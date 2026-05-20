@@ -179,4 +179,4 @@ Found a bug or have a suggestion? Open an issue on the project page!
 
 ---
 
-[![GitHub](https://img.shields.io/badge/GitHub-BRutus-181717?logo=github)](https://github.com/danielcosta42/BRutus)
+[![GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)

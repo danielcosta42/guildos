@@ -80,7 +80,7 @@ See existing ADRs in `decisions.md` as examples.
 - **Lint**: luacheck on every push/PR to `main`
 - **Versioning**: auto-semver from Conventional Commits
 - **Changelog**: auto-generated, prepended to `CHANGELOG.md`
-- **Publish**: BigWigsMods packager → CurseForge (project ID 1517832, BCC client)
+- **Publish**: BigWigsMods packager → CurseForge (project ID 1549177, BCC client)
 
 ---
 

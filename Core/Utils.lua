@@ -210,7 +210,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     titleFS:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     titleFS:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -2)
     titleFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleFS:SetText("BRutus — Profession Sync Required")
+    titleFS:SetText("Guild OS — Profession Sync Required")
 
     -- Description
     local profNames = table.concat(staleProfessions, ", ")

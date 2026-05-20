@@ -1,16 +1,20 @@
--- Luacheck configuration for BRutus WoW Addon
+-- Luacheck configuration for Guild OS WoW Addon
 
 std = "lua51"
 max_line_length = false
 
 -- Globals that the addon WRITES to
 globals = {
-    -- Addon tables
+    -- Addon tables (GuildOS is the primary namespace; BRutus is a legacy alias)
+    "GuildOS",
     "BRutus",
+    "GuildOSDB",
     "BRutusDB",
 
     -- Slash commands
     "SlashCmdList",
+    "SLASH_GUILDOS1",
+    "SLASH_GUILDOS2",
     "SLASH_BRUTUS1",
     "SLASH_BRUTUS2",
 
@@ -78,7 +82,8 @@ read_globals = {
     "GetGuildRosterInfo",
     "GetNumGuildMembers",
     "GetGuildRosterMOTD",
-    "GuildRoster",
+    "GuildRoster",         -- nil in TBC Classic; guarded in Compat.lua
+    "SetGuildTabardTextures",
 
     -- WoW API: Inventory & Items
     "GetInventoryItemLink",

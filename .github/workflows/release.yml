@@ -70,7 +70,7 @@ jobs:
 
       - name: Update TOC version
         run: |
-          sed -i "s/^## Version: .*/## Version: ${{ steps.version.outputs.next }}/" BRutus.toc
+          sed -i "s/^## Version: .*/## Version: ${{ steps.version.outputs.next }}/" GuildOS.toc
 
       - name: Generate changelog entry
         run: |
@@ -129,14 +129,14 @@ jobs:
             tail -n +4 CHANGELOG.md >> CHANGELOG.tmp
             mv CHANGELOG.tmp CHANGELOG.md
           else
-            echo -e "# BRutus Changelog\n\nAll notable changes to this project will be documented in this file.\n\n${ENTRY}" > CHANGELOG.md
+            echo -e "# Guild OS Changelog\n\nAll notable changes to this project will be documented in this file.\n\n${ENTRY}" > CHANGELOG.md
           fi
 
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add BRutus.toc CHANGELOG.md
+          git add GuildOS.toc CHANGELOG.md
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "chore: bump version to ${{ steps.version.outputs.next }} [skip ci]"
           git push origin main

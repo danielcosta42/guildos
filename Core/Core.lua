@@ -1,17 +1,16 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Core
--- Global namespace, database bootstrap, event frame, lifecycle.
+-- Guild OS - Core
+-- Global namespace bootstrap, database lifecycle, event handling.
+-- Constants are defined in Core/Config.lua (loaded first).
 ----------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
--- Global addon table
-BRutus = {}
-BRutus.ns = ns
+-- Safety net: Config.lua should have run first, but guard defensively.
+_G.GuildOS = _G.GuildOS or {}
+_G.BRutus  = _G.GuildOS  -- legacy alias; see Config.lua
 
--- Version
-BRutus.VERSION      = "1.0.0"
-BRutus.COMM_VERSION = 1
-BRutus.PREFIX       = "BRutus"
+-- Attach the file-local namespace table (only accessible from this file)
+GuildOS.ns = ns
 
 ----------------------------------------------------------------------
 -- Session state (runtime-only, never persisted)
@@ -105,17 +104,33 @@ end)
 -- Initialization
 ----------------------------------------------------------------------
 function BRutus:Initialize()
-    -- Ensure global container exists
-    if not BRutusDB then
-        BRutusDB = {}
+    -- Ensure both DB globals exist (WoW sets SavedVariables to nil if never written)
+    if not GuildOSDB then GuildOSDB = {} end
+    if not BRutusDB  then BRutusDB  = {} end
+
+    -- One-time migration: copy legacy BRutusDB data into GuildOSDB when upgrading
+    if not GuildOSDB._migrated then
+        if next(BRutusDB) ~= nil then
+            -- Shallow-copy every top-level key that GuildOSDB does not already own
+            for k, v in pairs(BRutusDB) do
+                if GuildOSDB[k] == nil then
+                    GuildOSDB[k] = v
+                end
+            end
+            GuildOSDB._migratedFrom      = "BRutus"
+            GuildOSDB._legacyDbPreserved = true
+            -- BRutusDB is intentionally preserved; never wiped automatically
+        end
+        GuildOSDB._migrated = true
     end
 
-    -- Register addon prefix for communication
+    -- Register both prefixes so we can receive messages from older BRutus clients
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         C_ChatInfo.RegisterAddonMessagePrefix(self.PREFIX)
+        C_ChatInfo.RegisterAddonMessagePrefix(self.LEGACY_PREFIX)
     end
 
-    self:Print("v" .. self.VERSION .. " loaded. Type |cffFFD700/brutus|r to open.")
+    self:Print("v" .. self.VERSION .. " loaded. Type |cffFFD700/guildos|r to open.")
 end
 
 ----------------------------------------------------------------------
@@ -138,24 +153,24 @@ function BRutus:ResolveGuildDB()
     if self.guildKey == guildKey and self.db then return true end
 
     -- Migration from flat structure (pre-guild-keyed DB)
-    if not BRutusDB._dbVersion then
-        if BRutusDB.version or BRutusDB.members or BRutusDB.settings then
+    if not GuildOSDB._dbVersion then
+        if GuildOSDB.version or GuildOSDB.members or GuildOSDB.settings then
             local oldData = {}
-            for k, v in pairs(BRutusDB) do
+            for k, v in pairs(GuildOSDB) do
                 oldData[k] = v
             end
-            wipe(BRutusDB)
-            BRutusDB[guildKey] = oldData
+            wipe(GuildOSDB)
+            GuildOSDB[guildKey] = oldData
         end
-        BRutusDB._dbVersion = 2
+        GuildOSDB._dbVersion = 2
     end
 
-    if not BRutusDB[guildKey] then
-        BRutusDB[guildKey] = {}
+    if not GuildOSDB[guildKey] then
+        GuildOSDB[guildKey] = {}
     end
 
     -- Apply defaults
-    local guildDB = BRutusDB[guildKey]
+    local guildDB = GuildOSDB[guildKey]
     for k, v in pairs(DB_DEFAULTS) do
         if guildDB[k] == nil then
             if type(v) == "table" then
@@ -262,7 +277,7 @@ function BRutus:InitModules()
         C_GuildInfo.GuildRoster()
     end
 
-    -- Hook into default guild frame so BRutus opens instead
+    -- Hook into default guild frame so Guild OS opens instead
     BRutus:HookGuildFrame()
 end
 
@@ -374,7 +389,7 @@ end
 -- Utility — print
 ----------------------------------------------------------------------
 function BRutus:Print(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cffFFD700[BRutus]|r " .. tostring(msg))
+    DEFAULT_CHAT_FRAME:AddMessage("|cffFFD700[Guild OS]|r " .. tostring(msg))
 end
 
 ----------------------------------------------------------------------

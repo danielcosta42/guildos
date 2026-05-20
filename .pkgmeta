@@ -1,4 +1,4 @@
-package-as: BRutus
+package-as: GuildOS
 
 # Libraries are embedded directly as .lua files in Libs/
 # No externals needed — avoids path conflicts with single-file libs

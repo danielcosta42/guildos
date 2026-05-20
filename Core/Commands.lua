@@ -1,11 +1,17 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Slash Commands
--- /brutus and /br dispatch table.
+-- Guild OS - Slash Commands
+-- /guildos (primary) and /brutus (legacy alias) dispatch table.
 ----------------------------------------------------------------------
 
+-- Primary slash command: /guildos and /gos
+SLASH_GUILDOS1 = "/guildos"
+SLASH_GUILDOS2 = "/gos"
+
+-- Legacy slash commands kept for backward compatibility: /brutus and /br
 SLASH_BRUTUS1 = "/brutus"
 SLASH_BRUTUS2 = "/br"
-SlashCmdList["BRUTUS"] = function(msg)
+
+local function handleCommand(msg)
     msg = strtrim(msg or "")
     if msg == "scan" then
         if BRutus.DataCollector then
@@ -17,8 +23,9 @@ SlashCmdList["BRUTUS"] = function(msg)
             BRutus.CommSystem:FullSync()
         end
     elseif msg == "reset" then
-        if BRutus.guildKey and BRutusDB then
-            BRutusDB[BRutus.guildKey] = nil
+        if BRutus.guildKey then
+            if GuildOSDB then GuildOSDB[BRutus.guildKey] = nil end
+            if BRutusDB  then BRutusDB[BRutus.guildKey]  = nil end
         end
         ReloadUI()
     elseif msg:match("^recruit") then
@@ -50,7 +57,7 @@ SlashCmdList["BRUTUS"] = function(msg)
             local key = name .. "-" .. realm
             BRutus.TrialTracker:AddTrial(key)
         else
-            BRutus:Print("Usage: /brutus trial <PlayerName>")
+            BRutus:Print("Usage: /guildos trial <PlayerName>")
         end
     elseif msg:match("^note") then
         local rest = msg:gsub("^note%s*", "")
@@ -62,7 +69,7 @@ SlashCmdList["BRUTUS"] = function(msg)
                 BRutus:Print("Note added for " .. target)
             end
         else
-            BRutus:Print("Usage: /brutus note <PlayerName> <text>")
+            BRutus:Print("Usage: /guildos note <PlayerName> <text>")
         end
     elseif msg == "lm" or msg == "lootmaster" then
         if BRutus.LootMaster then
@@ -73,7 +80,7 @@ SlashCmdList["BRUTUS"] = function(msg)
             end
         end
     elseif msg:match("^lm announce") then
-        -- /brutus lm announce - manually announce item from target tooltip
+        -- /guildos lm announce - manually announce item from target tooltip
         BRutus:Print("Open loot window as Master Looter to announce items.")
     elseif msg == "exportatt" or msg == "exportattendance" then
         if BRutus.RaidTracker then
@@ -99,7 +106,7 @@ SlashCmdList["BRUTUS"] = function(msg)
             if itemId and BRutus.Wishlist then
                 BRutus.Wishlist:RemoveFromWishlist(itemId)
             else
-                BRutus:Print("Usage: /brutus wish remove [itemlink]")
+                BRutus:Print("Usage: /guildos wish remove [itemlink]")
             end
         else
             -- Treat remainder as an item link to add
@@ -107,7 +114,7 @@ SlashCmdList["BRUTUS"] = function(msg)
             if itemId and BRutus.Wishlist then
                 BRutus.Wishlist:AddToWishlist(itemId, rest, false)
             else
-                BRutus:Print("Usage: /brutus wish [itemlink] | /brutus wish remove [itemlink]")
+                BRutus:Print("Usage: /guildos wish [itemlink] | /guildos wish remove [itemlink]")
             end
         end
     elseif msg == "mergeraids" then
@@ -115,7 +122,7 @@ SlashCmdList["BRUTUS"] = function(msg)
             BRutus:Print("Merging duplicate raid sessions\226\128\166")
             local count = BRutus.RaidTracker:MergeDuplicateSessions()
             if count == 0 then
-                BRutus:Print("|cffAAAAAA[BRutus] No duplicates found.|r")
+                BRutus:Print("|cffAAAAAA[Guild OS] No duplicates found.|r")
             end
         end
     elseif msg == "specs" then
@@ -190,3 +197,9 @@ SlashCmdList["BRUTUS"] = function(msg)
         BRutus:ToggleRoster()
     end
 end
+
+-- Dispatch: /guildos and /gos (primary)
+SlashCmdList["GUILDOS"] = handleCommand
+
+-- Dispatch: /brutus and /br (legacy alias — kept for backward compatibility)
+SlashCmdList["BRUTUS"]  = handleCommand

@@ -28,11 +28,12 @@ CommSystem.THROTTLE_INTERVAL = 5  -- seconds between broadcasts
 CommSystem.lastBroadcast = 0
 
 function CommSystem:Initialize()
-    -- Register for addon messages
+    -- Register for addon messages on both the new prefix and the legacy BRutus prefix
+    -- so this client can receive messages from older addon versions during guild transitions.
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("CHAT_MSG_ADDON")
     frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
-        if prefix == BRutus.PREFIX then
+        if prefix == BRutus.PREFIX or prefix == BRutus.LEGACY_PREFIX then
             CommSystem:OnMessageReceived(msg, channel, sender)
         end
     end)

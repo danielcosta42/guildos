@@ -1,14 +1,14 @@
 ## Interface: 20505
-## Title: |cffFFD700BRutus|r |cff888888Guild Manager|r
+## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary
 ## Author: danielcosta42
 ## Version: 1.42.1
-## SavedVariables: BRutusDB
+## SavedVariables: GuildOSDB, BRutusDB
 ## DefaultState: enabled
 ## X-License: MIT
 ## X-Category: Guild
-## X-Website: https://github.com/danielcosta42/BRutus
-## X-Curse-Project-ID: 1517832
+## X-Website: https://github.com/danielcosta42/GuildOS
+## X-Curse-Project-ID: 1549177
 ## X-Wago-ID: b6XeDxKp
 
 
@@ -20,6 +20,7 @@ Libs\LibDeflate.lua
 Libs\ChatThrottleLib.lua
 
 # Core
+Core\Config.lua
 Core\Core.lua
 Core\Compat.lua
 Core\Data.lua

@@ -79,15 +79,39 @@ function BRutus.CreateRosterFrame()
     titleBg:SetAllPoints()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
-    -- Guild icon
-    local guildIcon = titleBar:CreateTexture(nil, "OVERLAY")
+    -- Guild emblem icon (3-layer tabard system)
+    -- Textures MUST have global names — SetGuildTabardTextures in TBC Classic
+    -- expects string names, not Lua object references.
+    local guildIcon = CreateFrame("Frame", nil, titleBar)
     guildIcon:SetSize(28, 28)
     guildIcon:SetPoint("LEFT", 12, 0)
-    guildIcon:SetTexture("Interface\\GuildFrame\\GuildLogo-NoLogo")
-    guildIcon:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
+    local guildIconBg     = guildIcon:CreateTexture("GuildOSTabardBg",     "BACKGROUND")
+    local guildIconBorder = guildIcon:CreateTexture("GuildOSTabardBorder", "BORDER")
+    local guildIconEmblem = guildIcon:CreateTexture("GuildOSTabardEmblem", "ARTWORK")
+    guildIconBg:SetAllPoints(guildIcon)
+    guildIconBorder:SetAllPoints(guildIcon)
+    guildIconEmblem:SetAllPoints(guildIcon)
+
+    local function UpdateGuildIcon()
+        if IsInGuild() then
+            -- Pass global texture names — TBC Classic (bg, border, emblem) order.
+            SetGuildTabardTextures("GuildOSTabardBg", "GuildOSTabardBorder", "GuildOSTabardEmblem")
+            if guildIconEmblem:GetTexture() then
+                guildIconEmblem:SetVertexColor(1, 1, 1)
+                return
+            end
+        end
+        -- No guild, or guild has no purchased tabard — show generic guild logo
+        guildIconBg:SetTexture(nil)
+        guildIconBorder:SetTexture(nil)
+        guildIconEmblem:SetTexture("Interface\\GuildFrame\\GuildLogo-NoLogo")
+        guildIconEmblem:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
+    end
+    frame.UpdateGuildIcon = UpdateGuildIcon
+    frame:HookScript("OnShow", UpdateGuildIcon)
 
     -- Title text
-    local title = UI:CreateTitle(titleBar, "|cffFFD700B|cffE8C840R|cffD0B030u|cffB89820t|cffA08010u|cff887000s|r", 20)
+    local title = UI:CreateTitle(titleBar, "|cffFFD700Guild|r |cffD4AC0DOS|r", 20)
     title:SetPoint("LEFT", guildIcon, "RIGHT", 8, 2)
 
     -- Subtitle (guild name)
@@ -507,7 +531,7 @@ function BRutus.CreateRosterFrame()
     bottomLine:SetPoint("BOTTOMLEFT", 0, 30)
     bottomLine:SetPoint("BOTTOMRIGHT", 0, 30)
 
-    local helpText = UI:CreateText(bottomBar, "/brutus scan  |  /brutus sync  |  /brutus wish", 9, 0.4, 0.4, 0.5)
+    local helpText = UI:CreateText(bottomBar, "/guildos scan  |  /guildos sync  |  /guildos wish", 9, 0.4, 0.4, 0.5)
     helpText:SetPoint("LEFT", 12, 0)
 
     -- "Minha Wishlist" quick-access button (all members)
@@ -762,9 +786,12 @@ function BRutus.CreateRosterFrame()
             self.subtitle:SetText("< " .. guildName .. " >")
         end
 
+        -- Refresh guild emblem
+        if self.UpdateGuildIcon then self.UpdateGuildIcon() end
+
         self.totalText:SetText("Members: |cffFFFFFF" .. numTotal .. "|r")
         self.onlineText:SetText("Online: |cff4CFF4C" .. numOnline .. "|r")
-        self.addonText:SetText("BRutus: |cff8060FF" .. numWithAddon .. "|r")
+        self.addonText:SetText("Guild OS: |cff8060FF" .. numWithAddon .. "|r")
     end
 
     -- ESC to close
@@ -774,8 +801,15 @@ function BRutus.CreateRosterFrame()
     frame:RegisterEvent("GROUP_ROSTER_UPDATE")
     frame:RegisterEvent("RAID_ROSTER_UPDATE")
     frame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
-    frame:SetScript("OnEvent", function(self)
-        self:UpdateTabVisibility()
+    -- Refresh guild emblem when tabard/guild data becomes available
+    frame:RegisterEvent("GUILD_ROSTER_UPDATE")
+    frame:RegisterEvent("PLAYER_GUILD_UPDATE")
+    frame:SetScript("OnEvent", function(self, event)
+        if event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
+            if self.UpdateGuildIcon then self.UpdateGuildIcon() end
+        else
+            self:UpdateTabVisibility()
+        end
     end)
 
     -- Initialize tab system
@@ -1200,7 +1234,7 @@ local function MemberDropdown_Initialize(self, level)
     -- View detail
     info = UIDropDownMenu_CreateInfo()
     info.notCheckable = true
-    info.text = "BRutus Detail"
+    info.text = "Guild OS Detail"
     info.func = function()
         BRutus:ShowMemberDetail(data)
     end
@@ -1229,7 +1263,7 @@ local function MemberDropdown_Initialize(self, level)
             info.text = "|cff8888FFAdd Note|r"
             info.func = function()
                 -- Simple note via chat input
-                BRutus:Print("Use: /brutus note " .. data.name .. " <your note>")
+                BRutus:Print("Use: /guildos note " .. data.name .. " <your note>")
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -1340,10 +1374,10 @@ function ShowRowTooltip(row)
 
     if not data.hasAddonData then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Player does not have BRutus installed", C.red.r, C.red.g, C.red.b)
+        GameTooltip:AddLine("Player does not have Guild OS installed", C.red.r, C.red.g, C.red.b)
     elseif data.addonVersion and data.addonVersion ~= BRutus.VERSION then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("BRutus v" .. data.addonVersion .. " (outdated)", C.red.r, C.red.g, C.red.b)
+        GameTooltip:AddLine("Guild OS v" .. data.addonVersion .. " (outdated)", C.red.r, C.red.g, C.red.b)
     end
 
     -- Wishlist info (native)

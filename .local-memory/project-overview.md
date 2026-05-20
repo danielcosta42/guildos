@@ -101,4 +101,4 @@ Substitui o frame padrão de guild do Blizzard por um hub moderno que coleta, si
 | Persistência | SavedVariables (`BRutusDB`) |
 | Lint | luacheck (`C:\Users\danie\bin\luacheck.exe`) |
 | CI/CD | GitHub Actions + BigWigsMods packager |
-| Publish | CurseForge ID 1517832 (BCC client) |
+| Publish | CurseForge ID 1549177 (BCC client) |

@@ -17,7 +17,7 @@ release/
 .release/
 
 # WoW specific
-!BRutus.toc
+!GuildOS.toc
 WTF/
 Cache/
 

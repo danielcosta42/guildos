@@ -61,4 +61,4 @@ PHASE 3 — WRITE (implementar e validar)
 | Logger | `BRutus.Logger.Debug/Info/Warn` — sem `print()` direto |
 | luacheck | `C:\Users\danie\bin\luacheck.exe . --config .luacheckrc` |
 | Commit format | Conventional Commits: `feat:`, `fix:`, `refactor:`, `chore:`, etc. |
-| CurseForge | Projeto ID 1517832, BCC client |
+| CurseForge | Projeto ID 1549177, BCC client |

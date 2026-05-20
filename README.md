@@ -1,8 +1,8 @@
-# ![BRutus](https://img.shields.io/badge/BRutus-Guild%20Manager-blueviolet?style=for-the-badge) 
+# ![Guild OS](https://img.shields.io/badge/Guild%20OS-Guild%20Manager-blueviolet?style=for-the-badge) 
 
 ### Premium Guild Management Addon for WoW TBC Anniversary
 
-BRutus replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
+Guild OS replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
 
 > **Client:** WoW TBC Anniversary (Interface 20505)
 
@@ -16,7 +16,7 @@ BRutus replaces the default guild frame with a modern, feature-rich management h
 - **Online/Offline toggle** with offline members shown in grayscale
 - **Hover tooltips** with detailed character info
 - **Click any member** to open their full inspection panel
-- **Stats bar** showing total members, online count, and how many have BRutus installed
+- **Stats bar** showing total members, online count, and how many have Guild OS installed
 
 ### Member Detail Panel
 - Full equipment inspection (17 gear slots) with quality-colored item names and tier-colored item levels
@@ -88,7 +88,7 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - Synced across all addon instances in the guild
 
 ### Guild-Wide Data Sync
-- Automatically shares your gear, professions, attunements and stats with guildmates who have BRutus
+- Automatically shares your gear, professions, attunements and stats with guildmates who have Guild OS installed
 - Compressed and chunked communication protocol (LibSerialize + LibDeflate)
 - Periodic sync every 5 minutes + manual sync button
 - No manual inspection needed — data flows automatically
@@ -97,7 +97,7 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - **Auto-recruit popup** — a notification appears on a configurable interval; click it to send your recruitment message to chat channels (LookingForGroup, Trade, etc.)
 - **Send Now button** in the Recruitment tab for instant posting
 - **Welcome message** — automatically posts a greeting in guild chat when a new member joins, with customizable message and Discord link
-- **Guild invite** via `/brutus recruit invite <Player>`
+- **Guild invite** via `/guildos recruit invite <Player>`
 - Full configuration UI in the Recruitment tab: message, interval, channels, welcome text, Discord link
 
 ### Tab System
@@ -111,7 +111,7 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 | Recruitment | Officers only |
 
 ### Guild Frame Hook
-Pressing **J** (or however you open the guild frame) opens BRutus instead of the default Blizzard guild panel.
+Pressing **J** (or however you open the guild frame) opens Guild OS instead of the default Blizzard guild panel.
 
 ---
 
@@ -119,33 +119,37 @@ Pressing **J** (or however you open the guild frame) opens BRutus instead of the
 
 | Command | Description |
 |---|---|
-| `/brutus` or `/br` | Toggle the roster window |
-| `/brutus scan` | Re-collect your local character data |
-| `/brutus sync` | Broadcast your data to the guild |
-| `/brutus reset` | Wipe saved data and reload |
+| `/guildos` or `/gos` | Toggle the roster window |
+| `/guildos scan` | Re-collect your local character data |
+| `/guildos sync` | Broadcast your data to the guild |
+| `/guildos reset` | Wipe saved data and reload |
+
+> **Legacy commands** `/brutus` and `/br` continue to work as aliases.
 
 ### Recruitment Commands (Officer+)
 
 | Command | Description |
 |---|---|
-| `/brutus recruit on/off` | Start/stop auto-recruit popup |
-| `/brutus recruit status` | Show recruitment status |
-| `/brutus recruit msg <text>` | Set recruitment message |
-| `/brutus recruit interval <sec>` | Set popup interval (min 60s) |
-| `/brutus recruit channel add/remove/list <name>` | Manage channels |
-| `/brutus recruit welcome on/off` | Toggle welcome message |
-| `/brutus recruit welcome msg <text>` | Set welcome message |
-| `/brutus recruit discord <link>` | Set Discord link |
-| `/brutus recruit invite <Player>` | Send guild invite |
+| `/guildos recruit on/off` | Start/stop auto-recruit popup |
+| `/guildos recruit status` | Show recruitment status |
+| `/guildos recruit msg <text>` | Set recruitment message |
+| `/guildos recruit interval <sec>` | Set popup interval (min 60s) |
+| `/guildos recruit channel add/remove/list <name>` | Manage channels |
+| `/guildos recruit welcome on/off` | Toggle welcome message |
+| `/guildos recruit welcome msg <text>` | Set welcome message |
+| `/guildos recruit discord <link>` | Set Discord link |
+| `/guildos recruit invite <Player>` | Send guild invite |
 
 ---
 
 ## Installation
 
 1. Download and extract into your `Interface/AddOns/` folder
-2. The folder should be named `BRutus`
+2. The folder must be named `GuildOS`
 3. Restart WoW or type `/reload`
-4. Press **J** to open BRutus or type `/brutus`
+4. Press **J** to open Guild OS or type `/guildos`
+
+> **Upgrading from BRutus?** Your saved data migrates automatically on first load. The old `BRutusDB` is preserved alongside the new `GuildOSDB`.
 
 ---
 
@@ -161,9 +165,9 @@ Pressing **J** (or however you open the guild frame) opens BRutus instead of the
 
 ## Notes
 
-- **SendChatMessage to channels** (LookingForGroup, Trade, etc.) requires a hardware click due to Blizzard restrictions. BRutus handles this by showing a clickable popup notification instead of sending automatically.
+- **SendChatMessage to channels** (LookingForGroup, Trade, etc.) requires a hardware click due to Blizzard restrictions. Guild OS handles this by showing a clickable popup notification instead of sending automatically.
 - Officer permission is determined by configurable guild rank threshold (default: rank ≤ 2). Adjustable in the Settings tab by current officers.
-- Data is stored per-guild in `BRutusDB` SavedVariables (isolated per guild name+realm).
+- Data is stored per-guild in `GuildOSDB` SavedVariables (isolated per guild name+realm). Legacy `BRutusDB` is preserved and migrated automatically.
 - Account-wide attunements require officers to manually link a player's alt characters via the Member Detail panel.
 
 ---
@@ -178,12 +182,12 @@ Third-party libraries are included under their own respective licenses (MIT, zli
 
 ## Contributing
 
-Bug reports and feature requests are welcome! Please use the [GitHub Issues](https://github.com/danielcosta42/BRutus/issues) page.
+Bug reports and feature requests are welcome! Please use the [GitHub Issues](https://github.com/danielcosta42/GuildOS/issues) page.
 
 ---
 
 ## Support
 
-If BRutus has been useful to your guild and you'd like to help keep it maintained, consider buying me a coffee ☕
+If Guild OS has been useful to your guild and you'd like to help keep it maintained, consider buying me a coffee ☕
 
 [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-0070BA?style=for-the-badge&logo=paypal&logoColor=white)](https://www.paypal.com/donate/?business=daniel.cfdutra13%40gmail.com&no_recurring=0&currency_code=USD)

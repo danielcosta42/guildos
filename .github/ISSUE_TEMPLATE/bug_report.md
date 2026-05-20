@@ -1,13 +1,13 @@
 ---
 name: Bug Report
-about: Report a bug or error in BRutus
+about: Report a bug or error in Guild OS
 title: "[BUG] "
 labels: bug
 assignees: ''
 ---
 
 **Addon Version**
-<!-- e.g. 1.0.0 — type /brutus to see it in-game -->
+<!-- e.g. 1.0.0 — type /guildos to see it in-game -->
 
 **WoW Client Version**
 <!-- e.g. TBC Anniversary 2.5.4 -->
