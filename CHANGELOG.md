@@ -2,6 +2,118 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0] - 2026-05-20
+
+### Added
+- rename and migrate Guild OS, update documentation and commands
+- enhance Master Looter checks for group and raid scenarios
+- update roll popup visibility to show in groups instead of just raids
+- restrict roll popup and bag roll functionality to raid only
+- update Loot tab visibility to always show for officers
+- enhance Loot Master and Roster Frame with conditional tab visibility and raid checks
+- Add complete function catalog and Lua best practices documentation
+- add addon version tracking to broadcast data and roster UI for version comparison
+- update welcome message functionality to post in guild chat and add priority handling for message broadcasting
+- modify HandleRequest to broadcast data to GUILD instead of WHISPER to prevent spam
+- add support section to README with donation link
+- update publish workflow to include Wago and clarify package publishing
+- optimize memory usage by reusing member list table in roster frame
+- add GetItemCount to read_globals for enhanced item tracking
+- update attunement tracking logic and clarify account-wide limitations
+- add attunement status and debug commands to chat interface
+- refactor duplicate session merging logic for improved clarity
+- update attunement display to show only game-verified data without alt-propagation
+- enhance encounter tracking and deduplication logic in raid sessions
+- improve session merging logic with debounce handling for incoming raid broadcasts
+- migrate wishlist data structure to per-character storage and update related functionality
+- add manual close flags for HUD and consumable popup to improve user experience
+- debounce wishlist panel updates on item info received to improve performance
+- enhance session merging by deduplicating encounters and normalizing snapshot data
+- add guild-only filter to recent sessions retrieval in RaidTracker
+- enhance wishlist functionality with item delivery tracking and improved UI display
+- implement session deletion tracking and enhance loot award handling
+- enhance OnEnterWorld to handle initial login and UI reload scenarios
+- add RAID_DELETE message type and officer verification for raid session deletion
+- add event listener to refresh wishlist frame on item info received
+- restrict wishlist access and display to officers only during testing
+- Implement Wishlist System for per-character item tracking and guild-wide synchronization
+- add zone column to roster UI and update frame width
+- add additional WoW API read globals for talent inspection functionality
+- implement talent data collection and viewer for player specs
+- add SpecChecker module to collect and display talent spec data
+- Add functionality to record received loot, remove entries, and export as CSV
+- update settings panel to mark certain features as officer-only
+- add new WoW API globals for spell texture and invite functions
+- add RaidHUD for tracking raid cooldowns and consumable checks
+- enhance raid attendance tracking for 25-man raids and update UI components
+- add welcome message claim functionality for officers
+- implement full sync for officer data including raid attendance and officer notes
+- enhance account-wide attunement support and improve UI for linked characters in README and CURSEFORGE
+- implement alt/main linking for account-wide attunement propagation and enhance member detail UI
+- add officer rank configuration panel and integrate WoW guild control API for rank management
+- add support for new profession 'Poisons' and enhance profession checks in RecipeTracker
+- enhance welcome message handling for new guild members with roster tracking
+- enhance item and spell crafter indexing for improved tooltip information
+- migrate data storage from BRutusDB to BRutus.db for improved modularity
+- exclude gathering professions from stale profession checks and recipe listings
+- improve recipe deduplication by skipping name-only entries without ID matches
+- enhance tooltip display for recipe items and spells in the Recipes panel
+- enrich recipe data by merging spellIds and enhance gem tooltips in member detail
+- enhance recipe scanning to extract enchant IDs from item links and merge duplicate entries
+- add item crafter index and tooltip enhancements for recipe visibility
+- enhance whisper functionality to include item link in messages
+- restrict officer-only module initialization and settings visibility
+- enhance guild invitation tracking and welcome messaging
+- enhance trial data broadcasting and handling for officers
+- enhance profession handling and item display across various modules
+- group crafters in recipe index and update online status display
+- Implement profession freshness check and reminder system
+- enhance WoW API integration and improve function parameters in LootMaster and UI panels
+- implement publish workflow for CurseForge and trigger from release workflow
+- update release workflow to include packaging and publishing to CurseForge
+- update release workflow to remove re-checkout step and add publish workflow for CurseForge
+- add re-checkout step for tagged commit in release workflow
+- add right-click context menu for roster members with various actions
+
+### Fixed
+- correctly handle checkbox state in settings panel
+- update isGuildRaid checks to include legacy session data
+- streamline attendance migration check for old format
+- correct registration of Mining profession to include the correct parameters
+- remove redundant LibSerialize initialization in BroadcastAllNotes and HandleAllIncoming functions
+- correct reference to guildKey in reset command for proper database reset functionality
+- correct formatting in login message and streamline playerKey assignments in member detail population
+- standardize text formatting and improve UI element labels across multiple files
+- update descriptions and labels for clarity in CURSEFORGE.md, README.md, and RecruitmentSystem.lua
+- update parameter name in ShowMemberContextMenu for consistency
+- update parameter names in CreateTMBPanel and RenderItemRows for consistency
+- format update TOC version step for better readability
+
+### Changed
+- simplify conditionals for guild-only session filtering and improve variable naming in session merging
+- update variable naming for clarity and remove unused attendance export button
+- update attendance merging logic to support new nested format
+- remove unused variables in PopulateDetail function for improved clarity
+- remove unused variables and improve code clarity in LootMaster and FeaturePanels
+- remove unused ENCHANTABLE_SLOTS definition from MemberDetail.lua
+- release workflow to include linting with Luacheck and version bumping logic
+
+### Other
+- Add Spec Checker, Trial Tracker, and Wishlist System modules
+- Refactor attendance tracking and loot distribution features
+- Add Recipe Tracker and Recipes Panel for guild tradeskill management
+- Add Loot Tracker, Officer Notes, Raid Tracker, Trial Tracker, and UI Panels
+- Add TMBIntegration.lua for That's My BiS integration
+- Update release workflow to include version tagging and push to CurseForge
+- Remove unused local variables in CreateRecruitmentPanel function
+- Update luacheck ignore codes in CreateRecruitmentPanel function
+- Refactor code for improved clarity and performance; update luacheck configuration and remove unnecessary externals
+- Update luacheck configuration and correct Curse Project ID in toc file
+- Update project metadata, add issue templates, and enhance documentation
+- Implement recruitment system popups and manual send button; update documentation
+- Initial commit
+
+
 ## [1.42.1] - 2026-05-05
 
 ### Fixed
