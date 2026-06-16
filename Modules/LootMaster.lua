@@ -990,10 +990,12 @@ function LootMaster:EndRolling()
         local aOrder = a.wishlist and a.wishlist.order or 999
         local bOrder = b.wishlist and b.wishlist.order or 999
         if aOrder ~= bOrder then return aOrder < bOrder end
-        -- Received tiebreaker: fewer items received this lockout wins
-        local aRecv = a.recvCount or 0
-        local bRecv = b.recvCount or 0
-        if aRecv ~= bRecv then return aRecv < bRecv end
+        -- Received tiebreaker: fewer items received this lockout wins (when enabled)
+        if BRutus.db.lootMaster.recvPenalty ~= false then
+            local aRecv = a.recvCount or 0
+            local bRecv = b.recvCount or 0
+            if aRecv ~= bRecv then return aRecv < bRecv end
+        end
         -- Attendance tiebreaker: higher 25-man attendance wins
         if BRutus.db.lootMaster.attTiebreaker and (a.att25 or 0) ~= (b.att25 or 0) then
             return (a.att25 or 0) > (b.att25 or 0)

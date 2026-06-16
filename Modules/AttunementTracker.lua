@@ -179,7 +179,6 @@ AttunementTracker.HEROIC_KEYS = {
 function AttunementTracker:Initialize()
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("QUEST_TURNED_IN")
-    frame:RegisterEvent("QUEST_LOG_UPDATE")
     frame:SetScript("OnEvent", function(_, event)
         if event == "QUEST_TURNED_IN" then
             C_Timer.After(1, function() AttunementTracker:ScanAttunements() end)

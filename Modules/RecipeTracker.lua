@@ -14,10 +14,8 @@ function RecipeTracker:Initialize()
 
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("TRADE_SKILL_SHOW")
-    frame:RegisterEvent("TRADE_SKILL_CLOSE")
-    -- Craft API events (Enchanting in some clients)
+    -- Craft API event (Enchanting in some clients)
     frame:RegisterEvent("CRAFT_SHOW")
-    frame:RegisterEvent("CRAFT_CLOSE")
     frame:SetScript("OnEvent", function(_, event)
         if event == "TRADE_SKILL_SHOW" then
             RecipeTracker:DebounceScan("trade")
