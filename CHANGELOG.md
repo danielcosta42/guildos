@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-06-16
+
+### Added
+- obsidian theme, roster dashboard, and raid HUD/loot fixes
+
+
 ## [0.1.1] - 2026-06-16
 
 ### Fixed
