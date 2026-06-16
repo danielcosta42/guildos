@@ -183,7 +183,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    frame:SetBackdropColor(0.06, 0.06, 0.10, 0.95)
+    frame:SetBackdropColor(0.066, 0.066, 0.084, 0.95)
     frame:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
     frame:SetMovable(true)
     frame:EnableMouse(true)

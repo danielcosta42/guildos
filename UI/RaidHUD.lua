@@ -142,12 +142,9 @@ local ICON_W     = 18
 local LABEL_W    = 90
 local FOOT_H     = 36
 
-local CP_W         = 520
-local CP_H         = 460
-local CONS_ROW_H   = 24
-local CONS_NAME_W  = 140
-local CONS_COL_W   = 44
-local CONS_COL_PAD = 4
+local CP_W         = 320   -- compact consumables panel width
+local CONS_ROW_H   = 18    -- compact "missing" row height
+local CONS_MAX_ROWS = 12   -- cap visible rows before the list scrolls
 
 ----------------------------------------------------------------------
 -- HELPERS
@@ -412,7 +409,12 @@ function BRutus:CreateRaidHUD()
     closeTxt:SetText("×")
 
     closeBtn:SetScript("OnClick", function()
+        -- Persist the dismissal so it survives zoning/reload within the raid
+        -- session (it is cleared again when the player leaves the raid).
         _hudManuallyClosed = true
+        if BRutus.db and BRutus.db.settings then
+            BRutus.db.settings.raidHUDDismissed = true
+        end
         f:Hide()
     end)
 
@@ -468,8 +470,11 @@ function BRutus:UpdateRaidHUDVisibility()
             BuildHUDRows(_hudFrame)
         end
     else
-        -- Reset dismissed flags when leaving raid so windows reappear on next raid
+        -- Left the raid: clear the dismissal so the HUD reappears next raid.
         _hudManuallyClosed = false
+        if BRutus.db and BRutus.db.settings then
+            BRutus.db.settings.raidHUDDismissed = false
+        end
         _hudFrame:Hide()
         if _consPopup then _consPopup:Hide() end
     end
@@ -485,11 +490,14 @@ _evtFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 
 _evtFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_ENTERING_WORLD" then
-        -- Reset dismissed flag on login/reload so window shows fresh
-        _hudManuallyClosed = false
-        -- Wait for BRutus.db to be ready (set in ADDON_LOADED)
+        -- Do NOT reset the dismissal here: zoning inside a raid (wipes,
+        -- instance transitions) fires PEW and was re-opening a window the
+        -- user had closed. Restore the persisted state once db is ready.
         C_Timer.After(2, function()
             if BRutus.db then
+                if BRutus.db.settings then
+                    _hudManuallyClosed = BRutus.db.settings.raidHUDDismissed and true or false
+                end
                 BRutus:CreateRaidHUD()
                 BRutus:UpdateRaidHUDVisibility()
             end
@@ -500,179 +508,91 @@ _evtFrame:SetScript("OnEvent", function(_, event)
 end)
 
 ----------------------------------------------------------------------
--- CONSUMABLE POPUP — full grid, standalone floating frame
+-- CONSUMABLE PANEL — compact "problems only" floating frame
 ----------------------------------------------------------------------
 local function BuildConsPopup(f)
     local CC = BRutus.ConsumableChecker
     if not CC then return end
 
-    -- Status text
     local results = CC:GetLastResults()
+
+    -- Status line
     if CC.lastCheck then
         local ago = floor(GetServerTime() - (CC.lastCheck.time or 0))
-        f.statusText:SetText("Last scan: " .. ago .. "s ago")
+        f.statusText:SetText("Scan há " .. ago .. "s")
     elseif results and next(results) then
-        f.statusText:SetText("Data from previous session — rescan for fresh results")
+        f.statusText:SetText("Sessão anterior — re-escaneie")
     else
-        f.statusText:SetText("Not in a raid — join a raid group to scan")
+        f.statusText:SetText("Sem dados")
     end
 
-    local cols    = CC.COLUMN_ORDER
-    local content = f.content
-    local rowPool = f.rowPool
-
-    -- Hide pooled rows
-    for _, row in ipairs(rowPool) do
-        row:Hide()
-        for _, region in ipairs({ row:GetRegions() }) do region:Hide() end
-        for _, child  in ipairs({ row:GetChildren() }) do child:Hide()  end
-    end
-
-    -- Build column icon headers only once
-    if not f.headersBuilt then
-        f.headersBuilt = true
-        for i, col in ipairs(cols) do
-            local xOff = CONS_NAME_W + (i - 1) * (CONS_COL_W + CONS_COL_PAD)
-
-            local ico = f.headerRow:CreateTexture(nil, "ARTWORK")
-            ico:SetSize(CONS_COL_W - 4, CONS_COL_W - 4)
-            ico:SetPoint("BOTTOMLEFT", xOff + 2, 2)
-            local icoTex = GetSpellTexture(col.icon)
-            ico:SetTexture(icoTex or "Interface\\Icons\\INV_Misc_QuestionMark")
-            ico:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-            local ha = CreateFrame("Frame", nil, f.headerRow)
-            ha:SetSize(CONS_COL_W, CONS_ROW_H + 4)
-            ha:SetPoint("BOTTOMLEFT", xOff, 0)
-            ha:EnableMouse(true)
-            local cat      = CC.CONSUMABLES[col.key]
-            local catLabel = cat and cat.label or col.key
-            ha:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-                GameTooltip:ClearLines()
-                GameTooltip:AddLine(catLabel, C.gold.r, C.gold.g, C.gold.b)
-                GameTooltip:Show()
-            end)
-            ha:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- Collect only players missing something; tally ready vs total
+    local problems, total, ready = {}, 0, 0
+    if results then
+        for _, p in pairs(results) do
+            total = total + 1
+            if p.missing and #p.missing > 0 then
+                table.insert(problems, p)
+            else
+                ready = ready + 1
+            end
         end
     end
-
-    if not results or not next(results) then
-        content:SetHeight(40)
-        return
-    end
-
-    -- Sort: by class then name
-    local list = {}
-    for _, p in pairs(results) do
-        table.insert(list, p)
-    end
-    table.sort(list, function(a, b)
-        local ca = a.class or "ZZZ"
-        local cb = b.class or "ZZZ"
-        return ca == cb and a.name < b.name or ca < cb
+    table.sort(problems, function(a, b)
+        local ca, cb = a.class or "ZZZ", b.class or "ZZZ"
+        if ca == cb then return (a.name or "") < (b.name or "") end
+        return ca < cb
     end)
 
+    f.countText:SetText(total > 0 and (ready .. "/" .. total .. " prontos") or "")
+
+    for _, row in ipairs(f.rowPool) do row:Hide() end
+
+    local content = f.content
     local yOff = 0
-    for idx, p in ipairs(list) do
-        -- Reuse or create row frame
-        local row = rowPool[idx]
-        if not row then
-            row = CreateFrame("Frame", nil, content, "BackdropTemplate")
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
 
-            row._nameText = UI:CreateText(row, "", 10, 1, 1, 1)
-            row._nameText:SetPoint("LEFT", 6, 0)
-            row._nameText:SetWidth(CONS_NAME_W - 10)
-
-            row._cells = {}
-            for i2, _ in ipairs(cols) do
-                local xOff2  = CONS_NAME_W + (i2 - 1) * (CONS_COL_W + CONS_COL_PAD)
-                local cell   = {}
-                local iconSz = CONS_ROW_H - 4
-                local xPad   = floor((CONS_COL_W - iconSz) / 2)
-
-                local cico = row:CreateTexture(nil, "ARTWORK")
-                cico:SetSize(iconSz, iconSz)
-                cico:SetPoint("LEFT", xOff2 + xPad, 0)
-                cico:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                cell.icon = cico
-
-                local miss = row:CreateFontString(nil, "OVERLAY")
-                miss:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
-                miss:SetPoint("LEFT", xOff2 + floor(CONS_COL_W / 2) - 4, 0)
-                miss:SetTextColor(0.85, 0.15, 0.15)
-                miss:SetText("-")
-                cell.missText = miss
-
-                local ha2 = CreateFrame("Frame", nil, row)
-                ha2:SetSize(CONS_COL_W, CONS_ROW_H)
-                ha2:SetPoint("LEFT", xOff2, 0)
-                ha2:EnableMouse(true)
-                cell.hitArea = ha2
-
-                row._cells[i2] = cell
+    if total == 0 then
+        f.emptyText:SetText("Entre numa raid e escaneie.")
+        f.emptyText:Show()
+    elseif #problems == 0 then
+        f.emptyText:SetText("|cff4CFF4CTodos preparados!|r")
+        f.emptyText:Show()
+    else
+        f.emptyText:Hide()
+        for idx, p in ipairs(problems) do
+            local row = f.rowPool[idx]
+            if not row then
+                row = CreateFrame("Frame", nil, content)
+                row:SetHeight(CONS_ROW_H)
+                row._name = UI:CreateText(row, "", 11, 1, 1, 1)
+                row._name:SetPoint("LEFT", 4, 0)
+                row._name:SetWidth(94)
+                row._name:SetJustifyH("LEFT")
+                row._name:SetWordWrap(false)
+                row._miss = UI:CreateText(row, "", 10, C.red.r, C.red.g, C.red.b)
+                row._miss:SetPoint("LEFT", 102, 0)
+                row._miss:SetPoint("RIGHT", -4, 0)
+                row._miss:SetJustifyH("LEFT")
+                row._miss:SetWordWrap(false)
+                f.rowPool[idx] = row
             end
-            rowPool[idx] = row
+            row:SetWidth(content:GetWidth())
+            row:SetPoint("TOPLEFT", 0, -yOff)
+            local cr, cg, cbv = BRutus:GetClassColor(p.class)
+            row._name:SetTextColor(cr, cg, cbv)
+            row._name:SetText(p.name or "?")
+            row._miss:SetText(table.concat(p.missing, ", "))
+            row:Show()
+            yOff = yOff + CONS_ROW_H
         end
-
-        row:SetSize(content:GetWidth(), CONS_ROW_H)
-        row:SetPoint("TOPLEFT", 0, -yOff)
-        local bg = (idx % 2 == 1) and C.row1 or C.row2
-        row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
-        row:Show()
-
-        -- Name (class-colored)
-        local cr, cg, cbv = BRutus:GetClassColor(p.class)
-        row._nameText:SetTextColor(cr, cg, cbv)
-        row._nameText:SetText(p.name or "?")
-        row._nameText:Show()
-
-        -- Per-category cells
-        for i, col in ipairs(cols) do
-            local cell    = row._cells[i]
-            local hasBuff = p.buffs[col.key]
-
-            -- Support both new format ({name, id}) and old format (plain string)
-            local buffId   = type(hasBuff) == "table" and hasBuff.id   or nil
-            local buffName = type(hasBuff) == "table" and hasBuff.name or hasBuff
-
-            if hasBuff then
-                -- Prefer actual buff icon; fall back to category representative icon
-                local buffTex = (buffId and GetSpellTexture(buffId))
-                             or GetSpellTexture(col.icon)
-                             or "Interface\\Icons\\INV_Misc_QuestionMark"
-                cell.icon:SetTexture(buffTex)
-                cell.icon:Show()
-                cell.missText:Hide()
-                cell.hitArea:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:ClearLines()
-                    GameTooltip:AddLine(p.name, cr, cg, cbv)
-                    GameTooltip:AddLine(type(buffName) == "string" and buffName or "?", 1, 1, 1, true)
-                    GameTooltip:Show()
-                end)
-                cell.hitArea:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            else
-                cell.icon:Hide()
-                cell.missText:Show()
-                cell.hitArea:SetScript("OnEnter", nil)
-                cell.hitArea:SetScript("OnLeave", nil)
-            end
-        end
-
-        -- Hover highlight
-        row:EnableMouse(true)
-        row:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-        end)
-        row:SetScript("OnLeave", function(self)
-            self:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
-        end)
-
-        yOff = yOff + CONS_ROW_H + 2
     end
+
     content:SetHeight(math.max(1, yOff))
+
+    -- Dynamic panel height: header + toolbar + body (capped) + padding
+    local visibleRows = math.min(#problems, CONS_MAX_ROWS)
+    local bodyH = (#problems > 0) and (visibleRows * CONS_ROW_H) or 30
+    f:SetHeight(HEADER_H + 28 + bodyH + 10)
 end
 
 function BRutus:ShowConsumablePopup()
@@ -685,15 +605,12 @@ function BRutus:ShowConsumablePopup()
         return
     end
 
+    local WHITE = "Interface\\Buttons\\WHITE8x8"
     local f = CreateFrame("Frame", "BRutusConsPopup", UIParent, "BackdropTemplate")
-    f:SetSize(CP_W, CP_H)
+    f:SetSize(CP_W, 160)
     f:SetPoint("CENTER")
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    f:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 0.96)
+    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    f:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 1)
     f:SetFrameStrata("HIGH")
     f:SetFrameLevel(60)
@@ -705,70 +622,59 @@ function BRutus:ShowConsumablePopup()
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
     -- Header
-    local hdr = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    local hdr = CreateFrame("Frame", nil, f)
     hdr:SetHeight(HEADER_H)
-    hdr:SetPoint("TOPLEFT",  f, "TOPLEFT",  0, 0)
-    hdr:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-    hdr:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    hdr:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1)
+    hdr:SetPoint("TOPLEFT", 0, 0)
+    hdr:SetPoint("TOPRIGHT", 0, 0)
+    local hbg = hdr:CreateTexture(nil, "BACKGROUND")
+    hbg:SetAllPoints()
+    hbg:SetTexture(WHITE)
+    hbg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1)
 
-    local hTitle = hdr:CreateFontString(nil, "OVERLAY")
-    hTitle:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    local hTitle = UI:CreateText(hdr, "Consumíveis", 12, C.gold.r, C.gold.g, C.gold.b)
     hTitle:SetPoint("LEFT", 10, 0)
-    hTitle:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    hTitle:SetText("Consumable Check")
 
-    local hClose = CreateFrame("Button", nil, hdr)
-    hClose:SetSize(18, 18)
-    hClose:SetPoint("RIGHT", -2, 0)
-    local hCloseTxt = hClose:CreateFontString(nil, "OVERLAY")
-    hCloseTxt:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
-    hCloseTxt:SetAllPoints()
-    hCloseTxt:SetJustifyH("CENTER")
-    hCloseTxt:SetTextColor(0.85, 0.20, 0.20)
-    hCloseTxt:SetText("×")
-    hClose:SetScript("OnClick", function()
-        f:Hide()
-    end)
+    local hClose = UI:CreateCloseButton(hdr)
+    hClose:SetPoint("RIGHT", -4, 0)
+    hClose:SetScript("OnClick", function() f:Hide() end)
 
-    -- Status text
-    f.statusText = UI:CreateText(f, "No scan yet", 10, C.silver.r, C.silver.g, C.silver.b)
+    f.countText = UI:CreateText(hdr, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    f.countText:SetPoint("RIGHT", hClose, "LEFT", -8, 0)
+
+    -- Toolbar: status (left) + scan/announce (right)
+    f.statusText = UI:CreateText(f, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     f.statusText:SetPoint("TOPLEFT", 10, -(HEADER_H + 8))
 
-    -- Report to Raid button
-    local repBtn = UI:CreateButton(f, "Report to Raid", 120, 22)
-    repBtn:SetPoint("TOPRIGHT", -10, -(HEADER_H + 4))
+    local scanBtn = UI:CreateButton(f, "Escanear", 78, 20)
+    scanBtn:SetPoint("TOPRIGHT", -10, -(HEADER_H + 4))
+    scanBtn:SetScript("OnClick", function()
+        if BRutus.ConsumableChecker then BRutus.ConsumableChecker:CheckRaid() end
+        BuildConsPopup(f)
+    end)
+
+    local repBtn = UI:CreateButton(f, "Anunciar", 78, 20)
+    repBtn:SetPoint("RIGHT", scanBtn, "LEFT", -6, 0)
     repBtn:SetScript("OnClick", function()
         if BRutus.ConsumableChecker then BRutus.ConsumableChecker:ReportToChat("RAID") end
     end)
 
-    -- Column header row (icons per category)
-    local headerRow = CreateFrame("Frame", nil, f)
-    headerRow:SetPoint("TOPLEFT",  f, "TOPLEFT",  10, -(HEADER_H + 32))
-    headerRow:SetPoint("TOPRIGHT", f, "TOPRIGHT", -10, -(HEADER_H + 32))
-    headerRow:SetHeight(CONS_ROW_H + 4)
-    f.headerRow    = headerRow
-    f.headersBuilt = false
+    -- Centered message for "all prepared" / "no data"
+    f.emptyText = UI:CreateText(f, "", 12, C.silver.r, C.silver.g, C.silver.b)
+    f.emptyText:SetPoint("TOP", 0, -(HEADER_H + 36))
 
-    -- "Player" column header label
-    local nameHdr = UI:CreateText(headerRow, "Player", 9, C.gold.r, C.gold.g, C.gold.b)
-    nameHdr:SetPoint("BOTTOMLEFT", 6, 2)
-
-    -- Scrollable player list
-    local scroll = CreateFrame(
-        "ScrollFrame", "BRutusConsPopupScroll", f, "UIPanelScrollFrameTemplate"
-    )
-    scroll:SetPoint("TOPLEFT",     f, "TOPLEFT",     10, -(HEADER_H + 32 + CONS_ROW_H + 8))
-    scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 10)
+    -- Scrollable problem list
+    local scroll = CreateFrame("ScrollFrame", "BRutusConsPopupScroll", f, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 8, -(HEADER_H + 28))
+    scroll:SetPoint("BOTTOMRIGHT", -22, 8)
     UI:SkinScrollBar(scroll, "BRutusConsPopupScroll")
-
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(CP_W - 46, 1)
+    content:SetSize(CP_W - 30, 1)
     scroll:SetScrollChild(content)
 
     f.content = content
-    f.rowPool  = {}
+    f.rowPool = {}
 
+    UI:StylePopup(f)
     _consPopup = f
     BuildConsPopup(f)
 end

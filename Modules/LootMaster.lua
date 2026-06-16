@@ -72,7 +72,11 @@ function LootMaster:Initialize()
     if lmdb.recvPenalty      == nil then lmdb.recvPenalty      = true end
     if lmdb.awardHistory     == nil then lmdb.awardHistory     = {}   end
     if lmdb.disenchanter     == nil then lmdb.disenchanter     = ""  end
-    self.disenchanter = lmdb.disenchanter
+    -- Rarity threshold the ML window reacts to (item quality id, 2=Uncommon,
+    -- 3=Rare, 4=Epic, 5=Legendary). Defaults to Rare+ as before.
+    if lmdb.lootThreshold    == nil then lmdb.lootThreshold    = 3   end
+    self.disenchanter   = lmdb.disenchanter
+    self.LOOT_THRESHOLD = lmdb.lootThreshold
 
     -- Build /roll detection pattern from localized RANDOM_ROLL_RESULT global
     -- e.g. EN: "%s rolls %d (%d-%d)."  → ^(.+) rolls (%d+) %((%d+)%-(%d+)%)%.$
@@ -331,14 +335,14 @@ function LootMaster:OnLootOpened()
         local link = GetLootSlotLink(i)
         if link then
             local q = quality or 1
-            local isRarePlus = q >= 3
+            local meetsThreshold = q >= (self.LOOT_THRESHOLD or 3)
             local isBoE = false
             local itemId = tonumber(link:match("item:(%d+)"))
             if itemId then
                 local bindType = select(14, GetItemInfo(itemId))
                 isBoE = bindType == 2
             end
-            if isRarePlus or isBoE then
+            if meetsThreshold or isBoE then
                 table.insert(items, {
                     slot    = i,
                     link    = link,
@@ -666,8 +670,9 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    f:SetBackdropColor(0.06, 0.05, 0.10, 0.98)
-    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -741,7 +746,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     -- Send to disenchanter
     local deCouncilBtn = UI:CreateButton(f, "Send to DE", 110, 26)
     deCouncilBtn:SetPoint("BOTTOM", 0, 10)
-    deCouncilBtn:SetBackdropColor(0.22, 0.10, 0.38, 0.7)
+    deCouncilBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deCouncilBtn:SetScript("OnClick", function()
         local loot = LootMaster.activeLoot
         if loot then
@@ -1412,8 +1417,9 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    f:SetBackdropColor(0.08, 0.06, 0.14, 0.95)
-    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
+    f:SetBackdropColor(0.082, 0.082, 0.105, 0.95)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    BRutus.UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -1756,8 +1762,9 @@ function LootMaster:ShowLootFrame(items)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 2,
     })
-    f:SetBackdropColor(0.06, 0.05, 0.10, 0.97)
-    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.9)
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.97)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -1832,8 +1839,9 @@ function LootMaster:ShowLootFrame(items)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    dePickerPopup:SetBackdropColor(0.06, 0.05, 0.12, 0.98)
-    dePickerPopup:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.7)
+    dePickerPopup:SetBackdropColor(0.060, 0.060, 0.080, 0.98)
+    dePickerPopup:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(dePickerPopup, { shadowSize = 10 })
     dePickerPopup:Hide()
 
     -- Popup header
@@ -1939,7 +1947,7 @@ function LootMaster:ShowLootFrame(items)
             end)
             row:SetScript("OnLeave", function(self)
                 if LootMaster:GetDisenchanter() == capturedName then
-                    self:SetBackdropColor(0.14, 0.10, 0.26, 1)
+                    self:SetBackdropColor(0.160, 0.150, 0.220, 1)
                 else
                     self:SetBackdropColor(0, 0, 0, 0)
                 end
@@ -2015,7 +2023,7 @@ function LootMaster:ShowLootFrame(items)
     prioHdr:SetSize(rightW, 16)
     prioHdr:SetPoint("TOPLEFT", RIGHT_X, -52)
     prioHdr:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    prioHdr:SetBackdropColor(0.04, 0.04, 0.08, 1)
+    prioHdr:SetBackdropColor(0.040, 0.040, 0.055, 1)
     local function PH(txt, x)
         local t = prioHdr:CreateFontString(nil, "OVERLAY")
         t:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
@@ -2062,7 +2070,7 @@ function LootMaster:ShowLootFrame(items)
     -- Send to disenchanter (for items nobody wants)
     local deLootBtn = UI:CreateButton(f, "Send to DE", 110, 26)
     deLootBtn:SetPoint("RIGHT", openRollBtn, "LEFT", -6, 0)
-    deLootBtn:SetBackdropColor(0.22, 0.10, 0.38, 0.7)
+    deLootBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deLootBtn:SetScript("OnClick", function()
         if not selectedItem then
             statusText:SetText("|cffFF4444Selecione um item primeiro.|r")
@@ -2230,7 +2238,7 @@ function LootMaster:ShowLootFrame(items)
             local bgA = isPresent and (bg.a or 1) or (bg.a or 1) * 0.4
 
             if isTopTier and isPresent then
-                row:SetBackdropColor(0.10, 0.12, 0.22, 1.0)
+                row:SetBackdropColor(0.100, 0.100, 0.140, 1.0)
                 -- accent bar on left edge
                 local bar = row:CreateTexture(nil, "ARTWORK")
                 bar:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -2357,7 +2365,7 @@ function LootMaster:ShowLootFrame(items)
             end)
             row:SetScript("OnLeave", function(self)
                 if capturedTop then
-                    self:SetBackdropColor(0.10, 0.12, 0.22, 1.0)
+                    self:SetBackdropColor(0.100, 0.100, 0.140, 1.0)
                 else
                     self:SetBackdropColor(capturedBg.r, capturedBg.g, capturedBg.b, capturedBgA)
                 end
@@ -2407,7 +2415,7 @@ function LootMaster:ShowLootFrame(items)
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = 1,
         })
-        btn:SetBackdropColor(0.09, 0.07, 0.14, 0.7)
+        btn:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
         btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
 
         -- Quality-colored item name
@@ -2439,18 +2447,18 @@ function LootMaster:ShowLootFrame(items)
         end)
         btn:SetScript("OnLeave", function(self)
             if selectedItem == capturedItem then
-                self:SetBackdropColor(0.16, 0.10, 0.26, 0.9)
+                self:SetBackdropColor(0.180, 0.160, 0.250, 0.9)
             else
-                self:SetBackdropColor(0.09, 0.07, 0.14, 0.7)
+                self:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
             end
             GameTooltip:Hide()
         end)
         btn:SetScript("OnClick", function(self)
             if selectedBtn then
-                selectedBtn:SetBackdropColor(0.09, 0.07, 0.14, 0.7)
+                selectedBtn:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
             end
             selectedBtn = self
-            self:SetBackdropColor(0.16, 0.10, 0.26, 0.9)
+            self:SetBackdropColor(0.180, 0.160, 0.250, 0.9)
             LoadItem(capturedItem)
         end)
 
@@ -2505,7 +2513,7 @@ function LootMaster:ShowLootFrame(items)
         local firstBtn = itemBtns[items[1].slot]
         if firstBtn then
             selectedBtn = firstBtn
-            firstBtn:SetBackdropColor(0.16, 0.10, 0.26, 0.9)
+            firstBtn:SetBackdropColor(0.180, 0.160, 0.250, 0.9)
         end
         LoadItem(items[1])
     end
@@ -2533,8 +2541,9 @@ function LootMaster:ShowRollFrame()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    f:SetBackdropColor(0.06, 0.05, 0.10, 0.95)
-    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.95)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -2608,7 +2617,7 @@ function LootMaster:ShowRollFrame()
     -- Send to Disenchanter (between Cancel and End Rolling)
     local deRollBtn = UI:CreateButton(f, "Send to DE", 100, 24)
     deRollBtn:SetPoint("LEFT", cancelBtn, "RIGHT", 8, 0)
-    deRollBtn:SetBackdropColor(0.22, 0.10, 0.38, 0.7)
+    deRollBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deRollBtn:SetScript("OnClick", function()
         if not LootMaster.activeLoot then
             BRutus:Print("Nenhum item ativo para enviar ao disenchanter.")
@@ -2731,7 +2740,7 @@ function LootMaster:RefreshRollFrame()
         row:SetSize(480, 22)
         row:SetPoint("TOPLEFT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        row:SetBackdropColor(0.08, 0.06, 0.14, 0.6)
+        row:SetBackdropColor(0.082, 0.082, 0.105, 0.6)
 
         -- Player name (class colored)
         local cc = CLASS_COLORS[r.class] or { r = 0.8, g = 0.8, b = 0.8 }
@@ -2884,6 +2893,30 @@ function LootMaster:SetDisenchanter(name)
     end
 end
 
+-- Rarity threshold (item quality id) the ML window reacts to.
+LootMaster.THRESHOLD_NAMES = {
+    [2] = "Incomum (verde)",
+    [3] = "Raro (azul)",
+    [4] = "Épico (roxo)",
+    [5] = "Lendário (laranja)",
+}
+
+function LootMaster:GetLootThreshold()
+    if BRutus.db and BRutus.db.lootMaster and BRutus.db.lootMaster.lootThreshold then
+        return BRutus.db.lootMaster.lootThreshold
+    end
+    return self.LOOT_THRESHOLD or 3
+end
+
+function LootMaster:SetLootThreshold(q)
+    q = tonumber(q) or 3
+    if q < 2 then q = 2 elseif q > 5 then q = 5 end
+    self.LOOT_THRESHOLD = q
+    if BRutus.db and BRutus.db.lootMaster then
+        BRutus.db.lootMaster.lootThreshold = q
+    end
+end
+
 -- Award the active item (or the provided item) to the disenchanter.
 -- Called when ML clicks "Send to DE" from any loot UI.
 function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
@@ -2943,10 +2976,10 @@ function LootMaster:RollFromBag(bag, slot)
 
     if not itemLink then return end
 
-    -- Only Rare+ (quality >= 3); skip if info not cached yet
+    -- Respect the configured rarity threshold; skip if info not cached yet
     local _, _, quality = GetItemInfo(itemLink)
-    if quality and quality < 3 then
-        BRutus:Print("|cffFF9900[LootMaster]|r Apenas itens Raro (azul) ou superior podem ser rolados.")
+    if quality and quality < (self.LOOT_THRESHOLD or 3) then
+        BRutus:Print("|cffFF9900[LootMaster]|r Item abaixo do threshold de raridade configurado.")
         return
     end
 

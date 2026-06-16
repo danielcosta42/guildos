@@ -157,9 +157,10 @@ function Recruitment:CreatePopupFrame()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    f:SetBackdropColor(0.08, 0.06, 0.14, 0.95)
-    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
+    f:SetBackdropColor(0.082, 0.082, 0.105, 0.95)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
+    BRutus.UI:StylePopup(f)
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")

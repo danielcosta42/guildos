@@ -81,7 +81,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    searchBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     searchBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -117,7 +117,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         local btn = CreateFrame("Button", nil, filterRow, "BackdropTemplate")
         btn:SetHeight(22)
         btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        btn:SetBackdropColor(0.10, 0.10, 0.16, 1.0)
+        btn:SetBackdropColor(0.100, 0.100, 0.130, 1.0)
         btn.profName = profName
 
         local icon
@@ -161,7 +161,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 if fb.profName == state.profFilter then
                     fb:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
                 else
-                    fb:SetBackdropColor(0.10, 0.10, 0.16, 1.0)
+                    fb:SetBackdropColor(0.100, 0.100, 0.130, 1.0)
                 end
             end
             RefreshResults()
@@ -169,7 +169,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         end)
         btn:SetScript("OnEnter", function(self)
             if state.profFilter ~= self.profName then
-                self:SetBackdropColor(0.16, 0.14, 0.24, 1.0)
+                self:SetBackdropColor(0.160, 0.150, 0.210, 1.0)
             end
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(profName, 1, 1, 1)
@@ -177,7 +177,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         end)
         btn:SetScript("OnLeave", function(self)
             if state.profFilter ~= self.profName then
-                self:SetBackdropColor(0.10, 0.10, 0.16, 1.0)
+                self:SetBackdropColor(0.100, 0.100, 0.130, 1.0)
             end
             GameTooltip:Hide()
         end)

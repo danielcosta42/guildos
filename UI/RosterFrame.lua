@@ -1,4 +1,4 @@
-﻿----------------------------------------------------------------------
+----------------------------------------------------------------------
 -- BRutus Guild Manager - Roster Frame
 -- Premium guild roster UI with modern visual design
 ----------------------------------------------------------------------
@@ -6,25 +6,31 @@ local UI = BRutus.UI
 local C = BRutus.Colors
 
 -- Column definitions
+-- Attunements and Attendance live in their own dedicated places (member
+-- detail / Raids tab / KPI card), so they are intentionally omitted here to
+-- keep the roster table clean. Freed width is redistributed to the remaining
+-- columns so the table still fills its area.
 local COLUMNS = {
     { key = "status",      label = "",            width = 20,  align = "CENTER" },
-    { key = "name",        label = "MEMBER",      width = 140, align = "LEFT" },
+    { key = "name",        label = "MEMBER",      width = 170, align = "LEFT" },
     { key = "level",       label = "LVL",         width = 40,  align = "CENTER" },
-    { key = "class",       label = "CLASS",       width = 80,  align = "LEFT" },
-    { key = "race",        label = "RACE",        width = 80,  align = "LEFT" },
+    { key = "class",       label = "CLASS",       width = 100, align = "LEFT" },
+    { key = "race",        label = "RACE",        width = 95,  align = "LEFT" },
     { key = "avgIlvl",     label = "iLVL",        width = 50,  align = "CENTER" },
-    { key = "professions", label = "PROFESSIONS", width = 160, align = "LEFT" },
-    { key = "attunements", label = "ATTUNEMENTS",  width = 140, align = "LEFT" },
-    { key = "attendance", label = "ATT%",         width = 50,  align = "CENTER" },
-    { key = "zone",        label = "ZONE",         width = 120, align = "LEFT" },
-    { key = "lastSeen",    label = "LAST SEEN",   width = 80,  align = "RIGHT" },
+    { key = "professions", label = "PROFESSIONS", width = 230, align = "LEFT" },
+    { key = "zone",        label = "ZONE",        width = 165, align = "LEFT" },
+    { key = "lastSeen",    label = "LAST SEEN",   width = 90,  align = "RIGHT" },
 }
 
 local ROW_HEIGHT = 32
 local HEADER_HEIGHT = 36
 local VISIBLE_ROWS = 18
-local FRAME_WIDTH = 1080
-local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150  -- extra space for tab bar
+local RAIL_WIDTH = 156          -- left filter/segment rail (roster dashboard)
+local KPI_BAND_HEIGHT = 66      -- KPI card band above the table
+-- Widen + heighten so the table keeps its original geometry once the rail
+-- and KPI band are carved out of the roster panel.
+local FRAME_WIDTH = 1080 + RAIL_WIDTH
+local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150 + KPI_BAND_HEIGHT
 
 local TAB_HEIGHT = 28
 
@@ -42,6 +48,12 @@ function BRutus.CreateRosterFrame()
     frame:SetFrameLevel(10)
     frame:Hide()
 
+    -- Soft drop shadow so the window lifts off the game world (premium depth)
+    UI:CreateDropShadow(frame, 18, 0.5)
+
+    -- Smooth fade-in when opened
+    UI:EnableFadeIn(frame, 0.16)
+
     -- Double border effect for premium feel
     local outerBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     outerBorder:SetPoint("TOPLEFT", -2, 2)
@@ -50,7 +62,7 @@ function BRutus.CreateRosterFrame()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.3)
+    outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.22)
     outerBorder:SetFrameLevel(9)
 
     -- Inner glow effect (subtle gradient overlay at top)
@@ -58,8 +70,8 @@ function BRutus.CreateRosterFrame()
     topGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
     topGlow:SetPoint("TOPLEFT", 1, -1)
     topGlow:SetPoint("TOPRIGHT", -1, -1)
-    topGlow:SetHeight(60)
-    topGlow:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.08))
+    topGlow:SetHeight(70)
+    topGlow:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.07))
 
     ----------------------------------------------------------------
     -- Title Bar
@@ -155,7 +167,7 @@ function BRutus.CreateRosterFrame()
     local tabBarBg = tabBar:CreateTexture(nil, "BACKGROUND")
     tabBarBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     tabBarBg:SetAllPoints()
-    tabBarBg:SetVertexColor(0.06, 0.06, 0.10, 1.0)
+    tabBarBg:SetVertexColor(0.066, 0.066, 0.084, 1.0)
 
     frame.tabs = {}
     frame.tabPanels = {}
@@ -169,7 +181,7 @@ function BRutus.CreateRosterFrame()
         local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
         tab:SetSize(100, TAB_HEIGHT)
         tab:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        tab:SetBackdropColor(0.10, 0.10, 0.16, 1.0)
+        tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
         tab:SetFrameLevel(tabBar:GetFrameLevel() + 2)
 
         if idx == 1 then
@@ -182,23 +194,37 @@ function BRutus.CreateRosterFrame()
         tabLabel:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
         tabLabel:SetPoint("CENTER")
         tabLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+        tabLabel:SetShadowOffset(1, -1)
+        tabLabel:SetShadowColor(0, 0, 0, 0.6)
         tabLabel:SetText(label)
         tab.label = tabLabel
         tab.key = key
         tab.officerOnly = officerOnly
         tab.condition   = condition  -- optional function() → bool; overrides officerOnly when present
 
+        -- Active underline indicator
+        local underline = tab:CreateTexture(nil, "OVERLAY")
+        underline:SetTexture("Interface\\Buttons\\WHITE8x8")
+        underline:SetHeight(2)
+        underline:SetPoint("BOTTOMLEFT", 3, 0)
+        underline:SetPoint("BOTTOMRIGHT", -3, 0)
+        underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
+        underline:Hide()
+        tab.underline = underline
+
         tab:SetScript("OnClick", function()
             frame:SetActiveTab(key)
         end)
         tab:SetScript("OnEnter", function(self)
             if frame.activeTab ~= self.key then
-                self:SetBackdropColor(0.16, 0.14, 0.24, 1.0)
+                self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
+                self.label:SetTextColor(C.text.r, C.text.g, C.text.b)
             end
         end)
         tab:SetScript("OnLeave", function(self)
             if frame.activeTab ~= self.key then
-                self:SetBackdropColor(0.10, 0.10, 0.16, 1.0)
+                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+                self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             end
         end)
 
@@ -212,9 +238,11 @@ function BRutus.CreateRosterFrame()
             if tab.key == key then
                 tab:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
                 tab.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                if tab.underline then tab.underline:Show() end
             else
-                tab:SetBackdropColor(0.10, 0.10, 0.16, 1.0)
+                tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
                 tab.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+                if tab.underline then tab.underline:Hide() end
             end
         end
         for k, panel in pairs(self.tabPanels) do
@@ -271,15 +299,82 @@ function BRutus.CreateRosterFrame()
     CreateTab("settings", "Settings", false)
 
     ----------------------------------------------------------------
-    -- ROSTER PANEL
+    -- ROSTER PANEL  (dashboard layout: KPI band + left rail + table)
     ----------------------------------------------------------------
     local rosterPanel = CreateFrame("Frame", nil, frame)
     rosterPanel:SetPoint("TOPLEFT", 0, contentTop)
     rosterPanel:SetPoint("BOTTOMRIGHT", 0, 30)
     frame.tabPanels["roster"] = rosterPanel
 
-    -- Stats Bar
-    local statsBar = CreateFrame("Frame", nil, rosterPanel)
+    ----------------------------------------------------------------
+    -- KPI band (summary cards across the top)
+    ----------------------------------------------------------------
+    local kpiBand = CreateFrame("Frame", nil, rosterPanel)
+    kpiBand:SetPoint("TOPLEFT", 0, 0)
+    kpiBand:SetPoint("TOPRIGHT", 0, 0)
+    kpiBand:SetHeight(KPI_BAND_HEIGHT)
+
+    local function MakeKpiCard(x, w, labelText, valueColor)
+        local card = UI:CreatePanel(kpiBand)
+        -- CreatePanel pins level to 1; raise it above the main window's
+        -- backdrop (level ~10) so the card and its text are actually visible.
+        card:SetFrameLevel((kpiBand:GetFrameLevel() or 1) + 1)
+        card:SetPoint("TOPLEFT", x, -8)
+        card:SetSize(w, KPI_BAND_HEIGHT - 16)
+        card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.95)
+
+        local value = UI:CreateText(card, "—", 20, valueColor.r, valueColor.g, valueColor.b)
+        value:SetPoint("TOPLEFT", 12, -7)
+
+        local lbl = UI:CreateText(card, labelText, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        lbl:SetPoint("BOTTOMLEFT", 12, 8)
+
+        return value
+    end
+
+    -- 5 cards spread evenly across the band width (rosterPanel == FRAME_WIDTH)
+    local CARD_GAP, CARD_MARGIN, CARD_COUNT = 10, 12, 5
+    local CARD_W = math.floor((FRAME_WIDTH - CARD_MARGIN * 2 - CARD_GAP * (CARD_COUNT - 1)) / CARD_COUNT)
+    local function cardX(i) return CARD_MARGIN + (CARD_W + CARD_GAP) * i end
+    frame.kpiMembers = MakeKpiCard(cardX(0), CARD_W, "MEMBROS",        C.text)
+    frame.kpiOnline  = MakeKpiCard(cardX(1), CARD_W, "ONLINE",         C.online)
+    frame.kpiIlvl    = MakeKpiCard(cardX(2), CARD_W, "iLVL MÉDIO",     C.gold)
+    frame.kpiAtt     = MakeKpiCard(cardX(3), CARD_W, "PRESENÇA MÉDIA", C.text)
+    frame.kpiAddon   = MakeKpiCard(cardX(4), CARD_W, "COM GUILD OS",   C.accent)
+
+    -- KPI band bottom separator
+    local bandLine = UI:CreateSeparator(rosterPanel)
+    bandLine:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
+    bandLine:SetPoint("TOPRIGHT", 0, -KPI_BAND_HEIGHT)
+
+    ----------------------------------------------------------------
+    -- Left filter / segment rail
+    ----------------------------------------------------------------
+    local rail = CreateFrame("Frame", nil, rosterPanel)
+    rail:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
+    rail:SetPoint("BOTTOMLEFT", 0, 0)
+    rail:SetWidth(RAIL_WIDTH)
+    local railBg = rail:CreateTexture(nil, "BACKGROUND")
+    railBg:SetAllPoints()
+    railBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    railBg:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.55)
+    local railDiv = rail:CreateTexture(nil, "ARTWORK")
+    railDiv:SetTexture("Interface\\Buttons\\WHITE8x8")
+    railDiv:SetWidth(1)
+    railDiv:SetPoint("TOPRIGHT", 0, 0)
+    railDiv:SetPoint("BOTTOMRIGHT", 0, 0)
+    railDiv:SetVertexColor(C.separator.r, C.separator.g, C.separator.b, C.separator.a)
+    frame.rail = rail
+
+    ----------------------------------------------------------------
+    -- Table area (toolbar + headers + rows) to the right of the rail
+    ----------------------------------------------------------------
+    local tableArea = CreateFrame("Frame", nil, rosterPanel)
+    tableArea:SetPoint("TOPLEFT", RAIL_WIDTH, -KPI_BAND_HEIGHT)
+    tableArea:SetPoint("BOTTOMRIGHT", 0, 0)
+
+    -- Toolbar (search + filters) — the former stats bar, scoped to the table
+    local statsBar = CreateFrame("Frame", nil, tableArea)
     statsBar:SetPoint("TOPLEFT", 0, 0)
     statsBar:SetPoint("TOPRIGHT", 0, 0)
     statsBar:SetHeight(28)
@@ -287,19 +382,12 @@ function BRutus.CreateRosterFrame()
     local statsBg = statsBar:CreateTexture(nil, "BACKGROUND")
     statsBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     statsBg:SetAllPoints()
-    statsBg:SetVertexColor(0.06, 0.06, 0.10, 1.0)
+    statsBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
-    local totalText = UI:CreateText(statsBar, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    totalText:SetPoint("LEFT", 12, 0)
-    frame.totalText = totalText
-
-    local onlineText = UI:CreateText(statsBar, "", 10, C.online.r, C.online.g, C.online.b)
-    onlineText:SetPoint("LEFT", totalText, "RIGHT", 20, 0)
-    frame.onlineText = onlineText
-
-    local addonText = UI:CreateText(statsBar, "", 10, C.accent.r, C.accent.g, C.accent.b)
-    addonText:SetPoint("LEFT", onlineText, "RIGHT", 20, 0)
-    frame.addonText = addonText
+    -- Active-filter / result summary on the left of the toolbar
+    local resultText = UI:CreateText(statsBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    resultText:SetPoint("LEFT", 12, 0)
+    frame.resultText = resultText
 
     -- Filter: Show offline toggle
     local offlineBtn = UI:CreateButton(statsBar, "Show Offline", 100, 22)
@@ -310,10 +398,10 @@ function BRutus.CreateRosterFrame()
         BRutus.db.settings.showOffline = self.isToggled
         if self.isToggled then
             self.label:SetText("Show Offline")
-            self:SetBackdropColor(C.accentDim.r, C.accentDim.g, C.accentDim.b, 0.6)
+            self:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
         else
             self.label:SetText("Online Only")
-            self:SetBackdropColor(C.online.r * 0.3, C.online.g * 0.3, C.online.b * 0.3, 0.6)
+            self:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
         frame:RefreshRoster()
     end)
@@ -328,7 +416,7 @@ function BRutus.CreateRosterFrame()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    searchBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     searchBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -354,10 +442,17 @@ function BRutus.CreateRosterFrame()
     end)
     searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    -- Focus highlight: border glows with the accent while typing
+    searchBox:SetScript("OnEditFocusGained", function(self)
+        self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.85)
+    end)
+    searchBox:SetScript("OnEditFocusLost", function(self)
+        self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+    end)
     frame.searchBox = searchBox
 
     -- Column Headers
-    local headerFrame = CreateFrame("Frame", nil, rosterPanel)
+    local headerFrame = CreateFrame("Frame", nil, tableArea)
     headerFrame:SetPoint("TOPLEFT", 0, -28)
     headerFrame:SetPoint("TOPRIGHT", 0, -28)
     headerFrame:SetHeight(HEADER_HEIGHT)
@@ -417,12 +512,12 @@ function BRutus.CreateRosterFrame()
     end
 
     -- Header bottom line
-    local headerLine = UI:CreateSeparator(rosterPanel)
+    local headerLine = UI:CreateSeparator(tableArea)
     headerLine:SetPoint("TOPLEFT", 0, -(28 + HEADER_HEIGHT))
     headerLine:SetPoint("TOPRIGHT", 0, -(28 + HEADER_HEIGHT))
 
     -- Scroll Frame for roster rows
-    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer", rosterPanel)
+    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer", tableArea)
     rosterContainer:SetPoint("TOPLEFT", 1, -(28 + HEADER_HEIGHT + 1))
     rosterContainer:SetPoint("BOTTOMRIGHT", -1, 0)
 
@@ -443,6 +538,236 @@ function BRutus.CreateRosterFrame()
             frame:UpdateRows()
         end)
     end)
+
+    ----------------------------------------------------------------
+    -- RAIL CONTENT: segments + dynamic guild ranks + class chips
+    ----------------------------------------------------------------
+    local WHITE = "Interface\\Buttons\\WHITE8x8"
+    local RAIL_PAD = 8
+    local RAIL_BTN_W = RAIL_WIDTH - RAIL_PAD * 2 - 2
+
+    frame.segment = "all"     -- "all" | "online" | "rank:<index>"
+    frame.classFilter = nil   -- classFile or nil
+    frame.segBtns = {}
+    frame.rankBtns = {}       -- pooled, laid out in UpdateRail
+    frame.classChips = {}
+
+    local function RailSectionHeader(text, yOff)
+        local fs = UI:CreateText(rail, text, 9, C.gold.r, C.gold.g, C.gold.b)
+        fs:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
+        fs:SetPoint("TOPLEFT", RAIL_PAD + 2, yOff)
+        return fs
+    end
+
+    -- Full-width rail button with a label and a right-aligned count
+    local function CreateRailButton()
+        local b = CreateFrame("Button", nil, rail, "BackdropTemplate")
+        b:SetSize(RAIL_BTN_W, 24)
+        b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+        b:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.0)
+        b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
+
+        local lbl = UI:CreateText(b, "", 11, C.silver.r, C.silver.g, C.silver.b)
+        lbl:SetPoint("LEFT", 9, 0)
+        lbl:SetWidth(RAIL_BTN_W - 44)
+        lbl:SetJustifyH("LEFT")
+        lbl:SetWordWrap(false)
+        b.label = lbl
+
+        local cnt = UI:CreateText(b, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+        cnt:SetPoint("RIGHT", -9, 0)
+        b.count = cnt
+
+        function b:SetActive(active)
+            self.active = active
+            if active then
+                self:SetBackdropColor(C.accent.r * 0.30, C.accent.g * 0.30, C.accent.b * 0.30, 0.95)
+                self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.7)
+                self.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            else
+                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.0)
+                self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
+                self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            end
+        end
+        b:SetScript("OnEnter", function(self)
+            if not self.active then self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.9) end
+        end)
+        b:SetScript("OnLeave", function(self)
+            if not self.active then self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.0) end
+        end)
+        return b
+    end
+
+    -- VISÃO
+    RailSectionHeader("VISÃO", -10)
+    local segAll = CreateRailButton()
+    segAll:SetPoint("TOPLEFT", RAIL_PAD, -26)
+    segAll.label:SetText("Todos")
+    segAll:SetScript("OnClick", function() frame:SetSegment("all") end)
+    frame.segBtns.all = segAll
+
+    local segOnline = CreateRailButton()
+    segOnline:SetPoint("TOPLEFT", RAIL_PAD, -52)
+    segOnline.label:SetText("Online")
+    segOnline:SetScript("OnClick", function() frame:SetSegment("online") end)
+    frame.segBtns.online = segOnline
+
+    -- RANKS (dynamic — populated from the guild's actual ranks in UpdateRail)
+    RailSectionHeader("RANKS", -86)
+    local RANK_TOP, RANK_H = -106, 26
+
+    -- CLASSES (fixed chips, anchored to the bottom of the rail, growing upward)
+    local CLASS_ORDER = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+    local CHIP_GAP = 6
+    local CHIP_H = 22
+    local CHIP_W = (RAIL_BTN_W - CHIP_GAP) / 2
+
+    local function CreateClassChip(classFile)
+        local chip = CreateFrame("Button", nil, rail, "BackdropTemplate")
+        chip:SetSize(CHIP_W, CHIP_H)
+        chip:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+        chip:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.5)
+        chip:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
+
+        local icon = chip:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(15, 15)
+        icon:SetPoint("LEFT", 5, 0)
+        icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CharacterCreate-Classes")
+        if CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile] then
+            icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
+        end
+        chip.icon = icon
+
+        local cnt = UI:CreateText(chip, "0", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+        cnt:SetPoint("RIGHT", -6, 0)
+        chip.count = cnt
+
+        local cc = BRutus.ClassColors[classFile] or C.silver
+        function chip:SetActive(active)
+            self.active = active
+            if active then
+                self:SetBackdropColor(cc.r * 0.30, cc.g * 0.30, cc.b * 0.30, 0.95)
+                self:SetBackdropBorderColor(cc.r, cc.g, cc.b, 0.85)
+                self.count:SetTextColor(C.white.r, C.white.g, C.white.b)
+            else
+                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.5)
+                self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
+                self.count:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+            end
+        end
+        chip:SetScript("OnEnter", function(self)
+            if not self.active then self:SetBackdropBorderColor(cc.r, cc.g, cc.b, 0.5) end
+        end)
+        chip:SetScript("OnLeave", function(self)
+            if not self.active then self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0) end
+        end)
+        chip:SetScript("OnClick", function() frame:SetClassFilter(classFile) end)
+        return chip
+    end
+
+    local CHIP_ROW_H = CHIP_H + 4
+    for idx, classFile in ipairs(CLASS_ORDER) do
+        local chip = CreateClassChip(classFile)
+        local col = (idx - 1) % 2
+        local rowI = math.floor((idx - 1) / 2)
+        local x = RAIL_PAD + col * (CHIP_W + CHIP_GAP)
+        local y = 10 + (4 - rowI) * CHIP_ROW_H   -- bottom-up; 5 rows (row 0 highest)
+        chip:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", x, y)
+        frame.classChips[classFile] = chip
+    end
+    local classHeader = UI:CreateText(rail, "CLASSES", 9, C.gold.r, C.gold.g, C.gold.b)
+    classHeader:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
+    classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + 5 * CHIP_ROW_H + 2)
+
+    function frame:UpdateRailActive()
+        self.segBtns.all:SetActive(self.segment == "all")
+        self.segBtns.online:SetActive(self.segment == "online")
+        for _, b in ipairs(self.rankBtns) do
+            b:SetActive(self.segment == ("rank:" .. tostring(b.rankIndex)))
+        end
+        for classFile, chip in pairs(self.classChips) do
+            chip:SetActive(self.classFilter == classFile)
+        end
+    end
+
+    function frame:UpdateRail()
+        local total, online = 0, 0
+        local rankCount, rankName = {}, {}
+        local classCount = {}
+        local n = GetNumGuildMembers()
+        for i = 1, n do
+            local name, rName, rIdx, _, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
+            if name then
+                total = total + 1
+                if isOnline then online = online + 1 end
+                if rIdx then
+                    rankCount[rIdx] = (rankCount[rIdx] or 0) + 1
+                    rankName[rIdx] = rName
+                end
+                if classFile and classFile ~= "" then
+                    classCount[classFile] = (classCount[classFile] or 0) + 1
+                end
+            end
+        end
+
+        self.segBtns.all.count:SetText(total)
+        self.segBtns.online.count:SetText(online)
+
+        -- Lay out one button per populated rank, sorted by rank index
+        local indices = {}
+        for idx in pairs(rankCount) do indices[#indices + 1] = idx end
+        table.sort(indices)
+        for slot, idx in ipairs(indices) do
+            local b = self.rankBtns[slot]
+            if not b then
+                b = CreateRailButton()
+                b:SetPoint("TOPLEFT", RAIL_PAD, RANK_TOP - (slot - 1) * RANK_H)
+                self.rankBtns[slot] = b
+            end
+            b.rankIndex = idx
+            b.label:SetText(rankName[idx] or ("Rank " .. idx))
+            b.count:SetText(rankCount[idx] or 0)
+            b:SetScript("OnClick", function() frame:SetSegment("rank:" .. idx) end)
+            b:Show()
+        end
+        for slot = #indices + 1, #self.rankBtns do
+            self.rankBtns[slot]:Hide()
+        end
+
+        for classFile, chip in pairs(self.classChips) do
+            local c = classCount[classFile] or 0
+            chip.count:SetText(c)
+            chip:SetAlpha(c == 0 and 0.35 or 1)
+        end
+
+        self:UpdateRailActive()
+    end
+
+    function frame:GetSegmentLabel()
+        if self.segment == "online" then
+            return "Online"
+        elseif type(self.segment) == "string" and self.segment:find("^rank:") then
+            local ri = tonumber(self.segment:match("^rank:(%d+)"))
+            for _, b in ipairs(self.rankBtns) do
+                if b.rankIndex == ri then return b.label:GetText() or "Rank" end
+            end
+            return "Rank"
+        end
+        return "Todos"
+    end
+
+    function frame:SetSegment(id)
+        self.segment = id
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
+
+    function frame:SetClassFilter(classFile)
+        self.classFilter = (self.classFilter == classFile) and nil or classFile
+        self:UpdateRailActive()
+        self:RefreshRoster()
+    end
 
     ----------------------------------------------------------------
     -- RECIPES PANEL
@@ -544,7 +869,7 @@ function BRutus.CreateRosterFrame()
     inviteBox:SetSize(140, 22)
     inviteBox:SetPoint("RIGHT", -90, 0)
     inviteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    inviteBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    inviteBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     inviteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     inviteBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
     inviteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -647,6 +972,20 @@ function BRutus.CreateRosterFrame()
                     if not searchTarget:find(filter, 1, true) then
                         passFilter = false
                     end
+                end
+
+                -- Rail segment filter (Todos / Online / by rank)
+                local seg = self.segment
+                if seg == "online" then
+                    if not isOnline then passFilter = false end
+                elseif type(seg) == "string" and seg:find("^rank:") then
+                    local ri = tonumber(seg:match("^rank:(%d+)"))
+                    if ri and rankIndex ~= ri then passFilter = false end
+                end
+
+                -- Rail class filter
+                if self.classFilter and classFile ~= self.classFilter then
+                    passFilter = false
                 end
 
                 if passFilter then
@@ -766,19 +1105,37 @@ function BRutus.CreateRosterFrame()
     function frame:UpdateStats()
         local numTotal = GetNumGuildMembers()
         local numOnline = 0
-        local numWithAddon = 0
 
         for i = 1, numTotal do
             local _, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
             if isOnline then numOnline = numOnline + 1 end
         end
 
-        -- Count members with addon data
+        -- Addon coverage + average item level (members with stored addon data)
+        local numWithAddon, ilvlSum, ilvlCount = 0, 0, 0
         for _, data in pairs(BRutus.db.members) do
             if data.lastUpdate and data.lastUpdate > 0 then
                 numWithAddon = numWithAddon + 1
+                if data.avgIlvl and data.avgIlvl > 0 then
+                    ilvlSum = ilvlSum + data.avgIlvl
+                    ilvlCount = ilvlCount + 1
+                end
             end
         end
+        local avgIlvl = ilvlCount > 0 and math.floor(ilvlSum / ilvlCount + 0.5) or 0
+
+        -- Average 25-man raid attendance across known members
+        local attSum, attCount = 0, 0
+        if BRutus.RaidTracker and BRutus.RaidTracker.GetAttendance25ManPercent then
+            for key in pairs(BRutus.db.members) do
+                local p = BRutus.RaidTracker:GetAttendance25ManPercent(key)
+                if p and p > 0 then
+                    attSum = attSum + p
+                    attCount = attCount + 1
+                end
+            end
+        end
+        local avgAtt = attCount > 0 and math.floor(attSum / attCount + 0.5) or 0
 
         -- Update guild name in subtitle
         local guildName = GetGuildInfo("player")
@@ -789,9 +1146,23 @@ function BRutus.CreateRosterFrame()
         -- Refresh guild emblem
         if self.UpdateGuildIcon then self.UpdateGuildIcon() end
 
-        self.totalText:SetText("Members: |cffFFFFFF" .. numTotal .. "|r")
-        self.onlineText:SetText("Online: |cff4CFF4C" .. numOnline .. "|r")
-        self.addonText:SetText("Guild OS: |cff8060FF" .. numWithAddon .. "|r")
+        -- KPI cards
+        if self.kpiMembers then self.kpiMembers:SetText(numTotal) end
+        if self.kpiOnline then self.kpiOnline:SetText(numOnline) end
+        if self.kpiIlvl then self.kpiIlvl:SetText(avgIlvl > 0 and avgIlvl or "—") end
+        if self.kpiAtt then self.kpiAtt:SetText(avgAtt > 0 and (avgAtt .. "%") or "—") end
+        if self.kpiAddon then self.kpiAddon:SetText(numWithAddon) end
+
+        -- Toolbar result summary (reflects the active filters)
+        if self.resultText then
+            local shown = self.sortedMembers and #self.sortedMembers or 0
+            local segLabel = self.GetSegmentLabel and self:GetSegmentLabel() or "Todos"
+            self.resultText:SetText(string.format(
+                "%s  |cff6a6a76·|r  |cffffffff%d|r de %d", segLabel, shown, numTotal))
+        end
+
+        -- Rail counts + active highlight
+        if self.UpdateRail then self:UpdateRail() end
     end
 
     -- ESC to close
@@ -920,40 +1291,21 @@ function CreateRosterRow(parent, rowIndex)
     row.profText = profText
     xOff = xOff + COLUMNS[7].width
 
-    -- Attunements
-    local attText = row:CreateFontString(nil, "OVERLAY")
-    attText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    attText:SetPoint("LEFT", xOff, 0)
-    attText:SetWidth(COLUMNS[8].width)
-    attText:SetJustifyH("LEFT")
-    attText:SetWordWrap(false)
-    row.attText = attText
-    xOff = xOff + COLUMNS[8].width
-
-    -- Attendance %
-    local attPctText = row:CreateFontString(nil, "OVERLAY")
-    attPctText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    attPctText:SetPoint("LEFT", xOff, 0)
-    attPctText:SetWidth(COLUMNS[9].width)
-    attPctText:SetJustifyH("CENTER")
-    row.attPctText = attPctText
-    xOff = xOff + COLUMNS[9].width
-
     -- Zone
     local zoneText = row:CreateFontString(nil, "OVERLAY")
     zoneText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
     zoneText:SetPoint("LEFT", xOff, 0)
-    zoneText:SetWidth(COLUMNS[10].width)
+    zoneText:SetWidth(COLUMNS[8].width)
     zoneText:SetJustifyH("LEFT")
     zoneText:SetWordWrap(false)
     row.zoneText = zoneText
-    xOff = xOff + COLUMNS[10].width
+    xOff = xOff + COLUMNS[8].width
 
     -- Last Seen
     local lastSeenText = row:CreateFontString(nil, "OVERLAY")
     lastSeenText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
     lastSeenText:SetPoint("LEFT", xOff, 0)
-    lastSeenText:SetWidth(COLUMNS[11].width)
+    lastSeenText:SetWidth(COLUMNS[9].width)
     lastSeenText:SetJustifyH("RIGHT")
     lastSeenText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     row.lastSeenText = lastSeenText
@@ -1082,34 +1434,6 @@ function UpdateRosterRow(row, data, rowIndex)
         row.profText:SetText(table.concat(parts, " / "))
     else
         row.profText:SetText("|cff666666No data|r")
-    end
-
-    -- Attunements
-    if data.attunements and #data.attunements > 0 then
-        row.attText:SetText(BRutus.AttunementTracker:GetAttunementSummary(data.key))
-    else
-        row.attText:SetText("|cff666666No data|r")
-    end
-
-    -- Attendance %
-    if BRutus.RaidTracker then
-        local pct = BRutus.RaidTracker:GetAttendance25ManPercent(data.key)
-        if pct > 0 then
-            local ar, ag, ab
-            if pct >= 75 then
-                ar, ag, ab = textColor(C.green.r, C.green.g, C.green.b)
-            elseif pct >= 50 then
-                ar, ag, ab = textColor(C.gold.r, C.gold.g, C.gold.b)
-            else
-                ar, ag, ab = textColor(C.red.r, C.red.g, C.red.b)
-            end
-            row.attPctText:SetTextColor(ar, ag, ab)
-            row.attPctText:SetText(pct .. "%")
-        else
-            row.attPctText:SetText("|cff666666-|r")
-        end
-    else
-        row.attPctText:SetText("")
     end
 
     -- Zone (only shown for online members)
@@ -1465,7 +1789,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     wishSearch:SetSize(200, 22)
     wishSearch:SetPoint("LEFT", searchIcon, "RIGHT", 8, 0)
     wishSearch:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    wishSearch:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    wishSearch:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     wishSearch:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     wishSearch:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     wishSearch:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -1680,7 +2004,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                 detailBg:SetPoint("TOPLEFT", 0, ly)
                 detailBg:SetSize(childWidth, 1)
                 detailBg:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                detailBg:SetBackdropColor(0.07, 0.06, 0.11, 0.9)
+                detailBg:SetBackdropColor(0.068, 0.068, 0.088, 0.9)
                 detailBg:Show()
 
                 local detailLy = -4
@@ -1699,7 +2023,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     iRow:SetPoint("TOPLEFT", 20, ly + detailLy)
                     iRow:SetSize(childWidth - 30, 18)
                     iRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                    iRow:SetBackdropColor(0.06, 0.06, 0.10, 0.6)
+                    iRow:SetBackdropColor(0.066, 0.066, 0.084, 0.6)
                     iRow:Show()
 
                     -- Color bar
@@ -1762,13 +2086,13 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     -- Tooltip
                     iRow:EnableMouse(true)
                     iRow:SetScript("OnEnter", function(self)
-                        self:SetBackdropColor(0.12, 0.10, 0.18, 0.8)
+                        self:SetBackdropColor(0.130, 0.130, 0.170, 0.8)
                         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                         GameTooltip:SetHyperlink("item:" .. (item.itemId or 0))
                         GameTooltip:Show()
                     end)
                     iRow:SetScript("OnLeave", function(self)
-                        self:SetBackdropColor(0.06, 0.06, 0.10, 0.6)
+                        self:SetBackdropColor(0.066, 0.066, 0.084, 0.6)
                         GameTooltip:Hide()
                     end)
 
@@ -1986,11 +2310,11 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         if s.enabled then
             statusText:SetText("|cff4CFF4CACTIVE|r")
             toggleBtn.label:SetText("Disable")
-            toggleBtn:SetBackdropColor(C.red.r * 0.3, C.red.g * 0.3, C.red.b * 0.3, 0.6)
+            toggleBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
         else
             statusText:SetText("|cffFF4444INACTIVE|r")
             toggleBtn.label:SetText("Enable")
-            toggleBtn:SetBackdropColor(C.online.r * 0.3, C.online.g * 0.3, C.online.b * 0.3, 0.6)
+            toggleBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
     end
 
@@ -2008,7 +2332,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     intervalBox:SetSize(80, 22)
     intervalBox:SetPoint("TOPLEFT", 140, yOff)
     intervalBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    intervalBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    intervalBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     intervalBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     intervalBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     intervalBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -2042,7 +2366,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     msgBox:SetSize(680, 40)
     msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    msgBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     msgBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     msgBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     msgBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -2079,11 +2403,11 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         if s.welcomeEnabled then
             welcomeStatusText:SetText("|cff4CFF4CON|r")
             welcomeToggle.label:SetText("Disable")
-            welcomeToggle:SetBackdropColor(C.red.r * 0.3, C.red.g * 0.3, C.red.b * 0.3, 0.6)
+            welcomeToggle:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
         else
             welcomeStatusText:SetText("|cffFF4444OFF|r")
             welcomeToggle.label:SetText("Enable")
-            welcomeToggle:SetBackdropColor(C.online.r * 0.3, C.online.g * 0.3, C.online.b * 0.3, 0.6)
+            welcomeToggle:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
     end
 
@@ -2101,7 +2425,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     discordBox:SetSize(400, 22)
     discordBox:SetPoint("TOPLEFT", 140, yOff)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    discordBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     discordBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     discordBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
@@ -2125,7 +2449,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeBox:SetSize(680, 40)
     welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    welcomeBox:SetBackdropColor(0.05, 0.05, 0.08, 1.0)
+    welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     welcomeBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     welcomeBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     welcomeBox:SetTextColor(C.white.r, C.white.g, C.white.b)

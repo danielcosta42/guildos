@@ -108,6 +108,7 @@ function CreateDetailFrame()
     frame:SetFrameStrata("DIALOG")
     frame:SetFrameLevel(20)
     frame:Hide()
+    UI:StylePopup(frame, { noSheen = true, shadowSize = 18 })
 
     -- Outer glow border
     local outerBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -676,7 +677,7 @@ function PopulateDetail(frame, data)
             addNoteBox:SetSize(contentWidth - 100, 22)
             addNoteBox:SetPoint("TOPLEFT", 15, yOff - 8)
             addNoteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-            addNoteBox:SetBackdropColor(0.05, 0.05, 0.08, 1)
+            addNoteBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
             addNoteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
             addNoteBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
             addNoteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -819,7 +820,7 @@ function PopulateDetail(frame, data)
         addLinkBox:SetSize(contentWidth - 110, 22)
         addLinkBox:SetPoint("TOPLEFT", 12, yOff - 6)
         addLinkBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        addLinkBox:SetBackdropColor(0.05, 0.05, 0.08, 1)
+        addLinkBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
         addLinkBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
         addLinkBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
         addLinkBox:SetTextColor(C.white.r, C.white.g, C.white.b)
@@ -1079,7 +1080,7 @@ function CreateAttunementRow(parent, att, yOff, width)
     if att.complete then
         rowBg:SetVertexColor(C.green.r * 0.1, C.green.g * 0.1, C.green.b * 0.1, 0.3)
     else
-        rowBg:SetVertexColor(0.05, 0.05, 0.08, 0.3)
+        rowBg:SetVertexColor(0.050, 0.050, 0.066, 0.3)
     end
     rowBg:Show()
 
@@ -1157,6 +1158,7 @@ local function CreateTalentViewerFrame()
     f:SetFrameStrata("DIALOG")
     f:SetFrameLevel(30)
     f:Hide()
+    UI:StylePopup(f, { noSheen = true, shadowSize = 16 })
 
     ----------------------------------------------------------------
     -- Title bar (draggable)

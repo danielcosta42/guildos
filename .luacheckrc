@@ -53,6 +53,8 @@ read_globals = {
     "BackdropTemplateMixin",
     "STANDARD_TEXT_FONT",
     "DEFAULT_CHAT_FRAME",
+    "UIFrameFadeIn",
+    "UIFrameFadeOut",
 
     -- WoW API: C_ namespaces
     "C_Timer",

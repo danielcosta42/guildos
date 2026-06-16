@@ -5,26 +5,55 @@
 ----------------------------------------------------------------------
 
 -- UI color constants
+-- ── "Obsidian" theme ──────────────────────────────────────────────
+-- Near-black neutral charcoal surfaces with a barely-perceptible cool
+-- tint, a restrained desaturated-violet accent used only on interaction
+-- / active states, and a softened champagne gold reserved for the brand
+-- and key emphasis. Sleek and understated rather than colourful.
 BRutus.Colors = {
-    gold      = { r = 1.0, g = 0.84, b = 0.0 },
-    darkGold  = { r = 0.8, g = 0.67, b = 0.0 },
-    silver    = { r = 0.75, g = 0.75, b = 0.75 },
-    panel     = { r = 0.08, g = 0.08, b = 0.12, a = 1.0 },
-    panelDark = { r = 0.05, g = 0.05, b = 0.08, a = 1.0 },
-    row1      = { r = 0.14, g = 0.14, b = 0.20, a = 1.0 },
-    row2      = { r = 0.10, g = 0.10, b = 0.16, a = 1.0 },
-    rowHover  = { r = 0.22, g = 0.20, b = 0.32, a = 1.0 },
-    accent    = { r = 0.50, g = 0.35, b = 1.0 },
-    accentDim = { r = 0.35, g = 0.25, b = 0.70 },
-    online    = { r = 0.30, g = 1.0,  b = 0.30 },
-    offline   = { r = 0.50, g = 0.50, b = 0.50 },
-    white     = { r = 1.0, g = 1.0, b = 1.0 },
-    red       = { r = 1.0, g = 0.3, b = 0.3 },
-    green     = { r = 0.3, g = 1.0, b = 0.3 },
-    blue      = { r = 0.3, g = 0.5, b = 1.0 },
-    headerBg  = { r = 0.14, g = 0.12, b = 0.22, a = 1.0 },
-    border    = { r = 0.40, g = 0.30, b = 0.70, a = 0.6 },
-    separator = { r = 0.30, g = 0.25, b = 0.50, a = 0.4 },
+    -- Brand / emphasis
+    gold      = { r = 0.93, g = 0.80, b = 0.48 },           -- champagne gold (softened)
+    darkGold  = { r = 0.70, g = 0.58, b = 0.30 },
+    silver    = { r = 0.70, g = 0.72, b = 0.78 },           -- cool silver
+
+    -- Surfaces (deepest → most elevated)
+    bg0       = { r = 0.035, g = 0.035, b = 0.050, a = 1.0 }, -- wells / scroll backgrounds
+    bg1       = { r = 0.050, g = 0.050, b = 0.066, a = 1.0 }, -- inputs / popups
+    bg2       = { r = 0.066, g = 0.066, b = 0.084, a = 1.0 }, -- elevated sub-panels
+    panel     = { r = 0.066, g = 0.066, b = 0.082, a = 0.98 },
+    panelDark = { r = 0.044, g = 0.044, b = 0.058, a = 1.0 },
+
+    -- Roster rows
+    row1      = { r = 0.102, g = 0.102, b = 0.122, a = 1.0 },
+    row2      = { r = 0.076, g = 0.076, b = 0.094, a = 1.0 },
+    rowHover  = { r = 0.150, g = 0.142, b = 0.196, a = 1.0 }, -- subtle violet lift on hover
+
+    -- Accent (use sparingly: borders on hover, active tabs, key marks)
+    accent    = { r = 0.56, g = 0.48, b = 0.82 },           -- refined desaturated violet
+    accentDim = { r = 0.30, g = 0.26, b = 0.44 },
+    accentSoft= { r = 0.56, g = 0.48, b = 0.82, a = 0.14 },  -- faint accent wash for gradients
+
+    -- Status / semantic
+    online    = { r = 0.42, g = 0.84, b = 0.46 },
+    offline   = { r = 0.46, g = 0.46, b = 0.52 },
+    white     = { r = 1.0, g = 1.0, b = 1.0 },              -- pure (kept for vertex resets)
+    text      = { r = 0.90, g = 0.90, b = 0.94 },           -- off-white body text
+    textDim   = { r = 0.60, g = 0.61, b = 0.68 },           -- muted secondary text
+    red       = { r = 0.90, g = 0.36, b = 0.40 },
+    green     = { r = 0.42, g = 0.82, b = 0.46 },
+    blue      = { r = 0.40, g = 0.58, b = 0.95 },
+
+    -- Chrome
+    headerBg  = { r = 0.094, g = 0.094, b = 0.118, a = 1.0 },
+    border    = { r = 0.30, g = 0.29, b = 0.40, a = 0.55 },  -- cool, subtle
+    separator = { r = 0.26, g = 0.25, b = 0.34, a = 0.35 },
+    shadow    = { r = 0.0,  g = 0.0,  b = 0.0,  a = 0.55 },  -- drop-shadow tint
+}
+
+-- Preferred fonts (centralised so new UI can reference one source).
+BRutus.Fonts = {
+    normal = "Fonts\\FRIZQT__.TTF",
+    number = "Fonts\\ARIALN.TTF",  -- condensed; good for dense numeric columns
 }
 
 -- Class colors (TBC)
