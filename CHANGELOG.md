@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-06-16
+
+### Fixed
+- reconnect non-functional control and drop dead event registrations
+- correct addon flaws found in full review
+
+
 ## [0.1.0] - 2026-05-20
 
 ### Added
