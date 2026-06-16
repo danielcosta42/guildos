@@ -764,7 +764,14 @@ function BRutus.CreateRosterFrame()
     end
 
     function frame:SetClassFilter(classFile)
-        self.classFilter = (self.classFilter == classFile) and nil or classFile
+        -- Toggle: clicking the active class clears it. NOTE: do not use the
+        -- "cond and nil or x" idiom here — `and nil` short-circuits so it can
+        -- never return nil, which made the filter impossible to clear.
+        if self.classFilter == classFile then
+            self.classFilter = nil
+        else
+            self.classFilter = classFile
+        end
         self:UpdateRailActive()
         self:RefreshRoster()
     end
