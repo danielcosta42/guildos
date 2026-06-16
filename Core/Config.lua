@@ -20,7 +20,7 @@ GuildOS.NAMESPACE         = "GuildOS"
 GuildOS.LEGACY_NAMESPACE  = "BRutus"     -- @deprecated
 
 -- ── Version ───────────────────────────────────────────────────────
-GuildOS.VERSION           = "1.0.0"
+GuildOS.VERSION           = "0.1.0"  -- kept in sync with GuildOS.toc by the release workflow
 GuildOS.COMM_VERSION      = 1
 
 -- ── SavedVariables ────────────────────────────────────────────────

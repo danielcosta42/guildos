@@ -78,12 +78,13 @@ function CommSystem:SendMessage(msgType, data, target, priority)
     local encoded = LibDeflate:EncodeForWoWAddonChannel(compressed)
 
     local len = #encoded
-    if len <= 253 then
-        -- Single message, no chunking needed (prefix with "S:")
+    if len <= 250 then
+        -- Single message, no chunking needed (prefix with "S:").
+        -- Cap at 250 so "S:" + payload stays safely under the 255-byte addon-message limit.
         local msg = "S:" .. encoded
         self:SendRaw(msg, target, priority)
     else
-        -- Multi-chunk: prefix each with "M:chunkIndex:totalChunks:msgId:"
+        -- Multi-chunk: prefix each with "M:msgId:chunkIndex:totalChunks:"
         local msgId = string.format("%X", math.random(0, 0xFFFF))
         local totalChunks = math.ceil(len / self.CHUNK_SIZE)
         for i = 1, totalChunks do

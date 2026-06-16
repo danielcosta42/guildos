@@ -88,9 +88,9 @@ AttunementTracker.ATTUNEMENTS = {
             { id = 10888, name = "Trial of the Naaru: Mercy" },
             { id = 10889, name = "Trial of the Naaru: Strength" },
             { id = 10890, name = "Trial of the Naaru: Tenacity" },
-            { id = 10901, name = "Trial of the Naaru: Magtheridon" },
+            { id = 10906, name = "Trial of the Naaru: Magtheridon" },
         },
-        finalQuestId = 10901,
+        finalQuestId = 10906,
         note = "Removed in patch 2.1.0 - Tracking for reference",
     },
     {
@@ -179,7 +179,6 @@ AttunementTracker.HEROIC_KEYS = {
 function AttunementTracker:Initialize()
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("QUEST_TURNED_IN")
-    frame:RegisterEvent("QUEST_LOG_UPDATE")
     frame:SetScript("OnEvent", function(_, event)
         if event == "QUEST_TURNED_IN" then
             C_Timer.After(1, function() AttunementTracker:ScanAttunements() end)
