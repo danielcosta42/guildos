@@ -138,7 +138,9 @@ function LootMaster:OnStartLootRoll(rollID, rollTime)
     local link = GetLootRollItemLink(rollID)
     if not link then return end
     local itemId = tonumber(link:match("item:(%d+)")) or 0
-    self:ShowRollPopup(link, rollTime or self.ROLL_DURATION, itemId)
+    -- START_LOOT_ROLL reports rollTime in milliseconds; ShowRollPopup expects seconds.
+    local durationSec = (rollTime and rollTime > 0) and (rollTime / 1000) or self.ROLL_DURATION
+    self:ShowRollPopup(link, durationSec, itemId)
 end
 
 ----------------------------------------------------------------------
@@ -1035,7 +1037,9 @@ function LootMaster:AwardLoot(playerName, silent)
     end
 
     local itemLink = self.activeLoot.link
-    local itemId = self.activeLoot.itemId
+    -- Default to 0 so the "%d" in the AWARD payload (and history record) never sees nil
+    -- for malformed/non-item links. The receiver skips this field with "%d+", so 0 is safe.
+    local itemId = self.activeLoot.itemId or 0
     local slot = self.activeLoot.slot
     local awarded = false
 
