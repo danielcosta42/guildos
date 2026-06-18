@@ -24,6 +24,11 @@ local function handleCommand(msg)
         if BRutus.CommSystem then
             BRutus.CommSystem:FullSync()
         end
+    elseif msg == "minimap" then
+        if BRutus.ToggleMinimapButton then
+            local shown = BRutus:ToggleMinimapButton()
+            BRutus:Print(shown and L["Minimap button shown."] or L["Minimap button hidden."])
+        end
     elseif msg == "reset" then
         if BRutus.guildKey then
             if GuildOSDB then GuildOSDB[BRutus.guildKey] = nil end

@@ -308,3 +308,73 @@ function BRutus:DismissProfessionReminder()
         self.profReminderStale = nil
     end
 end
+
+----------------------------------------------------------------------
+-- Data exports (tab-separated, paste straight into Sheets/Excel).
+-- Headers stay in English on purpose so exports are a stable interchange
+-- format regardless of the client locale.
+----------------------------------------------------------------------
+function BRutus:ExportRoster()
+    local lines = { "Name\tClass\tLevel\tRank\tiLvl\tAttendance%\tAttunements\tLastSeen" }
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name, rankName, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            local key = self:GetPlayerKey(short, realm)
+            local d = self.db.members[key] or {}
+            local att = self.RaidTracker and self.RaidTracker:GetAttendance25ManPercent(key) or 0
+            local attDone, attTotal = 0, 0
+            if self.AttunementTracker then
+                attTotal = #self.AttunementTracker:GetGuildColumns()
+                for _, a in ipairs(self.AttunementTracker:GetEffectiveAttunements(key)) do
+                    if a.complete and a.questsTotal and a.questsTotal > 0 then attDone = attDone + 1 end
+                end
+            end
+            local lastSeen = (d.lastUpdate and d.lastUpdate > 0) and date("%Y-%m-%d", d.lastUpdate) or ""
+            lines[#lines + 1] = table.concat({
+                short, classFile or "", level or 0, rankName or "",
+                d.avgIlvl or 0, att, attDone .. "/" .. attTotal, lastSeen,
+            }, "\t")
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+function BRutus:ExportLoot()
+    local lines = { "Date\tItem\tPlayer\tRaid" }
+    for _, e in ipairs(self.db.lootHistory or {}) do
+        local itemName = (e.itemLink and GetItemInfo(e.itemLink)) or e.itemName or "?"
+        local dateStr = e.timestamp and date("%Y-%m-%d %H:%M", e.timestamp) or ""
+        lines[#lines + 1] = table.concat({ dateStr, itemName, e.player or "?", e.raid or "" }, "\t")
+    end
+    return table.concat(lines, "\n")
+end
+
+----------------------------------------------------------------------
+-- First-seen tracking. WoW exposes no guild join date, so GuildOS
+-- records when it first observed each member in the roster. This is a
+-- "known to GuildOS since" date, not the true join date.
+----------------------------------------------------------------------
+function BRutus:RecordFirstSeen()
+    if not self.db then return end
+    if not self.db.firstSeen then self.db.firstSeen = {} end
+    local now = GetServerTime()
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            local key = self:GetPlayerKey(short, realm)
+            if not self.db.firstSeen[key] then
+                self.db.firstSeen[key] = now
+            end
+        end
+    end
+end
+
+function BRutus:GetFirstSeen(playerKey)
+    return self.db and self.db.firstSeen and self.db.firstSeen[playerKey]
+end

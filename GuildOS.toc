@@ -49,6 +49,8 @@ Modules\RecipeTracker.lua
 Modules\OfficerNotes.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua
+Modules\GearAudit.lua
+Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
 
@@ -59,4 +61,7 @@ UI\FeaturePanels.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\ManagementPanel.lua
+UI\AuditPanel.lua
+UI\RaidToolsPanel.lua
+UI\Minimap.lua
 UI\RaidHUD.lua

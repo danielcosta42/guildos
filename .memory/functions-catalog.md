@@ -367,6 +367,28 @@ Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via m
 
 ---
 
+## v0.3.0 additions — Audit / Raid Tools / QoL
+
+| Function | Description |
+|---|---|
+| `AttunementTracker:GetGuildColumns()` | Raid attunements that require a quest chain (grid columns) |
+| `AttunementTracker:GetGuildMatrix()` | (cols, rows) guild attunement matrix, sorted attuned-first |
+| `GearAudit:GetGuildEnchantAudit()` | Rows of members with equipped-but-unenchanted slots |
+| `GearAudit:GetEnchantableSlots()` | Slot IDs that should be enchanted in TBC |
+| `LootTracker:GetGuildLootEquity()` | Items received vs attendance per member (dry/over-fed) |
+| `RaidTracker:GetMissedStreak(key, group, cap)` | Consecutive recent 25-man guild raids missed |
+| `CommSystem:GetSyncHealth()` | (rows, withAddon, outdated) addon adoption / version / last sync |
+| `RaidTools:GetSource()` | (list, label) raid → party → online guild fallback |
+| `RaidTools:GetClassCounts(list)` / `:ResolveCoverage(defs, counts)` | Class tally + buff/CD coverage resolution |
+| `BRutus:ExportRoster()` / `:ExportLoot()` | Tab-separated exports for Sheets (English headers) |
+| `BRutus:RecordFirstSeen()` / `:GetFirstSeen(key)` | "Known to GuildOS since" tracking (no join-date API) |
+| `BRutus:CreateMinimapButton()` / `:ToggleMinimapButton()` | Draggable minimap button (angle/hide in settings.minimap) |
+| `BRutus:CreateAuditPanel(parent)` | Audit tab: attunement grid / enchant audit / sync sub-tabs |
+| `BRutus:CreateRaidToolsPanel(parent)` | Raid Tools tab: composition / cooldown coverage sub-tabs |
+| `BRutus:RefreshLootEquity(content, countText)` | Loot equity sub-view of the Loot tab |
+
+---
+
 ## ConsumableChecker.lua
 
 | Function | Description |

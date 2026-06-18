@@ -170,6 +170,8 @@ read_globals = {
     -- WoW API: Miscellaneous
     "GetLocale",
     "GetRealmName",
+    "Minimap",
+    "GetCursorPosition",
     "GetTime",
     "GetServerTime",
     "ReloadUI",
@@ -241,6 +243,7 @@ read_globals = {
     -- WoW Global constants & tables
     "SOUNDKIT",
     "CLASS_ICON_TCOORDS",
+    "LOCALIZED_CLASS_NAMES_MALE",
     "FACTION_BAR_COLORS",
     "RAID_CLASS_COLORS",
     "ERR_GUILD_JOIN_S",

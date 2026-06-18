@@ -491,6 +491,26 @@ function RaidTracker:GetAttendance25ManPercent(playerKey, groupTag)
     return math.floor((raids25 / total) * 100 + 0.5)
 end
 
+-- Consecutive most-recent 25-man guild raids the player missed (capped).
+-- A simple "recent form" signal: counts recent guild 25-man sessions newer
+-- than the player's last attended raid, stopping at the first they attended.
+function RaidTracker:GetMissedStreak(playerKey, groupTag, cap)
+    cap = cap or 5
+    local att = self:GetAttendance(playerKey, groupTag)
+    local lastRaid = att.lastRaid or 0
+    local sessions = self:GetRecentSessions(cap, true, true)
+    local missed = 0
+    for _, s in ipairs(sessions) do
+        local t = s.id or (s.data and s.data.startTime) or 0
+        if t > lastRaid then
+            missed = missed + 1
+        else
+            break
+        end
+    end
+    return missed
+end
+
 function RaidTracker:GetRecentSessions(limit, only25, guildOnly)
     limit = limit or 20
     local sessions = {}

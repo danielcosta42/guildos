@@ -294,6 +294,8 @@ function BRutus.CreateRosterFrame()
         CreateTab("wishlist", L["Wishlist"], false)
     end
     CreateTab("raids", L["Raids"], false)
+    CreateTab("audit", L["Audit"], false)
+    CreateTab("raidtools", L["Raid Tools"], false)
     CreateTab("loot", L["Loot"], true)  -- officers always see loot history; items recorded only via ML
     CreateTab("trials", L["Trials"], true)
     CreateTab("recruitment", L["Recruitment"], true)
@@ -847,6 +849,26 @@ function BRutus.CreateRosterFrame()
     managementPanel:Hide()
     frame.tabPanels["management"] = managementPanel
     BRutus:CreateManagementPanel(managementPanel, frame)
+
+    ----------------------------------------------------------------
+    -- AUDIT / READINESS PANEL (attunement grid + enchant audit)
+    ----------------------------------------------------------------
+    local auditPanel = CreateFrame("Frame", nil, frame)
+    auditPanel:SetPoint("TOPLEFT", 0, contentTop)
+    auditPanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    auditPanel:Hide()
+    frame.tabPanels["audit"] = auditPanel
+    BRutus:CreateAuditPanel(auditPanel, frame)
+
+    ----------------------------------------------------------------
+    -- RAID TOOLS PANEL (composition + cooldown coverage)
+    ----------------------------------------------------------------
+    local raidToolsPanel = CreateFrame("Frame", nil, frame)
+    raidToolsPanel:SetPoint("TOPLEFT", 0, contentTop)
+    raidToolsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    raidToolsPanel:Hide()
+    frame.tabPanels["raidtools"] = raidToolsPanel
+    BRutus:CreateRaidToolsPanel(raidToolsPanel, frame)
 
     ----------------------------------------------------------------
     -- SETTINGS PANEL
@@ -1680,6 +1702,12 @@ function ShowRowTooltip(row)
     GameTooltip:AddLine(data.name, cr, cg, cb)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
+
+    -- First seen by Guild OS (approximate "member since")
+    local firstSeen = BRutus.GetFirstSeen and BRutus:GetFirstSeen(data.key)
+    if firstSeen then
+        GameTooltip:AddLine(string.format(L["Tracked since %s"], date("%Y-%m-%d", firstSeen)), C.silver.r, C.silver.g, C.silver.b)
+    end
 
     -- Talent spec
     if BRutus.SpecChecker then

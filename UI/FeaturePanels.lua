@@ -499,6 +499,16 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local lastText = UI:CreateText(row, lastStr, 9, C.silver.r, C.silver.g, C.silver.b)
         lastText:SetPoint("LEFT", 450, 0)
 
+        -- Recent form: flag members who missed the latest guild raid(s).
+        local missed = BRutus.RaidTracker:GetMissedStreak(entry.key, entry.groupTag, 5)
+        if missed >= 2 then
+            local f = UI:CreateText(row, string.format(L["missed last %d"], missed), 9, C.red.r, C.red.g, C.red.b)
+            f:SetPoint("LEFT", 540, 0)
+        elseif missed == 1 then
+            local f = UI:CreateText(row, L["missed last raid"], 9, C.gold.r, C.gold.g, C.gold.b)
+            f:SetPoint("LEFT", 540, 0)
+        end
+
         local capturedEntry = entry
         row:EnableMouse(true)
         row:SetScript("OnEnter", function(self)
@@ -554,10 +564,30 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     local countText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
     countText:SetPoint("TOPRIGHT", 0, -2)
 
-    -- Column headers
-    local colHeader = CreateFrame("Frame", nil, scrollParent)
-    colHeader:SetPoint("TOPLEFT", 0, -28)
-    colHeader:SetPoint("TOPRIGHT", 0, -28)
+    -- View toggle: History | Equity
+    local histBtn = UI:CreateButton(scrollParent, L["History"], 90, 20)
+    histBtn:SetPoint("TOPLEFT", 0, -24)
+    local eqBtn = UI:CreateButton(scrollParent, L["Equity"], 90, 20)
+    eqBtn:SetPoint("LEFT", histBtn, "RIGHT", 6, 0)
+
+    local exportBtn = UI:CreateButton(scrollParent, L["Export"], 90, 20)
+    exportBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    exportBtn:SetScript("OnClick", function()
+        BRutus:ShowExportPopup(L["Loot Export"], BRutus:ExportLoot())
+    end)
+
+    local VIEW_TOP = 50  -- space reserved for title + toggle row
+
+    ----------------------------------------------------------------
+    -- History view
+    ----------------------------------------------------------------
+    local historyView = CreateFrame("Frame", nil, scrollParent)
+    historyView:SetPoint("TOPLEFT", 0, -VIEW_TOP)
+    historyView:SetPoint("BOTTOMRIGHT", 0, 0)
+
+    local colHeader = CreateFrame("Frame", nil, historyView)
+    colHeader:SetPoint("TOPLEFT", 0, 0)
+    colHeader:SetPoint("TOPRIGHT", 0, 0)
     colHeader:SetHeight(20)
 
     local hItem = UI:CreateHeaderText(colHeader, L["ITEM"], 10)
@@ -569,12 +599,12 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     local hDate = UI:CreateHeaderText(colHeader, L["DATE"], 10)
     hDate:SetPoint("LEFT", 600, 0)
 
-    local sep = UI:CreateSeparator(scrollParent)
-    sep:SetPoint("TOPLEFT", 0, -50)
-    sep:SetPoint("TOPRIGHT", 0, -50)
+    local sep = UI:CreateSeparator(historyView)
+    sep:SetPoint("TOPLEFT", 0, -20)
+    sep:SetPoint("TOPRIGHT", 0, -20)
 
-    local lootScroll = CreateFrame("ScrollFrame", "BRutusLootScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    lootScroll:SetPoint("TOPLEFT", 0, -52)
+    local lootScroll = CreateFrame("ScrollFrame", "BRutusLootScroll", historyView, "UIPanelScrollFrameTemplate")
+    lootScroll:SetPoint("TOPLEFT", 0, -22)
     lootScroll:SetPoint("BOTTOMRIGHT", -10, 0)
     UI:SkinScrollBar(lootScroll, "BRutusLootScroll")
 
@@ -582,8 +612,63 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     lootContent:SetSize(800, 1)
     lootScroll:SetScrollChild(lootContent)
 
+    ----------------------------------------------------------------
+    -- Equity view
+    ----------------------------------------------------------------
+    local equityView = CreateFrame("Frame", nil, scrollParent)
+    equityView:SetPoint("TOPLEFT", 0, -VIEW_TOP)
+    equityView:SetPoint("BOTTOMRIGHT", 0, 0)
+    equityView:Hide()
+
+    local eqHeader = CreateFrame("Frame", nil, equityView)
+    eqHeader:SetPoint("TOPLEFT", 0, 0)
+    eqHeader:SetPoint("TOPRIGHT", 0, 0)
+    eqHeader:SetHeight(20)
+    local ehName = UI:CreateHeaderText(eqHeader, L["MEMBER"], 10)
+    ehName:SetPoint("LEFT", 6, 0)
+    local ehItems = UI:CreateHeaderText(eqHeader, L["ITEMS"], 10)
+    ehItems:SetPoint("LEFT", 200, 0)
+    local ehAtt = UI:CreateHeaderText(eqHeader, L["ATT%"], 10)
+    ehAtt:SetPoint("LEFT", 300, 0)
+    local ehRaids = UI:CreateHeaderText(eqHeader, L["RAIDS"], 10)
+    ehRaids:SetPoint("LEFT", 400, 0)
+    local ehPer = UI:CreateHeaderText(eqHeader, L["ITEMS/RAID"], 10)
+    ehPer:SetPoint("LEFT", 500, 0)
+
+    local eqSep = UI:CreateSeparator(equityView)
+    eqSep:SetPoint("TOPLEFT", 0, -20)
+    eqSep:SetPoint("TOPRIGHT", 0, -20)
+
+    local eqScroll = CreateFrame("ScrollFrame", "BRutusLootEquityScroll", equityView, "UIPanelScrollFrameTemplate")
+    eqScroll:SetPoint("TOPLEFT", 0, -22)
+    eqScroll:SetPoint("BOTTOMRIGHT", -10, 0)
+    UI:SkinScrollBar(eqScroll, "BRutusLootEquityScroll")
+
+    local eqContent = CreateFrame("Frame", nil, eqScroll)
+    eqContent:SetSize(800, 1)
+    eqScroll:SetScrollChild(eqContent)
+
+    ----------------------------------------------------------------
+    -- Toggle logic
+    ----------------------------------------------------------------
+    local function showView(which)
+        local hist = (which == "history")
+        historyView:SetShown(hist)
+        equityView:SetShown(not hist)
+        title:SetText(hist and L["Loot History"] or L["Loot Equity"])
+        histBtn:SetBaseColor(hist and C.accent.r * 0.32 or C.bg2.r, hist and C.accent.g * 0.32 or C.bg2.g, hist and C.accent.b * 0.32 or C.bg2.b, 0.92)
+        eqBtn:SetBaseColor(not hist and C.accent.r * 0.32 or C.bg2.r, not hist and C.accent.g * 0.32 or C.bg2.g, not hist and C.accent.b * 0.32 or C.bg2.b, 0.92)
+        if hist then
+            BRutus:RefreshLootPanel(lootContent, countText)
+        else
+            BRutus:RefreshLootEquity(eqContent, countText)
+        end
+    end
+    histBtn:SetScript("OnClick", function() showView("history") end)
+    eqBtn:SetScript("OnClick", function() showView("equity") end)
+
     parent:SetScript("OnShow", function()
-        BRutus:RefreshLootPanel(lootContent, countText)
+        showView("history")
     end)
 end
 
@@ -652,6 +737,59 @@ function BRutus:RefreshLootPanel(content, countText)
         dateText:SetPoint("LEFT", 600, 0)
 
         yOff = yOff + 22
+    end
+    content:SetHeight(math.max(1, yOff))
+end
+
+function BRutus:RefreshLootEquity(content, countText)
+    if not BRutus.LootTracker then return end
+    for _, child in pairs({ content:GetChildren() }) do child:Hide() end
+
+    local rows = BRutus.LootTracker:GetGuildLootEquity()
+    countText:SetText(string.format(L["%d members with loot/raid history"], #rows))
+
+    local yOff = 0
+    for _, r in ipairs(rows) do
+        local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        row:SetSize(content:GetWidth() - 10, 22)
+        row:SetPoint("TOPLEFT", 0, -yOff)
+        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        local altIdx = (math.floor(yOff / 22) % 2 == 0) and C.row1 or C.row2
+        row:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
+
+        local cr, cg, cb = BRutus:GetClassColor(r.class)
+        local nameText = UI:CreateText(row, r.name, 10, cr, cg, cb)
+        nameText:SetPoint("LEFT", 6, 0)
+
+        local itemsText = UI:CreateText(row, tostring(r.items), 10, C.white.r, C.white.g, C.white.b)
+        itemsText:SetPoint("LEFT", 200, 0)
+
+        -- Attendance: green when high, gold mid, red low.
+        local attColor = r.attendance >= 70 and C.green or (r.attendance >= 40 and C.gold or C.red)
+        local attText = UI:CreateText(row, r.attendance .. "%", 10, attColor.r, attColor.g, attColor.b)
+        attText:SetPoint("LEFT", 300, 0)
+
+        local raidsText = UI:CreateText(row, tostring(r.raids), 10, C.silver.r, C.silver.g, C.silver.b)
+        raidsText:SetPoint("LEFT", 400, 0)
+
+        local perText = UI:CreateText(row, string.format("%.2f", r.perRaid), 10, C.silver.r, C.silver.g, C.silver.b)
+        perText:SetPoint("LEFT", 500, 0)
+
+        -- Flag: dry (deserves loot) vs over-fed, for quick scanning.
+        if r.attendance >= 70 and r.items == 0 then
+            local flag = UI:CreateText(row, L["dry"], 10, C.green.r, C.green.g, C.green.b)
+            flag:SetPoint("LEFT", 600, 0)
+        elseif r.raids > 0 and r.perRaid >= 1.0 then
+            local flag = UI:CreateText(row, L["well-fed"], 10, C.red.r, C.red.g, C.red.b)
+            flag:SetPoint("LEFT", 600, 0)
+        end
+
+        yOff = yOff + 22
+    end
+
+    if #rows == 0 then
+        local empty = UI:CreateText(content, L["No loot or attendance data yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+        empty:SetPoint("TOPLEFT", 6, -4)
     end
     content:SetHeight(math.max(1, yOff))
 end

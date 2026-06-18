@@ -392,3 +392,40 @@ function CommSystem:FullSync()
         end
     end)
 end
+
+----------------------------------------------------------------------
+-- Sync health: who is running Guild OS, who is on an outdated version,
+-- and when each member last synced data. Drives the Audit > Sync view.
+-- Returns (rows, withAddonCount, outdatedCount). Each row:
+-- { name, key, class, online, hasAddon, version, outdated, lastUpdate }
+----------------------------------------------------------------------
+function CommSystem:GetSyncHealth()
+    local rows, withAddon, outdated = {}, 0, 0
+    local cur = BRutus.VERSION
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name, _, _, _, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            local key = BRutus:GetPlayerKey(short, realm)
+            local d = BRutus.db.members[key]
+            local has = (d and d.lastUpdate and d.lastUpdate > 0) and true or false
+            local ver = d and d.addonVersion or nil
+            local isOld = (has and ver and ver ~= cur) and true or false
+            if has then withAddon = withAddon + 1 end
+            if isOld then outdated = outdated + 1 end
+            rows[#rows + 1] = {
+                name = short, key = key, class = classFile or "", online = isOnline,
+                hasAddon = has, version = ver, outdated = isOld,
+                lastUpdate = (d and d.lastUpdate) or 0,
+            }
+        end
+    end
+    table.sort(rows, function(a, b)
+        -- Members WITHOUT the addon first (those are the actionable ones).
+        if a.hasAddon ~= b.hasAddon then return not a.hasAddon end
+        return a.name:lower() < b.name:lower()
+    end)
+    return rows, withAddon, outdated
+end

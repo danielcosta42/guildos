@@ -35,6 +35,8 @@ BRutus/
   OfficerNotes.lua        — officer note management + sync
   TrialTracker.lua        — trial member lifecycle
   GuildManager.lua        — leadership suite: ranks/kick/MOTD/inactivity/suggestions/log
+  GearAudit.lua           — guild-wide enchant audit (from synced gear)
+  RaidTools.lua           — composition / buff & cooldown coverage
   Locales/
     Locale.lua            — BRutus.L bootstrap (metatable fallback to English key)
     enUS.lua              — master/stub (English is implicit)
@@ -46,6 +48,9 @@ BRutus/
     RosterFrame.lua       — main guild roster window + tabs
     MemberDetail.lua      — per-member detail slide-in panel
     ManagementPanel.lua   — "Liderança" tab (rank/inactivity/suggestions/MOTD/log)
+    AuditPanel.lua        — "Audit" tab (attunement grid / enchant audit / sync health)
+    RaidToolsPanel.lua    — "Raid Tools" tab (composition / cooldown coverage)
+    Minimap.lua           — draggable minimap button (no LibDBIcon)
     FeaturePanels.lua     — raids, loot, trials, settings, wishlist, recruitment panels
     RecipesPanel.lua      — profession recipes panel
     RaidHUD.lua           — floating CD tracker + consumable check popup
@@ -90,6 +95,8 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 | `OfficerNotes.lua` | Officer note storage + sync | UI |
 | `TrialTracker.lua` | Trial lifecycle + sync | UI |
 | `GuildManager.lua` | Rank changes, kicks, MOTD/Info, inactivity, suggestions, action log | UI, comm |
+| `GearAudit.lua` | Guild-wide enchant audit from synced gear | UI |
+| `RaidTools.lua` | Composition + buff/cooldown coverage of group/online roster | UI |
 | `ConsumableChecker.lua` | Detect flask/elixir/food buffs | UI |
 | `SpecChecker.lua` | Detect talent spec | UI |
 | `UI/Helpers.lua` | ALL UI components + theme (until split) | data logic, comms |

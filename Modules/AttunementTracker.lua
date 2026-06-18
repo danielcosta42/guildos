@@ -19,6 +19,7 @@
 ----------------------------------------------------------------------
 local AttunementTracker = {}
 BRutus.AttunementTracker = AttunementTracker
+local L = BRutus.L
 
 ----------------------------------------------------------------------
 -- TBC Attunement Data
@@ -296,12 +297,64 @@ function AttunementTracker:GetEffectiveAttunements(playerKey)
 end
 
 ----------------------------------------------------------------------
+-- Guild-wide attunement matrix (for the progression grid UI).
+-- Columns are the raid attunements that actually require a quest chain
+-- (alwaysComplete raids like Gruul/Mag/SWP are excluded).
+----------------------------------------------------------------------
+function AttunementTracker:GetGuildColumns()
+    local cols = {}
+    for _, def in ipairs(self.ATTUNEMENTS) do
+        if not def.alwaysComplete and def.finalQuestId and #def.quests > 0 then
+            cols[#cols + 1] = { short = def.short, name = def.name, tier = def.tier, icon = def.icon }
+        end
+    end
+    return cols
+end
+
+-- Returns (columns, rows). Each row: { name, key, class, online, hasData,
+-- doneCount, cells = { [short] = attEntry } }. Rows sort fully-attuned first,
+-- then by completion count, then name.
+function AttunementTracker:GetGuildMatrix()
+    local cols = self:GetGuildColumns()
+    local rows = {}
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name, _, _, _, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            local key = BRutus:GetPlayerKey(short, realm)
+            local atts = self:GetEffectiveAttunements(key)
+            local cells, done = {}, 0
+            for _, a in ipairs(atts) do
+                cells[a.short] = a
+            end
+            for _, col in ipairs(cols) do
+                local c = cells[col.short]
+                if c and c.complete then done = done + 1 end
+            end
+            rows[#rows + 1] = {
+                name = short, key = key, class = classFile or "",
+                online = isOnline, hasData = (#atts > 0),
+                doneCount = done, cells = cells,
+            }
+        end
+    end
+    table.sort(rows, function(a, b)
+        if a.hasData ~= b.hasData then return a.hasData end
+        if a.doneCount ~= b.doneCount then return a.doneCount > b.doneCount end
+        return a.name:lower() < b.name:lower()
+    end)
+    return cols, rows
+end
+
+----------------------------------------------------------------------
 -- Get compact summary for the roster column (e.g. "3/8")
 ----------------------------------------------------------------------
 function AttunementTracker:GetAttunementSummary(playerKey)
     local atts = self:GetEffectiveAttunements(playerKey)
     if not atts or #atts == 0 then
-        return "No data"
+        return L["No data"]
     end
 
     local total = #atts

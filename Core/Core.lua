@@ -70,6 +70,7 @@ local DB_DEFAULTS = {
     },
     officerNotes = {},
     managementLog = {},  -- leadership action log (ring buffer; capped in GuildManager)
+    firstSeen = {},      -- [playerKey] = timestamp first observed by GuildOS
     trials = {},
     altLinks = {},  -- [altKey] = mainKey  (officer-maintained, for account-wide attunement propagation)
     consumableChecks = { lastResults = {} },
@@ -259,6 +260,9 @@ function BRutus:InitModules()
     if BRutus.GuildManager and modEnabled("guildManager") then
         BRutus.GuildManager:Initialize()
     end
+    if BRutus.CreateMinimapButton then
+        BRutus:CreateMinimapButton()
+    end
 
     -- Officer-only modules: defer init until guild info is available
     C_Timer.After(5, function()
@@ -326,6 +330,7 @@ function BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)
 end
 
 function BRutus:OnGuildRosterUpdate()
+    if BRutus.RecordFirstSeen then BRutus:RecordFirstSeen() end
     if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
         BRutus.RosterFrame:RefreshRoster()
     end
