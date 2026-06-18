@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-06-18
+
+### Added
+- guild leadership suite + full i18n (EN/PT/ES/DE/FR)
+
+
 ## [0.2.1] - 2026-06-16
 
 ### Fixed
