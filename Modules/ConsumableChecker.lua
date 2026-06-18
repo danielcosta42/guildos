@@ -4,11 +4,12 @@
 ----------------------------------------------------------------------
 local ConsumableChecker = {}
 BRutus.ConsumableChecker = ConsumableChecker
+local L = BRutus.L
 
 -- TBC consumable buff IDs grouped by category
 ConsumableChecker.CONSUMABLES = {
     flask = {
-        label = "Flask",
+        label = L["Flask"],
         buffs = {
             [17627] = "Flask of Distilled Wisdom",
             [17626] = "Flask of the Titans",
@@ -30,7 +31,7 @@ ConsumableChecker.CONSUMABLES = {
         },
     },
     food = {
-        label = "Food Buff",
+        label = L["Food Buff"],
         buffs = {
             [33254] = "Well Fed (20 Stam/Spirit)",
             [33257] = "Well Fed (20 Agi/Spirit)",
@@ -44,7 +45,7 @@ ConsumableChecker.CONSUMABLES = {
         },
     },
     weaponBuff = {
-        label = "Weapon Buff",
+        label = L["Weapon Buff"],
         buffs = {
             -- Wizard Oils
             [25123] = "Brilliant Wizard Oil",
@@ -65,7 +66,7 @@ ConsumableChecker.CONSUMABLES = {
         },
     },
     battleElixir = {
-        label = "Battle Elixir",
+        label = L["Battle Elixir"],
         buffs = {
             [28490] = "Elixir of Major Strength",
             [28491] = "Elixir of Healing Power",
@@ -80,7 +81,7 @@ ConsumableChecker.CONSUMABLES = {
         },
     },
     guardianElixir = {
-        label = "Guardian Elixir",
+        label = L["Guardian Elixir"],
         buffs = {
             [28502] = "Elixir of Major Mageblood",
             [28509] = "Elixir of Major Defense",
@@ -111,7 +112,7 @@ end
 
 function ConsumableChecker:CheckRaid()
     if not IsInRaid() then
-        BRutus:Print("Voce nao esta em uma raid.")
+        BRutus:Print(L["You are not in a raid."])
         return nil
     end
 
@@ -209,7 +210,7 @@ end
 function ConsumableChecker:ReportToChat(channel)
     local results = self:GetLastResults()
     if not results or not next(results) then
-        BRutus:Print("Nenhum resultado. Use /brutus para checar consumables primeiro.")
+        BRutus:Print(L["No results. Use /brutus to check consumables first."])
         return
     end
 
@@ -221,9 +222,9 @@ function ConsumableChecker:ReportToChat(channel)
     end
 
     if #missing == 0 then
-        SendChatMessage("[BRutus] Consumable check: Todos OK!", channel or "RAID")
+        SendChatMessage(L["[BRutus] Consumable check: All OK!"], channel or "RAID")
     else
-        SendChatMessage("[BRutus] Consumable check - Faltando:", channel or "RAID")
+        SendChatMessage(L["[BRutus] Consumable check - Missing:"], channel or "RAID")
         for _, line in ipairs(missing) do
             SendChatMessage("  " .. line, channel or "RAID")
         end

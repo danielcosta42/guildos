@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------
 local UI = BRutus.UI
 local C = BRutus.Colors
+local L = BRutus.L
 
 -- Session filter state: true = 25-man only, false = all raids
 local _raidFilter25 = true
@@ -17,7 +18,7 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
 
     -- Title
-    local title = UI:CreateTitle(scrollParent, "Raid Attendance", 14)
+    local title = UI:CreateTitle(scrollParent, L["Raid Attendance"], 14)
     title:SetPoint("TOPLEFT", 0, 0)
 
     -- Status text
@@ -27,12 +28,12 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Sessions section (top ~40%)
     ----------------------------------------------------------------
-    local sessionsLabel = UI:CreateHeaderText(scrollParent, "Sessions", 11)
+    local sessionsLabel = UI:CreateHeaderText(scrollParent, L["Sessions"], 11)
     sessionsLabel:SetPoint("TOPLEFT", 0, -28)
 
     -- Filter toggle buttons
-    local filterAllBtn  = UI:CreateButton(scrollParent, "Todas", 58, 18)
-    local filter25Btn   = UI:CreateButton(scrollParent, "25-man", 62, 18)
+    local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 18)
+    local filter25Btn   = UI:CreateButton(scrollParent, L["25-man"], 62, 18)
     filterAllBtn:SetPoint("LEFT", sessionsLabel, "RIGHT", 10, 0)
     filter25Btn:SetPoint("LEFT", filterAllBtn,   "RIGHT",  4, 0)
 
@@ -48,7 +49,7 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Attendance section (bottom ~50%)
     ----------------------------------------------------------------
-    local attLabel = UI:CreateHeaderText(scrollParent, "Member Attendance — 25-man only", 11)
+    local attLabel = UI:CreateHeaderText(scrollParent, L["Member Attendance — 25-man only"], 11)
     attLabel:SetPoint("BOTTOMLEFT", 0, 236)
 
     local attScroll = CreateFrame("ScrollFrame", "BRutusAttendanceScroll", scrollParent, "UIPanelScrollFrameTemplate")
@@ -109,8 +110,8 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
     local curGroup  = BRutus.RaidTracker:GetCurrentGroup()
     local groupStr  = curGroup ~= "" and ("|cffFFD700" .. curGroup .. "|r  ·  ") or ""
     local trackStr  = BRutus.RaidTracker.trackingActive
-                      and "|cff00ff00Tracking|r" or "|cff888888Idle|r"
-    statusText:SetText(groupStr .. totalAll .. " lockouts (" .. total25 .. " 25-man)  |  " .. trackStr)
+                      and "|cff00ff00" .. L["Tracking"] .. "|r" or "|cff888888" .. L["Idle"] .. "|r"
+    statusText:SetText(groupStr .. totalAll .. L[" lockouts ("] .. total25 .. L[" 25-man)  |  "] .. trackStr)
 
     ----------------------------------------------------------------
     -- Sessions grouped by instance + TBC reset week (Tuesday reset)
@@ -137,7 +138,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             groups[groupKey] = {
                 key        = groupKey,
                 instanceID = sd.instanceID,
-                name       = sd.name or "Unknown",
+                name       = sd.name or L["Unknown"],
                 groupTag   = sgTag,
                 weekNum    = weekNum,
                 weekStart  = wStart,
@@ -204,16 +205,16 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             :SetPoint("LEFT", 170, 0)
 
         -- Session count
-        UI:CreateText(gRow, #g.sessions .. " sess.", 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
+        UI:CreateText(gRow, #g.sessions .. L[" sess."], 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
             :SetPoint("LEFT", 280, 0)
 
         -- Unique player count
-        UI:CreateText(gRow, uPlayers .. " players", 9, C.white.r, C.white.g, C.white.b)
+        UI:CreateText(gRow, uPlayers .. L[" players"], 9, C.white.r, C.white.g, C.white.b)
             :SetPoint("LEFT", 340, 0)
 
         -- Kills / wipes summary
-        local encStr = g.kills .. " kills"
-        if g.wipes > 0 then encStr = encStr .. " / " .. g.wipes .. " wipes" end
+        local encStr = g.kills .. L[" kills"]
+        if g.wipes > 0 then encStr = encStr .. " / " .. g.wipes .. L[" wipes"] end
         local encClr = g.kills > 0 and C.green or C.silver
         UI:CreateText(gRow, encStr, 9, encClr.r, encClr.g, encClr.b)
             :SetPoint("LEFT", 420, 0)
@@ -265,7 +266,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
 
                 -- Player count
                 local pCount = BRutus.RaidTracker:CountTable(sd.players or {})
-                UI:CreateText(row, pCount .. " players", 9, C.white.r, C.white.g, C.white.b)
+                UI:CreateText(row, pCount .. L[" players"], 9, C.white.r, C.white.g, C.white.b)
                     :SetPoint("LEFT", 215, 0)
 
                 -- Boss kills / wipes
@@ -273,15 +274,15 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 for _, enc in ipairs(sd.encounters or {}) do
                     if enc.success then sk = sk + 1 else sw = sw + 1 end
                 end
-                local sEncStr = sk .. " kills"
-                if sw > 0 then sEncStr = sEncStr .. " / " .. sw .. " wipes" end
+                local sEncStr = sk .. L[" kills"]
+                if sw > 0 then sEncStr = sEncStr .. " / " .. sw .. L[" wipes"] end
                 local sEncClr = sk > 0 and C.green or C.silver
                 UI:CreateText(row, sEncStr, 9, sEncClr.r, sEncClr.g, sEncClr.b)
                     :SetPoint("LEFT", 300, 0)
 
                 -- Delete button (officer only)
                 if BRutus:IsOfficer() then
-                    local delBtn = UI:CreateButton(row, "X", 20, 16)
+                    local delBtn = UI:CreateButton(row, L["X"], 20, 16)
                     delBtn:SetPoint("RIGHT", -2, 0)
                     local capturedSID = s.id
                     delBtn:SetScript("OnClick", function()
@@ -357,7 +358,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     local function Hdr(txt, x)
                         UI:CreateText(hdrFrame, txt, 8, C.accent.r, C.accent.g, C.accent.b):SetPoint("LEFT", x, 0)
                     end
-                    Hdr("PLAYER", 6); Hdr("SCORE", 120); Hdr("LATE", 170); Hdr("LEFT EARLY", 210); Hdr("NO CONS", 290)
+                    Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210); Hdr(L["NO CONS"], 290)
                     yOff = yOff + 18
 
                     for pIdx, p in ipairs(playerList) do
@@ -381,8 +382,8 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
                             local fr, fg, fb = val and C.red.r or C.green.r, val and C.red.g or C.green.g, val and C.red.b or C.green.b
                             UI:CreateText(pRow, val and redTxt or greenTxt, 8, fr, fg, fb):SetPoint("LEFT", x, 0)
                         end
-                        Flag(170, p.wasLate,   "LATE", "OK")
-                        Flag(210, p.leftEarly, "LEFT", "OK")
+                        Flag(170, p.wasLate,   L["LATE"], L["OK"])
+                        Flag(210, p.leftEarly, L["LEFT"], L["OK"])
 
                         local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
                         local cr2 = not p.noConsumes and C.green or C.red
@@ -433,7 +434,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local t = UI:CreateText(attHdr, txt, 8, C.accent.r, C.accent.g, C.accent.b)
         t:SetPoint("LEFT", x, 0)
     end
-    AHdr("PLAYER", 6); AHdr("GROUP", 145); AHdr("ATT%", 240); AHdr("RAIDS", 295); AHdr("AVG SCORE", 355); AHdr("LAST RAID", 450)
+    AHdr(L["PLAYER"], 6); AHdr(L["GROUP"], 145); AHdr(L["ATT%"], 240); AHdr(L["RAIDS"], 295); AHdr(L["AVG SCORE"], 355); AHdr(L["LAST RAID"], 450)
 
     yOff = 20
     local lastGroupTag = nil
@@ -446,10 +447,10 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             ghRow:SetPoint("TOPLEFT", 0, -yOff)
             ghRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
             ghRow:SetBackdropColor(0.100, 0.100, 0.130, 1)
-            local groupLabel = entry.groupTag ~= "" and entry.groupTag or "(sem grupo)"
+            local groupLabel = entry.groupTag ~= "" and entry.groupTag or L["(no group)"]
             local total25g = BRutus.RaidTracker:GetTotal25ManSessions(entry.groupTag)
             local ghText = UI:CreateText(ghRow,
-                "|cff9966FF" .. groupLabel .. "|r  —  " .. total25g .. " raids de 25",
+                "|cff9966FF" .. groupLabel .. "|r  —  " .. total25g .. L[" 25-man raids"],
                 9, C.white.r, C.white.g, C.white.b)
             ghText:SetPoint("LEFT", 6, 0)
             yOff = yOff + 18
@@ -505,20 +506,20 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:ClearLines()
             GameTooltip:AddLine(shortName, cr, cg, cb)
-            local gLabel = capturedEntry.groupTag ~= "" and capturedEntry.groupTag or "(sem grupo)"
-            GameTooltip:AddLine("Grupo: " .. gLabel, 0.56, 0.48, 0.82)
-            GameTooltip:AddLine("25-man Attendance", C.gold.r, C.gold.g, C.gold.b)
+            local gLabel = capturedEntry.groupTag ~= "" and capturedEntry.groupTag or L["(no group)"]
+            GameTooltip:AddLine(L["Group: "] .. gLabel, 0.56, 0.48, 0.82)
+            GameTooltip:AddLine(L["25-man Attendance"], C.gold.r, C.gold.g, C.gold.b)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddDoubleLine("Raids:", raids25 .. "/" .. total25g, 1,1,1, C.silver.r,C.silver.g,C.silver.b)
-            GameTooltip:AddDoubleLine("Attendance %:", pct .. "%", 1,1,1, pctClr.r,pctClr.g,pctClr.b)
+            GameTooltip:AddDoubleLine(L["Raids:"], raids25 .. "/" .. total25g, 1,1,1, C.silver.r,C.silver.g,C.silver.b)
+            GameTooltip:AddDoubleLine(L["Attendance %:"], pct .. "%", 1,1,1, pctClr.r,pctClr.g,pctClr.b)
             if avgScore > 0 then
-                GameTooltip:AddDoubleLine("Avg score/raid:", avgScore .. " pts", 1,1,1, asr,asg,asb)
+                GameTooltip:AddDoubleLine(L["Avg score/raid:"], avgScore .. L[" pts"], 1,1,1, asr,asg,asb)
             end
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Score começa em 100 por raid.", 0.6,0.6,0.6)
-            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.LATE or 10) .. " Chegou tarde", 0.7,0.5,0.5)
-            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10) .. " Saiu cedo", 0.7,0.5,0.5)
-            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10) .. " Sem consumíveis", 0.7,0.5,0.5)
+            GameTooltip:AddLine(L["Score starts at 100 per raid."], 0.6,0.6,0.6)
+            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.LATE or 10) .. L[" Arrived late"], 0.7,0.5,0.5)
+            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10) .. L[" Left early"], 0.7,0.5,0.5)
+            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10) .. L[" No consumables"], 0.7,0.5,0.5)
             GameTooltip:Show()
             local _ = capturedEntry
         end)
@@ -531,7 +532,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
     end
 
     if #attList == 0 then
-        local emptyText = UI:CreateText(attContent, "No 25-man attendance data yet.", 10, C.silver.r, C.silver.g, C.silver.b)
+        local emptyText = UI:CreateText(attContent, L["No 25-man attendance data yet."], 10, C.silver.r, C.silver.g, C.silver.b)
         emptyText:SetPoint("TOPLEFT", 6, -yOff)
         yOff = yOff + 22
     end
@@ -547,7 +548,7 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     scrollParent:SetPoint("TOPLEFT", 10, -10)
     scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
 
-    local title = UI:CreateTitle(scrollParent, "Loot History", 14)
+    local title = UI:CreateTitle(scrollParent, L["Loot History"], 14)
     title:SetPoint("TOPLEFT", 0, 0)
 
     local countText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -559,13 +560,13 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     colHeader:SetPoint("TOPRIGHT", 0, -28)
     colHeader:SetHeight(20)
 
-    local hItem = UI:CreateHeaderText(colHeader, "ITEM", 10)
+    local hItem = UI:CreateHeaderText(colHeader, L["ITEM"], 10)
     hItem:SetPoint("LEFT", 6, 0)
-    local hPlayer = UI:CreateHeaderText(colHeader, "PLAYER", 10)
+    local hPlayer = UI:CreateHeaderText(colHeader, L["PLAYER"], 10)
     hPlayer:SetPoint("LEFT", 300, 0)
-    local hRaid = UI:CreateHeaderText(colHeader, "RAID", 10)
+    local hRaid = UI:CreateHeaderText(colHeader, L["RAID"], 10)
     hRaid:SetPoint("LEFT", 450, 0)
-    local hDate = UI:CreateHeaderText(colHeader, "DATE", 10)
+    local hDate = UI:CreateHeaderText(colHeader, L["DATE"], 10)
     hDate:SetPoint("LEFT", 600, 0)
 
     local sep = UI:CreateSeparator(scrollParent)
@@ -592,7 +593,7 @@ function BRutus:RefreshLootPanel(content, countText)
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
 
     local history = BRutus.LootTracker:GetHistory(100)
-    countText:SetText(#BRutus.db.lootHistory .. " items tracked")
+    countText:SetText(#BRutus.db.lootHistory .. L[" items tracked"])
 
     local yOff = 0
     for _, entry in ipairs(history) do
@@ -663,7 +664,7 @@ function BRutus:CreateTrialsPanel(parent, _mainFrame)
     scrollParent:SetPoint("TOPLEFT", 10, -10)
     scrollParent:SetPoint("BOTTOMRIGHT", -10, 10)
 
-    local title = UI:CreateTitle(scrollParent, "Trial Members", 14)
+    local title = UI:CreateTitle(scrollParent, L["Trial Members"], 14)
     title:SetPoint("TOPLEFT", 0, 0)
 
     local statusText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -675,17 +676,17 @@ function BRutus:CreateTrialsPanel(parent, _mainFrame)
     colHeader:SetPoint("TOPRIGHT", 0, -28)
     colHeader:SetHeight(20)
 
-    local hName = UI:CreateHeaderText(colHeader, "MEMBER", 10)
+    local hName = UI:CreateHeaderText(colHeader, L["MEMBER"], 10)
     hName:SetPoint("LEFT", 6, 0)
-    local hIlvl = UI:CreateHeaderText(colHeader, "iLVL", 10)
+    local hIlvl = UI:CreateHeaderText(colHeader, L["iLVL"], 10)
     hIlvl:SetPoint("LEFT", 140, 0)
-    local hAtt = UI:CreateHeaderText(colHeader, "ATTUNE", 10)
+    local hAtt = UI:CreateHeaderText(colHeader, L["ATTUNE"], 10)
     hAtt:SetPoint("LEFT", 210, 0)
-    local hSponsor = UI:CreateHeaderText(colHeader, "SPONSOR", 10)
+    local hSponsor = UI:CreateHeaderText(colHeader, L["SPONSOR"], 10)
     hSponsor:SetPoint("LEFT", 290, 0)
-    local hDays = UI:CreateHeaderText(colHeader, "REMAINING", 10)
+    local hDays = UI:CreateHeaderText(colHeader, L["REMAINING"], 10)
     hDays:SetPoint("LEFT", 400, 0)
-    local hStatus = UI:CreateHeaderText(colHeader, "STATUS", 10)
+    local hStatus = UI:CreateHeaderText(colHeader, L["STATUS"], 10)
     hStatus:SetPoint("LEFT", 500, 0)
 
     local sep = UI:CreateSeparator(scrollParent)
@@ -724,7 +725,7 @@ function BRutus:RefreshTrialsPanel(parent)
             activeCount = activeCount + 1
         end
     end
-    statusText:SetText(activeCount .. " active trials")
+    statusText:SetText(activeCount .. L[" active trials"])
 
     local expanded = parent.expandedTrials or {}
     local yOff = 0
@@ -797,27 +798,27 @@ function BRutus:RefreshTrialsPanel(parent)
         local statusColor = C.silver
         local statusStr = data.status or "?"
         if data.status == "trial" then
-            statusColor = C.gold; statusStr = "TRIAL"
+            statusColor = C.gold; statusStr = L["TRIAL"]
         elseif data.status == "approved" then
-            statusColor = C.green; statusStr = "APPROVED"
+            statusColor = C.green; statusStr = L["APPROVED"]
         elseif data.status == "denied" then
-            statusColor = C.red; statusStr = "DENIED"
+            statusColor = C.red; statusStr = L["DENIED"]
         elseif data.status == "expired" then
-            statusColor = C.red; statusStr = "EXPIRED"
+            statusColor = C.red; statusStr = L["EXPIRED"]
         end
         local sText = UI:CreateText(row, statusStr, 10, statusColor.r, statusColor.g, statusColor.b)
         sText:SetPoint("LEFT", 500, 0)
 
         -- Action buttons for active trials
         if data.status == "trial" then
-            local approveBtn = UI:CreateButton(row, "OK", 30, 18)
+            local approveBtn = UI:CreateButton(row, L["OK"], 30, 18)
             approveBtn:SetPoint("LEFT", 580, 0)
             approveBtn:SetScript("OnClick", function()
                 BRutus.TrialTracker:UpdateStatus(trial.key, BRutus.TrialTracker.STATUS.APPROVED)
                 BRutus:RefreshTrialsPanel(parent)
             end)
 
-            local denyBtn = UI:CreateButton(row, "X", 24, 18)
+            local denyBtn = UI:CreateButton(row, L["X"], 24, 18)
             denyBtn:SetPoint("LEFT", approveBtn, "RIGHT", 4, 0)
             denyBtn:SetScript("OnClick", function()
                 BRutus.TrialTracker:UpdateStatus(trial.key, BRutus.TrialTracker.STATUS.DENIED)
@@ -858,7 +859,7 @@ function BRutus:RefreshTrialsPanel(parent)
             infoFS:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             infoFS:SetPoint("TOPLEFT", 10, dY)
             infoFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            infoFS:SetText(format("Started: %s  |  Day %d  |  Sponsor: %s", startStr, daysSince or 0, data.sponsor or "?"))
+            infoFS:SetText(format(L["Started: %s  |  Day %d  |  Sponsor: %s"], startStr, daysSince or 0, data.sponsor or "?"))
             infoFS:Show()
             dY = dY - 16
 
@@ -868,7 +869,7 @@ function BRutus:RefreshTrialsPanel(parent)
                 notesLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
                 notesLabel:SetPoint("TOPLEFT", 10, dY)
                 notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                notesLabel:SetText("Comments:")
+                notesLabel:SetText(L["Comments:"])
                 notesLabel:Show()
                 dY = dY - 14
 
@@ -904,13 +905,13 @@ function BRutus:RefreshTrialsPanel(parent)
             ph:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             ph:SetPoint("LEFT", 4, 0)
             ph:SetTextColor(0.3, 0.3, 0.3)
-            ph:SetText("Add comment...")
+            ph:SetText(L["Add comment..."])
             addBox:SetScript("OnTextChanged", function(self)
                 if self:GetText() ~= "" then ph:Hide() else ph:Show() end
             end)
             addBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-            local addBtn = UI:CreateButton(detailFrame, "Add", 50, 20)
+            local addBtn = UI:CreateButton(detailFrame, L["Add"], 50, 20)
             addBtn:SetPoint("LEFT", addBox, "RIGHT", 4, 0)
             addBtn:SetScript("OnClick", function()
                 local text = addBox:GetText()
@@ -938,7 +939,7 @@ function BRutus:RefreshTrialsPanel(parent)
     end
 
     if #trials == 0 then
-        local emptyText = UI:CreateText(content, "No trial members tracked.", 11, C.silver.r, C.silver.g, C.silver.b)
+        local emptyText = UI:CreateText(content, L["No trial members tracked."], 11, C.silver.r, C.silver.g, C.silver.b)
         emptyText:SetPoint("TOPLEFT", 0, 0)
         yOff = 30
     end
@@ -974,13 +975,13 @@ function BRutus:ShowExportPopup(titleStr, text)
     titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     titleText:SetPoint("TOP", 0, -10)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText(titleStr or "Export")
+    titleText:SetText(titleStr or L["Export"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
     hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
     hint:SetPoint("TOP", 0, -28)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    hint:SetText("Press Ctrl+A to select all, then Ctrl+C to copy")
+    hint:SetText(L["Press Ctrl+A to select all, then Ctrl+C to copy"])
 
     -- Scroll frame for the edit box
     local scrollFrame = CreateFrame("ScrollFrame", "BRutusExportScroll", f, "UIPanelScrollFrameTemplate")
@@ -1003,7 +1004,7 @@ function BRutus:ShowExportPopup(titleStr, text)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    local closeTextBtn = UI:CreateButton(f, "Close", 80, 24)
+    local closeTextBtn = UI:CreateButton(f, L["Close"], 80, 24)
     closeTextBtn:SetPoint("BOTTOM", 0, 10)
     closeTextBtn:SetScript("OnClick", function() f:Hide() end)
 
@@ -1032,11 +1033,11 @@ function BRutus:RefreshSettingsPanel(content)
     local yOff = 0
 
     -- Title
-    local title = UI:CreateTitle(content, "Settings", 16)
+    local title = UI:CreateTitle(content, L["Settings"], 16)
     title:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 28
 
-    local subtitle = UI:CreateText(content, "Enable or disable modules and adjust settings. Changes take effect immediately.", 10, C.silver.r, C.silver.g, C.silver.b)
+    local subtitle = UI:CreateText(content, L["Enable or disable modules and adjust settings. Changes take effect immediately."], 10, C.silver.r, C.silver.g, C.silver.b)
     subtitle:SetPoint("TOPLEFT", 0, -yOff)
     subtitle:SetWidth(content:GetWidth() - 20)
     yOff = yOff + 24
@@ -1050,7 +1051,7 @@ function BRutus:RefreshSettingsPanel(content)
     --------------------------------------------------------------------
     -- MODULE TOGGLES
     --------------------------------------------------------------------
-    local sectionTitle = UI:CreateHeaderText(content, "MODULES", 12)
+    local sectionTitle = UI:CreateHeaderText(content, L["MODULES"], 12)
     sectionTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
@@ -1067,16 +1068,16 @@ function BRutus:RefreshSettingsPanel(content)
     local isOfficer = BRutus:IsOfficer()
 
     local modules = {
-        { key = "raidTracker",       label = "Raid Tracker",         desc = "Track raid attendance, penalties, and sessions", officerOnly = true },
-        { key = "lootTracker",       label = "Loot Tracker",         desc = "Record loot drops from boss kills" },
-        { key = "lootMaster",        label = "Loot Master",          desc = "Master Loot com wishlist auto-council" },
-        { key = "consumableChecker", label = "Consumable Checker",   desc = "Scan raid for missing flasks/food/elixirs" },
-        { key = "raidHUD",           label = "Raid CD Tracker",      desc = "Floating tracker for raid cooldowns and consumable check" },
+        { key = "raidTracker",       label = L["Raid Tracker"],         desc = L["Track raid attendance, penalties, and sessions"], officerOnly = true },
+        { key = "lootTracker",       label = L["Loot Tracker"],         desc = L["Record loot drops from boss kills"] },
+        { key = "lootMaster",        label = L["Loot Master"],          desc = L["Master Loot with wishlist auto-council"] },
+        { key = "consumableChecker", label = L["Consumable Checker"],   desc = L["Scan raid for missing flasks/food/elixirs"] },
+        { key = "raidHUD",           label = L["Raid CD Tracker"],      desc = L["Floating tracker for raid cooldowns and consumable check"] },
 
-        { key = "trialTracker",      label = "Trial Tracker",        desc = "Track trial member progress (officer)", officerOnly = true },
-        { key = "officerNotes",      label = "Officer Notes",        desc = "Private notes on guild members (officer)", officerOnly = true },
-        { key = "recruitment",       label = "Recruitment",          desc = "Auto-post recruitment messages (officer)", officerOnly = true },
-        { key = "commSystem",        label = "Comm System",          desc = "Sync member data between addon users" },
+        { key = "trialTracker",      label = L["Trial Tracker"],        desc = L["Track trial member progress (officer)"], officerOnly = true },
+        { key = "officerNotes",      label = L["Officer Notes"],        desc = L["Private notes on guild members (officer)"], officerOnly = true },
+        { key = "recruitment",       label = L["Recruitment"],          desc = L["Auto-post recruitment messages (officer)"], officerOnly = true },
+        { key = "commSystem",        label = L["Comm System"],          desc = L["Sync member data between addon users"] },
     }
 
     for _, mod in ipairs(modules) do
@@ -1095,9 +1096,9 @@ function BRutus:RefreshSettingsPanel(content)
             -- Explicitly store false so modEnabled() sees ~= false correctly.
             mods[mod.key] = checked and true or false
             if checked then
-                BRutus:Print(mod.label .. " |cff00ff00enabled|r. Reload UI to apply.")
+                BRutus:Print(mod.label .. L[" |cff00ff00enabled|r. Reload UI to apply."])
             else
-                BRutus:Print(mod.label .. " |cffFF4444disabled|r. Reload UI to apply.")
+                BRutus:Print(mod.label .. L[" |cffFF4444disabled|r. Reload UI to apply."])
             end
         end
 
@@ -1121,12 +1122,12 @@ function BRutus:RefreshSettingsPanel(content)
     --------------------------------------------------------------------
     -- LOOT MASTER SETTINGS (officer only)
     --------------------------------------------------------------------
-    local lmTitle = UI:CreateHeaderText(content, "LOOT MASTER", 12)
+    local lmTitle = UI:CreateHeaderText(content, L["LOOT MASTER"], 12)
     lmTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
     -- Roll duration
-    local durLabel = UI:CreateText(content, "Roll Duration (seconds):", 11, C.white.r, C.white.g, C.white.b)
+    local durLabel = UI:CreateText(content, L["Roll Duration (seconds):"], 11, C.white.r, C.white.g, C.white.b)
     durLabel:SetPoint("TOPLEFT", 8, -yOff)
 
     local durBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
@@ -1146,9 +1147,9 @@ function BRutus:RefreshSettingsPanel(content)
         if val and val >= 5 and val <= 120 then
             BRutus.db.lootMaster.rollDuration = val
             if BRutus.LootMaster then BRutus.LootMaster.ROLL_DURATION = val end
-            BRutus:Print("Roll duration set to " .. val .. "s")
+            BRutus:Print(L["Roll duration set to "] .. val .. "s")
         else
-            BRutus:Print("Duration must be between 5 and 120 seconds.")
+            BRutus:Print(L["Duration must be between 5 and 120 seconds."])
             self:SetText(tostring(BRutus.db.lootMaster.rollDuration or 30))
         end
         self:ClearFocus()
@@ -1157,7 +1158,7 @@ function BRutus:RefreshSettingsPanel(content)
     yOff = yOff + 30
 
     -- Auto announce
-    local autoAnn = UI:CreateCheckbox(content, "Auto-announce loot when ML opens loot window", 18)
+    local autoAnn = UI:CreateCheckbox(content, L["Auto-announce loot when ML opens loot window"], 18)
     autoAnn:SetPoint("TOPLEFT", 8, -yOff)
     autoAnn.checkbox:SetChecked(BRutus.db.lootMaster.autoAnnounce ~= false)
     autoAnn.checkbox.onChanged = function(_, checked)
@@ -1167,7 +1168,7 @@ function BRutus:RefreshSettingsPanel(content)
     yOff = yOff + 28
 
     -- Wishlist auto-council
-    local tmbCouncil = UI:CreateCheckbox(content, "Wishlist Auto-Council (verificar wishlist antes de rolar)", 18)
+    local tmbCouncil = UI:CreateCheckbox(content, L["Wishlist Auto-Council (check wishlist before rolling)"], 18)
     tmbCouncil:SetPoint("TOPLEFT", 8, -yOff)
     tmbCouncil.checkbox:SetChecked(BRutus.db.lootMaster.wishlistOnlyMode or false)
     tmbCouncil.checkbox.onChanged = function(_, checked)
@@ -1184,12 +1185,12 @@ function BRutus:RefreshSettingsPanel(content)
     ldSep:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
-    local ldTitle = UI:CreateHeaderText(content, "LOOT DISTRIBUTION", 12)
+    local ldTitle = UI:CreateHeaderText(content, L["LOOT DISTRIBUTION"], 12)
     ldTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
     -- Min attendance for MS roll
-    local minAttLabel = UI:CreateText(content, "Min. Attendance for MS Roll (%):", 11, C.white.r, C.white.g, C.white.b)
+    local minAttLabel = UI:CreateText(content, L["Min. Attendance for MS Roll (%):"], 11, C.white.r, C.white.g, C.white.b)
     minAttLabel:SetPoint("TOPLEFT", 8, -yOff)
 
     local minAttBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
@@ -1207,18 +1208,18 @@ function BRutus:RefreshSettingsPanel(content)
     minAttBox:SetScript("OnEnterPressed", function(self)
         local val = math.max(0, math.min(100, tonumber(self:GetText()) or 0))
         BRutus.db.lootMaster.minAttendancePct = val
-        BRutus:Print("Min. MS attendance set to " .. val .. "%" .. (val == 0 and " (disabled)" or ""))
+        BRutus:Print(L["Min. MS attendance set to "] .. val .. "%" .. (val == 0 and L[" (disabled)"] or ""))
         self:ClearFocus()
     end)
     minAttBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    local minAttHint = UI:CreateText(content, "0 = disabled. Below this % MS is auto-downgraded to OS.", 9, C.silver.r, C.silver.g, C.silver.b)
+    local minAttHint = UI:CreateText(content, L["0 = disabled. Below this % MS is auto-downgraded to OS."], 9, C.silver.r, C.silver.g, C.silver.b)
     minAttHint:SetPoint("LEFT", minAttBox, "RIGHT", 8, 0)
     minAttHint:SetWidth(280)
     yOff = yOff + 30
 
     -- Attendance as roll tiebreaker
-    local attTie = UI:CreateCheckbox(content, "Use 25-man Attendance as Roll Tiebreaker", 18)
+    local attTie = UI:CreateCheckbox(content, L["Use 25-man Attendance as Roll Tiebreaker"], 18)
     attTie:SetPoint("TOPLEFT", 8, -yOff)
     attTie.checkbox:SetChecked(BRutus.db.lootMaster.attTiebreaker ~= false)
     attTie.checkbox.onChanged = function(_, checked)
@@ -1228,7 +1229,7 @@ function BRutus:RefreshSettingsPanel(content)
     yOff = yOff + 28
 
     -- Penalize recent receivers
-    local recvPen = UI:CreateCheckbox(content, "Penalize Players Who Received Items This Lockout", 18)
+    local recvPen = UI:CreateCheckbox(content, L["Penalize Players Who Received Items This Lockout"], 18)
     recvPen:SetPoint("TOPLEFT", 8, -yOff)
     recvPen.checkbox:SetChecked(BRutus.db.lootMaster.recvPenalty ~= false)
     recvPen.checkbox.onChanged = function(_, checked)
@@ -1238,7 +1239,7 @@ function BRutus:RefreshSettingsPanel(content)
     yOff = yOff + 28
 
     -- Disenchanter name
-    local deLabel = UI:CreateText(content, "Disenchanter:", 11, C.white.r, C.white.g, C.white.b)
+    local deLabel = UI:CreateText(content, L["Disenchanter:"], 11, C.white.r, C.white.g, C.white.b)
     deLabel:SetPoint("TOPLEFT", 8, -yOff)
 
     local deBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
@@ -1256,22 +1257,22 @@ function BRutus:RefreshSettingsPanel(content)
         local name = strtrim(self:GetText())
         if BRutus.LootMaster then BRutus.LootMaster:SetDisenchanter(name) end
         if name ~= "" then
-            BRutus:Print("Disenchanter definido: |cff00ff00" .. name .. "|r")
+            BRutus:Print(L["Disenchanter set: "] .. "|cff00ff00" .. name .. "|r")
         else
-            BRutus:Print("Disenchanter removido.")
+            BRutus:Print(L["Disenchanter removed."])
         end
         self:ClearFocus()
     end)
     deBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    local deHint = UI:CreateText(content, "Nome do player que recebe itens para DE", 9, C.silver.r, C.silver.g, C.silver.b)
+    local deHint = UI:CreateText(content, L["Name of the player who receives items for DE"], 9, C.silver.r, C.silver.g, C.silver.b)
     deHint:SetPoint("LEFT", deBox, "RIGHT", 8, 0)
     deHint:SetWidth(180)
     yOff = yOff + 30
 
     -- Rarity threshold: which item quality opens the ML loot window.
     -- Click to cycle Uncommon -> Rare -> Epic -> Legendary.
-    local thrLabel = UI:CreateText(content, "Threshold de raridade:", 11, C.white.r, C.white.g, C.white.b)
+    local thrLabel = UI:CreateText(content, L["Rarity threshold:"], 11, C.white.r, C.white.g, C.white.b)
     thrLabel:SetPoint("TOPLEFT", 8, -yOff)
 
     local thrBtn = UI:CreateButton(content, "", 150, 22)
@@ -1293,11 +1294,11 @@ function BRutus:RefreshSettingsPanel(content)
         if q > 5 then q = 2 end
         BRutus.LootMaster:SetLootThreshold(q)
         refreshThr()
-        BRutus:Print("Threshold de loot: |cffffd700" .. thrName(q) .. "|r")
+        BRutus:Print(L["Loot threshold: "] .. "|cffffd700" .. thrName(q) .. "|r")
     end)
     refreshThr()
 
-    local thrHint = UI:CreateText(content, "Itens nessa raridade (ou acima) abrem o painel do ML", 9, C.silver.r, C.silver.g, C.silver.b)
+    local thrHint = UI:CreateText(content, L["Items of this rarity (or higher) open the ML panel"], 9, C.silver.r, C.silver.g, C.silver.b)
     thrHint:SetPoint("LEFT", thrBtn, "RIGHT", 8, 0)
     thrHint:SetWidth(200)
     yOff = yOff + 30
@@ -1313,13 +1314,13 @@ function BRutus:RefreshSettingsPanel(content)
     --------------------------------------------------------------------
     -- RAID TRACKER SETTINGS
     --------------------------------------------------------------------
-    local rtTitle = UI:CreateHeaderText(content, "RAID TRACKER", 12)
+    local rtTitle = UI:CreateHeaderText(content, L["RAID TRACKER"], 12)
     rtTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
     -- Officer-only: Raid Group Tag
     if isOfficer then
-        local groupLabel = UI:CreateText(content, "Grupo de Raid:", 11, C.white.r, C.white.g, C.white.b)
+        local groupLabel = UI:CreateText(content, L["Raid Group:"], 11, C.white.r, C.white.g, C.white.b)
         groupLabel:SetPoint("TOPLEFT", 8, -yOff)
 
         local groupBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
@@ -1337,28 +1338,28 @@ function BRutus:RefreshSettingsPanel(content)
             local name = strtrim(self:GetText())
             if BRutus.RaidTracker then BRutus.RaidTracker:SetGroupTag(name) end
             if name ~= "" then
-                BRutus:Print("Grupo de raid definido: |cff9966FF" .. name .. "|r")
+                BRutus:Print(L["Raid group set: "] .. "|cff9966FF" .. name .. "|r")
             else
-                BRutus:Print("Grupo de raid removido.")
+                BRutus:Print(L["Raid group removed."])
             end
             self:ClearFocus()
         end)
         groupBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-        local groupHint = UI:CreateText(content, "Ex: Core 1, Core 2", 9, C.silver.r, C.silver.g, C.silver.b)
+        local groupHint = UI:CreateText(content, L["Ex: Core 1, Core 2"], 9, C.silver.r, C.silver.g, C.silver.b)
         groupHint:SetPoint("LEFT", groupBox, "RIGHT", 8, 0)
         groupHint:SetWidth(180)
         yOff = yOff + 30
     end -- isOfficer (Raid group tag)
 
-    local penaltyInfo = UI:CreateText(content, "Penalties per session (base score = 100):", 11, C.white.r, C.white.g, C.white.b)
+    local penaltyInfo = UI:CreateText(content, L["Penalties per session (base score = 100):"], 11, C.white.r, C.white.g, C.white.b)
     penaltyInfo:SetPoint("TOPLEFT", 8, -yOff)
     yOff = yOff + 20
 
     local penalties = {
-        { label = "Late (missed first snapshot)", val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.LATE or 10 },
-        { label = "Left Early (missed last snapshot)", val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10 },
-        { label = "No Consumables (<50% snapshots)", val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10 },
+        { label = L["Late (missed first snapshot)"], val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.LATE or 10 },
+        { label = L["Left Early (missed last snapshot)"], val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10 },
+        { label = L["No Consumables (<50% snapshots)"], val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10 },
     }
     for _, p in ipairs(penalties) do
         local pt = UI:CreateText(content, "  -" .. p.val .. "  " .. p.label, 10, C.silver.r, C.silver.g, C.silver.b)
@@ -1376,38 +1377,38 @@ function BRutus:RefreshSettingsPanel(content)
     --------------------------------------------------------------------
     -- TEST FUNCTIONS (officer only)
     --------------------------------------------------------------------
-    local testTitle = UI:CreateHeaderText(content, "TEST FUNCTIONS", 12)
+    local testTitle = UI:CreateHeaderText(content, L["TEST FUNCTIONS"], 12)
     testTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 6
 
-    local testNote = UI:CreateText(content, "Simulate features to preview how they work. No data is sent to raid or guild chat.", 10, C.silver.r, C.silver.g, C.silver.b)
+    local testNote = UI:CreateText(content, L["Simulate features to preview how they work. No data is sent to raid or guild chat."], 10, C.silver.r, C.silver.g, C.silver.b)
     testNote:SetPoint("TOPLEFT", 0, -yOff)
     testNote:SetWidth(content:GetWidth() - 20)
     yOff = yOff + 22
 
     -- Test: Consumable Check
-    local testCons = UI:CreateButton(content, "Test Consumable Check", 200, 26)
+    local testCons = UI:CreateButton(content, L["Test Consumable Check"], 200, 26)
     testCons:SetPoint("TOPLEFT", 8, -yOff)
     testCons:SetScript("OnClick", function()
         if BRutus.ConsumableChecker then
             local results = BRutus.ConsumableChecker:CheckRaid()
             if results then
                 local missing = BRutus.ConsumableChecker:GetMissingCount(results)
-                BRutus:Print("Consumable Check Test: " .. missing .. " players missing buffs.")
-                BRutus:Print("Use |cffFFD700/brutus consreport|r to see details in raid chat.")
+                BRutus:Print(L["Consumable Check Test: "] .. missing .. L[" players missing buffs."])
+                BRutus:Print(L["Use |cffFFD700/brutus consreport|r to see details in raid chat."])
             else
-                BRutus:Print("Consumable check returned no results (not in a raid?).")
+                BRutus:Print(L["Consumable check returned no results (not in a raid?)."])
             end
         else
-            BRutus:Print("|cffFF4444Consumable Checker module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Consumable Checker module is disabled.|r"])
         end
     end)
-    local testConsDesc = UI:CreateText(content, "Scans your current raid for missing consumables", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testConsDesc = UI:CreateText(content, L["Scans your current raid for missing consumables"], 9, C.silver.r, C.silver.g, C.silver.b)
     testConsDesc:SetPoint("LEFT", testCons, "RIGHT", 10, 0)
     yOff = yOff + 32
 
     -- Test: Loot Master Roll Popup
-    local testLM = UI:CreateButton(content, "Test Roll Popup", 200, 26)
+    local testLM = UI:CreateButton(content, L["Test Roll Popup"], 200, 26)
     testLM:SetPoint("TOPLEFT", 8, -yOff)
     testLM:SetScript("OnClick", function()
         if BRutus.LootMaster then
@@ -1418,17 +1419,17 @@ function BRutus:RefreshSettingsPanel(content)
                 15,
                 32837
             )
-            BRutus:Print("Test roll popup shown (15s timer). Try MS/OS/Pass buttons.")
+            BRutus:Print(L["Test roll popup shown (15s timer). Try MS/OS/Pass buttons."])
         else
-            BRutus:Print("|cffFF4444Loot Master module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Loot Master module is disabled.|r"])
         end
     end)
-    local testLMDesc = UI:CreateText(content, "Shows the raider roll popup with a sample item", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testLMDesc = UI:CreateText(content, L["Shows the raider roll popup with a sample item"], 9, C.silver.r, C.silver.g, C.silver.b)
     testLMDesc:SetPoint("LEFT", testLM, "RIGHT", 10, 0)
     yOff = yOff + 32
 
     -- Test: Wishlist Council Preview
-    local testCouncil = UI:CreateButton(content, "Test Wishlist Council", 200, 26)
+    local testCouncil = UI:CreateButton(content, L["Test Wishlist Council"], 200, 26)
     testCouncil:SetPoint("TOPLEFT", 8, -yOff)
     testCouncil:SetScript("OnClick", function()
         if BRutus.LootMaster then
@@ -1451,17 +1452,17 @@ function BRutus:RefreshSettingsPanel(content)
                 nil,
                 fakeCandidates
             )
-            BRutus:Print("Test council frame shown. Award button won't work (no loot slot).")
+            BRutus:Print(L["Test council frame shown. Award button won't work (no loot slot)."])
         else
-            BRutus:Print("|cffFF4444Loot Master module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Loot Master module is disabled.|r"])
         end
     end)
-    local testCouncilDesc = UI:CreateText(content, "Shows the ML council result frame with sample data", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testCouncilDesc = UI:CreateText(content, L["Shows the ML council result frame with sample data"], 9, C.silver.r, C.silver.g, C.silver.b)
     testCouncilDesc:SetPoint("LEFT", testCouncil, "RIGHT", 10, 0)
     yOff = yOff + 32
 
     -- Test: ML Roll Tracker
-    local testRollFrame = UI:CreateButton(content, "Test Roll Tracker", 200, 26)
+    local testRollFrame = UI:CreateButton(content, L["Test Roll Tracker"], 200, 26)
     testRollFrame:SetPoint("TOPLEFT", 8, -yOff)
     testRollFrame:SetScript("OnClick", function()
         if BRutus.LootMaster then
@@ -1480,37 +1481,37 @@ function BRutus:RefreshSettingsPanel(content)
                 ["TestRogue-Realm"] = { name = "TestRogue", class = "ROGUE", rollType = "PASS", roll = 0 },
             }
             BRutus.LootMaster:ShowRollFrame()
-            BRutus:Print("Test roll tracker shown with sample rolls.")
+            BRutus:Print(L["Test roll tracker shown with sample rolls."])
         else
-            BRutus:Print("|cffFF4444Loot Master module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Loot Master module is disabled.|r"])
         end
     end)
-    local testRFDesc = UI:CreateText(content, "Shows the ML roll tracker with sample roll data", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testRFDesc = UI:CreateText(content, L["Shows the ML roll tracker with sample roll data"], 9, C.silver.r, C.silver.g, C.silver.b)
     testRFDesc:SetPoint("LEFT", testRollFrame, "RIGHT", 10, 0)
     yOff = yOff + 32
 
     -- Test: Raid Tracker Status
-    local testRT = UI:CreateButton(content, "Test Raid Status", 200, 26)
+    local testRT = UI:CreateButton(content, L["Test Raid Status"], 200, 26)
     testRT:SetPoint("TOPLEFT", 8, -yOff)
     testRT:SetScript("OnClick", function()
         if BRutus.RaidTracker then
             local total = BRutus.RaidTracker:GetTotalSessions()
             local tracking = BRutus.RaidTracker.trackingActive
-            BRutus:Print(string.format("Raid Tracker: %d sessions recorded. Currently %s.",
-                total, tracking and "|cff00ff00tracking|r" or "|cffFF4444not tracking|r"))
+            BRutus:Print(string.format(L["Raid Tracker: %d sessions recorded. Currently %s."],
+                total, tracking and "|cff00ff00" .. L["tracking"] .. "|r" or "|cffFF4444" .. L["not tracking"] .. "|r"))
             if BRutus.RaidTracker.currentRaid then
-                BRutus:Print("Active raid: " .. (BRutus.RaidTracker.currentRaid.name or "Unknown"))
+                BRutus:Print(L["Active raid: "] .. (BRutus.RaidTracker.currentRaid.name or L["Unknown"]))
             end
         else
-            BRutus:Print("|cffFF4444Raid Tracker module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Raid Tracker module is disabled.|r"])
         end
     end)
-    local testRTDesc = UI:CreateText(content, "Shows current raid tracking status and session count", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testRTDesc = UI:CreateText(content, L["Shows current raid tracking status and session count"], 9, C.silver.r, C.silver.g, C.silver.b)
     testRTDesc:SetPoint("LEFT", testRT, "RIGHT", 10, 0)
     yOff = yOff + 32
 
     -- Test: ML Loot Frame
-    local testLootFrame = UI:CreateButton(content, "Test Loot Frame", 200, 26)
+    local testLootFrame = UI:CreateButton(content, L["Test Loot Frame"], 200, 26)
     testLootFrame:SetPoint("TOPLEFT", 8, -yOff)
     testLootFrame:SetScript("OnClick", function()
         if BRutus.LootMaster then
@@ -1521,31 +1522,31 @@ function BRutus:RefreshSettingsPanel(content)
                 { slot = 3, link = "|cffa335ee|Hitem:30019::::::::70:::::|h[Ring of Endless Coils]|h|r", name = "Ring of Endless Coils", quality = 4 },
             }
             BRutus.LootMaster:ShowLootFrame(fakeItems)
-            BRutus:Print("Test loot frame shown with 3 sample items.")
+            BRutus:Print(L["Test loot frame shown with 3 sample items."])
         else
-            BRutus:Print("|cffFF4444Loot Master module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Loot Master module is disabled.|r"])
         end
     end)
-    local testLFDesc = UI:CreateText(content, "Opens the ML loot frame with sample items", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testLFDesc = UI:CreateText(content, L["Opens the ML loot frame with sample items"], 9, C.silver.r, C.silver.g, C.silver.b)
     testLFDesc:SetPoint("LEFT", testLootFrame, "RIGHT", 10, 0)
     yOff = yOff + 32
 
     -- Test: Export Attendance
-    local testExport = UI:CreateButton(content, "Test Attendance Export", 200, 26)
+    local testExport = UI:CreateButton(content, L["Test Attendance Export"], 200, 26)
     testExport:SetPoint("TOPLEFT", 8, -yOff)
     testExport:SetScript("OnClick", function()
         if BRutus.RaidTracker then
             local json, err = BRutus.RaidTracker:ExportForTMB()
             if json then
-                BRutus:ShowExportPopup("Export de Presença", json)
+                BRutus:ShowExportPopup(L["Attendance Export"], json)
             else
-                BRutus:Print("|cffFF4444Export failed:|r " .. (err or "No attendance data"))
+                BRutus:Print(L["|cffFF4444Export failed:|r "] .. (err or L["No attendance data"]))
             end
         else
-            BRutus:Print("|cffFF4444Raid Tracker module is disabled.|r")
+            BRutus:Print(L["|cffFF4444Raid Tracker module is disabled.|r"])
         end
     end)
-    local testExpDesc = UI:CreateText(content, "Abre a janela de export de presença", 9, C.silver.r, C.silver.g, C.silver.b)
+    local testExpDesc = UI:CreateText(content, L["Opens the attendance export window"], 9, C.silver.r, C.silver.g, C.silver.b)
     testExpDesc:SetPoint("LEFT", testExport, "RIGHT", 10, 0)
     yOff = yOff + 32
 
@@ -1561,12 +1562,12 @@ function BRutus:RefreshSettingsPanel(content)
     --------------------------------------------------------------------
     -- OFFICER RANK CONFIGURATION (officer only)
     --------------------------------------------------------------------
-    local rankTitle = UI:CreateHeaderText(content, "OFFICER RANKS", 12)
+    local rankTitle = UI:CreateHeaderText(content, L["OFFICER RANKS"], 12)
     rankTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
     local rankDesc = UI:CreateText(content,
-        "Ranks marcados terão acesso a funcionalidades de officer no BRutus.",
+        L["Checked ranks will have access to officer features in BRutus."],
         10, C.silver.r, C.silver.g, C.silver.b)
     rankDesc:SetPoint("TOPLEFT", 8, -yOff)
     rankDesc:SetWidth(content:GetWidth() - 20)
@@ -1582,7 +1583,7 @@ function BRutus:RefreshSettingsPanel(content)
     end
 
     if numRanks == 0 then
-        local noRankText = UI:CreateText(content, "Guild rank info not available. Open the Guild panel first.", 10, C.silver.r, C.silver.g, C.silver.b)
+        local noRankText = UI:CreateText(content, L["Guild rank info not available. Open the Guild panel first."], 10, C.silver.r, C.silver.g, C.silver.b)
         noRankText:SetPoint("TOPLEFT", 8, -yOff)
         yOff = yOff + 18
     else
@@ -1590,8 +1591,8 @@ function BRutus:RefreshSettingsPanel(content)
         -- We store officerMaxRank as 0-based WoW rankIndex
         for i = 1, numRanks do
             local rankWoWIndex = i - 1  -- convert to 0-based WoW rankIndex
-            local rankName = GuildControlGetRankName and GuildControlGetRankName(i) or ("Rank " .. rankWoWIndex)
-            if not rankName or rankName == "" then rankName = "Rank " .. rankWoWIndex end
+            local rankName = GuildControlGetRankName and GuildControlGetRankName(i) or (L["Rank "] .. rankWoWIndex)
+            if not rankName or rankName == "" then rankName = L["Rank "] .. rankWoWIndex end
 
             local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
             row:SetSize(content:GetWidth() - 10, 26)
@@ -1607,13 +1608,13 @@ function BRutus:RefreshSettingsPanel(content)
             cb.checkbox:SetChecked(isChecked)
 
             -- Rank label showing 0-based index
-            local idxLabel = UI:CreateText(row, "(rank " .. rankWoWIndex .. ")", 9, C.silver.r, C.silver.g, C.silver.b)
+            local idxLabel = UI:CreateText(row, L["(rank "] .. rankWoWIndex .. ")", 9, C.silver.r, C.silver.g, C.silver.b)
             idxLabel:SetPoint("LEFT", 220, 0)
 
             if isGM then
                 -- GM is always an officer, cannot be unchecked
                 cb.checkbox:Disable()
-                local lockNote = UI:CreateText(row, "|cff666666sempre officer|r", 9, 0.4, 0.4, 0.4)
+                local lockNote = UI:CreateText(row, L["|cff666666always officer|r"], 9, 0.4, 0.4, 0.4)
                 lockNote:SetPoint("LEFT", 280, 0)
             else
             local capturedRankIndex = rankWoWIndex
@@ -1631,8 +1632,8 @@ function BRutus:RefreshSettingsPanel(content)
                     if newMax < 0 then newMax = 0 end
                 end
                 BRutus.db.settings.officerMaxRank = newMax
-                local newRankName = GuildControlGetRankName and GuildControlGetRankName(newMax + 1) or ("Rank " .. newMax)
-                BRutus:Print("Officer threshold: ranks 0-" .. newMax .. " (" .. newRankName .. " e acima são officers).")
+                local newRankName = GuildControlGetRankName and GuildControlGetRankName(newMax + 1) or (L["Rank "] .. newMax)
+                BRutus:Print(L["Officer threshold: ranks 0-"] .. newMax .. " (" .. newRankName .. L[" and above are officers)."])
             end
             end
 
@@ -1642,7 +1643,7 @@ function BRutus:RefreshSettingsPanel(content)
 
     yOff = yOff + 4
     local rankNote = UI:CreateText(content,
-        "Alteração tem efeito imediato. Reload UI necessário para recarregar módulos de officer.",
+        L["Change takes effect immediately. Reload UI required to reload officer modules."],
         9, C.silver.r, C.silver.g, C.silver.b)
     rankNote:SetPoint("TOPLEFT", 8, -yOff)
     rankNote:SetWidth(content:GetWidth() - 20)
@@ -1657,7 +1658,7 @@ function BRutus:RefreshSettingsPanel(content)
     yOff = yOff + 12
 
     -- Reload UI button
-    local reloadBtn = UI:CreateButton(content, "Reload UI", 120, 28)
+    local reloadBtn = UI:CreateButton(content, L["Reload UI"], 120, 28)
     reloadBtn:SetPoint("TOPLEFT", 8, -yOff)
     reloadBtn:SetBackdropColor(0.4, 0.15, 0.0, 0.6)
     reloadBtn:SetScript("OnClick", function()
@@ -1671,7 +1672,7 @@ function BRutus:RefreshSettingsPanel(content)
         self:SetBackdropColor(0.4, 0.15, 0.0, 0.6)
         self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
     end)
-    local reloadNote = UI:CreateText(content, "Required after enabling/disabling modules", 9, C.silver.r, C.silver.g, C.silver.b)
+    local reloadNote = UI:CreateText(content, L["Required after enabling/disabling modules"], 9, C.silver.r, C.silver.g, C.silver.b)
     reloadNote:SetPoint("LEFT", reloadBtn, "RIGHT", 10, 0)
     yOff = yOff + 36
 
@@ -1739,7 +1740,7 @@ local function BuildWishlistFrame()
     titleText:SetPoint("LEFT", 14, 0)
     titleText:SetPoint("TOP", 0, -12)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText("MINHA WISHLIST")
+    titleText:SetText(L["MY WISHLIST"])
     f.titleText = titleText
 
     -- Counter (N/50)
@@ -1780,9 +1781,9 @@ local function BuildWishlistFrame()
         return t
     end
     Hdr("#",      10,  24, "CENTER")
-    Hdr("ITEM",   38, 262, "LEFT")
-    Hdr("TIPO",  308,  50, "CENTER")
-    Hdr("ORDEM", 366,  60, "CENTER")
+    Hdr(L["ITEM"],   38, 262, "LEFT")
+    Hdr(L["TYPE"],  308,  50, "CENTER")
+    Hdr(L["ORDER"], 366,  60, "CENTER")
 
     -- Thin separator between headers and rows
     local hdrLine = UI:CreateAccentLine(f, 1)
@@ -1937,7 +1938,7 @@ local function BuildWishlistFrame()
     -- Total: 10+56+4+56+6+162+6+88+8+80+8 = 484, centred with margins ✓
     f.isOS = false   -- false = Main Spec, true = Off Spec
 
-    local msBtn = UI:CreateButton(f, "MS", 56, 28)
+    local msBtn = UI:CreateButton(f, L["MS"], 56, 28)
     msBtn:SetPoint("BOTTOMLEFT", 10, 11)
     -- Small dot indicator (6x6 texture, left of label)
     local msDot = msBtn:CreateTexture(nil, "OVERLAY")
@@ -1947,7 +1948,7 @@ local function BuildWishlistFrame()
     msBtn.dot = msDot
     f.msBtn = msBtn
 
-    local osBtn = UI:CreateButton(f, "OS", 56, 28)
+    local osBtn = UI:CreateButton(f, L["OS"], 56, 28)
     osBtn:SetPoint("BOTTOMLEFT", msBtn, "BOTTOMRIGHT", 4, 0)
     local osDot = osBtn:CreateTexture(nil, "OVERLAY")
     osDot:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -1989,8 +1990,8 @@ local function BuildWishlistFrame()
         self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine("Main Spec", C.gold.r, C.gold.g, C.gold.b)
-        GameTooltip:AddLine("Item e prioridade para sua spec principal.", 1, 1, 1, true)
+        GameTooltip:AddLine(L["Main Spec"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Item and priority for your main spec."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
     msBtn:SetScript("OnLeave", function()
@@ -2001,8 +2002,8 @@ local function BuildWishlistFrame()
         self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine("Off Spec", C.gold.r, C.gold.g, C.gold.b)
-        GameTooltip:AddLine("Item e para uma spec secundaria.", 1, 1, 1, true)
+        GameTooltip:AddLine(L["Off Spec"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Item for a secondary spec."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
     osBtn:SetScript("OnLeave", function()
@@ -2033,7 +2034,7 @@ local function BuildWishlistFrame()
     addPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     addPlaceholder:SetPoint("LEFT", 6, 0)
     addPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    addPlaceholder:SetText("Buscar item ou cole link...")
+    addPlaceholder:SetText(L["Search item or paste link..."])
 
     -- Search dropdown — appears above the addBox
     local DROP_ROWS  = 6
@@ -2157,7 +2158,7 @@ local function BuildWishlistFrame()
             itemLink = lnk or ""
         end
         if not itemId then
-            BRutus:Print("[Wishlist] Selecione da lista, cole um item link ou digite o ID do item.")
+            BRutus:Print(L["[Wishlist] Select from the list, paste an item link, or type the item ID."])
             return
         end
         if BRutus.Wishlist then
@@ -2178,16 +2179,16 @@ local function BuildWishlistFrame()
     end)
     f.addBox = addBox
 
-    local addBtn = UI:CreateButton(f, "+ Adicionar", 88, 28)
+    local addBtn = UI:CreateButton(f, L["+ Add"], 88, 28)
     addBtn:SetPoint("BOTTOMLEFT", addBox, "BOTTOMRIGHT", 6, 0)
     addBtn:SetScript("OnClick", DoAdd)
 
     -- Sync button — anchored to the right, with guaranteed gap from addBtn
-    local syncBtn = UI:CreateButton(f, "Sync", 80, 28)
+    local syncBtn = UI:CreateButton(f, L["Sync"], 80, 28)
     syncBtn:SetPoint("BOTTOMRIGHT", -8, 11)
     syncBtn:SetScript("OnClick", function()
         if BRutus.Wishlist then BRutus.Wishlist:BroadcastMyWishlist() end
-        BRutus:Print("[Wishlist] Enviado para a guild.")
+        BRutus:Print(L["[Wishlist] Sent to the guild."])
     end)
 
     BRutus.WishlistFrame = f
@@ -2274,7 +2275,7 @@ function BRutus:RefreshWishlistFrame()
             elseif entry.itemLink and entry.itemLink ~= "" then
                 displayText = entry.itemLink
             else
-                displayText = "Item #" .. entry.itemId
+                displayText = L["Item #"] .. entry.itemId
             end
             row.itemText:SetText(displayText)
 
@@ -2286,9 +2287,9 @@ function BRutus:RefreshWishlistFrame()
             end
 
             if entry.isOffspec then
-                row.typeText:SetText("|cffAAAAAA  OS|r")
+                row.typeText:SetText("|cffAAAAAA  " .. L["OS"] .. "|r")
             else
-                row.typeText:SetText("|cff4CB5FF  MS|r")
+                row.typeText:SetText("|cff4CB5FF  " .. L["MS"] .. "|r")
             end
 
             -- Show/hide action buttons based on delivered state
@@ -2350,7 +2351,7 @@ local function BuildPrioModal()
     titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     titleText:SetPoint("LEFT", 14, 0); titleText:SetPoint("TOP", 0, -12)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText("GERENCIAR PRIORIDADES")
+    titleText:SetText(L["MANAGE PRIORITIES"])
     f.titleText = titleText
 
     local titleLine = UI:CreateAccentLine(f, 2)
@@ -2365,7 +2366,7 @@ local function BuildPrioModal()
     subtitleText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     subtitleText:SetPoint("LEFT", 14, 0); subtitleText:SetPoint("TOP", 0, -28)
     subtitleText:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-    subtitleText:SetText("Busque um item para gerenciar prioridades")
+    subtitleText:SetText(L["Search for an item to manage priorities"])
 
     -- Item search bar
     local searchBg = f:CreateTexture(nil, "BACKGROUND")
@@ -2392,7 +2393,7 @@ local function BuildPrioModal()
     placeholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     placeholder:SetPoint("LEFT", 6, 0)
     placeholder:SetTextColor(0.4, 0.4, 0.4)
-    placeholder:SetText("Buscar item, cole link ou ID...")
+    placeholder:SetText(L["Search item, paste link or ID..."])
 
     -- Search dropdown
     local PDROP_ROWS  = 6
@@ -2495,7 +2496,7 @@ local function BuildPrioModal()
         prioDropdown:Hide()
     end)
 
-    local loadBtn = UI:CreateButton(f, "Carregar", 90, 26)
+    local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
     loadBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
 
     -- Status line
@@ -2522,10 +2523,10 @@ local function BuildPrioModal()
         t:SetWidth(w); t:SetJustifyH(justify or "LEFT")
         t:SetText(lbl)
     end
-    PrioHdr("#PRIO",  10,  40, "CENTER")
-    PrioHdr("NOME",   56, 170, "LEFT")
-    PrioHdr("WL #",  230,  50, "CENTER")
-    PrioHdr("ACOES", 290,  80, "CENTER")
+    PrioHdr(L["#PRIO"],  10,  40, "CENTER")
+    PrioHdr(L["NAME"],   56, 170, "LEFT")
+    PrioHdr(L["WL #"],  230,  50, "CENTER")
+    PrioHdr(L["ACTIONS"], 290,  80, "CENTER")
 
     -- Scroll area
     local scrollCont = CreateFrame("Frame", nil, f)
@@ -2611,11 +2612,11 @@ local function BuildPrioModal()
     local bottomLine = UI:CreateAccentLine(f, 1)
     bottomLine:SetPoint("BOTTOMLEFT", 0, 44); bottomLine:SetPoint("BOTTOMRIGHT", 0, 44)
 
-    local saveBtn = UI:CreateButton(f, "Salvar e Sync", 130, 26)
+    local saveBtn = UI:CreateButton(f, L["Save and Sync"], 130, 26)
     saveBtn:SetPoint("BOTTOMRIGHT", -10, 10)
     saveBtn:SetScript("OnClick", function()
         if not f.prioData or not f.currentItemId then
-            f.statusText:SetText("|cffFF4444Nenhum item carregado.|r")
+            f.statusText:SetText(L["|cffFF4444No item loaded.|r"])
             return
         end
         if not BRutus.db.lootPrios then BRutus.db.lootPrios = {} end
@@ -2631,16 +2632,16 @@ local function BuildPrioModal()
         if BRutus.Wishlist then
             BRutus.Wishlist:BroadcastLootPrios()
         end
-        f.statusText:SetText("|cff4CFF4CSalvo e enviado!|r")
-        BRutus:Print("[Prio] Prioridades salvas e sincronizadas.")
+        f.statusText:SetText(L["|cff4CFF4CSaved and sent!|r"])
+        BRutus:Print(L["[Prio] Priorities saved and synced."])
     end)
 
-    local cancelBtn = UI:CreateButton(f, "Cancelar", 80, 26)
+    local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 26)
     cancelBtn:SetPoint("BOTTOMRIGHT", saveBtn, "BOTTOMLEFT", -8, 0)
     cancelBtn:SetScript("OnClick", function() f:Hide() end)
 
     -- Help text in bottom bar
-    local bottomHelp = UI:CreateText(f, "Reordene com as setas. Apenas voce ve antes de salvar.", 9, 0.4, 0.4, 0.5)
+    local bottomHelp = UI:CreateText(f, L["Reorder with the arrows. Only you see this before saving."], 9, 0.4, 0.4, 0.5)
     bottomHelp:SetPoint("BOTTOMLEFT", 10, 14)
 
     -- Wire up LoadItem
@@ -2653,7 +2654,7 @@ local function BuildPrioModal()
             itemId = tonumber(text:match("item:(%d+)")) or tonumber(text)
         end
         if not itemId then
-            f.statusText:SetText("|cffFF4444Item invalido.|r")
+            f.statusText:SetText(L["|cffFF4444Invalid item.|r"])
             return
         end
 
@@ -2707,8 +2708,8 @@ local function BuildPrioModal()
             f.prioData = wishEntries
         end
 
-        local itemName = GetItemInfo(itemId) or ("Item #" .. itemId)
-        f.statusText:SetText(format("|cffFFD700%s|r  %d interessados", itemName, #f.prioData))
+        local itemName = GetItemInfo(itemId) or (L["Item #"] .. itemId)
+        f.statusText:SetText("|cffFFD700" .. itemName .. "|r  " .. format(L["%d interested"], #f.prioData))
         subtitleText:SetText(itemName)
         BRutus:RefreshPrioModal()
     end
@@ -2729,7 +2730,7 @@ end
 
 function BRutus:ShowPrioModal()
     if not BRutus:IsOfficer() then
-        BRutus:Print("|cffFF4444Apenas officers podem gerenciar prioridades.|r")
+        BRutus:Print(L["|cffFF4444Only officers can manage priorities.|r"])
         return
     end
     if not self.PrioModal then BuildPrioModal() end

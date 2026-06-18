@@ -5,6 +5,7 @@
 ----------------------------------------------------------------------
 local Recruitment = {}
 BRutus.Recruitment = Recruitment
+local L = BRutus.L
 
 -- Defaults
 Recruitment.DEFAULT_SETTINGS = {
@@ -48,8 +49,8 @@ function Recruitment:Initialize()
 
     -- Set default message if empty
     if r.message == "" then
-        local guildName = GetGuildInfo("player") or "our guild"
-        r.message = guildName .. " is recruiting! All classes and roles welcome. Whisper me for info or invite!"
+        local guildName = GetGuildInfo("player") or L["our guild"]
+        r.message = guildName .. L[" is recruiting! All classes and roles welcome. Whisper me for info or invite!"]
     end
 
     -- Hook right-click menu for guild invite
@@ -57,8 +58,8 @@ function Recruitment:Initialize()
 
     -- Set default welcome message if empty
     if r.welcomeMessage == "" then
-        local guildName = GetGuildInfo("player") or "our guild"
-         r.welcomeMessage = "Welcome to " .. guildName .. "! Join our Discord: " .. r.discord .. " - Have fun!"
+        local guildName = GetGuildInfo("player") or L["our guild"]
+         r.welcomeMessage = L["Welcome to "] .. guildName .. L["! Join our Discord: "] .. r.discord .. L[" - Have fun!"]
     end
 
     -- Listen for new guild members joining
@@ -85,7 +86,7 @@ end
 ----------------------------------------------------------------------
 function Recruitment:StartAutoRecruit()
     if not self:CanUseRecruitment() then
-        BRutus:Print("|cffFF4444You don't have permission to use recruitment.|r")
+        BRutus:Print(L["|cffFF4444You don't have permission to use recruitment.|r"])
         return false
     end
 
@@ -111,7 +112,7 @@ function Recruitment:StartAutoRecruit()
         self:ShowSendPopup()
     end)
 
-     BRutus:Print("Recruitment |cff4CFF4Cstarted|r - popup every " .. interval .. "s. Click to send!")
+     BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
     return true
 end
 
@@ -127,7 +128,7 @@ function Recruitment:StopAutoRecruit()
     if self.popupFrame then
         self.popupFrame:Hide()
     end
-    BRutus:Print("Recruitment |cffFF4444stopped|r.")
+    BRutus:Print(L["Recruitment |cffFF4444stopped|r."])
 end
 
 ----------------------------------------------------------------------
@@ -184,7 +185,7 @@ function Recruitment:CreatePopupFrame()
     text:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     text:SetPoint("LEFT", icon, "RIGHT", 8, 0)
     text:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    text:SetText("Click to send recruit msg!")
+    text:SetText(L["Click to send recruit msg!"])
     f.label = text
 
     local dismiss = CreateFrame("Button", nil, f)
@@ -209,9 +210,9 @@ function Recruitment:CreatePopupFrame()
     f:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("BRutus Recruitment", C.gold.r, C.gold.g, C.gold.b)
-        GameTooltip:AddLine("Left-click to post recruitment message.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("Drag to move. x to dismiss.", 0.5, 0.5, 0.5, true)
+        GameTooltip:AddLine(L["BRutus Recruitment"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Left-click to post recruitment message."], 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(L["Drag to move. x to dismiss."], 0.5, 0.5, 0.5, true)
         GameTooltip:Show()
     end)
     f:SetScript("OnLeave", function(self)
@@ -235,7 +236,7 @@ function Recruitment:ShowSendPopup()
     -- Update channel list in label
     local channels = BRutus.db.recruitment.channels
     local chText = table.concat(channels, ", ")
-    self.popupFrame.label:SetText("Click to recruit!  >>  " .. chText)
+    self.popupFrame.label:SetText(L["Click to recruit!  >>  "] .. chText)
     self.popupFrame:Show()
 
     -- Auto-hide after 30s if not clicked
@@ -255,7 +256,7 @@ function Recruitment:DoSendRecruitmentMessage()
     local settings = BRutus.db.recruitment
     local msg = settings.message
     if not msg or msg == "" then
-        BRutus:Print("|cffFF4444No recruitment message set.|r")
+        BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
         return
     end
 
@@ -270,9 +271,9 @@ function Recruitment:DoSendRecruitmentMessage()
 
     if sent then
         self.lastSend = GetTime()
-        BRutus:Print("Recruitment message sent!")
+        BRutus:Print(L["Recruitment message sent!"])
     else
-        BRutus:Print("|cffFF4444No valid channels found. Join a channel first.|r")
+        BRutus:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
     end
 end
 
@@ -300,100 +301,100 @@ function Recruitment:HandleCommand(args)
         local newMsg = table.concat(args, " ")
         if newMsg and newMsg ~= "" then
             BRutus.db.recruitment.message = newMsg
-            BRutus:Print("Recruitment message set to: |cffFFFFFF" .. newMsg .. "|r")
+            BRutus:Print(L["Recruitment message set to: |cffFFFFFF"] .. newMsg .. "|r")
         else
-            BRutus:Print("Current message: |cffFFFFFF" .. (BRutus.db.recruitment.message or "(empty)") .. "|r")
+            BRutus:Print(L["Current message: |cffFFFFFF"] .. (BRutus.db.recruitment.message or L["(empty)"]) .. "|r")
         end
     elseif cmd == "interval" then
         local secs = tonumber(args[2])
         if secs and secs >= 60 then
             BRutus.db.recruitment.interval = secs
-            BRutus:Print("Recruitment interval set to |cffFFFFFF" .. secs .. "s|r.")
+            BRutus:Print(string.format(L["Recruitment interval set to |cffFFFFFF%ds|r."], secs))
             -- Restart if active
             if BRutus.db.recruitment.enabled then
                 self:StopAutoRecruit()
                 self:StartAutoRecruit()
             end
         else
-            BRutus:Print("Usage: /brutus recruit interval <seconds> (min 60)")
+            BRutus:Print(L["Usage: /brutus recruit interval <seconds> (min 60)"])
         end
     elseif cmd == "channel" then
         local action = args[2]
         local chName = args[3]
         if action == "add" and chName then
             table.insert(BRutus.db.recruitment.channels, chName)
-            BRutus:Print("Added channel: |cffFFFFFF" .. chName .. "|r")
+            BRutus:Print(L["Added channel: |cffFFFFFF"] .. chName .. "|r")
         elseif action == "remove" and chName then
             local channels = BRutus.db.recruitment.channels
             for i = #channels, 1, -1 do
                 if channels[i]:lower() == chName:lower() then
                     table.remove(channels, i)
-                    BRutus:Print("Removed channel: |cffFFFFFF" .. chName .. "|r")
+                    BRutus:Print(L["Removed channel: |cffFFFFFF"] .. chName .. "|r")
                     return
                 end
             end
-            BRutus:Print("Channel not found: " .. chName)
+            BRutus:Print(L["Channel not found: "] .. chName)
         elseif action == "list" then
             local list = table.concat(BRutus.db.recruitment.channels, ", ")
-            BRutus:Print("Channels: |cffFFFFFF" .. (list ~= "" and list or "(none)") .. "|r")
+            BRutus:Print(L["Channels: |cffFFFFFF"] .. (list ~= "" and list or L["(none)"]) .. "|r")
         else
-            BRutus:Print("Usage: /brutus recruit channel <add|remove|list> [name]")
+            BRutus:Print(L["Usage: /brutus recruit channel <add|remove|list> [name]"])
         end
     elseif cmd == "status" then
         local s = BRutus.db.recruitment
-        local status = s.enabled and "|cff4CFF4CON|r" or "|cffFF4444OFF|r"
-        local wStatus = s.welcomeEnabled and "|cff4CFF4CON|r" or "|cffFF4444OFF|r"
-        BRutus:Print("--- Recruitment Status ---")
-        BRutus:Print("Active: " .. status)
-        BRutus:Print("Interval: |cffFFFFFF" .. s.interval .. "s|r")
-        BRutus:Print("Channels: |cffFFFFFF" .. table.concat(s.channels, ", ") .. "|r")
-        BRutus:Print("Message: |cffFFFFFF" .. s.message .. "|r")
-        BRutus:Print("Welcome: " .. wStatus)
-        BRutus:Print("Welcome msg: |cffFFFFFF" .. s.welcomeMessage .. "|r")
-        BRutus:Print("Discord: |cffFFFFFF" .. s.discord .. "|r")
+        local status = s.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
+        local wStatus = s.welcomeEnabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
+        BRutus:Print(L["--- Recruitment Status ---"])
+        BRutus:Print(L["Active: "] .. status)
+        BRutus:Print(string.format(L["Interval: |cffFFFFFF%ds|r"], s.interval))
+        BRutus:Print(L["Channels: |cffFFFFFF"] .. table.concat(s.channels, ", ") .. "|r")
+        BRutus:Print(L["Message: |cffFFFFFF"] .. s.message .. "|r")
+        BRutus:Print(L["Welcome: "] .. wStatus)
+        BRutus:Print(L["Welcome msg: |cffFFFFFF"] .. s.welcomeMessage .. "|r")
+        BRutus:Print(L["Discord: |cffFFFFFF"] .. s.discord .. "|r")
     elseif cmd == "welcome" then
         local sub = args[2]
         if sub == "on" then
             BRutus.db.recruitment.welcomeEnabled = true
-            BRutus:Print("Welcome message |cff4CFF4Cenabled|r.")
+            BRutus:Print(L["Welcome message |cff4CFF4Cenabled|r."])
         elseif sub == "off" then
             BRutus.db.recruitment.welcomeEnabled = false
-            BRutus:Print("Welcome message |cffFF4444disabled|r.")
+            BRutus:Print(L["Welcome message |cffFF4444disabled|r."])
         elseif sub == "msg" then
             table.remove(args, 1)
             table.remove(args, 1)
             local newMsg = table.concat(args, " ")
             if newMsg and newMsg ~= "" then
                 BRutus.db.recruitment.welcomeMessage = newMsg
-                BRutus:Print("Welcome message set to: |cffFFFFFF" .. newMsg .. "|r")
+                BRutus:Print(L["Welcome message set to: |cffFFFFFF"] .. newMsg .. "|r")
             else
-                BRutus:Print("Current: |cffFFFFFF" .. BRutus.db.recruitment.welcomeMessage .. "|r")
+                BRutus:Print(L["Current: |cffFFFFFF"] .. BRutus.db.recruitment.welcomeMessage .. "|r")
             end
         else
-            BRutus:Print("Usage: /brutus recruit welcome <on|off|msg> [text]")
+            BRutus:Print(L["Usage: /brutus recruit welcome <on|off|msg> [text]"])
         end
     elseif cmd == "discord" then
         local link = args[2]
         if link and link ~= "" then
             BRutus.db.recruitment.discord = link
-            BRutus:Print("Discord link set to: |cffFFFFFF" .. link .. "|r")
+            BRutus:Print(L["Discord link set to: |cffFFFFFF"] .. link .. "|r")
         else
-            BRutus:Print("Discord: |cffFFFFFF" .. BRutus.db.recruitment.discord .. "|r")
+            BRutus:Print(L["Discord: |cffFFFFFF"] .. BRutus.db.recruitment.discord .. "|r")
         end
     elseif cmd == "invite" then
         local target = args[2]
         if target and target ~= "" then
             if not CanGuildInvite() then
-                BRutus:Print("|cffFF4444You don't have permission to invite.|r")
+                BRutus:Print(L["|cffFF4444You don't have permission to invite.|r"])
                 return
             end
             GuildInvite(target)
-            BRutus:Print("Guild invite sent to |cffFFFFFF" .. target .. "|r.")
+            BRutus:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
         else
-            BRutus:Print("Usage: /brutus recruit invite <PlayerName>")
+            BRutus:Print(L["Usage: /brutus recruit invite <PlayerName>"])
         end
     else
-        BRutus:Print("|cffFFD700Recruitment commands:|r")
+        BRutus:Print(L["|cffFFD700Recruitment commands:|r"])
         BRutus:Print("  /brutus recruit on/off")
         BRutus:Print("  /brutus recruit status")
         BRutus:Print("  /brutus recruit msg <text>")
@@ -491,7 +492,7 @@ function Recruitment:RegisterWelcomeEvent()
             local welcomeMsg = settings.welcomeMessage
             if welcomeMsg and welcomeMsg ~= "" then
                 SendChatMessage(welcomeMsg, "GUILD")
-                BRutus:Print("Welcome message sent for |cffFFFFFF" .. newMember .. "|r in guild chat.")
+                BRutus:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
             end
         end)
     end)

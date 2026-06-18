@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------
 local RaidTracker = {}
 BRutus.RaidTracker = RaidTracker
+local L = BRutus.L
 
 local _mergeDebounceTimer = nil  -- debounce handle for post-broadcast dedup
 
@@ -124,7 +125,7 @@ function RaidTracker:CheckZone()
                 -- Same raid: cancel the pending end and resume
                 self.endTimer:Cancel()
                 self.endTimer = nil
-                BRutus:Print("|cffFFAA00Raid resumed — session continuing.|r")
+                BRutus:Print(L["|cffFFAA00Raid resumed — session continuing.|r"])
                 self:TakeSnapshot("raid_resumed")
                 return
             else
@@ -142,7 +143,7 @@ function RaidTracker:CheckZone()
         if self.trackingActive and not self.endTimer then
             -- Start a 20-minute grace period before actually ending the session.
             -- This covers wipes (zone to graveyard + run back) and short DCs.
-            BRutus:Print("|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r")
+            BRutus:Print(L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"])
             self.endTimer = C_Timer.NewTimer(1200, function()
                 self.endTimer = nil
                 RaidTracker:EndSession()
@@ -152,7 +153,7 @@ function RaidTracker:CheckZone()
 end
 
 function RaidTracker:StartSession(instanceID)
-    local raidName = self.RAID_INSTANCES[instanceID] or "Unknown"
+    local raidName = self.RAID_INSTANCES[instanceID] or L["Unknown"]
     self.trackingActive = true
     self.currentRaid = {
         instanceID = instanceID,
@@ -173,7 +174,7 @@ function RaidTracker:StartSession(instanceID)
         end
     end)
 
-    BRutus:Print("Raid tracking started: |cffFFD700" .. raidName .. "|r")
+    BRutus:Print(L["Raid tracking started: |cffFFD700"] .. raidName .. "|r")
 end
 
 function RaidTracker:IsGuildRaid(session)
@@ -229,8 +230,8 @@ function RaidTracker:EndSession()
     -- Discard sessions shorter than 10 minutes (likely disconnects / quick zone-ins)
     local MIN_SESSION_DURATION = 600
     if self.currentRaid.duration < MIN_SESSION_DURATION then
-        BRutus:Print("|cffFFAA00Raid session discarded (too short: "
-            .. self.currentRaid.duration .. "s < " .. MIN_SESSION_DURATION .. "s).|r")
+        BRutus:Print(string.format(L["|cffFFAA00Raid session discarded (too short: %ds < %ds).|r"],
+            self.currentRaid.duration, MIN_SESSION_DURATION))
         self.currentRaid = nil
         return
     end
@@ -246,10 +247,10 @@ function RaidTracker:EndSession()
         self:RebuildAttendanceFromSessions()
     else
         self.currentRaid.isGuildRaid = false
-        BRutus:Print("|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r")
+        BRutus:Print(L["|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r"])
     end
 
-    BRutus:Print("Raid tracking ended: |cffFFD700" .. self.currentRaid.name .. "|r")
+    BRutus:Print(L["Raid tracking ended: |cffFFD700"] .. self.currentRaid.name .. "|r")
     self.currentRaid = nil
 
     -- Broadcast updated raid data to all officer clients
@@ -376,7 +377,7 @@ function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
         end
     end
 
-    local status = (success == 1) and "|cff00ff00KILL|r" or "|cffff3333WIPE|r"
+    local status = (success == 1) and L["|cff00ff00KILL|r"] or L["|cffff3333WIPE|r"]
     BRutus:Print(encounterName .. " - " .. status)
 end
 
@@ -663,8 +664,7 @@ function RaidTracker:MergeDuplicateSessions()
     end
 
     if totalMerged > 0 then
-        BRutus:Print("|cff00FF00BRutus: merged " .. totalMerged
-            .. " duplicate raid session(s).|r")
+        BRutus:Print(string.format(L["|cff00FF00BRutus: merged %d duplicate raid session(s).|r"], totalMerged))
     end
     -- Always rebuild so attendance stays consistent with the session DB
     self:RebuildAttendanceFromSessions()
@@ -782,7 +782,7 @@ end
 
 function RaidTracker:DeleteSession(sessionID)
     if not BRutus:IsOfficer() then
-        BRutus:Print("|cffFF4444Apenas officers podem deletar raids.|r")
+        BRutus:Print(L["|cffFF4444Only officers can delete raids.|r"])
         return
     end
 
@@ -986,8 +986,8 @@ function RaidTracker:ExportForTMB(groupTag)
     groupTag = groupTag or self:GetCurrentGroup()
     local total = self:GetTotal25ManSessions(groupTag)
     if total == 0 then
-        local label = groupTag ~= "" and groupTag or "padrão"
-        return nil, "Nenhuma raid de 25 registrada para o grupo: " .. label
+        local label = groupTag ~= "" and groupTag or L["default"]
+        return nil, L["No 25-man raids recorded for group: "] .. label
     end
 
     local att = BRutus.db.raidTracker.attendance or {}
@@ -1030,7 +1030,7 @@ function RaidTracker:MigrateAttendanceIfNeeded()
     -- Inspect the first entry only to detect the old flat format
     local _, v = next(att)
     if type(v) == "table" and (v.raids ~= nil or v.lastRaid ~= nil or v.raids25 ~= nil) then
-        BRutus:Print("|cffFFAA00BRutus: Detectada attendance no formato antigo. Reconstruindo por grupo…|r")
+        BRutus:Print(L["|cffFFAA00BRutus: Old attendance format detected. Rebuilding per group…|r"])
         self:RebuildAttendanceFromSessions()
     end
 end

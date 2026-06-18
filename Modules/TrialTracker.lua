@@ -5,6 +5,7 @@
 ----------------------------------------------------------------------
 local TrialTracker = {}
 BRutus.TrialTracker = TrialTracker
+local L = BRutus.L
 
 -- Trial status values
 TrialTracker.STATUS = {
@@ -43,7 +44,7 @@ function TrialTracker:AddTrial(playerKey, sponsor)
     -- Take initial snapshot
     self:TakeSnapshot(playerKey)
 
-    BRutus:Print(playerKey .. " marcado como trial por " .. (sponsor or UnitName("player")))
+    BRutus:Print(playerKey .. L[" marked as trial by "] .. (sponsor or UnitName("player")))
     self:BroadcastTrials()
     return true
 end
@@ -126,7 +127,7 @@ function TrialTracker:CheckExpired()
         end
     end
     if #expired > 0 and BRutus:IsOfficer() then
-        BRutus:Print("|cffFF6600" .. #expired .. " trial(s) expiraram!|r Use /brutus para revisar.")
+        BRutus:Print(string.format(L["|cffFF6600%d trial(s) expired!|r Use /brutus to review."], #expired))
     end
 end
 

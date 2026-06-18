@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------
 local UI = BRutus.UI
 local C = BRutus.Colors
+local L = BRutus.L
 
 local ROW_HEIGHT = 24
 local VISIBLE_ROWS = 20
@@ -65,7 +66,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     topBar:SetHeight(60)
 
     -- Title
-    local title = UI:CreateTitle(topBar, "Guild Recipes", 14)
+    local title = UI:CreateTitle(topBar, L["Guild Recipes"], 14)
     title:SetPoint("TOPLEFT", 0, 0)
 
     -- Result count
@@ -93,7 +94,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     searchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    searchPlaceholder:SetText("Search recipes...")
+    searchPlaceholder:SetText(L["Search recipes..."])
 
     -- Profession filter buttons row
     local filterRow = CreateFrame("Frame", nil, topBar)
@@ -110,7 +111,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
             state.results = BRutus.RecipeTracker:Search(state.query, state.profFilter)
         end
         state.scrollOffset = 0
-        countText:SetText(string.format("|cff888888%d results|r", #state.results))
+        countText:SetText(string.format(L["|cff888888%d results|r"], #state.results))
     end
 
     local function CreateFilterButton(profName, anchorTo)
@@ -127,7 +128,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         if profName == "All" then
             btn:SetWidth(40)
             label:SetPoint("CENTER")
-            label:SetText("All")
+            label:SetText(L["All"])
             label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
         else
             local iconTex = PROF_ICONS[profName]
@@ -243,13 +244,13 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     hStatus:SetPoint("LEFT", 8, 0)
     hStatus:SetWidth(20)
 
-    local hRecipe = UI:CreateHeaderText(headerFrame, "RECIPE", 10)
+    local hRecipe = UI:CreateHeaderText(headerFrame, L["RECIPE"], 10)
     hRecipe:SetPoint("LEFT", 32, 0)
 
-    local hProfession = UI:CreateHeaderText(headerFrame, "PROFESSION", 10)
+    local hProfession = UI:CreateHeaderText(headerFrame, L["PROFESSION"], 10)
     hProfession:SetPoint("LEFT", 400, 0)
 
-    local hPlayer = UI:CreateHeaderText(headerFrame, "CRAFTERS", 10)
+    local hPlayer = UI:CreateHeaderText(headerFrame, L["CRAFTERS"], 10)
     hPlayer:SetPoint("LEFT", 560, 0)
 
     local hAction = UI:CreateHeaderText(headerFrame, "", 10)
@@ -315,7 +316,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         row.playerName = playerName
 
         -- Whisper button
-        local whisperBtn = UI:CreateButton(row, "Whisper", 60, 20)
+        local whisperBtn = UI:CreateButton(row, L["Whisper"], 60, 20)
         whisperBtn:SetPoint("RIGHT", -4, 0)
         whisperBtn:SetFrameLevel(row:GetFrameLevel() + 2)
         whisperBtn:Hide()
@@ -438,9 +439,9 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                             itemLink = select(2, GetItemInfo(entry.itemId))
                         end
                         if itemLink then
-                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. " Você consegue craftar " .. itemLink .. " ?")
+                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. L[" Can you craft "] .. itemLink .. L[" ?"])
                         else
-                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. " Você consegue craftar " .. (entry.name or "esse item") .. " ?")
+                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. L[" Can you craft "] .. (entry.name or L["this item"]) .. L[" ?"])
                         end
                     end
                 end)
@@ -469,7 +470,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     local infoText = UI:CreateText(infoBar, "", 9, 0.5, 0.5, 0.6)
     infoText:SetPoint("LEFT", 0, 0)
 
-    local scanHint = UI:CreateText(infoBar, "Open your tradeskill window to share your recipes", 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
+    local scanHint = UI:CreateText(infoBar, L["Open your tradeskill window to share your recipes"], 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
     scanHint:SetPoint("RIGHT", 0, 0)
 
     ----------------------------------------------------------------
@@ -489,6 +490,6 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 totalRecipes = totalRecipes + #recipes
             end
         end
-        infoText:SetText(string.format("|cff888888%d crafters  |  %d total recipes indexed|r", totalPlayers, totalRecipes))
+        infoText:SetText(string.format(L["|cff888888%d crafters  |  %d total recipes indexed|r"], totalPlayers, totalRecipes))
     end)
 end

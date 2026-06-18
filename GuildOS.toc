@@ -21,6 +21,15 @@ Libs\ChatThrottleLib.lua
 
 # Core
 Core\Config.lua
+
+# Localization (Locale.lua first; enUS is the master list)
+Locales\Locale.lua
+Locales\enUS.lua
+Locales\ptBR.lua
+Locales\esES.lua
+Locales\deDE.lua
+Locales\frFR.lua
+
 Core\Core.lua
 Core\Compat.lua
 Core\Data.lua
@@ -39,6 +48,7 @@ Modules\LootMaster.lua
 Modules\RecipeTracker.lua
 Modules\OfficerNotes.lua
 Modules\TrialTracker.lua
+Modules\GuildManager.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
 
@@ -48,4 +58,5 @@ UI\RecipesPanel.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
+UI\ManagementPanel.lua
 UI\RaidHUD.lua

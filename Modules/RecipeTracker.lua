@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------
 local RecipeTracker = {}
 BRutus.RecipeTracker = RecipeTracker
+local L = BRutus.L
 
 ----------------------------------------------------------------------
 -- Initialize
@@ -92,10 +93,10 @@ function RecipeTracker:EnrichStoredRecipes()
     end
 
     if enriched > 0 then
-        BRutus:Print(format("|cff00ff00Recipes:|r enriched %d entries with IDs.", enriched))
+        BRutus:Print(format(L["|cff00ff00Recipes:|r enriched %d entries with IDs."], enriched))
     end
     if purged > 0 then
-        BRutus:Print(format("|cffFFD700Recipes:|r purged %d old entries without IDs. They will be restored on next scan/sync.", purged))
+        BRutus:Print(format(L["|cffFFD700Recipes:|r purged %d old entries without IDs. They will be restored on next scan/sync."], purged))
     end
 end
 
@@ -264,7 +265,7 @@ function RecipeTracker:StoreMyRecipes(profName, recipes)
     end
     BRutus.db.recipeScanTimes[profName] = time()
 
-    BRutus:Print(string.format("|cff00ff00Recipes scanned:|r %d %s recipes indexed.", #recipes, profName))
+    BRutus:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, profName))
 
     -- Dismiss the profession reminder if all professions are now scanned
     if BRutus.profReminderFrame then
@@ -666,10 +667,10 @@ function RecipeTracker:HookTooltips()
         end)
 
         tooltip:AddLine(" ")
-        tooltip:AddLine(label or "Fabricado por:", C.accent.r, C.accent.g, C.accent.b)
+        tooltip:AddLine(label or L["Crafted by:"], C.accent.r, C.accent.g, C.accent.b)
         for _, c in ipairs(sorted) do
             local cc = c.class and BRutus.ClassColors[c.class] or C.white
-            local status = onlineSet[c.playerName] and " |cff00ff00(online)|r" or " |cff666666(offline)|r"
+            local status = onlineSet[c.playerName] and L[" |cff00ff00(online)|r"] or L[" |cff666666(offline)|r"]
             tooltip:AddDoubleLine("  " .. c.playerName .. status, c.profName, cc.r, cc.g, cc.b, 0.6, 0.6, 0.6)
         end
 
@@ -687,7 +688,7 @@ function RecipeTracker:HookTooltips()
         if not itemId then return end
 
         local crafters = RecipeTracker:GetCraftersForItem(itemId)
-        AppendCrafters(tooltip, crafters, "Fabricado por:")
+        AppendCrafters(tooltip, crafters, L["Crafted by:"])
     end
 
     -- Spell tooltip handler (tradeskill window, spellbook, action bars)
@@ -698,7 +699,7 @@ function RecipeTracker:HookTooltips()
         if not spellId then return end
 
         local crafters = RecipeTracker:GetCraftersForSpell(spellId)
-        AppendCrafters(tooltip, crafters, "Encantado por:")
+        AppendCrafters(tooltip, crafters, L["Enchanted by:"])
     end
 
     -- Clear online cache when tooltip hides

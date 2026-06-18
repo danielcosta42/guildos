@@ -12,6 +12,8 @@ _G.BRutus  = _G.GuildOS  -- legacy alias; see Config.lua
 -- Attach the file-local namespace table (only accessible from this file)
 GuildOS.ns = ns
 
+local L = BRutus.L
+
 ----------------------------------------------------------------------
 -- Session state (runtime-only, never persisted)
 ----------------------------------------------------------------------
@@ -45,6 +47,7 @@ local DB_DEFAULTS = {
             trialTracker = true,
             officerNotes = true,
             commSystem = true,
+            guildManager = true,
         },
     },
     myData = {},
@@ -66,6 +69,7 @@ local DB_DEFAULTS = {
         disenchanter = "",
     },
     officerNotes = {},
+    managementLog = {},  -- leadership action log (ring buffer; capped in GuildManager)
     trials = {},
     altLinks = {},  -- [altKey] = mainKey  (officer-maintained, for account-wide attunement propagation)
     consumableChecks = { lastResults = {} },
@@ -130,7 +134,7 @@ function BRutus:Initialize()
         C_ChatInfo.RegisterAddonMessagePrefix(self.LEGACY_PREFIX)
     end
 
-    self:Print("v" .. self.VERSION .. " loaded. Type |cffFFD700/guildos|r to open.")
+    self:Print("v" .. self.VERSION .. L[" loaded. Type |cffFFD700/guildos|r to open."])
 end
 
 ----------------------------------------------------------------------
@@ -188,7 +192,7 @@ end
 
 function BRutus:OnLogin()
     if not IsInGuild() then
-        self:Print("|cff888888Not in a guild - addon inactive.|r")
+        self:Print(L["|cff888888Not in a guild - addon inactive.|r"])
         return
     end
 
@@ -204,7 +208,7 @@ function BRutus:OnLogin()
             if attempts < 5 then
                 C_Timer.After(2, tryResolve)
             else
-                BRutus:Print("|cffFF4444Could not load guild info. Try /reload.|r")
+                BRutus:Print(L["|cffFF4444Could not load guild info. Try /reload.|r"])
             end
         end
         C_Timer.After(2, tryResolve)
@@ -251,6 +255,9 @@ function BRutus:InitModules()
     end
     if BRutus.RecipeTracker then
         BRutus.RecipeTracker:Initialize()
+    end
+    if BRutus.GuildManager and modEnabled("guildManager") then
+        BRutus.GuildManager:Initialize()
     end
 
     -- Officer-only modules: defer init until guild info is available
@@ -331,6 +338,10 @@ function BRutus:HookGuildFrame()
     -- Replace ToggleGuildFrame (called by J keybind and guild micro button)
     if ToggleGuildFrame then
         local originalToggleGuildFrame = ToggleGuildFrame
+        -- Keep a handle to the native toggle so GuildManager can hand the
+        -- leader off to Blizzard's secure guild panel for protected actions
+        -- (promote/demote/kick can only be performed there).
+        BRutus._origToggleGuildFrame = originalToggleGuildFrame
         ToggleGuildFrame = function()
             if IsInGuild() then
                 BRutus:ToggleRoster()
@@ -358,7 +369,7 @@ end
 ----------------------------------------------------------------------
 function BRutus:ToggleRoster()
     if not IsInGuild() or not self.db then
-        self:Print("|cff888888Not in a guild \226\128\148 addon inactive.|r")
+        self:Print(L["|cff888888Not in a guild \226\128\148 addon inactive.|r"])
         return
     end
     if not self.RosterFrame then

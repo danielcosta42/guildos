@@ -4,19 +4,20 @@
 ----------------------------------------------------------------------
 local UI = BRutus.UI
 local C = BRutus.Colors
+local L = BRutus.L
 
 local DETAIL_WIDTH = 420
 local DETAIL_HEIGHT = 620
 
 -- Static stat list — defined once at module level to avoid per-call allocation.
 local STATS_LIST = {
-    { label = "HP",  key = "health",    color = "green" },
-    { label = "MP",  key = "mana",      color = "blue"  },
-    { label = "STR", key = "strength"  },
-    { label = "AGI", key = "agility"   },
-    { label = "STA", key = "stamina"   },
-    { label = "INT", key = "intellect" },
-    { label = "SPI", key = "spirit"    },
+    { label = L["HP"],  key = "health",    color = "green" },
+    { label = L["MP"],  key = "mana",      color = "blue"  },
+    { label = L["STR"], key = "strength"  },
+    { label = L["AGI"], key = "agility"   },
+    { label = L["STA"], key = "stamina"   },
+    { label = L["INT"], key = "intellect" },
+    { label = L["SPI"], key = "spirit"    },
 }
 
 ----------------------------------------------------------------------
@@ -246,8 +247,8 @@ function PopulateDetail(frame, data)
     frame.nameText:SetTextColor(cr, cg, cb)
 
     -- Info line
-    local raceStr = data.race ~= "" and data.race or "Unknown"
-    frame.infoText:SetText(string.format("Level %d %s %s  |  %s", data.level, raceStr, data.classDisplay, data.rank))
+    local raceStr = data.race ~= "" and data.race or L["Unknown"]
+    frame.infoText:SetText(string.format(L["Level %d %s %s  |  %s"], data.level, raceStr, data.classDisplay, data.rank))
 
     local yOff = -5
     local contentWidth = DETAIL_WIDTH - 35
@@ -258,7 +259,7 @@ function PopulateDetail(frame, data)
     local playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
     local specLabel = BRutus.SpecChecker and BRutus.SpecChecker:GetSpecLabel(playerKey)
 
-    yOff = CreateSectionHeader(child, "TALENT SPEC", yOff, contentWidth)
+    yOff = CreateSectionHeader(child, L["TALENT SPEC"], yOff, contentWidth)
     yOff = yOff - 5
 
     if specLabel then
@@ -278,7 +279,7 @@ function PopulateDetail(frame, data)
                 end)
                 barFrame:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                    GameTooltip:SetText("Click to view talent tree", 1, 1, 0.6)
+                    GameTooltip:SetText(L["Click to view talent tree"], 1, 1, 0.6)
                     GameTooltip:Show()
                 end)
                 barFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -369,17 +370,17 @@ function PopulateDetail(frame, data)
             local age = GetServerTime() - spec.scannedAt
             local ageStr
             if age < 3600 then
-                ageStr = math.floor(age / 60) .. "m ago"
+                ageStr = math.floor(age / 60) .. L["m ago"]
             elseif age < 86400 then
-                ageStr = math.floor(age / 3600) .. "h ago"
+                ageStr = math.floor(age / 3600) .. L["h ago"]
             else
-                ageStr = math.floor(age / 86400) .. "d ago"
+                ageStr = math.floor(age / 86400) .. L["d ago"]
             end
             local scanText = _pFS(child)
             scanText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
             scanText:SetPoint("TOPLEFT", 10, yOff)
             scanText:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
-            scanText:SetText("Last scanned: " .. ageStr)
+            scanText:SetText(L["Last scanned: "] .. ageStr)
             scanText:Show()
             yOff = yOff - 18
         end
@@ -388,7 +389,7 @@ function PopulateDetail(frame, data)
         noSpec:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         noSpec:SetPoint("TOPLEFT", 15, yOff)
         noSpec:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noSpec:SetText("No spec data. Use /brutus specs to scan the group.")
+        noSpec:SetText(L["No spec data. Use /brutus specs to scan the group."])
         noSpec:Show()
         yOff = yOff - 25
     end
@@ -399,7 +400,7 @@ function PopulateDetail(frame, data)
     -- Section: Stats
     ----------------------------------------------------------------
     if data.stats then
-        yOff = CreateSectionHeader(child, "CHARACTER STATS", yOff, contentWidth)
+        yOff = CreateSectionHeader(child, L["CHARACTER STATS"], yOff, contentWidth)
         yOff = yOff - 5
 
         local statsGrid = CreateFrame("Frame", nil, child)
@@ -434,7 +435,7 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Equipment
     ----------------------------------------------------------------
-     yOff = CreateSectionHeader(child, "EQUIPMENT" .. (data.avgIlvl and data.avgIlvl > 0 and ("  -  Avg iLvl: " .. data.avgIlvl) or ""), yOff, contentWidth)
+     yOff = CreateSectionHeader(child, L["EQUIPMENT"] .. (data.avgIlvl and data.avgIlvl > 0 and (L["  -  Avg iLvl: "] .. data.avgIlvl) or ""), yOff, contentWidth)
     yOff = yOff - 5
 
     if data.gear then
@@ -447,7 +448,7 @@ function PopulateDetail(frame, data)
         noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noData:SetText("No gear data available. Player needs BRutus addon.")
+        noData:SetText(L["No gear data available. Player needs BRutus addon."])
         noData:Show()
         yOff = yOff - 25
     end
@@ -456,7 +457,7 @@ function PopulateDetail(frame, data)
     -- Section: Professions
     ----------------------------------------------------------------
     yOff = yOff - 10
-    yOff = CreateSectionHeader(child, "PROFESSIONS", yOff, contentWidth)
+    yOff = CreateSectionHeader(child, L["PROFESSIONS"], yOff, contentWidth)
     yOff = yOff - 5
 
     if data.professions and #data.professions > 0 then
@@ -468,7 +469,7 @@ function PopulateDetail(frame, data)
         noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noData:SetText("No profession data available.")
+        noData:SetText(L["No profession data available."])
         noData:Show()
         yOff = yOff - 25
     end
@@ -477,7 +478,7 @@ function PopulateDetail(frame, data)
     -- Section: Attunements (account-wide propagation from linked chars)
     ----------------------------------------------------------------
     yOff = yOff - 10
-    yOff = CreateSectionHeader(child, "RAID ATTUNEMENTS", yOff, contentWidth)
+    yOff = CreateSectionHeader(child, L["RAID ATTUNEMENTS"], yOff, contentWidth)
     yOff = yOff - 5
 
     local attsToShow
@@ -496,7 +497,7 @@ function PopulateDetail(frame, data)
         noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noData:SetText("No attunement data available.")
+        noData:SetText(L["No attunement data available."])
         noData:Show()
         yOff = yOff - 25
     end
@@ -508,7 +509,7 @@ function PopulateDetail(frame, data)
     local wishData = BRutus.db.guildWishlists and BRutus.db.guildWishlists[guildKey]
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
-        local wishHeader = "WISHLIST  --  " .. #wishData.wishlist .. " item(s)"
+        local wishHeader = L["WISHLIST  --  "] .. #wishData.wishlist .. L[" item(s)"]
         yOff = CreateSectionHeader(child, wishHeader, yOff, contentWidth)
         yOff = yOff - 5
 
@@ -518,7 +519,7 @@ function PopulateDetail(frame, data)
                 local q = BRutus.Wishlist:GetItemQuality(item.itemId)
                 qColor = BRutus.QualityColors[q] or C.white
             end
-            local localName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or ("Item #" .. (item.itemId or "?"))
+            local localName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or (L["Item #"] .. (item.itemId or "?"))
             local osStr = item.isOffspec and " |cffAAAAAA(OS)|r" or ""
             local itemStr = _pFS(child)
             itemStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
@@ -546,7 +547,7 @@ function PopulateDetail(frame, data)
         local total25      = BRutus.RaidTracker:GetTotal25ManSessions(playerGroup)
         local raids25      = att.raids25 or 0
         local groupSuffix  = playerGroup ~= "" and ("  [" .. playerGroup .. "]") or ""
-        local attStr = string.format("RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)",
+        local attStr = string.format(L["RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"],
             groupSuffix, pct, raids25, total25)
         yOff = CreateSectionHeader(child, attStr, yOff, contentWidth)
 
@@ -555,7 +556,7 @@ function PopulateDetail(frame, data)
             lastStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
             lastStr:SetPoint("TOPLEFT", 15, yOff - 5)
             lastStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            lastStr:SetText("Last raid: " .. date("%m/%d/%Y", att.lastRaid))
+            lastStr:SetText(L["Last raid: "] .. date("%m/%d/%Y", att.lastRaid))
             lastStr:Show()
             yOff = yOff - 20
         end
@@ -568,7 +569,7 @@ function PopulateDetail(frame, data)
         yOff = yOff - 10
         playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
         local lootCount = BRutus.LootTracker:GetLootCount(playerKey)
-        local lootHeader = "LOOT HISTORY  --  " .. lootCount .. " items"
+        local lootHeader = L["LOOT HISTORY  --  "] .. lootCount .. L[" items"]
         yOff = CreateSectionHeader(child, lootHeader, yOff, contentWidth)
 
         local recentLoot = BRutus.LootTracker:GetPlayerLoot(playerKey, 5)
@@ -610,15 +611,15 @@ function PopulateDetail(frame, data)
             yOff = yOff - 10
             local daysRem = BRutus.TrialTracker:GetDaysRemaining(playerKey)
             local daysSince = BRutus.TrialTracker:GetDaysSinceStart(playerKey)
-            local trialStr = "TRIAL STATUS  --  " .. (trial.status or "?"):upper()
-            if daysRem then trialStr = trialStr .. "  (" .. daysRem .. " days left)" end
+            local trialStr = L["TRIAL STATUS  --  "] .. (trial.status or "?"):upper()
+            if daysRem then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
             local infoStr = _pFS(child)
             infoStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
             infoStr:SetPoint("TOPLEFT", 15, yOff - 5)
             infoStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            infoStr:SetText("Sponsor: " .. (trial.sponsor or "?") .. "  |  Day " .. (daysSince or 0))
+            infoStr:SetText(L["Sponsor: "] .. (trial.sponsor or "?") .. L["  |  Day "] .. (daysSince or 0))
             infoStr:Show()
             yOff = yOff - 20
 
@@ -628,7 +629,7 @@ function PopulateDetail(frame, data)
                 -- iLvl progress
                 local ilvlColor = progress.ilvlDelta > 0 and C.green or (progress.ilvlDelta < 0 and C.red or C.silver)
                 local ilvlSign = progress.ilvlDelta > 0 and "+" or ""
-                local ilvlStr = format("iLvl: %d >> %d  (%s%d)", progress.startIlvl, progress.currentIlvl, ilvlSign, progress.ilvlDelta)
+                local ilvlStr = format(L["iLvl: %d >> %d  (%s%d)"], progress.startIlvl, progress.currentIlvl, ilvlSign, progress.ilvlDelta)
                 local ilvlText = _pFS(child)
                 ilvlText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
                 ilvlText:SetPoint("TOPLEFT", 15, yOff - 3)
@@ -638,7 +639,7 @@ function PopulateDetail(frame, data)
 
                 -- Attunement progress
                 local attColor = progress.attDelta > 0 and C.green or C.silver
-                local attStr = format("Attunements: %d/%d >> %d/%d  (+%d)", progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
+                local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
                 local attText = _pFS(child)
                 attText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
                 attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
@@ -654,7 +655,7 @@ function PopulateDetail(frame, data)
                 notesLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
                 notesLabel:SetPoint("TOPLEFT", 15, yOff - 6)
                 notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                notesLabel:SetText("Officer Comments (" .. #trial.notes .. ")")
+                notesLabel:SetText(L["Officer Comments ("] .. #trial.notes .. ")")
                 notesLabel:Show()
                 yOff = yOff - 18
 
@@ -690,13 +691,13 @@ function PopulateDetail(frame, data)
             placeholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
             placeholder:SetPoint("LEFT", 6, 0)
             placeholder:SetTextColor(0.35, 0.35, 0.35)
-            placeholder:SetText("Add officer comment...")
+            placeholder:SetText(L["Add officer comment..."])
             addNoteBox:SetScript("OnTextChanged", function(self)
                 if self:GetText() ~= "" then placeholder:Hide() else placeholder:Show() end
             end)
             addNoteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-            local addBtn = UI:CreateButton(child, "Add", 60, 22)
+            local addBtn = UI:CreateButton(child, L["Add"], 60, 22)
             addBtn:SetPoint("LEFT", addNoteBox, "RIGHT", 6, 0)
             addBtn:SetScript("OnClick", function()
                 local text = addNoteBox:GetText()
@@ -728,7 +729,7 @@ function PopulateDetail(frame, data)
         yOff = yOff - 10
         playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
         local notes = BRutus.OfficerNotes:GetNotes(playerKey)
-        local notesHeader = "OFFICER NOTES  --  " .. #notes .. " notes"
+        local notesHeader = L["OFFICER NOTES  --  "] .. #notes .. L[" notes"]
         yOff = CreateSectionHeader(child, notesHeader, yOff, contentWidth)
 
         -- Show tags
@@ -773,8 +774,8 @@ function PopulateDetail(frame, data)
 
         -- Header shows how many chars are linked
         local linkCount = #linkedKeys - 1  -- exclude self
-        local hdrSuffix = linkCount > 0 and ("  --  " .. linkCount .. " vinculado(s)") or "  --  nenhum"
-        yOff = CreateSectionHeader(child, "PERSONAGENS VINCULADOS" .. hdrSuffix, yOff, contentWidth)
+        local hdrSuffix = linkCount > 0 and ("  --  " .. linkCount .. L[" linked"]) or L["  --  none"]
+        yOff = CreateSectionHeader(child, L["LINKED CHARACTERS"] .. hdrSuffix, yOff, contentWidth)
         yOff = yOff - 5
 
         local noteLabel = _pFS(child)
@@ -782,7 +783,7 @@ function PopulateDetail(frame, data)
         noteLabel:SetPoint("TOPLEFT", 12, yOff)
         noteLabel:SetWidth(contentWidth - 20)
         noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-        noteLabel:SetText("Chars vinculados compartilham attunements account-wide.")
+        noteLabel:SetText(L["Linked chars share attunements account-wide."])
         noteLabel:Show()
         yOff = yOff - 16
 
@@ -795,11 +796,11 @@ function PopulateDetail(frame, data)
                 lkLabel:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
                 lkLabel:SetPoint("TOPLEFT", 12, yOff)
                 lkLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                lkLabel:SetText((lkIsMain and "[main] " or "[alt]  ") .. lkName)
+                lkLabel:SetText((lkIsMain and L["[main] "] or L["[alt]  "]) .. lkName)
                 lkLabel:Show()
 
                 -- Unlink button
-                local unlinkBtn = UI:CreateButton(child, "Desvincular", 80, 18)
+                local unlinkBtn = UI:CreateButton(child, L["Unlink"], 80, 18)
                 unlinkBtn:SetPoint("LEFT", lkLabel, "RIGHT", 10, 0)
                 local capturedKey = lk
                 unlinkBtn:SetScript("OnClick", function()
@@ -833,13 +834,13 @@ function PopulateDetail(frame, data)
         addLinkPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
         addLinkPlaceholder:SetPoint("LEFT", 6, 0)
         addLinkPlaceholder:SetTextColor(0.35, 0.35, 0.35)
-        addLinkPlaceholder:SetText("NomeDoAlt (este é o main)")
+        addLinkPlaceholder:SetText(L["AltName (this is the main)"])
         addLinkBox:SetScript("OnTextChanged", function(self)
             if self:GetText() ~= "" then addLinkPlaceholder:Hide() else addLinkPlaceholder:Show() end
         end)
         addLinkBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-        local addLinkBtn = UI:CreateButton(child, "Vincular alt", 90, 22)
+        local addLinkBtn = UI:CreateButton(child, L["Link alt"], 90, 22)
         addLinkBtn:SetPoint("LEFT", addLinkBox, "RIGHT", 6, 0)
 
         local doLink = function()
@@ -907,7 +908,7 @@ local ENCHANT_WARNING_SLOTS = {
 function CreateGearRow(parent, slotId, item, yOff, width)
     local ROW_H = 26
     local subRowH = 14
-    local slotName = BRutus.SlotNames[slotId] or "Slot " .. slotId
+    local slotName = BRutus.SlotNames[slotId] or L["Slot "] .. slotId
     local hasExtra = false
 
     -- Slot label
@@ -999,7 +1000,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             enchText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             enchText:SetPoint("TOPLEFT", 106, enchantY)
             enchText:SetTextColor(0.0, 0.8, 0.0)
-            enchText:SetText("Enchanted")
+            enchText:SetText(L["Enchanted"])
             enchText:Show()
             hasExtra = true
         elseif ENCHANT_WARNING_SLOTS[slotId] then
@@ -1007,7 +1008,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             warnText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             warnText:SetPoint("TOPLEFT", 106, enchantY)
             warnText:SetTextColor(C.red.r, C.red.g, C.red.b, 0.7)
-            warnText:SetText("Not enchanted")
+            warnText:SetText(L["Not enchanted"])
             warnText:Show()
             hasExtra = true
         end
@@ -1017,7 +1018,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
         emptyText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
         emptyText:SetPoint("TOPLEFT", 82, yOff - 5)
         emptyText:SetTextColor(0.3, 0.3, 0.3)
-        emptyText:SetText("- Empty -")
+        emptyText:SetText(L["- Empty -"])
         emptyText:Show()
     end
 
@@ -1110,9 +1111,9 @@ function CreateAttunementRow(parent, att, yOff, width)
         statusText:SetTextColor(C.green.r, C.green.g, C.green.b)
         if att.accountWide and att.sourceChar then
             local srcName = att.sourceChar:match("^([^-]+)") or att.sourceChar
-            statusText:SetText("ATTUNED |cff888888(conta: " .. srcName .. ")|r")
+            statusText:SetText(L["ATTUNED"] .. " |cff888888(" .. L["account: "] .. srcName .. ")|r")
         else
-            statusText:SetText("ATTUNED")
+            statusText:SetText(L["ATTUNED"])
         end
     elseif att.progress and att.progress > 0 then
         nameText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
@@ -1123,7 +1124,7 @@ function CreateAttunementRow(parent, att, yOff, width)
         nameText:SetTextColor(C.red.r, C.red.g, C.red.b, 0.7)
         nameText:SetText(att.name)
         statusText:SetTextColor(C.red.r, C.red.g, C.red.b, 0.7)
-        statusText:SetText("NOT STARTED")
+        statusText:SetText(L["NOT STARTED"])
     end
 
     -- Progress bar (only for in-progress attunements, not completed ones)
@@ -1276,11 +1277,11 @@ local function CreateTalentViewerFrame()
                 GameTooltip:SetText(td.name, 1, 1, 1)
                 if td.currentRank > 0 then
                     GameTooltip:AddLine(
-                        format("Rank %d / %d", td.currentRank, td.maxRank),
+                        format(L["Rank %d / %d"], td.currentRank, td.maxRank),
                         0.9, 0.8, 0.1)
                 else
                     GameTooltip:AddLine(
-                        format("Not learned  (0/%d)", td.maxRank),
+                        format(L["Not learned  (0/%d)"], td.maxRank),
                         0.5, 0.5, 0.5)
                 end
                 GameTooltip:Show()
@@ -1305,7 +1306,7 @@ local function CreateTalentViewerFrame()
         local cr, cg, cb = BRutus:GetClassColor(self.classToken)
         for i, tabBtn in ipairs(self.tabs) do
             local pts  = (spec.points and spec.points[i]) or 0
-            local name = (spec.names  and spec.names[i])  or ("Tree " .. i)
+            local name = (spec.names  and spec.names[i])  or (L["Tree "] .. i)
             if #name > 8 then name = name:sub(1, 8) end
             tabBtn.label:SetText(name .. "\n" .. pts)
             if i == tab then
@@ -1376,7 +1377,7 @@ end
 ----------------------------------------------------------------------
 function BRutus:ShowTalentViewer(spec, playerName, classToken)
     if not spec or not spec.talents then
-        BRutus:Print("|cffFF4444No talent data available for this player.|r")
+        BRutus:Print(L["|cffFF4444No talent data available for this player.|r"])
         return
     end
 
@@ -1388,7 +1389,7 @@ function BRutus:ShowTalentViewer(spec, playerName, classToken)
     f.classToken = classToken
 
     local shortName = (playerName or "?"):match("^([^-]+)") or playerName
-    local specName  = spec.tree or "Unknown"
+    local specName  = spec.tree or L["Unknown"]
     f.titleText:SetText(shortName .. "  —  " .. specName)
 
     f.currentTab = spec.treeIndex or 1

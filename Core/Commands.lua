@@ -11,12 +11,14 @@ SLASH_GUILDOS2 = "/gos"
 SLASH_BRUTUS1 = "/brutus"
 SLASH_BRUTUS2 = "/br"
 
+local L = BRutus.L
+
 local function handleCommand(msg)
     msg = strtrim(msg or "")
     if msg == "scan" then
         if BRutus.DataCollector then
             BRutus.DataCollector:CollectMyData()
-            BRutus:Print("Data collected.")
+            BRutus:Print(L["Data collected."])
         end
     elseif msg == "sync" then
         if BRutus.CommSystem then
@@ -42,7 +44,7 @@ local function handleCommand(msg)
             local results = BRutus.ConsumableChecker:CheckRaid()
             if results then
                 local missing = BRutus.ConsumableChecker:GetMissingCount(results)
-                BRutus:Print("Consumable check done. " .. missing .. " players missing buffs.")
+                BRutus:Print(string.format(L["Consumable check done. %d players missing buffs."], missing))
             end
         end
     elseif msg == "consreport" then
@@ -57,7 +59,7 @@ local function handleCommand(msg)
             local key = name .. "-" .. realm
             BRutus.TrialTracker:AddTrial(key)
         else
-            BRutus:Print("Usage: /guildos trial <PlayerName>")
+            BRutus:Print(L["Usage: /guildos trial <PlayerName>"])
         end
     elseif msg:match("^note") then
         local rest = msg:gsub("^note%s*", "")
@@ -66,34 +68,34 @@ local function handleCommand(msg)
             local realm = GetRealmName()
             local key = target .. "-" .. realm
             if BRutus.OfficerNotes:AddNote(key, noteText) then
-                BRutus:Print("Note added for " .. target)
+                BRutus:Print(L["Note added for "] .. target)
             end
         else
-            BRutus:Print("Usage: /guildos note <PlayerName> <text>")
+            BRutus:Print(L["Usage: /guildos note <PlayerName> <text>"])
         end
     elseif msg == "lm" or msg == "lootmaster" then
         if BRutus.LootMaster then
             if BRutus.LootMaster:IsMasterLooter() then
-                BRutus:Print("Loot Master mode active. Open loot to start.")
+                BRutus:Print(L["Loot Master mode active. Open loot to start."])
             else
-                BRutus:Print("You are not the Master Looter.")
+                BRutus:Print(L["You are not the Master Looter."])
             end
         end
     elseif msg:match("^lm announce") then
         -- /guildos lm announce - manually announce item from target tooltip
-        BRutus:Print("Open loot window as Master Looter to announce items.")
+        BRutus:Print(L["Open loot window as Master Looter to announce items."])
     elseif msg == "exportatt" or msg == "exportattendance" then
         if BRutus.RaidTracker then
             local json, err = BRutus.RaidTracker:ExportForTMB()
             if json then
-                BRutus:ShowExportPopup("Export de Presença", json)
+                BRutus:ShowExportPopup(L["Attendance Export"], json)
             else
-                BRutus:Print("|cffFF4444Export failed:|r " .. (err or "unknown error"))
+                BRutus:Print(L["|cffFF4444Export failed:|r "] .. (err or L["unknown error"]))
             end
         end
     elseif msg:match("^wish") then
         if not BRutus:IsOfficer() then
-            BRutus:Print("|cffFF4444Lista de desejos disponível apenas para officers no momento.|r")
+            BRutus:Print(L["|cffFF4444Wishlist is currently available to officers only.|r"])
             return
         end
         local rest = strtrim(msg:gsub("^wish%s*", ""))
@@ -106,7 +108,7 @@ local function handleCommand(msg)
             if itemId and BRutus.Wishlist then
                 BRutus.Wishlist:RemoveFromWishlist(itemId)
             else
-                BRutus:Print("Usage: /guildos wish remove [itemlink]")
+                BRutus:Print(L["Usage: /guildos wish remove [itemlink]"])
             end
         else
             -- Treat remainder as an item link to add
@@ -114,15 +116,15 @@ local function handleCommand(msg)
             if itemId and BRutus.Wishlist then
                 BRutus.Wishlist:AddToWishlist(itemId, rest, false)
             else
-                BRutus:Print("Usage: /guildos wish [itemlink] | /guildos wish remove [itemlink]")
+                BRutus:Print(L["Usage: /guildos wish [itemlink] | /guildos wish remove [itemlink]"])
             end
         end
     elseif msg == "mergeraids" then
         if BRutus.RaidTracker then
-            BRutus:Print("Merging duplicate raid sessions\226\128\166")
+            BRutus:Print(L["Merging duplicate raid sessions\226\128\166"])
             local count = BRutus.RaidTracker:MergeDuplicateSessions()
             if count == 0 then
-                BRutus:Print("|cffAAAAAA[Guild OS] No duplicates found.|r")
+                BRutus:Print(L["|cffAAAAAA[Guild OS] No duplicates found.|r"])
             end
         end
     elseif msg == "specs" then
@@ -133,16 +135,16 @@ local function handleCommand(msg)
         -- Print attunement status for the logged-in character to chat.
         if BRutus.AttunementTracker then
             local atts = BRutus.AttunementTracker:ScanAttunements()
-            BRutus:Print("|cffFFD700Attunements:|r")
+            BRutus:Print(L["|cffFFD700Attunements:|r"])
             for _, att in ipairs(atts) do
                 if not att.alwaysComplete then
                     local status
                     if att.complete then
-                        status = "|cff00FF00Done|r"
+                        status = L["|cff00FF00Done|r"]
                     elseif att.progress and att.progress > 0 then
                         status = format("|cffFFD700%d%%|r", math.floor(att.progress * 100))
                     else
-                        status = "|cffFF4444Not started|r"
+                        status = L["|cffFF4444Not started|r"]
                     end
                     BRutus:Print(format("  [%s] %s \226\128\148 %s", att.tier, att.name, status))
                 end

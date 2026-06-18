@@ -5,6 +5,7 @@
 ----------------------------------------------------------------------
 local LootMaster = {}
 BRutus.LootMaster = LootMaster
+local L = BRutus.L
 
 -- Roll types
 LootMaster.ROLL_MS     = "MS"    -- Main Spec
@@ -366,8 +367,7 @@ function LootMaster:OnLootClosed()
     -- awarded), warn the ML and keep activeLoot intact so Award/DE still work
     -- via the trade path (lootWindowOpen=false → QueueForTrade).
     if self.activeLoot and not self.activeLoot.delivered then
-        BRutus:Print("|cffFF9900[LootMaster]|r Janela de loot fechada antes da entrega — "
-            .. "use o frame de roll para entregar o item via trade.")
+        BRutus:Print("|cffFF9900[LootMaster]|r " .. L["Loot window closed before delivery - use the roll frame to deliver the item via trade."])
     end
 end
 
@@ -469,7 +469,7 @@ end
 ----------------------------------------------------------------------
 function LootMaster:AnnounceItem(itemLink, lootSlot)
     if not IsInRaid() and not self.testMode then
-        BRutus:Print("You must be in a raid to announce loot.")
+        BRutus:Print(L["You must be in a raid to announce loot."])
         return
     end
 
@@ -544,17 +544,17 @@ end
 ----------------------------------------------------------------------
 function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prioEntry)
     -- Main announce
-    local msg = format("[ROLL] %s  -  /roll 1-100 = MS  -  /roll 1-99 = OS  -  %ds",
+    local msg = format(L["[ROLL] %s  -  /roll 1-100 = MS  -  /roll 1-99 = OS  -  %ds"],
         itemLink, self.ROLL_DURATION)
     self:SafeSendChat(msg, "RAID_WARNING")
 
     -- Post priority info note
     if prioEntry then
-        local infoMsg = format("[Prioridade] %s tem prio oficial #1 - roll aberto para todos",
+        local infoMsg = format(L["[Priority] %s has official prio #1 - roll open to everyone"],
             prioEntry.name)
         self:SafeSendChat(infoMsg, "RAID")
     elseif topEntry then
-        local infoMsg = format("[Prioridade] %s (#%d na wishlist) - roll aberto para todos",
+        local infoMsg = format(L["[Priority] %s (#%d on wishlist) - roll open to everyone"],
             topEntry.name, topEntry.order)
         self:SafeSendChat(infoMsg, "RAID")
     end
@@ -576,7 +576,7 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
     -- Update UI — always open/refresh the ML roll frame
     self:ShowRollFrame()
 
-    BRutus:Print("Loot announced: " .. itemLink .. " (" .. self.ROLL_DURATION .. "s)")
+    BRutus:Print(L["Loot announced: "] .. itemLink .. " (" .. self.ROLL_DURATION .. "s)")
 end
 
 ----------------------------------------------------------------------
@@ -585,14 +585,14 @@ end
 function LootMaster:AutoCouncilAward(winner, itemLink, lootSlot, allCandidates)
     local orderStr
     if winner.isPrio then
-        orderStr = "Prio Oficial #1"
+        orderStr = L["Official Prio #1"]
     else
-        orderStr = string.format("wishlist #%d", winner.order)
+        orderStr = string.format(L["wishlist #%d"], winner.order)
     end
 
     -- Announce in raid
     self:SafeSendChat(
-        string.format("[Wishlist] %s vai para %s (%s) - aguardando confirmacao do ML", itemLink, winner.name, orderStr),
+        string.format(L["[Wishlist] %s goes to %s (%s) - awaiting ML confirmation"], itemLink, winner.name, orderStr),
         "RAID_WARNING"
     )
 
@@ -612,12 +612,12 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
         self.restrictedRollers[strlower(c.name)] = true
         table.insert(names, c.name)
     end
-    local orderStr = string.format("wishlist #%d", tied[1].order)
+    local orderStr = string.format(L["wishlist #%d"], tied[1].order)
     local nameStr = table.concat(names, ", ")
 
     -- Announce in RAID_WARNING — only listed players should roll
     self:SafeSendChat(
-        string.format("[ROLL] %s  -  Empate [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds",
+        string.format(L["[ROLL] %s  -  Tie [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"],
             itemLink, orderStr, nameStr, self.ROLL_DURATION),
         "RAID_WARNING"
     )
@@ -640,7 +640,7 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
     -- Show roll tracker for ML
     self:ShowRollFrame()
 
-    BRutus:Print(string.format("|cffFFD700Wishlist tie|r [wishlist #%d]: %s — apenas eles podem rolar (%ds)",
+    BRutus:Print(string.format(L["|cffFFD700Wishlist tie|r [wishlist #%d]: %s - only they may roll (%ds)"],
         tied[1].order, nameStr, self.ROLL_DURATION))
 end
 
@@ -685,13 +685,13 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     title:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText("Wishlist Council")
+    title:SetText(L["Wishlist Council"])
 
     -- Item
     local itemText = f:CreateFontString(nil, "OVERLAY")
     itemText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     itemText:SetPoint("TOP", 0, -26)
-    itemText:SetText(itemLink or "Unknown Item")
+    itemText:SetText(itemLink or L["Unknown Item"])
 
     -- Winner line
     local CLASS_COLORS = RAID_CLASS_COLORS
@@ -700,8 +700,8 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     winText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     winText:SetPoint("TOP", 0, -44)
     local winLabel = winner.isPrio
-        and string.format("|cffFFD700Prio Oficial #1|r")
-        or  string.format("|cff4CB8FFwishlist #%d|r", winner.order)
+        and L["|cffFFD700Official Prio #1|r"]
+        or  string.format(L["|cff4CB8FFwishlist #%d|r"], winner.order)
     winText:SetText(string.format(">> |cff%02x%02x%02x%s|r - %s",
         cc.r * 255, cc.g * 255, cc.b * 255,
         winner.name, winLabel))
@@ -726,7 +726,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
             row:SetPoint("TOPLEFT", 14, yOff)
             local prefix = (i == 1) and "|cff00ff00>>|r " or "   "
             row:SetText(string.format(
-                "%s|cff%02x%02x%02x%s|r  |cff4CB8FFwishlist #%d|r  |cff%s%d%%|r",
+                L["%s|cff%02x%02x%02x%s|r  |cff4CB8FFwishlist #%d|r  |cff%s%d%%|r"],
                 prefix, ccc.r * 255, ccc.g * 255, ccc.b * 255,
                 c.name, c.order,
                 attColor, ctx.att25))
@@ -735,7 +735,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     end
 
     -- Buttons
-    local awardBtn = UI:CreateButton(f, "Award to " .. winner.name, 150, 26)
+    local awardBtn = UI:CreateButton(f, L["Award to "] .. winner.name, 150, 26)
     awardBtn:SetPoint("BOTTOMLEFT", 10, 10)
     awardBtn:SetBackdropColor(0.0, 0.4, 0.0, 0.6)
     awardBtn:SetScript("OnClick", function()
@@ -744,7 +744,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     end)
 
     -- Send to disenchanter
-    local deCouncilBtn = UI:CreateButton(f, "Send to DE", 110, 26)
+    local deCouncilBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
     deCouncilBtn:SetPoint("BOTTOM", 0, 10)
     deCouncilBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deCouncilBtn:SetScript("OnClick", function()
@@ -761,15 +761,15 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
         local deName = LootMaster:GetDisenchanter()
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         if deName and deName ~= "" then
-            GameTooltip:SetText("Enviar para Disenchant\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
+            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
         else
-            GameTooltip:SetText("Enviar para Disenchant\n|cffFF4444Nenhum disenchanter definido|r", 1, 1, 1)
+            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cffFF4444" .. L["No disenchanter set"] .. "|r", 1, 1, 1)
         end
         GameTooltip:Show()
     end)
     deCouncilBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    local rollBtn = UI:CreateButton(f, "Open Roll Instead", 130, 26)
+    local rollBtn = UI:CreateButton(f, L["Open Roll Instead"], 130, 26)
     rollBtn:SetPoint("BOTTOMRIGHT", -10, 10)
     rollBtn:SetScript("OnClick", function()
         f:Hide()
@@ -834,7 +834,7 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
             awardedTo, link = rest:match("^([^|]+)|(.+)$")
         end
         if awardedTo and link then
-            BRutus:Print(string.format("|cffFFD700Loot:|r %s awarded to |cff00ff00%s|r", link, awardedTo))
+            BRutus:Print(string.format(L["|cffFFD700Loot:|r %s awarded to |cff00ff00%s|r"], link, awardedTo))
 
             -- Record to loot history only if the sender is an officer and not ourselves
             -- (the awarder already recorded locally in AwardLoot).
@@ -879,7 +879,7 @@ function LootMaster:RegisterRoll(name, rollType, roll)
     if rollType == "MS" and minAtt > 0 and ctx.att25 < minAtt then
         rollType = "OS"
         self:SafeSendChat(string.format(
-            "[Loot] %s: MS convertido para OS (presenca %d%% abaixo do minimo %d%%)",
+            L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
             name, ctx.att25, minAtt), "RAID")
     end
 
@@ -947,10 +947,10 @@ function LootMaster:RegisterRoll(name, rollType, roll)
 
     -- Announce prio or wishlist position to raid
     if prioOrder then
-        self:SafeSendChat(string.format("[Loot] %s: %s (Prio Oficial #%d)",
+        self:SafeSendChat(string.format(L["[Loot] %s: %s (Official Prio #%d)"],
             name, rollType, prioOrder), "RAID")
     elseif wishInfo then
-        self:SafeSendChat(string.format("[Loot] %s: %s (Wishlist #%d)",
+        self:SafeSendChat(string.format(L["[Loot] %s: %s (Wishlist #%d)"],
             name, rollType, wishInfo.order), "RAID")
     end
 
@@ -1017,14 +1017,14 @@ function LootMaster:EndRolling()
         local winner = sorted[1]
         local wishStr = ""
         if winner.prioOrder then
-            wishStr = string.format(" [Prio Oficial #%d]", winner.prioOrder)
+            wishStr = string.format(L[" [Official Prio #%d]"], winner.prioOrder)
         elseif winner.wishlist then
-            wishStr = string.format(" [Wishlist #%d]", winner.wishlist.order)
+            wishStr = string.format(L[" [Wishlist #%d]"], winner.wishlist.order)
         end
-        self:SafeSendChat(string.format("[VENCEDOR] %s - %s (%d)%s - %s",
+        self:SafeSendChat(string.format(L["[WINNER] %s - %s (%d)%s - %s"],
             winner.name, winner.rollType, winner.roll, wishStr, self.activeLoot.link), "RAID_WARNING")
     else
-        self:SafeSendChat("[Roll] Nenhum roll recebido para " .. self.activeLoot.link, "RAID_WARNING")
+        self:SafeSendChat(L["[Roll] No roll received for "] .. self.activeLoot.link, "RAID_WARNING")
     end
 
     -- Refresh UI
@@ -1039,7 +1039,7 @@ end
 function LootMaster:AwardLoot(playerName, silent)
     if not self.activeLoot then return end
     if not self:IsMasterLooter() then
-        BRutus:Print("You are not the Master Looter.")
+        BRutus:Print(L["You are not the Master Looter."])
         return
     end
 
@@ -1092,7 +1092,7 @@ function LootMaster:AwardLoot(playerName, silent)
 
     -- Announce (skipped when silent=true, e.g. SendToDisenchanter already announced)
     if not silent then
-        self:SafeSendChat(string.format("[Loot] %s entregue para %s", itemLink, playerName), "RAID")
+        self:SafeSendChat(string.format(L["[Loot] %s delivered to %s"], itemLink, playerName), "RAID")
     end
 
     -- Save to LootMaster's own award log (for undo / ML reference)
@@ -1128,9 +1128,9 @@ function LootMaster:AwardLoot(playerName, silent)
     end
 
     if awarded then
-        BRutus:Print(itemLink .. " given to |cff00ff00" .. playerName .. "|r")
+        BRutus:Print(itemLink .. L[" given to |cff00ff00"] .. playerName .. "|r")
     else
-        BRutus:Print(itemLink .. " awarded to |cff00ff00" .. playerName .. "|r - trade to deliver.")
+        BRutus:Print(itemLink .. L[" awarded to |cff00ff00"] .. playerName .. L["|r - trade to deliver."])
     end
 
     if self.activeLoot then self.activeLoot.delivered = true end
@@ -1150,7 +1150,7 @@ function LootMaster:QueueForTrade(playerName, itemLink, itemId)
         itemId = itemId,
         timestamp = GetServerTime(),
     })
-    BRutus:Print(string.format("|cffFFFF00Trade queued:|r %s for %s. Open trade with them.", itemLink, playerName))
+    BRutus:Print(string.format(L["|cffFFFF00Trade queued:|r %s for %s. Open trade with them."], itemLink, playerName))
 end
 
 -- Find an item in bags by itemId
@@ -1202,7 +1202,7 @@ function LootMaster:OnTradeShow()
                 elseif UseContainerItem then
                     UseContainerItem(bag, slot)
                 end
-                BRutus:Print(string.format("|cff00ff00Auto-added:|r %s to trade.", pending.link))
+                BRutus:Print(string.format(L["|cff00ff00Auto-added:|r %s to trade."], pending.link))
                 pending.addedToTrade = true
                 itemsAdded = itemsAdded + 1
                 tradeSlot = tradeSlot + 1
@@ -1211,7 +1211,7 @@ function LootMaster:OnTradeShow()
     end
 
     if itemsAdded > 0 then
-        BRutus:Print(string.format("%d item(s) added to trade with %s.", itemsAdded, tradeName))
+        BRutus:Print(string.format(L["%d item(s) added to trade with %s."], itemsAdded, tradeName))
     end
 end
 
@@ -1233,7 +1233,7 @@ function LootMaster:OnTradeAcceptUpdate(playerAccepted, targetAccepted)
                         break
                     end
                 end
-                BRutus:Print(string.format("|cff00ff00Trade complete:|r %s delivered to %s.", pending.link, pending.player))
+                BRutus:Print(string.format(L["|cff00ff00Trade complete:|r %s delivered to %s."], pending.link, pending.player))
                 table.remove(self.pendingTrades, i)
             end
         end
@@ -1259,7 +1259,7 @@ function LootMaster:ScheduleCountdownWarnings()
             C_Timer.After(dur - secs, function()
                 if LootMaster.activeLoot and not LootMaster.activeLoot.ended then
                     LootMaster:SafeSendChat(
-                        "[Roll] " .. secs .. " segundo" .. (secs == 1 and "" or "s") .. "!",
+                        L["[Roll] "] .. secs .. L[" second"] .. (secs == 1 and "" or L["s"]) .. "!",
                         "RAID_WARNING")
                 end
             end)
@@ -1278,7 +1278,7 @@ function LootMaster:CancelRolling()
         self.rollTimer = nil
     end
     if self.activeLoot then
-        self:SafeSendChat("[Loot] Roll cancelado: " .. self.activeLoot.link, "RAID")
+        self:SafeSendChat(L["[Loot] Roll cancelled: "] .. self.activeLoot.link, "RAID")
         self.activeLoot.delivered = true
     end
     self.activeLoot = nil
@@ -1333,7 +1333,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
                     table.insert(entries, {
                         name    = e.name,
                         class   = e.class or "UNKNOWN",
-                        typeStr = "PRIO",
+                        typeStr = L["PRIO"],
                         typeCat = "prio",
                         order   = idx,
                     })
@@ -1353,7 +1353,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
                     table.insert(entries, {
                         name    = e.name,
                         class   = e.class or "UNKNOWN",
-                        typeStr = "WISH",
+                        typeStr = L["WISH"],
                         typeCat = "wishlist",
                         order   = e.order or 999,
                     })
@@ -1432,13 +1432,13 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     title:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText("BRutus Loot Master")
+    title:SetText(L["BRutus Loot Master"])
 
     -- Item link
     local itemText = f:CreateFontString(nil, "OVERLAY")
     itemText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     itemText:SetPoint("TOP", 0, -26)
-    itemText:SetText(itemLink or "Unknown Item")
+    itemText:SetText(itemLink or L["Unknown Item"])
 
     -- Player's own prio / wishlist status
     local tmbText = f:CreateFontString(nil, "OVERLAY")
@@ -1458,7 +1458,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
         end
 
         if myPrioOrder then
-            tmbText:SetText(format("|cffFFD700[PRIO OFICIAL #%d]|r", myPrioOrder))
+            tmbText:SetText(format(L["|cffFFD700[OFFICIAL PRIO #%d]|r"], myPrioOrder))
         else
             local interest = BRutus.Wishlist and BRutus.Wishlist:GetItemInterest(itemId)
             local myEntry  = nil
@@ -1471,9 +1471,9 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
                 end
             end
             if myEntry then
-                tmbText:SetText("|cff4CB8FFWishlist #" .. myEntry.order .. "|r")
+                tmbText:SetText(L["|cff4CB8FFWishlist #"] .. myEntry.order .. "|r")
             else
-                tmbText:SetText("|cff666666Not on your wishlist|r")
+                tmbText:SetText(L["|cff666666Not on your wishlist|r"])
             end
         end
     end
@@ -1501,13 +1501,13 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
             h:SetTextColor(0.5, 0.5, 0.5)
             h:SetText(lbl)
         end
-        MakeHdr("#",      12)
-        MakeHdr("TYPE",   26)
-        MakeHdr("ORD",    68)
-        MakeHdr("PLAYER", 98)
-        MakeHdr("ATT%",  234)
-        MakeHdr("RECV",  275)
-        MakeHdr("RAID",  310)
+        MakeHdr("#",            12)
+        MakeHdr(L["TYPE"],      26)
+        MakeHdr(L["ORD"],       68)
+        MakeHdr(L["PLAYER"],    98)
+        MakeHdr(L["ATT%"],     234)
+        MakeHdr(L["RECV"],     275)
+        MakeHdr(L["RAID"],     310)
         listY = listY - 18
 
         -- Entry rows
@@ -1609,7 +1609,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
             raidT:SetPoint("LEFT", 306, 0)
             if e.inRaid then
                 raidT:SetTextColor(0.3, 1.0, 0.3)
-                raidT:SetText("YES")
+                raidT:SetText(L["YES"])
             else
                 raidT:SetTextColor(0.4, 0.4, 0.4)
                 raidT:SetText("-")
@@ -1624,7 +1624,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
             moreT:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             moreT:SetPoint("TOPLEFT", 12, listY - 2)
             moreT:SetTextColor(0.5, 0.5, 0.5)
-            moreT:SetText(format("+ %d more interested", numEntries - MAX_VISIBLE))
+            moreT:SetText(format(L["+ %d more interested"], numEntries - MAX_VISIBLE))
         end
     else
         -- No wishlist/prio data for this item
@@ -1632,7 +1632,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
         noDataT:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
         noDataT:SetPoint("TOPLEFT", 12, listY - 4)
         noDataT:SetTextColor(0.5, 0.5, 0.5)
-        noDataT:SetText("Nenhum dado de wishlist para este item.")
+        noDataT:SetText(L["No wishlist data for this item."])
     end
 
     ----------------------------------------------------------------
@@ -1645,7 +1645,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     msBtn:SetScript("OnClick", function()
         RandomRoll(1, 100)
         f:Hide()
-        BRutus:Print("Rolled |cff00ff00MS|r on " .. (itemLink or "item") .. " — /roll 1-100")
+        BRutus:Print(L["Rolled |cff00ff00MS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-100")
     end)
 
     local osBtn = UI:CreateButton(f, "OS", 90, 26)
@@ -1654,10 +1654,10 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     osBtn:SetScript("OnClick", function()
         RandomRoll(1, 99)
         f:Hide()
-        BRutus:Print("Rolled |cffFFFF00OS|r on " .. (itemLink or "item") .. " — /roll 1-99")
+        BRutus:Print(L["Rolled |cffFFFF00OS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-99")
     end)
 
-    local passBtn = UI:CreateButton(f, "Pass", 90, 26)
+    local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
     passBtn:SetPoint("BOTTOMRIGHT", -15, 12)
     passBtn:SetBackdropColor(0.4, 0.0, 0.0, 0.6)
     passBtn:SetScript("OnClick", function()
@@ -1777,7 +1777,7 @@ function LootMaster:ShowLootFrame(items)
     titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     titleText:SetPoint("TOPLEFT", 12, -10)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText("Master Loot")
+    titleText:SetText(L["Master Loot"])
 
     -- Instance name
     local instText = f:CreateFontString(nil, "OVERLAY")
@@ -1828,7 +1828,7 @@ function LootMaster:ShowLootFrame(items)
     deTitleLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     deTitleLabel:SetPoint("RIGHT", deNameText, "LEFT", -3, 0)
     deTitleLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    deTitleLabel:SetText("DE:")
+    deTitleLabel:SetText(L["DE:"])
 
     -- Popup frame (child of f so it auto-hides with it)
     local dePickerPopup = CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -1849,7 +1849,7 @@ function LootMaster:ShowLootFrame(items)
     dePopHdr:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
     dePopHdr:SetPoint("TOPLEFT", 6, -4)
     dePopHdr:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-    dePopHdr:SetText("DISENCHANTER")
+    dePopHdr:SetText(L["DISENCHANTER"])
 
     -- Scroll frame inside popup
     local dePopScroll = CreateFrame("ScrollFrame", "BRutusMLDEPickerScroll", dePickerPopup, "UIPanelScrollFrameTemplate")
@@ -1870,7 +1870,7 @@ function LootMaster:ShowLootFrame(items)
             deNameText:SetText(deName)
         else
             deNameText:SetTextColor(0.45, 0.45, 0.45)
-            deNameText:SetText("Nenhum")
+            deNameText:SetText(L["None"])
         end
     end
     RefreshDELabel()
@@ -1940,7 +1940,7 @@ function LootMaster:ShowLootFrame(items)
                 LootMaster:SetDisenchanter(capturedName)
                 RefreshDELabel()
                 dePickerPopup:Hide()
-                BRutus:Print("Disenchanter: |cff00ff00" .. capturedName .. "|r")
+                BRutus:Print(L["Disenchanter: |cff00ff00"] .. capturedName .. "|r")
             end)
             row:SetScript("OnEnter", function(self)
                 self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
@@ -1965,7 +1965,7 @@ function LootMaster:ShowLootFrame(items)
         clearText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
         clearText:SetPoint("LEFT", 6, 0)
         clearText:SetTextColor(0.4, 0.4, 0.4)
-        clearText:SetText("--- Nenhum ---")
+        clearText:SetText(L["--- None ---"])
         clearRow:SetScript("OnClick", function()
             LootMaster:SetDisenchanter("")
             RefreshDELabel()
@@ -2002,7 +2002,7 @@ function LootMaster:ShowLootFrame(items)
     itemsLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     itemsLabel:SetPoint("TOPLEFT", 8, -30)
     itemsLabel:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-    itemsLabel:SetText("LOOT  (" .. #items .. ")")
+    itemsLabel:SetText(L["LOOT  ("] .. #items .. ")")
 
     local selectedBtn  = nil
     local selectedItem = nil
@@ -2016,7 +2016,7 @@ function LootMaster:ShowLootFrame(items)
     selItemText:SetPoint("TOPLEFT", RIGHT_X, -30)
     selItemText:SetWidth(rightW - 10)
     selItemText:SetJustifyH("LEFT")
-    selItemText:SetText("|cff888888Select an item from the left.|r")
+    selItemText:SetText(L["|cff888888Select an item from the left.|r"])
 
     -- Column headers
     local prioHdr = CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -2031,7 +2031,7 @@ function LootMaster:ShowLootFrame(items)
         t:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
         t:SetText(txt)
     end
-    PH("#", 4); PH("TYPE", 22); PH("ORDER", 64); PH("PLAYER", 106); PH("ATT%", 210); PH("RECV", 255); PH("IN RAID", 295)
+    PH("#", 4); PH(L["TYPE"], 22); PH(L["ORDER"], 64); PH(L["PLAYER"], 106); PH(L["ATT%"], 210); PH(L["RECV"], 255); PH(L["IN RAID"], 295)
 
     -- Priority scroll area
     local prioContainer = CreateFrame("Frame", nil, f)
@@ -2060,26 +2060,26 @@ function LootMaster:ShowLootFrame(items)
     statusText:SetJustifyH("LEFT")
     statusText:SetText("")
 
-    local awardTopBtn = UI:CreateButton(f, "Award #1", 140, 26)
+    local awardTopBtn = UI:CreateButton(f, L["Award #1"], 140, 26)
     awardTopBtn:SetPoint("BOTTOMRIGHT", -10, 10)
     awardTopBtn:Disable()
 
-    local openRollBtn = UI:CreateButton(f, "Open Roll", 120, 26)
+    local openRollBtn = UI:CreateButton(f, L["Open Roll"], 120, 26)
     openRollBtn:SetPoint("RIGHT", awardTopBtn, "LEFT", -6, 0)
 
     -- Send to disenchanter (for items nobody wants)
-    local deLootBtn = UI:CreateButton(f, "Send to DE", 110, 26)
+    local deLootBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
     deLootBtn:SetPoint("RIGHT", openRollBtn, "LEFT", -6, 0)
     deLootBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deLootBtn:SetScript("OnClick", function()
         if not selectedItem then
-            statusText:SetText("|cffFF4444Selecione um item primeiro.|r")
+            statusText:SetText(L["|cffFF4444Select an item first.|r"])
             return
         end
         local iId = tonumber(selectedItem.link:match("item:(%d+)"))
         LootMaster:SetActiveLoot(selectedItem.link, selectedItem.slot, iId)
         LootMaster:SendToDisenchanter(selectedItem.link, selectedItem.slot, iId)
-        statusText:SetText("|cff9966FFEnviado para Disenchant!|r")
+        statusText:SetText(L["|cff9966FFSent to Disenchant!|r"])
         if itemBtns[selectedItem.slot] then
             itemBtns[selectedItem.slot].awardedText:Show()
         end
@@ -2088,9 +2088,9 @@ function LootMaster:ShowLootFrame(items)
         local deName = LootMaster:GetDisenchanter()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if deName and deName ~= "" then
-            GameTooltip:SetText("Enviar para Disenchant\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
+            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
         else
-            GameTooltip:SetText("Enviar para Disenchant\n|cffFF4444Nenhum disenchanter definido|r", 1, 1, 1)
+            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cffFF4444" .. L["No disenchanter set"] .. "|r", 1, 1, 1)
         end
         GameTooltip:Show()
     end)
@@ -2126,7 +2126,7 @@ function LootMaster:ShowLootFrame(items)
         local iId = tonumber(item.link:match("item:(%d+)"))
         LootMaster:SetActiveLoot(item.link, item.slot, iId)
         LootMaster:AwardLoot(entryName)  -- RecordReceived is called inside AwardLoot
-        statusText:SetText("|cff4CFF4CAwarded to " .. entryName .. "!|r")
+        statusText:SetText(L["|cff4CFF4CAwarded to "] .. entryName .. "!|r")
         if itemBtns[item.slot] then
             itemBtns[item.slot].awardedText:Show()
         end
@@ -2156,13 +2156,13 @@ function LootMaster:ShowLootFrame(items)
             t:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             t:SetText(msg)
             prioChild:SetHeight(40)
-            awardTopBtn:SetText("Award #1")
+            awardTopBtn:SetText(L["Award #1"])
             awardTopBtn:Disable()
-            openRollBtn:SetText("Roll for All")
+            openRollBtn:SetText(L["Roll for All"])
         end
 
         if not itemId then
-            NoData("Could not parse item ID.")
+            NoData(L["Could not parse item ID."])
             return
         end
 
@@ -2176,7 +2176,7 @@ function LootMaster:ShowLootFrame(items)
         end
 
         if #candidates == 0 then
-            NoData("Nenhum dado de wishlist para este item — use Open Roll.")
+            NoData(L["No wishlist data for this item - use Open Roll."])
             return
         end
 
@@ -2203,18 +2203,18 @@ function LootMaster:ShowLootFrame(items)
         -- Update bottom buttons
         if topCandidate then
             if tiedCount == 1 then
-                awardTopBtn:SetText("Award → " .. topCandidate.name)
+                awardTopBtn:SetText(L["Award → "] .. topCandidate.name)
                 awardTopBtn:Enable()
-                openRollBtn:SetText("Open Roll")
+                openRollBtn:SetText(L["Open Roll"])
             else
-                awardTopBtn:SetText("Tied " .. tiedCount .. " — Roll")
+                awardTopBtn:SetText(format(L["Tied %d — Roll"], tiedCount))
                 awardTopBtn:Disable()
-                openRollBtn:SetText("Roll Tied (" .. tiedCount .. ")")
+                openRollBtn:SetText(format(L["Roll Tied (%d)"], tiedCount))
             end
         else
-            awardTopBtn:SetText("Award #1")
+            awardTopBtn:SetText(L["Award #1"])
             awardTopBtn:Disable()
-            openRollBtn:SetText("Roll for All")
+            openRollBtn:SetText(L["Roll for All"])
         end
 
         -- Render priority rows
@@ -2265,7 +2265,7 @@ function LootMaster:ShowLootFrame(items)
             local typeT = row:CreateFontString(nil, "OVERLAY")
             typeT:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
             typeT:SetPoint("LEFT", 22, 0)
-            typeT:SetText(e.type == "prio" and "PRIO" or "WISH")
+            typeT:SetText(e.type == "prio" and L["PRIO"] or L["WISH"])
             local tc2 = e.type == "prio" and C.accent or C.gold
             typeT:SetTextColor(
                 isPresent and tc2.r or 0.3,
@@ -2333,15 +2333,15 @@ function LootMaster:ShowLootFrame(items)
             raidT:SetPoint("LEFT", 295, 0)
             if isPresent then
                 raidT:SetTextColor(0.3, 1.0, 0.3)
-                raidT:SetText("IN RAID")
+                raidT:SetText(L["IN RAID"])
             else
                 raidT:SetTextColor(0.4, 0.4, 0.4)
-                raidT:SetText("absent")
+                raidT:SetText(L["absent"])
             end
 
             -- Award button (in-raid + ML only)
             if isPresent and LootMaster:IsMasterLooter() then
-                local aBtn = UI:CreateButton(row, "Award", 58, 18)
+                local aBtn = UI:CreateButton(row, L["Award"], 58, 18)
                 aBtn:SetPoint("RIGHT", -4, 0)
                 local capturedEntry = e
                 local capturedItem  = item
@@ -2386,7 +2386,7 @@ function LootMaster:ShowLootFrame(items)
                 recvHdr:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
                 recvHdr:SetPoint("TOPLEFT", 4, -yOff)
                 recvHdr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-                recvHdr:SetText("Already received:")
+                recvHdr:SetText(L["Already received:"])
                 yOff = yOff + 16
                 for _, e in ipairs(recvList) do
                     local rt = prioChild:CreateFontString(nil, "OVERLAY")
@@ -2433,7 +2433,7 @@ function LootMaster:ShowLootFrame(items)
         aText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
         aText:SetPoint("BOTTOMLEFT", 6, 3)
         aText:SetTextColor(0.3, 1.0, 0.3)
-        aText:SetText("awarded")
+        aText:SetText(L["awarded"])
         aText:Hide()
         btn.awardedText = aText
 
@@ -2480,14 +2480,14 @@ function LootMaster:ShowLootFrame(items)
     tmbLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     tmbLabel:SetPoint("LEFT", tmbCheck, "RIGHT", 2, 0)
     tmbLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    tmbLabel:SetText("Wishlist Council")
+    tmbLabel:SetText(L["Wishlist Council"])
 
     ----------------------------------------------------------------
     -- Bottom button handlers
     ----------------------------------------------------------------
     awardTopBtn:SetScript("OnClick", function()
         if not topCandidate or not selectedItem then
-            statusText:SetText("|cffFF4444No top priority candidate.|r")
+            statusText:SetText(L["|cffFF4444No top priority candidate.|r"])
             return
         end
         DoAward(selectedItem, topCandidate.name)
@@ -2498,12 +2498,12 @@ function LootMaster:ShowLootFrame(items)
 
     openRollBtn:SetScript("OnClick", function()
         if not selectedItem then
-            statusText:SetText("|cffFF4444Select an item first.|r")
+            statusText:SetText(L["|cffFF4444Select an item first.|r"])
             return
         end
         LootMaster:AnnounceItem(selectedItem.link, selectedItem.slot)
         LootMaster:ShowRollFrame()
-        statusText:SetText("|cffFFFF00Roll opened!|r")
+        statusText:SetText(L["|cffFFFF00Roll opened!|r"])
     end)
 
     ----------------------------------------------------------------
@@ -2556,7 +2556,7 @@ function LootMaster:ShowRollFrame()
     title:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText("Roll Tracker")
+    title:SetText(L["Roll Tracker"])
 
     -- Item display
     local itemText = f:CreateFontString(nil, "OVERLAY")
@@ -2580,7 +2580,7 @@ function LootMaster:ShowRollFrame()
     sep:SetVertexColor(C.border.r, C.border.g, C.border.b, 0.4)
 
     -- Column headers
-    local headers = { { "Player", 6 }, { "Type", 145 }, { "Roll", 195 }, { "Prio/WL", 245 }, { "ATT%", 325 }, { "RECV", 375 } }
+    local headers = { { L["Player"], 6 }, { L["Type"], 145 }, { L["Roll"], 195 }, { L["Prio/WL"], 245 }, { L["ATT%"], 325 }, { L["RECV"], 375 } }
     for _, h in ipairs(headers) do
         local ht = f:CreateFontString(nil, "OVERLAY")
         ht:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
@@ -2600,14 +2600,14 @@ function LootMaster:ShowRollFrame()
     f.scrollContent = scrollContent
 
     -- Bottom buttons
-    local cancelBtn = UI:CreateButton(f, "Cancel", 80, 24)
+    local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
     cancelBtn:SetPoint("BOTTOMLEFT", 10, 12)
     cancelBtn:SetBackdropColor(C.red.r * 0.3, C.red.g * 0.3, C.red.b * 0.3, 0.6)
     cancelBtn:SetScript("OnClick", function()
         LootMaster:CancelRolling()
     end)
 
-    local endBtn = UI:CreateButton(f, "End Rolling", 100, 24)
+    local endBtn = UI:CreateButton(f, L["End Rolling"], 100, 24)
     endBtn:SetPoint("BOTTOM", 0, 12)
     endBtn:SetScript("OnClick", function()
         LootMaster:EndRolling()
@@ -2615,12 +2615,12 @@ function LootMaster:ShowRollFrame()
     f.endBtn = endBtn
 
     -- Send to Disenchanter (between Cancel and End Rolling)
-    local deRollBtn = UI:CreateButton(f, "Send to DE", 100, 24)
+    local deRollBtn = UI:CreateButton(f, L["Send to DE"], 100, 24)
     deRollBtn:SetPoint("LEFT", cancelBtn, "RIGHT", 8, 0)
     deRollBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deRollBtn:SetScript("OnClick", function()
         if not LootMaster.activeLoot then
-            BRutus:Print("Nenhum item ativo para enviar ao disenchanter.")
+            BRutus:Print(L["No active item to send to the disenchanter."])
             return
         end
         local loot = LootMaster.activeLoot
@@ -2631,9 +2631,9 @@ function LootMaster:ShowRollFrame()
         local deName = LootMaster:GetDisenchanter()
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         if deName and deName ~= "" then
-            GameTooltip:SetText("Enviar para Disenchant\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
+            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
         else
-            GameTooltip:SetText("Enviar para Disenchant\n|cffFF4444Nenhum disenchanter definido|r", 1, 1, 1)
+            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cffFF4444" .. L["No disenchanter set"] .. "|r", 1, 1, 1)
         end
         GameTooltip:Show()
     end)
@@ -2649,7 +2649,7 @@ function LootMaster:ShowRollFrame()
     end)
     osRollBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Roll Off-Spec\n|cff888888/roll 1-99|r", 1, 1, 1)
+        GameTooltip:SetText(L["Roll Off-Spec"] .. "\n|cff888888/roll 1-99|r", 1, 1, 1)
         GameTooltip:Show()
     end)
     osRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2663,7 +2663,7 @@ function LootMaster:ShowRollFrame()
     end)
     msRollBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Roll Main Spec\n|cff888888/roll 1-100|r", 1, 1, 1)
+        GameTooltip:SetText(L["Roll Main Spec"] .. "\n|cff888888/roll 1-100|r", 1, 1, 1)
         GameTooltip:Show()
     end)
     msRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2673,7 +2673,7 @@ function LootMaster:ShowRollFrame()
     rollLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
     rollLabel:SetPoint("BOTTOM", msRollBtn, "TOP", 32, 2)
     rollLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    rollLabel:SetText("Your roll:")
+    rollLabel:SetText(L["Your roll:"])
 
     -- Close
     local closeBtn = UI:CreateCloseButton(f)
@@ -2705,9 +2705,9 @@ function LootMaster:RefreshRollFrame()
 
     -- Update item
     if self.activeLoot then
-        f.itemText:SetText(self.activeLoot.link or "No item")
+        f.itemText:SetText(self.activeLoot.link or L["No item"])
     else
-        f.itemText:SetText("|cff888888No active roll|r")
+        f.itemText:SetText(L["|cff888888No active roll|r"])
         f.timerText:SetText("")
     end
 
@@ -2775,9 +2775,9 @@ function LootMaster:RefreshRollFrame()
         tmbText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
         tmbText:SetPoint("LEFT", 250, 0)
         if r.prioOrder then
-            tmbText:SetText(string.format("|cffFFD700* Prio #%d|r", r.prioOrder))
+            tmbText:SetText(string.format(L["|cffFFD700* Prio #%d|r"], r.prioOrder))
         elseif r.wishlist then
-            tmbText:SetText("|cff4CB8FFwishlist #" .. r.wishlist.order .. "|r")
+            tmbText:SetText(L["|cff4CB8FFwishlist #"] .. r.wishlist.order .. "|r")
         else
             tmbText:SetTextColor(0.4, 0.4, 0.4)
             tmbText:SetText("-")
@@ -2826,7 +2826,7 @@ function LootMaster:RefreshRollFrame()
             local aText = awardBtn:CreateFontString(nil, "OVERLAY")
             aText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
             aText:SetPoint("CENTER")
-            aText:SetText("Award")
+            aText:SetText(L["Award"])
             aText:SetTextColor(0.3, 1.0, 0.3)
             local playerName = r.name
             awardBtn:SetScript("OnClick", function()
@@ -2853,20 +2853,20 @@ function LootMaster:UpdateRollTimer()
     if not self.rollFrame or not self.activeLoot then return end
 
     if self.activeLoot.ended then
-        self.rollFrame.timerText:SetText("|cffFF4444Rolling ended - click Award|r")
+        self.rollFrame.timerText:SetText(L["|cffFF4444Rolling ended - click Award|r"])
         return
     end
 
     if not self.activeLoot.endTime then
-        self.rollFrame.timerText:SetText("|cff888888No timer|r")
+        self.rollFrame.timerText:SetText(L["|cff888888No timer|r"])
         return
     end
 
     local remaining = self.activeLoot.endTime - GetServerTime()
     if remaining > 0 then
-        self.rollFrame.timerText:SetText(string.format("|cffFFFF00%ds remaining|r  |  %d rolls", remaining, self:CountRolls()))
+        self.rollFrame.timerText:SetText(string.format(L["|cffFFFF00%ds remaining|r  |  %d rolls"], remaining, self:CountRolls()))
     else
-        self.rollFrame.timerText:SetText("|cffFF4444Time's up!|r")
+        self.rollFrame.timerText:SetText(L["|cffFF4444Time's up!|r"])
     end
 end
 
@@ -2895,10 +2895,10 @@ end
 
 -- Rarity threshold (item quality id) the ML window reacts to.
 LootMaster.THRESHOLD_NAMES = {
-    [2] = "Incomum (verde)",
-    [3] = "Raro (azul)",
-    [4] = "Épico (roxo)",
-    [5] = "Lendário (laranja)",
+    [2] = L["Uncommon (green)"],
+    [3] = L["Rare (blue)"],
+    [4] = L["Epic (purple)"],
+    [5] = L["Legendary (orange)"],
 }
 
 function LootMaster:GetLootThreshold()
@@ -2922,7 +2922,7 @@ end
 function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
     local deName = self:GetDisenchanter()
     if not deName or deName == "" then
-        BRutus:Print("|cffFF4444Nenhum disenchanter definido.|r Configure nas opções do Loot Master.")
+        BRutus:Print("|cffFF4444" .. L["No disenchanter set."] .. "|r " .. L["Configure it in the Loot Master options."])
         return
     end
 
@@ -2933,11 +2933,11 @@ function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
 
     local msg
     if reason == "norolls" then
-        msg = string.format("[Loot] %s - ninguem rolou. Enviando para Disenchant: %s",
-            itemLink or "item", deName)
+        msg = string.format(L["[Loot] %s - nobody rolled. Sending to Disenchant: %s"],
+            itemLink or L["item"], deName)
     else
-        msg = string.format("[Loot] %s entregue para Disenchant (%s)",
-            itemLink or "item", deName)
+        msg = string.format(L["[Loot] %s delivered to Disenchant (%s)"],
+            itemLink or L["item"], deName)
     end
     self:SafeSendChat(msg, "RAID")
 
@@ -2952,17 +2952,17 @@ end
 ----------------------------------------------------------------------
 function LootMaster:RollFromBag(bag, slot)
     if not IsInRaid() and not self.testMode then
-        BRutus:Print("|cffFF4444[LootMaster]|r Apenas disponível em raid.")
+        BRutus:Print("|cffFF4444[LootMaster]|r " .. L["Only available in a raid."])
         return
     end
     if not self:IsMasterLooter() then
-        BRutus:Print("|cffFF4444[LootMaster]|r Apenas o Master Looter pode usar esta função.")
+        BRutus:Print("|cffFF4444[LootMaster]|r " .. L["Only the Master Looter can use this function."])
         return
     end
 
     -- Block if a roll session is already in progress
     if self.activeLoot and not self.activeLoot.delivered then
-        BRutus:Print("|cffFF9900[LootMaster]|r Roll em andamento: " .. (self.activeLoot.link or "?"))
+        BRutus:Print("|cffFF9900[LootMaster]|r " .. L["Roll in progress: "] .. (self.activeLoot.link or "?"))
         return
     end
 
@@ -2979,13 +2979,13 @@ function LootMaster:RollFromBag(bag, slot)
     -- Respect the configured rarity threshold; skip if info not cached yet
     local _, _, quality = GetItemInfo(itemLink)
     if quality and quality < (self.LOOT_THRESHOLD or 3) then
-        BRutus:Print("|cffFF9900[LootMaster]|r Item abaixo do threshold de raridade configurado.")
+        BRutus:Print("|cffFF9900[LootMaster]|r " .. L["Item below the configured rarity threshold."])
         return
     end
 
     -- Force trade-delivery path (no loot window is open for bag items)
     self.lootWindowOpen = false
 
-    BRutus:Print("|cff00ff00[LootMaster]|r Iniciando roll da bag: " .. itemLink)
+    BRutus:Print("|cff00ff00[LootMaster]|r " .. L["Starting bag roll: "] .. itemLink)
     self:AnnounceItem(itemLink, nil)
 end

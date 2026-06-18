@@ -5,6 +5,7 @@
 ----------------------------------------------------------------------
 local Wishlist = {}
 BRutus.Wishlist = Wishlist
+local L = BRutus.L
 
 -- Color palette for wishlist entries
 Wishlist.TypeColors = {
@@ -140,9 +141,9 @@ end
 -- Item metadata helpers
 ----------------------------------------------------------------------
 function Wishlist:GetItemName(itemId)
-    if not itemId then return "Item #?" end
+    if not itemId then return L["Item #?"] end
     local name = GetItemInfo(itemId)
-    return name or ("Item #" .. itemId)
+    return name or (L["Item #"] .. itemId)
 end
 
 function Wishlist:GetItemQuality(itemId)
@@ -178,19 +179,19 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
             entry.itemLink  = itemLink or entry.itemLink
             entry.isOffspec = isOffspec or false
             self:BroadcastMyWishlist()
-            BRutus:Print(format("[Wishlist] Atualizado: %s", itemLink or ("Item #" .. itemId)))
+            BRutus:Print(format(L["[Wishlist] Updated: %s"], itemLink or (L["Item #"] .. itemId)))
             return
         end
     end
 
     if #list >= WISHLIST_MAX then
-        BRutus:Print(format("|cffFF4444[Wishlist]|r Limite de %d itens atingido.", WISHLIST_MAX))
+        BRutus:Print(format(L["|cffFF4444[Wishlist]|r Item limit of %d reached."], WISHLIST_MAX))
         return
     end
 
     local name = GetItemInfo(itemId)
     if not name then
-        BRutus:Print("|cffFF4444[Wishlist]|r Item desconhecido. Tente novamente em alguns segundos.")
+        BRutus:Print(L["|cffFF4444[Wishlist]|r Unknown item. Try again in a few seconds."])
         return
     end
 
@@ -201,7 +202,7 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
         isOffspec = isOffspec or false,
     })
     self:BroadcastMyWishlist()
-    BRutus:Print(format("[Wishlist] Adicionado #%d: %s", #list, itemLink or name))
+    BRutus:Print(format(L["[Wishlist] Added #%d: %s"], #list, itemLink or name))
     if BRutus.WishlistFrame and BRutus.WishlistFrame:IsShown() then
         BRutus:RefreshWishlistFrame()
     end
@@ -231,7 +232,7 @@ end
 function Wishlist:RemoveFromWishlist(itemId)
     if not BRutus.db then return end
     if self:IsItemDelivered(itemId) then
-        BRutus:Print("|cffFF4444[Wishlist]|r Este item já foi entregue e não pode ser removido.")
+        BRutus:Print(L["|cffFF4444[Wishlist]|r This item has already been delivered and cannot be removed."])
         return
     end
     local list = self:GetMyList()
@@ -241,14 +242,14 @@ function Wishlist:RemoveFromWishlist(itemId)
             table.remove(list, i)
             for j, e in ipairs(list) do e.order = j end
             self:BroadcastMyWishlist()
-            BRutus:Print(format("[Wishlist] Removido: %s", link ~= "" and link or ("Item #" .. itemId)))
+            BRutus:Print(format(L["[Wishlist] Removed: %s"], link ~= "" and link or (L["Item #"] .. itemId)))
             if BRutus.WishlistFrame and BRutus.WishlistFrame:IsShown() then
                 BRutus:RefreshWishlistFrame()
             end
             return
         end
     end
-    BRutus:Print("[Wishlist] Item não encontrado na sua wishlist.")
+    BRutus:Print(L["[Wishlist] Item not found in your wishlist."])
 end
 
 -- Move an item up (-1) or down (+1) in the wishlist order.
@@ -352,13 +353,13 @@ function Wishlist:HookTooltips()
         if not entries or #entries == 0 then return end
 
         tooltip:AddLine(" ")
-        tooltip:AddLine("Na wishlist de:",
+        tooltip:AddLine(L["On the wishlist of:"],
             self.TypeColors.wishlist.r,
             self.TypeColors.wishlist.g,
             self.TypeColors.wishlist.b)
         for _, e in ipairs(entries) do
             local cc    = BRutus.ClassColors[e.class:upper()] or BRutus.Colors.white
-            local label = "#" .. e.order .. (e.isOffspec and " (OS)" or "")
+            local label = "#" .. e.order .. (e.isOffspec and L[" (OS)"] or "")
             tooltip:AddDoubleLine("  " .. e.name, label,
                 cc.r, cc.g, cc.b, 0.7, 0.7, 0.7)
         end
@@ -400,5 +401,5 @@ function Wishlist:HandleLootPriosBroadcast(sender, data)
     if not BRutus.db then return end
     BRutus.db.lootPrios = payload
     self:RebuildItemIndex()
-    BRutus:Print("[Wishlist] Prioridades atualizadas por " .. (sender or "?"))
+    BRutus:Print(L["[Wishlist] Priorities updated by "] .. (sender or "?"))
 end

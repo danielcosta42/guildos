@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------
 local UI = BRutus.UI
 local C = BRutus.Colors
+local L = BRutus.L
 
 -- Column definitions
 -- Attunements and Attendance live in their own dedicated places (member
@@ -11,15 +12,15 @@ local C = BRutus.Colors
 -- keep the roster table clean. Freed width is redistributed to the remaining
 -- columns so the table still fills its area.
 local COLUMNS = {
-    { key = "status",      label = "",            width = 20,  align = "CENTER" },
-    { key = "name",        label = "MEMBER",      width = 170, align = "LEFT" },
-    { key = "level",       label = "LVL",         width = 40,  align = "CENTER" },
-    { key = "class",       label = "CLASS",       width = 100, align = "LEFT" },
-    { key = "race",        label = "RACE",        width = 95,  align = "LEFT" },
-    { key = "avgIlvl",     label = "iLVL",        width = 50,  align = "CENTER" },
-    { key = "professions", label = "PROFESSIONS", width = 230, align = "LEFT" },
-    { key = "zone",        label = "ZONE",        width = 165, align = "LEFT" },
-    { key = "lastSeen",    label = "LAST SEEN",   width = 90,  align = "RIGHT" },
+    { key = "status",      label = "",                 width = 20,  align = "CENTER" },
+    { key = "name",        label = L["MEMBER"],        width = 170, align = "LEFT" },
+    { key = "level",       label = L["LVL"],           width = 40,  align = "CENTER" },
+    { key = "class",       label = L["CLASS"],         width = 100, align = "LEFT" },
+    { key = "race",        label = L["RACE"],          width = 95,  align = "LEFT" },
+    { key = "avgIlvl",     label = L["iLVL"],          width = 50,  align = "CENTER" },
+    { key = "professions", label = L["PROFESSIONS"],   width = 230, align = "LEFT" },
+    { key = "zone",        label = L["ZONE"],          width = 165, align = "LEFT" },
+    { key = "lastSeen",    label = L["LAST SEEN"],      width = 90,  align = "RIGHT" },
 }
 
 local ROW_HEIGHT = 32
@@ -142,7 +143,7 @@ function BRutus.CreateRosterFrame()
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
     -- Sync button
-    local syncBtn = UI:CreateButton(titleBar, "Sync", 70, 24)
+    local syncBtn = UI:CreateButton(titleBar, L["Sync"], 70, 24)
     syncBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
     syncBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     syncBtn:SetScript("OnClick", function()
@@ -287,16 +288,17 @@ function BRutus.CreateRosterFrame()
     end
 
     -- Create tabs
-    CreateTab("roster", "Roster", false)
-    CreateTab("recipes", "Recipes", false)
+    CreateTab("roster", L["Roster"], false)
+    CreateTab("recipes", L["Recipes"], false)
     if BRutus:IsOfficer() then
-        CreateTab("wishlist", "Lista de Desejos", false)
+        CreateTab("wishlist", L["Wishlist"], false)
     end
-    CreateTab("raids", "Raids", false)
-    CreateTab("loot", "Loot", true)  -- officers always see loot history; items recorded only via ML
-    CreateTab("trials", "Trials", true)
-    CreateTab("recruitment", "Recruitment", true)
-    CreateTab("settings", "Settings", false)
+    CreateTab("raids", L["Raids"], false)
+    CreateTab("loot", L["Loot"], true)  -- officers always see loot history; items recorded only via ML
+    CreateTab("trials", L["Trials"], true)
+    CreateTab("recruitment", L["Recruitment"], true)
+    CreateTab("management", L["Leadership"], true)
+    CreateTab("settings", L["Settings"], false)
 
     ----------------------------------------------------------------
     -- ROSTER PANEL  (dashboard layout: KPI band + left rail + table)
@@ -336,11 +338,11 @@ function BRutus.CreateRosterFrame()
     local CARD_GAP, CARD_MARGIN, CARD_COUNT = 10, 12, 5
     local CARD_W = math.floor((FRAME_WIDTH - CARD_MARGIN * 2 - CARD_GAP * (CARD_COUNT - 1)) / CARD_COUNT)
     local function cardX(i) return CARD_MARGIN + (CARD_W + CARD_GAP) * i end
-    frame.kpiMembers = MakeKpiCard(cardX(0), CARD_W, "MEMBROS",        C.text)
-    frame.kpiOnline  = MakeKpiCard(cardX(1), CARD_W, "ONLINE",         C.online)
-    frame.kpiIlvl    = MakeKpiCard(cardX(2), CARD_W, "iLVL MÉDIO",     C.gold)
-    frame.kpiAtt     = MakeKpiCard(cardX(3), CARD_W, "PRESENÇA MÉDIA", C.text)
-    frame.kpiAddon   = MakeKpiCard(cardX(4), CARD_W, "COM GUILD OS",   C.accent)
+    frame.kpiMembers = MakeKpiCard(cardX(0), CARD_W, L["MEMBERS"],        C.text)
+    frame.kpiOnline  = MakeKpiCard(cardX(1), CARD_W, L["ONLINE"],         C.online)
+    frame.kpiIlvl    = MakeKpiCard(cardX(2), CARD_W, L["AVG iLVL"],       C.gold)
+    frame.kpiAtt     = MakeKpiCard(cardX(3), CARD_W, L["AVG ATTENDANCE"], C.text)
+    frame.kpiAddon   = MakeKpiCard(cardX(4), CARD_W, L["WITH GUILD OS"],  C.accent)
 
     -- KPI band bottom separator
     local bandLine = UI:CreateSeparator(rosterPanel)
@@ -390,17 +392,17 @@ function BRutus.CreateRosterFrame()
     frame.resultText = resultText
 
     -- Filter: Show offline toggle
-    local offlineBtn = UI:CreateButton(statsBar, "Show Offline", 100, 22)
+    local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
     offlineBtn:SetPoint("RIGHT", -12, 0)
     offlineBtn.isToggled = true
     offlineBtn:SetScript("OnClick", function(self)
         self.isToggled = not self.isToggled
         BRutus.db.settings.showOffline = self.isToggled
         if self.isToggled then
-            self.label:SetText("Show Offline")
+            self.label:SetText(L["Show Offline"])
             self:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
         else
-            self.label:SetText("Online Only")
+            self.label:SetText(L["Online Only"])
             self:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
         frame:RefreshRoster()
@@ -428,7 +430,7 @@ function BRutus.CreateRosterFrame()
     searchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    searchPlaceholder:SetText("Search...")
+    searchPlaceholder:SetText(L["Search..."])
 
     searchBox:SetScript("OnTextChanged", function(self)
         local text = self:GetText()
@@ -600,21 +602,21 @@ function BRutus.CreateRosterFrame()
     end
 
     -- VISÃO
-    RailSectionHeader("VISÃO", -10)
+    RailSectionHeader(L["VIEW"], -10)
     local segAll = CreateRailButton()
     segAll:SetPoint("TOPLEFT", RAIL_PAD, -26)
-    segAll.label:SetText("Todos")
+    segAll.label:SetText(L["All"])
     segAll:SetScript("OnClick", function() frame:SetSegment("all") end)
     frame.segBtns.all = segAll
 
     local segOnline = CreateRailButton()
     segOnline:SetPoint("TOPLEFT", RAIL_PAD, -52)
-    segOnline.label:SetText("Online")
+    segOnline.label:SetText(L["Online"])
     segOnline:SetScript("OnClick", function() frame:SetSegment("online") end)
     frame.segBtns.online = segOnline
 
     -- RANKS (dynamic — populated from the guild's actual ranks in UpdateRail)
-    RailSectionHeader("RANKS", -86)
+    RailSectionHeader(L["RANKS"], -86)
     local RANK_TOP, RANK_H = -106, 26
 
     -- CLASSES (fixed chips, anchored to the bottom of the rail, growing upward)
@@ -676,7 +678,7 @@ function BRutus.CreateRosterFrame()
         chip:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", x, y)
         frame.classChips[classFile] = chip
     end
-    local classHeader = UI:CreateText(rail, "CLASSES", 9, C.gold.r, C.gold.g, C.gold.b)
+    local classHeader = UI:CreateText(rail, L["CLASSES"], 9, C.gold.r, C.gold.g, C.gold.b)
     classHeader:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
     classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + 5 * CHIP_ROW_H + 2)
 
@@ -726,7 +728,7 @@ function BRutus.CreateRosterFrame()
                 self.rankBtns[slot] = b
             end
             b.rankIndex = idx
-            b.label:SetText(rankName[idx] or ("Rank " .. idx))
+            b.label:SetText(rankName[idx] or string.format(L["Rank %d"], idx))
             b.count:SetText(rankCount[idx] or 0)
             b:SetScript("OnClick", function() frame:SetSegment("rank:" .. idx) end)
             b:Show()
@@ -746,15 +748,15 @@ function BRutus.CreateRosterFrame()
 
     function frame:GetSegmentLabel()
         if self.segment == "online" then
-            return "Online"
+            return L["Online"]
         elseif type(self.segment) == "string" and self.segment:find("^rank:") then
             local ri = tonumber(self.segment:match("^rank:(%d+)"))
             for _, b in ipairs(self.rankBtns) do
-                if b.rankIndex == ri then return b.label:GetText() or "Rank" end
+                if b.rankIndex == ri then return b.label:GetText() or L["Rank"] end
             end
-            return "Rank"
+            return L["Rank"]
         end
-        return "Todos"
+        return L["All"]
     end
 
     function frame:SetSegment(id)
@@ -837,6 +839,16 @@ function BRutus.CreateRosterFrame()
     BRutus:CreateTrialsPanel(trialsPanel, frame)
 
     ----------------------------------------------------------------
+    -- MANAGEMENT / LEADERSHIP PANEL (officer only)
+    ----------------------------------------------------------------
+    local managementPanel = CreateFrame("Frame", nil, frame)
+    managementPanel:SetPoint("TOPLEFT", 0, contentTop)
+    managementPanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    managementPanel:Hide()
+    frame.tabPanels["management"] = managementPanel
+    BRutus:CreateManagementPanel(managementPanel, frame)
+
+    ----------------------------------------------------------------
     -- SETTINGS PANEL
     ----------------------------------------------------------------
     local settingsPanel = CreateFrame("Frame", nil, frame)
@@ -867,7 +879,7 @@ function BRutus.CreateRosterFrame()
     helpText:SetPoint("LEFT", 12, 0)
 
     -- "Minha Wishlist" quick-access button (all members)
-    local wishBtn = UI:CreateButton(bottomBar, "Minha Wishlist", 120, 22)
+    local wishBtn = UI:CreateButton(bottomBar, L["My Wishlist"], 120, 22)
     wishBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
     wishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
 
@@ -888,7 +900,7 @@ function BRutus.CreateRosterFrame()
     invitePlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
     invitePlaceholder:SetPoint("LEFT", 6, 0)
     invitePlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    invitePlaceholder:SetText("Player name...")
+    invitePlaceholder:SetText(L["Player name..."])
 
     inviteBox:SetScript("OnTextChanged", function(self)
         local text = self:GetText()
@@ -899,17 +911,17 @@ function BRutus.CreateRosterFrame()
         end
     end)
 
-    local inviteBtn = UI:CreateButton(bottomBar, "Invite", 70, 22)
+    local inviteBtn = UI:CreateButton(bottomBar, L["Invite"], 70, 22)
     inviteBtn:SetPoint("RIGHT", -12, 0)
 
     local function DoInvite()
         local target = strtrim(inviteBox:GetText() or "")
         if target == "" then
-            BRutus:Print("Enter a player name to invite.")
+            BRutus:Print(L["Enter a player name to invite."])
             return
         end
         GuildInvite(target)
-        BRutus:Print("Guild invite sent to " .. target .. ".")
+        BRutus:Print(string.format(L["Guild invite sent to %s."], target))
         inviteBox:SetText("")
         inviteBox:ClearFocus()
     end
@@ -1163,9 +1175,9 @@ function BRutus.CreateRosterFrame()
         -- Toolbar result summary (reflects the active filters)
         if self.resultText then
             local shown = self.sortedMembers and #self.sortedMembers or 0
-            local segLabel = self.GetSegmentLabel and self:GetSegmentLabel() or "Todos"
+            local segLabel = self.GetSegmentLabel and self:GetSegmentLabel() or L["All"]
             self.resultText:SetText(string.format(
-                "%s  |cff6a6a76·|r  |cffffffff%d|r de %d", segLabel, shown, numTotal))
+                L["%s  |cff6a6a76·|r  |cffffffff%d|r of %d"], segLabel, shown, numTotal))
         end
 
         -- Rail counts + active highlight
@@ -1440,7 +1452,7 @@ function UpdateRosterRow(row, data, rowIndex)
         end
         row.profText:SetText(table.concat(parts, " / "))
     else
-        row.profText:SetText("|cff666666No data|r")
+        row.profText:SetText(L["|cff666666No data|r"])
     end
 
     -- Zone (only shown for online members)
@@ -1453,7 +1465,7 @@ function UpdateRosterRow(row, data, rowIndex)
 
     -- Last seen
     if data.isOnline then
-        row.lastSeenText:SetText("|cff4CFF4CNow|r")
+        row.lastSeenText:SetText(L["|cff4CFF4CNow|r"])
     elseif data.lastUpdate > 0 then
         row.lastSeenText:SetText(BRutus:TimeAgo(data.lastUpdate))
     else
@@ -1466,9 +1478,32 @@ end
 ----------------------------------------------------------------------
 local memberDropdown = CreateFrame("Frame", "BRutusMemberDropdown", UIParent, "UIDropDownMenuTemplate")
 
-local function MemberDropdown_Initialize(self, level)
+local function MemberDropdown_Initialize(self, level, menuList)
     local data = self.memberData
     if not data then return end
+
+    -- Submenu: "Definir Rank" rank picker (level 2)
+    if level == 2 and menuList == "SETRANK" then
+        local GM = BRutus.GuildManager
+        if not GM then return end
+        local currentRank = GM:GetRankIndex(data.name)
+        for _, rank in ipairs(GM:GetRanks()) do
+            -- Skip Guild Master (rank 0): GuildPromote cannot grant GM rank.
+            if rank.index > 0 then
+                local rinfo = UIDropDownMenu_CreateInfo()
+                rinfo.text = rank.name
+                rinfo.checked = (rank.index == currentRank)
+                rinfo.disabled = (rank.index == currentRank)
+                local targetRank = rank.index
+                rinfo.func = function()
+                    BRutus.GuildManager:ConfirmSetRank(data.name, targetRank)
+                    if CloseDropDownMenus then CloseDropDownMenus() end
+                end
+                UIDropDownMenu_AddButton(rinfo, level)
+            end
+        end
+        return
+    end
 
     local info = UIDropDownMenu_CreateInfo()
     local myName = UnitName("player")
@@ -1485,7 +1520,7 @@ local function MemberDropdown_Initialize(self, level)
 
     -- Whisper
     if not isMe and data.isOnline then
-        info.text = WHISPER_MESSAGE or "Whisper"
+        info.text = WHISPER_MESSAGE or L["Whisper"]
         info.func = function()
             ChatFrame_SendTell(data.name)
         end
@@ -1496,7 +1531,7 @@ local function MemberDropdown_Initialize(self, level)
     if not isMe and data.isOnline then
         info = UIDropDownMenu_CreateInfo()
         info.notCheckable = true
-        info.text = PARTY_INVITE or "Invite"
+        info.text = PARTY_INVITE or L["Invite"]
         info.func = function()
             -- Classic/TBC uses InviteByName for name-based invites
             if C_PartyInfo and C_PartyInfo.InviteUnit then
@@ -1516,39 +1551,57 @@ local function MemberDropdown_Initialize(self, level)
     if not isMe and data.isOnline then
         info = UIDropDownMenu_CreateInfo()
         info.notCheckable = true
-        info.text = INSPECT or "Inspect"
+        info.text = INSPECT or L["Inspect"]
         info.func = function()
             InspectUnit(data.name)
         end
         UIDropDownMenu_AddButton(info, level)
     end
 
-    -- Guild promote (if we can)
-    if not isMe and IsGuildLeader and IsGuildLeader() then
-        info = UIDropDownMenu_CreateInfo()
-        info.notCheckable = true
-        info.text = GUILD_PROMOTE or "Promote"
-        info.func = function()
-            GuildPromote(data.name)
-        end
-        UIDropDownMenu_AddButton(info, level)
+    -- Rank management (gated on actual guild permission, not just GM)
+    if not isMe and BRutus.GuildManager then
+        local GM = BRutus.GuildManager
+        local canPromote, canDemote = GM:CanPromote(), GM:CanDemote()
 
-        info = UIDropDownMenu_CreateInfo()
-        info.notCheckable = true
-        info.text = GUILD_DEMOTE or "Demote"
-        info.func = function()
-            GuildDemote(data.name)
+        if canPromote then
+            info = UIDropDownMenu_CreateInfo()
+            info.notCheckable = true
+            info.text = "|cff66FF66" .. (GUILD_PROMOTE or L["Promote"]) .. "|r"
+            info.func = function()
+                BRutus.GuildManager:Promote(data.name)
+                BRutus.GuildManager:RefreshUI()
+            end
+            UIDropDownMenu_AddButton(info, level)
         end
-        UIDropDownMenu_AddButton(info, level)
+
+        if canDemote then
+            info = UIDropDownMenu_CreateInfo()
+            info.notCheckable = true
+            info.text = "|cffFFCC66" .. (GUILD_DEMOTE or L["Demote"]) .. "|r"
+            info.func = function()
+                BRutus.GuildManager:Demote(data.name)
+                BRutus.GuildManager:RefreshUI()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+        if canPromote or canDemote then
+            info = UIDropDownMenu_CreateInfo()
+            info.notCheckable = true
+            info.hasArrow = true
+            info.text = L["Set Rank"]
+            info.menuList = "SETRANK"
+            UIDropDownMenu_AddButton(info, level)
+        end
     end
 
-    -- Guild remove (if we can)
-    if not isMe and CanGuildRemove and CanGuildRemove() then
+    -- Guild remove (with confirmation + action logging)
+    if not isMe and BRutus.GuildManager and BRutus.GuildManager:CanKick() then
         info = UIDropDownMenu_CreateInfo()
         info.notCheckable = true
-        info.text = GUILD_UNINVITE or "Remove from guild"
+        info.text = "|cffFF6666" .. (GUILD_UNINVITE or L["Remove from guild"]) .. "|r"
         info.func = function()
-            GuildUninvite(data.name)
+            BRutus.GuildManager:ConfirmKick(data.name)
         end
         UIDropDownMenu_AddButton(info, level)
     end
@@ -1556,7 +1609,7 @@ local function MemberDropdown_Initialize(self, level)
     -- Who
     info = UIDropDownMenu_CreateInfo()
     info.notCheckable = true
-    info.text = WHO or "Who"
+    info.text = WHO or L["Who"]
     info.func = function()
         SendWho("n-" .. data.name)
     end
@@ -1565,7 +1618,7 @@ local function MemberDropdown_Initialize(self, level)
     -- View detail
     info = UIDropDownMenu_CreateInfo()
     info.notCheckable = true
-    info.text = "Guild OS Detail"
+    info.text = L["Guild OS Detail"]
     info.func = function()
         BRutus:ShowMemberDetail(data)
     end
@@ -1579,7 +1632,7 @@ local function MemberDropdown_Initialize(self, level)
             if not BRutus.TrialTracker:IsTrial(key) then
                 info = UIDropDownMenu_CreateInfo()
                 info.notCheckable = true
-                info.text = "|cffFFAA00Mark as Trial|r"
+                info.text = L["|cffFFAA00Mark as Trial|r"]
                 info.func = function()
                     BRutus.TrialTracker:AddTrial(key)
                 end
@@ -1591,10 +1644,10 @@ local function MemberDropdown_Initialize(self, level)
         if BRutus.OfficerNotes then
             info = UIDropDownMenu_CreateInfo()
             info.notCheckable = true
-            info.text = "|cff8888FFAdd Note|r"
+            info.text = L["|cff8888FFAdd Note|r"]
             info.func = function()
                 -- Simple note via chat input
-                BRutus:Print("Use: /guildos note " .. data.name .. " <your note>")
+                BRutus:Print(string.format(L["Use: /guildos note %s <your note>"], data.name))
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -1603,7 +1656,7 @@ local function MemberDropdown_Initialize(self, level)
     -- Cancel
     info = UIDropDownMenu_CreateInfo()
     info.notCheckable = true
-    info.text = CANCEL or "Cancel"
+    info.text = CANCEL or L["Cancel"]
     UIDropDownMenu_AddButton(info, level)
 end
 
@@ -1625,7 +1678,7 @@ function ShowRowTooltip(row)
     -- Header: Name colored by class
     local cr, cg, cb = BRutus:GetClassColor(data.class)
     GameTooltip:AddLine(data.name, cr, cg, cb)
-    GameTooltip:AddLine(string.format("Level %d %s %s", data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
+    GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
 
     -- Talent spec
@@ -1634,29 +1687,29 @@ function ShowRowTooltip(row)
         local specLabel = BRutus.SpecChecker:GetSpecLabel(memberKey)
         if specLabel then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Spec: " .. specLabel, cr, cg, cb)
+            GameTooltip:AddLine(string.format(L["Spec: %s"], specLabel), cr, cg, cb)
         end
     end
 
     if data.zone and data.zone ~= "" then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Zone: " .. data.zone, C.silver.r, C.silver.g, C.silver.b)
+        GameTooltip:AddLine(string.format(L["Zone: %s"], data.zone), C.silver.r, C.silver.g, C.silver.b)
     end
 
     if data.note and data.note ~= "" then
-        GameTooltip:AddLine("Note: " .. data.note, 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine(string.format(L["Note: %s"], data.note), 0.6, 0.6, 0.6, true)
     end
 
     -- Gear summary
     if data.avgIlvl and data.avgIlvl > 0 then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Average Item Level: " .. data.avgIlvl, C.accent.r, C.accent.g, C.accent.b)
+        GameTooltip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.accent.r, C.accent.g, C.accent.b)
     end
 
     -- Professions detail
     if data.professions and #data.professions > 0 then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Professions:", C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Professions:"], C.gold.r, C.gold.g, C.gold.b)
         for _, prof in ipairs(data.professions) do
             local profColor = prof.isPrimary and C.gold or C.silver
             GameTooltip:AddLine(string.format("  %s  %d / %d", prof.name, prof.rank, prof.maxRank),
@@ -1682,12 +1735,12 @@ function ShowRowTooltip(row)
 
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(
-            string.format("Attunements: (%d/%d)", #done, #effAtts),
+            string.format(L["Attunements: (%d/%d)"], #done, #effAtts),
             C.gold.r, C.gold.g, C.gold.b)
 
         for _, att in ipairs(done) do
             GameTooltip:AddLine(
-                string.format("  [%s] %s", att.tier, att.name) .. "  Done",
+                string.format("  [%s] %s", att.tier, att.name) .. "  " .. L["Done"],
                 C.green.r, C.green.g, C.green.b)
         end
         for _, att in ipairs(inProg) do
@@ -1698,17 +1751,17 @@ function ShowRowTooltip(row)
         end
         for _, att in ipairs(pending) do
             GameTooltip:AddLine(
-                string.format("  [%s] %s  Not started", att.tier, att.name),
+                string.format(L["  [%s] %s  Not started"], att.tier, att.name),
                 C.red.r, C.red.g, C.red.b)
         end
     end
 
     if not data.hasAddonData then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Player does not have Guild OS installed", C.red.r, C.red.g, C.red.b)
+        GameTooltip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
     elseif data.addonVersion and data.addonVersion ~= BRutus.VERSION then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Guild OS v" .. data.addonVersion .. " (outdated)", C.red.r, C.red.g, C.red.b)
+        GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
     end
 
     -- Wishlist info (native)
@@ -1718,24 +1771,24 @@ function ShowRowTooltip(row)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = BRutus.Wishlist and BRutus.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Wishlist:", C.gold.r, C.gold.g, C.gold.b)
+            GameTooltip:AddLine(L["Wishlist:"], C.gold.r, C.gold.g, C.gold.b)
             local shown = math.min(#wData.wishlist, 5)
             for j = 1, shown do
                 local item = wData.wishlist[j]
-                local iName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or ("Item #" .. (item.itemId or "?"))
-                local os = item.isOffspec and " (OS)" or ""
+                local iName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
+                local os = item.isOffspec and (" (" .. L["OS"] .. ")") or ""
                 GameTooltip:AddLine("  #" .. (item.order or j) .. ": " .. iName .. os,
                     wColor.r, wColor.g, wColor.b)
             end
             if #wData.wishlist > 5 then
-                GameTooltip:AddLine("  +" .. (#wData.wishlist - 5) .. " mais...", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine(string.format(L["  +%d more..."], #wData.wishlist - 5), 0.5, 0.5, 0.5)
             end
         end
     end
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Left-click: detailed view", 0.5, 0.5, 0.5)
-    GameTooltip:AddLine("Right-click: whisper, invite, etc.", 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(L["Left-click: detailed view"], 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(L["Right-click: whisper, invite, etc."], 0.5, 0.5, 0.5)
 
     GameTooltip:Show()
 end
@@ -1760,12 +1813,12 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     statusText:SetJustifyH("LEFT")
 
     -- "Minha Wishlist" button — open personal wishlist manager
-    local myWishBtn = UI:CreateButton(topBar, "Minha Wishlist", 120, 24)
+    local myWishBtn = UI:CreateButton(topBar, L["My Wishlist"], 120, 24)
     myWishBtn:SetPoint("RIGHT", -140, 0)
     myWishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
 
     -- "Gerenciar Prios" button — officer only, opens prio modal
-    local managePrioBtn = UI:CreateButton(topBar, "Gerenciar Prios", 120, 24)
+    local managePrioBtn = UI:CreateButton(topBar, L["Manage Prios"], 120, 24)
     managePrioBtn:SetPoint("RIGHT", -6, 0)
     managePrioBtn:SetScript("OnClick", function() BRutus:ShowPrioModal() end)
 
@@ -1790,7 +1843,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     searchIcon:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     searchIcon:SetPoint("LEFT", 8, 0)
     searchIcon:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-    searchIcon:SetText("Buscar:")
+    searchIcon:SetText(L["Search:"])
 
     local wishSearch = CreateFrame("EditBox", nil, searchBar, "BackdropTemplate")
     wishSearch:SetSize(200, 22)
@@ -1809,7 +1862,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     wishSearchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     wishSearchPlaceholder:SetPoint("LEFT", 6, 0)
     wishSearchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    wishSearchPlaceholder:SetText("Nome do jogador...")
+    wishSearchPlaceholder:SetText(L["Player name..."])
 
     local charCountText = UI:CreateText(searchBar, "", 10, C.silver.r, C.silver.g, C.silver.b)
     charCountText:SetPoint("RIGHT", -5, 0)
@@ -1824,13 +1877,13 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     colHeader:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
     colHeader:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.8)
 
-    local hName = UI:CreateHeaderText(colHeader, "Personagem", 10)
+    local hName = UI:CreateHeaderText(colHeader, L["Character"], 10)
     hName:SetPoint("LEFT", 28, 0)
-    local hClass = UI:CreateHeaderText(colHeader, "Classe", 10)
+    local hClass = UI:CreateHeaderText(colHeader, L["Class"], 10)
     hClass:SetPoint("LEFT", 180, 0)
-    local hWish = UI:CreateHeaderText(colHeader, "Wishlist", 10)
+    local hWish = UI:CreateHeaderText(colHeader, L["Wishlist"], 10)
     hWish:SetPoint("LEFT", 310, 0)
-    local hAtt = UI:CreateHeaderText(colHeader, "Pres%", 10)
+    local hAtt = UI:CreateHeaderText(colHeader, L["Att%"], 10)
     hAtt:SetPoint("LEFT", 400, 0)
 
     ----------------------------------------------------------------
@@ -1932,7 +1985,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             wishCount:SetWidth(60)
             if #wishItems > 0 then
                 wishCount:SetTextColor(wColor.r, wColor.g, wColor.b)
-                wishCount:SetText(tostring(#wishItems) .. " itens")
+                wishCount:SetText(string.format(L["%d items"], #wishItems))
             else
                 wishCount:SetTextColor(0.3, 0.3, 0.3)
                 wishCount:SetText("-")
@@ -2021,7 +2074,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                 secLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
                 secLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                 secLabel:SetTextColor(wColor.r, wColor.g, wColor.b)
-                secLabel:SetText("WISHLIST  (" .. #wishItems .. ")")
+                secLabel:SetText(string.format(L["WISHLIST  (%d)"], #wishItems))
                 secLabel:Show()
                 detailLy = detailLy - 16
 
@@ -2056,7 +2109,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                         local q = BRutus.Wishlist:GetItemQuality(item.itemId)
                         qColor = BRutus.QualityColors[q] or C.white
                     end
-                    local itemName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or ("Item #" .. (item.itemId or "?"))
+                    local itemName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                     local itemStr = iRow:CreateFontString(nil, "OVERLAY")
                     itemStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
                     itemStr:SetPoint("LEFT", 34, 0)
@@ -2072,7 +2125,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                         osBadge:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
                         osBadge:SetPoint("RIGHT", -8, 0)
                         osBadge:SetTextColor(0.7, 0.7, 0.7, 0.7)
-                        osBadge:SetText("OS")
+                        osBadge:SetText(L["OS"])
                     end
 
                     -- Officer prio badge for this item + this character
@@ -2136,7 +2189,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     prioLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
                     prioLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                     prioLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                    prioLabel:SetText("PRIORIDADE OFICIAL  (" .. #prioBadges .. ")")
+                    prioLabel:SetText(string.format(L["OFFICIAL PRIORITY  (%d)"], #prioBadges))
                     prioLabel:Show()
                     detailLy = detailLy - 16
 
@@ -2163,7 +2216,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                         starStr:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                         starStr:SetText("|cffFFD700*|r #" .. badge.order)
 
-                        local pName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(badge.itemId) or ("Item #" .. badge.itemId)
+                        local pName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(badge.itemId) or string.format(L["Item #%s"], badge.itemId)
                         local pqColor = C.white
                         if BRutus.QualityColors and BRutus.Wishlist then
                             local q = BRutus.Wishlist:GetItemQuality(badge.itemId)
@@ -2204,7 +2257,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
             noData:SetPoint("TOP", listChild, "TOP", 0, ly - 30)
             noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-            noData:SetText("Nenhum membro sincronizou a wishlist ainda.\nUse o botao Sync na janela Minha Wishlist para enviar seus dados.")
+            noData:SetText(L["No member has synced their wishlist yet.\nUse the Sync button in the My Wishlist window to send your data."])
             noData:SetJustifyH("CENTER")
             noData:Show()
             ly = ly - 60
@@ -2213,7 +2266,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             noMatch:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
             noMatch:SetPoint("TOP", listChild, "TOP", 0, ly - 20)
             noMatch:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-            noMatch:SetText("Nenhum personagem encontrado.")
+            noMatch:SetText(L["No character found."])
             noMatch:SetJustifyH("CENTER")
             noMatch:Show()
             ly = ly - 40
@@ -2223,14 +2276,14 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
         if BRutus.db.guildWishlists then
             for _ in pairs(BRutus.db.guildWishlists) do total = total + 1 end
         end
-        charCountText:SetText(count .. " / " .. total .. " membros")
+        charCountText:SetText(string.format(L["%d / %d members"], count, total))
         listChild:SetHeight(math.abs(ly) + 20)
 
         -- Update status text
         if total > 0 then
-            statusText:SetText(string.format("|cff4CFF4C%d|r membros sincronizaram a wishlist", total))
+            statusText:SetText(string.format(L["|cff4CFF4C%d|r members synced their wishlist"], total))
         else
-            statusText:SetText("|cffAAAAAASem dados de wishlist recebidos|r")
+            statusText:SetText(L["|cffAAAAAANo wishlist data received|r"])
         end
     end
 
@@ -2287,24 +2340,24 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Auto-Recruit Section
     ----------------------------------------------------------------
-    yOff = SectionHeader("Auto-Recruit Messages", yOff)
+    yOff = SectionHeader(L["Auto-Recruit Messages"], yOff)
 
     -- Info note about Blizzard restriction
-    local infoNote = UI:CreateText(parent, "Note: Blizzard requires a click to send channel messages. A popup will appear on interval.", 10, 0.7, 0.55, 0.2)
+    local infoNote = UI:CreateText(parent, L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."], 10, 0.7, 0.55, 0.2)
     infoNote:SetPoint("TOPLEFT", 30, yOff)
     infoNote:SetWidth(700)
     yOff = yOff - 18
 
     -- Status + toggle
-    RowLabel("Status:", yOff)
+    RowLabel(L["Status:"], yOff)
     local statusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
     statusText:SetPoint("TOPLEFT", 140, yOff)
 
-    local toggleBtn = UI:CreateButton(parent, "Enable", 80, 22)
+    local toggleBtn = UI:CreateButton(parent, L["Enable"], 80, 22)
     toggleBtn:SetPoint("TOPLEFT", 300, yOff + 3)
 
     -- Manual send button
-    local sendNowBtn = UI:CreateButton(parent, "Send Now", 100, 22)
+    local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, 22)
     sendNowBtn:SetPoint("TOPLEFT", 390, yOff + 3)
     sendNowBtn:SetScript("OnClick", function()
         if BRutus.Recruitment then
@@ -2315,12 +2368,12 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local function UpdateRecruitStatus()
         local s = BRutus.db.recruitment
         if s.enabled then
-            statusText:SetText("|cff4CFF4CACTIVE|r")
-            toggleBtn.label:SetText("Disable")
+            statusText:SetText(L["|cff4CFF4CACTIVE|r"])
+            toggleBtn.label:SetText(L["Disable"])
             toggleBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
         else
-            statusText:SetText("|cffFF4444INACTIVE|r")
-            toggleBtn.label:SetText("Enable")
+            statusText:SetText(L["|cffFF4444INACTIVE|r"])
+            toggleBtn.label:SetText(L["Enable"])
             toggleBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
     end
@@ -2334,7 +2387,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = yOff - 28
 
     -- Interval
-    RowLabel("Interval (sec):", yOff)
+    RowLabel(L["Interval (sec):"], yOff)
     local intervalBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     intervalBox:SetSize(80, 22)
     intervalBox:SetPoint("TOPLEFT", 140, yOff)
@@ -2351,7 +2404,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local val = tonumber(self:GetText())
         if val and val >= 60 then
             BRutus.db.recruitment.interval = val
-            BRutus:Print("Interval set to " .. val .. "s.")
+            BRutus:Print(string.format(L["Interval set to %ds."], val))
         else
             self:SetText(tostring(BRutus.db.recruitment.interval))
         end
@@ -2361,14 +2414,14 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = yOff - 28
 
     -- Channels
-    RowLabel("Channels:", yOff)
+    RowLabel(L["Channels:"], yOff)
     local channelsText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
     channelsText:SetPoint("TOPLEFT", 140, yOff)
     channelsText:SetWidth(500)
     yOff = yOff - 28
 
     -- Message
-    RowLabel("Message:", yOff)
+    RowLabel(L["Message:"], yOff)
     local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     msgBox:SetSize(680, 40)
     msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
@@ -2385,7 +2438,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local txt = self:GetText()
         if txt and txt ~= "" then
             BRutus.db.recruitment.message = txt
-            BRutus:Print("Recruitment message updated.")
+            BRutus:Print(L["Recruitment message updated."])
         end
         self:ClearFocus()
     end)
@@ -2395,25 +2448,25 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Welcome Message Section
     ----------------------------------------------------------------
-    yOff = SectionHeader("Welcome Message (New Members)", yOff)
+    yOff = SectionHeader(L["Welcome Message (New Members)"], yOff)
 
     -- Welcome status + toggle
-    RowLabel("Auto-Welcome:", yOff)
+    RowLabel(L["Auto-Welcome:"], yOff)
     local welcomeStatusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
     welcomeStatusText:SetPoint("TOPLEFT", 140, yOff)
 
-    local welcomeToggle = UI:CreateButton(parent, "Enable", 80, 22)
+    local welcomeToggle = UI:CreateButton(parent, L["Enable"], 80, 22)
     welcomeToggle:SetPoint("TOPLEFT", 300, yOff + 3)
 
     local function UpdateWelcomeStatus()
         local s = BRutus.db.recruitment
         if s.welcomeEnabled then
-            welcomeStatusText:SetText("|cff4CFF4CON|r")
-            welcomeToggle.label:SetText("Disable")
+            welcomeStatusText:SetText(L["|cff4CFF4CON|r"])
+            welcomeToggle.label:SetText(L["Disable"])
             welcomeToggle:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
         else
-            welcomeStatusText:SetText("|cffFF4444OFF|r")
-            welcomeToggle.label:SetText("Enable")
+            welcomeStatusText:SetText(L["|cffFF4444OFF|r"])
+            welcomeToggle.label:SetText(L["Enable"])
             welcomeToggle:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
     end
@@ -2421,13 +2474,13 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeToggle:SetScript("OnClick", function()
         BRutus.db.recruitment.welcomeEnabled = not BRutus.db.recruitment.welcomeEnabled
         UpdateWelcomeStatus()
-        local state = BRutus.db.recruitment.welcomeEnabled and "enabled" or "disabled"
-        BRutus:Print("Welcome message " .. state .. ".")
+        local state = BRutus.db.recruitment.welcomeEnabled and L["enabled"] or L["disabled"]
+        BRutus:Print(string.format(L["Welcome message %s."], state))
     end)
     yOff = yOff - 28
 
     -- Discord link
-    RowLabel("Discord:", yOff)
+    RowLabel(L["Discord:"], yOff)
     local discordBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     discordBox:SetSize(400, 22)
     discordBox:SetPoint("TOPLEFT", 140, yOff)
@@ -2443,7 +2496,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local txt = self:GetText()
         if txt and txt ~= "" then
             BRutus.db.recruitment.discord = txt
-            BRutus:Print("Discord link updated.")
+            BRutus:Print(L["Discord link updated."])
         end
         self:ClearFocus()
     end)
@@ -2451,7 +2504,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = yOff - 28
 
     -- Welcome message
-    RowLabel("Welcome Msg:", yOff)
+    RowLabel(L["Welcome Msg:"], yOff)
     local welcomeBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     welcomeBox:SetSize(680, 40)
     welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
@@ -2468,7 +2521,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local txt = self:GetText()
         if txt and txt ~= "" then
             BRutus.db.recruitment.welcomeMessage = txt
-            BRutus:Print("Welcome message updated.")
+            BRutus:Print(L["Welcome message updated."])
         end
         self:ClearFocus()
     end)

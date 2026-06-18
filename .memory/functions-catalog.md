@@ -22,6 +22,17 @@
 
 ---
 
+## Locale.lua — Localization
+
+| Symbol | Description |
+|---|---|
+| `BRutus.L` | Translation table. `L["English key"]` → localized string for the active client locale, or the English key itself if untranslated (metatable `__index` returns the key). Loaded right after Config.lua. |
+| `BRutus.Locale` | Active client locale string from `GetLocale()` (e.g. "enUS", "ptBR", "deDE"). |
+
+Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via metatable), `Locales/ptBR.lua`, `Locales/esES.lua` (esES+esMX), `Locales/deDE.lua`, `Locales/frFR.lua`. Each non-English file early-returns unless `GetLocale()` matches, then assigns `L["English key"] = "translation"`. Keys are the canonical English strings used directly in source.
+
+---
+
 ## Core.lua — BRutus global
 
 | Function | Description |
@@ -330,6 +341,32 @@
 
 ---
 
+## GuildManager.lua — BRutus.GuildManager (Leadership Suite)
+
+| Function | Description |
+|---|---|
+| `GuildManager:Initialize()` | Ensures `db.managementLog` ring buffer exists |
+| `GuildManager:CanPromote()` / `:CanDemote()` / `:CanKick()` | Nil-guarded wrappers over CanGuildPromote/Demote/Remove |
+| `GuildManager:CanSetMOTD()` / `:CanSetGuildInfo()` | Nil-guarded wrappers over CanEditMOTD/CanEditGuildInfo |
+| `GuildManager:GetRosterIndex(name)` | Guild roster index for a short/full name (realm-stripped match) |
+| `GuildManager:GetRankIndex(name)` | Current 0-based rank index for a player name |
+| `GuildManager:GetRanks()` | Ordered `{index, name}` rank list (GuildControl 1-based → 0-based) |
+| `GuildManager:GetRankName(rankIndex)` | Display name for a 0-based rank index |
+| `GuildManager:Promote(name)` / `:Demote(name)` / `:SetRank(name)` / `:Kick(name)` | **Protected** in Classic — route to `_protectedNotice` handoff, do NOT call the restricted API |
+| `GuildManager:OpenNativeGuild()` | Opens Blizzard's native guild panel via `BRutus._origToggleGuildFrame` (handoff target) |
+| `GuildManager:_protectedNotice(actionLabel, name)` | Prints "protegido pela Blizzard" notice + opens native panel; returns false |
+| `GuildManager:SetMOTD(text)` / `:SetGuildInfo(text)` | Sets MOTD / Guild Info, permission-gated, logged (not protected) |
+| `GuildManager:GetMOTD()` / `:GetGuildInfo()` | Reads client-cached MOTD / Guild Info text |
+| `GuildManager:GetDaysOffline(rosterIndex)` | Days since last online via GetGuildRosterLastOnline (nil if online) |
+| `GuildManager:GetInactiveMembers(days)` | Roster members offline ≥ days, sorted most-inactive first |
+| `GuildManager:GetSuggestions()` | `{trialsReady, promoteCandidates}` from trial + attendance data |
+| `GuildManager:LogAction(action, target, detail)` | Appends to capped action log (LOG_MAX 200) |
+| `GuildManager:GetLog()` / `:ClearLog()` | Returns log newest-first / wipes it |
+| `GuildManager:RefreshUI()` | Refreshes roster + active management sub-panel after an action |
+| `GuildManager:ConfirmSetRank(name)` / `:ConfirmKick(name)` | Call-site entry points → `_protectedNotice` handoff |
+
+---
+
 ## ConsumableChecker.lua
 
 | Function | Description |
@@ -432,6 +469,20 @@
 | `local CreateAttunementRow(parent, att, yOff, width)` | Attunement row with tier badge, status, progress bar |
 | `local CreateTalentViewerFrame()` | Compact talent tree viewer with tab buttons and icon grid |
 | `BRutus:ShowTalentViewer(spec, playerName, classToken)` | Opens talent tree viewer for a spec record |
+
+---
+
+## UI/ManagementPanel.lua
+
+| Function | Description |
+|---|---|
+| `BRutus:CreateManagementPanel(parent, _mainFrame)` | Builds the "Liderança" tab: sub-tab bar + 5 sub-panels (ranks/inactive/suggest/motd/log) |
+| `parent.RefreshActive()` | Re-runs the refresh of the currently visible sub-panel (called by GuildManager:RefreshUI) |
+| `local BuildRanksSub(panel)` | Roster list with ▲/▼ promote/demote per row → returns refresh fn |
+| `local BuildInactiveSub(panel)` | Inactivity report with day threshold + Remover (kick) per row |
+| `local BuildSuggestSub(panel)` | Trials-ready (Aprovar/Negar) + promotion candidates (Promover) |
+| `local BuildMotdSub(panel)` | MOTD + Guild Info editors, permission-gated |
+| `local BuildLogSub(panel)` | Action log list + Limpar button |
 
 ---
 

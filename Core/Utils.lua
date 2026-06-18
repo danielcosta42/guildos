@@ -2,6 +2,7 @@
 -- BRutus Guild Manager - Utilities
 -- Pure helper functions. No business logic, no persistent state writes.
 ----------------------------------------------------------------------
+local L = BRutus.L
 
 ----------------------------------------------------------------------
 -- Alt / Main linking (account-wide attunement propagation)
@@ -12,7 +13,7 @@ function BRutus:LinkAlt(altKey, mainKey)
     self.db.altLinks = self.db.altLinks or {}
     -- Prevent circular links: mainKey must not itself be an alt
     if self.db.altLinks[mainKey] then
-        self:Print("Erro: " .. mainKey .. " já é um alt. Desvincule-o antes.")
+        self:Print(L["Error: "] .. mainKey .. L[" is already an alt. Unlink it first."])
         return false
     end
     self.db.altLinks[altKey] = mainKey
@@ -103,12 +104,12 @@ function BRutus:GetPlayerKey(name, realm)
 end
 
 function BRutus:TimeAgo(timestamp)
-    if not timestamp or timestamp == 0 then return "Never" end
+    if not timestamp or timestamp == 0 then return L["Never"] end
     local diff = time() - timestamp
-    if diff < 60 then return "Just now"
-    elseif diff < 3600 then return math.floor(diff / 60) .. "m ago"
-    elseif diff < 86400 then return math.floor(diff / 3600) .. "h ago"
-    else return math.floor(diff / 86400) .. "d ago"
+    if diff < 60 then return L["Just now"]
+    elseif diff < 3600 then return math.floor(diff / 60) .. L["m ago"]
+    elseif diff < 86400 then return math.floor(diff / 3600) .. L["h ago"]
+    else return math.floor(diff / 86400) .. L["d ago"]
     end
 end
 
@@ -125,7 +126,7 @@ function BRutus:HookChatInvite()
         local name = link:match("^player:([^:]+)")
         if name and name ~= "" then
             GuildInvite(name)
-            BRutus:Print("Guild invite sent to " .. name .. ". (Alt+Click)")
+            BRutus:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
         end
     end)
 end
@@ -162,7 +163,7 @@ function BRutus:CheckProfessionFreshness()
     if #stale == 0 then return end
 
     self:ShowProfessionReminder(stale)
-    self:Print("|cffFFAA00You have " .. #stale .. " profession(s) with outdated recipe data.|r Open them to sync!")
+    self:Print(string.format(L["|cffFFAA00You have %d profession(s) with outdated recipe data.|r Open them to sync!"], #stale))
 end
 
 function BRutus:ShowProfessionReminder(staleProfessions)
@@ -210,7 +211,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     titleFS:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     titleFS:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -2)
     titleFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleFS:SetText("Guild OS — Profession Sync Required")
+    titleFS:SetText(L["Guild OS — Profession Sync Required"])
 
     -- Description
     local profNames = table.concat(staleProfessions, ", ")
@@ -221,7 +222,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     descFS:SetJustifyH("LEFT")
     descFS:SetWordWrap(true)
     descFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    descFS:SetText("Open your profession windows to update recipe data:\n|cffFFFFFF" .. profNames .. "|r")
+    descFS:SetText(L["Open your profession windows to update recipe data:\n|cffFFFFFF"] .. profNames .. "|r")
 
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame)
@@ -296,7 +297,7 @@ function BRutus:CheckAndDismissProfessionReminder()
                 BRutus.profReminderStale = nil
             end
         end)
-        BRutus:Print("|cff00ff00All professions synced!|r Recipe data is up to date.")
+        BRutus:Print(L["|cff00ff00All professions synced!|r Recipe data is up to date."])
     end
 end
 

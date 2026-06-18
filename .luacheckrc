@@ -35,6 +35,7 @@ globals = {
 
     -- Tables written to
     "UISpecialFrames",
+    "StaticPopupDialogs",  -- GuildManager registers confirmation dialogs
 }
 
 -- Globals that the addon READS (WoW environment)
@@ -135,9 +136,17 @@ read_globals = {
     -- WoW API: Guild management
     "IsGuildLeader",
     "CanGuildRemove",
+    "CanGuildPromote",
+    "CanGuildDemote",
+    "CanEditMOTD",
+    "CanEditGuildInfo",
     "GuildPromote",
     "GuildDemote",
     "GuildUninvite",
+    "GuildSetMOTD",
+    "SetGuildInfoText",
+    "GetGuildInfoText",
+    "GetGuildRosterLastOnline",
     "GuildControlGetNumRanks",
     "GuildControlGetRankName",
 
@@ -146,6 +155,7 @@ read_globals = {
     "UIDropDownMenu_AddButton",
     "UIDropDownMenu_Initialize",
     "ToggleDropDownMenu",
+    "CloseDropDownMenus",
 
     -- WoW Global strings
     "WHISPER_MESSAGE",
@@ -158,6 +168,7 @@ read_globals = {
     "CANCEL",
 
     -- WoW API: Miscellaneous
+    "GetLocale",
     "GetRealmName",
     "GetTime",
     "GetServerTime",
@@ -234,7 +245,6 @@ read_globals = {
     "RAID_CLASS_COLORS",
     "ERR_GUILD_JOIN_S",
     "ERR_GUILD_INVITE_S",
-    "StaticPopupDialogs",
 
     -- WoW Lua aliases (not in std lua51)
     "strsplit",

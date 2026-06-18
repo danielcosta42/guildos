@@ -6,6 +6,7 @@
 local BRutus = BRutus
 local UI     = BRutus.UI
 local C      = BRutus.Colors
+local L      = BRutus.L
 
 ----------------------------------------------------------------------
 -- TBC RAID CD DEFINITIONS
@@ -17,7 +18,7 @@ local C      = BRutus.Colors
 local RAID_CDS = {
     {
         key      = "rebirth",
-        label    = "Battle Rez",
+        label    = L["Battle Rez"],
         class    = "DRUID",
         iconID   = 20484,
         cooldown = 1800,
@@ -25,7 +26,7 @@ local RAID_CDS = {
     },
     {
         key      = "bloodlust",
-        label    = "Bloodlust/Hero",
+        label    = L["Bloodlust/Hero"],
         class    = "SHAMAN",
         iconID   = 2825,
         cooldown = 600,
@@ -33,7 +34,7 @@ local RAID_CDS = {
     },
     {
         key      = "innervate",
-        label    = "Innervate",
+        label    = L["Innervate"],
         class    = "DRUID",
         iconID   = 29166,
         cooldown = 360,
@@ -41,7 +42,7 @@ local RAID_CDS = {
     },
     {
         key      = "pi",
-        label    = "Power Infusion",
+        label    = L["Power Infusion"],
         class    = "PRIEST",
         iconID   = 10060,
         cooldown = 180,
@@ -49,7 +50,7 @@ local RAID_CDS = {
     },
     {
         key      = "md",
-        label    = "Misdirection",
+        label    = L["Misdirection"],
         class    = "HUNTER",
         iconID   = 34477,
         cooldown = 30,
@@ -57,7 +58,7 @@ local RAID_CDS = {
     },
     {
         key      = "loh",
-        label    = "Lay on Hands",
+        label    = L["Lay on Hands"],
         class    = "PALADIN",
         iconID   = 633,
         cooldown = 3600,
@@ -65,7 +66,7 @@ local RAID_CDS = {
     },
     {
         key      = "di",
-        label    = "Div. Intervention",
+        label    = L["Div. Intervention"],
         class    = "PALADIN",
         iconID   = 19752,
         cooldown = 3600,
@@ -73,7 +74,7 @@ local RAID_CDS = {
     },
     {
         key      = "ps",
-        label    = "Pain Suppression",
+        label    = L["Pain Suppression"],
         class    = "PRIEST",
         iconID   = 33206,
         cooldown = 180,
@@ -81,7 +82,7 @@ local RAID_CDS = {
     },
     {
         key      = "sf",
-        label    = "Shadowfiend",
+        label    = L["Shadowfiend"],
         class    = "PRIEST",
         iconID   = 34433,
         cooldown = 300,
@@ -89,7 +90,7 @@ local RAID_CDS = {
     },
     {
         key      = "tranquility",
-        label    = "Tranquility",
+        label    = L["Tranquility"],
         class    = "DRUID",
         iconID   = 740,
         cooldown = 300,
@@ -97,7 +98,7 @@ local RAID_CDS = {
     },
     {
         key      = "shieldwall",
-        label    = "Shield Wall",
+        label    = L["Shield Wall"],
         class    = "WARRIOR",
         iconID   = 871,
         cooldown = 1800,
@@ -105,7 +106,7 @@ local RAID_CDS = {
     },
     {
         key      = "laststand",
-        label    = "Last Stand",
+        label    = L["Last Stand"],
         class    = "WARRIOR",
         iconID   = 12975,
         cooldown = 480,
@@ -290,7 +291,7 @@ local function BuildHUDRows(f)
                     if rem > 0 then
                         status = "|cffff5555" .. FormatTime(rem) .. "|r"
                     else
-                        status = "|cff55ff55Ready|r"
+                        status = "|cff55ff55" .. L["Ready"] .. "|r"
                     end
                     GameTooltip:AddLine(p.name .. ": " .. status, 1, 1, 1, false)
                 end
@@ -366,7 +367,7 @@ function BRutus:CreateRaidHUD()
     titleText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     titleText:SetPoint("LEFT", 8, 0)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText("BRutus — Raid CDs")
+    titleText:SetText(L["BRutus — Raid CDs"])
 
     ----------------------------------------------------------------
     -- Collapse button  (— / +)
@@ -428,7 +429,7 @@ function BRutus:CreateRaidHUD()
     ----------------------------------------------------------------
     -- Check Consumables button
     ----------------------------------------------------------------
-    f.consBtn = UI:CreateButton(f, "Check Consumables", 200, 24)
+    f.consBtn = UI:CreateButton(f, L["Check Consumables"], 200, 24)
     f.consBtn:SetPoint("BOTTOM", f, "BOTTOM", 0, 6)
     f.consBtn:SetScript("OnClick", function()
         BRutus:ShowConsumablePopup()
@@ -519,11 +520,11 @@ local function BuildConsPopup(f)
     -- Status line
     if CC.lastCheck then
         local ago = floor(GetServerTime() - (CC.lastCheck.time or 0))
-        f.statusText:SetText("Scan há " .. ago .. "s")
+        f.statusText:SetText(L["Scanned "] .. ago .. L["s ago"])
     elseif results and next(results) then
-        f.statusText:SetText("Sessão anterior — re-escaneie")
+        f.statusText:SetText(L["Previous session — rescan"])
     else
-        f.statusText:SetText("Sem dados")
+        f.statusText:SetText(L["No data"])
     end
 
     -- Collect only players missing something; tally ready vs total
@@ -544,7 +545,7 @@ local function BuildConsPopup(f)
         return ca < cb
     end)
 
-    f.countText:SetText(total > 0 and (ready .. "/" .. total .. " prontos") or "")
+    f.countText:SetText(total > 0 and (ready .. "/" .. total .. L[" ready"]) or "")
 
     for _, row in ipairs(f.rowPool) do row:Hide() end
 
@@ -552,10 +553,10 @@ local function BuildConsPopup(f)
     local yOff = 0
 
     if total == 0 then
-        f.emptyText:SetText("Entre numa raid e escaneie.")
+        f.emptyText:SetText(L["Join a raid and scan."])
         f.emptyText:Show()
     elseif #problems == 0 then
-        f.emptyText:SetText("|cff4CFF4CTodos preparados!|r")
+        f.emptyText:SetText("|cff4CFF4C" .. L["Everyone is prepared!"] .. "|r")
         f.emptyText:Show()
     else
         f.emptyText:Hide()
@@ -631,7 +632,7 @@ function BRutus:ShowConsumablePopup()
     hbg:SetTexture(WHITE)
     hbg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1)
 
-    local hTitle = UI:CreateText(hdr, "Consumíveis", 12, C.gold.r, C.gold.g, C.gold.b)
+    local hTitle = UI:CreateText(hdr, L["Consumables"], 12, C.gold.r, C.gold.g, C.gold.b)
     hTitle:SetPoint("LEFT", 10, 0)
 
     local hClose = UI:CreateCloseButton(hdr)
@@ -645,14 +646,14 @@ function BRutus:ShowConsumablePopup()
     f.statusText = UI:CreateText(f, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     f.statusText:SetPoint("TOPLEFT", 10, -(HEADER_H + 8))
 
-    local scanBtn = UI:CreateButton(f, "Escanear", 78, 20)
+    local scanBtn = UI:CreateButton(f, L["Scan"], 78, 20)
     scanBtn:SetPoint("TOPRIGHT", -10, -(HEADER_H + 4))
     scanBtn:SetScript("OnClick", function()
         if BRutus.ConsumableChecker then BRutus.ConsumableChecker:CheckRaid() end
         BuildConsPopup(f)
     end)
 
-    local repBtn = UI:CreateButton(f, "Anunciar", 78, 20)
+    local repBtn = UI:CreateButton(f, L["Announce"], 78, 20)
     repBtn:SetPoint("RIGHT", scanBtn, "LEFT", -6, 0)
     repBtn:SetScript("OnClick", function()
         if BRutus.ConsumableChecker then BRutus.ConsumableChecker:ReportToChat("RAID") end

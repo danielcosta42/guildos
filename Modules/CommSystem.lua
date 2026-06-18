@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------
 local CommSystem = {}
 BRutus.CommSystem = CommSystem
+local L = BRutus.L
 
 local LibSerialize = LibStub("LibSerialize")
 local LibDeflate = LibStub("LibDeflate")
@@ -330,7 +331,7 @@ end
 function CommSystem:HandleVersionCheck(_sender, data)
     -- Could notify user of newer versions
     if data and data ~= BRutus.VERSION then
-        BRutus:Print("A different BRutus version detected: " .. tostring(data))
+        BRutus:Print(L["A different BRutus version detected: "] .. tostring(data))
     end
 end
 
@@ -351,7 +352,7 @@ end
 ----------------------------------------------------------------------
 function CommSystem:FullSync()
     if not IsInGuild() then
-        BRutus:Print("Not in a guild.")
+        BRutus:Print(L["Not in a guild."])
         return
     end
 
@@ -362,12 +363,12 @@ function CommSystem:FullSync()
     self:RequestAllData()
 
     if not BRutus:IsOfficer() then
-        BRutus:Print("Syncing data with guild...")
+        BRutus:Print(L["Syncing data with guild..."])
         return
     end
 
     -- Officer-only staggered broadcasts
-    BRutus:Print("Syncing all guild data (officer mode)...")
+    BRutus:Print(L["Syncing all guild data (officer mode)..."])
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()

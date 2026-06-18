@@ -34,12 +34,18 @@ BRutus/
   RecipeTracker.lua       — profession recipe scanning
   OfficerNotes.lua        — officer note management + sync
   TrialTracker.lua        — trial member lifecycle
+  GuildManager.lua        — leadership suite: ranks/kick/MOTD/inactivity/suggestions/log
+  Locales/
+    Locale.lua            — BRutus.L bootstrap (metatable fallback to English key)
+    enUS.lua              — master/stub (English is implicit)
+    ptBR.lua esES.lua deDE.lua frFR.lua — translations (guarded by GetLocale)
   ConsumableChecker.lua   — flask/elixir/food buff detection
   SpecChecker.lua         — spec/talent detection
   UI/
     Helpers.lua           — ALL UI factory + theme (current; target: split below)
     RosterFrame.lua       — main guild roster window + tabs
     MemberDetail.lua      — per-member detail slide-in panel
+    ManagementPanel.lua   — "Liderança" tab (rank/inactivity/suggestions/MOTD/log)
     FeaturePanels.lua     — raids, loot, trials, settings, wishlist, recruitment panels
     RecipesPanel.lua      — profession recipes panel
     RaidHUD.lua           — floating CD tracker + consumable check popup
@@ -83,11 +89,13 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 | `RecipeTracker.lua` | Recipe scanning + sync | UI |
 | `OfficerNotes.lua` | Officer note storage + sync | UI |
 | `TrialTracker.lua` | Trial lifecycle + sync | UI |
+| `GuildManager.lua` | Rank changes, kicks, MOTD/Info, inactivity, suggestions, action log | UI, comm |
 | `ConsumableChecker.lua` | Detect flask/elixir/food buffs | UI |
 | `SpecChecker.lua` | Detect talent spec | UI |
 | `UI/Helpers.lua` | ALL UI components + theme (until split) | data logic, comms |
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
 | `UI/MemberDetail.lua` | Per-member detail panel | data writes |
+| `UI/ManagementPanel.lua` | "Liderança" tab UI (calls GuildManager) | data writes |
 | `UI/FeaturePanels.lua` | Feature panels (raids/loot/etc.) | data writes |
 | `UI/RecipesPanel.lua` | Recipes panel | data writes |
 | `UI/RaidHUD.lua` | CD overlay + consumable popup | data writes |
@@ -99,6 +107,7 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 | # | File | Depends on |
 |---|------|------------|
 | 1–5 | `Libs/*` | nothing |
+| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR.lua` | Config — creates `BRutus.L`; must load before any file that does `local L = BRutus.L` |
 | 6 | `Core.lua` | Libs — creates BRutus global, Logger, Compat, State, Config |
 | 7 | `DataCollector.lua` | BRutus |
 | 8 | `AttunementTracker.lua` | BRutus, BRutus.Compat |
@@ -111,6 +120,7 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 | 15 | `RecipeTracker.lua` | BRutus, BRutus.CommSystem |
 | 16 | `OfficerNotes.lua` | BRutus, BRutus.CommSystem |
 | 17 | `TrialTracker.lua` | BRutus, BRutus.CommSystem |
+| 17a | `GuildManager.lua` | BRutus, BRutus.TrialTracker, BRutus.RaidTracker |
 | 18 | `ConsumableChecker.lua` | BRutus |
 | 19 | `SpecChecker.lua` | BRutus |
 | 20 | `UI/Helpers.lua` | BRutus (creates BRutus.UI) |
@@ -118,6 +128,7 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 | 22 | `UI/FeaturePanels.lua` | BRutus.UI, BRutus.RaidTracker, BRutus.WishlistSystem |
 | 23 | `UI/RosterFrame.lua` | BRutus.UI, all data modules |
 | 24 | `UI/MemberDetail.lua` | BRutus.UI |
+| 24a | `UI/ManagementPanel.lua` | BRutus.UI, BRutus.GuildManager |
 | 25 | `UI/RaidHUD.lua` | BRutus.UI, BRutus.State.raidCD |
 
 ---
@@ -209,6 +220,7 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
   altLinks = { [altKey] = mainKey },
   trials   = { [key] = { status, startDate, endDate, notes, snapshots } },
   officerNotes     = { [key] = { notes=[], tags={} } },
+  managementLog    = [{ action, target, detail, author, timestamp }],  -- capped ring buffer (200)
   raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions },
   lootHistory      = [{ itemId, itemLink, playerName, raidName, timestamp }],
   lootMaster       = { rollDuration, autoAnnounce, wishlistOnlyMode, awardHistory },

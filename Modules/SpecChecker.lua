@@ -5,6 +5,7 @@
 ----------------------------------------------------------------------
 local SpecChecker = {}  -- luacheck: ignore 111
 BRutus.SpecChecker = SpecChecker
+local L = BRutus.L
 
 -- Time between inspect requests to avoid server throttle
 local INSPECT_DELAY = 1.5
@@ -148,7 +149,7 @@ end
 ----------------------------------------------------------------------
 function SpecChecker:ScanGroup()
     if not IsInGroup() and not IsInRaid() then
-        BRutus:Print("|cffFF4444You must be in a group or raid to scan specs.|r")
+        BRutus:Print(L["|cffFF4444You must be in a group or raid to scan specs.|r"])
         return
     end
 
@@ -170,10 +171,10 @@ function SpecChecker:ScanGroup()
     end
 
     if #inspectQueue == 0 then
-        BRutus:Print("No group members available to inspect.")
+        BRutus:Print(L["No group members available to inspect."])
         return
     end
-    BRutus:Print("Scanning specs for " .. #inspectQueue .. " player(s)…")
+    BRutus:Print(string.format(L["Scanning specs for %d player(s)…"], #inspectQueue))
     self:ProcessNextInspect()
 end
 
@@ -183,7 +184,7 @@ end
 function SpecChecker:ProcessNextInspect()
     if #inspectQueue == 0 then
         inspectPending = nil
-        BRutus:Print("|cff00FF00Spec scan complete.|r")
+        BRutus:Print(L["|cff00FF00Spec scan complete.|r"])
         return
     end
 

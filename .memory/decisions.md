@@ -197,3 +197,84 @@ UI callbacks are one-liner delegations or at most simple display logic (color se
 - (+) Data module unit-testable in isolation.
 - (+) UI callbacks are readable and predictable.
 - (−) Requires discipline to resist the temptation of "just putting it here for now".
+
+---
+
+## ADR-0010 — Leadership Suite (`GuildManager`) split from its UI
+
+### Context
+Guild leaders needed quality-of-life management tools (rank changes, kicks,
+MOTD/Info editing, inactivity purge, promotion suggestions). The pre-existing
+right-click promote/demote was GM-only, single-step, unconfirmed, and had no
+panel. The value-add is combining GuildOS-only data (raid attendance, trial
+progress, last-online) with management actions.
+
+### Decision
+Add a dedicated logic module `Modules/GuildManager.lua` and a thin UI tab
+`UI/ManagementPanel.lua` ("Liderança"), following Rule 3 / Rule 10:
+- **All** guild API calls (GuildPromote/Demote/Uninvite/GuildSetMOTD/
+  SetGuildInfoText) and the action log live in `GuildManager`.
+- The panel and the roster context menu only *call* `GuildManager` methods.
+- Permission gating uses the live `Can*` guild APIs (CanGuildPromote/Demote/
+  Remove, CanEditMOTD/GuildInfo) — nil-guarded — **not** `IsGuildLeader()`, so
+  officers with delegated rights get the actions too.
+- A local, capped (200) `db.managementLog` records MOTD/Info changes for
+  officer accountability. It is **not** synced over comm (local audit only).
+
+### Protected-function constraint (discovered in TBC Anniversary)
+`GuildPromote`, `GuildDemote`, and `GuildUninvite` are **restricted/protected**
+functions: only Blizzard's untainted UI may call them. Any addon call raises
+`ADDON_ACTION_FORBIDDEN` and does nothing — and there is **no** hardware-event
+escape (unlike `InviteUnit` / `RandomRoll`, which the addon does call from
+clicks). Confirmed in-client (v0.2.x) and by community sources.
+
+Therefore `Promote`/`Demote`/`SetRank`/`Kick` do **not** call the restricted
+API. They route to `GuildManager:_protectedNotice()`, which prints a clear
+message and hands the leader off to the native guild panel via
+`BRutus._origToggleGuildFrame` (captured in `Core:HookGuildFrame`). The
+"intelligence" (inactivity report, promotion/trial suggestions) and the
+non-protected actions (`SetMOTD`, `SetGuildInfo`, trial approve/deny) run
+in-addon as normal.
+
+### Consequences
+- (+) The advisory layer (who to promote / who is inactive) is the real value
+  and works fully; the final privileged click is a one-step native handoff.
+- (+) No more `ADDON_ACTION_FORBIDDEN` errors.
+- (−) Rank changes / kicks cannot be one-click from the addon — a hard Blizzard
+  limitation, not a design choice.
+- (−) The action log is per-officer (not shared); intentional for v1 simplicity.
+
+---
+
+## ADR-0011 — Localization (`BRutus.L`, English-key, metatable fallback)
+
+### Context
+The addon was originally Brazilian Portuguese with strings hardcoded and mixed
+PT/EN throughout. To serve a general (international) audience it needed full i18n
+with English as the default and additional languages.
+
+### Decision
+Add a lightweight localization layer (no Ace/LibStub dependency):
+- `Locales/Locale.lua` creates `BRutus.L = setmetatable({}, { __index = function(_, k) return k end })`.
+  Keys are the **canonical English strings used directly in source** (`L["Roster"]`),
+  so a missing translation falls back to readable English (never nil, no symbolic
+  key leakage). `BRutus.Locale = GetLocale()`.
+- Loaded **right after `Config.lua`** (before any file that aliases `local L = BRutus.L`).
+- One data file per locale: `enUS.lua` is a stub (English implicit via metatable);
+  `ptBR.lua`, `esES.lua` (esES+esMX), `deDE.lua`, `frFR.lua` early-return unless
+  `GetLocale()` matches, then assign `L["English key"] = "translation"`.
+- All player-facing literals across the codebase were converted to `L["..."]`.
+  Format specifiers (`%d`/`%s`) and WoW markup (`|cff..|r`, `|T..|t`) stay **inside**
+  the key. Protocol strings, slash-command tokens, debug output, texture/font paths,
+  and the "Guild OS" brand are NOT localized.
+- `GetLocale` added to `.luacheckrc read_globals`.
+
+### Consequences
+- (+) English default → serveable to a general audience; PT preserved as a locale.
+- (+) Adding a language = drop one `xxYY.lua` file; no source changes.
+- (+) Graceful degradation: untranslated keys show English, never break.
+- (−) English keys are the lookup identity, so editing an English string requires
+  updating that key in every locale file (coverage validated by extracting source
+  `L["..."]` keys and diffing against each locale).
+- (−) Non-EN/PT translations are machine-generated (v1) — fine to ship, native
+  review recommended before a polished release.
