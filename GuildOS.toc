@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary
 ## Author: danielcosta42
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: GuildOSDB, BRutusDB
 ## DefaultState: enabled
 ## X-License: MIT
