@@ -519,13 +519,13 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
             btn:SetActive(k == key)
         end
         local info = parent.subPanels[key]
-        if info and info.refresh then info.refresh() end
+        if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
 
     -- Refresh whatever sub-panel is currently visible (used by GuildManager).
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
-        if info and info.refresh then info.refresh() end
+        if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
 
     local x = 0

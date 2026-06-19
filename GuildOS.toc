@@ -64,4 +64,8 @@ UI\ManagementPanel.lua
 UI\AuditPanel.lua
 UI\RaidToolsPanel.lua
 UI\Minimap.lua
+UI\Onboarding.lua
 UI\RaidHUD.lua
+
+# Keybindings
+Bindings.xml

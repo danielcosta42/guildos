@@ -24,6 +24,7 @@ BRutus.State = {
     raid        = {},
     consumables = {},
     raidCD      = { state = {}, members = {} },
+    errors      = {},  -- session error ring (see BRutus:SafeCall / /guildos errors)
 }
 
 ----------------------------------------------------------------------
@@ -263,6 +264,10 @@ function BRutus:InitModules()
     if BRutus.CreateMinimapButton then
         BRutus:CreateMinimapButton()
     end
+    -- First-run welcome (once); delayed so guild info + frames are ready.
+    if BRutus.MaybeShowOnboarding then
+        BRutus.Compat.After(6, function() BRutus:MaybeShowOnboarding() end)
+    end
 
     -- Officer-only modules: defer init until guild info is available
     C_Timer.After(5, function()
@@ -406,6 +411,47 @@ end
 ----------------------------------------------------------------------
 function BRutus:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cffFFD700[Guild OS]|r " .. tostring(msg))
+end
+
+----------------------------------------------------------------------
+-- Structured logger + error resilience
+-- Logger.debug gates verbose output (toggle via /guildos debug).
+-- SafeCall pcall-wraps risky callbacks so a single failure never breaks
+-- the rest of the UI or spams the default error frame; failures land in a
+-- session ring buffer viewable via /guildos errors.
+----------------------------------------------------------------------
+BRutus.Logger = { debug = false }
+
+function BRutus.Logger.Debug(msg)
+    if BRutus.Logger.debug then
+        BRutus:Print("|cff888888[debug]|r " .. tostring(msg))
+    end
+end
+
+function BRutus.Logger.Info(msg)
+    BRutus:Print(tostring(msg))
+end
+
+function BRutus.Logger.Warn(msg)
+    BRutus:Print("|cffFF8800[warn]|r " .. tostring(msg))
+end
+
+local ERROR_RING_MAX = 50
+
+-- pcall a function, capturing any error into BRutus.State.errors.
+-- Returns (ok, errOrResult). Use for event handlers and panel refreshes.
+function BRutus:SafeCall(fn, ...)
+    if type(fn) ~= "function" then return false end
+    local ok, err = pcall(fn, ...)
+    if not ok then
+        local ring = BRutus.State.errors
+        ring[#ring + 1] = { msg = tostring(err), when = (GetServerTime and GetServerTime()) or 0 }
+        while #ring > ERROR_RING_MAX do table.remove(ring, 1) end
+        if BRutus.Logger.debug then
+            BRutus:Print("|cffFF4444[error]|r " .. tostring(err))
+        end
+    end
+    return ok, err
 end
 
 ----------------------------------------------------------------------

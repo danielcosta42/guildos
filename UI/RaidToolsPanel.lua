@@ -194,11 +194,11 @@ function BRutus:CreateRaidToolsPanel(parent, _mainFrame)
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
-        if info and info.refresh then info.refresh() end
+        if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
-        if info and info.refresh then info.refresh() end
+        if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
 
     local x = 0

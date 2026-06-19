@@ -378,3 +378,39 @@ end
 function BRutus:GetFirstSeen(playerKey)
     return self.db and self.db.firstSeen and self.db.firstSeen[playerKey]
 end
+
+----------------------------------------------------------------------
+-- DB hygiene: drop cached data for members who left the guild.
+-- Manual-only (never auto-run) to avoid data loss if the roster is mid-load.
+-- Prunes the volatile caches (members gear/spec, firstSeen) but keeps officer
+-- records (trials, officer notes) for historical reference.
+----------------------------------------------------------------------
+function BRutus:PruneStaleData()
+    if not self.db then return 0 end
+    local n = GetNumGuildMembers() or 0
+    if n == 0 then return 0 end  -- roster not loaded yet; refuse to prune
+
+    local roster = {}
+    for i = 1, n do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            roster[self:GetPlayerKey(short, realm)] = true
+        end
+    end
+
+    local removed = 0
+    for key in pairs(self.db.members or {}) do
+        if not roster[key] then
+            self.db.members[key] = nil
+            removed = removed + 1
+        end
+    end
+    for key in pairs(self.db.firstSeen or {}) do
+        if not roster[key] then
+            self.db.firstSeen[key] = nil
+        end
+    end
+    return removed
+end

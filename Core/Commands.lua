@@ -13,6 +13,11 @@ SLASH_BRUTUS2 = "/br"
 
 local L = BRutus.L
 
+-- Keybinding labels, read by the Blizzard key-binding UI at load time.
+BINDING_HEADER_GUILDOS = "Guild OS"
+BINDING_NAME_GUILDOS_TOGGLE = L["Toggle Guild OS"]
+BINDING_NAME_GUILDOS_WISHLIST = L["Open My Wishlist"]
+
 local function handleCommand(msg)
     msg = strtrim(msg or "")
     if msg == "scan" then
@@ -28,6 +33,22 @@ local function handleCommand(msg)
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()
             BRutus:Print(shown and L["Minimap button shown."] or L["Minimap button hidden."])
+        end
+    elseif msg == "prune" then
+        local removed = BRutus:PruneStaleData()
+        BRutus:Print(string.format(L["Pruned %d member(s) who left the guild."], removed))
+    elseif msg == "debug" then
+        BRutus.Logger.debug = not BRutus.Logger.debug
+        BRutus:Print(BRutus.Logger.debug and L["Debug mode ON."] or L["Debug mode OFF."])
+    elseif msg == "errors" then
+        local ring = (BRutus.State and BRutus.State.errors) or {}
+        if #ring == 0 then
+            BRutus:Print(L["No errors recorded this session."])
+        else
+            BRutus:Print(string.format(L["%d recent error(s):"], #ring))
+            for i = math.max(1, #ring - 9), #ring do
+                BRutus:Print("|cffFF4444" .. (ring[i].msg or "?") .. "|r")
+            end
         end
     elseif msg == "reset" then
         if BRutus.guildKey then

@@ -22,6 +22,11 @@ globals = {
     "ToggleGuildFrame",
     "ToggleFriendsFrame",
 
+    -- Keybinding labels (read by the Blizzard binding UI)
+    "BINDING_HEADER_GUILDOS",
+    "BINDING_NAME_GUILDOS_TOGGLE",
+    "BINDING_NAME_GUILDOS_WISHLIST",
+
     -- Implicit globals defined across files (functions shared between modules)
     "CreateRosterRow",
     "UpdateRosterRow",

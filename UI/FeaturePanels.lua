@@ -1814,6 +1814,49 @@ function BRutus:RefreshSettingsPanel(content)
     reloadNote:SetPoint("LEFT", reloadBtn, "RIGHT", 10, 0)
     yOff = yOff + 36
 
+    --------------------------------------------------------------------
+    -- ABOUT & SUPPORT
+    --------------------------------------------------------------------
+    yOff = yOff + 8
+    local sepAbout = UI:CreateSeparator(content)
+    sepAbout:SetPoint("TOPLEFT", 0, -yOff)
+    sepAbout:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+
+    local aboutTitle = UI:CreateHeaderText(content, L["ABOUT & SUPPORT"], 12)
+    aboutTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 22
+
+    local verText = UI:CreateText(content, "Guild OS v" .. (BRutus.VERSION or "?"), 11, C.gold.r, C.gold.g, C.gold.b)
+    verText:SetPoint("TOPLEFT", 8, -yOff)
+    yOff = yOff + 20
+
+    local privacy = UI:CreateText(content,
+        L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],
+        10, C.silver.r, C.silver.g, C.silver.b)
+    privacy:SetPoint("TOPLEFT", 8, -yOff)
+    privacy:SetWidth(content:GetWidth() - 20)
+    privacy:SetJustifyH("LEFT")
+    yOff = yOff + 42
+
+    local cmds = UI:CreateText(content,
+        "/guildos  |  /guildos sync  |  /guildos prune  |  /guildos minimap  |  /guildos debug",
+        9, C.textDim.r, C.textDim.g, C.textDim.b)
+    cmds:SetPoint("TOPLEFT", 8, -yOff)
+    yOff = yOff + 22
+
+    local linksBtn = UI:CreateButton(content, L["Links"], 120, 24)
+    linksBtn:SetPoint("TOPLEFT", 8, -yOff)
+    linksBtn:SetScript("OnClick", function()
+        BRutus:ShowExportPopup(L["Guild OS Links"],
+            "GitHub:  https://github.com/danielcosta42/GuildOS\n"
+            .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
+            .. "Wago:  https://addons.wago.io/addons/b6XeDxKp")
+    end)
+    local linksNote = UI:CreateText(content, L["Project page, bug reports and updates"], 9, C.silver.r, C.silver.g, C.silver.b)
+    linksNote:SetPoint("LEFT", linksBtn, "RIGHT", 10, 0)
+    yOff = yOff + 34
+
     content:SetHeight(math.max(1, yOff))
 end
 

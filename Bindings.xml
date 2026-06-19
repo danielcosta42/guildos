@@ -1,0 +1,8 @@
+<Bindings>
+    <Binding name="GUILDOS_TOGGLE" category="ADDONS" header="GUILDOS">
+        if BRutus and BRutus.ToggleRoster then BRutus:ToggleRoster() end
+    </Binding>
+    <Binding name="GUILDOS_WISHLIST" category="ADDONS">
+        if BRutus and BRutus.ShowWishlistFrame then BRutus:ShowWishlistFrame() end
+    </Binding>
+</Bindings>
