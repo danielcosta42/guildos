@@ -210,7 +210,7 @@ function Recruitment:CreatePopupFrame()
     f:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine(L["BRutus Recruitment"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Guild OS Recruitment"], C.gold.r, C.gold.g, C.gold.b)
         GameTooltip:AddLine(L["Left-click to post recruitment message."], 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(L["Drag to move. x to dismiss."], 0.5, 0.5, 0.5, true)
         GameTooltip:Show()
@@ -316,7 +316,7 @@ function Recruitment:HandleCommand(args)
                 self:StartAutoRecruit()
             end
         else
-            BRutus:Print(L["Usage: /brutus recruit interval <seconds> (min 60)"])
+            BRutus:Print(L["Usage: /guildos recruit interval <seconds> (min 60)"])
         end
     elseif cmd == "channel" then
         local action = args[2]
@@ -338,7 +338,7 @@ function Recruitment:HandleCommand(args)
             local list = table.concat(BRutus.db.recruitment.channels, ", ")
             BRutus:Print(L["Channels: |cffFFFFFF"] .. (list ~= "" and list or L["(none)"]) .. "|r")
         else
-            BRutus:Print(L["Usage: /brutus recruit channel <add|remove|list> [name]"])
+            BRutus:Print(L["Usage: /guildos recruit channel <add|remove|list> [name]"])
         end
     elseif cmd == "status" then
         local s = BRutus.db.recruitment
@@ -371,7 +371,7 @@ function Recruitment:HandleCommand(args)
                 BRutus:Print(L["Current: |cffFFFFFF"] .. BRutus.db.recruitment.welcomeMessage .. "|r")
             end
         else
-            BRutus:Print(L["Usage: /brutus recruit welcome <on|off|msg> [text]"])
+            BRutus:Print(L["Usage: /guildos recruit welcome <on|off|msg> [text]"])
         end
     elseif cmd == "discord" then
         local link = args[2]
@@ -391,18 +391,18 @@ function Recruitment:HandleCommand(args)
             GuildInvite(target)
             BRutus:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
         else
-            BRutus:Print(L["Usage: /brutus recruit invite <PlayerName>"])
+            BRutus:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end
     else
         BRutus:Print(L["|cffFFD700Recruitment commands:|r"])
-        BRutus:Print("  /brutus recruit on/off")
-        BRutus:Print("  /brutus recruit status")
-        BRutus:Print("  /brutus recruit msg <text>")
-        BRutus:Print("  /brutus recruit interval <seconds>")
-        BRutus:Print("  /brutus recruit channel add/remove/list <name>")
-        BRutus:Print("  /brutus recruit welcome on/off/msg <text>")
-        BRutus:Print("  /brutus recruit discord <link>")
-        BRutus:Print("  /brutus recruit invite <PlayerName>")
+        BRutus:Print("  /guildos recruit on/off")
+        BRutus:Print("  /guildos recruit status")
+        BRutus:Print("  /guildos recruit msg <text>")
+        BRutus:Print("  /guildos recruit interval <seconds>")
+        BRutus:Print("  /guildos recruit channel add/remove/list <name>")
+        BRutus:Print("  /guildos recruit welcome on/off/msg <text>")
+        BRutus:Print("  /guildos recruit discord <link>")
+        BRutus:Print("  /guildos recruit invite <PlayerName>")
     end
 end
 

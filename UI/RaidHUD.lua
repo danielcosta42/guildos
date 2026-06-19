@@ -367,7 +367,7 @@ function BRutus:CreateRaidHUD()
     titleText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     titleText:SetPoint("LEFT", 8, 0)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText(L["BRutus — Raid CDs"])
+    titleText:SetText(L["Guild OS — Raid CDs"])
 
     ----------------------------------------------------------------
     -- Collapse button  (— / +)

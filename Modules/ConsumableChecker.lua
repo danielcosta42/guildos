@@ -210,7 +210,7 @@ end
 function ConsumableChecker:ReportToChat(channel)
     local results = self:GetLastResults()
     if not results or not next(results) then
-        BRutus:Print(L["No results. Use /brutus to check consumables first."])
+        BRutus:Print(L["No results. Use /guildos to check consumables first."])
         return
     end
 
@@ -222,9 +222,9 @@ function ConsumableChecker:ReportToChat(channel)
     end
 
     if #missing == 0 then
-        SendChatMessage(L["[BRutus] Consumable check: All OK!"], channel or "RAID")
+        SendChatMessage(L["[Guild OS] Consumable check: All OK!"], channel or "RAID")
     else
-        SendChatMessage(L["[BRutus] Consumable check - Missing:"], channel or "RAID")
+        SendChatMessage(L["[Guild OS] Consumable check - Missing:"], channel or "RAID")
         for _, line in ipairs(missing) do
             SendChatMessage("  " .. line, channel or "RAID")
         end

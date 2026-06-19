@@ -71,7 +71,7 @@ end
 
 ----------------------------------------------------------------------
 -- Collect the local player's own spec from their talent tabs.
--- Stores result in BRutus.db.members[key].spec and returns it.
+-- Stores result in Guild OS.db.members[key].spec and returns it.
 ----------------------------------------------------------------------
 function SpecChecker:CollectOwnSpec()
     local numTabs = GetNumTalentTabs()

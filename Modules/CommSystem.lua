@@ -331,7 +331,7 @@ end
 function CommSystem:HandleVersionCheck(_sender, data)
     -- Could notify user of newer versions
     if data and data ~= BRutus.VERSION then
-        BRutus:Print(L["A different BRutus version detected: "] .. tostring(data))
+        BRutus:Print(L["A different Guild OS version detected: "] .. tostring(data))
     end
 end
 

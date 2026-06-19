@@ -389,7 +389,7 @@ function PopulateDetail(frame, data)
         noSpec:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         noSpec:SetPoint("TOPLEFT", 15, yOff)
         noSpec:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noSpec:SetText(L["No spec data. Use /brutus specs to scan the group."])
+        noSpec:SetText(L["No spec data. Use /guildos specs to scan the group."])
         noSpec:Show()
         yOff = yOff - 25
     end
@@ -448,7 +448,7 @@ function PopulateDetail(frame, data)
         noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noData:SetText(L["No gear data available. Player needs BRutus addon."])
+        noData:SetText(L["No gear data available. Player needs Guild OS addon."])
         noData:Show()
         yOff = yOff - 25
     end

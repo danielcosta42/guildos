@@ -684,7 +684,7 @@ function RaidTracker:MergeDuplicateSessions()
     end
 
     if totalMerged > 0 then
-        BRutus:Print(string.format(L["|cff00FF00BRutus: merged %d duplicate raid session(s).|r"], totalMerged))
+        BRutus:Print(string.format(L["|cff00FF00Guild OS: merged %d duplicate raid session(s).|r"], totalMerged))
     end
     -- Always rebuild so attendance stays consistent with the session DB
     self:RebuildAttendanceFromSessions()
@@ -1050,7 +1050,7 @@ function RaidTracker:MigrateAttendanceIfNeeded()
     -- Inspect the first entry only to detect the old flat format
     local _, v = next(att)
     if type(v) == "table" and (v.raids ~= nil or v.lastRaid ~= nil or v.raids25 ~= nil) then
-        BRutus:Print(L["|cffFFAA00BRutus: Old attendance format detected. Rebuilding per group…|r"])
+        BRutus:Print(L["|cffFFAA00Guild OS: Old attendance format detected. Rebuilding per group…|r"])
         self:RebuildAttendanceFromSessions()
     end
 end

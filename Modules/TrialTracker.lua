@@ -127,7 +127,7 @@ function TrialTracker:CheckExpired()
         end
     end
     if #expired > 0 and BRutus:IsOfficer() then
-        BRutus:Print(string.format(L["|cffFF6600%d trial(s) expired!|r Use /brutus to review."], #expired))
+        BRutus:Print(string.format(L["|cffFF6600%d trial(s) expired!|r Use /guildos to review."], #expired))
     end
 end
 

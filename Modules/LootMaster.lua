@@ -1432,7 +1432,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     title:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText(L["BRutus Loot Master"])
+    title:SetText(L["Guild OS Loot Master"])
 
     -- Item link
     local itemText = f:CreateFontString(nil, "OVERLAY")

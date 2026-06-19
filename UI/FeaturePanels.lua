@@ -1533,7 +1533,7 @@ function BRutus:RefreshSettingsPanel(content)
             if results then
                 local missing = BRutus.ConsumableChecker:GetMissingCount(results)
                 BRutus:Print(L["Consumable Check Test: "] .. missing .. L[" players missing buffs."])
-                BRutus:Print(L["Use |cffFFD700/brutus consreport|r to see details in raid chat."])
+                BRutus:Print(L["Use |cffFFD700/guildos consreport|r to see details in raid chat."])
             else
                 BRutus:Print(L["Consumable check returned no results (not in a raid?)."])
             end
@@ -1705,7 +1705,7 @@ function BRutus:RefreshSettingsPanel(content)
     yOff = yOff + 22
 
     local rankDesc = UI:CreateText(content,
-        L["Checked ranks will have access to officer features in BRutus."],
+        L["Checked ranks will have access to officer features in Guild OS."],
         10, C.silver.r, C.silver.g, C.silver.b)
     rankDesc:SetPoint("TOPLEFT", 8, -yOff)
     rankDesc:SetWidth(content:GetWidth() - 20)
