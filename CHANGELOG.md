@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-06-20
+
+### Added
+- explicit Save buttons on text fields; silence keybind warning
+- commercial polish — onboarding, error resilience, prune, keybinds, about (v0.4.0)
+
+### Changed
+- replace user-facing "BRutus"/"/brutus" with "Guild OS"/"/guildos"
+
+
 ## [0.4.0] - 2026-06-19
 
 ### Added
