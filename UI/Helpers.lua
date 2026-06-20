@@ -276,6 +276,47 @@ function Helpers:CreateButton(parent, text, width, height)
 end
 
 ----------------------------------------------------------------------
+-- Attach an inline "Save" button to an EditBox whose value is otherwise
+-- committed only by pressing Enter. The button and the Enter key share
+-- the same commit callback, so the action is no longer hidden behind an
+-- implicit keypress.
+--   onSave(editBox)  -- runs the commit; receives the edit box
+-- opts (all optional):
+--   text    button label            (default: localized "Save")
+--   width   button width            (default: 60)
+--   height  button height           (default: edit box height, min 22)
+--   gap     space box -> button     (default: 6)
+--   point   { ... } SetPoint args to override the default anchoring
+--           (default: anchored to the immediate right of the edit box)
+-- This also rewires the box's OnEnterPressed to the same callback so the
+-- two stay in sync. Returns the button.
+----------------------------------------------------------------------
+function Helpers:AttachSaveButton(editBox, onSave, opts)
+    opts = opts or {}
+    local parent = opts.parent or editBox:GetParent()
+    local label  = opts.text or (BRutus.L and BRutus.L["Save"]) or "Save"
+    local h = opts.height or editBox:GetHeight()
+    if not h or h < 22 then h = 22 end
+
+    local btn = self:CreateButton(parent, label, opts.width or 60, h)
+    if opts.point then
+        btn:SetPoint(unpack(opts.point))
+    else
+        btn:SetPoint("LEFT", editBox, "RIGHT", opts.gap or 6, 0)
+    end
+
+    local function commit()
+        onSave(editBox)
+        editBox:ClearFocus()
+    end
+    btn:SetScript("OnClick", commit)
+    editBox:SetScript("OnEnterPressed", commit)
+
+    editBox.saveButton = btn
+    return btn
+end
+
+----------------------------------------------------------------------
 -- Create a styled checkbox with label (real checkmark glyph)
 ----------------------------------------------------------------------
 function Helpers:CreateCheckbox(parent, labelText, size)

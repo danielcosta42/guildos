@@ -1280,19 +1280,19 @@ function BRutus:RefreshSettingsPanel(content)
     durBox:SetMaxLetters(3)
     durBox:SetAutoFocus(false)
     durBox:SetText(tostring(BRutus.db.lootMaster.rollDuration or 30))
-    durBox:SetScript("OnEnterPressed", function(self)
-        local val = tonumber(self:GetText())
+    local function commitDur(box)
+        local val = tonumber(box:GetText())
         if val and val >= 5 and val <= 120 then
             BRutus.db.lootMaster.rollDuration = val
             if BRutus.LootMaster then BRutus.LootMaster.ROLL_DURATION = val end
             BRutus:Print(L["Roll duration set to "] .. val .. "s")
         else
             BRutus:Print(L["Duration must be between 5 and 120 seconds."])
-            self:SetText(tostring(BRutus.db.lootMaster.rollDuration or 30))
+            box:SetText(tostring(BRutus.db.lootMaster.rollDuration or 30))
         end
-        self:ClearFocus()
-    end)
+    end
     durBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(durBox, commitDur)
     yOff = yOff + 30
 
     -- Auto announce
@@ -1343,16 +1343,16 @@ function BRutus:RefreshSettingsPanel(content)
     minAttBox:SetMaxLetters(3)
     minAttBox:SetAutoFocus(false)
     minAttBox:SetText(tostring(BRutus.db.lootMaster.minAttendancePct or 0))
-    minAttBox:SetScript("OnEnterPressed", function(self)
-        local val = math.max(0, math.min(100, tonumber(self:GetText()) or 0))
+    local function commitMinAtt(box)
+        local val = math.max(0, math.min(100, tonumber(box:GetText()) or 0))
         BRutus.db.lootMaster.minAttendancePct = val
         BRutus:Print(L["Min. MS attendance set to "] .. val .. "%" .. (val == 0 and L[" (disabled)"] or ""))
-        self:ClearFocus()
-    end)
+    end
     minAttBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(minAttBox, commitMinAtt)
 
     local minAttHint = UI:CreateText(content, L["0 = disabled. Below this % MS is auto-downgraded to OS."], 9, C.silver.r, C.silver.g, C.silver.b)
-    minAttHint:SetPoint("LEFT", minAttBox, "RIGHT", 8, 0)
+    minAttHint:SetPoint("LEFT", minAttBox.saveButton, "RIGHT", 8, 0)
     minAttHint:SetWidth(280)
     yOff = yOff + 30
 
@@ -1391,20 +1391,20 @@ function BRutus:RefreshSettingsPanel(content)
     deBox:SetMaxLetters(64)
     deBox:SetAutoFocus(false)
     deBox:SetText((BRutus.LootMaster and BRutus.LootMaster:GetDisenchanter()) or "")
-    deBox:SetScript("OnEnterPressed", function(self)
-        local name = strtrim(self:GetText())
+    local function commitDE(box)
+        local name = strtrim(box:GetText())
         if BRutus.LootMaster then BRutus.LootMaster:SetDisenchanter(name) end
         if name ~= "" then
             BRutus:Print(L["Disenchanter set: "] .. "|cff00ff00" .. name .. "|r")
         else
             BRutus:Print(L["Disenchanter removed."])
         end
-        self:ClearFocus()
-    end)
+    end
     deBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(deBox, commitDE)
 
     local deHint = UI:CreateText(content, L["Name of the player who receives items for DE"], 9, C.silver.r, C.silver.g, C.silver.b)
-    deHint:SetPoint("LEFT", deBox, "RIGHT", 8, 0)
+    deHint:SetPoint("LEFT", deBox.saveButton, "RIGHT", 8, 0)
     deHint:SetWidth(180)
     yOff = yOff + 30
 
@@ -1472,20 +1472,20 @@ function BRutus:RefreshSettingsPanel(content)
         groupBox:SetMaxLetters(64)
         groupBox:SetAutoFocus(false)
         groupBox:SetText(BRutus.db.raidTracker and BRutus.db.raidTracker.currentGroupTag or "")
-        groupBox:SetScript("OnEnterPressed", function(self)
-            local name = strtrim(self:GetText())
+        local function commitGroup(box)
+            local name = strtrim(box:GetText())
             if BRutus.RaidTracker then BRutus.RaidTracker:SetGroupTag(name) end
             if name ~= "" then
                 BRutus:Print(L["Raid group set: "] .. "|cff9966FF" .. name .. "|r")
             else
                 BRutus:Print(L["Raid group removed."])
             end
-            self:ClearFocus()
-        end)
+        end
         groupBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        UI:AttachSaveButton(groupBox, commitGroup)
 
         local groupHint = UI:CreateText(content, L["Ex: Core 1, Core 2"], 9, C.silver.r, C.silver.g, C.silver.b)
-        groupHint:SetPoint("LEFT", groupBox, "RIGHT", 8, 0)
+        groupHint:SetPoint("LEFT", groupBox.saveButton, "RIGHT", 8, 0)
         groupHint:SetWidth(180)
         yOff = yOff + 30
     end -- isOfficer (Raid group tag)

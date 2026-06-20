@@ -42,7 +42,6 @@ Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via m
 | `BRutus:PruneStaleData()` | Manual (`/guildos prune`) removal of cached data for members who left the guild |
 | `BRutus:ShowOnboarding()` / `:MaybeShowOnboarding()` | First-run welcome wizard (once; `settings.onboarded`) |
 | Slash: `/guildos minimap | debug | errors | prune` | Toggle minimap button / debug / dump errors / prune left members |
-| Keybindings: `GUILDOS_TOGGLE`, `GUILDOS_WISHLIST` | Bindings.xml — toggle roster / open wishlist (labels via L) |
 
 Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos"; namespace, frame names, SavedVariables and the legacy `/brutus` alias intentionally unchanged.
 

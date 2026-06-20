@@ -2428,17 +2428,17 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     intervalBox:SetAutoFocus(false)
     intervalBox:SetNumeric(true)
     intervalBox:SetMaxLetters(5)
-    intervalBox:SetScript("OnEnterPressed", function(self)
-        local val = tonumber(self:GetText())
+    local function commitInterval(box)
+        local val = tonumber(box:GetText())
         if val and val >= 60 then
             BRutus.db.recruitment.interval = val
             BRutus:Print(string.format(L["Interval set to %ds."], val))
         else
-            self:SetText(tostring(BRutus.db.recruitment.interval))
+            box:SetText(tostring(BRutus.db.recruitment.interval))
         end
-        self:ClearFocus()
-    end)
+    end
     intervalBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(intervalBox, commitInterval)
     yOff = yOff - 28
 
     -- Channels
@@ -2462,15 +2462,15 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     msgBox:SetAutoFocus(false)
     msgBox:SetMaxLetters(255)
     msgBox:SetMultiLine(false)
-    msgBox:SetScript("OnEnterPressed", function(self)
-        local txt = self:GetText()
+    local function commitMsg(box)
+        local txt = box:GetText()
         if txt and txt ~= "" then
             BRutus.db.recruitment.message = txt
             BRutus:Print(L["Recruitment message updated."])
         end
-        self:ClearFocus()
-    end)
+    end
     msgBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(msgBox, commitMsg)
     yOff = yOff - 68
 
     ----------------------------------------------------------------
@@ -2520,15 +2520,15 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     discordBox:SetTextInsets(6, 6, 0, 0)
     discordBox:SetAutoFocus(false)
     discordBox:SetMaxLetters(100)
-    discordBox:SetScript("OnEnterPressed", function(self)
-        local txt = self:GetText()
+    local function commitDiscord(box)
+        local txt = box:GetText()
         if txt and txt ~= "" then
             BRutus.db.recruitment.discord = txt
             BRutus:Print(L["Discord link updated."])
         end
-        self:ClearFocus()
-    end)
+    end
     discordBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(discordBox, commitDiscord)
     yOff = yOff - 28
 
     -- Welcome message
@@ -2545,15 +2545,15 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeBox:SetAutoFocus(false)
     welcomeBox:SetMaxLetters(255)
     welcomeBox:SetMultiLine(false)
-    welcomeBox:SetScript("OnEnterPressed", function(self)
-        local txt = self:GetText()
+    local function commitWelcome(box)
+        local txt = box:GetText()
         if txt and txt ~= "" then
             BRutus.db.recruitment.welcomeMessage = txt
             BRutus:Print(L["Welcome message updated."])
         end
-        self:ClearFocus()
-    end)
+    end
     welcomeBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(welcomeBox, commitWelcome)
 
     ----------------------------------------------------------------
     -- Refresh function for when panel is shown

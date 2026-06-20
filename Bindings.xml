@@ -1,8 +1,14 @@
 <Bindings>
-    <Binding name="GUILDOS_TOGGLE" category="ADDONS" header="GUILDOS">
-        if BRutus and BRutus.ToggleRoster then BRutus:ToggleRoster() end
-    </Binding>
-    <Binding name="GUILDOS_WISHLIST" category="ADDONS">
-        if BRutus and BRutus.ShowWishlistFrame then BRutus:ShowWishlistFrame() end
-    </Binding>
+    <!--
+        Intentionally empty. Guild OS registers NO key bindings.
+
+        This file exists only so the WoW client's automatic per-addon
+        Bindings.xml probe succeeds. The client tries to open
+        <AddOn>/Bindings.xml on its own (regardless of the .toc), so
+        deleting the file makes it log:
+            "LUA_WARNING: Couldn't open Interface/AddOns/GuildOS/Bindings.xml"
+
+        All Guild OS actions remain reachable via the minimap button,
+        the in-frame buttons, and the /guildos (/gos) slash commands.
+    -->
 </Bindings>

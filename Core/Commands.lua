@@ -13,11 +13,6 @@ SLASH_BRUTUS2 = "/br"
 
 local L = BRutus.L
 
--- Keybinding labels, read by the Blizzard key-binding UI at load time.
-BINDING_HEADER_GUILDOS = "Guild OS"
-BINDING_NAME_GUILDOS_TOGGLE = L["Toggle Guild OS"]
-BINDING_NAME_GUILDOS_WISHLIST = L["Open My Wishlist"]
-
 local function handleCommand(msg)
     msg = strtrim(msg or "")
     if msg == "scan" then
