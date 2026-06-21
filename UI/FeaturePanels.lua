@@ -1222,8 +1222,13 @@ function BRutus:CreateSettingsPanel(parent, _mainFrame)
 end
 
 function BRutus:RefreshSettingsPanel(content)
-    -- Clear existing
+    -- Clear existing. Hide BOTH child frames AND regions: section titles,
+    -- hints and separators are FontStrings/textures parented straight to
+    -- `content`, so they must be hidden too — otherwise a re-render with a
+    -- different layout (e.g. switching loot system) leaves the old text
+    -- overlapping the new.
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
+    for _, region in pairs({ content:GetRegions() }) do region:Hide() end
 
     local yOff = 0
 
