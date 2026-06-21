@@ -2108,6 +2108,17 @@ function BRutus:RefreshSettingsPanel(content, category)
     reloadNote:SetPoint("LEFT", reloadBtn, "RIGHT", 10, 0)
     yOff = yOff + 36
 
+    -- Backup / Restore
+    local backupBtn = UI:CreateButton(content, L["Backup"], 110, 24)
+    backupBtn:SetPoint("TOPLEFT", 8, -yOff)
+    backupBtn:SetScript("OnClick", function() if BRutus.Backup then BRutus.Backup:ShowExport() end end)
+    local restoreBtn2 = UI:CreateButton(content, L["Restore"], 110, 24)
+    restoreBtn2:SetPoint("LEFT", backupBtn, "RIGHT", 8, 0)
+    restoreBtn2:SetScript("OnClick", function() if BRutus.Backup then BRutus.Backup:ShowRestore() end end)
+    local backupNote = UI:CreateText(content, L["Export/import all Guild OS data for this guild"], 9, C.silver.r, C.silver.g, C.silver.b)
+    backupNote:SetPoint("LEFT", restoreBtn2, "RIGHT", 10, 0)
+    yOff = yOff + 34
+
     --------------------------------------------------------------------
     -- ABOUT & SUPPORT
     --------------------------------------------------------------------

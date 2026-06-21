@@ -36,6 +36,10 @@ local function handleCommand(msg)
         if BRutus.Digest then
             BRutus.Digest:Show()
         end
+    elseif msg == "backup" then
+        if BRutus.Backup then BRutus.Backup:ShowExport() end
+    elseif msg == "restore" then
+        if BRutus.Backup then BRutus.Backup:ShowRestore() end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()
