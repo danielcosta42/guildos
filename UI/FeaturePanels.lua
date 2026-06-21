@@ -1221,33 +1221,59 @@ function BRutus:CreateSettingsPanel(parent, _mainFrame)
     end)
 end
 
-function BRutus:RefreshSettingsPanel(content)
+function BRutus:RefreshSettingsPanel(content, category)
     -- Clear existing. Hide BOTH child frames AND regions: section titles,
     -- hints and separators are FontStrings/textures parented straight to
     -- `content`, so they must be hidden too — otherwise a re-render with a
-    -- different layout (e.g. switching loot system) leaves the old text
+    -- different layout (e.g. switching category) leaves the old text
     -- overlapping the new.
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
     for _, region in pairs({ content:GetRegions() }) do region:Hide() end
 
+    local isOfficer = BRutus:IsOfficer()
+
+    -- Settings are grouped into category sub-tabs so the panel is easy to
+    -- navigate. Officer-only categories are hidden from members. The active
+    -- category is remembered on the panel itself.
+    local CATS = {
+        { key = "general", label = L["General"] },
+        { key = "loot",    label = L["Loot"],    officer = true },
+        { key = "raid",    label = L["Raid"] },
+        { key = "officer", label = L["Officer"], officer = true },
+        { key = "about",   label = L["About"] },
+    }
+    local cat = category or content.__settingsCat or "general"
+    if (cat == "loot" or cat == "officer") and not isOfficer then cat = "general" end
+    content.__settingsCat = cat
+
     local yOff = 0
 
-    -- Title
+    -- Title + category bar
     local title = UI:CreateTitle(content, L["Settings"], 16)
     title:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 28
+    yOff = yOff + 26
 
-    local subtitle = UI:CreateText(content, L["Enable or disable modules and adjust settings. Changes take effect immediately."], 10, C.silver.r, C.silver.g, C.silver.b)
-    subtitle:SetPoint("TOPLEFT", 0, -yOff)
-    subtitle:SetWidth(content:GetWidth() - 20)
-    yOff = yOff + 24
+    local cx = 0
+    for _, c in ipairs(CATS) do
+        if not c.officer or isOfficer then
+            local b = UI:CreateButton(content, c.label, 92, 24)
+            b:SetPoint("TOPLEFT", cx, -yOff)
+            if c.key == cat then
+                b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+                b.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            end
+            b:SetScript("OnClick", function() BRutus:RefreshSettingsPanel(content, c.key) end)
+            cx = cx + 96
+        end
+    end
+    yOff = yOff + 34
 
-    -- Separator
     local sep1 = UI:CreateSeparator(content)
     sep1:SetPoint("TOPLEFT", 0, -yOff)
     sep1:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
+    if cat == "general" then
     --------------------------------------------------------------------
     -- MODULE TOGGLES
     --------------------------------------------------------------------
@@ -1265,7 +1291,6 @@ function BRutus:RefreshSettingsPanel(content)
         }
     end
     local mods = BRutus.db.settings.modules
-    local isOfficer = BRutus:IsOfficer()
 
     local modules = {
         { key = "raidTracker",       label = L["Raid Tracker"],         desc = L["Track raid attendance, penalties, and sessions"], officerOnly = true },
@@ -1347,14 +1372,34 @@ function BRutus:RefreshSettingsPanel(content)
         b:SetScript("OnClick", qb.fn)
         qx = qx + 136
     end
+    yOff = yOff + 36
+
+    --------------------------------------------------------------------
+    -- GENERAL OPTIONS
+    --------------------------------------------------------------------
+    local goTitle = UI:CreateHeaderText(content, L["GENERAL OPTIONS"], 12)
+    goTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 24
+
+    local mmCb = UI:CreateCheckbox(content, L["Show minimap button"], 18)
+    mmCb:SetPoint("TOPLEFT", 8, -yOff)
+    mmCb.checkbox:SetChecked(BRutus.IsMinimapShown and BRutus:IsMinimapShown() or false)
+    mmCb.checkbox.onChanged = function(_, checked)
+        if BRutus.SetMinimapShown then BRutus:SetMinimapShown(checked) end
+    end
+    yOff = yOff + 30
+
+    local welcomeBtn = UI:CreateButton(content, L["Show welcome again"], 160, 24)
+    welcomeBtn:SetPoint("TOPLEFT", 8, -yOff)
+    welcomeBtn:SetScript("OnClick", function()
+        if BRutus.ShowOnboarding then BRutus:ShowOnboarding() end
+    end)
+    local welcomeNote = UI:CreateText(content, L["Replay the first-run intro"], 9, C.silver.r, C.silver.g, C.silver.b)
+    welcomeNote:SetPoint("LEFT", welcomeBtn, "RIGHT", 10, 0)
     yOff = yOff + 34
+    end -- cat == "general"
 
-    local sepQA = UI:CreateSeparator(content)
-    sepQA:SetPoint("TOPLEFT", 0, -yOff)
-    sepQA:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
-    if isOfficer then
+    if isOfficer and cat == "loot" then
     --------------------------------------------------------------------
     -- LOOT SYSTEM (officer) — how the guild distributes loot
     --------------------------------------------------------------------
@@ -1415,6 +1460,27 @@ function BRutus:RefreshSettingsPanel(content)
             end
             yOff = yOff + 28
         end
+
+        -- Mode: DKP / EPGP / Loot Council
+        local modeLbl = UI:CreateText(content, L["Mode:"], 11, C.white.r, C.white.g, C.white.b)
+        modeLbl:SetPoint("TOPLEFT", 16, -yOff)
+        local MODES = { { k = "dkp", n = "DKP" }, { k = "epgp", n = "EPGP" }, { k = "council", n = L["Loot Council"] } }
+        local mx = 90
+        for _, m in ipairs(MODES) do
+            local mb = UI:CreateButton(content, m.n, 90, 22)
+            mb:SetPoint("TOPLEFT", mx, -yOff + 2)
+            if BRutus.Points:GetMode() == m.k then
+                mb:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+                mb.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            end
+            mb:SetScript("OnClick", function()
+                BRutus.Points:SetMode(m.k)
+                BRutus:RefreshSettingsPanel(content)
+            end)
+            mx = mx + 94
+        end
+        yOff = yOff + 30
+
         numRow(L["Points per boss:"], "bossAward", L["Awarded to raiders on each boss kill"])
         numRow(L["Weekly decay (%):"], "decayPct", L["Use the DKP window's Decay button to apply"])
         numRow(L["Starting points:"], "startingPoints", L["Default for a player's first entry"])
@@ -1630,8 +1696,9 @@ function BRutus:RefreshSettingsPanel(content)
     sep3:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
-    end -- isOfficer (Loot Master settings)
+    end -- isOfficer and cat == "loot" (Loot settings)
 
+    if cat == "raid" then
     --------------------------------------------------------------------
     -- RAID TRACKER SETTINGS
     --------------------------------------------------------------------
@@ -1689,12 +1756,50 @@ function BRutus:RefreshSettingsPanel(content)
     end
 
     yOff = yOff + 8
-    local sep4 = UI:CreateSeparator(content)
-    sep4:SetPoint("TOPLEFT", 0, -yOff)
-    sep4:SetPoint("TOPRIGHT", -10, -yOff)
+    end -- cat == "raid"
+
+    if isOfficer and cat == "officer" then
+    --------------------------------------------------------------------
+    -- MAINTENANCE (officer only)
+    --------------------------------------------------------------------
+    local mtTitle = UI:CreateHeaderText(content, L["MAINTENANCE"], 12)
+    mtTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 22
+
+    local pruneBtn = UI:CreateButton(content, L["Prune Left Members"], 170, 24)
+    pruneBtn:SetPoint("TOPLEFT", 8, -yOff)
+    pruneBtn:SetScript("OnClick", function()
+        local removed = BRutus:PruneStaleData()
+        BRutus:Print(string.format(L["Pruned %d member(s) who left the guild."], removed))
+    end)
+
+    local errBtn = UI:CreateButton(content, L["View Errors"], 120, 24)
+    errBtn:SetPoint("LEFT", pruneBtn, "RIGHT", 8, 0)
+    errBtn:SetScript("OnClick", function()
+        local ring = (BRutus.State and BRutus.State.errors) or {}
+        if #ring == 0 then
+            BRutus:Print(L["No errors recorded this session."])
+        else
+            BRutus:Print(string.format(L["%d recent error(s):"], #ring))
+            for i = math.max(1, #ring - 9), #ring do
+                BRutus:Print("|cffFF4444" .. (ring[i].msg or "?") .. "|r")
+            end
+        end
+    end)
+
+    local dbgCb = UI:CreateCheckbox(content, L["Debug logging"], 18)
+    dbgCb:SetPoint("LEFT", errBtn, "RIGHT", 14, 0)
+    dbgCb.checkbox:SetChecked((BRutus.Logger and BRutus.Logger.debug) or false)
+    dbgCb.checkbox.onChanged = function(_, checked)
+        if BRutus.Logger then BRutus.Logger.debug = checked and true or false end
+    end
+    yOff = yOff + 34
+
+    local sepMaint = UI:CreateSeparator(content)
+    sepMaint:SetPoint("TOPLEFT", 0, -yOff)
+    sepMaint:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
-    if isOfficer then
     --------------------------------------------------------------------
     -- TEST FUNCTIONS (officer only)
     --------------------------------------------------------------------
@@ -1871,15 +1976,14 @@ function BRutus:RefreshSettingsPanel(content)
     testExpDesc:SetPoint("LEFT", testExport, "RIGHT", 10, 0)
     yOff = yOff + 32
 
-    end -- isOfficer (Test Functions)
+    end -- isOfficer and cat == "officer" (Maintenance + Test Functions)
 
+    if isOfficer and cat == "officer" then
     yOff = yOff + 8
     local sep5 = UI:CreateSeparator(content)
     sep5:SetPoint("TOPLEFT", 0, -yOff)
     sep5:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
-
-    if isOfficer then
     --------------------------------------------------------------------
     -- OFFICER RANK CONFIGURATION (officer only)
     --------------------------------------------------------------------
@@ -1970,14 +2074,9 @@ function BRutus:RefreshSettingsPanel(content)
     rankNote:SetWidth(content:GetWidth() - 20)
     yOff = yOff + 20
 
-    end -- isOfficer (Rank config)
+    end -- isOfficer and cat == "officer" (Rank config)
 
-    yOff = yOff + 8
-    local sep6 = UI:CreateSeparator(content)
-    sep6:SetPoint("TOPLEFT", 0, -yOff)
-    sep6:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
+    if cat == "about" then
     -- Reload UI button
     local reloadBtn = UI:CreateButton(content, L["Reload UI"], 120, 28)
     reloadBtn:SetPoint("TOPLEFT", 8, -yOff)
@@ -2039,8 +2138,12 @@ function BRutus:RefreshSettingsPanel(content)
     local linksNote = UI:CreateText(content, L["Project page, bug reports and updates"], 9, C.silver.r, C.silver.g, C.silver.b)
     linksNote:SetPoint("LEFT", linksBtn, "RIGHT", 10, 0)
     yOff = yOff + 34
+    end -- cat == "about"
 
     content:SetHeight(math.max(1, yOff))
+    -- Snap back to the top so a shorter category never shows blank space.
+    local sf = content:GetParent()
+    if sf and sf.SetVerticalScroll then sf:SetVerticalScroll(0) end
 end
 
 ----------------------------------------------------------------------

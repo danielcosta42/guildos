@@ -104,3 +104,16 @@ function BRutus:ToggleMinimapButton()
     end
     return not cfg.hide
 end
+
+-- Explicit show/hide (used by the Settings checkbox).
+function BRutus:SetMinimapShown(shown)
+    local cfg = GetMinimapCfg()
+    cfg.hide = not shown
+    if self.minimapButton then
+        self.minimapButton:SetShown(shown and true or false)
+    end
+end
+
+function BRutus:IsMinimapShown()
+    return not GetMinimapCfg().hide
+end
