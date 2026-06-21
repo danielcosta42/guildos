@@ -258,6 +258,9 @@ function BRutus:InitModules()
     if BRutus.Digest then
         BRutus.Digest:Initialize()
     end
+    if BRutus.Bulletin then
+        BRutus.Bulletin:Initialize()
+    end
     if BRutus.ConsumableChecker and modEnabled("consumableChecker") then
         BRutus.ConsumableChecker:Initialize()
     end

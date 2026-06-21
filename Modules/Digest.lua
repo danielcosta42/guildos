@@ -72,6 +72,17 @@ function Digest:Build(since)
         end
     end
 
+    -- New bulletin notices (most recent few)
+    if BRutus.Bulletin then
+        local shown = 0
+        for _, m in ipairs(BRutus.Bulletin:GetMessages()) do
+            if (m.ts or 0) > since and shown < 3 then
+                lines[#lines + 1] = "|cffEDCC7B" .. L["Notice:"] .. "|r " .. (m.text or "")
+                shown = shown + 1
+            end
+        end
+    end
+
     -- Officer-only catch-up
     if BRutus:IsOfficer() then
         if BRutus.TrialTracker then

@@ -822,6 +822,13 @@ L["|cffFF8800Warning:|r this replaces ALL of this guild's Guild OS data and relo
 L["Restore & Reload"] = "Restaurar & Recarregar"
 L["|cffFF4444Restore failed:|r "] = "|cffFF4444Falha ao restaurar:|r "
 L["Export/import all Guild OS data for this guild"] = "Exporta/importa todos os dados do Guild OS desta guilda"
+-- Bulletin board
+L["Bulletin"] = "Mural"
+L["Guild Bulletin"] = "Mural da Guilda"
+L["Post"] = "Publicar"
+L["No notices yet."] = "Nenhum aviso ainda."
+L["|cffFF4444Officers only.|r"] = "|cffFF4444Apenas oficiais.|r"
+L["Notice:"] = "Aviso:"
 -- Onboarding officer step
 L["Officers: pick your loot system"] = "Oficiais: escolham o sistema de loot"
 L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."] = "Em Settings -> Sistema de Loot, escolha como a guilda distribui loot: /roll, TMB, Wishlist ou DKP. DKP libera pontos por boss, decaimento e a janela Loot & DKP (também na barra inferior)."

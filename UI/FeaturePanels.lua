@@ -1362,6 +1362,9 @@ function BRutus:RefreshSettingsPanel(content, category)
         local txt = BRutus.Exporter and BRutus.Exporter:Build("equity", "tsv") or ""
         BRutus:ShowExportPopup(L["Loot Equity"], txt)
     end }
+    quickButtons[#quickButtons + 1] = { label = L["Bulletin"], fn = function()
+        if BRutus.Bulletin then BRutus.Bulletin:Show() end
+    end }
     quickButtons[#quickButtons + 1] = { label = L["Login Digest"], fn = function()
         if BRutus.Digest then BRutus.Digest:Show() end
     end }

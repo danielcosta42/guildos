@@ -57,6 +57,7 @@ Modules\Points.lua
 Modules\LootEquity.lua
 Modules\Digest.lua
 Modules\Backup.lua
+Modules\Bulletin.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
