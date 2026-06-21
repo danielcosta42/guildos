@@ -486,12 +486,18 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     local itemId = tonumber(itemLink:match("item:(%d+)"))
     self.activeLoot.itemId = itemId
 
+    -- The guild's chosen loot system (Settings) decides the default flow:
+    -- "wishlist"/"tmb" force wishlist auto-council; "dkp"/"rolls" open a roll
+    -- (DKP just changes how the roll frame ranks and what award charges).
+    local lootSystem = (BRutus.GetLootSystem and BRutus:GetLootSystem()) or "rolls"
+    local wishlistOnly = self.WISHLIST_ONLY_MODE or lootSystem == "wishlist" or lootSystem == "tmb"
+
     -- Check officer prios first — they override wishlist council
     if itemId and itemId > 0 then
         local prioList = self:ResolvePrioList(itemId)
         if prioList then
             local topPrio = prioList[1]
-            if self.WISHLIST_ONLY_MODE then
+            if wishlistOnly then
                 -- Direct award prompt for top prio player
                 local council = self:ResolveWishlistCouncil(itemId) or {}
                 self:AutoCouncilAward(
@@ -521,7 +527,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
                 -- Tie at top of wishlist: only those players roll
                 self:StartRestrictedRoll(tied, council, itemLink, lootSlot, itemId)
                 return
-            elseif #tied == 1 and self.WISHLIST_ONLY_MODE then
+            elseif #tied == 1 and wishlistOnly then
                 -- Single top entry + wishlist-only mode: prompt ML for direct award
                 self:AutoCouncilAward(top, itemLink, lootSlot, council)
                 return
@@ -543,9 +549,16 @@ end
 -- One of these is used to post an info line about who has priority.
 ----------------------------------------------------------------------
 function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prioEntry)
-    -- Main announce
-    local msg = format(L["[ROLL] %s  -  /roll 1-100 = MS  -  /roll 1-99 = OS  -  %ds"],
-        itemLink, self.ROLL_DURATION)
+    -- Main announce (DKP mode rolls register interest; the ML awards by standings)
+    local lootSystem = (BRutus.GetLootSystem and BRutus:GetLootSystem()) or "rolls"
+    local msg
+    if lootSystem == "dkp" then
+        msg = format(L["[DKP] %s  -  /roll to bid, highest DKP wins  -  %ds"],
+            itemLink, self.ROLL_DURATION)
+    else
+        msg = format(L["[ROLL] %s  -  /roll 1-100 = MS  -  /roll 1-99 = OS  -  %ds"],
+            itemLink, self.ROLL_DURATION)
+    end
     self:SafeSendChat(msg, "RAID_WARNING")
 
     -- Post priority info note
@@ -943,6 +956,7 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         prioOrder  = prioOrder,
         att25      = ctx.att25,
         recvCount  = ctx.recvThisLockout,
+        dkp        = (BRutus.Points and BRutus.Points:Get(BRutus:GetPlayerKey(name, GetRealmName()))) or 0,
     }
 
     -- Announce prio or wishlist position to raid
@@ -1125,6 +1139,18 @@ function LootMaster:AwardLoot(playerName, silent)
             instanceID = instanceID,
             fromML     = true,
         })
+    end
+
+    -- DKP: charge the winner when the guild runs the points system and a
+    -- per-item cost is configured (cost 0 = informational standings only).
+    if BRutus.Points and (BRutus.GetLootSystem and BRutus:GetLootSystem()) == "dkp" and BRutus:IsOfficer() then
+        local cost = (BRutus.db.points.config and BRutus.db.points.config.itemCost) or 0
+        if cost > 0 then
+            local pKey = BRutus:GetPlayerKey(playerName, realm)
+            BRutus.Points:Charge(pKey, cost, GetItemInfo(itemLink) or itemLink)
+            self:SafeSendChat(string.format(L["[DKP] %s charged %d points for %s"],
+                playerName, cost, itemLink), "RAID")
+        end
     end
 
     if awarded then
@@ -2716,20 +2742,26 @@ function LootMaster:RefreshRollFrame()
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
 
     -- Build sorted list
+    local lootSystem = (BRutus.GetLootSystem and BRutus:GetLootSystem()) or "rolls"
     local sorted = {}
     for _, r in pairs(self.rolls) do
         table.insert(sorted, r)
     end
-    -- Sort: MS first, then prio order, then roll
+    -- Sort: MS first, then (DKP mode) highest DKP / (else) prio order, then roll
     table.sort(sorted, function(a, b)
         if a.rollType ~= b.rollType then
             if a.rollType == "PASS" then return false end
             if b.rollType == "PASS" then return true end
             return a.rollType == "MS"
         end
-        local aPrio = a.prioOrder or 999
-        local bPrio = b.prioOrder or 999
-        if aPrio ~= bPrio then return aPrio < bPrio end
+        if lootSystem == "dkp" then
+            local ad, bd = a.dkp or 0, b.dkp or 0
+            if ad ~= bd then return ad > bd end
+        else
+            local aPrio = a.prioOrder or 999
+            local bPrio = b.prioOrder or 999
+            if aPrio ~= bPrio then return aPrio < bPrio end
+        end
         return a.roll > b.roll
     end)
 
@@ -2774,7 +2806,9 @@ function LootMaster:RefreshRollFrame()
         local tmbText = row:CreateFontString(nil, "OVERLAY")
         tmbText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
         tmbText:SetPoint("LEFT", 250, 0)
-        if r.prioOrder then
+        if lootSystem == "dkp" then
+            tmbText:SetText(string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
+        elseif r.prioOrder then
             tmbText:SetText(string.format(L["|cffFFD700* Prio #%d|r"], r.prioOrder))
         elseif r.wishlist then
             tmbText:SetText(L["|cff4CB8FFwishlist #"] .. r.wishlist.order .. "|r")

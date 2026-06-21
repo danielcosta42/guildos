@@ -777,6 +777,12 @@ L["Use the DKP window's Decay button to apply"] = "Use o botão Decaimento na ja
 L["Default for a player's first entry"] = "Padrão para a primeira entrada de um jogador"
 L["Auto-award on boss kill (raid leader only)"] = "Conceder automático ao matar boss (apenas líder)"
 L["Open DKP Window"] = "Abrir Janela DKP"
+L["Cost per item:"] = "Custo por item:"
+L["Charged to the winner when the ML awards (0 = off)"] = "Cobrado do ganhador quando o ML entrega (0 = desligado)"
+-- LootMaster x DKP
+L["[DKP] %s  -  /roll to bid, highest DKP wins  -  %ds"] = "[DKP] %s  -  /roll para dar lance, maior DKP vence  -  %ds"
+L["|cffFFD700%d DKP|r"] = "|cffFFD700%d DKP|r"
+L["[DKP] %s charged %d points for %s"] = "[DKP] %s pagou %d pontos por %s"
 -- Onboarding officer step
 L["Officers: pick your loot system"] = "Oficiais: escolham o sistema de loot"
 L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."] = "Em Settings -> Sistema de Loot, escolha como a guilda distribui loot: /roll, TMB, Wishlist ou DKP. DKP libera pontos por boss, decaimento e a janela Loot & DKP (também na barra inferior)."

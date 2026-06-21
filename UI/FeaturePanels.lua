@@ -1409,6 +1409,7 @@ function BRutus:RefreshSettingsPanel(content)
         numRow(L["Points per boss:"], "bossAward", L["Awarded to raiders on each boss kill"])
         numRow(L["Weekly decay (%):"], "decayPct", L["Use the DKP window's Decay button to apply"])
         numRow(L["Starting points:"], "startingPoints", L["Default for a player's first entry"])
+        numRow(L["Cost per item:"], "itemCost", L["Charged to the winner when the ML awards (0 = off)"])
 
         local autoCb = UI:CreateCheckbox(content, L["Auto-award on boss kill (raid leader only)"], 18)
         autoCb:SetPoint("TOPLEFT", 12, -yOff)

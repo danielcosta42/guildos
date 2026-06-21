@@ -34,6 +34,7 @@ function Points:Initialize()
     if cfg.startingPoints == nil then cfg.startingPoints = 0 end
     if cfg.decayPct       == nil then cfg.decayPct = 0 end
     if cfg.autoAward      == nil then cfg.autoAward = false end
+    if cfg.itemCost       == nil then cfg.itemCost = 0 end
     p.standings   = p.standings or {}
     p.log         = p.log or {}
     p.appliedOps  = p.appliedOps or {}
