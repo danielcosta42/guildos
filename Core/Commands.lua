@@ -32,6 +32,10 @@ local function handleCommand(msg)
         if BRutus.LootEquity then
             BRutus.LootEquity:PrintSummary(15)
         end
+    elseif msg == "digest" then
+        if BRutus.Digest then
+            BRutus.Digest:Show()
+        end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()

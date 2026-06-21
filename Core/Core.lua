@@ -255,6 +255,9 @@ function BRutus:InitModules()
     if BRutus.Points and modEnabled("points") then
         BRutus.Points:Initialize()
     end
+    if BRutus.Digest then
+        BRutus.Digest:Initialize()
+    end
     if BRutus.ConsumableChecker and modEnabled("consumableChecker") then
         BRutus.ConsumableChecker:Initialize()
     end
@@ -273,6 +276,11 @@ function BRutus:InitModules()
     -- First-run welcome (once); delayed so guild info + frames are ready.
     if BRutus.MaybeShowOnboarding then
         BRutus.Compat.After(6, function() BRutus:MaybeShowOnboarding() end)
+    end
+    -- Login digest: shown a bit later so guild/roster data is ready and it
+    -- doesn't collide with the first-run onboarding wizard.
+    if BRutus.Digest then
+        BRutus.Compat.After(9, function() BRutus.Digest:ShowOnLogin() end)
     end
 
     -- Officer-only modules: defer init until guild info is available

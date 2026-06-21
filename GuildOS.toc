@@ -55,6 +55,7 @@ Modules\Readiness.lua
 Modules\ExportImport.lua
 Modules\Points.lua
 Modules\LootEquity.lua
+Modules\Digest.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua

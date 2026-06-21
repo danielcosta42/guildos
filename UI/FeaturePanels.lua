@@ -1362,6 +1362,9 @@ function BRutus:RefreshSettingsPanel(content, category)
         local txt = BRutus.Exporter and BRutus.Exporter:Build("equity", "tsv") or ""
         BRutus:ShowExportPopup(L["Loot Equity"], txt)
     end }
+    quickButtons[#quickButtons + 1] = { label = L["Login Digest"], fn = function()
+        if BRutus.Digest then BRutus.Digest:Show() end
+    end }
     quickButtons[#quickButtons + 1] = { label = L["Export Data"], fn = function()
         if BRutus.ShowExportChooser then BRutus:ShowExportChooser() end
     end }
@@ -1386,6 +1389,15 @@ function BRutus:RefreshSettingsPanel(content, category)
     mmCb.checkbox:SetChecked(BRutus.IsMinimapShown and BRutus:IsMinimapShown() or false)
     mmCb.checkbox.onChanged = function(_, checked)
         if BRutus.SetMinimapShown then BRutus:SetMinimapShown(checked) end
+    end
+    yOff = yOff + 30
+
+    local digestCb = UI:CreateCheckbox(content, L["Show login digest"], 18)
+    digestCb:SetPoint("TOPLEFT", 8, -yOff)
+    digestCb.checkbox:SetChecked(not (BRutus.db.digest and BRutus.db.digest.enabled == false))
+    digestCb.checkbox.onChanged = function(_, checked)
+        BRutus.db.digest = BRutus.db.digest or {}
+        BRutus.db.digest.enabled = checked and true or false
     end
     yOff = yOff + 30
 
