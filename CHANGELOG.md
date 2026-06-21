@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-06-21
+
+### Added
+- login digest — "since your last login" catch-up (A5)
+- default officer threshold to rank 1; officer-only onboarding
+- credit Chehul in the Settings > About section
+- category sub-tabs + fill config gaps
+- surface only the active loot system's UI
+- honor the selected loot system (rolls/TMB/wishlist/DKP)
+- UI access for all features + loot-system settings (officer)
+- loot equity analytics (A3)
+- DKP / EPGP / Loot Council economy (S1)
+- CSV / TSV / Discord export + import parser (A6)
+- "Is the raid ready?" rollup (S4)
+- SyncService v2 — versioned envelope, dedup, revision, ACK
+
+### Fixed
+- clear FontString/texture regions on settings re-render
+
+
 ## [0.5.0] - 2026-06-20
 
 ### Added
