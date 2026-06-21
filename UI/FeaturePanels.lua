@@ -2111,7 +2111,12 @@ function BRutus:RefreshSettingsPanel(content, category)
 
     local verText = UI:CreateText(content, "Guild OS v" .. (BRutus.VERSION or "?"), 11, C.gold.r, C.gold.g, C.gold.b)
     verText:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 20
+    yOff = yOff + 18
+
+    local creditText = UI:CreateText(content,
+        L["Made with care by "] .. "|cffFFD700Chehul|r", 10, C.silver.r, C.silver.g, C.silver.b)
+    creditText:SetPoint("TOPLEFT", 8, -yOff)
+    yOff = yOff + 22
 
     local privacy = UI:CreateText(content,
         L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],

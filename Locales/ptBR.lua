@@ -798,6 +798,7 @@ L["View Errors"] = "Ver Erros"
 L["Debug logging"] = "Log de depuração"
 L["Mode:"] = "Modo:"
 L["Loot Council"] = "Conselho de Loot"
+L["Made with care by "] = "Feito com carinho por "
 -- Onboarding officer step
 L["Officers: pick your loot system"] = "Oficiais: escolham o sistema de loot"
 L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."] = "Em Settings -> Sistema de Loot, escolha como a guilda distribui loot: /roll, TMB, Wishlist ou DKP. DKP libera pontos por boss, decaimento e a janela Loot & DKP (também na barra inferior)."
