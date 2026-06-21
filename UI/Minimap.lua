@@ -80,7 +80,7 @@ function BRutus:CreateMinimapButton()
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("|cffFFD700Guild|r |cffD4AC0DOS|r")
+        GameTooltip:AddLine("|cffFFD700Guild|r |cffD4AC0DOS|r  |cff666666by Chehul|r")
         GameTooltip:AddLine(L["Left-click: open"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Right-click: settings"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Drag: move button"], 0.5, 0.5, 0.5)

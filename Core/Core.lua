@@ -136,7 +136,7 @@ function BRutus:Initialize()
         C_ChatInfo.RegisterAddonMessagePrefix(self.LEGACY_PREFIX)
     end
 
-    self:Print("v" .. self.VERSION .. L[" loaded. Type |cffFFD700/guildos|r to open."])
+    self:Print("v" .. self.VERSION .. " |cffFFD700by Chehul|r" .. L[" loaded. Type |cffFFD700/guildos|r to open."])
 end
 
 ----------------------------------------------------------------------

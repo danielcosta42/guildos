@@ -10,7 +10,8 @@ local L = BRutus.L
 local STEPS = {
     {
         title = L["Welcome to Guild OS"],
-        body  = L["An all-in-one guild suite: roster, raid attendance, loot, wishlists, attunements, leadership tools and audits — all synced between guildmates who run the addon."],
+        body  = L["An all-in-one guild suite: roster, raid attendance, loot, wishlists, attunements, leadership tools and audits — all synced between guildmates who run the addon."]
+            .. "\n\n|cff888888" .. L["Made with care by "] .. "|cffFFD700Chehul|r|r",
     },
     {
         title = L["Getting started"],
