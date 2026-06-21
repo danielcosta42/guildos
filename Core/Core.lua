@@ -234,6 +234,9 @@ function BRutus:InitModules()
     if BRutus.AttunementTracker then
         BRutus.AttunementTracker:Initialize()
     end
+    if BRutus.SyncService then
+        BRutus.SyncService:Initialize()
+    end
     if BRutus.CommSystem and modEnabled("commSystem") then
         BRutus.CommSystem:Initialize()
     end

@@ -40,6 +40,7 @@ Core\Commands.lua
 Modules\DataCollector.lua
 Modules\AttunementTracker.lua
 Modules\CommSystem.lua
+Modules\SyncService.lua
 Modules\RecruitmentSystem.lua
 Modules\WishlistSystem.lua
 Modules\RaidTracker.lua

@@ -22,6 +22,7 @@ CommSystem.MSG_TYPES = {
     RAID_DELETE = "RX",  -- Delete a raid session (officer only; sender verified)
     NOTES_ALL = "OA",    -- Bulk officer notes sync (officer only)
     WELCOME_CLAIM = "WC",-- Welcome message claimed for a member (officer only)
+    SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
 }
 
 -- Throttle settings
@@ -222,6 +223,12 @@ function CommSystem:OnMessageReceived(msg, _, sender)
     elseif msgType == CommSystem.MSG_TYPES.NOTES_ALL then
         if BRutus:IsOfficer() and BRutus.OfficerNotes then
             BRutus.OfficerNotes:HandleAllIncoming(data)
+        end
+    elseif msgType == CommSystem.MSG_TYPES.SYNC_V2 then
+        -- Versioned envelope (protocol v2): dedup/validation/dispatch is
+        -- handled entirely by SyncService.
+        if BRutus.SyncService then
+            BRutus.SyncService:OnEnvelope(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_CLAIM then
         -- Another officer claimed the welcome for this member — suppress ours
