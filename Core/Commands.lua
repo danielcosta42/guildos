@@ -44,6 +44,11 @@ local function handleCommand(msg)
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
     elseif msg == "polls" or msg == "poll" then
         if BRutus.Polls then BRutus.Polls:Show() end
+    elseif msg == "search" or msg:match("^find") then
+        if BRutus.Search then
+            local q = strtrim(msg:gsub("^find%s*", ""))
+            BRutus.Search:Show(q ~= "search" and q or "")
+        end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()

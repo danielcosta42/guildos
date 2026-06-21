@@ -60,6 +60,7 @@ Modules\Backup.lua
 Modules\Bulletin.lua
 Modules\Polls.lua
 Modules\Milestones.lua
+Modules\Search.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua

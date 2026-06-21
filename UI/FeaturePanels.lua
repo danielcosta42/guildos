@@ -1368,6 +1368,9 @@ function BRutus:RefreshSettingsPanel(content, category)
     quickButtons[#quickButtons + 1] = { label = L["Polls"], fn = function()
         if BRutus.Polls then BRutus.Polls:Show() end
     end }
+    quickButtons[#quickButtons + 1] = { label = L["Search"], fn = function()
+        if BRutus.Search then BRutus.Search:Show() end
+    end }
     quickButtons[#quickButtons + 1] = { label = L["Login Digest"], fn = function()
         if BRutus.Digest then BRutus.Digest:Show() end
     end }
