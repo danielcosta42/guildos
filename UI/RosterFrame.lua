@@ -164,6 +164,14 @@ function BRutus.CreateRosterFrame()
         end
     end)
 
+    -- Global search button (always available in the header)
+    local searchBtn = UI:CreateButton(titleBar, L["Search"], 80, 24)
+    searchBtn:SetPoint("RIGHT", syncBtn, "LEFT", -8, 0)
+    searchBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
+    searchBtn:SetScript("OnClick", function()
+        if BRutus.Search then BRutus.Search:Show() end
+    end)
+
     -- Title accent line
     local titleLine = UI:CreateAccentLine(frame, 2)
     titleLine:SetPoint("TOPLEFT", 0, -44)
