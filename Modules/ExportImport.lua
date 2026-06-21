@@ -145,12 +145,27 @@ function Exporter:StandingsData()
     return headers, rows
 end
 
+function Exporter:EquityData()
+    local headers = { "Player", "Items", "Epics", "Share%", "LastLoot" }
+    local rows = {}
+    if BRutus.LootEquity then
+        for _, r in ipairs(BRutus.LootEquity:GetReport()) do
+            rows[#rows + 1] = {
+                r.name, r.total, r.epics, string.format("%.0f", r.share),
+                r.last > 0 and date("%Y-%m-%d", r.last) or "",
+            }
+        end
+    end
+    return headers, rows
+end
+
 Exporter.DATASETS = {
     roster     = { fn = "RosterData",     title = "Roster" },
     attendance = { fn = "AttendanceData", title = "Attendance" },
     loot       = { fn = "LootData",       title = "Loot History" },
     readiness  = { fn = "ReadinessData",  title = "Readiness" },
     standings  = { fn = "StandingsData",  title = "DKP Standings" },
+    equity     = { fn = "EquityData",     title = "Loot Equity" },
 }
 
 -- Build an export string. Returns (text, title) or nil for an unknown dataset.
