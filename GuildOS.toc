@@ -52,6 +52,7 @@ Modules\TrialTracker.lua
 Modules\GuildManager.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
+Modules\ExportImport.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua

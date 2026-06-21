@@ -114,6 +114,21 @@ local function handleCommand(msg)
                 BRutus:Print(L["|cffFF4444Export failed:|r "] .. (err or L["unknown error"]))
             end
         end
+    elseif msg:match("^export") then
+        -- /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]
+        local rest = strtrim(msg:gsub("^export%s*", ""))
+        local dataset, fmt = rest:match("^(%S*)%s*(%S*)$")
+        dataset = (dataset and dataset ~= "") and dataset or "roster"
+        fmt = (fmt and fmt ~= "") and fmt or "csv"
+        local text, title = nil, nil
+        if BRutus.Exporter then
+            text, title = BRutus.Exporter:Build(dataset, fmt)
+        end
+        if text then
+            BRutus:ShowExportPopup(string.format("%s (%s)", title or L["Export"], fmt), text)
+        else
+            BRutus:Print(L["Usage: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"])
+        end
     elseif msg:match("^wish") then
         if not BRutus:IsOfficer() then
             BRutus:Print(L["|cffFF4444Wishlist is currently available to officers only.|r"])
