@@ -10,6 +10,7 @@ local L = BRutus.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local SUBTABS = {
+    { key = "ready",   label = L["Readiness"] },
     { key = "attune",  label = L["Attunements"] },
     { key = "enchant", label = L["Enchants"] },
     { key = "sync",    label = L["Sync"] },
@@ -49,6 +50,117 @@ end
 
 local function ClearContent(content)
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
+end
+
+----------------------------------------------------------------------
+-- READINESS sub-panel — "is the raid ready?" one-screen rollup
+-- Aggregates attunement + enchants + iLvl + (in-raid) consumables.
+----------------------------------------------------------------------
+local function BuildReadySub(panel)
+    panel.targetIdx = 0   -- 0 = all raids; 1..N = a specific attunement raid
+
+    local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    summary:SetPoint("TOPLEFT", 4, -4)
+
+    local targetBtn = UI:CreateButton(panel, L["Target: All raids"], 220, 20)
+    targetBtn:SetPoint("TOPRIGHT", -12, -2)
+
+    local header = CreateFrame("Frame", nil, panel)
+    header:SetPoint("TOPLEFT", 0, -26)
+    header:SetPoint("TOPRIGHT", -10, -26)
+    header:SetHeight(16)
+    local function hcol(txt, x)
+        local fs = UI:CreateHeaderText(header, txt, 9)
+        fs:SetPoint("LEFT", x, 0)
+    end
+    hcol(L["MEMBER"], 8)
+    hcol(L["STATUS"], 160)
+    hcol(L["iLVL"], 250)
+    hcol(L["ATTUNE"], 310)
+    hcol(L["ENCHANTS"], 400)
+    hcol(L["CONSUMES"], 510)
+
+    local listHolder = CreateFrame("Frame", nil, panel)
+    listHolder:SetPoint("TOPLEFT", 0, -46)
+    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local _, content = MakeScrollList(listHolder, "GuildOSAuditReadyScroll")
+
+    local function refresh()
+        content:SetWidth(listHolder:GetWidth() - 12)
+        ClearContent(content)
+
+        local targets = BRutus.Readiness:GetTargets()
+        local target = (panel.targetIdx > 0) and targets[panel.targetIdx] or nil
+        local targetShort = target and target.short or nil
+        targetBtn.label:SetText(target and (L["Target: "] .. target.short) or L["Target: All raids"])
+
+        local rows = BRutus.Readiness:GetReport(targetShort)
+        local c = BRutus.Readiness:Summarize(rows)
+        summary:SetText(string.format(L["%d ready  |  %d need attention  |  %d not ready"],
+            c.ready, c.warn, c.notready))
+
+        local yOff = 0
+        for idx, r in ipairs(rows) do
+            local row = MakeRow(content, yOff, idx)
+            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+            nameFS:SetPoint("LEFT", 8, 0)
+            if r.status == "nodata" then nameFS:SetTextColor(0.45, 0.45, 0.5) end
+
+            local stFS = UI:CreateText(row, "", 11, 1, 1, 1)
+            stFS:SetPoint("LEFT", 160, 0)
+            if r.status == "ready" then
+                stFS:SetText(ICON_DONE .. " |cff4CFF4C" .. L["ready"] .. "|r")
+            elseif r.status == "notready" then
+                stFS:SetText(ICON_NONE .. " |cffFF5555" .. L["not attuned"] .. "|r")
+            elseif r.status == "warn" then
+                stFS:SetText("|cffEDCC7B! " .. L["check"] .. "|r")
+            else
+                stFS:SetText("|cff808080\226\128\147|r")
+            end
+
+            local ilvlFS = UI:CreateText(row, r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
+                10, C.silver.r, C.silver.g, C.silver.b)
+            ilvlFS:SetPoint("LEFT", 250, 0)
+
+            local attColor = (r.attTotal > 0 and r.attDone == r.attTotal) and C.green or C.gold
+            if r.targetOk == false then attColor = C.red elseif r.targetOk == true then attColor = C.green end
+            local attTxt = r.attTotal > 0 and (r.attDone .. "/" .. r.attTotal) or "\226\128\148"
+            local attFS = UI:CreateText(row, attTxt, 10, attColor.r, attColor.g, attColor.b)
+            attFS:SetPoint("LEFT", 310, 0)
+
+            local enchTxt, ec
+            if not r.hasGear then enchTxt, ec = "\226\128\148", C.textDim
+            elseif r.missEnch > 0 then enchTxt, ec = string.format(L["%d missing"], r.missEnch), C.red
+            else enchTxt, ec = "OK", C.green end
+            local enchFS = UI:CreateText(row, enchTxt, 10, ec.r, ec.g, ec.b)
+            enchFS:SetPoint("LEFT", 400, 0)
+
+            local consTxt, cc
+            if r.missCons == nil then consTxt, cc = "\226\128\148", C.textDim
+            elseif r.missCons > 0 then consTxt, cc = string.format(L["%d missing"], r.missCons), C.red
+            else consTxt, cc = "OK", C.green end
+            local consFS = UI:CreateText(row, consTxt, 10, cc.r, cc.g, cc.b)
+            consFS:SetPoint("LEFT", 510, 0)
+
+            yOff = yOff + ROW_H + 2
+        end
+
+        if #rows == 0 then
+            local empty = UI:CreateText(content, L["No roster data yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+            empty:SetPoint("TOPLEFT", 4, -4)
+        end
+        content:SetHeight(math.max(1, yOff))
+    end
+
+    targetBtn:SetScript("OnClick", function()
+        local targets = BRutus.Readiness:GetTargets()
+        panel.targetIdx = panel.targetIdx + 1
+        if panel.targetIdx > #targets then panel.targetIdx = 0 end
+        refresh()
+    end)
+
+    return refresh
 end
 
 ----------------------------------------------------------------------
@@ -250,7 +362,7 @@ end
 ----------------------------------------------------------------------
 function BRutus:CreateAuditPanel(parent, _mainFrame)
     parent.subPanels = {}
-    parent.activeSub = "attune"
+    parent.activeSub = "ready"
 
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
@@ -288,13 +400,13 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
         return p
     end
 
-    local builders = { attune = BuildAttuneSub, enchant = BuildEnchantSub, sync = BuildSyncSub }
+    local builders = { ready = BuildReadySub, attune = BuildAttuneSub, enchant = BuildEnchantSub, sync = BuildSyncSub }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
     end
 
     parent:SetScript("OnShow", function()
-        selectSub(parent.activeSub or "attune")
+        selectSub(parent.activeSub or "ready")
     end)
 end
