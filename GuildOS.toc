@@ -53,6 +53,7 @@ Modules\GuildManager.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
 Modules\ExportImport.lua
+Modules\Points.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
@@ -65,6 +66,7 @@ UI\RosterFrame.lua
 UI\MemberDetail.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua
+UI\PointsPanel.lua
 UI\RaidToolsPanel.lua
 UI\Minimap.lua
 UI\Onboarding.lua

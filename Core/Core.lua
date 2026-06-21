@@ -252,6 +252,9 @@ function BRutus:InitModules()
     if BRutus.LootMaster and modEnabled("lootMaster") then
         BRutus.LootMaster:Initialize()
     end
+    if BRutus.Points and modEnabled("points") then
+        BRutus.Points:Initialize()
+    end
     if BRutus.ConsumableChecker and modEnabled("consumableChecker") then
         BRutus.ConsumableChecker:Initialize()
     end

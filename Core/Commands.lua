@@ -24,6 +24,10 @@ local function handleCommand(msg)
         if BRutus.CommSystem then
             BRutus.CommSystem:FullSync()
         end
+    elseif msg == "points" or msg == "dkp" then
+        if BRutus.ShowPointsFrame then
+            BRutus:ShowPointsFrame()
+        end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()

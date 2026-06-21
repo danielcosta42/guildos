@@ -379,6 +379,11 @@ function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
 
     local status = (success == 1) and L["|cff00ff00KILL|r"] or L["|cffff3333WIPE|r"]
     BRutus:Print(encounterName .. " - " .. status)
+
+    -- Optional DKP auto-award on a kill (raid-leader gated inside Points).
+    if success == 1 and BRutus.Points then
+        BRutus.Points:OnBossKill(encounterName)
+    end
 end
 
 ----------------------------------------------------------------------
