@@ -301,6 +301,7 @@ function BRutus.CreateRosterFrame()
 
     -- Create tabs
     CreateTab("roster", L["Roster"], false)
+    CreateTab("guild", L["Guild"], false)
     CreateTab("recipes", L["Recipes"], false)
     -- Wishlist tab only when the guild's loot system is wishlist/TMB.
     CreateTab("wishlist", L["Wishlist"], false, function()
@@ -310,6 +311,8 @@ function BRutus.CreateRosterFrame()
     CreateTab("audit", L["Audit"], false)
     CreateTab("raidtools", L["Raid Tools"], false)
     CreateTab("loot", L["Loot"], true)  -- officers always see loot history; items recorded only via ML
+    -- DKP tab only when the guild's loot system is DKP/Points.
+    CreateTab("dkp", L["DKP"], false, function() return BRutus:LootSystemShowsDKP() end)
     CreateTab("trials", L["Trials"], true)
     CreateTab("recruitment", L["Recruitment"], true)
     CreateTab("management", L["Leadership"], true)
@@ -872,6 +875,26 @@ function BRutus.CreateRosterFrame()
     auditPanel:Hide()
     frame.tabPanels["audit"] = auditPanel
     BRutus:CreateAuditPanel(auditPanel, frame)
+
+    ----------------------------------------------------------------
+    -- GUILD HUB PANEL (activity / bulletin / polls)
+    ----------------------------------------------------------------
+    local guildPanel = CreateFrame("Frame", nil, frame)
+    guildPanel:SetPoint("TOPLEFT", 0, contentTop)
+    guildPanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    guildPanel:Hide()
+    frame.tabPanels["guild"] = guildPanel
+    BRutus:CreateGuildHub(guildPanel, frame)
+
+    ----------------------------------------------------------------
+    -- DKP / POINTS PANEL
+    ----------------------------------------------------------------
+    local dkpPanel = CreateFrame("Frame", nil, frame)
+    dkpPanel:SetPoint("TOPLEFT", 0, contentTop)
+    dkpPanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    dkpPanel:Hide()
+    frame.tabPanels["dkp"] = dkpPanel
+    BRutus:CreateDKPPanel(dkpPanel, frame)
 
     ----------------------------------------------------------------
     -- RAID TOOLS PANEL (composition + cooldown coverage)

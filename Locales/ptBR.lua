@@ -855,6 +855,13 @@ L["No matches."] = "Nenhum resultado."
 -- Theme
 L["Accent theme:"] = "Cor de destaque:"
 L["Theme set. Reload for full effect."] = "Tema definido. Recarregue para efeito total."
+-- Guild hub + DKP tabs
+L["Guild"] = "Guilda"
+L["Activity"] = "Atividade"
+L["What's happened in the guild lately."] = "O que rolou na guilda recentemente."
+L["Nothing new in the last 7 days."] = "Nada de novo nos últimos 7 dias."
+L["More..."] = "Mais..."
+L["Mode: %s  ·  click More for decay / raid award / history"] = "Modo: %s  ·  clique em Mais para decay / award de raid / histórico"
 -- Onboarding officer step
 L["Officers: pick your loot system"] = "Oficiais: escolham o sistema de loot"
 L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."] = "Em Settings -> Sistema de Loot, escolha como a guilda distribui loot: /roll, TMB, Wishlist ou DKP. DKP libera pontos por boss, decaimento e a janela Loot & DKP (também na barra inferior)."
