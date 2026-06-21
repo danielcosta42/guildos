@@ -1365,20 +1365,25 @@ function BRutus:RefreshSettingsPanel(content, category)
     quickButtons[#quickButtons + 1] = { label = L["Bulletin"], fn = function()
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
     end }
+    quickButtons[#quickButtons + 1] = { label = L["Polls"], fn = function()
+        if BRutus.Polls then BRutus.Polls:Show() end
+    end }
     quickButtons[#quickButtons + 1] = { label = L["Login Digest"], fn = function()
         if BRutus.Digest then BRutus.Digest:Show() end
     end }
     quickButtons[#quickButtons + 1] = { label = L["Export Data"], fn = function()
         if BRutus.ShowExportChooser then BRutus:ShowExportChooser() end
     end }
-    local qx = 0
+    local qx, qrow = 0, 0
+    local qMaxX = content:GetWidth() - 150
     for _, qb in ipairs(quickButtons) do
+        if qx > qMaxX then qx = 0; qrow = qrow + 30 end
         local b = UI:CreateButton(content, qb.label, 130, 24)
-        b:SetPoint("TOPLEFT", qx, -yOff)
+        b:SetPoint("TOPLEFT", qx, -(yOff + qrow))
         b:SetScript("OnClick", qb.fn)
         qx = qx + 136
     end
-    yOff = yOff + 36
+    yOff = yOff + 36 + qrow
 
     --------------------------------------------------------------------
     -- GENERAL OPTIONS

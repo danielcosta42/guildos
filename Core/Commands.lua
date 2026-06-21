@@ -42,6 +42,8 @@ local function handleCommand(msg)
         if BRutus.Backup then BRutus.Backup:ShowRestore() end
     elseif msg == "bulletin" or msg == "board" then
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
+    elseif msg == "polls" or msg == "poll" then
+        if BRutus.Polls then BRutus.Polls:Show() end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()

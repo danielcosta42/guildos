@@ -83,6 +83,17 @@ function Digest:Build(since)
         end
     end
 
+    -- New polls opened since last login
+    if BRutus.Polls then
+        local newPolls = 0
+        for _, p in pairs(BRutus.Polls:GetList()) do
+            if not p.closed and (p.ts or 0) > since then newPolls = newPolls + 1 end
+        end
+        if newPolls > 0 then
+            lines[#lines + 1] = string.format(L["%d new poll(s) — cast your vote"], newPolls)
+        end
+    end
+
     -- Officer-only catch-up
     if BRutus:IsOfficer() then
         if BRutus.TrialTracker then
