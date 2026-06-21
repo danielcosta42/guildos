@@ -59,6 +59,7 @@ Modules\Digest.lua
 Modules\Backup.lua
 Modules\Bulletin.lua
 Modules\Polls.lua
+Modules\Milestones.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua

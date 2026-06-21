@@ -840,6 +840,10 @@ L["closed"] = "encerrada"
 L["No polls yet."] = "Nenhuma enquete ainda."
 L["%d vote(s) · by %s"] = "%d voto(s) · por %s"
 L["%d new poll(s) — cast your vote"] = "%d nova(s) enquete(s) — vote"
+-- Milestones
+L["%s reached level %s!"] = "%s chegou ao nível %s!"
+L["%s completed a new attunement"] = "%s concluiu uma nova sintonia"
+L["%s is celebrating %d year(s) with the guild!"] = "%s está completando %d ano(s) de guilda!"
 -- Onboarding officer step
 L["Officers: pick your loot system"] = "Oficiais: escolham o sistema de loot"
 L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."] = "Em Settings -> Sistema de Loot, escolha como a guilda distribui loot: /roll, TMB, Wishlist ou DKP. DKP libera pontos por boss, decaimento e a janela Loot & DKP (também na barra inferior)."

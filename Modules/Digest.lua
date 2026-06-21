@@ -72,6 +72,13 @@ function Digest:Build(since)
         end
     end
 
+    -- Milestones & guild anniversaries
+    if BRutus.Milestones then
+        for _, line in ipairs(BRutus.Milestones:GetDigestLines(since)) do
+            lines[#lines + 1] = line
+        end
+    end
+
     -- New bulletin notices (most recent few)
     if BRutus.Bulletin then
         local shown = 0

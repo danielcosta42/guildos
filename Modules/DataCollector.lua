@@ -326,6 +326,18 @@ function DataCollector:StoreReceivedData(playerKey, data)
         return
     end
 
+    -- Snapshot prior state for milestone detection BEFORE the merge mutates
+    -- `existing`. hadPrior is false on the very first sync of a member, so
+    -- milestones don't fire for everyone on the initial data exchange.
+    local prevLevel = existing.level
+    local hadPrior = prevLevel ~= nil
+    local prevAttune = 0
+    if existing.attunements then
+        for _, a in ipairs(existing.attunements) do
+            if a.complete then prevAttune = prevAttune + 1 end
+        end
+    end
+
     -- Merge with existing data (skip recipes, handled separately)
     for k, v in pairs(data) do
         if k ~= "recipes" then
@@ -335,6 +347,10 @@ function DataCollector:StoreReceivedData(playerKey, data)
     existing.lastSync = time()
 
     BRutus.db.members[playerKey] = existing
+
+    if BRutus.Milestones then
+        BRutus.Milestones:Check(playerKey, existing, prevLevel, prevAttune, hadPrior)
+    end
 
     -- Store recipes if included in broadcast
     if data.recipes then

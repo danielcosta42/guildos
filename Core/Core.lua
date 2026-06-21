@@ -264,6 +264,9 @@ function BRutus:InitModules()
     if BRutus.Polls then
         BRutus.Polls:Initialize()
     end
+    if BRutus.Milestones then
+        BRutus.Milestones:Initialize()
+    end
     if BRutus.ConsumableChecker and modEnabled("consumableChecker") then
         BRutus.ConsumableChecker:Initialize()
     end
