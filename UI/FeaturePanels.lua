@@ -1420,6 +1420,34 @@ function BRutus:RefreshSettingsPanel(content, category)
     local welcomeNote = UI:CreateText(content, L["Replay the first-run intro"], 9, C.silver.r, C.silver.g, C.silver.b)
     welcomeNote:SetPoint("LEFT", welcomeBtn, "RIGHT", 10, 0)
     yOff = yOff + 34
+
+    -- Accent theme swatches
+    local themeLbl = UI:CreateText(content, L["Accent theme:"], 11, C.white.r, C.white.g, C.white.b)
+    themeLbl:SetPoint("TOPLEFT", 8, -yOff)
+    local curTheme = BRutus:GetSetting("theme") or "violet"
+    local sx = 130
+    for _, p in ipairs(BRutus.ACCENT_PRESETS or {}) do
+        local sw = CreateFrame("Button", nil, content, "BackdropTemplate")
+        sw:SetSize(50, 22)
+        sw:SetPoint("TOPLEFT", sx, -yOff + 2)
+        sw:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = (p.key == curTheme) and 2 or 1 })
+        sw:SetBackdropColor(p.r * 0.5, p.g * 0.5, p.b * 0.5, 0.95)
+        if p.key == curTheme then
+            sw:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1)
+        else
+            sw:SetBackdropBorderColor(p.r, p.g, p.b, 0.85)
+        end
+        local themeKey = p.key
+        sw:SetScript("OnClick", function()
+            BRutus:SetSetting("theme", themeKey)
+            BRutus:ApplyTheme()
+            BRutus:Print(L["Theme set. Reload for full effect."])
+            BRutus:RefreshSettingsPanel(content)
+        end)
+        sx = sx + 54
+    end
+    yOff = yOff + 34
     end -- cat == "general"
 
     if isOfficer and cat == "loot" then

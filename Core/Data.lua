@@ -50,6 +50,18 @@ BRutus.Colors = {
     shadow    = { r = 0.0,  g = 0.0,  b = 0.0,  a = 0.55 },  -- drop-shadow tint
 }
 
+-- Accent color presets (themes). The accent drives hover borders, active
+-- tabs and key highlights; BRutus:ApplyTheme() recolors the palette from
+-- the chosen preset on load.
+BRutus.ACCENT_PRESETS = {
+    { key = "violet",  label = "Violet",  r = 0.56, g = 0.48, b = 0.82 },
+    { key = "gold",    label = "Gold",    r = 0.85, g = 0.70, b = 0.35 },
+    { key = "teal",    label = "Teal",    r = 0.30, g = 0.74, b = 0.72 },
+    { key = "crimson", label = "Crimson", r = 0.82, g = 0.36, b = 0.42 },
+    { key = "emerald", label = "Emerald", r = 0.36, g = 0.74, b = 0.48 },
+    { key = "azure",   label = "Azure",   r = 0.38, g = 0.60, b = 0.92 },
+}
+
 -- Preferred fonts (centralised so new UI can reference one source).
 BRutus.Fonts = {
     normal = "Fonts\\FRIZQT__.TTF",

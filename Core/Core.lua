@@ -227,6 +227,9 @@ function BRutus:InitModules()
         return self.db.settings.modules[key] ~= false
     end
 
+    -- Apply the chosen accent theme before any frame is built.
+    self:ApplyTheme()
+
     -- Initialize subsystems (always-on)
     if BRutus.DataCollector then
         BRutus.DataCollector:Initialize()
@@ -554,4 +557,26 @@ end
 
 function BRutus:LootSystemShowsDKP()
     return self:GetLootSystem() == "dkp"
+end
+
+----------------------------------------------------------------------
+-- Theme: recolor the palette from the chosen accent preset. Mutates the
+-- shared color tables in place so frames built afterwards pick it up.
+-- Existing frames keep their colors until a reload.
+----------------------------------------------------------------------
+function BRutus:ApplyTheme()
+    local key = self:GetSetting("theme") or "violet"
+    local preset
+    for _, p in ipairs(BRutus.ACCENT_PRESETS or {}) do
+        if p.key == key then preset = p break end
+    end
+    if not preset then return end
+    local C = BRutus.Colors
+    local r, g, b = preset.r, preset.g, preset.b
+    C.accent.r, C.accent.g, C.accent.b = r, g, b
+    C.accentDim.r, C.accentDim.g, C.accentDim.b = r * 0.54, g * 0.54, b * 0.54
+    C.accentSoft.r, C.accentSoft.g, C.accentSoft.b = r, g, b
+    C.rowHover.r, C.rowHover.g, C.rowHover.b = r * 0.20 + 0.09, g * 0.20 + 0.09, b * 0.20 + 0.09
+    C.border.r, C.border.g, C.border.b = r * 0.45 + 0.06, g * 0.45 + 0.06, b * 0.45 + 0.06
+    C.separator.r, C.separator.g, C.separator.b = r * 0.40 + 0.06, g * 0.40 + 0.06, b * 0.40 + 0.06
 end

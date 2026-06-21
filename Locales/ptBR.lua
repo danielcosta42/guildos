@@ -852,6 +852,9 @@ L["RECIPES"] = "RECEITAS"
 L["LOOT"] = "LOOT"
 L["Type at least 2 characters."] = "Digite ao menos 2 caracteres."
 L["No matches."] = "Nenhum resultado."
+-- Theme
+L["Accent theme:"] = "Cor de destaque:"
+L["Theme set. Reload for full effect."] = "Tema definido. Recarregue para efeito total."
 -- Onboarding officer step
 L["Officers: pick your loot system"] = "Oficiais: escolham o sistema de loot"
 L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."] = "Em Settings -> Sistema de Loot, escolha como a guilda distribui loot: /roll, TMB, Wishlist ou DKP. DKP libera pontos por boss, decaimento e a janela Loot & DKP (também na barra inferior)."
