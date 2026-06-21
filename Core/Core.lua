@@ -38,7 +38,7 @@ local DB_DEFAULTS = {
         sortAsc = false,
         showOffline = true,
         minimap = { hide = false },
-        officerMaxRank = 2,  -- rank indexes 0..officerMaxRank are considered officers
+        officerMaxRank = 1,  -- rank indexes 0..officerMaxRank are officers (GM + rank 1 by default)
         modules = {
             raidTracker = true,
             lootTracker = true,
@@ -467,7 +467,7 @@ function BRutus:IsOfficer()
     if not IsInGuild() then return false end
     local _, _, rankIndex = GetGuildInfo("player")
     if not rankIndex then return false end
-    local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 2
+    local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 1
     return rankIndex <= maxRank
 end
 
@@ -475,7 +475,7 @@ end
 -- by scanning the guild roster. Used to validate incoming officer-only messages.
 function BRutus:IsOfficerByName(fullName)
     if not IsInGuild() or not fullName then return false end
-    local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 2
+    local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 1
     -- Normalise: strip realm if present
     local shortName = fullName:match("^([^-]+)") or fullName
     local numMembers = GetNumGuildMembers() or 0

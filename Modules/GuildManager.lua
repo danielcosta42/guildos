@@ -252,7 +252,7 @@ function GuildManager:GetSuggestions()
 
     -- Non-officer, non-trial members with strong attendance → promote candidates.
     if BRutus.RaidTracker then
-        local officerMaxRank = BRutus:GetSetting("officerMaxRank") or 2
+        local officerMaxRank = BRutus:GetSetting("officerMaxRank") or 1
         local n = GetNumGuildMembers() or 0
         for i = 1, n do
             local name, rankName, rankIndex, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)

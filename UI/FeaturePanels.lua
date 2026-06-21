@@ -1999,7 +1999,7 @@ function BRutus:RefreshSettingsPanel(content, category)
     yOff = yOff + 18
 
     -- Read current max rank setting
-    local currentMaxRank = BRutus.db.settings.officerMaxRank or 2
+    local currentMaxRank = BRutus.db.settings.officerMaxRank or 1
 
     -- Get rank names from the WoW guild control API (1-based, rank 1 = GM)
     local numRanks = 0

@@ -15,15 +15,15 @@ local STEPS = {
     },
     {
         title = L["Getting started"],
-        body  = L["Open it anytime with /guildos, the minimap button, or a key binding. Officers: set which guild ranks count as officers in Settings to unlock leadership tools."],
+        body  = L["Open it anytime with /guildos, the minimap button, or a key binding. Click any guildmate to see their full character — gear, professions and attunements."],
     },
     {
         title = L["Data & privacy"],
         body  = L["Guild OS shares your gear, professions, attunements, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."],
     },
     {
-        title = L["Officers: pick your loot system"],
-        body  = L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."],
+        title = L["Officer tools"],
+        body  = L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: /roll, TMB, Wishlist or DKP."],
         officer = true,
     },
 }
