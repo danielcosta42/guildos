@@ -1086,6 +1086,63 @@ function BRutus:RefreshTrialsPanel(parent)
 end
 
 ----------------------------------------------------------------------
+-- EXPORT CHOOSER — pick a dataset and format from the UI (not just chat)
+----------------------------------------------------------------------
+function BRutus:ShowExportChooser()
+    if self.exportChooser then self.exportChooser:Show(); return end
+
+    local f = CreateFrame("Frame", "GuildOSExportChooser", UIParent, "BackdropTemplate")
+    f:SetSize(390, 300)
+    f:SetPoint("CENTER")
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self2) self2:StartMoving() end)
+    f:SetScript("OnDragStop", function(self2) self2:StopMovingOrSizing() end)
+    self.exportChooser = f
+
+    local title = UI:CreateTitle(f, L["Export Data"], 16)
+    title:SetPoint("TOP", 0, -12)
+    local hint = UI:CreateText(f, L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."], 9, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
+
+    local close = UI:CreateCloseButton(f)
+    close:SetPoint("TOPRIGHT", -8, -8)
+    close:SetScript("OnClick", function() f:Hide() end)
+
+    local datasets = {
+        { key = "roster",     label = L["Roster"] },
+        { key = "attendance", label = L["Attendance"] },
+        { key = "loot",       label = L["Loot History"] },
+        { key = "readiness",  label = L["Readiness"] },
+        { key = "equity",     label = L["Loot Equity"] },
+        { key = "standings",  label = L["DKP Standings"] },
+    }
+    local y = -56
+    for _, d in ipairs(datasets) do
+        local lbl = UI:CreateText(f, d.label, 11, C.text.r, C.text.g, C.text.b)
+        lbl:SetPoint("TOPLEFT", 16, y)
+        local fx = 150
+        for _, fmt in ipairs({ "csv", "tsv", "discord" }) do
+            local b = UI:CreateButton(f, fmt:upper(), 66, 20)
+            b:SetPoint("TOPLEFT", fx, y + 3)
+            b:SetScript("OnClick", function()
+                if not BRutus.Exporter then return end
+                local text, t = BRutus.Exporter:Build(d.key, fmt)
+                if text then BRutus:ShowExportPopup(string.format("%s (%s)", t or d.label, fmt), text) end
+            end)
+            fx = fx + 70
+        end
+        y = y - 32
+    end
+end
+
+----------------------------------------------------------------------
 -- EXPORT POPUP (copyable text box)
 ----------------------------------------------------------------------
 function BRutus:ShowExportPopup(titleStr, text)
@@ -1256,7 +1313,123 @@ function BRutus:RefreshSettingsPanel(content)
     sep2:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
+    --------------------------------------------------------------------
+    -- QUICK ACCESS — open feature windows from the UI (not just chat)
+    --------------------------------------------------------------------
+    local qaTitle = UI:CreateHeaderText(content, L["QUICK ACCESS"], 12)
+    qaTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 22
+
+    local quickButtons = {
+        { label = L["Loot & DKP"],  fn = function() BRutus:ShowPointsFrame() end },
+        { label = L["My Wishlist"], fn = function() BRutus:ShowWishlistFrame() end },
+        { label = L["Loot Equity"], fn = function()
+            local txt = BRutus.Exporter and BRutus.Exporter:Build("equity", "tsv") or ""
+            BRutus:ShowExportPopup(L["Loot Equity"], txt)
+        end },
+        { label = L["Export Data"], fn = function()
+            if BRutus.ShowExportChooser then BRutus:ShowExportChooser() end
+        end },
+    }
+    local qx = 0
+    for _, qb in ipairs(quickButtons) do
+        local b = UI:CreateButton(content, qb.label, 130, 24)
+        b:SetPoint("TOPLEFT", qx, -yOff)
+        b:SetScript("OnClick", qb.fn)
+        qx = qx + 136
+    end
+    yOff = yOff + 34
+
+    local sepQA = UI:CreateSeparator(content)
+    sepQA:SetPoint("TOPLEFT", 0, -yOff)
+    sepQA:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+
     if isOfficer then
+    --------------------------------------------------------------------
+    -- LOOT SYSTEM (officer) — how the guild distributes loot
+    --------------------------------------------------------------------
+    local lsTitle = UI:CreateHeaderText(content, L["LOOT SYSTEM"], 12)
+    lsTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 20
+
+    local lsDesc = UI:CreateText(content, L["Choose how your guild distributes loot. Sets the default Loot Master flow."], 9, C.silver.r, C.silver.g, C.silver.b)
+    lsDesc:SetPoint("TOPLEFT", 8, -yOff)
+    lsDesc:SetWidth(content:GetWidth() - 20)
+    yOff = yOff + 18
+
+    local curSys = BRutus:GetLootSystem()
+    local lx = 8
+    for _, sys in ipairs(BRutus.LOOT_SYSTEMS) do
+        local b = UI:CreateButton(content, sys.label, 130, 24)
+        b:SetPoint("TOPLEFT", lx, -yOff)
+        if sys.key == curSys then
+            b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+            b.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        end
+        b:SetScript("OnClick", function()
+            BRutus:SetLootSystem(sys.key)
+            BRutus:Print(string.format(L["Loot system set to %s."], sys.label))
+            BRutus:RefreshSettingsPanel(content)
+        end)
+        lx = lx + 136
+    end
+    yOff = yOff + 34
+
+    -- DKP/Points configuration appears when the DKP system is selected
+    if curSys == "dkp" and BRutus.Points and BRutus.db.points then
+        local pcfg = BRutus.db.points.config
+        local function numRow(labelText, key, hint)
+            local lbl = UI:CreateText(content, labelText, 11, C.white.r, C.white.g, C.white.b)
+            lbl:SetPoint("TOPLEFT", 16, -yOff)
+            local box = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+            box:SetSize(60, 22)
+            box:SetPoint("TOPLEFT", 220, -yOff + 2)
+            box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            box:SetBackdropColor(0.05, 0.05, 0.066, 1)
+            box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+            box:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+            box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            box:SetAutoFocus(false)
+            box:SetNumeric(true)
+            box:SetMaxLetters(6)
+            box:SetText(tostring(pcfg[key] or 0))
+            box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            UI:AttachSaveButton(box, function(b2)
+                pcfg[key] = tonumber(b2:GetText()) or pcfg[key] or 0
+                BRutus.Points:BroadcastSnapshot()
+            end)
+            if hint then
+                local h = UI:CreateText(content, hint, 9, C.silver.r, C.silver.g, C.silver.b)
+                h:SetPoint("TOPLEFT", 360, -yOff)
+                h:SetWidth(280)
+            end
+            yOff = yOff + 28
+        end
+        numRow(L["Points per boss:"], "bossAward", L["Awarded to raiders on each boss kill"])
+        numRow(L["Weekly decay (%):"], "decayPct", L["Use the DKP window's Decay button to apply"])
+        numRow(L["Starting points:"], "startingPoints", L["Default for a player's first entry"])
+
+        local autoCb = UI:CreateCheckbox(content, L["Auto-award on boss kill (raid leader only)"], 18)
+        autoCb:SetPoint("TOPLEFT", 12, -yOff)
+        autoCb.checkbox:SetChecked(pcfg.autoAward and true or false)
+        autoCb.checkbox.onChanged = function(_, checked)
+            pcfg.autoAward = checked and true or false
+            BRutus.Points:BroadcastSnapshot()
+        end
+        yOff = yOff + 28
+
+        local openDkp = UI:CreateButton(content, L["Open DKP Window"], 150, 22)
+        openDkp:SetPoint("TOPLEFT", 12, -yOff)
+        openDkp:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
+        yOff = yOff + 30
+    end
+
+    local sepLS = UI:CreateSeparator(content)
+    sepLS:SetPoint("TOPLEFT", 0, -yOff)
+    sepLS:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+
     --------------------------------------------------------------------
     -- LOOT MASTER SETTINGS (officer only)
     --------------------------------------------------------------------

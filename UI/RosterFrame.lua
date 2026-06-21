@@ -905,6 +905,11 @@ function BRutus.CreateRosterFrame()
     wishBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
     wishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
 
+    -- "Loot & DKP" quick-access button (all members; standings are read-only)
+    local dkpBtn = UI:CreateButton(bottomBar, L["Loot & DKP"], 110, 22)
+    dkpBtn:SetPoint("LEFT", wishBtn, "RIGHT", 8, 0)
+    dkpBtn:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
+
     -- Guild Invite (visible only if player can invite)
     local inviteBox = CreateFrame("EditBox", nil, bottomBar, "BackdropTemplate")
     inviteBox:SetSize(140, 22)

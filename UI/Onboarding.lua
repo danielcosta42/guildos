@@ -20,6 +20,11 @@ local STEPS = {
         title = L["Data & privacy"],
         body  = L["Guild OS shares your gear, professions, attunements, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."],
     },
+    {
+        title = L["Officers: pick your loot system"],
+        body  = L["In Settings -> Loot System, choose how your guild hands out loot: /roll, TMB, Wishlist or DKP. DKP unlocks points per boss, decay, and the Loot & DKP window (also on the bottom bar)."],
+        officer = true,
+    },
 }
 
 local function BuildFrame()
@@ -70,22 +75,23 @@ local function BuildFrame()
     f.settingsBtn = settingsBtn
 
     f.step = 1
+    f.steps = STEPS  -- replaced per-show by ShowOnboarding (officer filtering)
 
     local function render()
-        local s = STEPS[f.step]
+        local s = f.steps[f.step]
         f.title:SetText(s.title)
-        f.stepLbl:SetText(string.format(L["Step %d of %d"], f.step, #STEPS))
+        f.stepLbl:SetText(string.format(L["Step %d of %d"], f.step, #f.steps))
         f.body:SetText(s.body)
         f.backBtn:SetShown(f.step > 1)
-        f.nextBtn.label:SetText(f.step < #STEPS and L["Next"] or L["Finish"])
-        f.settingsBtn:SetShown(f.step == #STEPS)
+        f.nextBtn.label:SetText(f.step < #f.steps and L["Next"] or L["Finish"])
+        f.settingsBtn:SetShown(f.step == #f.steps)
     end
 
     backBtn:SetScript("OnClick", function()
         if f.step > 1 then f.step = f.step - 1; render() end
     end)
     nextBtn:SetScript("OnClick", function()
-        if f.step < #STEPS then
+        if f.step < #f.steps then
             f.step = f.step + 1
             render()
         else
@@ -102,6 +108,12 @@ function BRutus:ShowOnboarding()
     if not self.onboardingFrame then
         self.onboardingFrame = BuildFrame()
     end
+    -- Officer-only steps (e.g. loot system) are skipped for non-officers.
+    local steps, officer = {}, self:IsOfficer()
+    for _, s in ipairs(STEPS) do
+        if not s.officer or officer then steps[#steps + 1] = s end
+    end
+    self.onboardingFrame.steps = steps
     self.onboardingFrame.step = 1
     self.onboardingFrame.render()
     self.onboardingFrame:Show()

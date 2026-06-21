@@ -503,3 +503,24 @@ function BRutus:SetSetting(key, value)
         self.db.settings[key] = value
     end
 end
+
+----------------------------------------------------------------------
+-- Loot distribution system chosen by the guild (Settings, officer).
+-- Drives the default Loot Master flow; read by features that present
+-- loot UI. "rolls" = /roll MS/OS (default), "tmb"/"wishlist" = interest
+-- lists, "dkp" = the Points economy.
+----------------------------------------------------------------------
+BRutus.LOOT_SYSTEMS = {
+    { key = "rolls",    label = "/roll (MS/OS)" },
+    { key = "tmb",      label = "TMB" },
+    { key = "wishlist", label = "Wishlist" },
+    { key = "dkp",      label = "DKP / Points" },
+}
+
+function BRutus:GetLootSystem()
+    return self:GetSetting("lootSystem") or "rolls"
+end
+
+function BRutus:SetLootSystem(sys)
+    self:SetSetting("lootSystem", sys)
+end
