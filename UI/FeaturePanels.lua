@@ -1325,17 +1325,21 @@ function BRutus:RefreshSettingsPanel(content)
     qaTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
-    local quickButtons = {
-        { label = L["Loot & DKP"],  fn = function() BRutus:ShowPointsFrame() end },
-        { label = L["My Wishlist"], fn = function() BRutus:ShowWishlistFrame() end },
-        { label = L["Loot Equity"], fn = function()
-            local txt = BRutus.Exporter and BRutus.Exporter:Build("equity", "tsv") or ""
-            BRutus:ShowExportPopup(L["Loot Equity"], txt)
-        end },
-        { label = L["Export Data"], fn = function()
-            if BRutus.ShowExportChooser then BRutus:ShowExportChooser() end
-        end },
-    }
+    -- Show only the loot-access button that matches the active system.
+    local quickButtons = {}
+    if BRutus:LootSystemShowsDKP() then
+        quickButtons[#quickButtons + 1] = { label = L["Loot & DKP"], fn = function() BRutus:ShowPointsFrame() end }
+    end
+    if BRutus:LootSystemShowsWishlist() then
+        quickButtons[#quickButtons + 1] = { label = L["My Wishlist"], fn = function() BRutus:ShowWishlistFrame() end }
+    end
+    quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
+        local txt = BRutus.Exporter and BRutus.Exporter:Build("equity", "tsv") or ""
+        BRutus:ShowExportPopup(L["Loot Equity"], txt)
+    end }
+    quickButtons[#quickButtons + 1] = { label = L["Export Data"], fn = function()
+        if BRutus.ShowExportChooser then BRutus:ShowExportChooser() end
+    end }
     local qx = 0
     for _, qb in ipairs(quickButtons) do
         local b = UI:CreateButton(content, qb.label, 130, 24)

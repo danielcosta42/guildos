@@ -523,4 +523,18 @@ end
 
 function BRutus:SetLootSystem(sys)
     self:SetSetting("lootSystem", sys)
+    -- Re-surface only the access points the new system needs (no reload).
+    if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
+end
+
+-- Each loot system exposes only its own UI so players never see screens
+-- that don't apply: wishlist/TMB -> wishlist access; DKP -> DKP access;
+-- plain /roll -> neither.
+function BRutus:LootSystemShowsWishlist()
+    local s = self:GetLootSystem()
+    return s == "wishlist" or s == "tmb"
+end
+
+function BRutus:LootSystemShowsDKP()
+    return self:GetLootSystem() == "dkp"
 end

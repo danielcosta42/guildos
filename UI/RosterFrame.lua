@@ -36,6 +36,18 @@ local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150 + KPI_BAN
 local TAB_HEIGHT = 28
 
 ----------------------------------------------------------------------
+-- Re-apply loot-system-dependent visibility (bottom-bar buttons + the
+-- wishlist tab) without a reload. Called when the loot system changes.
+----------------------------------------------------------------------
+function BRutus:UpdateLootSystemUI()
+    local f = self.RosterFrame
+    if not f then return end
+    if f.wishBtn then f.wishBtn:SetShown(self:LootSystemShowsWishlist()) end
+    if f.dkpBtn  then f.dkpBtn:SetShown(self:LootSystemShowsDKP()) end
+    if f.UpdateTabVisibility then f:UpdateTabVisibility() end
+end
+
+----------------------------------------------------------------------
 -- Create the main roster frame
 ----------------------------------------------------------------------
 function BRutus.CreateRosterFrame()
@@ -290,9 +302,10 @@ function BRutus.CreateRosterFrame()
     -- Create tabs
     CreateTab("roster", L["Roster"], false)
     CreateTab("recipes", L["Recipes"], false)
-    if BRutus:IsOfficer() then
-        CreateTab("wishlist", L["Wishlist"], false)
-    end
+    -- Wishlist tab only when the guild's loot system is wishlist/TMB.
+    CreateTab("wishlist", L["Wishlist"], false, function()
+        return BRutus:IsOfficer() and BRutus:LootSystemShowsWishlist()
+    end)
     CreateTab("raids", L["Raids"], false)
     CreateTab("audit", L["Audit"], false)
     CreateTab("raidtools", L["Raid Tools"], false)
@@ -900,15 +913,20 @@ function BRutus.CreateRosterFrame()
     local helpText = UI:CreateText(bottomBar, "/guildos scan  |  /guildos sync  |  /guildos wish", 9, 0.4, 0.4, 0.5)
     helpText:SetPoint("LEFT", 12, 0)
 
-    -- "Minha Wishlist" quick-access button (all members)
+    -- Loot quick-access buttons. Wishlist and DKP share the same slot —
+    -- only the one matching the active loot system is shown (see
+    -- BRutus:UpdateLootSystemUI), so /roll guilds see neither.
     local wishBtn = UI:CreateButton(bottomBar, L["My Wishlist"], 120, 22)
     wishBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
     wishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
+    wishBtn:SetShown(BRutus:LootSystemShowsWishlist())
+    frame.wishBtn = wishBtn
 
-    -- "Loot & DKP" quick-access button (all members; standings are read-only)
     local dkpBtn = UI:CreateButton(bottomBar, L["Loot & DKP"], 110, 22)
-    dkpBtn:SetPoint("LEFT", wishBtn, "RIGHT", 8, 0)
+    dkpBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
     dkpBtn:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
+    dkpBtn:SetShown(BRutus:LootSystemShowsDKP())
+    frame.dkpBtn = dkpBtn
 
     -- Guild Invite (visible only if player can invite)
     local inviteBox = CreateFrame("EditBox", nil, bottomBar, "BackdropTemplate")
