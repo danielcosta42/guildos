@@ -16,7 +16,7 @@ Recruitment.DEFAULT_SETTINGS = {
     minRankIndex = 2,         -- max rank index allowed (0 = GM, 1 = first officer, 2 = second officer, etc.)
     welcomeEnabled = true,
     welcomeMessage = "",      -- auto-filled on init
-    discord = "https://discord.gg/6bcyPZ2UUC",
+    discord = "",
 }
 
 Recruitment.ticker = nil
@@ -59,7 +59,11 @@ function Recruitment:Initialize()
     -- Set default welcome message if empty
     if r.welcomeMessage == "" then
         local guildName = GetGuildInfo("player") or L["our guild"]
-         r.welcomeMessage = L["Welcome to "] .. guildName .. L["! Join our Discord: "] .. r.discord .. L[" - Have fun!"]
+        if r.discord ~= "" then
+            r.welcomeMessage = L["Welcome to "] .. guildName .. L["! Join our Discord: "] .. r.discord .. L[" - Have fun!"]
+        else
+            r.welcomeMessage = L["Welcome to "] .. guildName .. L[" - Have fun!"]
+        end
     end
 
     -- Listen for new guild members joining
