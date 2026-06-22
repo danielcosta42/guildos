@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-06-22
+
+### Added
+- global Search button in the main window header
+- Guild hub + DKP main tabs (move features into the interface)
+- accent color presets (C4)
+- global search / command palette (C5)
+- milestones & guild anniversaries (B3)
+- guild polls / voting (B1)
+- officer bulletin board (B2)
+- backup/restore the guild DB (C2)
+
+### Fixed
+- remove hardcoded Discord link default
+
+
 ## [0.6.0] - 2026-06-21
 
 ### Added
