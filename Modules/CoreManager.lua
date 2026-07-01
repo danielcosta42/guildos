@@ -559,7 +559,7 @@ function CoreManager:InitSync()
     if not BRutus.SyncService then return end
 
     -- Any player may broadcast a signup; officers store it.
-    BRutus.SyncService:On("core.signup", function(env, sender)
+    BRutus.SyncService:On("core.signup", function(env, _sender)
         local d = env.data
         if not d or not d.coreName or not d.playerKey then return end
         if not BRutus:IsOfficer() then return end
