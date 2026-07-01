@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-07-01
+
+### Added
+- SoftRes import from softres.it + version mismatch fix
+
+### Fixed
+- prefix unused sender arg with underscore in CoreManager
+
+
 ## [0.7.0] - 2026-06-22
 
 ### Added
