@@ -219,9 +219,19 @@ local function handleCommand(msg)
                 if not attDef.alwaysComplete and attDef.finalQuestId then
                     BRutus:Print(format("|cffAAAAAA--- %s (final=%d) ---|r", attDef.name, attDef.finalQuestId))
                     for _, q in ipairs(attDef.quests) do
-                        local done = BRutus.AttunementTracker:IsQuestComplete(q.id)
-                        local col = done and "|cff00FF00" or "|cffFF4444"
-                        BRutus:Print(format("  %s[%d] %s|r", col, q.id, q.name))
+                        if q.ids then
+                            local anyDone = false
+                            for _, qid in ipairs(q.ids) do
+                                if BRutus.AttunementTracker:IsQuestComplete(qid) then anyDone = true end
+                            end
+                            local col = anyDone and "|cff00FF00" or "|cffFF4444"
+                            local ids = table.concat(q.ids, "/")
+                            BRutus:Print(format("  %s[%s] %s (Aldor|Scryers)|r", col, ids, q.name))
+                        else
+                            local done = BRutus.AttunementTracker:IsQuestComplete(q.id)
+                            local col = done and "|cff00FF00" or "|cffFF4444"
+                            BRutus:Print(format("  %s[%d] %s|r", col, q.id, q.name))
+                        end
                     end
                     if attDef.keyItemId then
                         local count = GetItemCount(attDef.keyItemId) or 0
@@ -255,6 +265,31 @@ local function handleCommand(msg)
             BRutus:Print("|cffFF4444No completed quests found in that range.|r")
         else
             BRutus:Print(format("|cffAAAAAA%d quests found. Run on main to compare IDs.|r", found))
+        end
+    elseif msg:match("^signup") then
+        -- /gos signup <CoreName> [note]
+        local rest     = strtrim(msg:gsub("^signup%s*", ""))
+        local coreName = rest:match("^(%S+)")
+        local note     = rest:match("^%S+%s+(.+)$") or ""
+        if not coreName or coreName == "" then
+            BRutus:Print(L["Usage: /gos signup <CoreName> [note]"])
+        elseif not BRutus.CoreManager then
+            BRutus:Print(L["Core Manager not loaded."])
+        elseif not BRutus.CoreManager:Exists(coreName) then
+            BRutus:Print(string.format(L["Core \"%s\" not found."], coreName))
+        else
+            BRutus.CoreManager:BroadcastSignup(coreName, note)
+            BRutus:Print(string.format(L["Sign-up sent for core: %s"], coreName))
+        end
+    elseif msg:match("^unsignup") then
+        -- /gos unsignup <CoreName>  — withdraw your own application
+        local coreName = strtrim(msg:gsub("^unsignup%s*", ""))
+        if coreName == "" then
+            BRutus:Print(L["Usage: /gos unsignup <CoreName>"])
+        elseif BRutus.CoreManager then
+            local playerKey = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+            BRutus.CoreManager:DeclineSignup(playerKey, coreName)
+            BRutus:Print(string.format(L["Sign-up withdrawn from core: %s"], coreName))
         end
     else
         BRutus:ToggleRoster()

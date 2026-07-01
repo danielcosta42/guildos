@@ -765,6 +765,10 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
     local firstSnap = allSnapshots[1]
     local lastSnap  = allSnapshots[#allSnapshots]
 
+    -- Use per-core penalty weights when CoreManager is available
+    local penalties = (BRutus.CoreManager and BRutus.CoreManager:GetPenalties(groupTag))
+                      or self.PENALTIES
+
     for playerKey in pairs(allPlayers) do
         if not groupAtt[playerKey] then
             groupAtt[playerKey] = { raids = 0, lastRaid = 0, totalScore = 0 }
@@ -778,10 +782,10 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
 
         local score = 100
         if firstSnap and firstSnap.members and not firstSnap.members[playerKey] then
-            score = score - self.PENALTIES.LATE
+            score = score - penalties.LATE
         end
         if lastSnap and lastSnap.members and not lastSnap.members[playerKey] then
-            score = score - self.PENALTIES.LEFT_EARLY
+            score = score - penalties.LEFT_EARLY
         end
         local consumeChecks, consumeHits = 0, 0
         for _, snap in ipairs(allSnapshots) do
@@ -793,7 +797,7 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
             end
         end
         if consumeChecks > 0 and (consumeHits / consumeChecks) < 0.5 then
-            score = score - self.PENALTIES.NO_CONSUMES
+            score = score - penalties.NO_CONSUMES
         end
         score = math.max(0, math.min(100, score))
         groupAtt[playerKey].totalScore = groupAtt[playerKey].totalScore + score

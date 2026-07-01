@@ -43,6 +43,8 @@ Modules\CommSystem.lua
 Modules\SyncService.lua
 Modules\RecruitmentSystem.lua
 Modules\WishlistSystem.lua
+Modules\SoftResSystem.lua
+Modules\CoreManager.lua
 Modules\RaidTracker.lua
 Modules\LootTracker.lua
 Modules\LootMaster.lua
@@ -71,6 +73,7 @@ UI\RecipesPanel.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua
+UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua
 UI\PointsPanel.lua

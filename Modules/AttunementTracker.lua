@@ -86,12 +86,12 @@ AttunementTracker.ATTUNEMENTS = {
         icon = "Interface\\Icons\\INV_Misc_Gem_NetherDragonEye",
         tier = "T5",
         quests = {
-            { id = 10888, name = "Trial of the Naaru: Mercy" },
-            { id = 10889, name = "Trial of the Naaru: Strength" },
-            { id = 10890, name = "Trial of the Naaru: Tenacity" },
-            { id = 10906, name = "Trial of the Naaru: Magtheridon" },
+            { id = 10884, name = "Trial of the Naaru: Mercy" },
+            { id = 10885, name = "Trial of the Naaru: Strength" },
+            { id = 10886, name = "Trial of the Naaru: Tenacity" },
+            { id = 10888, name = "Trial of the Naaru: Magtheridon" },
         },
-        finalQuestId = 10906,
+        finalQuestId = 10888,
         note = "Removed in patch 2.1.0 - Tracking for reference",
     },
     {
@@ -111,16 +111,20 @@ AttunementTracker.ATTUNEMENTS = {
         icon = "Interface\\Icons\\INV_Weapon_Glaive_01",
         tier = "T6",
         quests = {
-            { id = 10563, name = "Tablets of Baa'ri" },
-            { id = 10564, name = "Oronu the Elder" },
-            { id = 10565, name = "The Ashtongue Corruptors" },
-            { id = 10567, name = "The Warden's Cage" },
-            { id = 10568, name = "Proof of Allegiance" },
-            { id = 10570, name = "Akama" },
-            { id = 10575, name = "Seer Udalo" },
-            { id = 10576, name = "A Mysterious Portent" },
-            { id = 10577, name = "The Ata'mal Terrace" },
-            { id = 10578, name = "Akama's Promise" },
+            -- Aldor path (10568→10571→10574→10575) OR Scryers path (10683→10684→10685→10686).
+            -- Each pair uses `ids` so either variant counts as that step done.
+            { ids = {10568, 10683}, name = "Tablets of Baa'ri" },
+            { ids = {10571, 10684}, name = "Oronu the Elder" },
+            { ids = {10574, 10685}, name = "The Ashtongue Corruptors" },
+            { ids = {10575, 10686}, name = "The Warden's Cage" },
+            -- Shared path after both faction chains merge
+            { id = 10622, name = "Proof of Allegiance" },
+            { id = 10628, name = "Akama" },
+            { id = 10705, name = "Seer Udalo" },
+            { id = 10706, name = "A Mysterious Portent" },
+            { id = 10707, name = "The Ata'mal Terrace" },
+            { id = 10708, name = "Akama's Promise" },
+            -- Requires kills in SSC, The Eye, and Hyjal before final turn-in
             { id = 10944, name = "The Secret Compromised" },
             { id = 10946, name = "Ruse of the Ashtongue" },
             { id = 10947, name = "An Artifact From the Past" },
@@ -213,11 +217,19 @@ function AttunementTracker:ScanAttunements()
             local questStatus = {}
 
             for _, quest in ipairs(attunement.quests) do
-                local isComplete = self:IsQuestComplete(quest.id)
-                questStatus[quest.id] = isComplete
-                if isComplete then
-                    done = done + 1
+                local isComplete = false
+                if quest.ids then
+                    -- OR-logic: Aldor/Scryers parallel paths — done if ANY variant is complete
+                    for _, qid in ipairs(quest.ids) do
+                        local ok = self:IsQuestComplete(qid)
+                        questStatus[qid] = ok
+                        if ok then isComplete = true end
+                    end
+                else
+                    isComplete = self:IsQuestComplete(quest.id)
+                    questStatus[quest.id] = isComplete
                 end
+                if isComplete then done = done + 1 end
             end
 
             entry.complete = attunement.finalQuestId and questStatus[attunement.finalQuestId] or false

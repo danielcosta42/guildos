@@ -21,23 +21,44 @@ local LOG_MAX = 500
 local OPS_MAX = 2000
 
 ----------------------------------------------------------------------
+-- Active pool resolver
+-- Returns the points DB for the currently active core, or the global
+-- db.points when no named core is active (ungrouped raids).
+----------------------------------------------------------------------
+function Points:GetDB()
+    if BRutus.CoreManager then
+        return BRutus.CoreManager:GetPointsDB()
+    end
+    return BRutus.db.points
+end
+
+-- Returns the points DB for a specific core (used during sync routing).
+function Points:GetDBForCore(coreName)
+    if BRutus.CoreManager then
+        return BRutus.CoreManager:GetPointsDB(coreName)
+    end
+    return BRutus.db.points
+end
+
+----------------------------------------------------------------------
 -- Lifecycle
 ----------------------------------------------------------------------
 function Points:Initialize()
+    -- Ensure the global/ungrouped pool is well-formed
     local p = BRutus.db.points or {}
     BRutus.db.points = p
     p.mode = p.mode or "dkp"
     p.config = p.config or {}
-    local cfg = p.config
-    if cfg.bossAward      == nil then cfg.bossAward = 10 end
-    if cfg.onTimeAward    == nil then cfg.onTimeAward = 0 end
-    if cfg.startingPoints == nil then cfg.startingPoints = 0 end
-    if cfg.decayPct       == nil then cfg.decayPct = 0 end
-    if cfg.autoAward      == nil then cfg.autoAward = false end
-    if cfg.itemCost       == nil then cfg.itemCost = 0 end
-    p.standings   = p.standings or {}
-    p.log         = p.log or {}
-    p.appliedOps  = p.appliedOps or {}
+    local c = p.config
+    if c.bossAward      == nil then c.bossAward      = 10    end
+    if c.onTimeAward    == nil then c.onTimeAward     = 0     end
+    if c.startingPoints == nil then c.startingPoints  = 0     end
+    if c.decayPct       == nil then c.decayPct        = 0     end
+    if c.autoAward      == nil then c.autoAward       = false end
+    if c.itemCost       == nil then c.itemCost         = 0     end
+    p.standings    = p.standings    or {}
+    p.log          = p.log          or {}
+    p.appliedOps   = p.appliedOps   or {}
     p.appliedCount = p.appliedCount or 0
 
     if BRutus.SyncService then
@@ -45,8 +66,9 @@ function Points:Initialize()
     end
 end
 
-local function cfg()      return BRutus.db.points.config end
-local function standings() return BRutus.db.points.standings end
+-- Internal helpers — always use the active pool via GetDB()
+local function cfg()       return Points:GetDB().config    end
+local function standings()  return Points:GetDB().standings end
 
 local function newOp()
     return string.format("%X-%04X", GetServerTime(), math.random(0, 0xFFFF))
@@ -55,12 +77,12 @@ end
 ----------------------------------------------------------------------
 -- Accessors
 ----------------------------------------------------------------------
-function Points:GetMode() return BRutus.db.points.mode end
+function Points:GetMode() return self:GetDB().mode end
 
 function Points:SetMode(mode)
     if not BRutus:IsOfficer() then return end
     if mode ~= "dkp" and mode ~= "epgp" and mode ~= "council" then return end
-    BRutus.db.points.mode = mode
+    self:GetDB().mode = mode
     self:BroadcastSnapshot()
     self:Refresh()
 end
@@ -88,7 +110,7 @@ function Points:GetStandings()
 end
 
 function Points:GetLog(limit)
-    local log = BRutus.db.points.log
+    local log = self:GetDB().log
     if not limit or limit >= #log then return log end
     local out = {}
     for i = 1, limit do out[i] = log[i] end
@@ -101,19 +123,28 @@ end
 function Points:MakeEntry(key, delta, reason, kind)
     local short = key:match("^([^-]+)") or key
     local class = (BRutus.db.members[key] and BRutus.db.members[key].class) or ""
+    -- Tag with the active core so receivers can route to the right pool
+    local coreName = BRutus.CoreManager and BRutus.CoreManager:GetActiveName() or ""
     return {
         op = newOp(), key = key, name = short, class = class,
         delta = delta, reason = reason or "", kind = kind or "adjust",
         author = UnitName("player"), ts = GetServerTime(),
+        core = coreName,
     }
 end
 
-function Points:ApplyEntry(e)
+-- Apply an entry to a specific pool (nil → active pool).
+function Points:ApplyEntry(e, pool)
     if not e or not e.key or not e.delta then return end
-    local s = standings()[e.key]
+    pool = pool or self:GetDB()
+    local stnd = pool.standings
+    local s = stnd[e.key]
     if not s then
-        s = { current = cfg().startingPoints, earned = 0, spent = 0, name = e.name, class = e.class }
-        standings()[e.key] = s
+        s = {
+            current = (pool.config and pool.config.startingPoints or 0),
+            earned = 0, spent = 0, name = e.name, class = e.class,
+        }
+        stnd[e.key] = s
     end
     if e.name then s.name = e.name end
     if e.class and e.class ~= "" then s.class = e.class end
@@ -123,7 +154,7 @@ function Points:ApplyEntry(e)
     else
         s.spent = (s.spent or 0) + (-e.delta)
     end
-    local log = BRutus.db.points.log
+    local log = pool.log
     table.insert(log, 1, {
         ts = e.ts, key = e.key, name = e.name, delta = e.delta,
         reason = e.reason, author = e.author, kind = e.kind,
@@ -131,15 +162,16 @@ function Points:ApplyEntry(e)
     while #log > LOG_MAX do table.remove(log) end
 end
 
-function Points:MarkApplied(op)
+-- Mark an op as applied in a specific pool (nil → active pool).
+function Points:MarkApplied(op, pool)
     if not op then return end
-    local p = BRutus.db.points
-    if not p.appliedOps[op] then
-        p.appliedOps[op] = true
-        p.appliedCount = (p.appliedCount or 0) + 1
-        if p.appliedCount > OPS_MAX then
-            wipe(p.appliedOps)
-            p.appliedCount = 0
+    pool = pool or self:GetDB()
+    if not pool.appliedOps[op] then
+        pool.appliedOps[op] = true
+        pool.appliedCount = (pool.appliedCount or 0) + 1
+        if pool.appliedCount > OPS_MAX then
+            wipe(pool.appliedOps)
+            pool.appliedCount = 0
         end
     end
 end
@@ -230,39 +262,52 @@ end
 
 ----------------------------------------------------------------------
 -- Sync (domain "points")
+-- Delta entries carry a `core` field so receivers route them to the
+-- right pool. Snapshots carry `core` in the payload.
+-- Old clients without the `core` field fall back to global db.points.
 ----------------------------------------------------------------------
 function Points:OnSync(env)
     local d = env.data
     if env.act == "delta" and d and d.entries then
         local applied = false
         for _, e in ipairs(d.entries) do
-            if e.op and not BRutus.db.points.appliedOps[e.op] then
-                self:ApplyEntry(e)
-                self:MarkApplied(e.op)
+            local pool = self:GetDBForCore(e.core)
+            if e.op and not pool.appliedOps[e.op] then
+                self:ApplyEntry(e, pool)
+                self:MarkApplied(e.op, pool)
                 applied = true
             end
         end
         if applied then self:Refresh() end
     elseif env.act == "snapshot" and d then
-        if BRutus.SyncService:ShouldApply("points", "standings", env.rev) then
-            if d.mode then BRutus.db.points.mode = d.mode end
-            if d.config then BRutus.db.points.config = d.config end
-            if d.standings then BRutus.db.points.standings = d.standings end
-            BRutus.SyncService:SetRevision("points", "standings", env.rev)
+        local pool = self:GetDBForCore(d.core)
+        -- Use a composite revision key so per-core snapshots don't
+        -- overwrite each other's revision counter.
+        local domain = d.core and ("points:" .. d.core) or "points"
+        if BRutus.SyncService:ShouldApply(domain, "standings", env.rev) then
+            if d.mode     then pool.mode     = d.mode     end
+            if d.config   then pool.config   = d.config   end
+            if d.standings then pool.standings = d.standings end
+            BRutus.SyncService:SetRevision(domain, "standings", env.rev)
             self:Refresh()
         end
     end
 end
 
 -- Officer authoritative snapshot (mode + config + full standings).
+-- Broadcasts for the currently active core.
 function Points:BroadcastSnapshot()
     if not BRutus:IsOfficer() then return end
     if not BRutus.SyncService then return end
-    local rev = BRutus.SyncService:NextRevision("points", "standings")
+    local coreName = BRutus.CoreManager and BRutus.CoreManager:GetActiveName() or ""
+    local pool  = self:GetDB()
+    local domain = (coreName ~= "") and ("points:" .. coreName) or "points"
+    local rev = BRutus.SyncService:NextRevision(domain, "standings")
     BRutus.SyncService:Publish("points", "snapshot", {
-        mode = BRutus.db.points.mode,
-        config = BRutus.db.points.config,
-        standings = BRutus.db.points.standings,
+        core     = coreName,
+        mode     = pool.mode,
+        config   = pool.config,
+        standings = pool.standings,
     }, { rev = rev })
 end
 

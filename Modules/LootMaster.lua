@@ -49,6 +49,27 @@ function LootMaster:SafeSendAddon(prefix, payload, channel)
 end
 
 ----------------------------------------------------------------------
+-- Per-core config helpers.
+-- All reads go through GetCfg() so they automatically reflect the
+-- active core's overrides; all writes go through SaveCfgKey() so they
+-- are persisted in the right place.
+----------------------------------------------------------------------
+function LootMaster:GetCfg()
+    if BRutus.CoreManager then
+        return BRutus.CoreManager:GetLootConfig()
+    end
+    return BRutus.db.lootMaster or {}
+end
+
+function LootMaster:SaveCfgKey(key, value)
+    if BRutus.CoreManager then
+        BRutus.CoreManager:SetLootConfigKey(key, value)
+    elseif BRutus.db.lootMaster then
+        BRutus.db.lootMaster[key] = value
+    end
+end
+
+----------------------------------------------------------------------
 -- Initialize
 ----------------------------------------------------------------------
 function LootMaster:Initialize()
@@ -61,23 +82,23 @@ function LootMaster:Initialize()
         }
     end
 
-    self.ROLL_DURATION = BRutus.db.lootMaster.rollDuration or 30
-    self.AUTO_ANNOUNCE = BRutus.db.lootMaster.autoAnnounce
-    self.WISHLIST_ONLY_MODE = BRutus.db.lootMaster.wishlistOnlyMode or false
-    self.pendingTrades = {}
-
-    -- Ensure loot-distribution settings exist (added in v2)
+    -- Ensure loot-distribution settings exist in the global fallback (added in v2)
     local lmdb = BRutus.db.lootMaster
     if lmdb.minAttendancePct == nil then lmdb.minAttendancePct = 0    end
     if lmdb.attTiebreaker    == nil then lmdb.attTiebreaker    = true end
     if lmdb.recvPenalty      == nil then lmdb.recvPenalty      = true end
     if lmdb.awardHistory     == nil then lmdb.awardHistory     = {}   end
-    if lmdb.disenchanter     == nil then lmdb.disenchanter     = ""  end
-    -- Rarity threshold the ML window reacts to (item quality id, 2=Uncommon,
-    -- 3=Rare, 4=Epic, 5=Legendary). Defaults to Rare+ as before.
-    if lmdb.lootThreshold    == nil then lmdb.lootThreshold    = 3   end
-    self.disenchanter   = lmdb.disenchanter
-    self.LOOT_THRESHOLD = lmdb.lootThreshold
+    if lmdb.disenchanter     == nil then lmdb.disenchanter     = ""   end
+    if lmdb.lootThreshold    == nil then lmdb.lootThreshold    = 3    end
+
+    -- Cache active values (read via GetCfg so cores are respected from the start)
+    local cfg = self:GetCfg()
+    self.ROLL_DURATION      = cfg.rollDuration or 30
+    self.AUTO_ANNOUNCE      = cfg.autoAnnounce
+    self.WISHLIST_ONLY_MODE = cfg.wishlistOnlyMode or false
+    self.disenchanter       = cfg.disenchanter or ""
+    self.LOOT_THRESHOLD     = cfg.lootThreshold or 3
+    self.pendingTrades      = {}
 
     -- Build /roll detection pattern from localized RANDOM_ROLL_RESULT global
     -- e.g. EN: "%s rolls %d (%d-%d)."  → ^(.+) rolls (%d+) %((%d+)%-(%d+)%)%.$
@@ -500,11 +521,12 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
             if wishlistOnly then
                 -- Direct award prompt for top prio player
                 local council = self:ResolveWishlistCouncil(itemId) or {}
+                self:AnnounceSoftReserves(itemId)
                 self:AutoCouncilAward(
                     { name = topPrio.name, class = topPrio.class or "UNKNOWN", order = 1, isPrio = true },
                     itemLink, lootSlot, council)
             else
-                -- Open roll but announce prio info
+                -- Open roll but announce prio info (DoNormalAnnounce calls AnnounceSoftReserves)
                 self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, topPrio)
             end
             return
@@ -529,6 +551,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
                 return
             elseif #tied == 1 and wishlistOnly then
                 -- Single top entry + wishlist-only mode: prompt ML for direct award
+                self:AnnounceSoftReserves(itemId)
                 self:AutoCouncilAward(top, itemLink, lootSlot, council)
                 return
             end
@@ -571,6 +594,8 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
             topEntry.name, topEntry.order)
         self:SafeSendChat(infoMsg, "RAID")
     end
+
+    self:AnnounceSoftReserves(itemId)
 
     -- Send addon message so BRutus users get the roll popup
     local payload = format("ANNOUNCE|%s|%d|%d|0", itemLink, self.ROLL_DURATION, itemId or 0)
@@ -617,6 +642,20 @@ end
 -- Restricted roll: only the tied top-priority players may roll.
 -- Rolls from anyone else are silently ignored by ProcessSystemRoll.
 ----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- Post a "[SR] Soft reserved by: ..." line to raid if any in-raid
+-- players have this item on their soft reserve list.
+-- Safe to call even when SoftRes is nil or has no imported data.
+----------------------------------------------------------------------
+function LootMaster:AnnounceSoftReserves(itemId)
+    if not BRutus.SoftRes or not itemId or itemId == 0 then return end
+    local srList = BRutus.SoftRes:GetInRaidReserves(itemId)
+    if #srList == 0 then return end
+    local names = {}
+    for _, e in ipairs(srList) do names[#names+1] = e.name end
+    self:SafeSendChat(format(L["[SR] Soft reserved by: %s"], table.concat(names, ", ")), "RAID")
+end
+
 function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlot, itemId)
     -- Build restricted set (lowercase names for fast lookup)
     self.restrictedRollers = {}
@@ -634,6 +673,7 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
             itemLink, orderStr, nameStr, self.ROLL_DURATION),
         "RAID_WARNING"
     )
+    self:AnnounceSoftReserves(itemId or (self.activeLoot and self.activeLoot.itemId))
 
     -- Addon comm: show popup to BRutus users who have the item on their wishlist
     itemId = itemId or (self.activeLoot and self.activeLoot.itemId) or 0
@@ -888,7 +928,7 @@ function LootMaster:RegisterRoll(name, rollType, roll)
 
     -- Attendance gate: auto-downgrade MS → OS if below minimum threshold
     local ctx = self:GetPlayerContext(name)
-    local minAtt = BRutus.db.lootMaster.minAttendancePct or 0
+    local minAtt = self:GetCfg().minAttendancePct or 0
     if rollType == "MS" and minAtt > 0 and ctx.att25 < minAtt then
         rollType = "OS"
         self:SafeSendChat(string.format(
@@ -924,6 +964,17 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         end
     end
 
+    -- Soft reserve lookup
+    local srInfo = nil
+    if BRutus.SoftRes and self.activeLoot.itemId then
+        for _, entry in ipairs(BRutus.SoftRes:GetReserves(self.activeLoot.itemId)) do
+            if strlower(entry.name or "") == strlower(name) then
+                srInfo = { hard = entry.hard or false }
+                break
+            end
+        end
+    end
+
     -- Class from raid unit or stored member data
     local class = "UNKNOWN"
     local numMembers = GetNumGroupMembers() or 0
@@ -954,6 +1005,7 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         roll       = roll,
         wishlist   = wishInfo,
         prioOrder  = prioOrder,
+        softRes    = srInfo,
         att25      = ctx.att25,
         recvCount  = ctx.recvThisLockout,
         dkp        = (BRutus.Points and BRutus.Points:Get(BRutus:GetPlayerKey(name, GetRealmName()))) or 0,
@@ -1005,18 +1057,23 @@ function LootMaster:EndRolling()
         local aPrio = a.prioOrder or 999
         local bPrio = b.prioOrder or 999
         if aPrio ~= bPrio then return aPrio < bPrio end
+        -- Soft reserve: SR holder beats non-SR (below officer prio, above wishlist)
+        local aSR = a.softRes and 1 or 2
+        local bSR = b.softRes and 1 or 2
+        if aSR ~= bSR then return aSR < bSR end
         -- Wishlist priority: lower order number wins; no wishlist entry ranks last
         local aOrder = a.wishlist and a.wishlist.order or 999
         local bOrder = b.wishlist and b.wishlist.order or 999
         if aOrder ~= bOrder then return aOrder < bOrder end
         -- Received tiebreaker: fewer items received this lockout wins (when enabled)
-        if BRutus.db.lootMaster.recvPenalty ~= false then
+        local _cfg = LootMaster:GetCfg()
+        if _cfg.recvPenalty ~= false then
             local aRecv = a.recvCount or 0
             local bRecv = b.recvCount or 0
             if aRecv ~= bRecv then return aRecv < bRecv end
         end
         -- Attendance tiebreaker: higher 25-man attendance wins
-        if BRutus.db.lootMaster.attTiebreaker and (a.att25 or 0) ~= (b.att25 or 0) then
+        if _cfg.attTiebreaker and (a.att25 or 0) ~= (b.att25 or 0) then
             return (a.att25 or 0) > (b.att25 or 0)
         end
         -- Final tiebreaker: higher roll
@@ -1032,6 +1089,8 @@ function LootMaster:EndRolling()
         local wishStr = ""
         if winner.prioOrder then
             wishStr = string.format(L[" [Official Prio #%d]"], winner.prioOrder)
+        elseif winner.softRes then
+            wishStr = winner.softRes.hard and L[" [Hard Reserve]"] or L[" [Soft Reserve]"]
         elseif winner.wishlist then
             wishStr = string.format(L[" [Wishlist #%d]"], winner.wishlist.order)
         end
@@ -1110,18 +1169,17 @@ function LootMaster:AwardLoot(playerName, silent)
     end
 
     -- Save to LootMaster's own award log (for undo / ML reference)
-    if not BRutus.db.lootMaster.awardHistory then
-        BRutus.db.lootMaster.awardHistory = {}
-    end
-    table.insert(BRutus.db.lootMaster.awardHistory, 1, {
+    local awardHistory = BRutus.CoreManager and BRutus.CoreManager:GetAwardHistory()
+                         or (BRutus.db.lootMaster and BRutus.db.lootMaster.awardHistory) or {}
+    table.insert(awardHistory, 1, {
         link = itemLink,
         itemId = itemId,
         player = playerName,
         timestamp = GetServerTime(),
         received = awarded,
     })
-    while #BRutus.db.lootMaster.awardHistory > 200 do
-        table.remove(BRutus.db.lootMaster.awardHistory)
+    while #awardHistory > 200 do
+        table.remove(awardHistory)
     end
 
     -- Record to the central loot history (ML-awarded items only, officer action)
@@ -1144,7 +1202,8 @@ function LootMaster:AwardLoot(playerName, silent)
     -- DKP: charge the winner when the guild runs the points system and a
     -- per-item cost is configured (cost 0 = informational standings only).
     if BRutus.Points and (BRutus.GetLootSystem and BRutus:GetLootSystem()) == "dkp" and BRutus:IsOfficer() then
-        local cost = (BRutus.db.points.config and BRutus.db.points.config.itemCost) or 0
+        local _pdb = BRutus.Points and BRutus.Points:GetDB()
+        local cost = (_pdb and _pdb.config and _pdb.config.itemCost) or 0
         if cost > 0 then
             local pKey = BRutus:GetPlayerKey(playerName, realm)
             BRutus.Points:Charge(pKey, cost, GetItemInfo(itemLink) or itemLink)
@@ -1251,7 +1310,9 @@ function LootMaster:OnTradeAcceptUpdate(playerAccepted, targetAccepted)
             local pending = self.pendingTrades[i]
             if pending.player == tradeName and pending.addedToTrade then
                 -- Mark as received in award history
-                for _, award in ipairs(BRutus.db.lootMaster.awardHistory) do
+                local _ah = BRutus.CoreManager and BRutus.CoreManager:GetAwardHistory()
+                            or (BRutus.db.lootMaster and BRutus.db.lootMaster.awardHistory) or {}
+                for _, award in ipairs(_ah) do
                     if award.itemId == pending.itemId
                         and award.player == pending.player
                         and not award.received then
@@ -2500,7 +2561,7 @@ function LootMaster:ShowLootFrame(items)
     tmbCheck:SetScript("OnClick", function(cb)
         local val = cb:GetChecked()
         LootMaster.WISHLIST_ONLY_MODE = val
-        BRutus.db.lootMaster.wishlistOnlyMode = val
+        LootMaster:SaveCfgKey("wishlistOnlyMode", val)
     end)
     local tmbLabel = f:CreateFontString(nil, "OVERLAY")
     tmbLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
@@ -2914,17 +2975,12 @@ end
 -- Disenchanter: designated player who receives unwanted items to DE
 ----------------------------------------------------------------------
 function LootMaster:GetDisenchanter()
-    if BRutus.db and BRutus.db.lootMaster then
-        return BRutus.db.lootMaster.disenchanter or ""
-    end
-    return self.disenchanter or ""
+    return self:GetCfg().disenchanter or self.disenchanter or ""
 end
 
 function LootMaster:SetDisenchanter(name)
     self.disenchanter = name or ""
-    if BRutus.db and BRutus.db.lootMaster then
-        BRutus.db.lootMaster.disenchanter = self.disenchanter
-    end
+    self:SaveCfgKey("disenchanter", self.disenchanter)
 end
 
 -- Rarity threshold (item quality id) the ML window reacts to.
@@ -2936,19 +2992,14 @@ LootMaster.THRESHOLD_NAMES = {
 }
 
 function LootMaster:GetLootThreshold()
-    if BRutus.db and BRutus.db.lootMaster and BRutus.db.lootMaster.lootThreshold then
-        return BRutus.db.lootMaster.lootThreshold
-    end
-    return self.LOOT_THRESHOLD or 3
+    return self:GetCfg().lootThreshold or self.LOOT_THRESHOLD or 3
 end
 
 function LootMaster:SetLootThreshold(q)
     q = tonumber(q) or 3
     if q < 2 then q = 2 elseif q > 5 then q = 5 end
     self.LOOT_THRESHOLD = q
-    if BRutus.db and BRutus.db.lootMaster then
-        BRutus.db.lootMaster.lootThreshold = q
-    end
+    self:SaveCfgKey("lootThreshold", q)
 end
 
 -- Award the active item (or the provided item) to the disenchanter.

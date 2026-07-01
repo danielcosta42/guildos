@@ -6,6 +6,20 @@ local UI = BRutus.UI
 local C = BRutus.Colors
 local L = BRutus.L
 
+-- Returns -1 if a < b, 0 if equal, 1 if a > b (semver major.minor.patch)
+local function CompareVersions(a, b)
+    local function parts(v)
+        local maj, min, pat = strsplit(".", v or "0")
+        return tonumber(maj) or 0, tonumber(min) or 0, tonumber(pat) or 0
+    end
+    local a1, a2, a3 = parts(a)
+    local b1, b2, b3 = parts(b)
+    if a1 ~= b1 then return a1 < b1 and -1 or 1 end
+    if a2 ~= b2 then return a2 < b2 and -1 or 1 end
+    if a3 ~= b3 then return a3 < b3 and -1 or 1 end
+    return 0
+end
+
 -- Column definitions
 -- Attunements and Attendance live in their own dedicated places (member
 -- detail / Raids tab / KPI card), so they are intentionally omitted here to
@@ -50,6 +64,151 @@ end
 ----------------------------------------------------------------------
 -- Create the main roster frame
 ----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- Raid Hub: single container with a sub-tab bar that hosts the four
+-- raid-related panels (Sessions, Cores, Audit, Raid Tools).
+----------------------------------------------------------------------
+function BRutus:CreateRaidHubPanel(container, mainFrame)
+    local WHITE = "Interface\\Buttons\\WHITE8x8"
+    local SUB_H = 26  -- sub-tab bar height
+
+    ----------------------------------------------------------------
+    -- Sub-tab bar
+    ----------------------------------------------------------------
+    local subBar = CreateFrame("Frame", nil, container)
+    subBar:SetPoint("TOPLEFT", 0, 0)
+    subBar:SetPoint("TOPRIGHT", 0, 0)
+    subBar:SetHeight(SUB_H)
+
+    local subBarBg = subBar:CreateTexture(nil, "BACKGROUND")
+    subBarBg:SetTexture(WHITE)
+    subBarBg:SetAllPoints()
+    subBarBg:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.7)
+
+    local subBarLine = subBar:CreateTexture(nil, "ARTWORK")
+    subBarLine:SetTexture(WHITE)
+    subBarLine:SetHeight(1)
+    subBarLine:SetPoint("BOTTOMLEFT", 0, 0)
+    subBarLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    subBarLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.35)
+
+    ----------------------------------------------------------------
+    -- Sub-panels (all fill the area below the sub-tab bar)
+    ----------------------------------------------------------------
+    local function MakeSubPanel()
+        local p = CreateFrame("Frame", nil, container)
+        p:SetPoint("TOPLEFT", 0, -SUB_H)
+        p:SetPoint("BOTTOMRIGHT", 0, 0)
+        p:Hide()
+        return p
+    end
+
+    local sessPanel  = MakeSubPanel()
+    local coresPanel = MakeSubPanel()
+    local auditPanel = MakeSubPanel()
+    local rtPanel    = MakeSubPanel()
+
+    -- Populate each sub-panel using the existing builders
+    BRutus:CreateRaidsPanel(sessPanel, mainFrame)
+    BRutus:CreateCoresPanel(coresPanel)           -- new signature (no contentTop)
+    BRutus:CreateAuditPanel(auditPanel, mainFrame)
+    BRutus:CreateRaidToolsPanel(rtPanel, mainFrame)
+
+    ----------------------------------------------------------------
+    -- Sub-tab definitions (Cores is officer-only)
+    ----------------------------------------------------------------
+    local SUBTABS = {
+        { key = "sessions",  label = L["Sessions"],   panel = sessPanel,  officerOnly = false },
+        { key = "cores",     label = L["Cores"],      panel = coresPanel, officerOnly = true  },
+        { key = "audit",     label = L["Audit"],      panel = auditPanel, officerOnly = false },
+        { key = "raidtools", label = L["Raid Tools"], panel = rtPanel,    officerOnly = false },
+    }
+
+    local activeSubTab = nil
+    local subTabBtns   = {}
+
+    local function SetSubTab(key)
+        activeSubTab = key
+        for _, t in ipairs(subTabBtns) do
+            if t.key == key then
+                t:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
+                t.lbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                if t.underline then t.underline:Show() end
+            else
+                t:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+                t.lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+                if t.underline then t.underline:Hide() end
+            end
+        end
+        for _, st in ipairs(SUBTABS) do
+            if st.key == key then st.panel:Show() else st.panel:Hide() end
+        end
+    end
+
+    local prevBtn = nil
+    for _, st in ipairs(SUBTABS) do
+        -- Skip officer-only sub-tabs for non-officers
+        local visible = not st.officerOnly or BRutus:IsOfficer()
+        if visible then
+            local btn = CreateFrame("Button", nil, subBar, "BackdropTemplate")
+            btn:SetSize(110, SUB_H)
+            btn:SetBackdrop({ bgFile = WHITE })
+            btn:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+            btn:SetFrameLevel(subBar:GetFrameLevel() + 2)
+            if prevBtn then
+                btn:SetPoint("LEFT", prevBtn, "RIGHT", 2, 0)
+            else
+                btn:SetPoint("LEFT", 4, 0)
+            end
+
+            local lbl = btn:CreateFontString(nil, "OVERLAY")
+            lbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            lbl:SetPoint("CENTER")
+            lbl:SetShadowOffset(1, -1)
+            lbl:SetShadowColor(0, 0, 0, 0.6)
+            lbl:SetText(st.label)
+            lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            btn.lbl = lbl
+
+            local underline = btn:CreateTexture(nil, "OVERLAY")
+            underline:SetTexture(WHITE)
+            underline:SetHeight(2)
+            underline:SetPoint("BOTTOMLEFT", 3, 0)
+            underline:SetPoint("BOTTOMRIGHT", -3, 0)
+            underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
+            underline:Hide()
+            btn.underline = underline
+
+            btn.key = st.key
+            btn:SetScript("OnClick", function() SetSubTab(st.key) end)
+            btn:SetScript("OnEnter", function(self)
+                if activeSubTab ~= self.key then
+                    self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
+                    self.lbl:SetTextColor(C.text.r, C.text.g, C.text.b)
+                end
+            end)
+            btn:SetScript("OnLeave", function(self)
+                if activeSubTab ~= self.key then
+                    self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+                    self.lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+                end
+            end)
+
+            subTabBtns[#subTabBtns + 1] = btn
+            prevBtn = btn
+        end
+    end
+
+    -- Default to Sessions sub-tab
+    container:SetScript("OnShow", function()
+        if not activeSubTab then
+            SetSubTab("sessions")
+        end
+    end)
+
+    SetSubTab("sessions")
+end
+
 function BRutus.CreateRosterFrame()
     local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
     frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
@@ -316,8 +475,6 @@ function BRutus.CreateRosterFrame()
         return BRutus:IsOfficer() and BRutus:LootSystemShowsWishlist()
     end)
     CreateTab("raids", L["Raids"], false)
-    CreateTab("audit", L["Audit"], false)
-    CreateTab("raidtools", L["Raid Tools"], false)
     CreateTab("loot", L["Loot"], true)  -- officers always see loot history; items recorded only via ML
     -- DKP tab only when the guild's loot system is DKP/Points.
     CreateTab("dkp", L["DKP"], false, function() return BRutus:LootSystemShowsDKP() end)
@@ -835,14 +992,14 @@ function BRutus.CreateRosterFrame()
     BRutus:CreateWishlistGuildPanel(wishlistPanel, frame)
 
     ----------------------------------------------------------------
-    -- RAID ATTENDANCE PANEL
+    -- RAID HUB PANEL  (Sessions | Cores | Audit | Raid Tools)
     ----------------------------------------------------------------
     local raidsPanel = CreateFrame("Frame", nil, frame)
     raidsPanel:SetPoint("TOPLEFT", 0, contentTop)
     raidsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
     raidsPanel:Hide()
     frame.tabPanels["raids"] = raidsPanel
-    BRutus:CreateRaidsPanel(raidsPanel, frame)
+    BRutus:CreateRaidHubPanel(raidsPanel, frame)
 
     ----------------------------------------------------------------
     -- LOOT HISTORY PANEL
@@ -875,14 +1032,7 @@ function BRutus.CreateRosterFrame()
     BRutus:CreateManagementPanel(managementPanel, frame)
 
     ----------------------------------------------------------------
-    -- AUDIT / READINESS PANEL (attunement grid + enchant audit)
-    ----------------------------------------------------------------
-    local auditPanel = CreateFrame("Frame", nil, frame)
-    auditPanel:SetPoint("TOPLEFT", 0, contentTop)
-    auditPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    auditPanel:Hide()
-    frame.tabPanels["audit"] = auditPanel
-    BRutus:CreateAuditPanel(auditPanel, frame)
+    -- GUILD HUB PANEL (activity / bulletin / polls)
 
     ----------------------------------------------------------------
     -- GUILD HUB PANEL (activity / bulletin / polls)
@@ -903,16 +1053,6 @@ function BRutus.CreateRosterFrame()
     dkpPanel:Hide()
     frame.tabPanels["dkp"] = dkpPanel
     BRutus:CreateDKPPanel(dkpPanel, frame)
-
-    ----------------------------------------------------------------
-    -- RAID TOOLS PANEL (composition + cooldown coverage)
-    ----------------------------------------------------------------
-    local raidToolsPanel = CreateFrame("Frame", nil, frame)
-    raidToolsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    raidToolsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    raidToolsPanel:Hide()
-    frame.tabPanels["raidtools"] = raidToolsPanel
-    BRutus:CreateRaidToolsPanel(raidToolsPanel, frame)
 
     ----------------------------------------------------------------
     -- SETTINGS PANEL
@@ -958,6 +1098,12 @@ function BRutus.CreateRosterFrame()
     dkpBtn:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
     dkpBtn:SetShown(BRutus:LootSystemShowsDKP())
     frame.dkpBtn = dkpBtn
+
+    -- Core Sign-up — always visible, shows available cores and role coverage
+    local signupCoreBtn = UI:CreateButton(bottomBar, L["Core Sign-up"], 110, 22)
+    signupCoreBtn:SetPoint("LEFT", helpText, "RIGHT", 148, 0)   -- clears 120px wishBtn + gap
+    signupCoreBtn:SetScript("OnClick", function() BRutus:ShowCoreSignupFrame() end)
+    frame.signupCoreBtn = signupCoreBtn
 
     -- Guild Invite (visible only if player can invite)
     local inviteBox = CreateFrame("EditBox", nil, bottomBar, "BackdropTemplate")
@@ -1480,7 +1626,7 @@ function UpdateRosterRow(row, data, rowIndex)
     -- Addon data indicator
     if data.hasAddonData then
         row.addonDot:Show()
-        if data.addonVersion and data.addonVersion ~= BRutus.VERSION then
+        if data.addonVersion and CompareVersions(data.addonVersion, BRutus.VERSION) < 0 then
             row.addonDot:SetVertexColor(C.red.r, C.red.g, C.red.b, 0.9)
         else
             row.addonDot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
@@ -1843,7 +1989,11 @@ function ShowRowTooltip(row)
         GameTooltip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
     elseif data.addonVersion and data.addonVersion ~= BRutus.VERSION then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
+        if CompareVersions(data.addonVersion, BRutus.VERSION) < 0 then
+            GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
+        else
+            GameTooltip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.gold.r, C.gold.g, C.gold.b)
+        end
     end
 
     -- Wishlist info (native)

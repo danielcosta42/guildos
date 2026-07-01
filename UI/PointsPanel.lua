@@ -110,7 +110,7 @@ function BRutus:ShowPointsFrame()
         local raidBtn = UI:CreateButton(f, L["Award Raid"], 100, 20)
         raidBtn:SetPoint("TOPLEFT", 16, -78)
         raidBtn:SetScript("OnClick", function()
-            local amt = BRutus.db.points.config.bossAward or 0
+            local amt = BRutus.Points:GetDB().config.bossAward or 0
             local n = BRutus.Points:AwardRaidGroup(amt, L["Manual raid award"])
             if n and n > 0 then
                 BRutus:Print(string.format(L["Awarded %d points to %d raiders."], amt, n))
@@ -184,7 +184,7 @@ function BRutus:ShowPointsFrame()
         if not f:IsShown() then return end
         local mode = BRutus.Points:GetMode()
         modeText:SetText(MODE_LABEL[mode] or mode)
-        local cfg = BRutus.db.points.config
+        local cfg = BRutus.Points:GetDB().config
         summary:SetText(string.format(L["Boss award: %d  |  Decay: %d%%  |  Auto-award: %s"],
             cfg.bossAward or 0, cfg.decayPct or 0, cfg.autoAward and L["on"] or L["off"]))
 

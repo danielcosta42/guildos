@@ -76,6 +76,7 @@ local DB_DEFAULTS = {
     altLinks = {},  -- [altKey] = mainKey  (officer-maintained, for account-wide attunement propagation)
     consumableChecks = { lastResults = {} },
     wishlists = {},   -- [charKey] = [{ itemId, itemLink, order, isOffspec }] — per-character wishlists
+    cores = {},       -- [coreName] = { lootMaster, attendance, points, members }
 }
 
 ----------------------------------------------------------------------
@@ -245,6 +246,12 @@ function BRutus:InitModules()
     end
     if BRutus.Wishlist then
         BRutus.Wishlist:Initialize()
+    end
+    if BRutus.SoftRes then
+        BRutus.SoftRes:Initialize()
+    end
+    if BRutus.CoreManager then
+        BRutus.CoreManager:Initialize()
     end
     if BRutus.RaidTracker and modEnabled("raidTracker") then
         BRutus.RaidTracker:Initialize()

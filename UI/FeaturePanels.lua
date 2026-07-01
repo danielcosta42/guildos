@@ -10,6 +10,321 @@ local L = BRutus.L
 local _raidFilter25 = true
 
 ----------------------------------------------------------------------
+-- Core Sign-up Frame — footer button opens this for any player
+----------------------------------------------------------------------
+local _coreSignupFrame = nil
+
+local WHITE8 = "Interface\\Buttons\\WHITE8x8"
+
+local function TimeAgo(ts)
+    if not ts or ts == 0 then return "" end
+    local d = time() - ts
+    if d < 60 then return "just now"
+    elseif d < 3600 then return math.floor(d / 60) .. "m ago"
+    elseif d < 86400 then return math.floor(d / 3600) .. "h ago"
+    else return math.floor(d / 86400) .. "d ago"
+    end
+end
+
+local function RefreshCoreSignupFrame()
+    local f = _coreSignupFrame
+    if not f or not f:IsShown() then return end
+    local CM = BRutus.CoreManager
+    if not CM then return end
+
+    -- Identify the current player
+    local playerName  = UnitName("player") or ""
+    local _, pClass   = UnitClass("player")
+    local playerKey   = BRutus:GetPlayerKey(playerName, GetRealmName())
+    local playerRole  = CM.CLASS_DEFAULT_ROLE[pClass] or "rdps"
+    local rc          = CM.ROLE_COLORS[playerRole] or { r=1, g=1, b=1 }
+
+    -- Update role label
+    f.playerRoleLbl:SetText(string.format(
+        "%s |cff%02X%02X%02X%s|r  |cff888888(%s)|r",
+        L["Your role:"],
+        rc.r * 255, rc.g * 255, rc.b * 255,
+        CM.ROLE_LABELS[playerRole] or playerRole,
+        pClass:sub(1,1) .. pClass:sub(2):lower()
+    ))
+
+    local myCore  = CM:GetMemberCore(playerKey)
+    local content = f.content
+    local W       = content:GetWidth()
+
+    -- Clear previous content (fontstrings/textures on content, child frames = buttons/inputs)
+    for _, c in ipairs({ content:GetChildren() }) do c:Hide() end
+    for _, r in pairs({ content:GetRegions() }) do r:Hide() end
+
+    -- Sort core names alphabetically
+    local coreNames = {}
+    for name in pairs(CM:GetAll()) do coreNames[#coreNames + 1] = name end
+    table.sort(coreNames)
+
+    if #coreNames == 0 then
+        local noL = content:CreateFontString(nil, "OVERLAY")
+        noL:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        noL:SetPoint("TOPLEFT", 8, -12)
+        noL:SetTextColor(0.45, 0.45, 0.45)
+        noL:SetText(L["No cores configured yet."])
+        content:SetHeight(40)
+        return
+    end
+
+    local y = 0
+
+    for _, coreName in ipairs(coreNames) do
+        local comp     = CM:GetComposition(coreName)
+        local signups  = CM:GetSignups(coreName) or {}
+        local roles    = comp.roleCounts or {}
+        local isMember = (myCore == coreName)
+        local isPending= (signups[playerKey] ~= nil)
+
+        -- ── Header ───────────────────────────────────────────
+        local hdrBg = content:CreateTexture(nil, "BACKGROUND")
+        hdrBg:SetTexture(WHITE8)
+        hdrBg:SetPoint("TOPLEFT", 0, y)
+        hdrBg:SetSize(W, 24)
+        hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.88)
+
+        local hdrLbl = content:CreateFontString(nil, "OVERLAY")
+        hdrLbl:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        hdrLbl:SetPoint("TOPLEFT", 8, y - 5)
+        hdrLbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        hdrLbl:SetText(coreName)
+
+        local cntLbl = content:CreateFontString(nil, "OVERLAY")
+        cntLbl:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        cntLbl:SetPoint("TOPRIGHT", -8, y - 6)
+        cntLbl:SetTextColor(0.5, 0.5, 0.5)
+        local sz = CM:GetRaidSize(coreName)
+        cntLbl:SetText(comp.total .. "/" .. sz .. " " .. L["members"])
+
+        local hdrLine = content:CreateTexture(nil, "ARTWORK")
+        hdrLine:SetTexture(WHITE8); hdrLine:SetHeight(1)
+        hdrLine:SetPoint("BOTTOMLEFT", 0, y - 23)
+        hdrLine:SetPoint("BOTTOMRIGHT", 0, y - 23)
+        hdrLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.25)
+        y = y - 24
+
+        -- ── Role coverage row ─────────────────────────────────
+        local rowBg = content:CreateTexture(nil, "BACKGROUND")
+        rowBg:SetTexture(WHITE8)
+        rowBg:SetPoint("TOPLEFT", 0, y)
+        rowBg:SetSize(W, 30)
+        rowBg:SetVertexColor(0.04, 0.04, 0.06, 1)
+
+        local raidSize = CM:GetRaidSize(coreName)
+        local T = CM.RAID_TARGETS[raidSize] or CM.RAID_TARGETS[25]
+        local ROLE_DEFS = {
+            { key="tank",   short="T", target=T.tank },
+            { key="healer", short="H", target=T.healer },
+            { key="mdps",   short="M", target=T.mdps },
+            { key="rdps",   short="R", target=T.rdps },
+        }
+        local rx = 8
+        for _, rd in ipairs(ROLE_DEFS) do
+            local cnt     = roles[rd.key] or 0
+            local rcol    = CM.ROLE_COLORS[rd.key] or { r=1, g=1, b=1 }
+            -- Highlight the player's role
+            local isMine  = (rd.key == playerRole)
+            local rlbl = content:CreateFontString(nil, "OVERLAY")
+            rlbl:SetFont("Fonts\\FRIZQT__.TTF", isMine and 12 or 10, "OUTLINE")
+            rlbl:SetPoint("TOPLEFT", rx, y - 8)
+            rlbl:SetTextColor(rcol.r, rcol.g, rcol.b)
+            rlbl:SetText(string.format("%s:%d/%d", rd.short, cnt, rd.target))
+            if isMine then
+                -- Underline the player's own role column
+                local ul = content:CreateTexture(nil, "ARTWORK")
+                ul:SetTexture(WHITE8); ul:SetHeight(1)
+                ul:SetPoint("TOPLEFT", rx, y - 21)
+                ul:SetWidth(44)
+                ul:SetVertexColor(rcol.r, rcol.g, rcol.b, 0.7)
+            end
+            rx = rx + 56
+        end
+
+        -- ── Note input + action button ────────────────────────
+        local NOTE_W, BTN_W = 110, 85
+        local noteInp = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+        noteInp:SetSize(NOTE_W, 20)
+        noteInp:SetPoint("TOPRIGHT", -(BTN_W + 10), y - 5)
+        noteInp:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
+        noteInp:SetBackdropColor(0.05, 0.05, 0.07, 1)
+        noteInp:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+        noteInp:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        noteInp:SetTextColor(C.white.r, C.white.g, C.white.b)
+        noteInp:SetTextInsets(4, 4, 0, 0)
+        noteInp:SetAutoFocus(false)
+        noteInp:SetMaxLetters(80)
+        noteInp:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        -- Placeholder
+        local ph = noteInp:CreateFontString(nil, "OVERLAY")
+        ph:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+        ph:SetPoint("LEFT", 4, 0)
+        ph:SetTextColor(0.35, 0.35, 0.35)
+        ph:SetText(L["Note (optional)"])
+        noteInp:SetScript("OnTextChanged", function(self)
+            if self:GetText() ~= "" then ph:Hide() else ph:Show() end
+        end)
+
+        local actBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        actBtn:SetSize(BTN_W, 20)
+        actBtn:SetPoint("TOPRIGHT", -4, y - 5)
+        actBtn:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
+        local actLbl = actBtn:CreateFontString(nil, "OVERLAY")
+        actLbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        actLbl:SetPoint("CENTER")
+
+        if isMember then
+            noteInp:Hide()
+            actBtn:SetBackdropColor(0.04, 0.22, 0.06, 0.9)
+            actBtn:SetBackdropBorderColor(0.2, 0.7, 0.3, 0.4)
+            actLbl:SetTextColor(0.25, 0.85, 0.35)
+            actLbl:SetText(L["In Roster"])
+        elseif isPending then
+            noteInp:Hide()
+            actBtn:SetBackdropColor(C.accent.r*0.18, C.accent.g*0.18, C.accent.b*0.18, 0.9)
+            actBtn:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.45)
+            actLbl:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
+            local pendTs   = signups[playerKey] and signups[playerKey].ts
+            local pendBase = pendTs and ("Pending " .. TimeAgo(pendTs)) or L["Pending"]
+            actLbl:SetText(pendBase .. "  ×")
+            local capCore = coreName
+            actBtn:SetScript("OnClick", function()
+                CM:DeclineSignup(playerKey, capCore)
+                if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
+                RefreshCoreSignupFrame()
+            end)
+            actBtn:SetScript("OnEnter", function(s)
+                s:SetBackdropColor(0.28, 0.04, 0.04, 0.9)
+                actLbl:SetText(L["Cancel signup"])
+            end)
+            actBtn:SetScript("OnLeave", function(s)
+                s:SetBackdropColor(C.accent.r*0.18, C.accent.g*0.18, C.accent.b*0.18, 0.9)
+                actLbl:SetText(pendBase .. "  ×")
+            end)
+        else
+            actBtn:SetBackdropColor(0.06, 0.06, 0.10, 0.9)
+            actBtn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.45)
+            actLbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            actLbl:SetText(L["Sign Up"])
+            local capCore = coreName
+            actBtn:SetScript("OnClick", function()
+                local note = strtrim(noteInp:GetText() or "")
+                CM:BroadcastSignup(capCore, note)
+                noteInp:SetText("")
+                if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
+                RefreshCoreSignupFrame()
+            end)
+            actBtn:SetScript("OnEnter", function(s)
+                s:SetBackdropColor(C.accent.r*0.22, C.accent.g*0.22, C.accent.b*0.22, 0.9)
+                s:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.65)
+            end)
+            actBtn:SetScript("OnLeave", function(s)
+                s:SetBackdropColor(0.06, 0.06, 0.10, 0.9)
+                s:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.45)
+            end)
+        end
+
+        y = y - 34   -- role row height + gap
+    end
+
+    content:SetHeight(math.abs(y) + 8)
+end
+
+local function BuildCoreSignupFrame()
+    local FRAME_W, FRAME_H = 420, 460
+
+    local f = CreateFrame("Frame", "GuildOSCoreSignupFrame", UIParent, "BackdropTemplate")
+    f:SetSize(FRAME_W, FRAME_H)
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(s) s:StartMoving() end)
+    f:SetScript("OnDragStop",  function(s) s:StopMovingOrSizing() end)
+    f:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=2 })
+    f:SetBackdropColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.97)
+    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.75)
+    f:Hide()
+    table.insert(UISpecialFrames, "GuildOSCoreSignupFrame")
+
+    -- Title bar
+    local tBg = f:CreateTexture(nil, "BACKGROUND")
+    tBg:SetTexture(WHITE8)
+    tBg:SetPoint("TOPLEFT", 2, -2)
+    tBg:SetPoint("TOPRIGHT", -2, -2)
+    tBg:SetHeight(28)
+    tBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.92)
+
+    local tLine = f:CreateTexture(nil, "ARTWORK")
+    tLine:SetTexture(WHITE8); tLine:SetHeight(1)
+    tLine:SetPoint("TOPLEFT", 2, -30)
+    tLine:SetPoint("TOPRIGHT", -2, -30)
+    tLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+
+    local tTitle = f:CreateFontString(nil, "OVERLAY")
+    tTitle:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    tTitle:SetPoint("TOPLEFT", 10, -7)
+    tTitle:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    tTitle:SetText(L["Core Sign-ups"])
+
+    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetSize(26, 26)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    -- Player role strip
+    local roleBg = f:CreateTexture(nil, "BACKGROUND")
+    roleBg:SetTexture(WHITE8)
+    roleBg:SetPoint("TOPLEFT", 2, -32)
+    roleBg:SetPoint("TOPRIGHT", -2, -32)
+    roleBg:SetHeight(22)
+    roleBg:SetVertexColor(0.05, 0.05, 0.08, 1)
+
+    f.playerRoleLbl = f:CreateFontString(nil, "OVERLAY")
+    f.playerRoleLbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    f.playerRoleLbl:SetPoint("TOPLEFT", 10, -37)
+    f.playerRoleLbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+
+    -- Scroll area for core list
+    local scroll = CreateFrame("ScrollFrame", "GuildOSCoreSignupScroll", f, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 2, -58)
+    scroll:SetPoint("BOTTOMRIGHT", -20, 6)
+    UI:SkinScrollBar(scroll, "GuildOSCoreSignupScroll")
+
+    -- Explicit width so child buttons render correctly (avoids GetWidth()=0 bug)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetWidth(FRAME_W - 26)   -- frame width minus scrollbar (18) and padding (8)
+    content:SetHeight(1)
+    scroll:SetScrollChild(content)
+
+    f.content = content
+    return f
+end
+
+function BRutus:ShowCoreSignupFrame()
+    if not _coreSignupFrame then
+        _coreSignupFrame = BuildCoreSignupFrame()
+    end
+    if _coreSignupFrame:IsShown() then
+        _coreSignupFrame:Hide()
+        return
+    end
+    -- Anchor next to the main window; fall back to screen center if unavailable
+    _coreSignupFrame:ClearAllPoints()
+    local main = _G["BRutusRosterFrame"]
+    if main and main:IsShown() then
+        _coreSignupFrame:SetPoint("TOPLEFT", main, "TOPRIGHT", 6, 0)
+    else
+        _coreSignupFrame:SetPoint("CENTER")
+    end
+    _coreSignupFrame:Show()
+    RefreshCoreSignupFrame()
+end
+
+----------------------------------------------------------------------
 -- RAID ATTENDANCE PANEL
 ----------------------------------------------------------------------
 function BRutus:CreateRaidsPanel(parent, _mainFrame)
@@ -564,14 +879,16 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     local countText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
     countText:SetPoint("TOPRIGHT", 0, -2)
 
-    -- View toggle: History | Equity
+    -- View toggle: History | Equity | SoftRes
     local histBtn = UI:CreateButton(scrollParent, L["History"], 90, 20)
     histBtn:SetPoint("TOPLEFT", 0, -24)
     local eqBtn = UI:CreateButton(scrollParent, L["Equity"], 90, 20)
     eqBtn:SetPoint("LEFT", histBtn, "RIGHT", 6, 0)
+    local srBtn = UI:CreateButton(scrollParent, L["Soft Res"], 90, 20)
+    srBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
 
     local exportBtn = UI:CreateButton(scrollParent, L["Export"], 90, 20)
-    exportBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    exportBtn:SetPoint("LEFT", srBtn, "RIGHT", 6, 0)
     exportBtn:SetScript("OnClick", function()
         BRutus:ShowExportPopup(L["Loot Export"], BRutus:ExportLoot())
     end)
@@ -649,23 +966,149 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     eqScroll:SetScrollChild(eqContent)
 
     ----------------------------------------------------------------
+    -- SoftRes view
+    ----------------------------------------------------------------
+    local srView = CreateFrame("Frame", nil, scrollParent)
+    srView:SetPoint("TOPLEFT", 0, -VIEW_TOP)
+    srView:SetPoint("BOTTOMRIGHT", 0, 0)
+    srView:Hide()
+
+    -- Action bar: Import + Clear
+    local srImportBtn = UI:CreateButton(srView, L["Import from softres.it"], 160, 22)
+    srImportBtn:SetPoint("TOPLEFT", 0, 0)
+    local srClearBtn = UI:CreateButton(srView, L["Clear"], 70, 22)
+    srClearBtn:SetPoint("LEFT", srImportBtn, "RIGHT", 6, 0)
+
+    local srActionTop = 28  -- pixels used by the action bar
+
+    -- Column header
+    local srColHeader = CreateFrame("Frame", nil, srView)
+    srColHeader:SetPoint("TOPLEFT", 0, -srActionTop)
+    srColHeader:SetPoint("TOPRIGHT", 0, -srActionTop)
+    srColHeader:SetHeight(20)
+    local srHItem  = UI:CreateHeaderText(srColHeader, L["ITEM"],       10); srHItem:SetPoint("LEFT",  6,   0)
+    local srHRes   = UI:CreateHeaderText(srColHeader, L["RESERVED BY"],10); srHRes:SetPoint("LEFT",  300, 0)
+    local srHRaid  = UI:CreateHeaderText(srColHeader, L["IN RAID"],    10); srHRaid:SetPoint("LEFT", 550, 0)
+
+    local srSep = UI:CreateSeparator(srView)
+    srSep:SetPoint("TOPLEFT",  0, -(srActionTop + 20))
+    srSep:SetPoint("TOPRIGHT", 0, -(srActionTop + 20))
+
+    local srScroll = CreateFrame("ScrollFrame", "BRutusSoftResScroll", srView, "UIPanelScrollFrameTemplate")
+    srScroll:SetPoint("TOPLEFT",  0, -(srActionTop + 22))
+    srScroll:SetPoint("BOTTOMRIGHT", -10, 0)
+    UI:SkinScrollBar(srScroll, "BRutusSoftResScroll")
+
+    local srContent = CreateFrame("Frame", nil, srScroll)
+    srContent:SetSize(800, 1)
+    srScroll:SetScrollChild(srContent)
+
+    local function refreshSR()
+        for _, child in pairs({ srContent:GetChildren() }) do child:Hide() end
+        if not BRutus.SoftRes then return end
+
+        local items = BRutus.SoftRes:GetAllItems()
+        countText:SetText(#items .. " " .. L["items"])
+
+        local yOff = 0
+        for idx, entry in ipairs(items) do
+            local itemId  = entry.itemId
+            local row = CreateFrame("Frame", nil, srContent, "BackdropTemplate")
+            row:SetPoint("TOPLEFT",  0,    -yOff)
+            row:SetPoint("TOPRIGHT", -4,   -yOff)
+            row:SetHeight(22)
+            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            local bg = (idx % 2 == 0) and C.row1 or C.row2
+            row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a or 0.4)
+
+            -- Item name / link
+            local itemName, _, _, _, _, _, _, _, _, itemTexture = GetItemInfo(itemId)
+            local itemText = UI:CreateText(row, itemName or ("Item #" .. itemId), 11,
+                C.white.r, C.white.g, C.white.b)
+            itemText:SetPoint("LEFT", 6, 0)
+            itemText:SetWidth(290)
+
+            if itemTexture then
+                local icon = row:CreateTexture(nil, "ARTWORK")
+                icon:SetSize(16, 16)
+                icon:SetPoint("LEFT", 6, 0)
+                icon:SetTexture(itemTexture)
+                itemText:SetPoint("LEFT", 26, 0)
+                itemText:SetWidth(274)
+            end
+
+            -- Reservers list
+            local reserves = BRutus.SoftRes:GetReservesForDisplay(itemId)
+            local inRaidCount, names = 0, {}
+            for _, r in ipairs(reserves) do
+                if r.inRaid then inRaidCount = inRaidCount + 1 end
+                names[#names+1] = r.name
+            end
+            local nameStr = table.concat(names, ", ")
+            if #nameStr > 40 then nameStr = nameStr:sub(1, 37) .. "..." end
+
+            local resText = UI:CreateText(row, nameStr, 11, C.silver.r, C.silver.g, C.silver.b)
+            resText:SetPoint("LEFT", 300, 0)
+            resText:SetWidth(245)
+
+            -- In-raid count
+            local raidColor = inRaidCount > 0 and C.green or C.silver
+            local raidStr   = inRaidCount > 0
+                and (inRaidCount .. "/" .. #reserves .. " " .. L["in raid"])
+                or  "–"
+            local raidText = UI:CreateText(row, raidStr, 11,
+                raidColor.r or 0.5, raidColor.g or 0.5, raidColor.b or 0.5)
+            raidText:SetPoint("LEFT", 550, 0)
+
+            yOff = yOff + 22
+        end
+        srContent:SetHeight(math.max(yOff, 1))
+    end
+
+    -- Register the refresh callback so SoftResSystem can trigger it after import
+    BRutus.softResRefresh = refreshSR
+
+    srImportBtn:SetScript("OnClick", function()
+        BRutus:ShowSoftResImportPopup()
+    end)
+    srClearBtn:SetScript("OnClick", function()
+        if BRutus.SoftRes then BRutus.SoftRes:Clear() end
+        refreshSR()
+    end)
+
+    ----------------------------------------------------------------
     -- Toggle logic
     ----------------------------------------------------------------
     local function showView(which)
-        local hist = (which == "history")
-        historyView:SetShown(hist)
-        equityView:SetShown(not hist)
-        title:SetText(hist and L["Loot History"] or L["Loot Equity"])
-        histBtn:SetBaseColor(hist and C.accent.r * 0.32 or C.bg2.r, hist and C.accent.g * 0.32 or C.bg2.g, hist and C.accent.b * 0.32 or C.bg2.b, 0.92)
-        eqBtn:SetBaseColor(not hist and C.accent.r * 0.32 or C.bg2.r, not hist and C.accent.g * 0.32 or C.bg2.g, not hist and C.accent.b * 0.32 or C.bg2.b, 0.92)
-        if hist then
+        historyView:SetShown(which == "history")
+        equityView:SetShown(which == "equity")
+        srView:SetShown(which == "softres")
+
+        local titles = { history = L["Loot History"], equity = L["Loot Equity"], softres = L["Soft Reserves"] }
+        title:SetText(titles[which] or L["Loot History"])
+
+        local function btnColor(btn, active)
+            if active then
+                btn:SetBaseColor(C.accent.r * 0.32, C.accent.g * 0.32, C.accent.b * 0.32, 0.92)
+            else
+                btn:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
+            end
+        end
+        btnColor(histBtn, which == "history")
+        btnColor(eqBtn,   which == "equity")
+        btnColor(srBtn,   which == "softres")
+
+        if which == "history" then
             BRutus:RefreshLootPanel(lootContent, countText)
-        else
+        elseif which == "equity" then
             BRutus:RefreshLootEquity(eqContent, countText)
+        else
+            refreshSR()
         end
     end
     histBtn:SetScript("OnClick", function() showView("history") end)
-    eqBtn:SetScript("OnClick", function() showView("equity") end)
+    eqBtn:SetScript("OnClick",   function() showView("equity")  end)
+    srBtn:SetScript("OnClick",   function() showView("softres") end)
 
     parent:SetScript("OnShow", function()
         showView("history")
@@ -1208,6 +1651,78 @@ function BRutus:ShowExportPopup(titleStr, text)
 end
 
 ----------------------------------------------------------------------
+-- SoftRes import popup: paste Gargul export string or CSV
+----------------------------------------------------------------------
+function BRutus:ShowSoftResImportPopup()
+    if self.srImportPopup then self.srImportPopup:Hide() end
+
+    local f = CreateFrame("Frame", "BRutusSRImportPopup", UIParent, "BackdropTemplate")
+    f:SetSize(520, 360)
+    f:SetPoint("CENTER")
+    f:SetBackdrop({
+        bgFile   = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
+
+    local titleText = f:CreateFontString(nil, "OVERLAY")
+    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    titleText:SetPoint("TOP", 0, -10)
+    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetText(L["Import SoftRes from softres.it"])
+
+    local hint = f:CreateFontString(nil, "OVERLAY")
+    hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    hint:SetPoint("TOP", 0, -28)
+    hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    hint:SetText(L["Paste the Gargul export string (or CSV) from softres.it, then click Import."])
+
+    local scrollFrame = CreateFrame("ScrollFrame", "BRutusSRImportScroll", f, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 12, -50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -12, 44)
+    UI:SkinScrollBar(scrollFrame, "BRutusSRImportScroll")
+
+    local editBox = CreateFrame("EditBox", nil, scrollFrame)
+    editBox:SetMultiLine(true)
+    editBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
+    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    editBox:SetAutoFocus(true)
+    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    scrollFrame:SetScrollChild(editBox)
+
+    local closeBtn = UI:CreateCloseButton(f)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    local importBtn = UI:CreateButton(f, L["Import"], 100, 26)
+    importBtn:SetPoint("BOTTOMRIGHT", -12, 10)
+    importBtn:SetScript("OnClick", function()
+        local raw = editBox:GetText()
+        if BRutus.SoftRes then
+            BRutus.SoftRes:Import(raw)
+        end
+        f:Hide()
+    end)
+
+    local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 26)
+    cancelBtn:SetPoint("RIGHT", importBtn, "LEFT", -6, 0)
+    cancelBtn:SetScript("OnClick", function() f:Hide() end)
+
+    f:Show()
+    self.srImportPopup = f
+end
+
+----------------------------------------------------------------------
 -- SETTINGS PANEL
 ----------------------------------------------------------------------
 function BRutus:CreateSettingsPanel(parent, _mainFrame)
@@ -1482,8 +1997,8 @@ function BRutus:RefreshSettingsPanel(content, category)
     yOff = yOff + 34
 
     -- DKP/Points configuration appears when the DKP system is selected
-    if curSys == "dkp" and BRutus.Points and BRutus.db.points then
-        local pcfg = BRutus.db.points.config
+    if curSys == "dkp" and BRutus.Points then
+        local pcfg = BRutus.Points:GetDB().config
         local function numRow(labelText, key, hint)
             local lbl = UI:CreateText(content, labelText, 11, C.white.r, C.white.g, C.white.b)
             lbl:SetPoint("TOPLEFT", 16, -yOff)
@@ -1579,16 +2094,20 @@ function BRutus:RefreshSettingsPanel(content, category)
     durBox:SetNumeric(true)
     durBox:SetMaxLetters(3)
     durBox:SetAutoFocus(false)
-    durBox:SetText(tostring(BRutus.db.lootMaster.rollDuration or 30))
+    local _lmCfg = BRutus.LootMaster and BRutus.LootMaster:GetCfg() or (BRutus.db.lootMaster or {})
+    durBox:SetText(tostring(_lmCfg.rollDuration or 30))
     local function commitDur(box)
         local val = tonumber(box:GetText())
         if val and val >= 5 and val <= 120 then
-            BRutus.db.lootMaster.rollDuration = val
-            if BRutus.LootMaster then BRutus.LootMaster.ROLL_DURATION = val end
+            if BRutus.LootMaster then
+                BRutus.LootMaster:SaveCfgKey("rollDuration", val)
+                BRutus.LootMaster.ROLL_DURATION = val
+            end
             BRutus:Print(L["Roll duration set to "] .. val .. "s")
         else
             BRutus:Print(L["Duration must be between 5 and 120 seconds."])
-            box:SetText(tostring(BRutus.db.lootMaster.rollDuration or 30))
+            local cur = BRutus.LootMaster and BRutus.LootMaster:GetCfg() or (BRutus.db.lootMaster or {})
+            box:SetText(tostring(cur.rollDuration or 30))
         end
     end
     durBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -1598,20 +2117,24 @@ function BRutus:RefreshSettingsPanel(content, category)
     -- Auto announce
     local autoAnn = UI:CreateCheckbox(content, L["Auto-announce loot when ML opens loot window"], 18)
     autoAnn:SetPoint("TOPLEFT", 8, -yOff)
-    autoAnn.checkbox:SetChecked(BRutus.db.lootMaster.autoAnnounce ~= false)
+    autoAnn.checkbox:SetChecked(_lmCfg.autoAnnounce ~= false)
     autoAnn.checkbox.onChanged = function(_, checked)
-        BRutus.db.lootMaster.autoAnnounce = checked
-        if BRutus.LootMaster then BRutus.LootMaster.AUTO_ANNOUNCE = checked end
+        if BRutus.LootMaster then
+            BRutus.LootMaster:SaveCfgKey("autoAnnounce", checked)
+            BRutus.LootMaster.AUTO_ANNOUNCE = checked
+        end
     end
     yOff = yOff + 28
 
     -- Wishlist auto-council
     local tmbCouncil = UI:CreateCheckbox(content, L["Wishlist Auto-Council (check wishlist before rolling)"], 18)
     tmbCouncil:SetPoint("TOPLEFT", 8, -yOff)
-    tmbCouncil.checkbox:SetChecked(BRutus.db.lootMaster.wishlistOnlyMode or false)
+    tmbCouncil.checkbox:SetChecked(_lmCfg.wishlistOnlyMode or false)
     tmbCouncil.checkbox.onChanged = function(_, checked)
-        BRutus.db.lootMaster.wishlistOnlyMode = checked
-        if BRutus.LootMaster then BRutus.LootMaster.WISHLIST_ONLY_MODE = checked end
+        if BRutus.LootMaster then
+            BRutus.LootMaster:SaveCfgKey("wishlistOnlyMode", checked)
+            BRutus.LootMaster.WISHLIST_ONLY_MODE = checked
+        end
     end
     yOff = yOff + 28
 
@@ -1642,10 +2165,10 @@ function BRutus:RefreshSettingsPanel(content, category)
     minAttBox:SetNumeric(true)
     minAttBox:SetMaxLetters(3)
     minAttBox:SetAutoFocus(false)
-    minAttBox:SetText(tostring(BRutus.db.lootMaster.minAttendancePct or 0))
+    minAttBox:SetText(tostring(_lmCfg.minAttendancePct or 0))
     local function commitMinAtt(box)
         local val = math.max(0, math.min(100, tonumber(box:GetText()) or 0))
-        BRutus.db.lootMaster.minAttendancePct = val
+        if BRutus.LootMaster then BRutus.LootMaster:SaveCfgKey("minAttendancePct", val) end
         BRutus:Print(L["Min. MS attendance set to "] .. val .. "%" .. (val == 0 and L[" (disabled)"] or ""))
     end
     minAttBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -1659,20 +2182,18 @@ function BRutus:RefreshSettingsPanel(content, category)
     -- Attendance as roll tiebreaker
     local attTie = UI:CreateCheckbox(content, L["Use 25-man Attendance as Roll Tiebreaker"], 18)
     attTie:SetPoint("TOPLEFT", 8, -yOff)
-    attTie.checkbox:SetChecked(BRutus.db.lootMaster.attTiebreaker ~= false)
+    attTie.checkbox:SetChecked(_lmCfg.attTiebreaker ~= false)
     attTie.checkbox.onChanged = function(_, checked)
-        BRutus.db.lootMaster.attTiebreaker = checked
-        if BRutus.LootMaster then BRutus.LootMaster.ATT_TIEBREAKER = checked end
+        if BRutus.LootMaster then BRutus.LootMaster:SaveCfgKey("attTiebreaker", checked) end
     end
     yOff = yOff + 28
 
     -- Penalize recent receivers
     local recvPen = UI:CreateCheckbox(content, L["Penalize Players Who Received Items This Lockout"], 18)
     recvPen:SetPoint("TOPLEFT", 8, -yOff)
-    recvPen.checkbox:SetChecked(BRutus.db.lootMaster.recvPenalty ~= false)
+    recvPen.checkbox:SetChecked(_lmCfg.recvPenalty ~= false)
     recvPen.checkbox.onChanged = function(_, checked)
-        BRutus.db.lootMaster.recvPenalty = checked
-        if BRutus.LootMaster then BRutus.LootMaster.RECV_PENALTY = checked end
+        if BRutus.LootMaster then BRutus.LootMaster:SaveCfgKey("recvPenalty", checked) end
     end
     yOff = yOff + 28
 
