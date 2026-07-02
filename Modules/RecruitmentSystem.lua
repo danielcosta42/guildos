@@ -301,11 +301,7 @@ function Recruitment:ShowSendPopup()
 
     self:CreatePopupFrame()
 
-    local channels = isOfficer
-        and BRutus.db.recruitment.channels
-        or  (BRutus.db.guildRecruitment and BRutus.db.guildRecruitment.channels or {})
-    local chText = table.concat(channels, ", ")
-    self.popupFrame.label:SetText(L["Click to recruit!  >>  "] .. chText)
+    self.popupFrame.label:SetText(L["Click to recruit!"])
     self.popupFrame:Show()
 
     -- Auto-hide after 30s if not clicked
