@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.3] - 2026-07-02
+
+### Fixed
+- reliable first-open + periodic member-data sync
+
+
 ## [0.11.2] - 2026-07-02
 
 ### Fixed
