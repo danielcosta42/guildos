@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.0] - 2026-07-02
+
+### Added
+- drop General and LocalDefense channel toggles
+
+
 ## [0.12.0] - 2026-07-02
 
 ### Added
