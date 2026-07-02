@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - 2026-07-02
+
+### Added
+- multi-select channel toggles in officer panel
+
+
 ## [0.10.1] - 2026-07-02
 
 ### Changed
