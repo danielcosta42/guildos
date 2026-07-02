@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0] - 2026-07-02
+
+### Added
+- all members can spam recruitment messages
+
+
 ## [0.9.0] - 2026-07-02
 
 ### Added
