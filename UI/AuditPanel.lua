@@ -305,10 +305,21 @@ local function BuildSyncSub(panel)
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -6)
 
+    local refresh  -- forward declaration so the Sync button can refresh post-sync
+
     local exportBtn = UI:CreateButton(panel, L["Export Roster"], 110, 20)
     exportBtn:SetPoint("TOPRIGHT", -12, -2)
     exportBtn:SetScript("OnClick", function()
         BRutus:ShowExportPopup(L["Roster Export"], BRutus:ExportRoster())
+    end)
+
+    -- Manual sync: broadcast our data + re-request everyone's, then refresh the
+    -- list once responses have had a moment to arrive.
+    local syncBtn = UI:CreateButton(panel, L["Sync now"], 90, 20)
+    syncBtn:SetPoint("TOPRIGHT", exportBtn, "TOPLEFT", -6, 0)
+    syncBtn:SetScript("OnClick", function()
+        if BRutus.CommSystem then BRutus.CommSystem:FullSync() end
+        C_Timer.After(2.5, function() if refresh then refresh() end end)
     end)
 
     local listHolder = CreateFrame("Frame", nil, panel)
@@ -316,7 +327,7 @@ local function BuildSyncSub(panel)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSAuditSyncScroll")
 
-    return function()
+    refresh = function()
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
@@ -355,6 +366,8 @@ local function BuildSyncSub(panel)
         end
         content:SetHeight(math.max(1, yOff))
     end
+
+    return refresh
 end
 
 ----------------------------------------------------------------------

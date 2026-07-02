@@ -12,6 +12,14 @@ function DataCollector:Initialize()
     frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     frame:RegisterEvent("SKILL_LINES_CHANGED")
     frame:RegisterEvent("CHAT_MSG_SKILL")
+    -- Cache/talent readiness events: on a cold first login the item cache and
+    -- talents may not be loaded when we first collect, producing a snapshot with
+    -- avgIlvl=0 / no spec. These let us correct and re-broadcast the moment the
+    -- data becomes available, instead of leaving peers with a partial snapshot
+    -- until the next 5-minute tick. (pcall: not all client flavors expose them.)
+    pcall(function() frame:RegisterEvent("GET_ITEM_INFO_RECEIVED") end)
+    pcall(function() frame:RegisterEvent("PLAYER_TALENT_UPDATE") end)
+    pcall(function() frame:RegisterEvent("CHARACTER_POINTS_CHANGED") end)
     frame:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
             C_Timer.After(0.5, function()
@@ -25,6 +33,27 @@ function DataCollector:Initialize()
             end)
         elseif event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SKILL" then
             C_Timer.After(1, function() DataCollector:CollectProfessions() end)
+        elseif event == "GET_ITEM_INFO_RECEIVED" or event == "PLAYER_TALENT_UPDATE"
+            or event == "CHARACTER_POINTS_CHANGED" then
+            -- Only react while a prior snapshot was known-incomplete (these events,
+            -- GET_ITEM_INFO_RECEIVED especially, fire very frequently). Debounce so
+            -- a burst of cache-fills collapses into a single refresh, and cap the
+            -- attempts so an item that never resolves can't cause endless churn
+            -- (the 300s ticker remains a fallback).
+            if not DataCollector._snapshotIncomplete then return end
+            if DataCollector._refreshPending then return end
+            if (DataCollector._refreshAttempts or 0) >= 8 then return end
+            DataCollector._refreshPending = true
+            DataCollector._refreshAttempts = (DataCollector._refreshAttempts or 0) + 1
+            C_Timer.After(1, function()
+                DataCollector._refreshPending = false
+                DataCollector:CollectMyData()
+                -- If the snapshot is now complete, push the corrected data
+                -- (force past the throttle so it isn't swallowed).
+                if not DataCollector._snapshotIncomplete and BRutus.CommSystem then
+                    BRutus.CommSystem:BroadcastMyData(true)
+                end
+            end)
         end
     end)
 end
@@ -50,7 +79,8 @@ function DataCollector:CollectMyData()
     data.lastUpdate = time()
 
     -- Collect gear
-    data.gear = self:CollectGear()
+    local gear, gearIncomplete = self:CollectGear()
+    data.gear = gear
     data.avgIlvl = self:CalculateAvgIlvl(data.gear)
 
     -- Collect professions
@@ -60,13 +90,19 @@ function DataCollector:CollectMyData()
     data.stats = self:CollectStats()
 
     -- Collect own spec (requires talents to be loaded)
+    local specMissing = false
     if BRutus.SpecChecker then
         local spec = BRutus.SpecChecker:CollectOwnSpec()
-        if spec then data.spec = spec end
+        if spec then data.spec = spec else specMissing = true end
     end
 
     BRutus.db.members[key] = data
     BRutus.db.myData = data
+
+    -- Flag a partial first-open snapshot (cold item cache / talents not loaded)
+    -- so the cache/talent readiness events can re-collect + re-broadcast once
+    -- the data resolves, rather than leaving peers with 0-ilvl / spec-less data.
+    self._snapshotIncomplete = gearIncomplete or specMissing
 
     return data
 end
@@ -74,8 +110,12 @@ end
 ----------------------------------------------------------------------
 -- Collect equipped gear
 ----------------------------------------------------------------------
+-- Returns (gear, incomplete). `incomplete` is true when an equipped slot has a
+-- link but GetItemInfo has not resolved it yet (cold item cache) — the caller
+-- uses this to schedule a corrective re-collect once the cache fills.
 function DataCollector:CollectGear()
     local gear = {}
+    local incomplete = false
 
     for _, slotInfo in ipairs(BRutus.SlotIDs) do
         local slotId = slotInfo.id
@@ -83,6 +123,9 @@ function DataCollector:CollectGear()
 
         if itemLink then
             local itemName, _, itemQuality, itemLevel, _, _, _, _, _, _ = GetItemInfo(itemLink)
+            if not itemName or not itemLevel or itemLevel == 0 then
+                incomplete = true  -- item not in cache yet; name/ilvl unresolved
+            end
             local itemId = tonumber(itemLink:match("item:(%d+)"))
 
             -- Parse enchant and gems from the item link
@@ -103,7 +146,7 @@ function DataCollector:CollectGear()
         end
     end
 
-    return gear
+    return gear, incomplete
 end
 
 ----------------------------------------------------------------------

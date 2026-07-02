@@ -338,20 +338,15 @@ function BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)
     -- we don't want to re-collect, re-broadcast, or re-check professions then.
     if not isInitialLogin and not isReloadingUi then return end
 
-    -- Collect own data after a short delay
+    -- Collect own data after a short delay. This feeds the profession-freshness
+    -- check and the officer wishlist broadcast. The member-data NETWORK broadcast
+    -- is owned by CommSystem:Initialize (which runs after the guild DB resolves,
+    -- so it fires reliably even on a cold login) — do NOT broadcast here too, or
+    -- a /reload would double-send.
     C_Timer.After(3, function()
         if BRutus.DataCollector then
             BRutus.DataCollector:CollectMyData()
         end
-        if BRutus.AttunementTracker then
-            BRutus.AttunementTracker:ScanAttunements()
-        end
-        -- Broadcast our data to guildies
-        C_Timer.After(2, function()
-            if BRutus.CommSystem then
-                BRutus.CommSystem:BroadcastMyData()
-            end
-        end)
         -- Broadcast our wishlist so guildies can see our priorities (officer-only while in testing)
         if BRutus:IsOfficer() then
             C_Timer.After(5, function()

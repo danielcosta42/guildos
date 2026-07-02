@@ -42,7 +42,7 @@ function CommSystem:Initialize()
         end
     end)
 
-    -- Periodic sync timer (every 5 minutes)
+    -- Periodic sync timer (every 5 minutes): PUSH our own data.
     C_Timer.NewTicker(300, function()
         if IsInGuild() then
             CommSystem:BroadcastMyData()
@@ -61,10 +61,42 @@ function CommSystem:Initialize()
         end
     end)
 
-    -- Request data from online guildies after init
-    C_Timer.After(8, function()
-        CommSystem:RequestAllData()
+    -- Periodic re-REQUEST (self-healing PULL) on a slower, jittered cadence.
+    -- The 300s ticker above only broadcasts our own data; without this a client
+    -- that missed a peer's one broadcast would never re-pull it within the
+    -- session. Kept on a separate 10-min timer; the 0-15s jitter spreads the
+    -- guild-wide REQUEST fan-out across clients (each peer's response is itself
+    -- throttled to once per THROTTLE_INTERVAL, so this cannot storm the channel).
+    C_Timer.NewTicker(600, function()
+        if IsInGuild() then
+            C_Timer.After(math.random() * 15, function()
+                if IsInGuild() then CommSystem:RequestAllData() end
+            end)
+        end
     end)
+
+    -- Reliable startup sync (first-open PUSH). Initialize() only runs AFTER the
+    -- guild DB is resolved (via InitModules), so this fires even on a COLD login
+    -- where OnEnterWorld bailed out before self.db existed. This is what makes a
+    -- freshly-installed member's data reach the guild promptly instead of waiting
+    -- up to 5 minutes for the first periodic tick.
+    C_Timer.After(3, function()
+        if not IsInGuild() then return end
+        if BRutus.DataCollector then BRutus.DataCollector:CollectMyData() end
+        if BRutus.AttunementTracker then BRutus.AttunementTracker:ScanAttunements() end
+        C_Timer.After(2, function()
+            if IsInGuild() then CommSystem:BroadcastMyData() end
+        end)
+    end)
+
+    -- First-open PULL: a small staggered burst (not a single shot) so a newly
+    -- installed member reliably pulls existing members' data even if the first
+    -- request is dropped or peers are still loading when it goes out.
+    for _, delay in ipairs({ 8, 25, 60 }) do
+        C_Timer.After(delay, function()
+            if IsInGuild() then CommSystem:RequestAllData() end
+        end)
+    end
 end
 
 -- Chunking settings
@@ -271,12 +303,15 @@ end
 ----------------------------------------------------------------------
 -- Broadcast own data
 ----------------------------------------------------------------------
-function CommSystem:BroadcastMyData()
+-- force=true bypasses the throttle (used for corrective re-broadcasts once a
+-- cold-cache snapshot finally resolves, which would otherwise be swallowed by
+-- the 5s window right after the startup broadcast).
+function CommSystem:BroadcastMyData(force)
     if not IsInGuild() then return end
 
     -- Throttle
     local now = GetTime()
-    if now - self.lastBroadcast < self.THROTTLE_INTERVAL then return end
+    if not force and now - self.lastBroadcast < self.THROTTLE_INTERVAL then return end
     self.lastBroadcast = now
 
     -- Collect fresh data
