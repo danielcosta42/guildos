@@ -23,7 +23,6 @@ Recruitment.DEFAULT_SETTINGS = {
     welcomeEnabled = true,
     welcomeMessage = "",      -- auto-filled on init
     discord = "",
-    classNeeds = {},          -- [className] = number of spots wanted (0 = not recruiting that class)
 }
 
 Recruitment.ticker       = nil   -- officer auto-send ticker
@@ -164,7 +163,6 @@ function Recruitment:BroadcastStatus()
     local r = BRutus.db.recruitment
     local payload = LibStub("LibSerialize"):Serialize({
         enabled    = r.enabled,
-        classNeeds = r.classNeeds or {},
         discord    = r.discord or "",
         message    = r.message or "",
         channels   = r.channels or {},

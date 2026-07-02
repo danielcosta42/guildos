@@ -244,7 +244,6 @@ function CommSystem:OnMessageReceived(msg, _, sender)
             if ok and type(info) == "table" then
                 BRutus.db.guildRecruitment = {
                     enabled    = info.enabled,
-                    classNeeds = info.classNeeds or {},
                     discord    = info.discord or "",
                     message    = info.message or "",
                     channels   = info.channels or {},
