@@ -2751,7 +2751,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Channels (multi-select toggles)
     RowLabel(L["Channels:"], yOff)
-    local CHAN_LIST = { "Trade", "LookingForGroup", "General", "LocalDefense", "GuildRecruitment" }
+    local CHAN_LIST = { "Trade", "LookingForGroup", "GuildRecruitment" }
     local CHAN_PER_ROW = 4
     local chanBtns = {}
     local function refreshChanBtns()
