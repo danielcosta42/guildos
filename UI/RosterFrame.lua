@@ -479,7 +479,7 @@ function BRutus.CreateRosterFrame()
     -- DKP tab only when the guild's loot system is DKP/Points.
     CreateTab("dkp", L["DKP"], false, function() return BRutus:LootSystemShowsDKP() end)
     CreateTab("trials", L["Trials"], true)
-    CreateTab("recruitment", L["Recruitment"], true)
+    CreateTab("recruitment", L["Recruitment"], false)
     CreateTab("management", L["Leadership"], true)
     CreateTab("settings", L["Settings"], false)
 
@@ -2550,6 +2550,118 @@ end
 -- Recruitment Panel UI
 ----------------------------------------------------------------------
 function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
+    ----------------------------------------------------------------
+    -- Member view (non-officer): read-only recruitment status
+    ----------------------------------------------------------------
+    if not BRutus:IsOfficer() then
+        local CLASSES = BRutus.Recruitment and BRutus.Recruitment.CLASSES or
+            { "WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","MAGE","WARLOCK","DRUID" }
+
+        -- Status badge
+        local statusLabel = UI:CreateTitle(parent, "", 15)
+        statusLabel:SetPoint("TOPLEFT", 20, -15)
+
+        local updatedLabel = UI:CreateText(parent, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        updatedLabel:SetPoint("TOPLEFT", 20, -36)
+
+        -- Class needs section header
+        local needsHeader = UI:CreateText(parent, L["Class Needs:"], 12, C.gold.r, C.gold.g, C.gold.b)
+        needsHeader:SetPoint("TOPLEFT", 20, -60)
+        local needsSep = UI:CreateSeparator(parent)
+        needsSep:SetPoint("TOPLEFT", 20, -76); needsSep:SetPoint("TOPRIGHT", -20, -76)
+
+        -- Per-class grid (3 columns)
+        local CLASS_DISPLAY = {
+            WARRIOR="Warrior", PALADIN="Paladin", HUNTER="Hunter", ROGUE="Rogue",
+            PRIEST="Priest",   SHAMAN="Shaman",   MAGE="Mage",    WARLOCK="Warlock",
+            DRUID="Druid",
+        }
+        local colW = 220
+        local classLabels = {}
+        for i, cls in ipairs(CLASSES) do
+            local col = (i-1) % 3
+            local row = math.floor((i-1) / 3)
+            local xBase = 20 + col * colW
+            local yBase = -82 - row * 26
+            local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[cls] or { r=0.7,g=0.7,b=0.7 }
+
+            local nameText = UI:CreateText(parent, CLASS_DISPLAY[cls], 11, cc.r, cc.g, cc.b)
+            nameText:SetPoint("TOPLEFT", xBase, yBase)
+            nameText:SetWidth(80)
+
+            local countText = UI:CreateText(parent, "0", 12, C.white.r, C.white.g, C.white.b)
+            countText:SetPoint("LEFT", nameText, "RIGHT", 4, 0)
+            classLabels[cls] = { name = nameText, count = countText }
+        end
+
+        local classGridBottom = -82 - math.ceil(#CLASSES / 3) * 26 - 8
+
+        -- Discord
+        local discordHeader = UI:CreateText(parent, L["Discord:"], 11, C.silver.r, C.silver.g, C.silver.b)
+        discordHeader:SetPoint("TOPLEFT", 20, classGridBottom)
+        local discordText = UI:CreateText(parent, "—", 11, C.accent.r, C.accent.g, C.accent.b)
+        discordText:SetPoint("LEFT", discordHeader, "RIGHT", 8, 0)
+        discordText:SetWidth(400)
+
+        -- Recruitment message
+        local msgText = UI:CreateText(parent, "", 11, C.silver.r, C.silver.g, C.silver.b)
+        msgText:SetPoint("TOPLEFT", 20, classGridBottom - 24)
+        msgText:SetWidth(700)
+
+        -- Refresh function — reads from guildRecruitment (synced) or officer's own DB
+        local function refresh()
+            local info = BRutus.db.guildRecruitment
+            -- Officers can also see their own configured data before any broadcast
+            if not info and BRutus:IsOfficer() then
+                info = BRutus.db.recruitment
+            end
+
+            if not info or info.enabled == nil then
+                statusLabel:SetText("|cff888888" .. L["No recruitment data received yet."] .. "|r")
+                updatedLabel:SetText("")
+                discordText:SetText("—")
+                msgText:SetText("")
+                for _, pair in pairs(classLabels) do
+                    pair.count:SetText("—")
+                    pair.name:SetTextColor(0.4, 0.4, 0.4)
+                end
+                return
+            end
+
+            if info.enabled then
+                statusLabel:SetText("|cff4CFF4C● " .. L["Guild is actively recruiting!"] .. "|r")
+            else
+                statusLabel:SetText("|cffFF6644● " .. L["Not currently recruiting"] .. "|r")
+            end
+
+            if info.updatedBy then
+                updatedLabel:SetText(string.format(L["Last updated by %s"], info.updatedBy))
+            else
+                updatedLabel:SetText("")
+            end
+
+            local needs = info.classNeeds or {}
+            for cls, pair in pairs(classLabels) do
+                local n = needs[cls] or 0
+                local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[cls] or { r=0.7,g=0.7,b=0.7 }
+                if n > 0 then
+                    pair.name:SetTextColor(cc.r, cc.g, cc.b)
+                    pair.count:SetText("|cff4CFF4C" .. n .. "|r")
+                else
+                    pair.name:SetTextColor(0.35, 0.35, 0.35)
+                    pair.count:SetText("|cff444444" .. n .. "|r")
+                end
+            end
+
+            discordText:SetText(info.discord ~= "" and info.discord or "—")
+            msgText:SetText(info.message or "")
+        end
+
+        BRutus.recruitmentPanelRefresh = refresh
+        parent:SetScript("OnShow", refresh)
+        return
+    end
+
     local yOff = -15
 
     -- Helper to create a labeled section
@@ -2678,6 +2790,64 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = yOff - 68
 
     ----------------------------------------------------------------
+    -- Class Needs Section (officer config: how many of each class)
+    ----------------------------------------------------------------
+    yOff = SectionHeader(L["Class Needs"], yOff)
+
+    local CLASSES = BRutus.Recruitment and BRutus.Recruitment.CLASSES or
+        { "WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","MAGE","WARLOCK","DRUID" }
+    local CLASS_DISPLAY = {
+        WARRIOR="Warrior", PALADIN="Paladin", HUNTER="Hunter", ROGUE="Rogue",
+        PRIEST="Priest",   SHAMAN="Shaman",   MAGE="Mage",    WARLOCK="Warlock",
+        DRUID="Druid",
+    }
+    local colW = 240
+    local classNeedLabels = {}  -- [cls] = FontString (count)
+    for i, cls in ipairs(CLASSES) do
+        local col = (i-1) % 3
+        local row = math.floor((i-1) / 3)
+        local xBase = 30 + col * colW
+        local yBase = yOff - row * 30
+
+        local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[cls] or { r=0.7, g=0.7, b=0.7 }
+        local nameLabel = UI:CreateText(parent, CLASS_DISPLAY[cls] or cls, 11, cc.r, cc.g, cc.b)
+        nameLabel:SetPoint("TOPLEFT", xBase, yBase)
+        nameLabel:SetWidth(76)
+
+        local countLabel = UI:CreateText(parent, "0", 12, C.white.r, C.white.g, C.white.b)
+        countLabel:SetPoint("LEFT", nameLabel, "RIGHT", 4, 0)
+        countLabel:SetWidth(24)
+        classNeedLabels[cls] = countLabel
+
+        local minusBtn = UI:CreateButton(parent, "-", 20, 20)
+        minusBtn:SetPoint("LEFT", countLabel, "RIGHT", 2, 0)
+        minusBtn:SetScript("OnClick", function()
+            local r = BRutus.db.recruitment
+            r.classNeeds = r.classNeeds or {}
+            r.classNeeds[cls] = math.max(0, (r.classNeeds[cls] or 0) - 1)
+            countLabel:SetText(tostring(r.classNeeds[cls]))
+        end)
+
+        local plusBtn = UI:CreateButton(parent, "+", 20, 20)
+        plusBtn:SetPoint("LEFT", minusBtn, "RIGHT", 2, 0)
+        plusBtn:SetScript("OnClick", function()
+            local r = BRutus.db.recruitment
+            r.classNeeds = r.classNeeds or {}
+            r.classNeeds[cls] = math.min(10, (r.classNeeds[cls] or 0) + 1)
+            countLabel:SetText(tostring(r.classNeeds[cls]))
+        end)
+    end
+    yOff = yOff - math.ceil(#CLASSES / 3) * 30 - 10
+
+    -- Broadcast button
+    local broadcastBtn = UI:CreateButton(parent, L["Broadcast to Members"], 180, 24)
+    broadcastBtn:SetPoint("TOPLEFT", 30, yOff)
+    broadcastBtn:SetScript("OnClick", function()
+        if BRutus.Recruitment then BRutus.Recruitment:BroadcastStatus() end
+    end)
+    yOff = yOff - 36
+
+    ----------------------------------------------------------------
     -- Welcome Message Section
     ----------------------------------------------------------------
     yOff = SectionHeader(L["Welcome Message (New Members)"], yOff)
@@ -2771,5 +2941,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         welcomeBox:SetText(s.welcomeMessage or "")
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
+        -- Refresh class need counters
+        local needs = s.classNeeds or {}
+        for cls, lbl in pairs(classNeedLabels) do
+            lbl:SetText(tostring(needs[cls] or 0))
+        end
     end)
 end

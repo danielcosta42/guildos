@@ -7,6 +7,12 @@ local Recruitment = {}
 BRutus.Recruitment = Recruitment
 local L = BRutus.L
 
+-- TBC class list (used by UI and broadcast)
+Recruitment.CLASSES = {
+    "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
+    "SHAMAN", "MAGE", "WARLOCK", "DRUID",
+}
+
 -- Defaults
 Recruitment.DEFAULT_SETTINGS = {
     enabled = false,
@@ -17,6 +23,7 @@ Recruitment.DEFAULT_SETTINGS = {
     welcomeEnabled = true,
     welcomeMessage = "",      -- auto-filled on init
     discord = "",
+    classNeeds = {},          -- [className] = number of spots wanted (0 = not recruiting that class)
 }
 
 Recruitment.ticker = nil
@@ -145,6 +152,23 @@ function Recruitment:Toggle()
         self:StartAutoRecruit()
     end
     return BRutus.db.recruitment.enabled
+end
+
+----------------------------------------------------------------------
+-- Broadcast recruitment status (class needs, discord, message) to all
+-- guild members who have Guild OS installed.
+----------------------------------------------------------------------
+function Recruitment:BroadcastStatus()
+    if not BRutus.CommSystem or not IsInGuild() then return end
+    local r = BRutus.db.recruitment
+    local payload = LibStub("LibSerialize"):Serialize({
+        enabled    = r.enabled,
+        classNeeds = r.classNeeds or {},
+        discord    = r.discord or "",
+        message    = r.message or "",
+    })
+    BRutus.CommSystem:SendMessage("RI", payload)
+    BRutus:Print(L["Recruitment status broadcast to guild members."])
 end
 
 ----------------------------------------------------------------------

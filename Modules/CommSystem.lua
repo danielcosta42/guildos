@@ -23,6 +23,7 @@ CommSystem.MSG_TYPES = {
     NOTES_ALL = "OA",    -- Bulk officer notes sync (officer only)
     WELCOME_CLAIM = "WC",-- Welcome message claimed for a member (officer only)
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
+    RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
 }
 
 -- Throttle settings
@@ -235,6 +236,25 @@ function CommSystem:OnMessageReceived(msg, _, sender)
         if BRutus.Recruitment and data and data ~= "" then
             BRutus.Recruitment._welcomedRecently[data] = true
             BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true
+        end
+    elseif msgType == CommSystem.MSG_TYPES.RECRUIT_INFO then
+        -- Only accept from verified officers
+        if BRutus:IsOfficerByName(sender) then
+            local ok, info = LibSerialize:Deserialize(data)
+            if ok and type(info) == "table" then
+                BRutus.db.guildRecruitment = {
+                    enabled    = info.enabled,
+                    classNeeds = info.classNeeds or {},
+                    discord    = info.discord or "",
+                    message    = info.message or "",
+                    updatedAt  = time(),
+                    updatedBy  = sender,
+                }
+                -- Notify the recruitment panel to refresh if it's open
+                if BRutus.recruitmentPanelRefresh then
+                    BRutus.recruitmentPanelRefresh()
+                end
+            end
         end
     end
 end
