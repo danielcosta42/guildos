@@ -21,7 +21,8 @@ CommSystem.MSG_TYPES = {
     RAID_DATA = "RD",    -- Raid attendance + session sync (officer only)
     RAID_DELETE = "RX",  -- Delete a raid session (officer only; sender verified)
     NOTES_ALL = "OA",    -- Bulk officer notes sync (officer only)
-    WELCOME_CLAIM = "WC",-- Welcome message claimed for a member (officer only)
+    WELCOME_INTENT = "WI",-- Officer declares intent to welcome a member (race coordination)
+    WELCOME_CLAIM = "WC",-- Welcome message sent (suppresses remaining timers)
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
     RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
 }
@@ -231,8 +232,15 @@ function CommSystem:OnMessageReceived(msg, _, sender)
         if BRutus.SyncService then
             BRutus.SyncService:OnEnvelope(sender, data)
         end
+    elseif msgType == CommSystem.MSG_TYPES.WELCOME_INTENT then
+        -- Another officer is also considering welcoming this member; record their intent
+        if BRutus.Recruitment and data and data ~= "" then
+            BRutus.Recruitment._welcomeIntents = BRutus.Recruitment._welcomeIntents or {}
+            BRutus.Recruitment._welcomeIntents[data] = BRutus.Recruitment._welcomeIntents[data] or {}
+            BRutus.Recruitment._welcomeIntents[data][sender] = true
+        end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_CLAIM then
-        -- Another officer claimed the welcome for this member — suppress ours
+        -- Another officer already sent the welcome — suppress ours
         if BRutus.Recruitment and data and data ~= "" then
             BRutus.Recruitment._welcomedRecently[data] = true
             BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true

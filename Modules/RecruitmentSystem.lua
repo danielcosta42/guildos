@@ -490,6 +490,7 @@ function Recruitment:RegisterWelcomeEvent()
     self._knownMembers = {}
     self._rosterReady = false
     self._welcomedRecently = {}
+    self._welcomeIntents   = {}  -- [memberName] = { [officerName] = true, ... }
 
     -- Build initial roster snapshot
     local function SnapshotRoster()
@@ -539,26 +540,42 @@ function Recruitment:RegisterWelcomeEvent()
         local myName = UnitName("player")
         if newMember == myName then return end
 
-        -- Avoid duplicate welcomes (e.g. multiple officers running BRutus)
+        -- Dedup: if already handled on this client, skip
         if Recruitment._welcomedRecently[newMember] then return end
         Recruitment._welcomedRecently[newMember] = true
-        C_Timer.After(60, function()
+        C_Timer.After(90, function()
             Recruitment._welcomedRecently[newMember] = nil
+            Recruitment._welcomeIntents[newMember]  = nil
         end)
 
         -- Add to known members
         Recruitment._knownMembers[newMember] = true
 
-        -- Random delay 3-7s so only the first officer to fire actually sends.
-        -- Before sending, re-check the claim flag (another officer may have
-        -- already claimed via CommSystem WC message and set it back to true).
-        local delay = 3 + math.random() * 4
-        C_Timer.After(delay, function()
-            -- Re-check: another BRutus client may have claimed in the meantime
+        -- Phase 1: broadcast intent immediately so all online officers can collect intents.
+        -- After 2 seconds the officer with the lexicographically lowest name wins and sends.
+        -- This is deterministic across all clients — no race condition.
+        Recruitment._welcomeIntents[newMember] = Recruitment._welcomeIntents[newMember] or {}
+        Recruitment._welcomeIntents[newMember][myName] = true
+
+        if BRutus.CommSystem then
+            BRutus.CommSystem:SendMessage(
+                BRutus.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "NORMAL")
+        end
+
+        C_Timer.After(2, function()
+            -- Already suppressed by a WC claim from another officer?
             if Recruitment._welcomedRecently[newMember .. "_sent"] then return end
+
+            -- Tiebreak: lowest name alphabetically among intents wins
+            local intents = Recruitment._welcomeIntents[newMember] or {}
+            local winner = myName
+            for name in pairs(intents) do
+                if name < winner then winner = name end
+            end
+            if winner ~= myName then return end  -- someone else wins
+
             Recruitment._welcomedRecently[newMember .. "_sent"] = true
 
-            -- Broadcast claim with NORMAL priority so other clients suppress before their timer fires
             if BRutus.CommSystem then
                 BRutus.CommSystem:SendMessage(
                     BRutus.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "NORMAL")
