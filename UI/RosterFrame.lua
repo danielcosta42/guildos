@@ -2751,7 +2751,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Channels (multi-select toggles)
     RowLabel(L["Channels:"], yOff)
-    local CHAN_LIST = { "Trade", "LookingForGroup", "General", "LocalDefense" }
+    local CHAN_LIST = { "Trade", "LookingForGroup", "General", "LocalDefense", "GuildRecruitment" }
+    local CHAN_PER_ROW = 4
     local chanBtns = {}
     local function refreshChanBtns()
         local chs = BRutus.db.recruitment.channels
@@ -2768,8 +2769,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         end
     end
     for i, ch in ipairs(CHAN_LIST) do
+        local col = (i - 1) % CHAN_PER_ROW
+        local row = math.floor((i - 1) / CHAN_PER_ROW)
         local btn = UI:CreateButton(parent, ch, 130, 22)
-        btn:SetPoint("TOPLEFT", 128 + (i - 1) * 136, yOff + 2)
+        btn:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
         btn._ch = ch
         btn:SetScript("OnClick", function()
             local chs = BRutus.db.recruitment.channels
@@ -2785,7 +2788,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         end)
         chanBtns[i] = btn
     end
-    yOff = yOff - 32
+    yOff = yOff - 6 - math.ceil(#CHAN_LIST / CHAN_PER_ROW) * 26
 
     -- Message
     RowLabel(L["Message:"], yOff)
