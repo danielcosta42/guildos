@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0] - 2026-07-02
+
+### Added
+- expose class needs to all members
+
+
 ## [0.8.0] - 2026-07-01
 
 ### Added
