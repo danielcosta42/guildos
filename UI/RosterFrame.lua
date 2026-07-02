@@ -2603,10 +2603,53 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         discordText:SetPoint("LEFT", discordHeader, "RIGHT", 8, 0)
         discordText:SetWidth(400)
 
-        -- Recruitment message
+        -- Recruitment message preview
         local msgText = UI:CreateText(parent, "", 11, C.silver.r, C.silver.g, C.silver.b)
         msgText:SetPoint("TOPLEFT", 20, classGridBottom - 24)
         msgText:SetWidth(700)
+
+        -- Action row separator
+        local actionSep = UI:CreateSeparator(parent)
+        actionSep:SetPoint("TOPLEFT", 20, classGridBottom - 52)
+        actionSep:SetPoint("TOPRIGHT", -20, classGridBottom - 52)
+
+        -- Send Now button (one-shot manual send)
+        local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 130, 28)
+        sendNowBtn:SetPoint("TOPLEFT", 20, classGridBottom - 60)
+        sendNowBtn:SetScript("OnClick", function()
+            if BRutus.Recruitment then BRutus.Recruitment:ShowSendPopup() end
+        end)
+
+        -- Auto-Send toggle
+        local autoBtn = UI:CreateButton(parent, L["Auto-Send: OFF"], 140, 28)
+        autoBtn:SetPoint("LEFT", sendNowBtn, "RIGHT", 8, 0)
+
+        local autoStatusText = UI:CreateText(parent, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        autoStatusText:SetPoint("LEFT", autoBtn, "RIGHT", 10, 0)
+
+        local function updateAutoBtn()
+            local active = BRutus.Recruitment and BRutus.Recruitment:IsMemberRecruitActive()
+            if active then
+                autoBtn.label:SetText(L["Auto-Send: ON"])
+                autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
+                local interval = BRutus.db.guildRecruitment and BRutus.db.guildRecruitment.interval or 120
+                autoStatusText:SetText(string.format(L["(popup every %ds)"], interval))
+            else
+                autoBtn.label:SetText(L["Auto-Send: OFF"])
+                autoBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+                autoStatusText:SetText("")
+            end
+        end
+
+        autoBtn:SetScript("OnClick", function()
+            if not BRutus.Recruitment then return end
+            if BRutus.Recruitment:IsMemberRecruitActive() then
+                BRutus.Recruitment:StopMemberRecruit()
+            else
+                BRutus.Recruitment:StartMemberRecruit()
+            end
+            updateAutoBtn()
+        end)
 
         -- Refresh function — reads from guildRecruitment (synced) or officer's own DB
         local function refresh()
@@ -2655,6 +2698,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
             discordText:SetText(info.discord ~= "" and info.discord or "—")
             msgText:SetText(info.message or "")
+            updateAutoBtn()
         end
 
         BRutus.recruitmentPanelRefresh = refresh

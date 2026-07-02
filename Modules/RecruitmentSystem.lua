@@ -26,8 +26,9 @@ Recruitment.DEFAULT_SETTINGS = {
     classNeeds = {},          -- [className] = number of spots wanted (0 = not recruiting that class)
 }
 
-Recruitment.ticker = nil
-Recruitment.lastSend = 0
+Recruitment.ticker       = nil   -- officer auto-send ticker
+Recruitment.memberTicker = nil   -- member opt-in auto-send ticker
+Recruitment.lastSend     = 0
 
 ----------------------------------------------------------------------
 -- Initialize
@@ -166,9 +167,43 @@ function Recruitment:BroadcastStatus()
         classNeeds = r.classNeeds or {},
         discord    = r.discord or "",
         message    = r.message or "",
+        channels   = r.channels or {},
+        interval   = r.interval or 120,
     })
     BRutus.CommSystem:SendMessage("RI", payload)
     BRutus:Print(L["Recruitment status broadcast to guild members."])
+end
+
+----------------------------------------------------------------------
+-- Member auto-send: opt-in ticker using guild-broadcast config
+----------------------------------------------------------------------
+function Recruitment:StartMemberRecruit()
+    local info = BRutus.db.guildRecruitment
+    if not info or not info.message or info.message == "" then
+        BRutus:Print(L["|cffFF4444No recruitment data received yet. Ask an officer to broadcast.|r"])
+        return false
+    end
+    if self.memberTicker then self.memberTicker:Cancel() end
+    local interval = math.max(info.interval or 120, 60)
+    self.memberTicker = C_Timer.NewTicker(interval, function()
+        Recruitment:ShowSendPopup()
+    end)
+    C_Timer.After(2, function() Recruitment:ShowSendPopup() end)
+    BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
+    return true
+end
+
+function Recruitment:StopMemberRecruit()
+    if self.memberTicker then
+        self.memberTicker:Cancel()
+        self.memberTicker = nil
+    end
+    if self.popupFrame then self.popupFrame:Hide() end
+    BRutus:Print(L["Recruitment |cffFF4444stopped|r."])
+end
+
+function Recruitment:IsMemberRecruitActive()
+    return self.memberTicker ~= nil
 end
 
 ----------------------------------------------------------------------
@@ -255,14 +290,22 @@ end
 -- Show the popup notification
 ----------------------------------------------------------------------
 function Recruitment:ShowSendPopup()
-    if not BRutus.db.recruitment.enabled then return end
     if InCombatLockdown() then return end
-    if not self:CanUseRecruitment() then return end
+
+    -- Officers use their own config; members use the guild-broadcast config
+    local isOfficer = BRutus:IsOfficer()
+    if isOfficer then
+        if not BRutus.db.recruitment.enabled then return end
+    else
+        local info = BRutus.db.guildRecruitment
+        if not info or not info.enabled or not info.message or info.message == "" then return end
+    end
 
     self:CreatePopupFrame()
 
-    -- Update channel list in label
-    local channels = BRutus.db.recruitment.channels
+    local channels = isOfficer
+        and BRutus.db.recruitment.channels
+        or  (BRutus.db.guildRecruitment and BRutus.db.guildRecruitment.channels or {})
     local chText = table.concat(channels, ", ")
     self.popupFrame.label:SetText(L["Click to recruit!  >>  "] .. chText)
     self.popupFrame:Show()
@@ -281,7 +324,14 @@ end
 function Recruitment:DoSendRecruitmentMessage()
     if not IsInGuild() then return end
 
-    local settings = BRutus.db.recruitment
+    -- Officers use their own config; members use guild-broadcast config
+    local settings = BRutus:IsOfficer()
+        and BRutus.db.recruitment
+        or  BRutus.db.guildRecruitment
+    if not settings then
+        BRutus:Print(L["|cffFF4444No recruitment data. Ask an officer to broadcast.|r"])
+        return
+    end
     local msg = settings.message
     if not msg or msg == "" then
         BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
@@ -289,7 +339,7 @@ function Recruitment:DoSendRecruitmentMessage()
     end
 
     local sent = false
-    for _, channelName in ipairs(settings.channels) do
+    for _, channelName in ipairs(settings.channels or {}) do
         local channelNum = GetChannelName(channelName)
         if channelNum and channelNum > 0 then
             SendChatMessage(msg, "CHANNEL", nil, channelNum)

@@ -247,6 +247,8 @@ function CommSystem:OnMessageReceived(msg, _, sender)
                     classNeeds = info.classNeeds or {},
                     discord    = info.discord or "",
                     message    = info.message or "",
+                    channels   = info.channels or {},
+                    interval   = info.interval or 120,
                     updatedAt  = time(),
                     updatedBy  = sender,
                 }
