@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.1] - 2026-07-02
+
+### Fixed
+- deterministic welcome tiebreak to prevent duplicate messages
+
+
 ## [0.11.0] - 2026-07-02
 
 ### Added
