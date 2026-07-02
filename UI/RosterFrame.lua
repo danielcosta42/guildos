@@ -2749,12 +2749,43 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     UI:AttachSaveButton(intervalBox, commitInterval)
     yOff = yOff - 28
 
-    -- Channels
+    -- Channels (multi-select toggles)
     RowLabel(L["Channels:"], yOff)
-    local channelsText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    channelsText:SetPoint("TOPLEFT", 140, yOff)
-    channelsText:SetWidth(500)
-    yOff = yOff - 28
+    local CHAN_LIST = { "Trade", "LookingForGroup", "General", "LocalDefense" }
+    local chanBtns = {}
+    local function refreshChanBtns()
+        local chs = BRutus.db.recruitment.channels
+        for _, b in ipairs(chanBtns) do
+            local active = false
+            for _, c in ipairs(chs) do
+                if c:lower() == b._ch:lower() then active = true; break end
+            end
+            if active then
+                b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+            else
+                b:SetBaseColor(0.12, 0.12, 0.16, 0.85)
+            end
+        end
+    end
+    for i, ch in ipairs(CHAN_LIST) do
+        local btn = UI:CreateButton(parent, ch, 130, 22)
+        btn:SetPoint("TOPLEFT", 128 + (i - 1) * 136, yOff + 2)
+        btn._ch = ch
+        btn:SetScript("OnClick", function()
+            local chs = BRutus.db.recruitment.channels
+            local found = false
+            for j = #chs, 1, -1 do
+                if chs[j]:lower() == ch:lower() then
+                    table.remove(chs, j)
+                    found = true
+                end
+            end
+            if not found then table.insert(chs, ch) end
+            refreshChanBtns()
+        end)
+        chanBtns[i] = btn
+    end
+    yOff = yOff - 32
 
     -- Message
     RowLabel(L["Message:"], yOff)
@@ -2877,7 +2908,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     parent:SetScript("OnShow", function()
         local s = BRutus.db.recruitment
         intervalBox:SetText(tostring(s.interval or 120))
-        channelsText:SetText(table.concat(s.channels or {}, ", "))
+        refreshChanBtns()
         msgBox:SetText(s.message or "")
         discordBox:SetText(s.discord or "")
         welcomeBox:SetText(s.welcomeMessage or "")
