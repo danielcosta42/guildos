@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.0] - 2026-07-02
+
+### Added
+- add GuildRecruitment channel toggle
+
+
 ## [0.11.3] - 2026-07-02
 
 ### Fixed
