@@ -18,6 +18,7 @@ Libs\CallbackHandler-1.0.lua
 Libs\LibSerialize.lua
 Libs\LibDeflate.lua
 Libs\ChatThrottleLib.lua
+Libs\LibChehulMesh.lua
 
 # Core
 Core\Config.lua

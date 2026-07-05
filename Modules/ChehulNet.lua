@@ -1,18 +1,15 @@
 -- ChehulNet - shared cross-addon presence handshake for the Chehul addon family
 -- (PartyLens, ProfessionHelper, GuildOS). SHIP THIS FILE IDENTICAL in each addon.
 --
--- A single instance lives at _G.ChehulNet: whichever addon loads first creates it,
+-- A single instance lives at _G.ChehulNet; whichever addon loads first creates it,
 -- the rest reuse it and call ChehulNet:Register(tag, capsFn, onPeer). Every addon
--- stays fully standalone; when two are present (same account, or same realm/guild)
--- they recognise each other and can enrich (e.g. "this player is also a crafter").
+-- stays fully standalone; when two are present they recognise each other.
 --
--- Transport is the hardened, delivering bus set (guild + group + SAY proximity;
--- CHANNEL addon messages are blocked on this client). A handshake's realm-wide
--- reach is inherently bounded to those buses - that is by design, not a bug.
+-- Transport is LibChehulMesh (_G.ChehulMesh): presence rides guild + group + SAY
+-- proximity AND the realm-wide dedicated channel, so a HELLO reaches the whole
+-- realm/faction, not just your guild. Discovery is two-way (reply on first contact).
 
-local VERSION = 1
-
--- A sibling addon already loaded an equal/newer ChehulNet: reuse it, do nothing.
+local VERSION = 2
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -29,15 +26,7 @@ CN.PEER_TTL       = 600 -- forget a peer not heard within this
 CN.peers     = CN.peers or {}     -- [shortName] = { addons=set, class, level, caps, ts }
 CN.providers = CN.providers or {} -- [tag] = { caps=function|nil, onPeer=function|nil }
 
--- ---------------------------------------------------------------------------
--- Low-level send (hidden addon message; never throws).
--- ---------------------------------------------------------------------------
-local function RawSend(payload, dist, target)
-    local fn = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
-    if fn then
-        pcall(fn, CN.PREFIX, payload, dist, target)
-    end
-end
+local Mesh = _G.ChehulMesh -- shared transport (loaded before this file)
 
 local function MyShortName()
     return UnitName("player") or ""
@@ -75,17 +64,14 @@ function CN:BuildHello()
 end
 
 function CN:Announce()
-    if not next(CN.providers) then
+    if not next(CN.providers) or not Mesh then
         return
     end
     local payload = self:BuildHello()
-    if IsInGuild and IsInGuild() then
-        RawSend(payload, "GUILD")
-    end
-    if IsInGroup and IsInGroup() then
-        RawSend(payload, (IsInRaid and IsInRaid()) and "RAID" or "PARTY")
-    end
-    RawSend(payload, "SAY") -- proximity (city / auction-house hubs)
+    Mesh:Guild(CN.PREFIX, payload)
+    Mesh:Group(CN.PREFIX, payload)
+    Mesh:Proximity(CN.PREFIX, payload)
+    Mesh:Realm(CN.PREFIX, payload, CN.PREFIX .. ":hello") -- realm-wide (coalesced)
 end
 
 function CN:Prune()
@@ -97,44 +83,39 @@ function CN:Prune()
     end
 end
 
--- ---------------------------------------------------------------------------
--- Inbound handshake.
--- ---------------------------------------------------------------------------
-function CN:OnAddonMessage(prefix, text, channel, sender)
-    if prefix ~= CN.PREFIX or not sender or type(text) ~= "string" then
+-- Inbound HELLO (routed here by LibChehulMesh for our prefix).
+local function OnHello(payload, sender, dist)
+    if type(payload) ~= "string" or not sender then
         return
     end
-    local proto, op, addons, class, level, caps = strsplit("|", text)
-    if proto ~= CN.PROTO then
+    local proto, op, addons, class, level, caps = strsplit("|", payload)
+    if proto ~= CN.PROTO or op ~= "H" then
         return
     end
     local short = (Ambiguate and Ambiguate(sender, "short")) or sender
     if short == MyShortName() then
         return -- ignore our own broadcast
     end
-    if op == "H" then
-        local set = {}
-        for t in string.gmatch(addons or "", "[^+]+") do
-            set[t] = true
-        end
-        local isNew = CN.peers[short] == nil
-        CN.peers[short] = {
-            addons = set,
-            class  = (class ~= "" and class) or nil,
-            level  = tonumber(level),
-            caps   = caps or "",
-            ts     = time(),
-        }
-        -- Reply once to a newcomer heard via a broadcast (not a whisper), so
-        -- discovery is two-way even without a shared guild. Their whispered reply
-        -- carries channel == "WHISPER", so it never triggers another reply.
-        if isNew and channel ~= "WHISPER" then
-            RawSend(self:BuildHello(), "WHISPER", sender)
-        end
-        for _, p in pairs(CN.providers) do
-            if p.onPeer then
-                pcall(p.onPeer, short, CN.peers[short])
-            end
+    local set = {}
+    for t in string.gmatch(addons or "", "[^+]+") do
+        set[t] = true
+    end
+    local isNew = CN.peers[short] == nil
+    CN.peers[short] = {
+        addons = set,
+        class  = (class ~= "" and class) or nil,
+        level  = tonumber(level),
+        caps   = caps or "",
+        ts     = time(),
+    }
+    -- Reply once to a newcomer we heard via broadcast (not a whisper), so discovery
+    -- is two-way. Their whispered reply arrives as dist "WHISPER" -> no ping-pong.
+    if isNew and dist ~= "WHISPER" and Mesh then
+        Mesh:Whisper(CN.PREFIX, CN:BuildHello(), sender)
+    end
+    for _, p in pairs(CN.providers) do
+        if p.onPeer then
+            pcall(p.onPeer, short, CN.peers[short])
         end
     end
 end
@@ -162,7 +143,6 @@ function CN:PeerRuns(name, tag)
     return (p ~= nil) and (p.addons[tag] == true)
 end
 
--- Count peers heard, optionally only those running a given addon tag.
 function CN:Count(tag)
     local n = 0
     for _, p in pairs(CN.peers) do
@@ -192,27 +172,17 @@ function CN:Start()
 end
 
 -- ---------------------------------------------------------------------------
--- Bootstrap: register the prefix + one shared event frame.
+-- Bootstrap: register our receive handler with the mesh + start on login.
 -- ---------------------------------------------------------------------------
-do
-    local reg = (C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix) or RegisterAddonMessagePrefix
-    if reg then
-        pcall(reg, CN.PREFIX)
-    end
-
-    CN.frame = CN.frame or CreateFrame("Frame")
-    CN.frame:RegisterEvent("CHAT_MSG_ADDON")
-    CN.frame:RegisterEvent("PLAYER_LOGIN")
-    CN.frame:SetScript("OnEvent", function(_, event, ...)
-        if event == "CHAT_MSG_ADDON" then
-            CN:OnAddonMessage(...)
-        elseif event == "PLAYER_LOGIN" then
-            CN:Start()
-        end
-    end)
-
-    -- If we somehow loaded after PLAYER_LOGIN, start anyway.
-    if C_Timer and C_Timer.After then
-        C_Timer.After(8, function() CN:Start() end)
-    end
+if Mesh then
+    Mesh:Register(CN.PREFIX, OnHello)
 end
+
+CN.frame = CN.frame or CreateFrame("Frame")
+CN.frame:RegisterEvent("PLAYER_LOGIN")
+CN.frame:SetScript("OnEvent", function() CN:Start() end)
+if C_Timer and C_Timer.After then
+    C_Timer.After(8, function() CN:Start() end)
+end
+
+return CN
