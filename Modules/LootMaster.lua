@@ -70,6 +70,16 @@ function LootMaster:SaveCfgKey(key, value)
 end
 
 ----------------------------------------------------------------------
+-- Whether the Loot Master module is currently enabled.
+-- Read live from settings so the Settings toggle takes effect at runtime
+-- (no /reload): the event handlers and hooks consult this on every fire.
+----------------------------------------------------------------------
+function LootMaster:IsModuleEnabled()
+    local m = BRutus.db and BRutus.db.settings and BRutus.db.settings.modules
+    return not m or m.lootMaster ~= false
+end
+
+----------------------------------------------------------------------
 -- Initialize
 ----------------------------------------------------------------------
 function LootMaster:Initialize()
@@ -123,6 +133,9 @@ function LootMaster:Initialize()
     -- Blizzard's window with meaningless /roll buttons. The raid MS/OS popup is
     -- driven by the ANNOUNCE addon message instead (see OnAddonMessage).
     frame:SetScript("OnEvent", function(_, event, ...)
+        -- Runtime kill-switch: when the module is toggled off in Settings,
+        -- ignore all loot events immediately (no /reload needed).
+        if not LootMaster:IsModuleEnabled() then return end
         if event == "LOOT_OPENED" then
             LootMaster:OnLootOpened()
         elseif event == "LOOT_CLOSED" then
@@ -146,12 +159,33 @@ function LootMaster:Initialize()
     -- Guard: only hook if the default UI function exists (TBC Anniversary).
     if ContainerFrameItemButton_OnModifiedClick then
         hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(btn, _button)
+            if not LootMaster:IsModuleEnabled() then return end
             if not IsAltKeyDown() then return end
             if not LootMaster:IsMasterLooter() then return end
             local bagId  = btn:GetParent():GetID()
             local slotId = btn:GetID()
             LootMaster:RollFromBag(bagId, slotId)
         end)
+    end
+end
+
+----------------------------------------------------------------------
+-- Apply a Settings module toggle at runtime (no /reload).
+-- Enabling for the first time (module was off at login, so Initialize
+-- never ran) does a lazy Initialize; the caller has already written
+-- db.settings.modules.lootMaster, which IsModuleEnabled() reads live.
+-- Disabling hides any open loot frames; the OnEvent gate stops new ones.
+----------------------------------------------------------------------
+function LootMaster:SetEnabled(enabled)
+    if enabled then
+        if not self.eventFrame then
+            self:Initialize()
+        end
+    else
+        if self.lootFrame    then self.lootFrame:Hide()    end
+        if self.rollFrame    then self.rollFrame:Hide()    end
+        if self.rollPopup    then self.rollPopup:Hide()    end
+        if self.councilFrame then self.councilFrame:Hide() end
     end
 end
 
@@ -334,6 +368,12 @@ function LootMaster:OnLootOpened()
 
     self.isMLSession = true
     self.lootWindowOpen = true
+
+    -- Respect the "Auto-announce loot when ML opens loot window" toggle.
+    -- When off, do not auto-open the master-loot screen; the ML uses normal
+    -- looting. Re-enabling the toggle brings the screen back. Read live via
+    -- GetCfg() so the active core's setting (and CorePanel edits) apply.
+    if self:GetCfg().autoAnnounce == false then return end
 
     -- Collect Rare+ and BoE items (BoE regardless of quality)
     local numItems = GetNumLootItems()

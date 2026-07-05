@@ -383,7 +383,9 @@ function BRutus:CreateCoresPanel(panel)
             local aaCheck = track(MakeCheck(rightContent, L["Auto-announce"]))
             aaCheck:SetPoint("LEFT", rdInput, "RIGHT", 16, 0)
             aaCheck:SetChecked(lootCfg.autoAnnounce ~= false)
-            aaCheck:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked()) end)
+            -- Store an explicit boolean (GetChecked yields true/nil in TBC) so the
+            -- per-core cascade doesn't fall back to default-true when unchecked.
+            aaCheck:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked() and true or false) end)
             y = y - 28
 
             local wmCheck = track(MakeCheck(rightContent, L["Wishlist-only mode"]))
@@ -484,7 +486,7 @@ function BRutus:CreateCoresPanel(panel)
             local aaCheck2 = track(MakeCheck(rightContent, L["Auto-announce bids"]))
             aaCheck2:SetPoint("TOPLEFT", 4, y)
             aaCheck2:SetChecked(lootCfg.autoAnnounce ~= false)
-            aaCheck2:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked()) end)
+            aaCheck2:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked() and true or false) end)
             y = y - 28
 
             local thLbl2 = track(MakeLabel(rightContent, L["Loot threshold:"], 10))

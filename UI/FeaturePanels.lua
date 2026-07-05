@@ -1835,7 +1835,14 @@ function BRutus:RefreshSettingsPanel(content, category)
             -- GetChecked() returns true or nil (never false) in WoW TBC.
             -- Explicitly store false so modEnabled() sees ~= false correctly.
             mods[mod.key] = checked and true or false
-            if checked then
+            -- Loot Master supports live toggling (SetEnabled); other modules
+            -- still register their events only at Initialize, so they need a reload.
+            if mod.key == "lootMaster" and BRutus.LootMaster and BRutus.LootMaster.SetEnabled then
+                BRutus.LootMaster:SetEnabled(mods[mod.key])
+                BRutus:Print(mod.label .. (checked
+                    and L[" |cff00ff00enabled|r."]
+                    or  L[" |cffFF4444disabled|r."]))
+            elseif checked then
                 BRutus:Print(mod.label .. L[" |cff00ff00enabled|r. Reload UI to apply."])
             else
                 BRutus:Print(mod.label .. L[" |cffFF4444disabled|r. Reload UI to apply."])
@@ -2120,8 +2127,11 @@ function BRutus:RefreshSettingsPanel(content, category)
     autoAnn.checkbox:SetChecked(_lmCfg.autoAnnounce ~= false)
     autoAnn.checkbox.onChanged = function(_, checked)
         if BRutus.LootMaster then
-            BRutus.LootMaster:SaveCfgKey("autoAnnounce", checked)
-            BRutus.LootMaster.AUTO_ANNOUNCE = checked
+            -- GetChecked() yields true/nil in TBC; store an explicit boolean so
+            -- the per-core cascade can't fall back to the default-true when off.
+            local val = checked and true or false
+            BRutus.LootMaster:SaveCfgKey("autoAnnounce", val)
+            BRutus.LootMaster.AUTO_ANNOUNCE = val
         end
     end
     yOff = yOff + 28
