@@ -1258,7 +1258,10 @@ function BRutus.CreateRosterFrame()
                         race = addonData.race or "",
                         lastUpdate = addonData.lastUpdate or 0,
                         lastSync = addonData.lastSync or 0,
-                        addonVersion = addonData.addonVersion,
+                        -- Prefer the live version a member is broadcasting on the mesh
+                        -- (realm-wide, fresher than the last guild sync) over the stored
+                        -- one, so an update shows up before CommSystem re-syncs.
+                        addonVersion = (BRutus.Mesh and BRutus.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
                         hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
                     })
                 end

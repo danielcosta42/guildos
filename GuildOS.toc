@@ -40,6 +40,8 @@ Core\Commands.lua
 # Cross-addon presence mesh (shared singleton; identical file in each Chehul addon)
 Modules\ChehulNet.lua
 Modules\ChehulNetWire.lua
+# GuildOS-side mesh facade (NOT shared — GuildOS-specific logic)
+Modules\Mesh.lua
 
 # Data Modules
 Modules\DataCollector.lua

@@ -718,6 +718,7 @@ L["%d members with loot/raid history"] = "%d membros com histórico de loot/raid
 L["%d missing"] = "%d faltando"
 L["%d with missing enchants  |  %d scanned"] = "%d sem encantamentos  |  %d verificados"
 L["%d/%d have Guild OS  |  %d outdated"] = "%d/%d têm o Guild OS  |  %d desatualizados"
+L["Chehul mesh: %s  |  %d peers  |  %d on Guild OS"] = "Malha Chehul: %s  |  %d peers  |  %d no Guild OS"
 L["Usage: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"] = "Uso: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"
 -- Readiness sub-panel
 L["Readiness"] = "Prontidão"

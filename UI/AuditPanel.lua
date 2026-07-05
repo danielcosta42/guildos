@@ -305,6 +305,11 @@ local function BuildSyncSub(panel)
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -6)
 
+    -- Chehul mesh observability: realm-wide, cross-addon presence beyond the
+    -- guild-only sync above. Makes the otherwise-invisible mesh auditable.
+    local meshLine = UI:CreateText(panel, "", 9, C.silver.r, C.silver.g, C.silver.b)
+    meshLine:SetPoint("TOPLEFT", 4, -20)
+
     local refresh  -- forward declaration so the Sync button can refresh post-sync
 
     local exportBtn = UI:CreateButton(panel, L["Export Roster"], 110, 20)
@@ -323,7 +328,7 @@ local function BuildSyncSub(panel)
     end)
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -24)
+    listHolder:SetPoint("TOPLEFT", 0, -34)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSAuditSyncScroll")
 
@@ -333,6 +338,12 @@ local function BuildSyncSub(panel)
 
         local rows, withAddon, outdated = BRutus.CommSystem:GetSyncHealth()
         summary:SetText(string.format(L["%d/%d have Guild OS  |  %d outdated"], withAddon, #rows, outdated))
+
+        if BRutus.Mesh then
+            meshLine:SetText(string.format(
+                L["Chehul mesh: %s  |  %d peers  |  %d on Guild OS"],
+                BRutus.Mesh:HealthLine(), BRutus.Mesh:PeerCount(), BRutus.Mesh:PeerCount("gos")))
+        end
 
         local yOff = 0
         for idx, r in ipairs(rows) do
@@ -365,6 +376,14 @@ local function BuildSyncSub(panel)
             empty:SetPoint("TOPLEFT", 4, -4)
         end
         content:SetHeight(math.max(1, yOff))
+    end
+
+    -- Live-update the mesh line as HELLOs arrive (throttled in GuildOS.Mesh),
+    -- but only while this sub-panel is actually visible.
+    if BRutus.Mesh then
+        BRutus.Mesh:OnRefresh(function()
+            if panel:IsShown() then refresh() end
+        end)
     end
 
     return refresh

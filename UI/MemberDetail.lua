@@ -248,7 +248,13 @@ function PopulateDetail(frame, data)
 
     -- Info line
     local raceStr = data.race ~= "" and data.race or L["Unknown"]
-    frame.infoText:SetText(string.format(L["Level %d %s %s  |  %s"], data.level, raceStr, data.classDisplay, data.rank))
+    local infoLine = string.format(L["Level %d %s %s  |  %s"], data.level, raceStr, data.classDisplay, data.rank)
+    -- Cross-addon presence: append which sibling Chehul addons this player is
+    -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
+    if BRutus.Mesh then
+        infoLine = infoLine .. BRutus.Mesh:PresenceSuffix(data.name)
+    end
+    frame.infoText:SetText(infoLine)
 
     local yOff = -5
     local contentWidth = DETAIL_WIDTH - 35

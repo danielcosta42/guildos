@@ -718,6 +718,7 @@ L["%d members with loot/raid history"] = "%d membres avec historique de butin/ra
 L["%d missing"] = "%d manquant(s)"
 L["%d with missing enchants  |  %d scanned"] = "%d sans enchantements  |  %d analysés"
 L["%d/%d have Guild OS  |  %d outdated"] = "%d/%d ont Guild OS  |  %d obsolètes"
+L["Chehul mesh: %s  |  %d peers  |  %d on Guild OS"] = "Maillage Chehul : %s  |  %d pairs  |  %d sur Guild OS"
 L["Attack Power"] = "Puissance d'attaque"
 L["Attunements"] = "Harmonisations"
 L["Audit"] = "Audit"
