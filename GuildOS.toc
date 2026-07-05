@@ -56,6 +56,7 @@ Modules\RaidTracker.lua
 Modules\LootTracker.lua
 Modules\LootMaster.lua
 Modules\RecipeTracker.lua
+Modules\CraftNet.lua
 Modules\OfficerNotes.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua

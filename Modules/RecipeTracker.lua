@@ -639,6 +639,27 @@ function RecipeTracker:GetCraftersForSpell(spellId)
 end
 
 ----------------------------------------------------------------------
+-- Can the LOCAL player craft this item? Returns the profession name if so,
+-- else nil. Reads only our own scanned recipes (db.recipes[myKey]) — used to
+-- answer realm-wide CraftNet queries authoritatively for ourselves.
+----------------------------------------------------------------------
+function RecipeTracker:LocalCrafts(itemId)
+    itemId = tonumber(itemId)
+    if not itemId then return nil end
+    local key = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    local professions = BRutus.db and BRutus.db.recipes and BRutus.db.recipes[key]
+    if not professions then return nil end
+    for profName, recipes in pairs(professions) do
+        for _, r in ipairs(recipes) do
+            if r.itemId == itemId then
+                return profName
+            end
+        end
+    end
+    return nil
+end
+
+----------------------------------------------------------------------
 -- Hook GameTooltip to show crafters for items
 ----------------------------------------------------------------------
 function RecipeTracker:HookTooltips()

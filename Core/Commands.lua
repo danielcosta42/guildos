@@ -49,6 +49,38 @@ local function handleCommand(msg)
             local q = strtrim(msg:gsub("^find%s*", ""))
             BRutus.Search:Show(q ~= "search" and q or "")
         end
+    elseif msg:match("^craft") then
+        -- /guildos craft <item link or id> — who can craft this, guild + realm.
+        local arg = strtrim(msg:gsub("^craft%s*", ""))
+        local itemId = tonumber(arg:match("item:(%d+)")) or tonumber(arg:match("^(%d+)$"))
+        if not itemId then
+            BRutus:Print(L["Usage: /guildos craft [item link or id]"])
+        else
+            local itemName = GetItemInfo(itemId) or ("item:" .. itemId)
+            local seen = {}
+            -- Guild crafters are already known locally (RecipeTracker sync).
+            local guild = BRutus.RecipeTracker and BRutus.RecipeTracker:GetCraftersForItem(itemId)
+            if guild and #guild > 0 then
+                local names = {}
+                for _, c in ipairs(guild) do
+                    if not seen[c.playerName] then
+                        seen[c.playerName] = true
+                        names[#names + 1] = c.playerName
+                    end
+                end
+                BRutus:Print(string.format(L["Crafters for %s in guild: %s"], itemName, table.concat(names, ", ")))
+            else
+                BRutus:Print(string.format(L["No guild crafter for %s - asking the realm..."], itemName))
+            end
+            -- Realm-wide: answers trickle in over the mesh (out-of-guild reach).
+            if BRutus.CraftNet then
+                BRutus.CraftNet:Query(itemId, function(short, label)
+                    if seen[short] then return end
+                    seen[short] = true
+                    BRutus:Print("   " .. string.format(L["%s can craft %s (%s)"], short, itemName, label or "?"))
+                end)
+            end
+        end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()
