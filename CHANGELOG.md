@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.1] - 2026-07-05
+
+### Fixed
+- make Auto-announce toggle and Loot Master kill-switch actually work
+
+
 ## [0.15.0] - 2026-07-05
 
 ### Added
