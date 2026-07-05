@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.1] - 2026-07-05
+
+### Fixed
+- suppress MS/OS popup during native group loot
+
+
 ## [0.13.0] - 2026-07-02
 
 ### Added
