@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.0] - 2026-07-05
+
+### Added
+- join the ChehulNet cross-addon presence mesh
+
+
 ## [0.13.1] - 2026-07-05
 
 ### Fixed
