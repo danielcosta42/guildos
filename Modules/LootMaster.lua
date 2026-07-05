@@ -117,7 +117,11 @@ function LootMaster:Initialize()
     frame:RegisterEvent("TRADE_SHOW")
     frame:RegisterEvent("TRADE_ACCEPT_UPDATE")
     -- GROUP_LEFT: disenchanter is now persisted to DB, no need to clear
-    frame:RegisterEvent("START_LOOT_ROLL")  -- native WoW group loot rolls
+    -- START_LOOT_ROLL intentionally NOT registered: it only fires under native
+    -- Group Loot (need/greed/pass), where there is no BRutus master looter
+    -- collecting rolls. Popping the MS/OS roll frame there just duplicates
+    -- Blizzard's window with meaningless /roll buttons. The raid MS/OS popup is
+    -- driven by the ANNOUNCE addon message instead (see OnAddonMessage).
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "LOOT_OPENED" then
             LootMaster:OnLootOpened()
@@ -131,8 +135,6 @@ function LootMaster:Initialize()
             LootMaster:OnTradeShow()
         elseif event == "TRADE_ACCEPT_UPDATE" then
             LootMaster:OnTradeAcceptUpdate(...)
-        elseif event == "START_LOOT_ROLL" then
-            LootMaster:OnStartLootRoll(...)
         end
     end)
 
@@ -151,22 +153,6 @@ function LootMaster:Initialize()
             LootMaster:RollFromBag(bagId, slotId)
         end)
     end
-end
-
-----------------------------------------------------------------------
--- Handle native WoW group loot roll (START_LOOT_ROLL event).
--- Fires for every group member when the game starts a native roll.
--- Shows the roll popup so all BRutus users can see priority info.
-----------------------------------------------------------------------
-function LootMaster:OnStartLootRoll(rollID, rollTime)
-    -- Only show the roll popup when in a group (party or raid), never solo.
-    if not IsInGroup() then return end
-    local link = GetLootRollItemLink(rollID)
-    if not link then return end
-    local itemId = tonumber(link:match("item:(%d+)")) or 0
-    -- START_LOOT_ROLL reports rollTime in milliseconds; ShowRollPopup expects seconds.
-    local durationSec = (rollTime and rollTime > 0) and (rollTime / 1000) or self.ROLL_DURATION
-    self:ShowRollPopup(link, durationSec, itemId)
 end
 
 ----------------------------------------------------------------------
@@ -1390,8 +1376,7 @@ function LootMaster:SendMyRoll(rollType)
 end
 
 ----------------------------------------------------------------------
--- UI: Roll popup for raiders — shown on ANNOUNCE (BRutus ML) or
--- START_LOOT_ROLL (native WoW group loot).
+-- UI: Roll popup for raiders — shown on ANNOUNCE (BRutus ML session only).
 -- Displays the item link, the local player's own prio/wishlist
 -- position, and the full priority list so everyone can see who
 -- has priority without having to ask.
