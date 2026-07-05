@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.0] - 2026-07-05
+
+### Added
+- adopt shared LibChehulMesh transport (realm-wide ChehulNet presence)
+
+
 ## [0.14.0] - 2026-07-05
 
 ### Added
