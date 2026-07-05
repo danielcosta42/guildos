@@ -78,6 +78,7 @@ Modules\SpecChecker.lua
 # UI
 UI\Helpers.lua
 UI\RecipesPanel.lua
+UI\CraftFinder.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua

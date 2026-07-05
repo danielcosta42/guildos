@@ -96,6 +96,11 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     searchPlaceholder:SetText(L["Search recipes..."])
 
+    -- Realm-wide crafter finder (guild + mesh) — opens the CraftFinder popup.
+    local realmBtn = UI:CreateButton(topBar, L["Find a Crafter"], 120, 24)
+    realmBtn:SetPoint("RIGHT", searchBox, "LEFT", -8, 0)
+    realmBtn:SetScript("OnClick", function() BRutus:ShowCraftFinder() end)
+
     -- Profession filter buttons row
     local filterRow = CreateFrame("Frame", nil, topBar)
     filterRow:SetPoint("TOPLEFT", 0, -26)

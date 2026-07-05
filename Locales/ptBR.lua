@@ -723,6 +723,13 @@ L["Usage: /guildos craft [item link or id]"] = "Uso: /guildos craft [link do ite
 L["Crafters for %s in guild: %s"] = "Crafters de %s na guilda: %s"
 L["No guild crafter for %s - asking the realm..."] = "Nenhum crafter de %s na guilda - perguntando ao reino..."
 L["%s can craft %s (%s)"] = "%s pode criar %s (%s)"
+L["Find a Crafter"] = "Achar Crafter"
+L["Shift-click an item or type its id"] = "Shift-clique num item ou digite o id"
+L["%d crafter(s) found"] = "%d crafter(s) encontrado(s)"
+L[" (+%d more)"] = " (+%d mais)"
+L["  -  querying the realm..."] = "  -  perguntando ao reino..."
+L["Realm"] = "Reino"
+L["WHERE"] = "ONDE"
 L["Usage: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"] = "Uso: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"
 -- Readiness sub-panel
 L["Readiness"] = "Prontidão"

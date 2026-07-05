@@ -272,6 +272,8 @@ read_globals = {
 
     -- WoW API: Key modifiers
     "IsAltKeyDown",
+    "IsShiftKeyDown",
+    "HandleModifiedItemClick",
     "SetItemRef",
 
     -- Tooltip frames

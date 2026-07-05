@@ -54,7 +54,12 @@ local function handleCommand(msg)
         local arg = strtrim(msg:gsub("^craft%s*", ""))
         local itemId = tonumber(arg:match("item:(%d+)")) or tonumber(arg:match("^(%d+)$"))
         if not itemId then
-            BRutus:Print(L["Usage: /guildos craft [item link or id]"])
+            -- No item given: open the Craft Finder popup instead.
+            if BRutus.ShowCraftFinder then
+                BRutus:ShowCraftFinder()
+            else
+                BRutus:Print(L["Usage: /guildos craft [item link or id]"])
+            end
         else
             local itemName = GetItemInfo(itemId) or ("item:" .. itemId)
             local seen = {}
