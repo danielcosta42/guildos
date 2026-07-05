@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.16.0] - 2026-07-05
+
+### Added
+- light up ChehulNet presence — advertise version, consume peers
+
+
 ## [0.15.1] - 2026-07-05
 
 ### Fixed
