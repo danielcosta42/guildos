@@ -250,6 +250,7 @@ read_globals = {
     "ERR_GUILD_INVITE_S",
 
     -- WoW Lua aliases (not in std lua51)
+    "Ambiguate",
     "strsplit",
     "strtrim",
     "strlower",

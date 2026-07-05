@@ -36,6 +36,10 @@ Core\Data.lua
 Core\Utils.lua
 Core\Commands.lua
 
+# Cross-addon presence mesh (shared singleton; identical file in each Chehul addon)
+Modules\ChehulNet.lua
+Modules\ChehulNetWire.lua
+
 # Data Modules
 Modules\DataCollector.lua
 Modules\AttunementTracker.lua
