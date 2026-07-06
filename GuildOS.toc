@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary
 ## Author: Chehul (danielcosta42)
-## Version: 0.17.0
+## Version: 0.17.1
 ## SavedVariables: GuildOSDB, BRutusDB
 ## DefaultState: enabled
 ## X-License: MIT
@@ -18,6 +18,7 @@ Libs\CallbackHandler-1.0.lua
 Libs\LibSerialize.lua
 Libs\LibDeflate.lua
 Libs\ChatThrottleLib.lua
+Libs\AceComm-3.0.lua
 Libs\LibChehulMesh.lua
 
 # Core
