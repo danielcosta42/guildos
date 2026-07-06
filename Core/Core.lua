@@ -144,40 +144,48 @@ end
 -- Per-guild DB resolution
 ----------------------------------------------------------------------
 function BRutus:ResolveGuildDB()
-    if not IsInGuild() then
-        self.db = nil
-        self.guildKey = nil
-        return false
+    local realmName = GetRealmName() or "Unknown"
+    local dbKey, guilded
+    if IsInGuild() then
+        local guildName = GetGuildInfo("player")
+        if not guildName then return false end  -- in a guild but name not ready; caller retries
+        dbKey = guildName .. "-" .. realmName
+        guilded = true
+    else
+        -- Guildless: boot against a per-realm fallback DB so the mesh, recruitment
+        -- finder, minimap and commands still work. Guild-scoped data just stays
+        -- empty, and the player switches to the real guild DB once they join one.
+        dbKey = "_noguild-" .. realmName
+        guilded = false
     end
 
-    local guildName = GetGuildInfo("player")
-    if not guildName then return false end
+    -- Already resolved to this key
+    if self.guildKey == dbKey and self.db then
+        self.isGuilded = guilded
+        return true
+    end
 
-    local realmName = GetRealmName() or "Unknown"
-    local guildKey = guildName .. "-" .. realmName
-
-    -- Already resolved to this guild
-    if self.guildKey == guildKey and self.db then return true end
-
-    -- Migration from flat structure (pre-guild-keyed DB)
-    if not GuildOSDB._dbVersion then
+    -- Migration from the pre-guild-keyed flat structure. Only meaningful when
+    -- guilded, so legacy data lands under the real guild key (never _noguild);
+    -- a guildless boot leaves _dbVersion untouched so a later guilded boot migrates.
+    if guilded and not GuildOSDB._dbVersion then
         if GuildOSDB.version or GuildOSDB.members or GuildOSDB.settings then
             local oldData = {}
             for k, v in pairs(GuildOSDB) do
                 oldData[k] = v
             end
             wipe(GuildOSDB)
-            GuildOSDB[guildKey] = oldData
+            GuildOSDB[dbKey] = oldData
         end
         GuildOSDB._dbVersion = 2
     end
 
-    if not GuildOSDB[guildKey] then
-        GuildOSDB[guildKey] = {}
+    if not GuildOSDB[dbKey] then
+        GuildOSDB[dbKey] = {}
     end
 
     -- Apply defaults
-    local guildDB = GuildOSDB[guildKey]
+    local guildDB = GuildOSDB[dbKey]
     for k, v in pairs(DB_DEFAULTS) do
         if guildDB[k] == nil then
             if type(v) == "table" then
@@ -189,17 +197,15 @@ function BRutus:ResolveGuildDB()
     end
 
     self.db = guildDB
-    self.guildKey = guildKey
+    self.guildKey = dbKey
+    self.isGuilded = guilded
     return true
 end
 
 function BRutus:OnLogin()
-    if not IsInGuild() then
-        self:Print(L["|cff888888Not in a guild - addon inactive.|r"])
-        return
-    end
-
-    -- Guild info may not be available immediately; retry a few times
+    -- Boots whether or not we're in a guild: ResolveGuildDB falls back to a
+    -- guildless DB so the mesh + recruitment finder + minimap still work.
+    -- A false return only means "in a guild but the name isn't ready yet".
     if not self:ResolveGuildDB() then
         local attempts = 0
         local function tryResolve()
@@ -412,8 +418,14 @@ end
 -- Toggle main roster window
 ----------------------------------------------------------------------
 function BRutus:ToggleRoster()
-    if not IsInGuild() or not self.db then
+    if not self.db then
         self:Print(L["|cff888888Not in a guild \226\128\148 addon inactive.|r"])
+        return
+    end
+    if not IsInGuild() then
+        -- Guildless: the roster is guild data — open the recruitment finder,
+        -- which is exactly what a guildless player is here for.
+        if self.ShowRecruitInbox then self:ShowRecruitInbox() end
         return
     end
     if not self.RosterFrame then
