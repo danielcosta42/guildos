@@ -8,6 +8,21 @@ if not CN then
     return
 end
 
+-- Show network alerts in Guild OS's identity (gold). Forever-dismissed ids persist in our
+-- SavedVariables (GuildOSDB.alertDismissed), resolved at call time (after SV load).
+if CN.EnableAlerts then
+    CN:EnableAlerts({
+        accent = { 1.0, 0.843, 0.0 },
+        title = "Guild OS",
+        priority = 2,
+        store = function()
+            GuildOSDB = GuildOSDB or {}
+            GuildOSDB.alertDismissed = GuildOSDB.alertDismissed or {}
+            return GuildOSDB.alertDismissed
+        end,
+    })
+end
+
 CN:Register("gos",
     -- caps: advertise our version (tiny + non-sensitive; it rides a public post).
     function()

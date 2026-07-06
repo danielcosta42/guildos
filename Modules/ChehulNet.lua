@@ -13,8 +13,11 @@
 -- layer-aware, not just PartyLens users. Addons with real layer detection (PartyLens)
 -- register CN.layerProvider; the rest use a built-in minimal detector (creature-GUID
 -- field 5 = zoneUID) so GuildOS/ProfessionHelper users report their layer too.
+-- v4: receives ChehulAlert broadcasts and shows a dismissible popup in the host addon's
+-- identity (CN:EnableAlerts{accent,title,priority,store}). One popup per client (highest
+-- priority wins); "Dismiss" persists the alert id so it never shows again.
 
-local VERSION = 3
+local VERSION = 4
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -251,12 +254,144 @@ local function OnPing(payload, sender, dist)
 end
 
 -- ---------------------------------------------------------------------------
+-- Network alerts: receive a ChehulAlert broadcast and show a dismissible popup styled in
+-- the HOST addon's identity. An addon opts in via:
+--   CN:EnableAlerts{ accent={r,g,b}, title="PartyLens", priority=3, store=function() return tbl end }
+-- Highest priority wins, so with several Chehul addons installed exactly ONE popup shows.
+-- `store()` returns the addon's SavedVariables table of forever-dismissed alert ids.
+-- ---------------------------------------------------------------------------
+CN.ALERT_PREFIX = "ChehulAlert"
+CN.alertSeen = CN.alertSeen or {} -- [key]=true, dedupe re-broadcasts within a session
+
+function CN:EnableAlerts(opts)
+    if type(opts) ~= "table" or type(opts.store) ~= "function" then
+        return
+    end
+    if CN._alert and (opts.priority or 0) <= (CN._alert.priority or 0) then
+        return
+    end
+    CN._alert = {
+        accent   = opts.accent or { 0.208, 0.941, 0.773 },
+        title    = opts.title or "ChehulNet",
+        priority = opts.priority or 0,
+        store    = opts.store,
+    }
+end
+
+local alertFrame
+local function EnsureAlertFrame()
+    if alertFrame then
+        return alertFrame
+    end
+    local fr = CreateFrame("Frame", "ChehulNetAlertPopup", UIParent)
+    fr:SetSize(384, 136)
+    fr:SetPoint("TOP", 0, -150)
+    fr:SetFrameStrata("DIALOG")
+    fr:SetToplevel(true)
+    fr:EnableMouse(true)
+    fr:SetMovable(true)
+    fr:RegisterForDrag("LeftButton")
+    fr:SetScript("OnDragStart", fr.StartMoving)
+    fr:SetScript("OnDragStop", fr.StopMovingOrSizing)
+    fr.bg = fr:CreateTexture(nil, "BACKGROUND"); fr.bg:SetAllPoints()
+    fr.bg:SetColorTexture(0.035, 0.047, 0.063, 0.97)
+    fr.edges = {}
+    local edgeDef = {
+        { "TOPLEFT", "TOPRIGHT", nil, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 1 },
+        { "TOPLEFT", "BOTTOMLEFT", 1, nil }, { "TOPRIGHT", "BOTTOMRIGHT", 1, nil },
+    }
+    for _, d in ipairs(edgeDef) do
+        local t = fr:CreateTexture(nil, "BORDER")
+        t:SetPoint(d[1]); t:SetPoint(d[2])
+        if d[3] then t:SetWidth(d[3]) end
+        if d[4] then t:SetHeight(d[4]) end
+        fr.edges[#fr.edges + 1] = t
+    end
+    fr.topbar = fr:CreateTexture(nil, "ARTWORK")
+    fr.topbar:SetPoint("TOPLEFT", 1, -1); fr.topbar:SetPoint("TOPRIGHT", -1, -1); fr.topbar:SetHeight(3)
+    fr.title = fr:CreateFontString(nil, "OVERLAY"); fr.title:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+    fr.title:SetPoint("TOPLEFT", 14, -13)
+    fr.from = fr:CreateFontString(nil, "OVERLAY"); fr.from:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+    fr.from:SetPoint("TOPLEFT", 14, -32); fr.from:SetTextColor(0.55, 0.60, 0.66, 1)
+    fr.msg = fr:CreateFontString(nil, "OVERLAY"); fr.msg:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+    fr.msg:SetPoint("TOPLEFT", 14, -52); fr.msg:SetPoint("RIGHT", -14, 0)
+    fr.msg:SetJustifyH("LEFT"); fr.msg:SetHeight(42); fr.msg:SetTextColor(0.82, 0.85, 0.89, 1)
+    -- Dismiss (never again).
+    fr.dismiss = CreateFrame("Button", nil, fr)
+    fr.dismiss:SetSize(210, 22); fr.dismiss:SetPoint("BOTTOMLEFT", 14, 12)
+    fr.dismiss.bg = fr.dismiss:CreateTexture(nil, "BACKGROUND"); fr.dismiss.bg:SetAllPoints()
+    fr.dismiss.txt = fr.dismiss:CreateFontString(nil, "OVERLAY")
+    fr.dismiss.txt:SetFont("Fonts\\FRIZQT__.TTF", 11, ""); fr.dismiss.txt:SetPoint("CENTER")
+    fr.dismiss.txt:SetText("Dismiss — don't show again")
+    -- Close (this time only).
+    fr.close = CreateFrame("Button", nil, fr); fr.close:SetSize(22, 22); fr.close:SetPoint("TOPRIGHT", -4, -4)
+    fr.close.txt = fr.close:CreateFontString(nil, "OVERLAY")
+    fr.close.txt:SetFont("Fonts\\FRIZQT__.TTF", 16, ""); fr.close.txt:SetPoint("CENTER")
+    fr.close.txt:SetText("\195\151"); fr.close.txt:SetTextColor(0.75, 0.4, 0.4, 1)
+    fr.close:SetScript("OnClick", function() fr:Hide() end)
+    fr:Hide()
+    alertFrame = fr
+    return fr
+end
+
+function CN:ShowAlert(key, text, sender)
+    if not CN._alert then
+        return
+    end
+    local acc = CN._alert.accent
+    local fr = EnsureAlertFrame()
+    fr.topbar:SetColorTexture(acc[1], acc[2], acc[3], 0.9)
+    for _, t in ipairs(fr.edges) do t:SetColorTexture(acc[1], acc[2], acc[3], 0.55) end
+    fr.title:SetText(CN._alert.title .. "  \194\183  network alert")
+    fr.title:SetTextColor(acc[1], acc[2], acc[3], 1)
+    fr.from:SetText("from " .. (sender or "?"))
+    fr.msg:SetText(text or "")
+    fr.dismiss.bg:SetColorTexture(acc[1], acc[2], acc[3], 0.18)
+    fr.dismiss.txt:SetTextColor(acc[1], acc[2], acc[3], 1)
+    fr.dismiss:SetScript("OnClick", function()
+        local ok, store = pcall(CN._alert.store)
+        if ok and type(store) == "table" then store[key] = true end
+        fr:Hide()
+    end)
+    fr:Show()
+    if PlaySound then pcall(PlaySound, 8959) end -- RaidWarning
+end
+
+local function OnAlert(payload, sender)
+    if type(payload) ~= "string" then
+        return
+    end
+    local kind, id, text = strsplit("|", payload)
+    if kind ~= "ALERT" or not id or id == "" then
+        return
+    end
+    local short = (Ambiguate and Ambiguate(sender or "", "short")) or sender
+    if not short or short == MyShortName() then
+        return -- ignore my own alert
+    end
+    local key = short .. "#" .. id
+    if CN.alertSeen[key] then
+        return -- already handled this alert this session (it re-broadcasts on a timer)
+    end
+    CN.alertSeen[key] = true
+    if not CN._alert then
+        return -- no host addon registered a display on this client
+    end
+    local ok, store = pcall(CN._alert.store)
+    if ok and type(store) == "table" and store[key] then
+        return -- dismissed forever
+    end
+    CN:ShowAlert(key, text or "", short)
+end
+
+-- ---------------------------------------------------------------------------
 -- Bootstrap: register our receive handler with the mesh + start on login. Also drive
 -- the built-in layer detector off target/mouseover (a no-op when a provider is set).
 -- ---------------------------------------------------------------------------
 if Mesh then
     Mesh:Register(CN.PREFIX, OnHello)
     Mesh:Register(CN.PING_PREFIX, OnPing)
+    Mesh:Register(CN.ALERT_PREFIX, OnAlert)
 end
 
 CN.frame = CN.frame or CreateFrame("Frame")
