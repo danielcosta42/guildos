@@ -2,15 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.19.1] - 2026-07-06
-
-### Changed
-- Shared cross-addon presence (ChehulNet) bumped to v3: the HELLO now carries this
-  character's **layer** (`mapID:zoneUID`), detected via a built-in minimal detector, so
-  GuildOS users are visible by layer across the whole Chehul mesh (PartyLens's occupancy
-  map, Circle, etc.) — not just by class/level. Also answers the `ChehulPing` RTT probe now,
-  so the network monitor can measure round-trip to GuildOS users. Ship-identical shared file.
-
 ## [0.19.0] - 2026-07-06
 
 ### Added

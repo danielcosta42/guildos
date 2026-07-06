@@ -61,6 +61,7 @@ read_globals = {
     "C_Timer",
     "C_ChatInfo",
     "C_GuildInfo",
+    "C_Map",
     "C_QuestLog",
 
     -- WoW API: Unit functions
@@ -74,6 +75,8 @@ read_globals = {
     "UnitPowerMax",
     "UnitStat",
     "UnitExists",
+    "UnitIsPlayer",
+    "UnitPlayerControlled",
     "UnitIsConnected",
     "UnitBuff",
 
