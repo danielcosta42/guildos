@@ -44,6 +44,8 @@ local function handleCommand(msg)
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
     elseif msg == "polls" or msg == "poll" then
         if BRutus.Polls then BRutus.Polls:Show() end
+    elseif msg == "calendar" or msg == "cal" or msg == "events" then
+        if BRutus.ShowCalendar then BRutus:ShowCalendar() end
     elseif msg == "search" or msg:match("^find") then
         if BRutus.Search then
             local q = strtrim(msg:gsub("^find%s*", ""))

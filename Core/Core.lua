@@ -280,6 +280,9 @@ function BRutus:InitModules()
     if BRutus.Polls then
         BRutus.Polls:Initialize()
     end
+    if BRutus.Calendar then
+        BRutus.Calendar:Initialize()
+    end
     if BRutus.Milestones then
         BRutus.Milestones:Initialize()
     end

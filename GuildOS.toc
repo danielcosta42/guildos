@@ -71,6 +71,7 @@ Modules\Digest.lua
 Modules\Backup.lua
 Modules\Bulletin.lua
 Modules\Polls.lua
+Modules\Calendar.lua
 Modules\Milestones.lua
 Modules\Search.lua
 Modules\RaidTools.lua
@@ -82,6 +83,7 @@ UI\Helpers.lua
 UI\RecipesPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
+UI\CalendarPanel.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua

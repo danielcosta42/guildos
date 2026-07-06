@@ -79,6 +79,16 @@ function Digest:Build(since)
         end
     end
 
+    -- Upcoming raid reminder (event within the next 24h)
+    if BRutus.Calendar and BRutus.Calendar.GetDigestLines then
+        local calLines = BRutus.Calendar:GetDigestLines()
+        if calLines then
+            for _, line in ipairs(calLines) do
+                lines[#lines + 1] = "|cff4CB8FF" .. line .. "|r"
+            end
+        end
+    end
+
     -- New bulletin notices (most recent few)
     if BRutus.Bulletin then
         local shown = 0
