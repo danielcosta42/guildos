@@ -289,6 +289,9 @@ function BRutus:InitModules()
     if BRutus.CraftNet then
         BRutus.CraftNet:Initialize()
     end
+    if BRutus.RecruitBeacon then
+        BRutus.RecruitBeacon:Initialize()
+    end
     if BRutus.GuildManager and modEnabled("guildManager") then
         BRutus.GuildManager:Initialize()
     end

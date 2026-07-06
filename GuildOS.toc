@@ -58,6 +58,7 @@ Modules\LootTracker.lua
 Modules\LootMaster.lua
 Modules\RecipeTracker.lua
 Modules\CraftNet.lua
+Modules\RecruitBeacon.lua
 Modules\OfficerNotes.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua
@@ -80,6 +81,7 @@ Modules\SpecChecker.lua
 UI\Helpers.lua
 UI\RecipesPanel.lua
 UI\CraftFinder.lua
+UI\RecruitBeacon.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua
 UI\MemberDetail.lua

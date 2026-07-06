@@ -86,6 +86,12 @@ local function handleCommand(msg)
                 end)
             end
         end
+    elseif msg == "beacon" or msg == "recruitbeacon" then
+        -- Officer: compose/toggle the guild recruitment beacon.
+        if BRutus.ShowRecruitBeacon then BRutus:ShowRecruitBeacon() end
+    elseif msg == "lfg" or msg == "recruiting" then
+        -- Anyone: browse guilds recruiting nearby (heard over the mesh).
+        if BRutus.ShowRecruitInbox then BRutus:ShowRecruitInbox() end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()
