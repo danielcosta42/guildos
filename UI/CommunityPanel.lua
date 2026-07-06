@@ -230,6 +230,7 @@ end
 -- Guild Hub assembly (sub-tab bar mirrors the Audit panel)
 ----------------------------------------------------------------------
 local HUB_SUBTABS = {
+    { key = "calendar", label = L["Calendar"] },
     { key = "activity", label = L["Activity"] },
     { key = "bulletin", label = L["Bulletin"] },
     { key = "polls",    label = L["Polls"] },
@@ -237,7 +238,7 @@ local HUB_SUBTABS = {
 
 function BRutus:CreateGuildHub(parent, _mainFrame)
     parent.subPanels = {}
-    parent.activeSub = "activity"
+    parent.activeSub = "calendar"
 
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
@@ -252,6 +253,7 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
         local info = parent.subPanels[key]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
+    parent.SelectSub = selectSub   -- exposed so /guildos calendar can jump here
 
     local x = 0
     for _, t in ipairs(HUB_SUBTABS) do
@@ -270,14 +272,17 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
         return p
     end
 
-    local builders = { activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub }
+    local builders = {
+        calendar = function(p) return BRutus:CreateCalendarSub(p) end,
+        activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub,
+    }
     for _, t in ipairs(HUB_SUBTABS) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
     end
 
     parent:SetScript("OnShow", function()
-        selectSub(parent.activeSub or "activity")
+        selectSub(parent.activeSub or "calendar")
     end)
 end
 

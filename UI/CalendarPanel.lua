@@ -1,7 +1,8 @@
 ----------------------------------------------------------------------
--- Guild OS - Calendar Panel (month grid)
--- Month view with event markers; click a day to RSVP to its events or (officer)
--- create one. Backed by GuildOS.Calendar (synced "event" domain).
+-- Guild OS - Calendar sub-panel (month grid)
+-- Embedded as the first sub-tab of the Guild hub. Month view with event
+-- markers; click a day to RSVP to its events or (officer) create one.
+-- Backed by GuildOS.Calendar (synced "event" domain).
 -- Time basis: the client's date()/time() used consistently (assumes the guild
 -- shares one timezone, which is the normal case).
 ----------------------------------------------------------------------
@@ -16,13 +17,16 @@ local ROLES    = { "TANK", "HEALER", "DPS" }
 local SIZES    = { 10, 25, 40 }
 
 local COLS, ROWS = 7, 6
-local CELL_W, CELL_H = 76, 46
-local GRID_X, GRID_Y = 12, -84
+local CELL_H  = 44
+local NAV_Y   = -6
+local WD_Y    = -34
+local GRID_Y  = -50
+local GRID_X  = 8
 
 -- Date helpers (noon avoids DST edge issues).
 local function noon(y, m, d) return time({ year = y, month = m, day = d, hour = 12 }) end
-local function daysInMonth(y, m) return date("*t", noon(y, m + 1, 0)).day end   -- day 0 of next month
-local function firstWeekday(y, m) return date("*t", noon(y, m, 1)).wday end       -- 1=Sun..7=Sat
+local function daysInMonth(y, m) return date("*t", noon(y, m + 1, 0)).day end
+local function firstWeekday(y, m) return date("*t", noon(y, m, 1)).wday end   -- 1=Sun..7=Sat
 local function dayKey(y, m, d) return y * 10000 + m * 100 + d end
 local function keyOfTs(ts) local t = date("*t", ts); return dayKey(t.year, t.month, t.day) end
 local function roleLabel(r)
@@ -32,59 +36,39 @@ local function roleLabel(r)
 end
 
 ----------------------------------------------------------------------
--- Build the singleton window.
+-- Build the calendar into a Guild-hub sub-panel; return its refresh fn.
 ----------------------------------------------------------------------
-local function BuildCalendar()
-    local f = CreateFrame("Frame", "GuildOSCalendar", UIParent, "BackdropTemplate")
-    f:SetSize(568, 620)
-    f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
-    f:SetFrameStrata("HIGH")
-    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(s) s:StartMoving() end)
-    f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
-    table.insert(UISpecialFrames, "GuildOSCalendar")
-
-    local title = UI:CreateTitle(f, L["Guild Calendar"], 15)
-    title:SetPoint("TOPLEFT", 16, -12)
-    local close = UI:CreateCloseButton(f)
-    close:SetPoint("TOPRIGHT", -8, -8)
-    close:SetScript("OnClick", function() f:Hide() end)
+function BRutus:CreateCalendarSub(panel)
+    local f = CreateFrame("Frame", nil, panel)
+    f:SetAllPoints(panel)
 
     -- Month navigation
     local prevBtn = UI:CreateButton(f, "<", 26, 22)
-    prevBtn:SetPoint("TOPLEFT", 16, -40)
-    local monthLabel = UI:CreateText(f, "", 13, C.gold.r, C.gold.g, C.gold.b)
+    prevBtn:SetPoint("TOPLEFT", GRID_X, NAV_Y)
+    local monthLabel = UI:CreateText(f, "", 14, C.gold.r, C.gold.g, C.gold.b)
     monthLabel:SetPoint("LEFT", prevBtn, "RIGHT", 10, 0)
-    monthLabel:SetWidth(150); monthLabel:SetJustifyH("CENTER")
+    monthLabel:SetWidth(170); monthLabel:SetJustifyH("LEFT")
     local nextBtn = UI:CreateButton(f, ">", 26, 22)
-    nextBtn:SetPoint("LEFT", monthLabel, "RIGHT", 10, 0)
+    nextBtn:SetPoint("LEFT", monthLabel, "RIGHT", 4, 0)
     local todayBtn = UI:CreateButton(f, L["Today"], 60, 22)
     todayBtn:SetPoint("LEFT", nextBtn, "RIGHT", 12, 0)
 
-    -- Weekday header
-    for i, wd in ipairs(WEEKDAYS) do
-        local h = UI:CreateText(f, L[wd], 9, C.silver.r, C.silver.g, C.silver.b)
-        h:SetPoint("TOPLEFT", GRID_X + (i - 1) * CELL_W + 4, -68)
+    -- Weekday headers (repositioned in Render to match the dynamic grid width)
+    f.wdFS = {}
+    for i = 1, COLS do
+        f.wdFS[i] = UI:CreateText(f, L[WEEKDAYS[i]], 10, C.silver.r, C.silver.g, C.silver.b)
     end
 
     -- Day cells
     f.cells = {}
     for idx = 1, COLS * ROWS do
-        local col = (idx - 1) % COLS
-        local row = math.floor((idx - 1) / COLS)
         local cell = CreateFrame("Button", nil, f, "BackdropTemplate")
-        cell:SetSize(CELL_W - 2, CELL_H - 2)
-        cell:SetPoint("TOPLEFT", GRID_X + col * CELL_W, GRID_Y - row * CELL_H)
         cell:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         cell.dayFS = cell:CreateFontString(nil, "OVERLAY")
-        cell.dayFS:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        cell.dayFS:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
         cell.dayFS:SetPoint("TOPLEFT", 4, -3)
         cell.evtFS = cell:CreateFontString(nil, "OVERLAY")
-        cell.evtFS:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+        cell.evtFS:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
         cell.evtFS:SetPoint("BOTTOMLEFT", 3, 3)
         cell.evtFS:SetPoint("BOTTOMRIGHT", -3, 3)
         cell.evtFS:SetJustifyH("LEFT"); cell.evtFS:SetWordWrap(false)
@@ -94,15 +78,15 @@ local function BuildCalendar()
         f.cells[idx] = cell
     end
 
-    -- Detail area (selected day)
+    -- Detail area (below the grid)
     local DET_Y = GRID_Y - ROWS * CELL_H - 12
     local detailLabel = UI:CreateText(f, "", 12, C.gold.r, C.gold.g, C.gold.b)
-    detailLabel:SetPoint("TOPLEFT", 16, DET_Y)
+    detailLabel:SetPoint("TOPLEFT", GRID_X, DET_Y)
 
     -- Officer create row (time / title / size / create)
     local createRow = CreateFrame("Frame", nil, f)
-    createRow:SetPoint("TOPLEFT", 16, DET_Y - 20)
-    createRow:SetSize(536, 26)
+    createRow:SetPoint("TOPLEFT", GRID_X, DET_Y - 20)
+    createRow:SetSize(560, 26)
     local function mkBox(w, ph)
         local b = CreateFrame("EditBox", nil, createRow, "BackdropTemplate")
         b:SetSize(w, 22)
@@ -117,7 +101,7 @@ local function BuildCalendar()
         return b
     end
     local timeBox  = mkBox(52, L["HH:MM"]); timeBox:SetPoint("LEFT", 0, 0); timeBox:SetMaxLetters(5)
-    local titleBox = mkBox(220, L["Event title"]); titleBox:SetPoint("LEFT", timeBox, "RIGHT", 6, 0); titleBox:SetMaxLetters(60)
+    local titleBox = mkBox(240, L["Event title"]); titleBox:SetPoint("LEFT", timeBox, "RIGHT", 6, 0); titleBox:SetMaxLetters(60)
     local sizeBtn  = UI:CreateButton(createRow, "25", 40, 22); sizeBtn:SetPoint("LEFT", titleBox, "RIGHT", 6, 0)
     sizeBtn.sizeVal = 25
     sizeBtn:SetScript("OnClick", function()
@@ -137,27 +121,35 @@ local function BuildCalendar()
         if not hh or not mm or hh > 23 or mm > 59 then
             BRutus:Print(L["Enter a time as HH:MM."]); return
         end
-        local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
-        CAL():Create(titleBox:GetText(), when, sizeBtn.sizeVal, "")
+        CAL():Create(titleBox:GetText(), time({ year = y, month = m, day = d, hour = hh, min = mm }), sizeBtn.sizeVal, "")
         titleBox:SetText(""); timeBox:SetText(""); titleBox:ClearFocus(); timeBox:ClearFocus()
     end)
     f.createRow = createRow
 
-    -- Event list holder (scrollable)
+    -- Event list holder (scrollable), fills the rest of the panel
     local holder = CreateFrame("Frame", nil, f)
-    holder:SetPoint("TOPLEFT", 12, DET_Y - 52)
-    holder:SetPoint("BOTTOMRIGHT", -12, 14)
+    holder:SetPoint("TOPLEFT", GRID_X + 4, DET_Y - 52)
+    holder:SetPoint("BOTTOMRIGHT", -12, 12)
+    f.holder = holder
     local _, scrollChild = UI:CreateScrollFrame(holder, "GuildOSCalendarScroll")
     f.child = scrollChild
 
     ------------------------------------------------------------------
-    -- Render
+    -- Render (grid sizes to the current panel width)
     ------------------------------------------------------------------
     function f.Render()
-        -- Month label
+        local W = f:GetWidth()
+        if not W or W < 120 then W = 1000 end
+        local cellW = math.floor((W - GRID_X - 12) / COLS)
+
         monthLabel:SetText(date("%b %Y", noon(f.viewYear, f.viewMonth, 1)))
 
-        -- Bucket events by day for the visible month range.
+        for i = 1, COLS do
+            f.wdFS[i]:ClearAllPoints()
+            f.wdFS[i]:SetPoint("TOPLEFT", GRID_X + (i - 1) * cellW + 4, WD_Y)
+        end
+
+        -- Bucket events by day.
         local byDay = {}
         for _, e in pairs(CAL():GetEvents()) do
             if not e.canceled then
@@ -168,11 +160,17 @@ local function BuildCalendar()
         end
 
         local dim = daysInMonth(f.viewYear, f.viewMonth)
-        local lead = firstWeekday(f.viewYear, f.viewMonth) - 1     -- blank cells before day 1
+        local lead = firstWeekday(f.viewYear, f.viewMonth) - 1
         local todayKey = keyOfTs(GetServerTime())
 
         for idx = 1, COLS * ROWS do
+            local col = (idx - 1) % COLS
+            local row = math.floor((idx - 1) / COLS)
             local cell = f.cells[idx]
+            cell:ClearAllPoints()
+            cell:SetPoint("TOPLEFT", GRID_X + col * cellW, GRID_Y - row * CELL_H)
+            cell:SetSize(cellW - 2, CELL_H - 2)
+
             local dayNum = idx - lead
             if dayNum < 1 or dayNum > dim then
                 cell.dayFS:SetText(""); cell.evtFS:SetText(""); cell.dkey = nil
@@ -181,8 +179,7 @@ local function BuildCalendar()
             else
                 local k = dayKey(f.viewYear, f.viewMonth, dayNum)
                 cell.dkey = k
-                cell.dayFS:SetText(dayNum)
-                cell.dayFS:SetTextColor(1, 1, 1)
+                cell.dayFS:SetText(dayNum); cell.dayFS:SetTextColor(1, 1, 1)
                 local evs = byDay[k]
                 if evs then
                     table.sort(evs, function(a, b) return a.when < b.when end)
@@ -193,7 +190,6 @@ local function BuildCalendar()
                 else
                     cell.evtFS:SetText("")
                 end
-                -- Cell background: selected > today > has-events > plain
                 if k == f.selectedKey then
                     cell:SetBackdropColor(C.accent.r * 0.30, C.accent.g * 0.30, C.accent.b * 0.30, 0.95)
                     cell:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.9)
@@ -227,7 +223,7 @@ local function BuildCalendar()
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(536)
+        child:SetWidth(f.holder:GetWidth() - 12)
 
         local evs = (sel and byDay and byDay[sel]) or {}
         local yy = 0
@@ -240,7 +236,7 @@ local function BuildCalendar()
             head:SetPoint("TOPLEFT", 4, -yy)
             if isOfficer then
                 local cancelBtn = UI:CreateButton(child, L["Cancel"], 60, 18)
-                cancelBtn:SetPoint("TOPRIGHT", -2, -yy)
+                cancelBtn:SetPoint("TOPLEFT", 320, -yy)
                 local id = e.id
                 cancelBtn:SetScript("OnClick", function() CAL():Cancel(id) end)
             end
@@ -252,7 +248,6 @@ local function BuildCalendar()
             compFS:SetPoint("TOPLEFT", 6, -yy)
             yy = yy + 18
 
-            -- RSVP row: role cycle + Yes / Tentative / No
             local id = e.id
             local roleBtn = UI:CreateButton(child, roleLabel((mine and mine.role) or "DPS"), 66, 18)
             roleBtn:SetPoint("TOPLEFT", 6, -yy)
@@ -270,12 +265,11 @@ local function BuildCalendar()
                 b:SetScript("OnClick", function() CAL():Rsvp(id, status, roleBtn.role) end)
                 return b
             end
-            rsvpBtn(L["Going"],     "yes",       8,  C.online)
-            rsvpBtn(L["Tentative"], "tentative", 76, C.gold)
+            rsvpBtn(L["Going"],     "yes",       8,   C.online)
+            rsvpBtn(L["Tentative"], "tentative", 76,  C.gold)
             rsvpBtn(L["Absent"],    "no",        144, C.red)
             yy = yy + 24
 
-            -- Who's going
             local going = {}
             for _, r in pairs(e.rsvps or {}) do
                 if r.status == "yes" then
@@ -285,7 +279,7 @@ local function BuildCalendar()
             end
             if #going > 0 then
                 local goFS = UI:CreateText(child, L["Going: "] .. table.concat(going, ", "), 9, C.textDim.r, C.textDim.g, C.textDim.b)
-                goFS:SetPoint("TOPLEFT", 6, -yy); goFS:SetWidth(520); goFS:SetJustifyH("LEFT")
+                goFS:SetPoint("TOPLEFT", 6, -yy); goFS:SetWidth(child:GetWidth() - 12); goFS:SetJustifyH("LEFT")
                 yy = yy + math.max(14, (goFS:GetStringHeight() or 12) + 4)
             end
             yy = yy + 10
@@ -315,22 +309,25 @@ local function BuildCalendar()
         f.Render()
     end)
 
-    return f
+    -- Initial view = current month, today selected.
+    local t = date("*t", GetServerTime())
+    f.viewYear, f.viewMonth, f.selectedKey = t.year, t.month, dayKey(t.year, t.month, t.day)
+
+    -- Live-refresh while visible as synced events/RSVPs arrive.
+    if BRutus.Calendar then
+        BRutus.Calendar.uiRefresh = function() if panel:IsShown() then f.Render() end end
+    end
+
+    return f.Render
 end
 
 ----------------------------------------------------------------------
--- Public entry
+-- Entry point (command): open the roster on the Guild hub's Calendar sub-tab.
 ----------------------------------------------------------------------
 function BRutus:ShowCalendar()
-    local f = self.calendarFrame or BuildCalendar()
-    self.calendarFrame = f
-    if not f.viewYear then
-        local t = date("*t", GetServerTime())
-        f.viewYear, f.viewMonth, f.selectedKey = t.year, t.month, dayKey(t.year, t.month, t.day)
-    end
-    if self.Calendar then
-        self.Calendar.uiRefresh = function() if f:IsShown() then f.Render() end end
-    end
-    f:Show(); f:Raise()
-    f.Render()
+    if not self.RosterFrame then self.RosterFrame = BRutus.CreateRosterFrame() end
+    if not self.RosterFrame:IsShown() then self.RosterFrame:Show() end
+    if self.RosterFrame.SetActiveTab then self.RosterFrame:SetActiveTab("guild") end
+    local gp = self.RosterFrame.tabPanels and self.RosterFrame.tabPanels["guild"]
+    if gp and gp.SelectSub then gp.SelectSub("calendar") end
 end
