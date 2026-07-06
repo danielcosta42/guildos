@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.0] - 2026-07-06
+
+### Added
+- gossip-relay ads + personalization + recruitment-tab composer
+- RecruitBeacon — guild recruitment matching over the mesh
+
+### Fixed
+- boot the addon for guildless players (mesh + recruitment)
+
+
 ## [0.18.0] - 2026-07-06
 
 ### Added
