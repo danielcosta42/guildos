@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0] - 2026-07-06
+
+### Added
+- month-grid raid calendar + signups (synced, Plan A)
+
+### Fixed
+- complete luacheck WoW globals (UnitIsPlayer/UnitPlayerControlled/C_Map) for the ChehulNet v3 layer detector; drop manual toc/changelog bump (CI auto-versions)
+
+### Changed
+- embed the month grid as the Guild hub's first sub-tab
+
+### Other
+- Release 0.19.1: ChehulNet shared presence v3 - HELLO carries layer (mapID:zoneUID) via built-in detector, GuildOS users now visible by layer across the Chehul mesh; answers ChehulPing RTT probe. Ship-identical shared file
+
+
 ## [0.19.0] - 2026-07-06
 
 ### Added
