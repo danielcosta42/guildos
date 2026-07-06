@@ -19,8 +19,10 @@
 -- v5: alert popups are gated to an ALLOWLIST of sender names (CN.ALERT_SENDERS) — only the
 -- operator's own characters can fire a popup. Names are unique per realm and the alert
 -- buses are realm-local, so this is, in practice, "only alerts from the backoffice I run".
+-- v6: the operator now SEES their own alert too (no self-skip) — confirmation it went out +
+-- solo-testable. Still deduped by id, still allowlist-gated.
 
-local VERSION = 5
+local VERSION = 6
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -373,12 +375,15 @@ local function OnAlert(payload, sender)
         return
     end
     local short = (Ambiguate and Ambiguate(sender or "", "short")) or sender
-    if not short or short == MyShortName() then
-        return -- ignore my own alert
+    if not short then
+        return
     end
     if not CN.ALERT_SENDERS[short:lower()] then
         return -- not an authorized alert sender (only the operator's chars pop up)
     end
+    -- NOTE: we intentionally DO NOT skip our own alert — the operator sees it too (over the
+    -- YELL/SAY self-echo), as confirmation it went out and so a solo test works. Deduped by
+    -- id, so a re-broadcast never re-pops it.
     local key = short .. "#" .. id
     if CN.alertSeen[key] then
         return -- already handled this alert this session (it re-broadcasts on a timer)
