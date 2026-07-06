@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.1] - 2026-07-06
+
+### Fixed
+- gate alert popups to an authorized-sender allowlist (ChehulNet v5) — only the operator's char can fire a network-alert popup; closes the griefing vector
+
+
 ## [0.21.0] - 2026-07-06
 
 ### Added
