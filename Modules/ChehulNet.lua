@@ -16,8 +16,11 @@
 -- v4: receives ChehulAlert broadcasts and shows a dismissible popup in the host addon's
 -- identity (CN:EnableAlerts{accent,title,priority,store}). One popup per client (highest
 -- priority wins); "Dismiss" persists the alert id so it never shows again.
+-- v5: alert popups are gated to an ALLOWLIST of sender names (CN.ALERT_SENDERS) — only the
+-- operator's own characters can fire a popup. Names are unique per realm and the alert
+-- buses are realm-local, so this is, in practice, "only alerts from the backoffice I run".
 
-local VERSION = 4
+local VERSION = 5
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -262,6 +265,10 @@ end
 -- ---------------------------------------------------------------------------
 CN.ALERT_PREFIX = "ChehulAlert"
 CN.alertSeen = CN.alertSeen or {} -- [key]=true, dedupe re-broadcasts within a session
+-- ONLY these characters (lowercased short names) may fire an alert popup — everyone else is
+-- ignored. Character names are unique per realm and the alert buses are realm-local, so in
+-- practice this is "only alerts from the operator's own backoffice". Edit to add operator alts.
+CN.ALERT_SENDERS = CN.ALERT_SENDERS or { ["chehul"] = true }
 
 function CN:EnableAlerts(opts)
     if type(opts) ~= "table" or type(opts.store) ~= "function" then
@@ -368,6 +375,9 @@ local function OnAlert(payload, sender)
     local short = (Ambiguate and Ambiguate(sender or "", "short")) or sender
     if not short or short == MyShortName() then
         return -- ignore my own alert
+    end
+    if not CN.ALERT_SENDERS[short:lower()] then
+        return -- not an authorized alert sender (only the operator's chars pop up)
     end
     local key = short .. "#" .. id
     if CN.alertSeen[key] then
