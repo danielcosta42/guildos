@@ -21,8 +21,10 @@
 -- buses are realm-local, so this is, in practice, "only alerts from the backoffice I run".
 -- v6: the operator now SEES their own alert too (no self-skip) — confirmation it went out +
 -- solo-testable. Still deduped by id, still allowlist-gated.
+-- v7: the alert is now a QUIET, persistent top BANNER (no sound, no big centered popup) —
+-- subtle but always visible until the operator clicks × (dismiss forever).
 
-local VERSION = 6
+local VERSION = 7
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -287,83 +289,63 @@ function CN:EnableAlerts(opts)
     }
 end
 
+-- A QUIET, persistent top banner (not a loud centered popup, no sound). Stays visible
+-- until the operator clicks × (which dismisses the id forever). Themed by the host addon's
+-- accent (a thin left bar + hairline underline + the addon name in its colour).
 local alertFrame
 local function EnsureAlertFrame()
     if alertFrame then
         return alertFrame
     end
-    local fr = CreateFrame("Frame", "ChehulNetAlertPopup", UIParent)
-    fr:SetSize(384, 136)
-    fr:SetPoint("TOP", 0, -150)
-    fr:SetFrameStrata("DIALOG")
-    fr:SetToplevel(true)
+    local fr = CreateFrame("Frame", "ChehulNetAlertBanner", UIParent)
+    fr:SetSize(460, 28)
+    fr:SetPoint("TOP", 0, -6)
+    fr:SetFrameStrata("HIGH")
     fr:EnableMouse(true)
     fr:SetMovable(true)
     fr:RegisterForDrag("LeftButton")
     fr:SetScript("OnDragStart", fr.StartMoving)
     fr:SetScript("OnDragStop", fr.StopMovingOrSizing)
     fr.bg = fr:CreateTexture(nil, "BACKGROUND"); fr.bg:SetAllPoints()
-    fr.bg:SetColorTexture(0.035, 0.047, 0.063, 0.97)
-    fr.edges = {}
-    local edgeDef = {
-        { "TOPLEFT", "TOPRIGHT", nil, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 1 },
-        { "TOPLEFT", "BOTTOMLEFT", 1, nil }, { "TOPRIGHT", "BOTTOMRIGHT", 1, nil },
-    }
-    for _, d in ipairs(edgeDef) do
-        local t = fr:CreateTexture(nil, "BORDER")
-        t:SetPoint(d[1]); t:SetPoint(d[2])
-        if d[3] then t:SetWidth(d[3]) end
-        if d[4] then t:SetHeight(d[4]) end
-        fr.edges[#fr.edges + 1] = t
-    end
-    fr.topbar = fr:CreateTexture(nil, "ARTWORK")
-    fr.topbar:SetPoint("TOPLEFT", 1, -1); fr.topbar:SetPoint("TOPRIGHT", -1, -1); fr.topbar:SetHeight(3)
-    fr.title = fr:CreateFontString(nil, "OVERLAY"); fr.title:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
-    fr.title:SetPoint("TOPLEFT", 14, -13)
-    fr.from = fr:CreateFontString(nil, "OVERLAY"); fr.from:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
-    fr.from:SetPoint("TOPLEFT", 14, -32); fr.from:SetTextColor(0.55, 0.60, 0.66, 1)
-    fr.msg = fr:CreateFontString(nil, "OVERLAY"); fr.msg:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
-    fr.msg:SetPoint("TOPLEFT", 14, -52); fr.msg:SetPoint("RIGHT", -14, 0)
-    fr.msg:SetJustifyH("LEFT"); fr.msg:SetHeight(42); fr.msg:SetTextColor(0.82, 0.85, 0.89, 1)
-    -- Dismiss (never again).
-    fr.dismiss = CreateFrame("Button", nil, fr)
-    fr.dismiss:SetSize(210, 22); fr.dismiss:SetPoint("BOTTOMLEFT", 14, 12)
-    fr.dismiss.bg = fr.dismiss:CreateTexture(nil, "BACKGROUND"); fr.dismiss.bg:SetAllPoints()
-    fr.dismiss.txt = fr.dismiss:CreateFontString(nil, "OVERLAY")
-    fr.dismiss.txt:SetFont("Fonts\\FRIZQT__.TTF", 11, ""); fr.dismiss.txt:SetPoint("CENTER")
-    fr.dismiss.txt:SetText("Dismiss — don't show again")
-    -- Close (this time only).
-    fr.close = CreateFrame("Button", nil, fr); fr.close:SetSize(22, 22); fr.close:SetPoint("TOPRIGHT", -4, -4)
+    fr.bg:SetColorTexture(0.04, 0.05, 0.07, 0.86)
+    fr.accentBar = fr:CreateTexture(nil, "ARTWORK")
+    fr.accentBar:SetPoint("TOPLEFT"); fr.accentBar:SetPoint("BOTTOMLEFT"); fr.accentBar:SetWidth(3)
+    fr.underline = fr:CreateTexture(nil, "ARTWORK")
+    fr.underline:SetPoint("BOTTOMLEFT"); fr.underline:SetPoint("BOTTOMRIGHT"); fr.underline:SetHeight(1)
+    fr.title = fr:CreateFontString(nil, "OVERLAY"); fr.title:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    fr.title:SetPoint("LEFT", 12, 0)
+    fr.msg = fr:CreateFontString(nil, "OVERLAY"); fr.msg:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    fr.msg:SetPoint("LEFT", fr.title, "RIGHT", 8, 0); fr.msg:SetPoint("RIGHT", -28, 0)
+    fr.msg:SetJustifyH("LEFT"); fr.msg:SetWordWrap(false); fr.msg:SetTextColor(0.82, 0.85, 0.89, 1)
+    -- × = dismiss forever (there's no "close for now" — the banner lives until dismissed).
+    fr.close = CreateFrame("Button", nil, fr); fr.close:SetSize(20, 20); fr.close:SetPoint("RIGHT", -5, 0)
     fr.close.txt = fr.close:CreateFontString(nil, "OVERLAY")
-    fr.close.txt:SetFont("Fonts\\FRIZQT__.TTF", 16, ""); fr.close.txt:SetPoint("CENTER")
-    fr.close.txt:SetText("\195\151"); fr.close.txt:SetTextColor(0.75, 0.4, 0.4, 1)
-    fr.close:SetScript("OnClick", function() fr:Hide() end)
+    fr.close.txt:SetFont("Fonts\\FRIZQT__.TTF", 14, ""); fr.close.txt:SetPoint("CENTER")
+    fr.close.txt:SetText("\195\151"); fr.close.txt:SetTextColor(0.55, 0.60, 0.66, 1)
+    fr.close:SetScript("OnEnter", function() fr.close.txt:SetTextColor(0.9, 0.5, 0.5, 1) end)
+    fr.close:SetScript("OnLeave", function() fr.close.txt:SetTextColor(0.55, 0.60, 0.66, 1) end)
     fr:Hide()
     alertFrame = fr
     return fr
 end
 
-function CN:ShowAlert(key, text, sender)
+function CN:ShowAlert(key, text)
     if not CN._alert then
         return
     end
     local acc = CN._alert.accent
     local fr = EnsureAlertFrame()
-    fr.topbar:SetColorTexture(acc[1], acc[2], acc[3], 0.9)
-    for _, t in ipairs(fr.edges) do t:SetColorTexture(acc[1], acc[2], acc[3], 0.55) end
-    fr.title:SetText(CN._alert.title .. "  \194\183  network alert")
+    fr.accentBar:SetColorTexture(acc[1], acc[2], acc[3], 0.95)
+    fr.underline:SetColorTexture(acc[1], acc[2], acc[3], 0.35)
+    fr.title:SetText(CN._alert.title)
     fr.title:SetTextColor(acc[1], acc[2], acc[3], 1)
-    fr.from:SetText("from " .. (sender or "?"))
     fr.msg:SetText(text or "")
-    fr.dismiss.bg:SetColorTexture(acc[1], acc[2], acc[3], 0.18)
-    fr.dismiss.txt:SetTextColor(acc[1], acc[2], acc[3], 1)
-    fr.dismiss:SetScript("OnClick", function()
+    fr.close:SetScript("OnClick", function()
         local ok, store = pcall(CN._alert.store)
         if ok and type(store) == "table" then store[key] = true end
         fr:Hide()
     end)
-    fr:Show()
-    if PlaySound then pcall(PlaySound, 8959) end -- RaidWarning
+    fr:Show() -- quiet + persistent: no sound, stays until × (dismiss forever)
 end
 
 local function OnAlert(payload, sender)
@@ -396,7 +378,7 @@ local function OnAlert(payload, sender)
     if ok and type(store) == "table" and store[key] then
         return -- dismissed forever
     end
-    CN:ShowAlert(key, text or "", short)
+    CN:ShowAlert(key, text or "")
 end
 
 -- ---------------------------------------------------------------------------
