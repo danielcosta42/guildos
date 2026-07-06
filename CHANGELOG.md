@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.18.0] - 2026-07-06
+
+### Added
+- Craft Finder UI for the realm-wide crafting network
+
+### Other
+- Shared mesh -> LibChehulMesh v3 (AceComm-3.0 + ChatThrottleLib; realm bus now YELL). Identical file across the Chehul family.
+
+
 ## [0.17.0] - 2026-07-05
 
 ### Added
