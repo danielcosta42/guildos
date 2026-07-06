@@ -9,32 +9,41 @@ local L  = BRutus.L
 
 local function RB() return BRutus.RecruitBeacon end
 
--- Display label for a need token (localized class names; role words).
+-- Friendly labels for guild-focus tokens.
+local FOCUS_LABEL = {
+    RAID = "Raid", PVP = "PvP", CASUAL = "Casual",
+    LEVELING = "Leveling", SOCIAL = "Social", RP = "RP",
+}
+
+-- Display label for any token (role words, localized class names, focus, langs).
 local function TokenLabel(t)
     if t == "TANK"   then return L["Tank"]   end
     if t == "HEALER" then return L["Healer"] end
     if t == "DPS"    then return L["DPS"]    end
-    return (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[t]) or t
+    if FOCUS_LABEL[t] then return L[FOCUS_LABEL[t]] end
+    local cn = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[t]
+    if cn then return cn end
+    return t   -- language codes (enUS/ptBR/…) show as-is
 end
 
 local function TokenColor(t)
-    if t == "TANK" or t == "HEALER" or t == "DPS" then
-        return C.silver.r, C.silver.g, C.silver.b
+    if BRutus.ClassColors and BRutus.ClassColors[t] then
+        return BRutus:GetClassColor(t)   -- class token
     end
-    return BRutus:GetClassColor(t)   -- class token
+    return C.silver.r, C.silver.g, C.silver.b
 end
 
-local function HasNeed(ad, token)
-    for _, t in ipairs(ad.needs or {}) do if t == token then return true end end
+-- Generic list-membership helpers (work on ad.needs / ad.langs / ad.focus).
+local function HasTok(list, token)
+    for _, t in ipairs(list or {}) do if t == token then return true end end
     return false
 end
 
-local function ToggleNeed(ad, token)
-    ad.needs = ad.needs or {}
-    for i, t in ipairs(ad.needs) do
-        if t == token then table.remove(ad.needs, i); return end
+local function ToggleTok(list, token)
+    for i, t in ipairs(list) do
+        if t == token then table.remove(list, i); return end
     end
-    table.insert(ad.needs, token)
+    table.insert(list, token)
 end
 
 -- Shared styled backdrop for both popups.
@@ -81,9 +90,15 @@ end
 ----------------------------------------------------------------------
 local ROLES   = { "TANK", "HEALER", "DPS" }
 local CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+local FOCUS   = { "RAID", "PVP", "CASUAL", "LEVELING", "SOCIAL", "RP" }
+local LANGS   = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU" }
+local NEEDS   = {}
+for _, t in ipairs(ROLES)   do NEEDS[#NEEDS + 1] = t end
+for _, t in ipairs(CLASSES) do NEEDS[#NEEDS + 1] = t end
+local TTL_CYCLE = { 1, 3, 7, 14, 30 }
 
 local function BuildComposer()
-    local f = StylePopupFrame("GuildOSRecruitComposer", 380, 340)
+    local f = StylePopupFrame("GuildOSRecruitComposer", 410, 440)
 
     local title = UI:CreateTitle(f, L["Recruitment Beacon"], 13)
     title:SetPoint("TOPLEFT", 12, -10)
@@ -91,21 +106,27 @@ local function BuildComposer()
     close:SetPoint("TOPRIGHT", -6, -6)
     close:SetScript("OnClick", function() f:Hide() end)
 
-    -- Enable toggle
     local enable = UI:CreateCheckbox(f, L["Broadcast this ad while I'm online"], 16)
     enable:SetPoint("TOPLEFT", 10, -34)
+    enable.checkbox.onChanged = function(_, checked)
+        RB():SetAdField("enabled", checked and true or false)
+        if checked then RB():Broadcast() end
+    end
 
-    -- Needs label
-    local needLbl = UI:CreateText(f, L["Recruiting (click to toggle):"], 10, C.silver.r, C.silver.g, C.silver.b)
-    needLbl:SetPoint("TOPLEFT", 12, -60)
+    f.refreshers = {}
 
-    -- Token toggle buttons
-    f.tokenBtns = {}
-    local function MakeTokenRow(tokens, y)
-        local x = 12
+    -- A wrapped grid of toggle buttons bound to a list field of the ad
+    -- (needs / focus / langs). Returns the bottom y so sections flow.
+    local function Grid(labelText, tokens, field, startY)
+        if labelText ~= "" then
+            local lbl = UI:CreateText(f, labelText, 10, C.silver.r, C.silver.g, C.silver.b)
+            lbl:SetPoint("TOPLEFT", 12, startY)
+        end
+        local btns, refresh = {}, nil
+        local x, y = 12, startY - 14
         for _, tok in ipairs(tokens) do
             local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
-            btn:SetSize(66, 20)
+            btn:SetSize(56, 20)
             btn:SetPoint("TOPLEFT", x, y)
             btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             local fs = btn:CreateFontString(nil, "OVERLAY")
@@ -114,54 +135,65 @@ local function BuildComposer()
             fs:SetText(TokenLabel(tok))
             btn.token = tok; btn.fs = fs
             btn:SetScript("OnClick", function()
-                local ad = RB():GetAd()
-                ToggleNeed(ad, tok)
-                f.RefreshTokens()
+                ToggleTok(RB():GetAd()[field], tok)
+                RB():MarkEdited()
+                if refresh then refresh() end
             end)
-            f.tokenBtns[#f.tokenBtns + 1] = btn
-            x = x + 70
-            if x > 300 then x = 12; y = y - 24 end
+            btns[#btns + 1] = btn
+            x = x + 62
+            if x > 360 then x = 12; y = y - 24 end
         end
-        return y
-    end
-    local yAfterRoles = MakeTokenRow(ROLES, -76)
-    MakeTokenRow(CLASSES, yAfterRoles - 26)
-
-    function f.RefreshTokens()
-        local ad = RB():GetAd()
-        for _, btn in ipairs(f.tokenBtns) do
-            local on = HasNeed(ad, btn.token)
-            if on then
-                local r, g, b = TokenColor(btn.token)
-                btn:SetBackdropColor(r * 0.35, g * 0.35, b * 0.35, 0.95)
-                btn:SetBackdropBorderColor(r, g, b, 0.9)
-                btn.fs:SetTextColor(1, 1, 1)
-            else
-                btn:SetBackdropColor(0.10, 0.10, 0.13, 1.0)
-                btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-                btn.fs:SetTextColor(0.55, 0.55, 0.55)
+        refresh = function()
+            local list = RB():GetAd()[field]
+            for _, btn in ipairs(btns) do
+                if HasTok(list, btn.token) then
+                    local r, g, b = TokenColor(btn.token)
+                    btn:SetBackdropColor(r * 0.35, g * 0.35, b * 0.35, 0.95)
+                    btn:SetBackdropBorderColor(r, g, b, 0.9)
+                    btn.fs:SetTextColor(1, 1, 1)
+                else
+                    btn:SetBackdropColor(0.10, 0.10, 0.13, 1.0)
+                    btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+                    btn.fs:SetTextColor(0.55, 0.55, 0.55)
+                end
             end
         end
+        f.refreshers[#f.refreshers + 1] = refresh
+        return (x ~= 12) and (y - 24) or y
     end
+
+    local y = -56
+    y = Grid(L["Recruiting (click to toggle):"], NEEDS, "needs", y)
+    y = Grid(L["Guild focus:"], FOCUS, "focus", y - 10)
+    y = Grid(L["Languages:"], LANGS, "langs", y - 10)
+
+    -- Live-for (TTL) cycle button — how long the ad keeps relaying after we log off.
+    local ttlLbl = UI:CreateText(f, L["Live for (days):"], 10, C.silver.r, C.silver.g, C.silver.b)
+    ttlLbl:SetPoint("TOPLEFT", 12, y - 10)
+    local ttlBtn = UI:CreateButton(f, "7", 50, 20)
+    ttlBtn:SetPoint("LEFT", ttlLbl, "RIGHT", 8, -1)
+    ttlBtn:SetScript("OnClick", function()
+        local ad = RB():GetAd()
+        local cur, idx = ad.ttlDays or 7, 1
+        for i, v in ipairs(TTL_CYCLE) do if v == cur then idx = i break end end
+        local nv = TTL_CYCLE[(idx % #TTL_CYCLE) + 1]
+        RB():SetAdField("ttlDays", nv)
+        ttlBtn.label:SetText(tostring(nv))
+    end)
+    y = y - 34
 
     -- Days + note
-    local daysBox = MakeInput(f, -152, L["Raid days / times:"], 356)
-    local noteBox = MakeInput(f, -196, L["Short note:"], 356)
-    noteBox:SetMaxLetters(120)
-
+    local daysBox = MakeInput(f, y, L["Raid days / times:"], 386)
     daysBox:SetScript("OnTextChanged", function(self) RB():SetAdField("days", self:GetText() or "") end)
+    y = y - 42
+    local noteBox = MakeInput(f, y, L["Short note:"], 386)
+    noteBox:SetMaxLetters(120)
     noteBox:SetScript("OnTextChanged", function(self) RB():SetAdField("note", self:GetText() or "") end)
 
-    enable.checkbox.onChanged = function(_, checked)
-        RB():SetAdField("enabled", checked and true or false)
-        if checked then RB():Broadcast() end
-    end
-
-    -- Reach hint
+    -- Reach hint + broadcast
     local hint = UI:CreateText(f, L["Yelled zone-wide (cities) + your guild while enabled."], 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
     hint:SetPoint("BOTTOMLEFT", 12, 40)
 
-    -- Broadcast-now button
     local castBtn = UI:CreateButton(f, L["Broadcast now"], 120, 24)
     castBtn:SetPoint("BOTTOMLEFT", 12, 10)
     castBtn:SetScript("OnClick", function()
@@ -176,7 +208,8 @@ local function BuildComposer()
         enable.checkbox:SetChecked(ad.enabled and true or false)
         daysBox:SetText(ad.days or "")
         noteBox:SetText(ad.note or "")
-        f.RefreshTokens()
+        ttlBtn.label:SetText(tostring(ad.ttlDays or 7))
+        for _, r in ipairs(f.refreshers) do r() end
     end
 
     return f
@@ -270,6 +303,17 @@ local function BuildInbox()
         return (#parts > 0) and table.concat(parts, ", ") or L["anyone"]
     end
 
+    -- Compact "focus  langs" tag string for the secondary line.
+    local function MetaString(ad)
+        local foc = {}
+        for _, tok in ipairs(FOCUS) do if ad.focus and ad.focus[tok] then foc[#foc + 1] = TokenLabel(tok) end end
+        local lang = {}
+        for _, tok in ipairs(LANGS) do if ad.langs and ad.langs[tok] then lang[#lang + 1] = tok end end
+        local s = (#foc > 0) and table.concat(foc, "/") or ""
+        if #lang > 0 then s = (s ~= "" and s .. "  " or "") .. table.concat(lang, ",") end
+        return s
+    end
+
     function f.Refresh()
         local all = RB():GetInbox()
         local shown = 0
@@ -290,6 +334,8 @@ local function BuildInbox()
                 row.needsFS:SetText(L["Wants: "] .. NeedsString(ad))
                 local noteLine = ad.note ~= "" and ad.note or ""
                 if ad.days ~= "" then noteLine = ad.days .. (noteLine ~= "" and "  -  " .. noteLine or "") end
+                local meta = MetaString(ad)
+                if meta ~= "" then noteLine = meta .. (noteLine ~= "" and "  -  " .. noteLine or "") end
                 row.noteFS:SetText(noteLine)
                 local from = ad.from
                 row.applyBtn:SetScript("OnClick", function()

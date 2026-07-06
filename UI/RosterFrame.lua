@@ -2909,6 +2909,31 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     UI:AttachSaveButton(welcomeBox, commitWelcome)
 
     ----------------------------------------------------------------
+    -- Recruitment Beacon (Chehul mesh) — realm/city-wide ad, officer-only
+    ----------------------------------------------------------------
+    yOff = yOff - 66
+    yOff = SectionHeader(L["Recruitment Beacon (mesh)"], yOff)
+    RowLabel(L["Status:"], yOff)
+    local beaconStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
+    beaconStatus:SetPoint("TOPLEFT", 140, yOff)
+    local editBeaconBtn = UI:CreateButton(parent, L["Edit Beacon"], 130, 22)
+    editBeaconBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+    editBeaconBtn:SetScript("OnClick", function()
+        if BRutus.ShowRecruitBeacon then BRutus:ShowRecruitBeacon() end
+    end)
+    local function UpdateBeaconStatus()
+        local ad = BRutus.RecruitBeacon and BRutus.RecruitBeacon:GetAd()
+        if ad and ad.enabled then
+            beaconStatus:SetText(L["|cff4CFF4CBroadcasting|r"])
+        else
+            beaconStatus:SetText(L["|cff888888Off|r"])
+        end
+    end
+    UpdateBeaconStatus()
+    local beaconHint = UI:CreateText(parent, L["Lives in the mesh and keeps circulating even when you're offline."], 10, 0.6, 0.6, 0.65)
+    beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
+
+    ----------------------------------------------------------------
     -- Refresh function for when panel is shown
     ----------------------------------------------------------------
     parent:SetScript("OnShow", function()
@@ -2920,5 +2945,6 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         welcomeBox:SetText(s.welcomeMessage or "")
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
+        UpdateBeaconStatus()
     end)
 end
