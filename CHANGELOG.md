@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.3] - 2026-07-06
+
+### Fixed
+- network alert is now a quiet persistent top banner, not a loud popup (ChehulNet v7) — no sound, subtle, visible until dismissed
+
+
 ## [0.21.2] - 2026-07-06
 
 ### Fixed
