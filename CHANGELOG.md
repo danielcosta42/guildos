@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.0] - 2026-07-06
+
+### Added
+- network alert popups (ChehulNet v4) — receive ChehulAlert and show a dismissible popup in Guild OS's gold identity; Dismiss persists the id to GuildOSDB so it never shows again
+
+
 ## [0.20.0] - 2026-07-06
 
 ### Added
