@@ -32,7 +32,7 @@ No spreadsheets. No external sites. No manual inspecting. **Install it, press `J
 
 *Made with care by **Chehul**.*
 
-![Interface: 20505](https://img.shields.io/badge/Client-TBC%20Anniversary%20(20505)-blueviolet)
+![Interface: 20506](https://img.shields.io/badge/Client-TBC%20Anniversary%20(20506)-blueviolet)
 
 ---
 
@@ -194,7 +194,7 @@ Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, inte
 
 ## Notes
 
-- Built specifically for **WoW TBC Anniversary** (Interface `20505`)
+- Built specifically for **WoW TBC Anniversary** (Interface `20506`)
 - Channel messages (LookingForGroup, Trade) require a hardware click due to Blizzard restrictions — Guild OS uses a clickable popup instead of sending silently
 - Officer status is a configurable guild-rank threshold, adjustable in Settings by current officers
 - Data is stored per-guild in SavedVariables (isolated per guild name + realm)

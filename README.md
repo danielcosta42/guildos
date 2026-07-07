@@ -6,7 +6,7 @@
 
 Guild OS replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
 
-> **Client:** WoW TBC Anniversary (Interface 20505)
+> **Client:** WoW TBC Anniversary (Interface 20506)
 
 ---
 
