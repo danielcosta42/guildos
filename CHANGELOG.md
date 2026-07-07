@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.4] - 2026-07-07
+
+### Fixed
+- bump Interface to 20506 for TBC Anniversary 2.5.6
+
+
 ## [0.21.3] - 2026-07-06
 
 ### Fixed
