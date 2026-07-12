@@ -99,6 +99,13 @@ local function handleCommand(msg)
             local shown = BRutus:ToggleMinimapButton()
             BRutus:Print(shown and L["Minimap button shown."] or L["Minimap button hidden."])
         end
+    elseif msg == "guildbutton" then
+        -- Toggle whether the guild micro button / "J" opens Guild OS or Blizzard's
+        -- guild UI. Lets people keep the modern guild UI and reach Guild OS elsewhere.
+        local on = not BRutus:IsGuildButtonHijacked()
+        BRutus:SetSetting("hijackGuildButton", on)
+        BRutus:Print(on and L["Guild button now opens Guild OS."]
+            or L["Guild button now opens the Blizzard guild UI. Open Guild OS from the minimap button."])
     elseif msg == "prune" then
         local removed = BRutus:PruneStaleData()
         BRutus:Print(string.format(L["Pruned %d member(s) who left the guild."], removed))

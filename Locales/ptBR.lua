@@ -24,6 +24,15 @@ L["|cffFFD700Attunements:|r"] = "|cffFFD700Sintonias:|r"
 L["|cff00FF00Done|r"] = "|cff00FF00Concluído|r"
 L["|cffFF4444Not started|r"] = "|cffFF4444Não iniciado|r"
 
+-- Guild-button takeover (opt-out) + native <-> Guild OS toggle
+L["Guild button opens Guild OS"] = "Botão de guilda abre o Guild OS"
+L["The guild button"] = "O botão de guilda"
+L["By default the guild button (and \"J\") opens Guild OS. Prefer Blizzard's own guild window — chat history, news? Turn this off; you can still open Guild OS from the minimap button."] =
+    "Por padrão o botão de guilda (e o \"J\") abre o Guild OS. Prefere a janela de guilda da Blizzard — histórico de chat, novidades? Desligue isto; você ainda abre o Guild OS pelo botão do minimapa."
+L["Guild button now opens Guild OS."] = "Botão de guilda agora abre o Guild OS."
+L["Guild button now opens the Blizzard guild UI. Open Guild OS from the minimap button."] =
+    "Botão de guilda agora abre a UI de guilda da Blizzard. Abra o Guild OS pelo botão do minimapa."
+
 -- Core/Core.lua
 L[" loaded. Type |cffFFD700/guildos|r to open."] = " carregado. Digite |cffFFD700/guildos|r para abrir."
 L["|cff888888Not in a guild - addon inactive.|r"] = "|cff888888Você não está em uma guilda - addon inativo.|r"

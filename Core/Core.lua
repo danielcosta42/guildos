@@ -38,6 +38,7 @@ local DB_DEFAULTS = {
         sortAsc = false,
         showOffline = true,
         minimap = { hide = false },
+        hijackGuildButton = true,  -- guild micro button / "J" opens Guild OS (opt-out in General)
         officerMaxRank = 1,  -- rank indexes 0..officerMaxRank are officers (GM + rank 1 by default)
         modules = {
             raidTracker = true,
@@ -393,10 +394,15 @@ function BRutus:HookGuildFrame()
         local originalToggleGuildFrame = ToggleGuildFrame
         -- Keep a handle to the native toggle so GuildManager can hand the
         -- leader off to Blizzard's secure guild panel for protected actions
-        -- (promote/demote/kick can only be performed there).
+        -- (promote/demote/kick can only be performed there), and so our own
+        -- "Blizzard" header button can open the native guild UI.
         BRutus._origToggleGuildFrame = originalToggleGuildFrame
         ToggleGuildFrame = function()
-            if IsInGuild() then
+            -- Only take over the guild button when in a guild AND the user hasn't
+            -- opted out (Settings > General, or /guildos guildbutton). When opted
+            -- out, the guild button opens Blizzard's UI and Guild OS is reached via
+            -- the minimap button / the "Guild OS" button we add to the native frame.
+            if IsInGuild() and BRutus:IsGuildButtonHijacked() then
                 BRutus:ToggleRoster()
             else
                 originalToggleGuildFrame()
@@ -408,13 +414,97 @@ function BRutus:HookGuildFrame()
     if ToggleFriendsFrame then
         local originalToggleFriendsFrame = ToggleFriendsFrame
         ToggleFriendsFrame = function(tabNumber, ...)
-            if tabNumber == 3 and IsInGuild() then
+            if tabNumber == 3 and IsInGuild() and BRutus:IsGuildButtonHijacked() then
                 BRutus:ToggleRoster()
                 return
             end
             return originalToggleFriendsFrame(tabNumber, ...)
         end
     end
+
+    -- Add a "Guild OS" button to Blizzard's own guild frames so you can jump from
+    -- the native UI to Guild OS (and back via the "Blizzard" button in our header),
+    -- rather than the addon fully replacing the guild pane.
+    BRutus:SetupNativeGuildButtons()
+end
+
+----------------------------------------------------------------------
+-- Guild-button takeover (opt-out) + native <-> Guild OS toggle buttons
+----------------------------------------------------------------------
+
+-- Does the guild micro button / "J" open Guild OS? Default yes; opt-out in Settings
+-- (General) or via /guildos guildbutton, so players can keep the modern Blizzard
+-- guild UI (chat history, news) as the guild button's target and use both.
+function BRutus:IsGuildButtonHijacked()
+    return self:GetSetting("hijackGuildButton") ~= false
+end
+
+-- Open Blizzard's own guild UI (classic GuildFrame or the modern Communities frame,
+-- whichever the client is set to) — the "Blizzard" button in our header calls this so
+-- a Guild OS user can still reach guild chat history / the news feed.
+function BRutus:OpenBlizzardGuildUI()
+    if self._origToggleGuildFrame then
+        self._origToggleGuildFrame()
+    elseif ToggleGuildFrame then
+        ToggleGuildFrame()
+    end
+end
+
+-- Attach a "Guild OS" button to a Blizzard guild frame ONCE (guarded — a shape change
+-- in a future client never errors us). Attached state is tracked in a local table, NOT
+-- as a field on the Blizzard global frame (which would trip luacheck's undefined-field).
+local nativeGuildOSButtons = {}
+local function AttachGuildOSButton(parent, point, xOff, yOff)
+    if not parent or nativeGuildOSButtons[parent] then
+        return
+    end
+    nativeGuildOSButtons[parent] = true
+    local ok, btn = pcall(CreateFrame, "Button", nil, parent, "UIPanelButtonTemplate")
+    if not ok or not btn then
+        return
+    end
+    btn:SetSize(84, 22)
+    btn:SetText("Guild OS")
+    btn:SetFrameLevel((parent:GetFrameLevel() or 0) + 10)
+    -- Anchor is per-frame: the classic GuildFrame and the modern CommunitiesFrame have
+    -- different top-bar layouts (the classic "Show Offline Members" checkbox and the
+    -- Communities online counter each sit where a shared corner offset would overlap),
+    -- so each caller picks its own corner + offset.
+    point = point or "TOPRIGHT"
+    btn:SetPoint(point, parent, point, xOff or -56, yOff or -32)
+    btn:SetScript("OnClick", function() BRutus:ToggleRoster() end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("|cffFFD700Guild|r |cffD4AC0DOS|r")
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+-- Put the "Guild OS" button on BOTH the classic GuildFrame and the modern
+-- CommunitiesFrame. Both are load-on-demand, so attach now if already present and again
+-- when their addon loads. Runs once.
+function BRutus:SetupNativeGuildButtons()
+    if self._nativeButtonsSetup then
+        return
+    end
+    self._nativeButtonsSetup = true
+    local function tryAttach()
+        -- Classic GuildFrame: top-LEFT — the top-right there holds the "Show Offline
+        -- Members" checkbox, so we sit on the empty left side under the title.
+        if GuildFrame then AttachGuildOSButton(GuildFrame, "TOPLEFT", 16, -28) end
+        -- Modern CommunitiesFrame: top-right, pushed in so it clears the "x/y Online"
+        -- member counter in the top bar.
+        if CommunitiesFrame then AttachGuildOSButton(CommunitiesFrame, "TOPRIGHT", -12, -32) end
+    end
+    tryAttach()
+    local watcher = CreateFrame("Frame")
+    watcher:RegisterEvent("ADDON_LOADED")
+    watcher:SetScript("OnEvent", function(_, _, name)
+        if name == "Blizzard_GuildUI" or name == "Blizzard_Communities" then
+            tryAttach()
+        end
+    end)
 end
 
 ----------------------------------------------------------------------

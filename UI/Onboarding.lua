@@ -18,6 +18,11 @@ local STEPS = {
         body  = L["Open it anytime with /guildos, the minimap button, or a key binding. Click any guildmate to see their full character — gear, professions and attunements."],
     },
     {
+        title = L["The guild button"],
+        body  = L["By default the guild button (and \"J\") opens Guild OS. Prefer Blizzard's own guild window — chat history, news? Turn this off; you can still open Guild OS from the minimap button."],
+        guildButtonToggle = true,  -- render the hijack checkbox on this step
+    },
+    {
         title = L["Data & privacy"],
         body  = L["Guild OS shares your gear, professions, attunements, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."],
     },
@@ -57,6 +62,16 @@ local function BuildFrame()
     body:SetWordWrap(true)
     f.body = body
 
+    -- Per-step interactive control: the guild-button takeover toggle. Only shown on the
+    -- step flagged guildButtonToggle; applies immediately (default on = opens Guild OS).
+    local gbToggle = UI:CreateCheckbox(f, L["Guild button opens Guild OS"], 18)
+    gbToggle:SetPoint("TOPLEFT", 24, -196)
+    gbToggle.checkbox.onChanged = function(_, checked)
+        BRutus:SetSetting("hijackGuildButton", checked and true or false)
+    end
+    gbToggle:Hide()
+    f.gbToggle = gbToggle
+
     local backBtn = UI:CreateButton(f, L["Back"], 90, 24)
     backBtn:SetPoint("BOTTOMLEFT", 16, 16)
     f.backBtn = backBtn
@@ -86,6 +101,13 @@ local function BuildFrame()
         f.backBtn:SetShown(f.step > 1)
         f.nextBtn.label:SetText(f.step < #f.steps and L["Next"] or L["Finish"])
         f.settingsBtn:SetShown(f.step == #f.steps)
+        -- Guild-button takeover toggle: only on its step, reflecting the live setting.
+        if s.guildButtonToggle then
+            f.gbToggle.checkbox:SetChecked(BRutus:IsGuildButtonHijacked())
+            f.gbToggle:Show()
+        else
+            f.gbToggle:Hide()
+        end
     end
 
     backBtn:SetScript("OnClick", function()

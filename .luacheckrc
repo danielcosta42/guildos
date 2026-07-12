@@ -237,6 +237,7 @@ read_globals = {
 
     -- WoW API: Frame management
     "GuildFrame",
+    "CommunitiesFrame",   -- modern (LoD) guild/communities UI; we attach a "Guild OS" button
     "FriendsFrame",
     "ShowUIPanel",
     "HideUIPanel",

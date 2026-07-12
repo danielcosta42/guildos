@@ -1925,6 +1925,17 @@ function BRutus:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
+    -- Guild button takeover — off = the guild micro button / "J" opens Blizzard's own
+    -- guild UI instead of Guild OS (use the minimap button, or the "Guild OS" button we
+    -- add to the native frame, to open Guild OS). Lets players use both.
+    local gbCb = UI:CreateCheckbox(content, L["Guild button opens Guild OS"], 18)
+    gbCb:SetPoint("TOPLEFT", 8, -yOff)
+    gbCb.checkbox:SetChecked(BRutus:IsGuildButtonHijacked())
+    gbCb.checkbox.onChanged = function(_, checked)
+        BRutus:SetSetting("hijackGuildButton", checked and true or false)
+    end
+    yOff = yOff + 30
+
     local digestCb = UI:CreateCheckbox(content, L["Show login digest"], 18)
     digestCb:SetPoint("TOPLEFT", 8, -yOff)
     digestCb.checkbox:SetChecked(not (BRutus.db.digest and BRutus.db.digest.enabled == false))

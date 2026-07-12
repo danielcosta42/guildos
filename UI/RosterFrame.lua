@@ -331,6 +331,16 @@ function BRutus.CreateRosterFrame()
         if BRutus.Search then BRutus.Search:Show() end
     end)
 
+    -- Blizzard guild UI button — jump to the native guild pane (chat history, news,
+    -- protected officer actions) without the addon fully replacing it. Opens whichever
+    -- native UI the client uses (classic GuildFrame or the modern Communities frame).
+    local blizzBtn = UI:CreateButton(titleBar, L["Blizzard"], 80, 24)
+    blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -8, 0)
+    blizzBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
+    blizzBtn:SetScript("OnClick", function()
+        if BRutus.OpenBlizzardGuildUI then BRutus:OpenBlizzardGuildUI() end
+    end)
+
     -- Title accent line
     local titleLine = UI:CreateAccentLine(frame, 2)
     titleLine:SetPoint("TOPLEFT", 0, -44)
