@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.22.0] - 2026-07-12
+
+### Added
+- let players use both Guild OS and Blizzard's guild UI
+
+
 ## [0.21.4] - 2026-07-07
 
 ### Fixed
