@@ -12,6 +12,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 local SUBTABS = {
     { key = "ready",   label = L["Readiness"] },
     { key = "attune",  label = L["Attunements"] },
+    { key = "resist",  label = L["Resistances"] },
     { key = "enchant", label = L["Enchants"] },
     { key = "sync",    label = L["Sync"] },
 }
@@ -247,6 +248,77 @@ local function BuildAttuneSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- RESISTANCES sub-panel — guild resistance-gear grid (member x school)
+-- Shows the max resistance each member can field per school (from gear they
+-- own, bags included), coloured against that school's headline fight.
+----------------------------------------------------------------------
+local function BuildResistSub(panel)
+    local R = BRutus.Resistances
+
+    local legend = UI:CreateText(panel,
+        L["Max resistance each member can equip from owned gear (bags included). Green = a solid set for that fight."],
+        9, C.silver.r, C.silver.g, C.silver.b)
+    legend:SetPoint("TOPLEFT", 4, -2)
+
+    -- Column header: MEMBER + one column per school (coloured), fight/target below.
+    local header = CreateFrame("Frame", nil, panel)
+    header:SetPoint("TOPLEFT", 0, -20)
+    header:SetPoint("TOPRIGHT", -10, -20)
+    header:SetHeight(30)
+    local hName = UI:CreateHeaderText(header, L["MEMBER"], 10)
+    hName:SetPoint("LEFT", 8, 6)
+    for ci, sc in ipairs(R.SCHOOLS) do
+        local x = NAME_W + (ci - 1) * COL_W
+        local lbl = UI:CreateHeaderText(header, sc.label, 10)
+        lbl:SetPoint("LEFT", x, 6)
+        lbl:SetTextColor(sc.r, sc.g, sc.b)
+        local sub = UI:CreateText(header, sc.fight .. " \226\137\165" .. sc.target, 8,
+            C.textDim.r, C.textDim.g, C.textDim.b)
+        sub:SetPoint("LEFT", x, -8)
+    end
+
+    local listHolder = CreateFrame("Frame", nil, panel)
+    listHolder:SetPoint("TOPLEFT", 0, -52)
+    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local _, content = MakeScrollList(listHolder, "GuildOSAuditResistScroll")
+
+    return function()
+        content:SetWidth(listHolder:GetWidth() - 12)
+        ClearContent(content)
+
+        local rows = R:GetRows()
+        local yOff = 0
+        for idx, r in ipairs(rows) do
+            local row = MakeRow(content, yOff, idx)
+            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
+            nameFS:SetPoint("LEFT", 8, 0)
+
+            for ci, sc in ipairs(R.SCHOOLS) do
+                local x = NAME_W + (ci - 1) * COL_W
+                local v = (r.res and r.res[sc.key]) or 0
+                local tier = R:Tier(v, sc.target)
+                local col = C.textDim
+                if tier == "ready" then col = C.green
+                elseif tier == "partial" then col = C.gold
+                elseif tier == "low" then col = C.silver end
+                local txt = v > 0 and tostring(v) or "|cff808080\226\128\148|r"
+                local cell = UI:CreateText(row, txt, 11, col.r, col.g, col.b)
+                cell:SetPoint("LEFT", x, 0)
+            end
+            yOff = yOff + ROW_H + 2
+        end
+
+        if #rows == 0 then
+            local empty = UI:CreateText(content, L["No resistance data synced yet."], 11,
+                C.silver.r, C.silver.g, C.silver.b)
+            empty:SetPoint("TOPLEFT", 4, -4)
+        end
+        content:SetHeight(math.max(1, yOff))
+    end
+end
+
+----------------------------------------------------------------------
 -- ENCHANTS sub-panel — guild enchant audit
 ----------------------------------------------------------------------
 local function BuildEnchantSub(panel)
@@ -432,7 +504,8 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
         return p
     end
 
-    local builders = { ready = BuildReadySub, attune = BuildAttuneSub, enchant = BuildEnchantSub, sync = BuildSyncSub }
+    local builders = { ready = BuildReadySub, attune = BuildAttuneSub, resist = BuildResistSub,
+        enchant = BuildEnchantSub, sync = BuildSyncSub }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }

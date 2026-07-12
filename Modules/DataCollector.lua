@@ -96,6 +96,13 @@ function DataCollector:CollectMyData()
         if spec then data.spec = spec else specMissing = true end
     end
 
+    -- Collect resistance gear: the MAX wearable resistance per school from everything
+    -- I own (equipped + bags), NOT just what's equipped now — so officers can see who
+    -- can field a Nature/Frost/Shadow set (Hydross, Mother Shahraz...) even when it's
+    -- sitting in bags. Only my OWN client can see my bags, so each player reports their
+    -- own; it rides the normal member-data sync.
+    data.resistances = self:CollectResistances()
+
     BRutus.db.members[key] = data
     BRutus.db.myData = data
 
@@ -105,6 +112,150 @@ function DataCollector:CollectMyData()
     self._snapshotIncomplete = gearIncomplete or specMissing
 
     return data
+end
+
+----------------------------------------------------------------------
+-- Collect resistance gear (max wearable per school, from equipped + bags)
+--
+-- We report, per school, the best set the player COULD assemble from items they
+-- own: for each equip slot take the single highest-resistance item (top two for
+-- rings/trinkets) and sum. Each school is computed independently, which is exactly
+-- what matters in TBC — resistance is a per-fight, single-school stat (Hydross =
+-- Nature/Frost, Mother Shahraz = Shadow), so nobody wears all schools at once.
+--
+-- Resistances are read by SCANNING THE ITEM TOOLTIP, not GetItemStats: on this
+-- (Anniversary) client GetItemStats only returns armor (RESISTANCE0) + primary stats
+-- and omits the magic-school resistances entirely (verified — a Fire Resistance item
+-- reported only RESISTANCE0_NAME/armor). The tooltip always shows "+N Fire Resistance"
+-- lines, and the localized school name comes from the RESISTANCEx_NAME global, so this
+-- is locale-independent. Only carried bags (0-4) are scannable off-bank, so a
+-- bank-stashed set counts only while the bank is open.
+----------------------------------------------------------------------
+-- Hidden tooltip used to read item resistance lines.
+local resScanTip
+local function ResScanTip()
+    if not resScanTip then
+        resScanTip = CreateFrame("GameTooltip", "GuildOSResScanTip", nil, "GameTooltipTemplate")
+        resScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+    end
+    return resScanTip
+end
+
+-- Localized "Fire Resistance"/"Nature Resistance"/... -> our school key (2=Fire,
+-- 3=Nature, 4=Frost, 5=Shadow, 6=Arcane in WoW's resistance/school order).
+local resNameToSchool
+local function ResNameMap()
+    if resNameToSchool then
+        return resNameToSchool
+    end
+    resNameToSchool = {}
+    local idx = { fire = 2, nature = 3, frost = 4, shadow = 5, arcane = 6 }
+    for school, i in pairs(idx) do
+        local nm = _G["RESISTANCE" .. i .. "_NAME"]
+        if nm and nm ~= "" then
+            resNameToSchool[nm] = school
+        end
+    end
+    return resNameToSchool
+end
+
+-- Resistance per school for one item, read from its tooltip ("+N Fire Resistance").
+-- Returns a { school = value } table, or nil.
+local function ItemResistances(link)
+    local tip = ResScanTip()
+    tip:ClearLines()
+    if not pcall(tip.SetHyperlink, tip, link) then
+        return nil
+    end
+    local names = ResNameMap()
+    local out
+    for i = 2, tip:NumLines() do
+        local fs = _G["GuildOSResScanTipTextLeft" .. i]
+        local text = fs and fs:GetText()
+        if text then
+            for nm, school in pairs(names) do
+                if text:find(nm, 1, true) then
+                    local n = tonumber(text:match("%d+"))
+                    if n and n > 0 then
+                        out = out or {}
+                        out[school] = math.max(out[school] or 0, n)
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- How many of each equip bucket a character can wear at once.
+local RES_BUCKET_CAP = {
+    Head = 1, Neck = 1, Shoulder = 1, Back = 1, Chest = 1, Wrist = 1, Hands = 1,
+    Waist = 1, Legs = 1, Feet = 1, Finger = 2, Trinket = 2,
+    MainHand = 1, OffHand = 1, Ranged = 1,
+}
+local RES_LOC_TO_BUCKET = {
+    INVTYPE_HEAD = "Head", INVTYPE_NECK = "Neck", INVTYPE_SHOULDER = "Shoulder",
+    INVTYPE_CLOAK = "Back", INVTYPE_CHEST = "Chest", INVTYPE_ROBE = "Chest",
+    INVTYPE_WRIST = "Wrist", INVTYPE_HAND = "Hands", INVTYPE_WAIST = "Waist",
+    INVTYPE_LEGS = "Legs", INVTYPE_FEET = "Feet", INVTYPE_FINGER = "Finger",
+    INVTYPE_TRINKET = "Trinket",
+    INVTYPE_WEAPON = "MainHand", INVTYPE_WEAPONMAINHAND = "MainHand", INVTYPE_2HWEAPON = "MainHand",
+    INVTYPE_WEAPONOFFHAND = "OffHand", INVTYPE_SHIELD = "OffHand", INVTYPE_HOLDABLE = "OffHand",
+    INVTYPE_RANGED = "Ranged", INVTYPE_RANGEDRIGHT = "Ranged", INVTYPE_THROWN = "Ranged",
+    INVTYPE_RELIC = "Ranged",
+}
+
+function DataCollector:CollectResistances()
+    -- Gather every candidate item link: equipped slots + carried bags.
+    local links = {}
+    for _, slotInfo in ipairs(BRutus.SlotIDs) do
+        local l = GetInventoryItemLink("player", slotInfo.id)
+        if l then links[#links + 1] = l end
+    end
+    for bag = 0, 4 do
+        local n = (C_Container and C_Container.GetContainerNumSlots
+            and C_Container.GetContainerNumSlots(bag)) or 0
+        for slot = 1, n do
+            local l = C_Container and C_Container.GetContainerItemLink
+                and C_Container.GetContainerItemLink(bag, slot)
+            if l then links[#links + 1] = l end
+        end
+    end
+
+    -- pool[bucket][school] = list of resistance values seen for that slot bucket.
+    local pool = {}
+    for _, link in ipairs(links) do
+        local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(link)
+        local bucket = equipLoc and RES_LOC_TO_BUCKET[equipLoc]
+        if bucket then
+            local itemRes = ItemResistances(link)
+            if itemRes then
+                for school, v in pairs(itemRes) do
+                    if v > 0 then
+                        pool[bucket] = pool[bucket] or {}
+                        pool[bucket][school] = pool[bucket][school] or {}
+                        local list = pool[bucket][school]
+                        list[#list + 1] = v
+                    end
+                end
+            end
+        end
+    end
+
+    -- Sum the top-N (N = bucket capacity) per bucket, per school.
+    local res = { fire = 0, nature = 0, frost = 0, shadow = 0, arcane = 0 }
+    for bucket, cap in pairs(RES_BUCKET_CAP) do
+        local schools = pool[bucket]
+        if schools then
+            for school, list in pairs(schools) do
+                table.sort(list, function(a, b) return a > b end)
+                for i = 1, math.min(cap, #list) do
+                    res[school] = res[school] + list[i]
+                end
+            end
+        end
+    end
+    return res
 end
 
 ----------------------------------------------------------------------
@@ -480,6 +631,12 @@ function DataCollector:GetBroadcastData()
     -- Include talent spec
     if myData.spec then
         clean.spec = myData.spec
+    end
+
+    -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).
+    -- StoreReceivedData merges every key generically, so the receiver stores it too.
+    if myData.resistances then
+        clean.resistances = myData.resistances
     end
 
     -- Include recipes (keyed by profession)

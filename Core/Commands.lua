@@ -112,6 +112,17 @@ local function handleCommand(msg)
     elseif msg == "debug" then
         BRutus.Logger.debug = not BRutus.Logger.debug
         BRutus:Print(BRutus.Logger.debug and L["Debug mode ON."] or L["Debug mode OFF."])
+    elseif msg == "resscan" then
+        -- Diagnostic: run the resistance scan (equipped + bags) and print the max
+        -- wearable per school, so the tooltip-based read can be verified in-game.
+        local r = BRutus.DataCollector and BRutus.DataCollector:CollectResistances()
+        if r then
+            BRutus:Print(string.format(
+                "Resistances (max wearable) - Shadow %d | Nature %d | Frost %d | Fire %d | Arcane %d",
+                r.shadow or 0, r.nature or 0, r.frost or 0, r.fire or 0, r.arcane or 0))
+        else
+            BRutus:Print("Resistance scan unavailable.")
+        end
     elseif msg == "errors" then
         local ring = (BRutus.State and BRutus.State.errors) or {}
         if #ring == 0 then

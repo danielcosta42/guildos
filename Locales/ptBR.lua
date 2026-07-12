@@ -29,6 +29,17 @@ L["Guild button opens Guild OS"] = "Botão de guilda abre o Guild OS"
 L["The guild button"] = "O botão de guilda"
 L["By default the guild button (and \"J\") opens Guild OS. Prefer Blizzard's own guild window — chat history, news? Turn this off; you can still open Guild OS from the minimap button."] =
     "Por padrão o botão de guilda (e o \"J\") abre o Guild OS. Prefere a janela de guilda da Blizzard — histórico de chat, novidades? Desligue isto; você ainda abre o Guild OS pelo botão do minimapa."
+
+-- Resistances (Audit sub-tab)
+L["Resistances"] = "Resistências"
+L["Shadow"] = "Sombra"
+L["Nature"] = "Natureza"
+L["Frost"]  = "Gelo"
+L["Fire"]   = "Fogo"
+L["Arcane"] = "Arcano"
+L["Max resistance each member can equip from owned gear (bags included). Green = a solid set for that fight."] =
+    "Resistência máxima que cada membro consegue equipar do que possui (bolsas incluídas). Verde = um set sólido pra aquela luta."
+L["No resistance data synced yet."] = "Nenhum dado de resistência sincronizado ainda."
 L["Guild button now opens Guild OS."] = "Botão de guilda agora abre o Guild OS."
 L["Guild button now opens the Blizzard guild UI. Open Guild OS from the minimap button."] =
     "Botão de guilda agora abre a UI de guilda da Blizzard. Abra o Guild OS pelo botão do minimapa."

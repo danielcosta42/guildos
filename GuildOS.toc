@@ -64,6 +64,7 @@ Modules\TrialTracker.lua
 Modules\GuildManager.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
+Modules\Resistances.lua
 Modules\ExportImport.lua
 Modules\Points.lua
 Modules\LootEquity.lua
