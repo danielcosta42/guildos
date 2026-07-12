@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.0] - 2026-07-12
+
+### Added
+- guild resistance-gear overview for raid fights
+
+
 ## [0.22.0] - 2026-07-12
 
 ### Added
