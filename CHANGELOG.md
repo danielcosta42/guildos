@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.24.0] - 2026-07-16
+
+### Added
+- calendar — edit & delete events, descriptions, and categories
+
+
 ## [0.23.1] - 2026-07-16
 
 ### Fixed
