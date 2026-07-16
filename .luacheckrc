@@ -169,6 +169,8 @@ read_globals = {
     "GUILD_UNINVITE",
     "WHO",
     "CANCEL",
+    "YES",
+    "NO",
 
     -- WoW API: Miscellaneous
     "GetLocale",
