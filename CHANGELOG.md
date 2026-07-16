@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.1] - 2026-07-16
+
+### Fixed
+- pace + bound the realm YELL flush so it can't trip the chat rate limit
+
+
 ## [0.23.0] - 2026-07-12
 
 ### Added
