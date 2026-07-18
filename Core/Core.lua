@@ -648,14 +648,28 @@ BRutus.LOOT_SYSTEMS = {
     { key = "tmb",      label = "TMB" },
     { key = "wishlist", label = "Wishlist" },
     { key = "dkp",      label = "DKP / Points" },
+    { key = "external", label = "External / Off" },
 }
 
 function BRutus:GetLootSystem()
     return self:GetSetting("lootSystem") or "rolls"
 end
 
+-- True unless the guild has opted out of GuildOS loot handling entirely
+-- ("external": loot is run by Gargul/RCLootCouncil/etc.).
+function BRutus:LootSystemActive()
+    return self:GetLootSystem() ~= "external"
+end
+
 function BRutus:SetLootSystem(sys)
     self:SetSetting("lootSystem", sys)
+    -- Loot Master follows the system: "external" silences it entirely (no
+    -- roll popups, ML window, council, or /roll capture — and with no awards
+    -- the loot history stops growing too). SetEnabled hides any open frames
+    -- immediately; the runtime gate keeps new ones from opening.
+    if self.LootMaster and self.LootMaster.SetEnabled then
+        self.LootMaster:SetEnabled(self.LootMaster:IsModuleEnabled())
+    end
     -- Re-surface only the access points the new system needs (no reload).
     if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
 end

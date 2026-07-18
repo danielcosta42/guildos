@@ -75,6 +75,12 @@ end
 -- (no /reload): the event handlers and hooks consult this on every fire.
 ----------------------------------------------------------------------
 function LootMaster:IsModuleEnabled()
+    -- The guild's loot system can switch the whole module off ("external"):
+    -- guilds distributing loot with Gargul/RCLootCouncil want zero GuildOS
+    -- loot behaviour (no popups, rolls, council, or history).
+    if BRutus.LootSystemActive and not BRutus:LootSystemActive() then
+        return false
+    end
     local m = BRutus.db and BRutus.db.settings and BRutus.db.settings.modules
     return not m or m.lootMaster ~= false
 end

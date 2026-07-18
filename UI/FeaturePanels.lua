@@ -2014,6 +2014,15 @@ function BRutus:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 34
 
+    -- "External / Off" explainer — this is the full loot-system kill switch.
+    if curSys == "external" then
+        local note = UI:CreateText(content, L["GuildOS won't touch loot: no roll popups, wishlists, or history. Pick this if your guild distributes loot with Gargul, RCLootCouncil, etc."], 9, C.silver.r, C.silver.g, C.silver.b)
+        note:SetPoint("TOPLEFT", 8, -yOff)
+        note:SetWidth(content:GetWidth() - 20)
+        note:SetJustifyH("LEFT")
+        yOff = yOff + 28
+    end
+
     -- DKP/Points configuration appears when the DKP system is selected
     if curSys == "dkp" and BRutus.Points then
         local pcfg = BRutus.Points:GetDB().config
