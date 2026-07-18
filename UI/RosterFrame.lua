@@ -470,13 +470,14 @@ function BRutus.CreateRosterFrame()
                 tab:Hide()
             end
         end
-        -- Fall back to roster if the previously active tab is now hidden.
+        -- Fall back to Home if the previously active tab is now hidden.
         if not self.activeTab then
-            self:SetActiveTab("roster")
+            self:SetActiveTab("home")
         end
     end
 
     -- Create tabs
+    CreateTab("home", L["Home"], false)
     CreateTab("roster", L["Roster"], false)
     CreateTab("guild", L["Guild"], false)
     CreateTab("recipes", L["Recipes"], false)
@@ -492,6 +493,16 @@ function BRutus.CreateRosterFrame()
     CreateTab("recruitment", L["Recruitment"], false)
     CreateTab("management", L["Leadership"], true)
     CreateTab("settings", L["Settings"], false)
+
+    ----------------------------------------------------------------
+    -- HOME PANEL (dashboard — the default landing tab)
+    ----------------------------------------------------------------
+    local homePanel = CreateFrame("Frame", nil, frame)
+    homePanel:SetPoint("TOPLEFT", 0, contentTop)
+    homePanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    homePanel:Hide()
+    frame.tabPanels["home"] = homePanel
+    if BRutus.CreateDashboardPanel then BRutus:CreateDashboardPanel(homePanel, frame) end
 
     ----------------------------------------------------------------
     -- ROSTER PANEL  (dashboard layout: KPI band + left rail + table)
@@ -1439,7 +1450,7 @@ function BRutus.CreateRosterFrame()
 
     -- Initialize tab system
     frame:UpdateTabVisibility()
-    frame:SetActiveTab("roster")
+    frame:SetActiveTab("home")
 
     return frame
 end

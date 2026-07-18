@@ -81,6 +81,7 @@ Modules\SpecChecker.lua
 
 # UI
 UI\Helpers.lua
+UI\Dashboard.lua
 UI\RecipesPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
