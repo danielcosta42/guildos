@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.0] - 2026-07-18
+
+### Added
+- Home dashboard as the default landing tab
+
+
 ## [0.26.0] - 2026-07-18
 
 ### Added
