@@ -57,6 +57,12 @@ function CommSystem:Initialize()
                         BRutus.RaidTracker:BroadcastRaidData()
                     end)
                 end
+                -- Keep members' copy of the recruitment ad fresh while enabled.
+                if BRutus.Recruitment and BRutus.db.recruitment and BRutus.db.recruitment.enabled then
+                    C_Timer.After(13, function()
+                        BRutus.Recruitment:BroadcastStatus(true)
+                    end)
+                end
             end
         end
     end)
@@ -278,24 +284,11 @@ function CommSystem:OnMessageReceived(msg, _, sender)
             BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true
         end
     elseif msgType == CommSystem.MSG_TYPES.RECRUIT_INFO then
-        -- Only accept from verified officers
-        if BRutus:IsOfficerByName(sender) then
-            local ok, info = LibSerialize:Deserialize(data)
-            if ok and type(info) == "table" then
-                BRutus.db.guildRecruitment = {
-                    enabled    = info.enabled,
-                    discord    = info.discord or "",
-                    message    = info.message or "",
-                    channels   = info.channels or {},
-                    interval   = info.interval or 120,
-                    updatedAt  = time(),
-                    updatedBy  = sender,
-                }
-                -- Notify the recruitment panel to refresh if it's open
-                if BRutus.recruitmentPanelRefresh then
-                    BRutus.recruitmentPanelRefresh()
-                end
-            end
+        -- Direct officer broadcast OR a member relay. Trust/version checks live
+        -- in Recruitment:ApplyIncoming (author must be a verified officer).
+        local ok, info = LibSerialize:Deserialize(data)
+        if ok and BRutus.Recruitment then
+            BRutus.Recruitment:ApplyIncoming(info, sender)
         end
     end
 end
@@ -376,6 +369,14 @@ function CommSystem:HandleRequest(_sender, _data)
         if BRutus:IsOfficer() and BRutus.RaidTracker then
             C_Timer.After(2, function()
                 BRutus.RaidTracker:BroadcastRaidData()
+            end)
+        end
+
+        -- Share the guild recruitment config so alts/late-loggers reliably get
+        -- it: officers push their own, members relay the cached copy.
+        if BRutus.Recruitment then
+            C_Timer.After(2.5, function()
+                BRutus.Recruitment:RespondToSync()
             end)
         end
     end)

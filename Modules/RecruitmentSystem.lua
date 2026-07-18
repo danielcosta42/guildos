@@ -124,6 +124,8 @@ function Recruitment:StartAutoRecruit()
     end)
 
      BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
+    -- Push the (now enabled) config to guild members so they can help spread it.
+    self:BroadcastStatus(true)
     return true
 end
 
@@ -139,6 +141,8 @@ function Recruitment:StopAutoRecruit()
     if self.popupFrame then
         self.popupFrame:Hide()
     end
+    -- Push the disabled state so members stop spreading it (newest wins).
+    if BRutus:IsOfficer() then self:BroadcastStatus(true) end
     BRutus:Print(L["Recruitment |cffFF4444stopped|r."])
 end
 
@@ -158,18 +162,29 @@ end
 -- Broadcast recruitment status (class needs, discord, message) to all
 -- guild members who have Guild OS installed.
 ----------------------------------------------------------------------
-function Recruitment:BroadcastStatus()
+function Recruitment:BroadcastStatus(quiet)
     if not BRutus.CommSystem or not IsInGuild() then return end
+    if not (BRutus.IsOfficer and BRutus:IsOfficer()) then return end
     local r = BRutus.db.recruitment
+    r.updatedAt = time()   -- version stamp: newest broadcast wins on receivers
     local payload = LibStub("LibSerialize"):Serialize({
         enabled    = r.enabled,
         discord    = r.discord or "",
         message    = r.message or "",
         channels   = r.channels or {},
         interval   = r.interval or 120,
+        updatedBy  = UnitName("player"),
+        updatedAt  = r.updatedAt,
     })
     BRutus.CommSystem:SendMessage("RI", payload)
-    BRutus:Print(L["Recruitment status broadcast to guild members."])
+    -- Mirror into the guild-synced slot so this account's own member-rank alts
+    -- (they share the per-guild DB) get the ad immediately, with no round-trip.
+    BRutus.db.guildRecruitment = {
+        enabled = r.enabled, discord = r.discord or "", message = r.message or "",
+        channels = r.channels or {}, interval = r.interval or 120,
+        updatedAt = r.updatedAt, updatedBy = UnitName("player"),
+    }
+    if not quiet then BRutus:Print(L["Recruitment status broadcast to guild members."]) end
 end
 
 ----------------------------------------------------------------------
@@ -202,6 +217,115 @@ end
 
 function Recruitment:IsMemberRecruitActive()
     return self.memberTicker ~= nil
+end
+
+----------------------------------------------------------------------
+-- Guild-wide sharing + opt-out participation
+--
+-- The officer's config is relayed member-to-member (not just pushed once by
+-- the officer), so alts and late-loggers reliably end up with it. Each member
+-- decides once whether to help spread it — db.recruitParticipate is tri-state
+-- (nil = undecided → prompt; true = participating; false = declined) and the
+-- choice is remembered across sessions.
+----------------------------------------------------------------------
+
+-- Re-share the guild's recruitment config in response to a sync REQUEST.
+-- Officers send their own authoritative copy; members relay the cached one so
+-- the ad reaches newcomers even when no officer is online.
+function Recruitment:RespondToSync()
+    if not BRutus.CommSystem or not IsInGuild() then return end
+    if BRutus:IsOfficer() then
+        local r = BRutus.db.recruitment
+        if r and r.enabled then self:BroadcastStatus(true) end
+        return
+    end
+    local info = BRutus.db.guildRecruitment
+    if info and info.enabled and info.message and info.message ~= "" then
+        local payload = LibStub("LibSerialize"):Serialize({
+            enabled = info.enabled, discord = info.discord or "", message = info.message or "",
+            channels = info.channels or {}, interval = info.interval or 120,
+            updatedBy = info.updatedBy, updatedAt = info.updatedAt,
+        })
+        BRutus.CommSystem:SendMessage("RI", payload)
+    end
+end
+
+-- Apply an incoming config (direct officer broadcast OR a member relay).
+-- Trusted only if the AUTHOR is a verified guild officer, and only if it is
+-- newer than what we hold (newest updatedAt wins) so relays can't roll it back.
+function Recruitment:ApplyIncoming(info, sender)
+    if type(info) ~= "table" then return end
+    local author = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
+    if not (BRutus.IsOfficerByName and BRutus:IsOfficerByName(author)) then return end
+    local incomingAt = tonumber(info.updatedAt) or 0
+    local cur = BRutus.db.guildRecruitment
+    if cur and cur.updatedAt and incomingAt < cur.updatedAt then return end
+    BRutus.db.guildRecruitment = {
+        enabled   = info.enabled,
+        discord   = info.discord or "",
+        message   = info.message or "",
+        channels  = info.channels or {},
+        interval  = info.interval or 120,
+        updatedAt = incomingAt > 0 and incomingAt or time(),
+        updatedBy = author,
+    }
+    if BRutus.recruitmentPanelRefresh then BRutus.recruitmentPanelRefresh() end
+    self:SyncMemberParticipation()
+end
+
+-- Member opt-out choice (persisted, tri-state).
+function Recruitment:SetParticipation(v)
+    BRutus.db.recruitParticipate = v
+    self:SyncMemberParticipation()
+end
+
+-- Reconcile the member popup ticker and the one-time prompt with the current
+-- guild config and the stored choice. Safe to call repeatedly.
+function Recruitment:SyncMemberParticipation()
+    if BRutus:IsOfficer() then return end   -- officers use their own flow
+    local info = BRutus.db.guildRecruitment
+    local active = info and info.enabled and info.message and info.message ~= ""
+    if not active then
+        if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
+        return
+    end
+    local choice = BRutus.db.recruitParticipate
+    if choice == true then
+        if not self:IsMemberRecruitActive() then self:StartMemberRecruit() end
+    elseif choice == false then
+        if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
+    else
+        self:PromptParticipation()
+    end
+end
+
+-- One-time "help recruit?" prompt (deduped per session; decision persists).
+function Recruitment:PromptParticipation()
+    if self._promptShown then return end
+    if BRutus.db.recruitParticipate ~= nil then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    self._promptShown = true
+    StaticPopup_Show("GUILDOS_RECRUIT_JOIN")
+end
+
+----------------------------------------------------------------------
+-- Member-side setup — runs for EVERY player (unlike the officer-only
+-- Initialize). Registers the opt-in prompt and reconciles participation
+-- against the persisted/synced config on login, so members auto-fire the
+-- recruit popup without any officer action on their client.
+----------------------------------------------------------------------
+function Recruitment:InitParticipation()
+    StaticPopupDialogs["GUILDOS_RECRUIT_JOIN"] = {
+        text = L["Your guild is recruiting! Show a periodic reminder so you can help post it in chat? (change anytime in the Recruitment tab)"],
+        button1 = L["I'll help"],
+        button2 = L["No thanks"],
+        OnAccept = function() if BRutus.Recruitment then BRutus.Recruitment:SetParticipation(true) end end,
+        OnCancel = function() if BRutus.Recruitment then BRutus.Recruitment:SetParticipation(false) end end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+    C_Timer.After(15, function()
+        if BRutus.Recruitment then BRutus.Recruitment:SyncMemberParticipation() end
+    end)
 end
 
 ----------------------------------------------------------------------

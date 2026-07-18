@@ -2606,8 +2606,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         autoStatusText:SetPoint("LEFT", autoBtn, "RIGHT", 10, 0)
 
         local function updateAutoBtn()
-            local active = BRutus.Recruitment and BRutus.Recruitment:IsMemberRecruitActive()
-            if active then
+            -- Reflects the persisted opt-out choice (db.recruitParticipate), so
+            -- it stays in sync with the one-time join prompt and across relogs.
+            local participating = BRutus.db.recruitParticipate == true
+            if participating then
                 autoBtn.label:SetText(L["Auto-Send: ON"])
                 autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
                 local interval = BRutus.db.guildRecruitment and BRutus.db.guildRecruitment.interval or 120
@@ -2621,11 +2623,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
         autoBtn:SetScript("OnClick", function()
             if not BRutus.Recruitment then return end
-            if BRutus.Recruitment:IsMemberRecruitActive() then
-                BRutus.Recruitment:StopMemberRecruit()
-            else
-                BRutus.Recruitment:StartMemberRecruit()
-            end
+            local participating = BRutus.db.recruitParticipate == true
+            BRutus.Recruitment:SetParticipation(not participating)
             updateAutoBtn()
         end)
 
@@ -2646,9 +2645,9 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
             end
 
             if info.enabled then
-                statusLabel:SetText("|cff4CFF4C● " .. L["Guild is actively recruiting!"] .. "|r")
+                statusLabel:SetText("|TInterface\\COMMON\\Indicator-Green:14|t |cff4CFF4C" .. L["Guild is actively recruiting!"] .. "|r")
             else
-                statusLabel:SetText("|cffFF6644● " .. L["Not currently recruiting"] .. "|r")
+                statusLabel:SetText("|TInterface\\COMMON\\Indicator-Red:14|t |cffFF6644" .. L["Not currently recruiting"] .. "|r")
             end
 
             if info.updatedBy then

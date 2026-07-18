@@ -302,6 +302,11 @@ function BRutus:InitModules()
     if BRutus.RecruitBeacon then
         BRutus.RecruitBeacon:Initialize()
     end
+    -- Recruitment participation runs for EVERY player (the officer-only
+    -- Initialize below handles just the officer auto-post/welcome flow).
+    if BRutus.Recruitment and modEnabled("recruitment") then
+        BRutus.Recruitment:InitParticipation()
+    end
     if BRutus.GuildManager and modEnabled("guildManager") then
         BRutus.GuildManager:Initialize()
     end

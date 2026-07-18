@@ -1027,7 +1027,7 @@ function BRutus:CreateCoresPanel(panel)
                             local key = BRutus:GetPlayerKey(gm.name, GetRealmName())
                             local alreadyIn = inCoreKeys[key]
                             local cr, cg, cb = BRutus:GetClassColor(gm.class)
-                            local dot = gm.online and "|cff00FF00●|r " or "|cff555555●|r "
+                            local dot = gm.online and "|TInterface\\COMMON\\Indicator-Green:10|t " or "|TInterface\\COMMON\\Indicator-Gray:10|t "
 
                             local row = CreateFrame("Button", nil, gmDropdown.child, "BackdropTemplate")
                             row:SetSize(DD_ROW_W, ROW_H)
