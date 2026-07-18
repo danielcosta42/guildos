@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.0] - 2026-07-18
+
+### Added
+- add "External / Off" loot system to disable all loot handling
+
+
 ## [0.24.0] - 2026-07-16
 
 ### Added
