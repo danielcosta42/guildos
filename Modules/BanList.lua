@@ -110,8 +110,13 @@ end
 function BanList:_Publish(key, entry)
     if not BRutus.SyncService then return end
     local rev = BRutus.SyncService:NextRevision("ban", key)
-    -- broadcast to all officers; ACK is point-to-point so not used here —
-    -- convergence is via revision-check + the periodic 5-min sync.
+    -- Broadcast to the whole guild (Publish has no target); SyncService:Validate
+    -- restricts who may *apply* a ban write to officers, not who receives it.
+    -- ACK is point-to-point, so it's not used for a broadcast: online clients
+    -- converge at broadcast time via the revision-check (highest rev wins).
+    -- NOTE: there is no cold-sync/backfill for the "ban" domain yet, so an officer
+    -- offline at ban time won't hold the entry until the next mutation — tracked
+    -- follow-up: re-emit ban entries from CommSystem FullSync/HandleRequest.
     BRutus.SyncService:Publish("ban", "set", { key = key, entry = entry }, { rev = rev })
 end
 
@@ -173,6 +178,7 @@ function BanList:_SetupDetection()
     self._whisperCd = {}
     BRutus.Compat.After(8, function() BanList._ready = true end)
     f:SetScript("OnEvent", function(_, event, arg1, arg2)
+        if not BRutus:IsOfficer() then return end
         if event == "CHAT_MSG_SYSTEM" then
             if not BanList._ready then return end
             local joiner = BanList:_ParseJoin(arg1)
@@ -251,6 +257,15 @@ function BanList:_RegisterTests()
     S:Register("banlist.parse_join", function()
         local n = BanList:_ParseJoin("Grefer has joined the guild.")
         if n ~= "Grefer" then return false, "got " .. tostring(n) end
+        return true
+    end)
+
+    S:Register("banlist.list_hides_removed", function()
+        local store = { a = { name = "A", ts = 2 }, b = { name = "B", ts = 1, removed = true } }
+        local out = BanList:List(store)
+        if #out ~= 1 or out[1].name ~= "A" then
+            return false, "tombstone should be hidden, active kept"
+        end
         return true
     end)
 end
