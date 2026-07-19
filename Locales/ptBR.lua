@@ -23,6 +23,12 @@ L["|cffAAAAAA[Guild OS] No duplicates found.|r"] = "|cffAAAAAA[Guild OS] Nenhuma
 L["|cffFFD700Attunements:|r"] = "|cffFFD700Sintonias:|r"
 L["|cff00FF00Done|r"] = "|cff00FF00Concluído|r"
 L["|cffFF4444Not started|r"] = "|cffFF4444Não iniciado|r"
+L["Banned "] = "Banido "
+L["Unbanned "] = "Desbanido "
+L["Temp-banned "] = "Banido temporariamente "
+L[" days)"] = " dias)"
+L["Usage: /gos ban <name> [reason]"] = "Uso: /gos ban <nome> [motivo]"
+L["Usage: /gos tempban <name> <days> [reason]"] = "Uso: /gos tempban <nome> <dias> [motivo]"
 
 -- Guild-button takeover (opt-out) + native <-> Guild OS toggle
 L["Guild button opens Guild OS"] = "Botão de guilda abre o Guild OS"

@@ -356,6 +356,44 @@ local function handleCommand(msg)
             BRutus.CoreManager:DeclineSignup(playerKey, coreName)
             BRutus:Print(string.format(L["Sign-up withdrawn from core: %s"], coreName))
         end
+    elseif msg:match("^tempban%s") then
+        -- /gos tempban <name> <days> [reason]  — officer-gated inside BanList:Add.
+        local rest = strtrim(msg:gsub("^tempban%s+", ""))
+        local name, days, reason = rest:match("^(%S+)%s+(%d+)%s*(.*)$")
+        local numDays = days and tonumber(days)
+        if name and numDays and numDays > 0 then
+            if BRutus.BanList and BRutus.BanList:Add(name, reason, numDays * 86400) then
+                BRutus:Print(L["Temp-banned "] .. name .. " (" .. days .. L[" days)"])
+            end
+        else
+            BRutus:Print(L["Usage: /gos tempban <name> <days> [reason]"])
+        end
+    elseif msg:match("^ban%s") then
+        -- /gos ban <name> [reason]  — officer-gated inside BanList:Add.
+        local rest = strtrim(msg:gsub("^ban%s+", ""))
+        local name, reason = rest:match("^(%S+)%s*(.*)$")
+        if name then
+            if BRutus.BanList and BRutus.BanList:Add(name, reason) then
+                BRutus:Print(L["Banned "] .. name)
+            end
+        else
+            BRutus:Print(L["Usage: /gos ban <name> [reason]"])
+        end
+    elseif msg:match("^unban%s") then
+        -- /gos unban <name>  — officer-gated inside BanList:Remove.
+        local name = strtrim(msg:gsub("^unban%s+", ""))
+        if name ~= "" and BRutus.BanList and BRutus.BanList:Remove(name) then
+            BRutus:Print(L["Unbanned "] .. name)
+        end
+    elseif msg == "banlist" then
+        -- Open the main window on the Leadership tab. No BRutus:ShowManagement
+        -- opener exists yet (confirmed via UI/RosterFrame.lua + UI/ManagementPanel.lua),
+        -- so follow the same open pattern as BRutus:ShowCalendar (UI/CalendarPanel.lua).
+        -- Task 6 adds the "ban" sub-tab to UI/ManagementPanel.lua; until then this lands
+        -- on the Leadership tab without a sub-tab pre-selected.
+        if not BRutus.RosterFrame then BRutus.RosterFrame = BRutus.CreateRosterFrame() end
+        if not BRutus.RosterFrame:IsShown() then BRutus.RosterFrame:Show() end
+        if BRutus.RosterFrame.SetActiveTab then BRutus.RosterFrame:SetActiveTab("management") end
     else
         BRutus:ToggleRoster()
     end

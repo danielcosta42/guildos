@@ -23,6 +23,12 @@ L["|cffAAAAAA[Guild OS] No duplicates found.|r"] = "|cffAAAAAA[Guild OS] Keine D
 L["|cffFFD700Attunements:|r"] = "|cffFFD700Einstimmungen:|r"
 L["|cff00FF00Done|r"] = "|cff00FF00Erledigt|r"
 L["|cffFF4444Not started|r"] = "|cffFF4444Nicht begonnen|r"
+L["Banned "] = "Gebannt "
+L["Unbanned "] = "Entbannt "
+L["Temp-banned "] = "Temporär gebannt "
+L[" days)"] = " Tage)"
+L["Usage: /gos ban <name> [reason]"] = "Verwendung: /gos ban <Name> [Grund]"
+L["Usage: /gos tempban <name> <days> [reason]"] = "Verwendung: /gos tempban <Name> <Tage> [Grund]"
 
 -- Core/Core.lua
 L[" loaded. Type |cffFFD700/guildos|r to open."] = " geladen. Tippe |cffFFD700/guildos|r zum Öffnen."
