@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0] - 2026-07-19
+
+### Added
+- self-service raid roles + Raiders KPI band
+
+
 ## [0.28.0] - 2026-07-19
 
 ### Added
