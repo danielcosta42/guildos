@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.0] - 2026-07-19
+
+### Added
+- Raiders sub-tab, an officer-curated level-70 raid pool
+
+
 ## [0.27.0] - 2026-07-18
 
 ### Added
