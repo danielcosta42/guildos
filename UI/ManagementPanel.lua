@@ -500,60 +500,129 @@ end
 -- BAN LIST sub-panel — officer blacklist (add / search / remove)
 ----------------------------------------------------------------------
 local function BuildBanSub(panel)
-    -- Add row (officer)
+    -- Header + one-line context
+    local header = UI:CreateHeaderText(panel, L["BANNED PLAYERS"], 11)
+    header:SetPoint("TOPLEFT", 2, -4)
+    local hint = UI:CreateText(panel,
+        L["Blocked from auto-invite. You're alerted when a banned player rejoins the guild or whispers you."],
+        9, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOPLEFT", 2, -22)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -22)
+    hint:SetJustifyH("LEFT")
+
+    -- Add form, row 1: player + reason
+    local playerLbl = UI:CreateText(panel, L["Player"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+    playerLbl:SetPoint("TOPLEFT", 4, -52)
     local nameBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    nameBox:SetSize(120, 22); nameBox:SetPoint("TOPLEFT", 4, -4)
+    nameBox:SetSize(140, 22); nameBox:SetPoint("LEFT", playerLbl, "RIGHT", 8, 0)
     nameBox:SetAutoFocus(false); nameBox:SetMaxLetters(40)
     nameBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
 
+    local reasonLbl = UI:CreateText(panel, L["Reason"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+    reasonLbl:SetPoint("LEFT", nameBox, "RIGHT", 16, 0)
     local reasonBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    reasonBox:SetSize(200, 22); reasonBox:SetPoint("LEFT", nameBox, "RIGHT", 14, 0)
+    reasonBox:SetSize(210, 22); reasonBox:SetPoint("LEFT", reasonLbl, "RIGHT", 8, 0)
     reasonBox:SetAutoFocus(false); reasonBox:SetMaxLetters(80)
     reasonBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
 
-    local addBtn = UI:CreateButton(panel, L["Ban"], 70, 22)
-    addBtn:SetPoint("LEFT", reasonBox, "RIGHT", 10, 0)
+    -- Add form, row 2: temporary toggle (+days) and the Ban button
+    local tempChk = UI:CreateCheckbox(panel, L["Temporary"], 18)
+    tempChk:SetPoint("TOPLEFT", 4, -84)
+    local daysBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    daysBox:SetSize(42, 20); daysBox:SetPoint("LEFT", tempChk, "LEFT", 104, 0)
+    daysBox:SetAutoFocus(false); daysBox:SetNumeric(true); daysBox:SetMaxLetters(4)
+    daysBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    local daysLbl = UI:CreateText(panel, L["days"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    daysLbl:SetPoint("LEFT", daysBox, "RIGHT", 6, 0)
+    daysBox:Hide(); daysLbl:Hide()
+    tempChk.checkbox.onChanged = function(_, checked)
+        daysBox:SetShown(checked); daysLbl:SetShown(checked)
+        if not checked then daysBox:SetText("") end
+    end
+
+    local banBtn = UI:CreateButton(panel, L["Ban player"], 110, 24)
+    banBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -82)
+
     local function doAdd()
         local n = strtrim(nameBox:GetText())
-        if n ~= "" and BRutus.BanList then
+        if n == "" or not BRutus.BanList then return end
+        if tempChk.checkbox:GetChecked() then
+            local d = tonumber(strtrim(daysBox:GetText() or ""))
+            if not d or d <= 0 then
+                BRutus:Print(L["Enter a positive number of days for a temporary ban."])
+                return
+            end
+            BRutus.BanList:Add(n, reasonBox:GetText(), d * 86400)
+        else
             BRutus.BanList:Add(n, reasonBox:GetText())
-            nameBox:SetText(""); reasonBox:SetText(""); nameBox:ClearFocus(); reasonBox:ClearFocus()
         end
+        nameBox:SetText(""); reasonBox:SetText(""); daysBox:SetText("")
+        nameBox:ClearFocus(); reasonBox:ClearFocus(); daysBox:ClearFocus()
     end
-    addBtn:SetScript("OnClick", doAdd)
+    banBtn:SetScript("OnClick", doAdd)
     nameBox:SetScript("OnEnterPressed", doAdd)
     reasonBox:SetScript("OnEnterPressed", doAdd)
+    daysBox:SetScript("OnEnterPressed", doAdd)
 
-    -- Search
+    -- Divider between the form and the list
+    local sep = UI:CreateSeparator(panel)
+    sep:SetPoint("TOPLEFT", 2, -114)
+    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -114)
+
+    -- Filter + column headers
+    local filterLbl = UI:CreateText(panel, L["Filter"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    filterLbl:SetPoint("TOPLEFT", 4, -128)
     local searchBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    searchBox:SetSize(160, 20); searchBox:SetPoint("TOPLEFT", 4, -34)
+    searchBox:SetSize(180, 20); searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-    local searchLbl = UI:CreateText(panel, L["Search"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    searchLbl:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
+
+    local function colHeader(text, x)
+        local fs = UI:CreateText(panel, text, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        fs:SetPoint("TOPLEFT", x, -152)
+    end
+    colHeader(L["PLAYER"], 8)
+    colHeader(L["REASON"], 160)
+    colHeader(L["BY"], 340)
+    colHeader(L["EXPIRES"], 430)
 
     -- List
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 4, -60)
+    listHolder:SetPoint("TOPLEFT", 4, -168)
     listHolder:SetPoint("BOTTOMRIGHT", -4, 4)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtBanScroll")
+
+    local function cell(text, x, w, y, r, g, b)
+        local fs = UI:CreateText(content, text, 11, r, g, b)
+        fs:SetPoint("TOPLEFT", x, -y)
+        fs:SetWidth(w); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+    end
 
     local function refresh()
         for _, c in pairs({ content:GetChildren() }) do c:Hide() end
         for _, r in pairs({ content:GetRegions() }) do r:Hide() end
         content:SetWidth(listHolder:GetWidth() - 4)
         local filter = strtrim(searchBox:GetText() or ""):lower()
+        local now = GetServerTime()
         local list = BRutus.BanList and BRutus.BanList:List() or {}
         local y = 0
         for _, e in ipairs(list) do
             if filter == "" or (e.name or ""):lower():find(filter, 1, true) then
-                local expTxt = e.expiry and (" |cff888888(" .. date("%m/%d", e.expiry) .. ")|r") or ""
-                local row = UI:CreateText(content,
-                    "|cffFF6666" .. (e.name or "?") .. "|r  " .. (e.reason or "") ..
-                    "  |cff777777— " .. (e.author or "?") .. "|r" .. expTxt,
-                    11, C.text.r, C.text.g, C.text.b)
-                row:SetPoint("TOPLEFT", 4, -y)
-                row:SetJustifyH("LEFT"); row:SetWidth(content:GetWidth() - 34)
+                local expired = e.expiry and e.expiry <= now
+                local nr, ng, nb = C.red.r, C.red.g, C.red.b
+                local expTxt
+                if not e.expiry then
+                    expTxt = L["permanent"]
+                elseif expired then
+                    expTxt = L["(expired)"]
+                    nr, ng, nb = C.silver.r, C.silver.g, C.silver.b
+                else
+                    expTxt = date("%m/%d/%y", e.expiry)
+                end
+                cell(e.name or "?", 4, 148, y, nr, ng, nb)
+                cell(e.reason or "", 156, 176, y, C.text.r, C.text.g, C.text.b)
+                cell(e.author or "?", 336, 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
+                cell(expTxt, 426, 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
                 del:SetPoint("TOPRIGHT", -4, -y)
                 local nm = e.name
@@ -562,7 +631,9 @@ local function BuildBanSub(panel)
             end
         end
         if y == 0 then
-            local empty = UI:CreateText(content, L["No bans."], 11, C.silver.r, C.silver.g, C.silver.b)
+            local empty = UI:CreateText(content,
+                L["No banned players yet. Add one above to block them."],
+                11, C.silver.r, C.silver.g, C.silver.b)
             empty:SetPoint("TOPLEFT", 4, -4)
         end
         content:SetHeight(math.max(1, y))
