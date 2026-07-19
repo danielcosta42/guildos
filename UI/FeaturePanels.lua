@@ -1790,6 +1790,26 @@ function BRutus:RefreshSettingsPanel(content, category)
 
     if cat == "general" then
     --------------------------------------------------------------------
+    -- MY PROFILE (self-service raid roles)
+    --------------------------------------------------------------------
+    local profTitle = UI:CreateHeaderText(content, L["MY PROFILE"], 12)
+    profTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 22
+
+    local rolesHint = UI:CreateText(content, L["Roles you're willing to play. Your guild's Raiders list picks this up automatically, so no officer has to set it."], 10, C.silver.r, C.silver.g, C.silver.b)
+    rolesHint:SetPoint("TOPLEFT", 4, -yOff); rolesHint:SetWidth(content:GetWidth() - 20); rolesHint:SetJustifyH("LEFT")
+    yOff = yOff + 20
+
+    local rolePicker = BRutus:CreateRolePicker(content)
+    rolePicker:SetPoint("TOPLEFT", 4, -yOff)
+    yOff = yOff + 34
+
+    local profSep = UI:CreateSeparator(content)
+    profSep:SetPoint("TOPLEFT", 0, -yOff)
+    profSep:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+
+    --------------------------------------------------------------------
     -- MODULE TOGGLES
     --------------------------------------------------------------------
     local sectionTitle = UI:CreateHeaderText(content, L["MODULES"], 12)

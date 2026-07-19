@@ -633,6 +633,13 @@ function DataCollector:GetBroadcastData()
         clean.spec = myData.spec
     end
 
+    -- Include self-declared roles (the player's own preference; the Raider
+    -- Roster shows these unless an officer overrides). Merged generically by
+    -- StoreReceivedData into db.members[key].prefRoles.
+    if BRutus.db.profile and BRutus.db.profile.prefRoles then
+        clean.prefRoles = BRutus.db.profile.prefRoles
+    end
+
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).
     -- StoreReceivedData merges every key generically, so the receiver stores it too.
     if myData.resistances then

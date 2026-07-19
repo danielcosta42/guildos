@@ -27,6 +27,11 @@ local STEPS = {
         body  = L["Guild OS shares your gear, professions, attunements, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."],
     },
     {
+        title = L["Your raid roles"],
+        body  = L["Which roles can you play? Pick any that apply. Your guild's Raiders list picks this up automatically, so officers don't have to set it for you. You can change it later in Settings."],
+        roleStep = true,  -- render the self-service role picker on this step
+    },
+    {
         title = L["Officer tools"],
         body  = L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: /roll, TMB, Wishlist or DKP."],
         officer = true,
@@ -72,6 +77,12 @@ local function BuildFrame()
     gbToggle:Hide()
     f.gbToggle = gbToggle
 
+    -- Per-step self-service role picker (shown only on the roleStep).
+    local rolePick = BRutus:CreateRolePicker(f)
+    rolePick:SetPoint("TOPLEFT", 24, -186)
+    rolePick:Hide()
+    f.rolePick = rolePick
+
     local backBtn = UI:CreateButton(f, L["Back"], 90, 24)
     backBtn:SetPoint("BOTTOMLEFT", 16, 16)
     f.backBtn = backBtn
@@ -107,6 +118,13 @@ local function BuildFrame()
             f.gbToggle:Show()
         else
             f.gbToggle:Hide()
+        end
+        -- Self-service role picker: only on the role step.
+        if s.roleStep then
+            f.rolePick.refresh()
+            f.rolePick:Show()
+        else
+            f.rolePick:Hide()
         end
     end
 

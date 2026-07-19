@@ -696,6 +696,28 @@ function BRutus:LootSystemShowsDKP()
 end
 
 ----------------------------------------------------------------------
+-- Player self-service profile: the roles this character is willing to
+-- play. Stored locally, mirrored into our own member row, and broadcast
+-- so the Raider Roster + guildmates pick it up with no officer input.
+----------------------------------------------------------------------
+function BRutus:GetMyRoles()
+    return (self.db and self.db.profile and self.db.profile.prefRoles) or {}
+end
+
+function BRutus:SetMyRoles(roles)
+    self.db.profile = self.db.profile or {}
+    self.db.profile.prefRoles = roles or {}
+    local key = self:GetPlayerKey(UnitName("player"), GetRealmName())
+    self.db.members = self.db.members or {}
+    self.db.members[key] = self.db.members[key] or {}
+    self.db.members[key].prefRoles = self.db.profile.prefRoles
+    if self.CommSystem and self.CommSystem.BroadcastMyData then
+        self.CommSystem:BroadcastMyData(true)
+    end
+    if self.RaiderRoster then self.RaiderRoster:Refresh() end
+end
+
+----------------------------------------------------------------------
 -- Theme: recolor the palette from the chosen accent preset. Mutates the
 -- shared color tables in place so frames built afterwards pick it up.
 -- Existing frames keep their colors until a reload.

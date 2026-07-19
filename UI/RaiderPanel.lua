@@ -57,19 +57,91 @@ StaticPopupDialogs["GUILDOS_RAIDER_NOTE"] = {
 }
 
 ----------------------------------------------------------------------
+-- Reusable self-service role picker (Settings "My Profile" + onboarding).
+-- Reads/writes the player's OWN preferred roles; the change syncs to the
+-- guild via their member data, so officers don't have to set it.
+----------------------------------------------------------------------
+local ROLE_ORDER = { "TANK", "HEALER", "DPS" }
+local function roleName(r)
+    if r == "TANK"   then return L["Tank"]   end
+    if r == "HEALER" then return L["Healer"] end
+    return L["DPS"]
+end
+function BRutus:CreateRolePicker(parent)
+    local pick = CreateFrame("Frame", nil, parent)
+    pick:SetSize(200, 24)
+    local btns = {}
+    local function refresh()
+        local roles = BRutus:GetMyRoles()
+        for _, b in ipairs(btns) do
+            local rc = ROLE_COL[b.role]
+            if roles[b.role] then
+                b:SetBaseColor(rc.r * 0.40, rc.g * 0.40, rc.b * 0.40, 0.95)
+                b.label:SetTextColor(rc.r, rc.g, rc.b)
+            else
+                b:SetBaseColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.6)
+                b.label:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+            end
+        end
+    end
+    for i, role in ipairs(ROLE_ORDER) do
+        local b = UI:CreateButton(pick, roleName(role), 62, 22)
+        b:SetPoint("LEFT", (i - 1) * 66, 0)
+        b.role = role
+        b:SetScript("OnClick", function()
+            local roles = BRutus:GetMyRoles()
+            roles[role] = (not roles[role]) and true or nil
+            BRutus:SetMyRoles(roles)
+            refresh()
+        end)
+        btns[i] = b
+    end
+    refresh()
+    pick.refresh = refresh
+    return pick
+end
+
+----------------------------------------------------------------------
 -- Build the raiders panel; return its refresh fn.
 ----------------------------------------------------------------------
 function BRutus:CreateRaiderPanel(panel, _mainFrame)
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
-    local hint = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 12, -10)
+    -- KPI band (same card style as the Roster tab): raid coverage at a glance.
+    -- Values filled + cards positioned responsively in Refresh.
+    local KPI_H = 66
+    local band = CreateFrame("Frame", nil, f)
+    band:SetPoint("TOPLEFT", 0, 0); band:SetPoint("TOPRIGHT", 0, 0); band:SetHeight(KPI_H)
 
-    -- Column headers
+    local KPI_DEFS = {
+        { label = L["RAIDERS"], col = C.gold },
+        { label = L["ONLINE"],  col = C.online },
+        { label = L["TANKS"],   col = ROLE_COL.TANK },
+        { label = L["HEALERS"], col = ROLE_COL.HEALER },
+        { label = L["DPS"],     col = ROLE_COL.DPS },
+        { label = L["READY"],   col = GEAR_COL.ready },
+    }
+    f.kpi = {}
+    for i, k in ipairs(KPI_DEFS) do
+        local card = UI:CreatePanel(band)
+        card:SetFrameLevel((band:GetFrameLevel() or 1) + 1)
+        card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.95)
+        local val = UI:CreateText(card, "—", 20, k.col.r, k.col.g, k.col.b)
+        val:SetPoint("TOPLEFT", 12, -7)
+        local lbl = UI:CreateText(card, k.label, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        lbl:SetPoint("BOTTOMLEFT", 12, 8)
+        f.kpi[i] = { card = card, val = val }
+    end
+    f.KPI_H = KPI_H
+
+    local bandLine = UI:CreateSeparator(f)
+    bandLine:SetPoint("TOPLEFT", 0, -KPI_H); bandLine:SetPoint("TOPRIGHT", 0, -KPI_H)
+
+    -- Column headers (below the band)
     local function head(text, x)
         local h = UI:CreateHeaderText(f, text, 10)
-        h:SetPoint("TOPLEFT", x + 8, -30)
+        h:SetPoint("TOPLEFT", x + 8, -(KPI_H + 8))
         return h
     end
     head(L["Raider"],  NAME_X)
@@ -80,11 +152,11 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
     head(L["Note"],    NOTE_X)
 
     local sep = UI:CreateSeparator(f)
-    sep:SetPoint("TOPLEFT", 8, -46); sep:SetPoint("TOPRIGHT", -8, -46)
+    sep:SetPoint("TOPLEFT", 8, -(KPI_H + 24)); sep:SetPoint("TOPRIGHT", -8, -(KPI_H + 24))
 
     -- Scrollable list
     local holder = CreateFrame("Frame", nil, f)
-    holder:SetPoint("TOPLEFT", 8, -50)
+    holder:SetPoint("TOPLEFT", 8, -(KPI_H + 28))
     holder:SetPoint("BOTTOMRIGHT", -8, 8)
     f.holder = holder
     local scroll, child = UI:CreateScrollFrame(holder, "GuildOSRaiderScroll")
@@ -143,8 +215,8 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
         end
         table.sort(list, function(a, b) return a.name:lower() < b.name:lower() end)
 
-        hint:SetText(string.format(isOfficer and L["%d raiders (level 70) — click Roles / Gear / Note to edit"]
-                                             or  L["%d raiders (level 70)"], #list))
+        -- Aggregate counts for the KPI band (accumulated in the row loop).
+        local online, rT, rH, rD, gReady = 0, 0, 0, 0, 0
 
         for idx, m in ipairs(list) do
             local row = f.rows[idx]
@@ -158,14 +230,23 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
             local rec = RR():Get(m.key) or {}
             local mem = BRutus.db.members and BRutus.db.members[m.key]
 
+            -- Tally for the KPI band. Roles are effective (officer override or
+            -- the player's own self-declared roles).
+            local eff = RR():EffectiveRoles(m.key)
+            if m.online then online = online + 1 end
+            if eff.TANK   then rT = rT + 1 end
+            if eff.HEALER then rH = rH + 1 end
+            if eff.DPS    then rD = rD + 1 end
+            if (rec.gear or "") == "ready" then gReady = gReady + 1 end
+
             -- Name (class-colored; dim when offline)
             local cr, cg, cb = BRutus:GetClassColor(m.class)
             if not m.online then cr, cg, cb = cr * 0.55, cg * 0.55, cb * 0.55 end
             row.nameFS:SetText(m.name); row.nameFS:SetTextColor(cr, cg, cb)
 
-            -- Roles (multi-toggle)
+            -- Roles (multi-toggle; shows the effective set)
             for _, b in ipairs(row.roleBtns) do
-                local on = rec.roles and rec.roles[b.role]
+                local on = eff[b.role]
                 local rc = ROLE_COL[b.role]
                 if on then
                     b:SetBaseColor(rc.r * 0.40, rc.g * 0.40, rc.b * 0.40, 0.95)
@@ -225,6 +306,22 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
 
         -- Hide any leftover pooled rows.
         for i = #list + 1, #f.rows do f.rows[i]:Hide() end
+
+        -- KPI band: position cards responsively (like the roster band) + fill.
+        local W = f:GetWidth(); if not W or W < 200 then W = 1000 end
+        local M, G, N = 12, 8, #f.kpi
+        local cw = math.floor((W - M * 2 - G * (N - 1)) / N)
+        for i, c in ipairs(f.kpi) do
+            c.card:ClearAllPoints()
+            c.card:SetPoint("TOPLEFT", M + (i - 1) * (cw + G), -8)
+            c.card:SetSize(cw, f.KPI_H - 16)
+        end
+        f.kpi[1].val:SetText(tostring(#list))
+        f.kpi[2].val:SetText(tostring(online))
+        f.kpi[3].val:SetText(tostring(rT))
+        f.kpi[4].val:SetText(tostring(rH))
+        f.kpi[5].val:SetText(tostring(rD))
+        f.kpi[6].val:SetText(tostring(gReady))
 
         child2:SetHeight(math.max(1, #list * ROW_H))
 

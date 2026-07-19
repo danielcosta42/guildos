@@ -25,6 +25,16 @@ end
 function RaiderRoster:GetAll() return BRutus.db.raiders or {} end
 function RaiderRoster:Get(key) return BRutus.db.raiders and BRutus.db.raiders[key] or nil end
 
+-- Effective roles = the officer override once an officer has touched this row
+-- (rolesSet), otherwise the player's own self-declared roles (synced in their
+-- member data as prefRoles). This is what the roster shows and counts.
+function RaiderRoster:EffectiveRoles(key)
+    local r = BRutus.db.raiders and BRutus.db.raiders[key]
+    if r and r.rolesSet then return r.roles or {} end
+    local mem = BRutus.db.members and BRutus.db.members[key]
+    return (mem and mem.prefRoles) or {}
+end
+
 local function getOrNew(key)
     BRutus.db.raiders = BRutus.db.raiders or {}
     local r = BRutus.db.raiders[key]
@@ -47,6 +57,13 @@ end
 function RaiderRoster:ToggleRole(key, role)
     if not BRutus:IsOfficer() then return end
     local r = getOrNew(key)
+    -- First officer touch seeds the override from the player's self-declared
+    -- roles, so the officer starts from what the raider already said.
+    if not r.rolesSet then
+        r.roles = {}
+        for k, v in pairs(self:EffectiveRoles(key)) do if v then r.roles[k] = true end end
+        r.rolesSet = true
+    end
     r.roles[role] = (not r.roles[role]) and true or nil
     touch(r)
     self:Refresh(); self:Broadcast()
