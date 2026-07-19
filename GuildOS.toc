@@ -50,6 +50,7 @@ Modules\DataCollector.lua
 Modules\AttunementTracker.lua
 Modules\CommSystem.lua
 Modules\SyncService.lua
+Modules\BanList.lua
 Modules\RecruitmentSystem.lua
 Modules\WishlistSystem.lua
 Modules\SoftResSystem.lua
