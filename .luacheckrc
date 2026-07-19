@@ -291,6 +291,11 @@ read_globals = {
     -- Libraries
     "LibStub",
     "ChatThrottleLib",
+
+    -- UI / alerts
+    "RaidNotice_AddMessage",
+    "RaidWarningFrame",
+    "ChatTypeInfo",
 }
 
 -- Third-party libraries — skip

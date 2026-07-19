@@ -864,3 +864,8 @@ L["Pruned %d member(s) who left the guild."] = "Eliminados %d miembro(s) que dej
 L["Step %d of %d"] = "Paso %d de %d"
 L["Toggle Guild OS"] = "Mostrar/ocultar Guild OS"
 L["Welcome to Guild OS"] = "Bienvenido a Guild OS"
+
+-- Modules/BanList.lua
+L["Banned %s (%s) — banned by %s on %s"] = "Baneado %s (%s) — baneado por %s el %s"
+L["BANNED"] = "BANEADO"
+L["(no reason)"] = "(sin motivo)"

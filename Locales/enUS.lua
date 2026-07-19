@@ -8,3 +8,8 @@ local L = BRutus.L
 
 -- Populated during i18n conversion.
 local _ = L
+
+-- Modules/BanList.lua
+L["Banned %s (%s) — banned by %s on %s"] = "Banned %s (%s) — banned by %s on %s"
+L["BANNED"] = "BANNED"
+L["(no reason)"] = "(no reason)"
