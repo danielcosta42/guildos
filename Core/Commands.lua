@@ -20,6 +20,8 @@ local function handleCommand(msg)
             BRutus.DataCollector:CollectMyData()
             BRutus:Print(L["Data collected."])
         end
+    elseif msg == "selftest" then
+        if BRutus.SelfTest then BRutus.SelfTest:Run() end
     elseif msg == "sync" then
         if BRutus.CommSystem then
             BRutus.CommSystem:FullSync()

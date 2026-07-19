@@ -45,6 +45,7 @@ Modules\ChehulNetWire.lua
 Modules\Mesh.lua
 
 # Data Modules
+Modules\SelfTest.lua
 Modules\DataCollector.lua
 Modules\AttunementTracker.lua
 Modules\CommSystem.lua
