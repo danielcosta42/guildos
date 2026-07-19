@@ -6,6 +6,7 @@
 ----------------------------------------------------------------------
 local BanList = {}
 BRutus.BanList = BanList
+local L = BRutus.L
 
 local EXPIRED_GRACE = 7 * 86400    -- keep expired temp-bans 7 days for visibility
 local TOMBSTONE_TTL = 30 * 86400   -- keep un-ban tombstones 30 days for sync convergence
@@ -16,6 +17,7 @@ function BanList:Initialize()
         BRutus.SyncService:On("ban", function(env, sender) BanList:OnSync(env, sender) end)
     end
     self:_RegisterTests()
+    self:Prune()
 end
 
 ----------------------------------------------------------------------
@@ -64,6 +66,70 @@ function BanList:Prune(now, store)
         end
     end
     return removed
+end
+
+----------------------------------------------------------------------
+-- Officer mutations + sync (domain "ban", per-entry revision)
+----------------------------------------------------------------------
+function BanList:Add(name, reason, durationSec)
+    if not BRutus:IsOfficer() then
+        BRutus:Print(L["|cffFF4444Officers only.|r"])
+        return false
+    end
+    local key = self:_NormalizeKey(name)
+    if key == "" then return false end
+    local now = GetServerTime()
+    local entry = {
+        name    = name:match("^([^-]+)") or name,
+        reason  = strtrim(reason or "") ~= "" and strtrim(reason) or L["(no reason)"],
+        author  = UnitName("player"),
+        ts      = now,
+        expiry  = durationSec and (now + durationSec) or nil,
+    }
+    BRutus.db.banList[key] = entry
+    self:_Publish(key, entry)
+    self:Refresh()
+    return true
+end
+
+function BanList:Remove(name)
+    if not BRutus:IsOfficer() then return false end
+    local key = self:_NormalizeKey(name)
+    local existing = BRutus.db.banList[key]
+    local tomb = {
+        name = (existing and existing.name) or (name:match("^([^-]+)") or name),
+        author = UnitName("player"), ts = GetServerTime(), removed = true,
+    }
+    BRutus.db.banList[key] = tomb
+    self:_Publish(key, tomb)
+    self:Refresh()
+    return true
+end
+
+function BanList:_Publish(key, entry)
+    if not BRutus.SyncService then return end
+    local rev = BRutus.SyncService:NextRevision("ban", key)
+    -- broadcast to all officers; ACK is point-to-point so not used here —
+    -- convergence is via revision-check + the periodic 5-min sync.
+    BRutus.SyncService:Publish("ban", "set", { key = key, entry = entry }, { rev = rev })
+end
+
+function BanList:_ApplyRemote(key, entry, rev)
+    if not BRutus.SyncService:ShouldApply("ban", key, rev) then return false end
+    BRutus.db.banList[key] = entry
+    BRutus.SyncService:SetRevision("ban", key, rev)
+    return true
+end
+
+function BanList:OnSync(env)
+    if env.act ~= "set" or not env.data or not env.data.key then return end
+    if self:_ApplyRemote(env.data.key, env.data.entry, env.rev) then
+        self:Refresh()
+    end
+end
+
+function BanList:Refresh()
+    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------

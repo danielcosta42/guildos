@@ -35,6 +35,7 @@ SyncService.OFFICER_DOMAINS = {
     event    = true,   -- calendar event create/update/delete (rsvp is member-level)
     poll     = true,   -- poll create/close (vote is member-level)
     bulletin = true,   -- officer announcements
+    ban      = true,   -- blacklist add/remove (officer-authoritative)
 }
 
 -- Actions any guild member may perform even inside an officer domain.
