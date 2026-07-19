@@ -244,6 +244,12 @@ function CommSystem:OnMessageReceived(msg, _, sender)
         if BRutus.TrialTracker and BRutus:IsOfficer() then
             BRutus.TrialTracker:HandleIncoming(data)
         end
+    elseif msgType == "RR" then
+        -- Raider roster: everyone stores it (members view); HandleIncoming
+        -- trusts it only when the sender is a verified officer.
+        if BRutus.RaiderRoster then
+            BRutus.RaiderRoster:HandleIncoming(sender, data)
+        end
     elseif msgType == CommSystem.MSG_TYPES.ALT_LINK then
         if BRutus:IsOfficer() then
             local ok, links = LibSerialize:Deserialize(data)
@@ -377,6 +383,13 @@ function CommSystem:HandleRequest(_sender, _data)
         if BRutus.Recruitment then
             C_Timer.After(2.5, function()
                 BRutus.Recruitment:RespondToSync()
+            end)
+        end
+
+        -- Officers answer with the curated raider roster (login backfill).
+        if BRutus:IsOfficer() and BRutus.RaiderRoster then
+            C_Timer.After(3, function()
+                BRutus.RaiderRoster:RespondToSync()
             end)
         end
     end)

@@ -307,6 +307,10 @@ function BRutus:InitModules()
     if BRutus.Recruitment and modEnabled("recruitment") then
         BRutus.Recruitment:InitParticipation()
     end
+    -- Raider roster (officer-curated, everyone stores/views it).
+    if BRutus.RaiderRoster then
+        BRutus.RaiderRoster:Initialize()
+    end
     if BRutus.GuildManager and modEnabled("guildManager") then
         BRutus.GuildManager:Initialize()
     end

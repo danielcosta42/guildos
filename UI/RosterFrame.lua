@@ -103,13 +103,15 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
         return p
     end
 
-    local sessPanel  = MakeSubPanel()
-    local coresPanel = MakeSubPanel()
-    local auditPanel = MakeSubPanel()
-    local rtPanel    = MakeSubPanel()
+    local sessPanel    = MakeSubPanel()
+    local raidersPanel = MakeSubPanel()
+    local coresPanel   = MakeSubPanel()
+    local auditPanel   = MakeSubPanel()
+    local rtPanel      = MakeSubPanel()
 
     -- Populate each sub-panel using the existing builders
     BRutus:CreateRaidsPanel(sessPanel, mainFrame)
+    if BRutus.CreateRaiderPanel then BRutus:CreateRaiderPanel(raidersPanel, mainFrame) end
     BRutus:CreateCoresPanel(coresPanel)           -- new signature (no contentTop)
     BRutus:CreateAuditPanel(auditPanel, mainFrame)
     BRutus:CreateRaidToolsPanel(rtPanel, mainFrame)
@@ -118,10 +120,11 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     -- Sub-tab definitions (Cores is officer-only)
     ----------------------------------------------------------------
     local SUBTABS = {
-        { key = "sessions",  label = L["Sessions"],   panel = sessPanel,  officerOnly = false },
-        { key = "cores",     label = L["Cores"],      panel = coresPanel, officerOnly = true  },
-        { key = "audit",     label = L["Audit"],      panel = auditPanel, officerOnly = false },
-        { key = "raidtools", label = L["Raid Tools"], panel = rtPanel,    officerOnly = false },
+        { key = "sessions",  label = L["Sessions"],   panel = sessPanel,    officerOnly = false },
+        { key = "raiders",   label = L["Raiders"],    panel = raidersPanel, officerOnly = false },
+        { key = "cores",     label = L["Cores"],      panel = coresPanel,   officerOnly = true  },
+        { key = "audit",     label = L["Audit"],      panel = auditPanel,   officerOnly = false },
+        { key = "raidtools", label = L["Raid Tools"], panel = rtPanel,      officerOnly = false },
     }
 
     local activeSubTab = nil

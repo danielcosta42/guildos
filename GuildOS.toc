@@ -60,6 +60,7 @@ Modules\RecipeTracker.lua
 Modules\CraftNet.lua
 Modules\RecruitBeacon.lua
 Modules\OfficerNotes.lua
+Modules\RaiderRoster.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua
 Modules\GearAudit.lua
@@ -82,6 +83,7 @@ Modules\SpecChecker.lua
 # UI
 UI\Helpers.lua
 UI\Dashboard.lua
+UI\RaiderPanel.lua
 UI\RecipesPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
