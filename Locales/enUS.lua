@@ -21,3 +21,8 @@ L["Usage: /gos tempban <name> <days> [reason]"] = "Usage: /gos tempban <name> <d
 L["Banned %s (%s) — banned by %s on %s"] = "Banned %s (%s) — banned by %s on %s"
 L["BANNED"] = "BANNED"
 L["(no reason)"] = "(no reason)"
+
+-- UI/ManagementPanel.lua
+L["Ban List"] = "Ban List"
+L["Ban"] = "Ban"
+L["No bans."] = "No bans."

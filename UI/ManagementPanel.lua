@@ -17,6 +17,7 @@ local SUBTABS = {
     { key = "suggest",  label = L["Suggestions"] },
     { key = "motd",     label = L["MOTD / Info"] },
     { key = "log",      label = L["History"] },
+    { key = "ban",      label = L["Ban List"] },
 }
 
 local ROW_H = 26
@@ -496,6 +497,84 @@ local function BuildLogSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- BAN LIST sub-panel — officer blacklist (add / search / remove)
+----------------------------------------------------------------------
+local function BuildBanSub(panel)
+    -- Add row (officer)
+    local nameBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    nameBox:SetSize(120, 22); nameBox:SetPoint("TOPLEFT", 4, -4)
+    nameBox:SetAutoFocus(false); nameBox:SetMaxLetters(40)
+    nameBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+
+    local reasonBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    reasonBox:SetSize(200, 22); reasonBox:SetPoint("LEFT", nameBox, "RIGHT", 14, 0)
+    reasonBox:SetAutoFocus(false); reasonBox:SetMaxLetters(80)
+    reasonBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+
+    local addBtn = UI:CreateButton(panel, L["Ban"], 70, 22)
+    addBtn:SetPoint("LEFT", reasonBox, "RIGHT", 10, 0)
+    local function doAdd()
+        local n = strtrim(nameBox:GetText())
+        if n ~= "" and BRutus.BanList then
+            BRutus.BanList:Add(n, reasonBox:GetText())
+            nameBox:SetText(""); reasonBox:SetText(""); nameBox:ClearFocus(); reasonBox:ClearFocus()
+        end
+    end
+    addBtn:SetScript("OnClick", doAdd)
+    nameBox:SetScript("OnEnterPressed", doAdd)
+    reasonBox:SetScript("OnEnterPressed", doAdd)
+
+    -- Search
+    local searchBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    searchBox:SetSize(160, 20); searchBox:SetPoint("TOPLEFT", 4, -34)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    local searchLbl = UI:CreateText(panel, L["Search"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    searchLbl:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
+
+    -- List
+    local listHolder = CreateFrame("Frame", nil, panel)
+    listHolder:SetPoint("TOPLEFT", 4, -60)
+    listHolder:SetPoint("BOTTOMRIGHT", -4, 4)
+    local _, content = MakeScrollList(listHolder, "GuildOSMgmtBanScroll")
+
+    local function refresh()
+        for _, c in pairs({ content:GetChildren() }) do c:Hide() end
+        for _, r in pairs({ content:GetRegions() }) do r:Hide() end
+        content:SetWidth(listHolder:GetWidth() - 4)
+        local filter = strtrim(searchBox:GetText() or ""):lower()
+        local list = BRutus.BanList and BRutus.BanList:List() or {}
+        local y = 0
+        for _, e in ipairs(list) do
+            if filter == "" or (e.name or ""):lower():find(filter, 1, true) then
+                local expTxt = e.expiry and (" |cff888888(" .. date("%m/%d", e.expiry) .. ")|r") or ""
+                local row = UI:CreateText(content,
+                    "|cffFF6666" .. (e.name or "?") .. "|r  " .. (e.reason or "") ..
+                    "  |cff777777— " .. (e.author or "?") .. "|r" .. expTxt,
+                    11, C.text.r, C.text.g, C.text.b)
+                row:SetPoint("TOPLEFT", 4, -y)
+                row:SetJustifyH("LEFT"); row:SetWidth(content:GetWidth() - 34)
+                local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
+                del:SetPoint("TOPRIGHT", -4, -y)
+                local nm = e.name
+                del:SetScript("OnClick", function() if BRutus.BanList then BRutus.BanList:Remove(nm) end end)
+                y = y + ROW_H
+            end
+        end
+        if y == 0 then
+            local empty = UI:CreateText(content, L["No bans."], 11, C.silver.r, C.silver.g, C.silver.b)
+            empty:SetPoint("TOPLEFT", 4, -4)
+        end
+        content:SetHeight(math.max(1, y))
+    end
+
+    searchBox:SetScript("OnTextChanged", refresh)
+    -- let sync / mutations repaint this tab
+    if BRutus.BanList then BRutus.BanList.uiRefresh = refresh end
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Panel assembly
 ----------------------------------------------------------------------
 function BRutus:CreateManagementPanel(parent, _mainFrame)
@@ -552,6 +631,7 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
         suggest  = BuildSuggestSub,
         motd     = BuildMotdSub,
         log      = BuildLogSub,
+        ban      = BuildBanSub,
     }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()

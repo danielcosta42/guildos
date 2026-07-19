@@ -874,3 +874,8 @@ L["Welcome to Guild OS"] = "Bienvenue dans Guild OS"
 L["Banned %s (%s) — banned by %s on %s"] = "Banni %s (%s) — banni par %s le %s"
 L["BANNED"] = "BANNI"
 L["(no reason)"] = "(aucune raison)"
+
+-- UI/ManagementPanel.lua
+L["Ban List"] = "Liste des bannis"
+L["Ban"] = "Bannir"
+L["No bans."] = "Aucun banni."
