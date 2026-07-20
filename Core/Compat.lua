@@ -89,3 +89,30 @@ function Compat.SetWhoToUI(toApi)
         SetWhoToUI(toApi and 1 or 0)
     end
 end
+
+-- Whether this client may edit guild public notes
+function Compat.CanEditPublicNote()
+    if CanEditPublicNote then return CanEditPublicNote() and true or false end
+    return false
+end
+
+-- Set a guild member's public note by name (finds the roster index).
+-- Returns true if applied. No-op (false) if the API/permission is absent.
+function Compat.SetGuildPublicNote(name, text)
+    if not name or not GuildRosterSetPublicNote or not (CanEditPublicNote and CanEditPublicNote()) then
+        return false
+    end
+    local short = name:match("^([^-]+)") or name
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local full = GetGuildRosterInfo(i)
+        if full then
+            local fs = full:match("^([^-]+)") or full
+            if fs == short then
+                GuildRosterSetPublicNote(i, (text or ""):sub(1, 31))
+                return true
+            end
+        end
+    end
+    return false
+end

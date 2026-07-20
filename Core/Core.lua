@@ -305,6 +305,7 @@ function BRutus:InitModules()
     if BRutus.Mentions then
         BRutus.Mentions:Initialize()
     end
+    if BRutus.NoteCommand then BRutus.NoteCommand:Initialize() end
     if BRutus.RecipeTracker then
         BRutus.RecipeTracker:Initialize()
     end

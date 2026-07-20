@@ -258,6 +258,10 @@ read_globals = {
     "RAID_CLASS_COLORS",
     "ERR_GUILD_INVITE_S",
 
+    -- Guild notes
+    "GuildRosterSetPublicNote",
+    "CanEditPublicNote",
+
     -- Guild system messages
     "ERR_GUILD_JOIN_S",
     "ERR_GUILD_LEAVE_S",

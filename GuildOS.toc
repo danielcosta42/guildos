@@ -88,6 +88,7 @@ Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
 Modules\GuildAnalytics.lua
 Modules\Mentions.lua
+Modules\NoteCommand.lua
 
 # UI
 UI\Helpers.lua
