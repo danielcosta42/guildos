@@ -40,6 +40,13 @@ function Digest:Build(since)
         lines[#lines + 1] = string.format(L["%d new member(s): %s"], newCount, names)
     end
 
+    -- Roster changes since last login (from the audit log)
+    if BRutus.RosterLog then
+        local c = BRutus.RosterLog:CountsSince(since)
+        if c.kick > 0 then lines[#lines + 1] = string.format(L["%d member(s) removed"], c.kick) end
+        if c.leave > 0 then lines[#lines + 1] = string.format(L["%d member(s) left"], c.leave) end
+    end
+
     -- Raid sessions tracked since last login
     local raidCount = 0
     if BRutus.db.raidTracker and BRutus.db.raidTracker.sessions then

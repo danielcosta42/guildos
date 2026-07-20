@@ -1006,6 +1006,8 @@ L["%d item(s) looted"] = "%d item(ns) lootado(s)"
 L["Your points changed by %+d (now %d)"] = "Seus pontos mudaram em %+d (agora %d)"
 L["%d trial(s) ready for decision"] = "%d trial(s) prontos para decisão"
 L["%d inactive member(s)"] = "%d membro(s) inativo(s)"
+L["%d member(s) removed"] = "%d membro(s) removido(s)"
+L["%d member(s) left"] = "%d membro(s) saído(s)"
 -- Backup / Restore
 L["Backup"] = "Backup"
 L["Restore"] = "Restaurar"

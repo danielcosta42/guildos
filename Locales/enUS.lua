@@ -68,3 +68,7 @@ L["Keyword & level/class filters: /gos autoinvite. Banned players are never invi
 L["Audit Log"] = "Audit Log"
 L["Joined"] = "Joined"
 L["Left"] = "Left"
+
+-- Modules/Digest.lua (RosterLog audit counts)
+L["%d member(s) removed"] = "%d member(s) removed"
+L["%d member(s) left"] = "%d member(s) left"

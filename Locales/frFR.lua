@@ -914,3 +914,7 @@ L["permanent"] = "permanent"
 L["(expired)"] = "(expiré)"
 L["No banned players yet. Add one above to block them."] = "Aucun joueur banni pour le moment. Ajoutez-en un ci-dessus pour le bloquer."
 L["No bans."] = "Aucun banni."
+
+-- Modules/Digest.lua (RosterLog audit counts)
+L["%d member(s) removed"] = "%d membre(s) retiré(s) de la guilde"
+L["%d member(s) left"] = "%d membre(s) ayant quitté la guilde"

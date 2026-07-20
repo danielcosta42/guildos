@@ -103,6 +103,19 @@ function RosterLog:GetLog(store)
     return out
 end
 
+-- Tally join/leave/kick events strictly after `since` (a server timestamp).
+-- Used to feed the login digest with audit counts.
+function RosterLog:CountsSince(since, store)
+    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events) or {}
+    local c = { join = 0, leave = 0, kick = 0 }
+    for _, e in ipairs(store) do
+        if (e.timestamp or 0) > (since or 0) and c[e.action] ~= nil then
+            c[e.action] = c[e.action] + 1
+        end
+    end
+    return c
+end
+
 function RosterLog:_MigrateManagementLog()
     if BRutus.db.rosterLog.migrated then return end
     BRutus.db.rosterLog.migrated = true
@@ -203,6 +216,12 @@ function RosterLog:_RegisterTests()
         local store = { { action = "join", target = "Y", timestamp = 1, id = "y" } }
         local n = RosterLog:Prune(1 + MAX_AGE + 1, store)
         if n ~= 1 or #store ~= 0 then return false, "prune" end
+        return true
+    end)
+    S:Register("rosterlog.counts", function()
+        local store = { { action="join", timestamp=10 }, { action="kick", timestamp=20 }, { action="join", timestamp=5 } }
+        local c = RosterLog:CountsSince(8, store)
+        if c.join ~= 1 or c.kick ~= 1 then return false, "counts" end
         return true
     end)
 end
