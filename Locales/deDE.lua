@@ -957,3 +957,10 @@ L["Tokens: [player] [class] [level]"] = "Platzhalter: [player] [class] [level]"
 L["Whisper selected"] = "Ausgewählte anflüstern"
 L["Whisper %d players?"] = "%d Spieler anflüstern?"
 L["Whispering %d candidate(s)…"] = "Flüstere %d Kandidat(en) an…"
+
+-- Modules/AltAutoDetect.lua (login prompt + /gos myalts)
+L["Found %d of your characters in this guild. Link them as alts of %s?"] = "%d deiner Charaktere wurden in dieser Gilde gefunden. Als Twinks von %s verknüpfen?"
+L["Link"] = "Verknüpfen"
+L["Not now"] = "Jetzt nicht"
+L["Linked %d alt(s) to %s."] = "%d Twink(s) mit %s verknüpft."
+L["No other characters of yours found in this guild."] = "Keine weiteren Charaktere von dir in dieser Gilde gefunden."

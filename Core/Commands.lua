@@ -22,6 +22,8 @@ local function handleCommand(msg)
         end
     elseif msg == "selftest" then
         if BRutus.SelfTest then BRutus.SelfTest:Run() end
+    elseif msg == "myalts" then
+        if BRutus.AltAutoDetect then BRutus.AltAutoDetect:PromptNow() end
     elseif msg == "sync" then
         if BRutus.CommSystem then
             BRutus.CommSystem:FullSync()

@@ -958,3 +958,10 @@ L["Tokens: [player] [class] [level]"] = "Marcadores: [player] [class] [level]"
 L["Whisper selected"] = "Susurrar a los seleccionados"
 L["Whisper %d players?"] = "¿Susurrar a %d jugadores?"
 L["Whispering %d candidate(s)…"] = "Susurrando a %d candidato(s)…"
+
+-- Modules/AltAutoDetect.lua (login prompt + /gos myalts)
+L["Found %d of your characters in this guild. Link them as alts of %s?"] = "Se encontraron %d de tus personajes en esta hermandad. ¿Vincularlos como alts de %s?"
+L["Link"] = "Vincular"
+L["Not now"] = "Ahora no"
+L["Linked %d alt(s) to %s."] = "%d personaje(s) secundario(s) vinculado(s) a %s."
+L["No other characters of yours found in this guild."] = "No se encontraron otros personajes tuyos en esta hermandad."

@@ -8,7 +8,17 @@
 local AltAutoDetect = {}
 BRutus.AltAutoDetect = AltAutoDetect
 
+local L = BRutus.L
 local LibSerialize = LibStub("LibSerialize")
+
+-- Stable signature for a detected group, used to dedupe the "declined"
+-- marker: same set of keys => same signature regardless of order.
+local function GroupSignature(group)
+    local sorted = {}
+    for i, key in ipairs(group) do sorted[i] = key end
+    table.sort(sorted)
+    return table.concat(sorted, "|")
+end
 
 function AltAutoDetect:Initialize()
     self:RecordSelf()
@@ -97,6 +107,71 @@ function AltAutoDetect:HandleSelfClaim(_sender, data)
     if not ok or type(claim) ~= "table" or not claim.main or type(claim.alts) ~= "table" then return end
     for _, k in ipairs(claim.alts) do
         if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+    end
+end
+
+----------------------------------------------------------------------
+-- Login suggestion prompt: "Link N chars as alts of [Main]?"
+-- Suggest + one-click confirm. Nagging is guarded two ways: at most once
+-- per session, and a persisted per-group "declined" marker so a login
+-- doesn't re-offer the exact same group forever (a new/removed alt changes
+-- the signature and is re-offered).
+----------------------------------------------------------------------
+function AltAutoDetect:_RegisterPopup()
+    if StaticPopupDialogs["GUILDOS_ALT_AUTODETECT"] then return end
+    StaticPopupDialogs["GUILDOS_ALT_AUTODETECT"] = {
+        text = L["Found %d of your characters in this guild. Link them as alts of %s?"],
+        button1 = L["Link"],
+        button2 = L["Not now"],
+        OnAccept = function(dlg, data)
+            local r = data or (dlg and dlg.data)
+            if not r then return end
+            AltAutoDetect:LinkOwnAlts(r.main, r.group)
+            local short = r.main:match("^([^-]+)") or r.main
+            BRutus:Print(string.format(L["Linked %d alt(s) to %s."], #r.group - 1, short))
+        end,
+        OnCancel = function(dlg, data)
+            local r = data or (dlg and dlg.data)
+            if not r then return end
+            GuildOSDB.altDeclined = GuildOSDB.altDeclined or {}
+            GuildOSDB.altDeclined[GroupSignature(r.group)] = true
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+end
+
+-- Shows the confirm popup for a detected group `r` ({ group = {keys...}, main = key }).
+-- `r` is passed through StaticPopup_Show's text/data args rather than captured
+-- by closure, so a stale `r` from an earlier scan can never be shown/applied.
+function AltAutoDetect:_ShowPrompt(r)
+    self:_RegisterPopup()
+    local short = r.main:match("^([^-]+)") or r.main
+    local dlg = StaticPopup_Show("GUILDOS_ALT_AUTODETECT", #r.group - 1, short, r)
+    if dlg then dlg.data = r end
+    self._prompted = true
+end
+
+-- Called from Initialize, after the roster has had time to populate
+-- (cold-login timing — GetGuildRosterInfo is empty for the first few
+-- seconds after login).
+function AltAutoDetect:_SchedulePrompt()
+    BRutus.Compat.After(10, function()
+        if AltAutoDetect._prompted then return end
+        local r = AltAutoDetect:DetectOwnAlts(GuildOSDB.accountChars, AltAutoDetect:_GuildSet(), BRutus.db.altLinks)
+        if not r then return end
+        local declined = GuildOSDB.altDeclined
+        if declined and declined[GroupSignature(r.group)] then return end
+        AltAutoDetect:_ShowPrompt(r)
+    end)
+end
+
+-- Manual trigger for /gos myalts: ignores the session/declined guards.
+function AltAutoDetect:PromptNow()
+    local r = self:DetectOwnAlts(GuildOSDB.accountChars, self:_GuildSet(), BRutus.db.altLinks)
+    if r then
+        self:_ShowPrompt(r)
+    else
+        BRutus:Print(L["No other characters of yours found in this guild."])
     end
 end
 
