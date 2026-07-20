@@ -89,6 +89,7 @@ Modules\SpecChecker.lua
 Modules\GuildAnalytics.lua
 Modules\Mentions.lua
 Modules\NoteCommand.lua
+Modules\LevelQuery.lua
 
 # UI
 UI\Helpers.lua
