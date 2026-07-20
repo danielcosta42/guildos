@@ -62,6 +62,7 @@ Modules\LootMaster.lua
 Modules\RecipeTracker.lua
 Modules\CraftNet.lua
 Modules\RecruitBeacon.lua
+Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
 Modules\RaiderRoster.lua
 Modules\AltRoster.lua
