@@ -25,9 +25,77 @@ Recruitment.DEFAULT_SETTINGS = {
     discord = "",
 }
 
+-- Auto-invite defaults (merged into db.recruitment.autoInvite on Initialize).
+Recruitment.AUTOINVITE_DEFAULTS = {
+    enabled     = false,
+    keyword     = "ginv",
+    minLevel    = 0,
+    classes     = {},        -- set: { WARRIOR = true, ... }; empty = any class
+    cooldownSec = 300,
+    whoFallback = "skip",    -- "skip" (fail-safe) or "invite" when /who can't confirm
+}
+
 Recruitment.ticker       = nil   -- officer auto-send ticker
 Recruitment.memberTicker = nil   -- member opt-in auto-send ticker
 Recruitment.lastSend     = 0
+
+----------------------------------------------------------------------
+-- Auto-invite: pure helpers (deterministic; unit-tested via /gos selftest)
+----------------------------------------------------------------------
+function Recruitment:_MatchKeyword(msg, keyword)
+    local m = strtrim(msg or ""):lower()
+    local k = (keyword or ""):lower()
+    if k == "" then return false end
+    return m == k or m:sub(1, #k + 1) == (k .. " ")
+end
+
+function Recruitment:_OnInviteCooldown(name, now, store)
+    store = store or self._inviteCd or {}
+    local exp = store[name]
+    return exp ~= nil and exp > (now or 0)
+end
+
+function Recruitment:_MarkInvited(name, now, cooldownSec, store)
+    store = store or self._inviteCd
+    if not store then self._inviteCd = {}; store = self._inviteCd end
+    store[name] = (now or 0) + (cooldownSec or 300)
+end
+
+function Recruitment:_PassesFilters(info, cfg)
+    if not info then return false end
+    if (cfg.minLevel or 0) > 0 and (info.level or 0) < cfg.minLevel then return false end
+    if cfg.classes and next(cfg.classes) ~= nil then
+        if not cfg.classes[info.class] then return false end
+    end
+    return true
+end
+
+function Recruitment:_RegisterAutoInviteTests()
+    if not BRutus.SelfTest then return end
+    local S = BRutus.SelfTest
+    S:Register("autoinvite.keyword_exact", function()
+        if not Recruitment:_MatchKeyword("  GINV ", "ginv") then return false, "exact should match" end
+        return true
+    end)
+    S:Register("autoinvite.keyword_prefix", function()
+        if not Recruitment:_MatchKeyword("ginv please", "ginv") then return false, "prefix should match" end
+        if Recruitment:_MatchKeyword("ginvite me", "ginv") then return false, "must not match 'ginvite'" end
+        return true
+    end)
+    S:Register("autoinvite.cooldown", function()
+        local store = { Bob = 500 }
+        if not Recruitment:_OnInviteCooldown("Bob", 400, store) then return false, "should be on cd" end
+        if Recruitment:_OnInviteCooldown("Bob", 600, store) then return false, "cd should be over" end
+        return true
+    end)
+    S:Register("autoinvite.filters", function()
+        local cfg = { minLevel = 60, classes = { WARRIOR = true } }
+        if not Recruitment:_PassesFilters({ level = 70, class = "WARRIOR" }, cfg) then return false, "should pass" end
+        if Recruitment:_PassesFilters({ level = 58, class = "WARRIOR" }, cfg) then return false, "level fail" end
+        if Recruitment:_PassesFilters({ level = 70, class = "MAGE" }, cfg) then return false, "class fail" end
+        return true
+    end)
+end
 
 ----------------------------------------------------------------------
 -- Initialize
@@ -48,6 +116,16 @@ function Recruitment:Initialize()
             end
         end
     end
+
+    -- Auto-invite config (fill missing keys the same way)
+    r.autoInvite = r.autoInvite or {}
+    for k, v in pairs(self.AUTOINVITE_DEFAULTS) do
+        if r.autoInvite[k] == nil then
+            r.autoInvite[k] = (type(v) == "table") and BRutus:DeepCopy(v) or v
+        end
+    end
+    self._inviteCd = {}
+    self:_RegisterAutoInviteTests()
 
     -- Set default channels if empty
     if #r.channels == 0 then
