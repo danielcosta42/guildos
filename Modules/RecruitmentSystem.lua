@@ -139,7 +139,6 @@ end
 -- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
 -- apply whoFallback ("skip" = do NOT invite).
 function Recruitment:_QualifyAndInvite(sender)
-    self._whoPending = self._whoPending or {}
     if self._whoBusy then
         -- one lookup at a time; drop extra concurrent triggers (cooldown will let them retry)
         return
@@ -784,7 +783,11 @@ end
 -- Auto-invite command handler
 ----------------------------------------------------------------------
 function Recruitment:HandleAutoInviteCommand(args)
-    local cfg = BRutus.db.recruitment.autoInvite
+    local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+    if not cfg then
+        BRutus:Print(L["Auto-invite is available to officers after login."])
+        return
+    end
     local sub = args[1]
     if sub == "on" then
         cfg.enabled = true

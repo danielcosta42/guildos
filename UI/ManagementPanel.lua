@@ -495,6 +495,7 @@ local function BuildLogSub(panel)
         refresh()
     end)
 
+    if BRutus.RosterLog then BRutus.RosterLog.uiRefresh = refresh end
     return refresh
 end
 

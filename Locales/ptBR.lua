@@ -134,6 +134,7 @@ L["Usage: /gos autoinvite minlevel <0-70>"] = "Uso: /gos autoinvite minlevel <0-
 L["Auto-invite class filter cleared."] = "Filtro de classe do auto-convite limpo."
 L["Auto-invite class filter updated."] = "Filtro de classe do auto-convite atualizado."
 L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"] = "Uso: /gos autoinvite class <add|remove|clear> <CLASSE>"
+L["Auto-invite is available to officers after login."] = "O auto-convite fica disponível para oficiais após o login."
 
 -- UI/FeaturePanels.lua
 L["AUTO-INVITE"] = "AUTO-CONVITE"
