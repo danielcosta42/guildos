@@ -299,6 +299,9 @@ function BRutus:InitModules()
     if BRutus.SpecChecker then
         BRutus.SpecChecker:Initialize()
     end
+    if BRutus.GuildAnalytics then
+        BRutus.GuildAnalytics:Initialize()
+    end
     if BRutus.RecipeTracker then
         BRutus.RecipeTracker:Initialize()
     end

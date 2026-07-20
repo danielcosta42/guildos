@@ -84,6 +84,7 @@ Modules\Search.lua
 Modules\RaidTools.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
+Modules\GuildAnalytics.lua
 
 # UI
 UI\Helpers.lua
