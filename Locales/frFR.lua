@@ -926,3 +926,10 @@ L["alt of %s"] = "reroll de %s"
 -- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
 L["Players"] = "Joueurs"
 L["of %d chars"] = "sur %d personnages"
+
+-- UI/FeaturePanels.lua (CHAT settings block — Modules/ChatTweaks.lua)
+L["CHAT"] = "CHAT"
+L["Annotate guild chat (class icon, level, alt tag)"] = "Annoter le chat de guilde (icône de classe, niveau, étiquette de reroll)"
+L["Class icon"] = "Icône de classe"
+L["Level"] = "Niveau"
+L["Alt tag"] = "Étiquette de reroll"

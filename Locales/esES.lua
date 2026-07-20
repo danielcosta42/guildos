@@ -927,3 +927,10 @@ L["alt of %s"] = "alt de %s"
 -- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
 L["Players"] = "Jugadores"
 L["of %d chars"] = "de %d personajes"
+
+-- UI/FeaturePanels.lua (CHAT settings block — Modules/ChatTweaks.lua)
+L["CHAT"] = "CHAT"
+L["Annotate guild chat (class icon, level, alt tag)"] = "Anotar el chat de guilda (icono de clase, nivel, etiqueta de alt)"
+L["Class icon"] = "Icono de clase"
+L["Level"] = "Nivel"
+L["Alt tag"] = "Etiqueta de alt"

@@ -926,3 +926,10 @@ L["alt of %s"] = "Twink von %s"
 -- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
 L["Players"] = "Spieler"
 L["of %d chars"] = "von %d Charakteren"
+
+-- UI/FeaturePanels.lua (CHAT settings block — Modules/ChatTweaks.lua)
+L["CHAT"] = "CHAT"
+L["Annotate guild chat (class icon, level, alt tag)"] = "Gildenchat kommentieren (Klassensymbol, Stufe, Twink-Markierung)"
+L["Class icon"] = "Klassensymbol"
+L["Level"] = "Stufe"
+L["Alt tag"] = "Twink-Markierung"

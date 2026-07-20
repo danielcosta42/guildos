@@ -2001,6 +2001,54 @@ function BRutus:RefreshSettingsPanel(content, category)
         sx = sx + 54
     end
     yOff = yOff + 34
+
+    --------------------------------------------------------------------
+    -- CHAT (guild/officer chat annotations — a personal display
+    -- preference, not officer-only; lives in Modules/ChatTweaks.lua)
+    --------------------------------------------------------------------
+    local chatTitle = UI:CreateHeaderText(content, L["CHAT"], 12)
+    chatTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 24
+
+    local chatCb = UI:CreateCheckbox(content, L["Annotate guild chat (class icon, level, alt tag)"], 18)
+    chatCb:SetPoint("TOPLEFT", 8, -yOff)
+    chatCb.checkbox:SetChecked(BRutus.db.chatTweaks and BRutus.db.chatTweaks.enabled or false)
+    chatCb.checkbox.onChanged = function(_, checked)
+        if BRutus.db.chatTweaks then
+            BRutus.db.chatTweaks.enabled = checked and true or false
+        end
+    end
+    yOff = yOff + 26
+
+    local classIconCb = UI:CreateCheckbox(content, L["Class icon"], 16)
+    classIconCb:SetPoint("TOPLEFT", 28, -yOff)
+    classIconCb.checkbox:SetChecked(BRutus.db.chatTweaks and BRutus.db.chatTweaks.classIcon ~= false)
+    classIconCb.checkbox.onChanged = function(_, checked)
+        if BRutus.db.chatTweaks then
+            BRutus.db.chatTweaks.classIcon = checked and true or false
+        end
+    end
+    yOff = yOff + 22
+
+    local levelCb = UI:CreateCheckbox(content, L["Level"], 16)
+    levelCb:SetPoint("TOPLEFT", 28, -yOff)
+    levelCb.checkbox:SetChecked(BRutus.db.chatTweaks and BRutus.db.chatTweaks.level ~= false)
+    levelCb.checkbox.onChanged = function(_, checked)
+        if BRutus.db.chatTweaks then
+            BRutus.db.chatTweaks.level = checked and true or false
+        end
+    end
+    yOff = yOff + 22
+
+    local altTagCb = UI:CreateCheckbox(content, L["Alt tag"], 16)
+    altTagCb:SetPoint("TOPLEFT", 28, -yOff)
+    altTagCb.checkbox:SetChecked(BRutus.db.chatTweaks and BRutus.db.chatTweaks.altTag ~= false)
+    altTagCb.checkbox.onChanged = function(_, checked)
+        if BRutus.db.chatTweaks then
+            BRutus.db.chatTweaks.altTag = checked and true or false
+        end
+    end
+    yOff = yOff + 26
     end -- cat == "general"
 
     if isOfficer and cat == "loot" then
