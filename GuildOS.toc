@@ -66,6 +66,7 @@ Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
 Modules\RaiderRoster.lua
 Modules\AltRoster.lua
+Modules\AltAutoDetect.lua
 Modules\ChatTweaks.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua

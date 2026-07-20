@@ -326,6 +326,9 @@ function BRutus:InitModules()
     if BRutus.AltRoster then
         BRutus.AltRoster:Initialize()
     end
+    if BRutus.AltAutoDetect then
+        BRutus.AltAutoDetect:Initialize()
+    end
     if BRutus.ChatTweaks then
         BRutus.ChatTweaks:Initialize()
     end
