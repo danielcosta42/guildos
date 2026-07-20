@@ -40,7 +40,8 @@ function ChatTweaks:_RefreshCache()
         local name, _, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
-            cache[short] = { classFile = classFile, level = level, fullKey = name }
+            local realm = name:match("-(.+)$") or GetRealmName()
+            cache[short] = { classFile = classFile, level = level, fullKey = BRutus:GetPlayerKey(short, realm) }
         end
     end
     self._cache = cache

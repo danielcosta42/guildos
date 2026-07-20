@@ -66,7 +66,11 @@ function BRutus:GetTrueRoster()
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
-        if full then roster[#roster + 1] = full end
+        if full then
+            local short = full:match("^([^-]+)") or full
+            local realm = full:match("-(.+)$") or GetRealmName()
+            roster[#roster + 1] = BRutus:GetPlayerKey(short, realm)
+        end
     end
     return AltRoster:BuildTrueRoster(roster)
 end
