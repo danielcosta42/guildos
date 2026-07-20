@@ -73,3 +73,6 @@ L["Left"] = "Left"
 -- Modules/Digest.lua (RosterLog audit counts)
 L["%d member(s) removed"] = "%d member(s) removed"
 L["%d member(s) left"] = "%d member(s) left"
+
+-- Modules/AltRoster.lua
+L["alt of %s"] = "alt of %s"

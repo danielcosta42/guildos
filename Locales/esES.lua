@@ -920,3 +920,6 @@ L["No bans."] = "Sin baneos."
 -- Modules/Digest.lua (RosterLog audit counts)
 L["%d member(s) removed"] = "%d miembro(s) expulsado(s)"
 L["%d member(s) left"] = "%d miembro(s) que se fueron"
+
+-- Modules/AltRoster.lua
+L["alt of %s"] = "alt de %s"

@@ -64,6 +64,7 @@ Modules\CraftNet.lua
 Modules\RecruitBeacon.lua
 Modules\OfficerNotes.lua
 Modules\RaiderRoster.lua
+Modules\AltRoster.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua
 Modules\GearAudit.lua

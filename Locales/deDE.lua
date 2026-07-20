@@ -919,3 +919,6 @@ L["No bans."] = "Keine Banns."
 -- Modules/Digest.lua (RosterLog audit counts)
 L["%d member(s) removed"] = "%d Mitglied(er) entfernt"
 L["%d member(s) left"] = "%d Mitglied(er) haben die Gilde verlassen"
+
+-- Modules/AltRoster.lua
+L["alt of %s"] = "Twink von %s"

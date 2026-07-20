@@ -1165,3 +1165,6 @@ L["permanent"] = "permanente"
 L["(expired)"] = "(expirado)"
 L["No banned players yet. Add one above to block them."] = "Nenhum jogador banido ainda. Adicione um acima para bloqueá-lo."
 L["No bans."] = "Nenhum banimento."
+
+-- Modules/AltRoster.lua
+L["alt of %s"] = "alt de %s"
