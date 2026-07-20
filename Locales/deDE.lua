@@ -115,6 +115,11 @@ L["Auto-invite class filter cleared."] = "Klassenfilter der Auto-Einladung gelee
 L["Auto-invite class filter updated."] = "Klassenfilter der Auto-Einladung aktualisiert."
 L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"] = "Verwendung: /gos autoinvite class <add|remove|clear> <KLASSE>"
 
+-- UI/FeaturePanels.lua
+L["AUTO-INVITE"] = "AUTO-EINLADUNG"
+L["Auto-invite players who whisper the keyword"] = "Spieler automatisch einladen, die das Schlüsselwort flüstern"
+L["Keyword & level/class filters: /gos autoinvite. Banned players are never invited."] = "Schlüsselwort- und Stufen-/Klassenfilter: /gos autoinvite. Gebannte Spieler werden niemals eingeladen."
+
 -- Modules/RaidTracker.lua
 L["|cffFFAA00Raid resumed — session continuing.|r"] = "|cffFFAA00Schlachtzug fortgesetzt — Sitzung läuft weiter.|r"
 L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"] = "|cffFFAA00Schlachtzugzone verlassen — Sitzung endet in 20 Min, wenn du nicht zurückkehrst.|r"

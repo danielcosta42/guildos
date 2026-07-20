@@ -2698,6 +2698,39 @@ function BRutus:RefreshSettingsPanel(content, category)
 
     end -- isOfficer and cat == "officer" (Rank config)
 
+    if isOfficer and cat == "officer" then
+    yOff = yOff + 8
+    local sep6 = UI:CreateSeparator(content)
+    sep6:SetPoint("TOPLEFT", 0, -yOff)
+    sep6:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+    --------------------------------------------------------------------
+    -- AUTO-INVITE (officer opt-in) — keyword/level/class filters live in
+    -- /gos autoinvite; this is just the on/off switch.
+    --------------------------------------------------------------------
+    local aiTitle = UI:CreateHeaderText(content, L["AUTO-INVITE"], 12)
+    aiTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 22
+
+    local aiChk = UI:CreateCheckbox(content, L["Auto-invite players who whisper the keyword"], 18)
+    aiChk:SetPoint("TOPLEFT", 8, -yOff)
+    aiChk.checkbox:SetChecked(BRutus.db.recruitment and BRutus.db.recruitment.autoInvite and BRutus.db.recruitment.autoInvite.enabled or false)
+    aiChk.checkbox.onChanged = function(_, checked)
+        if BRutus.db.recruitment and BRutus.db.recruitment.autoInvite then
+            BRutus.db.recruitment.autoInvite.enabled = checked and true or false
+        end
+    end
+    yOff = yOff + 30
+
+    local aiHint = UI:CreateText(content,
+        L["Keyword & level/class filters: /gos autoinvite. Banned players are never invited."],
+        9, C.silver.r, C.silver.g, C.silver.b)
+    aiHint:SetPoint("TOPLEFT", 8, -yOff)
+    aiHint:SetWidth(content:GetWidth() - 20)
+    yOff = yOff + 20
+
+    end -- isOfficer and cat == "officer" (Auto-Invite)
+
     if cat == "about" then
     -- Reload UI button
     local reloadBtn = UI:CreateButton(content, L["Reload UI"], 120, 28)

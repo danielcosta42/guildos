@@ -115,6 +115,11 @@ L["Auto-invite class filter cleared."] = "Filtre de classe de l'auto-invitation 
 L["Auto-invite class filter updated."] = "Filtre de classe de l'auto-invitation mis à jour."
 L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"] = "Utilisation : /gos autoinvite class <add|remove|clear> <CLASSE>"
 
+-- UI/FeaturePanels.lua
+L["AUTO-INVITE"] = "AUTO-INVITATION"
+L["Auto-invite players who whisper the keyword"] = "Inviter automatiquement les joueurs qui murmurent le mot-clé"
+L["Keyword & level/class filters: /gos autoinvite. Banned players are never invited."] = "Mot-clé et filtres de niveau/classe : /gos autoinvite. Les joueurs bannis ne sont jamais invités."
+
 -- Modules/RaidTracker.lua
 L["|cffFFAA00Raid resumed — session continuing.|r"] = "|cffFFAA00Raid repris — session en cours.|r"
 L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"] = "|cffFFAA00Vous avez quitté la zone de raid — la session se termine dans 20 min si vous ne revenez pas.|r"
