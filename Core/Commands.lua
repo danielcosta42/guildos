@@ -394,6 +394,13 @@ local function handleCommand(msg)
         if not BRutus.RosterFrame then BRutus.RosterFrame = BRutus.CreateRosterFrame() end
         if not BRutus.RosterFrame:IsShown() then BRutus.RosterFrame:Show() end
         if BRutus.RosterFrame.SetActiveTab then BRutus.RosterFrame:SetActiveTab("management") end
+    elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then
+        if BRutus.Recruitment then
+            local rest = strtrim(msg:gsub("^ai%s*", ""):gsub("^autoinvite%s*", ""))
+            local a = {}
+            for w in rest:gmatch("%S+") do a[#a + 1] = w end
+            BRutus.Recruitment:HandleAutoInviteCommand(a)
+        end
     else
         BRutus:ToggleRoster()
     end

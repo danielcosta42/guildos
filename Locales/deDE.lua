@@ -100,6 +100,15 @@ L["Usage: /guildos recruit invite <PlayerName>"] = "Verwendung: /guildos recruit
 L["|cffFFD700Recruitment commands:|r"] = "|cffFFD700Rekrutierungsbefehle:|r"
 L["Welcome message sent for |cffFFFFFF"] = "Willkommensnachricht gesendet für |cffFFFFFF"
 L["|r in guild chat."] = "|r im Gildenchat."
+L["Auto-invited |cffFFFFFF%s|r to the guild."] = "Automatisch eingeladen: |cffFFFFFF%s|r in die Gilde."
+L["Auto-invite |cff4CFF4Cenabled|r (keyword: |cffFFFFFF"] = "Auto-Einladung |cff4CFF4Caktiviert|r (Schlüsselwort: |cffFFFFFF"
+L["Auto-invite |cffFF4444disabled|r."] = "Auto-Einladung |cffFF4444deaktiviert|r."
+L["Auto-invite keyword set to |cffFFFFFF"] = "Auto-Einladung-Schlüsselwort festgelegt auf |cffFFFFFF"
+L["Current keyword: |cffFFFFFF"] = "Aktuelles Schlüsselwort: |cffFFFFFF"
+L["Auto-invite: "] = "Auto-Einladung: "
+L[" · keyword: |cffFFFFFF"] = " · Schlüsselwort: |cffFFFFFF"
+L["|r · min level: |cffFFFFFF"] = "|r · Mindeststufe: |cffFFFFFF"
+L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|status>"] = "Verwendung: /gos autoinvite <on|off|keyword|minlevel|class|status>"
 
 -- Modules/RaidTracker.lua
 L["|cffFFAA00Raid resumed — session continuing.|r"] = "|cffFFAA00Schlachtzug fortgesetzt — Sitzung läuft weiter.|r"

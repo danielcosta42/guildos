@@ -98,6 +98,45 @@ function Recruitment:_RegisterAutoInviteTests()
 end
 
 ----------------------------------------------------------------------
+-- Auto-invite: whisper hook + invite flow
+----------------------------------------------------------------------
+function Recruitment:RegisterAutoInviteEvent()
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("CHAT_MSG_WHISPER")
+    f:SetScript("OnEvent", function(_, _, msg, author)
+        local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+        if not cfg or not cfg.enabled then return end
+        if not CanGuildInvite() then return end
+        if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
+        local sender = author and (author:match("^([^-]+)") or author)
+        if sender and sender ~= "" then
+            Recruitment:_HandleKeywordWhisper(sender)
+        end
+    end)
+end
+
+function Recruitment:_DoInvite(name)
+    local cfg = BRutus.db.recruitment.autoInvite
+    GuildInvite(name)
+    self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
+    BRutus:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
+end
+
+function Recruitment:_HandleKeywordWhisper(sender)
+    local cfg = BRutus.db.recruitment.autoInvite
+    -- Ban gate (BanList already alerts on a banned whisper)
+    if BRutus.BanList and BRutus.BanList:IsBanned(sender) then return end
+    -- Cooldown
+    if self:_OnInviteCooldown(sender, GetServerTime()) then return end
+    -- Filters: no filter set → invite now. (Task 3 inserts the /who path when filters are set.)
+    if (cfg.minLevel or 0) == 0 and (not cfg.classes or next(cfg.classes) == nil) then
+        self:_DoInvite(sender)
+    else
+        self:_DoInvite(sender)   -- Task 3 replaces this branch with a /who-qualified invite
+    end
+end
+
+----------------------------------------------------------------------
 -- Initialize
 ----------------------------------------------------------------------
 function Recruitment:Initialize()
@@ -153,6 +192,9 @@ function Recruitment:Initialize()
 
     -- Listen for new guild members joining
     self:RegisterWelcomeEvent()
+
+    -- Listen for keyword whispers requesting an auto-invite
+    self:RegisterAutoInviteEvent()
 
     -- Resume if was enabled
     if r.enabled and self:CanUseRecruitment() then
@@ -667,6 +709,9 @@ function Recruitment:HandleCommand(args)
         else
             BRutus:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end
+    elseif cmd == "autoinvite" or cmd == "ai" then
+        table.remove(args, 1)
+        Recruitment:HandleAutoInviteCommand(args)
     else
         BRutus:Print(L["|cffFFD700Recruitment commands:|r"])
         BRutus:Print("  /guildos recruit on/off")
@@ -677,6 +722,34 @@ function Recruitment:HandleCommand(args)
         BRutus:Print("  /guildos recruit welcome on/off/msg <text>")
         BRutus:Print("  /guildos recruit discord <link>")
         BRutus:Print("  /guildos recruit invite <PlayerName>")
+    end
+end
+
+----------------------------------------------------------------------
+-- Auto-invite command handler
+----------------------------------------------------------------------
+function Recruitment:HandleAutoInviteCommand(args)
+    local cfg = BRutus.db.recruitment.autoInvite
+    local sub = args[1]
+    if sub == "on" then
+        cfg.enabled = true
+        BRutus:Print(L["Auto-invite |cff4CFF4Cenabled|r (keyword: |cffFFFFFF"] .. cfg.keyword .. "|r).")
+    elseif sub == "off" then
+        cfg.enabled = false
+        BRutus:Print(L["Auto-invite |cffFF4444disabled|r."])
+    elseif sub == "keyword" then
+        local kw = args[2] and strtrim(args[2]:lower())
+        if kw and kw ~= "" then
+            cfg.keyword = kw
+            BRutus:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. kw .. "|r.")
+        else
+            BRutus:Print(L["Current keyword: |cffFFFFFF"] .. cfg.keyword .. "|r.")
+        end
+    else
+        local st = cfg.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
+        BRutus:Print(L["Auto-invite: "] .. st .. L[" · keyword: |cffFFFFFF"] .. cfg.keyword ..
+            L["|r · min level: |cffFFFFFF"] .. tostring(cfg.minLevel) .. "|r")
+        BRutus:Print(L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|status>"])
     end
 end
 
