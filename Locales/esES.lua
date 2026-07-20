@@ -923,3 +923,7 @@ L["%d member(s) left"] = "%d miembro(s) que se fueron"
 
 -- Modules/AltRoster.lua
 L["alt of %s"] = "alt de %s"
+
+-- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
+L["Players"] = "Jugadores"
+L["of %d chars"] = "de %d personajes"

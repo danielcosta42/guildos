@@ -136,7 +136,9 @@ function CreateDetailFrame()
     local titleBar = CreateFrame("Frame", nil, frame)
     titleBar:SetPoint("TOPLEFT")
     titleBar:SetPoint("TOPRIGHT")
-    titleBar:SetHeight(50)
+    -- +14 over the original 50 so an "alt of X" line can sit under the
+    -- name/info subtitle when the member is a linked alt.
+    titleBar:SetHeight(64)
     titleBar:EnableMouse(true)
     titleBar:RegisterForDrag("LeftButton")
     titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
@@ -176,6 +178,11 @@ function CreateDetailFrame()
     infoText:SetPoint("LEFT", classIconFrame, "RIGHT", 10, -10)
     frame.infoText = infoText
 
+    -- Alt-of indicator (only shown when the member is a linked alt)
+    local altTagText = UI:CreateText(titleBar, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    altTagText:SetPoint("LEFT", classIconFrame, "RIGHT", 10, -24)
+    frame.altTagText = altTagText
+
     -- Close button
     local closeBtn = UI:CreateCloseButton(titleBar)
     closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -12)
@@ -184,14 +191,14 @@ function CreateDetailFrame()
 
     -- Title line
     local titleLine = UI:CreateAccentLine(frame, 2)
-    titleLine:SetPoint("TOPLEFT", 0, -50)
-    titleLine:SetPoint("TOPRIGHT", 0, -50)
+    titleLine:SetPoint("TOPLEFT", 0, -64)
+    titleLine:SetPoint("TOPRIGHT", 0, -64)
 
     ----------------------------------------------------------------
     -- Content scroll
     ----------------------------------------------------------------
     local content = CreateFrame("ScrollFrame", "BRutusDetailScroll", frame, "UIPanelScrollFrameTemplate")
-    content:SetPoint("TOPLEFT", 5, -55)
+    content:SetPoint("TOPLEFT", 5, -69)
     content:SetPoint("BOTTOMRIGHT", -10, 5)
     UI:SkinScrollBar(content, "BRutusDetailScroll")
 
@@ -255,6 +262,10 @@ function PopulateDetail(frame, data)
         infoLine = infoLine .. BRutus.Mesh:PresenceSuffix(data.name)
     end
     frame.infoText:SetText(infoLine)
+
+    -- Alt-of indicator: nil unless this member is linked to a main.
+    local memberKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
+    frame.altTagText:SetText((BRutus.GetAltTag and BRutus:GetAltTag(memberKey)) or "")
 
     local yOff = -5
     local contentWidth = DETAIL_WIDTH - 35

@@ -922,3 +922,7 @@ L["%d member(s) left"] = "%d membre(s) ayant quitté la guilde"
 
 -- Modules/AltRoster.lua
 L["alt of %s"] = "reroll de %s"
+
+-- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
+L["Players"] = "Joueurs"
+L["of %d chars"] = "sur %d personnages"

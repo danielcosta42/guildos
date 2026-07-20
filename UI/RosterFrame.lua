@@ -41,7 +41,10 @@ local ROW_HEIGHT = 32
 local HEADER_HEIGHT = 36
 local VISIBLE_ROWS = 18
 local RAIL_WIDTH = 156          -- left filter/segment rail (roster dashboard)
-local KPI_BAND_HEIGHT = 66      -- KPI card band above the table
+-- +16 over the original 66 so the "Players" card has room for its
+-- "of N chars" sub-label under the usual caption; the other cards keep
+-- their same anchors, just with a touch more breathing room below.
+local KPI_BAND_HEIGHT = 82      -- KPI card band above the table
 -- Widen + heighten so the table keeps its original geometry once the rail
 -- and KPI band are carved out of the roster panel.
 local FRAME_WIDTH = 1080 + RAIL_WIDTH
@@ -523,7 +526,10 @@ function BRutus.CreateRosterFrame()
     kpiBand:SetPoint("TOPRIGHT", 0, 0)
     kpiBand:SetHeight(KPI_BAND_HEIGHT)
 
-    local function MakeKpiCard(x, w, labelText, valueColor)
+    -- subLabelText: optional; when given, the card gets a second, smaller
+    -- caption line below the main label (e.g. "of 62 chars" under "Players").
+    -- Returns the value FontString, and the sub-label FontString if requested.
+    local function MakeKpiCard(x, w, labelText, valueColor, subLabelText)
         local card = UI:CreatePanel(kpiBand)
         -- CreatePanel pins level to 1; raise it above the main window's
         -- backdrop (level ~10) so the card and its text are actually visible.
@@ -536,20 +542,32 @@ function BRutus.CreateRosterFrame()
         value:SetPoint("TOPLEFT", 12, -7)
 
         local lbl = UI:CreateText(card, labelText, 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        lbl:SetPoint("BOTTOMLEFT", 12, 8)
 
-        return value
+        local sub
+        if subLabelText ~= nil then
+            -- Two-line caption: main label pushed up, sub-label takes the
+            -- usual bottom-padding slot the single-line siblings use.
+            lbl:SetPoint("BOTTOMLEFT", 12, 22)
+            sub = UI:CreateText(card, subLabelText, 8, C.textDim.r, C.textDim.g, C.textDim.b)
+            sub:SetPoint("BOTTOMLEFT", 12, 8)
+        else
+            lbl:SetPoint("BOTTOMLEFT", 12, 8)
+        end
+
+        return value, sub
     end
 
-    -- 5 cards spread evenly across the band width (rosterPanel == FRAME_WIDTH)
-    local CARD_GAP, CARD_MARGIN, CARD_COUNT = 10, 12, 5
+    -- 6 cards spread evenly across the band width (rosterPanel == FRAME_WIDTH)
+    local CARD_GAP, CARD_MARGIN, CARD_COUNT = 10, 12, 6
     local CARD_W = math.floor((FRAME_WIDTH - CARD_MARGIN * 2 - CARD_GAP * (CARD_COUNT - 1)) / CARD_COUNT)
     local function cardX(i) return CARD_MARGIN + (CARD_W + CARD_GAP) * i end
     frame.kpiMembers = MakeKpiCard(cardX(0), CARD_W, L["MEMBERS"],        C.text)
-    frame.kpiOnline  = MakeKpiCard(cardX(1), CARD_W, L["ONLINE"],         C.online)
-    frame.kpiIlvl    = MakeKpiCard(cardX(2), CARD_W, L["AVG iLVL"],       C.gold)
-    frame.kpiAtt     = MakeKpiCard(cardX(3), CARD_W, L["AVG ATTENDANCE"], C.text)
-    frame.kpiAddon   = MakeKpiCard(cardX(4), CARD_W, L["WITH GUILD OS"],  C.accent)
+    frame.kpiPlayers, frame.kpiPlayersSub =
+                       MakeKpiCard(cardX(1), CARD_W, L["Players"],        C.text, "—")
+    frame.kpiOnline  = MakeKpiCard(cardX(2), CARD_W, L["ONLINE"],         C.online)
+    frame.kpiIlvl    = MakeKpiCard(cardX(3), CARD_W, L["AVG iLVL"],       C.gold)
+    frame.kpiAtt     = MakeKpiCard(cardX(4), CARD_W, L["AVG ATTENDANCE"], C.text)
+    frame.kpiAddon   = MakeKpiCard(cardX(5), CARD_W, L["WITH GUILD OS"],  C.accent)
 
     -- KPI band bottom separator
     local bandLine = UI:CreateSeparator(rosterPanel)
@@ -1413,6 +1431,15 @@ function BRutus.CreateRosterFrame()
 
         -- Refresh guild emblem
         if self.UpdateGuildIcon then self.UpdateGuildIcon() end
+
+        -- True Roster: unique players behind the guild's alt/main links.
+        if self.kpiPlayers and BRutus.GetTrueRoster then
+            local tr = BRutus:GetTrueRoster()
+            self.kpiPlayers:SetText(tr.uniqueCount)
+            if self.kpiPlayersSub then
+                self.kpiPlayersSub:SetText(string.format(L["of %d chars"], tr.totalChars))
+            end
+        end
 
         -- KPI cards
         if self.kpiMembers then self.kpiMembers:SetText(numTotal) end

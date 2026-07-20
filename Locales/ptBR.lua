@@ -1168,3 +1168,7 @@ L["No bans."] = "Nenhum banimento."
 
 -- Modules/AltRoster.lua
 L["alt of %s"] = "alt de %s"
+
+-- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
+L["Players"] = "Jogadores"
+L["of %d chars"] = "de %d personagens"

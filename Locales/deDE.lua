@@ -922,3 +922,7 @@ L["%d member(s) left"] = "%d Mitglied(er) haben die Gilde verlassen"
 
 -- Modules/AltRoster.lua
 L["alt of %s"] = "Twink von %s"
+
+-- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
+L["Players"] = "Spieler"
+L["of %d chars"] = "von %d Charakteren"
