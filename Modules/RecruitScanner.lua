@@ -70,10 +70,10 @@ function RecruitScanner:Scan(onDone)
     end
     self._whoFrame:RegisterEvent("WHO_LIST_UPDATE")
     self._onScanDone = onDone
-    if SetWhoToUI then SetWhoToUI(1) end
+    BRutus.Compat.SetWhoToUI(true)
     -- level-range query; Blizzard caps results (~50). classes filtered post-hoc.
     local q = string.format("%d-%d", (cfg.minLevel or 1) > 0 and cfg.minLevel or 1, cfg.maxLevel or 70)
-    SendWho(q)
+    BRutus.Compat.SendWho(q)
     BRutus.Compat.After(6, function()
         if RecruitScanner._scanBusy then RecruitScanner:_FinishScan() end
     end)
@@ -103,7 +103,7 @@ end
 
 function RecruitScanner:_FinishScan()
     if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
-    if SetWhoToUI then SetWhoToUI(0) end
+    BRutus.Compat.SetWhoToUI(false)
     self._scanBusy = nil
     if self._onScanDone then BRutus:SafeCall(self._onScanDone) end
 end

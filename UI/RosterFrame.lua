@@ -1887,7 +1887,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     info.notCheckable = true
     info.text = WHO or L["Who"]
     info.func = function()
-        SendWho("n-" .. data.name)
+        BRutus.Compat.SendWho("n-" .. data.name)
     end
     UIDropDownMenu_AddButton(info, level)
 
@@ -2982,6 +2982,19 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     UpdateBeaconStatus()
     local beaconHint = UI:CreateText(parent, L["Lives in the mesh and keeps circulating even when you're offline."], 10, 0.6, 0.6, 0.65)
     beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
+
+    ----------------------------------------------------------------
+    -- Recruit Scanner (active /who prospecting)
+    ----------------------------------------------------------------
+    yOff = yOff - 50
+    yOff = SectionHeader(L["Recruit Scanner"], yOff)
+    local scannerBtn = UI:CreateButton(parent, L["Recruit Scanner"], 160, 24)
+    scannerBtn:SetPoint("TOPLEFT", 30, yOff)
+    scannerBtn:SetScript("OnClick", function()
+        if BRutus.RecruitScanner then BRutus.RecruitScanner:Show() end
+    end)
+    local scannerHint = UI:CreateText(parent, L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"], 10, 0.6, 0.6, 0.65)
+    scannerHint:SetPoint("TOPLEFT", 30, yOff - 30)
 
     ----------------------------------------------------------------
     -- Refresh function for when panel is shown

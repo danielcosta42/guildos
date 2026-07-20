@@ -71,3 +71,21 @@ function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName,
         C_ChatInfo.SendAddonMessage(prefix, text, channel, target)
     end
 end
+
+-- Send a /who query (C_FriendList on BCC/modern; legacy global fallback)
+function Compat.SendWho(filter)
+    if C_FriendList and C_FriendList.SendWho then
+        C_FriendList.SendWho(filter)
+    elseif SendWho then
+        SendWho(filter)
+    end
+end
+
+-- Route /who results to the API (true) or the Social frame (false)
+function Compat.SetWhoToUI(toApi)
+    if C_FriendList and C_FriendList.SetWhoToUI then
+        C_FriendList.SetWhoToUI(toApi and true or false)
+    elseif SetWhoToUI then
+        SetWhoToUI(toApi and 1 or 0)
+    end
+end

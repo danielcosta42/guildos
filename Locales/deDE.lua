@@ -943,6 +943,7 @@ L["No data."] = "Keine Daten."
 
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Rekrutierungs-Scanner"
+L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Durchsucht /who nach Stufenbereich für gildenlose Kandidaten und sendet dann Massenflüsternachrichten mit deiner Vorlage. Außerdem: /gos scout"
 L["Officers only."] = "Nur Offiziere."
 L["Min level"] = "Min. Stufe"
 L["Max level"] = "Max. Stufe"

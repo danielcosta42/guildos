@@ -149,8 +149,8 @@ function Recruitment:_QualifyAndInvite(sender)
         self._whoFrame:SetScript("OnEvent", function() Recruitment:_OnWhoResult() end)
     end
     self._whoFrame:RegisterEvent("WHO_LIST_UPDATE")
-    if SetWhoToUI then SetWhoToUI(1) end   -- results to the API, not the Social frame
-    SendWho('n-"' .. sender .. '"')
+    BRutus.Compat.SetWhoToUI(true)   -- results to the API, not the Social frame
+    BRutus.Compat.SendWho('n-"' .. sender .. '"')
     -- Timeout: /who is throttled; give it 6s then fail-safe.
     BRutus.Compat.After(6, function()
         if Recruitment._whoBusy == sender then Recruitment:_FinishWho(sender, nil) end
@@ -176,7 +176,7 @@ end
 
 function Recruitment:_FinishWho(sender, info)
     if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
-    if SetWhoToUI then SetWhoToUI(0) end
+    BRutus.Compat.SetWhoToUI(false)
     self._whoBusy = nil
     local cfg = BRutus.db.recruitment.autoInvite
     -- Re-check cooldown/ban in case time passed.
