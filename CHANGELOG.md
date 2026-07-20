@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.31.0] - 2026-07-20
+
+### Added
+- redesign Recruit Scanner layout (full-width list, columns, footer actions)
+- login prompt + /gos myalts to auto-link own detected alts
+- self-alt linking — officer direct, member self-claim officers replay
+- AltAutoDetect account-wide registry + own-alt detection (tested)
+- Recruit Scanner window (/gos scout) — scan, whisper, inbox
+- RecruitScanner /who scan, throttled mass-whisper, reply inbox
+- RecruitScanner core (template expansion + candidate filter, tested)
+- Guild Analytics window (/gos analytics) with distribution bars
+- GuildAnalytics composition distributions (class/level/rank/zone, tested)
+- CHAT settings block for chat annotations
+- ChatTweaks — guild/officer chat class-icon/level/alt-tag prefix (off by default)
+- unique-players KPI + alt-of indicator in the inspector
+- AltRoster aggregation API (GetMain/GetAltTag/GetTrueRoster, tested)
+
+### Fixed
+- align scanner column headers with data columns (HDR 16->12)
+- recruitment sub-tab OnShow on root + per-container scanner refresh
+- route /who through C_FriendList (2.5 SendWho nil); add Recruit Scanner to Recruitment tab
+- normalize altLinks key form in GetTrueRoster + ChatTweaks cache
+
+### Changed
+- embed Recruit Scanner inline in the Recruitment tab via sub-tabs
+
+
 ## [0.30.0] - 2026-07-20
 
 ### Added
