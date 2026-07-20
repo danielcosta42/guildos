@@ -359,11 +359,11 @@ function RecruitScanner:BuildInto(container)
 
         ------------------------------------------------------------
         -- Row 3 — column header (Results view only) + separator. X
-        -- offsets are HDR (holder's 12px inset + the scroll frame's own
-        -- ~4px inset) plus the matching row column offset used below, so
-        -- headers stay lined up with the data columns beneath them.
+        -- offsets are HDR (the holder's 12px inset; the scroll child is
+        -- flush with the holder, no extra inset) plus the matching row
+        -- column offset used below, so headers line up with the data.
         ------------------------------------------------------------
-        local HDR = 16
+        local HDR = 12
         local hName = UI:CreateText(f, L["PLAYER"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
         hName:SetPoint("TOPLEFT", HDR + 30, -92)
         local hLvl = UI:CreateText(f, L["LVL"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
