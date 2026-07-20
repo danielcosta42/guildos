@@ -18,6 +18,7 @@ CommSystem.MSG_TYPES = {
     PONG      = "PO",    -- Presence response
     VERSION   = "VR",    -- Version check
     ALT_LINK  = "AL",    -- Alt/main link table sync (officer only)
+    SELF_ALT  = "SA",    -- member self-claim of own alts (officers replay via LinkAlt)
     RAID_DATA = "RD",    -- Raid attendance + session sync (officer only)
     RAID_DELETE = "RX",  -- Delete a raid session (officer only; sender verified)
     NOTES_ALL = "OA",    -- Bulk officer notes sync (officer only)
@@ -257,6 +258,8 @@ function CommSystem:OnMessageReceived(msg, _, sender)
                 BRutus.db.altLinks = links
             end
         end
+    elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
+        if BRutus.AltAutoDetect then BRutus.AltAutoDetect:HandleSelfClaim(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DATA then
         if BRutus:IsOfficer() and BRutus.RaidTracker then
             BRutus.RaidTracker:HandleIncoming(data)

@@ -8,6 +8,8 @@
 local AltAutoDetect = {}
 BRutus.AltAutoDetect = AltAutoDetect
 
+local LibSerialize = LibStub("LibSerialize")
+
 function AltAutoDetect:Initialize()
     self:RecordSelf()
     self:_RegisterTests()
@@ -66,6 +68,36 @@ function AltAutoDetect:DetectOwnAlts(accountChars, guildSet, altLinks)
     local keys = {}
     for _, g in ipairs(group) do keys[#keys + 1] = g.key end
     return { group = keys, main = main }
+end
+
+function AltAutoDetect:LinkOwnAlts(mainKey, altKeys)
+    if not mainKey or not altKeys then return end
+    if BRutus:IsOfficer() then
+        -- authoritative path: LinkAlt writes db.altLinks + BroadcastAltLinks
+        for _, k in ipairs(altKeys) do
+            if k ~= mainKey then BRutus:LinkAlt(k, mainKey) end
+        end
+    else
+        -- member: apply locally (own view) + broadcast a self-claim officers replay
+        BRutus.db.altLinks = BRutus.db.altLinks or {}
+        for _, k in ipairs(altKeys) do
+            if k ~= mainKey then BRutus.db.altLinks[k] = mainKey end
+        end
+        if BRutus.CommSystem then
+            local payload = LibSerialize:Serialize({ main = mainKey, alts = altKeys })
+            BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.SELF_ALT, payload)
+        end
+    end
+end
+
+-- Officer applies a member's self-claim through the authoritative LinkAlt path.
+function AltAutoDetect:HandleSelfClaim(_sender, data)
+    if not BRutus:IsOfficer() then return end       -- only officers apply/propagate
+    local ok, claim = LibSerialize:Deserialize(data)
+    if not ok or type(claim) ~= "table" or not claim.main or type(claim.alts) ~= "table" then return end
+    for _, k in ipairs(claim.alts) do
+        if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+    end
 end
 
 function AltAutoDetect:_RegisterTests()
