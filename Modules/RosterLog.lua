@@ -104,8 +104,45 @@ function RosterLog:GetLog(store)
 end
 
 function RosterLog:_MigrateManagementLog() end   -- Task 4
-function RosterLog:_SetupDetection() end          -- Task 2
 function RosterLog:OnSync() end                    -- Task 3
+
+----------------------------------------------------------------------
+-- Recording + detection
+----------------------------------------------------------------------
+function RosterLog:Add(evt)
+    local inserted = self:_Insert(evt)
+    if inserted then
+        self:_Publish(evt)     -- no-op until Task 3; safe stub below
+        self:Refresh()
+    end
+    return inserted
+end
+
+function RosterLog:Record(action, target, author, detail)
+    return self:Add({
+        action = action, target = target and self:_NormShort(target) or nil,
+        author = author and self:_NormShort(author) or nil, detail = detail,
+        timestamp = GetServerTime(),
+    })
+end
+
+function RosterLog:Refresh()
+    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+end
+
+function RosterLog:_SetupDetection()
+    self._ready = false
+    BRutus.Compat.After(8, function() RosterLog._ready = true end)
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("CHAT_MSG_SYSTEM")
+    f:SetScript("OnEvent", function(_, _, msg)
+        if not RosterLog._ready then return end
+        local evt = RosterLog:_ParseSystem(msg)
+        if evt then RosterLog:Add(evt) end
+    end)
+end
+
+function RosterLog:_Publish() end   -- Task 3
 
 ----------------------------------------------------------------------
 -- Self-tests
