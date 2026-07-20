@@ -132,7 +132,62 @@ function Recruitment:_HandleKeywordWhisper(sender)
     if (cfg.minLevel or 0) == 0 and (not cfg.classes or next(cfg.classes) == nil) then
         self:_DoInvite(sender)
     else
-        self:_DoInvite(sender)   -- Task 3 replaces this branch with a /who-qualified invite
+        self:_QualifyAndInvite(sender)
+    end
+end
+
+-- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
+-- apply whoFallback ("skip" = do NOT invite).
+function Recruitment:_QualifyAndInvite(sender)
+    self._whoPending = self._whoPending or {}
+    if self._whoBusy then
+        -- one lookup at a time; drop extra concurrent triggers (cooldown will let them retry)
+        return
+    end
+    self._whoBusy = sender
+    if not self._whoFrame then
+        self._whoFrame = CreateFrame("Frame")
+        self._whoFrame:SetScript("OnEvent", function() Recruitment:_OnWhoResult() end)
+    end
+    self._whoFrame:RegisterEvent("WHO_LIST_UPDATE")
+    if SetWhoToUI then SetWhoToUI(1) end   -- results to the API, not the Social frame
+    SendWho('n-"' .. sender .. '"')
+    -- Timeout: /who is throttled; give it 6s then fail-safe.
+    BRutus.Compat.After(6, function()
+        if Recruitment._whoBusy == sender then Recruitment:_FinishWho(sender, nil) end
+    end)
+end
+
+function Recruitment:_OnWhoResult()
+    local sender = self._whoBusy
+    if not sender then return end
+    local info
+    if C_FriendList and C_FriendList.GetNumWhoResults then
+        local n = C_FriendList.GetNumWhoResults() or 0
+        for i = 1, n do
+            local w = C_FriendList.GetWhoInfo(i)
+            if w and w.fullName and (w.fullName:match("^([^-]+)") or w.fullName) == sender then
+                info = { level = w.level, class = w.filename }
+                break
+            end
+        end
+    end
+    self:_FinishWho(sender, info)
+end
+
+function Recruitment:_FinishWho(sender, info)
+    if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
+    if SetWhoToUI then SetWhoToUI(0) end
+    self._whoBusy = nil
+    local cfg = BRutus.db.recruitment.autoInvite
+    -- Re-check cooldown/ban in case time passed.
+    if BRutus.BanList and BRutus.BanList:IsBanned(sender) then return end
+    if self:_OnInviteCooldown(sender, GetServerTime()) then return end
+    if info then
+        if self:_PassesFilters(info, cfg) then self:_DoInvite(sender) end
+    else
+        -- couldn't confirm → fail-safe
+        if cfg.whoFallback == "invite" then self:_DoInvite(sender) end
     end
 end
 
@@ -744,6 +799,25 @@ function Recruitment:HandleAutoInviteCommand(args)
             BRutus:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. kw .. "|r.")
         else
             BRutus:Print(L["Current keyword: |cffFFFFFF"] .. cfg.keyword .. "|r.")
+        end
+    elseif sub == "minlevel" then
+        local n = tonumber(args[2])
+        if n and n >= 0 then
+            cfg.minLevel = n
+            BRutus:Print(string.format(L["Auto-invite min level set to |cffFFFFFF%d|r."], n))
+        else
+            BRutus:Print(L["Usage: /gos autoinvite minlevel <0-70>"])
+        end
+    elseif sub == "class" then
+        local op, cls = args[2], args[3] and args[3]:upper()
+        if op == "clear" then
+            cfg.classes = {}
+            BRutus:Print(L["Auto-invite class filter cleared."])
+        elseif (op == "add" or op == "remove") and cls then
+            cfg.classes[cls] = (op == "add") and true or nil
+            BRutus:Print(L["Auto-invite class filter updated."])
+        else
+            BRutus:Print(L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"])
         end
     else
         local st = cfg.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]

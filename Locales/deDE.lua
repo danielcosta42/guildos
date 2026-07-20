@@ -109,6 +109,11 @@ L["Auto-invite: "] = "Auto-Einladung: "
 L[" · keyword: |cffFFFFFF"] = " · Schlüsselwort: |cffFFFFFF"
 L["|r · min level: |cffFFFFFF"] = "|r · Mindeststufe: |cffFFFFFF"
 L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|status>"] = "Verwendung: /gos autoinvite <on|off|keyword|minlevel|class|status>"
+L["Auto-invite min level set to |cffFFFFFF%d|r."] = "Mindeststufe für Auto-Einladung auf |cffFFFFFF%d|r gesetzt."
+L["Usage: /gos autoinvite minlevel <0-70>"] = "Verwendung: /gos autoinvite minlevel <0-70>"
+L["Auto-invite class filter cleared."] = "Klassenfilter der Auto-Einladung geleert."
+L["Auto-invite class filter updated."] = "Klassenfilter der Auto-Einladung aktualisiert."
+L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"] = "Verwendung: /gos autoinvite class <add|remove|clear> <KLASSE>"
 
 -- Modules/RaidTracker.lua
 L["|cffFFAA00Raid resumed — session continuing.|r"] = "|cffFFAA00Schlachtzug fortgesetzt — Sitzung läuft weiter.|r"

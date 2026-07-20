@@ -136,6 +136,10 @@ read_globals = {
     "GetTalentInfo",
     "SendWho",
 
+    -- /who lookups
+    "SetWhoToUI",
+    "C_FriendList",
+
     -- WoW API: Guild management
     "IsGuildLeader",
     "CanGuildRemove",
