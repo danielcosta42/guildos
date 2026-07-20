@@ -179,7 +179,7 @@ local function handleCommand(msg)
         else
             BRutus:Print(L["Usage: /guildos trial <PlayerName>"])
         end
-    elseif msg:match("^note") then
+    elseif msg == "note" or msg:match("^note%s") then
         local rest = msg:gsub("^note%s*", "")
         local target, noteText = rest:match("^(%S+)%s+(.+)$")
         if target and noteText and BRutus.OfficerNotes then
