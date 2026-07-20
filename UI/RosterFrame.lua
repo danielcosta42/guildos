@@ -2730,25 +2730,35 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local recruitingSub = makeSubPanel()
     local scannerSub = makeSubPanel()
 
-    if BRutus.RecruitScanner then BRutus.RecruitScanner:BuildInto(scannerSub) end
-
-    local RECRUIT_SUBTABS = {
-        { key = "recruiting", label = L["Recruiting"], panel = recruitingSub },
-        { key = "scanner",    label = L["Scanner"],    panel = scannerSub },
-    }
-    local subTabBtns = {}
+    -- root.subPanels[key] = { panel, refresh } — same shape as
+    -- UI/ManagementPanel.lua. selectSub() below both flips visibility AND
+    -- runs the active sub's refresh, so fields are always repopulated
+    -- fresh, not left over from whatever they last held.
+    root.subPanels = {}
     root.activeSub = "recruiting"
+
+    local scannerRefresh
+    if BRutus.RecruitScanner then scannerRefresh = BRutus.RecruitScanner:BuildInto(scannerSub) end
+    root.subPanels.scanner = { panel = scannerSub, refresh = scannerRefresh }
+
+    local subTabBtns = {}
 
     local function selectSub(key)
         root.activeSub = key
-        for _, t in ipairs(RECRUIT_SUBTABS) do
-            t.panel:SetShown(t.key == key)
+        for k, info in pairs(root.subPanels) do
+            info.panel:SetShown(k == key)
         end
         for k, btn in pairs(subTabBtns) do
             btn:SetActive(k == key)
         end
+        local info = root.subPanels[key]
+        if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
 
+    local RECRUIT_SUBTABS = {
+        { key = "recruiting", label = L["Recruiting"] },
+        { key = "scanner",    label = L["Scanner"] },
+    }
     local x = 0
     for _, t in ipairs(RECRUIT_SUBTABS) do
         local btn = UI:CreateTab(bar, t.label, 116)
@@ -3041,9 +3051,14 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
 
     ----------------------------------------------------------------
-    -- Refresh function for when panel is shown
+    -- Refresh function for the "Recruiting" sub-tab. Registered into
+    -- root.subPanels so selectSub() runs it whenever this sub-tab becomes
+    -- active (and root's OnShow below re-runs it every time the officer
+    -- opens the Recruitment tab) — NOT wired to recruitingSub's own
+    -- OnShow, which (being a child frame already left "shown") would
+    -- never see a real hidden->shown transition on its own.
     ----------------------------------------------------------------
-    parent:SetScript("OnShow", function()
+    local function recruitingRefresh()
         local s = BRutus.db.recruitment
         intervalBox:SetText(tostring(s.interval or 120))
         refreshChanBtns()
@@ -3053,7 +3068,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
         UpdateBeaconStatus()
-    end)
+    end
+    root.subPanels.recruiting = { panel = recruitingSub, refresh = recruitingRefresh }
 
-    selectSub("recruiting")
+    root:SetScript("OnShow", function()
+        selectSub(root.activeSub or "recruiting")
+    end)
 end

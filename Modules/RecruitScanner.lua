@@ -189,12 +189,18 @@ local ROW_HEIGHT = 20
 -- by container._scannerBuilt.
 ----------------------------------------------------------------------
 function RecruitScanner:BuildInto(container)
-    if not container or container._scannerBuilt then return end
+    if not container then return end
+    if container._scannerBuilt then return container._scannerRefresh end
     container._scannerBuilt = true
 
     local UI = BRutus.UI
     local C = BRutus.Colors
     local f = container
+    -- Forward-declared: the button handlers below close over this LOCAL
+    -- (not a shared self.uiRefresh) so each container's controls always
+    -- repaint that same container — never a different popup/embed built
+    -- later, which would otherwise steal a single shared refresh slot.
+    local refresh
 
     -- Officer gate is checked once at build time (mirrors Bulletin.lua's
     -- officer-only post box): non-officers get a static notice and no
@@ -252,9 +258,9 @@ function RecruitScanner:BuildInto(container)
         scanBtn:SetScript("OnClick", function()
             RecruitScanner:Scan(function()
                 self._selected = {}
-                if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+                BRutus:SafeCall(refresh)
             end)
-            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end -- immediate busy-state repaint
+            BRutus:SafeCall(refresh) -- immediate busy-state repaint
         end)
         f.scanBtn = scanBtn
 
@@ -265,13 +271,13 @@ function RecruitScanner:BuildInto(container)
         resultsTab:SetPoint("TOPLEFT", 16, -80)
         resultsTab:SetScript("OnClick", function()
             self._view = "results"
-            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+            BRutus:SafeCall(refresh)
         end)
         local inboxTab = UI:CreateTab(f, L["Inbox"], 100)
         inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 6, 0)
         inboxTab:SetScript("OnClick", function()
             self._view = "inbox"
-            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+            BRutus:SafeCall(refresh)
         end)
         f.tabs = { results = resultsTab, inbox = inboxTab }
 
@@ -323,7 +329,7 @@ function RecruitScanner:BuildInto(container)
         f.whisperBtn = whisperBtn
     end
 
-    local function refresh()
+    refresh = function()
         if not f:IsShown() or not f.isOfficer then return end
 
         if RecruitScanner._scanBusy then
@@ -417,9 +423,10 @@ function RecruitScanner:BuildInto(container)
         child:SetHeight(math.max(1, y))
     end
 
-    self.uiRefresh = refresh
+    container._scannerRefresh = refresh
     f:SetScript("OnShow", refresh)
     refresh()
+    return refresh
 end
 
 ----------------------------------------------------------------------
@@ -456,9 +463,9 @@ function RecruitScanner:Show()
         self.frame = f
     end
 
-    self:BuildInto(f)
+    local refresh = self:BuildInto(f)
     f:Show()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    BRutus:SafeCall(refresh)
 end
 
 ----------------------------------------------------------------------
