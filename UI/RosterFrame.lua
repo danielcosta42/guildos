@@ -655,7 +655,7 @@ function BRutus.CreateRosterFrame()
     searchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    searchPlaceholder:SetText(L["Search..."])
+    searchPlaceholder:SetText(L["Search / 60-70 / >=60"])
 
     searchBox:SetScript("OnTextChanged", function(self)
         local text = self:GetText()
@@ -1232,6 +1232,7 @@ function BRutus.CreateRosterFrame()
         local members = self.sortedMembers
         local showOffline = BRutus.db.settings.showOffline
         local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
+        local levelMatch = (filter ~= "" and BRutus.LevelQuery) and BRutus.LevelQuery:Parse(filter) or nil
 
         -- Get guild roster info
         local numMembers = GetNumGuildMembers()
@@ -1251,9 +1252,13 @@ function BRutus.CreateRosterFrame()
                     passFilter = false
                 end
                 if filter ~= "" then
-                    local searchTarget = strlower(displayName .. " " .. (classLoc or "") .. " " .. (zone or "") .. " " .. (rankName or ""))
-                    if not searchTarget:find(filter, 1, true) then
-                        passFilter = false
+                    if levelMatch then
+                        if not levelMatch(level or 0) then passFilter = false end
+                    else
+                        local searchTarget = strlower(displayName .. " " .. (classLoc or "") .. " " .. (zone or "") .. " " .. (rankName or ""))
+                        if not searchTarget:find(filter, 1, true) then
+                            passFilter = false
+                        end
                     end
                 end
 

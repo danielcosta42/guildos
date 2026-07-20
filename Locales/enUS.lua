@@ -82,6 +82,9 @@ L["Players"] = "Players"
 L["of %d chars"] = "of %d chars"
 L["Add your own alts (any account). An officer's client applies them guild-wide."] = "Add your own alts (any account). An officer's client applies them guild-wide."
 
+-- UI/RosterFrame.lua (search placeholder — accepts level queries)
+L["Search / 60-70 / >=60"] = "Search / 60-70 / >=60"
+
 -- UI/FeaturePanels.lua (CHAT settings block — Modules/ChatTweaks.lua)
 L["CHAT"] = "CHAT"
 L["Annotate guild chat (class icon, level, alt tag)"] = "Annotate guild chat (class icon, level, alt tag)"
