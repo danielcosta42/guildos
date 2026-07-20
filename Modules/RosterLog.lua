@@ -103,7 +103,25 @@ function RosterLog:GetLog(store)
     return out
 end
 
-function RosterLog:_MigrateManagementLog() end   -- Task 4
+function RosterLog:_MigrateManagementLog()
+    if BRutus.db.rosterLog.migrated then return end
+    BRutus.db.rosterLog.migrated = true
+    local old = BRutus.db.managementLog
+    if type(old) == "table" then
+        for _, e in ipairs(old) do
+            self:_Insert({
+                action = e.action, target = e.target, author = e.author,
+                detail = e.detail, timestamp = e.timestamp,
+            })
+        end
+    end
+end
+
+function RosterLog:Clear()
+    if not BRutus:IsOfficer() then return end
+    BRutus.db.rosterLog.events = {}
+    self:Refresh()
+end
 
 function RosterLog:OnSync(env)
     if env.act == "add" and env.data and env.data.evt then

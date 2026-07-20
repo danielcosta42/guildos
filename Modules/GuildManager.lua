@@ -289,6 +289,10 @@ end
 ----------------------------------------------------------------------
 -- Append an entry to the local action log (capped ring buffer).
 function GuildManager:LogAction(action, target, detail)
+    if BRutus.RosterLog then
+        BRutus.RosterLog:Record(action, target, UnitName("player"), detail)
+        return
+    end
     local log = BRutus.db.managementLog
     if not log then
         log = {}
@@ -310,6 +314,7 @@ end
 
 -- Return the action log newest-first (does not mutate stored order).
 function GuildManager:GetLog()
+    if BRutus.RosterLog then return BRutus.RosterLog:GetLog() end
     local log = BRutus.db.managementLog or {}
     local out = {}
     for i = #log, 1, -1 do
@@ -319,6 +324,10 @@ function GuildManager:GetLog()
 end
 
 function GuildManager:ClearLog()
+    if BRutus.RosterLog then
+        BRutus.RosterLog:Clear()
+        return
+    end
     BRutus.db.managementLog = {}
 end
 

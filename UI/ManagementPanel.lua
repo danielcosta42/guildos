@@ -16,7 +16,7 @@ local SUBTABS = {
     { key = "inactive", label = L["Inactivity"] },
     { key = "suggest",  label = L["Suggestions"] },
     { key = "motd",     label = L["MOTD / Info"] },
-    { key = "log",      label = L["History"] },
+    { key = "log",      label = L["Audit Log"] },
     { key = "ban",      label = L["Ban List"] },
 }
 
@@ -438,6 +438,8 @@ local ACTION_LABELS = {
     kick    = { txt = L["Removed"],  color = "red" },
     motd    = { txt = L["MOTD"],     color = "accent" },
     info    = { txt = L["Info"],     color = "accent" },
+    join    = { txt = L["Joined"], color = "online" },
+    leave   = { txt = L["Left"],   color = "offline" },
 }
 
 local function BuildLogSub(panel)

@@ -63,3 +63,8 @@ L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"] = "Usage: /gos auto
 L["AUTO-INVITE"] = "AUTO-INVITE"
 L["Auto-invite players who whisper the keyword"] = "Auto-invite players who whisper the keyword"
 L["Keyword & level/class filters: /gos autoinvite. Banned players are never invited."] = "Keyword & level/class filters: /gos autoinvite. Banned players are never invited."
+
+-- UI/ManagementPanel.lua (RosterLog Audit Log)
+L["Audit Log"] = "Audit Log"
+L["Joined"] = "Joined"
+L["Left"] = "Left"
