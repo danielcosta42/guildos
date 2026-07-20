@@ -44,6 +44,8 @@ local function handleCommand(msg)
         if BRutus.Backup then BRutus.Backup:ShowRestore() end
     elseif msg == "bulletin" or msg == "board" then
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
+    elseif msg == "analytics" or msg == "stats" then
+        if BRutus.GuildAnalytics then BRutus.GuildAnalytics:Show() end
     elseif msg == "polls" or msg == "poll" then
         if BRutus.Polls then BRutus.Polls:Show() end
     elseif msg == "calendar" or msg == "cal" or msg == "events" then

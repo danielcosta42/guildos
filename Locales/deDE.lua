@@ -933,3 +933,10 @@ L["Annotate guild chat (class icon, level, alt tag)"] = "Gildenchat kommentieren
 L["Class icon"] = "Klassensymbol"
 L["Level"] = "Stufe"
 L["Alt tag"] = "Twink-Markierung"
+
+-- Modules/GuildAnalytics.lua (/gos analytics)
+L["Guild Analytics"] = "Gilden-Analyse"
+L["Levels"] = "Stufen"
+L["Zones"] = "Zonen"
+L["Online only"] = "Nur online"
+L["No data."] = "Keine Daten."

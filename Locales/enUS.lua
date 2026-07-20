@@ -87,3 +87,10 @@ L["Annotate guild chat (class icon, level, alt tag)"] = "Annotate guild chat (cl
 L["Class icon"] = "Class icon"
 L["Level"] = "Level"
 L["Alt tag"] = "Alt tag"
+
+-- Modules/GuildAnalytics.lua (/gos analytics)
+L["Guild Analytics"] = "Guild Analytics"
+L["Levels"] = "Levels"
+L["Zones"] = "Zones"
+L["Online only"] = "Online only"
+L["No data."] = "No data."

@@ -1178,3 +1178,10 @@ L["alt of %s"] = "alt de %s"
 -- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
 L["Players"] = "Jogadores"
 L["of %d chars"] = "de %d personagens"
+
+-- Modules/GuildAnalytics.lua (/gos analytics)
+L["Guild Analytics"] = "Análises da Guilda"
+L["Levels"] = "Níveis"
+L["Zones"] = "Zonas"
+L["Online only"] = "Somente online"
+L["No data."] = "Sem dados."
