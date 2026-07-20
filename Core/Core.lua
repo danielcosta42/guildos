@@ -302,6 +302,9 @@ function BRutus:InitModules()
     if BRutus.GuildAnalytics then
         BRutus.GuildAnalytics:Initialize()
     end
+    if BRutus.Mentions then
+        BRutus.Mentions:Initialize()
+    end
     if BRutus.RecipeTracker then
         BRutus.RecipeTracker:Initialize()
     end
