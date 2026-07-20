@@ -92,6 +92,9 @@ local function handleCommand(msg)
                 end)
             end
         end
+    elseif msg == "scout" or msg == "recruitscan" then
+        -- Officer: /who-scan unguilded candidates, mass-whisper a template.
+        if BRutus.RecruitScanner then BRutus.RecruitScanner:Show() end
     elseif msg == "beacon" or msg == "recruitbeacon" then
         -- Officer: compose/toggle the guild recruitment beacon.
         if BRutus.ShowRecruitBeacon then BRutus:ShowRecruitBeacon() end
