@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0] - 2026-07-20
+
+### Added
+- RosterLog audit counts in the login digest
+- RosterLog absorbs the action log; History becomes Audit Log
+- sync RosterLog events live over officer-domain audit
+- RosterLog detects guild events from system messages
+- RosterLog model + system-message parsers + dedup (tested)
+- auto-invite toggle in recruitment settings
+- /who-qualified auto-invite filters (level/class), fail-safe
+- keyword auto-invite flow (ban-gate, cooldown) + commands
+- auto-invite config + pure keyword/cooldown/filter logic (tested)
+- redesign Ban List sub-tab (labels, temp-ban toggle, columns, context)
+- Ban List sub-tab in the Leadership panel
+- /gos ban, tempban, unban, banlist commands
+- ban alerts on rejoin, whisper, and unit tooltip
+- sync ban add/remove via officer-domain revision (domain ban)
+- BanList data model with IsBanned/expiry/prune (tested)
+
+### Fixed
+- guard /gos autoinvite for non-officers; live-refresh Audit Log; drop dead line
+- correct BanList sync comment, gate detection on officer, test List()
+- wire BanList:Initialize into InitModules
+
+
 ## [0.29.0] - 2026-07-19
 
 ### Added
