@@ -141,3 +141,13 @@ L["Watch-words cleared."] = "Watch-words cleared."
 L["--- Recent mentions ---"] = "--- Recent mentions ---"
 L["(none)"] = "(none)"
 L["Usage: /gos mentions <on|off|add|remove|clearwords> [word]"] = "Usage: /gos mentions <on|off|add|remove|clearwords> [word]"
+
+-- Modules/NoteCommand.lua / Core/Commands.lua (/gos notecmd)
+L["Set %s's note: |cffFFFFFF%s|r"] = "Set %s's note: |cffFFFFFF%s|r"
+L["(cleared)"] = "(cleared)"
+L["!note command |cff4CFF4Con|r."] = "!note command |cff4CFF4Con|r."
+L["!note command |cffFF4444off|r."] = "!note command |cffFF4444off|r."
+L["!note command: "] = "!note command: "
+L[" — members type !note <text> in guild chat; officers apply it."] = " — members type !note <text> in guild chat; officers apply it."
+L["|cff4CFF4CON|r"] = "|cff4CFF4CON|r"
+L["|cffFF4444OFF|r"] = "|cffFF4444OFF|r"

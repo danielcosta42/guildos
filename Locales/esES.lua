@@ -987,3 +987,11 @@ L["Watch-word removed: |cffFFFFFF"] = "Palabra clave eliminada: |cffFFFFFF"
 L["Watch-words cleared."] = "Palabras clave borradas."
 L["--- Recent mentions ---"] = "--- Menciones recientes ---"
 L["Usage: /gos mentions <on|off|add|remove|clearwords> [word]"] = "Uso: /gos mentions <on|off|add|remove|clearwords> [palabra]"
+
+-- Modules/NoteCommand.lua / Core/Commands.lua (/gos notecmd)
+L["Set %s's note: |cffFFFFFF%s|r"] = "Nota de %s establecida: |cffFFFFFF%s|r"
+L["(cleared)"] = "(borrado)"
+L["!note command |cff4CFF4Con|r."] = "Comando !note |cff4CFF4Cactivado|r."
+L["!note command |cffFF4444off|r."] = "Comando !note |cffFF4444desactivado|r."
+L["!note command: "] = "Comando !note: "
+L[" — members type !note <text> in guild chat; officers apply it."] = " — los miembros escriben !note <texto> en el chat de hermandad; los oficiales lo aplican."

@@ -415,6 +415,12 @@ local function handleCommand(msg)
             for w in rest:gmatch("%S+") do a[#a + 1] = w end
             BRutus.Mentions:HandleCommand(a)
         end
+    elseif msg == "notecmd" or msg:match("^notecmd%s") then
+        if BRutus.NoteCommand then
+            local rest = strtrim(msg:gsub("^notecmd%s*", ""))
+            local a = {}; for w in rest:gmatch("%S+") do a[#a+1] = w end
+            BRutus.NoteCommand:HandleCommand(a)
+        end
     else
         BRutus:ToggleRoster()
     end

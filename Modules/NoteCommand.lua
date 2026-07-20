@@ -47,6 +47,18 @@ function NoteCommand:_SetupHook()
     end)
 end
 
+function NoteCommand:HandleCommand(args)
+    local cfg = BRutus.db.noteCommand
+    if not cfg then return end
+    local sub = args[1]
+    if sub == "on" then cfg.enabled = true; BRutus:Print(L["!note command |cff4CFF4Con|r."])
+    elseif sub == "off" then cfg.enabled = false; BRutus:Print(L["!note command |cffFF4444off|r."])
+    else
+        local st = cfg.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
+        BRutus:Print(L["!note command: "] .. st .. L[" — members type !note <text> in guild chat; officers apply it."])
+    end
+end
+
 function NoteCommand:_RegisterTests()
     if not BRutus.SelfTest then return end
     local S = BRutus.SelfTest
