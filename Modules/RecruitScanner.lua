@@ -54,7 +54,106 @@ function RecruitScanner:_CandidateOK(cand, filters, isBannedFn)
     return true
 end
 
-function RecruitScanner:_RegisterEvents() end   -- Task 2 replaces this
+----------------------------------------------------------------------
+-- /who scan (fail-safe)
+----------------------------------------------------------------------
+function RecruitScanner:Scan(onDone)
+    if not BRutus:IsOfficer() then return end
+    if self._scanBusy then return end
+    self._scanBusy = true
+    self._results = {}
+    local cfg = BRutus.db.recruitScanner
+    if not self._whoFrame then
+        self._whoFrame = CreateFrame("Frame")
+        self._whoFrame:SetScript("OnEvent", function() RecruitScanner:_OnWhoResult() end)
+    end
+    self._whoFrame:RegisterEvent("WHO_LIST_UPDATE")
+    self._onScanDone = onDone
+    if SetWhoToUI then SetWhoToUI(1) end
+    -- level-range query; Blizzard caps results (~50). classes filtered post-hoc.
+    local q = string.format("%d-%d", (cfg.minLevel or 1) > 0 and cfg.minLevel or 1, cfg.maxLevel or 70)
+    SendWho(q)
+    BRutus.Compat.After(6, function()
+        if RecruitScanner._scanBusy then RecruitScanner:_FinishScan() end
+    end)
+end
+
+function RecruitScanner:_OnWhoResult()
+    local cfg = BRutus.db.recruitScanner
+    local isBanned = function(n) return BRutus.BanList and BRutus.BanList:IsBanned(n) end
+    local out = {}
+    if C_FriendList and C_FriendList.GetNumWhoResults then
+        local n = C_FriendList.GetNumWhoResults() or 0
+        for i = 1, n do
+            local w = C_FriendList.GetWhoInfo(i)
+            if w and w.fullName then
+                local short = w.fullName:match("^([^-]+)") or w.fullName
+                local cand = {
+                    name = short, level = w.level, class = w.filename,
+                    zone = w.area, guilded = (w.fullGuildName ~= nil and w.fullGuildName ~= ""),
+                }
+                if self:_CandidateOK(cand, cfg, isBanned) then out[#out + 1] = cand end
+            end
+        end
+    end
+    self._results = out
+    self:_FinishScan()
+end
+
+function RecruitScanner:_FinishScan()
+    if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
+    if SetWhoToUI then SetWhoToUI(0) end
+    self._scanBusy = nil
+    if self._onScanDone then BRutus:SafeCall(self._onScanDone) end
+end
+
+function RecruitScanner:GetResults() return self._results or {} end
+
+----------------------------------------------------------------------
+-- Mass-whisper (throttled, cooldown, batch-capped)
+----------------------------------------------------------------------
+function RecruitScanner:WhisperSelected(names)
+    if not BRutus:IsOfficer() then return end
+    local cfg = BRutus.db.recruitScanner
+    local now = GetServerTime()
+    local sent, delay = 0, 0
+    for _, name in ipairs(names or {}) do
+        if sent >= (cfg.batchMax or 10) then break end
+        local cd = self._contactCd[name]
+        if not (cd and cd > now) then
+            local cand
+            for _, r in ipairs(self._results) do if r.name == name then cand = r; break end end
+            local msg = self:_ExpandTemplate(cfg.template, cand or { name = name })
+            self._contactCd[name] = now + (cfg.cooldownSec or 1800)
+            sent = sent + 1
+            delay = delay + 1.5    -- throttle: 1.5s between whispers
+            BRutus.Compat.After(delay, function()
+                SendChatMessage(msg, "WHISPER", nil, name)
+            end)
+        end
+    end
+    if sent > 0 then
+        BRutus:Print(string.format(BRutus.L["Whispering %d candidate(s)…"], sent))
+    end
+end
+
+----------------------------------------------------------------------
+-- Reply inbox
+----------------------------------------------------------------------
+function RecruitScanner:_RegisterEvents()
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("CHAT_MSG_WHISPER")
+    f:SetScript("OnEvent", function(_, _, msg, author)
+        local short = author and (author:match("^([^-]+)") or author)
+        if short and RecruitScanner._contactCd[short] then
+            local inbox = BRutus.db.recruitScanner.inbox
+            table.insert(inbox, 1, { name = short, msg = msg, ts = GetServerTime() })
+            while #inbox > 200 do table.remove(inbox) end
+        end
+    end)
+end
+
+function RecruitScanner:GetInbox() return (BRutus.db.recruitScanner and BRutus.db.recruitScanner.inbox) or {} end
 
 ----------------------------------------------------------------------
 -- Self-tests
