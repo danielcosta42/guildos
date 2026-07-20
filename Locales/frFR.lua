@@ -976,3 +976,13 @@ L["Link"] = "Lier"
 L["Not now"] = "Pas maintenant"
 L["Linked %d alt(s) to %s."] = "%d alt(s) lié(s) à %s."
 L["No other characters of yours found in this guild."] = "Aucun autre personnage de vous trouvé dans cette guilde."
+
+-- Modules/Mentions.lua / Core/Commands.lua (/gos mentions)
+L["|cffFFD700Mention|r (%s): %s: %s"] = "|cffFFD700Mention|r (%s) : %s : %s"
+L["Mentions |cff4CFF4Con|r."] = "Mentions |cff4CFF4Cactivées|r."
+L["Mentions |cffFF4444off|r."] = "Mentions |cffFF4444désactivées|r."
+L["Watch-word added: |cffFFFFFF"] = "Mot-clé ajouté : |cffFFFFFF"
+L["Watch-word removed: |cffFFFFFF"] = "Mot-clé retiré : |cffFFFFFF"
+L["Watch-words cleared."] = "Mots-clés effacés."
+L["--- Recent mentions ---"] = "--- Mentions récentes ---"
+L["Usage: /gos mentions <on|off|add|remove|clearwords> [word]"] = "Utilisation : /gos mentions <on|off|add|remove|clearwords> [mot]"

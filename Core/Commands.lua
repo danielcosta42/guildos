@@ -408,6 +408,13 @@ local function handleCommand(msg)
             for w in rest:gmatch("%S+") do a[#a + 1] = w end
             BRutus.Recruitment:HandleAutoInviteCommand(a)
         end
+    elseif msg == "mentions" or msg:match("^mentions%s") then
+        if BRutus.Mentions then
+            local rest = strtrim(msg:gsub("^mentions%s*", ""))
+            local a = {}
+            for w in rest:gmatch("%S+") do a[#a + 1] = w end
+            BRutus.Mentions:HandleCommand(a)
+        end
     else
         BRutus:ToggleRoster()
     end

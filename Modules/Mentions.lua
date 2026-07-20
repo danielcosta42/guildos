@@ -100,3 +100,31 @@ function Mentions:_RegisterTests()
         return true
     end)
 end
+
+function Mentions:HandleCommand(args)
+    local cfg = BRutus.db.mentions
+    if not cfg then return end
+    local sub = args[1]
+    if sub == "on" then cfg.enabled = true; BRutus:Print(L["Mentions |cff4CFF4Con|r."])
+    elseif sub == "off" then cfg.enabled = false; BRutus:Print(L["Mentions |cffFF4444off|r."])
+    elseif sub == "add" and args[2] then
+        table.insert(cfg.watchWords, args[2]:lower())
+        BRutus:Print(L["Watch-word added: |cffFFFFFF"] .. args[2] .. "|r")
+    elseif sub == "remove" and args[2] then
+        local t = args[2]:lower()
+        for i = #cfg.watchWords, 1, -1 do if cfg.watchWords[i] == t then table.remove(cfg.watchWords, i) end end
+        BRutus:Print(L["Watch-word removed: |cffFFFFFF"] .. args[2] .. "|r")
+    elseif sub == "clearwords" then
+        cfg.watchWords = {}; BRutus:Print(L["Watch-words cleared."])
+    else
+        -- default: print the recent log
+        local log = cfg.log or {}
+        BRutus:Print(L["--- Recent mentions ---"])
+        if #log == 0 then BRutus:Print(L["(none)"]) end
+        for i = 1, math.min(#log, 15) do
+            local e = log[i]
+            BRutus:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
+        end
+        BRutus:Print(L["Usage: /gos mentions <on|off|add|remove|clearwords> [word]"])
+    end
+end

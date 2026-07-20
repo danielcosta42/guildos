@@ -977,3 +977,13 @@ L["Link"] = "Vincular"
 L["Not now"] = "Ahora no"
 L["Linked %d alt(s) to %s."] = "%d personaje(s) secundario(s) vinculado(s) a %s."
 L["No other characters of yours found in this guild."] = "No se encontraron otros personajes tuyos en esta hermandad."
+
+-- Modules/Mentions.lua / Core/Commands.lua (/gos mentions)
+L["|cffFFD700Mention|r (%s): %s: %s"] = "|cffFFD700Mención|r (%s): %s: %s"
+L["Mentions |cff4CFF4Con|r."] = "Menciones |cff4CFF4Cactivadas|r."
+L["Mentions |cffFF4444off|r."] = "Menciones |cffFF4444desactivadas|r."
+L["Watch-word added: |cffFFFFFF"] = "Palabra clave añadida: |cffFFFFFF"
+L["Watch-word removed: |cffFFFFFF"] = "Palabra clave eliminada: |cffFFFFFF"
+L["Watch-words cleared."] = "Palabras clave borradas."
+L["--- Recent mentions ---"] = "--- Menciones recientes ---"
+L["Usage: /gos mentions <on|off|add|remove|clearwords> [word]"] = "Uso: /gos mentions <on|off|add|remove|clearwords> [palabra]"
