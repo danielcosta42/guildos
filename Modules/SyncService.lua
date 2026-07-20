@@ -36,6 +36,7 @@ SyncService.OFFICER_DOMAINS = {
     poll     = true,   -- poll create/close (vote is member-level)
     bulletin = true,   -- officer announcements
     ban      = true,   -- blacklist add/remove (officer-authoritative)
+    audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
 }
 
 -- Actions any guild member may perform even inside an officer domain.

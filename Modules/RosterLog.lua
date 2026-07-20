@@ -104,7 +104,12 @@ function RosterLog:GetLog(store)
 end
 
 function RosterLog:_MigrateManagementLog() end   -- Task 4
-function RosterLog:OnSync() end                    -- Task 3
+
+function RosterLog:OnSync(env)
+    if env.act == "add" and env.data and env.data.evt then
+        if self:_Insert(env.data.evt) then self:Refresh() end
+    end
+end
 
 ----------------------------------------------------------------------
 -- Recording + detection
@@ -112,7 +117,7 @@ function RosterLog:OnSync() end                    -- Task 3
 function RosterLog:Add(evt)
     local inserted = self:_Insert(evt)
     if inserted then
-        self:_Publish(evt)     -- no-op until Task 3; safe stub below
+        self:_Publish(evt)     -- broadcasts to officers if we are one; no-op for members
         self:Refresh()
     end
     return inserted
@@ -142,7 +147,11 @@ function RosterLog:_SetupDetection()
     end)
 end
 
-function RosterLog:_Publish() end   -- Task 3
+function RosterLog:_Publish(evt)
+    if not BRutus.SyncService or not BRutus:IsOfficer() then return end
+    -- broadcast; convergence is by id-dedup on receipt (no rev, no ACK).
+    BRutus.SyncService:Publish("audit", "add", { evt = evt })
+end
 
 ----------------------------------------------------------------------
 -- Self-tests
