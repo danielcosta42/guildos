@@ -115,6 +115,12 @@ L["Message template"] = "Message template"
 L["Tokens: [player] [class] [level]"] = "Tokens: [player] [class] [level]"
 L["Whisper selected"] = "Whisper selected"
 L["Whisper %d players?"] = "Whisper %d players?"
+L["%d found"] = "%d found"
+L["Select all"] = "Select all"
+L["%d selected"] = "%d selected"
+L["Whisper selected (%d)"] = "Whisper selected (%d)"
+L["Class: %s"] = "Class: %s"
+L["Any"] = "Any"
 L["Whispering %d candidate(s)…"] = "Whispering %d candidate(s)…"
 
 -- Modules/AltAutoDetect.lua (login prompt + /gos myalts)

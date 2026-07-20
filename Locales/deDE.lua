@@ -961,6 +961,12 @@ L["Message template"] = "Nachrichtenvorlage"
 L["Tokens: [player] [class] [level]"] = "Platzhalter: [player] [class] [level]"
 L["Whisper selected"] = "Ausgewählte anflüstern"
 L["Whisper %d players?"] = "%d Spieler anflüstern?"
+L["%d found"] = "%d gefunden"
+L["Select all"] = "Alle auswählen"
+L["%d selected"] = "%d ausgewählt"
+L["Whisper selected (%d)"] = "Ausgewählte anflüstern (%d)"
+L["Class: %s"] = "Klasse: %s"
+L["Any"] = "Beliebig"
 L["Whispering %d candidate(s)…"] = "Flüstere %d Kandidat(en) an…"
 
 -- Modules/AltAutoDetect.lua (login prompt + /gos myalts)
