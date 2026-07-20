@@ -256,8 +256,14 @@ read_globals = {
     "LOCALIZED_CLASS_NAMES_MALE",
     "FACTION_BAR_COLORS",
     "RAID_CLASS_COLORS",
-    "ERR_GUILD_JOIN_S",
     "ERR_GUILD_INVITE_S",
+
+    -- Guild system messages
+    "ERR_GUILD_JOIN_S",
+    "ERR_GUILD_LEAVE_S",
+    "ERR_GUILD_REMOVE_SS",
+    "ERR_GUILD_PROMOTE_SSS",
+    "ERR_GUILD_DEMOTE_SSS",
 
     -- WoW Lua aliases (not in std lua51)
     "Ambiguate",
