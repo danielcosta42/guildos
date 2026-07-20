@@ -320,6 +320,9 @@ function BRutus:InitModules()
     if BRutus.AltRoster then
         BRutus.AltRoster:Initialize()
     end
+    if BRutus.ChatTweaks then
+        BRutus.ChatTweaks:Initialize()
+    end
     if BRutus.GuildManager and modEnabled("guildManager") then
         BRutus.GuildManager:Initialize()
     end
