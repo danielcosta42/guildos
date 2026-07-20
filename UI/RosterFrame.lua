@@ -2707,6 +2707,63 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         return
     end
 
+    ----------------------------------------------------------------
+    -- Officer view: sub-tabs — "Recruiting" (config, unchanged below)
+    -- and "Scanner" (the Recruit Scanner, embedded inline). Mirrors the
+    -- sub-tab idiom in UI/ManagementPanel.lua:CreateManagementPanel.
+    ----------------------------------------------------------------
+    local root = parent
+
+    local bar = CreateFrame("Frame", nil, root)
+    bar:SetPoint("TOPLEFT", 10, -8)
+    bar:SetPoint("TOPRIGHT", -10, -8)
+    bar:SetHeight(26)
+
+    local function makeSubPanel()
+        local p = CreateFrame("Frame", nil, root)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -8)
+        p:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
+        p:Hide()
+        return p
+    end
+
+    local recruitingSub = makeSubPanel()
+    local scannerSub = makeSubPanel()
+
+    if BRutus.RecruitScanner then BRutus.RecruitScanner:BuildInto(scannerSub) end
+
+    local RECRUIT_SUBTABS = {
+        { key = "recruiting", label = L["Recruiting"], panel = recruitingSub },
+        { key = "scanner",    label = L["Scanner"],    panel = scannerSub },
+    }
+    local subTabBtns = {}
+    root.activeSub = "recruiting"
+
+    local function selectSub(key)
+        root.activeSub = key
+        for _, t in ipairs(RECRUIT_SUBTABS) do
+            t.panel:SetShown(t.key == key)
+        end
+        for k, btn in pairs(subTabBtns) do
+            btn:SetActive(k == key)
+        end
+    end
+
+    local x = 0
+    for _, t in ipairs(RECRUIT_SUBTABS) do
+        local btn = UI:CreateTab(bar, t.label, 116)
+        btn:SetPoint("LEFT", x, 0)
+        btn:SetScript("OnClick", function() selectSub(t.key) end)
+        subTabBtns[t.key] = btn
+        x = x + 120
+    end
+
+    -- Everything below builds onto `parent`, unchanged since before the
+    -- sub-tabs existed. Retargeting it here means the whole "Auto-Recruit
+    -- / Welcome / Beacon" block transparently becomes the content of the
+    -- "Recruiting" sub-tab with no further edits required below.
+    parent = recruitingSub
+
     local yOff = -15
 
     -- Helper to create a labeled section
@@ -2984,19 +3041,6 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
 
     ----------------------------------------------------------------
-    -- Recruit Scanner (active /who prospecting)
-    ----------------------------------------------------------------
-    yOff = yOff - 50
-    yOff = SectionHeader(L["Recruit Scanner"], yOff)
-    local scannerBtn = UI:CreateButton(parent, L["Recruit Scanner"], 160, 24)
-    scannerBtn:SetPoint("TOPLEFT", 30, yOff)
-    scannerBtn:SetScript("OnClick", function()
-        if BRutus.RecruitScanner then BRutus.RecruitScanner:Show() end
-    end)
-    local scannerHint = UI:CreateText(parent, L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"], 10, 0.6, 0.6, 0.65)
-    scannerHint:SetPoint("TOPLEFT", 30, yOff - 30)
-
-    ----------------------------------------------------------------
     -- Refresh function for when panel is shown
     ----------------------------------------------------------------
     parent:SetScript("OnShow", function()
@@ -3010,4 +3054,6 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         UpdateWelcomeStatus()
         UpdateBeaconStatus()
     end)
+
+    selectSub("recruiting")
 end

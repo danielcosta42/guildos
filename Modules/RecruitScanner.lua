@@ -174,164 +174,153 @@ if not StaticPopupDialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] then
 end
 
 ----------------------------------------------------------------------
--- UI (self-contained popup — mirrors Modules/Bulletin.lua:Show())
+-- UI (embeddable content + a self-contained popup wrapper — mirrors
+-- Modules/Bulletin.lua:Show()). BuildInto() builds every scanner widget
+-- as a child of whatever container it's given (the popup body, or a
+-- Recruitment-tab sub-panel); Show() just supplies the popup chrome.
 ----------------------------------------------------------------------
 local ROW_HEIGHT = 20
 
-function RecruitScanner:Show()
+----------------------------------------------------------------------
+-- Build all scanner controls (filters, Scan button, Results/Inbox tabs,
+-- results list, template box, Whisper button) as children of `container`.
+-- Safe to call more than once overall (e.g. popup body + an embedded
+-- sub-tab), but a second call on the SAME container is a no-op, guarded
+-- by container._scannerBuilt.
+----------------------------------------------------------------------
+function RecruitScanner:BuildInto(container)
+    if not container or container._scannerBuilt then return end
+    container._scannerBuilt = true
+
     local UI = BRutus.UI
     local C = BRutus.Colors
+    local f = container
 
-    local f = self.frame
-    if not f then
-        f = CreateFrame("Frame", "GuildOSRecruitScannerFrame", UIParent, "BackdropTemplate")
-        f:SetSize(480, 460)
-        f:SetPoint("CENTER")
-        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-        UI:StylePopup(f)
-        f:SetFrameStrata("HIGH")
-        f:SetMovable(true)
-        f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", function(s) s:StartMoving() end)
-        f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
+    -- Officer gate is checked once at build time (mirrors Bulletin.lua's
+    -- officer-only post box): non-officers get a static notice and no
+    -- controls are ever created for them.
+    f.isOfficer = BRutus:IsOfficer()
+    if not f.isOfficer then
+        local notice = UI:CreateText(f, L["Officers only."], 12, C.silver.r, C.silver.g, C.silver.b)
+        notice:SetPoint("TOPLEFT", 16, -50)
+    else
+        self._selected = self._selected or {}
+        self._view = self._view or "results"
+        local cfg = BRutus.db.recruitScanner
 
-        local title = UI:CreateTitle(f, L["Recruit Scanner"], 15)
-        title:SetPoint("TOPLEFT", 16, -14)
-        local close = UI:CreateCloseButton(f)
-        close:SetPoint("TOPRIGHT", -8, -8)
-        close:SetScript("OnClick", function() f:Hide() end)
-
-        -- Officer gate is checked once at build time (mirrors Bulletin.lua's
-        -- officer-only post box): non-officers get a static notice and no
-        -- controls are ever created for them.
-        f.isOfficer = BRutus:IsOfficer()
-        if not f.isOfficer then
-            local notice = UI:CreateText(f, L["Officers only."], 12, C.silver.r, C.silver.g, C.silver.b)
-            notice:SetPoint("TOPLEFT", 16, -50)
-        else
-            self._selected = self._selected or {}
-            self._view = self._view or "results"
-            local cfg = BRutus.db.recruitScanner
-
-            ------------------------------------------------------------
-            -- Filters row: Min level / Max level / Scan
-            ------------------------------------------------------------
-            local minLbl = UI:CreateText(f, L["Min level"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-            minLbl:SetPoint("TOPLEFT", 16, -46)
-            local minBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-            minBox:SetSize(36, 20)
-            minBox:SetPoint("LEFT", minLbl, "RIGHT", 8, 0)
-            minBox:SetAutoFocus(false)
-            minBox:SetNumeric(true)
-            minBox:SetMaxLetters(2)
-            minBox:SetText(tostring(cfg.minLevel or 0))
-            minBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-            local function commitMin(s)
-                cfg.minLevel = math.max(0, math.min(70, tonumber(s:GetText()) or 0))
-                s:SetText(tostring(cfg.minLevel))
-                s:ClearFocus()
-            end
-            minBox:SetScript("OnEnterPressed", commitMin)
-            minBox:SetScript("OnEditFocusLost", commitMin)
-
-            local maxLbl = UI:CreateText(f, L["Max level"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-            maxLbl:SetPoint("LEFT", minBox, "RIGHT", 16, 0)
-            local maxBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-            maxBox:SetSize(36, 20)
-            maxBox:SetPoint("LEFT", maxLbl, "RIGHT", 8, 0)
-            maxBox:SetAutoFocus(false)
-            maxBox:SetNumeric(true)
-            maxBox:SetMaxLetters(2)
-            maxBox:SetText(tostring(cfg.maxLevel or 70))
-            maxBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-            local function commitMax(s)
-                cfg.maxLevel = math.max(0, math.min(70, tonumber(s:GetText()) or 70))
-                s:SetText(tostring(cfg.maxLevel))
-                s:ClearFocus()
-            end
-            maxBox:SetScript("OnEnterPressed", commitMax)
-            maxBox:SetScript("OnEditFocusLost", commitMax)
-
-            local scanBtn = UI:CreateButton(f, L["Scan"], 90, 24)
-            scanBtn:SetPoint("LEFT", maxBox, "RIGHT", 16, 0)
-            scanBtn:SetScript("OnClick", function()
-                RecruitScanner:Scan(function()
-                    self._selected = {}
-                    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
-                end)
-                if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end -- immediate busy-state repaint
-            end)
-            f.scanBtn = scanBtn
-
-            ------------------------------------------------------------
-            -- Tabs: Results / Inbox (share a single scroll list)
-            ------------------------------------------------------------
-            local resultsTab = UI:CreateTab(f, L["Results"], 100)
-            resultsTab:SetPoint("TOPLEFT", 16, -80)
-            resultsTab:SetScript("OnClick", function()
-                self._view = "results"
-                if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
-            end)
-            local inboxTab = UI:CreateTab(f, L["Inbox"], 100)
-            inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 6, 0)
-            inboxTab:SetScript("OnClick", function()
-                self._view = "inbox"
-                if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
-            end)
-            f.tabs = { results = resultsTab, inbox = inboxTab }
-
-            ------------------------------------------------------------
-            -- Results/inbox list (ScrollFrame gotcha: CreateScrollFrame does
-            -- NOT anchor the scroll frame itself — SetAllPoints() here, or
-            -- content is clipped to 0x0.)
-            ------------------------------------------------------------
-            local holder = CreateFrame("Frame", nil, f)
-            holder:SetPoint("TOPLEFT", 12, -112)
-            holder:SetPoint("TOPRIGHT", -12, -112)
-            holder:SetHeight(190)
-            local scroll, child = UI:CreateScrollFrame(holder, "GuildOSRecruitScannerScroll")
-            scroll:SetAllPoints()
-            f.child = child
-            f.holder = holder
-
-            ------------------------------------------------------------
-            -- Message template + token hint
-            ------------------------------------------------------------
-            local tmplLbl = UI:CreateText(f, L["Message template"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-            tmplLbl:SetPoint("TOPLEFT", holder, "BOTTOMLEFT", 4, -10)
-            local tmplBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-            tmplBox:SetSize(420, 20)
-            tmplBox:SetPoint("TOPLEFT", tmplLbl, "BOTTOMLEFT", 4, -6)
-            tmplBox:SetAutoFocus(false)
-            tmplBox:SetMaxLetters(255)
-            tmplBox:SetText(cfg.template or "")
-            tmplBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-            local function commitTemplate(s)
-                cfg.template = s:GetText()
-                s:ClearFocus()
-            end
-            tmplBox:SetScript("OnEnterPressed", commitTemplate)
-            tmplBox:SetScript("OnEditFocusLost", commitTemplate)
-
-            local hint = UI:CreateText(f, L["Tokens: [player] [class] [level]"], 9, C.silver.r, C.silver.g, C.silver.b)
-            hint:SetPoint("TOPLEFT", tmplBox, "BOTTOMLEFT", 0, -6)
-
-            local whisperBtn = UI:CreateButton(f, L["Whisper selected"], 150, 24)
-            whisperBtn:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", -2, -10)
-            whisperBtn:SetScript("OnClick", function()
-                local names = {}
-                for name in pairs(self._selected) do names[#names + 1] = name end
-                if #names == 0 then return end
-                local dlg = StaticPopup_Show("GUILDOS_SCOUT_WHISPER_CONFIRM", #names, nil, names)
-                if dlg then dlg.data = names end
-            end)
-            f.whisperBtn = whisperBtn
+        ------------------------------------------------------------
+        -- Filters row: Min level / Max level / Scan
+        ------------------------------------------------------------
+        local minLbl = UI:CreateText(f, L["Min level"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+        minLbl:SetPoint("TOPLEFT", 16, -46)
+        local minBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+        minBox:SetSize(36, 20)
+        minBox:SetPoint("LEFT", minLbl, "RIGHT", 8, 0)
+        minBox:SetAutoFocus(false)
+        minBox:SetNumeric(true)
+        minBox:SetMaxLetters(2)
+        minBox:SetText(tostring(cfg.minLevel or 0))
+        minBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        local function commitMin(s)
+            cfg.minLevel = math.max(0, math.min(70, tonumber(s:GetText()) or 0))
+            s:SetText(tostring(cfg.minLevel))
+            s:ClearFocus()
         end
+        minBox:SetScript("OnEnterPressed", commitMin)
+        minBox:SetScript("OnEditFocusLost", commitMin)
 
-        self.frame = f
+        local maxLbl = UI:CreateText(f, L["Max level"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+        maxLbl:SetPoint("LEFT", minBox, "RIGHT", 16, 0)
+        local maxBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+        maxBox:SetSize(36, 20)
+        maxBox:SetPoint("LEFT", maxLbl, "RIGHT", 8, 0)
+        maxBox:SetAutoFocus(false)
+        maxBox:SetNumeric(true)
+        maxBox:SetMaxLetters(2)
+        maxBox:SetText(tostring(cfg.maxLevel or 70))
+        maxBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        local function commitMax(s)
+            cfg.maxLevel = math.max(0, math.min(70, tonumber(s:GetText()) or 70))
+            s:SetText(tostring(cfg.maxLevel))
+            s:ClearFocus()
+        end
+        maxBox:SetScript("OnEnterPressed", commitMax)
+        maxBox:SetScript("OnEditFocusLost", commitMax)
+
+        local scanBtn = UI:CreateButton(f, L["Scan"], 90, 24)
+        scanBtn:SetPoint("LEFT", maxBox, "RIGHT", 16, 0)
+        scanBtn:SetScript("OnClick", function()
+            RecruitScanner:Scan(function()
+                self._selected = {}
+                if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+            end)
+            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end -- immediate busy-state repaint
+        end)
+        f.scanBtn = scanBtn
+
+        ------------------------------------------------------------
+        -- Tabs: Results / Inbox (share a single scroll list)
+        ------------------------------------------------------------
+        local resultsTab = UI:CreateTab(f, L["Results"], 100)
+        resultsTab:SetPoint("TOPLEFT", 16, -80)
+        resultsTab:SetScript("OnClick", function()
+            self._view = "results"
+            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+        end)
+        local inboxTab = UI:CreateTab(f, L["Inbox"], 100)
+        inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 6, 0)
+        inboxTab:SetScript("OnClick", function()
+            self._view = "inbox"
+            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+        end)
+        f.tabs = { results = resultsTab, inbox = inboxTab }
+
+        ------------------------------------------------------------
+        -- Results/inbox list (ScrollFrame gotcha: CreateScrollFrame does
+        -- NOT anchor the scroll frame itself — SetAllPoints() here, or
+        -- content is clipped to 0x0.)
+        ------------------------------------------------------------
+        local holder = CreateFrame("Frame", nil, f)
+        holder:SetPoint("TOPLEFT", 12, -112)
+        holder:SetPoint("TOPRIGHT", -12, -112)
+        holder:SetHeight(190)
+        local scroll, child = UI:CreateScrollFrame(holder, "GuildOSRecruitScannerScroll")
+        scroll:SetAllPoints()
+        f.child = child
+        f.holder = holder
+
+        ------------------------------------------------------------
+        -- Message template + token hint
+        ------------------------------------------------------------
+        local tmplLbl = UI:CreateText(f, L["Message template"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+        tmplLbl:SetPoint("TOPLEFT", holder, "BOTTOMLEFT", 4, -10)
+        local tmplBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+        tmplBox:SetSize(420, 20)
+        tmplBox:SetPoint("TOPLEFT", tmplLbl, "BOTTOMLEFT", 4, -6)
+        tmplBox:SetAutoFocus(false)
+        tmplBox:SetMaxLetters(255)
+        tmplBox:SetText(cfg.template or "")
+        tmplBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        local function commitTemplate(s)
+            cfg.template = s:GetText()
+            s:ClearFocus()
+        end
+        tmplBox:SetScript("OnEnterPressed", commitTemplate)
+        tmplBox:SetScript("OnEditFocusLost", commitTemplate)
+
+        local hint = UI:CreateText(f, L["Tokens: [player] [class] [level]"], 9, C.silver.r, C.silver.g, C.silver.b)
+        hint:SetPoint("TOPLEFT", tmplBox, "BOTTOMLEFT", 0, -6)
+
+        local whisperBtn = UI:CreateButton(f, L["Whisper selected"], 150, 24)
+        whisperBtn:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", -2, -10)
+        whisperBtn:SetScript("OnClick", function()
+            local names = {}
+            for name in pairs(self._selected) do names[#names + 1] = name end
+            if #names == 0 then return end
+            local dlg = StaticPopup_Show("GUILDOS_SCOUT_WHISPER_CONFIRM", #names, nil, names)
+            if dlg then dlg.data = names end
+        end)
+        f.whisperBtn = whisperBtn
     end
 
     local function refresh()
@@ -430,8 +419,46 @@ function RecruitScanner:Show()
 
     self.uiRefresh = refresh
     f:SetScript("OnShow", refresh)
-    f:Show()
     refresh()
+end
+
+----------------------------------------------------------------------
+-- Popup wrapper: chrome only (backdrop/title/close/drag). Content is
+-- built by BuildInto() so the same widgets can be embedded elsewhere
+-- (see UI/RosterFrame.lua's Recruitment > Scanner sub-tab).
+----------------------------------------------------------------------
+function RecruitScanner:Show()
+    local UI = BRutus.UI
+    local C = BRutus.Colors
+
+    local f = self.frame
+    if not f then
+        f = CreateFrame("Frame", "GuildOSRecruitScannerFrame", UIParent, "BackdropTemplate")
+        f:SetSize(480, 460)
+        f:SetPoint("CENTER")
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        UI:StylePopup(f)
+        f:SetFrameStrata("HIGH")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(s) s:StartMoving() end)
+        f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
+
+        local title = UI:CreateTitle(f, L["Recruit Scanner"], 15)
+        title:SetPoint("TOPLEFT", 16, -14)
+        local close = UI:CreateCloseButton(f)
+        close:SetPoint("TOPRIGHT", -8, -8)
+        close:SetScript("OnClick", function() f:Hide() end)
+
+        self.frame = f
+    end
+
+    self:BuildInto(f)
+    f:Show()
+    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------

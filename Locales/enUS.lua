@@ -95,6 +95,10 @@ L["Zones"] = "Zones"
 L["Online only"] = "Online only"
 L["No data."] = "No data."
 
+-- UI/RosterFrame.lua (Recruitment sub-tabs)
+L["Recruiting"] = "Recruiting"
+L["Scanner"] = "Scanner"
+
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Recruit Scanner"
 L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"
