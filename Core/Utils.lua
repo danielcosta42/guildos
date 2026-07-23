@@ -103,6 +103,74 @@ function BRutus:GetPlayerKey(name, realm)
     return name .. "-" .. realm
 end
 
+----------------------------------------------------------------------
+-- Member-authored free text
+----------------------------------------------------------------------
+-- Text a player types (a public note, an LFG note) ends up in FontStrings and
+-- in the chat frame on every OTHER player's client, so it cannot be trusted
+-- raw: a bare "|" injects a texture (|T...|t), an unterminated colour (|cff...)
+-- that bleeds into the rest of the line, or a fake hyperlink (|H...|h). Strip
+-- the escape character entirely (escaping to "||" renders literally in frames
+-- that do not process escapes, so it is not equivalent) and flatten control
+-- characters and runs of whitespace.
+--
+-- maxBytes, when given, caps the result WITHOUT splitting a UTF-8 codepoint.
+-- string.sub counts bytes while SetMaxLetters counts characters, so an
+-- accented note from a ptBR/deDE/frFR/esES player is longer in bytes than it
+-- looks and a naive sub leaves a half codepoint that renders as a box.
+local function utf8Backoff(s)
+    local i = #s
+    while i > 0 do
+        local b = s:byte(i)
+        if b < 0x80 or b >= 0xC0 then break end   -- ASCII, or the lead byte
+        i = i - 1                                 -- 10xxxxxx continuation
+    end
+    if i == 0 then return s end
+    local lead, need = s:byte(i), 1
+    if lead >= 0xF0 then need = 4
+    elseif lead >= 0xE0 then need = 3
+    elseif lead >= 0xC0 then need = 2 end
+    if (#s - i + 1) < need then return s:sub(1, i - 1) end
+    return s
+end
+
+function BRutus:SanitizeUserText(text, maxBytes)
+    local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
+    s = strtrim(s)
+    if maxBytes and #s > maxBytes then
+        s = utf8Backoff(s:sub(1, maxBytes))
+    end
+    return s
+end
+
+function BRutus:RegisterUtilTests()
+    if not self.SelfTest then return end
+    self.SelfTest:Register("utils.sanitize_escapes", function()
+        if self:SanitizeUserText("|cffFF0000red|r") ~= "cffFF0000redr" then
+            return false, "pipe not stripped"
+        end
+        if self:SanitizeUserText("|TInterface\\Icons\\X:64|t") ~= "TInterface\\Icons\\X:64t" then
+            return false, "texture escape survived"
+        end
+        if self:SanitizeUserText("a\nb\tc") ~= "a b c" then return false, "control chars" end
+        if self:SanitizeUserText("  spaced   out  ") ~= "spaced out" then return false, "trim/collapse" end
+        if self:SanitizeUserText(nil) ~= "" then return false, "nil" end
+        if self:SanitizeUserText({}) == nil then return false, "table must not error" end
+        return true
+    end)
+    self.SelfTest:Register("utils.sanitize_utf8_cap", function()
+        if self:SanitizeUserText("abcdef", 3) ~= "abc" then return false, "ascii cap" end
+        if self:SanitizeUserText("abc", 10) ~= "abc" then return false, "under cap untouched" end
+        -- "ação" is a,\xC3\xA7,a,o = 5 bytes. Capping at 2 must drop the split
+        -- two-byte sequence, not leave half of it behind.
+        local acao = "a\195\167ao"
+        if self:SanitizeUserText(acao, 2) ~= "a" then return false, "split codepoint kept" end
+        if self:SanitizeUserText(acao, 3) ~= "a\195\167" then return false, "whole codepoint dropped" end
+        if self:SanitizeUserText(acao, 5) ~= acao then return false, "exact fit" end
+        return true
+    end)
+end
+
 function BRutus:TimeAgo(timestamp)
     if not timestamp or timestamp == 0 then return L["Never"] end
     local diff = time() - timestamp

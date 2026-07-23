@@ -238,6 +238,9 @@ function BRutus:InitModules()
     -- Apply the chosen accent theme before any frame is built.
     self:ApplyTheme()
 
+    -- Core helper tests (Utils loads before SelfTest, so it cannot self-register).
+    self:RegisterUtilTests()
+
     -- Initialize subsystems (always-on)
     if BRutus.DataCollector then
         BRutus.DataCollector:Initialize()
