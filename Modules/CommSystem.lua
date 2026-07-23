@@ -411,6 +411,17 @@ function CommSystem:HandleRequest(_sender, _data)
                 BRutus.RaiderRoster:RespondToSync()
             end)
         end
+
+        -- Every member answers with their own live LFG listing. Availability
+        -- is otherwise only ever sent once, so a guildmate who logged in after
+        -- the post would see an empty board until it was posted again.
+        -- Rebroadcast carries the age of the entry, not a fresh timestamp, so
+        -- answering requests can never extend a listing.
+        if BRutus.LFGBoard and BRutus.LFGBoard:AmAvailable() then
+            C_Timer.After(3.5, function()
+                BRutus.LFGBoard:Rebroadcast()
+            end)
+        end
     end)
 end
 
