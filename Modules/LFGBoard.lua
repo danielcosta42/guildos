@@ -73,6 +73,35 @@ function LFGBoard:_SanitizeRole(role)
     return (type(role) == "string" and tContains(self.ROLES, role) and role) or "ANY"
 end
 
+-- Default role for a fresh Role cycle button. The player's own last pick
+-- wins whenever it is anything other than the untouched default "ANY". If
+-- it is still "ANY", fall back to their self-service raid role profile
+-- (BRutus:GetMyRoles(), a { [ROLE] = true } set, see Core/Core.lua) but
+-- ONLY when exactly one role is configured there -- with two or more (or
+-- zero) we cannot guess which one they mean for this LFG post, so it stays
+-- "ANY". Always sanitized on the way out, so this can never return a value
+-- outside LFGBoard.ROLES.
+-- rolesOverride / lastRoleOverride are injectable so the self test can pin
+-- every branch without touching live db/profile state; production calls
+-- this with no arguments.
+function LFGBoard:_DefaultRole(rolesOverride, lastRoleOverride)
+    local lastRole = lastRoleOverride or (BRutus.db.lfgPrefs and BRutus.db.lfgPrefs.lastRole) or "ANY"
+    if lastRole ~= "ANY" then return self:_SanitizeRole(lastRole) end
+
+    local roles = rolesOverride
+    if roles == nil and BRutus.GetMyRoles then roles = BRutus:GetMyRoles() end
+    roles = roles or {}
+
+    local only
+    for role, on in pairs(roles) do
+        if on then
+            if only then return "ANY" end -- more than one role configured, don't guess
+            only = role
+        end
+    end
+    return self:_SanitizeRole(only)
+end
+
 ----------------------------------------------------------------------
 -- Self declare (publishes only your OWN entry)
 ----------------------------------------------------------------------
@@ -230,7 +259,7 @@ function LFGBoard:Show()
         local roleLbl = UI:CreateText(f, L["Role"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
         roleLbl:SetPoint("TOPLEFT", 60, -47)
 
-        local roleBtn = makeCycleButton(f, 90, LFGBoard.ROLES, roleDisplay, BRutus.db.lfgPrefs.lastRole)
+        local roleBtn = makeCycleButton(f, 90, LFGBoard.ROLES, roleDisplay, self:_DefaultRole())
         roleBtn:SetPoint("TOPLEFT", 94, -45)
         f.roleBtn = roleBtn
 
@@ -330,7 +359,7 @@ function LFGBoard:Show()
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
         child:SetWidth(f.holder:GetWidth() - 12)
 
-        local myKeyVal = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+        local myKeyVal = myKey()
         local y = 0
         for _, entry in ipairs(list) do
             local isMe = (entry.key == myKeyVal)
@@ -438,6 +467,13 @@ function LFGBoard:_RegisterTests()
         if LFGBoard:_SanitizeRole("|cffff0000EVIL|r") ~= "ANY" then return false, "escape string rejected" end
         if LFGBoard:_SanitizeRole(42) ~= "ANY" then return false, "non string rejected" end
         if LFGBoard:_SanitizeRole(nil) ~= "ANY" then return false, "nil defaults" end
+        return true
+    end)
+    S:Register("lfg.default_role", function()
+        if LFGBoard:_DefaultRole({ HEALER = true }, "ANY") ~= "HEALER" then return false, "single role maps" end
+        if LFGBoard:_DefaultRole({ TANK = true, DPS = true }, "ANY") ~= "ANY" then return false, "multiple roles -> ANY" end
+        if LFGBoard:_DefaultRole({}, "ANY") ~= "ANY" then return false, "no roles -> ANY" end
+        if LFGBoard:_DefaultRole({ TANK = true }, "HEALER") ~= "HEALER" then return false, "lastRole wins over roles" end
         return true
     end)
 end
