@@ -90,6 +90,7 @@ Modules\GuildAnalytics.lua
 Modules\Mentions.lua
 Modules\NoteCommand.lua
 Modules\LevelQuery.lua
+Modules\LFGBoard.lua
 
 # UI
 UI\Helpers.lua

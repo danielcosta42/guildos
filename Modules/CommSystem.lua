@@ -26,6 +26,7 @@ CommSystem.MSG_TYPES = {
     WELCOME_CLAIM = "WC",-- Welcome message sent (suppresses remaining timers)
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
     RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
+    LFG       = "LG",    -- member self-declared LFG availability (sender bound)
 }
 
 -- Throttle settings
@@ -262,6 +263,8 @@ function CommSystem:OnMessageReceived(msg, _, sender)
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
         if BRutus.AltAutoDetect then BRutus.AltAutoDetect:HandleSelfClaim(sender, data) end
+    elseif msgType == CommSystem.MSG_TYPES.LFG then
+        if BRutus.LFGBoard then BRutus.LFGBoard:HandleEntry(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DATA then
         if BRutus:IsOfficer() and BRutus.RaidTracker then
             BRutus.RaidTracker:HandleIncoming(data)
