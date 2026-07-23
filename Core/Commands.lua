@@ -13,9 +13,79 @@ SLASH_BRUTUS2 = "/br"
 
 local L = BRutus.L
 
+----------------------------------------------------------------------
+-- /gos help listing
+--
+-- Lives in helpers so the command branch stays a single call. Colour
+-- escapes are built here and never stored inside an L[] key, so a
+-- translation can never break "|cff......" / "|r".
+----------------------------------------------------------------------
+local HELP_HEADER_COLOR = "|cff00CCFF"   -- section headers
+local HELP_CMD_COLOR    = "|cffFFD700"   -- command verbs (addon gold)
+
+local function helpHeader(text)
+    BRutus:Print(HELP_HEADER_COLOR .. text .. "|r")
+end
+
+local function helpLine(verb, desc)
+    BRutus:Print("  " .. HELP_CMD_COLOR .. verb .. "|r  " .. desc)
+end
+
+local function printHelp()
+    BRutus:Print(HELP_CMD_COLOR .. L["Guild OS commands (/gos or /guildos):"] .. "|r")
+
+    helpHeader(L["General"])
+    helpLine("/gos",             L["Open the roster window"])
+    helpLine("/gos find <text>", L["Search members by name, class, level or note"])
+    helpLine("/gos analytics",   L["Guild analytics and activity stats"])
+    helpLine("/gos calendar",    L["Guild calendar and events"])
+    helpLine("/gos polls",       L["Guild polls"])
+    helpLine("/gos bulletin",    L["Guild bulletin board"])
+
+    helpHeader(L["Raid and loot"])
+    helpLine("/gos lm",            L["Master Loot helper status"])
+    helpLine("/gos points",        L["Points and DKP window"])
+    helpLine("/gos cons",          L["Check raid consumables"])
+    helpLine("/gos specs",         L["Scan group talent specs"])
+    helpLine("/gos export <what>", L["Export roster, attendance or loot"])
+
+    helpHeader(L["Personal"])
+    helpLine("/gos avail",         L["List yourself as available for a group"])
+    helpLine("/gos signup <core>", L["Sign up for a raid core"])
+    helpLine("/gos mentions",      L["Name mention alerts"])
+    helpLine("/gos myalts",        L["Detect and link your own alts"])
+    helpLine("/gos attune",        L["Your attunement progress"])
+    helpLine("/gos craft <item>",  L["Who can craft an item"])
+
+    helpHeader(L["Diagnostics"])
+    helpLine("/gos sync",     L["Force a full data sync"])
+    helpLine("/gos selftest", L["Run the built-in self test"])
+    helpLine("/gos errors",   L["Show recent errors"])
+    helpLine("/gos debug",    L["Toggle debug output"])
+
+    -- These verbs are refused inside their own modules for non-officers, so
+    -- showing them to a member would only advertise commands that do nothing.
+    if BRutus:IsOfficer() then
+        helpHeader(L["Officers"])
+        helpLine("/gos ban <name>",            L["Ban a player from invites"])
+        helpLine("/gos tempban <name> <days>", L["Ban a player for a number of days"])
+        helpLine("/gos unban <name>",          L["Lift a ban"])
+        helpLine("/gos banlist",               L["Open the ban list"])
+        helpLine("/gos autoinvite",            L["Auto-invite settings"])
+        helpLine("/gos note <name> <text>",    L["Add an officer note"])
+        helpLine("/gos wish",                  L["Open the loot wishlist"])
+        helpLine("/gos scout",                 L["Scan for unguilded recruits"])
+    end
+end
+
 local function handleCommand(msg)
     msg = strtrim(msg or "")
-    if msg == "scan" then
+    -- Deliberately the first branch: "help", "?" and "commands" are exact
+    -- literals, so this can never swallow another verb, and sitting at the top
+    -- means no present or future prefix pattern below can ever swallow them.
+    if msg == "help" or msg == "?" or msg == "commands" then
+        printHelp()
+    elseif msg == "scan" then
         if BRutus.DataCollector then
             BRutus.DataCollector:CollectMyData()
             BRutus:Print(L["Data collected."])
@@ -434,6 +504,12 @@ local function handleCommand(msg)
             BRutus.LFGBoard:HandleCommand(a, rest)
         end
     else
+        -- Unknown verb: point at the listing, then keep the historic
+        -- behaviour of opening the roster. A bare /gos is the documented way
+        -- to open the roster and is not a typo, so it stays silent.
+        if msg ~= "" then
+            BRutus:Print(string.format(L["Unknown command. Type %s for the list."], "|cffFFD700/gos help|r"))
+        end
         BRutus:ToggleRoster()
     end
 end
