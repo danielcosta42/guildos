@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0] - 2026-07-23
+
+### Added
+- members can manage their own alts from the inspector (self-claim)
+
+### Fixed
+- bind SELF_ALT claims to the sender (members can only claim their own links)
+- all guild members receive alt links (trust by sender, not receiver)
+
+
 ## [0.31.0] - 2026-07-20
 
 ### Added
