@@ -17,7 +17,7 @@ CommSystem.MSG_TYPES = {
     PING      = "PI",    -- Presence ping
     PONG      = "PO",    -- Presence response
     VERSION   = "VR",    -- Version check
-    ALT_LINK  = "AL",    -- Alt/main link table sync (officer only)
+    ALT_LINK  = "AL",    -- Alt/main link table sync (officer-authored; all members store)
     SELF_ALT  = "SA",    -- member self-claim of own alts (officers replay via LinkAlt)
     RAID_DATA = "RD",    -- Raid attendance + session sync (officer only)
     RAID_DELETE = "RX",  -- Delete a raid session (officer only; sender verified)
@@ -252,7 +252,9 @@ function CommSystem:OnMessageReceived(msg, _, sender)
             BRutus.RaiderRoster:HandleIncoming(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.ALT_LINK then
-        if BRutus:IsOfficer() then
+        -- Officer-authored, everyone stores: members need altLinks to see
+        -- alt/main grouping (True Roster, chat tags, inspector).
+        if BRutus:IsOfficerByName(sender) then
             local ok, links = LibSerialize:Deserialize(data)
             if ok and type(links) == "table" then
                 BRutus.db.altLinks = links
@@ -366,6 +368,17 @@ function CommSystem:HandleRequest(_sender, _data)
     -- safe and already happens every 5 minutes anyway.
     C_Timer.After(math.random() * 3, function()  -- Stagger responses
         self:BroadcastMyData()
+
+        -- Officers also send the alt/main link table. This REQUEST handler
+        -- is what a member's automatic login-time pull (and the periodic
+        -- re-REQUEST ticker) lands on, so this is what lets a member who
+        -- logs in later actually converge on altLinks without an officer
+        -- having to run a manual /gos sync.
+        if BRutus:IsOfficer() then
+            C_Timer.After(0.5, function()
+                self:BroadcastAltLinks()
+            end)
+        end
 
         -- Officers also send trial data
         if BRutus:IsOfficer() and BRutus.TrialTracker then
