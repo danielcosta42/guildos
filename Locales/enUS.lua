@@ -80,6 +80,7 @@ L["alt of %s"] = "alt of %s"
 -- UI/RosterFrame.lua (Players KPI) / UI/MemberDetail.lua (alt-of indicator)
 L["Players"] = "Players"
 L["of %d chars"] = "of %d chars"
+L["Add your own alts (any account). An officer's client applies them guild-wide."] = "Add your own alts (any account). An officer's client applies them guild-wide."
 
 -- UI/FeaturePanels.lua (CHAT settings block — Modules/ChatTweaks.lua)
 L["CHAT"] = "CHAT"

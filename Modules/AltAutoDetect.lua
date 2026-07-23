@@ -100,13 +100,36 @@ function AltAutoDetect:LinkOwnAlts(mainKey, altKeys)
     end
 end
 
--- Officer applies a member's self-claim through the authoritative LinkAlt path.
+-- Member-safe unlink of one's OWN alt: officers apply directly, members
+-- broadcast a self-claim that officers replay.
+function AltAutoDetect:UnlinkOwnAlt(altKey)
+    if not altKey then return end
+    if BRutus:IsOfficer() then
+        BRutus:UnlinkAlt(altKey)
+    else
+        BRutus.db.altLinks = BRutus.db.altLinks or {}
+        BRutus.db.altLinks[altKey] = nil
+        if BRutus.CommSystem then
+            local payload = LibSerialize:Serialize({ unlink = { altKey } })
+            BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.SELF_ALT, payload)
+        end
+    end
+end
+
+-- Officer applies a member's self-claim through the authoritative LinkAlt/
+-- UnlinkAlt path. Link and unlink are validated and handled independently so
+-- an unlink-only claim (no main/alts) isn't rejected by the link guard.
 function AltAutoDetect:HandleSelfClaim(_sender, data)
     if not BRutus:IsOfficer() then return end       -- only officers apply/propagate
     local ok, claim = LibSerialize:Deserialize(data)
-    if not ok or type(claim) ~= "table" or not claim.main or type(claim.alts) ~= "table" then return end
-    for _, k in ipairs(claim.alts) do
-        if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+    if not ok or type(claim) ~= "table" then return end
+    if claim.main and type(claim.alts) == "table" then
+        for _, k in ipairs(claim.alts) do
+            if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+        end
+    end
+    if type(claim.unlink) == "table" then
+        for _, k in ipairs(claim.unlink) do BRutus:UnlinkAlt(k) end
     end
 end
 

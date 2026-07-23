@@ -782,9 +782,12 @@ function PopulateDetail(frame, data)
     end
 
     ----------------------------------------------------------------
-    -- Section: Linked Characters (officer only — alt/main management)
+    -- Section: Linked Characters (officers manage anyone; members manage
+    -- their own alts on the current character via self-claim)
     ----------------------------------------------------------------
-    if BRutus:IsOfficer() then
+    local myKey = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    local isSelfManage = (playerKey == myKey)
+    if BRutus:IsOfficer() or isSelfManage then
         yOff = yOff - 10
         local linkedKeys = BRutus:GetLinkedChars(playerKey)
         local altLinks = (BRutus.db and BRutus.db.altLinks) or {}
@@ -800,7 +803,8 @@ function PopulateDetail(frame, data)
         noteLabel:SetPoint("TOPLEFT", 12, yOff)
         noteLabel:SetWidth(contentWidth - 20)
         noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-        noteLabel:SetText(L["Linked chars share attunements account-wide."])
+        noteLabel:SetText(BRutus:IsOfficer() and L["Linked chars share attunements account-wide."]
+            or L["Add your own alts (any account). An officer's client applies them guild-wide."])
         noteLabel:Show()
         yOff = yOff - 16
 
@@ -821,12 +825,13 @@ function PopulateDetail(frame, data)
                 unlinkBtn:SetPoint("LEFT", lkLabel, "RIGHT", 10, 0)
                 local capturedKey = lk
                 unlinkBtn:SetScript("OnClick", function()
-                    -- If lk is the main, unlink playerKey from it; else unlink lk
-                    if lkIsMain then
-                        BRutus:UnlinkAlt(playerKey)
-                    else
-                        BRutus:UnlinkAlt(capturedKey)
+                    -- If lk is the main, unlink playerKey from it; else unlink lk.
+                    -- Officers apply directly; members route through the self-claim.
+                    local function doUnlink(k)
+                        if BRutus:IsOfficer() then BRutus:UnlinkAlt(k)
+                        else BRutus.AltAutoDetect:UnlinkOwnAlt(k) end
                     end
+                    if lkIsMain then doUnlink(playerKey) else doUnlink(capturedKey) end
                     PopulateDetail(frame, data)
                 end)
                 yOff = yOff - 22
@@ -865,8 +870,17 @@ function PopulateDetail(frame, data)
             if altName == "" then return end
             local realm = data.realm or GetRealmName()
             local altKey = BRutus:GetPlayerKey(altName, realm)
-            -- playerKey is treated as the main; altKey as the alt
-            if BRutus:LinkAlt(altKey, playerKey) then
+            -- playerKey is treated as the main; altKey as the alt.
+            -- Officers apply directly; members route through the self-claim
+            -- (applied locally + broadcast for an officer to replay).
+            local applied
+            if BRutus:IsOfficer() then
+                applied = BRutus:LinkAlt(altKey, playerKey)
+            else
+                BRutus.AltAutoDetect:LinkOwnAlts(playerKey, { altKey })
+                applied = true
+            end
+            if applied then
                 addLinkBox:SetText("")
                 addLinkBox:ClearFocus()
                 PopulateDetail(frame, data)
