@@ -96,23 +96,57 @@ function Compat.CanEditPublicNote()
     return false
 end
 
--- Set a guild member's public note by name (finds the roster index).
--- Returns true if applied. No-op (false) if the API/permission is absent.
-function Compat.SetGuildPublicNote(name, text)
-    if not name or not GuildRosterSetPublicNote or not (CanEditPublicNote and CanEditPublicNote()) then
-        return false
-    end
+-- Resolve a guild roster index for `name`, which may be "Name" or "Name-Realm";
+-- `realm` (from a chat event, say) overrides any suffix on `name`.
+--
+-- A connected-realm guild can hold both Bob-RealmA and Bob-RealmB. Matching on
+-- the short name alone and taking the FIRST hit writes to whichever Bob sorts
+-- earlier, so: an exact Name-Realm match wins outright, a short-name match is
+-- accepted only when it is unique, and anything ambiguous returns nil rather
+-- than guessing.
+function Compat.FindGuildRosterIndex(name, realm)
+    if not name or name == "" then return nil end
     local short = name:match("^([^-]+)") or name
+    realm = realm or name:match("^[^-]+%-(.+)$")
     local n = GetNumGuildMembers() or 0
+    local onlyIdx, hits = nil, 0
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
         if full then
             local fs = full:match("^([^-]+)") or full
+            local fr = full:match("^[^-]+%-(.+)$")
             if fs == short then
-                GuildRosterSetPublicNote(i, (text or ""):sub(1, 31))
-                return true
+                if realm and realm ~= "" and fr == realm then
+                    return i                    -- exact Name-Realm
+                end
+                hits = hits + 1
+                onlyIdx = i
             end
         end
     end
-    return false
+    if hits == 1 then return onlyIdx end
+    return nil                                  -- absent, or ambiguous
+end
+
+-- Current public note for a guild member, or nil when they cannot be resolved.
+function Compat.GetGuildPublicNote(name, realm)
+    local idx = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return nil end
+    local _, _, _, _, _, _, note = GetGuildRosterInfo(idx)
+    return note or ""
+end
+
+-- Set a guild member's public note by name (finds the roster index).
+-- Returns true if applied. No-op (false) if the API/permission is absent, or
+-- if the name cannot be resolved to exactly one roster row.
+function Compat.SetGuildPublicNote(name, text, realm)
+    if not name or not GuildRosterSetPublicNote or not (CanEditPublicNote and CanEditPublicNote()) then
+        return false
+    end
+    local idx = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return false end
+    -- Member-authored text: strip UI escapes and cap without splitting a
+    -- codepoint (shared helper, Core/Utils.lua).
+    GuildRosterSetPublicNote(idx, BRutus:SanitizeUserText(text, 31))
+    return true
 end

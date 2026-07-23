@@ -8,6 +8,7 @@ BRutus.Mentions = Mentions
 local L = BRutus.L
 
 local LOG_MAX = 100
+local MIN_WORD = 3      -- shorter watch-words fire on nearly every message
 
 Mentions.DEFAULTS = {
     enabled   = true,
@@ -27,16 +28,43 @@ function Mentions:Initialize()
     end
     BRutus.db.mentions.log = BRutus.db.mentions.log or {}
     self._cd = {}
+    self._hinted = false
     self:_SetupHook()
     self:_RegisterTests()
 end
 
--- whole-word, case-insensitive: normalize non-alphanumerics to spaces,
--- then look for " needle " inside " haystack ".
+-- Split on SEPARATORS (whitespace, punctuation, control chars) rather than on
+-- "not alphanumeric": %w rejects every UTF-8 byte >= 0x80 in the C locale, so
+-- the old "[^%w]" pass turned the accents in Jurgen/Bjorn/Jose into spaces on
+-- the haystack while the needle kept them, and the match could never land.
+-- Runs of separators collapse to one space so "mc-run" still matches "mc - run".
+local function normWords(s)
+    local t = s:lower():gsub("[%s%p%c]+", " ")
+    t = t:gsub("^ ", ""):gsub(" $", "")
+    return " " .. t .. " "
+end
+
+-- whole-word, case-insensitive: normalize BOTH sides the same way, then look
+-- for " needle " inside " haystack ".
 local function hasWord(hay, needle)
-    if not hay or not needle or needle == "" then return false end
-    local h = " " .. hay:lower():gsub("[^%w]", " ") .. " "
-    return h:find(" " .. needle:lower() .. " ", 1, true) ~= nil
+    if not hay or not needle then return false end
+    local n = normWords(needle)
+    -- A needle made only of separators would normalize to "  " and match any
+    -- haystack; treat it as matching nothing instead.
+    if not n:find("[^ ]") then return false end
+    return normWords(hay):find(n, 1, true) ~= nil
+end
+
+-- Pure: append `phrase` to `list`. Returns status ("ok"|"short"|"dupe") and the
+-- normalized phrase. Dedupe is case-insensitive against what is already stored.
+function Mentions:_AddWatchWord(list, phrase)
+    local p = strtrim(tostring(phrase or "")):lower()
+    if #p < MIN_WORD then return "short", p end
+    for _, w in ipairs(list) do
+        if tostring(w):lower() == p then return "dupe", p end
+    end
+    list[#list + 1] = p
+    return "ok", p
 end
 
 function Mentions:_Match(msg, ownName, watchWords, watchOwn)
@@ -76,6 +104,14 @@ function Mentions:_SetupHook()
         Mentions:_Record(term, sender, msg)
         BRutus:Print(string.format(L["|cffFFD700Mention|r (%s): %s: %s"], term, sender or "?", msg))
         if cfg.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
+        -- Own-name matching is on by default and there is no settings UI for it,
+        -- so a player called Tank/Ally/Lol would get alerted on normal guild
+        -- chatter with no idea where it came from. Point at the off switch once
+        -- per session (flag set first, so later alerts stay quiet).
+        if not Mentions._hinted then
+            Mentions._hinted = true
+            BRutus:Print(L["Tip: turn these off with /gos mentions ownname off, /gos mentions sound off, or /gos mentions off."])
+        end
     end)
 end
 
@@ -99,6 +135,38 @@ function Mentions:_RegisterTests()
         if Mentions:_Match("HEY BOB", "bob", {}, true) ~= "bob" then return false, "case" end
         return true
     end)
+    S:Register("mentions.punctuation_needle", function()
+        -- Both sides normalize the same way, so an apostrophe/hyphen in the
+        -- watch-word still lands (it used to be a guaranteed silent no-op).
+        if Mentions:_Match("anyone for Kel'Thuzad?", "X", { "kel'thuzad" }, false) ~= "kel'thuzad" then
+            return false, "apostrophe"
+        end
+        if Mentions:_Match("lf1m mc-run", "X", { "mc-run" }, false) ~= "mc-run" then
+            return false, "hyphen"
+        end
+        -- Whole-word matching must not regress.
+        if Mentions:_Match("Bobby says hi", "Bob", {}, true) ~= nil then return false, "Bobby is not Bob" end
+        -- A needle of pure punctuation must match nothing, not everything.
+        if Mentions:_Match("hello there", "X", { "!!!" }, false) ~= nil then return false, "punct-only needle" end
+        return true
+    end)
+    S:Register("mentions.high_bytes", function()
+        -- "Jose" with an accented e: \195\169 must survive on BOTH sides.
+        local jose = "Jos\195\169"
+        if Mentions:_Match("hey " .. jose .. " inv?", jose, {}, true) ~= jose then return false, "accented own name" end
+        return true
+    end)
+    S:Register("mentions.add_watchword", function()
+        local list = {}
+        local st, norm = Mentions:_AddWatchWord(list, "need heals")
+        if st ~= "ok" or norm ~= "need heals" then return false, "phrase not kept whole" end
+        if #list ~= 1 then return false, "not stored" end
+        st = Mentions:_AddWatchWord(list, "NEED HEALS")
+        if st ~= "dupe" or #list ~= 1 then return false, "case-insensitive dedupe" end
+        st = Mentions:_AddWatchWord(list, "a")
+        if st ~= "short" or #list ~= 1 then return false, "min length" end
+        return true
+    end)
 end
 
 function Mentions:HandleCommand(args)
@@ -107,13 +175,35 @@ function Mentions:HandleCommand(args)
     local sub = args[1]
     if sub == "on" then cfg.enabled = true; BRutus:Print(L["Mentions |cff4CFF4Con|r."])
     elseif sub == "off" then cfg.enabled = false; BRutus:Print(L["Mentions |cffFF4444off|r."])
+    elseif sub == "ownname" and (args[2] == "on" or args[2] == "off") then
+        cfg.ownName = (args[2] == "on")
+        BRutus:Print(L["Own-name alerts: "] .. (cfg.ownName and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]))
+    elseif sub == "sound" and (args[2] == "on" or args[2] == "off") then
+        cfg.sound = (args[2] == "on")
+        BRutus:Print(L["Mention sound: "] .. (cfg.sound and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]))
+    elseif sub == "list" then
+        BRutus:Print(L["--- Watch-words ---"])
+        if #cfg.watchWords == 0 then BRutus:Print(L["(none)"]) end
+        for i = 1, #cfg.watchWords do
+            BRutus:Print("  |cffFFFFFF" .. tostring(cfg.watchWords[i]) .. "|r")
+        end
     elseif sub == "add" and args[2] then
-        table.insert(cfg.watchWords, args[2]:lower())
-        BRutus:Print(L["Watch-word added: |cffFFFFFF"] .. args[2] .. "|r")
+        -- Keep the whole phrase: "add need heals" is two words, not "need".
+        local phrase = table.concat(args, " ", 2, #args)
+        local status, norm = Mentions:_AddWatchWord(cfg.watchWords, phrase)
+        if status == "ok" then
+            BRutus:Print(L["Watch-word added: |cffFFFFFF"] .. norm .. "|r")
+        elseif status == "short" then
+            BRutus:Print(L["Watch-words must be at least 3 characters."])
+        else
+            BRutus:Print(L["Already watching: |cffFFFFFF"] .. norm .. "|r")
+        end
     elseif sub == "remove" and args[2] then
-        local t = args[2]:lower()
-        for i = #cfg.watchWords, 1, -1 do if cfg.watchWords[i] == t then table.remove(cfg.watchWords, i) end end
-        BRutus:Print(L["Watch-word removed: |cffFFFFFF"] .. args[2] .. "|r")
+        local t = strtrim(table.concat(args, " ", 2, #args)):lower()
+        for i = #cfg.watchWords, 1, -1 do
+            if tostring(cfg.watchWords[i]):lower() == t then table.remove(cfg.watchWords, i) end
+        end
+        BRutus:Print(L["Watch-word removed: |cffFFFFFF"] .. t .. "|r")
     elseif sub == "clearwords" then
         cfg.watchWords = {}; BRutus:Print(L["Watch-words cleared."])
     else
@@ -125,6 +215,6 @@ function Mentions:HandleCommand(args)
             local e = log[i]
             BRutus:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
         end
-        BRutus:Print(L["Usage: /gos mentions <on|off|add|remove|clearwords> [word]"])
+        BRutus:Print(L["Usage: /gos mentions <on|off|add|remove|list|clearwords|ownname|sound> [word|on|off]"])
     end
 end
