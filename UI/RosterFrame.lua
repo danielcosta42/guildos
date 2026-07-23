@@ -2652,9 +2652,9 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         autoStatusText:SetPoint("LEFT", autoBtn, "RIGHT", 10, 0)
 
         local function updateAutoBtn()
-            -- Reflects the persisted opt-out choice (db.recruitParticipate), so
-            -- it stays in sync with the one-time join prompt and across relogs.
-            local participating = BRutus.db.recruitParticipate == true
+            -- Opt-out: the member helps unless they turned it off, so the
+            -- untouched default (nil) reads as ON. ~= false, not == true.
+            local participating = BRutus.db.recruitParticipate ~= false
             if participating then
                 autoBtn.label:SetText(L["Auto-Send: ON"])
                 autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
@@ -2669,7 +2669,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
         autoBtn:SetScript("OnClick", function()
             if not BRutus.Recruitment then return end
-            local participating = BRutus.db.recruitParticipate == true
+            local participating = BRutus.db.recruitParticipate ~= false
             BRutus.Recruitment:SetParticipation(not participating)
             updateAutoBtn()
         end)

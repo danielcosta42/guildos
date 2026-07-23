@@ -95,6 +95,14 @@ function Recruitment:_RegisterAutoInviteTests()
         if Recruitment:_PassesFilters({ level = 70, class = "MAGE" }, cfg) then return false, "class fail" end
         return true
     end)
+    S:Register("recruit.participation_opt_out", function()
+        -- Opt-out: the untouched default (nil) and an explicit true both help;
+        -- only a stored false stays out.
+        if not Recruitment:_ParticipatingFrom(nil) then return false, "nil default must participate" end
+        if not Recruitment:_ParticipatingFrom(true) then return false, "true participates" end
+        if Recruitment:_ParticipatingFrom(false) then return false, "false opts out" end
+        return true
+    end)
 end
 
 ----------------------------------------------------------------------
@@ -364,10 +372,12 @@ end
 ----------------------------------------------------------------------
 -- Member auto-send: opt-in ticker using guild-broadcast config
 ----------------------------------------------------------------------
-function Recruitment:StartMemberRecruit()
+function Recruitment:StartMemberRecruit(quiet)
     local info = BRutus.db.guildRecruitment
     if not info or not info.message or info.message == "" then
-        BRutus:Print(L["|cffFF4444No recruitment data received yet. Ask an officer to broadcast.|r"])
+        if not quiet then
+            BRutus:Print(L["|cffFF4444No recruitment data received yet. Ask an officer to broadcast.|r"])
+        end
         return false
     end
     if self.memberTicker then self.memberTicker:Cancel() end
@@ -376,7 +386,9 @@ function Recruitment:StartMemberRecruit()
         Recruitment:ShowSendPopup()
     end)
     C_Timer.After(2, function() Recruitment:ShowSendPopup() end)
-    BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
+    if not quiet then
+        BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
+    end
     return true
 end
 
@@ -394,13 +406,15 @@ function Recruitment:IsMemberRecruitActive()
 end
 
 ----------------------------------------------------------------------
--- Guild-wide sharing + opt-out participation
+-- Guild-wide sharing + opt-OUT participation
 --
 -- The officer's config is relayed member-to-member (not just pushed once by
--- the officer), so alts and late-loggers reliably end up with it. Each member
--- decides once whether to help spread it — db.recruitParticipate is tri-state
--- (nil = undecided → prompt; true = participating; false = declined) and the
--- choice is remembered across sessions.
+-- the officer), so alts and late-loggers reliably end up with it. Helping is
+-- opt-out: db.recruitParticipate is nil when the member has never touched it
+-- (they participate by default so a recruiting guild actually gets help),
+-- true when explicitly kept on, and false when the member opted out. The
+-- choice is remembered across sessions. There is no join prompt: the member
+-- leaves any time with the Auto-Send toggle in the Recruitment tab.
 ----------------------------------------------------------------------
 
 -- Re-share the guild's recruitment config in response to a sync REQUEST.
@@ -447,56 +461,58 @@ function Recruitment:ApplyIncoming(info, sender)
     self:SyncMemberParticipation()
 end
 
--- Member opt-out choice (persisted, tri-state).
+-- Member opt-out choice (persisted). nil = never touched, true = kept on,
+-- false = opted out.
 function Recruitment:SetParticipation(v)
     BRutus.db.recruitParticipate = v
     self:SyncMemberParticipation()
 end
 
--- Reconcile the member popup ticker and the one-time prompt with the current
--- guild config and the stored choice. Safe to call repeatedly.
+-- Pure opt-out semantics for a stored choice: nil (untouched) and true both
+-- participate; only an explicit false opts out. Kept separate so a self test
+-- pins the nil-counts-as-participating rule the whole change hinges on.
+function Recruitment:_ParticipatingFrom(choice)
+    return choice ~= false
+end
+
+-- Opt-out: a member helps unless they explicitly turned it off.
+function Recruitment:IsParticipating()
+    return self:_ParticipatingFrom(BRutus.db.recruitParticipate)
+end
+
+-- Reconcile the member popup ticker with the current guild config and the
+-- stored choice. Safe to call repeatedly.
 function Recruitment:SyncMemberParticipation()
     if BRutus:IsOfficer() then return end   -- officers use their own flow
     local info = BRutus.db.guildRecruitment
     local active = info and info.enabled and info.message and info.message ~= ""
-    if not active then
+    if not active or not self:IsParticipating() then
         if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
         return
     end
-    local choice = BRutus.db.recruitParticipate
-    if choice == true then
-        if not self:IsMemberRecruitActive() then self:StartMemberRecruit() end
-    elseif choice == false then
-        if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
-    else
-        self:PromptParticipation()
+    if not self:IsMemberRecruitActive() then
+        self:StartMemberRecruit(true)   -- quiet: no per-login "started" spam
+        self:_HintOptOutOnce()
     end
 end
 
--- One-time "help recruit?" prompt (deduped per session; decision persists).
-function Recruitment:PromptParticipation()
-    if self._promptShown then return end
+-- The first time auto-participation kicks in for a member who never chose,
+-- tell them once (persisted) how to opt out, so the popups are never a mystery.
+function Recruitment:_HintOptOutOnce()
     if BRutus.db.recruitParticipate ~= nil then return end
-    if InCombatLockdown and InCombatLockdown() then return end
-    self._promptShown = true
-    StaticPopup_Show("GUILDOS_RECRUIT_JOIN")
+    if BRutus.db.recruitOptOutHinted then return end
+    BRutus.db.recruitOptOutHinted = true
+    BRutus:Print(L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."])
 end
 
 ----------------------------------------------------------------------
 -- Member-side setup — runs for EVERY player (unlike the officer-only
--- Initialize). Registers the opt-in prompt and reconciles participation
--- against the persisted/synced config on login, so members auto-fire the
--- recruit popup without any officer action on their client.
+-- Initialize). Reconciles participation against the persisted/synced config on
+-- login. Opt-out: unless the member turned it off, they auto-fire the recruit
+-- popup once the guild is recruiting, without any officer action on their
+-- client and without a join prompt.
 ----------------------------------------------------------------------
 function Recruitment:InitParticipation()
-    StaticPopupDialogs["GUILDOS_RECRUIT_JOIN"] = {
-        text = L["Your guild is recruiting! Show a periodic reminder so you can help post it in chat? (change anytime in the Recruitment tab)"],
-        button1 = L["I'll help"],
-        button2 = L["No thanks"],
-        OnAccept = function() if BRutus.Recruitment then BRutus.Recruitment:SetParticipation(true) end end,
-        OnCancel = function() if BRutus.Recruitment then BRutus.Recruitment:SetParticipation(false) end end,
-        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-    }
     C_Timer.After(15, function()
         if BRutus.Recruitment then BRutus.Recruitment:SyncMemberParticipation() end
     end)

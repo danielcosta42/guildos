@@ -947,6 +947,9 @@ L["No data."] = "Keine Daten."
 L["Recruiting"] = "Rekrutierung"
 L["Scanner"] = "Scanner"
 
+-- Modules/RecruitmentSystem.lua (opt-out member participation)
+L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."] = "Deine Gilde rekrutiert und du hilfst beim Verbreiten. Schalte es mit dem Auto-Send-Schalter im Rekrutierungs-Tab aus."
+
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Rekrutierungs-Scanner"
 L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Durchsucht /who nach Stufenbereich für gildenlose Kandidaten und sendet dann Massenflüsternachrichten mit deiner Vorlage. Außerdem: /gos scout"
