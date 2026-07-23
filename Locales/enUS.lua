@@ -174,3 +174,11 @@ L["(you)"] = "(you)"
 L["Invite"] = "Invite"
 L["%dm"] = "%dm"
 L["Nobody is available right now. Be the first!"] = "Nobody is available right now. Be the first!"
+
+-- Modules/LFGBoard.lua (/gos avail chat command + notify)
+L["%s is available: %s"] = "%s is available: %s"
+L["(no note)"] = "(no note)"
+L["You are no longer listed as available."] = "You are no longer listed as available."
+L["You are available as %s for %s: %s"] = "You are available as %s for %s: %s"
+L["LFG notify |cff4CFF4Con|r."] = "LFG notify |cff4CFF4Con|r."
+L["LFG notify |cffFF4444off|r."] = "LFG notify |cffFF4444off|r."

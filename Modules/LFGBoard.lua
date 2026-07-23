@@ -429,6 +429,64 @@ function LFGBoard:Show()
 end
 
 ----------------------------------------------------------------------
+-- Chat command: /gos avail [off | notify [on|off] | [role] <text>]
+----------------------------------------------------------------------
+
+-- Role tokens accepted as an optional LEADING word of "/gos avail ...".
+-- Lowercased on the way in, mapped to the canonical LFGBoard.ROLES spelling.
+local ROLE_TOKENS = { tank = "TANK", healer = "HEALER", dps = "DPS", any = "ANY" }
+
+-- Pure: turns the /gos avail argument list into an action plus its data.
+-- Reads no db, sends no comm, touches no frame, so the self test can pin
+-- every branch. Inputs:
+--   args         token array built from rest
+--   rest         raw remainder, internal spacing intact
+--   defaultRole  role to use when no leading role token is given. The caller
+--                passes self:_DefaultRole(); nil sanitizes to "ANY".
+-- Returns action, role, note, value:
+--   "show"                      -> open the board
+--   "clear"                     -> stop being available
+--   "notify", nil, nil, value   -> value true/false sets it, nil = report only
+--   "set", role, note           -> post availability (note already capped)
+function LFGBoard:_ParseAvailArgs(args, rest, defaultRole)
+    args = args or {}
+    rest = strtrim(rest or "")
+    local first = args[1] and args[1]:lower()
+    if not first or first == "" then return "show" end
+    if first == "off" or first == "stop" then return "clear" end
+    if first == "notify" then
+        local v = args[2] and args[2]:lower()
+        if v == "on" then return "notify", nil, nil, true end
+        if v == "off" then return "notify", nil, nil, false end
+        return "notify"
+    end
+    -- Only a leading token counts as a role, so "need 2 dps" stays all note.
+    local role, note = ROLE_TOKENS[first], rest
+    if role then note = strtrim(rest:match("^%S+%s*(.*)$") or "") end
+    return "set", self:_SanitizeRole(role or defaultRole), note:sub(1, NOTE_MAX)
+end
+
+function LFGBoard:HandleCommand(args, rest)
+    local prefs = BRutus.db and BRutus.db.lfgPrefs
+    if not prefs then return end
+    local action, role, note, value = self:_ParseAvailArgs(args, rest, self:_DefaultRole())
+    if action == "clear" then
+        self:ClearAvailable()
+        BRutus:Print(L["You are no longer listed as available."])
+    elseif action == "notify" then
+        if value ~= nil then prefs.notify = value end
+        BRutus:Print(prefs.notify and L["LFG notify |cff4CFF4Con|r."] or L["LFG notify |cffFF4444off|r."])
+    elseif action == "set" then
+        local ttl = prefs.lastTtl or DEFAULT_TTL
+        self:SetAvailable(role, note, ttl)
+        BRutus:Print(string.format(L["You are available as %s for %s: %s"],
+            roleDisplay(role), durationDisplay(ttl), (note ~= "" and note) or L["(no note)"]))
+    else
+        self:Show()
+    end
+end
+
+----------------------------------------------------------------------
 -- Self tests
 ----------------------------------------------------------------------
 function LFGBoard:_RegisterTests()
@@ -474,6 +532,36 @@ function LFGBoard:_RegisterTests()
         if LFGBoard:_DefaultRole({ TANK = true, DPS = true }, "ANY") ~= "ANY" then return false, "multiple roles -> ANY" end
         if LFGBoard:_DefaultRole({}, "ANY") ~= "ANY" then return false, "no roles -> ANY" end
         if LFGBoard:_DefaultRole({ TANK = true }, "HEALER") ~= "HEALER" then return false, "lastRole wins over roles" end
+        return true
+    end)
+    S:Register("lfg.avail_parse_show_clear", function()
+        if LFGBoard:_ParseAvailArgs({}, "") ~= "show" then return false, "bare -> show" end
+        if LFGBoard:_ParseAvailArgs(nil, nil) ~= "show" then return false, "nil args -> show" end
+        if LFGBoard:_ParseAvailArgs({ "off" }, "off") ~= "clear" then return false, "off -> clear" end
+        return true
+    end)
+    S:Register("lfg.avail_parse_notify", function()
+        local action, _, _, value = LFGBoard:_ParseAvailArgs({ "notify" }, "notify")
+        if action ~= "notify" or value ~= nil then return false, "bare notify reports only" end
+        action, _, _, value = LFGBoard:_ParseAvailArgs({ "notify", "on" }, "notify on")
+        if action ~= "notify" or value ~= true then return false, "notify on -> true" end
+        action, _, _, value = LFGBoard:_ParseAvailArgs({ "notify", "off" }, "notify off")
+        if action ~= "notify" or value ~= false then return false, "notify off -> false" end
+        return true
+    end)
+    S:Register("lfg.avail_parse_role_token", function()
+        local action, role, note = LFGBoard:_ParseAvailArgs({ "tank", "heroic", "SP" }, "tank heroic SP", "DPS")
+        if action ~= "set" or role ~= "TANK" or note ~= "heroic SP" then return false, "leading role consumed" end
+        action, role, note = LFGBoard:_ParseAvailArgs({ "need", "2", "dps" }, "need 2 dps", "HEALER")
+        if action ~= "set" or role ~= "HEALER" or note ~= "need 2 dps" then return false, "trailing dps is note" end
+        action, role, note = LFGBoard:_ParseAvailArgs({ "tankk", "lol" }, "tankk lol", "ANY")
+        if action ~= "set" or role ~= "ANY" or note ~= "tankk lol" then return false, "tankk is not a role" end
+        return true
+    end)
+    S:Register("lfg.avail_parse_note_cap", function()
+        local long = string.rep("x", NOTE_MAX + 30)
+        local action, _, note = LFGBoard:_ParseAvailArgs({ long }, long, "ANY")
+        if action ~= "set" or #note ~= NOTE_MAX then return false, "note capped at NOTE_MAX" end
         return true
     end)
 end

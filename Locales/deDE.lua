@@ -1011,3 +1011,11 @@ L["LOOKING FOR"] = "SUCHT"
 L["(you)"] = "(du)"
 L["%dm"] = "%dm"
 L["Nobody is available right now. Be the first!"] = "Gerade ist niemand verfügbar. Sei der Erste!"
+
+-- Modules/LFGBoard.lua (/gos avail chat command + notify)
+L["%s is available: %s"] = "%s ist verfügbar: %s"
+L["(no note)"] = "(keine Notiz)"
+L["You are no longer listed as available."] = "Du wirst nicht mehr als verfügbar gelistet."
+L["You are available as %s for %s: %s"] = "Du bist als %s für %s verfügbar: %s"
+L["LFG notify |cff4CFF4Con|r."] = "Gruppensuche-Hinweis |cff4CFF4Can|r."
+L["LFG notify |cffFF4444off|r."] = "Gruppensuche-Hinweis |cffFF4444aus|r."

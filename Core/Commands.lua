@@ -421,6 +421,18 @@ local function handleCommand(msg)
             local a = {}; for w in rest:gmatch("%S+") do a[#a+1] = w end
             BRutus.NoteCommand:HandleCommand(a)
         end
+    elseif msg == "avail" or msg:match("^avail%s") then
+        -- /gos avail [off | notify [on|off] | [tank|healer|dps|any] <text>]
+        -- Anchored on "^avail%s" so it can never swallow a sibling verb.
+        -- (/gos lfg is already the recruitment beacon inbox, hence "avail".)
+        if BRutus.LFGBoard then
+            -- gsub returns (string, count); the extra parens drop the count so it
+            -- cannot reach strtrim's optional "characters to trim" argument. The
+            -- note here is free text, so "avail 10 man" must not lose its "1".
+            local rest = strtrim((msg:gsub("^avail%s*", "")))
+            local a = {}; for w in rest:gmatch("%S+") do a[#a+1] = w end
+            BRutus.LFGBoard:HandleCommand(a, rest)
+        end
     else
         BRutus:ToggleRoster()
     end
