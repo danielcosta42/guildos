@@ -54,12 +54,12 @@ local function handleCommand(msg)
         if BRutus.ShowCalendar then BRutus:ShowCalendar() end
     elseif msg == "search" or msg:match("^find") then
         if BRutus.Search then
-            local q = strtrim(msg:gsub("^find%s*", ""))
+            local q = strtrim((msg:gsub("^find%s*", "")))
             BRutus.Search:Show(q ~= "search" and q or "")
         end
     elseif msg:match("^craft") then
         -- /guildos craft <item link or id> — who can craft this, guild + realm.
-        local arg = strtrim(msg:gsub("^craft%s*", ""))
+        local arg = strtrim((msg:gsub("^craft%s*", "")))
         local itemId = tonumber(arg:match("item:(%d+)")) or tonumber(arg:match("^(%d+)$"))
         if not itemId then
             -- No item given: open the Craft Finder popup instead.
@@ -213,7 +213,7 @@ local function handleCommand(msg)
         end
     elseif msg:match("^export") then
         -- /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]
-        local rest = strtrim(msg:gsub("^export%s*", ""))
+        local rest = strtrim((msg:gsub("^export%s*", "")))
         local dataset, fmt = rest:match("^(%S*)%s*(%S*)$")
         dataset = (dataset and dataset ~= "") and dataset or "roster"
         fmt = (fmt and fmt ~= "") and fmt or "csv"
@@ -231,7 +231,7 @@ local function handleCommand(msg)
             BRutus:Print(L["|cffFF4444Wishlist is currently available to officers only.|r"])
             return
         end
-        local rest = strtrim(msg:gsub("^wish%s*", ""))
+        local rest = strtrim((msg:gsub("^wish%s*", "")))
         if rest == "" or rest == "list" then
             -- Show wishlist frame
             BRutus:ShowWishlistFrame()
@@ -340,7 +340,7 @@ local function handleCommand(msg)
         end
     elseif msg:match("^signup") then
         -- /gos signup <CoreName> [note]
-        local rest     = strtrim(msg:gsub("^signup%s*", ""))
+        local rest     = strtrim((msg:gsub("^signup%s*", "")))
         local coreName = rest:match("^(%S+)")
         local note     = rest:match("^%S+%s+(.+)$") or ""
         if not coreName or coreName == "" then
@@ -355,7 +355,7 @@ local function handleCommand(msg)
         end
     elseif msg:match("^unsignup") then
         -- /gos unsignup <CoreName>  — withdraw your own application
-        local coreName = strtrim(msg:gsub("^unsignup%s*", ""))
+        local coreName = strtrim((msg:gsub("^unsignup%s*", "")))
         if coreName == "" then
             BRutus:Print(L["Usage: /gos unsignup <CoreName>"])
         elseif BRutus.CoreManager then
@@ -365,7 +365,7 @@ local function handleCommand(msg)
         end
     elseif msg:match("^tempban%s") then
         -- /gos tempban <name> <days> [reason]  — officer-gated inside BanList:Add.
-        local rest = strtrim(msg:gsub("^tempban%s+", ""))
+        local rest = strtrim((msg:gsub("^tempban%s+", "")))
         local name, days, reason = rest:match("^(%S+)%s+(%d+)%s*(.*)$")
         local numDays = days and tonumber(days)
         if name and numDays and numDays > 0 then
@@ -377,7 +377,7 @@ local function handleCommand(msg)
         end
     elseif msg:match("^ban%s") then
         -- /gos ban <name> [reason]  — officer-gated inside BanList:Add.
-        local rest = strtrim(msg:gsub("^ban%s+", ""))
+        local rest = strtrim((msg:gsub("^ban%s+", "")))
         local name, reason = rest:match("^(%S+)%s*(.*)$")
         if name then
             if BRutus.BanList and BRutus.BanList:Add(name, reason) then
@@ -388,7 +388,7 @@ local function handleCommand(msg)
         end
     elseif msg:match("^unban%s") then
         -- /gos unban <name>  — officer-gated inside BanList:Remove.
-        local name = strtrim(msg:gsub("^unban%s+", ""))
+        local name = strtrim((msg:gsub("^unban%s+", "")))
         if name ~= "" and BRutus.BanList and BRutus.BanList:Remove(name) then
             BRutus:Print(L["Unbanned "] .. name)
         end
@@ -403,21 +403,21 @@ local function handleCommand(msg)
         if BRutus.RosterFrame.SetActiveTab then BRutus.RosterFrame:SetActiveTab("management") end
     elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then
         if BRutus.Recruitment then
-            local rest = strtrim(msg:gsub("^ai%s*", ""):gsub("^autoinvite%s*", ""))
+            local rest = strtrim((msg:gsub("^ai%s*", ""):gsub("^autoinvite%s*", "")))
             local a = {}
             for w in rest:gmatch("%S+") do a[#a + 1] = w end
             BRutus.Recruitment:HandleAutoInviteCommand(a)
         end
     elseif msg == "mentions" or msg:match("^mentions%s") then
         if BRutus.Mentions then
-            local rest = strtrim(msg:gsub("^mentions%s*", ""))
+            local rest = strtrim((msg:gsub("^mentions%s*", "")))
             local a = {}
             for w in rest:gmatch("%S+") do a[#a + 1] = w end
             BRutus.Mentions:HandleCommand(a)
         end
     elseif msg == "notecmd" or msg:match("^notecmd%s") then
         if BRutus.NoteCommand then
-            local rest = strtrim(msg:gsub("^notecmd%s*", ""))
+            local rest = strtrim((msg:gsub("^notecmd%s*", "")))
             local a = {}; for w in rest:gmatch("%S+") do a[#a+1] = w end
             BRutus.NoteCommand:HandleCommand(a)
         end
