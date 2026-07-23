@@ -64,6 +64,15 @@ function LFGBoard:Prune(now, store)
     return removed
 end
 
+-- Whitelist an incoming role against the known set. Anything that is not a
+-- string, or not one of LFGBoard.ROLES (a forged length, a color/texture
+-- escape sequence, a number/boolean/table that survived LibSerialize), falls
+-- back to "ANY". Shared by HandleEntry and the self test so the rule cannot
+-- drift between production and the test that pins it.
+function LFGBoard:_SanitizeRole(role)
+    return (type(role) == "string" and tContains(self.ROLES, role) and role) or "ANY"
+end
+
 ----------------------------------------------------------------------
 -- Self declare (publishes only your OWN entry)
 ----------------------------------------------------------------------
@@ -112,7 +121,7 @@ function LFGBoard:HandleEntry(sender, data)
     else
         local wasActive = self:_IsActive(BRutus.db.lfgBoard[key], GetServerTime())
         BRutus.db.lfgBoard[key] = {
-            role = p.role or "ANY",
+            role = self:_SanitizeRole(p.role),
             note = tostring(p.note or ""):sub(1, NOTE_MAX),
             ts = GetServerTime(),
             ttl = tonumber(p.ttl) or DEFAULT_TTL,
@@ -161,6 +170,13 @@ function LFGBoard:_RegisterTests()
         local store = { ["X-R"] = { ts = 1, ttl = 5 }, ["Y-R"] = { ts = 100, ttl = 600 } }
         local n = LFGBoard:Prune(300, store)
         if n ~= 1 or store["X-R"] ~= nil or store["Y-R"] == nil then return false, "prune" end
+        return true
+    end)
+    S:Register("lfg.role_whitelist", function()
+        if LFGBoard:_SanitizeRole("TANK") ~= "TANK" then return false, "valid role kept" end
+        if LFGBoard:_SanitizeRole("|cffff0000EVIL|r") ~= "ANY" then return false, "escape string rejected" end
+        if LFGBoard:_SanitizeRole(42) ~= "ANY" then return false, "non string rejected" end
+        if LFGBoard:_SanitizeRole(nil) ~= "ANY" then return false, "nil defaults" end
         return true
     end)
 end
