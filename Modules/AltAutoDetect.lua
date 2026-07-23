@@ -119,17 +119,44 @@ end
 -- Officer applies a member's self-claim through the authoritative LinkAlt/
 -- UnlinkAlt path. Link and unlink are validated and handled independently so
 -- an unlink-only claim (no main/alts) isn't rejected by the link guard.
-function AltAutoDetect:HandleSelfClaim(_sender, data)
+-- Security: a claim is only ever trusted for the KEYS IT NAMES about the
+-- SENDER themselves — the sender's own player key is derived from the comm
+-- envelope (never taken from the claim body), so a member cannot forge a
+-- claim that links/unlinks someone else's characters.
+function AltAutoDetect:HandleSelfClaim(sender, data)
     if not BRutus:IsOfficer() then return end       -- only officers apply/propagate
     local ok, claim = LibSerialize:Deserialize(data)
     if not ok or type(claim) ~= "table" then return end
+
+    local sShort = sender and (sender:match("^([^-]+)") or sender)
+    if not sShort then return end
+    local sRealm = (sender:match("-(.+)$")) or GetRealmName()
+    local senderKey = BRutus:GetPlayerKey(sShort, sRealm)
+
     if claim.main and type(claim.alts) == "table" then
-        for _, k in ipairs(claim.alts) do
-            if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+        -- Only apply if the sender is part of the group they're claiming
+        -- (either the main or one of the alts) — never someone else's.
+        local involvesSender = (claim.main == senderKey)
+        if not involvesSender then
+            for _, k in ipairs(claim.alts) do
+                if k == senderKey then involvesSender = true; break end
+            end
+        end
+        if involvesSender then
+            for _, k in ipairs(claim.alts) do
+                if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+            end
         end
     end
     if type(claim.unlink) == "table" then
-        for _, k in ipairs(claim.unlink) do BRutus:UnlinkAlt(k) end
+        -- Only unlink a key the sender owns: themselves, or an alt whose
+        -- main is the sender.
+        for _, k in ipairs(claim.unlink) do
+            local links = BRutus.db.altLinks or {}
+            if k == senderKey or links[k] == senderKey then
+                BRutus:UnlinkAlt(k)
+            end
+        end
     end
 end
 
