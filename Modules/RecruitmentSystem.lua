@@ -44,6 +44,8 @@ Recruitment.lastSend     = 0
 -- or aggressive config cannot spam them into a Blizzard silence.
 Recruitment.SEND_MIN_GAP     = 30   -- min seconds between two sends from this client
 Recruitment.AUTO_SESSION_CAP = 40   -- max AUTO popups per session before self-pausing
+Recruitment.MSG_MAX          = 255  -- SendChatMessage byte cap; the consent popup previews the SAME
+                                    -- length that is sent, so what the member sees is what posts
 
 ----------------------------------------------------------------------
 -- Auto-invite: pure helpers (deterministic; unit-tested via /gos selftest)
@@ -575,13 +577,19 @@ end
 -- (sanitize + 30s send gap + per-session popup cap + 60s interval floor + the
 -- consent popup), so a forged ad cannot silently spam or inject chat escapes
 -- under a member's name. updatedBy is stored as the CLAIMED author, for display.
+-- One more axis the content policy does NOT cover: newest-wins trusts the
+-- payload updatedAt, so a forged FUTURE stamp would pin the ad and freeze out a
+-- real officer's later edit (their time() stamp being smaller). We clamp
+-- incomingAt to now + a small slack so a far-future value cannot outlast a
+-- genuine update.
+local FUTURE_SLACK = 300   -- accept at most 5 min of clock skew ahead of us
 function Recruitment:ApplyIncoming(info, sender, channel)
     if type(info) ~= "table" then return end
     local claimedAuthor = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
     local claimedAuthorIsOfficer =
         (BRutus.IsOfficerByName and BRutus:IsOfficerByName(claimedAuthor)) or false
     local senderIsGuildmate = self:_IsGuildmate(sender)
-    local incomingAt = tonumber(info.updatedAt) or 0
+    local incomingAt = math.min(tonumber(info.updatedAt) or 0, time() + FUTURE_SLACK)
     local cur = BRutus.db.guildRecruitment
     local curAt = cur and cur.updatedAt or nil
     if not self:_AcceptConfig(channel, claimedAuthorIsOfficer, senderIsGuildmate, incomingAt, curAt) then
@@ -815,11 +823,11 @@ function Recruitment:ShowSendPopup()
     local chLabel = (#names > 0) and table.concat(names, ", ") or "-"
     f.channelLine:SetText(string.format(L["Post to channel: %s"], chLabel))
 
-    -- Message preview: sanitized, wrapped, truncated to a couple of lines.
-    local full    = BRutus:SanitizeUserText(raw, 255)
-    local preview = BRutus:SanitizeUserText(raw, 140)
-    if #preview < #full then preview = preview .. "..." end
-    f.msgText:SetText("\"" .. preview .. "\"")
+    -- Message preview == exactly what DoSendRecruitmentMessage will post (same
+    -- source, same sanitize, same MSG_MAX cap), so the member consents to the
+    -- real content with no hidden tail. The frame auto-sizes to the wrapped text.
+    local full = BRutus:SanitizeUserText(raw, self.MSG_MAX)
+    f.msgText:SetText("\"" .. full .. "\"")
 
     -- Layout: size the frame to the wrapped message, then the button row (or the
     -- join-channel hint if nothing is joined).
@@ -869,8 +877,9 @@ function Recruitment:DoSendRecruitmentMessage()
     end
     -- Sanitize before it ever reaches a public channel under the player's name:
     -- strip chat escapes (textures / unterminated colour / fake links) and cap
-    -- at the 255-byte SendChatMessage limit. Officer and member paths alike.
-    msg = BRutus:SanitizeUserText(msg, 255)
+    -- at the SendChatMessage limit. Officer and member paths alike. Same cap the
+    -- consent popup previewed, so the member posts exactly what they saw.
+    msg = BRutus:SanitizeUserText(msg, self.MSG_MAX)
     if msg == "" then
         BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
         return
