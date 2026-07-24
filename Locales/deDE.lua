@@ -956,6 +956,19 @@ L["Post to channel: %s"] = "In Kanal posten: %s"
 L["Join a channel to post the recruitment message."] = "Tritt einem Kanal bei, um die Rekrutierungsnachricht zu posten."
 L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."] = "Auto-Rekrutierung für diese Sitzung pausiert (Limit erreicht). Reaktiviere sie im Rekrutierungs-Tab."
 
+-- UI/ManagementPanel.lua (Engagement sub-tab)
+L["Engagement"] = "Engagement"
+L["POSTS"] = "POSTS"
+L["INVITES"] = "EINL."
+L["JOINED"] = "BEIGETR."
+L["LAST"] = "LETZTE"
+L["Active"] = "aktiv"
+L["Paused"] = "pausiert"
+L["Off"] = "aus"
+L["No recruitment activity yet."] = "Noch keine Rekrutierungsaktivit\195\164t."
+L["Guild: Posts %d  Invites %d  Joined %d  Conv %d%%"] = "Gilde: Posts %d  Einl. %d  Beigetr. %d  Konv %d%%"
+L["vs last week: invites %s, joins %s"] = "vs. letzte Woche: Einl. %s, Beitritte %s"
+
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Rekrutierungs-Scanner"
 L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Durchsucht /who nach Stufenbereich für gildenlose Kandidaten und sendet dann Massenflüsternachrichten mit deiner Vorlage. Außerdem: /gos scout"

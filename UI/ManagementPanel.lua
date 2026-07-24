@@ -18,6 +18,7 @@ local SUBTABS = {
     { key = "motd",     label = L["MOTD / Info"] },
     { key = "log",      label = L["Audit Log"] },
     { key = "ban",      label = L["Ban List"] },
+    { key = "engage",   label = L["Engagement"] },
 }
 
 local ROW_H = 26
@@ -649,6 +650,131 @@ local function BuildBanSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- ENGAGEMENT sub-panel — recruitment activity per member (officer analytics).
+-- Thin renderer over RecruitEngagement:GetAggregate; no logic of consequence
+-- lives here (Rule 10). "Joined" is confirmed direct-invite credit only, so a
+-- member who merely posts in a channel shows effort (Posts) without joins.
+----------------------------------------------------------------------
+local SPARK = { "\226\150\129", "\226\150\130", "\226\150\131", "\226\150\132",
+                "\226\150\133", "\226\150\134", "\226\150\135", "\226\150\136" }  -- U+2581..U+2588
+
+-- Signed count for a trend delta ("+12" / "-3" / "0").
+local function signedDelta(n)
+    return (n > 0 and "+" .. n) or tostring(n)
+end
+
+-- Sparkline of a 7-day array (index 1 = today), drawn oldest to newest so the
+-- axis reads left = 6 days ago, right = today.
+local function sparkline(vals)
+    local maxv = 0
+    for i = 1, 7 do local v = vals[i] or 0; if v > maxv then maxv = v end end
+    local out = {}
+    for i = 7, 1, -1 do
+        local v = vals[i] or 0
+        local lvl = (maxv > 0) and (math.floor((v / maxv) * 7) + 1) or 1
+        if lvl < 1 then lvl = 1 elseif lvl > 8 then lvl = 8 end
+        out[#out + 1] = SPARK[lvl]
+    end
+    return table.concat(out)
+end
+
+-- Present a member's status from the two fields the data carries.
+local function statusOf(r, now)
+    if not r.part then return L["Off"], C.textDim end
+    if r.last == 0 or (now - r.last) > 48 * 3600 then return L["Paused"], C.silver end
+    return L["Active"], C.green
+end
+
+local function BuildEngageSub(panel)
+    local totalsFS = UI:CreateText(panel, "", 11, C.gold.r, C.gold.g, C.gold.b)
+    totalsFS:SetPoint("TOPLEFT", 2, -4)
+
+    local trendFS = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    trendFS:SetPoint("TOPLEFT", 2, -22)
+
+    -- Fixed column header (aligns with the row x-offsets below).
+    local COLS = { name = 8, status = 150, posts = 280, invites = 350, joined = 430, last = 510 }
+    local function headerAt(text, x)
+        local fs = UI:CreateText(panel, text, 9, C.silver.r, C.silver.g, C.silver.b)
+        fs:SetPoint("TOPLEFT", x, -42)
+        return fs
+    end
+    headerAt(L["MEMBER"], COLS.name)
+    headerAt(L["STATUS"], COLS.status)
+    headerAt(L["POSTS"], COLS.posts)
+    headerAt(L["INVITES"], COLS.invites)
+    headerAt(L["JOINED"], COLS.joined)
+    headerAt(L["LAST"], COLS.last)
+
+    local listHolder = CreateFrame("Frame", nil, panel)
+    listHolder:SetPoint("TOPLEFT", 0, -58)
+    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local _, content = MakeScrollList(listHolder, "GuildOSMgmtEngageScroll")
+
+    local refresh
+    refresh = function()
+        content:SetWidth(listHolder:GetWidth() - 12)
+        ClearContent(content)
+
+        local agg = (BRutus.RecruitEngagement and BRutus.RecruitEngagement:GetAggregate())
+            or { rows = {}, totals = { posts7 = 0, invites7 = 0, joins7 = 0, conv = 0,
+                                       postsPrev = 0, invitesPrev = 0, joinsPrev = 0 } }
+        local t = agg.totals
+        local now = time()
+
+        totalsFS:SetText(format(L["Guild: Posts %d  Invites %d  Joined %d  Conv %d%%"],
+            t.posts7, t.invites7, t.joins7, math.floor((t.conv or 0) * 100 + 0.5)))
+
+        -- Guild daily invites (for the sparkline) summed across members.
+        local gd = { 0, 0, 0, 0, 0, 0, 0 }
+        for _, r in ipairs(agg.rows) do
+            local di = r.dailyInvites or {}
+            for i = 1, 7 do gd[i] = gd[i] + (di[i] or 0) end
+        end
+        trendFS:SetText(format(L["vs last week: invites %s, joins %s"],
+            signedDelta(t.invites7 - t.invitesPrev), signedDelta(t.joins7 - t.joinsPrev))
+            .. "   " .. sparkline(gd))
+
+        local yOff = 0
+        for idx, r in ipairs(agg.rows) do
+            local row = MakeRow(content, yOff, idx)
+            local nameColor = r.stale and C.textDim or C.text
+
+            local nameFS = UI:CreateText(row, r.name, 11, nameColor.r, nameColor.g, nameColor.b)
+            nameFS:SetPoint("LEFT", COLS.name, 0)
+
+            local sText, sColor = statusOf(r, now)
+            local statusFS = UI:CreateText(row, sText, 10, sColor.r, sColor.g, sColor.b)
+            statusFS:SetPoint("LEFT", COLS.status, 0)
+
+            local function numFS(val, x, color)
+                local fs = UI:CreateText(row, tostring(val), 10, color.r, color.g, color.b)
+                fs:SetPoint("LEFT", x, 0)
+            end
+            numFS(r.posts7, COLS.posts, C.text)
+            numFS(r.invites7, COLS.invites, C.text)
+            numFS(r.joins7, COLS.joined, r.joins7 > 0 and C.green or C.textDim)
+
+            local lastFS = UI:CreateText(row, BRutus:TimeAgo(r.last), 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            lastFS:SetPoint("LEFT", COLS.last, 0)
+
+            yOff = yOff + ROW_H + 2
+        end
+
+        if #agg.rows == 0 then
+            local empty = UI:CreateText(content, L["No recruitment activity yet."],
+                11, C.silver.r, C.silver.g, C.silver.b)
+            empty:SetPoint("TOPLEFT", 4, -4)
+        end
+        content:SetHeight(math.max(1, yOff))
+    end
+
+    -- Repaint when a fresh self-report arrives (RecruitEngagement:HandleStats).
+    BRutus.recruitEngagementRefresh = refresh
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Panel assembly
 ----------------------------------------------------------------------
 function BRutus:CreateManagementPanel(parent, _mainFrame)
@@ -706,6 +832,7 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
         motd     = BuildMotdSub,
         log      = BuildLogSub,
         ban      = BuildBanSub,
+        engage   = BuildEngageSub,
     }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()

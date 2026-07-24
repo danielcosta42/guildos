@@ -113,6 +113,21 @@ L["Post to channel: %s"] = "Post to channel: %s"
 L["Join a channel to post the recruitment message."] = "Join a channel to post the recruitment message."
 L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."] = "Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."
 
+-- UI/ManagementPanel.lua (Engagement sub-tab)
+L["Engagement"] = "Engagement"
+L["MEMBER"] = "MEMBER"
+L["STATUS"] = "STATUS"
+L["POSTS"] = "POSTS"
+L["INVITES"] = "INVITES"
+L["JOINED"] = "JOINED"
+L["LAST"] = "LAST"
+L["Active"] = "Active"
+L["Paused"] = "Paused"
+L["Off"] = "Off"
+L["No recruitment activity yet."] = "No recruitment activity yet."
+L["Guild: Posts %d  Invites %d  Joined %d  Conv %d%%"] = "Guild: Posts %d  Invites %d  Joined %d  Conv %d%%"
+L["vs last week: invites %s, joins %s"] = "vs last week: invites %s, joins %s"
+
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Recruit Scanner"
 L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"
