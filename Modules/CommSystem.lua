@@ -154,7 +154,12 @@ end
 ----------------------------------------------------------------------
 -- Receive a message
 ----------------------------------------------------------------------
-function CommSystem:OnMessageReceived(msg, _, sender)
+-- channel is the addon-message distribution ("GUILD", "WHISPER", "PARTY", ...)
+-- from CHAT_MSG_ADDON. Threaded to the type dispatch so handlers can bind trust
+-- to how a message arrived, not just to who claims to have authored the body.
+-- For a reassembled multi-chunk message this is the channel of the arriving
+-- chunk; every chunk of one message travels over the same distribution.
+function CommSystem:OnMessageReceived(msg, channel, sender)
     -- Don't process our own messages
     local myName = UnitName("player")
     if sender == myName or sender == myName .. "-" .. GetRealmName() then
@@ -298,11 +303,13 @@ function CommSystem:OnMessageReceived(msg, _, sender)
             BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true
         end
     elseif msgType == CommSystem.MSG_TYPES.RECRUIT_INFO then
-        -- Direct officer broadcast OR a member relay. Trust/version checks live
-        -- in Recruitment:ApplyIncoming (author must be a verified officer).
+        -- Direct officer broadcast OR a member relay. Trust is bound to the
+        -- envelope (sender + channel) in Recruitment:ApplyIncoming: it must
+        -- arrive over GUILD, name a current officer as author, and be sent by a
+        -- current guildmate. Passing channel is what kills the whisper-injection.
         local ok, info = LibSerialize:Deserialize(data)
         if ok and BRutus.Recruitment then
-            BRutus.Recruitment:ApplyIncoming(info, sender)
+            BRutus.Recruitment:ApplyIncoming(info, sender, channel)
         end
     end
 end

@@ -106,6 +106,13 @@ L["Scanner"] = "Scanner"
 -- Modules/RecruitmentSystem.lua (opt-out member participation)
 L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."] = "Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."
 
+-- Modules/RecruitmentSystem.lua (consent popup + content caps)
+L["Recruitment"] = "Recruitment"
+L["Post"] = "Post"
+L["Post to channel: %s"] = "Post to channel: %s"
+L["Join a channel to post the recruitment message."] = "Join a channel to post the recruitment message."
+L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."] = "Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."
+
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Recruit Scanner"
 L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"

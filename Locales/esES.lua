@@ -951,6 +951,12 @@ L["Scanner"] = "Escáner"
 -- Modules/RecruitmentSystem.lua (opt-out member participation)
 L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."] = "Tu hermandad esta reclutando y estas ayudando a difundirlo. Desactivalo con el boton Auto-Send en la pestana Reclutamiento."
 
+-- Modules/RecruitmentSystem.lua (consent popup + content caps)
+L["Post"] = "Publicar"
+L["Post to channel: %s"] = "Publicar en el canal: %s"
+L["Join a channel to post the recruitment message."] = "Únete a un canal para publicar el mensaje de reclutamiento."
+L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."] = "Reclutamiento automático pausado en esta sesión (límite alcanzado). Reactívalo en la pestaña de Reclutamiento."
+
 -- Modules/RecruitScanner.lua (/gos scout)
 L["Recruit Scanner"] = "Escáner de Reclutamiento"
 L["Scans /who by level range for unguilded prospects, then mass-whispers your template. Also: /gos scout"] = "Escanea el /who por rango de nivel en busca de candidatos sin hermandad y envía susurros masivos con tu plantilla. También: /gos scout"

@@ -39,6 +39,12 @@ Recruitment.ticker       = nil   -- officer auto-send ticker
 Recruitment.memberTicker = nil   -- member opt-in auto-send ticker
 Recruitment.lastSend     = 0
 
+-- Content policy for the auto-post (T2 hardening). These cap the rate and the
+-- volume of what a member can be made to post under their own name, so a forged
+-- or aggressive config cannot spam them into a Blizzard silence.
+Recruitment.SEND_MIN_GAP     = 30   -- min seconds between two sends from this client
+Recruitment.AUTO_SESSION_CAP = 40   -- max AUTO popups per session before self-pausing
+
 ----------------------------------------------------------------------
 -- Auto-invite: pure helpers (deterministic; unit-tested via /gos selftest)
 ----------------------------------------------------------------------
@@ -68,6 +74,53 @@ function Recruitment:_PassesFilters(info, cfg)
         if not cfg.classes[info.class] then return false end
     end
     return true
+end
+
+----------------------------------------------------------------------
+-- Recruitment sync: pure trust + rate decisions (deterministic; unit-tested)
+----------------------------------------------------------------------
+
+-- Pure trust decision for an incoming recruitment config. Identity comes from
+-- the comm ENVELOPE, never the payload body: the config is applied only when it
+-- arrives over GUILD, the CLAIMED author (info.updatedBy) is a current officer,
+-- and the envelope SENDER is a current guildmate (either the officer's own
+-- broadcast, or a member relaying it). Newest content edit wins, so an older
+-- stamp is rejected and a relay can never roll the ad back. Kept pure so a self
+-- test pins the rule with no comm/db in play.
+function Recruitment:_AcceptConfig(channel, claimedAuthorIsOfficer, senderIsGuildmate, incomingAt, curAt)
+    if channel ~= "GUILD" then return false end
+    if not claimedAuthorIsOfficer then return false end
+    if not senderIsGuildmate then return false end
+    if curAt and incomingAt < curAt then return false end
+    return true
+end
+
+-- Min-gap decision for an outgoing send. First send (lastAt nil) is allowed.
+function Recruitment:_CanSendNow(lastAt, now, gap)
+    if not lastAt then return true end
+    return (now - lastAt) >= (gap or 0)
+end
+
+-- Should the member AUTO ticker keep firing given how many popups it has shown
+-- this session? Pure so a self test pins the cap without a live ticker.
+function Recruitment:_AutoShouldContinue(popupCount, cap)
+    return (popupCount or 0) < (cap or 0)
+end
+
+-- Is a name resolvable on the current guild roster? The envelope sender must be
+-- a real guildmate for a relayed ad to be trusted. Realm suffix is tolerated.
+function Recruitment:_IsGuildmate(fullName)
+    if not fullName or not IsInGuild() then return false end
+    local short = fullName:match("^([^-]+)") or fullName
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            local memberShort = name:match("^([^-]+)") or name
+            if memberShort == short then return true end
+        end
+    end
+    return false
 end
 
 function Recruitment:_RegisterAutoInviteTests()
@@ -101,6 +154,45 @@ function Recruitment:_RegisterAutoInviteTests()
         if not Recruitment:_ParticipatingFrom(nil) then return false, "nil default must participate" end
         if not Recruitment:_ParticipatingFrom(true) then return false, "true participates" end
         if Recruitment:_ParticipatingFrom(false) then return false, "false opts out" end
+        return true
+    end)
+    S:Register("recruit.accept_config", function()
+        local T = 100
+        -- Happy path: GUILD + officer author + guildmate sender + newer stamp.
+        if not Recruitment:_AcceptConfig("GUILD", true, true, T + 1, T) then return false, "valid should accept" end
+        -- First receipt (no current stamp yet) accepts.
+        if not Recruitment:_AcceptConfig("GUILD", true, true, T, nil) then return false, "first receipt" end
+        -- External whisper injection: non-GUILD channel rejects.
+        if Recruitment:_AcceptConfig("WHISPER", true, true, T + 1, T) then return false, "whisper must reject" end
+        -- Payload attributed to a non-officer rejects.
+        if Recruitment:_AcceptConfig("GUILD", false, true, T + 1, T) then return false, "non-officer author" end
+        -- Envelope sender not on the roster rejects.
+        if Recruitment:_AcceptConfig("GUILD", true, false, T + 1, T) then return false, "non-guildmate sender" end
+        -- Stale stamp rejects (a relay cannot roll the ad back).
+        if Recruitment:_AcceptConfig("GUILD", true, true, T - 1, T) then return false, "stale must reject" end
+        return true
+    end)
+    S:Register("recruit.disable_convergence", function()
+        -- A later disable (T_disable > T_enable) is accepted over a stale enable,
+        -- so a member who was offline at disable time converges when they pull.
+        local tEnable, tDisable = 100, 200
+        if not Recruitment:_AcceptConfig("GUILD", true, true, tDisable, tEnable) then
+            return false, "disable must win over stale enable"
+        end
+        return true
+    end)
+    S:Register("recruit.send_gap", function()
+        if not Recruitment:_CanSendNow(nil, 0, 30) then return false, "first send allowed" end
+        if Recruitment:_CanSendNow(100, 129, 30) then return false, "29s < 30s must block" end
+        if not Recruitment:_CanSendNow(100, 130, 30) then return false, "exactly 30s allowed" end
+        if not Recruitment:_CanSendNow(100, 200, 30) then return false, "well past gap allowed" end
+        return true
+    end)
+    S:Register("recruit.auto_cap", function()
+        if not Recruitment:_AutoShouldContinue(0, 40) then return false, "0 of 40 continues" end
+        if not Recruitment:_AutoShouldContinue(39, 40) then return false, "39 of 40 continues" end
+        if Recruitment:_AutoShouldContinue(40, 40) then return false, "40 of 40 stops" end
+        if Recruitment:_AutoShouldContinue(41, 40) then return false, "over cap stops" end
         return true
     end)
 end
@@ -344,11 +436,18 @@ end
 -- Broadcast recruitment status (class needs, discord, message) to all
 -- guild members who have Guild OS installed.
 ----------------------------------------------------------------------
-function Recruitment:BroadcastStatus(quiet)
+-- reassert=true re-pushes the CURRENT config with its EXISTING updatedAt (an
+-- idempotent re-broadcast); reassert false/nil is a genuine edit and stamps
+-- time() as the new "last content edit". Keeping the stamp on a re-push means
+-- newest-wins never mistakes a re-broadcast for a newer edit, so a re-push can
+-- refresh a stale member without ever clobbering a genuinely newer change.
+function Recruitment:BroadcastStatus(quiet, reassert)
     if not BRutus.CommSystem or not IsInGuild() then return end
     if not (BRutus.IsOfficer and BRutus:IsOfficer()) then return end
     local r = BRutus.db.recruitment
-    r.updatedAt = time()   -- version stamp: newest broadcast wins on receivers
+    if not (reassert and r.updatedAt) then
+        r.updatedAt = time()   -- genuine edit: stamp "last content edit"
+    end
     local payload = LibStub("LibSerialize"):Serialize({
         enabled    = r.enabled,
         discord    = r.discord or "",
@@ -382,14 +481,28 @@ function Recruitment:StartMemberRecruit(quiet)
     end
     if self.memberTicker then self.memberTicker:Cancel() end
     local interval = math.max(info.interval or 120, 60)
-    self.memberTicker = C_Timer.NewTicker(interval, function()
-        Recruitment:ShowSendPopup()
-    end)
-    C_Timer.After(2, function() Recruitment:ShowSendPopup() end)
+    self.memberTicker = C_Timer.NewTicker(interval, function() Recruitment:_AutoTick() end)
+    C_Timer.After(2, function() Recruitment:_AutoTick() end)
     if not quiet then
         BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
     end
     return true
+end
+
+-- One tick of the member AUTO popup. Enforces the per-session cap so a member
+-- can never be nagged into a Blizzard silence: after AUTO_SESSION_CAP popups it
+-- self-pauses the ticker and says so once. The manual "Send Now" button calls
+-- ShowSendPopup directly and never routes through here, so it is never capped.
+function Recruitment:_AutoTick()
+    if not self:_AutoShouldContinue(self._autoPopups or 0, self.AUTO_SESSION_CAP) then
+        self._autoCapReached = true
+        if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
+        if self.popupFrame then self.popupFrame:Hide() end
+        BRutus:Print(L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."])
+        return
+    end
+    self._autoPopups = (self._autoPopups or 0) + 1
+    self:ShowSendPopup()
 end
 
 function Recruitment:StopMemberRecruit()
@@ -424,11 +537,17 @@ function Recruitment:RespondToSync()
     if not BRutus.CommSystem or not IsInGuild() then return end
     if BRutus:IsOfficer() then
         local r = BRutus.db.recruitment
-        if r and r.enabled then self:BroadcastStatus(true) end
+        -- Re-assert the current ad REGARDLESS of enabled, so a stale-enabled
+        -- member who pulls converges onto a later disable. reassert=true keeps
+        -- the existing stamp: idempotent, and it can never roll a newer edit back.
+        if r and r.updatedAt then self:BroadcastStatus(true, true) end
         return
     end
     local info = BRutus.db.guildRecruitment
-    if info and info.enabled and info.message and info.message ~= "" then
+    -- Members relay the cached ad REGARDLESS of enabled so a disabled state
+    -- still spreads member-to-member with no officer online. Gate on it being a
+    -- real received ad, and carry its EXISTING updatedBy/updatedAt unchanged.
+    if info and info.updatedAt and info.updatedBy and info.message and info.message ~= "" then
         local payload = LibStub("LibSerialize"):Serialize({
             enabled = info.enabled, discord = info.discord or "", message = info.message or "",
             channels = info.channels or {}, interval = info.interval or 120,
@@ -439,15 +558,35 @@ function Recruitment:RespondToSync()
 end
 
 -- Apply an incoming config (direct officer broadcast OR a member relay).
--- Trusted only if the AUTHOR is a verified guild officer, and only if it is
--- newer than what we hold (newest updatedAt wins) so relays can't roll it back.
-function Recruitment:ApplyIncoming(info, sender)
+--
+-- Identity is bound to the comm ENVELOPE, never the payload body (the bug class
+-- already fixed for ALT_LINK and SELF_ALT). Trust rule, all four required:
+--   1. the message arrived over GUILD (channel arg from the addon event),
+--   2. the CLAIMED author (info.updatedBy) is a current officer (attribution),
+--   3. the envelope SENDER is a current guildmate (the officer, or a relayer),
+--   4. it is not older than what we hold (newest-wins; a relay can't roll back).
+--
+-- Residual risk, accepted on purpose because we keep the member-to-member relay:
+-- a malicious CURRENT guildmate can still forge info.updatedBy to a real
+-- officer's name and push arbitrary content over GUILD. We cannot distinguish a
+-- genuine relay from a forged one without a signature, and dropping the relay
+-- would break the "config stays alive with no officer online" requirement. That
+-- residual is capped by the Task 3 content policy on the receiving side
+-- (sanitize + 30s send gap + per-session popup cap + 60s interval floor + the
+-- consent popup), so a forged ad cannot silently spam or inject chat escapes
+-- under a member's name. updatedBy is stored as the CLAIMED author, for display.
+function Recruitment:ApplyIncoming(info, sender, channel)
     if type(info) ~= "table" then return end
-    local author = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
-    if not (BRutus.IsOfficerByName and BRutus:IsOfficerByName(author)) then return end
+    local claimedAuthor = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
+    local claimedAuthorIsOfficer =
+        (BRutus.IsOfficerByName and BRutus:IsOfficerByName(claimedAuthor)) or false
+    local senderIsGuildmate = self:_IsGuildmate(sender)
     local incomingAt = tonumber(info.updatedAt) or 0
     local cur = BRutus.db.guildRecruitment
-    if cur and cur.updatedAt and incomingAt < cur.updatedAt then return end
+    local curAt = cur and cur.updatedAt or nil
+    if not self:_AcceptConfig(channel, claimedAuthorIsOfficer, senderIsGuildmate, incomingAt, curAt) then
+        return
+    end
     BRutus.db.guildRecruitment = {
         enabled   = info.enabled,
         discord   = info.discord or "",
@@ -455,7 +594,7 @@ function Recruitment:ApplyIncoming(info, sender)
         channels  = info.channels or {},
         interval  = info.interval or 120,
         updatedAt = incomingAt > 0 and incomingAt or time(),
-        updatedBy = author,
+        updatedBy = claimedAuthor,
     }
     if BRutus.recruitmentPanelRefresh then BRutus.recruitmentPanelRefresh() end
     self:SyncMemberParticipation()
@@ -465,6 +604,12 @@ end
 -- false = opted out.
 function Recruitment:SetParticipation(v)
     BRutus.db.recruitParticipate = v
+    if v ~= false then
+        -- A manual re-enable clears any per-session auto-pause and popup count,
+        -- so turning Auto-Send back on from the tab actually resumes popups.
+        self._autoCapReached = false
+        self._autoPopups = 0
+    end
     self:SyncMemberParticipation()
 end
 
@@ -490,6 +635,10 @@ function Recruitment:SyncMemberParticipation()
         if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
         return
     end
+    -- Self-paused for the session after hitting the popup cap: stay stopped
+    -- until the member manually re-enables (SetParticipation clears the flag),
+    -- so a routine re-sync never re-nags a member who was already capped.
+    if self._autoCapReached then return end
     if not self:IsMemberRecruitActive() then
         self:StartMemberRecruit(true)   -- quiet: no per-login "started" spam
         self:_HintOptOutOnce()
@@ -519,24 +668,51 @@ function Recruitment:InitParticipation()
 end
 
 ----------------------------------------------------------------------
--- Create the send popup (one-time)
+-- Which config drives the popup/send: officers post their own configured ad,
+-- members post the guild-broadcast (relayed) copy. Returns the settings table
+-- or nil.
+----------------------------------------------------------------------
+function Recruitment:_ActiveConfig()
+    return BRutus:IsOfficer() and BRutus.db.recruitment or BRutus.db.guildRecruitment
+end
+
+-- Configured channel names, and how many of them the player has actually joined
+-- right now. GetChannelName returns 0 for a channel the player is not in, so
+-- with zero joined there is nothing to post to.
+function Recruitment:_ResolveChannels(settings)
+    local names, joined = {}, 0
+    for _, ch in ipairs(settings and settings.channels or {}) do
+        names[#names + 1] = ch
+        local num = GetChannelName(ch)
+        if num and num > 0 then joined = joined + 1 end
+    end
+    return names, joined
+end
+
+----------------------------------------------------------------------
+-- Create the consent popup (one-time). Shows the actual target channel and the
+-- message text so the member consents to real content, not a blind click.
 ----------------------------------------------------------------------
 function Recruitment:CreatePopupFrame()
     if self.popupFrame then return end
 
-    local C = BRutus.Colors
-    local f = CreateFrame("Button", "BRutusRecruitPopup", UIParent, "BackdropTemplate")
-    f:SetSize(300, 50)
+    local C  = BRutus.Colors
+    local UI = BRutus.UI
+    local PAD, WIDTH = 14, 360
+    local cw = WIDTH - PAD * 2
+
+    local f = CreateFrame("Frame", "BRutusRecruitPopup", UIParent, "BackdropTemplate")
+    f:SetSize(WIDTH, 150)
     f:SetPoint("TOP", UIParent, "TOP", 0, -80)
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    f:SetBackdropColor(0.082, 0.082, 0.105, 0.95)
+    f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")
-    BRutus.UI:StylePopup(f)
+    UI:StylePopup(f)
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
@@ -544,29 +720,21 @@ function Recruitment:CreatePopupFrame()
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     f:Hide()
 
-    -- Glow pulse
-    local glow = f:CreateTexture(nil, "BACKGROUND", nil, -1)
-    glow:SetTexture("Interface\\Buttons\\WHITE8x8")
-    glow:SetPoint("TOPLEFT", -2, 2)
-    glow:SetPoint("BOTTOMRIGHT", 2, -2)
-    glow:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.15)
+    -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment").
+    local title = f:CreateFontString(nil, "OVERLAY")
+    title:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    title:SetPoint("TOPLEFT", PAD, -12)
+    title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    title:SetText("Guild OS  |cff6c6c78" .. L["Recruitment"] .. "|r")
 
-    local icon = f:CreateFontString(nil, "OVERLAY")
-    icon:SetFont("Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
-    icon:SetPoint("LEFT", 10, 0)
-    icon:SetText("|TInterface\\MINIMAP\\TRACKING\\Mailbox:16:16|t")
+    local sep = UI:CreateSeparator(f)
+    sep:SetPoint("TOPLEFT", PAD, -30)
+    sep:SetPoint("TOPRIGHT", -PAD, -30)
 
-    local text = f:CreateFontString(nil, "OVERLAY")
-    text:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-    text:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-    text:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    text:SetText(L["Click to send recruit msg!"])
-    f.label = text
-
+    -- x dismiss (top-right).
     local dismiss = CreateFrame("Button", nil, f)
     dismiss:SetSize(20, 20)
-    dismiss:SetPoint("TOPRIGHT", -4, -4)
-    dismiss:SetNormalFontObject(GameFontNormalSmall)
+    dismiss:SetPoint("TOPRIGHT", -4, -6)
     local dText = dismiss:CreateFontString(nil, "OVERLAY")
     dText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
     dText:SetPoint("CENTER")
@@ -576,49 +744,101 @@ function Recruitment:CreatePopupFrame()
     dismiss:SetScript("OnLeave", function() dText:SetTextColor(0.6, 0.6, 0.6) end)
     dismiss:SetScript("OnClick", function() f:Hide() end)
 
-    -- The main click = hardware event -> sends the message
-    f:SetScript("OnClick", function(self)
-        Recruitment:DoSendRecruitmentMessage()
-        self:Hide()
-    end)
+    -- Target channel line.
+    local channelLine = f:CreateFontString(nil, "OVERLAY")
+    channelLine:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    channelLine:SetPoint("TOPLEFT", PAD, -38)
+    channelLine:SetWidth(cw)
+    channelLine:SetJustifyH("LEFT")
+    channelLine:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    f.channelLine = channelLine
 
-    f:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1.0)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine(L["Guild OS Recruitment"], C.gold.r, C.gold.g, C.gold.b)
-        GameTooltip:AddLine(L["Left-click to post recruitment message."], 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(L["Drag to move. x to dismiss."], 0.5, 0.5, 0.5, true)
-        GameTooltip:Show()
+    -- Message preview (wrapped; sized in ShowSendPopup).
+    local msgText = f:CreateFontString(nil, "OVERLAY")
+    msgText:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 12, "")
+    msgText:SetPoint("TOPLEFT", PAD, -58)
+    msgText:SetWidth(cw)
+    msgText:SetJustifyH("LEFT")
+    msgText:SetTextColor(C.text.r, C.text.g, C.text.b)
+    f.msgText = msgText
+
+    -- "Join a channel" hint, shown instead of a dead Postar when nothing is joined.
+    local hint = f:CreateFontString(nil, "OVERLAY")
+    hint:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 11, "")
+    hint:SetWidth(cw)
+    hint:SetJustifyH("LEFT")
+    hint:SetTextColor(C.red.r, C.red.g, C.red.b)
+    hint:Hide()
+    f.hint = hint
+
+    -- Postar (the send): a hardware OnClick so SendChatMessage to a channel works.
+    local postBtn = UI:CreateButton(f, L["Post"], 120, 26)
+    postBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 14)
+    postBtn:SetBaseColor(C.online.r * 0.30, C.online.g * 0.30, C.online.b * 0.30, 0.9)
+    postBtn:SetScript("OnClick", function()
+        Recruitment:DoSendRecruitmentMessage()
+        f:Hide()
     end)
-    f:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
-        GameTooltip:Hide()
-    end)
+    f.postBtn = postBtn
+
+    -- "Agora nao" / dismiss.
+    local laterBtn = UI:CreateButton(f, L["Not now"], 120, 26)
+    laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 14)
+    laterBtn:SetScript("OnClick", function() f:Hide() end)
+    f.laterBtn = laterBtn
 
     self.popupFrame = f
 end
 
 ----------------------------------------------------------------------
--- Show the popup notification
+-- Show the consent popup, populated from the active config.
 ----------------------------------------------------------------------
 function Recruitment:ShowSendPopup()
     if InCombatLockdown() then return end
 
-    -- Officers use their own config; members use the guild-broadcast config
-    local isOfficer = BRutus:IsOfficer()
-    if isOfficer then
-        if not BRutus.db.recruitment.enabled then return end
+    -- Officers use their own config; members use the guild-broadcast config.
+    local settings = self:_ActiveConfig()
+    if BRutus:IsOfficer() then
+        if not settings or not settings.enabled then return end
     else
-        local info = BRutus.db.guildRecruitment
-        if not info or not info.enabled or not info.message or info.message == "" then return end
+        if not settings or not settings.enabled or not settings.message or settings.message == "" then return end
     end
+    local raw = settings.message
+    if not raw or raw == "" then return end
 
     self:CreatePopupFrame()
+    local f = self.popupFrame
+    local PAD = 14
 
-    self.popupFrame.label:SetText(L["Click to recruit!"])
-    self.popupFrame:Show()
+    -- Channel line.
+    local names, joined = self:_ResolveChannels(settings)
+    local chLabel = (#names > 0) and table.concat(names, ", ") or "-"
+    f.channelLine:SetText(string.format(L["Post to channel: %s"], chLabel))
 
-    -- Auto-hide after 30s if not clicked
+    -- Message preview: sanitized, wrapped, truncated to a couple of lines.
+    local full    = BRutus:SanitizeUserText(raw, 255)
+    local preview = BRutus:SanitizeUserText(raw, 140)
+    if #preview < #full then preview = preview .. "..." end
+    f.msgText:SetText("\"" .. preview .. "\"")
+
+    -- Layout: size the frame to the wrapped message, then the button row (or the
+    -- join-channel hint if nothing is joined).
+    local y = 58 + math.max(f.msgText:GetStringHeight() or 14, 14) + 12
+    if joined == 0 then
+        f.hint:ClearAllPoints()
+        f.hint:SetPoint("TOPLEFT", PAD, -y)
+        f.hint:SetText(L["Join a channel to post the recruitment message."])
+        f.hint:Show()
+        y = y + math.max(f.hint:GetStringHeight() or 14, 14) + 12
+        f.postBtn:Hide()
+    else
+        f.hint:Hide()
+        f.postBtn:Show()
+    end
+    f:SetHeight(y + 26 + 14)
+    f:Show()
+
+    -- Auto-hide after 30s if not acted on.
     C_Timer.After(30, function()
         if self.popupFrame and self.popupFrame:IsShown() then
             self.popupFrame:Hide()
@@ -627,21 +847,31 @@ function Recruitment:ShowSendPopup()
 end
 
 ----------------------------------------------------------------------
--- Actually send the message (called from button click = hardware event)
+-- Actually send the message (called from the Postar button = hardware event).
 ----------------------------------------------------------------------
 function Recruitment:DoSendRecruitmentMessage()
     if not IsInGuild() then return end
 
-    -- Officers use their own config; members use guild-broadcast config
-    local settings = BRutus:IsOfficer()
-        and BRutus.db.recruitment
-        or  BRutus.db.guildRecruitment
+    -- Min send gap: refuse a send too soon after the last one. Covers reflexive
+    -- rapid clicking and any forged low interval. Silent no-op when throttled.
+    if not self:_CanSendNow(self._lastSendAt, GetTime(), self.SEND_MIN_GAP) then return end
+
+    -- Officers use their own config; members use the guild-broadcast config.
+    local settings = self:_ActiveConfig()
     if not settings then
         BRutus:Print(L["|cffFF4444No recruitment data. Ask an officer to broadcast.|r"])
         return
     end
     local msg = settings.message
     if not msg or msg == "" then
+        BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
+        return
+    end
+    -- Sanitize before it ever reaches a public channel under the player's name:
+    -- strip chat escapes (textures / unterminated colour / fake links) and cap
+    -- at the 255-byte SendChatMessage limit. Officer and member paths alike.
+    msg = BRutus:SanitizeUserText(msg, 255)
+    if msg == "" then
         BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
         return
     end
@@ -656,6 +886,7 @@ function Recruitment:DoSendRecruitmentMessage()
     end
 
     if sent then
+        self._lastSendAt = GetTime()
         self.lastSend = GetTime()
         BRutus:Print(L["Recruitment message sent!"])
     else
