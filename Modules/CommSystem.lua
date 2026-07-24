@@ -27,6 +27,8 @@ CommSystem.MSG_TYPES = {
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
     RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
     LFG       = "LG",    -- member self-declared LFG availability (sender bound)
+    RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
+                         -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
 }
 
 -- Throttle settings
@@ -311,6 +313,14 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         if ok and BRutus.Recruitment then
             BRutus.Recruitment:ApplyIncoming(info, sender, channel)
         end
+    elseif msgType == CommSystem.MSG_TYPES.RECRUIT_STATS then
+        -- Self-reported engagement stats. Identity is the envelope sender and it
+        -- must arrive over GUILD; HandleStats keys the entry by that sender and
+        -- clamps every number, so a member can only file under their own name and
+        -- a hostile packet cannot break the officer UI.
+        if BRutus.RecruitEngagement then
+            BRutus.RecruitEngagement:HandleStats(sender, data, channel)
+        end
     end
 end
 
@@ -427,6 +437,14 @@ function CommSystem:HandleRequest(_sender, _data)
         if BRutus.LFGBoard and BRutus.LFGBoard:AmAvailable() then
             C_Timer.After(3.5, function()
                 BRutus.LFGBoard:Rebroadcast()
+            end)
+        end
+
+        -- Every member answers with its own recruitment engagement self-report,
+        -- so an officer logging in converges on a fresh picture of who is active.
+        if BRutus.RecruitEngagement then
+            C_Timer.After(4, function()
+                BRutus.RecruitEngagement:BroadcastStats()
             end)
         end
     end)

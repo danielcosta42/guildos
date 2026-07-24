@@ -220,6 +220,7 @@ end
 function Recruitment:_DoInvite(name)
     local cfg = BRutus.db.recruitment.autoInvite
     GuildInvite(name)
+    if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
     BRutus:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
 end
@@ -897,6 +898,7 @@ function Recruitment:DoSendRecruitmentMessage()
     if sent then
         self._lastSendAt = GetTime()
         self.lastSend = GetTime()
+        if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordPost() end
         BRutus:Print(L["Recruitment message sent!"])
     else
         BRutus:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
@@ -1015,6 +1017,7 @@ function Recruitment:HandleCommand(args)
                 return
             end
             GuildInvite(target)
+            if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordInvite(target) end
             BRutus:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
         else
             BRutus:Print(L["Usage: /guildos recruit invite <PlayerName>"])
@@ -1121,7 +1124,6 @@ function Recruitment:RegisterWelcomeEvent()
     frame:SetScript("OnEvent", function(_, event, msg)
         if event ~= "CHAT_MSG_SYSTEM" then return end
         if not IsInGuild() then return end
-        if not BRutus.db.recruitment.welcomeEnabled then return end
         if not Recruitment._rosterReady then return end
 
         -- Detect "%s has joined the guild."
@@ -1140,9 +1142,17 @@ function Recruitment:RegisterWelcomeEvent()
 
         if not newMember then return end
 
-        -- Don't welcome ourselves
+        -- Don't act on our own join.
         local myName = UnitName("player")
         if newMember == myName then return end
+
+        -- Credit a recruitment join to whoever invited this player. This runs
+        -- regardless of the welcome feature (engagement tracking is independent);
+        -- RecordJoin only credits when THIS client has a matching pending invite.
+        if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordJoin(newMember) end
+
+        -- The welcome message itself is opt-in and gated separately.
+        if not BRutus.db.recruitment.welcomeEnabled then return end
 
         -- Dedup: if already handled on this client, skip
         if Recruitment._welcomedRecently[newMember] then return end

@@ -328,6 +328,11 @@ function BRutus:InitModules()
     if BRutus.Recruitment and modEnabled("recruitment") then
         BRutus.Recruitment:InitParticipation()
     end
+    -- Recruitment engagement stats: every client tracks its own activity and
+    -- self-reports; officers aggregate for the Leadership dashboard.
+    if BRutus.RecruitEngagement then
+        BRutus.RecruitEngagement:Initialize()
+    end
     -- Raider roster (officer-curated, everyone stores/views it).
     if BRutus.RaiderRoster then
         BRutus.RaiderRoster:Initialize()

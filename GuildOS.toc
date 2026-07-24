@@ -53,6 +53,7 @@ Modules\SyncService.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
 Modules\RecruitmentSystem.lua
+Modules\RecruitEngagement.lua
 Modules\WishlistSystem.lua
 Modules\SoftResSystem.lua
 Modules\CoreManager.lua
