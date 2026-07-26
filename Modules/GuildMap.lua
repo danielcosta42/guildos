@@ -272,6 +272,24 @@ function GuildMap:GetPeers(now)
 end
 
 ----------------------------------------------------------------------
+-- shareExact pref (bound to the UI checkbox; keeps the UI out of the db)
+----------------------------------------------------------------------
+
+-- True when the player opted in to sharing exact live x/y.
+function GuildMap:IsShareExact()
+    local prefs = BRutus.db and BRutus.db.guildMapPrefs
+    return (prefs and prefs.shareExact) and true or false
+end
+
+-- Set the shareExact opt-in. Turning it on forces an immediate broadcast so
+-- peers get the new precision now instead of waiting for the next zone change.
+function GuildMap:SetShareExact(on)
+    BRutus.db.guildMapPrefs = BRutus.db.guildMapPrefs or {}
+    BRutus.db.guildMapPrefs.shareExact = on and true or false
+    self:Broadcast(true)
+end
+
+----------------------------------------------------------------------
 -- Init
 ----------------------------------------------------------------------
 function GuildMap:Initialize()

@@ -114,6 +114,73 @@ function Compat.GetPlayerMapPosition(mapID, unit)
     return nil
 end
 
+-- Localized display name for a mapID (C_Map.GetMapInfo). Returns nil when the
+-- API or the map is unknown, so callers substitute their own fallback.
+function Compat.GetMapName(mapID)
+    if mapID and C_Map and C_Map.GetMapInfo then
+        local info = C_Map.GetMapInfo(mapID)
+        if info then return info.name end
+    end
+    return nil
+end
+
+----------------------------------------------------------------------
+-- World map frame access
+--
+-- The world map is a MapCanvasMixin frame. We only ever READ its state and
+-- parent OUR OWN pins to its canvas; we never overwrite a Blizzard global.
+-- All of it is guarded so a missing/renamed API degrades to a no-op instead
+-- of erroring (Rule 4).
+----------------------------------------------------------------------
+
+-- The global WorldMapFrame, or nil if the world map addon is not loaded yet.
+function Compat.GetWorldMapFrame()
+    return WorldMapFrame
+end
+
+-- The world map canvas (the child the map art + pins live on). nil when the
+-- map is not available. Handles the GetCanvas() accessor and the raw
+-- ScrollContainer.Child fallback.
+function Compat.GetWorldMapCanvas()
+    local wmf = WorldMapFrame
+    if not wmf then return nil end
+    if wmf.GetCanvas then return wmf:GetCanvas() end
+    local sc = wmf.ScrollContainer
+    if sc and sc.Child then return sc.Child end
+    return nil
+end
+
+-- The mapID currently displayed by the world map, or nil.
+function Compat.GetShownMapID()
+    local wmf = WorldMapFrame
+    if wmf and wmf.GetMapID then return wmf:GetMapID() end
+    return nil
+end
+
+-- Navigate the world map to a mapID (insecure, not a protected call).
+function Compat.SetShownMapID(mapID)
+    local wmf = WorldMapFrame
+    if wmf and wmf.SetMapID and mapID then wmf:SetMapID(mapID) end
+end
+
+-- Ensure the world map is open. Skipped in combat (opening a UI panel is
+-- restricted there). ToggleWorldMap loads the map addon on demand if needed.
+-- Returns true when the map is (or was already) shown.
+function Compat.OpenWorldMap()
+    if InCombatLockdown and InCombatLockdown() then return false end
+    local wmf = WorldMapFrame
+    if wmf and wmf:IsShown() then return true end
+    if ToggleWorldMap then
+        ToggleWorldMap()
+        return true
+    end
+    if wmf and ShowUIPanel then
+        ShowUIPanel(wmf)
+        return true
+    end
+    return false
+end
+
 -- Whether this client may edit guild public notes
 function Compat.CanEditPublicNote()
     if CanEditPublicNote then return CanEditPublicNote() and true or false end

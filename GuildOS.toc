@@ -111,6 +111,7 @@ UI\AuditPanel.lua
 UI\PointsPanel.lua
 UI\CommunityPanel.lua
 UI\RaidToolsPanel.lua
+UI\GuildMap.lua
 UI\Minimap.lua
 UI\Onboarding.lua
 UI\RaidHUD.lua

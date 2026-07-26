@@ -35,6 +35,59 @@ local function OnDragUpdate(btn)
     UpdatePosition(btn)
 end
 
+-- Right-click context menu for the minimap button (built lazily). Left-click
+-- still opens the roster; the menu exposes the guild map and settings.
+local menuFrame
+
+local function OpenSettings()
+    BRutus:ToggleRoster()
+    if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
+        BRutus.RosterFrame:SetActiveTab("settings")
+    end
+end
+
+local function MinimapMenu_Init(_, level)
+    local info = UIDropDownMenu_CreateInfo()
+    info.isTitle = true; info.notCheckable = true
+    info.text = "|cffFFD700Guild|r |cffD4AC0DOS|r"
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+    info.text = L["Roster"]
+    info.func = function() BRutus:ToggleRoster(); CloseDropDownMenus() end
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+    info.text = L["Guild Map"]
+    info.func = function()
+        if BRutus.ToggleGuildMap then BRutus:ToggleGuildMap() end
+        CloseDropDownMenus()
+    end
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+    info.text = L["Settings"]
+    info.func = function() OpenSettings(); CloseDropDownMenus() end
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+    info.text = L["Hide minimap button"]
+    info.func = function() BRutus:SetMinimapShown(false); CloseDropDownMenus() end
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+    info.text = CANCEL or L["Cancel"]
+    UIDropDownMenu_AddButton(info, level)
+end
+
+local function ShowMinimapMenu()
+    if not menuFrame then
+        menuFrame = CreateFrame("Frame", "GuildOSMinimapMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+    UIDropDownMenu_Initialize(menuFrame, MinimapMenu_Init, "MENU")
+    ToggleDropDownMenu(1, nil, menuFrame, "cursor", 3, -3)
+end
+
 function BRutus:CreateMinimapButton()
     if self.minimapButton then return self.minimapButton end
     if not Minimap then return nil end
@@ -68,11 +121,8 @@ function BRutus:CreateMinimapButton()
 
     btn:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            -- Right-click jumps straight to the roster's Settings tab.
-            BRutus:ToggleRoster()
-            if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-                BRutus.RosterFrame:SetActiveTab("settings")
-            end
+            -- Right-click opens the menu (roster / guild map / settings).
+            ShowMinimapMenu()
         else
             BRutus:ToggleRoster()
         end
@@ -82,7 +132,7 @@ function BRutus:CreateMinimapButton()
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("|cffFFD700Guild|r |cffD4AC0DOS|r  |cff666666by Chehul|r")
         GameTooltip:AddLine(L["Left-click: open"], 0.8, 0.8, 0.8)
-        GameTooltip:AddLine(L["Right-click: settings"], 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L["Right-click: menu"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Drag: move button"], 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
@@ -92,6 +142,11 @@ function BRutus:CreateMinimapButton()
     if GetMinimapCfg().hide then btn:Hide() end
 
     self.minimapButton = btn
+
+    -- Wire the live guild map presence layer (minimap zone dots + refresh hook)
+    -- now that the minimap definitely exists. Safe to call once.
+    if BRutus.SetupGuildMapPresence then BRutus:SetupGuildMapPresence() end
+
     return btn
 end
 

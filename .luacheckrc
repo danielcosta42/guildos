@@ -246,6 +246,8 @@ read_globals = {
     "GuildFrame",
     "CommunitiesFrame",   -- modern (LoD) guild/communities UI; we attach a "Guild OS" button
     "FriendsFrame",
+    "WorldMapFrame",      -- live guild map: we parent our own pins to its canvas
+    "ToggleWorldMap",     -- open the world map (loads Blizzard_WorldMap on demand)
     "ShowUIPanel",
     "HideUIPanel",
     "InterfaceOptionsFrame_OpenToCategory",
