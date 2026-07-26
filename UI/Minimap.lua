@@ -66,6 +66,14 @@ local function MinimapMenu_Init(_, level)
     UIDropDownMenu_AddButton(info, level)
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+    info.text = L["Do I know this pug?"]
+    info.func = function()
+        if BRutus.TogglePugInspector then BRutus:TogglePugInspector() end
+        CloseDropDownMenus()
+    end
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Settings"]
     info.func = function() OpenSettings(); CloseDropDownMenus() end
     UIDropDownMenu_AddButton(info, level)

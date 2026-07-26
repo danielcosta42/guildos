@@ -1099,3 +1099,17 @@ L["Unknown zone"] = "Zone inconnue"
 L["Guildmates in your zone"] = "Membres de guilde dans votre zone"
 L["Hide minimap button"] = "Masquer le bouton de minicarte"
 L["Right-click: menu"] = "Clic droit : menu"
+
+-- Modules/PugInspector.lua + UI/PugInspector.lua ("Do I know this pug?")
+-- (L["Note: %s"] already defined above; do not redefine it here.)
+L["Do I know this pug?"] = "Est-ce que je connais ce pug ?"
+L["Guildmate"] = "Membre de guilde"
+L["Alt of %s"] = "Reroll de %s"
+L["Alt of %s (guild)"] = "Reroll de %s (guilde)"
+L["Ex-member"] = "Ancien membre"
+L["Unknown (not in guild)"] = "Inconnu (hors de la guilde)"
+L["Auto-open when a flagged player is in the group"] = "Ouvrir automatiquement quand un joueur signalé est dans le groupe"
+L["You are not in a group."] = "Vous n'êtes pas dans un groupe."
+L["No one else in your group."] = "Personne d'autre dans votre groupe."
+L["%d in group"] = "%d dans le groupe"
+L["Check who you're grouped with"] = "Voyez avec qui vous êtes en groupe"

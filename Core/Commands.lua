@@ -39,6 +39,7 @@ local function printHelp()
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
     helpLine("/gos map",         L["Open the live guild map"])
+    helpLine("/gos pug",         L["Check who you're grouped with"])
     helpLine("/gos calendar",    L["Guild calendar and events"])
     helpLine("/gos polls",       L["Guild polls"])
     helpLine("/gos bulletin",    L["Guild bulletin board"])
@@ -177,6 +178,9 @@ local function handleCommand(msg)
     elseif msg == "map" or msg == "guildmap" then
         -- Anyone: open the live guild map (world map pins + list overlay).
         if BRutus.ToggleGuildMap then BRutus:ToggleGuildMap() end
+    elseif msg == "pug" then
+        -- Anyone: classify the current party/raid against what GuildOS knows.
+        if BRutus.TogglePugInspector then BRutus:TogglePugInspector() end
     elseif msg == "minimap" then
         if BRutus.ToggleMinimapButton then
             local shown = BRutus:ToggleMinimapButton()

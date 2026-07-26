@@ -93,6 +93,7 @@ Modules\NoteCommand.lua
 Modules\LevelQuery.lua
 Modules\LFGBoard.lua
 Modules\GuildMap.lua
+Modules\PugInspector.lua
 
 # UI
 UI\Helpers.lua
@@ -113,5 +114,6 @@ UI\CommunityPanel.lua
 UI\RaidToolsPanel.lua
 UI\GuildMap.lua
 UI\Minimap.lua
+UI\PugInspector.lua
 UI\Onboarding.lua
 UI\RaidHUD.lua
