@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.1] - 2026-07-26
+
+### Fixed
+- stop tainting the Blizzard raid frame (guild-button hook)
+
+
 ## [0.33.0] - 2026-07-26
 
 ### Added
