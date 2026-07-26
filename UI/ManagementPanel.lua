@@ -655,28 +655,15 @@ end
 -- lives here (Rule 10). "Joined" is confirmed direct-invite credit only, so a
 -- member who merely posts in a channel shows effort (Posts) without joins.
 ----------------------------------------------------------------------
-local SPARK = { "\226\150\129", "\226\150\130", "\226\150\131", "\226\150\132",
-                "\226\150\133", "\226\150\134", "\226\150\135", "\226\150\136" }  -- U+2581..U+2588
-
 -- Signed count for a trend delta ("+12" / "-3" / "0").
 local function signedDelta(n)
     return (n > 0 and "+" .. n) or tostring(n)
 end
 
--- Sparkline of a 7-day array (index 1 = today), drawn oldest to newest so the
--- axis reads left = 6 days ago, right = today.
-local function sparkline(vals)
-    local maxv = 0
-    for i = 1, 7 do local v = vals[i] or 0; if v > maxv then maxv = v end end
-    local out = {}
-    for i = 7, 1, -1 do
-        local v = vals[i] or 0
-        local lvl = (maxv > 0) and (math.floor((v / maxv) * 7) + 1) or 1
-        if lvl < 1 then lvl = 1 elseif lvl > 8 then lvl = 8 end
-        out[#out + 1] = SPARK[lvl]
-    end
-    return table.concat(out)
-end
+local SPARK_BARS   = 7    -- one bar per day
+local SPARK_BAR_W  = 7
+local SPARK_STEP   = 9    -- bar width + gap
+local SPARK_H      = 12   -- max bar height in px
 
 -- Present a member's status from the two fields the data carries.
 local function statusOf(r, now)
@@ -691,6 +678,22 @@ local function BuildEngageSub(panel)
 
     local trendFS = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     trendFS:SetPoint("TOPLEFT", 2, -22)
+
+    -- Invite sparkline as texture bars (glyph blocks do not render in FRIZQT).
+    -- One bar per day, oldest on the left, newest on the right; heights scaled
+    -- to the busiest day. Anchored just right of the trend text.
+    local sparkFrame = CreateFrame("Frame", nil, panel)
+    sparkFrame:SetSize(SPARK_BARS * SPARK_STEP, SPARK_H)
+    sparkFrame:SetPoint("LEFT", trendFS, "RIGHT", 10, 0)
+    local sparkBars = {}
+    for i = 1, SPARK_BARS do
+        local tex = sparkFrame:CreateTexture(nil, "ARTWORK")
+        tex:SetTexture(WHITE)
+        tex:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.9)
+        tex:SetPoint("BOTTOMLEFT", (i - 1) * SPARK_STEP, 0)
+        tex:SetSize(SPARK_BAR_W, 1)
+        sparkBars[i] = tex
+    end
 
     -- Fixed column header (aligns with the row x-offsets below).
     local COLS = { name = 8, status = 150, posts = 280, invites = 350, joined = 430, last = 510 }
@@ -725,15 +728,22 @@ local function BuildEngageSub(panel)
         totalsFS:SetText(format(L["Guild: Posts %d  Invites %d  Joined %d  Conv %d%%"],
             t.posts7, t.invites7, t.joins7, math.floor((t.conv or 0) * 100 + 0.5)))
 
-        -- Guild daily invites (for the sparkline) summed across members.
+        trendFS:SetText(format(L["vs last week: invites %s, joins %s"],
+            signedDelta(t.invites7 - t.invitesPrev), signedDelta(t.joins7 - t.joinsPrev)))
+
+        -- Guild daily invites summed across members, drive the sparkline bars.
         local gd = { 0, 0, 0, 0, 0, 0, 0 }
         for _, r in ipairs(agg.rows) do
             local di = r.dailyInvites or {}
             for i = 1, 7 do gd[i] = gd[i] + (di[i] or 0) end
         end
-        trendFS:SetText(format(L["vs last week: invites %s, joins %s"],
-            signedDelta(t.invites7 - t.invitesPrev), signedDelta(t.joins7 - t.joinsPrev))
-            .. "   " .. sparkline(gd))
+        local maxv = 0
+        for i = 1, 7 do if gd[i] > maxv then maxv = gd[i] end end
+        for i = 1, SPARK_BARS do
+            local v = gd[8 - i] or 0   -- bar 1 = 6 days ago (gd[7]); bar 7 = today (gd[1])
+            local h = (maxv > 0) and math.max(1, math.floor((v / maxv) * SPARK_H + 0.5)) or 1
+            sparkBars[i]:SetHeight(h)
+        end
 
         local yOff = 0
         for idx, r in ipairs(agg.rows) do
