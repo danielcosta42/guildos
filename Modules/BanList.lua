@@ -114,10 +114,29 @@ function BanList:_Publish(key, entry)
     -- restricts who may *apply* a ban write to officers, not who receives it.
     -- ACK is point-to-point, so it's not used for a broadcast: online clients
     -- converge at broadcast time via the revision-check (highest rev wins).
-    -- NOTE: there is no cold-sync/backfill for the "ban" domain yet, so an officer
-    -- offline at ban time won't hold the entry until the next mutation — tracked
-    -- follow-up: re-emit ban entries from CommSystem FullSync/HandleRequest.
+    -- Cold-sync: an officer offline at ban time converges on login via
+    -- BanList:Backfill(), which re-emits every entry at its STORED revision
+    -- from CommSystem:HandleRequest (idempotent by the same revision check).
     BRutus.SyncService:Publish("ban", "set", { key = key, entry = entry }, { rev = rev })
+end
+
+----------------------------------------------------------------------
+-- Cold-sync backfill: re-broadcast every current ban entry (including
+-- un-ban tombstones, so removals also propagate) at its STORED revision,
+-- never a fresh one. An officer offline when a ban/un-ban happened misses
+-- the mutation broadcast; answering the login/periodic sync REQUEST with
+-- this lets them converge without waiting for the next mutation.
+-- Idempotent: preserving the stored revision means ShouldApply drops the
+-- re-broadcast for a peer already at that revision and applies it only for
+-- one that missed the change, so a stale re-emit can never roll back a newer
+-- edit. Officers only; members must never re-broadcast authoritative bans.
+----------------------------------------------------------------------
+function BanList:Backfill()
+    if not BRutus:IsOfficer() or not BRutus.SyncService then return end
+    for key, entry in pairs(BRutus.db.banList or {}) do
+        local rev = BRutus.SyncService:GetRevision("ban", key)
+        BRutus.SyncService:Publish("ban", "set", { key = key, entry = entry }, { rev = rev })
+    end
 end
 
 function BanList:_ApplyRemote(key, entry, rev)

@@ -466,6 +466,31 @@ function CommSystem:HandleRequest(_sender, _data)
                 BRutus.GuildMap:Broadcast(true)
             end)
         end
+
+        -- Officers re-broadcast their authoritative shared state (blacklist,
+        -- audit trail, bulletin board) so a peer who was offline when it last
+        -- changed converges on login instead of waiting for the next mutation.
+        -- Each backfill preserves its stored revision and never bumps it, so
+        -- the SyncService revision check (or audit id-dedup) drops it for a
+        -- peer already current and applies it only for one that missed the
+        -- change. Members must never re-broadcast these, hence the gate.
+        if BRutus:IsOfficer() and BRutus.BanList then
+            C_Timer.After(5, function()
+                BRutus.BanList:Backfill()
+            end)
+        end
+
+        if BRutus:IsOfficer() and BRutus.RosterLog then
+            C_Timer.After(5.5, function()
+                BRutus.RosterLog:Backfill()
+            end)
+        end
+
+        if BRutus:IsOfficer() and BRutus.Bulletin then
+            C_Timer.After(6, function()
+                BRutus.Bulletin:Backfill()
+            end)
+        end
     end)
 end
 

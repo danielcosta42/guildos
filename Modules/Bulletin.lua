@@ -70,6 +70,21 @@ function Bulletin:Broadcast()
     BRutus.SyncService:Publish("bulletin", "snapshot", { messages = self:GetMessages() }, { rev = rev })
 end
 
+-- Cold-sync backfill: re-broadcast the current board snapshot at its STORED
+-- revision (never a bumped one, unlike Broadcast) so an officer offline for
+-- the last post/removal converges on login. Answering the sync REQUEST with
+-- the existing revision keeps it idempotent: ShouldApply drops it for a peer
+-- already at that revision and applies it only for one that missed the edit,
+-- so a stale re-broadcast can never overwrite a newer board. A revision of 0
+-- means nothing authoritative has been posted yet, so there is nothing to
+-- backfill. Officers only. Called from CommSystem:HandleRequest.
+function Bulletin:Backfill()
+    if not BRutus:IsOfficer() or not BRutus.SyncService then return end
+    local rev = BRutus.SyncService:GetRevision("bulletin", "board")
+    if rev <= 0 then return end
+    BRutus.SyncService:Publish("bulletin", "snapshot", { messages = self:GetMessages() }, { rev = rev })
+end
+
 function Bulletin:OnSync(env)
     if env.act == "snapshot" and env.data
         and BRutus.SyncService:ShouldApply("bulletin", "board", env.rev) then

@@ -9,6 +9,7 @@ BRutus.RosterLog = RosterLog
 
 local CAP = 1000
 local MAX_AGE = 90 * 86400
+local BACKFILL_N = 25   -- cold-sync re-broadcast is capped to the last N events
 
 function RosterLog:Initialize()
     BRutus.db.rosterLog = BRutus.db.rosterLog or { events = {} }
@@ -116,6 +117,20 @@ function RosterLog:CountsSince(since, store)
     return c
 end
 
+-- Pure: the most recent up-to-N events (chronological order). Bounds the
+-- cold-sync backfill so a late officer converges on the tail of the log
+-- instead of us re-broadcasting the whole history every login.
+function RosterLog:_Recent(store, n)
+    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events) or {}
+    n = n or BACKFILL_N
+    local out = {}
+    local first = math.max(1, #store - n + 1)
+    for i = first, #store do
+        out[#out + 1] = store[i]
+    end
+    return out
+end
+
 function RosterLog:_MigrateManagementLog()
     if BRutus.db.rosterLog.migrated then return end
     BRutus.db.rosterLog.migrated = true
@@ -184,6 +199,20 @@ function RosterLog:_Publish(evt)
     BRutus.SyncService:Publish("audit", "add", { evt = evt })
 end
 
+-- Cold-sync backfill: re-broadcast the last BACKFILL_N audit events so an
+-- officer offline when they were recorded fills the tail of the log on login.
+-- The audit domain is append-only and id-deduped (no revision), so this is
+-- idempotent: _Insert drops an event a peer already holds and inserts one it
+-- missed. No revision is involved and none is bumped. Bounded by _Recent to
+-- avoid dumping unbounded history. Officers only. Called from HandleRequest.
+function RosterLog:Backfill()
+    if not BRutus.SyncService or not BRutus:IsOfficer() then return end
+    local recent = self:_Recent()
+    for i = 1, #recent do
+        self:_Publish(recent[i])
+    end
+end
+
 ----------------------------------------------------------------------
 -- Self-tests
 ----------------------------------------------------------------------
@@ -222,6 +251,18 @@ function RosterLog:_RegisterTests()
         local store = { { action="join", timestamp=10 }, { action="kick", timestamp=20 }, { action="join", timestamp=5 } }
         local c = RosterLog:CountsSince(8, store)
         if c.join ~= 1 or c.kick ~= 1 then return false, "counts" end
+        return true
+    end)
+    S:Register("rosterlog.recent_window", function()
+        local store = {}
+        for i = 1, 5 do store[i] = { action = "join", target = "P" .. i, timestamp = i, id = "e" .. i } end
+        local out = RosterLog:_Recent(store, 3)
+        if #out ~= 3 or out[1].id ~= "e3" or out[3].id ~= "e5" then
+            return false, "should return the last 3 in order"
+        end
+        local few = RosterLog:_Recent({ { id = "z" } }, 3)
+        if #few ~= 1 or few[1].id ~= "z" then return false, "fewer than N returns all" end
+        if #RosterLog:_Recent({}, 3) ~= 0 then return false, "empty store" end
         return true
     end)
 end
