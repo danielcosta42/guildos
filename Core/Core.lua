@@ -351,6 +351,9 @@ function BRutus:InitModules()
     if BRutus.GuildManager and modEnabled("guildManager") then
         BRutus.GuildManager:Initialize()
     end
+    if BRutus.ModPresets then
+        BRutus.ModPresets:Initialize()
+    end
     if BRutus.CreateMinimapButton then
         BRutus:CreateMinimapButton()
     end

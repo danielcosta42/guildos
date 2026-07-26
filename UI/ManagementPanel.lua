@@ -19,9 +19,31 @@ local SUBTABS = {
     { key = "log",      label = L["Audit Log"] },
     { key = "ban",      label = L["Ban List"] },
     { key = "engage",   label = L["Engagement"] },
+    { key = "presets",  label = L["Presets"] },
 }
 
 local ROW_H = 26
+
+-- Confirmation dialog for a bulk Apply. The full, already-formatted message
+-- is passed as text arg1 ("%s"); OnAccept runs the officer-gated ApplyPreset
+-- on exactly the members captured when Apply was clicked. Rank/kick handoffs
+-- inside ApplyPreset open Blizzard's native panel (ADR-0010) — no protected
+-- call is made from this insecure OnAccept.
+StaticPopupDialogs["GUILDOS_MODPRESET_APPLY"] = {
+    text = "%s",
+    button1 = L["Apply"],
+    button2 = L["Cancel"],
+    OnAccept = function(_, data)
+        if data and data.preset and BRutus.ModPresets then
+            BRutus.ModPresets:ApplyPreset(data.preset, data.matches)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    showAlert = true,
+    preferredIndex = 3,
+}
 
 ----------------------------------------------------------------------
 -- Small builders shared by the sub-panels
@@ -785,6 +807,228 @@ local function BuildEngageSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- PRESETS sub-panel — built-in bulk-moderation presets (officer-only).
+-- Thin renderer over BRutus.ModPresets: each preset shows its criteria, a
+-- live match count, threshold editors, Preview (inline member list) and
+-- Apply. No matching / apply logic lives here (Rule 10). Apply confirms
+-- first, then routes each rank/kick through ModPresets:ApplyPreset, whose
+-- protected handoffs open Blizzard's native panel (ADR-0010).
+----------------------------------------------------------------------
+-- Per-type threshold editor fields { key, label, rank? } for the UI.
+local PRESET_FIELDS = {
+    purge_inactive   = { { key = "days",         label = L["inactive days"] },
+                         { key = "minRankIndex", label = L["min rank"], rank = true } },
+    promote_regulars = { { key = "minAttendance", label = L["min attendance %"] } },
+    trial_cleanup    = { { key = "minDays",       label = L["trial days"] },
+                         { key = "maxAttendance", label = L["max attendance %"] } },
+}
+
+-- Apply confirmation text: heading + affected members (capped) + the
+-- Blizzard-protected note. Presentation only.
+local function presetApplyText(preset, matches)
+    local MP = BRutus.ModPresets
+    local action = MP:GetAction(preset)
+    local CAP = 10
+    local names = {}
+    for i, m in ipairs(matches) do
+        if i > CAP then break end
+        names[#names + 1] = m.name
+    end
+    local list = table.concat(names, ", ")
+    if #matches > CAP then
+        list = list .. " " .. format(L["and %d more"], #matches - CAP)
+    end
+    local line = (action == "promote")
+        and format(L["Promote %d member(s):"], #matches)
+        or  format(L["Remove %d member(s) from the guild:"], #matches)
+    return format(L["Apply preset \"%s\"?"], preset.name or "?") .. "\n"
+        .. line .. " " .. list .. "\n\n"
+        .. L["Rank and removal actions are Blizzard-protected: the guild panel opens to confirm each."]
+end
+
+local function BuildPresetsSub(panel)
+    panel.expanded = {}
+    panel.showChooser = false
+
+    local title = UI:CreateHeaderText(panel, L["MODERATION PRESETS"], 11)
+    title:SetPoint("TOPLEFT", 2, -4)
+
+    local newBtn = UI:CreateButton(panel, L["+ New"], 80, 22)
+    newBtn:SetPoint("TOPRIGHT", -12, -2)
+
+    local listHolder = CreateFrame("Frame", nil, panel)
+    listHolder:SetPoint("TOPLEFT", 0, -30)
+    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
+    local _, content = MakeScrollList(listHolder, "GuildOSMgmtPresetsScroll")
+
+    -- Small numeric threshold editor; commits to ModPresets then repaints.
+    local function makeNumBox(parent, value, onCommit)
+        local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+        box:SetSize(40, 20)
+        box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+        box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
+        box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+        box:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        box:SetTextColor(C.white.r, C.white.g, C.white.b)
+        box:SetJustifyH("CENTER")
+        box:SetAutoFocus(false)
+        box:SetNumeric(true)
+        box:SetMaxLetters(4)
+        box:SetText(tostring(value or 0))
+        box:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        box:SetScript("OnEnterPressed", function(s)
+            onCommit(tonumber(s:GetText()))
+            s:ClearFocus()
+        end)
+        return box
+    end
+
+    local refresh
+    refresh = function()
+        content:SetWidth(listHolder:GetWidth() - 12)
+        ClearContent(content)
+        for _, r in pairs({ content:GetRegions() }) do r:Hide() end
+
+        local MP = BRutus.ModPresets
+        local presets = (MP and MP:GetPresets()) or {}
+        local yOff = 0
+
+        -- "+ New" chooser: a labelled row of the built-in type buttons.
+        if panel.showChooser and MP then
+            local chooser = CreateFrame("Frame", nil, content)
+            chooser:SetSize(content:GetWidth() - 4, ROW_H)
+            chooser:SetPoint("TOPLEFT", 0, -yOff)
+            local lbl = UI:CreateText(chooser, L["Add preset:"], 10, C.gold.r, C.gold.g, C.gold.b)
+            lbl:SetPoint("LEFT", 8, 0)
+            local bx = 96
+            for _, key in ipairs(MP.TYPE_ORDER) do
+                local info = MP.TYPES[key]
+                local b = UI:CreateButton(chooser, info.name, 130, 20)
+                b:SetPoint("LEFT", bx, 0)
+                b:SetScript("OnClick", function()
+                    if MP:AddPreset(key) then
+                        panel.showChooser = false
+                        refresh()
+                    end
+                end)
+                bx = bx + 136
+            end
+            yOff = yOff + ROW_H + 4
+        end
+
+        if #presets == 0 and not panel.showChooser then
+            local empty = UI:CreateText(content, L["No presets yet. Use [+ New] to add one."],
+                11, C.silver.r, C.silver.g, C.silver.b)
+            empty:SetPoint("TOPLEFT", 4, -(yOff + 4))
+            content:SetHeight(math.max(1, yOff + ROW_H))
+            return
+        end
+
+        for idx, preset in ipairs(presets) do
+            local matches = (MP and MP:GetMatches(preset)) or {}
+            local expanded = panel.expanded[idx]
+
+            -- Height: header line + controls line (+ preview rows when open).
+            local blockH = ROW_H + 24
+            if expanded then blockH = blockH + math.max(1, #matches) * 18 + 4 end
+            local block = CreateFrame("Frame", nil, content, "BackdropTemplate")
+            block:SetSize(content:GetWidth() - 4, blockH)
+            block:SetPoint("TOPLEFT", 0, -yOff)
+            block:SetBackdrop({ bgFile = WHITE })
+            local alt = (idx % 2 == 0) and C.row1 or C.row2
+            block:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
+
+            -- Header line: name + criteria summary + remove.
+            local nameFS = UI:CreateText(block, preset.name or "?", 12, C.gold.r, C.gold.g, C.gold.b)
+            nameFS:SetPoint("TOPLEFT", 8, -5)
+            local sumFS = UI:CreateText(block, MP:Summarize(preset), 10, C.silver.r, C.silver.g, C.silver.b)
+            sumFS:SetPoint("TOPLEFT", 168, -6)
+
+            local delBtn = UI:CreateButton(block, "\195\151", 22, 18)  -- ×
+            delBtn:SetPoint("TOPRIGHT", -8, -4)
+            delBtn:SetScript("OnClick", function()
+                if MP:RemovePreset(idx) then
+                    panel.expanded[idx] = nil
+                    refresh()
+                end
+            end)
+
+            -- Controls line: threshold editors, match count, Preview, Apply.
+            local cy = -(ROW_H + 2)
+            local x = 8
+            for _, field in ipairs(PRESET_FIELDS[preset.type] or {}) do
+                local flbl = UI:CreateText(block, field.label, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                flbl:SetPoint("TOPLEFT", x, cy - 2)
+                x = x + flbl:GetStringWidth() + 6
+                local fieldKey = field.key
+                local box = makeNumBox(block, preset.thresholds and preset.thresholds[fieldKey], function(v)
+                    if MP:SetThreshold(idx, fieldKey, v) then refresh() end
+                end)
+                box:SetPoint("TOPLEFT", x, cy)
+                x = x + 46
+                if field.rank then
+                    local rn = (BRutus.GuildManager and BRutus.GuildManager:GetRankName(
+                        preset.thresholds and preset.thresholds[fieldKey] or 0)) or "?"
+                    local rnFS = UI:CreateText(block, "(" .. rn .. ")", 9, C.silver.r, C.silver.g, C.silver.b)
+                    rnFS:SetPoint("TOPLEFT", x, cy - 2)
+                    x = x + rnFS:GetStringWidth() + 10
+                end
+            end
+
+            local countFS = UI:CreateText(block, format(L["%d match"], #matches), 10, C.gold.r, C.gold.g, C.gold.b)
+            countFS:SetPoint("TOPLEFT", math.max(x + 8, 320), cy - 2)
+
+            local applyBtn = UI:CreateButton(block, L["Apply"], 70, 20)
+            applyBtn:SetPoint("TOPRIGHT", -8, cy)
+            applyBtn:SetScript("OnClick", function()
+                if not BRutus:IsOfficer() then BRutus:Print(L["Officers only."]) return end
+                local live = MP:GetMatches(preset)
+                if #live == 0 then BRutus:Print(L["No members match this preset."]) return end
+                StaticPopup_Show("GUILDOS_MODPRESET_APPLY", presetApplyText(preset, live), nil,
+                    { preset = preset, matches = live })
+            end)
+
+            local prevBtn = UI:CreateButton(block, L["Preview"], 70, 20)
+            prevBtn:SetPoint("TOPRIGHT", applyBtn, "TOPLEFT", -6, 0)
+            prevBtn:SetScript("OnClick", function()
+                panel.expanded[idx] = not panel.expanded[idx]
+                refresh()
+            end)
+
+            -- Inline preview list.
+            if expanded then
+                local py = ROW_H + 24
+                if #matches == 0 then
+                    local none = UI:CreateText(block, L["No members match this preset."],
+                        9, C.silver.r, C.silver.g, C.silver.b)
+                    none:SetPoint("TOPLEFT", 16, -py)
+                else
+                    for _, m in ipairs(matches) do
+                        local mFS = UI:CreateText(block,
+                            "\226\128\162 " .. m.name .. "  |cff888888" .. (m.detail or "") .. "|r",
+                            9, C.text.r, C.text.g, C.text.b)
+                        mFS:SetPoint("TOPLEFT", 16, -py)
+                        py = py + 18
+                    end
+                end
+            end
+
+            yOff = yOff + blockH + 4
+        end
+
+        content:SetHeight(math.max(1, yOff))
+    end
+
+    newBtn:SetScript("OnClick", function()
+        panel.showChooser = not panel.showChooser
+        refresh()
+    end)
+
+    if BRutus.ModPresets then BRutus.ModPresets.uiRefresh = refresh end
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Panel assembly
 ----------------------------------------------------------------------
 function BRutus:CreateManagementPanel(parent, _mainFrame)
@@ -843,6 +1087,7 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
         log      = BuildLogSub,
         ban      = BuildBanSub,
         engage   = BuildEngageSub,
+        presets  = BuildPresetsSub,
     }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()

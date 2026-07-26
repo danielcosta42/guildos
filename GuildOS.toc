@@ -71,6 +71,7 @@ Modules\AltAutoDetect.lua
 Modules\ChatTweaks.lua
 Modules\TrialTracker.lua
 Modules\GuildManager.lua
+Modules\ModPresets.lua
 Modules\GearAudit.lua
 Modules\Readiness.lua
 Modules\Resistances.lua
