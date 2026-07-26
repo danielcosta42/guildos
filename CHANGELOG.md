@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0] - 2026-07-26
+
+### Added
+- recruitment engagement sub-tab in the Leadership panel
+- recruitment engagement tracking and sync (data layer)
+- harden recruitment sync (envelope trust, disable propagation, content caps, consent popup)
+- member recruitment help is opt-out, not a join prompt
+- /gos help lists the available commands
+- BRutus:SanitizeUserText for member-authored free text (tested)
+- /gos avail command and LFG notify toggle
+- prefill LFG role from the player's configured raid roles
+- LFG board window with invite and whisper actions
+- LFG board core (sender bound availability sync, tested)
+- roster search accepts level queries (60-70, >=60, lists)
+- LevelQuery parser for roster level filters (tested)
+- /gos notecmd toggle for the !note command
+- !note self public-note command (officers apply; tested)
+- /gos mentions commands (log + watch-word management)
+- Mentions — alert on name/watch-word in guild chat (tested)
+
+### Fixed
+- draw the engagement sparkline with texture bars, not glyphs
+- clamp forged future recruitment timestamps and show the full sent text
+- Mentions matching, !note safety, and LevelQuery empty-result traps
+- sanitize, clamp, throttle and rebroadcast board entries
+- slash args no longer truncated at digits (strtrim got gsub's count)
+- whitelist incoming LFG role against the known role list
+- anchor /gos note branch so it stops shadowing /gos notecmd
+
+
 ## [0.32.0] - 2026-07-23
 
 ### Added
