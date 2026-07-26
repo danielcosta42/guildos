@@ -108,11 +108,12 @@ end
 -- secure Blizzard guild panel for the final click. See decisions.md ADR-0010.
 ----------------------------------------------------------------------
 
--- Best-effort: open the default Blizzard guild window via the pre-hook toggle
--- captured in Core:HookGuildFrame. Never calls a protected function.
+-- Best-effort: open the default Blizzard guild window. Routes through
+-- BRutus:OpenBlizzardGuildUI, which calls the native (unreplaced) toggle with
+-- the hijack redirect suppressed. Never calls a protected function.
 function GuildManager:OpenNativeGuild()
-    if BRutus._origToggleGuildFrame then
-        BRutus._origToggleGuildFrame()
+    if BRutus.OpenBlizzardGuildUI then
+        BRutus:OpenBlizzardGuildUI()
         return true
     end
     return false

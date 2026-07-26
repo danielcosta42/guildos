@@ -433,37 +433,36 @@ end
 -- Hook into the default Blizzard guild frame
 ----------------------------------------------------------------------
 function BRutus:HookGuildFrame()
-    -- Replace ToggleGuildFrame (called by J keybind and guild micro button)
-    if ToggleGuildFrame then
-        local originalToggleGuildFrame = ToggleGuildFrame
-        -- Keep a handle to the native toggle so GuildManager can hand the
-        -- leader off to Blizzard's secure guild panel for protected actions
-        -- (promote/demote/kick can only be performed there), and so our own
-        -- "Blizzard" header button can open the native guild UI.
-        BRutus._origToggleGuildFrame = originalToggleGuildFrame
-        ToggleGuildFrame = function()
-            -- Only take over the guild button when in a guild AND the user hasn't
-            -- opted out (Settings > General, or /guildos guildbutton). When opted
-            -- out, the guild button opens Blizzard's UI and Guild OS is reached via
-            -- the minimap button / the "Guild OS" button we add to the native frame.
-            if IsInGuild() and BRutus:IsGuildButtonHijacked() then
-                BRutus:ToggleRoster()
-            else
-                originalToggleGuildFrame()
+    -- CRITICAL: never overwrite ToggleGuildFrame / ToggleFriendsFrame with our own
+    -- closures. Replacing those Blizzard globals TAINTS the shared social-frame
+    -- code, and the Raid window is a FriendsFrame tab, so a raid leader could not
+    -- open the raid frame or move a unit between subgroups DURING COMBAT (the
+    -- protected action fails with "Interface action failed because of an addon").
+    -- The taint is installed at load, which is why toggling the guild-button
+    -- option off never cleared it. hooksecurefunc keeps Blizzard's functions
+    -- secure; we only react AFTER they run, mirroring the native guild frame's
+    -- open/close onto Guild OS. We deliberately do NOT touch ToggleFriendsFrame at
+    -- all, so the Raid tab (and every other tab) stays completely untainted.
+    if ToggleGuildFrame and not self._guildHookInstalled then
+        self._guildHookInstalled = true
+        hooksecurefunc("ToggleGuildFrame", function()
+            if self._suppressGuildHijack then return end
+            if not (IsInGuild() and self:IsGuildButtonHijacked()) then return end
+            local blizShown = (GuildFrame and GuildFrame:IsShown())
+                or (CommunitiesFrame and CommunitiesFrame:IsShown())
+            if blizShown then
+                -- Swap to Guild OS. The Hide runs in the same frame as the native
+                -- Show (hooksecurefunc is synchronous), so nothing actually renders.
+                if GuildFrame then GuildFrame:Hide() end
+                if CommunitiesFrame then CommunitiesFrame:Hide() end
+                if not (self.RosterFrame and self.RosterFrame:IsShown()) then
+                    self:ToggleRoster()
+                end
+            elseif self.RosterFrame and self.RosterFrame:IsShown() then
+                -- The toggle just closed the native frame: close ours to match.
+                self:ToggleRoster()
             end
-        end
-    end
-
-    -- Also hook ToggleFriendsFrame for guild tab (tab 3)
-    if ToggleFriendsFrame then
-        local originalToggleFriendsFrame = ToggleFriendsFrame
-        ToggleFriendsFrame = function(tabNumber, ...)
-            if tabNumber == 3 and IsInGuild() and BRutus:IsGuildButtonHijacked() then
-                BRutus:ToggleRoster()
-                return
-            end
-            return originalToggleFriendsFrame(tabNumber, ...)
-        end
+        end)
     end
 
     -- Add a "Guild OS" button to Blizzard's own guild frames so you can jump from
@@ -487,11 +486,13 @@ end
 -- whichever the client is set to) — the "Blizzard" button in our header calls this so
 -- a Guild OS user can still reach guild chat history / the news feed.
 function BRutus:OpenBlizzardGuildUI()
-    if self._origToggleGuildFrame then
-        self._origToggleGuildFrame()
-    elseif ToggleGuildFrame then
-        ToggleGuildFrame()
-    end
+    -- Open the native guild UI without our hijack redirect swapping it back to
+    -- Guild OS. We call the real (unreplaced) ToggleGuildFrame with a guard flag
+    -- our hooksecurefunc handler checks.
+    if not ToggleGuildFrame then return end
+    self._suppressGuildHijack = true
+    ToggleGuildFrame()
+    self._suppressGuildHijack = false
 end
 
 -- Attach a "Guild OS" button to a Blizzard guild frame ONCE (guarded — a shape change
