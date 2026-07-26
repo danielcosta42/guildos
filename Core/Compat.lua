@@ -90,6 +90,30 @@ function Compat.SetWhoToUI(toApi)
     end
 end
 
+-- Best map ID for a unit (C_Map on BCC/modern). Returns nil when the API is
+-- unavailable or the unit has no map (e.g. mid-loading-screen).
+function Compat.GetBestMapForUnit(unit)
+    if C_Map and C_Map.GetBestMapForUnit then
+        return C_Map.GetBestMapForUnit(unit)
+    end
+    return nil
+end
+
+-- Normalized position of a unit on `mapID` as x,y in 0..1. Returns nil inside
+-- instances (C_Map returns no position there) or when the API is unavailable.
+-- Handles both the Vector2DMixin return (has :GetXY()) and an older plain
+-- {x=,y=} table, so a missing API degrades to zone-only rather than erroring.
+function Compat.GetPlayerMapPosition(mapID, unit)
+    if mapID and C_Map and C_Map.GetPlayerMapPosition then
+        local pos = C_Map.GetPlayerMapPosition(mapID, unit)
+        if pos then
+            if pos.GetXY then return pos:GetXY() end
+            if pos.x and pos.y then return pos.x, pos.y end
+        end
+    end
+    return nil
+end
+
 -- Whether this client may edit guild public notes
 function Compat.CanEditPublicNote()
     if CanEditPublicNote then return CanEditPublicNote() and true or false end

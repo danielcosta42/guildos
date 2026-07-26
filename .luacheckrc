@@ -192,6 +192,7 @@ read_globals = {
 
     -- WoW API: Instance & Raid
     "GetInstanceInfo",
+    "IsInInstance",
     "GetNumGroupMembers",
     "IsInGroup",
     "IsInRaid",

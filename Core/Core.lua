@@ -311,6 +311,7 @@ function BRutus:InitModules()
     if BRutus.NoteCommand then BRutus.NoteCommand:Initialize() end
     if BRutus.LevelQuery then BRutus.LevelQuery:Initialize() end
     if BRutus.LFGBoard then BRutus.LFGBoard:Initialize() end
+    if BRutus.GuildMap then BRutus.GuildMap:Initialize() end
     if BRutus.RecipeTracker then
         BRutus.RecipeTracker:Initialize()
     end

@@ -92,6 +92,7 @@ Modules\Mentions.lua
 Modules\NoteCommand.lua
 Modules\LevelQuery.lua
 Modules\LFGBoard.lua
+Modules\GuildMap.lua
 
 # UI
 UI\Helpers.lua

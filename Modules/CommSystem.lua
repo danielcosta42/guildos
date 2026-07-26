@@ -29,6 +29,7 @@ CommSystem.MSG_TYPES = {
     LFG       = "LG",    -- member self-declared LFG availability (sender bound)
     RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
                          -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
+    MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD-only; clamped)
 }
 
 -- Throttle settings
@@ -321,6 +322,15 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         if BRutus.RecruitEngagement then
             BRutus.RecruitEngagement:HandleStats(sender, data, channel)
         end
+    elseif msgType == CommSystem.MSG_TYPES.MAP_POS then
+        -- Live guild-map position. Identity is the envelope sender and it must
+        -- arrive over GUILD; HandlePosition keys the entry by that sender and
+        -- clamps every number, so a peer can only ever place its OWN pin and a
+        -- hostile packet cannot break the map UI. channel is threaded exactly
+        -- like RECRUIT_STATS so the GUILD-only rule can be enforced.
+        if BRutus.GuildMap then
+            BRutus.GuildMap:HandlePosition(sender, data, channel)
+        end
     end
 end
 
@@ -445,6 +455,15 @@ function CommSystem:HandleRequest(_sender, _data)
         if BRutus.RecruitEngagement then
             C_Timer.After(4, function()
                 BRutus.RecruitEngagement:BroadcastStats()
+            end)
+        end
+
+        -- Every member answers with its own current map position (forced past
+        -- the throttle), so a guildmate logging in converges on where everyone
+        -- is instead of waiting for each peer's next zone change.
+        if BRutus.GuildMap then
+            C_Timer.After(4.5, function()
+                BRutus.GuildMap:Broadcast(true)
             end)
         end
     end)
