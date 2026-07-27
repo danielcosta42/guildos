@@ -808,6 +808,34 @@ function PopulateDetail(frame, data)
         noteLabel:Show()
         yOff = yOff - 16
 
+        -- The viewed character is excluded from the list below, so without this
+        -- row you could not promote your CURRENT character to main (you would
+        -- have to log an alt). Show it here with a "Set as main" when it is an
+        -- alt. Labelled "(you)" when it is your own character; for an officer
+        -- viewing someone else it is just their name and the officer path applies.
+        if #linkedKeys > 1 then
+            local selfIsMain = (altLinks[playerKey] == nil)
+            local selfName = playerKey:match("^([^-]+)") or playerKey
+            local selfLabel = _pFS(child)
+            selfLabel:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            selfLabel:SetPoint("TOPLEFT", 12, yOff)
+            selfLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            selfLabel:SetText(selfName
+                .. (isSelfManage and ("  " .. L["(you)"]) or "")
+                .. (selfIsMain and ("  " .. L["(main)"]) or ""))
+            selfLabel:Show()
+            if not selfIsMain then
+                local setSelfMain = UI:CreateButton(child, L["Set as main"], 90, 18)
+                setSelfMain:SetPoint("LEFT", selfLabel, "RIGHT", 10, 0)
+                setSelfMain:SetScript("OnClick", function()
+                    if BRutus:IsOfficer() then BRutus:SetMain(playerKey)
+                    else BRutus.AltAutoDetect:SetOwnMain(playerKey) end
+                    PopulateDetail(frame, data)
+                end)
+            end
+            yOff = yOff - 22
+        end
+
         -- List currently linked chars (excluding self)
         for _, lk in ipairs(linkedKeys) do
             if lk ~= playerKey then
