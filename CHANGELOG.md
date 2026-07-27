@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.36.0] - 2026-07-27
+
+### Added
+- bulk moderation presets in the Leadership panel
+- "do I know this pug?" group inspector
+- live guild map UI (world map pins, list, minimap dots)
+- cold-sync backfill for ban, audit and bulletin domains (F1)
+- guild map position tracking and sync (data layer)
+
+### Fixed
+- tie the guild map overlay to the world map's open/close state
+- guild map and pug inspector windows open on the first toggle
+- moderation preset Apply opens the guild panel once, not per member
+
+
 ## [0.35.0] - 2026-07-27
 
 ### Added
