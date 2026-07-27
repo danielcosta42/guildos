@@ -646,6 +646,8 @@ L["Add your own alts (any account). An officer's client applies them guild-wide.
 L["[main] "] = "[Main] "
 L["[alt]  "] = "[Twink] "
 L["Unlink"] = "Verknüpfung aufheben"
+L["(main)"] = "(Main)"
+L["Set as main"] = "Als Main festlegen"
 L["AltName (this is the main)"] = "TwinkName (dies ist der Main)"
 L["Link alt"] = "Twink verknüpfen"
 L["Slot "] = "Platz "

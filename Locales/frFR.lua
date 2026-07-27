@@ -646,6 +646,8 @@ L["Add your own alts (any account). An officer's client applies them guild-wide.
 L["[main] "] = "[principal] "
 L["[alt]  "] = "[reroll]  "
 L["Unlink"] = "Dissocier"
+L["(main)"] = "(principal)"
+L["Set as main"] = "Définir comme principal"
 L["AltName (this is the main)"] = "NomReroll (ceci est le principal)"
 L["Link alt"] = "Lier un reroll"
 L["Slot "] = "Emplacement "

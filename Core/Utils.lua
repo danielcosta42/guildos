@@ -49,6 +49,46 @@ function BRutus:GetLinkedChars(playerKey)
     return result
 end
 
+-- Pure re-point: given an altLinks table and a `group` (canonical main + all
+-- its alts, as GetLinkedChars returns), return a NEW altLinks table in which
+-- newMain is THE main (no entry) and every OTHER group member (including the
+-- old main) points at newMain. The input table is never mutated, and links
+-- for chars outside the group are copied through untouched. A group with
+-- fewer than 2 members is returned as an unchanged copy. Idempotent: if
+-- newMain is already the group's main the output equals the input.
+function BRutus:_RepointGroup(altLinks, group, newMain)
+    local out = {}
+    for k, v in pairs(altLinks or {}) do out[k] = v end
+    if not group or #group < 2 or not newMain then return out end
+    for _, k in ipairs(group) do
+        if k == newMain then
+            out[k] = nil            -- the new main points at nobody
+        else
+            out[k] = newMain        -- old main + siblings point at newMain
+        end
+    end
+    return out
+end
+
+-- Officer-side "set which character is the main" of an existing alt group.
+-- Resolves the group via GetLinkedChars, no-ops (returns false) for a group
+-- of fewer than 2 or when newMainKey is already the main, then re-points the
+-- whole group onto newMainKey and broadcasts once. No circular link can
+-- result because newMainKey's own entry is cleared.
+function BRutus:SetMain(newMainKey)
+    if not self:IsOfficer() then return false end
+    if not newMainKey then return false end
+    self.db.altLinks = self.db.altLinks or {}
+    local group = self:GetLinkedChars(newMainKey)
+    if #group < 2 then return false end                 -- nothing to re-main
+    if self.db.altLinks[newMainKey] == nil then return false end  -- already main
+    self.db.altLinks = self:_RepointGroup(self.db.altLinks, group, newMainKey)
+    if self.CommSystem then
+        self.CommSystem:BroadcastAltLinks()
+    end
+    return true
+end
+
 ----------------------------------------------------------------------
 -- General helpers
 ----------------------------------------------------------------------
@@ -167,6 +207,27 @@ function BRutus:RegisterUtilTests()
         if self:SanitizeUserText(acao, 2) ~= "a" then return false, "split codepoint kept" end
         if self:SanitizeUserText(acao, 3) ~= "a\195\167" then return false, "whole codepoint dropped" end
         if self:SanitizeUserText(acao, 5) ~= acao then return false, "exact fit" end
+        return true
+    end)
+    -- _RepointGroup is pure: no db, no comm. Pin the three re-main outcomes.
+    self.SelfTest:Register("altlink.repoint_promote", function()
+        local links = { ["Alt-R"] = "Main-R", ["Alt2-R"] = "Main-R" }
+        local out = self:_RepointGroup(links, { "Main-R", "Alt-R", "Alt2-R" }, "Alt-R")
+        if out["Alt-R"] ~= nil then return false, "new main must have no entry" end
+        if out["Main-R"] ~= "Alt-R" then return false, "old main not re-pointed" end
+        if out["Alt2-R"] ~= "Alt-R" then return false, "sibling not re-pointed" end
+        if links["Alt-R"] ~= "Main-R" then return false, "input mutated" end
+        return true
+    end)
+    self.SelfTest:Register("altlink.repoint_single", function()
+        local out = self:_RepointGroup({}, { "Solo-R" }, "Solo-R")
+        if next(out) ~= nil then return false, "1-member group must add nothing" end
+        return true
+    end)
+    self.SelfTest:Register("altlink.repoint_noop_main", function()
+        local out = self:_RepointGroup({ ["Alt-R"] = "Main-R" }, { "Main-R", "Alt-R" }, "Main-R")
+        if out["Main-R"] ~= nil then return false, "main must stay the main" end
+        if out["Alt-R"] ~= "Main-R" then return false, "alt must be unchanged" end
         return true
     end)
 end

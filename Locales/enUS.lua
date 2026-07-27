@@ -81,6 +81,8 @@ L["alt of %s"] = "alt of %s"
 L["Players"] = "Players"
 L["of %d chars"] = "of %d chars"
 L["Add your own alts (any account). An officer's client applies them guild-wide."] = "Add your own alts (any account). An officer's client applies them guild-wide."
+L["(main)"] = "(main)"
+L["Set as main"] = "Set as main"
 
 -- UI/RosterFrame.lua (search placeholder — accepts level queries)
 L["Search / 60-70 / >=60"] = "Search / 60-70 / >=60"

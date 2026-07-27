@@ -100,6 +100,34 @@ function AltAutoDetect:LinkOwnAlts(mainKey, altKeys)
     end
 end
 
+-- Member-safe "set which of my chars is the main". Officers apply directly
+-- via the authoritative SetMain; members re-point their OWN group LOCALLY (so
+-- their view updates immediately) and broadcast a SELF_ALT self-claim
+-- { main = newMainKey, alts = <every other current group member> } that
+-- officers replay. Security: the broadcast rides the comm envelope, and
+-- HandleSelfClaim only applies a claim whose sender is part of the named
+-- group, so a member can only ever re-main a group they belong to.
+function AltAutoDetect:SetOwnMain(newMainKey)
+    if not newMainKey then return end
+    if BRutus:IsOfficer() then
+        BRutus:SetMain(newMainKey)
+        return
+    end
+    local links = BRutus.db.altLinks or {}
+    local group = BRutus:GetLinkedChars(newMainKey)
+    if #group < 2 then return end               -- nothing to re-main
+    if links[newMainKey] == nil then return end -- already the main, no-op
+    BRutus.db.altLinks = BRutus:_RepointGroup(links, group, newMainKey)
+    if BRutus.CommSystem then
+        local alts = {}
+        for _, k in ipairs(group) do
+            if k ~= newMainKey then alts[#alts + 1] = k end
+        end
+        local payload = LibSerialize:Serialize({ main = newMainKey, alts = alts })
+        BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.SELF_ALT, payload)
+    end
+end
+
 -- Member-safe unlink of one's OWN alt: officers apply directly, members
 -- broadcast a self-claim that officers replay.
 function AltAutoDetect:UnlinkOwnAlt(altKey)
@@ -143,6 +171,13 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
             end
         end
         if involvesSender then
+            -- The claim asserts claim.main is THE main. If it is currently an
+            -- alt of someone else, clear its own entry BEFORE the LinkAlt loop
+            -- so LinkAlt's circular guard (mainKey must not itself be an alt)
+            -- does not reject promoting an existing alt to main. Safe: this
+            -- runs only after the sender-involvement gate above.
+            BRutus.db.altLinks = BRutus.db.altLinks or {}
+            BRutus.db.altLinks[claim.main] = nil
             for _, k in ipairs(claim.alts) do
                 if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
             end

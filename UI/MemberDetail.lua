@@ -817,7 +817,7 @@ function PopulateDetail(frame, data)
                 lkLabel:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
                 lkLabel:SetPoint("TOPLEFT", 12, yOff)
                 lkLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                lkLabel:SetText((lkIsMain and L["[main] "] or L["[alt]  "]) .. lkName)
+                lkLabel:SetText(lkName .. (lkIsMain and ("  " .. L["(main)"]) or ""))
                 lkLabel:Show()
 
                 -- Unlink button
@@ -834,6 +834,19 @@ function PopulateDetail(frame, data)
                     if lkIsMain then doUnlink(playerKey) else doUnlink(capturedKey) end
                     PopulateDetail(frame, data)
                 end)
+
+                -- "Set as main" on every listed char that is NOT the current
+                -- main. Officers apply directly; members route through the
+                -- self-claim (SetOwnMain is sender-bound, same as Unlink).
+                if not lkIsMain then
+                    local setMainBtn = UI:CreateButton(child, L["Set as main"], 90, 18)
+                    setMainBtn:SetPoint("LEFT", unlinkBtn, "RIGHT", 6, 0)
+                    setMainBtn:SetScript("OnClick", function()
+                        if BRutus:IsOfficer() then BRutus:SetMain(capturedKey)
+                        else BRutus.AltAutoDetect:SetOwnMain(capturedKey) end
+                        PopulateDetail(frame, data)
+                    end)
+                end
                 yOff = yOff - 22
             end
         end

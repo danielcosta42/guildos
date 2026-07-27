@@ -647,6 +647,8 @@ L["Add your own alts (any account). An officer's client applies them guild-wide.
 L["[main] "] = "[principal] "
 L["[alt]  "] = "[alt]  "
 L["Unlink"] = "Desvincular"
+L["(main)"] = "(principal)"
+L["Set as main"] = "Marcar como principal"
 L["AltName (this is the main)"] = "NombreAlt (este es el principal)"
 L["Link alt"] = "Vincular alt"
 L["Slot "] = "Espacio "
