@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.0] - 2026-07-27
+
+### Added
+- set which character is the main of an alt group
+
+### Fixed
+- only clear the claimed main when it is in the sender's own group
+
+
 ## [0.33.1] - 2026-07-26
 
 ### Fixed
