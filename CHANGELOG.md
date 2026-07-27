@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0] - 2026-07-27
+
+### Added
+- promote the character you are on to main from its own inspector
+
+
 ## [0.34.0] - 2026-07-27
 
 ### Added
