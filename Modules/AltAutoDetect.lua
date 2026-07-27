@@ -174,10 +174,18 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
             -- The claim asserts claim.main is THE main. If it is currently an
             -- alt of someone else, clear its own entry BEFORE the LinkAlt loop
             -- so LinkAlt's circular guard (mainKey must not itself be an alt)
-            -- does not reject promoting an existing alt to main. Safe: this
-            -- runs only after the sender-involvement gate above.
+            -- does not reject promoting an existing alt to main.
+            --
+            -- BUT clear ONLY when claim.main is already in the SENDER's own
+            -- group. Otherwise a claim {main=X, alts={self}} with an unrelated X
+            -- would detach X from its real group. When not same-group we skip
+            -- the clear, and LinkAlt's circular guard still blocks linking to an
+            -- existing alt, so a member can only re-main a group they belong to.
             BRutus.db.altLinks = BRutus.db.altLinks or {}
-            BRutus.db.altLinks[claim.main] = nil
+            local senderGroup = BRutus:GetLinkedChars(senderKey)
+            for _, k in ipairs(senderGroup) do
+                if k == claim.main then BRutus.db.altLinks[claim.main] = nil; break end
+            end
             for _, k in ipairs(claim.alts) do
                 if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
             end
