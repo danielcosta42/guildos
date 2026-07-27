@@ -270,13 +270,17 @@ function ModPresets:ApplyPreset(preset, matches)
     local GM = BRutus.GuildManager
     if not GM then return false end
     local action = self:GetAction(preset)
+    -- Kicks and rank changes are Blizzard-protected, so we cannot perform them.
+    -- List the targets once and open the native guild panel ONCE for the officer
+    -- to action them there. Looping GM:ConfirmKick/Promote per member would spam
+    -- chat and toggle the panel shut for an even match count. ADR-0010.
+    local names = {}
     for _, m in ipairs(matches) do
-        if action == "promote" then
-            GM:Promote(m.fullName)
-        else
-            GM:ConfirmKick(m.fullName)
-        end
+        names[#names + 1] = m.name or (m.fullName and (m.fullName:match("^([^-]+)") or m.fullName)) or "?"
     end
+    local verb = (action == "promote") and L["Promote"] or L["Remove from guild"]
+    BRutus:Print(string.format(L["%s in the guild panel: %s"], verb, table.concat(names, ", ")))
+    if GM.OpenNativeGuild then GM:OpenNativeGuild() end
     GM:RefreshUI()
     return true
 end

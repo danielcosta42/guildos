@@ -843,7 +843,7 @@ local function presetApplyText(preset, matches)
         or  format(L["Remove %d member(s) from the guild:"], #matches)
     return format(L["Apply preset \"%s\"?"], preset.name or "?") .. "\n"
         .. line .. " " .. list .. "\n\n"
-        .. L["Rank and removal actions are Blizzard-protected: the guild panel opens to confirm each."]
+        .. L["Rank and removal are Blizzard-protected: the guild panel opens, do them there."]
 end
 
 local function BuildPresetsSub(panel)
