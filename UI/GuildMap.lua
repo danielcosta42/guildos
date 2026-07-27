@@ -261,6 +261,9 @@ local function BuildListFrame()
     f.scroll = scroll
     listContent = content
 
+    -- Frames are shown on creation; hide it so ToggleGuildMap's first call
+    -- opens it instead of seeing IsShown()==true and immediately hiding it.
+    f:Hide()
     return f
 end
 

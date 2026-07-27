@@ -150,6 +150,9 @@ local function BuildFrame()
     end
     f.autoChk = chk
 
+    -- Start hidden: a frame is shown on creation, so TogglePugInspector's first
+    -- call would otherwise see IsShown()==true and hide it right away.
+    f:Hide()
     return f
 end
 
