@@ -49,6 +49,7 @@ local pinContainer              -- our frame covering the map canvas
 local activePins  = 0
 local hooked      = false
 local listFrame, listContent    -- the draggable list overlay
+local overlayEnabled = false    -- guild overlay is tied to the world map while on
 local listRows    = {}
 local dotsFrame                 -- minimap "guildmates in your zone" indicator
 
@@ -153,8 +154,16 @@ local function InstallMapHooks()
     if wmf.OnMapChanged then
         hooksecurefunc(wmf, "OnMapChanged", function() BRutus:SafeCall(LayoutPins) end)
     end
-    -- Map opened -> repaint from the latest data.
-    wmf:HookScript("OnShow", function() BRutus:SafeCall(RefreshData) end)
+    -- Map opened -> if the guild overlay is on, show it and repaint.
+    wmf:HookScript("OnShow", function()
+        if overlayEnabled and listFrame then listFrame:Show() end
+        BRutus:SafeCall(RefreshData)
+    end)
+    -- Map closed -> hide the overlay so it never floats over the game world.
+    -- overlayEnabled stays on, so reopening the map brings it back.
+    wmf:HookScript("OnHide", function()
+        if listFrame then listFrame:Hide() end
+    end)
 end
 
 -- Lazily build our pin container over the map canvas. Returns nil until the
@@ -234,7 +243,9 @@ local function BuildListFrame()
     title:SetPoint("TOPLEFT", 12, -10)
     local close = UI:CreateCloseButton(f)
     close:SetPoint("TOPRIGHT", -6, -6)
-    close:SetScript("OnClick", function() f:Hide() end)
+    -- The X dismisses the overlay for good (until /gos map re-enables it), so it
+    -- does not pop back the next time the world map is opened.
+    close:SetScript("OnClick", function() overlayEnabled = false; f:Hide() end)
 
     local chk = UI:CreateCheckbox(f, L["Share my live position"], 16)
     chk:SetPoint("TOPLEFT", 10, -34)
@@ -405,18 +416,22 @@ end
 function BRutus:ToggleGuildMap()
     local f = listFrame or BuildListFrame()
     listFrame = f
-    if f:IsShown() then
+    if overlayEnabled then
+        -- Turn the guild overlay off; leave the world map as the player had it.
+        overlayEnabled = false
         f:Hide()
         return
     end
+    overlayEnabled = true
     BRutus.Compat.OpenWorldMap()
     EnsurePinLayer()
     f:Show(); f:Raise()
     RefreshData()
     -- The map addon may have loaded on demand this frame; retry the layer +
-    -- repaint once the canvas certainly exists.
+    -- repaint (and re-show the overlay) once the canvas certainly exists.
     BRutus.Compat.After(0, function()
         EnsurePinLayer()
+        if overlayEnabled and listFrame then listFrame:Show() end
         RefreshData()
     end)
 end
