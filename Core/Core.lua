@@ -456,10 +456,21 @@ function BRutus:HookGuildFrame()
             local blizShown = (GuildFrame and GuildFrame:IsShown())
                 or (CommunitiesFrame and CommunitiesFrame:IsShown())
             if blizShown then
-                -- Swap to Guild OS. The Hide runs in the same frame as the native
+                -- Swap to Guild OS. The hide runs in the same frame as the native
                 -- Show (hooksecurefunc is synchronous), so nothing actually renders.
-                if GuildFrame then GuildFrame:Hide() end
-                if CommunitiesFrame then CommunitiesFrame:Hide() end
+                --
+                -- CRITICAL: use HideUIPanel, never frame:Hide(). Both of these are
+                -- UIPanels (registered in UIPanelWindows), and a bare :Hide() skips
+                -- the panel manager, so the slot they occupy is never released. The
+                -- panel stays "open" as far as GetUIPanel is concerned while being
+                -- invisible, and HideUIPanel later early-returns on a frame that is
+                -- already hidden, so the slot leaks for the rest of the session.
+                -- CloseAllWindows() then reports "I closed something" on every call,
+                -- and ToggleGameMenu never reaches ShowUIPanel(GameMenuFrame): ESC
+                -- still closes windows but stops opening the game menu, with no Lua
+                -- error, until /reload.
+                if GuildFrame then HideUIPanel(GuildFrame) end
+                if CommunitiesFrame then HideUIPanel(CommunitiesFrame) end
                 if not (self.RosterFrame and self.RosterFrame:IsShown()) then
                     self:ToggleRoster()
                 end
