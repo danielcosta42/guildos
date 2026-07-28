@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.36.1] - 2026-07-28
+
+### Fixed
+- release the guild frame's panel slot so ESC still opens the game menu
+
+
 ## [0.36.0] - 2026-07-27
 
 ### Added
