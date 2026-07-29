@@ -73,7 +73,7 @@ local editor   -- lazily-built singleton
 
 local function buildEditor()
     local f = CreateFrame("Frame", "GuildOSEventEditor", UIParent, "BackdropTemplate")
-    f:SetSize(360, 336)
+    f:SetSize(360, 392)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
@@ -163,6 +163,19 @@ local function buildEditor()
     local titleBox = fieldBox(14, -128, 332, L["Title"], false, 60)
     local descBox  = fieldBox(14, -178, 332, L["Description (optional)"], true, 500)
 
+    -- Alliance sharing. The whole block only exists while this guild is in a
+    -- pact: with no alliance there is nothing to share with, and an unexplained
+    -- checkbox is worse than no checkbox.
+    local shareCb = UI:CreateCheckbox(f, L["Share with the alliance"], 18)
+    shareCb:SetPoint("TOPLEFT", 14, -276)
+    local shareHint = UI:CreateText(f,
+        L["Allied guilds see this event and can request a slot. Unchecked, it stays in the guild."],
+        9, C.textDim.r, C.textDim.g, C.textDim.b)
+    shareHint:SetPoint("TOPLEFT", 34, -296)
+    shareHint:SetWidth(310)
+    shareHint:SetJustifyH("LEFT")
+    shareHint:SetWordWrap(true)
+
     local saveBtn = UI:CreateButton(f, L["Create"], 110, 24)
     saveBtn:SetPoint("BOTTOMLEFT", 14, 14)
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
@@ -177,10 +190,14 @@ local function buildEditor()
         local title = strtrim(titleBox:GetText() or "")
         if title == "" then BRutus:Print(L["An event needs a title and a date/time."]); return end
         local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
+        local inAlliance = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
+        local share = inAlliance and shareCb.checkbox:GetChecked() or nil
         if f.editId then
-            CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind)
+            CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "",
+                f.kind, share)
         else
-            CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind)
+            CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
+                f.kind, share and true or false)
         end
         f:Hide()
     end
@@ -204,6 +221,12 @@ local function buildEditor()
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
             hh, mm, size, title, note = 20, 0, 25, "", ""
         end
+        local inAlliance = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
+        shareCb:SetShown(inAlliance)
+        shareHint:SetShown(inAlliance)
+        f:SetHeight(inAlliance and 392 or 336)
+        shareCb.checkbox:SetChecked((event and event.shareAlliance) and true or false)
+
         dateBox:SetText(string.format("%04d-%02d-%02d", y, m, d))
         timeBox:SetText(string.format("%02d:%02d", hh, mm))
         sizeBtn.sizeVal = size; sizeBtn.label:SetText(tostring(size))
@@ -406,7 +429,13 @@ function BRutus:CreateCalendarSub(panel)
 
             local kc = kindColor(e.kind)
             local tag = string.format("|cff%02x%02x%02x[%s]|r ", kc.r * 255, kc.g * 255, kc.b * 255, kindLabel(e.kind))
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or 25) .. ")|r",
+            -- Shared events carry a mark so an officer can see what is exposed
+            -- without opening each one. Marking the SHARED ones (not the
+            -- private ones) because exposure is the state that wants attention.
+            -- A gold [A] rather than a globe glyph: FRIZQT has no symbol
+            -- coverage and unicode marks render as a box in this font.
+            local shareMark = e.shareAlliance and "  |cffEDCC7B[A]|r" or ""
+            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or 25) .. ")|r" .. shareMark,
                 12, C.gold.r, C.gold.g, C.gold.b)
             head:SetPoint("TOPLEFT", 4, -yy)
             if isOfficer then
