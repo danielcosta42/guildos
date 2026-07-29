@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.40.0] - 2026-07-29
+
+### Added
+- group the alliance chat into speaker cards with a clickable ally sheet
+
+
 ## [0.39.2] - 2026-07-29
 
 ### Fixed
