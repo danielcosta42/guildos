@@ -121,6 +121,11 @@ read_globals = {
     "JoinChannelByName",
     "LeaveChannelByName",
     "EnumerateServerChannels",
+    "GetChannelRosterInfo",
+    "ChannelKick",
+    "ChannelBan",
+    "ChannelUnban",
+    "ChannelModerator",
     "ChatFrame_AddMessageEventFilter",
     "ChatFrame_SendTell",
 

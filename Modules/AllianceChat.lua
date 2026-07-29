@@ -115,6 +115,96 @@ function AllianceChat:SetEnabled(on)
 end
 
 ----------------------------------------------------------------------
+-- Channel moderation.
+--
+-- This is the ONLY real moderation available. A custom channel message is
+-- delivered by the server to everyone in the channel and cannot be retracted:
+-- once it is printed it is printed, in the default chat frame and in our feed.
+-- What CAN be done is stop the person continuing, which is kick and ban.
+--
+-- Ownership is the catch. WoW hands a custom channel to whoever joined it
+-- first, which for an alliance channel is very often a regular member rather
+-- than an ambassador, so the people who need to moderate usually cannot. That
+-- is why PromoteAmbassadors exists: the owner hands moderator to the pact's
+-- ambassadors in one action.
+----------------------------------------------------------------------
+
+-- Best effort. The channel roster is only populated while the client is
+-- tracking it, so "unknown" is a real answer here and callers must treat it as
+-- "try and let the server decide" rather than as a refusal.
+function AllianceChat:ModeratorState()
+    local name = self:ChannelName()
+    local id = name and GetChannelName and GetChannelName(name)
+    if not id or id == 0 or not GetChannelRosterInfo then
+        return "unknown"
+    end
+    local me = UnitName("player")
+    for i = 1, 400 do
+        local ok, who, owner, moderator = pcall(GetChannelRosterInfo, id, i)
+        if not ok or not who then
+            break
+        end
+        if who == me then
+            if owner then return "owner" end
+            if moderator then return "moderator" end
+            return "member"
+        end
+    end
+    return "unknown"
+end
+
+function AllianceChat:CanModerate()
+    local state = self:ModeratorState()
+    return state == "owner" or state == "moderator" or state == "unknown"
+end
+
+local function channelName()
+    return GuildOS.AllianceChat:ChannelName()
+end
+
+function AllianceChat:Kick(playerName)
+    local ch = channelName()
+    if not ch or not playerName or playerName == "" or not ChannelKick then
+        return false
+    end
+    ChannelKick(ch, playerName)
+    return true
+end
+
+function AllianceChat:Ban(playerName)
+    local ch = channelName()
+    if not ch or not playerName or playerName == "" or not ChannelBan then
+        return false
+    end
+    ChannelBan(ch, playerName)
+    return true
+end
+
+-- Hand channel moderator to every ambassador in the pact. Only the owner can
+-- do this, and it is an explicit action rather than something that happens on
+-- login: silently changing other people's channel permissions is not the kind
+-- of thing an addon should decide on its own.
+function AllianceChat:PromoteAmbassadors()
+    local ch = channelName()
+    local ally = GuildOS.Alliance
+    local pact = ally and ally:Get()
+    if not ch or not pact or not ChannelModerator then
+        return 0
+    end
+    if self:ModeratorState() ~= "owner" then
+        return 0
+    end
+    local n = 0
+    for _, entry in pairs(pact.guilds) do
+        for _, amb in ipairs(entry.ambassadors or {}) do
+            ChannelModerator(ch, amb)
+            n = n + 1
+        end
+    end
+    return n
+end
+
+----------------------------------------------------------------------
 -- The feed: conversation and alliance events on one timeline.
 --
 -- Capture rides a dedicated event frame, NOT the display filter, because a

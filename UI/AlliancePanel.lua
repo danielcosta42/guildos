@@ -360,6 +360,14 @@ local function ensureAllyCard()
     f.sheet = UI:CreateButton(f, L["Full sheet"], 82, 22)
     f.sheet:SetPoint("LEFT", f.invite, "RIGHT", 6, 0)
 
+    -- Moderation. Kick and ban do not remove what was already said, which is
+    -- impossible on a server-delivered channel; they stop the person carrying
+    -- on. Only shown to ambassadors, and never for our own guildmates.
+    f.kick = UI:CreateButton(f, L["Kick from channel"], 118, 22)
+    f.kick:SetPoint("BOTTOMLEFT", 12, 38)
+    f.ban = UI:CreateButton(f, L["Ban from channel"], 118, 22)
+    f.ban:SetPoint("LEFT", f.kick, "RIGHT", 6, 0)
+
     tinsert(UISpecialFrames, "GuildOSAllyCard")   -- ESC closes it
     allyCard = f
     return f
@@ -433,7 +441,28 @@ function BRutus:ShowAllyCard(name, guild, anchor)
         end)
     end
 
-    f:SetHeight(math.max(150, 96 + (f.body:GetStringHeight() or 0) + 44))
+    -- Moderating your own guildmates through a channel kick is the wrong tool:
+    -- that is a guild matter, not an alliance one.
+    local chat = BRutus.AllianceChat
+    local canModerate = ally and ally:CanAdminister() and info.own ~= true
+        and chat and chat:CanModerate()
+    setShown(f.kick, canModerate)
+    setShown(f.ban, canModerate)
+    if canModerate then
+        f.kick:SetScript("OnClick", function()
+            if chat:Kick(name) then
+                BRutus:Print(string.format(L["Asked the server to kick %s from the channel."], name))
+            end
+        end)
+        f.ban:SetScript("OnClick", function()
+            StaticPopup_Show("GUILDOS_ALLY_BAN",
+                string.format(L["Ban %s from the alliance channel? They cannot rejoin until unbanned."], name),
+                nil, { name = name })
+        end)
+    end
+
+    local extra = canModerate and 30 or 0
+    f:SetHeight(math.max(150, 96 + (f.body:GetStringHeight() or 0) + 44 + extra))
     f:ClearAllPoints()
     if anchor then
         f:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 12, 8)
@@ -991,13 +1020,26 @@ local function BuildManage(panel)
     chatHint:SetJustifyH("LEFT")
     chatHint:SetWordWrap(true)
 
+    -- Channel ownership goes to whoever joined first, which is usually not an
+    -- ambassador, so the people who need to moderate cannot. This hands it over
+    -- in one action. Only the owner can, so it hides for everyone else.
+    local modBtn = UI:CreateButton(body, L["Give ambassadors channel moderation"], 250, 24)
+    modBtn:SetScript("OnClick", function()
+        local n = BRutus.AllianceChat and BRutus.AllianceChat:PromoteAmbassadors() or 0
+        if n > 0 then
+            BRutus:Print(string.format(L["Asked the server to promote %d ambassador(s)."], n))
+        else
+            BRutus:Print(L["Only the channel owner can do that."])
+        end
+    end)
+
     local leaveBtn = UI:CreateButton(body, L["Leave the alliance"], 170, 24)
 
     local foundGroup  = { foundHdr, tagBox, nameBox, foundBtn, foundHint }
     local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr,
                           blockHdr, blockBox, blockBtn, unblockBtn, blockHint,
                           removeHdr, removeBox, removeBtn, removeHint,
-                          chatBtn, chatHint, leaveBtn }
+                          chatBtn, chatHint, modBtn, leaveBtn }
 
     local function say(ok, err)
         if not ok and err then BRutus:Print(err) end
@@ -1038,6 +1080,7 @@ local function BuildManage(panel)
         removeHint:SetPoint("TOPLEFT", 6, -y);  y = y + 26
         chatBtn:SetPoint("TOPLEFT", 6, -y);     y = y + 28
         chatHint:SetPoint("TOPLEFT", 6, -y);    y = y + 30
+        modBtn:SetPoint("TOPLEFT", 6, -y);      y = y + 30
         leaveBtn:SetPoint("TOPLEFT", 6, -y)
     end
 
@@ -1211,6 +1254,17 @@ local function registerPopups()
             local ok, err = BRutus.Alliance:RemoveGuild(d.guild)
             if not ok and err then BRutus:Print(err) end
             if d.after then d.after() end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["GUILDOS_ALLY_BAN"] = {
+        text = "%s", button1 = L["Ban"], button2 = L["Cancel"],
+        OnAccept = function(self)
+            local d = self and self.data
+            if d and d.name and BRutus.AllianceChat:Ban(d.name) then
+                BRutus:Print(string.format(L["Asked the server to ban %s from the channel."], d.name))
+            end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
