@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.39.0] - 2026-07-29
+
+### Added
+- turn the alliance chat into a feed inside the alliance window
+
+
 ## [0.38.0] - 2026-07-29
 
 ### Added
