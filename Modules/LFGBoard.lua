@@ -15,7 +15,8 @@ local TTL_MAX     = 7200   -- 120 minutes, the longest duration the UI offers
 local NOTE_MAX    = 60
 local ENTRY_COOLDOWN = 5   -- accept at most one entry per sender per 5s
 
-LFGBoard.DEFAULTS = { notify = false, lastRole = "ANY", lastNote = "", lastTtl = DEFAULT_TTL }
+LFGBoard.DEFAULTS = { notify = false, lastRole = "ANY", lastNote = "", lastTtl = DEFAULT_TTL,
+                      allianceScope = false }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 
 function LFGBoard:Initialize()
@@ -26,7 +27,36 @@ function LFGBoard:Initialize()
     end
     self._cd = self._cd or {}
     self:Prune()
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:Register("lfg", {
+            priority = "NORMAL",
+            cap = 100,
+            build = function()
+                return LFGBoard._BuildAllianceLfg(BRutus.db.lfgBoard, GetServerTime(), 100)
+            end,
+        })
+    end
     self:_RegisterTests()
+    self:_RegisterAllianceTests()
+end
+
+function LFGBoard:_RegisterAllianceTests()
+    if not BRutus.SelfTest then return end
+    BRutus.SelfTest:Register("lfgboard.alliance_build_prunes", function()
+        local store = {
+            ["Ann-R"] = { role = "TANK", note = "MC", ts = 1000, ttl = 600 },   -- alive at 1200
+            ["Bob-R"] = { role = "DPS",  note = "any", ts = 100,  ttl = 300 },  -- expired at 1200
+            ["Cid-R"] = { role = "HEALER", note = "", ts = 1100, ttl = 600 },   -- alive
+        }
+        local out = LFGBoard._BuildAllianceLfg(store, 1200, 100)
+        if #out ~= 2 then return false, "expired entry crossed the wire: " .. #out end
+        if out[1].n ~= "Ann" or out[2].n ~= "Cid" then return false, "not sorted by key" end
+        if out[1].r ~= "TANK" then return false, "role lost" end
+        if #LFGBoard._BuildAllianceLfg(store, 1200, 1) ~= 1 then return false, "cap not enforced" end
+        if #LFGBoard._BuildAllianceLfg(nil, 1200, 100) ~= 0 then return false, "nil must not error" end
+        if #LFGBoard._BuildAllianceLfg(store, 99999, 100) ~= 0 then return false, "all expired" end
+        return true
+    end)
 end
 
 ----------------------------------------------------------------------
@@ -64,6 +94,83 @@ function LFGBoard:ActiveList(store, now, onlineSet)
     table.sort(out, function(a, b)
         if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
         return a.key < b.key
+    end)
+    return out
+end
+
+----------------------------------------------------------------------
+-- Alliance pool
+----------------------------------------------------------------------
+
+-- Snapshot for the alliance `lfg` domain. Expired entries are pruned HERE, so
+-- a dead listing never crosses the wire and never costs a revision on the
+-- other side. Sorted by key so the change fingerprint is stable.
+function LFGBoard._BuildAllianceLfg(store, now, cap)
+    local out = {}
+    if type(store) ~= "table" then
+        return out
+    end
+    cap = tonumber(cap) or 100
+    local keys = {}
+    for key in pairs(store) do
+        if type(key) == "string" then
+            keys[#keys + 1] = key
+        end
+    end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        if #out >= cap then
+            break
+        end
+        local e = store[key]
+        if LFGBoard:_IsActive(e, now) then
+            out[#out + 1] = {
+                n = key:match("^([^-]+)") or key,
+                r = e.role or "ANY",
+                t = e.note or "",
+                ts = e.ts,
+                ttl = e.ttl,
+            }
+        end
+    end
+    return out
+end
+
+-- Allied listings, in the same row shape the board renderer already consumes.
+-- The guild is folded into the note so no renderer change is needed; allied
+-- rows carry no `key`, which is what makes them read-only in the board.
+function LFGBoard:AllianceList(now)
+    local ally, sync = GuildOS.Alliance, GuildOS.AllianceSync
+    local pact = ally and ally:Get()
+    local out = {}
+    if not pact or not sync then
+        return out
+    end
+    local mine = ally:MyGuildName()
+    for guildName in pairs(pact.guilds) do
+        if guildName ~= mine and not ally:IsBlocked(guildName) then
+            local entry = sync:Remote(guildName, "lfg")
+            if entry and type(entry.data) == "table" then
+                for _, row in ipairs(entry.data) do
+                    local e = { role = row.r, note = row.t, ts = row.ts, ttl = row.ttl }
+                    if self:_IsActive(e, now) then
+                        out[#out + 1] = {
+                            key   = nil,
+                            name  = row.n,
+                            role  = row.r or "ANY",
+                            note  = "|cff8888aa[" .. guildName .. "]|r " .. (row.t or ""),
+                            ts    = row.ts,
+                            ttl   = row.ttl,
+                            guild = guildName,
+                        }
+                    end
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
+        return (a.name or "") < (b.name or "")
     end)
     return out
 end
@@ -352,6 +459,17 @@ function LFGBoard:Show()
         close:SetPoint("TOPRIGHT", -8, -8)
         close:SetScript("OnClick", function() f:Hide() end)
 
+        -- Guild / Alliance scope. Hidden entirely when there is no pact, so
+        -- guilds that never federate see no new control at all.
+        local scopeBtn = UI:CreateButton(f, L["Scope: Guild"], 130, 20)
+        scopeBtn:SetPoint("TOPRIGHT", -36, -12)
+        scopeBtn:Hide()
+        scopeBtn:SetScript("OnClick", function()
+            BRutus.db.lfgPrefs.allianceScope = not BRutus.db.lfgPrefs.allianceScope
+            LFGBoard:Refresh()
+        end)
+        f.scopeBtn = scopeBtn
+
         ------------------------------------------------------------
         -- Row 1: You: Role [ Any ]   Looking for [ .............. ]
         -- All row anchors are fixed pixel offsets straight off `f`
@@ -455,6 +573,22 @@ function LFGBoard:Show()
         local onlineSet, classByKey = self:_BuildOnlineRoster()
         local now = GetServerTime()
         local list = self:ActiveList(BRutus.db.lfgBoard, now, onlineSet)
+
+        -- Alliance scope: append the allied pool. Allied entries carry a guild
+        -- and no local key, so the row renderer treats them as read-only.
+        local ally = GuildOS.Alliance
+        local inAlliance = ally and ally:Get() ~= nil
+        if f.scopeBtn then
+            if inAlliance then f.scopeBtn:Show() else f.scopeBtn:Hide() end
+            f.scopeBtn.label:SetText(BRutus.db.lfgPrefs.allianceScope
+                and L["Scope: Alliance"] or L["Scope: Guild"])
+        end
+        if inAlliance and BRutus.db.lfgPrefs.allianceScope then
+            for _, row in ipairs(self:AllianceList(now)) do
+                list[#list + 1] = row
+            end
+        end
+
         f.countText:SetText(string.format(L["%d available"], #list))
 
         -- Reset ALL row state before repaint (children and regions),

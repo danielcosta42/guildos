@@ -367,6 +367,8 @@ L["Slot requested from %s."] = "Slot requested from %s."
 L["full"] = "full"
 L["TANK"] = "TANK"
 L["HEALER"] = "HEALER"
+L["Scope: Guild"] = "Scope: Guild"
+L["Scope: Alliance"] = "Scope: Alliance"
 
 -- Alliance crafter directory
 L["(offline)"] = "(offline)"
