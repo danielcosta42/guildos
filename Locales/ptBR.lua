@@ -1473,6 +1473,22 @@ L["Ambassadors can post. Everyone in the alliance sees it."] = "Embaixadores pod
 L["Only alliance ambassadors can post here."] = "Só embaixadores da aliança podem postar aqui."
 L["No alliance notices yet."] = "Nenhum aviso da aliança ainda."
 
+-- Alliance ambassadors, conflicts and diagnostics (UI)
+L["Ambassadors of this guild"] = "Embaixadores desta guilda"
+L["Claim ambassador"] = "Assumir como embaixador"
+L["Ambassadors speak for the guild: they invite, approve slots and post."] = "Embaixadores falam pela guilda: convidam, aprovam vaga e postam no mural."
+L["No ambassador of this guild is on the roster any more. Without one this guild cannot invite, approve slots or post."] = "Nenhum embaixador desta guilda está mais no roster. Sem embaixador a guilda não convida, não aprova vaga e não posta."
+L["SCHEDULE CONFLICTS (%d)"] = "CONFLITOS DE AGENDA (%d)"
+L["%dmin apart"] = "%dmin de diferença"
+L["%dh%02d apart"] = "%dh%02d de diferença"
+L["%d signed up for both: %s"] = "%d assinaram nos dois: %s"
+L["nobody in common"] = "ninguém em comum"
+L["Alliance %s  -  bridge: %s  -  probes %d"] = "Aliança %s  -  ponte: %s  -  probes %d"
+L["head %d/%d  -  pull %d/%d  -  push %d/%d  -  rejected %d"] = "head %d/%d  -  pull %d/%d  -  push %d/%d  -  rejeitados %d"
+L["HEAD IN"] = "HEAD IN"
+L["PUSH IN"] = "PUSH IN"
+L["ok"] = "ok"
+
 -- Alliance crafter directory
 L["(offline)"] = "(offline)"
 L["%s of %s can craft %s (%s)"] = "%s, da %s, sabe fazer %s (%s)"

@@ -61,24 +61,8 @@ local function BuildOverview(panel)
     line:SetPoint("TOPLEFT", 0, -44)
     line:SetPoint("TOPRIGHT", 0, -44)
 
-    -- Column headers, matching the approved mockup.
-    local head = {}
-    local COLS = {
-        { key = "guild", label = L["GUILD"],       x = 6,   w = 190 },
-        { key = "seen",  label = L["SEEN"],        x = 200, w = 70 },
-        { key = "amb",   label = L["AMBASSADORS"], x = 274, w = 200 },
-        { key = "sync",  label = L["LAST SYNC"],   x = 478, w = 110 },
-    }
-    for _, col in ipairs(COLS) do
-        local fs = UI:CreateHeaderText(panel, col.label, 10)
-        fs:SetPoint("TOPLEFT", col.x, -50)
-        fs:SetWidth(col.w)
-        fs:SetJustifyH("LEFT")
-        head[col.key] = fs
-    end
-
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -68)
+    holder:SetPoint("TOPLEFT", 0, -50)
     holder:SetPoint("BOTTOMRIGHT", 0, 4)
     -- CreateScrollFrame does NOT anchor the scroll frame; without this the
     -- content is clipped to 0x0 and renders as nothing, with no error.
@@ -95,7 +79,6 @@ local function BuildOverview(panel)
             title:Hide()
             status:Hide()
             line:Hide()
-            for _, fs in pairs(head) do fs:Hide() end
             empty:Show()
             empty:SetText(BRutus:IsOfficer()
                 and L["This guild is not in an alliance yet. Use the Manage tab to found one."]
@@ -107,7 +90,6 @@ local function BuildOverview(panel)
         title:Show()
         status:Show()
         line:Show()
-        for _, fs in pairs(head) do fs:Show() end
 
         title:SetText(string.format("%s  |cff888888[%s]|r  %s",
             summary.name, summary.tag,
@@ -123,6 +105,73 @@ local function BuildOverview(panel)
             summary.channel or "?", chanText))
 
         local y = 0
+
+        ------------------------------------------------------------------
+        -- Schedule conflicts. Only rendered when there is something to say,
+        -- so a healthy week costs no vertical space at all.
+        ------------------------------------------------------------------
+        local cal = BRutus.Calendar
+        local conflicts = (cal and cal.AllianceConflicts and cal:AllianceConflicts()) or {}
+        if #conflicts > 0 then
+            local hdr = UI:CreateText(content,
+                string.format(L["SCHEDULE CONFLICTS (%d)"], #conflicts),
+                10, C.gold.r, C.gold.g, C.gold.b)
+            hdr:SetPoint("TOPLEFT", 6, -y)
+            y = y + 16
+
+            for i = 1, math.min(#conflicts, 6) do
+                local c = conflicts[i]
+                local mins = math.floor((c.gap or 0) / 60)
+                local gapText = mins >= 60
+                    and string.format(L["%dh%02d apart"], math.floor(mins / 60), mins % 60)
+                    or string.format(L["%dmin apart"], mins)
+                local head = UI:CreateText(content, string.format(
+                    "%s  %s  |cff888888x|r  %s  |cff8888aa%s|r  |cff666666%s|r",
+                    date("%a %H:%M", c.mine.when), c.mine.title or "?",
+                    c.theirs.title or "?", c.theirs.guild or "?", gapText),
+                    11, C.text.r, C.text.g, C.text.b)
+                head:SetPoint("TOPLEFT", 10, -y)
+                head:SetWidth(math.max(content:GetWidth() - 20, 200))
+                head:SetJustifyH("LEFT")
+                head:SetWordWrap(false)
+                y = y + 15
+
+                local detail
+                if c.sharedCount > 0 then
+                    detail = string.format(L["%d signed up for both: %s"],
+                        c.sharedCount, table.concat(c.shared, ", "))
+                else
+                    detail = L["nobody in common"]
+                end
+                local sub = UI:CreateText(content, detail, 10,
+                    c.sharedCount > 0 and C.red.r or C.textDim.r,
+                    c.sharedCount > 0 and C.red.g or C.textDim.g,
+                    c.sharedCount > 0 and C.red.b or C.textDim.b)
+                sub:SetPoint("TOPLEFT", 18, -y)
+                sub:SetWidth(math.max(content:GetWidth() - 28, 200))
+                sub:SetJustifyH("LEFT")
+                sub:SetWordWrap(false)
+                y = y + 17
+            end
+            y = y + 10
+        end
+
+        ------------------------------------------------------------------
+        -- Allied guilds
+        ------------------------------------------------------------------
+        local COLS = {
+            { label = L["GUILD"],       x = 6 },
+            { label = L["SEEN"],        x = 200 },
+            { label = L["AMBASSADORS"], x = 274 },
+            { label = L["LAST SYNC"],   x = 478 },
+        }
+        for _, col in ipairs(COLS) do
+            local fs = UI:CreateHeaderText(content, col.label, 10)
+            fs:SetPoint("TOPLEFT", col.x, -y)
+            fs:SetJustifyH("LEFT")
+        end
+        y = y + 18
+
         for i, g in ipairs(summary.guilds) do
             local row = CreateFrame("Frame", nil, content)
             row:SetSize(content:GetWidth() > 0 and content:GetWidth() or 600, ROW_H)
@@ -187,7 +236,6 @@ local function BuildOverview(panel)
         end
 
         -- Upcoming events published by allied guilds, with a slot request.
-        local cal = BRutus.Calendar
         local events = (cal and cal.AllianceEvents and cal:AllianceEvents()) or {}
         if #events > 0 then
             y = y + 10
@@ -358,10 +406,39 @@ local function BuildManage(panel)
         10, C.textDim.r, C.textDim.g, C.textDim.b)
     inviteHint:SetPoint("TOPLEFT", 6, -58)
 
+    ------------------------------------------------------------------
+    -- Ambassadors. Rows are POOLED (created once, shown/hidden), because
+    -- WoW never frees a frame: rebuilding them per refresh would leak.
+    ------------------------------------------------------------------
+    local ambHdr = UI:CreateHeaderText(body, L["Ambassadors of this guild"], 11)
+    local ambRows = {}
+    for i = 1, 8 do
+        local row = CreateFrame("Frame", nil, body)
+        row:SetSize(360, 20)
+        row.name = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
+        row.name:SetPoint("LEFT", 6, 0)
+        row.name:SetWidth(250)
+        row.name:SetJustifyH("LEFT")
+        row.del = UI:CreateButton(row, L["Remove"], 80, 18)
+        row.del:SetPoint("LEFT", 264, 0)
+        row:Hide()
+        ambRows[i] = row
+    end
+    local ambBox = makeInput(body, 200)
+    local ambAddBtn = UI:CreateButton(body, L["Add"], 90, 24)
+    ambAddBtn:SetPoint("LEFT", ambBox, "RIGHT", 8, 0)
+    local ambHint = UI:CreateText(body,
+        L["Ambassadors speak for the guild: they invite, approve slots and post."],
+        10, C.textDim.r, C.textDim.g, C.textDim.b)
+    -- Vacancy state: shown instead of the list when the guild lost them all.
+    local ambWarn = UI:CreateText(body, "", 11, C.red.r, C.red.g, C.red.b)
+    ambWarn:SetWidth(460)
+    ambWarn:SetJustifyH("LEFT")
+    ambWarn:SetWordWrap(true)
+    local ambClaimBtn = UI:CreateButton(body, L["Claim ambassador"], 170, 24)
+
     local blockHdr = UI:CreateHeaderText(body, L["Ignore a guild locally"], 11)
-    blockHdr:SetPoint("TOPLEFT", 6, -86)
     local blockBox = makeInput(body, 200)
-    blockBox:SetPoint("TOPLEFT", 6, -106)
     local blockBtn = UI:CreateButton(body, L["Block"], 90, 24)
     blockBtn:SetPoint("LEFT", blockBox, "RIGHT", 8, 0)
     local unblockBtn = UI:CreateButton(body, L["Unblock"], 90, 24)
@@ -369,33 +446,26 @@ local function BuildManage(panel)
     local blockHint = UI:CreateText(body,
         L["Only affects you. The pact is untouched and nobody is told."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    blockHint:SetPoint("TOPLEFT", 6, -134)
 
     local removeHdr = UI:CreateHeaderText(body, L["Remove a guild from the pact"], 11)
-    removeHdr:SetPoint("TOPLEFT", 6, -162)
     local removeBox = makeInput(body, 200)
-    removeBox:SetPoint("TOPLEFT", 6, -182)
     local removeBtn = UI:CreateButton(body, L["Remove"], 90, 24)
     removeBtn:SetPoint("LEFT", removeBox, "RIGHT", 8, 0)
     local removeHint = UI:CreateText(body, L["Only the founding guild can do this."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    removeHint:SetPoint("TOPLEFT", 6, -210)
 
     local chatBtn = UI:CreateButton(body, L["Alliance chat"], 150, 24)
-    chatBtn:SetPoint("TOPLEFT", 6, -240)
     local chatHint = UI:CreateText(body,
         L["A custom channel is public: anyone who guesses the name can join. Keep secrets out of it."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    chatHint:SetPoint("TOPLEFT", 6, -268)
-    chatHint:SetPoint("RIGHT", body, "RIGHT", -6, 0)
+    chatHint:SetWidth(460)
     chatHint:SetJustifyH("LEFT")
     chatHint:SetWordWrap(true)
 
     local leaveBtn = UI:CreateButton(body, L["Leave the alliance"], 170, 24)
-    leaveBtn:SetPoint("TOPLEFT", 6, -300)
 
     local foundGroup  = { foundHdr, tagBox, nameBox, foundBtn, foundHint }
-    local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint,
+    local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr,
                           blockHdr, blockBox, blockBtn, unblockBtn, blockHint,
                           removeHdr, removeBox, removeBtn, removeHint,
                           chatBtn, chatHint, leaveBtn }
@@ -405,6 +475,60 @@ local function BuildManage(panel)
     end
 
     local refresh   -- forward declaration so handlers can re-render
+
+    -- Everything under the invite block is laid out with a running offset,
+    -- because the ambassador list grows and shrinks. Fixed offsets would either
+    -- overlap or leave a hole.
+    local function layout(ambCount, vacancy)
+        local y = 86
+        ambHdr:SetPoint("TOPLEFT", 6, -y)
+        y = y + 20
+        for i, row in ipairs(ambRows) do
+            if i <= ambCount then
+                row:SetPoint("TOPLEFT", 6, -y)
+                y = y + 20
+            end
+        end
+        if vacancy then
+            ambWarn:SetPoint("TOPLEFT", 6, -y)
+            y = y + 32
+            ambClaimBtn:SetPoint("TOPLEFT", 6, -y)
+            y = y + 30
+        else
+            ambBox:SetPoint("TOPLEFT", 6, -(y + 4))
+            y = y + 34
+            ambHint:SetPoint("TOPLEFT", 6, -y)
+            y = y + 24
+        end
+
+        blockHdr:SetPoint("TOPLEFT", 6, -y);    y = y + 20
+        blockBox:SetPoint("TOPLEFT", 6, -y);    y = y + 28
+        blockHint:SetPoint("TOPLEFT", 6, -y);   y = y + 24
+        removeHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
+        removeBox:SetPoint("TOPLEFT", 6, -y);   y = y + 28
+        removeHint:SetPoint("TOPLEFT", 6, -y);  y = y + 26
+        chatBtn:SetPoint("TOPLEFT", 6, -y);     y = y + 28
+        chatHint:SetPoint("TOPLEFT", 6, -y);    y = y + 30
+        leaveBtn:SetPoint("TOPLEFT", 6, -y)
+    end
+
+    ambAddBtn:SetScript("OnClick", function()
+        local who = ambBox:GetText()
+        local ok, err = ALLY():AddAmbassador(who)
+        say(ok, err)
+        if ok then
+            BRutus:Print(string.format(L["%s is now an ambassador."], who))
+            ambBox:SetText("")
+        end
+        refresh()
+    end)
+
+    ambClaimBtn:SetScript("OnClick", function()
+        local ok, err = ALLY():ClaimAmbassador()
+        say(ok, err)
+        if ok then BRutus:Print(L["You are now an ambassador of this guild."]) end
+        refresh()
+    end)
 
     foundBtn:SetScript("OnClick", function()
         local ok, err = ALLY():Create(tagBox:GetText(), nameBox:GetText())
@@ -470,7 +594,59 @@ local function BuildManage(panel)
         local hasPact = ally and ally:Get() ~= nil
         for _, w in ipairs(foundGroup) do setShown(w, not hasPact) end
         for _, w in ipairs(memberGroup) do setShown(w, hasPact) end
-        if not hasPact then return end
+        if not hasPact then
+            for _, row in ipairs(ambRows) do row:Hide() end
+            ambBox:Hide(); ambAddBtn:Hide(); ambHint:Hide()
+            ambWarn:Hide(); ambClaimBtn:Hide()
+            return
+        end
+
+        ------------------------------------------------------------------
+        -- Ambassadors
+        ------------------------------------------------------------------
+        local entry = ally:_MyEntry()
+        local list = (entry and entry.ambassadors) or {}
+        local me = (Ambiguate and Ambiguate(UnitName("player") or "", "short")) or UnitName("player")
+        local vacancy = GuildOS.Alliance._CanClaimAmbassador(list, ally:_GuildRosterShortSet())
+        local canEdit = ally:CanAdminister()
+
+        for i, row in ipairs(ambRows) do
+            local amb = list[i]
+            if amb and not vacancy then
+                local label = amb
+                if amb:lower() == tostring(me):lower() then
+                    label = label .. "  " .. L["(you)"]
+                end
+                row.name:SetText(label)
+                -- Never offer to remove the last one: that would lock the guild
+                -- out of its own pact, and the module refuses it anyway.
+                setShown(row.del, canEdit and #list > 1)
+                row.del:SetScript("OnClick", function()
+                    local ok, err = ALLY():RemoveAmbassador(amb)
+                    say(ok, err)
+                    if ok then
+                        BRutus:Print(string.format(L["%s is no longer an ambassador."], amb))
+                    end
+                    refresh()
+                end)
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+
+        setShown(ambWarn, vacancy)
+        setShown(ambClaimBtn, vacancy)
+        setShown(ambBox, not vacancy and canEdit)
+        setShown(ambAddBtn, not vacancy and canEdit)
+        setShown(ambHint, not vacancy)
+        if vacancy then
+            ambWarn:SetText(L["No ambassador of this guild is on the roster any more. Without one this guild cannot invite, approve slots or post."])
+        end
+        layout(vacancy and 0 or #list, vacancy)
+        if not vacancy then
+            ambAddBtn:SetPoint("LEFT", ambBox, "RIGHT", 8, 0)
+        end
 
         -- Enable/Disable rather than SetEnabled: both exist on Button and
         -- EditBox in this client, these two are the ones guaranteed to.

@@ -418,6 +418,79 @@ local function BuildSyncSub(panel)
         end
 
         local yOff = 0
+
+        ------------------------------------------------------------------
+        -- Alliance diagnostics. A cross-guild sync with no instrumentation
+        -- cannot be debugged in the field, so the counters and the per-guild
+        -- freshness live here, next to the mesh health line.
+        ------------------------------------------------------------------
+        local ally, async = BRutus.Alliance, BRutus.AllianceSync
+        if ally and async and ally:Get() then
+            local diag = async:Diagnostics()
+            local pact = ally:Get()
+            local bridge = ally:CurrentBridge() or L["nobody online"]
+            if ally:AmBridge() then bridge = bridge .. " " .. L["(you)"] end
+
+            local hdr = UI:CreateText(content, string.format(
+                L["Alliance %s  -  bridge: %s  -  probes %d"],
+                pact.tag, bridge, diag.stats.probes), 10, C.gold.r, C.gold.g, C.gold.b)
+            hdr:SetPoint("TOPLEFT", 8, -yOff)
+            yOff = yOff + 15
+
+            local counters = UI:CreateText(content, string.format(
+                L["head %d/%d  -  pull %d/%d  -  push %d/%d  -  rejected %d"],
+                diag.stats.headOut, diag.stats.headIn,
+                diag.stats.pullOut, diag.stats.pullIn,
+                diag.stats.pushOut, diag.stats.pushIn, diag.stats.rejected),
+                9, C.silver.r, C.silver.g, C.silver.b)
+            counters:SetPoint("TOPLEFT", 8, -yOff)
+            yOff = yOff + 18
+
+            local DOMAINS = { "roster", "craft", "events", "lfg", "board" }
+            local colHdr = { L["GUILD"], L["HEAD IN"], L["PUSH IN"] }
+            local xs = { 8, 130, 200 }
+            for i, label in ipairs(colHdr) do
+                local fs = UI:CreateText(content, label, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                fs:SetPoint("TOPLEFT", xs[i], -yOff)
+            end
+            for i, d in ipairs(DOMAINS) do
+                local fs = UI:CreateText(content, d, 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                fs:SetPoint("TOPLEFT", 275 + (i - 1) * 58, -yOff)
+            end
+            yOff = yOff + 14
+
+            for _, g in ipairs(diag.guilds) do
+                local nameFS = UI:CreateText(content, g.guild, 10, C.text.r, C.text.g, C.text.b)
+                nameFS:SetPoint("TOPLEFT", 8, -yOff)
+                nameFS:SetWidth(118)
+                nameFS:SetJustifyH("LEFT")
+                nameFS:SetWordWrap(false)
+
+                local headFS = UI:CreateText(content,
+                    g.lastHeadIn and BRutus:TimeAgo(g.lastHeadIn) or L["never"],
+                    10, C.textDim.r, C.textDim.g, C.textDim.b)
+                headFS:SetPoint("TOPLEFT", 130, -yOff)
+
+                local pushFS = UI:CreateText(content,
+                    g.lastPushIn and BRutus:TimeAgo(g.lastPushIn) or L["never"],
+                    10, C.textDim.r, C.textDim.g, C.textDim.b)
+                pushFS:SetPoint("TOPLEFT", 200, -yOff)
+
+                -- "--" means we have never received that domain from this guild.
+                for i, d in ipairs(DOMAINS) do
+                    local info = g.domains[d]
+                    local has = info and (info.theirs or 0) > 0
+                    local fs = UI:CreateText(content, has and L["ok"] or "--", 10,
+                        has and C.online.r or C.offline.r,
+                        has and C.online.g or C.offline.g,
+                        has and C.online.b or C.offline.b)
+                    fs:SetPoint("TOPLEFT", 275 + (i - 1) * 58, -yOff)
+                end
+                yOff = yOff + 15
+            end
+            yOff = yOff + 12
+        end
+
         for idx, r in ipairs(rows) do
             local row = MakeRow(content, yOff, idx)
             local cr, cg, cb = BRutus:GetClassColor(r.class)
