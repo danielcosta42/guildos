@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.40.1] - 2026-07-29
+
+### Fixed
+- build the merged roster record before opening the member sheet
+
+
 ## [0.40.0] - 2026-07-29
 
 ### Added
