@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.41.1] - 2026-07-29
+
+### Fixed
+- stop alliance invites vanishing silently, and rebuild the bulletin
+
+
 ## [0.41.0] - 2026-07-29
 
 ### Added
