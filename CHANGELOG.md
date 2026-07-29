@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.37.0] - 2026-07-29
+
+### Added
+- share an alliance bulletin between allied guilds
+- flag allied players in the pug inspector, digest and whispers
+- pool looking-for-group entries across the alliance
+- let allied members request a raid slot for officer approval
+- sync a compressed crafter directory across the alliance
+- add the alliance tab with the allied guild overview and controls
+- auto-join and tag the alliance chat channel
+- add /gos ally commands for founding and running an alliance
+- sync alliance domains between bridges and fan them into the guild
+- federate guilds over the ChehulAlly invite and pact protocol
+- add the alliance pact with its trust model and bridge election
+
+
 ## [0.36.1] - 2026-07-28
 
 ### Fixed
