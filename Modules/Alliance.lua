@@ -121,6 +121,51 @@ function Alliance._DebouncedBridge(prev, candidate, prevAt, now, hold)
     return prev
 end
 
+----------------------------------------------------------------------
+-- Guild identity colour.
+--
+-- In a federation the question the eye asks first is "which guild is this",
+-- and seven guild names in a list all read the same. WoW gives us no way to
+-- draw another guild's tabard (SetGuildTabardTextures only ever renders your
+-- own), so colour is the identity we CAN give them.
+--
+-- The hue comes from the same djb2 every client already agrees on, so a guild
+-- is the same colour on everyone's screen without syncing anything. Saturation
+-- and value are fixed and low so the result stays in the addon's family and
+-- legible on the dark surfaces, and the hue range skips the red band, which
+-- means error and ban everywhere else in this UI.
+----------------------------------------------------------------------
+local function hsvToRgb(h, s, v)
+    local c = v * s
+    local hp = h / 60
+    local x = c * (1 - math.abs(hp % 2 - 1))
+    local r, g, b
+    if hp < 1 then r, g, b = c, x, 0
+    elseif hp < 2 then r, g, b = x, c, 0
+    elseif hp < 3 then r, g, b = 0, c, x
+    elseif hp < 4 then r, g, b = 0, x, c
+    elseif hp < 5 then r, g, b = x, 0, c
+    else r, g, b = c, 0, x end
+    local m = v - c
+    return r + m, g + m, b + m
+end
+
+Alliance.HUE_MIN  = 20    -- skip the red band: red is error/ban in this UI
+Alliance.HUE_SPAN = 320
+
+function Alliance.GuildColor(guildName)
+    if type(guildName) ~= "string" or guildName == "" then
+        return 0.56, 0.48, 0.82   -- the addon accent, for "guild unknown"
+    end
+    local hue = Alliance.HUE_MIN + (Alliance.Hash(guildName) % Alliance.HUE_SPAN)
+    return hsvToRgb(hue, 0.42, 0.86)
+end
+
+function Alliance.GuildColorHex(guildName)
+    local r, g, b = Alliance.GuildColor(guildName)
+    return string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
+end
+
 local function countGuilds(pact)
     local n = 0
     if pact and type(pact.guilds) == "table" then
@@ -573,10 +618,22 @@ function Alliance:Invite(officerName)
         return false, L["Only an alliance ambassador can invite."]
     end
     self._invitesSent = self._invitesSent or {}
-    self._invitesSent[shortName(target):lower()] = (GetServerTime and GetServerTime()) or time()
+    local slot = shortName(target):lower()
+    self._invitesSent[slot] = (GetServerTime and GetServerTime()) or time()
     if not self:Send("INV", Alliance.SerializePact(pact), target) then
         return false, L["Could not reach the mesh."]
     end
+
+    -- A whisper reports success even when nobody receives it: AceComm cannot
+    -- know whether the target exists, is online, or runs this addon. The ACK
+    -- is the only real delivery proof, so warn when none arrives rather than
+    -- leaving the inviter believing it landed.
+    BRutus.Compat.After(Alliance.INVITE_TIMEOUT, function()
+        if GuildOS.Alliance._invitesSent and GuildOS.Alliance._invitesSent[slot] then
+            BRutus:Print(string.format(L["No answer from %s yet."], target))
+            BRutus:Print(L["They must be online, running Guild OS, and an officer of their guild."])
+        end
+    end)
     return true
 end
 
@@ -742,33 +799,52 @@ function Alliance:OnMessage(payload, sender, dist)
 end
 
 Alliance.INVITE_COOLDOWN = 30
+Alliance.INVITE_TIMEOUT  = 30   -- no ACK within this and the inviter is told
 
+-- Every reason an invite can die, logged. This path used to drop on six
+-- separate conditions without a word, so the inviter saw "sent" and the other
+-- guild saw nothing, with no way to tell which gate ate it.
 function Alliance:_OnInvite(raw, sender)
+    local short = shortName(sender)
+
     if self:Get() then
-        return   -- already federated; a second pact would need a human decision anyway
+        BRutus.Logger.Debug("Alliance: invite from " .. short .. " ignored, already in a pact")
+        return
     end
     local pact = Alliance.SanitizePact(raw)
     if not pact then
+        BRutus.Logger.Debug("Alliance: invite from " .. short .. " had an unreadable pact")
         return
     end
     -- The inviter must be an ambassador inside the pact they are offering.
     local theirGuild = self:GuildOfSender(sender, pact)
     if not theirGuild then
+        BRutus.Logger.Debug("Alliance: " .. short .. " is not an ambassador of the pact they sent")
         return
     end
     local now = (GetServerTime and GetServerTime()) or time()
     self._invitePrompts = self._invitePrompts or {}
-    local last = self._invitePrompts[shortName(sender):lower()]
+    local last = self._invitePrompts[short:lower()]
     if last and (now - last) < Alliance.INVITE_COOLDOWN then
+        BRutus.Logger.Debug("Alliance: invite from " .. short .. " throttled")
         return
     end
-    self._invitePrompts[shortName(sender):lower()] = now
+    self._invitePrompts[short:lower()] = now
+
+    -- A non-officer used to be a silent dead end, which is the single most
+    -- likely way an invite vanishes: IsOfficer defaults to rank <= 1, so most
+    -- guild members do not qualify. Tell them instead, so they can walk it to
+    -- an officer, rather than the invite disappearing into nothing.
     if not BRutus:IsOfficer() then
-        return   -- only an officer can answer for the guild
+        BRutus:Print(string.format(
+            L["%s of %s invited this guild into the alliance %s. Only an officer can accept, so pass it on."],
+            short, theirGuild, pact.name or pact.tag))
+        return
     end
+
     StaticPopup_Show("GUILDOS_ALLY_INVITE",
         string.format(L["%s of %s invites your guild into the alliance %s."],
-            shortName(sender), theirGuild, pact.name or pact.tag),
+            short, theirGuild, pact.name or pact.tag),
         nil, { pact = pact, sender = sender })
 end
 
@@ -1375,7 +1451,49 @@ function Alliance:PostBoard(text)
     return true
 end
 
+-- An ambassador may pull a notice their OWN guild published, and only that.
+-- Same independence rule as the rest of the pact: nobody edits another guild.
+function Alliance:RemoveBoardPost(id)
+    if not self:Get() then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not self:CanAdminister() then
+        return false, L["Only an alliance ambassador can do that."]
+    end
+    local store = self:BoardStore()
+    for i, p in ipairs(store) do
+        if p.id == id then
+            table.remove(store, i)
+            if BRutus.SyncService then
+                BRutus.SyncService:Publish("allyboard", "remove", { id = id })
+            end
+            if GuildOS.AllianceSync then
+                GuildOS.AllianceSync:RefreshLocal("board")
+            end
+            return true
+        end
+    end
+    -- Not in our store means it belongs to another guild, which only they can
+    -- pull. Say so rather than failing silently.
+    return false, L["Only the guild that posted a notice can remove it."]
+end
+
 function Alliance:OnBoardSync(env)
+    if env and env.act == "remove" then
+        local id = env.data and env.data.id
+        local store = self:BoardStore()
+        for i, p in ipairs(store) do
+            if p.id == id then
+                table.remove(store, i)
+                break
+            end
+        end
+        if GuildOS.AllianceSync then
+            GuildOS.AllianceSync:RefreshLocal("board")
+        end
+        return
+    end
+
     local post = env and env.data and env.data.post
     if type(post) ~= "table" or not post.id then
         return
@@ -1778,6 +1896,24 @@ function Alliance:_RegisterTests()
         if C({ "CHEHUL" }, { chehul = true }) then return false, "comparison is case sensitive" end
         if C(nil, {}) then return false, "nil list must not error" end
         if C({ "A" }, nil) then return false, "nil roster must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.guild_color", function()
+        local r, g, b = Alliance.GuildColor("Guild A")
+        local r2, g2, b2 = Alliance.GuildColor("Guild A")
+        if r ~= r2 or g ~= g2 or b ~= b2 then return false, "not deterministic" end
+        for _, v in ipairs({ r, g, b }) do
+            if v < 0 or v > 1 then return false, "component out of range: " .. v end
+        end
+        local ar, ag, ab = Alliance.GuildColor("Guild B")
+        if r == ar and g == ag and b == ab then return false, "two guilds got one colour" end
+        -- Never a pure red: red means error and ban everywhere else in this UI.
+        if r > 0.8 and g < 0.25 and b < 0.25 then return false, "landed in the red band" end
+        -- Unknown guild falls back to the addon accent rather than black.
+        local nr = Alliance.GuildColor(nil)
+        if nr == 0 then return false, "nil must not produce black" end
+        if select(1, Alliance.GuildColor("")) ~= nr then return false, "empty must match nil" end
         return true
     end)
 

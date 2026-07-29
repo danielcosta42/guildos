@@ -628,7 +628,12 @@ local function BuildChat(panel)
 
                 b.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, own and 0.35 or 0.55)
                 b.card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.35)
-                b.accent:SetColorTexture(cr, cg, cb, 0.9)
+                -- The rail is the GUILD's colour, matching the bulletin, so one
+                -- colour means one guild everywhere in this panel. Class still
+                -- reads off the icon and the name, which is where you look for
+                -- it anyway.
+                local gr, gg, gb = GuildOS.Alliance.GuildColor(g.guild)
+                b.accent:SetColorTexture(gr, gg, gb, 0.95)
                 b.accent:Show()
 
                 local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[info and info.class]
@@ -700,20 +705,108 @@ end
 -- Bulletin: notices posted by any ambassador in the alliance.
 ----------------------------------------------------------------------
 local function BuildBulletin(panel)
-    local box = makeInput(panel, 380)
-    box:SetPoint("TOPLEFT", 6, -8)
-    local postBtn = UI:CreateButton(panel, L["Post"], 80, 24)
-    postBtn:SetPoint("LEFT", box, "RIGHT", 8, 0)
-    local hint = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    hint:SetPoint("TOPLEFT", 6, -36)
+    ------------------------------------------------------------------
+    -- Identity band. This board is the face of the alliance, so it opens
+    -- with who the alliance IS: name, size, and one colour chip per member
+    -- guild. The chips are the same colours the notices use, so the legend
+    -- and the content teach each other.
+    ------------------------------------------------------------------
+    local title = UI:CreateText(panel, "", 14, C.gold.r, C.gold.g, C.gold.b)
+    title:SetPoint("TOPLEFT", 8, -6)
+    local count = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    count:SetPoint("TOPRIGHT", -8, -9)
+
+    local chips = {}
+    local function getChip(i)
+        if chips[i] then return chips[i] end
+        chips[i] = panel:CreateTexture(nil, "ARTWORK")
+        chips[i]:SetSize(14, 4)
+        return chips[i]
+    end
+
+    local rule = UI:CreateSeparator(panel)
+    rule:SetPoint("TOPLEFT", 0, -38)
+    rule:SetPoint("TOPRIGHT", 0, -38)
+
+    local box = makeInput(panel, 100)
+    box:SetPoint("TOPLEFT", 8, -48)
+    box:SetPoint("RIGHT", panel, "RIGHT", -104, 0)
+    box:SetHeight(26)
+    local placeholder = UI:CreateText(box, L["Write a notice for the alliance"], 11,
+        C.textDim.r, C.textDim.g, C.textDim.b)
+    placeholder:SetPoint("LEFT", 8, 0)
+    box:SetScript("OnTextChanged", function(self)
+        setShown(placeholder, (self:GetText() or "") == "")
+    end)
+
+    local postBtn = UI:CreateButton(panel, L["Post"], 88, 26)
+    postBtn:SetPoint("TOPRIGHT", -8, -48)
+
+    local hint = UI:CreateText(panel, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    hint:SetPoint("TOPLEFT", 8, -78)
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -54)
+    holder:SetPoint("TOPLEFT", 0, -94)
     holder:SetPoint("BOTTOMRIGHT", 0, 4)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceBoardScroll")
     scroll:SetAllPoints()
 
+    local empty = UI:CreateText(content, "", 12, C.textDim.r, C.textDim.g, C.textDim.b)
+    empty:Hide()
+
     local refresh
+
+    -- Notice cards, pooled: WoW never frees a frame.
+    local cards = {}
+    local function getCard(i)
+        if cards[i] then return cards[i] end
+        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        card:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+        })
+        card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
+
+        local rail = card:CreateTexture(nil, "ARTWORK")
+        rail:SetPoint("TOPLEFT", 0, 0)
+        rail:SetPoint("BOTTOMLEFT", 0, 0)
+        rail:SetWidth(3)
+
+        -- Eyebrow: who said it, institutionally. Small and uppercase in the
+        -- guild colour, so it reads as a stamp rather than as body text.
+        local who = UI:CreateText(card, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+        who:SetPoint("TOPLEFT", 14, -8)
+        who:SetJustifyH("LEFT")
+
+        local when = UI:CreateText(card, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        when:SetPoint("TOPRIGHT", -26, -9)
+
+        -- The notice is the biggest thing on the card. It is the only part
+        -- anyone opened this tab to read.
+        local body = UI:CreateText(card, "", 13, C.text.r, C.text.g, C.text.b)
+        body:SetPoint("TOPLEFT", 14, -24)
+        body:SetJustifyH("LEFT")
+        body:SetWordWrap(true)
+
+        local del = CreateFrame("Button", nil, card)
+        del:SetSize(18, 18)
+        del:SetPoint("TOPRIGHT", -5, -5)
+        del.fs = del:CreateFontString(nil, "OVERLAY")
+        del.fs:SetFont("Fonts\\FRIZQT__.TTF", 13, "")
+        del.fs:SetPoint("CENTER")
+        del.fs:SetText("\195\151")
+        del.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+        del:SetScript("OnEnter", function() del.fs:SetTextColor(C.red.r, C.red.g, C.red.b) end)
+        del:SetScript("OnLeave", function() del.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b) end)
+        del:SetScript("OnClick", function(self)
+            local ok, err = ALLY():RemoveBoardPost(self.postId)
+            if not ok and err then BRutus:Print(err) end
+            refresh()
+        end)
+
+        cards[i] = { card = card, rail = rail, who = who, when = when, body = body, del = del }
+        return cards[i]
+    end
 
     postBtn:SetScript("OnClick", function()
         local ok, err = ALLY():PostBoard(box:GetText())
@@ -728,37 +821,76 @@ local function BuildBulletin(panel)
 
     refresh = function()
         local ally = ALLY()
+        local Ally = GuildOS.Alliance
         content:SetWidth(math.max(holder:GetWidth() - 12, 1))
-        clear(content)
+
+        local summary = ally and ally:Summary()
+        title:SetText((summary and summary.name) or "")
+        count:SetText(summary
+            and string.format(L["%d guilds, %d members"], #summary.guilds, summary.members) or "")
+
+        local shown = 0
+        if summary then
+            for i, g in ipairs(summary.guilds) do
+                local chip = getChip(i)
+                local r, gg, b = Ally.GuildColor(g.name)
+                chip:SetColorTexture(r, gg, b, 0.95)
+                chip:SetPoint("TOPLEFT", 8 + (i - 1) * 18, -28)
+                chip:Show()
+                shown = i
+            end
+        end
+        for i = shown + 1, #chips do chips[i]:Hide() end
 
         local canPost = ally and ally:CanAdminister()
         setShown(box, canPost)
         setShown(postBtn, canPost)
+        setShown(placeholder, canPost and (box:GetText() or "") == "")
         hint:SetText(canPost and L["Ambassadors can post. Everyone in the alliance sees it."]
             or L["Only alliance ambassadors can post here."])
 
         local posts = (ally and ally.BoardPosts and ally:BoardPosts()) or {}
+        local mine = ally and ally:MyGuildName()
+        local width = math.max(content:GetWidth() - 8, 200)
         local y = 0
-        for _, p in ipairs(posts) do
-            local head = UI:CreateText(content, string.format("|cff8888aa[%s]|r %s  |cff666666%s|r",
-                p.guild or "?", p.by or "?", p.ts and BRutus:TimeAgo(p.ts) or ""),
-                10, C.textDim.r, C.textDim.g, C.textDim.b)
-            head:SetPoint("TOPLEFT", 6, -y)
-            y = y + 14
 
-            local body = UI:CreateText(content, p.text or "", 11, C.text.r, C.text.g, C.text.b)
-            body:SetPoint("TOPLEFT", 10, -y)
-            body:SetWidth(math.max(content:GetWidth() - 20, 200))
-            body:SetJustifyH("LEFT")
-            body:SetWordWrap(true)
-            y = y + math.max(16, (body:GetStringHeight() or 12) + 8)
+        for i, p in ipairs(posts) do
+            local c = getCard(i)
+            local r, g, b = Ally.GuildColor(p.guild)
+
+            c.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.5)
+            c.rail:SetColorTexture(r, g, b, 0.95)
+
+            c.who:SetText(string.format("|cff%s%s|r  |cff666666\194\183|r  %s",
+                Ally.GuildColorHex(p.guild), (p.guild or "?"):upper(), p.by or "?"))
+            c.when:SetText(p.ts and BRutus:TimeAgo(p.ts) or "")
+
+            c.body:SetWidth(width - 40)
+            c.body:SetText(p.text or "")
+
+            -- Only your own guild's notices can be pulled, and only by an
+            -- ambassador: the same independence rule as the rest of the pact.
+            c.del.postId = p.id
+            setShown(c.del, canPost and p.guild == mine)
+
+            local h = math.max(46, (c.body:GetStringHeight() or 12) + 34)
+            c.card:SetPoint("TOPLEFT", 4, -y)
+            c.card:SetSize(width, h)
+            c.card:Show()
+            y = y + h + 6
         end
 
+        for i = #posts + 1, #cards do cards[i].card:Hide() end
+
         if #posts == 0 then
-            local none = UI:CreateText(content, L["No alliance notices yet."], 11,
-                C.textDim.r, C.textDim.g, C.textDim.b)
-            none:SetPoint("TOPLEFT", 6, 0)
-            y = 20
+            -- An empty board is an invitation, not a status report.
+            empty:SetText(canPost and L["Nothing here yet. Welcome the allied guilds."]
+                or L["Nothing here yet."])
+            empty:SetPoint("TOPLEFT", 8, -4)
+            empty:Show()
+            y = 24
+        else
+            empty:Hide()
         end
         content:SetHeight(math.max(y, 1))
     end
