@@ -347,3 +347,6 @@ L["Alliance status and allied guilds"] = "Alliance status and allied guilds"
 L["Found an alliance with other guilds"] = "Found an alliance with other guilds"
 L["Invite a guild into the alliance"] = "Invite a guild into the alliance"
 L["Leave the alliance"] = "Leave the alliance"
+
+-- Modules/AllianceChat.lua
+L["unknown guild"] = "unknown guild"

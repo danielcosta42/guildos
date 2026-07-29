@@ -394,6 +394,25 @@ function Alliance:AmBridge()
     return self:CurrentBridge() == self:MyKey()
 end
 
+-- Which ALLIED guild a character belongs to, from the cached roster snapshots.
+-- nil for our own guildmates and for strangers. Feeds the chat tags and the
+-- pug inspector, neither of which needs any new sync to work.
+function Alliance:GuildOfMember(name)
+    local sync = GuildOS.AllianceSync
+    if not sync or not sync.MemberIndex then
+        return nil
+    end
+    local short = shortName(name or ""):lower()
+    if short == "" then
+        return nil
+    end
+    local guild = sync:MemberIndex()[short]
+    if not guild or guild == self:MyGuildName() then
+        return nil
+    end
+    return guild
+end
+
 -- A player of `guildName` we have positive evidence is online RIGHT NOW, so a
 -- whisper does not print "No player named X is currently playing" to the user.
 -- Evidence comes from the realm-wide presence mesh, where Guild OS clients in an

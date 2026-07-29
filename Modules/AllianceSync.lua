@@ -162,6 +162,31 @@ function AllianceSync:_Write(guild, domain, rev, data, fp)
         fp   = fp,
         ts   = (GetServerTime and GetServerTime()) or time(),
     }
+    self._indexDirty = true
+end
+
+-- { [lowercased short name] = allied guild name } across every cached roster.
+-- Rebuilt lazily, only after a snapshot actually changed, because the chat
+-- filter hits this on every single channel line.
+function AllianceSync:MemberIndex()
+    if self._index and not self._indexDirty then
+        return self._index
+    end
+    local idx = {}
+    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    for guild, domains in pairs(store) do
+        local roster = domains.roster
+        if roster and type(roster.data) == "table" then
+            for _, row in ipairs(roster.data) do
+                if type(row) == "table" and type(row.n) == "string" and row.n ~= "" then
+                    idx[row.n:lower()] = guild
+                end
+            end
+        end
+    end
+    self._index = idx
+    self._indexDirty = false
+    return idx
 end
 
 -- Refuses anything that is not strictly newer, so a late PUSH can never

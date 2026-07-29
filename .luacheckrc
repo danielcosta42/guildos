@@ -119,6 +119,7 @@ read_globals = {
     "RegisterAddonMessagePrefix",
     "GetChannelName",
     "JoinChannelByName",
+    "LeaveChannelByName",
     "EnumerateServerChannels",
     "ChatFrame_AddMessageEventFilter",
     "ChatFrame_SendTell",

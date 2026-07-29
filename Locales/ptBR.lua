@@ -1424,3 +1424,6 @@ L["Alliance status and allied guilds"] = "Status da aliança e guildas aliadas"
 L["Found an alliance with other guilds"] = "Fundar uma aliança com outras guildas"
 L["Invite a guild into the alliance"] = "Convidar uma guilda para a aliança"
 L["Leave the alliance"] = "Sair da aliança"
+
+-- Modules/AllianceChat.lua
+L["unknown guild"] = "guilda desconhecida"
