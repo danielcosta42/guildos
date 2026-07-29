@@ -421,11 +421,14 @@ function BRutus:ShowAllyCard(name, guild, anchor)
     setShown(f.sheet, info.own == true)
     if info.own then
         f.sheet:SetScript("OnClick", function()
-            local key = BRutus:GetPlayerKey(name, GetRealmName())
-            local m = BRutus.db and BRutus.db.members and BRutus.db.members[key]
-            if m and BRutus.ShowMemberDetail then
+            -- MemberDetail needs the merged roster view, not the raw synced
+            -- entry: rank and classDisplay only exist on the live roster.
+            local record = BRutus:GetMemberRecord(name)
+            if record and BRutus.ShowMemberDetail then
                 f:Hide()
-                BRutus:ShowMemberDetail(m)
+                BRutus:ShowMemberDetail(record)
+            else
+                BRutus:Print(L["Could not load that character's sheet."])
             end
         end)
     end

@@ -174,6 +174,58 @@ local function utf8Backoff(s)
     return s
 end
 
+----------------------------------------------------------------------
+-- The record UI/MemberDetail.lua expects.
+--
+-- MemberDetail does NOT take a raw db.members entry: it needs the same merged
+-- view the roster builds (UI/RosterFrame.lua), because `rank` and
+-- `classDisplay` come from the LIVE guild roster and are never stored in the
+-- synced member data. Passing the raw entry crashes on a nil format argument.
+--
+-- Returns nil when the character is not on this guild's roster.
+----------------------------------------------------------------------
+function BRutus:GetMemberRecord(name, realm)
+    if not name or name == "" then return nil end
+    local short = name:match("^([^-]+)") or name
+    realm = realm or GetRealmName()
+
+    local idx = self.Compat and self.Compat.FindGuildRosterIndex
+        and self.Compat.FindGuildRosterIndex(short, realm)
+    if not idx then return nil end
+
+    local full, rankName, rankIndex, level, classLoc, zone, note, officerNote,
+          isOnline, status, classFile = GetGuildRosterInfo(idx)
+    local key = self:GetPlayerKey(short, realm)
+    local data = (self.db and self.db.members and self.db.members[key]) or {}
+
+    return {
+        key          = key,
+        name         = short,
+        fullName     = full,
+        realm        = realm,
+        rank         = rankName or "",
+        rankIndex    = rankIndex,
+        level        = level or data.level or 0,
+        class        = classFile or data.class or "",
+        classDisplay = classLoc or "",
+        zone         = zone or "",
+        note         = note or "",
+        officerNote  = officerNote or "",
+        isOnline     = isOnline,
+        status       = status or "",
+        avgIlvl      = data.avgIlvl or 0,
+        gear         = data.gear,
+        professions  = data.professions,
+        attunements  = data.attunements,
+        stats        = data.stats,
+        spec         = data.spec,
+        race         = data.race or "",
+        lastUpdate   = data.lastUpdate or 0,
+        lastSync     = data.lastSync or 0,
+        addonVersion = data.addonVersion,
+    }
+end
+
 function BRutus:SanitizeUserText(text, maxBytes)
     local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
     s = strtrim(s)

@@ -254,8 +254,14 @@ function PopulateDetail(frame, data)
     frame.nameText:SetTextColor(cr, cg, cb)
 
     -- Info line
-    local raceStr = data.race ~= "" and data.race or L["Unknown"]
-    local infoLine = string.format(L["Level %d %s %s  |  %s"], data.level, raceStr, data.classDisplay, data.rank)
+    -- Defence in depth: string.format on a nil takes the WHOLE panel down, and
+    -- these two fields come from the live roster rather than the synced member
+    -- data, so any caller holding only a db.members entry would crash here.
+    -- BRutus:GetMemberRecord builds the correct merged record; this is the net
+    -- under it, not a substitute for it.
+    local raceStr = (data.race and data.race ~= "") and data.race or L["Unknown"]
+    local infoLine = string.format(L["Level %d %s %s  |  %s"],
+        data.level or 0, raceStr, data.classDisplay or data.class or "?", data.rank or "?")
     -- Cross-addon presence: append which sibling Chehul addons this player is
     -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
     if BRutus.Mesh then
