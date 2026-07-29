@@ -73,6 +73,7 @@ local function BuildOverview(panel)
         local ally = ALLY()
         local summary = ally and ally:Summary()
 
+        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
         clear(content)
 
         if not summary then
@@ -365,6 +366,10 @@ local function BuildChat(panel)
         local chat = CHAT()
         if not chat then return end
         chat:MarkRead()
+        -- CreateScrollFrame sizes the child from the scroll frame AT CREATION,
+        -- when nothing has been laid out yet, so it is born 0 wide and stays
+        -- that way. Every working panel in this addon re-sets it here.
+        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
         clear(content)
 
         local prefs = chat:Prefs()
@@ -482,6 +487,7 @@ local function BuildBulletin(panel)
 
     refresh = function()
         local ally = ALLY()
+        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
         clear(content)
 
         local canPost = ally and ally:CanAdminister()
