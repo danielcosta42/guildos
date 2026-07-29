@@ -29,6 +29,7 @@ local LibSerialize = LibStub("LibSerialize")
 AllianceSync.TICK        = 120   -- seconds between bridge heartbeats
 AllianceSync.PUSH_WINDOW = 60    -- min seconds between two PUSHes of a domain to one peer
 AllianceSync.ROSTER_CAP  = 300   -- imported members per guild
+AllianceSync.CRAFT_CAP   = 5000  -- imported recipe entries per guild
 
 AllianceSync.domains = {}   -- [name] = { build = fn, apply = fn, cap = n, priority = string }
 
@@ -116,6 +117,132 @@ function AllianceSync._BuildRoster(members, cap, altLinks)
                 p = profs,
                 m = main and (main:match("^([^-]+)") or main) or nil,
             }
+        end
+    end
+    return out
+end
+
+-- The crafter directory, name-indexed so a crafter costs one entry instead of
+-- one per recipe. A 100-member guild with ~40 crafters and ~80 recipes each is
+-- roughly 3200 pairs; without this indexing the same data would repeat the
+-- name 3200 times and blow the payload budget in the spec.
+--
+--   { c = { { n = "Fulano", p = "Alchemy" }, ... },      -- crafter+profession
+--     i = { { id = 12360, c = { 1, 3 } }, ... } }        -- SORTED by id
+--
+-- `i` is sorted so the fingerprint is stable AND a lookup can binary search.
+function AllianceSync._BuildCraft(recipes, cap)
+    local out = { c = {}, i = {} }
+    if type(recipes) ~= "table" then
+        return out
+    end
+    cap = tonumber(cap) or AllianceSync.CRAFT_CAP
+
+    local crafterSlot, itemMap = {}, {}
+    local playerKeys = {}
+    for key in pairs(recipes) do
+        if type(key) == "string" then
+            playerKeys[#playerKeys + 1] = key
+        end
+    end
+    table.sort(playerKeys)
+
+    for _, key in ipairs(playerKeys) do
+        local name = key:match("^([^-]+)") or key
+        local professions = recipes[key]
+        if type(professions) == "table" then
+            local profNames = {}
+            for prof in pairs(professions) do
+                if type(prof) == "string" then
+                    profNames[#profNames + 1] = prof
+                end
+            end
+            table.sort(profNames)
+            for _, prof in ipairs(profNames) do
+                local list = professions[prof]
+                if type(list) == "table" then
+                    local slot = name .. "\t" .. prof
+                    local ci = crafterSlot[slot]
+                    if not ci then
+                        out.c[#out.c + 1] = { n = name, p = prof }
+                        ci = #out.c
+                        crafterSlot[slot] = ci
+                    end
+                    for _, recipe in ipairs(list) do
+                        local id = type(recipe) == "table" and tonumber(recipe.itemId)
+                        if id then
+                            local bucket = itemMap[id]
+                            if not bucket then
+                                bucket = {}
+                                itemMap[id] = bucket
+                            end
+                            local dup = false
+                            for _, existing in ipairs(bucket) do
+                                if existing == ci then
+                                    dup = true
+                                    break
+                                end
+                            end
+                            if not dup then
+                                bucket[#bucket + 1] = ci
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local ids = {}
+    for id in pairs(itemMap) do
+        ids[#ids + 1] = id
+    end
+    table.sort(ids)
+    local dropped = 0
+    for _, id in ipairs(ids) do
+        if #out.i >= cap then
+            dropped = #ids - #out.i
+            break
+        end
+        out.i[#out.i + 1] = { id = id, c = itemMap[id] }
+    end
+    if dropped > 0 then
+        BRutus.Logger.Debug(string.format("Alliance craft: dropped %d items over the cap", dropped))
+    end
+    return out
+end
+
+-- Who, in one guild's directory, can craft `itemId`. Binary search over the
+-- sorted item array, so this is cheap enough to call per keystroke.
+function AllianceSync._ReadCraft(blob, itemId)
+    local out = {}
+    if type(blob) ~= "table" or type(blob.i) ~= "table" then
+        return out
+    end
+    itemId = tonumber(itemId)
+    if not itemId then
+        return out
+    end
+    local lo, hi = 1, #blob.i
+    while lo <= hi do
+        local mid = math.floor((lo + hi) / 2)
+        local entry = blob.i[mid]
+        local id = entry and tonumber(entry.id)
+        if not id then
+            return out
+        end
+        if id == itemId then
+            for _, ci in ipairs(entry.c or {}) do
+                local crafter = blob.c and blob.c[ci]
+                if crafter and crafter.n then
+                    out[#out + 1] = { name = crafter.n, prof = crafter.p }
+                end
+            end
+            return out
+        elseif id < itemId then
+            lo = mid + 1
+        else
+            hi = mid - 1
         end
     end
     return out
@@ -414,6 +541,16 @@ function AllianceSync:Initialize()
         end,
     })
 
+    -- The heavy one: BULK priority so ChatThrottleLib drains it behind
+    -- everything else, and it only moves when the fingerprint changes.
+    self:Register("craft", {
+        priority = "BULK",
+        cap = self.CRAFT_CAP,
+        build = function()
+            return AllianceSync._BuildCraft(BRutus.db.recipes, AllianceSync.CRAFT_CAP)
+        end,
+    })
+
     if BRutus.Compat and BRutus.Compat.NewTicker then
         BRutus.Compat.NewTicker(self.TICK, function() AllianceSync:Tick() end)
     end
@@ -474,6 +611,40 @@ function AllianceSync:_RegisterTests()
         end
         BRutus.db.allianceData = saved
         if fail then return false, fail end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliancesync.craft_roundtrip", function()
+        local recipes = {
+            ["Fulano-R"] = { Alchemy = { { itemId = 100 }, { itemId = 300 } } },
+            ["Zeca-R"]   = { Alchemy = { { itemId = 300 } },
+                             Blacksmithing = { { itemId = 200 } } },
+        }
+        local blob = AllianceSync._BuildCraft(recipes, 5000)
+        if #blob.i ~= 3 then return false, "expected 3 distinct items, got " .. #blob.i end
+        if blob.i[1].id ~= 100 or blob.i[3].id ~= 300 then return false, "items are not sorted by id" end
+        -- Each crafter+profession pair is stored once, not once per recipe.
+        if #blob.c ~= 3 then return false, "crafter index not deduped: " .. #blob.c end
+
+        local three = AllianceSync._ReadCraft(blob, 300)
+        if #three ~= 2 then return false, "item 300 should have 2 crafters" end
+        local names = {}
+        for _, c in ipairs(three) do names[c.name] = c.prof end
+        if names.Fulano ~= "Alchemy" or names.Zeca ~= "Alchemy" then
+            return false, "wrong crafter or profession"
+        end
+        if #AllianceSync._ReadCraft(blob, 200) ~= 1 then return false, "item 200 lookup" end
+        if #AllianceSync._ReadCraft(blob, 999) ~= 0 then return false, "missing item must be empty" end
+        if #AllianceSync._ReadCraft(nil, 100) ~= 0 then return false, "nil blob must not error" end
+        if #AllianceSync._ReadCraft(blob, nil) ~= 0 then return false, "nil item must not error" end
+
+        -- Deterministic: same input, same bytes worth of structure.
+        local again = AllianceSync._BuildCraft(recipes, 5000)
+        if again.c[1].n ~= blob.c[1].n then return false, "crafter order is not deterministic" end
+
+        local capped = AllianceSync._BuildCraft(recipes, 2)
+        if #capped.i ~= 2 then return false, "cap not enforced" end
+        if #AllianceSync._BuildCraft(nil, 10).i ~= 0 then return false, "nil source must not error" end
         return true
     end)
 

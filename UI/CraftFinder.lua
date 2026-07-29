@@ -214,6 +214,21 @@ local function BuildFinder()
             end
         end
 
+        -- Alliance: read straight from the synced directory, so an allied
+        -- crafter is found even while they are offline. No query, no waiting.
+        if BRutus.Alliance and BRutus.Alliance:Get() then
+            for _, c in ipairs(BRutus.Alliance:FindCrafters(itemId)) do
+                if not f.query.seen[c.name] then
+                    f.query.seen[c.name] = true
+                    local label = c.prof or "?"
+                    if not c.online then
+                        label = label .. " " .. L["(offline)"]
+                    end
+                    AddResult(c.name, label, c.guild, nil)
+                end
+            end
+        end
+
         -- Realm-wide: answers arrive over time.
         if BRutus.CraftNet then
             BRutus.CraftNet:Query(itemId, function(short, label)

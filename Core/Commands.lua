@@ -167,6 +167,17 @@ local function handleCommand(msg)
             else
                 BRutus:Print(string.format(L["No guild crafter for %s - asking the realm..."], itemName))
             end
+            -- Alliance: straight from the synced directory, offline crafters included.
+            if BRutus.Alliance and BRutus.Alliance:Get() then
+                for _, c in ipairs(BRutus.Alliance:FindCrafters(itemId)) do
+                    if not seen[c.name] then
+                        seen[c.name] = true
+                        BRutus:Print("   " .. string.format(L["%s of %s can craft %s (%s)"],
+                            c.name, c.guild, itemName, c.prof or "?")
+                            .. (c.online and "" or " " .. L["(offline)"]))
+                    end
+                end
+            end
             -- Realm-wide: answers trickle in over the mesh (out-of-guild reach).
             if BRutus.CraftNet then
                 BRutus.CraftNet:Query(itemId, function(short, label)

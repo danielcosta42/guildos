@@ -351,6 +351,10 @@ L["Leave the alliance"] = "Leave the alliance"
 -- Modules/AllianceChat.lua
 L["unknown guild"] = "unknown guild"
 
+-- Alliance crafter directory
+L["(offline)"] = "(offline)"
+L["%s of %s can craft %s (%s)"] = "%s of %s can craft %s (%s)"
+
 -- UI/AlliancePanel.lua
 L["Alliance"] = "Alliance"
 L["Overview"] = "Overview"

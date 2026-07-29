@@ -824,6 +824,50 @@ end
 -- Read model for the UI. Rule 10: the panel renders this and owns no logic.
 ----------------------------------------------------------------------
 
+-- Is this character visible on the realm-wide presence mesh right now?
+function Alliance:IsPeerOnline(name)
+    local net = _G.ChehulNet
+    if not net or not net.Peers then
+        return false
+    end
+    return net:Peers()[shortName(name or "")] ~= nil
+end
+
+-- Everyone in the ALLIANCE (not our own guild) who can craft `itemId`, from
+-- the cached directory. Works while the crafter is offline, which is the whole
+-- point of syncing the directory instead of querying live.
+function Alliance:FindCrafters(itemId)
+    local sync = GuildOS.AllianceSync
+    local pact = self:Get()
+    local out = {}
+    if not sync or not pact then
+        return out
+    end
+    local mine = self:MyGuildName()
+    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    for guildName in pairs(pact.guilds) do
+        if guildName ~= mine and not self:IsBlocked(guildName) then
+            local entry = store[guildName] and store[guildName].craft
+            if entry and entry.data then
+                for _, c in ipairs(GuildOS.AllianceSync._ReadCraft(entry.data, itemId)) do
+                    out[#out + 1] = {
+                        name   = c.name,
+                        guild  = guildName,
+                        prof   = c.prof,
+                        online = self:IsPeerOnline(c.name),
+                    }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.online ~= b.online then return a.online end
+        if a.guild ~= b.guild then return a.guild < b.guild end
+        return a.name < b.name
+    end)
+    return out
+end
+
 -- How many members of `guildName` the presence mesh can currently see. This is
 -- an UNDERCOUNT by construction (only players running Guild OS broadcast), and
 -- the UI must say so rather than passing it off as the real online count.
