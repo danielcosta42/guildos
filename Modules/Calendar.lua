@@ -121,11 +121,11 @@ function Calendar:_RegisterTests()
 
     BRutus.SelfTest:Register("calendar.alliance_events_build", function()
         local events = {
-            a1 = { id = "a1", title = "MC",   when = 2000, size = 40,
-                   rsvps = { x = { status = "yes" }, y = { status = "no" } } },
-            a2 = { id = "a2", title = "Past", when = 500,  size = 10 },
-            a3 = { id = "a3", title = "Gone", when = 3000, size = 10, canceled = true },
-            a4 = { id = "a4", title = "Kara", when = 2500, size = 10 },
+            a1 = { id = "a1", title = "MC",   when = 2000, size = 40, shareAlliance = true,
+                   rsvps = { x = { status = "yes", name = "Ann" }, y = { status = "no" } } },
+            a2 = { id = "a2", title = "Past", when = 500,  size = 10, shareAlliance = true },
+            a3 = { id = "a3", title = "Gone", when = 3000, size = 10, shareAlliance = true, canceled = true },
+            a4 = { id = "a4", title = "Kara", when = 2500, size = 10, shareAlliance = true },
         }
         local out = Calendar._BuildAllianceEvents(events, 1000, 50)
         if #out ~= 2 then return false, "expected 2 upcoming events, got " .. #out end
@@ -134,6 +134,29 @@ function Calendar:_RegisterTests()
         if type(out[1].names) ~= "table" then return false, "signup names missing" end
         if #Calendar._BuildAllianceEvents(events, 1000, 1) ~= 1 then return false, "cap not enforced" end
         if #Calendar._BuildAllianceEvents(nil, 1000, 50) ~= 0 then return false, "nil must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("calendar.alliance_sharing_is_opt_in", function()
+        local B = Calendar._BuildAllianceEvents
+        -- An event with the flag missing entirely is PRIVATE. This is the
+        -- migration case: everything created before the flag existed.
+        local legacy = { a1 = { id = "a1", title = "Interno", when = 2000, size = 10 } }
+        if #B(legacy, 1000, 50) ~= 0 then return false, "an event with no flag must stay private" end
+
+        local off = { a1 = { id = "a1", title = "Interno", when = 2000, size = 10, shareAlliance = false } }
+        if #B(off, 1000, 50) ~= 0 then return false, "shareAlliance=false must stay private" end
+
+        local on = { a1 = { id = "a1", title = "Publico", when = 2000, size = 10, shareAlliance = true } }
+        if #B(on, 1000, 50) ~= 1 then return false, "shareAlliance=true must be published" end
+
+        -- Mixed: only the shared one crosses.
+        local mixed = {
+            a1 = { id = "a1", title = "Interno", when = 2000, size = 10 },
+            a2 = { id = "a2", title = "Publico", when = 2100, size = 10, shareAlliance = true },
+        }
+        local out = B(mixed, 1000, 50)
+        if #out ~= 1 or out[1].id ~= "a2" then return false, "the wrong event crossed the wire" end
         return true
     end)
 end
@@ -211,7 +234,7 @@ end
 ----------------------------------------------------------------------
 -- Mutations (officer: create/cancel · member: rsvp)
 ----------------------------------------------------------------------
-function Calendar:Create(title, when, size, note, kind)
+function Calendar:Create(title, when, size, note, kind, shareAlliance)
     if not BRutus:IsOfficer() then
         BRutus:Print(L["|cffFF4444Officers only.|r"])
         return
@@ -227,6 +250,10 @@ function Calendar:Create(title, when, size, note, kind)
         note = note or "", kind = normalizeKind(kind),
         author = UnitName("player"), createdAt = GetServerTime(),
         canceled = false, rsvps = {},
+        -- OPT IN. An event is private to the guild unless an officer says so,
+        -- and a MISSING field means private, so every event that existed
+        -- before this feature stays inside the guild.
+        shareAlliance = shareAlliance and true or false,
     }
     self:GetEvents()[e.id] = e
     if BRutus.SyncService then
@@ -234,6 +261,7 @@ function Calendar:Create(title, when, size, note, kind)
         BRutus.SyncService:Publish("event", "create", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
+            shareAlliance = e.shareAlliance,
         } }, { rev = rev })
     end
     self:Refresh()
@@ -254,7 +282,7 @@ end
 
 -- Officer edit of an existing event (title / date+time / size / description).
 -- RSVPs are preserved; a fresh revision makes the change win on every client.
-function Calendar:Update(id, title, when, size, note, kind)
+function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     if not BRutus:IsOfficer() then
         BRutus:Print(L["|cffFF4444Officers only.|r"])
         return
@@ -272,11 +300,17 @@ function Calendar:Update(id, title, when, size, note, kind)
     e.size  = tonumber(size) or e.size or 25
     e.note  = note or ""
     e.kind  = normalizeKind(kind)
+    -- nil leaves the current setting alone, so a caller that does not know
+    -- about sharing can never silently expose an event.
+    if shareAlliance ~= nil then
+        e.shareAlliance = shareAlliance and true or false
+    end
     if BRutus.SyncService then
         local rev = BRutus.SyncService:NextRevision("event", id)
         BRutus.SyncService:Publish("event", "update", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
+            shareAlliance = e.shareAlliance,
         } }, { rev = rev })
     end
     self:Refresh()
@@ -330,6 +364,7 @@ function Calendar:OnSync(env, sender)
             local existing = self:GetEvents()[e.id]
             e.rsvps    = (existing and existing.rsvps) or {}
             e.canceled = (existing and existing.canceled) or false
+            e.shareAlliance = e.shareAlliance and true or false
             self:GetEvents()[e.id] = e
             BRutus.SyncService:SetRevision("event", e.id, env.rev)
             self:Refresh()
@@ -437,7 +472,11 @@ function Calendar._BuildAllianceEvents(events, now, cap)
     cap = tonumber(cap) or 50
     local ids = {}
     for id, e in pairs(events) do
+        -- The whole point of the flag: an unshared event never leaves the
+        -- guild, so it is filtered HERE, at the only place that builds the
+        -- outbound payload, rather than anywhere it could be forgotten.
         if type(id) == "string" and type(e) == "table" and not e.canceled
+            and e.shareAlliance
             and (tonumber(e.when) or 0) > (tonumber(now) or 0) then
             ids[#ids + 1] = id
         end
@@ -674,6 +713,12 @@ end
 function Calendar:_ReceiveSignup(data, sender, senderGuild)
     local ally = GuildOS.Alliance
     local e = self:GetEvents()[data.eventId or ""]
+    -- An ally could hold a snapshot from before the event was un-shared, so
+    -- refuse here too rather than trusting that they cannot see it.
+    if e and not e.shareAlliance then
+        ally:Send("EVT", { kind = "result", eventId = data.eventId, ok = false, why = "gone" }, sender)
+        return
+    end
     local comp = e and self:GetComposition(e)
     local decision = Calendar._AllianceSlotDecision(e, comp and comp.yes, GetServerTime())
     if decision ~= "ok" then
