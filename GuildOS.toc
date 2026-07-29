@@ -52,6 +52,7 @@ Modules\CommSystem.lua
 Modules\SyncService.lua
 # Cross-guild federation (rides the shared mesh; fans out via SyncService)
 Modules\Alliance.lua
+Modules\AllianceSync.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
 Modules\RecruitmentSystem.lua
