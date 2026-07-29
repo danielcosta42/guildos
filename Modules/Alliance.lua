@@ -1013,6 +1013,61 @@ function Alliance:ClaimAmbassador()
     return true
 end
 
+-- Class and level of our OWN guildmates, cached and rebuilt on roster change.
+-- Scanning GetGuildRosterInfo per chat line would be O(roster) per message.
+function Alliance:_GuildInfoMap()
+    if self._rosterInfo then
+        return self._rosterInfo
+    end
+    local map = {}
+    local total = (GetNumGuildMembers and GetNumGuildMembers()) or 0
+    for i = 1, total do
+        local name, _, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
+        if name then
+            map[(name:match("^([^-]+)") or name):lower()] = { class = classFile, level = level }
+        end
+    end
+    self._rosterInfo = map
+    return map
+end
+
+-- Everything we can say about someone speaking in the alliance channel,
+-- whether they are an ally or one of ours. MemberInfo deliberately answers nil
+-- for our own guild (it exists to identify ALLIES), so the chat needs this
+-- wider view or nobody from our own guild would ever be coloured.
+function Alliance:SpeakerInfo(name)
+    local short = shortName(name or "")
+    if short == "" then
+        return nil
+    end
+
+    local allied = self:MemberInfo(short)
+    if allied then
+        allied.own = false
+        return allied
+    end
+
+    local myGuild = self:MyGuildName()
+    local key = BRutus:GetPlayerKey(short, GetRealmName())
+    local m = BRutus.db and BRutus.db.members and BRutus.db.members[key]
+    if m then
+        return {
+            guild = myGuild,
+            class = m.class,
+            level = m.level,
+            spec  = type(m.spec) == "table" and m.spec.tree or nil,
+            own   = true,
+        }
+    end
+
+    -- In the guild but with no synced data yet: the roster still knows them.
+    local hit = self:_GuildInfoMap()[short:lower()]
+    if hit then
+        return { guild = myGuild, class = hit.class, level = hit.level, own = true }
+    end
+    return nil
+end
+
 -- Is this character visible on the realm-wide presence mesh right now?
 function Alliance:IsPeerOnline(name)
     local net = _G.ChehulNet
@@ -1526,6 +1581,10 @@ end
 function Alliance:Initialize()
     self:_RegisterTests()
     registerPopups()
+    -- The roster class/level cache is only valid until the roster changes.
+    local rf = CreateFrame("Frame")
+    rf:RegisterEvent("GUILD_ROSTER_UPDATE")
+    rf:SetScript("OnEvent", function() GuildOS.Alliance._rosterInfo = nil end)
     if BRutus.SyncService then
         BRutus.SyncService:On("allyboard", function(env) GuildOS.Alliance:OnBoardSync(env) end)
     end

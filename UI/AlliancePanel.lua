@@ -330,6 +330,52 @@ local function BuildChat(panel)
     local sendBtn = UI:CreateButton(panel, L["Send"], 62, 24)
     sendBtn:SetPoint("BOTTOMRIGHT", -6, 4)
 
+    local empty = UI:CreateText(content, L["Nothing here yet. Say hello."], 11,
+        C.textDim.r, C.textDim.g, C.textDim.b)
+    empty:Hide()
+
+    -- Line widgets are POOLED. Refresh runs on every incoming message, and WoW
+    -- never frees a frame, so building a Button per line per refresh leaked one
+    -- frame per message for the life of the session.
+    local rows = {}
+    local function getRow(i)
+        if rows[i] then return rows[i] end
+        local fs = UI:CreateText(content, "", 11, C.text.r, C.text.g, C.text.b)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+
+        local hit = CreateFrame("Button", nil, content)
+        hit:SetScript("OnEnter", function(self)
+            if not self.name then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(self.name)
+            local info = BRutus.Alliance and BRutus.Alliance:SpeakerInfo(self.name)
+            if self.guild then
+                GameTooltip:AddLine(self.guild, 0.56, 0.66, 0.78)
+            end
+            if info then
+                if info.class or info.level then
+                    GameTooltip:AddLine(string.format("%s %s",
+                        tostring(info.level or "?"), info.class or ""), 0.8, 0.8, 0.8)
+                end
+                if info.spec then GameTooltip:AddLine(info.spec, 0.8, 0.8, 0.8) end
+                if info.attunements and #info.attunements > 0 then
+                    GameTooltip:AddLine(L["Attune: "] ..
+                        table.concat(info.attunements, ", "), 0.6, 0.8, 0.6, true)
+                end
+            end
+            GameTooltip:AddLine(L["Click to whisper"], 0.5, 0.5, 0.5)
+            GameTooltip:Show()
+        end)
+        hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        hit:SetScript("OnClick", function(self)
+            if self.name then ChatFrame_SendTell(self.name) end
+        end)
+
+        rows[i] = { fs = fs, hit = hit }
+        return rows[i]
+    end
+
     local refresh
 
     local function doSend()
@@ -370,7 +416,8 @@ local function BuildChat(panel)
         -- when nothing has been laid out yet, so it is born 0 wide and stays
         -- that way. Every working panel in this addon re-sets it here.
         content:SetWidth(math.max(holder:GetWidth() - 12, 1))
-        clear(content)
+        -- No clear() here: the rows are pooled, so this refresh shows exactly
+        -- the ones it needs and parks the rest at the end.
 
         local prefs = chat:Prefs()
         sysBtn.label:SetText(prefs.system and L["Events: on"] or L["Events: off"])
@@ -381,60 +428,63 @@ local function BuildChat(panel)
 
         local log = chat:Log()
         local y = 0
-        for _, e in ipairs(log) do
+        local myGuild = BRutus.Alliance and BRutus.Alliance:MyGuildName()
+
+        for i, e in ipairs(log) do
+            local row = getRow(i)
             local stamp = e.t and date("%H:%M", e.t) or ""
             local line
+
             if e.sys then
+                -- Events read as events: a marker, one colour, no speaker.
                 local col = (e.sys == "warn") and "E0B040" or "8F7BD1"
-                line = string.format("|cff666666%s|r  |cff%s%s %s|r",
-                    stamp, col, "\194\187", e.m or "")
+                line = string.format("|cff555560%s|r  |cff%s\194\187 %s|r", stamp, col, e.m or "")
             else
-                local info = BRutus.Alliance and BRutus.Alliance:MemberInfo(e.n)
-                local cr, cg, cb = BRutus:GetClassColor(info and info.class)
-                line = string.format("|cff666666%s|r  |cff8888aa[%s]|r |cff%02x%02x%02x%s|r  %s",
-                    stamp, e.g or "?", cr * 255, cg * 255, cb * 255, e.n or "?", e.m or "")
+                local info = BRutus.Alliance and BRutus.Alliance:SpeakerInfo(e.n)
+                local hex = BRutus:GetClassColorHex(info and info.class)
+                -- Our own guild tag is dimmer than an allied one: in an alliance
+                -- channel the useful signal is WHICH ALLY is talking, and ours is
+                -- the boring case that should not shout.
+                local own = (e.g == myGuild)
+                local tagHex = own and "555566" or "8FA8C8"
+                line = string.format("|cff555560%s|r  |cff%s[%s]|r |cff%s%s|r|cff888888:|r %s",
+                    stamp, tagHex, e.g or "?", hex, e.n or "?", e.m or "")
             end
-            local fs = UI:CreateText(content, line, 11, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", 6, -y)
-            fs:SetWidth(math.max(content:GetWidth() - 12, 200))
-            fs:SetJustifyH("LEFT")
-            fs:SetWordWrap(true)
-            y = y + math.max(15, (fs:GetStringHeight() or 12) + 3)
+
+            row.fs:SetText(line)
+            row.fs:SetWidth(math.max(content:GetWidth() - 12, 200))
+            row.fs:SetPoint("TOPLEFT", 6, -y)
+            row.fs:Show()
+
+            local h = math.max(15, (row.fs:GetStringHeight() or 12) + 3)
 
             -- Clicking a speaker opens what the alliance already knows about
             -- them: guild, spec, attunements. No new sync pays for this.
             if e.n and not e.sys then
-                local hit = CreateFrame("Button", nil, content)
-                hit:SetPoint("TOPLEFT", 6, -(y - 15))
-                hit:SetSize(content:GetWidth() - 12, 15)
-                hit:SetScript("OnEnter", function()
-                    GameTooltip:SetOwner(hit, "ANCHOR_RIGHT")
-                    GameTooltip:AddLine(e.n)
-                    if e.g then GameTooltip:AddLine(e.g, 0.6, 0.6, 0.8) end
-                    local info = BRutus.Alliance and BRutus.Alliance:MemberInfo(e.n)
-                    if info then
-                        if info.class or info.level then
-                            GameTooltip:AddLine(string.format("%s %s",
-                                tostring(info.level or "?"), info.class or ""), 0.8, 0.8, 0.8)
-                        end
-                        if info.spec then GameTooltip:AddLine(info.spec, 0.8, 0.8, 0.8) end
-                        if info.attunements and #info.attunements > 0 then
-                            GameTooltip:AddLine(L["Attune: "] ..
-                                table.concat(info.attunements, ", "), 0.6, 0.8, 0.6, true)
-                        end
-                    end
-                    GameTooltip:Show()
-                end)
-                hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                hit:SetScript("OnClick", function() ChatFrame_SendTell(e.n) end)
+                row.hit:SetPoint("TOPLEFT", 6, -y)
+                row.hit:SetSize(math.max(content:GetWidth() - 12, 200), h)
+                row.hit.name = e.n
+                row.hit.guild = e.g
+                row.hit:Show()
+            else
+                row.hit:Hide()
             end
+
+            y = y + h
+        end
+
+        -- Park every pooled row the log no longer uses.
+        for i = #log + 1, #rows do
+            rows[i].fs:Hide()
+            rows[i].hit:Hide()
         end
 
         if #log == 0 then
-            local none = UI:CreateText(content, L["Nothing here yet. Say hello."], 11,
-                C.textDim.r, C.textDim.g, C.textDim.b)
-            none:SetPoint("TOPLEFT", 6, 0)
+            empty:SetPoint("TOPLEFT", 6, 0)
+            empty:Show()
             y = 20
+        else
+            empty:Hide()
         end
         content:SetHeight(math.max(y, 1))
         -- Deferred one frame: the scroll range is recomputed after the content
