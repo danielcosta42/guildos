@@ -54,6 +54,11 @@ function Calendar:Initialize()
             build = function()
                 return Calendar._BuildAllianceEvents(Calendar:GetEvents(), GetServerTime(), 50)
             end,
+            -- A fresh allied calendar is exactly when a new collision can
+            -- appear, so check right here instead of waiting for a panel open.
+            apply = function()
+                Calendar:_AnnounceNewConflicts()
+            end,
         })
     end
     self:_RegisterTests()
@@ -555,6 +560,34 @@ function Calendar._FindConflicts(mine, theirs, window)
     return out
 end
 
+-- Announce collisions that are NEW to this session, so an allied guild
+-- scheduling on top of us surfaces the moment their snapshot lands instead of
+-- waiting for somebody to open the panel. Session-scoped on purpose: repeating
+-- the same warning on every login would train people to ignore it.
+Calendar._seenConflicts = {}
+
+function Calendar:_AnnounceNewConflicts()
+    local chat = GuildOS.AllianceChat
+    if not chat then
+        return
+    end
+    for _, c in ipairs(self:AllianceConflicts()) do
+        local key = tostring(c.mine.id) .. "|" .. tostring(c.theirs.id)
+        if not Calendar._seenConflicts[key] then
+            Calendar._seenConflicts[key] = true
+            local text
+            if c.sharedCount > 0 then
+                text = string.format(L["Conflict: your %s clashes with %s of %s, %d signed to both"],
+                    c.mine.title or "?", c.theirs.title or "?", c.theirs.guild or "?", c.sharedCount)
+            else
+                text = string.format(L["Conflict: your %s clashes with %s of %s"],
+                    c.mine.title or "?", c.theirs.title or "?", c.theirs.guild or "?")
+            end
+            chat:AddSystem(text, "warn")
+        end
+    end
+end
+
 -- Live wrapper: our upcoming events against every allied guild's.
 function Calendar:AllianceConflicts()
     local ally = GuildOS.Alliance
@@ -681,6 +714,10 @@ function Calendar:_ReceiveSignup(data, sender, senderGuild)
         ts    = GetServerTime(),
     }
     BRutus:Print(string.format(L["%s of %s wants a slot in %s."], short, senderGuild, e.title or "?"))
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:AddSystem(
+            string.format(L["%s of %s wants a slot in %s."], short, senderGuild, e.title or "?"), "warn")
+    end
     self:Refresh()
 end
 

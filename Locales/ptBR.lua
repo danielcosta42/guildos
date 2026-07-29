@@ -1489,6 +1489,23 @@ L["HEAD IN"] = "HEAD IN"
 L["PUSH IN"] = "PUSH IN"
 L["ok"] = "ok"
 
+-- Alliance chat feed
+L["Chat"] = "Chat"
+L["Send"] = "Enviar"
+L["Clear"] = "Limpar"
+L["Events"] = "Eventos"
+L["Events: on"] = "Eventos: ligado"
+L["Events: off"] = "Eventos: desligado"
+L["Default chat"] = "Chat padrão"
+L["Default chat: shown"] = "Chat padrão: mostrando"
+L["Default chat: hidden"] = "Chat padrão: escondido"
+L["%s connected"] = "%s conectado"
+L["Not connected to the alliance channel."] = "Não está conectado ao canal da aliança."
+L["Nothing here yet. Say hello."] = "Nada aqui ainda. Manda um oi."
+L["Attune: "] = "Attune: "
+L["Conflict: your %s clashes with %s of %s"] = "Conflito: seu %s bate com %s da %s"
+L["Conflict: your %s clashes with %s of %s, %d signed to both"] = "Conflito: seu %s bate com %s da %s, %d assinaram nos dois"
+
 -- Alliance crafter directory
 L["(offline)"] = "(offline)"
 L["%s of %s can craft %s (%s)"] = "%s, da %s, sabe fazer %s (%s)"

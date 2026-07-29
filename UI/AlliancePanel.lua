@@ -301,6 +301,156 @@ local function BuildOverview(panel)
 end
 
 ----------------------------------------------------------------------
+-- Chat: the alliance feed. Conversation and alliance events on one timeline,
+-- which is the one thing a default chat tab cannot do.
+----------------------------------------------------------------------
+local function BuildChat(panel)
+    local CHAT = function() return BRutus.AllianceChat end
+
+    local status = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    status:SetPoint("TOPLEFT", 6, -6)
+
+    local sysBtn = UI:CreateButton(panel, L["Events"], 90, 20)
+    sysBtn:SetPoint("TOPRIGHT", -6, -2)
+    local hideBtn = UI:CreateButton(panel, L["Default chat"], 120, 20)
+    hideBtn:SetPoint("RIGHT", sysBtn, "LEFT", -6, 0)
+    local clearBtn = UI:CreateButton(panel, L["Clear"], 70, 20)
+    clearBtn:SetPoint("RIGHT", hideBtn, "LEFT", -6, 0)
+
+    local holder = CreateFrame("Frame", nil, panel)
+    holder:SetPoint("TOPLEFT", 0, -28)
+    holder:SetPoint("BOTTOMRIGHT", 0, 32)
+    local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceChatScroll")
+    scroll:SetAllPoints()
+
+    local input = makeInput(panel, 100)
+    input:SetPoint("BOTTOMLEFT", 6, 4)
+    input:SetPoint("BOTTOMRIGHT", -74, 4)
+    local sendBtn = UI:CreateButton(panel, L["Send"], 62, 24)
+    sendBtn:SetPoint("BOTTOMRIGHT", -6, 4)
+
+    local refresh
+
+    local function doSend()
+        local chat = CHAT()
+        if not chat then return end
+        -- Enter and click are hardware events, which is what makes a channel
+        -- send legal here at all (see Modules/RecruitmentSystem.lua).
+        if chat:Send(input:GetText()) then
+            input:SetText("")
+        else
+            BRutus:Print(L["Not connected to the alliance channel."])
+        end
+        refresh()
+    end
+    sendBtn:SetScript("OnClick", doSend)
+    input:SetScript("OnEnterPressed", doSend)
+
+    clearBtn:SetScript("OnClick", function()
+        if CHAT() then CHAT():Clear() end
+        refresh()
+    end)
+    sysBtn:SetScript("OnClick", function()
+        local p = CHAT() and CHAT():Prefs()
+        if p then p.system = not p.system end
+        refresh()
+    end)
+    hideBtn:SetScript("OnClick", function()
+        local p = CHAT() and CHAT():Prefs()
+        if p then p.hideDefault = not p.hideDefault end
+        refresh()
+    end)
+
+    refresh = function()
+        local chat = CHAT()
+        if not chat then return end
+        chat:MarkRead()
+        clear(content)
+
+        local prefs = chat:Prefs()
+        sysBtn.label:SetText(prefs.system and L["Events: on"] or L["Events: off"])
+        hideBtn.label:SetText(prefs.hideDefault and L["Default chat: hidden"] or L["Default chat: shown"])
+        status:SetText(chat:IsConnected()
+            and string.format(L["%s connected"], chat:ChannelName() or "?")
+            or L["not connected"])
+
+        local log = chat:Log()
+        local y = 0
+        for _, e in ipairs(log) do
+            local stamp = e.t and date("%H:%M", e.t) or ""
+            local line
+            if e.sys then
+                local col = (e.sys == "warn") and "E0B040" or "8F7BD1"
+                line = string.format("|cff666666%s|r  |cff%s%s %s|r",
+                    stamp, col, "\194\187", e.m or "")
+            else
+                local info = BRutus.Alliance and BRutus.Alliance:MemberInfo(e.n)
+                local cr, cg, cb = BRutus:GetClassColor(info and info.class)
+                line = string.format("|cff666666%s|r  |cff8888aa[%s]|r |cff%02x%02x%02x%s|r  %s",
+                    stamp, e.g or "?", cr * 255, cg * 255, cb * 255, e.n or "?", e.m or "")
+            end
+            local fs = UI:CreateText(content, line, 11, C.text.r, C.text.g, C.text.b)
+            fs:SetPoint("TOPLEFT", 6, -y)
+            fs:SetWidth(math.max(content:GetWidth() - 12, 200))
+            fs:SetJustifyH("LEFT")
+            fs:SetWordWrap(true)
+            y = y + math.max(15, (fs:GetStringHeight() or 12) + 3)
+
+            -- Clicking a speaker opens what the alliance already knows about
+            -- them: guild, spec, attunements. No new sync pays for this.
+            if e.n and not e.sys then
+                local hit = CreateFrame("Button", nil, content)
+                hit:SetPoint("TOPLEFT", 6, -(y - 15))
+                hit:SetSize(content:GetWidth() - 12, 15)
+                hit:SetScript("OnEnter", function()
+                    GameTooltip:SetOwner(hit, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine(e.n)
+                    if e.g then GameTooltip:AddLine(e.g, 0.6, 0.6, 0.8) end
+                    local info = BRutus.Alliance and BRutus.Alliance:MemberInfo(e.n)
+                    if info then
+                        if info.class or info.level then
+                            GameTooltip:AddLine(string.format("%s %s",
+                                tostring(info.level or "?"), info.class or ""), 0.8, 0.8, 0.8)
+                        end
+                        if info.spec then GameTooltip:AddLine(info.spec, 0.8, 0.8, 0.8) end
+                        if info.attunements and #info.attunements > 0 then
+                            GameTooltip:AddLine(L["Attune: "] ..
+                                table.concat(info.attunements, ", "), 0.6, 0.8, 0.6, true)
+                        end
+                    end
+                    GameTooltip:Show()
+                end)
+                hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                hit:SetScript("OnClick", function() ChatFrame_SendTell(e.n) end)
+            end
+        end
+
+        if #log == 0 then
+            local none = UI:CreateText(content, L["Nothing here yet. Say hello."], 11,
+                C.textDim.r, C.textDim.g, C.textDim.b)
+            none:SetPoint("TOPLEFT", 6, 0)
+            y = 20
+        end
+        content:SetHeight(math.max(y, 1))
+        -- Deferred one frame: the scroll range is recomputed after the content
+        -- height lands, so scrolling to the bottom in this frame would clamp
+        -- against the OLD range and leave the newest line off screen.
+        local target = math.max(0, y - holder:GetHeight())
+        BRutus.Compat.After(0, function()
+            if panel:IsVisible() then scroll:SetVerticalScroll(target) end
+        end)
+    end
+
+    if BRutus.AllianceChat then
+        BRutus.AllianceChat:OnRefresh(function()
+            if panel:IsVisible() then refresh() end
+        end)
+    end
+
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Bulletin: notices posted by any ambassador in the alliance.
 ----------------------------------------------------------------------
 local function BuildBulletin(panel)
@@ -701,16 +851,19 @@ end
 ----------------------------------------------------------------------
 -- Entry point, called from UI/RosterFrame.lua
 ----------------------------------------------------------------------
+-- Chat first: it is the reason to open this panel day to day. Chat and
+-- Bulletin need a pact to mean anything, so they hide until there is one.
 local SUBTABS = {
+    { key = "chat",     label = L["Chat"],     needsPact = true },
     { key = "overview", label = L["Overview"] },
-    { key = "bulletin", label = L["Bulletin"] },
+    { key = "bulletin", label = L["Bulletin"], needsPact = true },
     { key = "manage",   label = L["Manage"] },
 }
 
 function BRutus:CreateAlliancePanel(parent, _mainFrame)
     registerPopups()
     parent.subPanels = {}
-    parent.activeSub = "overview"
+    parent.activeSub = nil
 
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
@@ -727,13 +880,28 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
     end
     parent.SelectSub = selectSub
 
-    local x = 0
     for _, t in ipairs(SUBTABS) do
         local btn = UI:CreateTab(bar, t.label, 120)
-        btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         btns[t.key] = btn
-        x = x + 124
+    end
+
+    -- Re-anchor left to right over the VISIBLE tabs only, so hiding Chat and
+    -- Bulletin without a pact leaves no gap in the bar.
+    local function layoutTabs(hasPact)
+        local x, first = 0, nil
+        for _, t in ipairs(SUBTABS) do
+            local btn = btns[t.key]
+            local show = hasPact or not t.needsPact
+            setShown(btn, show)
+            if show then
+                btn:ClearAllPoints()
+                btn:SetPoint("LEFT", x, 0)
+                x = x + 124
+                first = first or t.key
+            end
+        end
+        return first
     end
 
     local function makeSubPanel()
@@ -744,13 +912,39 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
         return p
     end
 
-    local builders = { overview = BuildOverview, bulletin = BuildBulletin, manage = BuildManage }
+    local builders = {
+        chat = BuildChat, overview = BuildOverview,
+        bulletin = BuildBulletin, manage = BuildManage,
+    }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
     end
 
+    -- Unread count on the Chat tab, so a message that lands while you are on
+    -- another tab is not silently missed.
+    local function paintUnread()
+        local chat = BRutus.AllianceChat
+        local n = (chat and chat.unread) or 0
+        local btn = btns["chat"]
+        if not btn then return end
+        btn.label:SetText(n > 0 and string.format("%s (%d)", L["Chat"], n) or L["Chat"])
+    end
+    if BRutus.AllianceChat then
+        BRutus.AllianceChat:OnRefresh(function()
+            if parent:IsVisible() then paintUnread() end
+        end)
+    end
+
     parent:SetScript("OnShow", function()
-        selectSub(parent.activeSub or "overview")
+        local hasPact = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
+        local first = layoutTabs(hasPact)
+        local want = parent.activeSub
+        -- Falling out of a pact must not strand the panel on a hidden tab.
+        if not want or not btns[want] or not btns[want]:IsShown() then
+            want = hasPact and "chat" or (first or "overview")
+        end
+        selectSub(want)
+        paintUnread()
     end)
 end

@@ -406,11 +406,37 @@ function Alliance:GuildOfMember(name)
     if short == "" then
         return nil
     end
-    local guild = sync:MemberIndex()[short]
+    local hit = sync:MemberIndex()[short]
+    local guild = hit and hit.guild
     if not guild or guild == self:MyGuildName() then
         return nil
     end
     return guild
+end
+
+-- What the alliance already knows about an allied character, from the cached
+-- roster snapshot: guild, class, level, spec, completed attunements. nil for
+-- strangers and for our own guildmates.
+function Alliance:MemberInfo(name)
+    local sync = GuildOS.AllianceSync
+    if not sync or not sync.MemberIndex then
+        return nil
+    end
+    local short = shortName(name or ""):lower()
+    local hit = short ~= "" and sync:MemberIndex()[short]
+    if not hit or hit.guild == self:MyGuildName() then
+        return nil
+    end
+    local row = hit.row or {}
+    return {
+        guild       = hit.guild,
+        class       = row.c,
+        level       = row.l,
+        spec        = row.s,
+        professions = row.p,
+        attunements = row.a,
+        main        = row.m,
+    }
 end
 
 -- A player of `guildName` we have positive evidence is online RIGHT NOW, so a
@@ -821,6 +847,9 @@ function Alliance:_OnAck(data, sender)
     pact.revision = now
     self._invitesSent[senderShort:lower()] = nil
     BRutus:Print(string.format(L["%s joined the alliance."], guild))
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:AddSystem(string.format(L["%s joined the alliance."], guild), "info")
+    end
     self:BroadcastPact(true)
 end
 
@@ -860,6 +889,9 @@ function Alliance:_OnLeave(_sender, senderGuild)
         BRutus.db.allianceData[senderGuild] = nil
     end
     BRutus:Print(string.format(L["%s left the alliance."], senderGuild))
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:AddSystem(string.format(L["%s left the alliance."], senderGuild), "info")
+    end
 end
 
 ----------------------------------------------------------------------

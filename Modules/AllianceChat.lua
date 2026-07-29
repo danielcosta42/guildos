@@ -23,7 +23,17 @@ local AllianceChat = {}
 GuildOS.AllianceChat = AllianceChat
 local L = BRutus.L
 
-AllianceChat.DEFAULTS = { chat = true, tags = true }
+AllianceChat.DEFAULTS = {
+    chat        = true,   -- auto-join the channel
+    tags        = true,   -- guild tag prefix on each line
+    history     = true,   -- keep a rolling log in SavedVariables
+    hideDefault = false,  -- suppress the channel from the default chat frame
+    system      = true,   -- alliance events in the feed, not just conversation
+}
+
+-- Capped on purpose: this is plain text on the player's disk, and an
+-- unbounded log would grow the SavedVariables file forever.
+AllianceChat.MAX_LOG = 200
 
 local function accentHex()
     local c = BRutus.Colors and BRutus.Colors.accent
@@ -105,6 +115,101 @@ function AllianceChat:SetEnabled(on)
 end
 
 ----------------------------------------------------------------------
+-- The feed: conversation and alliance events on one timeline.
+--
+-- Capture rides a dedicated event frame, NOT the display filter, because a
+-- filter runs once per chat frame showing the channel: a player with the
+-- channel in two tabs would log every line twice.
+----------------------------------------------------------------------
+AllianceChat.unread = 0
+AllianceChat.listeners = {}
+
+function AllianceChat:Log()
+    BRutus.db.allianceChatLog = BRutus.db.allianceChatLog or {}
+    return BRutus.db.allianceChatLog
+end
+
+function AllianceChat:OnRefresh(fn)
+    if type(fn) == "function" then
+        self.listeners[#self.listeners + 1] = fn
+    end
+end
+
+function AllianceChat:_Notify()
+    for _, fn in ipairs(self.listeners) do
+        pcall(fn)
+    end
+end
+
+function AllianceChat:Push(entry)
+    if not self:Prefs().history then
+        return
+    end
+    local log = self:Log()
+    log[#log + 1] = entry
+    while #log > self.MAX_LOG do
+        table.remove(log, 1)
+    end
+    self.unread = self.unread + 1
+    self:_Notify()
+end
+
+-- An alliance event, rendered inline with the conversation. `kind` is "info"
+-- (something happened) or "warn" (something wants a decision).
+function AllianceChat:AddSystem(text, kind)
+    if not self:Prefs().system then
+        return
+    end
+    local clean = BRutus:SanitizeUserText(text, 180)
+    if clean == "" then
+        return
+    end
+    self:Push({ t = GetServerTime(), m = clean, sys = kind or "info" })
+end
+
+function AllianceChat:Clear()
+    BRutus.db.allianceChatLog = {}
+    self.unread = 0
+    self:_Notify()
+end
+
+function AllianceChat:MarkRead()
+    self.unread = 0
+end
+
+-- Send to the alliance channel. Only ever called from a button click or an
+-- EditBox Enter, which ARE hardware events, so the CHANNEL restriction noted
+-- in Modules/RecruitmentSystem.lua does not apply here.
+function AllianceChat:Send(text)
+    local clean = BRutus:SanitizeUserText(text, 240)
+    if clean == "" then
+        return false
+    end
+    local name = self:ChannelName()
+    local index = name and GetChannelName and GetChannelName(name)
+    if not index or index == 0 then
+        return false
+    end
+    SendChatMessage(clean, "CHANNEL", nil, index)
+    return true
+end
+
+function AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
+    local mine = self:ChannelName()
+    if not mine or not chanBaseName or chanBaseName:lower() ~= mine:lower() then
+        return
+    end
+    local ally = GuildOS.Alliance
+    local short = (Ambiguate and Ambiguate(author or "", "short")) or author
+    self:Push({
+        t = GetServerTime(),
+        n = short,
+        g = (ally and ally:GuildOfMember(author)) or (ally and ally:MyGuildName()) or nil,
+        m = BRutus:SanitizeUserText(msg, 240),
+    })
+end
+
+----------------------------------------------------------------------
 -- Message decoration. A chat filter, exactly like ChatTweaks, so the author
 -- link is never rewritten (only a prefix is added).
 ----------------------------------------------------------------------
@@ -120,6 +225,12 @@ function AllianceChat:_MakeFilter()
         local mine = AllianceChat:ChannelName()
         if not mine or not chanBaseName or chanBaseName:lower() ~= mine:lower() then
             return false
+        end
+        -- Reading it in our own feed AND in the default frame means reading it
+        -- twice. Off by default: hiding a channel the player joined is the kind
+        -- of thing that must be asked for, never assumed.
+        if BRutus.db.alliancePrefs.hideDefault then
+            return true
         end
         local ally = GuildOS.Alliance
         local guild = ally and ally:GuildOfMember(author)
@@ -161,9 +272,19 @@ function AllianceChat:Initialize()
 
     -- Channels are not available the instant the world loads, so join on a
     -- delay and retry once. Joining is idempotent (IsConnected short-circuits).
+    -- CHAT_MSG_CHANNEL is captured HERE rather than in the display filter, so
+    -- the feed logs each line exactly once no matter how many chat tabs show
+    -- the channel.
     local f = CreateFrame("Frame")
     f:RegisterEvent("PLAYER_ENTERING_WORLD")
-    f:SetScript("OnEvent", function()
+    f:RegisterEvent("CHAT_MSG_CHANNEL")
+    f:SetScript("OnEvent", function(_, event, msg, author, _, _, _, _, _, _, chanBaseName)
+        if event == "CHAT_MSG_CHANNEL" then
+            BRutus:SafeCall(function()
+                AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
+            end)
+            return
+        end
         BRutus.Compat.After(10, function() AllianceChat:Join() end)
         BRutus.Compat.After(45, function() AllianceChat:Join() end)
     end)

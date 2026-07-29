@@ -323,9 +323,9 @@ function AllianceSync:_Write(guild, domain, rev, data, fp)
     self._indexDirty = true
 end
 
--- { [lowercased short name] = allied guild name } across every cached roster.
--- Rebuilt lazily, only after a snapshot actually changed, because the chat
--- filter hits this on every single channel line.
+-- { [lowercased short name] = { guild = name, row = rosterRow } } across every
+-- cached roster. Rebuilt lazily, only after a snapshot actually changed,
+-- because the chat filter and the feed hit this on every single line.
 function AllianceSync:MemberIndex()
     if self._index and not self._indexDirty then
         return self._index
@@ -337,7 +337,7 @@ function AllianceSync:MemberIndex()
         if roster and type(roster.data) == "table" then
             for _, row in ipairs(roster.data) do
                 if type(row) == "table" and type(row.n) == "string" and row.n ~= "" then
-                    idx[row.n:lower()] = guild
+                    idx[row.n:lower()] = { guild = guild, row = row }
                 end
             end
         end

@@ -413,6 +413,23 @@ L["HEAD IN"] = "HEAD IN"
 L["PUSH IN"] = "PUSH IN"
 L["ok"] = "ok"
 
+-- Alliance chat feed
+L["Chat"] = "Chat"
+L["Send"] = "Send"
+L["Clear"] = "Clear"
+L["Events"] = "Events"
+L["Events: on"] = "Events: on"
+L["Events: off"] = "Events: off"
+L["Default chat"] = "Default chat"
+L["Default chat: shown"] = "Default chat: shown"
+L["Default chat: hidden"] = "Default chat: hidden"
+L["%s connected"] = "%s connected"
+L["Not connected to the alliance channel."] = "Not connected to the alliance channel."
+L["Nothing here yet. Say hello."] = "Nothing here yet. Say hello."
+L["Attune: "] = "Attune: "
+L["Conflict: your %s clashes with %s of %s"] = "Conflict: your %s clashes with %s of %s"
+L["Conflict: your %s clashes with %s of %s, %d signed to both"] = "Conflict: your %s clashes with %s of %s, %d signed to both"
+
 -- Alliance crafter directory
 L["(offline)"] = "(offline)"
 L["%s of %s can craft %s (%s)"] = "%s of %s can craft %s (%s)"
