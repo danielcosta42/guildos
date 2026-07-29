@@ -253,6 +253,75 @@ local function BuildOverview(panel)
 end
 
 ----------------------------------------------------------------------
+-- Bulletin: notices posted by any ambassador in the alliance.
+----------------------------------------------------------------------
+local function BuildBulletin(panel)
+    local box = makeInput(panel, 380)
+    box:SetPoint("TOPLEFT", 6, -8)
+    local postBtn = UI:CreateButton(panel, L["Post"], 80, 24)
+    postBtn:SetPoint("LEFT", box, "RIGHT", 8, 0)
+    local hint = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    hint:SetPoint("TOPLEFT", 6, -36)
+
+    local holder = CreateFrame("Frame", nil, panel)
+    holder:SetPoint("TOPLEFT", 0, -54)
+    holder:SetPoint("BOTTOMRIGHT", 0, 4)
+    local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceBoardScroll")
+    scroll:SetAllPoints()
+
+    local refresh
+
+    postBtn:SetScript("OnClick", function()
+        local ok, err = ALLY():PostBoard(box:GetText())
+        if ok then
+            box:SetText("")
+        elseif err then
+            BRutus:Print(err)
+        end
+        refresh()
+    end)
+    box:SetScript("OnEnterPressed", function() postBtn:Click() end)
+
+    refresh = function()
+        local ally = ALLY()
+        clear(content)
+
+        local canPost = ally and ally:CanAdminister()
+        setShown(box, canPost)
+        setShown(postBtn, canPost)
+        hint:SetText(canPost and L["Ambassadors can post. Everyone in the alliance sees it."]
+            or L["Only alliance ambassadors can post here."])
+
+        local posts = (ally and ally.BoardPosts and ally:BoardPosts()) or {}
+        local y = 0
+        for _, p in ipairs(posts) do
+            local head = UI:CreateText(content, string.format("|cff8888aa[%s]|r %s  |cff666666%s|r",
+                p.guild or "?", p.by or "?", p.ts and BRutus:TimeAgo(p.ts) or ""),
+                10, C.textDim.r, C.textDim.g, C.textDim.b)
+            head:SetPoint("TOPLEFT", 6, -y)
+            y = y + 14
+
+            local body = UI:CreateText(content, p.text or "", 11, C.text.r, C.text.g, C.text.b)
+            body:SetPoint("TOPLEFT", 10, -y)
+            body:SetWidth(math.max(content:GetWidth() - 20, 200))
+            body:SetJustifyH("LEFT")
+            body:SetWordWrap(true)
+            y = y + math.max(16, (body:GetStringHeight() or 12) + 8)
+        end
+
+        if #posts == 0 then
+            local none = UI:CreateText(content, L["No alliance notices yet."], 11,
+                C.textDim.r, C.textDim.g, C.textDim.b)
+            none:SetPoint("TOPLEFT", 6, 0)
+            y = 20
+        end
+        content:SetHeight(math.max(y, 1))
+    end
+
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Manage: found, invite, block, remove, leave, and the channel toggle.
 ----------------------------------------------------------------------
 local function BuildManage(panel)
@@ -458,6 +527,7 @@ end
 ----------------------------------------------------------------------
 local SUBTABS = {
     { key = "overview", label = L["Overview"] },
+    { key = "bulletin", label = L["Bulletin"] },
     { key = "manage",   label = L["Manage"] },
 }
 
@@ -498,7 +568,7 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
         return p
     end
 
-    local builders = { overview = BuildOverview, manage = BuildManage }
+    local builders = { overview = BuildOverview, bulletin = BuildBulletin, manage = BuildManage }
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }

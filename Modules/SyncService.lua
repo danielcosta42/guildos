@@ -37,6 +37,7 @@ SyncService.OFFICER_DOMAINS = {
     bulletin = true,   -- officer announcements
     ban      = true,   -- blacklist add/remove (officer-authoritative)
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
+    allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
 }
 
 -- Actions any guild member may perform even inside an officer domain.

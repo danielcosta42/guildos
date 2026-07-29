@@ -974,6 +974,142 @@ function Alliance:CanAdminister()
 end
 
 ----------------------------------------------------------------------
+-- Alliance bulletin
+--
+-- WHY IT SYNCS TWICE: a post has to reach the whole GUILD before it can reach
+-- the alliance, because only the bridge builds our guild's outbound snapshot.
+-- A post written by an ambassador who is not the bridge would otherwise sit on
+-- that one client forever. So a post goes out on the guild channel first
+-- (officer domain "allyboard"), and the bridge then publishes the agreed list.
+----------------------------------------------------------------------
+Alliance.BOARD_MAX      = 20
+Alliance.BOARD_TEXT_MAX = 200
+
+function Alliance:BoardStore()
+    BRutus.db.allianceBoard = BRutus.db.allianceBoard or {}
+    return BRutus.db.allianceBoard
+end
+
+-- Pure. Newest `cap` posts, oldest first. Ids are time-prefixed hex, so sorting
+-- by id is chronological and the resulting order is identical on every client,
+-- which is what keeps the change fingerprint stable.
+function Alliance._BuildBoard(posts, cap)
+    local out = {}
+    if type(posts) ~= "table" then
+        return out
+    end
+    cap = tonumber(cap) or Alliance.BOARD_MAX
+    local sorted = {}
+    for _, p in ipairs(posts) do
+        if type(p) == "table" and p.id then
+            sorted[#sorted + 1] = p
+        end
+    end
+    table.sort(sorted, function(a, b) return tostring(a.id) < tostring(b.id) end)
+    for i = math.max(1, #sorted - cap + 1), #sorted do
+        out[#out + 1] = {
+            id = sorted[i].id,
+            t  = sorted[i].text,
+            b  = sorted[i].by,
+            ts = tonumber(sorted[i].ts) or 0,
+        }
+    end
+    return out
+end
+
+local function trimBoard(store)
+    while #store > Alliance.BOARD_MAX do
+        table.remove(store, 1)
+    end
+end
+
+function Alliance:PostBoard(text)
+    local pact = self:Get()
+    if not pact then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not self:CanAdminister() then
+        return false, L["Only an alliance ambassador can do that."]
+    end
+    local clean = BRutus:SanitizeUserText(text, Alliance.BOARD_TEXT_MAX)
+    if clean == "" then
+        return false, L["Write something first."]
+    end
+    local now = (GetServerTime and GetServerTime()) or time()
+    local post = {
+        id   = string.format("%X%04X", now, math.random(0, 0xFFFF)),
+        text = clean,
+        by   = shortName(UnitName("player")),
+        ts   = now,
+    }
+    local store = self:BoardStore()
+    store[#store + 1] = post
+    trimBoard(store)
+    if BRutus.SyncService then
+        BRutus.SyncService:Publish("allyboard", "post", { post = post })
+    end
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:RefreshLocal("board")
+    end
+    return true
+end
+
+function Alliance:OnBoardSync(env)
+    local post = env and env.data and env.data.post
+    if type(post) ~= "table" or not post.id then
+        return
+    end
+    local store = self:BoardStore()
+    for _, p in ipairs(store) do
+        if p.id == post.id then
+            return   -- already have it
+        end
+    end
+    store[#store + 1] = {
+        id   = post.id,
+        text = BRutus:SanitizeUserText(post.text, Alliance.BOARD_TEXT_MAX),
+        by   = BRutus:SanitizeUserText(post.by, Alliance.GUILD_NAME_MAX),
+        ts   = tonumber(post.ts) or 0,
+    }
+    table.sort(store, function(a, b) return tostring(a.id) < tostring(b.id) end)
+    trimBoard(store)
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:RefreshLocal("board")
+    end
+end
+
+-- Every post visible to us: our own guild's plus every allied guild's, newest
+-- first, each tagged with the guild that wrote it.
+function Alliance:BoardPosts()
+    local out = {}
+    local pact = self:Get()
+    if not pact then
+        return out
+    end
+    local mine = self:MyGuildName()
+    for _, p in ipairs(self:BoardStore()) do
+        out[#out + 1] = { id = p.id, text = p.text, by = p.by, ts = p.ts, guild = mine }
+    end
+    local sync = GuildOS.AllianceSync
+    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    for guildName in pairs(pact.guilds) do
+        if guildName ~= mine and not self:IsBlocked(guildName) and sync then
+            local entry = store[guildName] and store[guildName].board
+            if entry and type(entry.data) == "table" then
+                for _, p in ipairs(entry.data) do
+                    out[#out + 1] = { id = p.id, text = p.t, by = p.b, ts = p.ts, guild = guildName }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.ts or 0) ~= (b.ts or 0) then return (a.ts or 0) > (b.ts or 0) end
+        return tostring(a.id) > tostring(b.id)
+    end)
+    return out
+end
+
+----------------------------------------------------------------------
 -- Slash command surface (/gos ally ...)
 ----------------------------------------------------------------------
 function Alliance:PrintStatus()
@@ -1106,6 +1242,9 @@ end
 function Alliance:Initialize()
     self:_RegisterTests()
     registerPopups()
+    if BRutus.SyncService then
+        BRutus.SyncService:On("allyboard", function(env) GuildOS.Alliance:OnBoardSync(env) end)
+    end
     local mesh = _G.ChehulMesh
     if mesh and not self._registered then
         self._registered = true
@@ -1257,6 +1396,27 @@ function Alliance:_RegisterTests()
         if Alliance.Decode("not a real payload") ~= nil then return false, "garbage must decode to nil" end
         if Alliance.Decode(nil) ~= nil then return false, "nil must not error" end
         if Alliance.Encode(nil) ~= nil then return false, "encoding nil must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.board_build", function()
+        local posts = {}
+        for i = 1, 30 do
+            posts[#posts + 1] = { id = string.format("%08X", i), text = "p" .. i, by = "Ann", ts = i }
+        end
+        local out = Alliance._BuildBoard(posts, 20)
+        if #out ~= 20 then return false, "cap not enforced: " .. #out end
+        -- The cap must drop the OLDEST posts, never the newest.
+        if out[#out].t ~= "p30" then return false, "newest post was dropped" end
+        if out[1].t ~= "p11" then return false, "wrong window kept: " .. tostring(out[1].t) end
+        -- Order must not depend on the input order.
+        local shuffled = { posts[5], posts[30], posts[1], posts[17] }
+        local s = Alliance._BuildBoard(shuffled, 20)
+        if s[1].id ~= posts[1].id or s[4].id ~= posts[30].id then
+            return false, "not sorted chronologically by id"
+        end
+        if #Alliance._BuildBoard(nil, 20) ~= 0 then return false, "nil must not error" end
+        if #Alliance._BuildBoard({ "junk", 5 }, 20) ~= 0 then return false, "malformed rows must be skipped" end
         return true
     end)
 

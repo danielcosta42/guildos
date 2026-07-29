@@ -1448,6 +1448,10 @@ L["TANK"] = "TANK"
 L["HEALER"] = "HEALER"
 L["Scope: Guild"] = "Escopo: Guilda"
 L["Scope: Alliance"] = "Escopo: Aliança"
+L["Write something first."] = "Escreva alguma coisa primeiro."
+L["Ambassadors can post. Everyone in the alliance sees it."] = "Embaixadores podem postar. Toda a aliança vê."
+L["Only alliance ambassadors can post here."] = "Só embaixadores da aliança podem postar aqui."
+L["No alliance notices yet."] = "Nenhum aviso da aliança ainda."
 
 -- Alliance crafter directory
 L["(offline)"] = "(offline)"

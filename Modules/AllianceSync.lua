@@ -541,6 +541,15 @@ function AllianceSync:Initialize()
         end,
     })
 
+    self:Register("board", {
+        priority = "NORMAL",
+        cap = GuildOS.Alliance.BOARD_MAX,
+        build = function()
+            return GuildOS.Alliance._BuildBoard(
+                GuildOS.Alliance:BoardStore(), GuildOS.Alliance.BOARD_MAX)
+        end,
+    })
+
     -- The heavy one: BULK priority so ChatThrottleLib drains it behind
     -- everything else, and it only moves when the fingerprint changes.
     self:Register("craft", {
