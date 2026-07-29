@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.42.0] - 2026-07-29
+
+### Added
+- let ambassadors moderate the alliance channel
+
+
 ## [0.41.1] - 2026-07-29
 
 ### Fixed
