@@ -467,6 +467,41 @@ function BRutus:CreateCalendarSub(panel)
                 goFS:SetPoint("TOPLEFT", 6, -yy); goFS:SetWidth(child:GetWidth() - 12); goFS:SetJustifyH("LEFT")
                 yy = yy + math.max(14, (goFS:GetStringHeight() or 12) + 4)
             end
+
+            -- Cross-guild signup queue. Officers only: the request already
+            -- reached only ambassadors, and seating is an officer action.
+            local pending = isOfficer and CAL().AlliancePending and CAL():AlliancePending(e) or {}
+            if #pending > 0 then
+                local hdr = UI:CreateText(child, string.format(L["ALLIANCE PENDING (%d)"], #pending),
+                    10, C.gold.r, C.gold.g, C.gold.b)
+                hdr:SetPoint("TOPLEFT", 6, -yy)
+                yy = yy + 16
+                for _, p in ipairs(pending) do
+                    local cr, cg, cb = BRutus:GetClassColor(p.class)
+                    local line = string.format("|cff%02x%02x%02x%s|r  %s  %s  |cff888888%s|r",
+                        cr * 255, cg * 255, cb * 255, p.name or "?",
+                        p.level and tostring(p.level) or "", roleLabel(p.role), p.guild or "?")
+                    if p.note and p.note ~= "" then
+                        line = line .. "  |cff777777\"" .. p.note .. "\"|r"
+                    end
+                    local fs = UI:CreateText(child, line, 10, C.text.r, C.text.g, C.text.b)
+                    fs:SetPoint("TOPLEFT", 10, -yy)
+                    fs:SetWidth(child:GetWidth() - 150)
+                    fs:SetJustifyH("LEFT")
+                    fs:SetWordWrap(false)
+
+                    local evId, pKey = e.id, p.key
+                    local noBtn = UI:CreateButton(child, L["Decline"], 62, 18)
+                    noBtn:SetPoint("TOPRIGHT", -4, -yy + 2)
+                    noBtn:SetScript("OnClick", function() CAL():DeclineAlliance(evId, pKey) end)
+                    local yesBtn = UI:CreateButton(child, L["Approve"], 62, 18)
+                    yesBtn:SetPoint("RIGHT", noBtn, "LEFT", -6, 0)
+                    yesBtn:SetScript("OnClick", function() CAL():ApproveAlliance(evId, pKey) end)
+
+                    yy = yy + 20
+                end
+            end
+
             yy = yy + 10
         end
         end)

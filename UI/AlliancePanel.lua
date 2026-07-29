@@ -186,6 +186,57 @@ local function BuildOverview(panel)
             y = y + ROW_H
         end
 
+        -- Upcoming events published by allied guilds, with a slot request.
+        local cal = BRutus.Calendar
+        local events = (cal and cal.AllianceEvents and cal:AllianceEvents()) or {}
+        if #events > 0 then
+            y = y + 10
+            local hdr = UI:CreateText(content, L["UPCOMING ALLIANCE EVENTS"], 10,
+                C.gold.r, C.gold.g, C.gold.b)
+            hdr:SetPoint("TOPLEFT", 6, -y)
+            y = y + 18
+
+            for i = 1, math.min(#events, 8) do
+                local ev = events[i]
+                local full = (ev.yes or 0) >= (ev.size or 25)
+                local when = date("%a %H:%M", ev.when)
+                local fs = UI:CreateText(content, string.format("%s  %s  |cff888888%s  %d/%d|r",
+                    when, ev.title or "?", ev.guild or "?", ev.yes or 0, ev.size or 25),
+                    11, C.text.r, C.text.g, C.text.b)
+                fs:SetPoint("TOPLEFT", 10, -y)
+                fs:SetWidth(math.max(content:GetWidth() - 200, 200))
+                fs:SetJustifyH("LEFT")
+                fs:SetWordWrap(false)
+
+                if full then
+                    local fullFs = UI:CreateText(content, L["full"], 10,
+                        C.textDim.r, C.textDim.g, C.textDim.b)
+                    fullFs:SetPoint("TOPRIGHT", -6, -y)
+                else
+                    local roleBtn = UI:CreateButton(content, L["DPS"], 56, 18)
+                    roleBtn.role = "DPS"
+                    local askBtn = UI:CreateButton(content, L["Request slot"], 100, 18)
+                    askBtn:SetPoint("TOPRIGHT", -6, -y + 2)
+                    roleBtn:SetPoint("RIGHT", askBtn, "LEFT", -6, 0)
+                    roleBtn:SetScript("OnClick", function()
+                        local order = { TANK = "HEALER", HEALER = "DPS", DPS = "TANK" }
+                        roleBtn.role = order[roleBtn.role] or "DPS"
+                        roleBtn.label:SetText(L[roleBtn.role])
+                    end)
+                    askBtn:SetScript("OnClick", function()
+                        local ok, err = BRutus.Calendar:RequestAllianceSlot(
+                            ev.id, ev.guild, roleBtn.role, "")
+                        if ok then
+                            BRutus:Print(string.format(L["Slot requested from %s."], ev.guild))
+                        elseif err then
+                            BRutus:Print(err)
+                        end
+                    end)
+                end
+                y = y + ROW_H
+            end
+        end
+
         if #summary.blocked > 0 then
             y = y + 8
             local fs = UI:CreateText(content,

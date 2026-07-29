@@ -1428,6 +1428,23 @@ L["Leave the alliance"] = "Sair da aliança"
 -- Modules/AllianceChat.lua
 L["unknown guild"] = "guilda desconhecida"
 
+-- Alliance cross-guild signups (Modules/Calendar.lua)
+L["Pick an alliance event first."] = "Escolha um evento da aliança primeiro."
+L["No officer of that guild is online right now. Try the alliance channel."] = "Nenhum oficial dessa guilda está online agora. Tente pelo canal da aliança."
+L["%s of %s wants a slot in %s."] = "%s, da %s, quer uma vaga em %s."
+L["%s approved your slot request."] = "%s aprovou seu pedido de vaga."
+L["%s declined your slot request."] = "%s recusou seu pedido de vaga."
+L["That event filled up before your request arrived."] = "O evento lotou antes do seu pedido chegar."
+L["That event is no longer open."] = "Esse evento não está mais aberto."
+L["ALLIANCE PENDING (%d)"] = "PENDENTES DA ALIANÇA (%d)"
+L["Approve"] = "Aprovar"
+L["Request slot"] = "Pedir vaga"
+L["UPCOMING ALLIANCE EVENTS"] = "PRÓXIMOS EVENTOS DA ALIANÇA"
+L["Slot requested from %s."] = "Vaga pedida para %s."
+L["full"] = "cheio"
+L["TANK"] = "TANK"
+L["HEALER"] = "HEALER"
+
 -- Alliance crafter directory
 L["(offline)"] = "(offline)"
 L["%s of %s can craft %s (%s)"] = "%s, da %s, sabe fazer %s (%s)"

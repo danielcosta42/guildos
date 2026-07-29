@@ -40,6 +40,61 @@ function Calendar:Initialize()
     if BRutus.SyncService then
         BRutus.SyncService:On("event", function(env, sender) Calendar:OnSync(env, sender) end)
     end
+
+    -- Alliance wiring. Both are no-ops until this guild joins a pact.
+    if GuildOS.Alliance then
+        GuildOS.Alliance:RegisterOp("EVT", function(data, sender, guild)
+            Calendar:OnAllianceEvent(data, sender, guild)
+        end)
+    end
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:Register("events", {
+            priority = "NORMAL",
+            cap = 50,
+            build = function()
+                return Calendar._BuildAllianceEvents(Calendar:GetEvents(), GetServerTime(), 50)
+            end,
+        })
+    end
+    self:_RegisterTests()
+end
+
+function Calendar:_RegisterTests()
+    if not BRutus.SelfTest then
+        return
+    end
+
+    BRutus.SelfTest:Register("calendar.alliance_slot_decision", function()
+        local D = Calendar._AllianceSlotDecision
+        local future = { when = 2000, size = 10 }
+        if D(future, 3, 1000) ~= "ok" then return false, "open event must be ok" end
+        if D(future, 10, 1000) ~= "full" then return false, "at capacity must be full" end
+        if D(future, 11, 1000) ~= "full" then return false, "over capacity must be full" end
+        if D({ when = 500, size = 10 }, 0, 1000) ~= "past" then return false, "past event" end
+        if D({ when = 2000, size = 10, canceled = true }, 0, 1000) ~= "canceled" then
+            return false, "canceled event"
+        end
+        if D(nil, 0, 1000) ~= "gone" then return false, "missing event" end
+        if D({ when = 2000 }, 25, 1000) ~= "full" then return false, "default size 25" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("calendar.alliance_events_build", function()
+        local events = {
+            a1 = { id = "a1", title = "MC",   when = 2000, size = 40,
+                   rsvps = { x = { status = "yes" }, y = { status = "no" } } },
+            a2 = { id = "a2", title = "Past", when = 500,  size = 10 },
+            a3 = { id = "a3", title = "Gone", when = 3000, size = 10, canceled = true },
+            a4 = { id = "a4", title = "Kara", when = 2500, size = 10 },
+        }
+        local out = Calendar._BuildAllianceEvents(events, 1000, 50)
+        if #out ~= 2 then return false, "expected 2 upcoming events, got " .. #out end
+        if out[1].id ~= "a1" or out[2].id ~= "a4" then return false, "not sorted by id" end
+        if out[1].yes ~= 1 then return false, "yes count wrong: " .. tostring(out[1].yes) end
+        if #Calendar._BuildAllianceEvents(events, 1000, 1) ~= 1 then return false, "cap not enforced" end
+        if #Calendar._BuildAllianceEvents(nil, 1000, 50) ~= 0 then return false, "nil must not error" end
+        return true
+    end)
 end
 
 function Calendar:GetEvents() return BRutus.db.calendar.events end
@@ -252,6 +307,26 @@ function Calendar:OnSync(env, sender)
             BRutus.SyncService:SetRevision("event", d.id, env.rev)
             self:Refresh()
         end
+    elseif env.act == "allyRsvp" and d and d.id and d.key then
+        -- Officer-gated by SyncService (allyRsvp is not a MEMBER_ACTION), so
+        -- only an officer can seat an allied player. Clears the same pending
+        -- entry on every other officer's queue.
+        local e = self:GetEvents()[d.id]
+        if e and not e.canceled then
+            e.rsvps = e.rsvps or {}
+            e.rsvps[d.key] = {
+                status = "yes", role = d.role, class = d.class,
+                name = d.name, guild = d.guild, ally = true, ts = GetServerTime(),
+            }
+            if e.allyPending then e.allyPending[d.key] = nil end
+            self:Refresh()
+        end
+    elseif env.act == "allyDecline" and d and d.id and d.key then
+        local e = self:GetEvents()[d.id]
+        if e and e.allyPending then
+            e.allyPending[d.key] = nil
+            self:Refresh()
+        end
     elseif env.act == "rsvp" and d and d.id and d.status then
         local e = self:GetEvents()[d.id]
         if e and not e.canceled then
@@ -267,4 +342,284 @@ end
 
 function Calendar:Refresh()
     if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+end
+
+----------------------------------------------------------------------
+-- Cross-guild signups (alliance)
+--
+-- Policy chosen in the design round: an allied player signs up freely and lands
+-- in a PENDING queue that an officer of the owning guild approves one by one.
+--
+-- WHERE THE QUEUE LIVES: only on the ambassador clients of the owning guild.
+-- The signer whispers the ambassadors it can see online, so the request only
+-- ever reaches officers and its author is the unforgeable envelope sender. That
+-- is simpler and tighter than fanning unapproved requests through the guild
+-- channel, where any guildmate could have forged one. The cost is that a
+-- request needs at least one ambassador online, which the UI says plainly.
+--
+-- Approval publishes "allyRsvp", an OFFICER action (SyncService gates it), so
+-- the accepted signup reaches every guildmate and clears the other officers'
+-- queues.
+----------------------------------------------------------------------
+Calendar.ALLY_NOTE_MAX = 60
+Calendar.ALLY_MAX_PENDING = 30
+
+-- Pure. Can this event still take an alliance signup right now?
+-- Returns "ok" | "gone" | "canceled" | "past" | "full".
+function Calendar._AllianceSlotDecision(event, yesCount, now)
+    if type(event) ~= "table" then
+        return "gone"
+    end
+    if event.canceled then
+        return "canceled"
+    end
+    if (tonumber(event.when) or 0) <= (tonumber(now) or 0) then
+        return "past"
+    end
+    if (tonumber(yesCount) or 0) >= (tonumber(event.size) or 25) then
+        return "full"
+    end
+    return "ok"
+end
+
+-- Compact upcoming-events snapshot for the alliance `events` domain. Past and
+-- canceled events are dropped, so the payload shrinks on its own over time.
+-- Sorted by id so the change fingerprint is stable.
+function Calendar._BuildAllianceEvents(events, now, cap)
+    local out = {}
+    if type(events) ~= "table" then
+        return out
+    end
+    cap = tonumber(cap) or 50
+    local ids = {}
+    for id, e in pairs(events) do
+        if type(id) == "string" and type(e) == "table" and not e.canceled
+            and (tonumber(e.when) or 0) > (tonumber(now) or 0) then
+            ids[#ids + 1] = id
+        end
+    end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        if #out >= cap then
+            break
+        end
+        local e = events[id]
+        local yes = 0
+        for _, r in pairs(e.rsvps or {}) do
+            if r.status == "yes" then
+                yes = yes + 1
+            end
+        end
+        out[#out + 1] = {
+            id = id, title = e.title, when = e.when, size = e.size,
+            kind = e.kind, note = e.note, author = e.author, yes = yes,
+        }
+    end
+    return out
+end
+
+-- Upcoming events published by ALLIED guilds, soonest first.
+function Calendar:AllianceEvents()
+    local sync, ally = GuildOS.AllianceSync, GuildOS.Alliance
+    local pact = ally and ally:Get()
+    local out = {}
+    if not sync or not pact then
+        return out
+    end
+    local mine = ally:MyGuildName()
+    local now = GetServerTime()
+    for guildName in pairs(pact.guilds) do
+        if guildName ~= mine and not ally:IsBlocked(guildName) then
+            local entry = sync:Remote(guildName, "events")
+            if entry and type(entry.data) == "table" then
+                for _, e in ipairs(entry.data) do
+                    if (tonumber(e.when) or 0) > now then
+                        out[#out + 1] = {
+                            id = e.id, title = e.title, when = e.when, size = e.size,
+                            kind = e.kind, note = e.note, yes = e.yes, guild = guildName,
+                        }
+                    end
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.when or 0) ~= (b.when or 0) then return (a.when or 0) < (b.when or 0) end
+        return tostring(a.id) < tostring(b.id)
+    end)
+    return out
+end
+
+function Calendar:AlliancePending(e)
+    local out = {}
+    for key, p in pairs((e and e.allyPending) or {}) do
+        out[#out + 1] = {
+            key = key, name = p.name, guild = p.guild, role = p.role,
+            note = p.note, class = p.class, level = p.level, ts = p.ts,
+        }
+    end
+    table.sort(out, function(a, b) return (a.ts or 0) < (b.ts or 0) end)
+    return out
+end
+
+----------------------------------------------------------------------
+-- Signer side
+----------------------------------------------------------------------
+function Calendar:RequestAllianceSlot(eventId, guildName, role, note)
+    local ally = GuildOS.Alliance
+    if not ally or not ally:Get() then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not eventId or not guildName then
+        return false, L["Pick an alliance event first."]
+    end
+    local sent = ally:SendToAmbassadors(guildName, "EVT", {
+        kind    = "signup",
+        eventId = eventId,
+        role    = (role == "TANK" or role == "HEALER" or role == "DPS") and role or "DPS",
+        note    = BRutus:SanitizeUserText(note, Calendar.ALLY_NOTE_MAX),
+    })
+    if sent == 0 then
+        return false, L["No officer of that guild is online right now. Try the alliance channel."]
+    end
+    return true
+end
+
+----------------------------------------------------------------------
+-- Receiving side (the ChehulAlly "EVT" op)
+----------------------------------------------------------------------
+function Calendar:OnAllianceEvent(data, sender, senderGuild)
+    if type(data) ~= "table" then
+        return
+    end
+    if data.kind == "signup" then
+        self:_ReceiveSignup(data, sender, senderGuild)
+    elseif data.kind == "result" then
+        self:_ReceiveSignupResult(data, senderGuild)
+    end
+end
+
+local function allyKey(name)
+    local short = (name or ""):match("^([^-]+)") or name
+    return "ally:" .. tostring(short)
+end
+
+function Calendar:_ReceiveSignup(data, sender, senderGuild)
+    local ally = GuildOS.Alliance
+    local e = self:GetEvents()[data.eventId or ""]
+    local comp = e and self:GetComposition(e)
+    local decision = Calendar._AllianceSlotDecision(e, comp and comp.yes, GetServerTime())
+    if decision ~= "ok" then
+        ally:Send("EVT", { kind = "result", eventId = data.eventId, ok = false, why = decision }, sender)
+        return
+    end
+
+    e.allyPending = e.allyPending or {}
+    local count = 0
+    for _ in pairs(e.allyPending) do count = count + 1 end
+    if count >= Calendar.ALLY_MAX_PENDING and not e.allyPending[allyKey(sender)] then
+        ally:Send("EVT", { kind = "result", eventId = data.eventId, ok = false, why = "full" }, sender)
+        return
+    end
+
+    -- Class and level come from the synced allied roster, never from the
+    -- payload, exactly like the guild map takes class from the roster.
+    local class, level
+    local sync = GuildOS.AllianceSync
+    local snap = sync and sync:Remote(senderGuild, "roster")
+    local short = (sender or ""):match("^([^-]+)") or sender
+    if snap and type(snap.data) == "table" then
+        for _, row in ipairs(snap.data) do
+            if row.n == short then
+                class, level = row.c, row.l
+                break
+            end
+        end
+    end
+
+    e.allyPending[allyKey(sender)] = {
+        name  = short,
+        guild = senderGuild,
+        role  = (data.role == "TANK" or data.role == "HEALER" or data.role == "DPS") and data.role or "DPS",
+        note  = BRutus:SanitizeUserText(data.note, Calendar.ALLY_NOTE_MAX),
+        class = class,
+        level = level,
+        ts    = GetServerTime(),
+    }
+    BRutus:Print(string.format(L["%s of %s wants a slot in %s."], short, senderGuild, e.title or "?"))
+    self:Refresh()
+end
+
+function Calendar:_ReceiveSignupResult(data, senderGuild)
+    local why = data.why
+    if data.ok then
+        BRutus:Print(string.format(L["%s approved your slot request."], senderGuild or "?"))
+    elseif why == "full" then
+        BRutus:Print(L["That event filled up before your request arrived."])
+    elseif why == "past" or why == "gone" or why == "canceled" then
+        BRutus:Print(L["That event is no longer open."])
+    else
+        BRutus:Print(string.format(L["%s declined your slot request."], senderGuild or "?"))
+    end
+    self:Refresh()
+end
+
+----------------------------------------------------------------------
+-- Officer decisions
+----------------------------------------------------------------------
+function Calendar:ApproveAlliance(eventId, key)
+    if not BRutus:IsOfficer() then
+        return false, L["|cffFF4444Officers only.|r"]
+    end
+    local e = self:GetEvents()[eventId or ""]
+    local p = e and e.allyPending and e.allyPending[key or ""]
+    if not p then
+        return false
+    end
+    local comp = self:GetComposition(e)
+    if Calendar._AllianceSlotDecision(e, comp.yes, GetServerTime()) ~= "ok" then
+        return self:DeclineAlliance(eventId, key, "full")
+    end
+
+    e.rsvps = e.rsvps or {}
+    e.rsvps[key] = {
+        status = "yes", role = p.role, class = p.class,
+        name = p.name, guild = p.guild, ally = true, ts = GetServerTime(),
+    }
+    e.allyPending[key] = nil
+
+    if BRutus.SyncService then
+        BRutus.SyncService:Publish("event", "allyRsvp", {
+            id = eventId, key = key, name = p.name, guild = p.guild,
+            role = p.role, class = p.class,
+        })
+    end
+    local ally = GuildOS.Alliance
+    if ally then
+        ally:SendToAmbassadors(p.guild, "EVT", { kind = "result", eventId = eventId, ok = true })
+        ally:Send("EVT", { kind = "result", eventId = eventId, ok = true }, p.name)
+    end
+    self:Refresh()
+    return true
+end
+
+function Calendar:DeclineAlliance(eventId, key, why)
+    if not BRutus:IsOfficer() then
+        return false, L["|cffFF4444Officers only.|r"]
+    end
+    local e = self:GetEvents()[eventId or ""]
+    local p = e and e.allyPending and e.allyPending[key or ""]
+    if not p then
+        return false
+    end
+    e.allyPending[key] = nil
+    if BRutus.SyncService then
+        BRutus.SyncService:Publish("event", "allyDecline", { id = eventId, key = key })
+    end
+    local ally = GuildOS.Alliance
+    if ally then
+        ally:Send("EVT", { kind = "result", eventId = eventId, ok = false, why = why }, p.name)
+    end
+    self:Refresh()
+    return true
 end

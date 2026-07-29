@@ -451,6 +451,28 @@ function Alliance:Send(op, tbl, target)
     return mesh:Whisper(self.PREFIX, self.PROTO .. "|" .. op .. "|" .. blob, target) and true or false
 end
 
+-- Whisper an op to the ambassadors of `guildName` that the presence mesh says
+-- are online, capped so one action never fans out to a dozen whispers. Returns
+-- how many were reached, so a caller can tell the user "nobody was online"
+-- instead of silently dropping their request.
+function Alliance:SendToAmbassadors(guildName, op, data, max)
+    local pact = self:Get()
+    local entry = pact and pact.guilds[guildName or ""]
+    if not entry or type(entry.ambassadors) ~= "table" then
+        return 0
+    end
+    local sent = 0
+    for _, amb in ipairs(entry.ambassadors) do
+        if sent >= (max or 3) then
+            break
+        end
+        if self:IsPeerOnline(amb) and self:Send(op, data, amb) then
+            sent = sent + 1
+        end
+    end
+    return sent
+end
+
 -- Push the current pact to every other member guild. `allowBlind` whispers a
 -- listed ambassador even without presence evidence: acceptable for a rare,
 -- user-initiated action, never for the periodic tick.
