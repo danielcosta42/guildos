@@ -1504,6 +1504,9 @@ L["Not connected to the alliance channel."] = "Não está conectado ao canal da 
 L["Nothing here yet. Say hello."] = "Nada aqui ainda. Manda um oi."
 L["Attune: "] = "Attune: "
 L["Click to whisper"] = "Clique para sussurrar"
+L["Professions"] = "Profissões"
+L["Full sheet"] = "Ficha completa"
+L["Nothing synced for this character yet."] = "Nada sincronizado desse personagem ainda."
 L["Conflict: your %s clashes with %s of %s"] = "Conflito: seu %s bate com %s da %s"
 L["Conflict: your %s clashes with %s of %s, %d signed to both"] = "Conflito: seu %s bate com %s da %s, %d assinaram nos dois"
 

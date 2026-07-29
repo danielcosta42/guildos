@@ -428,6 +428,11 @@ L["Not connected to the alliance channel."] = "Not connected to the alliance cha
 L["Nothing here yet. Say hello."] = "Nothing here yet. Say hello."
 L["Attune: "] = "Attune: "
 L["Click to whisper"] = "Click to whisper"
+L["Whisper"] = "Whisper"
+L["Professions"] = "Professions"
+L["Attunements"] = "Attunements"
+L["Full sheet"] = "Full sheet"
+L["Nothing synced for this character yet."] = "Nothing synced for this character yet."
 L["Conflict: your %s clashes with %s of %s"] = "Conflict: your %s clashes with %s of %s"
 L["Conflict: your %s clashes with %s of %s, %d signed to both"] = "Conflict: your %s clashes with %s of %s, %d signed to both"
 

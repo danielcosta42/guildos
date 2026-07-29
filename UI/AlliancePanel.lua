@@ -302,6 +302,145 @@ local function BuildOverview(panel)
 end
 
 ----------------------------------------------------------------------
+-- Ally card: everything the alliance already knows about one character.
+-- One reusable frame, re-anchored per click. Reads Alliance:SpeakerInfo, which
+-- normalises allied and own-guild data into a single shape.
+----------------------------------------------------------------------
+local allyCard
+
+local function ensureAllyCard()
+    if allyCard then return allyCard end
+
+    local f = CreateFrame("Frame", "GuildOSAllyCard", UIParent, "BackdropTemplate")
+    f:SetSize(260, 200)
+    f:SetFrameStrata("DIALOG")
+    f:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+    })
+    f:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.8)
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:Hide()
+
+    f.accent = f:CreateTexture(nil, "ARTWORK")
+    f.accent:SetPoint("TOPLEFT")
+    f.accent:SetPoint("TOPRIGHT")
+    f.accent:SetHeight(2)
+
+    f.icon = f:CreateTexture(nil, "ARTWORK")
+    f.icon:SetSize(30, 30)
+    f.icon:SetPoint("TOPLEFT", 12, -12)
+
+    f.name = UI:CreateText(f, "", 14, C.text.r, C.text.g, C.text.b)
+    f.name:SetPoint("TOPLEFT", 50, -12)
+    f.guild = UI:CreateText(f, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    f.guild:SetPoint("TOPLEFT", 50, -28)
+    f.sub = UI:CreateText(f, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    f.sub:SetPoint("TOPLEFT", 12, -50)
+
+    f.close = UI:CreateCloseButton(f)
+    f.close:SetPoint("TOPRIGHT", -4, -4)
+    f.close:SetScript("OnClick", function() f:Hide() end)
+
+    f.body = UI:CreateText(f, "", 11, C.text.r, C.text.g, C.text.b)
+    f.body:SetPoint("TOPLEFT", 12, -70)
+    f.body:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+    f.body:SetJustifyH("LEFT")
+    f.body:SetWordWrap(true)
+
+    f.whisper = UI:CreateButton(f, L["Whisper"], 76, 22)
+    f.whisper:SetPoint("BOTTOMLEFT", 12, 10)
+    f.invite = UI:CreateButton(f, L["Invite"], 76, 22)
+    f.invite:SetPoint("LEFT", f.whisper, "RIGHT", 6, 0)
+    f.sheet = UI:CreateButton(f, L["Full sheet"], 82, 22)
+    f.sheet:SetPoint("LEFT", f.invite, "RIGHT", 6, 0)
+
+    tinsert(UISpecialFrames, "GuildOSAllyCard")   -- ESC closes it
+    allyCard = f
+    return f
+end
+
+function BRutus:ShowAllyCard(name, guild, anchor)
+    local f = ensureAllyCard()
+    local ally = BRutus.Alliance
+    local info = (ally and ally:SpeakerInfo(name)) or {}
+    local cr, cg, cb = BRutus:GetClassColor(info.class)
+
+    f.accent:SetColorTexture(cr, cg, cb, 0.9)
+    f.name:SetText(name or "?")
+    f.name:SetTextColor(cr, cg, cb)
+    f.guild:SetText(info.guild or guild or "")
+
+    local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[info.class]
+    if coords then
+        f.icon:SetTexture("Interface\\WorldStateFrame\\Icons-Classes")
+        f.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+        f.icon:Show()
+    else
+        f.icon:Hide()
+    end
+
+    local bits = {}
+    if info.level then bits[#bits + 1] = tostring(info.level) end
+    if info.class then bits[#bits + 1] = info.class end
+    if info.spec then bits[#bits + 1] = info.spec end
+    f.sub:SetText(table.concat(bits, "  \194\183  "))
+
+    local lines = {}
+    if info.main then
+        lines[#lines + 1] = string.format(L["Alt of %s"], info.main)
+    end
+    if info.professions and #info.professions > 0 then
+        local profs = {}
+        for _, p in ipairs(info.professions) do
+            profs[#profs + 1] = string.format("%s %d", p.n or "?", p.r or 0)
+        end
+        lines[#lines + 1] = "|cffEDCC7B" .. L["Professions"] .. "|r\n  " .. table.concat(profs, "\n  ")
+    end
+    if info.attunements and #info.attunements > 0 then
+        lines[#lines + 1] = "|cffEDCC7B" .. L["Attunements"] .. "|r\n  " ..
+            table.concat(info.attunements, ", ")
+    end
+    if #lines == 0 then
+        -- Be explicit rather than showing an empty card: for an ally we only
+        -- ever know what their guild published.
+        lines[#lines + 1] = "|cff888888" .. L["Nothing synced for this character yet."] .. "|r"
+    end
+    f.body:SetText(table.concat(lines, "\n\n"))
+
+    f.whisper:SetScript("OnClick", function() ChatFrame_SendTell(name) end)
+    f.invite:SetScript("OnClick", function() InviteUnit(name) end)
+
+    -- The full member sheet only exists for our OWN guild: an ally's gear and
+    -- history are simply not data we hold.
+    setShown(f.sheet, info.own == true)
+    if info.own then
+        f.sheet:SetScript("OnClick", function()
+            local key = BRutus:GetPlayerKey(name, GetRealmName())
+            local m = BRutus.db and BRutus.db.members and BRutus.db.members[key]
+            if m and BRutus.ShowMemberDetail then
+                f:Hide()
+                BRutus:ShowMemberDetail(m)
+            end
+        end)
+    end
+
+    f:SetHeight(math.max(150, 96 + (f.body:GetStringHeight() or 0) + 44))
+    f:ClearAllPoints()
+    if anchor then
+        f:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 12, 8)
+    else
+        f:SetPoint("CENTER")
+    end
+    f:Show()
+end
+
+----------------------------------------------------------------------
 -- Chat: the alliance feed. Conversation and alliance events on one timeline,
 -- which is the one thing a default chat tab cannot do.
 ----------------------------------------------------------------------
@@ -334,46 +473,71 @@ local function BuildChat(panel)
         C.textDim.r, C.textDim.g, C.textDim.b)
     empty:Hide()
 
-    -- Line widgets are POOLED. Refresh runs on every incoming message, and WoW
-    -- never frees a frame, so building a Button per line per refresh leaked one
-    -- frame per message for the life of the session.
-    local rows = {}
-    local function getRow(i)
-        if rows[i] then return rows[i] end
-        local fs = UI:CreateText(content, "", 11, C.text.r, C.text.g, C.text.b)
-        fs:SetJustifyH("LEFT")
-        fs:SetWordWrap(true)
+    -- Blocks are POOLED. Refresh runs on every incoming message and WoW never
+    -- frees a frame, so building widgets per refresh leaked for the whole
+    -- session. Created on demand, parked when the log shrinks.
+    local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
+    local blocks = {}
 
-        local hit = CreateFrame("Button", nil, content)
+    local function getBlock(i)
+        if blocks[i] then return blocks[i] end
+
+        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        card:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+        })
+
+        -- Left accent bar in the speaker's class colour. This is the "bubble":
+        -- WHITE8x8 cannot round a corner without shipping an art asset, so the
+        -- card reads as a card through the bar and the hairline border instead.
+        local accent = card:CreateTexture(nil, "ARTWORK")
+        accent:SetPoint("TOPLEFT", 0, 0)
+        accent:SetPoint("BOTTOMLEFT", 0, 0)
+        accent:SetWidth(3)
+
+        local icon = card:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(20, 20)
+        icon:SetPoint("TOPLEFT", 10, -7)
+
+        local nameFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
+        nameFS:SetPoint("TOPLEFT", 38, -7)
+        nameFS:SetJustifyH("LEFT")
+
+        local timeFS = UI:CreateText(card, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        timeFS:SetPoint("TOPRIGHT", -8, -8)
+
+        local bodyFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
+        bodyFS:SetPoint("TOPLEFT", 38, -22)
+        bodyFS:SetJustifyH("LEFT")
+        bodyFS:SetWordWrap(true)
+
+        -- Only the icon and the name open the card: clicking the message text
+        -- itself would fire every time somebody tries to select text.
+        local hit = CreateFrame("Button", nil, card)
+        hit:SetPoint("TOPLEFT", 8, -5)
+        hit:SetSize(200, 22)
         hit:SetScript("OnEnter", function(self)
-            if not self.name then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(self.name)
-            local info = BRutus.Alliance and BRutus.Alliance:SpeakerInfo(self.name)
-            if self.guild then
-                GameTooltip:AddLine(self.guild, 0.56, 0.66, 0.78)
+            if self.name then
+                nameFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             end
-            if info then
-                if info.class or info.level then
-                    GameTooltip:AddLine(string.format("%s %s",
-                        tostring(info.level or "?"), info.class or ""), 0.8, 0.8, 0.8)
-                end
-                if info.spec then GameTooltip:AddLine(info.spec, 0.8, 0.8, 0.8) end
-                if info.attunements and #info.attunements > 0 then
-                    GameTooltip:AddLine(L["Attune: "] ..
-                        table.concat(info.attunements, ", "), 0.6, 0.8, 0.6, true)
-                end
-            end
-            GameTooltip:AddLine(L["Click to whisper"], 0.5, 0.5, 0.5)
-            GameTooltip:Show()
         end)
-        hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        hit:SetScript("OnLeave", function()
+            local col = blocks[i] and blocks[i].nameColor
+            if col then nameFS:SetTextColor(col[1], col[2], col[3]) end
+        end)
         hit:SetScript("OnClick", function(self)
-            if self.name then ChatFrame_SendTell(self.name) end
+            if self.name and BRutus.ShowAllyCard then
+                BRutus:ShowAllyCard(self.name, self.guild, self)
+            end
         end)
 
-        rows[i] = { fs = fs, hit = hit }
-        return rows[i]
+        blocks[i] = {
+            card = card, accent = accent, icon = icon,
+            nameFS = nameFS, timeFS = timeFS, bodyFS = bodyFS, hit = hit,
+            classTex = CLASS_TEX,
+        }
+        return blocks[i]
     end
 
     local refresh
@@ -427,56 +591,80 @@ local function BuildChat(panel)
             or L["not connected"])
 
         local log = chat:Log()
-        local y = 0
+        local groups = BRutus.AllianceChat.GroupLog(log, BRutus.AllianceChat.GROUP_WINDOW)
         local myGuild = BRutus.Alliance and BRutus.Alliance:MyGuildName()
+        local width = math.max(content:GetWidth() - 12, 200)
+        local y = 0
 
-        for i, e in ipairs(log) do
-            local row = getRow(i)
-            local stamp = e.t and date("%H:%M", e.t) or ""
-            local line
+        for i, g in ipairs(groups) do
+            local b = getBlock(i)
+            local stamp = g.t and date("%H:%M", g.t) or ""
 
-            if e.sys then
-                -- Events read as events: a marker, one colour, no speaker.
-                local col = (e.sys == "warn") and "E0B040" or "8F7BD1"
-                line = string.format("|cff555560%s|r  |cff%s\194\187 %s|r", stamp, col, e.m or "")
+            if g.sys then
+                -- Events stand apart: no card, no speaker, just a marked line.
+                local col = (g.sys == "warn") and "E0B040" or "8F7BD1"
+                b.card:SetBackdropColor(0, 0, 0, 0)
+                b.card:SetBackdropBorderColor(0, 0, 0, 0)
+                b.accent:Hide()
+                b.icon:Hide()
+                b.nameFS:Hide()
+                b.hit:Hide()
+                b.timeFS:SetText(stamp)
+                b.bodyFS:SetPoint("TOPLEFT", 12, -4)
+                b.bodyFS:SetWidth(width - 60)
+                b.bodyFS:SetText(string.format("|cff%s\194\187 %s|r", col, g.lines[1] or ""))
+                local h = math.max(18, (b.bodyFS:GetStringHeight() or 12) + 8)
+                b.card:SetPoint("TOPLEFT", 4, -y)
+                b.card:SetSize(width, h)
+                b.card:Show()
+                y = y + h + 2
             else
-                local info = BRutus.Alliance and BRutus.Alliance:SpeakerInfo(e.n)
-                local hex = BRutus:GetClassColorHex(info and info.class)
-                -- Our own guild tag is dimmer than an allied one: in an alliance
-                -- channel the useful signal is WHICH ALLY is talking, and ours is
-                -- the boring case that should not shout.
-                local own = (e.g == myGuild)
-                local tagHex = own and "555566" or "8FA8C8"
-                line = string.format("|cff555560%s|r  |cff%s[%s]|r |cff%s%s|r|cff888888:|r %s",
-                    stamp, tagHex, e.g or "?", hex, e.n or "?", e.m or "")
+                local info = BRutus.Alliance and BRutus.Alliance:SpeakerInfo(g.name)
+                local cr, cg, cb = BRutus:GetClassColor(info and info.class)
+                local own = (g.guild == myGuild)
+
+                b.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, own and 0.35 or 0.55)
+                b.card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.35)
+                b.accent:SetColorTexture(cr, cg, cb, 0.9)
+                b.accent:Show()
+
+                local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[info and info.class]
+                if coords then
+                    b.icon:SetTexture(b.classTex)
+                    b.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                    b.icon:Show()
+                else
+                    b.icon:Hide()
+                end
+
+                -- The guild tag stays dim for our own guild: in an alliance
+                -- channel the signal worth reading is WHICH ALLY is speaking.
+                b.nameFS:SetText(string.format("%s  |cff%s[%s]|r",
+                    g.name or "?", own and "555566" or "8FA8C8", g.guild or "?"))
+                b.nameFS:SetTextColor(cr, cg, cb)
+                b.nameColor = { cr, cg, cb }
+                b.nameFS:Show()
+
+                b.timeFS:SetText(stamp)
+                b.bodyFS:SetPoint("TOPLEFT", 38, -22)
+                b.bodyFS:SetWidth(width - 46)
+                b.bodyFS:SetText(table.concat(g.lines, "\n"))
+
+                local h = math.max(34, (b.bodyFS:GetStringHeight() or 12) + 28)
+                b.card:SetPoint("TOPLEFT", 4, -y)
+                b.card:SetSize(width, h)
+                b.card:Show()
+
+                b.hit.name = g.name
+                b.hit.guild = g.guild
+                b.hit:Show()
+                y = y + h + 3
             end
-
-            row.fs:SetText(line)
-            row.fs:SetWidth(math.max(content:GetWidth() - 12, 200))
-            row.fs:SetPoint("TOPLEFT", 6, -y)
-            row.fs:Show()
-
-            local h = math.max(15, (row.fs:GetStringHeight() or 12) + 3)
-
-            -- Clicking a speaker opens what the alliance already knows about
-            -- them: guild, spec, attunements. No new sync pays for this.
-            if e.n and not e.sys then
-                row.hit:SetPoint("TOPLEFT", 6, -y)
-                row.hit:SetSize(math.max(content:GetWidth() - 12, 200), h)
-                row.hit.name = e.n
-                row.hit.guild = e.g
-                row.hit:Show()
-            else
-                row.hit:Hide()
-            end
-
-            y = y + h
         end
 
-        -- Park every pooled row the log no longer uses.
-        for i = #log + 1, #rows do
-            rows[i].fs:Hide()
-            rows[i].hit:Hide()
+        -- Park every pooled block the log no longer needs.
+        for i = #groups + 1, #blocks do
+            blocks[i].card:Hide()
         end
 
         if #log == 0 then

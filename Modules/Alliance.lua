@@ -1051,12 +1051,36 @@ function Alliance:SpeakerInfo(name)
     local key = BRutus:GetPlayerKey(short, GetRealmName())
     local m = BRutus.db and BRutus.db.members and BRutus.db.members[key]
     if m then
+        -- Normalise to the SAME shape the allied snapshot uses, so the card
+        -- that renders this never has to know which side the data came from.
+        local profs
+        if type(m.professions) == "table" then
+            profs = {}
+            for _, p in ipairs(m.professions) do
+                if type(p) == "table" and p.name then
+                    profs[#profs + 1] = { n = p.name, r = tonumber(p.rank) or 0 }
+                end
+            end
+        end
+        local att
+        if type(m.attunements) == "table" then
+            for _, a in ipairs(m.attunements) do
+                if type(a) == "table" and a.complete and a.short then
+                    att = att or {}
+                    att[#att + 1] = a.short
+                end
+            end
+        end
+        local mainKey = BRutus.db.altLinks and BRutus.db.altLinks[key]
         return {
-            guild = myGuild,
-            class = m.class,
-            level = m.level,
-            spec  = type(m.spec) == "table" and m.spec.tree or nil,
-            own   = true,
+            guild       = myGuild,
+            class       = m.class,
+            level       = m.level,
+            spec        = type(m.spec) == "table" and m.spec.tree or nil,
+            professions = profs,
+            attunements = att,
+            main        = mainKey and (mainKey:match("^([^-]+)") or mainKey) or nil,
+            own         = true,
         }
     end
 

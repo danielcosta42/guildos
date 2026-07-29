@@ -177,6 +177,45 @@ function AllianceChat:MarkRead()
     self.unread = 0
 end
 
+-- Seconds within which further lines from the same speaker fold into the
+-- block above instead of repeating the header.
+AllianceChat.GROUP_WINDOW = 300
+
+-- Pure. Fold a flat log into render blocks. A block is one speaker talking
+-- without interruption inside the window; a system line always stands alone
+-- and always breaks the run, because "X entered the alliance" appearing under
+-- somebody's name would read as if they said it.
+function AllianceChat.GroupLog(log, window)
+    local out = {}
+    if type(log) ~= "table" then
+        return out
+    end
+    window = tonumber(window) or AllianceChat.GROUP_WINDOW
+    local last
+
+    for _, e in ipairs(log) do
+        if e.sys then
+            out[#out + 1] = { sys = e.sys, t = e.t, lines = { e.m or "" } }
+            last = nil
+        else
+            local sameRun = last
+                and last.name == e.n
+                and last.guild == e.g
+                and ((tonumber(e.t) or 0) - (tonumber(last.lastT) or 0)) <= window
+            if sameRun then
+                last.lines[#last.lines + 1] = e.m or ""
+                last.lastT = e.t
+            else
+                last = {
+                    name = e.n, guild = e.g, t = e.t, lastT = e.t, lines = { e.m or "" },
+                }
+                out[#out + 1] = last
+            end
+        end
+    end
+    return out
+end
+
 -- Send to the alliance channel. Only ever called from a button click or an
 -- EditBox Enter, which ARE hardware events, so the CHANNEL restriction noted
 -- in Modules/RecruitmentSystem.lua does not apply here.
@@ -297,6 +336,46 @@ function AllianceChat:_RegisterTests()
     if not BRutus.SelfTest then
         return
     end
+
+    BRutus.SelfTest:Register("alliancechat.group_log", function()
+        local G = AllianceChat.GroupLog
+        local log = {
+            { t = 100, n = "Ann", g = "GA", m = "oi" },
+            { t = 120, n = "Ann", g = "GA", m = "alguem de kara" },   -- folds in
+            { t = 130, n = "Bob", g = "GB", m = "eu vou" },           -- new speaker
+            { t = 140, n = "Ann", g = "GA", m = "fechou" },           -- Ann again, new block
+            { t = 150, sys = "info", m = "GC entrou" },
+            { t = 160, n = "Ann", g = "GA", m = "bora" },
+        }
+        local out = G(log, 300)
+        if #out ~= 5 then return false, "expected 5 blocks, got " .. #out end
+        if #out[1].lines ~= 2 then return false, "same speaker in window must fold" end
+        if out[1].lines[2] ~= "alguem de kara" then return false, "folded text lost" end
+        if out[2].name ~= "Bob" then return false, "speaker change must break the run" end
+        if out[3].name ~= "Ann" or #out[3].lines ~= 1 then return false, "return after Bob" end
+        if out[4].sys ~= "info" then return false, "system line must stand alone" end
+        -- A system line breaks the run even for the same speaker either side.
+        if out[5].name ~= "Ann" or #out[5].lines ~= 1 then
+            return false, "system line must break the run"
+        end
+
+        -- Outside the window the same speaker starts a fresh block.
+        local far = G({
+            { t = 100, n = "Ann", g = "GA", m = "a" },
+            { t = 500, n = "Ann", g = "GA", m = "b" },
+        }, 300)
+        if #far ~= 2 then return false, "window not enforced" end
+
+        -- Same name in a DIFFERENT guild is a different person.
+        local twins = G({
+            { t = 100, n = "Ann", g = "GA", m = "a" },
+            { t = 110, n = "Ann", g = "GB", m = "b" },
+        }, 300)
+        if #twins ~= 2 then return false, "guild change must break the run" end
+
+        if #G(nil, 300) ~= 0 then return false, "nil must not error" end
+        return true
+    end)
 
     BRutus.SelfTest:Register("alliancechat.decorate", function()
         local out = AllianceChat.Decorate("hello", "Ann", "Guild B")
