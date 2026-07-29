@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.39.2] - 2026-07-29
+
+### Fixed
+- colour the alliance chat by class and stop it leaking a frame per message
+
+
 ## [0.39.1] - 2026-07-29
 
 ### Fixed
