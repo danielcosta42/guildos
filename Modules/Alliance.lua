@@ -23,6 +23,10 @@
 ----------------------------------------------------------------------
 local Alliance = {}
 GuildOS.Alliance = Alliance
+local L = BRutus.L
+
+local LibSerialize = LibStub("LibSerialize")
+local LibDeflate   = LibStub("LibDeflate")
 
 -- Open protocol on the shared mesh transport, same family style as CraftNet
 -- ("ChehulCraft"/CC1) and RecruitBeacon ("ChehulRecruit"/CR2).
@@ -268,6 +272,572 @@ function Alliance.IsAmbassador(pact, guildName, playerName)
 end
 
 ----------------------------------------------------------------------
+-- Wire codec. The blob must never contain '|' because the frame is split on
+-- it; EncodeForWoWAddonChannel guarantees that (it escapes 0x7C among others).
+----------------------------------------------------------------------
+function Alliance.Encode(tbl)
+    if type(tbl) ~= "table" then
+        return nil
+    end
+    local ok, ser = pcall(function() return LibSerialize:Serialize(tbl) end)
+    if not ok or type(ser) ~= "string" then
+        return nil
+    end
+    local packed = LibDeflate:CompressDeflate(ser, { level = 9 })
+    if not packed then
+        return nil
+    end
+    return LibDeflate:EncodeForWoWAddonChannel(packed)
+end
+
+function Alliance.Decode(str)
+    if type(str) ~= "string" or str == "" then
+        return nil
+    end
+    local packed = LibDeflate:DecodeForWoWAddonChannel(str)
+    if not packed then
+        return nil
+    end
+    local ser = LibDeflate:DecompressDeflate(packed)
+    if not ser then
+        return nil
+    end
+    local ran, ok, tbl = pcall(function() return LibSerialize:Deserialize(ser) end)
+    if not ran or not ok or type(tbl) ~= "table" then
+        return nil
+    end
+    return tbl
+end
+
+----------------------------------------------------------------------
+-- Live state
+----------------------------------------------------------------------
+function Alliance:Get()
+    return (BRutus.db and BRutus.db.alliance) or nil
+end
+
+function Alliance:MyGuildName()
+    local name = GetGuildInfo("player")
+    if not name or name == "" then
+        return nil
+    end
+    return name
+end
+
+function Alliance:MyKey()
+    return BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+end
+
+function Alliance:IsMemberGuild(guildName)
+    local pact = self:Get()
+    return (pact and pact.guilds and pact.guilds[guildName or ""]) ~= nil
+end
+
+function Alliance:IsBlocked(guildName)
+    local pact = self:Get()
+    return (pact and pact.blocked and pact.blocked[guildName or ""]) == true
+end
+
+-- Which member guild a character speaks for, resolved from the pact's ambassador
+-- lists. `sender` MUST come from the comm envelope, never from a payload field.
+-- nil means "not authorised to speak for anyone", which is the safe default.
+function Alliance:GuildOfSender(sender, pact)
+    pact = pact or self:Get()
+    if not pact or type(pact.guilds) ~= "table" then
+        return nil
+    end
+    for guildName in pairs(pact.guilds) do
+        if Alliance.IsAmbassador(pact, guildName, sender) then
+            return guildName
+        end
+    end
+    return nil
+end
+
+-- Every online guildmate we know runs Guild OS, as "Name-Realm" keys. This is
+-- the candidate set for bridge election, and it is identical on every client
+-- because it is derived from the shared guild roster plus synced member data.
+function Alliance:OnlineGuildKeys()
+    local keys = {}
+    if not IsInGuild or not IsInGuild() then
+        return keys
+    end
+    local members = (BRutus.db and BRutus.db.members) or {}
+    local total = GetNumGuildMembers() or 0
+    for i = 1, total do
+        local name, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
+        if name and isOnline then
+            local short = name:match("^([^-]+)") or name
+            local realm = name:match("-(.+)$") or GetRealmName()
+            local key = BRutus:GetPlayerKey(short, realm)
+            if members[key] and members[key].addonVersion then
+                keys[#keys + 1] = key
+            end
+        end
+    end
+    return keys
+end
+
+function Alliance:CurrentBridge()
+    local now = (GetServerTime and GetServerTime()) or time()
+    local candidate = Alliance.ElectBridge(self:OnlineGuildKeys())
+    local resolved = Alliance._DebouncedBridge(
+        self._bridge, candidate, self._bridgeAt or 0, now, Alliance.BRIDGE_HOLD)
+    if resolved ~= self._bridge then
+        self._bridge = resolved
+        self._bridgeAt = now
+    end
+    return resolved
+end
+
+function Alliance:AmBridge()
+    return self:CurrentBridge() == self:MyKey()
+end
+
+-- A player of `guildName` we have positive evidence is online RIGHT NOW, so a
+-- whisper does not print "No player named X is currently playing" to the user.
+-- Evidence comes from the realm-wide presence mesh, where Guild OS clients in an
+-- alliance advertise their guild (see Mesh:BuildCaps).
+function Alliance:PeerTarget(guildName)
+    if not guildName or guildName == "" then
+        return nil
+    end
+    local net = _G.ChehulNet
+    if not net or not net.Peers then
+        return nil
+    end
+    local mesh = GuildOS.Mesh
+    local best, bestTs
+    for short, peer in pairs(net:Peers()) do
+        local theirGuild = mesh and mesh.GetPeerGuild and mesh:GetPeerGuild(short)
+        if theirGuild == guildName and (not bestTs or (peer.ts or 0) > bestTs) then
+            best, bestTs = short, peer.ts or 0
+        end
+    end
+    return best
+end
+
+----------------------------------------------------------------------
+-- Sending
+----------------------------------------------------------------------
+function Alliance:Send(op, tbl, target)
+    local mesh = _G.ChehulMesh
+    if not mesh or not target or target == "" then
+        return false
+    end
+    local blob = Alliance.Encode(tbl)
+    if not blob then
+        return false
+    end
+    return mesh:Whisper(self.PREFIX, self.PROTO .. "|" .. op .. "|" .. blob, target) and true or false
+end
+
+-- Push the current pact to every other member guild. `allowBlind` whispers a
+-- listed ambassador even without presence evidence: acceptable for a rare,
+-- user-initiated action, never for the periodic tick.
+function Alliance:BroadcastPact(allowBlind)
+    local pact = self:Get()
+    if not pact then
+        return
+    end
+    local mine = self:MyGuildName()
+    local wire = Alliance.SerializePact(pact)
+    for guildName, entry in pairs(pact.guilds) do
+        if guildName ~= mine and not self:IsBlocked(guildName) then
+            local target = self:PeerTarget(guildName)
+            if not target and allowBlind and type(entry.ambassadors) == "table" then
+                target = entry.ambassadors[1]
+            end
+            if target then
+                self:Send("PACT", wire, target)
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- Officer actions
+----------------------------------------------------------------------
+function Alliance:Create(tag, name)
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    if self:Get() then
+        return false, L["This guild is already in an alliance."]
+    end
+    local myGuild = self:MyGuildName()
+    if not myGuild then
+        return false, L["You are not in a guild."]
+    end
+    local t = Alliance.NormalizeTag(tag)
+    if t == "" then
+        return false, L["The alliance tag must contain letters or numbers."]
+    end
+    local now = (GetServerTime and GetServerTime()) or time()
+    local me = shortName(UnitName("player"))
+    local display = BRutus:SanitizeUserText(name, Alliance.NAME_MAX)
+    BRutus.db.alliance = {
+        tag      = t,
+        name     = (display ~= "" and display) or t,
+        owner    = myGuild,
+        revision = now,
+        guilds   = {
+            [myGuild] = { ambassadors = { me }, joinedAt = now, addedBy = me },
+        },
+        blocked  = {},
+    }
+    return true
+end
+
+function Alliance:Invite(officerName)
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    local pact = self:Get()
+    if not pact then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    local target = BRutus:SanitizeUserText(officerName, Alliance.GUILD_NAME_MAX)
+    if target == "" then
+        return false, L["Name an officer of the guild you want to invite."]
+    end
+    local myGuild = self:MyGuildName()
+    if not Alliance.IsAmbassador(pact, myGuild, UnitName("player")) then
+        return false, L["Only an alliance ambassador can invite."]
+    end
+    self._invitesSent = self._invitesSent or {}
+    self._invitesSent[shortName(target):lower()] = (GetServerTime and GetServerTime()) or time()
+    if not self:Send("INV", Alliance.SerializePact(pact), target) then
+        return false, L["Could not reach the mesh."]
+    end
+    return true
+end
+
+function Alliance:Leave()
+    local pact = self:Get()
+    if not pact then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    local myGuild = self:MyGuildName()
+    if not Alliance.IsAmbassador(pact, myGuild, UnitName("player")) then
+        return false, L["Only an alliance ambassador can do that."]
+    end
+    local now = (GetServerTime and GetServerTime()) or time()
+    local notice = { guild = myGuild, revision = now }
+    for guildName, entry in pairs(pact.guilds) do
+        if guildName ~= myGuild then
+            local target = self:PeerTarget(guildName)
+            if not target and type(entry.ambassadors) == "table" then
+                target = entry.ambassadors[1]
+            end
+            if target then
+                self:Send("LEAVE", notice, target)
+            end
+        end
+    end
+    BRutus.db.alliance = nil
+    BRutus.db.allianceData = nil
+    return true
+end
+
+function Alliance:RemoveGuild(guildName)
+    local pact = self:Get()
+    if not pact then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    local myGuild = self:MyGuildName()
+    if pact.owner ~= myGuild then
+        return false, L["Only the founding guild can remove another guild."]
+    end
+    local clean = BRutus:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
+    if clean == myGuild or not pact.guilds[clean] then
+        return false, L["That guild is not in the alliance."]
+    end
+    pact.guilds[clean] = nil
+    pact.revision = (GetServerTime and GetServerTime()) or time()
+    if BRutus.db.allianceData then
+        BRutus.db.allianceData[clean] = nil
+    end
+    self:BroadcastPact(true)
+    return true
+end
+
+function Alliance:Block(guildName)
+    local pact = self:Get()
+    if not pact then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    local clean = BRutus:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
+    if clean == "" then
+        return false, L["Name the guild to block."]
+    end
+    pact.blocked = pact.blocked or {}
+    pact.blocked[clean] = true
+    if BRutus.db.allianceData then
+        BRutus.db.allianceData[clean] = nil
+    end
+    return true
+end
+
+function Alliance:Unblock(guildName)
+    local pact = self:Get()
+    if not pact or not pact.blocked then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    pact.blocked[BRutus:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)] = nil
+    return true
+end
+
+----------------------------------------------------------------------
+-- Receiving. Every op is WHISPER-only, which kills party/yell injection, and
+-- authority always comes from the envelope `sender`, never from the payload.
+----------------------------------------------------------------------
+Alliance.ops = {}   -- [op] = function(data, sender, senderGuild); AllianceSync extends this
+
+function Alliance:RegisterOp(op, fn)
+    if type(op) == "string" and type(fn) == "function" then
+        Alliance.ops[op] = fn
+    end
+end
+
+function Alliance:OnMessage(payload, sender, dist)
+    if type(payload) ~= "string" or not sender then
+        return
+    end
+    if dist ~= "WHISPER" then
+        return   -- alliance traffic is directed only; drop anything broadcast
+    end
+    local proto, op, blob = strsplit("|", payload, 3)
+    if proto ~= self.PROTO or not op then
+        return   -- unknown protocol version: ignore silently, like the rest of the mesh
+    end
+    if shortName(sender) == UnitName("player") then
+        return
+    end
+    local data = Alliance.Decode(blob)
+    if type(data) ~= "table" then
+        return
+    end
+
+    -- INV and ACK are the two ops that CANNOT be gated on pact membership: an
+    -- invite arrives before any pact exists, and the accepting guild is by
+    -- definition not in our pact yet. Their authority comes from a human
+    -- clicking Accept (INV) and from an invite we ourselves sent (ACK).
+    if op == "INV" then
+        self:_OnInvite(data, sender)
+        return
+    end
+    if op == "ACK" then
+        self:_OnAck(data, sender)
+        return
+    end
+
+    local senderGuild = self:GuildOfSender(sender)
+    if not senderGuild or self:IsBlocked(senderGuild) then
+        return
+    end
+    if op == "PACT" then
+        self:_OnPact(data, sender, senderGuild)
+    elseif op == "LEAVE" then
+        self:_OnLeave(sender, senderGuild)
+    else
+        local fn = Alliance.ops[op]
+        if fn then
+            BRutus:SafeCall(fn, data, sender, senderGuild)
+        end
+    end
+end
+
+Alliance.INVITE_COOLDOWN = 30
+
+function Alliance:_OnInvite(raw, sender)
+    if self:Get() then
+        return   -- already federated; a second pact would need a human decision anyway
+    end
+    local pact = Alliance.SanitizePact(raw)
+    if not pact then
+        return
+    end
+    -- The inviter must be an ambassador inside the pact they are offering.
+    local theirGuild = self:GuildOfSender(sender, pact)
+    if not theirGuild then
+        return
+    end
+    local now = (GetServerTime and GetServerTime()) or time()
+    self._invitePrompts = self._invitePrompts or {}
+    local last = self._invitePrompts[shortName(sender):lower()]
+    if last and (now - last) < Alliance.INVITE_COOLDOWN then
+        return
+    end
+    self._invitePrompts[shortName(sender):lower()] = now
+    if not BRutus:IsOfficer() then
+        return   -- only an officer can answer for the guild
+    end
+    StaticPopup_Show("GUILDOS_ALLY_INVITE",
+        string.format(L["%s of %s invites your guild into the alliance %s."],
+            shortName(sender), theirGuild, pact.name or pact.tag),
+        nil, { pact = pact, sender = sender })
+end
+
+function Alliance:AcceptInvite(pact, sender)
+    local myGuild = self:MyGuildName()
+    if not myGuild or self:Get() or not pact then
+        return
+    end
+    local now = (GetServerTime and GetServerTime()) or time()
+    local me = shortName(UnitName("player"))
+    pact.blocked = {}
+    pact.guilds[myGuild] = pact.guilds[myGuild]
+        or { ambassadors = { me }, joinedAt = now, addedBy = shortName(sender) }
+    pact.revision = now
+    BRutus.db.alliance = pact
+    self:Send("ACK", { guild = myGuild, ambassadors = { me } }, sender)
+    BRutus:Print(string.format(L["Joined the alliance %s."], pact.name or pact.tag))
+end
+
+function Alliance:_OnAck(data, sender)
+    if not BRutus:IsOfficer() then
+        return
+    end
+    self._invitesSent = self._invitesSent or {}
+    if not self._invitesSent[shortName(sender):lower()] then
+        return   -- unsolicited: we never invited this character
+    end
+    local pact = self:Get()
+    if not pact then
+        return
+    end
+    local guild = BRutus:SanitizeUserText(data.guild, Alliance.GUILD_NAME_MAX)
+    if guild == "" or self:IsBlocked(guild) then
+        return
+    end
+    local count = 0
+    for _ in pairs(pact.guilds) do
+        count = count + 1
+    end
+    if not pact.guilds[guild] and count >= Alliance.MAX_GUILDS then
+        BRutus:Print(L["The alliance is full."])
+        return
+    end
+    local ambassadors = {}
+    if type(data.ambassadors) == "table" then
+        for _, amb in ipairs(data.ambassadors) do
+            if #ambassadors >= Alliance.MAX_AMBASSADORS then
+                break
+            end
+            local a = BRutus:SanitizeUserText(shortName(amb), Alliance.GUILD_NAME_MAX)
+            if a ~= "" then
+                ambassadors[#ambassadors + 1] = a
+            end
+        end
+    end
+    -- The accepting character is always an ambassador of its own guild, even if
+    -- the payload forgot to list it. Identity comes from the envelope.
+    local senderShort = shortName(sender)
+    local listed = false
+    for _, a in ipairs(ambassadors) do
+        if a:lower() == senderShort:lower() then
+            listed = true
+            break
+        end
+    end
+    if not listed then
+        table.insert(ambassadors, 1, senderShort)
+    end
+
+    local now = (GetServerTime and GetServerTime()) or time()
+    pact.guilds[guild] = {
+        ambassadors = ambassadors,
+        joinedAt    = now,
+        addedBy     = shortName(UnitName("player")),
+    }
+    pact.revision = now
+    self._invitesSent[senderShort:lower()] = nil
+    BRutus:Print(string.format(L["%s joined the alliance."], guild))
+    self:BroadcastPact(true)
+end
+
+function Alliance:_OnPact(raw, _sender, senderGuild)
+    local incoming = Alliance.SanitizePact(raw)
+    if not incoming then
+        return
+    end
+    local current = self:Get()
+    -- A pact change is only ever accepted DIRECT from an ambassador of a member
+    -- guild, never relayed. GuildOfSender already enforced that.
+    if not senderGuild then
+        return
+    end
+    local winner = Alliance.ResolvePact(current, incoming)
+    if winner == current then
+        return
+    end
+    -- Our own guild must never be dropped by someone else's copy, and the local
+    -- ignore list is ours alone.
+    local myGuild = self:MyGuildName()
+    if myGuild and current and current.guilds[myGuild] and not winner.guilds[myGuild] then
+        winner.guilds[myGuild] = current.guilds[myGuild]
+    end
+    winner.blocked = (current and current.blocked) or {}
+    BRutus.db.alliance = winner
+end
+
+function Alliance:_OnLeave(_sender, senderGuild)
+    local pact = self:Get()
+    if not pact or not pact.guilds[senderGuild] then
+        return
+    end
+    pact.guilds[senderGuild] = nil
+    pact.revision = (GetServerTime and GetServerTime()) or time()
+    if BRutus.db.allianceData then
+        BRutus.db.allianceData[senderGuild] = nil
+    end
+    BRutus:Print(string.format(L["%s left the alliance."], senderGuild))
+end
+
+----------------------------------------------------------------------
+-- Lifecycle
+----------------------------------------------------------------------
+local function registerPopups()
+    if StaticPopupDialogs["GUILDOS_ALLY_INVITE"] then
+        return
+    end
+    StaticPopupDialogs["GUILDOS_ALLY_INVITE"] = {
+        text = "%s",
+        button1 = L["Accept"],
+        button2 = L["Decline"],
+        OnAccept = function(self)
+            local d = self and self.data
+            if d then
+                GuildOS.Alliance:AcceptInvite(d.pact, d.sender)
+            end
+        end,
+        timeout = 60,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+end
+
+function Alliance:Initialize()
+    self:_RegisterTests()
+    registerPopups()
+    local mesh = _G.ChehulMesh
+    if mesh and not self._registered then
+        self._registered = true
+        mesh:Register(self.PREFIX, function(payload, sender, dist)
+            GuildOS.Alliance:OnMessage(payload, sender, dist)
+        end)
+    end
+end
+
+----------------------------------------------------------------------
 -- Self tests (run with /gos selftest)
 ----------------------------------------------------------------------
 local function samplePact()
@@ -394,6 +964,21 @@ function Alliance:_RegisterTests()
         end
         if Alliance.ResolvePact(nil, newer).revision ~= 200 then return false, "no current pact" end
         if Alliance.ResolvePact(cur, nil).revision ~= 100 then return false, "no incoming pact" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.encode_roundtrip", function()
+        local src = { tag = "BRCORE", revision = 42, guilds = { ["G A"] = { ambassadors = { "Ann" } } } }
+        local wire = Alliance.Encode(src)
+        if type(wire) ~= "string" or wire == "" then return false, "encode produced nothing" end
+        if wire:find("|", 1, true) then return false, "wire payload must not contain a pipe" end
+        local back = Alliance.Decode(wire)
+        if not back then return false, "decode failed" end
+        if back.tag ~= "BRCORE" or back.revision ~= 42 then return false, "fields lost" end
+        if back.guilds["G A"].ambassadors[1] ~= "Ann" then return false, "nested table lost" end
+        if Alliance.Decode("not a real payload") ~= nil then return false, "garbage must decode to nil" end
+        if Alliance.Decode(nil) ~= nil then return false, "nil must not error" end
+        if Alliance.Encode(nil) ~= nil then return false, "encoding nil must not error" end
         return true
     end)
 

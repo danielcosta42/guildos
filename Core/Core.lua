@@ -251,6 +251,9 @@ function BRutus:InitModules()
     if BRutus.SyncService then
         BRutus.SyncService:Initialize()
     end
+    if BRutus.Alliance then
+        BRutus.Alliance:Initialize()
+    end
     if BRutus.RosterLog then
         BRutus.RosterLog:Initialize()
     end

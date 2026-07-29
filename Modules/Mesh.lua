@@ -35,7 +35,31 @@ Mesh.ADDON_LABELS = {
 -- post. Namespaced key ("gosv=") so it never collides with a sibling's caps.
 ----------------------------------------------------------------------
 function Mesh:BuildCaps()
-    return "gosv=" .. (GuildOS.VERSION or "0")
+    local caps = "gosv=" .. (GuildOS.VERSION or "0")
+    -- Guild name, ONLY while this client is in an alliance. That is the one
+    -- feature that needs it (a bridge must find an online player of an allied
+    -- guild to whisper), and gating it keeps the caps string tiny for everyone
+    -- else -- it rides a public realm-wide post. Guild membership is public
+    -- in-game anyway, so this exposes nothing new. Commas are stripped because
+    -- they separate caps entries.
+    local ally = GuildOS.Alliance
+    if ally and ally.Get and ally:Get() then
+        local guild = GetGuildInfo("player")
+        if guild and guild ~= "" then
+            caps = caps .. ",gosg=" .. (GuildOS:SanitizeUserText(guild, 24):gsub(",", ""))
+        end
+    end
+    return caps
+end
+
+-- The guild a peer advertises in its merged caps string, or nil. Used by the
+-- alliance bridge to pick a whisper target it believes is online (whispering an
+-- offline player prints a visible "no player named X" system message).
+function Mesh:GetPeerGuild(name)
+    local p = self:GetPeer(name)
+    local caps = p and p.caps
+    if type(caps) ~= "string" then return nil end
+    return caps:match("gosg=([^,]+)")
 end
 
 -- Pull Guild OS's advertised version out of a peer's merged caps string.
