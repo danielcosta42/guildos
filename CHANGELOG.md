@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.38.0] - 2026-07-29
+
+### Added
+- surface ambassadors, schedule conflicts and alliance diagnostics
+- harden the alliance with ambassador management and conflict detection
+
+
 ## [0.37.0] - 2026-07-29
 
 ### Added
