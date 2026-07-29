@@ -31,7 +31,23 @@ AllianceSync.PUSH_WINDOW = 60    -- min seconds between two PUSHes of a domain t
 AllianceSync.ROSTER_CAP  = 300   -- imported members per guild
 AllianceSync.CRAFT_CAP   = 5000  -- imported recipe entries per guild
 
+AllianceSync.STALE_PROBE = 3600  -- seconds of silence before the login probe whispers blind
+
 AllianceSync.domains = {}   -- [name] = { build = fn, apply = fn, cap = n, priority = string }
+
+-- Observability. A distributed feature with no instrumentation cannot be
+-- debugged in the field, which is why the mesh already ships a health line.
+AllianceSync.stats = {
+    headOut = 0, headIn = 0, pullOut = 0, pullIn = 0,
+    pushOut = 0, pushIn = 0, probes = 0, rejected = 0,
+}
+AllianceSync.seen = {}   -- [guild] = { headIn = ts, pushIn = ts, headOut = ts }
+
+local function mark(guild, field)
+    if not guild then return end
+    AllianceSync.seen[guild] = AllianceSync.seen[guild] or {}
+    AllianceSync.seen[guild][field] = (GetServerTime and GetServerTime()) or time()
+end
 
 local function normKey(name)
     if not name or name == "" then
@@ -109,12 +125,27 @@ function AllianceSync._BuildRoster(members, cap, altLinks)
                     end
                 end
             end
+            -- Completed attunements only, as their short codes ("Kara", "SSC").
+            -- That is exactly what "who can we field for X" needs, and it is a
+            -- fraction of the size of the full progress record.
+            local att
+            if type(m.attunements) == "table" then
+                for _, a in ipairs(m.attunements) do
+                    if type(a) == "table" and a.complete and a.short then
+                        att = att or {}
+                        att[#att + 1] = a.short
+                    end
+                end
+            end
+
             local main = altLinks and altLinks[key]
             out[#out + 1] = {
                 n = BRutus:SanitizeUserText(m.name, 24),
                 c = m.class,
                 l = tonumber(m.level) or 0,
                 p = profs,
+                a = att,
+                s = type(m.spec) == "table" and m.spec.tree or nil,
                 m = main and (main:match("^([^-]+)") or main) or nil,
             }
         end
@@ -440,10 +471,13 @@ function AllianceSync:OnHead(data, sender, senderGuild)
     if type(data) ~= "table" or type(data.revs) ~= "table" then
         return
     end
+    self.stats.headIn = self.stats.headIn + 1
+    mark(senderGuild, "headIn")
     for domain, rev in pairs(data.revs) do
         if type(domain) == "string" and self.domains[domain] then
             local mineOfThem = self:Remote(senderGuild, domain)
             if AllianceSync.ShouldPull(mineOfThem and mineOfThem.rev, rev) then
+                self.stats.pullOut = self.stats.pullOut + 1
                 Ally():Send("PULL", { domain = domain }, sender)
             end
         end
@@ -471,6 +505,8 @@ function AllianceSync:OnPull(data, sender, _senderGuild)
         return   -- the bridge has not built it yet; the next HEAD will re-trigger
     end
     self._pushedAt[slot] = now
+    self.stats.pullIn = self.stats.pullIn + 1
+    self.stats.pushOut = self.stats.pushOut + 1
     Ally():Send("PUSH", { domain = domain, rev = entry.rev, data = entry.data }, sender)
 end
 
@@ -480,9 +516,13 @@ function AllianceSync:OnPush(data, _sender, senderGuild)
     end
     -- The guild is taken from the pact lookup of the ENVELOPE sender, never
     -- from the payload, so a peer can only ever publish for its own guild.
+    self.stats.pushIn = self.stats.pushIn + 1
+    mark(senderGuild, "pushIn")
     if self:StoreRemote(senderGuild, data.domain, data.rev, data.data) then
         self:_Apply(senderGuild, data.domain)
         self:Fanout(senderGuild, data.domain, tonumber(data.rev) or 0, data.data)
+    else
+        self.stats.rejected = self.stats.rejected + 1
     end
 end
 
@@ -506,10 +546,97 @@ function AllianceSync:Tick()
             -- target prints a system message in the user's chat frame.
             local target = ally:PeerTarget(guildName)
             if target then
+                self.stats.headOut = self.stats.headOut + 1
+                mark(guildName, "headOut")
                 ally:Send("HEAD", head, target)
             end
         end
     end
+end
+
+----------------------------------------------------------------------
+-- Login probe.
+--
+-- The heartbeat only reaches guilds the presence mesh can SEE, and the realm
+-- bus is YELL: zone-local, layer-local, and only about a third of clients emit
+-- per cycle. A guild can therefore stay invisible and never sync at all. Once
+-- per session, for guilds we have heard nothing from in STALE_PROBE seconds,
+-- whisper their ambassadors blind. This is the ONE place that accepts the
+-- "no player named X is currently playing" system message, and it is bounded:
+-- one round, at most two ambassadors per stale guild.
+----------------------------------------------------------------------
+function AllianceSync:ProbeStaleGuilds()
+    local ally = Ally()
+    local pact = ally and ally:Get()
+    if not pact or self._probed or not ally:AmBridge() then
+        return
+    end
+    self._probed = true
+    local mine = ally:MyGuildName()
+    local now = (GetServerTime and GetServerTime()) or time()
+    local head = self:_MyHead()
+
+    for guildName, entry in pairs(pact.guilds) do
+        if guildName ~= mine and not ally:IsBlocked(guildName) then
+            local newest = 0
+            local domains = (BRutus.db.allianceData or {})[guildName] or {}
+            for _, snap in pairs(domains) do
+                newest = math.max(newest, tonumber(snap.ts) or 0)
+            end
+            local silent = (now - newest) > self.STALE_PROBE
+            local invisible = ally:PeerTarget(guildName) == nil
+            if silent and invisible and type(entry.ambassadors) == "table" then
+                local sent = 0
+                for _, amb in ipairs(entry.ambassadors) do
+                    if sent >= 2 then
+                        break
+                    end
+                    if ally:Send("HEAD", head, amb) then
+                        sent = sent + 1
+                        self.stats.probes = self.stats.probes + 1
+                    end
+                end
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- Diagnostics for the Audit panel: one row per allied guild.
+----------------------------------------------------------------------
+function AllianceSync:Diagnostics()
+    local ally = Ally()
+    local pact = ally and ally:Get()
+    local out = { stats = self.stats, guilds = {} }
+    if not pact then
+        return out
+    end
+    local mine = ally:MyGuildName()
+    local names = {}
+    for guildName in pairs(pact.guilds) do
+        if guildName ~= mine then
+            names[#names + 1] = guildName
+        end
+    end
+    table.sort(names)
+
+    for _, guildName in ipairs(names) do
+        local row = { guild = guildName, domains = {}, behind = 0 }
+        local seen = self.seen[guildName] or {}
+        row.lastHeadIn = seen.headIn
+        row.lastPushIn = seen.pushIn
+        row.lastHeadOut = seen.headOut
+        for domain in pairs(self.domains) do
+            local localRev = (self:Remote(mine, domain) or {}).rev or 0
+            local theirRev = (self:Remote(guildName, domain) or {}).rev or 0
+            row.domains[domain] = { theirs = theirRev, ours = localRev }
+            if theirRev == 0 then
+                row.behind = row.behind + 1
+            end
+        end
+        out.guilds[#out.guilds + 1] = row
+    end
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -562,6 +689,11 @@ function AllianceSync:Initialize()
 
     if BRutus.Compat and BRutus.Compat.NewTicker then
         BRutus.Compat.NewTicker(self.TICK, function() AllianceSync:Tick() end)
+    end
+    -- Late enough that the guild roster and member data have settled, so the
+    -- bridge election is stable before the one blind probe round goes out.
+    if BRutus.Compat and BRutus.Compat.After then
+        BRutus.Compat.After(60, function() AllianceSync:ProbeStaleGuilds() end)
     end
 end
 
@@ -674,6 +806,33 @@ function AllianceSync:_RegisterTests()
         local linked = { ["A-R"] = { name = "A", class = "MAGE", level = 70 } }
         local withMain = AllianceSync._BuildRoster(linked, 10, { ["A-R"] = "Main-R" })
         if withMain[1].m ~= "Main" then return false, "main link not carried" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliancesync.roster_attunements", function()
+        local src = {
+            ["A-R"] = {
+                name = "A", class = "PRIEST", level = 70,
+                spec = { tree = "Holy" },
+                attunements = {
+                    { short = "Kara", complete = true },
+                    { short = "SSC",  complete = false },   -- must NOT ship
+                    { short = "TK",   complete = true },
+                    { complete = true },                    -- no short: skipped
+                },
+            },
+            ["B-R"] = { name = "B", class = "MAGE", level = 70 },
+        }
+        local out = AllianceSync._BuildRoster(src, 10)
+        local a = out[1]
+        if a.n ~= "A" then return false, "sort order changed" end
+        if a.s ~= "Holy" then return false, "spec tree missing" end
+        if type(a.a) ~= "table" or #a.a ~= 2 then
+            return false, "expected 2 completed attunements, got " .. tostring(a.a and #a.a)
+        end
+        if a.a[1] ~= "Kara" or a.a[2] ~= "TK" then return false, "wrong attunements shipped" end
+        -- A member with no attunement or spec data must not gain empty tables.
+        if out[2].a ~= nil or out[2].s ~= nil then return false, "empty fields must stay nil" end
         return true
     end)
 end

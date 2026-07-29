@@ -79,6 +79,41 @@ function Calendar:_RegisterTests()
         return true
     end)
 
+    BRutus.SelfTest:Register("calendar.alliance_conflicts", function()
+        local F = Calendar._FindConflicts
+        local mine = {
+            { id = "m1", title = "MC",   when = 100000, names = { "Ann", "Bob", "Cid" } },
+            { id = "m2", title = "Kara", when = 500000, names = { "Ann" } },
+        }
+        local theirs = {
+            { id = "t1", title = "BWL", when = 103000, guild = "G B", names = { "bob", "Cid", "Dan" } },
+            { id = "t2", title = "ZG",  when = 900000, guild = "G C", names = { "Ann" } },
+        }
+        local out = F(mine, theirs, 7200)   -- 2h window
+        if #out ~= 1 then return false, "expected 1 collision, got " .. #out end
+        local c = out[1]
+        if c.mine.id ~= "m1" or c.theirs.id ~= "t1" then return false, "wrong pair matched" end
+        -- Name matching must be case insensitive: "bob" and "Bob" are one person.
+        if c.sharedCount ~= 2 then return false, "expected 2 shared, got " .. c.sharedCount end
+        if c.shared[1] ~= "Bob" or c.shared[2] ~= "Cid" then
+            return false, "shared names wrong: " .. table.concat(c.shared, ",")
+        end
+        -- Outside the window nothing collides, however many names overlap.
+        if #F(mine, theirs, 60) ~= 0 then return false, "narrow window still matched" end
+        -- Most double-booked first.
+        local many = {
+            { id = "m9", title = "A", when = 100000, names = { "Ann", "Bob", "Cid" } },
+        }
+        local two = {
+            { id = "t8", title = "B", when = 100100, guild = "G", names = { "Zed" } },
+            { id = "t9", title = "C", when = 100200, guild = "G", names = { "Ann", "Bob", "Cid" } },
+        }
+        local ranked = F(many, two, 7200)
+        if ranked[1].theirs.id ~= "t9" then return false, "not ranked by shared count" end
+        if #F(nil, theirs, 7200) ~= 0 then return false, "nil must not error" end
+        return true
+    end)
+
     BRutus.SelfTest:Register("calendar.alliance_events_build", function()
         local events = {
             a1 = { id = "a1", title = "MC",   when = 2000, size = 40,
@@ -91,6 +126,7 @@ function Calendar:_RegisterTests()
         if #out ~= 2 then return false, "expected 2 upcoming events, got " .. #out end
         if out[1].id ~= "a1" or out[2].id ~= "a4" then return false, "not sorted by id" end
         if out[1].yes ~= 1 then return false, "yes count wrong: " .. tostring(out[1].yes) end
+        if type(out[1].names) ~= "table" then return false, "signup names missing" end
         if #Calendar._BuildAllianceEvents(events, 1000, 1) ~= 1 then return false, "cap not enforced" end
         if #Calendar._BuildAllianceEvents(nil, 1000, 50) ~= 0 then return false, "nil must not error" end
         return true
@@ -363,6 +399,9 @@ end
 ----------------------------------------------------------------------
 Calendar.ALLY_NOTE_MAX = 60
 Calendar.ALLY_MAX_PENDING = 30
+-- Confirmed signup names shipped per event. A raid is 40, and the payload is
+-- names * events, so this is the knob that keeps the events domain small.
+Calendar.ALLY_NAME_CAP = 40
 
 -- Pure. Can this event still take an alliance signup right now?
 -- Returns "ok" | "gone" | "canceled" | "past" | "full".
@@ -405,14 +444,26 @@ function Calendar._BuildAllianceEvents(events, now, cap)
         end
         local e = events[id]
         local yes = 0
+        -- Names of the confirmed signups, sorted, capped. These are what makes
+        -- cross-guild conflict detection able to say "and 4 of these people are
+        -- signed to both", instead of only "these two raids collide in time".
+        -- Guild rosters are public in-game, so this exposes nothing new.
+        local names = {}
         for _, r in pairs(e.rsvps or {}) do
             if r.status == "yes" then
                 yes = yes + 1
+                if r.name then
+                    names[#names + 1] = r.name
+                end
             end
+        end
+        table.sort(names)
+        while #names > Calendar.ALLY_NAME_CAP do
+            table.remove(names)
         end
         out[#out + 1] = {
             id = id, title = e.title, when = e.when, size = e.size,
-            kind = e.kind, note = e.note, author = e.author, yes = yes,
+            kind = e.kind, note = e.note, author = e.author, yes = yes, names = names,
         }
     end
     return out
@@ -436,7 +487,8 @@ function Calendar:AllianceEvents()
                     if (tonumber(e.when) or 0) > now then
                         out[#out + 1] = {
                             id = e.id, title = e.title, when = e.when, size = e.size,
-                            kind = e.kind, note = e.note, yes = e.yes, guild = guildName,
+                            kind = e.kind, note = e.note, yes = e.yes,
+                            names = e.names, guild = guildName,
                         }
                     end
                 end
@@ -448,6 +500,88 @@ function Calendar:AllianceEvents()
         return tostring(a.id) < tostring(b.id)
     end)
     return out
+end
+
+----------------------------------------------------------------------
+-- Conflict detection
+--
+-- With seven guilds the hard part is not sharing calendars, it is noticing
+-- that two raids collide AND that the same people signed up for both. This is
+-- pure computation over data already synced: no new domain, no new traffic.
+----------------------------------------------------------------------
+Calendar.CONFLICT_WINDOW = 2 * 3600   -- events starting within 2h of each other
+
+-- Pure. `mine` and `theirs` are arrays of { id, title, when, guild, names },
+-- where `names` is the array of short names signed up "yes". Returns one row
+-- per colliding pair, worst overlap first.
+function Calendar._FindConflicts(mine, theirs, window)
+    local out = {}
+    if type(mine) ~= "table" or type(theirs) ~= "table" then
+        return out
+    end
+    window = tonumber(window) or Calendar.CONFLICT_WINDOW
+
+    for _, a in ipairs(mine) do
+        for _, b in ipairs(theirs) do
+            local gap = math.abs((tonumber(a.when) or 0) - (tonumber(b.when) or 0))
+            if gap <= window then
+                local inB = {}
+                for _, n in ipairs(b.names or {}) do
+                    inB[tostring(n):lower()] = n
+                end
+                local shared = {}
+                for _, n in ipairs(a.names or {}) do
+                    if inB[tostring(n):lower()] then
+                        shared[#shared + 1] = n
+                    end
+                end
+                table.sort(shared)
+                out[#out + 1] = {
+                    mine = a, theirs = b, gap = gap,
+                    shared = shared, sharedCount = #shared,
+                }
+            end
+        end
+    end
+
+    -- Most people double-booked first; then the tightest collision; then a
+    -- stable id tie-break so the list never reshuffles between repaints.
+    table.sort(out, function(x, y)
+        if x.sharedCount ~= y.sharedCount then return x.sharedCount > y.sharedCount end
+        if x.gap ~= y.gap then return x.gap < y.gap end
+        return tostring(x.mine.id) .. tostring(x.theirs.id)
+             < tostring(y.mine.id) .. tostring(y.theirs.id)
+    end)
+    return out
+end
+
+-- Live wrapper: our upcoming events against every allied guild's.
+function Calendar:AllianceConflicts()
+    local ally = GuildOS.Alliance
+    if not ally or not ally:Get() then
+        return {}
+    end
+    local now = GetServerTime()
+    local mine = {}
+    for _, e in ipairs(self:GetUpcoming()) do
+        if not e.canceled and (tonumber(e.when) or 0) > now then
+            local names = {}
+            for _, r in pairs(e.rsvps or {}) do
+                if r.status == "yes" and r.name then
+                    names[#names + 1] = r.name
+                end
+            end
+            mine[#mine + 1] = { id = e.id, title = e.title, when = e.when, names = names }
+        end
+    end
+    local theirs = {}
+    for _, e in ipairs(self:AllianceEvents()) do
+        theirs[#theirs + 1] = {
+            id = e.id, title = e.title, when = e.when, guild = e.guild,
+            names = e.names or {},
+        }
+    end
+    return Calendar._FindConflicts(mine, theirs, Calendar.CONFLICT_WINDOW)
 end
 
 function Calendar:AlliancePending(e)

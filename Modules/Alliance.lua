@@ -600,6 +600,18 @@ function Alliance:RemoveGuild(guildName)
     if clean == myGuild or not pact.guilds[clean] then
         return false, L["That guild is not in the alliance."]
     end
+    -- Tell the guild BEFORE dropping it. BroadcastPact iterates pact.guilds, so
+    -- once the entry is gone the removed guild is unreachable and would sit on a
+    -- stale pact forever, still heartbeating at peers who silently drop it.
+    local ejected = pact.guilds[clean]
+    local target = self:PeerTarget(clean)
+    if not target and type(ejected.ambassadors) == "table" then
+        target = ejected.ambassadors[1]
+    end
+    if target then
+        self:Send("EJECT", { guild = clean, by = myGuild }, target)
+    end
+
     pact.guilds[clean] = nil
     pact.revision = (GetServerTime and GetServerTime()) or time()
     if BRutus.db.allianceData then
@@ -678,6 +690,12 @@ function Alliance:OnMessage(payload, sender, dist)
         self:_OnAck(data, sender)
         return
     end
+    -- A join request comes from a guild that is by definition NOT in our pact,
+    -- so it cannot pass the membership gate either. Human-gated like INV.
+    if op == "REQ" then
+        self:_OnJoinRequest(data, sender)
+        return
+    end
 
     local senderGuild = self:GuildOfSender(sender)
     if not senderGuild or self:IsBlocked(senderGuild) then
@@ -687,6 +705,8 @@ function Alliance:OnMessage(payload, sender, dist)
         self:_OnPact(data, sender, senderGuild)
     elseif op == "LEAVE" then
         self:_OnLeave(sender, senderGuild)
+    elseif op == "EJECT" then
+        self:_OnEject(data, senderGuild)
     else
         local fn = Alliance.ops[op]
         if fn then
@@ -846,6 +866,121 @@ end
 -- Read model for the UI. Rule 10: the panel renders this and owns no logic.
 ----------------------------------------------------------------------
 
+----------------------------------------------------------------------
+-- Ambassadors
+--
+-- Without this a guild ends up with exactly ONE ambassador (whoever created or
+-- accepted the pact) and freezes the day that person stops playing: it can no
+-- longer invite, leave, post, or approve anything. Add/remove is an ambassador
+-- action; `claim` is the escape hatch for the guild that already lost theirs.
+----------------------------------------------------------------------
+
+-- Pure. May a plain officer claim ambassadorship? Only when NOT ONE listed
+-- ambassador is still on the guild roster, i.e. the guild genuinely lost them
+-- all. `rosterShort` is a set of lowercased short names currently in the guild.
+function Alliance._CanClaimAmbassador(ambassadors, rosterShort)
+    if type(ambassadors) ~= "table" or type(rosterShort) ~= "table" then
+        return false
+    end
+    if #ambassadors == 0 then
+        return true
+    end
+    for _, amb in ipairs(ambassadors) do
+        if rosterShort[tostring(amb):lower()] then
+            return false   -- at least one is still here; no vacancy
+        end
+    end
+    return true
+end
+
+function Alliance:_GuildRosterShortSet()
+    local set = {}
+    local total = (GetNumGuildMembers and GetNumGuildMembers()) or 0
+    for i = 1, total do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            set[(name:match("^([^-]+)") or name):lower()] = true
+        end
+    end
+    return set
+end
+
+function Alliance:_MyEntry()
+    local pact = self:Get()
+    local mine = self:MyGuildName()
+    return pact and mine and pact.guilds[mine] or nil, mine
+end
+
+function Alliance:AddAmbassador(name)
+    local entry = self:_MyEntry()
+    if not entry then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not self:CanAdminister() then
+        return false, L["Only an alliance ambassador can do that."]
+    end
+    local clean = BRutus:SanitizeUserText(shortName(name), Alliance.GUILD_NAME_MAX)
+    if clean == "" then
+        return false, L["Name the character to make an ambassador."]
+    end
+    if not self:_GuildRosterShortSet()[clean:lower()] then
+        return false, L["That character is not in this guild."]
+    end
+    for _, amb in ipairs(entry.ambassadors) do
+        if amb:lower() == clean:lower() then
+            return false, string.format(L["%s is already an ambassador."], clean)
+        end
+    end
+    if #entry.ambassadors >= Alliance.MAX_AMBASSADORS then
+        return false, L["This guild already has the maximum number of ambassadors."]
+    end
+    entry.ambassadors[#entry.ambassadors + 1] = clean
+    self:Get().revision = (GetServerTime and GetServerTime()) or time()
+    self:BroadcastPact(true)
+    return true
+end
+
+function Alliance:RemoveAmbassador(name)
+    local entry = self:_MyEntry()
+    if not entry then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not self:CanAdminister() then
+        return false, L["Only an alliance ambassador can do that."]
+    end
+    local clean = shortName(BRutus:SanitizeUserText(name, Alliance.GUILD_NAME_MAX))
+    if #entry.ambassadors <= 1 then
+        -- Removing the last one would lock the guild out of its own pact.
+        return false, L["A guild must keep at least one ambassador."]
+    end
+    for i, amb in ipairs(entry.ambassadors) do
+        if amb:lower() == clean:lower() then
+            table.remove(entry.ambassadors, i)
+            self:Get().revision = (GetServerTime and GetServerTime()) or time()
+            self:BroadcastPact(true)
+            return true
+        end
+    end
+    return false, string.format(L["%s is not an ambassador."], clean)
+end
+
+function Alliance:ClaimAmbassador()
+    local entry = self:_MyEntry()
+    if not entry then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    if not Alliance._CanClaimAmbassador(entry.ambassadors, self:_GuildRosterShortSet()) then
+        return false, L["This guild still has an ambassador in the roster."]
+    end
+    entry.ambassadors[#entry.ambassadors + 1] = shortName(UnitName("player"))
+    self:Get().revision = (GetServerTime and GetServerTime()) or time()
+    self:BroadcastPact(true)
+    return true
+end
+
 -- Is this character visible on the realm-wide presence mesh right now?
 function Alliance:IsPeerOnline(name)
     local net = _G.ChehulNet
@@ -971,6 +1106,81 @@ function Alliance:CanAdminister()
         return false
     end
     return Alliance.IsAmbassador(pact, self:MyGuildName(), UnitName("player"))
+end
+
+-- We were removed from the pact. Only the OWNER guild may do this, and the
+-- payload must name us, so a random ally cannot evict anybody.
+function Alliance:_OnEject(data, senderGuild)
+    local pact = self:Get()
+    if not pact or senderGuild ~= pact.owner then
+        return
+    end
+    local mine = self:MyGuildName()
+    local named = BRutus:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
+    if not mine or named ~= mine then
+        return
+    end
+    BRutus.db.alliance = nil
+    BRutus.db.allianceData = nil
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:Leave()
+    end
+    BRutus:Print(string.format(L["%s removed this guild from the alliance."], senderGuild))
+end
+
+----------------------------------------------------------------------
+-- Join requests: the reverse of an invite. A guild that knows the alliance tag
+-- asks an officer of a member guild to bring them in, instead of waiting to be
+-- found. Still ends in the normal human-approved invite flow.
+----------------------------------------------------------------------
+function Alliance:RequestJoin(tag, officerName)
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    if self:Get() then
+        return false, L["This guild is already in an alliance."]
+    end
+    local myGuild = self:MyGuildName()
+    if not myGuild then
+        return false, L["You are not in a guild."]
+    end
+    local wanted = Alliance.NormalizeTag(tag)
+    if wanted == "" then
+        return false, L["Name the alliance tag you want to join."]
+    end
+    local target = BRutus:SanitizeUserText(officerName, Alliance.GUILD_NAME_MAX)
+    if target == "" then
+        return false, L["Name an officer of a guild already in that alliance."]
+    end
+    if not self:Send("REQ", { guild = myGuild, tag = wanted }, target) then
+        return false, L["Could not reach the mesh."]
+    end
+    return true
+end
+
+function Alliance:_OnJoinRequest(data, sender)
+    local pact = self:Get()
+    if not pact or not self:CanAdminister() then
+        return   -- only an ambassador of a real pact can act on this
+    end
+    if Alliance.NormalizeTag(data and data.tag) ~= pact.tag then
+        return   -- they asked for a different alliance
+    end
+    local guild = BRutus:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
+    if guild == "" or self:IsMemberGuild(guild) or self:IsBlocked(guild) then
+        return
+    end
+    local now = (GetServerTime and GetServerTime()) or time()
+    self._reqPrompts = self._reqPrompts or {}
+    local last = self._reqPrompts[shortName(sender):lower()]
+    if last and (now - last) < Alliance.INVITE_COOLDOWN then
+        return
+    end
+    self._reqPrompts[shortName(sender):lower()] = now
+    StaticPopup_Show("GUILDOS_ALLY_REQUEST",
+        string.format(L["%s of %s asks to join the alliance. Invite them?"],
+            shortName(sender), guild),
+        nil, { sender = sender })
 end
 
 ----------------------------------------------------------------------
@@ -1196,6 +1406,33 @@ function Alliance:HandleCommand(args)
         if ok then
             BRutus:Print(string.format(L["%s removed from the alliance."], rest))
         end
+    elseif verb == "amb" or verb == "ambassador" then
+        local sub, who = rest:match("^(%S*)%s*(.*)$")
+        sub = (sub and sub:lower()) or ""
+        who = strtrim(who or "")
+        if sub == "add" then
+            ok, err = self:AddAmbassador(who)
+            if ok then BRutus:Print(string.format(L["%s is now an ambassador."], who)) end
+        elseif sub == "remove" or sub == "rem" then
+            ok, err = self:RemoveAmbassador(who)
+            if ok then BRutus:Print(string.format(L["%s is no longer an ambassador."], who)) end
+        elseif sub == "claim" then
+            ok, err = self:ClaimAmbassador()
+            if ok then BRutus:Print(L["You are now an ambassador of this guild."]) end
+        else
+            local entry = self:_MyEntry()
+            if not entry then
+                return BRutus:Print(L["This guild is not in an alliance yet."])
+            end
+            BRutus:Print(string.format(L["Ambassadors: %s"], table.concat(entry.ambassadors, ", ")))
+            return BRutus:Print(L["Usage: /gos ally amb [add|remove|claim] <name>"])
+        end
+    elseif verb == "request" or verb == "join" then
+        local tag, who = rest:match("^(%S*)%s*(.*)$")
+        ok, err = self:RequestJoin(tag, strtrim(who or ""))
+        if ok then
+            BRutus:Print(string.format(L["Join request sent to %s."], strtrim(who or "")))
+        end
     elseif verb == "block" then
         ok, err = self:Block(rest)
         if ok then
@@ -1207,7 +1444,7 @@ function Alliance:HandleCommand(args)
             BRutus:Print(string.format(L["No longer ignoring %s."], rest))
         end
     else
-        return BRutus:Print(L["Usage: /gos ally [create|invite|leave|kick|block|unblock]"])
+        return BRutus:Print(L["Usage: /gos ally [create|invite|request|amb|leave|kick|block|unblock]"])
     end
 
     if not ok and err then
@@ -1231,6 +1468,21 @@ local function registerPopups()
             if d then
                 GuildOS.Alliance:AcceptInvite(d.pact, d.sender)
             end
+        end,
+        timeout = 60,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+    StaticPopupDialogs["GUILDOS_ALLY_REQUEST"] = {
+        text = "%s",
+        button1 = L["Invite"],
+        button2 = L["Decline"],
+        OnAccept = function(self)
+            local d = self and self.data
+            if not d then return end
+            local ok, err = GuildOS.Alliance:Invite(d.sender)
+            if not ok and err then BRutus:Print(err) end
         end,
         timeout = 60,
         whileDead = true,
@@ -1396,6 +1648,21 @@ function Alliance:_RegisterTests()
         if Alliance.Decode("not a real payload") ~= nil then return false, "garbage must decode to nil" end
         if Alliance.Decode(nil) ~= nil then return false, "nil must not error" end
         if Alliance.Encode(nil) ~= nil then return false, "encoding nil must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.claim_ambassador", function()
+        local C = Alliance._CanClaimAmbassador
+        -- Somebody listed is still in the guild: no vacancy.
+        if C({ "Chehul" }, { chehul = true }) then return false, "claim allowed while the ambassador is present" end
+        if C({ "Chehul", "Fulano" }, { fulano = true }) then return false, "one present is enough to block" end
+        -- Every listed ambassador has left the guild: the seat is open.
+        if not C({ "Chehul" }, { someoneelse = true }) then return false, "vacancy not detected" end
+        if not C({}, { anyone = true }) then return false, "empty list must allow a claim" end
+        -- Case must not matter: the roster set is lowercased, the list is not.
+        if C({ "CHEHUL" }, { chehul = true }) then return false, "comparison is case sensitive" end
+        if C(nil, {}) then return false, "nil list must not error" end
+        if C({ "A" }, nil) then return false, "nil roster must not error" end
         return true
     end)
 
