@@ -821,6 +821,93 @@ function Alliance:_OnLeave(_sender, senderGuild)
 end
 
 ----------------------------------------------------------------------
+-- Read model for the UI. Rule 10: the panel renders this and owns no logic.
+----------------------------------------------------------------------
+
+-- How many members of `guildName` the presence mesh can currently see. This is
+-- an UNDERCOUNT by construction (only players running Guild OS broadcast), and
+-- the UI must say so rather than passing it off as the real online count.
+function Alliance:SeenCount(guildName)
+    local net = _G.ChehulNet
+    local mesh = GuildOS.Mesh
+    if not net or not net.Peers or not mesh or not mesh.GetPeerGuild then
+        return 0
+    end
+    local n = 0
+    for short in pairs(net:Peers()) do
+        if mesh:GetPeerGuild(short) == guildName then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+function Alliance:Summary()
+    local pact = self:Get()
+    if not pact then
+        return nil
+    end
+    local sync = GuildOS.AllianceSync
+    local chat = GuildOS.AllianceChat
+    local mine = self:MyGuildName()
+
+    local names = {}
+    for guildName in pairs(pact.guilds) do
+        names[#names + 1] = guildName
+    end
+    table.sort(names)
+
+    local out = {
+        name      = pact.name or pact.tag,
+        tag       = pact.tag,
+        owner     = pact.owner,
+        bridge    = self:CurrentBridge(),
+        amBridge  = self:AmBridge(),
+        channel   = Alliance.ChannelName(pact.tag),
+        connected = chat and chat:IsConnected() or false,
+        guilds    = {},
+        members   = 0,
+        seen      = 0,
+    }
+
+    for _, guildName in ipairs(names) do
+        local entry = pact.guilds[guildName]
+        local roster = sync and sync:Remote(guildName, "roster")
+        local count = (roster and type(roster.data) == "table" and #roster.data) or 0
+        local seen = self:SeenCount(guildName)
+        out.members = out.members + count
+        out.seen = out.seen + seen
+        out.guilds[#out.guilds + 1] = {
+            name        = guildName,
+            isOwner     = (guildName == pact.owner),
+            isMine      = (guildName == mine),
+            ambassadors = entry.ambassadors or {},
+            members     = count,
+            seen        = seen,
+            ts          = roster and roster.ts or nil,
+        }
+    end
+
+    out.blocked = {}
+    if pact.blocked then
+        for guildName in pairs(pact.blocked) do
+            out.blocked[#out.blocked + 1] = guildName
+        end
+        table.sort(out.blocked)
+    end
+    return out
+end
+
+-- True when this character may run pact-level actions (invite, kick, leave).
+function Alliance:CanAdminister()
+    local pact = self:Get()
+    if not pact or not BRutus:IsOfficer() then
+        return false
+    end
+    return Alliance.IsAmbassador(pact, self:MyGuildName(), UnitName("player"))
+end
+
+----------------------------------------------------------------------
 -- Slash command surface (/gos ally ...)
 ----------------------------------------------------------------------
 function Alliance:PrintStatus()

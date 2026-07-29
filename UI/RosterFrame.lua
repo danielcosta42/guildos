@@ -497,6 +497,10 @@ function BRutus.CreateRosterFrame()
     CreateTab("dkp", L["DKP"], false, function() return BRutus:LootSystemShowsDKP() end)
     CreateTab("trials", L["Trials"], true)
     CreateTab("recruitment", L["Recruitment"], false)
+    -- Alliance tab: visible once a pact exists, and to officers who could found one.
+    CreateTab("alliance", L["Alliance"], false, function()
+        return (BRutus.Alliance and BRutus.Alliance:Get() ~= nil) or BRutus:IsOfficer()
+    end)
     CreateTab("management", L["Leadership"], true)
     CreateTab("settings", L["Settings"], false)
 
@@ -1085,6 +1089,18 @@ function BRutus.CreateRosterFrame()
     guildPanel:Hide()
     frame.tabPanels["guild"] = guildPanel
     BRutus:CreateGuildHub(guildPanel, frame)
+
+    ----------------------------------------------------------------
+    -- ALLIANCE PANEL (overview / manage)
+    ----------------------------------------------------------------
+    local alliancePanel = CreateFrame("Frame", nil, frame)
+    alliancePanel:SetPoint("TOPLEFT", 0, contentTop)
+    alliancePanel:SetPoint("BOTTOMRIGHT", 0, 30)
+    alliancePanel:Hide()
+    frame.tabPanels["alliance"] = alliancePanel
+    if BRutus.CreateAlliancePanel then
+        BRutus:CreateAlliancePanel(alliancePanel, frame)
+    end
 
     ----------------------------------------------------------------
     -- DKP / POINTS PANEL
