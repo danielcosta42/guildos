@@ -350,6 +350,8 @@ L["Leave the alliance"] = "Leave the alliance"
 
 -- Modules/AllianceChat.lua
 L["unknown guild"] = "unknown guild"
+L["Ally (%s)"] = "Ally (%s)"
+L["%d allied event(s) this week"] = "%d allied event(s) this week"
 
 -- Alliance cross-guild signups (Modules/Calendar.lua)
 L["Pick an alliance event first."] = "Pick an alliance event first."

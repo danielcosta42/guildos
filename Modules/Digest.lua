@@ -96,6 +96,23 @@ function Digest:Build(since)
         end
     end
 
+    -- Alliance: how many allied raids are coming up in the next week. One line,
+    -- and only when this guild is federated and something is actually scheduled.
+    if BRutus.Alliance and BRutus.Alliance:Get() and BRutus.Calendar
+        and BRutus.Calendar.AllianceEvents then
+        local horizon = GetServerTime() + (7 * 86400)
+        local count = 0
+        for _, e in ipairs(BRutus.Calendar:AllianceEvents()) do
+            if (tonumber(e.when) or 0) <= horizon then
+                count = count + 1
+            end
+        end
+        if count > 0 then
+            lines[#lines + 1] = "|cff8F7BD1" ..
+                string.format(L["%d allied event(s) this week"], count) .. "|r"
+        end
+    end
+
     -- New bulletin notices (most recent few)
     if BRutus.Bulletin then
         local shown = 0

@@ -58,6 +58,12 @@ function PugInspector:_Decide(facts)
     elseif f.exMember then
         tag      = L["Ex-member"]
         severity = "warn"
+    elseif f.alliedGuild and f.alliedGuild ~= "" then
+        -- Ranked below ex-member on purpose: "this person left us" is the more
+        -- urgent fact than "this person is a friend of the guild". No new sync
+        -- pays for this; the allied roster is already cached locally.
+        tag      = string.format(L["Ally (%s)"], f.alliedGuild)
+        severity = "guild"
     else
         tag      = L["Unknown (not in guild)"]
         severity = "unknown"
@@ -186,6 +192,12 @@ function PugInspector:Classify(name, srcs)
 
     if srcs.noteFor then
         f.note = srcs.noteFor(short, realm, key, f.inGuild)
+    end
+
+    -- Allied guild, straight from the cached alliance roster. Read-only, no
+    -- new sync, and nil for everyone when this guild is in no alliance.
+    if GuildOS.Alliance and GuildOS.Alliance.GuildOfMember then
+        f.alliedGuild = GuildOS.Alliance:GuildOfMember(short)
     end
 
     return self:_Decide(f)
@@ -366,6 +378,22 @@ function PugInspector:_RegisterTests()
     S:Register("pug.decide_exmember", function()
         local r = PugInspector:_Decide({ exMember = true })
         if r.tag ~= L["Ex-member"] or r.severity ~= "warn" then return false, tostring(r.tag) end
+        return true
+    end)
+
+    S:Register("pug.decide_allied", function()
+        local r = PugInspector:_Decide({ alliedGuild = "Guild B" })
+        if r.tag ~= string.format(L["Ally (%s)"], "Guild B") then return false, tostring(r.tag) end
+        if r.severity ~= "guild" then return false, "severity " .. tostring(r.severity) end
+        -- Ranked below the warnings: an ex-member or a ban still wins.
+        local ex = PugInspector:_Decide({ alliedGuild = "Guild B", exMember = true })
+        if ex.tag ~= L["Ex-member"] then return false, "ex-member must outrank ally" end
+        local ban = PugInspector:_Decide({ alliedGuild = "Guild B", banned = true, reason = "x" })
+        if ban.tag ~= L["BANNED"] then return false, "ban must outrank ally" end
+        -- Empty string must not produce an "Ally ()" tag.
+        if PugInspector:_Decide({ alliedGuild = "" }).tag ~= L["Unknown (not in guild)"] then
+            return false, "empty allied guild must fall through"
+        end
         return true
     end)
 

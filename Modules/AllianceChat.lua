@@ -131,6 +131,20 @@ function AllianceChat:_MakeFilter()
     end
 end
 
+function AllianceChat:_MakeWhisperFilter()
+    return function(_, _, msg, author, ...)
+        if not BRutus.db or not BRutus.db.alliancePrefs or not BRutus.db.alliancePrefs.tags then
+            return false
+        end
+        local ally = GuildOS.Alliance
+        local guild = ally and ally:GuildOfMember(author)
+        if not guild then
+            return false
+        end
+        return false, AllianceChat.Decorate(msg, author, guild), author, ...
+    end
+end
+
 ----------------------------------------------------------------------
 -- Lifecycle
 ----------------------------------------------------------------------
@@ -140,6 +154,9 @@ function AllianceChat:Initialize()
 
     if ChatFrame_AddMessageEventFilter then
         ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", self:_MakeFilter())
+        -- Same tag on an incoming whisper: knowing a stranger is from an allied
+        -- guild is exactly the moment you need it, and it costs no extra sync.
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", self:_MakeWhisperFilter())
     end
 
     -- Channels are not available the instant the world loads, so join on a
