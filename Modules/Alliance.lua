@@ -802,6 +802,112 @@ function Alliance:_OnLeave(_sender, senderGuild)
 end
 
 ----------------------------------------------------------------------
+-- Slash command surface (/gos ally ...)
+----------------------------------------------------------------------
+function Alliance:PrintStatus()
+    local pact = self:Get()
+    if not pact then
+        BRutus:Print(L["This guild is not in an alliance yet."])
+        if BRutus:IsOfficer() then
+            BRutus:Print(L["Start one with: /gos ally create <tag> <name>"])
+        end
+        return
+    end
+
+    local names = {}
+    for guildName in pairs(pact.guilds) do
+        names[#names + 1] = guildName
+    end
+    table.sort(names)
+    BRutus:Print(string.format(L["Alliance %s [%s] - %d guilds"],
+        pact.name or pact.tag, pact.tag, #names))
+    BRutus:Print(string.format(L["Bridge: %s"], self:CurrentBridge() or L["nobody online"]))
+
+    local sync = GuildOS.AllianceSync
+    local mine = self:MyGuildName()
+    for _, guildName in ipairs(names) do
+        local entry = sync and sync:Remote(guildName, "roster")
+        local count = (entry and type(entry.data) == "table" and #entry.data) or 0
+        local age = (entry and entry.ts and BRutus:TimeAgo(entry.ts)) or L["never"]
+        local suffix = ""
+        if guildName == pact.owner then
+            suffix = " " .. L["(owner)"]
+        end
+        if guildName == mine then
+            suffix = suffix .. " " .. L["(you)"]
+        end
+        BRutus:Print(string.format("  %s%s - %d, %s", guildName, suffix, count, age))
+    end
+
+    if pact.blocked and next(pact.blocked) then
+        local blocked = {}
+        for guildName in pairs(pact.blocked) do
+            blocked[#blocked + 1] = guildName
+        end
+        table.sort(blocked)
+        BRutus:Print(string.format(L["Blocked: %s"], table.concat(blocked, ", ")))
+    end
+end
+
+function Alliance:HandleCommand(args)
+    -- Parse with match, never strtrim(gsub(...)): gsub returns a second value
+    -- that strtrim takes as its charset argument, which silently truncated
+    -- every argument at the digit 1 in an earlier feature.
+    local input = strtrim(args or "")
+    local verb, rest = input:match("^(%S+)%s*(.*)$")
+    verb = (verb and verb:lower()) or ""
+    rest = strtrim(rest or "")
+
+    if verb == "" then
+        return self:PrintStatus()
+    end
+
+    local ok, err
+    if verb == "create" then
+        local tag, name = rest:match("^(%S+)%s*(.*)$")
+        if not tag then
+            return BRutus:Print(L["Usage: /gos ally create <tag> <name>"])
+        end
+        ok, err = self:Create(tag, name)
+        if ok then
+            BRutus:Print(string.format(L["Alliance %s created. Invite a guild with /gos ally invite <officer>"],
+                self:Get().name))
+        end
+    elseif verb == "invite" then
+        ok, err = self:Invite(rest)
+        if ok then
+            BRutus:Print(string.format(L["Invite sent to %s."], rest))
+        end
+    elseif verb == "leave" then
+        ok, err = self:Leave()
+        if ok then
+            BRutus:Print(L["Left the alliance."])
+        end
+    elseif verb == "kick" or verb == "remove" then
+        ok, err = self:RemoveGuild(rest)
+        if ok then
+            BRutus:Print(string.format(L["%s removed from the alliance."], rest))
+        end
+    elseif verb == "block" then
+        ok, err = self:Block(rest)
+        if ok then
+            BRutus:Print(string.format(L["Ignoring %s locally. The pact is unchanged."], rest))
+        end
+    elseif verb == "unblock" then
+        ok, err = self:Unblock(rest)
+        if ok then
+            BRutus:Print(string.format(L["No longer ignoring %s."], rest))
+        end
+    else
+        return BRutus:Print(L["Usage: /gos ally [create|invite|leave|kick|block|unblock]"])
+    end
+
+    if not ok and err then
+        BRutus:Print(err)
+    end
+end
+
+----------------------------------------------------------------------
 -- Lifecycle
 ----------------------------------------------------------------------
 local function registerPopups()

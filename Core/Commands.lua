@@ -43,6 +43,7 @@ local function printHelp()
     helpLine("/gos calendar",    L["Guild calendar and events"])
     helpLine("/gos polls",       L["Guild polls"])
     helpLine("/gos bulletin",    L["Guild bulletin board"])
+    helpLine("/gos ally",        L["Alliance status and allied guilds"])
 
     helpHeader(L["Raid and loot"])
     helpLine("/gos lm",            L["Master Loot helper status"])
@@ -77,6 +78,9 @@ local function printHelp()
         helpLine("/gos note <name> <text>",    L["Add an officer note"])
         helpLine("/gos wish",                  L["Open the loot wishlist"])
         helpLine("/gos scout",                 L["Scan for unguilded recruits"])
+        helpLine("/gos ally create <tag> <name>", L["Found an alliance with other guilds"])
+        helpLine("/gos ally invite <officer>",    L["Invite a guild into the alliance"])
+        helpLine("/gos ally leave",               L["Leave the alliance"])
     end
 end
 
@@ -118,6 +122,12 @@ local function handleCommand(msg)
         if BRutus.Backup then BRutus.Backup:ShowRestore() end
     elseif msg == "bulletin" or msg == "board" then
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
+    elseif msg == "ally" or msg:match("^ally%s") or msg == "alliance" or msg:match("^alliance%s") then
+        -- Cross-guild federation. Officer-only verbs refuse inside the module,
+        -- so this stays a thin router.
+        if BRutus.Alliance then
+            BRutus.Alliance:HandleCommand(msg:match("^%a+%s+(.*)$") or "")
+        end
     elseif msg == "analytics" or msg == "stats" then
         if BRutus.GuildAnalytics then BRutus.GuildAnalytics:Show() end
     elseif msg == "polls" or msg == "poll" then
