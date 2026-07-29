@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.39.1] - 2026-07-29
+
+### Fixed
+- give the alliance scroll panels a width so their content renders
+
+
 ## [0.39.0] - 2026-07-29
 
 ### Added
