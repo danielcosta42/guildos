@@ -337,6 +337,114 @@ function AllianceChat:AddSystem(text, kind)
     self:Push({ t = GetServerTime(), m = clean, sys = kind or "info" })
 end
 
+----------------------------------------------------------------------
+-- Hiding a message.
+--
+-- Honest about what this is: the message was already delivered by the server
+-- and already printed in the default chat frame, and people without the addon
+-- still see it. This removes it from the Guild OS feed, alliance-wide, after
+-- the fact. Ban is the tool that actually stops somebody.
+--
+-- Matched on speaker plus text rather than an id, because there is no id: each
+-- client stamps its own arrival time, so any hash including the timestamp
+-- would differ between clients. The failure mode of matching on text is that
+-- an identical line from the same person also goes, which is harmless.
+----------------------------------------------------------------------
+AllianceChat.MAX_HIDDEN = 50
+
+function AllianceChat:HiddenStore()
+    BRutus.db.allianceHidden = BRutus.db.allianceHidden or {}
+    return BRutus.db.allianceHidden
+end
+
+-- Pure. The lookup the renderer uses, built from every guild's hide list.
+function AllianceChat.BuildHiddenSet(lists)
+    local set = {}
+    if type(lists) ~= "table" then
+        return set
+    end
+    for _, list in ipairs(lists) do
+        if type(list) == "table" then
+            for _, h in ipairs(list) do
+                if type(h) == "table" and h.n and h.m then
+                    set[tostring(h.n):lower() .. "\0" .. tostring(h.m)] = true
+                end
+            end
+        end
+    end
+    return set
+end
+
+function AllianceChat.HiddenKey(name, text)
+    return tostring(name or ""):lower() .. "\0" .. tostring(text or "")
+end
+
+-- Every hide anyone in the alliance published, ours included.
+function AllianceChat:HiddenSet()
+    local lists = { self:HiddenStore() }
+    local sync = GuildOS.AllianceSync
+    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    if sync then
+        for _, domains in pairs(store) do
+            local entry = domains.hidden
+            if entry and type(entry.data) == "table" then
+                lists[#lists + 1] = entry.data
+            end
+        end
+    end
+    return AllianceChat.BuildHiddenSet(lists)
+end
+
+function AllianceChat:HideMessage(name, text)
+    local ally = GuildOS.Alliance
+    if not ally or not ally:CanAdminister() then
+        return false, BRutus.L["Only an alliance ambassador can do that."]
+    end
+    local clean = BRutus:SanitizeUserText(text, 240)
+    if clean == "" or not name then
+        return false
+    end
+    local store = self:HiddenStore()
+    for _, h in ipairs(store) do
+        if h.n == name and h.m == clean then
+            return true   -- already hidden
+        end
+    end
+    store[#store + 1] = { n = name, m = clean, ts = GetServerTime() }
+    while #store > self.MAX_HIDDEN do
+        table.remove(store, 1)
+    end
+    if BRutus.SyncService then
+        BRutus.SyncService:Publish("allyhide", "add", { n = name, m = clean })
+    end
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:RefreshLocal("hidden")
+    end
+    self:_Notify()
+    return true
+end
+
+function AllianceChat:OnHideSync(env)
+    local d = env and env.data
+    if type(d) ~= "table" or not d.n or not d.m then
+        return
+    end
+    local store = self:HiddenStore()
+    for _, h in ipairs(store) do
+        if h.n == d.n and h.m == d.m then
+            return
+        end
+    end
+    store[#store + 1] = { n = d.n, m = BRutus:SanitizeUserText(d.m, 240), ts = GetServerTime() }
+    while #store > self.MAX_HIDDEN do
+        table.remove(store, 1)
+    end
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:RefreshLocal("hidden")
+    end
+    self:_Notify()
+end
+
 function AllianceChat:Clear()
     BRutus.db.allianceChatLog = {}
     self.unread = 0
@@ -471,6 +579,26 @@ end
 function AllianceChat:Initialize()
     self:Prefs()
     self:_RegisterTests()
+
+    if BRutus.SyncService then
+        BRutus.SyncService:On("allyhide", function(env) AllianceChat:OnHideSync(env) end)
+    end
+    if GuildOS.AllianceSync then
+        GuildOS.AllianceSync:Register("hidden", {
+            priority = "NORMAL",
+            cap = AllianceChat.MAX_HIDDEN,
+            build = function()
+                local out = {}
+                for _, h in ipairs(AllianceChat:HiddenStore()) do
+                    out[#out + 1] = { n = h.n, m = h.m }
+                end
+                table.sort(out, function(a, b)
+                    return (tostring(a.n) .. tostring(a.m)) < (tostring(b.n) .. tostring(b.m))
+                end)
+                return out
+            end,
+        })
+    end
 
     if ChatFrame_AddMessageEventFilter then
         ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", self:_MakeFilter())

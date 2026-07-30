@@ -360,13 +360,11 @@ local function ensureAllyCard()
     f.sheet = UI:CreateButton(f, L["Full sheet"], 82, 22)
     f.sheet:SetPoint("LEFT", f.invite, "RIGHT", 6, 0)
 
-    -- Moderation. Kick and ban do not remove what was already said, which is
-    -- impossible on a server-delivered channel; they stop the person carrying
-    -- on. Only shown to ambassadors, and never for our own guildmates.
-    f.kick = UI:CreateButton(f, L["Kick from channel"], 118, 22)
-    f.kick:SetPoint("BOTTOMLEFT", 12, 38)
+    -- Ban only. Kick was pointless here: the join watchdog puts the player
+    -- back inside 20 seconds, so it promised something it could not deliver.
+    -- A ban is refused by the server on rejoin, which is what actually holds.
     f.ban = UI:CreateButton(f, L["Ban from channel"], 118, 22)
-    f.ban:SetPoint("LEFT", f.kick, "RIGHT", 6, 0)
+    f.ban:SetPoint("BOTTOMLEFT", 12, 38)
 
     tinsert(UISpecialFrames, "GuildOSAllyCard")   -- ESC closes it
     allyCard = f
@@ -446,14 +444,8 @@ function BRutus:ShowAllyCard(name, guild, anchor)
     local chat = BRutus.AllianceChat
     local canModerate = ally and ally:CanAdminister() and info.own ~= true
         and chat and chat:CanModerate()
-    setShown(f.kick, canModerate)
     setShown(f.ban, canModerate)
     if canModerate then
-        f.kick:SetScript("OnClick", function()
-            if chat:Kick(name) then
-                BRutus:Print(string.format(L["Asked the server to kick %s from the channel."], name))
-            end
-        end)
         f.ban:SetScript("OnClick", function()
             StaticPopup_Show("GUILDOS_ALLY_BAN",
                 string.format(L["Ban %s from the alliance channel? They cannot rejoin until unbanned."], name),
@@ -510,6 +502,9 @@ local function BuildChat(panel)
     -- session. Created on demand, parked when the log shrinks.
     local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
     local blocks = {}
+    -- Declared BEFORE getBlock: the hide button closes over it, and a later
+    -- declaration would leave that closure pointing at a nil global.
+    local refresh
 
     local function getBlock(i)
         if blocks[i] then return blocks[i] end
@@ -564,15 +559,41 @@ local function BuildChat(panel)
             end
         end)
 
+        local hide = CreateFrame("Button", nil, card)
+        hide:SetSize(16, 16)
+        hide:SetPoint("TOPRIGHT", -4, -4)
+        hide.fs = hide:CreateFontString(nil, "OVERLAY")
+        hide.fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+        hide.fs:SetPoint("CENTER")
+        hide.fs:SetText("\195\151")
+        hide.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+        hide:SetScript("OnEnter", function(self)
+            self.fs:SetTextColor(C.red.r, C.red.g, C.red.b)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(L["Hide from the alliance feed"])
+            GameTooltip:AddLine(L["The message was already delivered; this only clears it from the Guild OS feed."],
+                0.6, 0.6, 0.6, true)
+            GameTooltip:Show()
+        end)
+        hide:SetScript("OnLeave", function(self)
+            self.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
+            GameTooltip:Hide()
+        end)
+        hide:SetScript("OnClick", function(self)
+            local ok, err = BRutus.AllianceChat:HideMessage(self.who, self.text)
+            if not ok and err then BRutus:Print(err) end
+            refresh()
+        end)
+
         blocks[i] = {
             card = card, accent = accent, icon = icon,
             nameFS = nameFS, timeFS = timeFS, bodyFS = bodyFS, hit = hit,
-            classTex = CLASS_TEX,
+            hide = hide, classTex = CLASS_TEX,
         }
         return blocks[i]
     end
 
-    local refresh
+    -- refresh is declared above, next to the block pool.
 
     local function doSend()
         local chat = CHAT()
@@ -622,8 +643,16 @@ local function BuildChat(panel)
             and string.format(L["%s connected"], chat:ChannelName() or "?")
             or (chat:Prefs().chat and L["connecting..."] or L["not connected"]))
 
-        local log = chat:Log()
+        local rawLog = chat:Log()
+        local hidden = chat:HiddenSet()
+        local log = {}
+        for _, e in ipairs(rawLog) do
+            if e.sys or not hidden[BRutus.AllianceChat.HiddenKey(e.n, e.m)] then
+                log[#log + 1] = e
+            end
+        end
         local groups = BRutus.AllianceChat.GroupLog(log, BRutus.AllianceChat.GROUP_WINDOW)
+        local canHide = BRutus.Alliance and BRutus.Alliance:CanAdminister()
         local myGuild = BRutus.Alliance and BRutus.Alliance:MyGuildName()
         local width = math.max(content:GetWidth() - 12, 200)
         local y = 0
@@ -641,6 +670,7 @@ local function BuildChat(panel)
                 b.icon:Hide()
                 b.nameFS:Hide()
                 b.hit:Hide()
+                b.hide:Hide()
                 b.timeFS:SetText(stamp)
                 b.bodyFS:SetPoint("TOPLEFT", 12, -4)
                 b.bodyFS:SetWidth(width - 60)
@@ -695,6 +725,13 @@ local function BuildChat(panel)
                 b.hit.name = g.name
                 b.hit.guild = g.guild
                 b.hit:Show()
+
+                -- Hides the whole block's text, which is what the ambassador
+                -- clicked on: a run of lines from one speaker reads as one
+                -- message and pulling half of it would look like a glitch.
+                b.hide.who = g.name
+                b.hide.text = table.concat(g.lines, "\n")
+                setShown(b.hide, canHide)
                 y = y + h + 3
             end
         end
