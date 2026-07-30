@@ -126,6 +126,7 @@ read_globals = {
     "ChannelBan",
     "ChannelUnban",
     "ChannelModerator",
+    "SetChannelOwner",
     "ChatFrame_AddMessageEventFilter",
     "ChatFrame_SendTell",
 

@@ -224,6 +224,7 @@ function Alliance.SanitizePact(raw)
         name     = BRutus:SanitizeUserText(raw.name, Alliance.NAME_MAX),
         owner    = owner,
         revision = tonumber(raw.revision) or 0,
+        code     = Alliance.NormalizeCode(raw.code),
         guilds   = {},
     }
 
@@ -260,6 +261,74 @@ function Alliance.SanitizePact(raw)
         return nil
     end
     return out
+end
+
+----------------------------------------------------------------------
+-- Join code.
+--
+-- This DELIBERATELY weakens the trust model and it is worth being blunt about
+-- why. Normally authority is a character name, which cannot be forged, so only
+-- a listed ambassador can change the pact. A code is a shared secret, and for
+-- any member to validate it the code has to live inside the pact, which means
+-- it sits on the machine of every member of every allied guild. Treat it as
+-- semi-public: anyone who asks a member can get it.
+--
+-- What keeps that survivable is the rule below. A change carrying the code may
+-- only ADD guilds. It may not remove one, rename the alliance, change the
+-- owner, or touch another guild's ambassadors. Worst case somebody lets in a
+-- guild you did not want, which the owner undoes with a kick and a new code.
+----------------------------------------------------------------------
+Alliance.CODE_LEN = 8
+
+local CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   -- no O/0, no I/1
+
+function Alliance.NewCode()
+    local out = {}
+    for i = 1, Alliance.CODE_LEN do
+        local n = math.random(1, #CODE_ALPHABET)
+        out[i] = CODE_ALPHABET:sub(n, n)
+    end
+    return table.concat(out)
+end
+
+function Alliance.NormalizeCode(code)
+    return (tostring(code or ""):upper():gsub("[^A-Z0-9]", ""))
+end
+
+-- Pure. Is `incoming` a change that a code holder is allowed to make?
+-- Same alliance, same owner, same code, every existing guild present and
+-- BYTE-FOR-BYTE unchanged, and at least one guild added.
+function Alliance.IsCodeAuthorizedChange(current, incoming)
+    if type(current) ~= "table" or type(incoming) ~= "table" then
+        return false
+    end
+    if current.tag ~= incoming.tag then return false end
+    if current.owner ~= incoming.owner then return false end
+    if not current.code or current.code == "" then return false end
+    if current.code ~= incoming.code then return false end
+
+    local added = 0
+    for name, entry in pairs(current.guilds or {}) do
+        local other = incoming.guilds and incoming.guilds[name]
+        if type(other) ~= "table" then
+            return false   -- an existing guild was dropped
+        end
+        local a, b = entry.ambassadors or {}, other.ambassadors or {}
+        if #a ~= #b then
+            return false   -- somebody's ambassador list was rewritten
+        end
+        for i = 1, #a do
+            if tostring(a[i]):lower() ~= tostring(b[i]):lower() then
+                return false
+            end
+        end
+    end
+    for name in pairs(incoming.guilds or {}) do
+        if not (current.guilds and current.guilds[name]) then
+            added = added + 1
+        end
+    end
+    return added > 0
 end
 
 -- Which of two pacts wins. Highest revision, then (to guarantee two clients
@@ -381,6 +450,19 @@ end
 function Alliance:IsBlocked(guildName)
     local pact = self:Get()
     return (pact and pact.blocked and pact.blocked[guildName or ""]) == true
+end
+
+-- Is this character an ambassador of ANY guild in the pact?
+function Alliance.IsAmbassadorAnywhere(pact, playerName)
+    if type(pact) ~= "table" or type(pact.guilds) ~= "table" then
+        return false
+    end
+    for guildName in pairs(pact.guilds) do
+        if Alliance.IsAmbassador(pact, guildName, playerName) then
+            return true
+        end
+    end
+    return false
 end
 
 -- Which member guild a character speaks for, resolved from the pact's ambassador
@@ -593,6 +675,7 @@ function Alliance:Create(tag, name)
         name     = (display ~= "" and display) or t,
         owner    = myGuild,
         revision = now,
+        code     = Alliance.NewCode(),
         guilds   = {
             [myGuild] = { ambassadors = { me }, joinedAt = now, addedBy = me },
         },
@@ -779,6 +862,10 @@ function Alliance:OnMessage(payload, sender, dist)
         self:_OnJoinRequest(data, sender)
         return
     end
+    if op == "JOIN" then
+        self:_OnJoinCode(data, sender)
+        return
+    end
 
     local senderGuild = self:GuildOfSender(sender)
     if not senderGuild or self:IsBlocked(senderGuild) then
@@ -935,9 +1022,11 @@ function Alliance:_OnPact(raw, _sender, senderGuild)
         return
     end
     local current = self:Get()
-    -- A pact change is only ever accepted DIRECT from an ambassador of a member
-    -- guild, never relayed. GuildOfSender already enforced that.
-    if not senderGuild then
+    -- A pact change is normally only accepted DIRECT from an ambassador, which
+    -- GuildOfSender already enforced. The one exception is a change carrying
+    -- the join code, which any member may relay because it can ONLY add guilds:
+    -- see Alliance.IsCodeAuthorizedChange.
+    if not senderGuild and not Alliance.IsCodeAuthorizedChange(current, incoming) then
         return
     end
     local winner = Alliance.ResolvePact(current, incoming)
@@ -1345,6 +1434,100 @@ function Alliance:RequestJoin(tag, officerName)
     return true
 end
 
+----------------------------------------------------------------------
+-- Joining with a code. Whispered to ANY member of the alliance: the point of
+-- the code is that nobody has to be watching for it.
+----------------------------------------------------------------------
+function Alliance:JoinWithCode(tag, code, contactName)
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    if self:Get() then
+        return false, L["This guild is already in an alliance."]
+    end
+    local myGuild = self:MyGuildName()
+    if not myGuild then
+        return false, L["You are not in a guild."]
+    end
+    if Alliance.NormalizeTag(tag) == "" then
+        return false, L["Name the alliance tag you want to join."]
+    end
+    local clean = Alliance.NormalizeCode(code)
+    if clean == "" then
+        return false, L["Enter the alliance join code."]
+    end
+    local target = BRutus:SanitizeUserText(contactName, Alliance.GUILD_NAME_MAX)
+    if target == "" then
+        return false, L["Name anyone already in that alliance."]
+    end
+    if not self:Send("JOIN", { guild = myGuild, tag = Alliance.NormalizeTag(tag), code = clean }, target) then
+        return false, L["Could not reach the mesh."]
+    end
+    return true
+end
+
+-- ANY member of the alliance answers this, ambassador or not. That is the
+-- whole feature: no human has to be online and watching.
+function Alliance:_OnJoinCode(data, sender)
+    local pact = self:Get()
+    if not pact then
+        return
+    end
+    if Alliance.NormalizeTag(data and data.tag) ~= pact.tag then
+        return
+    end
+    local guild = BRutus:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
+    if guild == "" or self:IsMemberGuild(guild) or self:IsBlocked(guild) then
+        return
+    end
+    if not pact.code or pact.code == "" then
+        BRutus.Logger.Debug("Alliance: join code attempt but this pact has no code")
+        return
+    end
+    if Alliance.NormalizeCode(data.code) ~= pact.code then
+        BRutus.Logger.Debug("Alliance: wrong join code from " .. shortName(sender))
+        return
+    end
+    local count = 0
+    for _ in pairs(pact.guilds) do
+        count = count + 1
+    end
+    if count >= Alliance.MAX_GUILDS then
+        self:Send("EVT", { kind = "result", ok = false, why = "full" }, sender)
+        return
+    end
+
+    local now = (GetServerTime and GetServerTime()) or time()
+    pact.guilds[guild] = {
+        ambassadors = { shortName(sender) },
+        joinedAt    = now,
+        addedBy     = "code",
+    }
+    pact.revision = now
+    BRutus:Print(string.format(L["%s joined the alliance with the join code."], guild))
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:AddSystem(
+            string.format(L["%s joined the alliance with the join code."], guild), "info")
+    end
+    -- Hand the newcomer the pact, then tell everyone else.
+    self:Send("PACT", Alliance.SerializePact(pact), sender)
+    self:BroadcastPact(true)
+end
+
+function Alliance:RegenerateCode()
+    local pact = self:Get()
+    if not pact then
+        return false, L["This guild is not in an alliance yet."]
+    end
+    if pact.owner ~= self:MyGuildName() or not BRutus:IsOfficer() then
+        return false, L["Only the founding guild can do that."]
+    end
+    pact.code = Alliance.NewCode()
+    pact.revision = (GetServerTime and GetServerTime()) or time()
+    self:BroadcastPact(true)
+    return true, pact.code
+end
+
 function Alliance:_OnJoinRequest(data, sender)
     local pact = self:Get()
     if not pact or not self:CanAdminister() then
@@ -1656,7 +1839,36 @@ function Alliance:HandleCommand(args)
             BRutus:Print(string.format(L["Ambassadors: %s"], table.concat(entry.ambassadors, ", ")))
             return BRutus:Print(L["Usage: /gos ally amb [add|remove|claim] <name>"])
         end
-    elseif verb == "request" or verb == "join" then
+    elseif verb == "code" then
+        -- Only ambassadors ever SEE the code. It lives in every member's saved
+        -- variables because every member has to be able to validate it, so
+        -- hiding it here is a deterrent against casual sharing, not a wall.
+        if rest:lower() == "new" then
+            local newCode
+            ok, err = self:RegenerateCode()
+            newCode = ok and err or nil
+            if ok then
+                BRutus:Print(string.format(L["New join code: %s"], newCode))
+                err = nil
+            end
+        elseif not self:CanAdminister() then
+            return BRutus:Print(L["Only an alliance ambassador can do that."])
+        else
+            local pact = self:Get()
+            if not pact then
+                return BRutus:Print(L["This guild is not in an alliance yet."])
+            end
+            BRutus:Print(string.format(L["Join code: %s"], pact.code or "?"))
+            return BRutus:Print(L["Anyone with this code joins without an officer having to be online."])
+        end
+    elseif verb == "join" then
+        local tag, restArgs = rest:match("^(%S*)%s*(.*)$")
+        local code, who = strtrim(restArgs or ""):match("^(%S*)%s*(.*)$")
+        ok, err = self:JoinWithCode(tag, code, strtrim(who or ""))
+        if ok then
+            BRutus:Print(L["Join sent. If somebody from that alliance is online you are in."])
+        end
+    elseif verb == "request" then
         local tag, who = rest:match("^(%S*)%s*(.*)$")
         ok, err = self:RequestJoin(tag, strtrim(who or ""))
         if ok then
@@ -1673,7 +1885,7 @@ function Alliance:HandleCommand(args)
             BRutus:Print(string.format(L["No longer ignoring %s."], rest))
         end
     else
-        return BRutus:Print(L["Usage: /gos ally [create|invite|request|amb|leave|kick|block|unblock]"])
+        return BRutus:Print(L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"])
     end
 
     if not ok and err then
@@ -1896,6 +2108,66 @@ function Alliance:_RegisterTests()
         if C({ "CHEHUL" }, { chehul = true }) then return false, "comparison is case sensitive" end
         if C(nil, {}) then return false, "nil list must not error" end
         if C({ "A" }, nil) then return false, "nil roster must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.code_authorized_change", function()
+        local A = Alliance.IsCodeAuthorizedChange
+        local function pact(code, guilds)
+            return { tag = "BRCORE", owner = "Guild A", code = code, guilds = guilds }
+        end
+        local base = pact("ABCD1234", {
+            ["Guild A"] = { ambassadors = { "Chehul" } },
+            ["Guild B"] = { ambassadors = { "Beltrano" } },
+        })
+
+        -- Adding a guild with the right code is the ONLY allowed change.
+        local added = pact("ABCD1234", {
+            ["Guild A"] = { ambassadors = { "Chehul" } },
+            ["Guild B"] = { ambassadors = { "Beltrano" } },
+            ["Guild C"] = { ambassadors = { "Zeca" } },
+        })
+        if not A(base, added) then return false, "adding a guild must be allowed" end
+
+        -- Removing one is not.
+        local removed = pact("ABCD1234", { ["Guild A"] = { ambassadors = { "Chehul" } } })
+        if A(base, removed) then return false, "removal must be refused" end
+
+        -- Rewriting somebody else's ambassadors is not.
+        local hijack = pact("ABCD1234", {
+            ["Guild A"] = { ambassadors = { "Attacker" } },
+            ["Guild B"] = { ambassadors = { "Beltrano" } },
+            ["Guild C"] = { ambassadors = { "Zeca" } },
+        })
+        if A(base, hijack) then return false, "ambassador rewrite must be refused" end
+
+        -- Wrong code, changed owner, changed tag: all refused.
+        local wrongCode = pact("ZZZZ9999", added.guilds)
+        if A(base, wrongCode) then return false, "wrong code must be refused" end
+        local newOwner = pact("ABCD1234", added.guilds); newOwner.owner = "Guild B"
+        if A(base, newOwner) then return false, "owner change must be refused" end
+        local newTag = pact("ABCD1234", added.guilds); newTag.tag = "OTHER"
+        if A(base, newTag) then return false, "tag change must be refused" end
+
+        -- No change at all is not an authorised ADD.
+        if A(base, pact("ABCD1234", base.guilds)) then return false, "a no-op must be refused" end
+
+        -- A pact with no code can never be changed this way.
+        local codeless = pact("", base.guilds)
+        if A(codeless, added) then return false, "a codeless pact must refuse the path" end
+
+        if A(nil, added) then return false, "nil must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.new_code", function()
+        local c = Alliance.NewCode()
+        if #c ~= Alliance.CODE_LEN then return false, "wrong length: " .. #c end
+        if c:find("[^A-Z0-9]") then return false, "unexpected character in " .. c end
+        -- The alphabet drops the pairs people mistype when reading aloud.
+        if c:find("[OI01]") then return false, "ambiguous glyph in " .. c end
+        if Alliance.NormalizeCode(" abcd-1234 ") ~= "ABCD1234" then return false, "normalize" end
+        if Alliance.NormalizeCode(nil) ~= "" then return false, "nil must not error" end
         return true
     end)
 

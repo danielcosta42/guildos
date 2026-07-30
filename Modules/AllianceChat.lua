@@ -180,6 +180,63 @@ function AllianceChat:Ban(playerName)
     return true
 end
 
+-- Names currently in the channel, lowercased. Empty when the roster is not
+-- populated, which the callers treat as "cannot tell" rather than "nobody".
+function AllianceChat:_ChannelNames()
+    local out = {}
+    local name = self:ChannelName()
+    local id = name and GetChannelName and GetChannelName(name)
+    if not id or id == 0 or not GetChannelRosterInfo then
+        return out
+    end
+    for i = 1, 400 do
+        local ok, who = pcall(GetChannelRosterInfo, id, i)
+        if not ok or not who then
+            break
+        end
+        out[who:lower()] = who
+    end
+    return out
+end
+
+-- If WE own the channel and are NOT an ambassador, hand ownership to one.
+--
+-- WoW gives a custom channel to whoever joined first, which is usually a
+-- regular member, so moderation lands on the wrong person by default. This
+-- runs on the OWNER's client, which is the only client allowed to transfer,
+-- and does nothing anywhere else. If the owner does not run Guild OS there is
+-- nothing any of us can do about it, and the Manage tab says so.
+function AllianceChat:EnsureAmbassadorOwnership()
+    local ally = GuildOS.Alliance
+    local pact = ally and ally:Get()
+    if not pact or not SetChannelOwner then
+        return false
+    end
+    if self:ModeratorState() ~= "owner" then
+        return false   -- only the owner can pass it on
+    end
+    local me = UnitName("player")
+    if GuildOS.Alliance.IsAmbassadorAnywhere(pact, me) then
+        return false   -- already in the right hands
+    end
+
+    -- Prefer somebody actually in the channel: transferring to an absent
+    -- character is silently ignored by the server.
+    local present = self:_ChannelNames()
+    local ch = self:ChannelName()
+    for _, entry in pairs(pact.guilds) do
+        for _, amb in ipairs(entry.ambassadors or {}) do
+            if present[tostring(amb):lower()] then
+                SetChannelOwner(ch, amb)
+                BRutus.Logger.Debug("Alliance: handed channel ownership to " .. amb)
+                self:PromoteAmbassadors()
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- Hand channel moderator to every ambassador in the pact. Only the owner can
 -- do this, and it is an explicit action rather than something that happens on
 -- login: silently changing other people's channel permissions is not the kind
@@ -416,7 +473,18 @@ function AllianceChat:Initialize()
         end
         BRutus.Compat.After(10, function() AllianceChat:Join() end)
         BRutus.Compat.After(45, function() AllianceChat:Join() end)
+        -- Late, so the channel roster has had time to populate: the transfer
+        -- needs a target that is actually in the channel.
+        BRutus.Compat.After(75, function() AllianceChat:EnsureAmbassadorOwnership() end)
     end)
+
+    -- Ownership can land on us at any time, because WoW passes it on when the
+    -- previous owner leaves. Re-check on a slow timer rather than only at login.
+    if BRutus.Compat and BRutus.Compat.NewTicker then
+        BRutus.Compat.NewTicker(300, function()
+            AllianceChat:EnsureAmbassadorOwnership()
+        end)
+    end
 end
 
 ----------------------------------------------------------------------

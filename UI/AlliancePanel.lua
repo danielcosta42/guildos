@@ -995,6 +995,22 @@ local function BuildManage(panel)
     ambWarn:SetWordWrap(true)
     local ambClaimBtn = UI:CreateButton(body, L["Claim ambassador"], 170, 24)
 
+    -- Join code. Shown ONLY to ambassadors: it is stored on every member's
+    -- client (they all have to validate it) so this is a deterrent against
+    -- casual sharing rather than real secrecy, and the hint says as much.
+    local codeHdr = UI:CreateHeaderText(body, L["Join code"], 11)
+    local codeBox = makeInput(body, 140)
+    codeBox:SetAutoFocus(false)
+    codeBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    local codeNewBtn = UI:CreateButton(body, L["New code"], 100, 24)
+    codeNewBtn:SetPoint("LEFT", codeBox, "RIGHT", 8, 0)
+    local codeHint = UI:CreateText(body,
+        L["A guild with this code joins without anyone having to approve. Anyone in the alliance can be the contact."],
+        10, C.textDim.r, C.textDim.g, C.textDim.b)
+    codeHint:SetWidth(460)
+    codeHint:SetJustifyH("LEFT")
+    codeHint:SetWordWrap(true)
+
     local blockHdr = UI:CreateHeaderText(body, L["Ignore a guild locally"], 11)
     local blockBox = makeInput(body, 200)
     local blockBtn = UI:CreateButton(body, L["Block"], 90, 24)
@@ -1039,7 +1055,8 @@ local function BuildManage(panel)
     local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr,
                           blockHdr, blockBox, blockBtn, unblockBtn, blockHint,
                           removeHdr, removeBox, removeBtn, removeHint,
-                          chatBtn, chatHint, modBtn, leaveBtn }
+                          chatBtn, chatHint, modBtn, leaveBtn,
+                          codeHdr, codeBox, codeNewBtn, codeHint }
 
     local function say(ok, err)
         if not ok and err then BRutus:Print(err) end
@@ -1072,6 +1089,9 @@ local function BuildManage(panel)
             y = y + 24
         end
 
+        codeHdr:SetPoint("TOPLEFT", 6, -y);     y = y + 20
+        codeBox:SetPoint("TOPLEFT", 6, -y);     y = y + 28
+        codeHint:SetPoint("TOPLEFT", 6, -y);    y = y + 30
         blockHdr:SetPoint("TOPLEFT", 6, -y);    y = y + 20
         blockBox:SetPoint("TOPLEFT", 6, -y);    y = y + 28
         blockHint:SetPoint("TOPLEFT", 6, -y);   y = y + 24
@@ -1091,6 +1111,16 @@ local function BuildManage(panel)
         if ok then
             BRutus:Print(string.format(L["%s is now an ambassador."], who))
             ambBox:SetText("")
+        end
+        refresh()
+    end)
+
+    codeNewBtn:SetScript("OnClick", function()
+        local ok, res = ALLY():RegenerateCode()
+        if ok then
+            BRutus:Print(string.format(L["New join code: %s"], res))
+        elseif res then
+            BRutus:Print(res)
         end
         refresh()
     end)
@@ -1231,6 +1261,21 @@ local function BuildManage(panel)
             removeBox:Disable()
         end
 
+        -- Ambassadors only. A plain officer manages the pact but does not
+        -- get the code to hand around.
+        local isAmb = ally:CanAdminister()
+        for _, w in ipairs({ codeHdr, codeBox, codeNewBtn, codeHint }) do
+            setShown(w, isAmb)
+        end
+        if isAmb then
+            codeBox:SetText(ally:Get().code or "")
+            if ally:Get().owner == ally:MyGuildName() then
+                codeNewBtn:Enable()
+            else
+                codeNewBtn:Disable()
+            end
+        end
+
         local chat = BRutus.AllianceChat
         local on = chat and chat:Prefs().chat
         -- UI:CreateButton has no SetText; the label is a child FontString.
@@ -1284,12 +1329,13 @@ end
 ----------------------------------------------------------------------
 -- Entry point, called from UI/RosterFrame.lua
 ----------------------------------------------------------------------
--- Chat first: it is the reason to open this panel day to day. Chat and
--- Bulletin need a pact to mean anything, so they hide until there is one.
+-- Bulletin first: it is the alliance's front page, the thing an allied leader
+-- should land on. Bulletin and Chat need a pact to mean anything, so they hide
+-- until there is one, and the panel opens on whichever tab is first VISIBLE.
 local SUBTABS = {
+    { key = "bulletin", label = L["Bulletin"], needsPact = true },
     { key = "chat",     label = L["Chat"],     needsPact = true },
     { key = "overview", label = L["Overview"] },
-    { key = "bulletin", label = L["Bulletin"], needsPact = true },
     { key = "manage",   label = L["Manage"] },
 }
 
@@ -1373,9 +1419,11 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
         local hasPact = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
         local first = layoutTabs(hasPact)
         local want = parent.activeSub
-        -- Falling out of a pact must not strand the panel on a hidden tab.
+        -- Falling out of a pact must not strand the panel on a hidden tab, and
+        -- the landing tab is simply the first visible one, so reordering
+        -- SUBTABS is the only thing anyone has to change.
         if not want or not btns[want] or not btns[want]:IsShown() then
-            want = hasPact and "chat" or (first or "overview")
+            want = first or "overview"
         end
         selectSub(want)
         paintUnread()
