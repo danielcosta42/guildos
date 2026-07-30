@@ -1337,7 +1337,7 @@ local function BuildManage(panel)
             setShown(w, isAmb)
         end
         if isAmb then
-            codeBox:SetText(ally:Get().code or "")
+            codeBox:SetText(ally:JoinToken() or "")
             if ally:Get().owner == ally:MyGuildName() then
                 codeNewBtn:Enable()
             else

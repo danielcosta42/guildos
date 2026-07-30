@@ -1603,6 +1603,17 @@ function Alliance:_OnJoinCode(data, sender)
     self:BroadcastPact(true)
 end
 
+-- THE single producer of the user-facing invite string. It was built in three
+-- places before, so updating the command to show the tag prefix left the panel
+-- still printing the bare code. Everything that shows an invite calls this.
+function Alliance:JoinToken()
+    local pact = self:Get()
+    if not pact then
+        return nil
+    end
+    return Alliance.FormatJoinToken(pact.tag, pact.code)
+end
+
 function Alliance:RegenerateCode()
     local pact = self:Get()
     if not pact then
@@ -1614,7 +1625,7 @@ function Alliance:RegenerateCode()
     pact.code = Alliance.NewCode()
     pact.revision = (GetServerTime and GetServerTime()) or time()
     self:BroadcastPact(true)
-    return true, pact.code
+    return true, self:JoinToken()
 end
 
 function Alliance:_OnJoinRequest(data, sender)
@@ -1937,9 +1948,7 @@ function Alliance:HandleCommand(args)
             ok, err = self:RegenerateCode()
             newCode = ok and err or nil
             if ok then
-                local pact = self:Get()
-                BRutus:Print(string.format(L["New join code: %s"],
-                    Alliance.FormatJoinToken(pact and pact.tag, newCode) or "?"))
+                BRutus:Print(string.format(L["New join code: %s"], newCode or "?"))
                 err = nil
             end
         elseif not self:CanAdminister() then
@@ -1949,8 +1958,7 @@ function Alliance:HandleCommand(args)
             if not pact then
                 return BRutus:Print(L["This guild is not in an alliance yet."])
             end
-            BRutus:Print(string.format(L["Join code: %s"],
-                Alliance.FormatJoinToken(pact.tag, pact.code) or "?"))
+            BRutus:Print(string.format(L["Join code: %s"], self:JoinToken() or "?"))
             return BRutus:Print(L["Anyone with this code joins without an officer having to be online."])
         end
     elseif verb == "join" then
