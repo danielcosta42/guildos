@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.44.1] - 2026-07-30
+
+### Fixed
+- show the full invite token in the panel, not the bare code
+
+
 ## [0.44.0] - 2026-07-30
 
 ### Added
