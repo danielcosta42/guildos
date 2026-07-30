@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.45.0] - 2026-07-30
+
+### Added
+- hide a chat message from the alliance feed, and drop kick
+
+
 ## [0.44.2] - 2026-07-30
 
 ### Fixed
