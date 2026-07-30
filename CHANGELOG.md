@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.44.0] - 2026-07-30
+
+### Added
+- join an alliance from the panel instead of a slash command
+- join an alliance from one pasted token
+
+
 ## [0.43.0] - 2026-07-30
 
 ### Added
