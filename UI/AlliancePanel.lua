@@ -82,7 +82,7 @@ local function BuildOverview(panel)
             line:Hide()
             empty:Show()
             empty:SetText(BRutus:IsOfficer()
-                and L["This guild is not in an alliance yet. Use the Manage tab to found one."]
+                and L["This guild is not in an alliance yet. Use the Manage tab to join or found one."]
                 or L["This guild is not in an alliance yet."])
             return
         end
@@ -939,18 +939,37 @@ local function BuildManage(panel)
     body:SetPoint("TOPLEFT", 0, 0)
     body:SetPoint("BOTTOMRIGHT", 0, 0)
 
-    -- Found a new alliance (only shown when there is no pact).
+    ------------------------------------------------------------------
+    -- No pact yet. JOINING comes first and is one field: almost every guild
+    -- joins, exactly one founds.
+    ------------------------------------------------------------------
+    local joinHdr = UI:CreateHeaderText(body, L["Join an alliance"], 11)
+    local joinBox = makeInput(body, 100)
+    local joinBtn = UI:CreateButton(body, L["Join"], 90, 24)
+    local joinHint = UI:CreateText(body, L["Paste the invite an ambassador gave you."],
+        10, C.textDim.r, C.textDim.g, C.textDim.b)
+
+    -- Fallback, shown ONLY after a join failed to find anybody. The mesh
+    -- normally supplies the contact, so asking up front would be friction
+    -- charged to everyone to cover a minority case.
+    local joinWarn = UI:CreateText(body, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    joinWarn:SetWidth(460)
+    joinWarn:SetJustifyH("LEFT")
+    joinWarn:SetWordWrap(true)
+    local contactBox = makeInput(body, 200)
+    local contactBtn = UI:CreateButton(body, L["Try with this name"], 140, 24)
+    contactBtn:SetPoint("LEFT", contactBox, "RIGHT", 8, 0)
+
+    local foundSep = UI:CreateSeparator(body)
+
     local foundHdr = UI:CreateHeaderText(body, L["Found an alliance"], 11)
-    foundHdr:SetPoint("TOPLEFT", 6, -10)
     local tagBox = makeInput(body, 110)
-    tagBox:SetPoint("TOPLEFT", 6, -30)
     local nameBox = makeInput(body, 240)
     nameBox:SetPoint("LEFT", tagBox, "RIGHT", 8, 0)
     local foundBtn = UI:CreateButton(body, L["Create"], 90, 24)
     foundBtn:SetPoint("LEFT", nameBox, "RIGHT", 8, 0)
     local foundHint = UI:CreateText(body, L["Tag (letters and numbers) and a display name."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    foundHint:SetPoint("TOPLEFT", 6, -58)
 
     -- Invite / block, shown once a pact exists.
     local inviteHdr = UI:CreateHeaderText(body, L["Invite a guild"], 11)
@@ -1051,7 +1070,10 @@ local function BuildManage(panel)
 
     local leaveBtn = UI:CreateButton(body, L["Leave the alliance"], 170, 24)
 
-    local foundGroup  = { foundHdr, tagBox, nameBox, foundBtn, foundHint }
+    local foundGroup  = { joinHdr, joinBox, joinBtn, joinHint, foundSep,
+                          foundHdr, tagBox, nameBox, foundBtn, foundHint }
+    -- Set by a join that could not find anybody on the mesh.
+    local needContact = false
     local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr,
                           blockHdr, blockBox, blockBtn, unblockBtn, blockHint,
                           removeHdr, removeBox, removeBtn, removeHint,
@@ -1063,6 +1085,26 @@ local function BuildManage(panel)
     end
 
     local refresh   -- forward declaration so handlers can re-render
+
+    -- The no-pact side also runs on an offset, because the contact fallback
+    -- appears and disappears between renders.
+    local function layoutJoin()
+        local y = 10
+        joinHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
+        joinBox:SetPoint("TOPLEFT", 6, -y)
+        joinBox:SetPoint("RIGHT", body, "RIGHT", -110, 0)
+        joinBtn:SetPoint("TOPRIGHT", -8, -y); y = y + 30
+        joinHint:SetPoint("TOPLEFT", 6, -y);  y = y + 24
+        if needContact then
+            joinWarn:SetPoint("TOPLEFT", 6, -y);   y = y + 30
+            contactBox:SetPoint("TOPLEFT", 6, -y); y = y + 32
+        end
+        foundSep:SetPoint("TOPLEFT", 4, -y)
+        foundSep:SetPoint("TOPRIGHT", -4, -y); y = y + 16
+        foundHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
+        tagBox:SetPoint("TOPLEFT", 6, -y);     y = y + 30
+        foundHint:SetPoint("TOPLEFT", 6, -y)
+    end
 
     -- Everything under the invite block is laid out with a running offset,
     -- because the ambassador list grows and shrinks. Fixed offsets would either
@@ -1132,6 +1174,28 @@ local function BuildManage(panel)
         refresh()
     end)
 
+    local function tryJoin(contact)
+        local ok, err, marker = ALLY():JoinWithToken(joinBox:GetText(), contact)
+        if ok then
+            BRutus:Print(L["Join sent. If somebody from that alliance is online you are in."])
+            joinBox:SetText("")
+            contactBox:SetText("")
+            needContact = false
+        else
+            needContact = (marker == "needContact")
+            if needContact then
+                joinWarn:SetText(L["Nobody from that alliance is visible right now. Name anyone in it and try again."])
+            end
+            if err then BRutus:Print(err) end
+        end
+        refresh()
+    end
+
+    joinBtn:SetScript("OnClick", function() tryJoin(nil) end)
+    joinBox:SetScript("OnEnterPressed", function() joinBtn:Click() end)
+    contactBtn:SetScript("OnClick", function() tryJoin(contactBox:GetText()) end)
+    contactBox:SetScript("OnEnterPressed", function() contactBtn:Click() end)
+
     foundBtn:SetScript("OnClick", function()
         local ok, err = ALLY():Create(tagBox:GetText(), nameBox:GetText())
         say(ok, err)
@@ -1200,8 +1264,13 @@ local function BuildManage(panel)
             for _, row in ipairs(ambRows) do row:Hide() end
             ambBox:Hide(); ambAddBtn:Hide(); ambHint:Hide()
             ambWarn:Hide(); ambClaimBtn:Hide()
+            setShown(joinWarn, needContact)
+            setShown(contactBox, needContact)
+            setShown(contactBtn, needContact)
+            layoutJoin()
             return
         end
+        joinWarn:Hide(); contactBox:Hide(); contactBtn:Hide()
 
         ------------------------------------------------------------------
         -- Ambassadors
