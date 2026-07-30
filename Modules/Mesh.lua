@@ -43,13 +43,29 @@ function Mesh:BuildCaps()
     -- in-game anyway, so this exposes nothing new. Commas are stripped because
     -- they separate caps entries.
     local ally = GuildOS.Alliance
-    if ally and ally.Get and ally:Get() then
+    local pact = ally and ally.Get and ally:Get()
+    if pact then
         local guild = GetGuildInfo("player")
         if guild and guild ~= "" then
             caps = caps .. ",gosg=" .. (GuildOS:SanitizeUserText(guild, 24):gsub(",", ""))
         end
+        -- The alliance TAG, so a guild holding only a join token can find
+        -- somebody to talk to without being handed a contact name. The tag is
+        -- half of a token anyone is meant to be able to paste, and the channel
+        -- derived from it is public anyway, so this leaks nothing new.
+        if pact.tag and pact.tag ~= "" then
+            caps = caps .. ",gosa=" .. pact.tag
+        end
     end
     return caps
+end
+
+-- The alliance tag a peer advertises, or nil.
+function Mesh:GetPeerAlliance(name)
+    local p = self:GetPeer(name)
+    local caps = p and p.caps
+    if type(caps) ~= "string" then return nil end
+    return caps:match("gosa=([^,]+)")
 end
 
 -- The guild a peer advertises in its merged caps string, or nil. Used by the

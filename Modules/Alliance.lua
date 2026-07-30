@@ -295,6 +295,32 @@ function Alliance.NormalizeCode(code)
     return (tostring(code or ""):upper():gsub("[^A-Z0-9]", ""))
 end
 
+-- One string to hand over instead of three fields. The tag rides inside the
+-- token, so the guild joining pastes a single thing and never has to be told
+-- what a "tag" is.
+function Alliance.FormatJoinToken(tag, code)
+    local t, c = Alliance.NormalizeTag(tag), Alliance.NormalizeCode(code)
+    if t == "" or c == "" then
+        return nil
+    end
+    return t .. "-" .. c
+end
+
+-- Tolerant on purpose: this arrives pasted from Discord, so accept lowercase,
+-- stray spaces, and a missing or repeated dash.
+function Alliance.ParseJoinToken(token)
+    local raw = tostring(token or ""):upper():gsub("[^A-Z0-9%-]", "")
+    local tag, code = raw:match("^(%w+)%-+(%w+)$")
+    if not tag then
+        return nil
+    end
+    tag, code = Alliance.NormalizeTag(tag), Alliance.NormalizeCode(code)
+    if tag == "" or code == "" then
+        return nil
+    end
+    return tag, code
+end
+
 -- Pure. Is `incoming` a change that a code holder is allowed to make?
 -- Same alliance, same owner, same code, every existing guild present and
 -- BYTE-FOR-BYTE unchanged, and at least one guild added.
@@ -1438,6 +1464,69 @@ end
 -- Joining with a code. Whispered to ANY member of the alliance: the point of
 -- the code is that nobody has to be watching for it.
 ----------------------------------------------------------------------
+-- Anyone on the realm-wide mesh advertising this alliance tag. This is what
+-- removes the "contact name" field: the guild joining knows a token, not a
+-- person, and the mesh already knows who is in which alliance.
+function Alliance:FindAlliancePeers(tag, max)
+    local net = _G.ChehulNet
+    local mesh = GuildOS.Mesh
+    local out = {}
+    local wanted = Alliance.NormalizeTag(tag)
+    if wanted == "" or not net or not net.Peers or not mesh or not mesh.GetPeerAlliance then
+        return out
+    end
+    for short in pairs(net:Peers()) do
+        if #out >= (max or 3) then
+            break
+        end
+        if mesh:GetPeerAlliance(short) == wanted then
+            out[#out + 1] = short
+        end
+    end
+    return out
+end
+
+-- One pasted token, no contact needed in the normal case. Returns
+-- false, reason, "needContact" when nobody from that alliance is visible, so
+-- the UI can ask for a name only then instead of always.
+function Alliance:JoinWithToken(token, contactName)
+    if not BRutus:IsOfficer() then
+        return false, L["Only officers can do that."]
+    end
+    if self:Get() then
+        return false, L["This guild is already in an alliance."]
+    end
+    if not self:MyGuildName() then
+        return false, L["You are not in a guild."]
+    end
+    local tag, code = Alliance.ParseJoinToken(token)
+    if not tag then
+        return false, L["That invite does not look right. It should look like BRCORE-K7M2XQ9F."]
+    end
+
+    local targets = {}
+    local typed = BRutus:SanitizeUserText(contactName, Alliance.GUILD_NAME_MAX)
+    if typed ~= "" then
+        targets[1] = typed
+    else
+        targets = self:FindAlliancePeers(tag, 3)
+    end
+    if #targets == 0 then
+        return false, L["Nobody from that alliance is visible right now."], "needContact"
+    end
+
+    local sent = 0
+    for _, name in ipairs(targets) do
+        if self:JoinWithCode(tag, code, name) then
+            sent = sent + 1
+        end
+    end
+    if sent == 0 then
+        return false, L["Could not reach the mesh."]
+    end
+    return true
+end
+
 function Alliance:JoinWithCode(tag, code, contactName)
     if not BRutus:IsOfficer() then
         return false, L["Only officers can do that."]
@@ -1848,7 +1937,9 @@ function Alliance:HandleCommand(args)
             ok, err = self:RegenerateCode()
             newCode = ok and err or nil
             if ok then
-                BRutus:Print(string.format(L["New join code: %s"], newCode))
+                local pact = self:Get()
+                BRutus:Print(string.format(L["New join code: %s"],
+                    Alliance.FormatJoinToken(pact and pact.tag, newCode) or "?"))
                 err = nil
             end
         elseif not self:CanAdminister() then
@@ -1858,13 +1949,13 @@ function Alliance:HandleCommand(args)
             if not pact then
                 return BRutus:Print(L["This guild is not in an alliance yet."])
             end
-            BRutus:Print(string.format(L["Join code: %s"], pact.code or "?"))
+            BRutus:Print(string.format(L["Join code: %s"],
+                Alliance.FormatJoinToken(pact.tag, pact.code) or "?"))
             return BRutus:Print(L["Anyone with this code joins without an officer having to be online."])
         end
     elseif verb == "join" then
-        local tag, restArgs = rest:match("^(%S*)%s*(.*)$")
-        local code, who = strtrim(restArgs or ""):match("^(%S*)%s*(.*)$")
-        ok, err = self:JoinWithCode(tag, code, strtrim(who or ""))
+        local token, who = rest:match("^(%S*)%s*(.*)$")
+        ok, err = self:JoinWithToken(token, strtrim(who or ""))
         if ok then
             BRutus:Print(L["Join sent. If somebody from that alliance is online you are in."])
         end
@@ -2157,6 +2248,29 @@ function Alliance:_RegisterTests()
         if A(codeless, added) then return false, "a codeless pact must refuse the path" end
 
         if A(nil, added) then return false, "nil must not error" end
+        return true
+    end)
+
+    BRutus.SelfTest:Register("alliance.join_token", function()
+        local F, P = Alliance.FormatJoinToken, Alliance.ParseJoinToken
+        if F("brcore", "abcd1234") ~= "BRCORE-ABCD1234" then return false, "format" end
+        if F("", "ABCD") ~= nil then return false, "empty tag must not format" end
+        if F("BRCORE", "") ~= nil then return false, "empty code must not format" end
+
+        local tag, code = P("BRCORE-ABCD1234")
+        if tag ~= "BRCORE" or code ~= "ABCD1234" then return false, "round trip failed" end
+
+        -- It arrives pasted out of Discord, so be forgiving.
+        tag, code = P("  brcore-abcd1234  ")
+        if tag ~= "BRCORE" or code ~= "ABCD1234" then return false, "lowercase and spaces" end
+        tag = P("BRCORE--ABCD1234")
+        if tag ~= "BRCORE" then return false, "double dash" end
+
+        if P("BRCOREABCD1234") ~= nil then return false, "no separator must be rejected" end
+        if P("BRCORE-") ~= nil then return false, "missing code must be rejected" end
+        if P("-ABCD1234") ~= nil then return false, "missing tag must be rejected" end
+        if P(nil) ~= nil then return false, "nil must not error" end
+        if P("") ~= nil then return false, "empty must not error" end
         return true
     end)
 

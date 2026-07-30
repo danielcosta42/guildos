@@ -1581,3 +1581,5 @@ L["Anyone with this code joins without an officer having to be online."] = "Quem
 L["A guild with this code joins without anyone having to approve. Anyone in the alliance can be the contact."] = "Uma guilda com este código entra sem ninguém precisar aprovar. Qualquer pessoa da aliança serve de contato."
 L["Only the founding guild can do that."] = "Só a guilda fundadora pode fazer isso."
 L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"] = "Uso: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"
+L["That invite does not look right. It should look like BRCORE-K7M2XQ9F."] = "Esse convite não parece certo. Ele tem esta cara: BRCORE-K7M2XQ9F."
+L["Nobody from that alliance is visible right now."] = "Ninguém dessa aliança está visível na rede agora."

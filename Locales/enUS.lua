@@ -507,3 +507,5 @@ L["Anyone with this code joins without an officer having to be online."] = "Anyo
 L["A guild with this code joins without anyone having to approve. Anyone in the alliance can be the contact."] = "A guild with this code joins without anyone having to approve. Anyone in the alliance can be the contact."
 L["Only the founding guild can do that."] = "Only the founding guild can do that."
 L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"] = "Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"
+L["That invite does not look right. It should look like BRCORE-K7M2XQ9F."] = "That invite does not look right. It should look like BRCORE-K7M2XQ9F."
+L["Nobody from that alliance is visible right now."] = "Nobody from that alliance is visible right now."
