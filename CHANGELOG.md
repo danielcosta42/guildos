@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.43.0] - 2026-07-30
+
+### Added
+- add an alliance join code and keep channel ownership with an ambassador
+
+
 ## [0.42.0] - 2026-07-29
 
 ### Added
