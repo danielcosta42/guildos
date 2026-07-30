@@ -620,7 +620,7 @@ local function BuildChat(panel)
         hideBtn.label:SetText(prefs.hideDefault and L["Default chat: hidden"] or L["Default chat: shown"])
         status:SetText(chat:IsConnected()
             and string.format(L["%s connected"], chat:ChannelName() or "?")
-            or L["not connected"])
+            or (chat:Prefs().chat and L["connecting..."] or L["not connected"]))
 
         local log = chat:Log()
         local groups = BRutus.AllianceChat.GroupLog(log, BRutus.AllianceChat.GROUP_WINDOW)

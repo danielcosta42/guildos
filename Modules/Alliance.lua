@@ -973,6 +973,7 @@ function Alliance:AcceptInvite(pact, sender)
         or { ambassadors = { me }, joinedAt = now, addedBy = shortName(sender) }
     pact.revision = now
     BRutus.db.alliance = pact
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:EnsureJoined() end
     self:Send("ACK", { guild = myGuild, ambassadors = { me } }, sender)
     BRutus:Print(string.format(L["Joined the alliance %s."], pact.name or pact.tag))
 end
@@ -1067,6 +1068,9 @@ function Alliance:_OnPact(raw, _sender, senderGuild)
     end
     winner.blocked = (current and current.blocked) or {}
     BRutus.db.alliance = winner
+    -- A pact can arrive long after login (a join code landing, a first sync),
+    -- so joining the channel hangs off the pact, not off the login event.
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:EnsureJoined() end
 end
 
 function Alliance:_OnLeave(_sender, senderGuild)

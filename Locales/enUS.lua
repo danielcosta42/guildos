@@ -515,3 +515,4 @@ L["Paste the invite an ambassador gave you."] = "Paste the invite an ambassador 
 L["Try with this name"] = "Try with this name"
 L["Nobody from that alliance is visible right now. Name anyone in it and try again."] = "Nobody from that alliance is visible right now. Name anyone in it and try again."
 L["This guild is not in an alliance yet. Use the Manage tab to join or found one."] = "This guild is not in an alliance yet. Use the Manage tab to join or found one."
+L["connecting..."] = "connecting..."

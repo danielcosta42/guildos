@@ -84,10 +84,29 @@ function AllianceChat:Prefs()
     return BRutus.db.alliancePrefs
 end
 
-function AllianceChat:Join()
-    local name = self:ChannelName()
-    if not name or not self:Prefs().chat then
+-- Seconds between watchdog checks. GetChannelName is a trivial call, so this
+-- is cheap enough to run forever.
+AllianceChat.JOIN_RETRY = 20
+
+-- Idempotent, and the ONLY thing that joins. Being out of the alliance channel
+-- is never an acceptable resting state: the chat system is not ready for a
+-- while after a reload, and a fixed pair of attempts could land entirely
+-- inside that window and leave the player silently outside until next login.
+-- So this keeps running instead of giving up.
+--
+-- It stops for exactly one reason: the player turned the channel off. A kick
+-- WILL be undone by this, deliberately, since a kick is a warning and a ban is
+-- what actually removes somebody (the server refuses the rejoin).
+function AllianceChat:EnsureJoined()
+    if not BRutus.db or not BRutus.db.alliancePrefs then
         return false
+    end
+    if not self:Prefs().chat then
+        return false
+    end
+    local name = self:ChannelName()
+    if not name then
+        return false   -- no pact, nothing to join
     end
     if self:IsConnected() then
         return true
@@ -96,6 +115,10 @@ function AllianceChat:Join()
         JoinChannelByName(name)
     end
     return self:IsConnected()
+end
+
+function AllianceChat:Join()
+    return self:EnsureJoined()
 end
 
 function AllianceChat:Leave()
@@ -464,6 +487,9 @@ function AllianceChat:Initialize()
     local f = CreateFrame("Frame")
     f:RegisterEvent("PLAYER_ENTERING_WORLD")
     f:RegisterEvent("CHAT_MSG_CHANNEL")
+    -- Fires whenever the channel list changes, which after a reload is exactly
+    -- the moment joining starts working.
+    f:RegisterEvent("CHANNEL_UI_UPDATE")
     f:SetScript("OnEvent", function(_, event, msg, author, _, _, _, _, _, _, chanBaseName)
         if event == "CHAT_MSG_CHANNEL" then
             BRutus:SafeCall(function()
@@ -471,16 +497,29 @@ function AllianceChat:Initialize()
             end)
             return
         end
-        BRutus.Compat.After(10, function() AllianceChat:Join() end)
-        BRutus.Compat.After(45, function() AllianceChat:Join() end)
+        if event == "CHANNEL_UI_UPDATE" then
+            AllianceChat:EnsureJoined()
+            return
+        end
+        -- Staggered because the chat system comes up at an unpredictable time
+        -- after a reload. The watchdog below is what actually guarantees it;
+        -- these just make the common case fast.
+        for _, delay in ipairs({ 3, 8, 15, 30 }) do
+            BRutus.Compat.After(delay, function() AllianceChat:EnsureJoined() end)
+        end
         -- Late, so the channel roster has had time to populate: the transfer
         -- needs a target that is actually in the channel.
         BRutus.Compat.After(75, function() AllianceChat:EnsureAmbassadorOwnership() end)
     end)
 
-    -- Ownership can land on us at any time, because WoW passes it on when the
-    -- previous owner leaves. Re-check on a slow timer rather than only at login.
     if BRutus.Compat and BRutus.Compat.NewTicker then
+        -- The watchdog. Never stops, because being outside the channel is not
+        -- a state the player should ever be left sitting in.
+        BRutus.Compat.NewTicker(self.JOIN_RETRY, function()
+            AllianceChat:EnsureJoined()
+        end)
+        -- Ownership can land on us at any time: WoW passes it on when the
+        -- previous owner leaves.
         BRutus.Compat.NewTicker(300, function()
             AllianceChat:EnsureAmbassadorOwnership()
         end)

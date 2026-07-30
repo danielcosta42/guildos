@@ -1589,3 +1589,4 @@ L["Paste the invite an ambassador gave you."] = "Cole o convite que um embaixado
 L["Try with this name"] = "Tentar assim"
 L["Nobody from that alliance is visible right now. Name anyone in it and try again."] = "Ninguém dessa aliança está visível na rede agora. Diga o nome de alguém dela e tente de novo."
 L["This guild is not in an alliance yet. Use the Manage tab to join or found one."] = "Esta guilda ainda não está em uma aliança. Use a aba Gestão para entrar ou fundar uma."
+L["connecting..."] = "conectando..."
