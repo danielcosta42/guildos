@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.44.2] - 2026-07-30
+
+### Fixed
+- keep the alliance channel joined instead of trying twice and giving up
+
+
 ## [0.44.1] - 2026-07-30
 
 ### Fixed
