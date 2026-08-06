@@ -2836,14 +2836,23 @@ function BRutus:RefreshSettingsPanel(content, category)
         anchor = webSyncBtn
     end
 
+    -- Prefer showing the last WEB sync (data actually reached the server) over
+    -- the raw heartbeat (app merely running); fall back when never synced.
+    local syncPart
+    if webStatus.lastSyncAgeSecs then
+        syncPart = string.format(L["synced %s"], agoStr(webStatus.lastSyncAgeSecs))
+    else
+        syncPart = L["not synced yet"]
+    end
+
     local webNote
     if webStatus.fresh then
         webNote = UI:CreateText(content,
-            string.format(L["Companion connected \226\128\148 %s"], agoStr(webStatus.ageSecs)),
+            string.format(L["Companion connected \226\128\148 %s"], syncPart),
             9, 0.45, 0.85, 0.45)
     elseif webStatus.present then
         webNote = UI:CreateText(content,
-            string.format(L["Companion idle \226\128\148 last seen %s"], agoStr(webStatus.ageSecs)),
+            string.format(L["Companion idle \226\128\148 seen %s, %s"], agoStr(webStatus.ageSecs), syncPart),
             9, C.silver.r, C.silver.g, C.silver.b)
     else
         webNote = UI:CreateText(content,

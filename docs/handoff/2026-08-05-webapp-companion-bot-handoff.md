@@ -314,13 +314,20 @@ Interface/AddOns/GuildOS_Companion/
       ## DefaultState: enabled
       Heartbeat.lua
   Heartbeat.lua                # overwritten every ~60s:
-      GuildOSCompanionLink = { v = 1, app = "0.1.0", heartbeat = 1754400000, os = "windows" }
+      GuildOSCompanionLink = { v = 1, app = "0.1.0", heartbeat = 1754400000,
+                               lastSync = 1754399880, lastSyncOk = true, os = "windows" }
 ```
 
 - `heartbeat` = the PC's **local** Unix epoch at write time (`time.Now().Unix()`). The WoW client and
   the companion run on the same PC, so the addon compares it against its own `time()` with no clock
   skew. The addon treats the companion as "connected" when the heartbeat is within **900 s** at load —
   keep the write interval well under that (60 s recommended).
+- `lastSync` = local Unix epoch of the **last successful upload to the web API** (HTTP 2xx on
+  `POST /api/ingest`), NOT the heartbeat. Update it only on a confirmed 2xx; leave it unchanged (or
+  omit on first ever run) otherwise. The addon shows this as "synced Xm ago" — it's what officers
+  actually care about (did the data reach the server), separate from "is the app running". Optional
+  `lastSyncOk` mirrors the last attempt's success for future surfacing. Because the file is re-read
+  only at load, this value lags by one reload cycle — expected.
 - **Load-time only:** the client reads this file just at login / `/reload`, so the button state
   reflects "companion running as of the last load", not live. This is expected; don't try to make it
   live.

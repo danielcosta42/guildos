@@ -330,7 +330,13 @@ function CompanionExport:GetCompanionStatus()
     if type(link) ~= "table" or not tonumber(link.heartbeat) then
         return { present = false, fresh = false }
     end
-    local age = time() - tonumber(link.heartbeat)
+    local now = time()
+    local age = now - tonumber(link.heartbeat)
+    -- lastSync = epoch of the companion's last SUCCESSFUL upload to the web
+    -- (distinct from the heartbeat, which only means the app is running). It
+    -- reflects the previous load cycle since the file is re-read only at
+    -- login/reload — the same one-cycle lag as every disk channel here.
+    local lastSync = tonumber(link.lastSync)
     return {
         present = true,
         -- Small negative tolerance guards a companion write a few seconds
@@ -338,6 +344,8 @@ function CompanionExport:GetCompanionStatus()
         fresh = (age >= -60) and (age <= FRESH_WINDOW),
         ageSecs = age,
         lastSeen = tonumber(link.heartbeat),
+        lastSync = lastSync,
+        lastSyncAgeSecs = lastSync and (now - lastSync) or nil,
         appVersion = link.app,
     }
 end
