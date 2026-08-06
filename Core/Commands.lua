@@ -81,6 +81,8 @@ local function printHelp()
         helpLine("/gos ally create <tag> <name>", L["Found an alliance with other guilds"])
         helpLine("/gos ally invite <officer>",    L["Invite a guild into the alliance"])
         helpLine("/gos ally leave",               L["Leave the alliance"])
+        helpLine("/gos websync",                  L["Sync guild data to the web companion (reloads)"])
+        helpLine("/gos webstring",                L["Copy the web companion data string"])
     end
 end
 
@@ -120,6 +122,12 @@ local function handleCommand(msg)
         if BRutus.Backup then BRutus.Backup:ShowExport() end
     elseif msg == "restore" then
         if BRutus.Backup then BRutus.Backup:ShowRestore() end
+    elseif msg == "websync" then
+        -- Officer: stamp the companion payload and reload to flush it to disk.
+        if BRutus.CompanionExport then BRutus.CompanionExport:SyncNow() end
+    elseif msg == "webstring" or msg == "webexport" then
+        -- Officer: show the GOSCOMP1 payload in a copy box for manual paste.
+        if BRutus.CompanionExport then BRutus.CompanionExport:ShowExport() end
     elseif msg == "bulletin" or msg == "board" then
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
     elseif msg == "ally" or msg:match("^ally%s") or msg == "alliance" or msg:match("^alliance%s") then
