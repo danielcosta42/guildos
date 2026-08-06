@@ -2810,6 +2810,17 @@ function BRutus:RefreshSettingsPanel(content, category)
     backupNote:SetPoint("LEFT", restoreBtn2, "RIGHT", 10, 0)
     yOff = yOff + 34
 
+    -- Web companion sync (officer-gated inside CompanionExport)
+    local webSyncBtn = UI:CreateButton(content, L["Web Sync"], 110, 24)
+    webSyncBtn:SetPoint("TOPLEFT", 8, -yOff)
+    webSyncBtn:SetScript("OnClick", function() if BRutus.CompanionExport then BRutus.CompanionExport:SyncNow() end end)
+    local webStringBtn = UI:CreateButton(content, L["Copy String"], 110, 24)
+    webStringBtn:SetPoint("LEFT", webSyncBtn, "RIGHT", 8, 0)
+    webStringBtn:SetScript("OnClick", function() if BRutus.CompanionExport then BRutus.CompanionExport:ShowExport() end end)
+    local webNote = UI:CreateText(content, L["Push guild data to the web companion (Web Sync reloads)"], 9, C.silver.r, C.silver.g, C.silver.b)
+    webNote:SetPoint("LEFT", webStringBtn, "RIGHT", 10, 0)
+    yOff = yOff + 34
+
     --------------------------------------------------------------------
     -- ABOUT & SUPPORT
     --------------------------------------------------------------------
