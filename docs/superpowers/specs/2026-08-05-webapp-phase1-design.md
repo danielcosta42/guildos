@@ -228,8 +228,31 @@ minimal, trivial cross-compile for the ~10–15 officer machines. Hand-deliver t
 
 ## 7. Component C — the web app
 
-**Stack (recommended, swappable):** Next.js (App Router) + Postgres + Auth.js Discord provider +
-Prisma. Host on Fly.io/Railway. Boring on purpose.
+**Stack (decided):** Next.js (App Router) + Postgres + Auth.js Discord provider + Prisma. Boring on
+purpose.
+
+**Hosting (decided): one AWS Lightsail instance, everything in a monorepo, one `docker-compose`.**
+Covered by existing AWS credits (flat, predictable; ~$10–20/mo instance runs Phase 1's scale for a
+long time). Rationale: the bot holds a persistent Discord **gateway WebSocket** — an always-on process
+that serverless (Lambda/Vercel Functions) can't host — so it needs a real box; with a monorepo the web
+rides the same box rather than splitting the deploy. The bot needs **no public endpoint** (discord.js
+receives slash commands / button clicks over the outbound gateway), so only `web` is exposed.
+
+```
+  Lightsail instance — docker-compose:
+    web       Next.js        (only public port; HTTPS via caddy)
+    bot       discord.js     (outbound gateway only, no inbound)
+    postgres  container      (pg_dump → Lightsail snapshot; swap to Lightsail Managed DB if ops bite)
+    caddy     reverse proxy + automatic HTTPS
+
+  Monorepo (pnpm workspaces + Turborepo):
+    /apps/web            Next.js
+    /apps/bot            discord.js
+    /packages/db         Prisma schema + client (shared web ↔ bot)
+    /packages/goscomp    GOSCOMP1 decoder (DecodeForPrint + inflate + JSON) + shared types
+    /companion           Go single binary (same repo, built separately)
+```
+Escape hatch: if web traffic ever spikes, move only `web` to Vercel without touching the bot.
 
 **Login:** Discord OAuth. Scopes: `identify`, `guilds` (to confirm membership in the community's
 Discord). On first login create a `DiscordAccount`.
@@ -390,16 +413,20 @@ Each step is demoable on its own; step 2 alone already gives the community somet
 
 ---
 
-## 15. Open questions for the user
+## 15. Decisions
 
-1. **Web stack** — happy with Next.js + Postgres + Discord Auth.js, or a preference (SvelteKit, a
-   separate API, etc.)?
-2. **Companion language** — Go single binary (my rec) vs Tauri (window, heavier) vs Electron (no)?
-3. **Officer/link trust** — self-claim + officer approve enough for Phase 1, or do you want in-game
-   proof-of-ownership (a code the addon shows) from day one?
-4. **Addon change now or later** — add `CompanionExport.lua` (stabler), or parse raw SavedVariables
-   in the companion to avoid touching the addon first?
-5. **Hosting** — do you already have infra (VPS, Fly, Railway) for the community, or start from zero?
+**Locked (2026-08-05):**
+1. **Web stack** — Next.js (App Router) + Postgres + Auth.js Discord provider + Prisma. ✅
+2. **Companion language** — Go single binary. ✅
+3. **Link trust** — self-claim, no in-game proof-of-ownership in Phase 1. (Officer approve is now
+   optional polish, not required — self-claim stands on its own for a trusted 5-guild community.) ✅
+4. **Hosting** — one AWS Lightsail instance, monorepo, single `docker-compose`, on existing AWS
+   credits. Bot needs the always-on box (gateway WS); web rides the same box. ✅
+
+**Still open:**
+5. **Addon change now or later** — add `CompanionExport.lua` (stabler contract, my rec), or parse the
+   raw `GuildOSDB.lua` in the companion first to avoid touching the addon. Recommendation stands: add
+   the module, since the same team owns both and the projection is the stable contract.
 
 ---
 
