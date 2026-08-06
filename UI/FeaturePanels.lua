@@ -2810,6 +2810,58 @@ function BRutus:RefreshSettingsPanel(content, category)
     backupNote:SetPoint("LEFT", restoreBtn2, "RIGHT", 10, 0)
     yOff = yOff + 34
 
+    -- Web companion sync (officer-gated inside CompanionExport).
+    -- Copy String is always available (manual fallback). Web Sync only
+    -- appears when the companion looks active, since its reload is pointless
+    -- with nothing on the PC reading the payload.
+    local webStatus = BRutus.CompanionExport and BRutus.CompanionExport:GetCompanionStatus()
+        or { present = false, fresh = false }
+
+    local function agoStr(secs)
+        secs = math.max(0, secs or 0)
+        if secs < 90 then return string.format(L["%ds ago"], secs) end
+        if secs < 5400 then return string.format(L["%dm ago"], math.floor(secs / 60)) end
+        return string.format(L["%dh ago"], math.floor(secs / 3600))
+    end
+
+    local webStringBtn = UI:CreateButton(content, L["Copy String"], 110, 24)
+    webStringBtn:SetPoint("TOPLEFT", 8, -yOff)
+    webStringBtn:SetScript("OnClick", function() if BRutus.CompanionExport then BRutus.CompanionExport:ShowExport() end end)
+    local anchor = webStringBtn
+
+    if webStatus.fresh then
+        local webSyncBtn = UI:CreateButton(content, L["Web Sync"], 110, 24)
+        webSyncBtn:SetPoint("LEFT", webStringBtn, "RIGHT", 8, 0)
+        webSyncBtn:SetScript("OnClick", function() if BRutus.CompanionExport then BRutus.CompanionExport:SyncNow() end end)
+        anchor = webSyncBtn
+    end
+
+    -- Prefer showing the last WEB sync (data actually reached the server) over
+    -- the raw heartbeat (app merely running); fall back when never synced.
+    local syncPart
+    if webStatus.lastSyncAgeSecs then
+        syncPart = string.format(L["synced %s"], agoStr(webStatus.lastSyncAgeSecs))
+    else
+        syncPart = L["not synced yet"]
+    end
+
+    local webNote
+    if webStatus.fresh then
+        webNote = UI:CreateText(content,
+            string.format(L["Companion connected \226\128\148 %s"], syncPart),
+            9, 0.45, 0.85, 0.45)
+    elseif webStatus.present then
+        webNote = UI:CreateText(content,
+            string.format(L["Companion idle \226\128\148 seen %s, %s"], agoStr(webStatus.ageSecs), syncPart),
+            9, C.silver.r, C.silver.g, C.silver.b)
+    else
+        webNote = UI:CreateText(content,
+            L["Companion not detected \226\128\148 use Copy String for manual paste"],
+            9, C.silver.r, C.silver.g, C.silver.b)
+    end
+    webNote:SetPoint("LEFT", anchor, "RIGHT", 10, 0)
+    yOff = yOff + 34
+
     --------------------------------------------------------------------
     -- ABOUT & SUPPORT
     --------------------------------------------------------------------

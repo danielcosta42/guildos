@@ -322,6 +322,7 @@ function BRutus:InitModules()
     if BRutus.LFGBoard then BRutus.LFGBoard:Initialize() end
     if BRutus.GuildMap then BRutus.GuildMap:Initialize() end
     if BRutus.PugInspector then BRutus.PugInspector:Initialize() end
+    if BRutus.CompanionExport then BRutus.CompanionExport:Initialize() end
     if BRutus.RecipeTracker then
         BRutus.RecipeTracker:Initialize()
     end
