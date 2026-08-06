@@ -34,6 +34,15 @@ local FORMAT_VERSION = 1
 -- share GuildOSDB (same convention as the _migrated / _dbVersion meta keys).
 local SAVED_SLOT = "__companion"
 
+-- Presence detection: the companion app writes a heartbeat global from a
+-- side addon (GuildOS_Companion/Heartbeat.lua) that the client loads at
+-- login/reload. Because the WoW client and the companion run on the SAME
+-- PC, the heartbeat epoch and time() share one wall clock, so freshness is
+-- an exact comparison (no clock skew). The global only refreshes on load,
+-- so this reports "active as of the last login/reload", not live state.
+local HEARTBEAT_GLOBAL = "GuildOSCompanionLink"
+local FRESH_WINDOW = 900   -- seconds; heartbeat within this at load => "connected"
+
 ----------------------------------------------------------------------
 -- Minimal JSON encoder.
 --
@@ -306,6 +315,31 @@ function CompanionExport:ShowExport()
         return
     end
     BRutus:ShowExportPopup(L["Guild OS Web Sync"], str)
+end
+
+----------------------------------------------------------------------
+-- Report whether the companion app looks active, based on the heartbeat
+-- global it writes. Returns a table:
+--   { present = bool, fresh = bool, ageSecs = number, lastSeen = epoch,
+--     appVersion = string }
+-- `present` = the side addon is installed and wrote a heartbeat at all.
+-- `fresh`   = that heartbeat is recent (companion was running at load).
+----------------------------------------------------------------------
+function CompanionExport:GetCompanionStatus()
+    local link = _G[HEARTBEAT_GLOBAL]
+    if type(link) ~= "table" or not tonumber(link.heartbeat) then
+        return { present = false, fresh = false }
+    end
+    local age = time() - tonumber(link.heartbeat)
+    return {
+        present = true,
+        -- Small negative tolerance guards a companion write a few seconds
+        -- ahead of the client clock at load.
+        fresh = (age >= -60) and (age <= FRESH_WINDOW),
+        ageSecs = age,
+        lastSeen = tonumber(link.heartbeat),
+        appVersion = link.app,
+    }
 end
 
 ----------------------------------------------------------------------
