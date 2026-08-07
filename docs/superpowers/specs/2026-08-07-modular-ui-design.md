@@ -220,6 +220,14 @@ table at `UI/FeaturePanels.lua:1830-1841`.
 
 Guards:
 
+- **`officerOnly` is enforced at the opener, not only at the row.** Hiding a hub row or not drawing a
+  tab button is presentation, not access control: `UI:OpenWindow(id, sub)` is reachable from a slash
+  command, so it must refuse an `officerOnly` feature for a non-officer, and sub-tab selection must
+  apply the same test per sub-tab. Otherwise `/gos open management` renders the Leadership panel for
+  any member, and a sub-tab deep link walks past a button that was never drawn. The expanded-mode
+  path already defends this (`Core/Core.lua:606-613`); the window path must match it. The exposure is
+  information disclosure — mutating actions re-check `IsOfficer()` independently — but the rule holds
+  either way: the check belongs where the panel is opened.
 - `core = true` on `roster` and `settings` — they have no toggle, so a user cannot lock themselves
   out of the UI that would let them back in.
 - Disabling never destroys data. It hides UI and (for `module` entries, after reload) stops
