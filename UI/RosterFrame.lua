@@ -998,13 +998,10 @@ end
 -- The one gate for a tab: enabled, and rank/condition allow it. Both
 -- UpdateTabVisibility (which button to draw) and SetActiveTab (which panel
 -- to open) ask this — a dashboard card can call SetActiveTab with no button
--- involved at all.
+-- involved at all. Delegates to the registry's single gate (UI/FeatureRegistry.lua)
+-- so this and every other opener (UI:OpenWindow, the slash verb) agree.
 local function TabAllowed(def)
-    if not def then return false end
-    if not BRutus:IsFeatureEnabled(def.id) then return false end
-    if def.condition then return def.condition() end
-    if def.officerOnly then return BRutus:IsOfficer() end
-    return true
+    return UI:IsFeatureAllowed(def)
 end
 
 function BRutus.CreateRosterFrame()

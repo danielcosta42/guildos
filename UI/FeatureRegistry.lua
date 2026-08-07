@@ -76,6 +76,20 @@ function UI:VisibleFeatures(scope)
     return out
 end
 
+----------------------------------------------------------------------
+-- May this player open this feature right now? The single gate every
+-- opener asks: the hub window, the expanded-mode tab, the slash verb.
+-- `condition` overrides `officerOnly` when present, matching how
+-- CreateTab has always treated the pair.
+----------------------------------------------------------------------
+function UI:IsFeatureAllowed(def)
+    if not def then return false end
+    if not BRutus:IsFeatureEnabled(def.id) then return false end
+    if def.condition then return def.condition() end
+    if def.officerOnly then return BRutus:IsOfficer() end
+    return true
+end
+
 -- Overridden in UI/Window.lua once windows exist; a no-op until then so
 -- SetFeatureEnabled can call it unconditionally.
 function UI:OnFeatureToggled(_, _) end

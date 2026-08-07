@@ -164,13 +164,17 @@ function UI:OpenWindow(id, subKey)
     -- Durable gate: every future caller (the Task 5 hub included) routes
     -- through here, so this is the one place an officer-only feature needs
     -- to be checked rather than re-implemented at each call site. Mirrors
-    -- the expanded-mode guard at Core/Core.lua:606-613.
-    if def.officerOnly and not BRutus:IsOfficer() then
-        BRutus:Print(string.format(L["%s is officer-only."], def.label))
-        return
-    end
+    -- the expanded-mode guard at Core/Core.lua:606-613. IsFeatureEnabled is
+    -- tested first so a disabled feature and a rank refusal print different
+    -- messages; IsFeatureAllowed is the single gate (also covers `condition`,
+    -- which some officer-only features — wishlist — express instead of
+    -- `officerOnly`).
     if not BRutus:IsFeatureEnabled(id) then
         BRutus:Print(string.format(L["%s is disabled in Settings."], def.label))
+        return
+    end
+    if not self:IsFeatureAllowed(def) then
+        BRutus:Print(string.format(L["%s is officer-only."], def.label))
         return
     end
 

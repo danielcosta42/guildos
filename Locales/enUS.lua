@@ -580,3 +580,8 @@ L["Expanded mode"] = "Expanded mode"
 L["... more"] = "... more"
 L["Close all"] = "Close all"
 L["%d online of %d"] = "%d online of %d"
+
+-- UI/FeaturePanels.lua (Settings — UI scale slider, hub pulse toggle)
+L["UI scale"] = "UI scale"
+L[" Reload UI to apply."] = " Reload UI to apply."
+L["Show live info on the hub"] = "Show live info on the hub"

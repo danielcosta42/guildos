@@ -1922,66 +1922,67 @@ function BRutus:RefreshSettingsPanel(content, category)
     yOff = yOff + 12
 
     --------------------------------------------------------------------
+    -- UI SCALE
+    --------------------------------------------------------------------
+    local scaleLabel = UI:CreateText(content, L["UI scale"], 11, C.text.r, C.text.g, C.text.b)
+    scaleLabel:SetPoint("TOPLEFT", 0, -yOff)
+
+    local scale = CreateFrame("Slider", "GuildOSScaleSlider", content, "OptionsSliderTemplate")
+    scale:SetPoint("TOPLEFT", 120, -yOff)
+    scale:SetWidth(180)
+    scale:SetMinMaxValues(0.8, 1.2)
+    scale:SetValueStep(0.05)
+    scale:SetObeyStepOnDrag(true)
+    scale:SetValue(BRutus:GetSetting("uiScale") or 1)
+    _G[scale:GetName() .. "Low"]:SetText("80%")
+    _G[scale:GetName() .. "High"]:SetText("120%")
+    _G[scale:GetName() .. "Text"]:SetText(string.format("%d%%", (BRutus:GetSetting("uiScale") or 1) * 100))
+    scale:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value * 20 + 0.5) / 20   -- snap to the 0.05 step
+        BRutus:SetSetting("uiScale", value)
+        _G[self:GetName() .. "Text"]:SetText(string.format("%d%%", value * 100))
+        UI:ApplyScale()
+    end)
+    yOff = yOff + 40
+
+    --------------------------------------------------------------------
     -- MODULE TOGGLES
     --------------------------------------------------------------------
     local sectionTitle = UI:CreateHeaderText(content, L["MODULES"], 12)
     sectionTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
-    -- Ensure modules table exists
-    if not BRutus.db.settings.modules then
-        BRutus.db.settings.modules = {
-            raidTracker = true, lootTracker = true, lootMaster = true,
-            consumableChecker = true, recruitment = true, trialTracker = true,
-            officerNotes = true, commSystem = true,
-            raidHUD = true,
-        }
-    end
-    local mods = BRutus.db.settings.modules
-
-    local modules = {
-        { key = "raidTracker",       label = L["Raid Tracker"],         desc = L["Track raid attendance, penalties, and sessions"], officerOnly = true },
-        { key = "lootTracker",       label = L["Loot Tracker"],         desc = L["Record loot drops from boss kills"] },
-        { key = "lootMaster",        label = L["Loot Master"],          desc = L["Master Loot with wishlist auto-council"] },
-        { key = "consumableChecker", label = L["Consumable Checker"],   desc = L["Scan raid for missing flasks/food/elixirs"] },
-        { key = "raidHUD",           label = L["Raid CD Tracker"],      desc = L["Floating tracker for raid cooldowns and consumable check"] },
-
-        { key = "trialTracker",      label = L["Trial Tracker"],        desc = L["Track trial member progress (officer)"], officerOnly = true },
-        { key = "officerNotes",      label = L["Officer Notes"],        desc = L["Private notes on guild members (officer)"], officerOnly = true },
-        { key = "recruitment",       label = L["Recruitment"],          desc = L["Auto-post recruitment messages (officer)"], officerOnly = true },
-        { key = "commSystem",        label = L["Comm System"],          desc = L["Sync member data between addon users"] },
-    }
-
-    for _, mod in ipairs(modules) do
-        if not mod.officerOnly or isOfficer then
+    -- Toggles come from the feature registry. AllFeatures, not
+    -- VisibleFeatures: a disabled feature must keep its checkbox, or
+    -- there is no way left to switch it back on. `core` features have no
+    -- switch at all — turning Settings or Roster off would lock the user out.
+    for _, def in ipairs(UI:AllFeatures(nil)) do
+        if not def.core then
         local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
         row:SetSize(content:GetWidth() - 10, 36)
         row:SetPoint("TOPLEFT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         row:SetBackdropColor(0.082, 0.082, 0.105, 0.5)
 
-        local cb = UI:CreateCheckbox(row, mod.label, 18)
+        local cb = UI:CreateCheckbox(row, def.label, 18)
         cb:SetPoint("LEFT", 8, 0)
-        cb.checkbox:SetChecked(mods[mod.key] ~= false)
+        cb.checkbox:SetChecked(BRutus:IsFeatureEnabled(def.id))
         cb.checkbox.onChanged = function(_, checked)
-            -- GetChecked() returns true or nil (never false) in WoW TBC.
-            -- Explicitly store false so modEnabled() sees ~= false correctly.
-            mods[mod.key] = checked and true or false
-            -- Loot Master supports live toggling (SetEnabled); other modules
-            -- still register their events only at Initialize, so they need a reload.
-            if mod.key == "lootMaster" and BRutus.LootMaster and BRutus.LootMaster.SetEnabled then
-                BRutus.LootMaster:SetEnabled(mods[mod.key])
-                BRutus:Print(mod.label .. (checked
-                    and L[" |cff00ff00enabled|r."]
-                    or  L[" |cffFF4444disabled|r."]))
-            elseif checked then
-                BRutus:Print(mod.label .. L[" |cff00ff00enabled|r. Reload UI to apply."])
-            else
-                BRutus:Print(mod.label .. L[" |cffFF4444disabled|r. Reload UI to apply."])
+            BRutus:SetFeatureEnabled(def.id, checked)
+            -- Windows are lazy, so UI features toggle live. Background
+            -- modules register their events at Initialize, so only those
+            -- still need a reload.
+            local needsReload = def.module and not def.hub
+            BRutus:Print(def.label .. (checked
+                and L[" |cff00ff00enabled|r."]
+                or  L[" |cffFF4444disabled|r."])
+                .. (needsReload and L[" Reload UI to apply."] or ""))
+            if def.id == "lootMaster" and BRutus.LootMaster and BRutus.LootMaster.SetEnabled then
+                BRutus.LootMaster:SetEnabled(checked and true or false)
             end
         end
 
-        local desc = UI:CreateText(row, mod.desc, 9, C.silver.r, C.silver.g, C.silver.b)
+        local desc = UI:CreateText(row, def.desc or "", 9, C.silver.r, C.silver.g, C.silver.b)
         desc:SetPoint("LEFT", 240, 0)
         desc:SetWidth(400)
 
@@ -2074,6 +2075,17 @@ function BRutus:RefreshSettingsPanel(content, category)
     digestCb.checkbox.onChanged = function(_, checked)
         BRutus.db.digest = BRutus.db.digest or {}
         BRutus.db.digest.enabled = checked and true or false
+    end
+    yOff = yOff + 30
+
+    local pulseCb = UI:CreateCheckbox(content, L["Show live info on the hub"], 18)
+    pulseCb:SetPoint("TOPLEFT", 8, -yOff)
+    pulseCb.checkbox:SetChecked((BRutus:GetSetting("hub") or {}).pulse ~= false)
+    pulseCb.checkbox.onChanged = function(_, checked)
+        local h = BRutus:GetSetting("hub")
+        if type(h) ~= "table" then h = {}; BRutus:SetSetting("hub", h) end
+        h.pulse = checked and true or false
+        if UI.Hub and UI.Hub.Refresh then UI.Hub:Refresh() end
     end
     yOff = yOff + 30
 
