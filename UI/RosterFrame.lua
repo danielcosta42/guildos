@@ -52,6 +52,11 @@ local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150 + KPI_BAN
 
 local TAB_HEIGHT = 28
 
+-- Global frame names must stay unique: this builder now runs once per
+-- container (expanded-mode tab and floating window). The first instance
+-- keeps the historical names so nothing that hardcodes them breaks.
+local rosterInstances = 0
+
 ----------------------------------------------------------------------
 -- Re-apply loot-system-dependent visibility (bottom-bar buttons + the
 -- wishlist tab) without a reload. Called when the loot system changes.
@@ -213,6 +218,10 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     end)
 
     SetSubTab("sessions")
+
+    -- Exposed so the hub and /gos can deep-link a sub-tab (same contract as
+    -- CommunityPanel / AlliancePanel).
+    container.SelectSub = SetSubTab
 end
 
 ----------------------------------------------------------------------
@@ -224,6 +233,8 @@ end
 ----------------------------------------------------------------------
 function BRutus:CreateRosterPanel(parent, host)
     host = host or parent
+    rosterInstances = rosterInstances + 1
+    local uid = rosterInstances > 1 and tostring(rosterInstances) or ""
 
     ----------------------------------------------------------------
     -- KPI band (summary cards across the top)
@@ -342,7 +353,7 @@ function BRutus:CreateRosterPanel(parent, host)
     host.offlineBtn = offlineBtn
 
     -- Search box
-    local searchBox = CreateFrame("EditBox", "BRutusSearchBox", statsBar, "BackdropTemplate")
+    local searchBox = CreateFrame("EditBox", "BRutusSearchBox" .. uid, statsBar, "BackdropTemplate")
     searchBox:SetSize(160, 22)
     searchBox:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
     searchBox:SetBackdrop({
@@ -451,20 +462,20 @@ function BRutus:CreateRosterPanel(parent, host)
     headerLine:SetPoint("TOPRIGHT", 0, -(28 + HEADER_HEIGHT))
 
     -- Scroll Frame for roster rows
-    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer", tableArea)
+    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer" .. uid, tableArea)
     rosterContainer:SetPoint("TOPLEFT", 1, -(28 + HEADER_HEIGHT + 1))
     rosterContainer:SetPoint("BOTTOMRIGHT", -1, 0)
 
-    local scrollFrame = CreateFrame("ScrollFrame", "BRutusRosterScroll", rosterContainer, "FauxScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "BRutusRosterScroll" .. uid, rosterContainer, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
-    UI:SkinScrollBar(scrollFrame, "BRutusRosterScroll")
+    UI:SkinScrollBar(scrollFrame, "BRutusRosterScroll" .. uid)
 
     host.scrollFrame = scrollFrame
     host.rows = {}
 
     for i = 1, VISIBLE_ROWS do
-        host.rows[i] = CreateRosterRow(rosterContainer, i)
+        host.rows[i] = CreateRosterRow(rosterContainer, i, uid)
     end
 
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
@@ -1524,8 +1535,8 @@ end
 ----------------------------------------------------------------------
 -- Create a single roster row
 ----------------------------------------------------------------------
-function CreateRosterRow(parent, rowIndex)
-    local row = CreateFrame("Button", "BRutusRow" .. rowIndex, parent, "BackdropTemplate")
+function CreateRosterRow(parent, rowIndex, uid)
+    local row = CreateFrame("Button", "BRutusRow" .. (uid or "") .. rowIndex, parent, "BackdropTemplate")
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:SetHeight(ROW_HEIGHT)
     row:SetPoint("TOPLEFT", 0, -((rowIndex - 1) * ROW_HEIGHT))

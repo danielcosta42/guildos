@@ -36,6 +36,7 @@ local function printHelp()
 
     helpHeader(L["General"])
     helpLine("/gos",             L["Open the roster window"])
+    helpLine("/gos <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
     helpLine("/gos map",         L["Open the live guild map"])
@@ -529,14 +530,9 @@ local function handleCommand(msg)
             BRutus:Print(L["Unbanned "] .. name)
         end
     elseif msg == "banlist" then
-        -- Open the main window on the Leadership tab. No BRutus:ShowManagement
-        -- opener exists yet (confirmed via UI/RosterFrame.lua + UI/ManagementPanel.lua),
-        -- so follow the same open pattern as BRutus:ShowCalendar (UI/CalendarPanel.lua).
-        -- Task 6 adds the "ban" sub-tab to UI/ManagementPanel.lua; until then this lands
-        -- on the Leadership tab without a sub-tab pre-selected.
-        if not BRutus.RosterFrame then BRutus.RosterFrame = BRutus.CreateRosterFrame() end
-        if not BRutus.RosterFrame:IsShown() then BRutus.RosterFrame:Show() end
-        if BRutus.RosterFrame.SetActiveTab then BRutus.RosterFrame:SetActiveTab("management") end
+        -- Task 6 adds the "ban" sub-tab to UI/ManagementPanel.lua; until then
+        -- this lands on the Leadership window without a sub-tab pre-selected.
+        BRutus.UI:OpenWindow("management")
     elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then
         if BRutus.Recruitment then
             local rest = strtrim((msg:gsub("^ai%s*", ""):gsub("^autoinvite%s*", "")))
@@ -570,6 +566,19 @@ local function handleCommand(msg)
             BRutus.LFGBoard:HandleCommand(a, rest)
         end
     else
+        -- Any registered feature id opens its window: /gos raids, /gos loot...
+        -- Checked here, as a last resort, so it can never shadow a verb
+        -- handled by one of the branches above (e.g. /gos roster stays the
+        -- website import, /gos dkp stays the points frame).
+        local featureId, featureRest = msg:match("^(%S+)%s*(.-)$")
+        if featureId and BRutus.UI and BRutus.UI.GetFeature then
+            local def = BRutus.UI:GetFeature(featureId)
+            if def and def.hub then
+                BRutus.UI:OpenWindow(featureId, featureRest ~= "" and featureRest or nil)
+                return
+            end
+        end
+
         -- Unknown verb: point at the listing, then keep the historic
         -- behaviour of opening the roster. A bare /gos is the documented way
         -- to open the roster and is not a typo, so it stays silent.

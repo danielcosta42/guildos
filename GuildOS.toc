@@ -127,3 +127,4 @@ UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
 UI\RaidHUD.lua
+UI\Features.lua
