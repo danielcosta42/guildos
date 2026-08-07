@@ -593,27 +593,11 @@ function BRutus:ToggleRoster()
         if self.ShowRecruitInbox then self:ShowRecruitInbox() end
         return
     end
-    if not self.RosterFrame then
-        self.RosterFrame = BRutus.CreateRosterFrame()
+    if IsInGuild() then
+        C_GuildInfo.GuildRoster()
     end
-    if self.RosterFrame:IsShown() then
-        self.RosterFrame:Hide()
-    else
-        if IsInGuild() then
-            C_GuildInfo.GuildRoster()
-        end
-        self.RosterFrame:UpdateTabVisibility()
-        -- Reset to roster if current tab is officer-only and player isn't officer
-        local currentTab = self.RosterFrame.activeTab or "roster"
-        for _, tab in ipairs(self.RosterFrame.tabs) do
-            if tab.key == currentTab and tab.officerOnly and not self:IsOfficer() then
-                currentTab = "roster"
-                break
-            end
-        end
-        self.RosterFrame:SetActiveTab(currentTab)
-        self.RosterFrame:Show()
-        self.RosterFrame:RefreshRoster()
+    if BRutus.UI and BRutus.UI.Hub then
+        BRutus.UI.Hub:Toggle()
     end
 end
 

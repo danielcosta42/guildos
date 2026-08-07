@@ -574,3 +574,10 @@ L["Floating tracker for raid cooldowns and consumable check"] = "Floating tracke
 L["Track trial member progress (officer)"] = "Track trial member progress (officer)"
 L["Private notes on guild members (officer)"] = "Private notes on guild members (officer)"
 L["Sync member data between addon users"] = "Sync member data between addon users"
+
+-- UI/Hub.lua
+L["Expanded mode"] = "Expanded mode"
+L["... more"] = "... more"
+L["Close all"] = "Close all"
+L["%d online of %d"] = "%d online of %d"
+L["Everything is disabled — open Settings"] = "Everything is disabled — open Settings"

@@ -39,23 +39,18 @@ end
 -- still opens the roster; the menu exposes the guild map and settings.
 local menuFrame
 
-local function OpenSettings()
-    BRutus:ToggleRoster()
-    if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-        BRutus.RosterFrame:SetActiveTab("settings")
-    end
-end
-
 local function MinimapMenu_Init(_, level)
     local info = UIDropDownMenu_CreateInfo()
     info.isTitle = true; info.notCheckable = true
     info.text = "|cffFFD700Guild|r |cffD4AC0DOS|r"
     UIDropDownMenu_AddButton(info, level)
 
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Roster"]
-    info.func = function() BRutus:ToggleRoster(); CloseDropDownMenus() end
-    UIDropDownMenu_AddButton(info, level)
+    for _, def in ipairs(BRutus.UI:VisibleFeatures("hub")) do
+        info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+        info.text = def.label
+        info.func = function() BRutus.UI:OpenWindow(def.id); CloseDropDownMenus() end
+        UIDropDownMenu_AddButton(info, level)
+    end
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Guild Map"]
@@ -71,11 +66,6 @@ local function MinimapMenu_Init(_, level)
         if BRutus.TogglePugInspector then BRutus:TogglePugInspector() end
         CloseDropDownMenus()
     end
-    UIDropDownMenu_AddButton(info, level)
-
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Settings"]
-    info.func = function() OpenSettings(); CloseDropDownMenus() end
     UIDropDownMenu_AddButton(info, level)
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true

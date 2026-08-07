@@ -106,6 +106,7 @@ Modules\PugInspector.lua
 UI\Helpers.lua
 UI\FeatureRegistry.lua
 UI\Window.lua
+UI\Hub.lua
 UI\Dashboard.lua
 UI\RaiderPanel.lua
 UI\RecipesPanel.lua
