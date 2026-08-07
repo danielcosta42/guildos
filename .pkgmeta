@@ -13,6 +13,10 @@ ignore:
   - .gitattributes
   - .luacheckrc
   - screenshots
+  # Development harnesses. They run under plain lua5.1 outside the game and
+  # stub the WoW API, so shipping them would put fake GetGuildRosterInfo and
+  # friends inside the addon folder.
+  - tools
   - "*.md"
 
 manual-changelog:

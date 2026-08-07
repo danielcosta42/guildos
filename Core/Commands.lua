@@ -51,6 +51,7 @@ local function printHelp()
     helpLine("/gos cons",          L["Check raid consumables"])
     helpLine("/gos specs",         L["Scan group talent specs"])
     helpLine("/gos export <what>", L["Export roster, attendance or loot"])
+    helpLine("/gos web [on|off]",  L["Copy your guild into the web companion"])
 
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
@@ -301,6 +302,24 @@ local function handleCommand(msg)
     elseif msg:match("^lm announce") then
         -- /guildos lm announce - manually announce item from target tooltip
         BRutus:Print(L["Open loot window as Master Looter to announce items."])
+    elseif msg:match("^web") or msg:match("^companion") then
+        -- /guildos web [on|off] - the string you paste into the web companion.
+        local C = BRutus.Companion
+        local arg = C and msg:match("^%S+%s+(%S+)")
+        if C and (arg == "on" or arg == "off") then
+            C:SetEnabled(arg == "on")
+            BRutus:Print(arg == "on" and L["Web companion enabled."] or L["Web companion disabled."])
+        elseif C and not C:IsEnabled() then
+            BRutus:Print(L["The web companion is off. Turn it on with /gos web on."])
+        elseif C then
+            local text, countOrErr = C:Build()
+            if text then
+                BRutus:ShowExportPopup(
+                    string.format(L["Web Companion (%d members)"], countOrErr), text)
+            else
+                BRutus:Print(L["|cffFF4444Export failed:|r "] .. tostring(countOrErr))
+            end
+        end
     elseif msg == "exportatt" or msg == "exportattendance" then
         if BRutus.RaidTracker then
             local json, err = BRutus.RaidTracker:ExportForTMB()

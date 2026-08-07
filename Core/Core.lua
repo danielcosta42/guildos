@@ -40,6 +40,10 @@ local DB_DEFAULTS = {
         minimap = { hide = false },
         hijackGuildButton = true,  -- guild micro button / "J" opens Guild OS (opt-out in General)
         officerMaxRank = 1,  -- rank indexes 0..officerMaxRank are officers (GM + rank 1 by default)
+        -- Web companion. Off until someone turns it on: the export carries the
+        -- whole guild's gear, attunements and attendance, and a guild that does
+        -- not use the site should not have that one mistyped command away.
+        companion = false,
         modules = {
             raidTracker = true,
             lootTracker = true,
