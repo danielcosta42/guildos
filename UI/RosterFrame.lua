@@ -139,6 +139,13 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     local subTabBtns   = {}
 
     local function SetSubTab(key)
+        -- Defence at the selection point: the button for an officer-only
+        -- sub-tab is simply never drawn for non-officers, but SelectSub is
+        -- also reachable directly (deep link from /gos open raids <sub>),
+        -- so a non-officer key must be refused here too.
+        for _, st in ipairs(SUBTABS) do
+            if st.key == key and st.officerOnly and not BRutus:IsOfficer() then return end
+        end
         activeSubTab = key
         for _, t in ipairs(subTabBtns) do
             if t.key == key then

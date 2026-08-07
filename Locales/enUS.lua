@@ -544,6 +544,7 @@ L["The message was already delivered; this only clears it from the Guild OS feed
 
 -- UI/Window.lua
 L["%s is disabled in Settings."] = "%s is disabled in Settings."
+L["%s is officer-only."] = "%s is officer-only."
 
 -- UI/Features.lua
 L["Home"] = "Home"
