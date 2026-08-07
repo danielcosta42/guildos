@@ -296,7 +296,7 @@ function BRutus:InitModules()
 - [ ] **Step 5: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
-Expected: PASS, 0 warnings.
+Expected: 0 errors, warning count unchanged from baseline (71).
 
 In-game: `/reload` then `/gos selftest`
 Expected: all four `features.*` cases pass; the total count grows by 4 and `0 failed`.
@@ -612,7 +612,7 @@ UI\Window.lua
 - [ ] **Step 5: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
-Expected: PASS, 0 warnings.
+Expected: 0 errors, warning count unchanged from baseline (71).
 
 In-game: `/reload` then `/gos selftest`
 Expected: `window.geometry_roundtrip` passes, `0 failed`.
@@ -747,7 +747,29 @@ git commit -m "refactor: extract the roster panel into CreateRosterPanel"
 
 **Why this file loads last:** `build` closures resolve their builder at call time, so load order does not affect correctness — but registering after every panel file keeps the dependency direction obvious.
 
-- [ ] **Step 1: Expose sub-tab selection on the raid hub**
+- [ ] **Step 1: Make the roster's global frame names instance-unique**
+
+This task is what first makes `CreateRosterPanel` callable twice — once for the expanded-mode tab, once for the floating window. Four frames inside it are created with hardcoded global names, and a second instance would steal them: `BRutusSearchBox` (`UI/RosterFrame.lua:345`), `BRutusRosterContainer` (:454), `BRutusRosterScroll` (:458), and `"BRutusRow" .. rowIndex` in `CreateRosterRow` (:1528). The live consumers are `UI:SkinScrollBar(scrollFrame, "BRutusRosterScroll")` (:461) and `FauxScrollFrameTemplate`'s `$parent`-derived scrollbar — both resolve by name, so the second instance silently re-skins or mis-targets the first.
+
+Give each instance a suffix, keeping the first instance's names exactly as they are today so expanded mode is untouched:
+
+```lua
+-- Global frame names must stay unique: this builder now runs once per
+-- container (expanded-mode tab and floating window). The first instance
+-- keeps the historical names so nothing that hardcodes them breaks.
+local rosterInstances = 0
+```
+
+at file scope near the other file-locals, then at the top of `BRutus:CreateRosterPanel`:
+
+```lua
+    rosterInstances = rosterInstances + 1
+    local uid = rosterInstances > 1 and tostring(rosterInstances) or ""
+```
+
+Apply `uid` to all four names — `"BRutusSearchBox" .. uid`, `"BRutusRosterContainer" .. uid`, `"BRutusRosterScroll" .. uid`, and the `SkinScrollBar` argument — and pass it into `CreateRosterRow` so its rows become `"BRutusRow" .. uid .. rowIndex`. `CreateRosterRow` is a declared global (`.luacheckrc`); adding a third parameter is fine, but check for other callers first with `grep -rn "CreateRosterRow" --include=*.lua .` and update any you find.
+
+- [ ] **Step 2: Expose sub-tab selection on the raid hub**
 
 `UI/RosterFrame.lua` — `CreateRaidHubPanel` builds its sub-tabs but never exposes a selector, unlike `UI/CommunityPanel.lua:256` and `UI/AlliancePanel.lua:1466`. Add one line after `SetSubTab("sessions")` (line 215):
 
@@ -757,7 +779,7 @@ git commit -m "refactor: extract the roster panel into CreateRosterPanel"
     container.SelectSub = SetSubTab
 ```
 
-- [ ] **Step 2: Write the registry entries**
+- [ ] **Step 3: Write the registry entries**
 
 Create `UI/Features.lua`:
 
@@ -904,7 +926,7 @@ grep -rn "^function BRutus:Create" UI/*.lua
 
 **No feature registers a `badge` yet.** There is no ready counter for pending applications or unread alliance messages in the current modules, and inventing one is out of scope here. `Hub:Refresh` (Task 5) is nil-safe on `def.badge`, so badges light up the day a module exposes a count — one field, no other change.
 
-- [ ] **Step 3: Wire the slash commands**
+- [ ] **Step 4: Wire the slash commands**
 
 In `Core/Commands.lua`, in the dispatch chain, add a fallback before the "unknown command" branch:
 
@@ -939,7 +961,7 @@ And to `Locales/enUS.lua` under the `-- Core/Commands.lua` block:
 L["Open a feature window (roster, raids, loot, guild...)"] = "Open a feature window (roster, raids, loot, guild...)"
 ```
 
-- [ ] **Step 4: Register the file**
+- [ ] **Step 5: Register the file**
 
 Add to `GuildOS.toc` as the final UI line, after `UI\RaidHUD.lua`:
 
@@ -947,15 +969,15 @@ Add to `GuildOS.toc` as the final UI line, after `UI\RaidHUD.lua`:
 UI\Features.lua
 ```
 
-- [ ] **Step 5: Run both gates**
+- [ ] **Step 6: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
-Expected: PASS, 0 warnings.
+Expected: 0 errors, warning count unchanged from baseline (71). New files must be individually clean.
 
 In-game: `/reload` then `/gos selftest`
 Expected: `features.invariants` and `features.unique_ids` pass with the real entries loaded — this is the step that catches a typo'd builder name or a missing size.
 
-- [ ] **Step 6: Verify windows open**
+- [ ] **Step 7: Verify windows open**
 
 In-game, one at a time: `/gos roster`, `/gos raids`, `/gos loot`, `/gos guild`, `/gos settings`, `/gos raids audit`.
 Expected: each opens a small window with the correct title, the panel's real content, a working close button, drag by the title bar, resize by the corner grip (except Settings). `/gos raids audit` opens Raids on its Audit sub-tab. `ESC` closes the top window.
@@ -963,7 +985,7 @@ Expected: each opens a small window with the correct title, the panel's real con
 Then: drag Roster somewhere, `/reload`, `/gos roster`.
 Expected: it reopens exactly where it was left, at the size it was left.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add UI/Features.lua UI/RosterFrame.lua Core/Commands.lua GuildOS.toc Locales/enUS.lua
@@ -1376,7 +1398,7 @@ UI\Hub.lua
 - [ ] **Step 6: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
-Expected: PASS, 0 warnings.
+Expected: 0 errors, warning count unchanged from baseline (71).
 
 In-game: `/reload`, then `/gos`
 Expected: the hub card appears (~230px wide), showing the pulse lines and one row per enabled feature. Officer-only rows are absent on a non-officer character.
@@ -1508,7 +1530,7 @@ end
 - [ ] **Step 5: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
-Expected: PASS, 0 warnings.
+Expected: 0 errors, warning count unchanged from baseline (71).
 
 In-game: `/reload` then `/gos selftest`
 Expected: `0 failed`.
@@ -1616,7 +1638,7 @@ L[" Reload UI to apply."] = " Reload UI to apply."
 - [ ] **Step 4: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
-Expected: PASS, 0 warnings.
+Expected: 0 errors, warning count unchanged from baseline (71).
 
 In-game: `/reload` then `/gos selftest`
 Expected: `0 failed`.
