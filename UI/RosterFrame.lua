@@ -710,6 +710,258 @@ function BRutus:CreateRosterPanel(parent, host)
         self:RefreshRoster()
     end
 
+    ----------------------------------------------------------------
+    -- Data & Methods
+    ----------------------------------------------------------------
+    host.sortedMembers = {}
+    host.searchFilter = ""
+
+    function host:RefreshRoster()
+        self:BuildMemberList()
+        self:UpdateSortIndicators()
+        self:UpdateRows()
+        self:UpdateStats()
+    end
+
+    function host:BuildMemberList()
+        -- Reuse the existing table to avoid allocating a new one on every refresh.
+        wipe(self.sortedMembers)
+        local members = self.sortedMembers
+        local showOffline = BRutus.db.settings.showOffline
+        local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
+        local levelMatch = (filter ~= "" and BRutus.LevelQuery) and BRutus.LevelQuery:Parse(filter) or nil
+
+        -- Get guild roster info
+        local numMembers = GetNumGuildMembers()
+        for i = 1, numMembers do
+            local name, rankName, rankIndex, level, classLoc, zone, note,
+                  officerNote, isOnline, status, classFile = GetGuildRosterInfo(i)
+
+            if name then
+                -- Strip realm from name for display
+                local displayName = name:match("^([^-]+)") or name
+                local realm = name:match("-(.+)$") or GetRealmName()
+                local key = BRutus:GetPlayerKey(displayName, realm)
+
+                -- Apply filters
+                local passFilter = true
+                if not showOffline and not isOnline then
+                    passFilter = false
+                end
+                if filter ~= "" then
+                    if levelMatch then
+                        if not levelMatch(level or 0) then passFilter = false end
+                    else
+                        local searchTarget = strlower(displayName .. " " .. (classLoc or "") .. " " .. (zone or "") .. " " .. (rankName or ""))
+                        if not searchTarget:find(filter, 1, true) then
+                            passFilter = false
+                        end
+                    end
+                end
+
+                -- Rail segment filter (Todos / Online / by rank)
+                local seg = self.segment
+                if seg == "online" then
+                    if not isOnline then passFilter = false end
+                elseif type(seg) == "string" and seg:find("^rank:") then
+                    local ri = tonumber(seg:match("^rank:(%d+)"))
+                    if ri and rankIndex ~= ri then passFilter = false end
+                end
+
+                -- Rail class filter
+                if self.classFilter and classFile ~= self.classFilter then
+                    passFilter = false
+                end
+
+                if passFilter then
+                    -- Merge with stored addon data
+                    local addonData = BRutus.db.members[key] or {}
+
+                    table.insert(members, {
+                        index = i,
+                        key = key,
+                        name = displayName,
+                        fullName = name,
+                        realm = realm,
+                        rank = rankName,
+                        rankIndex = rankIndex,
+                        level = level or 0,
+                        class = classFile or "",
+                        classDisplay = classLoc or "",
+                        zone = zone or "",
+                        note = note or "",
+                        officerNote = officerNote or "",
+                        isOnline = isOnline,
+                        status = status or "",
+                        -- Addon data
+                        avgIlvl = addonData.avgIlvl or 0,
+                        gear = addonData.gear,
+                        professions = addonData.professions,
+                        attunements = addonData.attunements,
+                        stats = addonData.stats,
+                        race = addonData.race or "",
+                        lastUpdate = addonData.lastUpdate or 0,
+                        lastSync = addonData.lastSync or 0,
+                        -- Prefer the live version a member is broadcasting on the mesh
+                        -- (realm-wide, fresher than the last guild sync) over the stored
+                        -- one, so an update shows up before CommSystem re-syncs.
+                        addonVersion = (BRutus.Mesh and BRutus.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
+                        hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
+                    })
+                end
+            end
+        end
+
+        -- Sort
+        local sortBy = BRutus.db.settings.sortBy or "level"
+        local sortAsc = BRutus.db.settings.sortAsc
+
+        table.sort(members, function(a, b)
+            -- Online always first
+            if a.isOnline ~= b.isOnline then
+                return a.isOnline
+            end
+
+            local va, vb
+            if sortBy == "name" then
+                va, vb = a.name:lower(), b.name:lower()
+            elseif sortBy == "level" then
+                va, vb = a.level, b.level
+            elseif sortBy == "class" then
+                va, vb = a.classDisplay:lower(), b.classDisplay:lower()
+            elseif sortBy == "race" then
+                va, vb = a.race:lower(), b.race:lower()
+            elseif sortBy == "avgIlvl" then
+                va, vb = a.avgIlvl, b.avgIlvl
+            elseif sortBy == "lastSeen" then
+                va, vb = a.lastUpdate, b.lastUpdate
+            elseif sortBy == "attendance" then
+                local pa = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(a.key) or 0
+                local pb = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(b.key) or 0
+                va, vb = pa, pb
+            else
+                va, vb = a.level, b.level
+            end
+
+            if va == vb then
+                return a.name:lower() < b.name:lower()
+            end
+
+            if sortAsc then
+                return va < vb
+            else
+                return va > vb
+            end
+        end)
+    end
+
+    function host:UpdateSortIndicators()
+        local sortBy = BRutus.db.settings.sortBy
+        local sortAsc = BRutus.db.settings.sortAsc
+
+        for key, btn in pairs(self.headerButtons) do
+            if key == sortBy then
+                btn.sortArrow:SetText(sortAsc and "|TInterface\\BUTTONS\\Arrow-Up-Up:12:12|t" or "|TInterface\\BUTTONS\\Arrow-Down-Up:12:12|t")
+                btn.sortArrow:Show()
+            else
+                btn.sortArrow:Hide()
+            end
+        end
+    end
+
+    function host:UpdateRows()
+        local members = self.sortedMembers
+        local numMembers = #members
+        local offset = FauxScrollFrame_GetOffset(self.scrollFrame)
+
+        FauxScrollFrame_Update(self.scrollFrame, numMembers, VISIBLE_ROWS, ROW_HEIGHT)
+
+        for i = 1, VISIBLE_ROWS do
+            local row = self.rows[i]
+            local dataIndex = offset + i
+
+            if dataIndex <= numMembers then
+                local data = members[dataIndex]
+                UpdateRosterRow(row, data, i)
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+    end
+
+    function host:UpdateStats()
+        local numTotal = GetNumGuildMembers()
+        local numOnline = 0
+
+        for i = 1, numTotal do
+            local _, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
+            if isOnline then numOnline = numOnline + 1 end
+        end
+
+        -- Addon coverage + average item level (members with stored addon data)
+        local numWithAddon, ilvlSum, ilvlCount = 0, 0, 0
+        for _, data in pairs(BRutus.db.members) do
+            if data.lastUpdate and data.lastUpdate > 0 then
+                numWithAddon = numWithAddon + 1
+                if data.avgIlvl and data.avgIlvl > 0 then
+                    ilvlSum = ilvlSum + data.avgIlvl
+                    ilvlCount = ilvlCount + 1
+                end
+            end
+        end
+        local avgIlvl = ilvlCount > 0 and math.floor(ilvlSum / ilvlCount + 0.5) or 0
+
+        -- Average 25-man raid attendance across known members
+        local attSum, attCount = 0, 0
+        if BRutus.RaidTracker and BRutus.RaidTracker.GetAttendance25ManPercent then
+            for key in pairs(BRutus.db.members) do
+                local p = BRutus.RaidTracker:GetAttendance25ManPercent(key)
+                if p and p > 0 then
+                    attSum = attSum + p
+                    attCount = attCount + 1
+                end
+            end
+        end
+        local avgAtt = attCount > 0 and math.floor(attSum / attCount + 0.5) or 0
+
+        -- Update guild name in subtitle
+        local guildName = GetGuildInfo("player")
+        if guildName and self.subtitle then
+            self.subtitle:SetText("< " .. guildName .. " >")
+        end
+
+        -- Refresh guild emblem
+        if self.UpdateGuildIcon then self.UpdateGuildIcon() end
+
+        -- True Roster: unique players behind the guild's alt/main links.
+        if self.kpiPlayers and BRutus.GetTrueRoster then
+            local tr = BRutus:GetTrueRoster()
+            self.kpiPlayers:SetText(tr.uniqueCount)
+            if self.kpiPlayersSub then
+                self.kpiPlayersSub:SetText(string.format(L["of %d chars"], tr.totalChars))
+            end
+        end
+
+        -- KPI cards
+        if self.kpiMembers then self.kpiMembers:SetText(numTotal) end
+        if self.kpiOnline then self.kpiOnline:SetText(numOnline) end
+        if self.kpiIlvl then self.kpiIlvl:SetText(avgIlvl > 0 and avgIlvl or "—") end
+        if self.kpiAtt then self.kpiAtt:SetText(avgAtt > 0 and (avgAtt .. "%") or "—") end
+        if self.kpiAddon then self.kpiAddon:SetText(numWithAddon) end
+
+        -- Toolbar result summary (reflects the active filters)
+        if self.resultText then
+            local shown = self.sortedMembers and #self.sortedMembers or 0
+            local segLabel = self.GetSegmentLabel and self:GetSegmentLabel() or L["All"]
+            self.resultText:SetText(string.format(
+                L["%s  |cff6a6a76·|r  |cffffffff%d|r of %d"], segLabel, shown, numTotal))
+        end
+
+        -- Rail counts + active highlight
+        if self.UpdateRail then self:UpdateRail() end
+    end
+
     return parent
 end
 
@@ -1243,258 +1495,6 @@ function BRutus.CreateRosterFrame()
     end
 
     frame:HookScript("OnShow", UpdateInviteVisibility)
-
-    ----------------------------------------------------------------
-    -- Data & Methods
-    ----------------------------------------------------------------
-    frame.sortedMembers = {}
-    frame.searchFilter = ""
-
-    function frame:RefreshRoster()
-        self:BuildMemberList()
-        self:UpdateSortIndicators()
-        self:UpdateRows()
-        self:UpdateStats()
-    end
-
-    function frame:BuildMemberList()
-        -- Reuse the existing table to avoid allocating a new one on every refresh.
-        wipe(self.sortedMembers)
-        local members = self.sortedMembers
-        local showOffline = BRutus.db.settings.showOffline
-        local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
-        local levelMatch = (filter ~= "" and BRutus.LevelQuery) and BRutus.LevelQuery:Parse(filter) or nil
-
-        -- Get guild roster info
-        local numMembers = GetNumGuildMembers()
-        for i = 1, numMembers do
-            local name, rankName, rankIndex, level, classLoc, zone, note,
-                  officerNote, isOnline, status, classFile = GetGuildRosterInfo(i)
-
-            if name then
-                -- Strip realm from name for display
-                local displayName = name:match("^([^-]+)") or name
-                local realm = name:match("-(.+)$") or GetRealmName()
-                local key = BRutus:GetPlayerKey(displayName, realm)
-
-                -- Apply filters
-                local passFilter = true
-                if not showOffline and not isOnline then
-                    passFilter = false
-                end
-                if filter ~= "" then
-                    if levelMatch then
-                        if not levelMatch(level or 0) then passFilter = false end
-                    else
-                        local searchTarget = strlower(displayName .. " " .. (classLoc or "") .. " " .. (zone or "") .. " " .. (rankName or ""))
-                        if not searchTarget:find(filter, 1, true) then
-                            passFilter = false
-                        end
-                    end
-                end
-
-                -- Rail segment filter (Todos / Online / by rank)
-                local seg = self.segment
-                if seg == "online" then
-                    if not isOnline then passFilter = false end
-                elseif type(seg) == "string" and seg:find("^rank:") then
-                    local ri = tonumber(seg:match("^rank:(%d+)"))
-                    if ri and rankIndex ~= ri then passFilter = false end
-                end
-
-                -- Rail class filter
-                if self.classFilter and classFile ~= self.classFilter then
-                    passFilter = false
-                end
-
-                if passFilter then
-                    -- Merge with stored addon data
-                    local addonData = BRutus.db.members[key] or {}
-
-                    table.insert(members, {
-                        index = i,
-                        key = key,
-                        name = displayName,
-                        fullName = name,
-                        realm = realm,
-                        rank = rankName,
-                        rankIndex = rankIndex,
-                        level = level or 0,
-                        class = classFile or "",
-                        classDisplay = classLoc or "",
-                        zone = zone or "",
-                        note = note or "",
-                        officerNote = officerNote or "",
-                        isOnline = isOnline,
-                        status = status or "",
-                        -- Addon data
-                        avgIlvl = addonData.avgIlvl or 0,
-                        gear = addonData.gear,
-                        professions = addonData.professions,
-                        attunements = addonData.attunements,
-                        stats = addonData.stats,
-                        race = addonData.race or "",
-                        lastUpdate = addonData.lastUpdate or 0,
-                        lastSync = addonData.lastSync or 0,
-                        -- Prefer the live version a member is broadcasting on the mesh
-                        -- (realm-wide, fresher than the last guild sync) over the stored
-                        -- one, so an update shows up before CommSystem re-syncs.
-                        addonVersion = (BRutus.Mesh and BRutus.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
-                        hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
-                    })
-                end
-            end
-        end
-
-        -- Sort
-        local sortBy = BRutus.db.settings.sortBy or "level"
-        local sortAsc = BRutus.db.settings.sortAsc
-
-        table.sort(members, function(a, b)
-            -- Online always first
-            if a.isOnline ~= b.isOnline then
-                return a.isOnline
-            end
-
-            local va, vb
-            if sortBy == "name" then
-                va, vb = a.name:lower(), b.name:lower()
-            elseif sortBy == "level" then
-                va, vb = a.level, b.level
-            elseif sortBy == "class" then
-                va, vb = a.classDisplay:lower(), b.classDisplay:lower()
-            elseif sortBy == "race" then
-                va, vb = a.race:lower(), b.race:lower()
-            elseif sortBy == "avgIlvl" then
-                va, vb = a.avgIlvl, b.avgIlvl
-            elseif sortBy == "lastSeen" then
-                va, vb = a.lastUpdate, b.lastUpdate
-            elseif sortBy == "attendance" then
-                local pa = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(a.key) or 0
-                local pb = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(b.key) or 0
-                va, vb = pa, pb
-            else
-                va, vb = a.level, b.level
-            end
-
-            if va == vb then
-                return a.name:lower() < b.name:lower()
-            end
-
-            if sortAsc then
-                return va < vb
-            else
-                return va > vb
-            end
-        end)
-    end
-
-    function frame:UpdateSortIndicators()
-        local sortBy = BRutus.db.settings.sortBy
-        local sortAsc = BRutus.db.settings.sortAsc
-
-        for key, btn in pairs(self.headerButtons) do
-            if key == sortBy then
-                btn.sortArrow:SetText(sortAsc and "|TInterface\\BUTTONS\\Arrow-Up-Up:12:12|t" or "|TInterface\\BUTTONS\\Arrow-Down-Up:12:12|t")
-                btn.sortArrow:Show()
-            else
-                btn.sortArrow:Hide()
-            end
-        end
-    end
-
-    function frame:UpdateRows()
-        local members = self.sortedMembers
-        local numMembers = #members
-        local offset = FauxScrollFrame_GetOffset(self.scrollFrame)
-
-        FauxScrollFrame_Update(self.scrollFrame, numMembers, VISIBLE_ROWS, ROW_HEIGHT)
-
-        for i = 1, VISIBLE_ROWS do
-            local row = self.rows[i]
-            local dataIndex = offset + i
-
-            if dataIndex <= numMembers then
-                local data = members[dataIndex]
-                UpdateRosterRow(row, data, i)
-                row:Show()
-            else
-                row:Hide()
-            end
-        end
-    end
-
-    function frame:UpdateStats()
-        local numTotal = GetNumGuildMembers()
-        local numOnline = 0
-
-        for i = 1, numTotal do
-            local _, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
-            if isOnline then numOnline = numOnline + 1 end
-        end
-
-        -- Addon coverage + average item level (members with stored addon data)
-        local numWithAddon, ilvlSum, ilvlCount = 0, 0, 0
-        for _, data in pairs(BRutus.db.members) do
-            if data.lastUpdate and data.lastUpdate > 0 then
-                numWithAddon = numWithAddon + 1
-                if data.avgIlvl and data.avgIlvl > 0 then
-                    ilvlSum = ilvlSum + data.avgIlvl
-                    ilvlCount = ilvlCount + 1
-                end
-            end
-        end
-        local avgIlvl = ilvlCount > 0 and math.floor(ilvlSum / ilvlCount + 0.5) or 0
-
-        -- Average 25-man raid attendance across known members
-        local attSum, attCount = 0, 0
-        if BRutus.RaidTracker and BRutus.RaidTracker.GetAttendance25ManPercent then
-            for key in pairs(BRutus.db.members) do
-                local p = BRutus.RaidTracker:GetAttendance25ManPercent(key)
-                if p and p > 0 then
-                    attSum = attSum + p
-                    attCount = attCount + 1
-                end
-            end
-        end
-        local avgAtt = attCount > 0 and math.floor(attSum / attCount + 0.5) or 0
-
-        -- Update guild name in subtitle
-        local guildName = GetGuildInfo("player")
-        if guildName then
-            self.subtitle:SetText("< " .. guildName .. " >")
-        end
-
-        -- Refresh guild emblem
-        if self.UpdateGuildIcon then self.UpdateGuildIcon() end
-
-        -- True Roster: unique players behind the guild's alt/main links.
-        if self.kpiPlayers and BRutus.GetTrueRoster then
-            local tr = BRutus:GetTrueRoster()
-            self.kpiPlayers:SetText(tr.uniqueCount)
-            if self.kpiPlayersSub then
-                self.kpiPlayersSub:SetText(string.format(L["of %d chars"], tr.totalChars))
-            end
-        end
-
-        -- KPI cards
-        if self.kpiMembers then self.kpiMembers:SetText(numTotal) end
-        if self.kpiOnline then self.kpiOnline:SetText(numOnline) end
-        if self.kpiIlvl then self.kpiIlvl:SetText(avgIlvl > 0 and avgIlvl or "—") end
-        if self.kpiAtt then self.kpiAtt:SetText(avgAtt > 0 and (avgAtt .. "%") or "—") end
-        if self.kpiAddon then self.kpiAddon:SetText(numWithAddon) end
-
-        -- Toolbar result summary (reflects the active filters)
-        if self.resultText then
-            local shown = self.sortedMembers and #self.sortedMembers or 0
-            local segLabel = self.GetSegmentLabel and self:GetSegmentLabel() or L["All"]
-            self.resultText:SetText(string.format(
-                L["%s  |cff6a6a76·|r  |cffffffff%d|r of %d"], segLabel, shown, numTotal))
-        end
-
-        -- Rail counts + active highlight
-        if self.UpdateRail then self:UpdateRail() end
-    end
 
     -- ESC to close
     table.insert(UISpecialFrames, "BRutusRosterFrame")
