@@ -928,20 +928,27 @@ grep -rn "^function BRutus:Create" UI/*.lua
 
 - [ ] **Step 4: Wire the slash commands**
 
-In `Core/Commands.lua`, in the dispatch chain, add a fallback before the "unknown command" branch:
+**A bare `/gos <id>` fallback does not work and must not be used.** Six feature ids collide with verbs the dispatcher already owns, and one collides destructively: `^trial` (`Core/Commands.lua:274`) prefix-matches `/gos trials` and would pass `"s"` as a player name. `^roster` (:325) belongs to the companion import, `dkp` (:110) and `alliance` (:128) to existing openers. A last-resort fallback can never reach any of them, so half the features would be reachable by bare id and half silently not — worse than a rule with no exceptions.
+
+Use one explicit verb instead. In `Core/Commands.lua`, add this branch to the dispatch chain, positioned like the other verb branches:
 
 ```lua
-    -- Any registered feature id opens its window: /gos raids, /gos loot...
-    if BRutus.UI and BRutus.UI.GetFeature then
-        local def = BRutus.UI:GetFeature(cmd)
+    -- /gos open <feature> — one uniform way to open any feature window.
+    -- Explicit rather than a bare-id fallback: several feature ids
+    -- (roster, trials, dkp, alliance) are already verbs above, and
+    -- "^trial" would even prefix-match "trials" and eat the "s".
+    elseif msg == "open" or msg:match("^open%s") then
+        local id  = msg:match("^open%s+(%S+)")
+        local sub = msg:match("^open%s+%S+%s+(%S+)")
+        local def = id and BRutus.UI and BRutus.UI.GetFeature and BRutus.UI:GetFeature(id)
         if def and def.hub then
-            BRutus.UI:OpenWindow(cmd, rest ~= "" and rest or nil)
-            return
+            BRutus.UI:OpenWindow(id, sub)
+        else
+            BRutus:Print(L["Usage: /gos open <feature>. Try /gos open roster."])
         end
-    end
 ```
 
-Match the local variable names already used in that function for the command word and the remainder (read the surrounding code first — do not assume `cmd` / `rest`).
+Match the surrounding branches' local-name style — read the function first; it pattern-matches on a single `msg` local rather than pre-splitting into `cmd` / `rest`.
 
 Also fix the one command that opens a tab the long way (`Core/Commands.lua:515-521` — it creates the whole 1236px frame just to reach Leadership). Replace those lines with:
 
@@ -952,13 +959,14 @@ Also fix the one command that opens a tab the long way (`Core/Commands.lua:515-5
 Add to `printHelp` under the `General` header:
 
 ```lua
-    helpLine("/gos <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
+    helpLine("/gos open <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
 ```
 
 And to `Locales/enUS.lua` under the `-- Core/Commands.lua` block:
 
 ```lua
 L["Open a feature window (roster, raids, loot, guild...)"] = "Open a feature window (roster, raids, loot, guild...)"
+L["Usage: /gos open <feature>. Try /gos open roster."] = "Usage: /gos open <feature>. Try /gos open roster."
 ```
 
 - [ ] **Step 5: Register the file**
@@ -979,10 +987,12 @@ Expected: `features.invariants` and `features.unique_ids` pass with the real ent
 
 - [ ] **Step 7: Verify windows open**
 
-In-game, one at a time: `/gos roster`, `/gos raids`, `/gos loot`, `/gos guild`, `/gos settings`, `/gos raids audit`.
-Expected: each opens a small window with the correct title, the panel's real content, a working close button, drag by the title bar, resize by the corner grip (except Settings). `/gos raids audit` opens Raids on its Audit sub-tab. `ESC` closes the top window.
+In-game, one at a time: `/gos open roster`, `/gos open raids`, `/gos open loot`, `/gos open guild`, `/gos open settings`, `/gos open raids audit`.
+Expected: each opens a small window with the correct title, the panel's real content, a working close button, drag by the title bar, resize by the corner grip (except Settings). `/gos open raids audit` opens Raids on its Audit sub-tab. `ESC` closes the top window.
 
-Then: drag Roster somewhere, `/reload`, `/gos roster`.
+Also confirm the existing verbs still do what they always did: `/gos roster` still runs the companion import, `/gos trial <name>` still adds a trial, `/gos dkp` and `/gos alliance` still open what they used to.
+
+Then: drag Roster somewhere, `/reload`, `/gos open roster`.
 Expected: it reopens exactly where it was left, at the size it was left.
 
 - [ ] **Step 8: Commit**
