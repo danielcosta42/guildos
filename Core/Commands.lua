@@ -36,7 +36,7 @@ local function printHelp()
 
     helpHeader(L["General"])
     helpLine("/gos",             L["Open the roster window"])
-    helpLine("/gos <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
+    helpLine("/gos open <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
     helpLine("/gos map",         L["Open the live guild map"])
@@ -565,20 +565,22 @@ local function handleCommand(msg)
             local a = {}; for w in rest:gmatch("%S+") do a[#a+1] = w end
             BRutus.LFGBoard:HandleCommand(a, rest)
         end
-    else
-        -- Any registered feature id opens its window: /gos raids, /gos loot...
-        -- Checked here, as a last resort, so it can never shadow a verb
-        -- handled by one of the branches above (e.g. /gos roster stays the
-        -- website import, /gos dkp stays the points frame).
-        local featureId, featureRest = msg:match("^(%S+)%s*(.-)$")
-        if featureId and BRutus.UI and BRutus.UI.GetFeature then
-            local def = BRutus.UI:GetFeature(featureId)
-            if def and def.hub then
-                BRutus.UI:OpenWindow(featureId, featureRest ~= "" and featureRest or nil)
-                return
-            end
+    elseif msg == "open" or msg:match("^open%s") then
+        -- /gos open <feature> [sub] — one uniform way to open any feature
+        -- window. A dedicated verb rather than a bare-id fallback: several
+        -- feature ids (roster, trials, dkp, alliance) are already verbs
+        -- above, and "^trial" would even prefix-match "trials" and eat the
+        -- "s" as a player name. "open" itself is not a prefix of, nor
+        -- prefixed by, any other verb in this chain.
+        local id  = msg:match("^open%s+(%S+)")
+        local sub = msg:match("^open%s+%S+%s+(%S+)")
+        local def = id and BRutus.UI and BRutus.UI.GetFeature and BRutus.UI:GetFeature(id)
+        if def and def.hub then
+            BRutus.UI:OpenWindow(id, sub)
+        else
+            BRutus:Print(L["Usage: /gos open <feature>. Try /gos open roster."])
         end
-
+    else
         -- Unknown verb: point at the listing, then keep the historic
         -- behaviour of opening the roster. A bare /gos is the documented way
         -- to open the roster and is not a typo, so it stays silent.

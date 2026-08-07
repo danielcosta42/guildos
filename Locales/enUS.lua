@@ -275,6 +275,7 @@ L["Open the loot wishlist"] = "Open the loot wishlist"
 L["Scan for unguilded recruits"] = "Scan for unguilded recruits"
 L["Unknown command. Type %s for the list."] = "Unknown command. Type %s for the list."
 L["Open a feature window (roster, raids, loot, guild...)"] = "Open a feature window (roster, raids, loot, guild...)"
+L["Usage: /gos open <feature>. Try /gos open roster."] = "Usage: /gos open <feature>. Try /gos open roster."
 
 -- UI/GuildMap.lua + Core/Commands.lua + UI/Minimap.lua (live guild map)
 L["Open the live guild map"] = "Open the live guild map"
