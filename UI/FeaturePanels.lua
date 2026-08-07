@@ -1723,6 +1723,118 @@ function BRutus:ShowSoftResImportPopup()
 end
 
 ----------------------------------------------------------------------
+-- Companion import popup: paste the roster string from the website.
+-- Invite and group sit on the same window because they are the next two
+-- things a raid leader does, and making them hunt for a slash command
+-- while twenty-five people wait is how a feature goes unused.
+----------------------------------------------------------------------
+function BRutus:ShowImportPopup()
+    if self.companionImportPopup then self.companionImportPopup:Hide() end
+
+    local f = CreateFrame("Frame", "BRutusCompanionImportPopup", UIParent, "BackdropTemplate")
+    f:SetSize(520, 380)
+    f:SetPoint("CENTER")
+    f:SetBackdrop({
+        bgFile   = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
+
+    local titleText = f:CreateFontString(nil, "OVERLAY")
+    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    titleText:SetPoint("TOP", 0, -10)
+    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetText(L["Raid roster from the website"])
+
+    local hint = f:CreateFontString(nil, "OVERLAY")
+    hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    hint:SetPoint("TOP", 0, -28)
+    hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    hint:SetText(L["Paste the roster string, then Load. Invite and Groups work after that."])
+
+    local status = f:CreateFontString(nil, "OVERLAY")
+    status:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    status:SetPoint("BOTTOMLEFT", 14, 16)
+    status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+
+    -- Whatever was loaded earlier survives a reload, so say so on open.
+    local existing = BRutus.CompanionImport and BRutus.CompanionImport:Current()
+    if existing then
+        status:SetText(string.format(L["Loaded: %s (%d)"], existing.title, #existing.members))
+    end
+
+    local scrollFrame = CreateFrame("ScrollFrame", "BRutusCompanionImportScroll", f, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 12, -50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -12, 76)
+    UI:SkinScrollBar(scrollFrame, "BRutusCompanionImportScroll")
+
+    local editBox = CreateFrame("EditBox", nil, scrollFrame)
+    editBox:SetMultiLine(true)
+    editBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
+    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    editBox:SetAutoFocus(true)
+    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    scrollFrame:SetScrollChild(editBox)
+
+    local closeBtn = UI:CreateCloseButton(f)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
+    loadBtn:SetPoint("BOTTOMRIGHT", -12, 44)
+    loadBtn:SetScript("OnClick", function()
+        local n, err = BRutus.CompanionImport:Load(editBox:GetText())
+        if err then
+            status:SetTextColor(1, 0.35, 0.35)
+            status:SetText(err)
+        else
+            local r = BRutus.CompanionImport:Current()
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(string.format(L["Loaded: %s (%d)"], r.title, n))
+        end
+    end)
+
+    local inviteBtn = UI:CreateButton(f, L["Invite all"], 90, 26)
+    inviteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -6, 0)
+    inviteBtn:SetScript("OnClick", function()
+        local n, skipped, err = BRutus.CompanionImport:InviteAll()
+        if err then
+            status:SetTextColor(1, 0.35, 0.35)
+            status:SetText(err)
+        else
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(string.format(L["Invited %d, already here %d."], n, skipped))
+        end
+    end)
+
+    local groupsBtn = UI:CreateButton(f, L["Groups"], 90, 26)
+    groupsBtn:SetPoint("RIGHT", inviteBtn, "LEFT", -6, 0)
+    groupsBtn:SetScript("OnClick", function()
+        local moved, err = BRutus.CompanionImport:OrganizeGroups()
+        if err then
+            status:SetTextColor(1, 0.35, 0.35)
+            status:SetText(err)
+        else
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(string.format(L["Moved %d into their groups."], moved))
+        end
+    end)
+
+    f:Show()
+    self.companionImportPopup = f
+end
+
+----------------------------------------------------------------------
 -- SETTINGS PANEL
 ----------------------------------------------------------------------
 function BRutus:CreateSettingsPanel(parent, _mainFrame)

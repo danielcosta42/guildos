@@ -81,6 +81,7 @@ Modules\Readiness.lua
 Modules\Resistances.lua
 Modules\ExportImport.lua
 Modules\CompanionExport.lua
+Modules\CompanionImport.lua
 Modules\Points.lua
 Modules\LootEquity.lua
 Modules\Digest.lua

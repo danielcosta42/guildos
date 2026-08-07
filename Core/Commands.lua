@@ -52,6 +52,7 @@ local function printHelp()
     helpLine("/gos specs",         L["Scan group talent specs"])
     helpLine("/gos export <what>", L["Export roster, attendance or loot"])
     helpLine("/gos web [on|off]",  L["Copy your guild into the web companion"])
+    helpLine("/gos roster",        L["Bring the raid roster in from the website"])
 
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
@@ -319,6 +320,23 @@ local function handleCommand(msg)
             else
                 BRutus:Print(L["|cffFF4444Export failed:|r "] .. tostring(countOrErr))
             end
+        end
+    elseif msg:match("^roster") then
+        -- /guildos roster [invite|groups] — the roster the website planned.
+        local I = BRutus.CompanionImport
+        local sub = I and msg:match("^roster%s+(%S+)")
+        if not I then
+            BRutus:Print(L["|cffFF4444Export failed:|r "] .. "CompanionImport")
+        elseif sub == "invite" then
+            local n, skipped, err = I:InviteAll()
+            if err then BRutus:Print(err)
+            else BRutus:Print(string.format(L["Invited %d, already here %d."], n, skipped)) end
+        elseif sub == "groups" then
+            local moved, err = I:OrganizeGroups()
+            if err then BRutus:Print(err)
+            else BRutus:Print(string.format(L["Moved %d into their groups."], moved)) end
+        else
+            BRutus:ShowImportPopup()
         end
     elseif msg == "exportatt" or msg == "exportattendance" then
         if BRutus.RaidTracker then

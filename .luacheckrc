@@ -204,7 +204,9 @@ read_globals = {
     "IsInGroup",
     "IsInRaid",
     "UnitIsGroupLeader",
+    "UnitIsGroupAssistant",
     "GetRaidRosterInfo",
+    "SetRaidSubgroup",
     "CombatLogGetCurrentEventInfo",
 
     -- WoW API: Loot
