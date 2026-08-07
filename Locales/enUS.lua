@@ -539,3 +539,6 @@ L["This guild is not in an alliance yet. Use the Manage tab to join or found one
 L["connecting..."] = "connecting..."
 L["Hide from the alliance feed"] = "Hide from the alliance feed"
 L["The message was already delivered; this only clears it from the Guild OS feed."] = "The message was already delivered; this only clears it from the Guild OS feed."
+
+-- UI/Window.lua
+L["%s is disabled in Settings."] = "%s is disabled in Settings."

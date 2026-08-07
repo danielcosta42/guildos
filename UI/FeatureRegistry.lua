@@ -148,6 +148,32 @@ function UI:_RegisterFeatureTests()
         if BRutus.db.settings.modules then BRutus.db.settings.modules[id] = nil end
         return true
     end)
+
+    S:Register("window.geometry_roundtrip", function()
+        if not UI.SaveWindowGeometry then return false, "SaveWindowGeometry missing" end
+        local probe = CreateFrame("Frame", nil, UIParent)
+        probe.featureId = "__selftest_geom"
+        probe:SetSize(321, 234)
+        probe:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 40, -60)
+        UI:SaveWindowGeometry(probe)
+
+        local restored = CreateFrame("Frame", nil, UIParent)
+        restored.featureId = "__selftest_geom"
+        UI:RestoreWindowGeometry(restored, { w = 10, h = 10 })
+        local point, _, relPoint, x, y = restored:GetPoint()
+
+        BRutus.db.settings.windows["__selftest_geom"] = nil
+        if point ~= "TOPLEFT" or relPoint ~= "TOPLEFT" then
+            return false, "point lost: " .. tostring(point) .. "/" .. tostring(relPoint)
+        end
+        if math.abs(x - 40) > 1 or math.abs(y + 60) > 1 then
+            return false, string.format("offset lost: %.1f,%.1f", x, y)
+        end
+        if math.abs(restored:GetWidth() - 321) > 1 or math.abs(restored:GetHeight() - 234) > 1 then
+            return false, "size lost"
+        end
+        return true
+    end)
 end
 
 UI:_RegisterFeatureTests()
