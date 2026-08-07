@@ -984,6 +984,17 @@ function BRutus:CreateRosterPanel(parent, host)
     return parent
 end
 
+-- Every registered tab, ungated: officerOnly/condition are re-evaluated per
+-- call in UpdateTabVisibility, so the frames must exist unconditionally.
+local function TabFeatures()
+    local out = {}
+    for _, id in ipairs(UI.featureOrder) do
+        local d = UI.features[id]
+        if d.tab then out[#out + 1] = d end
+    end
+    return out
+end
+
 function BRutus.CreateRosterFrame()
     local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
     frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
@@ -1260,9 +1271,13 @@ function BRutus.CreateRosterFrame()
     end
 
     -- Tabs come from the feature registry: one entry, every surface.
-    -- AllFeatures, not VisibleFeatures — a tab hidden by a toggle must
-    -- still exist so UpdateTabVisibility can bring it back.
-    for _, def in ipairs(UI:AllFeatures("tab")) do
+    -- TabFeatures, not AllFeatures/VisibleFeatures — officerOnly and
+    -- condition are re-evaluated live by UpdateTabVisibility (rank changes,
+    -- loot-system switches, alliance pacts forming, all without a reload),
+    -- and a toggle-hidden tab must still exist so it can be brought back.
+    -- Every tab frame and panel is created unconditionally; only visibility
+    -- is gated, and only in UpdateTabVisibility.
+    for _, def in ipairs(TabFeatures()) do
         CreateTab(def.id, def.label, def.officerOnly, def.condition)
     end
 
@@ -1271,7 +1286,7 @@ function BRutus.CreateRosterFrame()
     -- feature's build() the first time that tab is activated. This used
     -- to construct all thirteen panels (and every sub-panel) up front.
     ----------------------------------------------------------------
-    for _, def in ipairs(UI:AllFeatures("tab")) do
+    for _, def in ipairs(TabFeatures()) do
         local panel = CreateFrame("Frame", nil, frame)
         panel:SetPoint("TOPLEFT", 0, contentTop)
         panel:SetPoint("BOTTOMRIGHT", 0, BOTTOM_BAR_H)

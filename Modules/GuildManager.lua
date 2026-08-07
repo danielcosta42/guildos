@@ -338,9 +338,13 @@ end
 -- so mirroring that here keeps the management views live after an action.
 ----------------------------------------------------------------------
 function GuildManager:RefreshUI()
+    -- Routed through RefreshRosterUI (not a direct rf:RefreshRoster() call)
+    -- because the Roster tab builds lazily now — RefreshRoster does not exist
+    -- until that tab has been activated at least once, and RefreshRosterUI
+    -- nil-guards for that and also covers the floating roster window.
+    BRutus:RefreshRosterUI()
     local rf = BRutus.RosterFrame
     if not rf or not rf:IsShown() then return end
-    rf:RefreshRoster()
     local mp = rf.tabPanels and rf.tabPanels.management
     if mp and mp:IsShown() and mp.RefreshActive then
         mp.RefreshActive()
