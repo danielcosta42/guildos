@@ -166,7 +166,15 @@ panels and all their sub-panels.
   decorative badges.
 - The hub absorbs the role of the current Home dashboard. `UI/Dashboard.lua` stays as the Home tab
   of expanded mode — no deletion, no duplication of effort.
-- If every feature is disabled, the list is replaced by a single row: "everything disabled — ⚙".
+- There is no "everything disabled" empty state, because there cannot be one: `roster` and
+  `settings` are `core = true`, so the hub always has at least two rows. An unreachable fallback row
+  would be dead code pretending to be a safety net.
+- **One predicate answers "is Guild OS showing?"** The native guild-frame hook
+  (`Core/Core.lua:462-499`) mirrors Blizzard's open/close onto the addon and used to ask
+  `RosterFrame:IsShown()`. With the hub as the front door that question has two possible answers, so
+  it becomes `BRutus:IsFrontDoorShown()` — hub visible, or expanded window visible. Without it,
+  pressing the guild button while the hub is open toggles the hub closed, and closing the native
+  frame stops closing ours.
 
 ## 6. Window inventory
 
