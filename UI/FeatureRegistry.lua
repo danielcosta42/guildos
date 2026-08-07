@@ -1,0 +1,153 @@
+----------------------------------------------------------------------
+-- Guild OS - Feature registry
+-- One entry per feature: what it is called, where it shows up, how big
+-- its window is and how to build it. Single source of truth for the hub,
+-- the expanded-mode tab bar, the minimap menu, the slash commands and the
+-- Settings toggles. Frame-free on purpose: this file only holds data and
+-- predicates, so it is testable without a live UI.
+----------------------------------------------------------------------
+local UI = BRutus.UI
+
+UI.features     = {}   -- id -> def
+UI.featureOrder = {}   -- ids, kept sorted by def.order
+
+----------------------------------------------------------------------
+-- Register a feature. Later duplicates are ignored with a printed
+-- warning rather than an error: a bad entry must never take the whole
+-- addon down at load time.
+----------------------------------------------------------------------
+function UI:RegisterFeature(def)
+    if type(def) ~= "table" or type(def.id) ~= "string" or def.id == "" then
+        BRutus:Print("|cffFF4444Feature registry: entry without an id ignored.|r")
+        return nil
+    end
+    if self.features[def.id] then
+        BRutus:Print("|cffFF4444Feature registry: duplicate id '" .. def.id .. "' ignored.|r")
+        return nil
+    end
+    if def.hub == nil then def.hub = true end
+    if def.tab == nil then def.tab = true end
+    def.order = def.order or (#self.featureOrder + 1) * 10
+
+    self.features[def.id] = def
+    self.featureOrder[#self.featureOrder + 1] = def.id
+    table.sort(self.featureOrder, function(a, b)
+        return self.features[a].order < self.features[b].order
+    end)
+    return def
+end
+
+function UI:GetFeature(id)
+    if type(id) ~= "string" then return nil end
+    return self.features[id]
+end
+
+----------------------------------------------------------------------
+-- Ordered defs for a surface, filtered by rank and condition but NOT by
+-- the on/off toggle. `scope` narrows to a surface:
+--   "hub" -> rows in the hub / floating windows
+--   "tab" -> tabs in expanded mode
+--   nil   -> every feature, background modules included
+--
+-- The Settings toggle list and the expanded-mode tab construction both
+-- need this rather than VisibleFeatures: a disabled feature must keep
+-- its checkbox (or there is no way to switch it back on) and must keep
+-- its tab frame (or re-enabling could never show it again).
+----------------------------------------------------------------------
+function UI:AllFeatures(scope)
+    local out = {}
+    for _, id in ipairs(self.featureOrder) do
+        local def = self.features[id]
+        local ok = true
+        if def.officerOnly and not BRutus:IsOfficer() then ok = false end
+        if ok and def.condition and not def.condition() then ok = false end
+        if ok and scope and not def[scope] then ok = false end
+        if ok then out[#out + 1] = def end
+    end
+    return out
+end
+
+-- What the user may see AND has switched on: hub rows, minimap menu.
+function UI:VisibleFeatures(scope)
+    local out = {}
+    for _, def in ipairs(self:AllFeatures(scope)) do
+        if BRutus:IsFeatureEnabled(def.id) then out[#out + 1] = def end
+    end
+    return out
+end
+
+-- Overridden in UI/Window.lua once windows exist; a no-op until then so
+-- SetFeatureEnabled can call it unconditionally.
+function UI:OnFeatureToggled(_, _) end
+
+function UI:_RegisterFeatureTests()
+    if not BRutus.SelfTest then return end
+    local S = BRutus.SelfTest
+
+    S:Register("features.invariants", function()
+        for _, id in ipairs(UI.featureOrder) do
+            local d = UI.features[id]
+            if type(d.label) ~= "string" or d.label == "" then
+                return false, id .. ": missing label"
+            end
+            if d.hub then
+                if type(d.build) ~= "function" then return false, id .. ": hub feature needs build()" end
+                if type(d.w) ~= "number" or d.w <= 0 then return false, id .. ": bad width" end
+                if type(d.h) ~= "number" or d.h <= 0 then return false, id .. ": bad height" end
+            end
+            if d.subs ~= nil then
+                if type(d.subs) ~= "table" then return false, id .. ": subs must be a list" end
+                for _, s in ipairs(d.subs) do
+                    if type(s) ~= "string" or s == "" then return false, id .. ": bad sub key" end
+                end
+            end
+        end
+        return true
+    end)
+
+    S:Register("features.unique_ids", function()
+        local seen, n = {}, 0
+        for _, id in ipairs(UI.featureOrder) do
+            if seen[id] then return false, "duplicate id in order list: " .. id end
+            seen[id] = true
+            n = n + 1
+        end
+        local m = 0
+        for _ in pairs(UI.features) do m = m + 1 end
+        if n ~= m then return false, string.format("order has %d ids, table has %d", n, m) end
+        return true
+    end)
+
+    S:Register("features.core_cannot_be_disabled", function()
+        local mods = BRutus.db and BRutus.db.settings and BRutus.db.settings.modules
+        if not mods then return false, "db.settings.modules missing" end
+        for _, id in ipairs(UI.featureOrder) do
+            if UI.features[id].core then
+                local prev = mods[id]
+                mods[id] = false
+                local ok = BRutus:IsFeatureEnabled(id)
+                mods[id] = prev
+                if not ok then return false, id .. " is core but reported disabled" end
+            end
+        end
+        return true
+    end)
+
+    S:Register("features.toggle_roundtrip", function()
+        local id = "__selftest_feature"
+        UI:RegisterFeature({ id = id, label = "Self test", hub = false, tab = false })
+        BRutus:SetFeatureEnabled(id, false)
+        if BRutus:IsFeatureEnabled(id) then return false, "disable did not stick" end
+        BRutus:SetFeatureEnabled(id, true)
+        if not BRutus:IsFeatureEnabled(id) then return false, "re-enable did not stick" end
+        -- clean up so repeated runs stay idempotent
+        UI.features[id] = nil
+        for i, v in ipairs(UI.featureOrder) do
+            if v == id then table.remove(UI.featureOrder, i) break end
+        end
+        if BRutus.db.settings.modules then BRutus.db.settings.modules[id] = nil end
+        return true
+    end)
+end
+
+UI:_RegisterFeatureTests()

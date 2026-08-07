@@ -233,10 +233,10 @@ function BRutus:OnLogin()
 end
 
 function BRutus:InitModules()
-    -- Module enabled helper
+    -- Module enabled helper (delegates to the public API; call sites below
+    -- keep the short local name).
     local function modEnabled(key)
-        if not self.db or not self.db.settings or not self.db.settings.modules then return true end
-        return self.db.settings.modules[key] ~= false
+        return self:IsFeatureEnabled(key)
     end
 
     -- Apply the chosen accent theme before any frame is built.
@@ -709,6 +709,36 @@ function BRutus:SetSetting(key, value)
     if self.db and self.db.settings then
         self.db.settings[key] = value
     end
+end
+
+----------------------------------------------------------------------
+-- Feature toggles (Rule 8 — never read db.settings.modules directly).
+-- Keys are the feature ids from UI/FeatureRegistry.lua. Default is ON:
+-- an absent key means "never touched", not "off". `core` features can
+-- never be turned off — that is how a user would lock themselves out of
+-- the Settings window that would turn them back on.
+----------------------------------------------------------------------
+function BRutus:IsFeatureEnabled(id)
+    if type(id) ~= "string" then return false end
+    -- UI loads after Core, so the registry is resolved per call, not per load.
+    local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
+    if def and def.core then return true end
+    local mods = self.db and self.db.settings and self.db.settings.modules
+    if not mods then return true end
+    return mods[id] ~= false
+end
+
+function BRutus:SetFeatureEnabled(id, enabled)
+    if type(id) ~= "string" then return end
+    local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
+    if def and def.core then return end
+    if not (self.db and self.db.settings) then return end
+    self.db.settings.modules = self.db.settings.modules or {}
+    -- GetChecked() returns true or nil (never false) in TBC, so store an
+    -- explicit boolean — IsFeatureEnabled compares against false.
+    enabled = enabled and true or false
+    self.db.settings.modules[id] = enabled
+    if self.UI and self.UI.OnFeatureToggled then self.UI:OnFeatureToggled(id, enabled) end
 end
 
 ----------------------------------------------------------------------
