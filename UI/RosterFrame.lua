@@ -995,6 +995,18 @@ local function TabFeatures()
     return out
 end
 
+-- The one gate for a tab: enabled, and rank/condition allow it. Both
+-- UpdateTabVisibility (which button to draw) and SetActiveTab (which panel
+-- to open) ask this — a dashboard card can call SetActiveTab with no button
+-- involved at all.
+local function TabAllowed(def)
+    if not def then return false end
+    if not BRutus:IsFeatureEnabled(def.id) then return false end
+    if def.condition then return def.condition() end
+    if def.officerOnly then return BRutus:IsOfficer() end
+    return true
+end
+
 function BRutus.CreateRosterFrame()
     local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
     frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
@@ -1209,9 +1221,10 @@ function BRutus.CreateRosterFrame()
     end
 
     function frame:SetActiveTab(key)
+        local def = UI:GetFeature(key)
+        if not TabAllowed(def) then return end
         local panel = self.tabPanels[key]
-        local def   = UI:GetFeature(key)
-        if panel and def and not panel.built then
+        if panel and not panel.built then
             panel.built = true
             def.build(panel, self)
         end
@@ -1239,14 +1252,7 @@ function BRutus.CreateRosterFrame()
     function frame:UpdateTabVisibility()
         local prevTab = nil
         for _, tab in ipairs(self.tabs) do
-            local visible = BRutus:IsFeatureEnabled(tab.key)
-            if visible then
-                if tab.condition then
-                    visible = tab.condition()
-                elseif tab.officerOnly then
-                    visible = BRutus:IsOfficer()
-                end
-            end
+            local visible = TabAllowed(UI:GetFeature(tab.key))
             if visible then
                 tab:ClearAllPoints()
                 if prevTab then
