@@ -602,6 +602,24 @@ function BRutus:ToggleRoster()
 end
 
 ----------------------------------------------------------------------
+-- Expanded mode: the full tabbed window. The hub is the default front
+-- door; this is the opt-in for people who want everything at once.
+----------------------------------------------------------------------
+function BRutus:ToggleExpanded()
+    if not (self.db and IsInGuild()) then return end
+    if not self.RosterFrame then
+        self.RosterFrame = BRutus.CreateRosterFrame()
+    end
+    if self.RosterFrame:IsShown() then
+        self.RosterFrame:Hide()
+        return
+    end
+    C_GuildInfo.GuildRoster()
+    self.RosterFrame:UpdateTabVisibility()
+    self.RosterFrame:Show()
+end
+
+----------------------------------------------------------------------
 -- Is Guild OS's front door on screen? Either container counts: the hub
 -- card or the expanded window. The guild-frame hook mirrors Blizzard's
 -- open/close onto us and must not care which one the user is using.

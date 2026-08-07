@@ -51,6 +51,7 @@ local FRAME_WIDTH = 1080 + RAIL_WIDTH
 local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150 + KPI_BAND_HEIGHT
 
 local TAB_HEIGHT = 28
+local BOTTOM_BAR_H = 30  -- bottom bar height; every tab panel insets its BOTTOMRIGHT by this
 
 -- Global frame names must stay unique: this builder now runs once per
 -- container (expanded-mode tab and floating window). The first instance
@@ -1197,6 +1198,12 @@ function BRutus.CreateRosterFrame()
     end
 
     function frame:SetActiveTab(key)
+        local panel = self.tabPanels[key]
+        local def   = UI:GetFeature(key)
+        if panel and def and not panel.built then
+            panel.built = true
+            def.build(panel, self)
+        end
         self.activeTab = key
         for _, tab in ipairs(self.tabs) do
             if tab.key == key then
@@ -1209,11 +1216,11 @@ function BRutus.CreateRosterFrame()
                 if tab.underline then tab.underline:Hide() end
             end
         end
-        for k, panel in pairs(self.tabPanels) do
+        for k, p in pairs(self.tabPanels) do
             if k == key then
-                panel:Show()
+                p:Show()
             else
-                panel:Hide()
+                p:Hide()
             end
         end
     end
@@ -1221,11 +1228,13 @@ function BRutus.CreateRosterFrame()
     function frame:UpdateTabVisibility()
         local prevTab = nil
         for _, tab in ipairs(self.tabs) do
-            local visible = true
-            if tab.condition then
-                visible = tab.condition()
-            elseif tab.officerOnly then
-                visible = BRutus:IsOfficer()
+            local visible = BRutus:IsFeatureEnabled(tab.key)
+            if visible then
+                if tab.condition then
+                    visible = tab.condition()
+                elseif tab.officerOnly then
+                    visible = BRutus:IsOfficer()
+                end
             end
             if visible then
                 tab:ClearAllPoints()
@@ -1250,162 +1259,26 @@ function BRutus.CreateRosterFrame()
         end
     end
 
-    -- Create tabs
-    CreateTab("home", L["Home"], false)
-    CreateTab("roster", L["Roster"], false)
-    CreateTab("guild", L["Guild"], false)
-    CreateTab("recipes", L["Recipes"], false)
-    -- Wishlist tab only when the guild's loot system is wishlist/TMB.
-    CreateTab("wishlist", L["Wishlist"], false, function()
-        return BRutus:IsOfficer() and BRutus:LootSystemShowsWishlist()
-    end)
-    CreateTab("raids", L["Raids"], false)
-    CreateTab("loot", L["Loot"], true)  -- officers always see loot history; items recorded only via ML
-    -- DKP tab only when the guild's loot system is DKP/Points.
-    CreateTab("dkp", L["DKP"], false, function() return BRutus:LootSystemShowsDKP() end)
-    CreateTab("trials", L["Trials"], true)
-    CreateTab("recruitment", L["Recruitment"], false)
-    -- Alliance tab: visible once a pact exists, and to officers who could found one.
-    CreateTab("alliance", L["Alliance"], false, function()
-        return (BRutus.Alliance and BRutus.Alliance:Get() ~= nil) or BRutus:IsOfficer()
-    end)
-    CreateTab("management", L["Leadership"], true)
-    CreateTab("settings", L["Settings"], false)
-
-    ----------------------------------------------------------------
-    -- HOME PANEL (dashboard — the default landing tab)
-    ----------------------------------------------------------------
-    local homePanel = CreateFrame("Frame", nil, frame)
-    homePanel:SetPoint("TOPLEFT", 0, contentTop)
-    homePanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    homePanel:Hide()
-    frame.tabPanels["home"] = homePanel
-    if BRutus.CreateDashboardPanel then BRutus:CreateDashboardPanel(homePanel, frame) end
-
-    ----------------------------------------------------------------
-    -- ROSTER PANEL  (dashboard layout: KPI band + left rail + table)
-    ----------------------------------------------------------------
-    local rosterPanel = CreateFrame("Frame", nil, frame)
-    rosterPanel:SetPoint("TOPLEFT", 0, contentTop)
-    rosterPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    rosterPanel:Hide()
-    frame.tabPanels["roster"] = rosterPanel
-    BRutus:CreateRosterPanel(rosterPanel, frame)
-
-    ----------------------------------------------------------------
-    -- RECIPES PANEL
-    ----------------------------------------------------------------
-    local recipesPanel = CreateFrame("Frame", nil, frame)
-    recipesPanel:SetPoint("TOPLEFT", 0, contentTop)
-    recipesPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    recipesPanel:Hide()
-    frame.tabPanels["recipes"] = recipesPanel
-    BRutus:CreateRecipesPanel(recipesPanel, frame)
-
-    ----------------------------------------------------------------
-    -- RECRUITMENT PANEL (officer only)
-    ----------------------------------------------------------------
-    local recruitPanel = CreateFrame("Frame", nil, frame)
-    recruitPanel:SetPoint("TOPLEFT", 0, contentTop)
-    recruitPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    recruitPanel:Hide()
-    frame.tabPanels["recruitment"] = recruitPanel
-    BRutus:CreateRecruitmentPanel(recruitPanel, frame)
-
-    ----------------------------------------------------------------
-    -- LISTA DE DESEJOS (WISHLIST) PANEL
-    ----------------------------------------------------------------
-    local wishlistPanel = CreateFrame("Frame", nil, frame)
-    wishlistPanel:SetPoint("TOPLEFT", 0, contentTop)
-    wishlistPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    wishlistPanel:Hide()
-    frame.tabPanels["wishlist"] = wishlistPanel
-    BRutus:CreateWishlistGuildPanel(wishlistPanel, frame)
-
-    ----------------------------------------------------------------
-    -- RAID HUB PANEL  (Sessions | Cores | Audit | Raid Tools)
-    ----------------------------------------------------------------
-    local raidsPanel = CreateFrame("Frame", nil, frame)
-    raidsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    raidsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    raidsPanel:Hide()
-    frame.tabPanels["raids"] = raidsPanel
-    BRutus:CreateRaidHubPanel(raidsPanel, frame)
-
-    ----------------------------------------------------------------
-    -- LOOT HISTORY PANEL
-    ----------------------------------------------------------------
-    local lootPanel = CreateFrame("Frame", nil, frame)
-    lootPanel:SetPoint("TOPLEFT", 0, contentTop)
-    lootPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    lootPanel:Hide()
-    frame.tabPanels["loot"] = lootPanel
-    BRutus:CreateLootPanel(lootPanel, frame)
-
-    ----------------------------------------------------------------
-    -- TRIAL TRACKER PANEL (officer only)
-    ----------------------------------------------------------------
-    local trialsPanel = CreateFrame("Frame", nil, frame)
-    trialsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    trialsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    trialsPanel:Hide()
-    frame.tabPanels["trials"] = trialsPanel
-    BRutus:CreateTrialsPanel(trialsPanel, frame)
-
-    ----------------------------------------------------------------
-    -- MANAGEMENT / LEADERSHIP PANEL (officer only)
-    ----------------------------------------------------------------
-    local managementPanel = CreateFrame("Frame", nil, frame)
-    managementPanel:SetPoint("TOPLEFT", 0, contentTop)
-    managementPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    managementPanel:Hide()
-    frame.tabPanels["management"] = managementPanel
-    BRutus:CreateManagementPanel(managementPanel, frame)
-
-    ----------------------------------------------------------------
-    -- GUILD HUB PANEL (activity / bulletin / polls)
-
-    ----------------------------------------------------------------
-    -- GUILD HUB PANEL (activity / bulletin / polls)
-    ----------------------------------------------------------------
-    local guildPanel = CreateFrame("Frame", nil, frame)
-    guildPanel:SetPoint("TOPLEFT", 0, contentTop)
-    guildPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    guildPanel:Hide()
-    frame.tabPanels["guild"] = guildPanel
-    BRutus:CreateGuildHub(guildPanel, frame)
-
-    ----------------------------------------------------------------
-    -- ALLIANCE PANEL (overview / manage)
-    ----------------------------------------------------------------
-    local alliancePanel = CreateFrame("Frame", nil, frame)
-    alliancePanel:SetPoint("TOPLEFT", 0, contentTop)
-    alliancePanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    alliancePanel:Hide()
-    frame.tabPanels["alliance"] = alliancePanel
-    if BRutus.CreateAlliancePanel then
-        BRutus:CreateAlliancePanel(alliancePanel, frame)
+    -- Tabs come from the feature registry: one entry, every surface.
+    -- AllFeatures, not VisibleFeatures — a tab hidden by a toggle must
+    -- still exist so UpdateTabVisibility can bring it back.
+    for _, def in ipairs(UI:AllFeatures("tab")) do
+        CreateTab(def.id, def.label, def.officerOnly, def.condition)
     end
 
     ----------------------------------------------------------------
-    -- DKP / POINTS PANEL
+    -- Tab panels: one empty container per registered tab, filled by the
+    -- feature's build() the first time that tab is activated. This used
+    -- to construct all thirteen panels (and every sub-panel) up front.
     ----------------------------------------------------------------
-    local dkpPanel = CreateFrame("Frame", nil, frame)
-    dkpPanel:SetPoint("TOPLEFT", 0, contentTop)
-    dkpPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    dkpPanel:Hide()
-    frame.tabPanels["dkp"] = dkpPanel
-    BRutus:CreateDKPPanel(dkpPanel, frame)
-
-    ----------------------------------------------------------------
-    -- SETTINGS PANEL
-    ----------------------------------------------------------------
-    local settingsPanel = CreateFrame("Frame", nil, frame)
-    settingsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    settingsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    settingsPanel:Hide()
-    frame.tabPanels["settings"] = settingsPanel
-    BRutus:CreateSettingsPanel(settingsPanel, frame)
+    for _, def in ipairs(UI:AllFeatures("tab")) do
+        local panel = CreateFrame("Frame", nil, frame)
+        panel:SetPoint("TOPLEFT", 0, contentTop)
+        panel:SetPoint("BOTTOMRIGHT", 0, BOTTOM_BAR_H)
+        panel:Hide()
+        panel.featureId = def.id
+        frame.tabPanels[def.id] = panel
+    end
 
     ----------------------------------------------------------------
     -- Bottom Bar
