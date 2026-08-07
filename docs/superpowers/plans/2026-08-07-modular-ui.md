@@ -639,6 +639,10 @@ git commit -m "feat: generic floating window container with saved geometry"
 
 **Why this task exists:** every other tab already has a builder (`CreateRecipesPanel`, `CreateGuildHub`, `CreateDKPPanel`, ...). The roster is the one panel still written inline inside `CreateRosterFrame`, so there is nothing a window could call. This task changes no behaviour — it is the riskiest edit in the plan and it gets its own verification against today's UI, before the registry is involved at all.
 
+**The range is two blocks, not one.** The roster's *widgets* are inline at lines 520-1012, but its five *methods* — `RefreshRoster`, `BuildMemberList`, `UpdateSortIndicators`, `UpdateRows`, `UpdateStats` — live further down in the `Data & Methods` block (~1253-1500) and must move too. The widget code calls `host:RefreshRoster()` and `host:UpdateRows()`; leaving the methods on the main frame works only while `host == frame` and throws the moment a window hosts the panel. Both blocks land in the same builder.
+
+Those five methods touch exactly two things that belong to the main window rather than the roster: `self.UpdateGuildIcon` (already nil-guarded at the call site) and `self.subtitle:SetText(...)` in `UpdateStats`, which is **not** guarded. Wrap that one in `if self.subtitle then` — a floating window has no subtitle. Everything else they reference is roster state moving with them.
+
 **The catch:** the inline block assigns 24 fields and methods to `frame` — `kpiOnline`, `kpiPlayers`, `kpiIlvl`, `kpiAtt`, `kpiAddon`, `kpiMembers`, `kpiPlayersSub`, `rail`, `rankBtns`, `classChips`, `classFilter`, `searchBox`, `searchFilter`, `segBtns`, `segment`, `offlineBtn`, `headerButtons`, `resultText`, `rows`, `scrollFrame`, and the methods `RefreshRoster`, `UpdateRows`, `UpdateRail`, `UpdateRailActive`, `SetSegment`, `SetClassFilter`, `GetSegmentLabel`. Those stay exactly where they are — they just land on the *host* rather than on the main frame specifically. External callers then have to ask which host is showing.
 
 - [ ] **Step 1: Move the block into a builder**
