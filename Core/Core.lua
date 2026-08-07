@@ -442,9 +442,7 @@ end
 
 function BRutus:OnGuildRosterUpdate()
     if BRutus.RecordFirstSeen then BRutus:RecordFirstSeen() end
-    if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-        BRutus.RosterFrame:RefreshRoster()
-    end
+    BRutus:RefreshRosterUI()
 end
 
 ----------------------------------------------------------------------
@@ -616,6 +614,18 @@ function BRutus:ToggleRoster()
         self.RosterFrame:SetActiveTab(currentTab)
         self.RosterFrame:Show()
         self.RosterFrame:RefreshRoster()
+    end
+end
+
+----------------------------------------------------------------------
+-- Refresh whichever container is currently showing the roster panel:
+-- the expanded window, the floating window, or neither.
+----------------------------------------------------------------------
+function BRutus:RefreshRosterUI()
+    local hosts = { self.RosterFrame }
+    if self.UI and self.UI.GetWindow then hosts[#hosts + 1] = self.UI:GetWindow("roster") end
+    for _, host in ipairs(hosts) do
+        if host and host:IsShown() and host.RefreshRoster then host:RefreshRoster() end
     end
 end
 
