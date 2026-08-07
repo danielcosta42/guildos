@@ -14,6 +14,8 @@
 
 - **No new dependencies.** Everything uses the existing `Libs/` set and the WoW API.
 - **Two verification gates, both real:** `luacheck . --config .luacheckrc` (the CI gate, runs locally — `/usr/bin/luacheck` is installed) and `/gos selftest` in-client (`Modules/SelfTest.lua`). There is no headless frame test runner; frame behaviour is verified by the scripted in-game checks written into each task.
+- **The luacheck bar is "0 errors, no new warnings".** The repo's baseline as of `066cd6e` is **71 warnings / 0 errors in 95 files**, all pre-existing in files this plan does not touch (`Modules/*`, `tools/*`, three `UI/*Panel.lua`, `UI/RosterFrame.lua`). A task passes when errors stay at 0 and the warning count does not rise. Files this plan creates must be individually clean.
+- **In-game steps cannot be run by an implementer** — there is no WoW client in this environment. Write the self-tests, run luacheck, and report the `/gos selftest` and click-through steps as PENDING HUMAN. Never claim an in-game step passed.
 - **Every new global must be declared in `.luacheckrc`,** or CI fails. New globals in this plan: none — everything hangs off `BRutus` / `BRutus.UI`.
 - **New user-facing strings** go through `L["English text"]`. `BRutus.L` falls back to the key, so the string works immediately; add it to `Locales/enUS.lua` in the same commit (master list), other locales optional.
 - **`GuildOS.VERSION` and `## Version:` in the TOC are managed by CI.** Never edit them by hand.
@@ -313,7 +315,7 @@ git commit -m "feat: feature registry and public feature-toggle API"
 **Files:**
 - Create: `UI/Window.lua`
 - Modify: `GuildOS.toc` (add `UI\Window.lua` after `UI\FeatureRegistry.lua`)
-- Modify: `Locales/enUS.lua` (two new strings)
+- Modify: `Locales/enUS.lua` (one new string)
 
 **Interfaces:**
 - Consumes: `UI:GetFeature(id)`, `BRutus:IsFeatureEnabled(id)` (Task 1); `UI:CreatePanel(parent, name)` (`UI/Helpers.lua:42`), `UI:StylePopup(frame)` (`UI/Helpers.lua:144`), `UI:CreateHeaderText`, `UI:CreateCloseButton` (`UI/Helpers.lua:406`), `BRutus:GetSetting/SetSetting`.
