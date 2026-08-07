@@ -228,10 +228,15 @@ table at `UI/FeaturePanels.lua:1830-1841`.
 
 Guards:
 
-- **`officerOnly` is enforced at the opener, not only at the row.** Hiding a hub row or not drawing a
-  tab button is presentation, not access control: `UI:OpenWindow(id, sub)` is reachable from a slash
-  command, so it must refuse an `officerOnly` feature for a non-officer, and sub-tab selection must
-  apply the same test per sub-tab. Otherwise `/gos open management` renders the Leadership panel for
+- **`officerOnly` is enforced at every opener, not only at the row.** Hiding a hub row or not drawing
+  a tab button is presentation, not access control. There are three openers and all three gate:
+  `UI:OpenWindow(id, sub)` (reachable from a slash command), sub-tab selection (reachable from a
+  deep link), and `frame:SetActiveTab(key)` in expanded mode — which the Home dashboard's cards call
+  directly via `goTab`, with no button involved. The gate is defined once, next to
+  `UpdateTabVisibility`, and both consumers call it; a second copy is how the definitions drift
+  apart. Note the failure mode is not obvious: while gated-out tab panels did not exist, an ungated
+  `SetActiveTab` merely did nothing, so creating the panels unconditionally is what turns a silent
+  no-op into a leak. Otherwise `/gos open management` renders the Leadership panel for
   any member, and a sub-tab deep link walks past a button that was never drawn. The expanded-mode
   path already defends this (`Core/Core.lua:606-613`); the window path must match it. The exposure is
   information disclosure — mutating actions re-check `IsOfficer()` independently — but the rule holds
