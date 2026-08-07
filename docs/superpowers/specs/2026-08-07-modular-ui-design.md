@@ -63,6 +63,9 @@ Facts that shape the design (measured, not assumed):
 
 ## 4. Architecture: one container, one registry
 
+Four new files: `UI/FeatureRegistry.lua` (the registry API), `UI/Window.lua` (the generic container),
+`UI/Features.lua` (the entries), `UI/Hub.lua` (the hub card).
+
 ### 4.1 `UI/Window.lua` — the generic container
 
 ```lua
@@ -77,7 +80,7 @@ UI:CloseAllWindows()
 
 `opts`: `title`, `w`, `h`, `resizable`, `minW`, `minH`, `build`.
 
-### 4.2 `UI/Windows.lua` — the registry
+### 4.2 `UI/FeatureRegistry.lua` — the registry
 
 One entry is the complete identity of a feature:
 
@@ -91,7 +94,9 @@ UI:RegisterWindow{
     subs        = { "sessions", "raiders", "cores", "audit", "raidtools" },
     officerOnly = false,
     core        = false,           -- true = cannot be disabled (roster, settings)
-    windowless  = false,           -- true = expanded-mode tab only, no floating window (home)
+    hub         = true,            -- false = no hub row and no floating window
+    tab         = true,            -- false = no tab in expanded mode
+                                   -- both false = background module, Settings toggle only
     module      = "raidTracker",   -- optional: background module this feature gates
     badge       = function() return ... end,  -- optional: pending count for the hub row
     build       = function(container, win) BRutus:CreateRaidHubPanel(container, win) end,
@@ -181,7 +186,7 @@ panels and all their sub-panels.
 | settings | 560x520 | no |
 
 Twelve windows, not thirteen: the `home` tab has no window of its own — the hub is what replaced it,
-and `home` stays registered as expanded-mode-only (`windowless = true`).
+and `home` stays registered as expanded-mode-only (`hub = false`).
 
 Plus a global `db.settings.uiScale` (0.8–1.2), applied with `SetScale` to the hub and every window.
 Part of "it is too big" is literally screen resolution, and this costs three lines.
@@ -250,6 +255,12 @@ Each phase ships on its own.
 
 1. **Foundation** — `UI/Window.lua`, `UI/Windows.lua`, public `IsFeatureEnabled`. Nothing visible
    changes yet.
+   One prerequisite surfaced while planning: **the roster panel has no builder.** Every other tab
+   has one (`CreateRecipesPanel`, `CreateGuildHub`, `CreateDKPPanel`, ...), but the roster is still
+   written inline inside `CreateRosterFrame` (`UI/RosterFrame.lua:520-1012`) and assigns 24 fields
+   and methods to the frame. It has to be extracted into `BRutus:CreateRosterPanel(parent, host)`
+   before a window can host it — a behaviour-free refactor, verified against the current UI, and the
+   riskiest edit in the whole rollout.
 2. **Hub** — `UI/Hub.lua`; minimap button and `/gos` open the hub; expanded mode reachable via `⛶`.
 3. **Registry-driven expanded mode** — `RosterFrame` builds its tabs from the registry, panels go
    lazy; delete the 13 `CreateTab` calls and the hardcoded Settings `modules` list.
@@ -263,11 +274,16 @@ Each phase ships on its own.
 `Modules/SelfTest.lua` is the existing in-client harness. Register one case covering the registry
 invariants:
 
-- every entry has `id`, `label`, `build` and a positive `w`/`h`;
+- every entry has `id`, `label`, and — when `hub` is true — `build` and a positive `w`/`h`;
 - ids are unique;
+- `subs`, when present, is a list of non-empty strings;
 - `core = true` implies `IsFeatureEnabled(id)` is always true, including with
   `db.settings.modules[id] = false`;
-- no `subs` entry references a sub-tab the builder does not create.
+- disabling and re-enabling a feature round-trips through `SetFeatureEnabled` / `IsFeatureEnabled`.
+
+A wrong `subs` key cannot be caught statically — sub-tabs are created by the builder at build time —
+so a deep link to a key the builder does not know silently does nothing. That is the accepted
+failure mode; the alternative is builders declaring their sub-tabs twice.
 
 Failures surface on `/gos selftest` instead of as a black window in raid.
 
