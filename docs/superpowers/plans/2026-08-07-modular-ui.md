@@ -1263,18 +1263,9 @@ function Hub:Refresh()
     end
     for i = shown + 1, #f.rows do f.rows[i]:Hide() end
 
-    if shown == 0 then
-        local row = acquireRow(f, 1)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", 6, -y)
-        row.icon:SetTexture(nil)
-        row.dot:Hide()
-        row.badge:SetText("")
-        row.label:SetText(L["Everything is disabled — open Settings"])
-        row:SetScript("OnClick", function() UI:OpenWindow("settings") end)
-        row:Show()
-        y = y + ROW_H
-    end
+    -- No empty state: `roster` and `settings` are core = true, so
+    -- VisibleFeatures("hub") can never return an empty list. An
+    -- unreachable fallback row is dead code dressed as a safety net.
 
     f.footer:ClearAllPoints()
     f.footer:SetPoint("TOPLEFT", 0, -(y + 2))
@@ -1396,7 +1387,6 @@ L["Expanded mode"] = "Expanded mode"
 L["... more"] = "... more"
 L["Close all"] = "Close all"
 L["%d online of %d"] = "%d online of %d"
-L["Everything is disabled — open Settings"] = "Everything is disabled — open Settings"
 ```
 
 Add to `GuildOS.toc`, after `UI\Window.lua`:
@@ -1607,7 +1597,26 @@ Inside the loop body, keep the existing row construction and replace the checkbo
 
 Use `def.desc or ""` where the old code used `mod.desc`, and `def.label` where it used `mod.label`. The `officerOnly` skip is already handled by `VisibleFeatures`, so delete the surrounding `if not mod.officerOnly or isOfficer then` guard and its `end`.
 
-- [ ] **Step 2: Add the UI scale slider**
+- [ ] **Step 2: Wire the hub's pulse toggle**
+
+`UI/Hub.lua` reads `db.settings.hub.pulse` to decide whether to draw the two live lines, but nothing can currently write it — the `else f.pulse:Hide()` branch is unreachable. Give it its switch here, next to the other Settings controls, rather than deleting a knob the spec asked for:
+
+```lua
+    local pulseCb = UI:CreateCheckbox(content, L["Show live info on the hub"], 18)
+    pulseCb:SetPoint("TOPLEFT", 0, -yOff)
+    pulseCb.checkbox:SetChecked((BRutus:GetSetting("hub") or {}).pulse ~= false)
+    pulseCb.checkbox.onChanged = function(_, checked)
+        local h = BRutus:GetSetting("hub")
+        if type(h) ~= "table" then h = {}; BRutus:SetSetting("hub", h) end
+        h.pulse = checked and true or false
+        if UI.Hub and UI.Hub.Refresh then UI.Hub:Refresh() end
+    end
+    yOff = yOff + 28
+```
+
+Match the surrounding section's `yOff` layout idiom — read it first; the exact spacing and anchor style are set by the code already there.
+
+- [ ] **Step 3: Add the UI scale slider**
 
 In the same Settings panel, directly above the module section (before the `MODULES` header at line 1815), add:
 
@@ -1636,7 +1645,7 @@ In the same Settings panel, directly above the module section (before the `MODUL
 
 Add `"OptionsSliderTemplate"` usage needs no luacheck entry (it is a string), but `_G` does — confirm `_G` is accepted by the current `.luacheckrc`; if luacheck flags it, add `"_G"` to `read_globals`.
 
-- [ ] **Step 3: Add strings**
+- [ ] **Step 4: Add strings**
 
 Append to `Locales/enUS.lua` under a `-- UI/FeaturePanels.lua` block (create it if absent):
 
@@ -1645,7 +1654,7 @@ L["UI scale"] = "UI scale"
 L[" Reload UI to apply."] = " Reload UI to apply."
 ```
 
-- [ ] **Step 4: Run both gates**
+- [ ] **Step 5: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
 Expected: 0 errors, warning count unchanged from baseline (71).
@@ -1653,7 +1662,7 @@ Expected: 0 errors, warning count unchanged from baseline (71).
 In-game: `/reload` then `/gos selftest`
 Expected: `0 failed`.
 
-- [ ] **Step 5: Verify the modularity rule end to end**
+- [ ] **Step 6: Verify the modularity rule end to end**
 
 In-game:
 1. `/gos` → open Settings → uncheck `Recipes`.
@@ -1663,7 +1672,7 @@ In-game:
 5. Confirm Settings and Roster have **no** checkbox at all.
 6. Drag the UI scale slider to 85% → the hub and every open window shrink immediately; `/reload` keeps the setting.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add UI/FeaturePanels.lua Locales/enUS.lua
