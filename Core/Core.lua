@@ -486,8 +486,9 @@ function BRutus:HookGuildFrame()
                     self:ToggleRoster()
                 end
             elseif self:IsFrontDoorShown() then
-                -- The toggle just closed the native frame: close ours to match.
-                self:ToggleRoster()
+                -- The toggle just closed the native frame: close ours to match,
+                -- whichever container (hub or expanded) is actually open.
+                self:HideFrontDoor()
             end
         end)
     end
@@ -628,6 +629,17 @@ function BRutus:IsFrontDoorShown()
     local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
     if hub and hub:IsShown() then return true end
     return (self.RosterFrame and self.RosterFrame:IsShown()) and true or false
+end
+
+----------------------------------------------------------------------
+-- Close whichever front door is open. The counterpart to
+-- IsFrontDoorShown: the guild-frame hook mirrors Blizzard's close onto
+-- us and must not care which container the user is actually using.
+----------------------------------------------------------------------
+function BRutus:HideFrontDoor()
+    local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
+    if hub and hub:IsShown() then hub:Hide() end
+    if self.RosterFrame and self.RosterFrame:IsShown() then self.RosterFrame:Hide() end
 end
 
 ----------------------------------------------------------------------
