@@ -265,6 +265,21 @@ Unchanged behaviour, but the tab bar is generated from the registry instead of t
 on its title bar returns to the hub. Tab visibility keeps honouring `officerOnly`, `condition` and
 now `IsFeatureEnabled`.
 
+**Tab frames are created ungated — by *no* filter, not merely by "not the toggle".** `AllFeatures`
+still applies `officerOnly` and `condition`, which is right for the Settings list but wrong here:
+gates evaluated once at construction cannot be re-evaluated later, and `UpdateTabVisibility` exists
+precisely to re-evaluate them on every event. Bake them in and a `dkp` tab can never appear when the
+guild switches loot system mid-session (`SetLootSystem` advertises itself as reload-free), an
+`alliance` tab can never appear when a pact forms, and a promoted officer sees no `loot`/`trials`/
+`management` until `/reload`. Expanded mode iterates every feature with `tab = true` and nothing
+else; `UpdateTabVisibility` owns every gate.
+
+**Lazy build changes when a panel's methods exist.** `CreateRosterPanel` installs `RefreshRoster` on
+its host, so with lazy build that method does not exist until the Roster tab is first activated —
+and the window opens on Home. Any caller that guards only on `IsShown()` will error. All roster
+refreshes go through `BRutus:RefreshRosterUI()`, which nil-guards the method and covers both
+containers; no caller reaches `RefreshRoster` directly.
+
 ## 10. Rollout
 
 Each phase ships on its own.
