@@ -482,10 +482,10 @@ function BRutus:HookGuildFrame()
                 -- error, until /reload.
                 if GuildFrame then HideUIPanel(GuildFrame) end
                 if CommunitiesFrame then HideUIPanel(CommunitiesFrame) end
-                if not (self.RosterFrame and self.RosterFrame:IsShown()) then
+                if not self:IsFrontDoorShown() then
                     self:ToggleRoster()
                 end
-            elseif self.RosterFrame and self.RosterFrame:IsShown() then
+            elseif self:IsFrontDoorShown() then
                 -- The toggle just closed the native frame: close ours to match.
                 self:ToggleRoster()
             end
@@ -599,6 +599,17 @@ function BRutus:ToggleRoster()
     if BRutus.UI and BRutus.UI.Hub then
         BRutus.UI.Hub:Toggle()
     end
+end
+
+----------------------------------------------------------------------
+-- Is Guild OS's front door on screen? Either container counts: the hub
+-- card or the expanded window. The guild-frame hook mirrors Blizzard's
+-- open/close onto us and must not care which one the user is using.
+----------------------------------------------------------------------
+function BRutus:IsFrontDoorShown()
+    local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
+    if hub and hub:IsShown() then return true end
+    return (self.RosterFrame and self.RosterFrame:IsShown()) and true or false
 end
 
 ----------------------------------------------------------------------

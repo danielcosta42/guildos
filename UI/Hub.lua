@@ -228,19 +228,6 @@ function Hub:Refresh()
     end
     for i = shown + 1, #f.rows do f.rows[i]:Hide() end
 
-    if shown == 0 then
-        local row = acquireRow(f, 1)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", 6, -y)
-        row.icon:SetTexture(nil)
-        row.dot:Hide()
-        row.badge:SetText("")
-        row.label:SetText(L["Everything is disabled — open Settings"])
-        row:SetScript("OnClick", function() UI:OpenWindow("settings") end)
-        row:Show()
-        y = y + ROW_H
-    end
-
     f.footer:ClearAllPoints()
     f.footer:SetPoint("TOPLEFT", 0, -(y + 2))
     f.footer:SetPoint("TOPRIGHT", 0, -(y + 2))
