@@ -1562,7 +1562,43 @@ git commit -m "refactor: build expanded-mode tabs from the feature registry, laz
 - Consumes: `UI:AllFeatures(nil)` — every feature, disabled ones included, no surface filter — plus `def.core`, `def.desc`, `def.module`; `BRutus:SetFeatureEnabled(id, enabled)`; `UI:ApplyScale()`.
 - Produces: nothing new; this task deletes a hand-maintained list.
 
-- [ ] **Step 1: Generate the toggle list**
+- [ ] **Step 1: One canonical feature gate**
+
+There are now two definitions of "may this player see this feature", and they disagree. `UI:OpenWindow` (`UI/Window.lua`) tests only `def.officerOnly`. `TabAllowed` (`UI/RosterFrame.lua`) tests `IsFeatureEnabled`, then `condition` overriding `officerOnly`. Because `wishlist` expresses its officer gate through `condition` rather than `officerOnly`:
+
+```lua
+condition = function() return BRutus:IsOfficer() and BRutus:LootSystemShowsWishlist() end,
+```
+
+`/gos open wishlist` opens the officer wishlist panel for any member. This is the fourth time this plan has hit the same failure — hiding the control is not controlling access — and the first three were each fixed at their own call site. Fix the cause: one predicate, one definition.
+
+Add to `UI/FeatureRegistry.lua`, beside `AllFeatures`:
+
+```lua
+----------------------------------------------------------------------
+-- May this player open this feature right now? The single gate every
+-- opener asks: the hub window, the expanded-mode tab, the slash verb.
+-- `condition` overrides `officerOnly` when present, matching how
+-- CreateTab has always treated the pair.
+----------------------------------------------------------------------
+function UI:IsFeatureAllowed(def)
+    if not def then return false end
+    if not BRutus:IsFeatureEnabled(def.id) then return false end
+    if def.condition then return def.condition() end
+    if def.officerOnly then return BRutus:IsOfficer() end
+    return true
+end
+```
+
+Then:
+
+- `UI:OpenWindow` replaces its two separate checks with this one. Keep both printed messages distinguishable — a disabled feature and a rank refusal are different messages to a user, so test `IsFeatureEnabled` first for the "disabled" wording, then `IsFeatureAllowed` for the refusal.
+- `TabAllowed` in `UI/RosterFrame.lua` becomes a one-line delegate to `UI:IsFeatureAllowed`, or is deleted in favour of calling it directly at both of its consumers.
+- `AllFeatures`/`VisibleFeatures` keep their own filtering as-is — they answer "what do I list", which is presentation, and they are already correct.
+
+Verify a non-officer is refused by `/gos open wishlist`, and that an officer in a wishlist-loot guild is not.
+
+- [ ] **Step 2: Generate the toggle list**
 
 In `UI/FeaturePanels.lua`, delete the hardcoded `modules` table (lines 1830-1841) and the `db.settings.modules` seeding block (lines 1819-1827 — `SetFeatureEnabled` creates the table on demand, and absent means on). Replace the loop header so it walks the registry:
 
@@ -1597,7 +1633,7 @@ Inside the loop body, keep the existing row construction and replace the checkbo
 
 Use `def.desc or ""` where the old code used `mod.desc`, and `def.label` where it used `mod.label`. The `officerOnly` skip is already handled by `VisibleFeatures`, so delete the surrounding `if not mod.officerOnly or isOfficer then` guard and its `end`.
 
-- [ ] **Step 2: Wire the hub's pulse toggle**
+- [ ] **Step 3: Wire the hub's pulse toggle**
 
 `UI/Hub.lua` reads `db.settings.hub.pulse` to decide whether to draw the two live lines, but nothing can currently write it — the `else f.pulse:Hide()` branch is unreachable. Give it its switch here, next to the other Settings controls, rather than deleting a knob the spec asked for:
 
@@ -1616,7 +1652,7 @@ Use `def.desc or ""` where the old code used `mod.desc`, and `def.label` where i
 
 Match the surrounding section's `yOff` layout idiom — read it first; the exact spacing and anchor style are set by the code already there.
 
-- [ ] **Step 3: Add the UI scale slider**
+- [ ] **Step 4: Add the UI scale slider**
 
 In the same Settings panel, directly above the module section (before the `MODULES` header at line 1815), add:
 
@@ -1645,7 +1681,7 @@ In the same Settings panel, directly above the module section (before the `MODUL
 
 Add `"OptionsSliderTemplate"` usage needs no luacheck entry (it is a string), but `_G` does — confirm `_G` is accepted by the current `.luacheckrc`; if luacheck flags it, add `"_G"` to `read_globals`.
 
-- [ ] **Step 4: Add strings**
+- [ ] **Step 5: Add strings**
 
 Append to `Locales/enUS.lua` under a `-- UI/FeaturePanels.lua` block (create it if absent):
 
@@ -1654,7 +1690,7 @@ L["UI scale"] = "UI scale"
 L[" Reload UI to apply."] = " Reload UI to apply."
 ```
 
-- [ ] **Step 5: Run both gates**
+- [ ] **Step 6: Run both gates**
 
 Run: `luacheck . --config .luacheckrc`
 Expected: 0 errors, warning count unchanged from baseline (71).
@@ -1662,7 +1698,7 @@ Expected: 0 errors, warning count unchanged from baseline (71).
 In-game: `/reload` then `/gos selftest`
 Expected: `0 failed`.
 
-- [ ] **Step 6: Verify the modularity rule end to end**
+- [ ] **Step 7: Verify the modularity rule end to end**
 
 In-game:
 1. `/gos` → open Settings → uncheck `Recipes`.
@@ -1672,7 +1708,7 @@ In-game:
 5. Confirm Settings and Roster have **no** checkbox at all.
 6. Drag the UI scale slider to 85% → the hub and every open window shrink immediately; `/reload` keeps the setting.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add UI/FeaturePanels.lua Locales/enUS.lua
