@@ -20,35 +20,63 @@ local function CompareVersions(a, b)
     return 0
 end
 
--- Column definitions
+-- Column definitions.
+--   min       narrowest the column may be drawn
+--   weight    share of any leftover width (0 = never grows past min)
+--   priority  drop order as the window narrows; lowest goes first
+--   required  never dropped, whatever the width
+-- Resolved per resize by UI:ResolveColumns (UI/Layout.lua), so the table
+-- follows its window instead of assuming the old fixed 1236px frame.
+--
+-- The former unlabelled 20px "status" column folded into `name`: the
+-- online dot is drawn inside the name cell, so it is not something the
+-- user can lose to a narrow window.
+--
 -- Attunements and Attendance live in their own dedicated places (member
 -- detail / Raids tab / KPI card), so they are intentionally omitted here to
--- keep the roster table clean. Freed width is redistributed to the remaining
--- columns so the table still fills its area.
+-- keep the roster table clean.
 local COLUMNS = {
-    { key = "status",      label = "",                 width = 20,  align = "CENTER" },
-    { key = "name",        label = L["MEMBER"],        width = 170, align = "LEFT" },
-    { key = "level",       label = L["LVL"],           width = 40,  align = "CENTER" },
-    { key = "class",       label = L["CLASS"],         width = 100, align = "LEFT" },
-    { key = "race",        label = L["RACE"],          width = 95,  align = "LEFT" },
-    { key = "avgIlvl",     label = L["iLVL"],          width = 50,  align = "CENTER" },
-    { key = "professions", label = L["PROFESSIONS"],   width = 230, align = "LEFT" },
-    { key = "zone",        label = L["ZONE"],          width = 165, align = "LEFT" },
-    { key = "lastSeen",    label = L["LAST SEEN"],      width = 90,  align = "RIGHT" },
+    { key = "name",        label = L["MEMBER"],      min = 150, weight = 3, priority = 100, required = true, align = "LEFT" },
+    { key = "level",       label = L["LVL"],         min = 34,  weight = 0, priority = 95,  required = true, align = "CENTER" },
+    { key = "class",       label = L["CLASS"],       min = 74,  weight = 1, priority = 90,  required = true, align = "LEFT" },
+    { key = "avgIlvl",     label = L["iLVL"],        min = 46,  weight = 0, priority = 80,  align = "CENTER" },
+    { key = "race",        label = L["RACE"],        min = 70,  weight = 1, priority = 60,  align = "LEFT" },
+    { key = "lastSeen",    label = L["LAST SEEN"],   min = 78,  weight = 1, priority = 50,  align = "RIGHT" },
+    { key = "professions", label = L["PROFESSIONS"], min = 160, weight = 2, priority = 40,  align = "LEFT" },
+    { key = "zone",        label = L["ZONE"],        min = 120, weight = 2, priority = 30,  align = "LEFT" },
+}
+
+-- KPI cards resolve through the same primitive, so they disappear in a
+-- deliberate order instead of running off the right edge. Listed in
+-- VISUAL order (ResolveColumns lays out in spec order); `priority` alone
+-- decides who goes first, so the survivors never shuffle sideways.
+local KPI_SPEC = {
+    { key = "members", min = 96, weight = 1, priority = 100, required = true },
+    { key = "players", min = 96, weight = 1, priority = 40 },
+    { key = "online",  min = 96, weight = 1, priority = 95,  required = true },
+    { key = "ilvl",    min = 96, weight = 1, priority = 90,  required = true },
+    { key = "att",     min = 96, weight = 1, priority = 60 },
+    { key = "addon",   min = 96, weight = 1, priority = 50 },
 }
 
 local ROW_HEIGHT = 32
 local HEADER_HEIGHT = 36
-local VISIBLE_ROWS = 18
 local RAIL_WIDTH = 156          -- left filter/segment rail (roster dashboard)
 -- +16 over the original 66 so the "Players" card has room for its
 -- "of N chars" sub-label under the usual caption; the other cards keep
 -- their same anchors, just with a touch more breathing room below.
 local KPI_BAND_HEIGHT = 82      -- KPI card band above the table
--- Widen + heighten so the table keeps its original geometry once the rail
--- and KPI band are carved out of the roster panel.
-local FRAME_WIDTH = 1080 + RAIL_WIDTH
-local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150 + KPI_BAND_HEIGHT
+local COL_GAP = 10              -- space between two table columns
+local ROW_INSET = 10            -- x of the first column inside a row
+local SCROLL_GUTTER = 18        -- rows stop short of the scrollbar
+-- Everything above the first row: KPI band, toolbar, column header, rule.
+local TABLE_RESERVED = KPI_BAND_HEIGHT + 28 + HEADER_HEIGHT + 1
+local KPI_GAP = 10
+local KPI_MARGIN = 12
+-- Expanded mode's default size. Only a starting point now: the panels
+-- inside lay themselves out from whatever size the frame actually has.
+local EXPANDED_W = 1236
+local EXPANDED_H = 844
 
 local TAB_HEIGHT = 28
 local BOTTOM_BAR_H = 30  -- bottom bar height; every tab panel insets its BOTTOMRIGHT by this
@@ -252,17 +280,22 @@ function BRutus:CreateRosterPanel(parent, host)
     kpiBand:SetPoint("TOPRIGHT", 0, 0)
     kpiBand:SetHeight(KPI_BAND_HEIGHT)
 
+    host.kpiCards = {}
+
     -- subLabelText: optional; when given, the card gets a second, smaller
     -- caption line below the main label (e.g. "of 62 chars" under "Players").
     -- Returns the value FontString, and the sub-label FontString if requested.
-    local function MakeKpiCard(x, w, labelText, valueColor, subLabelText)
+    -- The card frame itself is filed under `key` so the layout pass can
+    -- move and hide it; position and width come from ResolveColumns, not
+    -- from here.
+    local function MakeKpiCard(key, labelText, valueColor, subLabelText)
         local card = UI:CreatePanel(kpiBand)
         -- CreatePanel pins level to 1; raise it above the main window's
         -- backdrop (level ~10) so the card and its text are actually visible.
         card:SetFrameLevel((kpiBand:GetFrameLevel() or 1) + 1)
-        card:SetPoint("TOPLEFT", x, -8)
-        card:SetSize(w, KPI_BAND_HEIGHT - 16)
+        card:SetHeight(KPI_BAND_HEIGHT - 16)
         card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.95)
+        host.kpiCards[key] = card
 
         local value = UI:CreateText(card, "—", 20, valueColor.r, valueColor.g, valueColor.b)
         value:SetPoint("TOPLEFT", 12, -7)
@@ -283,17 +316,13 @@ function BRutus:CreateRosterPanel(parent, host)
         return value, sub
     end
 
-    -- 6 cards spread evenly across the band width (parent == FRAME_WIDTH)
-    local CARD_GAP, CARD_MARGIN, CARD_COUNT = 10, 12, 6
-    local CARD_W = math.floor((FRAME_WIDTH - CARD_MARGIN * 2 - CARD_GAP * (CARD_COUNT - 1)) / CARD_COUNT)
-    local function cardX(i) return CARD_MARGIN + (CARD_W + CARD_GAP) * i end
-    host.kpiMembers = MakeKpiCard(cardX(0), CARD_W, L["MEMBERS"],        C.text)
+    host.kpiMembers = MakeKpiCard("members", L["MEMBERS"],        C.text)
     host.kpiPlayers, host.kpiPlayersSub =
-                       MakeKpiCard(cardX(1), CARD_W, L["Players"],        C.text, "—")
-    host.kpiOnline  = MakeKpiCard(cardX(2), CARD_W, L["ONLINE"],         C.online)
-    host.kpiIlvl    = MakeKpiCard(cardX(3), CARD_W, L["AVG iLVL"],       C.gold)
-    host.kpiAtt     = MakeKpiCard(cardX(4), CARD_W, L["AVG ATTENDANCE"], C.text)
-    host.kpiAddon   = MakeKpiCard(cardX(5), CARD_W, L["WITH GUILD OS"],  C.accent)
+                      MakeKpiCard("players", L["Players"],        C.text, "—")
+    host.kpiOnline  = MakeKpiCard("online",  L["ONLINE"],         C.online)
+    host.kpiIlvl    = MakeKpiCard("ilvl",    L["AVG iLVL"],       C.gold)
+    host.kpiAtt     = MakeKpiCard("att",     L["AVG ATTENDANCE"], C.text)
+    host.kpiAddon   = MakeKpiCard("addon",   L["WITH GUILD OS"],  C.accent)
 
     -- KPI band bottom separator
     local bandLine = UI:CreateSeparator(parent)
@@ -415,13 +444,13 @@ function BRutus:CreateRosterPanel(parent, host)
     headerBg:SetAllPoints()
     headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
-    local xOff = 10
+    -- Header buttons are built once and repositioned by the layout pass;
+    -- x and width come from ResolveColumns, never from a constant.
     host.headerButtons = {}
     for _, col in ipairs(COLUMNS) do
-        if col.label ~= "" then
+        do
             local btn = CreateFrame("Button", nil, headerFrame)
-            btn:SetSize(col.width, HEADER_HEIGHT)
-            btn:SetPoint("LEFT", xOff, 0)
+            btn:SetHeight(HEADER_HEIGHT)
 
             local text = UI:CreateHeaderText(btn, col.label, 10)
             if col.align == "CENTER" then
@@ -461,7 +490,6 @@ function BRutus:CreateRosterPanel(parent, host)
 
             host.headerButtons[col.key] = btn
         end
-        xOff = xOff + col.width
     end
 
     -- Header bottom line
@@ -481,9 +509,21 @@ function BRutus:CreateRosterPanel(parent, host)
 
     host.scrollFrame = scrollFrame
     host.rows = {}
+    host.visibleRows = 0
 
-    for i = 1, VISIBLE_ROWS do
-        host.rows[i] = CreateRosterRow(rosterContainer, i, uid)
+    -- Rows are pooled and grown on demand: how many exist depends on how
+    -- tall the window is right now, which changes while the grip is dragged.
+    -- A row is created once and reused for the rest of the session.
+    host.AcquireRows = function(n)
+        for i = #host.rows + 1, n do
+            local row = CreateRosterRow(rosterContainer, i, uid)
+            if host.colLayout then row:ApplyColumns(host.colLayout) end
+            host.rows[i] = row
+        end
+        for i = 1, #host.rows do
+            host.rows[i]:SetShown(i <= n)
+        end
+        host.visibleRows = n
     end
 
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
@@ -892,10 +932,15 @@ function BRutus:CreateRosterPanel(parent, host)
         local members = self.sortedMembers
         local numMembers = #members
         local offset = FauxScrollFrame_GetOffset(self.scrollFrame)
+        -- How many rows exist is decided by the layout pass, not a
+        -- constant: a window dragged short has fewer, and one dragged
+        -- tall has more.
+        local visible = self.visibleRows or 0
+        if visible < 1 then return end
 
-        FauxScrollFrame_Update(self.scrollFrame, numMembers, VISIBLE_ROWS, ROW_HEIGHT)
+        FauxScrollFrame_Update(self.scrollFrame, numMembers, visible, ROW_HEIGHT)
 
-        for i = 1, VISIBLE_ROWS do
+        for i = 1, visible do
             local row = self.rows[i]
             local dataIndex = offset + i
 
@@ -981,6 +1026,52 @@ function BRutus:CreateRosterPanel(parent, host)
         if self.UpdateRail then self:UpdateRail() end
     end
 
+    ----------------------------------------------------------------
+    -- Layout: everything that depends on how big the container is right
+    -- now. Runs once on first show and once per frame while the grip is
+    -- dragged (UI:MakeResponsive coalesces the burst).
+    ----------------------------------------------------------------
+    UI:MakeResponsive(parent, function(_, w, h)
+        -- KPI band. Same drop-by-priority rule as the table, so the cards
+        -- vanish in a chosen order instead of sliding off the edge.
+        local kpi = UI:ResolveColumns(KPI_SPEC, w - KPI_MARGIN * 2, KPI_GAP)
+        for _, entry in ipairs(kpi) do
+            local card = host.kpiCards[entry.key]
+            if card then
+                card:SetShown(entry.shown)
+                if entry.shown then
+                    card:ClearAllPoints()
+                    card:SetPoint("TOPLEFT", KPI_MARGIN + entry.x, -8)
+                    card:SetWidth(entry.w)
+                end
+            end
+        end
+
+        -- Table columns.
+        local tableW = w - RAIL_WIDTH - ROW_INSET - SCROLL_GUTTER
+        local layout = UI:ResolveColumns(COLUMNS, tableW, COL_GAP)
+        host.colLayout = layout
+        for _, col in ipairs(layout) do
+            local btn = host.headerButtons[col.key]
+            if btn then
+                btn:SetShown(col.shown)
+                if col.shown then
+                    btn:ClearAllPoints()
+                    btn:SetPoint("LEFT", ROW_INSET + col.x, 0)
+                    btn:SetWidth(col.w)
+                end
+            end
+        end
+
+        -- Rows: how many fit, and where their cells sit.
+        host.AcquireRows(UI:ResolveRows(h - TABLE_RESERVED, ROW_HEIGHT, 0))
+        for i = 1, host.visibleRows do
+            host.rows[i]:ApplyColumns(layout)
+        end
+
+        BRutus:RefreshRosterUI()
+    end)
+
     return parent
 end
 
@@ -1006,7 +1097,7 @@ end
 
 function BRutus.CreateRosterFrame()
     local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
-    frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
+    frame:SetSize(EXPANDED_W, EXPANDED_H)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -1444,28 +1535,25 @@ function CreateRosterRow(parent, rowIndex, uid)
     row:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
     row.defaultBg = bgColor
 
-    -- Row elements
-    local xOff = 10
+    -- Row elements. None of them is positioned here: ApplyColumns below
+    -- places every cell from a resolved layout, so the same row works at
+    -- any window width.
 
-    -- Status indicator (online dot)
+    -- Status indicator (online dot) — rides inside the name cell
     local statusDot = row:CreateTexture(nil, "OVERLAY")
     statusDot:SetSize(8, 8)
-    statusDot:SetPoint("LEFT", xOff + 6, 0)
     statusDot:SetTexture("Interface\\COMMON\\Indicator-Green")
     row.statusDot = statusDot
-    xOff = xOff + COLUMNS[1].width
 
     -- Class icon + Name
     local classIcon = row:CreateTexture(nil, "OVERLAY")
     classIcon:SetSize(20, 20)
-    classIcon:SetPoint("LEFT", xOff, 0)
     classIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.classIcon = classIcon
 
     local nameText = row:CreateFontString(nil, "OVERLAY")
     nameText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     nameText:SetPoint("LEFT", classIcon, "RIGHT", 5, 0)
-    nameText:SetWidth(COLUMNS[2].width - 28)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
     row.nameText = nameText
@@ -1478,73 +1566,75 @@ function CreateRosterRow(parent, rowIndex, uid)
     addonDot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
     addonDot:Hide()
     row.addonDot = addonDot
-    xOff = xOff + COLUMNS[2].width
 
-    -- Level
-    local levelText = row:CreateFontString(nil, "OVERLAY")
-    levelText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
-    levelText:SetPoint("LEFT", xOff, 0)
-    levelText:SetWidth(COLUMNS[3].width)
-    levelText:SetJustifyH("CENTER")
-    row.levelText = levelText
-    xOff = xOff + COLUMNS[3].width
+    local function cell(size, justify, colour)
+        local fs = row:CreateFontString(nil, "OVERLAY")
+        fs:SetFont("Fonts\\FRIZQT__.TTF", size, "OUTLINE")
+        fs:SetJustifyH(justify)
+        fs:SetWordWrap(false)
+        if colour then fs:SetTextColor(colour.r, colour.g, colour.b) end
+        return fs
+    end
 
-    -- Class name
-    local classText = row:CreateFontString(nil, "OVERLAY")
-    classText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    classText:SetPoint("LEFT", xOff, 0)
-    classText:SetWidth(COLUMNS[4].width)
-    classText:SetJustifyH("LEFT")
-    row.classText = classText
-    xOff = xOff + COLUMNS[4].width
+    row.levelText    = cell(13, "CENTER")
+    row.classText    = cell(11, "LEFT")
+    row.raceText     = cell(11, "LEFT", C.silver)
+    row.ilvlText     = cell(12, "CENTER")
+    row.profText     = cell(10, "LEFT")
+    row.zoneText     = cell(10, "LEFT")
+    row.lastSeenText = cell(10, "RIGHT", C.silver)
 
-    -- Race
-    local raceText = row:CreateFontString(nil, "OVERLAY")
-    raceText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    raceText:SetPoint("LEFT", xOff, 0)
-    raceText:SetWidth(COLUMNS[5].width)
-    raceText:SetJustifyH("LEFT")
-    raceText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    row.raceText = raceText
-    xOff = xOff + COLUMNS[5].width
+    -- Which elements belong to which column, so a dropped column takes
+    -- everything it owns with it.
+    row.cells = {
+        name        = { nameText, classIcon, statusDot, addonDot },
+        level       = { row.levelText },
+        class       = { row.classText },
+        avgIlvl     = { row.ilvlText },
+        race        = { row.raceText },
+        lastSeen    = { row.lastSeenText },
+        professions = { row.profText },
+        zone        = { row.zoneText },
+    }
 
-    -- Average iLvl
-    local ilvlText = row:CreateFontString(nil, "OVERLAY")
-    ilvlText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-    ilvlText:SetPoint("LEFT", xOff, 0)
-    ilvlText:SetWidth(COLUMNS[6].width)
-    ilvlText:SetJustifyH("CENTER")
-    row.ilvlText = ilvlText
-    xOff = xOff + COLUMNS[6].width
+    -- Reposition every cell from a resolved layout. Runs once per row per
+    -- resize, never per data update.
+    function row:ApplyColumns(layout)
+        for _, col in ipairs(layout) do
+            local group = self.cells[col.key]
+            if group then
+                for _, el in ipairs(group) do el:SetShown(col.shown) end
+            end
+        end
+        -- addonDot has its own visibility rule (set per member in
+        -- UpdateRosterRow); the layout must not force it back on.
+        if not self.__hasAddon then self.addonDot:Hide() end
 
-    -- Professions
-    local profText = row:CreateFontString(nil, "OVERLAY")
-    profText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    profText:SetPoint("LEFT", xOff, 0)
-    profText:SetWidth(COLUMNS[7].width)
-    profText:SetJustifyH("LEFT")
-    profText:SetWordWrap(false)
-    row.profText = profText
-    xOff = xOff + COLUMNS[7].width
+        local byKey = layout.byKey
+        local nameCol = byKey.name
+        if nameCol and nameCol.shown then
+            self.statusDot:ClearAllPoints()
+            self.statusDot:SetPoint("LEFT", ROW_INSET + nameCol.x + 6, 0)
+            self.classIcon:ClearAllPoints()
+            self.classIcon:SetPoint("LEFT", ROW_INSET + nameCol.x + 20, 0)
+            self.nameText:SetWidth(math.max(20, nameCol.w - 48))
+        end
 
-    -- Zone
-    local zoneText = row:CreateFontString(nil, "OVERLAY")
-    zoneText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    zoneText:SetPoint("LEFT", xOff, 0)
-    zoneText:SetWidth(COLUMNS[8].width)
-    zoneText:SetJustifyH("LEFT")
-    zoneText:SetWordWrap(false)
-    row.zoneText = zoneText
-    xOff = xOff + COLUMNS[8].width
-
-    -- Last Seen
-    local lastSeenText = row:CreateFontString(nil, "OVERLAY")
-    lastSeenText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    lastSeenText:SetPoint("LEFT", xOff, 0)
-    lastSeenText:SetWidth(COLUMNS[9].width)
-    lastSeenText:SetJustifyH("RIGHT")
-    lastSeenText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    row.lastSeenText = lastSeenText
+        local function place(key, fs)
+            local col = byKey[key]
+            if not col or not col.shown then return end
+            fs:ClearAllPoints()
+            fs:SetPoint("LEFT", ROW_INSET + col.x, 0)
+            fs:SetWidth(col.w)
+        end
+        place("level",       self.levelText)
+        place("class",       self.classText)
+        place("avgIlvl",     self.ilvlText)
+        place("race",        self.raceText)
+        place("lastSeen",    self.lastSeenText)
+        place("professions", self.profText)
+        place("zone",        self.zoneText)
+    end
 
     -- Hover effects
     row:SetScript("OnEnter", function(self)
@@ -1618,7 +1708,10 @@ function UpdateRosterRow(row, data, rowIndex)
     row.nameText:SetText(data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
-    -- Addon data indicator
+    -- Addon data indicator. __hasAddon is remembered so a later layout
+    -- pass (which shows every element the name column owns) does not
+    -- resurrect the dot on a member who has no addon data.
+    row.__hasAddon = data.hasAddonData and true or false
     if data.hasAddonData then
         row.addonDot:Show()
         if data.addonVersion and CompareVersions(data.addonVersion, BRutus.VERSION) < 0 then

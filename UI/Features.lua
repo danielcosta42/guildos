@@ -23,7 +23,9 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "roster", label = L["Roster"], order = 10, core = true,
     icon = ICON .. "INV_Misc_GroupLooking",
-    w = 1000, h = 620, minW = 700, minH = 420,
+    -- minW 520 is the narrowest the table still reads at: the four-column
+    -- state (MEMBER, LVL, CLASS, iLVL). See the design doc, section 5.3.
+    w = 1000, h = 620, minW = 520, minH = 380,
     build = function(c, win) BRutus:CreateRosterPanel(c, win) end,
 })
 
