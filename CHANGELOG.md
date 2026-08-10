@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.0] - 2026-08-10
+
+### Added
+- two-column command-centre hub with live guild blocks
+- container-driven layout primitives with selftest coverage
+- add UI scale slider and hub pulse toggle to settings panel
+- minimal hub card as the addon front door
+- register every feature and open windows from slash commands
+- generic floating window container with saved geometry
+- feature registry and public feature-toggle API
+
+### Fixed
+- stop linting the test harnesses that exist to fake the WoW API
+- compare frame widths with a tolerance, the client stores them as floats
+- resizing a background window brings it to the front
+- give each floating window its own frame-level band so two windows stop interleaving
+- dashboard cards relayout on resize, debounced around the readiness scan
+- per-feature window minimums matched to the responsive layouts
+- recruitment panel scrolls instead of spilling past the window
+- title-bar buttons lost every click to the drag bar
+- gate SetActiveTab with the same predicate as UpdateTabVisibility
+- build all expanded-mode tab frames unconditionally, route roster refresh through RefreshRosterUI
+- close whichever front door is open, not just the hub
+- front-door predicate for the guild-button hook, calendar deep link, dead hub fallback
+- enforce officerOnly on the window-open and sub-tab-select paths
+- replace the bare feature-id fallback with an explicit /gos open verb
+
+### Changed
+- scroll children follow their frame instead of a baked-in width
+- leadership sub-tabs wrap instead of running off the window
+- recipes list follows its container height and width
+- roster table and KPI band lay out from their container
+- build expanded-mode tabs from the feature registry, lazily
+- move the roster's data methods into CreateRosterPanel
+- extract the roster panel into CreateRosterPanel
+
+### Other
+- Companion import: the roster comes back from the website
+- commit de tudo
+
+
 ## [0.45.0] - 2026-07-30
 
 ### Added
