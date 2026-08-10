@@ -23,6 +23,9 @@ local SUBTABS = {
 }
 
 local ROW_H = 26
+local TAB_H = 28        -- UI:CreateTab's fixed height
+local TAB_MIN_W = 70    -- narrowest a sub-tab may be drawn
+local TAB_PAD = 20      -- label padding inside a sub-tab
 
 -- Confirmation dialog for a bulk Apply. The full, already-formatted message
 -- is passed as text arg1 ("%s"); OnAccept runs the officer-gated ApplyPreset
@@ -1035,13 +1038,15 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "ranks"
 
-    -- Sub-tab bar
+    -- Sub-tab bar. Anchored on the left only: UI:FlowBar reads GetWidth to
+    -- decide where to wrap, and a frame pinned on both sides reports a
+    -- stale width in the same frame its container was resized.
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
-    bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetSize(400, TAB_H)
 
     local subTabBtns = {}
+    local subTabList = {}
 
     local function selectSub(key)
         parent.activeSub = key
@@ -1061,20 +1066,24 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
 
-    local x = 0
+    -- Tab width comes from the label, not a constant: eight tabs at a
+    -- fixed 120px needed 960px inside a 760px window, which is how the
+    -- bar ended up running off the right edge.
     for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 116)
-        btn:SetPoint("LEFT", x, 0)
+        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W)
+        btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + 120
+        subTabList[#subTabList + 1] = btn
     end
 
     -- One content panel per sub-tab, all sharing the area below the bar.
+    -- Anchored to the bar rather than a fixed offset, so a wrapped
+    -- two-row tab bar pushes the content down instead of overlapping it.
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", 12, -42)
-        p:SetPoint("BOTTOMRIGHT", -12, 10)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -8)
+        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 10)
         p:Hide()
         return p
     end
@@ -1097,5 +1106,19 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
 
     parent:SetScript("OnShow", function()
         selectSub(parent.activeSub or "ranks")
+    end)
+
+    -- Exposed so the layout can be inspected from outside the builder.
+    parent.subTabBar = bar
+    parent.subTabList = subTabList
+
+    ----------------------------------------------------------------
+    -- Layout: the tab bar wraps, and the visible sub-panel rebuilds so
+    -- its scroll content picks up the new width.
+    ----------------------------------------------------------------
+    UI:MakeResponsive(parent, function(_, w, _)
+        bar:SetWidth(math.max(TAB_MIN_W, w - 20))
+        UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = TAB_H })
+        parent.RefreshActive()
     end)
 end
