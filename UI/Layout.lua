@@ -379,19 +379,30 @@ function UI:_RegisterLayoutTests()
     -- reintroducing the sibling parenting and watching this go red.
     S:Register("layout.scroll_child_follows_frame", function()
         if not UI.BindScrollChildWidth then return false, "BindScrollChildWidth missing" end
+
+        -- Frame dimensions are floats: the live client reads back
+        -- 600.00006103516 for a frame set to 600, so a width is compared
+        -- with a tolerance and never with ==. Only assertions that read a
+        -- real dimension need this; levels, counts and the resolver output
+        -- are integers.
+        local function isApprox(got, want)
+            return math.abs(got - want) < 0.5
+        end
+
         local scroll = CreateFrame("ScrollFrame", nil, UIParent)
         local child  = CreateFrame("Frame", nil, scroll)
         scroll:SetWidth(600)
         UI:BindScrollChildWidth(scroll, child, 10)
-        if child:GetWidth() ~= 590 then
-            return false, "initial width " .. child:GetWidth() .. ", want 590"
+        if not isApprox(child:GetWidth(), 590) then
+            return false, string.format("initial width %.2f, want 590", child:GetWidth())
         end
+
         scroll:SetWidth(300)
         local onSize = scroll:GetScript("OnSizeChanged")
         if not onSize then return false, "OnSizeChanged was not registered" end
         onSize(scroll)
-        if child:GetWidth() ~= 290 then
-            return false, "after resize width " .. child:GetWidth() .. ", want 290"
+        if not isApprox(child:GetWidth(), 290) then
+            return false, string.format("after resize width %.2f, want 290", child:GetWidth())
         end
         return true
     end)
