@@ -339,5 +339,21 @@ function BRutus:CreateDashboardPanel(panel, mainFrame)
     -- Refresh whenever the tab becomes visible.
     panel:HookScript("OnShow", function() BRutus:SafeCall(f.Refresh) end)
 
+    -- ...and when the container is resized, because f.Refresh is what lays
+    -- the cards out. It also runs a readiness scan, which is far too heavy
+    -- for the once-per-frame rate a grip drag produces, so this debounces
+    -- and ignores changes too small to move a card.
+    local lastW, pending = nil, false
+    UI:MakeResponsive(panel, function(_, w)
+        if lastW and math.abs(w - lastW) < 8 then return end
+        lastW = w
+        if pending then return end
+        pending = true
+        C_Timer.After(0.2, function()
+            pending = false
+            BRutus:SafeCall(f.Refresh)
+        end)
+    end)
+
     return f.Refresh
 end
