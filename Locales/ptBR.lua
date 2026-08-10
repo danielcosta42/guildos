@@ -1592,3 +1592,18 @@ L["This guild is not in an alliance yet. Use the Manage tab to join or found one
 L["connecting..."] = "conectando..."
 L["Hide from the alliance feed"] = "Esconder do feed da aliança"
 L["The message was already delivered; this only clears it from the Guild OS feed."] = "A mensagem já foi entregue; isto só a tira do feed do Guild OS."
+
+-- UI/Hub.lua (hub painel de comando)
+L["ONLINE NOW"] = "ONLINE AGORA"
+L["NEXT EVENT"] = "PRÓXIMO EVENTO"
+L["NEEDS YOU"] = "PRECISA DE VOCÊ"
+L["YOU"] = "VOCÊ"
+L["Only you online"] = "Só você online"
+L["All caught up"] = "Tudo em dia"
+L["Collapse"] = "Recolher"
+L["+%d more"] = "+%d mais"
+L["%d inactive over %dd"] = "%d inativos há mais de %dd"
+L["%d trials expiring"] = "%d trials vencendo"
+L["%d pending suggestions"] = "%d sugestões pendentes"
+L["%d applicants waiting"] = "%d candidatos aguardando"
+L["%d on wishlist"] = "%d na wishlist"
