@@ -367,10 +367,16 @@ function UI:_RegisterLayoutTests()
 
     -- Regression guard for the dead-close-button bug. A title bar is
     -- mouse-enabled and drag-registered across its full width, so a button
-    -- sitting on it at the same frame level never receives the click: the
-    -- bar swallows it. UI/RosterFrame.lua had the fix inline; every other
-    -- title bar was missing it, which killed every close button in the
-    -- addon. UI:TitleBarButton is now the only way to build one.
+    -- that is its SIBLING sits at the same frame level and never receives
+    -- the click: the bar swallows it. UI/RosterFrame.lua had the fix
+    -- inline; every other title bar was missing it, which killed every
+    -- close button in the addon.
+    --
+    -- The parent assertion is the one that bites: a child frame already
+    -- defaults to parent level + 1, so reparenting is what fixes the bug
+    -- and the explicit bump is only insurance against a later
+    -- SetFrameLevel elsewhere flattening them back together. Verified by
+    -- reintroducing the sibling parenting and watching this go red.
     S:Register("layout.scroll_child_follows_frame", function()
         if not UI.BindScrollChildWidth then return false, "BindScrollChildWidth missing" end
         local scroll = CreateFrame("ScrollFrame", nil, UIParent)
