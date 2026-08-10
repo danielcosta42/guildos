@@ -39,6 +39,11 @@ function UnitIsGroupLeader() return true end
 function UnitIsGroupAssistant() return false end
 function GetRealmName() return "Firemaw" end
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+-- CompanionExport hangs a PLAYER_LOGOUT frame off its file scope; this only has
+-- to let the file load, since nothing here fires the event.
+function CreateFrame()
+  return { RegisterEvent = function() end, SetScript = function() end }
+end
 
 INVITED, MOVED = {}, {}
 function InviteUnit(name) INVITED[#INVITED + 1] = name end

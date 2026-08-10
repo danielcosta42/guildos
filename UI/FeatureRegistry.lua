@@ -108,6 +108,23 @@ function UI:_RegisterFeatureTests()
                 if type(d.build) ~= "function" then return false, id .. ": hub feature needs build()" end
                 if type(d.w) ~= "number" or d.w <= 0 then return false, id .. ": bad width" end
                 if type(d.h) ~= "number" or d.h <= 0 then return false, id .. ": bad height" end
+                -- A resizable window needs a floor its panel can actually
+                -- render at, and that floor has to be reachable: a minimum
+                -- above the default means the window opens already clamped.
+                if d.resizable ~= false then
+                    if type(d.minW) ~= "number" or d.minW <= 0 then
+                        return false, id .. ": resizable feature needs minW"
+                    end
+                    if type(d.minH) ~= "number" or d.minH <= 0 then
+                        return false, id .. ": resizable feature needs minH"
+                    end
+                    if d.minW > d.w then
+                        return false, string.format("%s: minW %d exceeds default width %d", id, d.minW, d.w)
+                    end
+                    if d.minH > d.h then
+                        return false, string.format("%s: minH %d exceeds default height %d", id, d.minH, d.h)
+                    end
+                end
             end
             if d.subs ~= nil then
                 if type(d.subs) ~= "table" then return false, id .. ": subs must be a list" end

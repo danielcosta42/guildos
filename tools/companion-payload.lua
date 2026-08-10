@@ -29,6 +29,12 @@ function GetGuildRosterInfo(i)
   return r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]
 end
 function GetGuildInfo() return "Raid Guild" end
+-- The module hangs a PLAYER_LOGOUT frame off the file scope so the payload
+-- lands in SavedVariables for the desktop companion. Nothing here fires it;
+-- the stub only has to let the file load.
+function CreateFrame()
+  return { RegisterEvent = function() end, SetScript = function() end }
+end
 function GetRealmName() return "Firemaw" end
 function UnitName() return "Chehul" end
 function time() return 1754400000 end

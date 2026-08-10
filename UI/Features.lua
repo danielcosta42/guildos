@@ -32,7 +32,7 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "raids", label = L["Raids"], order = 20,
     icon = ICON .. "INV_Sword_04",
-    w = 780, h = 540, minW = 620, minH = 400,
+    w = 780, h = 540, minW = 560, minH = 360,
     subs = { "sessions", "raiders", "cores", "audit", "raidtools" },
     build = function(c, win) BRutus:CreateRaidHubPanel(c, win) end,
 })
@@ -40,14 +40,14 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "loot", label = L["Loot"], order = 30, officerOnly = true,
     icon = ICON .. "INV_Misc_Coin_01",
-    w = 680, h = 470,
+    w = 680, h = 470, minW = 480, minH = 320,
     build = function(c, win) BRutus:CreateLootPanel(c, win) end,
 })
 
 UI:RegisterFeature({
     id = "dkp", label = L["DKP"], order = 35,
     icon = ICON .. "INV_Misc_Coin_02",
-    w = 620, h = 440,
+    w = 620, h = 440, minW = 440, minH = 300,
     condition = function() return BRutus:LootSystemShowsDKP() end,
     build = function(c, win) BRutus:CreateDKPPanel(c, win) end,
 })
@@ -55,7 +55,7 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "wishlist", label = L["Wishlist"], order = 38,
     icon = ICON .. "INV_Scroll_03",
-    w = 680, h = 470,
+    w = 680, h = 470, minW = 480, minH = 320,
     condition = function() return BRutus:IsOfficer() and BRutus:LootSystemShowsWishlist() end,
     build = function(c, win) BRutus:CreateWishlistGuildPanel(c, win) end,
 })
@@ -63,14 +63,14 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "recipes", label = L["Recipes"], order = 40,
     icon = ICON .. "INV_Misc_Book_09",
-    w = 700, h = 500,
+    w = 700, h = 500, minW = 400, minH = 300,
     build = function(c, win) BRutus:CreateRecipesPanel(c, win) end,
 })
 
 UI:RegisterFeature({
     id = "guild", label = L["Guild"], order = 50,
     icon = ICON .. "INV_Shirt_GuildTabard_01",
-    w = 720, h = 520,
+    w = 720, h = 520, minW = 500, minH = 360,
     subs = { "calendar", "activity" },
     build = function(c, win) BRutus:CreateGuildHub(c, win) end,
 })
@@ -78,7 +78,7 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "alliance", label = L["Alliance"], order = 60,
     icon = ICON .. "INV_BannerPVP_02",
-    w = 900, h = 600, minW = 700, minH = 460,
+    w = 900, h = 600, minW = 620, minH = 420,
     condition = function()
         return (BRutus.Alliance and BRutus.Alliance:Get() ~= nil) or BRutus:IsOfficer()
     end,
@@ -88,21 +88,24 @@ UI:RegisterFeature({
 UI:RegisterFeature({
     id = "recruitment", label = L["Recruitment"], order = 70,
     icon = ICON .. "INV_Misc_GroupNeedMore",
-    w = 720, h = 500,
+    -- Taller by default: the Recruiting stack is a scrolling column and
+    -- 500px cut it off before the Beacon section.
+    w = 720, h = 560, minW = 460, minH = 340,
     build = function(c, win) BRutus:CreateRecruitmentPanel(c, win) end,
 })
 
 UI:RegisterFeature({
     id = "trials", label = L["Trials"], order = 80, officerOnly = true,
     icon = ICON .. "INV_Misc_Note_01",
-    w = 620, h = 420,
+    w = 620, h = 420, minW = 440, minH = 300,
     build = function(c, win) BRutus:CreateTrialsPanel(c, win) end,
 })
 
 UI:RegisterFeature({
     id = "management", label = L["Leadership"], order = 90, officerOnly = true,
     icon = ICON .. "INV_Crown_01",
-    w = 760, h = 540, minW = 620, minH = 420,
+    -- Wider by default: eight sub-tabs fit on one row at 900px.
+    w = 900, h = 560, minW = 560, minH = 380,
     build = function(c, win) BRutus:CreateManagementPanel(c, win) end,
 })
 

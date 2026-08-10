@@ -267,18 +267,18 @@ MEMBRO's 150 absorbs the existing unlabelled 20px `status` column (`UI/RosterFra
 holds the online dot. The dot is visually part of the name cell (dot, class icon, name), so it
 rides along instead of being a droppable column of its own.
 
-**Table area** is the window width minus the 156px rail and 24px of margins, so
-`table = window - 180`. The resulting breakpoints, which `layout.columns_drop_by_priority` asserts
-against:
+**Table area** is the window width minus the 156px rail, the 10px row inset and the 18px scrollbar
+gutter, so `table = window - 184`. The resulting breakpoints, which
+`layout.columns_drop_by_priority` asserts against by table width:
 
 | Table width | Window width | Columns shown |
 |---|---|---|
-| >= 802 | >= 982 | all 8 |
-| 672 .. 801 | 852 .. 981 | drops ZONA |
-| 502 .. 671 | 682 .. 851 | also drops PROFISSOES |
-| 414 .. 501 | 594 .. 681 | also drops VISTO |
-| 334 .. 413 | 514 .. 593 | also drops RACA: MEMBRO, LVL, CLASSE, iLVL |
-| < 334 | < 514 | floor: MEMBRO, LVL, CLASSE |
+| >= 802 | >= 986 | all 8 |
+| 672 .. 801 | 856 .. 985 | drops ZONA |
+| 502 .. 671 | 686 .. 855 | also drops PROFISSOES |
+| 414 .. 501 | 598 .. 685 | also drops VISTO |
+| 334 .. 413 | 518 .. 597 | also drops RACA: MEMBRO, LVL, CLASSE, iLVL |
+| < 334 | < 518 | floor: MEMBRO, LVL, CLASSE |
 
 Roster `minW = 520` sits inside the four-column band, so that is the narrowest state the grip can
 reach and the three-column floor is unreachable by dragging. It still has to behave, because
