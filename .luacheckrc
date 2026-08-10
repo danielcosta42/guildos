@@ -327,6 +327,12 @@ read_globals = {
 -- Third-party libraries — skip
 exclude_files = {
     "Libs/**",
+    -- Host-side harnesses. They run under lua5.1 outside the game and their whole
+    -- job is to define the WoW API themselves, so every stub reads to luacheck as
+    -- writing a read-only global. Linting them against the addon's own config was
+    -- 42 warnings, a non-zero exit, and a red lint job that has blocked every
+    -- release since 7 August.
+    "tools/**",
 }
 
 -- Ignore unused self and shadowing of self (common in WoW callbacks/event handlers)
