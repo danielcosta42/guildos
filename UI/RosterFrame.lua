@@ -1103,15 +1103,13 @@ function BRutus.CreateRosterFrame()
     versionTag:SetPoint("LEFT", title, "RIGHT", 10, -10)
 
     -- Close button
-    local closeBtn = UI:CreateCloseButton(titleBar)
+    local closeBtn = UI:TitleBarButton(titleBar, "close")
     closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -10)
-    closeBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
     -- Sync button
-    local syncBtn = UI:CreateButton(titleBar, L["Sync"], 70, 24)
+    local syncBtn = UI:TitleBarButton(titleBar, "text", L["Sync"], 70, 24)
     syncBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
-    syncBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     syncBtn:SetScript("OnClick", function()
         if BRutus.CommSystem then
             BRutus.CommSystem:FullSync()
@@ -1119,9 +1117,8 @@ function BRutus.CreateRosterFrame()
     end)
 
     -- Global search button (always available in the header)
-    local searchBtn = UI:CreateButton(titleBar, L["Search"], 80, 24)
+    local searchBtn = UI:TitleBarButton(titleBar, "text", L["Search"], 80, 24)
     searchBtn:SetPoint("RIGHT", syncBtn, "LEFT", -8, 0)
-    searchBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     searchBtn:SetScript("OnClick", function()
         if BRutus.Search then BRutus.Search:Show() end
     end)
@@ -1129,9 +1126,8 @@ function BRutus.CreateRosterFrame()
     -- Blizzard guild UI button — jump to the native guild pane (chat history, news,
     -- protected officer actions) without the addon fully replacing it. Opens whichever
     -- native UI the client uses (classic GuildFrame or the modern Communities frame).
-    local blizzBtn = UI:CreateButton(titleBar, L["Blizzard"], 80, 24)
+    local blizzBtn = UI:TitleBarButton(titleBar, "text", L["Blizzard"], 80, 24)
     blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -8, 0)
-    blizzBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     blizzBtn:SetScript("OnClick", function()
         if BRutus.OpenBlizzardGuildUI then BRutus:OpenBlizzardGuildUI() end
     end)

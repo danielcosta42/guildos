@@ -107,8 +107,10 @@ function UI:CreateWindow(id)
     line:SetPoint("TOPLEFT", 0, -TITLE_H)
     line:SetPoint("TOPRIGHT", 0, -TITLE_H)
 
-    local close = self:CreateCloseButton(win)
-    close:SetPoint("TOPRIGHT", -4, -3)
+    -- Parented to the bar, not the window: a sibling at the same frame
+    -- level loses every click to the bar's drag handler.
+    local close = self:TitleBarButton(bar, "close")
+    close:SetPoint("TOPRIGHT", win, "TOPRIGHT", -4, -3)
     close:SetScript("OnClick", function() UI:ToggleWindow(id) end)
 
     -- Resize grip (bottom-right), unless the feature opted out.
@@ -133,10 +135,14 @@ function UI:CreateWindow(id)
         end)
     end
 
-    -- Content area: everything under the title bar.
+    -- Content area: everything under the title bar. Clipping is the net
+    -- under the responsive layout: a panel that still miscalculates gets
+    -- truncated inside its own window instead of painting over the rest
+    -- of the screen, which is what every unconverted panel used to do.
     local content = CreateFrame("Frame", nil, win)
     content:SetPoint("TOPLEFT", 0, -(TITLE_H + 1))
     content:SetPoint("BOTTOMRIGHT", 0, 0)
+    if content.SetClipsChildren then content:SetClipsChildren(true) end
     win.content = content
 
     -- Navigation shim. Panels cross-navigate through the main frame's

@@ -55,18 +55,20 @@ function Hub:Create()
     f:SetScale(BRutus:GetSetting("uiScale") or 1)
     self.frame = f
 
-    -- Title bar: drag, and click to collapse to just this bar.
-    local bar = CreateFrame("Button", nil, f)
+    -- Title bar: drag only. It is mouse-enabled across the full width, so
+    -- anything clickable on it has to go through UI:TitleBarButton or the
+    -- bar eats the click. Collapse used to live here as an OnClick, which
+    -- is precisely what killed the three buttons below; the chevron on the
+    -- summary line owns it now.
+    local bar = CreateFrame("Frame", nil, f)
     bar:SetPoint("TOPLEFT", 0, 0)
     bar:SetPoint("TOPRIGHT", 0, 0)
     bar:SetHeight(TITLE_H)
+    bar:EnableMouse(true)
     bar:RegisterForDrag("LeftButton")
     bar:SetScript("OnDragStart", function() f:StartMoving() end)
     bar:SetScript("OnDragStop", function() f:StopMovingOrSizing(); saveHubPos(f) end)
-    bar:SetScript("OnClick", function()
-        cfg().collapsed = not cfg().collapsed
-        Hub:Refresh()
-    end)
+    f.bar = bar
 
     local barBg = bar:CreateTexture(nil, "ARTWORK")
     barBg:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -76,16 +78,16 @@ function Hub:Create()
     local title = UI:CreateHeaderText(bar, "GUILD OS", 11)
     title:SetPoint("LEFT", 8, 0)
 
-    local close = UI:CreateCloseButton(f)
-    close:SetPoint("TOPRIGHT", -3, -2)
+    local close = UI:TitleBarButton(bar, "close")
+    close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -3, -2)
     close:SetScript("OnClick", function() f:Hide() end)
 
-    local gear = UI:CreateButton(f, "|TInterface\\Icons\\INV_Misc_Gear_01:12|t", 20, 18)
+    local gear = UI:TitleBarButton(bar, "text", "|TInterface\\Icons\\INV_Misc_Gear_01:12|t", 20, 18)
     gear:SetPoint("RIGHT", close, "LEFT", -2, 0)
     gear:SetScript("OnClick", function() UI:OpenWindow("settings") end)
     UI:AddTooltip(gear, L["Settings"])
 
-    local expand = UI:CreateButton(f, "[ ]", 20, 18)
+    local expand = UI:TitleBarButton(bar, "text", "[ ]", 20, 18)
     expand:SetPoint("RIGHT", gear, "LEFT", -2, 0)
     expand:SetScript("OnClick", function()
         if BRutus.ToggleExpanded then BRutus:ToggleExpanded() end

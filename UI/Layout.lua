@@ -344,6 +344,30 @@ function UI:_RegisterLayoutTests()
         if #narrow ~= 8 then return false, "nothing fits, want 8 rows, got " .. #narrow end
         return true
     end)
+
+    -- Regression guard for the dead-close-button bug. A title bar is
+    -- mouse-enabled and drag-registered across its full width, so a button
+    -- sitting on it at the same frame level never receives the click: the
+    -- bar swallows it. UI/RosterFrame.lua had the fix inline; every other
+    -- title bar was missing it, which killed every close button in the
+    -- addon. UI:TitleBarButton is now the only way to build one.
+    S:Register("ui.titlebar_button_outranks_bar", function()
+        if not UI.TitleBarButton then return false, "UI:TitleBarButton missing" end
+        local host = CreateFrame("Frame", nil, UIParent)
+        local bar  = CreateFrame("Frame", nil, host)
+        bar:EnableMouse(true)
+        for _, kind in ipairs({ "close", "text" }) do
+            local btn = UI:TitleBarButton(bar, kind, "x", 20, 18)
+            if btn:GetParent() ~= bar then
+                return false, kind .. " button is not parented to the bar"
+            end
+            if btn:GetFrameLevel() <= bar:GetFrameLevel() then
+                return false, string.format("%s button level %d does not outrank bar level %d",
+                    kind, btn:GetFrameLevel(), bar:GetFrameLevel())
+            end
+        end
+        return true
+    end)
 end
 
 UI:_RegisterLayoutTests()
