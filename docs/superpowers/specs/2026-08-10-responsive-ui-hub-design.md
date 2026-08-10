@@ -251,7 +251,7 @@ Signed off by the user. MEMBRO, LVL and CLASSE never drop. The spec that produce
 
 | Column | min | weight | priority | required |
 |---|---|---|---|---|
-| MEMBRO | 130 | 3 | 100 | yes |
+| MEMBRO | 150 | 3 | 100 | yes |
 | LVL | 34 | 0 | 95 | yes |
 | CLASSE | 74 | 1 | 90 | yes |
 | iLVL | 46 | 0 | 80 | no |
@@ -263,21 +263,26 @@ Signed off by the user. MEMBRO, LVL and CLASSE never drop. The spec that produce
 Gap between columns is 10. Drop order follows `priority` ascending: ZONA, PROFISSOES, VISTO, RACA,
 iLVL.
 
+MEMBRO's 150 absorbs the existing unlabelled 20px `status` column (`UI/RosterFrame.lua:29`), which
+holds the online dot. The dot is visually part of the name cell (dot, class icon, name), so it
+rides along instead of being a droppable column of its own.
+
 **Table area** is the window width minus the 156px rail and 24px of margins, so
 `table = window - 180`. The resulting breakpoints, which `layout.columns_drop_by_priority` asserts
 against:
 
 | Table width | Window width | Columns shown |
 |---|---|---|
-| >= 782 | >= 962 | all 8 |
-| 652 .. 781 | 832 .. 961 | drops ZONA |
-| 482 .. 651 | 662 .. 831 | also drops PROFISSOES |
-| 394 .. 481 | 574 .. 661 | also drops VISTO |
-| 314 .. 393 | 494 .. 573 | also drops RACA: MEMBRO, LVL, CLASSE, iLVL |
+| >= 802 | >= 982 | all 8 |
+| 672 .. 801 | 852 .. 981 | drops ZONA |
+| 502 .. 671 | 682 .. 851 | also drops PROFISSOES |
+| 414 .. 501 | 594 .. 681 | also drops VISTO |
+| 334 .. 413 | 514 .. 593 | also drops RACA: MEMBRO, LVL, CLASSE, iLVL |
+| < 334 | < 514 | floor: MEMBRO, LVL, CLASSE |
 
-Roster `minW = 520` sits inside the last band, so the four-column state is the narrowest the window
-can reach and the three-column fallback (below 314) is unreachable through the grip. It still has
-to behave, because expanded mode and a high UI scale can produce it.
+Roster `minW = 520` sits inside the four-column band, so that is the narrowest state the grip can
+reach and the three-column floor is unreachable by dragging. It still has to behave, because
+expanded mode and a high UI scale can produce it.
 
 ## 6. Testing
 
