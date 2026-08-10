@@ -180,6 +180,81 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
+    -- Two open windows used to share one frame-level range: every window is
+    -- created by UI:CreatePanel, which pins it to level 1, and its children
+    -- take parent + 1 from there. Panels nest to different depths, so a deep
+    -- child of the window behind could outrank a shallow frame of the window
+    -- in front and the two drew interleaved. Each window needs its own band.
+    S:Register("window.raise_gives_each_window_its_own_band", function()
+        if not UI.RaiseWindow then return false, "UI:RaiseWindow missing" end
+
+        local function tree(depth)
+            local root = CreateFrame("Frame", nil, UIParent)
+            local node = root
+            for _ = 1, depth do node = CreateFrame("Frame", nil, node) end
+            return root
+        end
+
+        local function span(frame, lo, hi)
+            local lvl = frame:GetFrameLevel()
+            lo = math.min(lo or lvl, lvl)
+            hi = math.max(hi or lvl, lvl)
+            for _, child in ipairs({ frame:GetChildren() }) do
+                lo, hi = span(child, lo, hi)
+            end
+            return lo, hi
+        end
+
+        -- Deliberately mismatched depths: that asymmetry is what produced
+        -- the interleaving in the first place.
+        local a, b = tree(7), tree(2)
+        UI:RaiseWindow(a)
+        UI:RaiseWindow(b)
+
+        local aLo, aHi = span(a)
+        local bLo, bHi = span(b)
+        if bLo <= aHi then
+            return false, string.format(
+                "B occupies %d..%d and A occupies %d..%d: the bands overlap",
+                bLo, bHi, aLo, aHi)
+        end
+
+        -- Raising A again must put it back in front, whole subtree included.
+        UI:RaiseWindow(a)
+        aLo, aHi = span(a)
+        bLo, bHi = span(b)
+        if aLo <= bHi then
+            return false, string.format(
+                "after re-raising A it occupies %d..%d, still under B's %d..%d",
+                aLo, aHi, bLo, bHi)
+        end
+        return true
+    end)
+
+    -- Each raise consumes a band, so the counter climbs all session. Left
+    -- unbounded it would eventually pass the client's frame-level cap and
+    -- every window would silently clamp to the same level, which is the
+    -- interleaving bug again. RaiseWindow renormalises instead; this proves
+    -- the ceiling holds without waiting hours for it to happen for real.
+    S:Register("window.raise_counter_stays_bounded", function()
+        if not UI.RaiseWindow then return false, "UI:RaiseWindow missing" end
+        local root = CreateFrame("Frame", nil, UIParent)
+        CreateFrame("Frame", nil, CreateFrame("Frame", nil, root))
+
+        local highest = 0
+        for _ = 1, 2000 do
+            UI:RaiseWindow(root)
+            local lvl = root:GetFrameLevel()
+            if lvl > highest then highest = lvl end
+        end
+        -- STACK_CEILING is 4000 in UI/Window.lua; allow one band over it,
+        -- since the check runs before the raise that would cross it.
+        if highest > 4100 then
+            return false, "frame level ran away to " .. highest
+        end
+        return true
+    end)
+
     S:Register("window.geometry_roundtrip", function()
         if not UI.SaveWindowGeometry then return false, "SaveWindowGeometry missing" end
         local probe = CreateFrame("Frame", nil, UIParent)

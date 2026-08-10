@@ -55,6 +55,61 @@ function UI:RestoreWindowGeometry(win, def)
 end
 
 ----------------------------------------------------------------------
+-- Window stacking
+--
+-- Every window is built by UI:CreatePanel, which pins the frame to level
+-- 1, and its children then take parent + 1 from there. Panels nest to
+-- different depths, so two open windows occupied overlapping level ranges
+-- and a deep child of the window BEHIND could outrank a shallow frame of
+-- the window in FRONT: the two drew interleaved rather than one over the
+-- other.
+--
+-- The fix is to hand each window its own band and write it across the
+-- whole subtree, rather than calling Raise() on the root and trusting the
+-- client to carry the children with it. Doing it explicitly makes the
+-- stacking the addon's own invariant, verifiable without the game running
+-- (see window.raise_gives_each_window_its_own_band).
+----------------------------------------------------------------------
+local STACK_BASE    = 10
+local STACK_CEILING = 4000   -- well under the client's 10000 level cap
+local nextLevel     = STACK_BASE
+
+-- Level the subtree from `level` down, and report the deepest level used.
+local function applyLevels(frame, level)
+    frame:SetFrameLevel(level)
+    local deepest = level
+    for _, child in ipairs({ frame:GetChildren() }) do
+        local d = applyLevels(child, level + 1)
+        if d > deepest then deepest = d end
+    end
+    return deepest
+end
+
+-- Re-stack every other open window from the base, preserving the order
+-- they are in now. Without this the counter climbs all session and would
+-- eventually run into the client's cap, where every window clamps to the
+-- same level and the interleaving comes straight back.
+local function renormalise(exclude)
+    local open = {}
+    for _, w in pairs(windows) do
+        if w ~= exclude and w:IsShown() then open[#open + 1] = w end
+    end
+    table.sort(open, function(a, b) return (a.__stackBase or 0) < (b.__stackBase or 0) end)
+    nextLevel = STACK_BASE
+    for _, w in ipairs(open) do
+        w.__stackBase = nextLevel
+        nextLevel = applyLevels(w, nextLevel) + 1
+    end
+end
+
+function UI:RaiseWindow(win)
+    if not win then return end
+    if nextLevel > STACK_CEILING then renormalise(win) end
+    win.__stackBase = nextLevel
+    nextLevel = applyLevels(win, nextLevel) + 1
+end
+
+----------------------------------------------------------------------
 -- UI scale: one global knob, applied to every live window and the hub.
 ----------------------------------------------------------------------
 function UI:ApplyScale()
@@ -89,11 +144,17 @@ function UI:CreateWindow(id)
     bar:SetHeight(TITLE_H)
     bar:EnableMouse(true)
     bar:RegisterForDrag("LeftButton")
+    bar:SetScript("OnMouseDown", function() UI:RaiseWindow(win) end)
     bar:SetScript("OnDragStart", function() win:StartMoving() end)
     bar:SetScript("OnDragStop", function()
         win:StopMovingOrSizing()
         UI:SaveWindowGeometry(win)
     end)
+
+    -- Clicking the window brings it forward. A mouse-enabled child consumes
+    -- its own clicks, so this covers the chrome and any empty area; the
+    -- title bar above is the reliable "bring to front" gesture.
+    win:SetScript("OnMouseDown", function() UI:RaiseWindow(win) end)
 
     local barBg = bar:CreateTexture(nil, "ARTWORK")
     barBg:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -191,7 +252,9 @@ function UI:OpenWindow(id, subKey)
         def.build(win.content, win)
     end
     win:Show()
-    win:Raise()
+    -- After build(): the panel's frames have to exist before they can be
+    -- levelled, or the subtree walk misses everything inside the window.
+    self:RaiseWindow(win)
     if subKey and win.content.SelectSub then win.content.SelectSub(subKey) end
     if self.Hub and self.Hub.Refresh then self.Hub:Refresh() end
 end
