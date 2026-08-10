@@ -436,6 +436,29 @@ function Helpers:CreateCloseButton(parent)
 end
 
 ----------------------------------------------------------------------
+-- A button that lives on a title bar.
+--
+-- A title bar is mouse-enabled and drag-registered across its full
+-- width. A button placed on it as a SIBLING, at the same frame level,
+-- never receives the click: the bar swallows it. Parenting to the bar
+-- and bumping the level is the fix. It used to be written inline at one
+-- of the three title bars and forgotten at the other two, which is how
+-- every close button in the addon ended up dead, so it lives here now.
+--   kind == "close" -> CreateCloseButton(bar)
+--   kind == "text"  -> CreateButton(bar, text, width, height)
+----------------------------------------------------------------------
+function Helpers:TitleBarButton(bar, kind, ...)
+    local btn
+    if kind == "close" then
+        btn = self:CreateCloseButton(bar)
+    else
+        btn = self:CreateButton(bar, ...)
+    end
+    btn:SetFrameLevel(bar:GetFrameLevel() + 5)
+    return btn
+end
+
+----------------------------------------------------------------------
 -- Skin a default WoW scrollbar into a thin, subtle track+thumb
 -- Works with both UIPanelScrollFrameTemplate and FauxScrollFrameTemplate
 ----------------------------------------------------------------------

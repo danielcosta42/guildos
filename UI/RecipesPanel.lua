@@ -7,7 +7,25 @@ local C = BRutus.Colors
 local L = BRutus.L
 
 local ROW_HEIGHT = 24
-local VISIBLE_ROWS = 20
+
+-- Resolved per resize by UI:ResolveColumns (UI/Layout.lua). The online
+-- dot rides inside the recipe cell, so it cannot be lost to a narrow
+-- window. PROFESSION is the one that goes: the icon in the row already
+-- says which profession it is.
+local COLUMNS = {
+    { key = "recipe",     min = 200, weight = 3, priority = 100, required = true },
+    { key = "profession", min = 130, weight = 0, priority = 40 },
+    { key = "crafters",   min = 140, weight = 2, priority = 60,  required = true },
+}
+
+local COL_GAP    = 10
+local ROW_INSET  = 10   -- x of the first cell inside a row
+local SIDE_MARGIN = 10  -- panel edge to the list
+local ROW_GUTTER = 10   -- rows stop short of the scrollbar
+local TOP_PAD    = 8    -- panel top to the top bar
+local TITLE_H    = 26   -- title + search row, above the profession filters
+local HEADER_H   = 24   -- column header strip
+local LIST_BOTTOM = 40  -- footer strip under the list
 
 ----------------------------------------------------------------------
 -- Profession icons (TBC tradeskill textures)
@@ -102,10 +120,12 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     realmBtn:SetScript("OnClick", function() BRutus:ShowCraftFinder() end)
 
     -- Profession filter buttons row
+    -- Anchored on the left only: UI:FlowBar reads GetWidth to decide where
+    -- to wrap, and a frame pinned on both sides reports a stale width in
+    -- the same frame the container was resized.
     local filterRow = CreateFrame("Frame", nil, topBar)
-    filterRow:SetPoint("TOPLEFT", 0, -26)
-    filterRow:SetPoint("TOPRIGHT", 0, -26)
-    filterRow:SetHeight(26)
+    filterRow:SetPoint("TOPLEFT", 0, -TITLE_H)
+    filterRow:SetSize(400, 26)
 
     local filterButtons = {}
 
@@ -119,7 +139,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         countText:SetText(string.format(L["|cff888888%d results|r"], #state.results))
     end
 
-    local function CreateFilterButton(profName, anchorTo)
+    local function CreateFilterButton(profName)
         local btn = CreateFrame("Button", nil, filterRow, "BackdropTemplate")
         btn:SetHeight(22)
         btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
@@ -153,12 +173,8 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         btn.label = label
         btn.icon = icon
-
-        if anchorTo then
-            btn:SetPoint("LEFT", anchorTo, "RIGHT", 2, 0)
-        else
-            btn:SetPoint("LEFT", 0, 0)
-        end
+        -- Position comes from UI:FlowBar, which wraps the row when the
+        -- window is too narrow to hold every profession on one line.
 
         btn:SetScript("OnClick", function()
             state.profFilter = profName
@@ -205,9 +221,8 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
             table.insert(allProfs, p)
         end
 
-        local prev
         for _, profName in ipairs(allProfs) do
-            prev = CreateFilterButton(profName, prev)
+            CreateFilterButton(profName)
         end
 
         -- Mark active
@@ -216,6 +231,10 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 fb:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
             end
         end
+
+        -- New buttons need placing straight away; the layout pass only
+        -- runs on resize.
+        if panel.Relayout then panel:Relayout() end
     end
 
     searchBox:SetScript("OnTextChanged", function(self)
@@ -236,37 +255,33 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     -- Column headers
     ----------------------------------------------------------------
     local headerFrame = CreateFrame("Frame", nil, panel)
-    headerFrame:SetPoint("TOPLEFT", 10, -72)
-    headerFrame:SetPoint("TOPRIGHT", -10, -72)
-    headerFrame:SetHeight(24)
+    headerFrame:SetPoint("TOPLEFT", topBar, "BOTTOMLEFT", 0, -4)
+    headerFrame:SetPoint("TOPRIGHT", topBar, "BOTTOMRIGHT", 0, -4)
+    headerFrame:SetHeight(HEADER_H)
 
     local headerBg = headerFrame:CreateTexture(nil, "BACKGROUND")
     headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     headerBg:SetAllPoints()
     headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
-    local hStatus = UI:CreateHeaderText(headerFrame, "", 10)
-    hStatus:SetPoint("LEFT", 8, 0)
-    hStatus:SetWidth(20)
-
-    local hRecipe = UI:CreateHeaderText(headerFrame, L["RECIPE"], 10)
-    hRecipe:SetPoint("LEFT", 32, 0)
-
-    local hProfession = UI:CreateHeaderText(headerFrame, L["PROFESSION"], 10)
-    hProfession:SetPoint("LEFT", 400, 0)
-
-    local hPlayer = UI:CreateHeaderText(headerFrame, L["CRAFTERS"], 10)
-    hPlayer:SetPoint("LEFT", 560, 0)
-
-    local hAction = UI:CreateHeaderText(headerFrame, "", 10)
-    hAction:SetPoint("RIGHT", -8, 0)
+    -- Header cells are positioned by the layout pass, keyed the same way
+    -- the row cells are so the two can never drift apart.
+    local headerByKey = {
+        recipe     = UI:CreateHeaderText(headerFrame, L["RECIPE"], 10),
+        profession = UI:CreateHeaderText(headerFrame, L["PROFESSION"], 10),
+        crafters   = UI:CreateHeaderText(headerFrame, L["CRAFTERS"], 10),
+    }
+    for _, fs in pairs(headerByKey) do
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(false)
+    end
 
     ----------------------------------------------------------------
     -- Scroll frame with rows
     ----------------------------------------------------------------
     local listFrame = CreateFrame("Frame", nil, panel)
-    listFrame:SetPoint("TOPLEFT", 10, -96)
-    listFrame:SetPoint("BOTTOMRIGHT", -10, 40)
+    listFrame:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
+    listFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -SIDE_MARGIN, LIST_BOTTOM)
 
     local scrollFrame = CreateFrame("ScrollFrame", "BRutusRecipeScroll", listFrame, "FauxScrollFrameTemplate")
     scrollFrame:SetAllPoints()
@@ -279,21 +294,18 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         local row = CreateFrame("Button", nil, listFrame, "BackdropTemplate")
         row:SetHeight(ROW_HEIGHT)
         row:SetPoint("TOPLEFT", 0, -((index - 1) * ROW_HEIGHT))
-        row:SetPoint("TOPRIGHT", -10, -((index - 1) * ROW_HEIGHT))
+        row:SetPoint("TOPRIGHT", -ROW_GUTTER, -((index - 1) * ROW_HEIGHT))
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
 
-        -- Online dot
+        -- Online dot: rides inside the recipe cell
         local statusDot = row:CreateTexture(nil, "OVERLAY")
         statusDot:SetSize(8, 8)
-        statusDot:SetPoint("LEFT", 10, 0)
         statusDot:SetTexture("Interface\\Buttons\\WHITE8x8")
         row.statusDot = statusDot
 
         -- Recipe name
         local recipeName = row:CreateFontString(nil, "OVERLAY")
         recipeName:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-        recipeName:SetPoint("LEFT", 32, 0)
-        recipeName:SetWidth(360)
         recipeName:SetJustifyH("LEFT")
         recipeName:SetWordWrap(false)
         row.recipeName = recipeName
@@ -301,24 +313,51 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         -- Profession icon + name
         local profIcon = row:CreateTexture(nil, "ARTWORK")
         profIcon:SetSize(16, 16)
-        profIcon:SetPoint("LEFT", 400, 0)
         row.profIcon = profIcon
 
         local profName = row:CreateFontString(nil, "OVERLAY")
         profName:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
         profName:SetPoint("LEFT", profIcon, "RIGHT", 4, 0)
-        profName:SetWidth(140)
         profName:SetJustifyH("LEFT")
+        profName:SetWordWrap(false)
         row.profName = profName
 
         -- Player name
         local playerName = row:CreateFontString(nil, "OVERLAY")
         playerName:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-        playerName:SetPoint("LEFT", 560, 0)
-        playerName:SetWidth(140)
         playerName:SetJustifyH("LEFT")
         playerName:SetWordWrap(false)
         row.playerName = playerName
+
+        -- Place every cell from a resolved layout.
+        function row:ApplyColumns(layout)
+            local byKey = layout.byKey
+
+            local rec = byKey.recipe
+            if rec and rec.shown then
+                self.statusDot:ClearAllPoints()
+                self.statusDot:SetPoint("LEFT", ROW_INSET + rec.x, 0)
+                self.recipeName:ClearAllPoints()
+                self.recipeName:SetPoint("LEFT", ROW_INSET + rec.x + 22, 0)
+                self.recipeName:SetWidth(math.max(20, rec.w - 22))
+            end
+
+            local prof = byKey.profession
+            self.profIcon:SetShown(prof and prof.shown)
+            self.profName:SetShown(prof and prof.shown)
+            if prof and prof.shown then
+                self.profIcon:ClearAllPoints()
+                self.profIcon:SetPoint("LEFT", ROW_INSET + prof.x, 0)
+                self.profName:SetWidth(math.max(20, prof.w - 20))
+            end
+
+            local cr = byKey.crafters
+            if cr and cr.shown then
+                self.playerName:ClearAllPoints()
+                self.playerName:SetPoint("LEFT", ROW_INSET + cr.x, 0)
+                self.playerName:SetWidth(cr.w)
+            end
+        end
 
         -- Whisper button
         local whisperBtn = UI:CreateButton(row, L["Whisper"], 60, 20)
@@ -369,8 +408,18 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         return row
     end
 
-    for i = 1, VISIBLE_ROWS do
-        CreateRow(i)
+    -- Rows are pooled and grown on demand: how many exist depends on how
+    -- tall the window is right now.
+    panel.visibleRows = 0
+    local function AcquireRows(n)
+        for i = #rows + 1, n do
+            local row = CreateRow(i)
+            if panel.colLayout then row:ApplyColumns(panel.colLayout) end
+        end
+        for i = 1, #rows do
+            if i > n then rows[i]:Hide() end
+        end
+        panel.visibleRows = n
     end
 
     ----------------------------------------------------------------
@@ -379,10 +428,12 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     function panel:UpdateRows()
         local offset = FauxScrollFrame_GetOffset(scrollFrame)
         local total = #state.results
+        local visible = self.visibleRows or 0
+        if visible < 1 then return end
 
-        FauxScrollFrame_Update(scrollFrame, total, VISIBLE_ROWS, ROW_HEIGHT)
+        FauxScrollFrame_Update(scrollFrame, total, visible, ROW_HEIGHT)
 
-        for i = 1, VISIBLE_ROWS do
+        for i = 1, visible do
             local row = rows[i]
             local dataIdx = offset + i
             if dataIdx <= total then
@@ -497,4 +548,43 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         end
         infoText:SetText(string.format(L["|cff888888%d crafters  |  %d total recipes indexed|r"], totalPlayers, totalRecipes))
     end)
+
+    ----------------------------------------------------------------
+    -- Layout: profession filters wrap, columns drop, rows follow height.
+    ----------------------------------------------------------------
+    function panel:Relayout(w, h)
+        w = w or parent:GetWidth()
+        h = h or parent:GetHeight()
+        if not w or not h or w < 1 or h < 1 then return end
+
+        local inner = w - SIDE_MARGIN * 2
+        filterRow:SetWidth(inner)
+        local filterH = UI:FlowBar(filterRow, filterButtons, { gap = 2, rowGap = 2, rowH = 22 })
+        topBar:SetHeight(TITLE_H + filterH)
+
+        local layout = UI:ResolveColumns(COLUMNS, inner - ROW_GUTTER - ROW_INSET, COL_GAP)
+        self.colLayout = layout
+        for _, col in ipairs(layout) do
+            local fs = headerByKey[col.key]
+            if fs then
+                fs:SetShown(col.shown)
+                if col.shown then
+                    fs:ClearAllPoints()
+                    fs:SetPoint("LEFT", ROW_INSET + col.x, 0)
+                    fs:SetWidth(col.w)
+                end
+            end
+        end
+
+        local listTop = TOP_PAD + TITLE_H + filterH + 4 + HEADER_H
+        AcquireRows(UI:ResolveRows(h - listTop - LIST_BOTTOM, ROW_HEIGHT, 0))
+        for i = 1, self.visibleRows do rows[i]:ApplyColumns(layout) end
+        self:UpdateRows()
+    end
+
+    UI:MakeResponsive(parent, function(_, w, h) panel:Relayout(w, h) end)
+
+    -- Returned so a caller (and the layout tests) can reach the panel
+    -- rather than only its container.
+    return panel
 end

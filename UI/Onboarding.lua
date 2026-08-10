@@ -94,10 +94,7 @@ local function BuildFrame()
     local settingsBtn = UI:CreateButton(f, L["Open Settings"], 120, 24)
     settingsBtn:SetPoint("BOTTOM", 0, 16)
     settingsBtn:SetScript("OnClick", function()
-        BRutus:ToggleRoster()
-        if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-            BRutus.RosterFrame:SetActiveTab("settings")
-        end
+        BRutus.UI:OpenWindow("settings")
     end)
     f.settingsBtn = settingsBtn
 

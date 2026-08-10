@@ -264,3 +264,28 @@ function Companion:Build()
 
     return WIRE_PREFIX .. LibDeflate:EncodeForPrint(compressed), payload.count
 end
+
+----------------------------------------------------------------------
+-- What the desktop companion reads
+--
+-- WoW flushes SavedVariables on logout and on /reload, and at no other
+-- moment, so this is the only place a file on disk can come from. The
+-- desktop companion watches that file and uploads what it finds, which is
+-- the whole point: nobody has to remember to copy a string on raid night.
+--
+-- The build is wrapped. A payload that fails on the way out must never be
+-- the reason someone's client hangs on logout.
+----------------------------------------------------------------------
+local writer = CreateFrame("Frame")
+writer:RegisterEvent("PLAYER_LOGOUT")
+writer:SetScript("OnEvent", function()
+    if not GuildOSDB or not Companion:IsEnabled() then return end
+
+    local ok, text = pcall(Companion.Build, Companion)
+    -- Build answers nil for the ordinary cases as well — logged out on a
+    -- guildless alt, nobody has published anything yet. Keeping the previous
+    -- string beats replacing a good payload with nothing.
+    if ok and type(text) == "string" then
+        GuildOSDB.__companion = text
+    end
+end)

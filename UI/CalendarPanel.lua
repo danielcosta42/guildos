@@ -581,9 +581,5 @@ end
 -- Entry point (command): open the roster on the Guild hub's Calendar sub-tab.
 ----------------------------------------------------------------------
 function BRutus:ShowCalendar()
-    if not self.RosterFrame then self.RosterFrame = BRutus.CreateRosterFrame() end
-    if not self.RosterFrame:IsShown() then self.RosterFrame:Show() end
-    if self.RosterFrame.SetActiveTab then self.RosterFrame:SetActiveTab("guild") end
-    local gp = self.RosterFrame.tabPanels and self.RosterFrame.tabPanels["guild"]
-    if gp and gp.SelectSub then gp.SelectSub("calendar") end
+    BRutus.UI:OpenWindow("guild", "calendar")
 end

@@ -36,6 +36,7 @@ local function printHelp()
 
     helpHeader(L["General"])
     helpLine("/gos",             L["Open the roster window"])
+    helpLine("/gos open <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
     helpLine("/gos map",         L["Open the live guild map"])
@@ -52,6 +53,7 @@ local function printHelp()
     helpLine("/gos specs",         L["Scan group talent specs"])
     helpLine("/gos export <what>", L["Export roster, attendance or loot"])
     helpLine("/gos web [on|off]",  L["Copy your guild into the web companion"])
+    helpLine("/gos roster",        L["Bring the raid roster in from the website"])
 
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
@@ -320,6 +322,23 @@ local function handleCommand(msg)
                 BRutus:Print(L["|cffFF4444Export failed:|r "] .. tostring(countOrErr))
             end
         end
+    elseif msg:match("^roster") then
+        -- /guildos roster [invite|groups] — the roster the website planned.
+        local I = BRutus.CompanionImport
+        local sub = I and msg:match("^roster%s+(%S+)")
+        if not I then
+            BRutus:Print(L["|cffFF4444Export failed:|r "] .. "CompanionImport")
+        elseif sub == "invite" then
+            local n, skipped, err = I:InviteAll()
+            if err then BRutus:Print(err)
+            else BRutus:Print(string.format(L["Invited %d, already here %d."], n, skipped)) end
+        elseif sub == "groups" then
+            local moved, err = I:OrganizeGroups()
+            if err then BRutus:Print(err)
+            else BRutus:Print(string.format(L["Moved %d into their groups."], moved)) end
+        else
+            BRutus:ShowImportPopup()
+        end
     elseif msg == "exportatt" or msg == "exportattendance" then
         if BRutus.RaidTracker then
             local json, err = BRutus.RaidTracker:ExportForTMB()
@@ -511,14 +530,9 @@ local function handleCommand(msg)
             BRutus:Print(L["Unbanned "] .. name)
         end
     elseif msg == "banlist" then
-        -- Open the main window on the Leadership tab. No BRutus:ShowManagement
-        -- opener exists yet (confirmed via UI/RosterFrame.lua + UI/ManagementPanel.lua),
-        -- so follow the same open pattern as BRutus:ShowCalendar (UI/CalendarPanel.lua).
-        -- Task 6 adds the "ban" sub-tab to UI/ManagementPanel.lua; until then this lands
-        -- on the Leadership tab without a sub-tab pre-selected.
-        if not BRutus.RosterFrame then BRutus.RosterFrame = BRutus.CreateRosterFrame() end
-        if not BRutus.RosterFrame:IsShown() then BRutus.RosterFrame:Show() end
-        if BRutus.RosterFrame.SetActiveTab then BRutus.RosterFrame:SetActiveTab("management") end
+        -- Task 6 adds the "ban" sub-tab to UI/ManagementPanel.lua; until then
+        -- this lands on the Leadership window without a sub-tab pre-selected.
+        BRutus.UI:OpenWindow("management")
     elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then
         if BRutus.Recruitment then
             local rest = strtrim((msg:gsub("^ai%s*", ""):gsub("^autoinvite%s*", "")))
@@ -550,6 +564,21 @@ local function handleCommand(msg)
             local rest = strtrim((msg:gsub("^avail%s*", "")))
             local a = {}; for w in rest:gmatch("%S+") do a[#a+1] = w end
             BRutus.LFGBoard:HandleCommand(a, rest)
+        end
+    elseif msg == "open" or msg:match("^open%s") then
+        -- /gos open <feature> [sub] — one uniform way to open any feature
+        -- window. A dedicated verb rather than a bare-id fallback: several
+        -- feature ids (roster, trials, dkp, alliance) are already verbs
+        -- above, and "^trial" would even prefix-match "trials" and eat the
+        -- "s" as a player name. "open" itself is not a prefix of, nor
+        -- prefixed by, any other verb in this chain.
+        local id  = msg:match("^open%s+(%S+)")
+        local sub = msg:match("^open%s+%S+%s+(%S+)")
+        local def = id and BRutus.UI and BRutus.UI.GetFeature and BRutus.UI:GetFeature(id)
+        if def and def.hub then
+            BRutus.UI:OpenWindow(id, sub)
+        else
+            BRutus:Print(L["Usage: /gos open <feature>. Try /gos open roster."])
         end
     else
         -- Unknown verb: point at the listing, then keep the historic

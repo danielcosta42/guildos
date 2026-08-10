@@ -233,10 +233,10 @@ function BRutus:OnLogin()
 end
 
 function BRutus:InitModules()
-    -- Module enabled helper
+    -- Module enabled helper (delegates to the public API; call sites below
+    -- keep the short local name).
     local function modEnabled(key)
-        if not self.db or not self.db.settings or not self.db.settings.modules then return true end
-        return self.db.settings.modules[key] ~= false
+        return self:IsFeatureEnabled(key)
     end
 
     -- Apply the chosen accent theme before any frame is built.
@@ -442,9 +442,7 @@ end
 
 function BRutus:OnGuildRosterUpdate()
     if BRutus.RecordFirstSeen then BRutus:RecordFirstSeen() end
-    if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-        BRutus.RosterFrame:RefreshRoster()
-    end
+    BRutus:RefreshRosterUI()
 end
 
 ----------------------------------------------------------------------
@@ -484,12 +482,13 @@ function BRutus:HookGuildFrame()
                 -- error, until /reload.
                 if GuildFrame then HideUIPanel(GuildFrame) end
                 if CommunitiesFrame then HideUIPanel(CommunitiesFrame) end
-                if not (self.RosterFrame and self.RosterFrame:IsShown()) then
+                if not self:IsFrontDoorShown() then
                     self:ToggleRoster()
                 end
-            elseif self.RosterFrame and self.RosterFrame:IsShown() then
-                -- The toggle just closed the native frame: close ours to match.
-                self:ToggleRoster()
+            elseif self:IsFrontDoorShown() then
+                -- The toggle just closed the native frame: close ours to match,
+                -- whichever container (hub or expanded) is actually open.
+                self:HideFrontDoor()
             end
         end)
     end
@@ -595,27 +594,63 @@ function BRutus:ToggleRoster()
         if self.ShowRecruitInbox then self:ShowRecruitInbox() end
         return
     end
+    if IsInGuild() then
+        C_GuildInfo.GuildRoster()
+    end
+    if BRutus.UI and BRutus.UI.Hub then
+        BRutus.UI.Hub:Toggle()
+    end
+end
+
+----------------------------------------------------------------------
+-- Expanded mode: the full tabbed window. The hub is the default front
+-- door; this is the opt-in for people who want everything at once.
+----------------------------------------------------------------------
+function BRutus:ToggleExpanded()
+    if not (self.db and IsInGuild()) then return end
     if not self.RosterFrame then
         self.RosterFrame = BRutus.CreateRosterFrame()
     end
     if self.RosterFrame:IsShown() then
         self.RosterFrame:Hide()
-    else
-        if IsInGuild() then
-            C_GuildInfo.GuildRoster()
-        end
-        self.RosterFrame:UpdateTabVisibility()
-        -- Reset to roster if current tab is officer-only and player isn't officer
-        local currentTab = self.RosterFrame.activeTab or "roster"
-        for _, tab in ipairs(self.RosterFrame.tabs) do
-            if tab.key == currentTab and tab.officerOnly and not self:IsOfficer() then
-                currentTab = "roster"
-                break
-            end
-        end
-        self.RosterFrame:SetActiveTab(currentTab)
-        self.RosterFrame:Show()
-        self.RosterFrame:RefreshRoster()
+        return
+    end
+    C_GuildInfo.GuildRoster()
+    self.RosterFrame:UpdateTabVisibility()
+    self.RosterFrame:Show()
+end
+
+----------------------------------------------------------------------
+-- Is Guild OS's front door on screen? Either container counts: the hub
+-- card or the expanded window. The guild-frame hook mirrors Blizzard's
+-- open/close onto us and must not care which one the user is using.
+----------------------------------------------------------------------
+function BRutus:IsFrontDoorShown()
+    local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
+    if hub and hub:IsShown() then return true end
+    return (self.RosterFrame and self.RosterFrame:IsShown()) and true or false
+end
+
+----------------------------------------------------------------------
+-- Close whichever front door is open. The counterpart to
+-- IsFrontDoorShown: the guild-frame hook mirrors Blizzard's close onto
+-- us and must not care which container the user is actually using.
+----------------------------------------------------------------------
+function BRutus:HideFrontDoor()
+    local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
+    if hub and hub:IsShown() then hub:Hide() end
+    if self.RosterFrame and self.RosterFrame:IsShown() then self.RosterFrame:Hide() end
+end
+
+----------------------------------------------------------------------
+-- Refresh whichever container is currently showing the roster panel:
+-- the expanded window, the floating window, or neither.
+----------------------------------------------------------------------
+function BRutus:RefreshRosterUI()
+    local hosts = { self.RosterFrame }
+    if self.UI and self.UI.GetWindow then hosts[#hosts + 1] = self.UI:GetWindow("roster") end
+    for _, host in ipairs(hosts) do
+        if host and host:IsShown() and host.RefreshRoster then host:RefreshRoster() end
     end
 end
 
@@ -709,6 +744,36 @@ function BRutus:SetSetting(key, value)
     if self.db and self.db.settings then
         self.db.settings[key] = value
     end
+end
+
+----------------------------------------------------------------------
+-- Feature toggles (Rule 8 — never read db.settings.modules directly).
+-- Keys are the feature ids from UI/FeatureRegistry.lua. Default is ON:
+-- an absent key means "never touched", not "off". `core` features can
+-- never be turned off — that is how a user would lock themselves out of
+-- the Settings window that would turn them back on.
+----------------------------------------------------------------------
+function BRutus:IsFeatureEnabled(id)
+    if type(id) ~= "string" then return false end
+    -- UI loads after Core, so the registry is resolved per call, not per load.
+    local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
+    if def and def.core then return true end
+    local mods = self.db and self.db.settings and self.db.settings.modules
+    if not mods then return true end
+    return mods[id] ~= false
+end
+
+function BRutus:SetFeatureEnabled(id, enabled)
+    if type(id) ~= "string" then return end
+    local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
+    if def and def.core then return end
+    if not (self.db and self.db.settings) then return end
+    self.db.settings.modules = self.db.settings.modules or {}
+    -- GetChecked() returns true or nil (never false) in TBC, so store an
+    -- explicit boolean — IsFeatureEnabled compares against false.
+    enabled = enabled and true or false
+    self.db.settings.modules[id] = enabled
+    if self.UI and self.UI.OnFeatureToggled then self.UI:OnFeatureToggled(id, enabled) end
 end
 
 ----------------------------------------------------------------------

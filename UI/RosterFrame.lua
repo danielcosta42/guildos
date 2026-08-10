@@ -20,37 +20,74 @@ local function CompareVersions(a, b)
     return 0
 end
 
--- Column definitions
+-- Column definitions.
+--   min       narrowest the column may be drawn
+--   weight    share of any leftover width (0 = never grows past min)
+--   priority  drop order as the window narrows; lowest goes first
+--   required  never dropped, whatever the width
+-- Resolved per resize by UI:ResolveColumns (UI/Layout.lua), so the table
+-- follows its window instead of assuming the old fixed 1236px frame.
+--
+-- The former unlabelled 20px "status" column folded into `name`: the
+-- online dot is drawn inside the name cell, so it is not something the
+-- user can lose to a narrow window.
+--
 -- Attunements and Attendance live in their own dedicated places (member
 -- detail / Raids tab / KPI card), so they are intentionally omitted here to
--- keep the roster table clean. Freed width is redistributed to the remaining
--- columns so the table still fills its area.
+-- keep the roster table clean.
 local COLUMNS = {
-    { key = "status",      label = "",                 width = 20,  align = "CENTER" },
-    { key = "name",        label = L["MEMBER"],        width = 170, align = "LEFT" },
-    { key = "level",       label = L["LVL"],           width = 40,  align = "CENTER" },
-    { key = "class",       label = L["CLASS"],         width = 100, align = "LEFT" },
-    { key = "race",        label = L["RACE"],          width = 95,  align = "LEFT" },
-    { key = "avgIlvl",     label = L["iLVL"],          width = 50,  align = "CENTER" },
-    { key = "professions", label = L["PROFESSIONS"],   width = 230, align = "LEFT" },
-    { key = "zone",        label = L["ZONE"],          width = 165, align = "LEFT" },
-    { key = "lastSeen",    label = L["LAST SEEN"],      width = 90,  align = "RIGHT" },
+    { key = "name",        label = L["MEMBER"],      min = 150, weight = 3, priority = 100, required = true, align = "LEFT" },
+    { key = "level",       label = L["LVL"],         min = 34,  weight = 0, priority = 95,  required = true, align = "CENTER" },
+    { key = "class",       label = L["CLASS"],       min = 74,  weight = 1, priority = 90,  required = true, align = "LEFT" },
+    { key = "avgIlvl",     label = L["iLVL"],        min = 46,  weight = 0, priority = 80,  align = "CENTER" },
+    { key = "race",        label = L["RACE"],        min = 70,  weight = 1, priority = 60,  align = "LEFT" },
+    { key = "lastSeen",    label = L["LAST SEEN"],   min = 78,  weight = 1, priority = 50,  align = "RIGHT" },
+    { key = "professions", label = L["PROFESSIONS"], min = 160, weight = 2, priority = 40,  align = "LEFT" },
+    { key = "zone",        label = L["ZONE"],        min = 120, weight = 2, priority = 30,  align = "LEFT" },
+}
+
+-- KPI cards resolve through the same primitive, so they disappear in a
+-- deliberate order instead of running off the right edge. Listed in
+-- VISUAL order (ResolveColumns lays out in spec order); `priority` alone
+-- decides who goes first, so the survivors never shuffle sideways.
+local KPI_SPEC = {
+    { key = "members", min = 96, weight = 1, priority = 100, required = true },
+    { key = "players", min = 96, weight = 1, priority = 40 },
+    { key = "online",  min = 96, weight = 1, priority = 95,  required = true },
+    { key = "ilvl",    min = 96, weight = 1, priority = 90,  required = true },
+    { key = "att",     min = 96, weight = 1, priority = 60 },
+    { key = "addon",   min = 96, weight = 1, priority = 50 },
 }
 
 local ROW_HEIGHT = 32
 local HEADER_HEIGHT = 36
-local VISIBLE_ROWS = 18
 local RAIL_WIDTH = 156          -- left filter/segment rail (roster dashboard)
 -- +16 over the original 66 so the "Players" card has room for its
 -- "of N chars" sub-label under the usual caption; the other cards keep
 -- their same anchors, just with a touch more breathing room below.
 local KPI_BAND_HEIGHT = 82      -- KPI card band above the table
--- Widen + heighten so the table keeps its original geometry once the rail
--- and KPI band are carved out of the roster panel.
-local FRAME_WIDTH = 1080 + RAIL_WIDTH
-local FRAME_HEIGHT = HEADER_HEIGHT + (ROW_HEIGHT * VISIBLE_ROWS) + 150 + KPI_BAND_HEIGHT
+local COL_GAP = 10              -- space between two table columns
+local ROW_INSET = 10            -- x of the first column inside a row
+local SCROLL_GUTTER = 18        -- rows stop short of the scrollbar
+-- Everything above the first row: KPI band, toolbar, column header, rule.
+local TABLE_RESERVED = KPI_BAND_HEIGHT + 28 + HEADER_HEIGHT + 1
+local KPI_GAP = 10
+local KPI_MARGIN = 12
+-- Expanded mode's default size. Only a starting point now: the panels
+-- inside lay themselves out from whatever size the frame actually has.
+local EXPANDED_W = 1236
+local EXPANDED_H = 844
 
 local TAB_HEIGHT = 28
+local BOTTOM_BAR_H = 30  -- bottom bar height; every tab panel insets its BOTTOMRIGHT by this
+
+-- Global frame names must stay unique: this builder now runs once per
+-- container (expanded-mode tab and floating window). The first instance
+-- keeps the historical names so nothing that hardcodes them breaks.
+local rosterInstances = 0
+-- Same reason as rosterInstances: the recruitment builder also runs once
+-- per container, and its scroll frame needs a globally unique name.
+local recruitInstances = 0
 
 ----------------------------------------------------------------------
 -- Re-apply loot-system-dependent visibility (bottom-bar buttons + the
@@ -134,6 +171,13 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     local subTabBtns   = {}
 
     local function SetSubTab(key)
+        -- Defence at the selection point: the button for an officer-only
+        -- sub-tab is simply never drawn for non-officers, but SelectSub is
+        -- also reachable directly (deep link from /gos open raids <sub>),
+        -- so a non-officer key must be refused here too.
+        for _, st in ipairs(SUBTABS) do
+            if st.key == key and st.officerOnly and not BRutus:IsOfficer() then return end
+        end
         activeSubTab = key
         for _, t in ipairs(subTabBtns) do
             if t.key == key then
@@ -213,334 +257,48 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     end)
 
     SetSubTab("sessions")
+
+    -- Exposed so the hub and /gos can deep-link a sub-tab (same contract as
+    -- CommunityPanel / AlliancePanel).
+    container.SelectSub = SetSubTab
 end
 
-function BRutus.CreateRosterFrame()
-    local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
-    frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-    frame:SetPoint("CENTER")
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:SetClampedToScreen(true)
-    frame:SetFrameStrata("HIGH")
-    frame:SetFrameLevel(10)
-    frame:Hide()
-
-    -- Soft drop shadow so the window lifts off the game world (premium depth)
-    UI:CreateDropShadow(frame, 18, 0.5)
-
-    -- Smooth fade-in when opened
-    UI:EnableFadeIn(frame, 0.16)
-
-    -- Double border effect for premium feel
-    local outerBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    outerBorder:SetPoint("TOPLEFT", -2, 2)
-    outerBorder:SetPoint("BOTTOMRIGHT", 2, -2)
-    outerBorder:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.22)
-    outerBorder:SetFrameLevel(9)
-
-    -- Inner glow effect (subtle gradient overlay at top)
-    local topGlow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-    topGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
-    topGlow:SetPoint("TOPLEFT", 1, -1)
-    topGlow:SetPoint("TOPRIGHT", -1, -1)
-    topGlow:SetHeight(70)
-    topGlow:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.07))
-
-    ----------------------------------------------------------------
-    -- Title Bar
-    ----------------------------------------------------------------
-    local titleBar = CreateFrame("Frame", nil, frame)
-    titleBar:SetPoint("TOPLEFT", 0, 0)
-    titleBar:SetPoint("TOPRIGHT", 0, 0)
-    titleBar:SetHeight(44)
-    titleBar:EnableMouse(true)
-    titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
-    titleBar:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-
-    -- Title background accent
-    local titleBg = titleBar:CreateTexture(nil, "ARTWORK")
-    titleBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    titleBg:SetAllPoints()
-    titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
-
-    -- Guild emblem icon (3-layer tabard system)
-    -- Textures MUST have global names — SetGuildTabardTextures in TBC Classic
-    -- expects string names, not Lua object references.
-    local guildIcon = CreateFrame("Frame", nil, titleBar)
-    guildIcon:SetSize(28, 28)
-    guildIcon:SetPoint("LEFT", 12, 0)
-    local guildIconBg     = guildIcon:CreateTexture("GuildOSTabardBg",     "BACKGROUND")
-    local guildIconBorder = guildIcon:CreateTexture("GuildOSTabardBorder", "BORDER")
-    local guildIconEmblem = guildIcon:CreateTexture("GuildOSTabardEmblem", "ARTWORK")
-    guildIconBg:SetAllPoints(guildIcon)
-    guildIconBorder:SetAllPoints(guildIcon)
-    guildIconEmblem:SetAllPoints(guildIcon)
-
-    local function UpdateGuildIcon()
-        if IsInGuild() then
-            -- Pass global texture names — TBC Classic (bg, border, emblem) order.
-            SetGuildTabardTextures("GuildOSTabardBg", "GuildOSTabardBorder", "GuildOSTabardEmblem")
-            if guildIconEmblem:GetTexture() then
-                guildIconEmblem:SetVertexColor(1, 1, 1)
-                return
-            end
-        end
-        -- No guild, or guild has no purchased tabard — show generic guild logo
-        guildIconBg:SetTexture(nil)
-        guildIconBorder:SetTexture(nil)
-        guildIconEmblem:SetTexture("Interface\\GuildFrame\\GuildLogo-NoLogo")
-        guildIconEmblem:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
-    end
-    frame.UpdateGuildIcon = UpdateGuildIcon
-    frame:HookScript("OnShow", UpdateGuildIcon)
-
-    -- Title text
-    local title = UI:CreateTitle(titleBar, "|cffFFD700Guild|r |cffD4AC0DOS|r", 20)
-    title:SetPoint("LEFT", guildIcon, "RIGHT", 8, 2)
-
-    -- Subtitle (guild name)
-    local subtitle = UI:CreateText(titleBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
-    subtitle:SetPoint("LEFT", title, "RIGHT", 10, 0)
-    frame.subtitle = subtitle
-
-    -- Version tag
-    local versionTag = UI:CreateText(titleBar, "v" .. BRutus.VERSION, 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
-    versionTag:SetPoint("LEFT", title, "RIGHT", 10, -10)
-
-    -- Close button
-    local closeBtn = UI:CreateCloseButton(titleBar)
-    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -10)
-    closeBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
-
-    -- Sync button
-    local syncBtn = UI:CreateButton(titleBar, L["Sync"], 70, 24)
-    syncBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
-    syncBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
-    syncBtn:SetScript("OnClick", function()
-        if BRutus.CommSystem then
-            BRutus.CommSystem:FullSync()
-        end
-    end)
-
-    -- Global search button (always available in the header)
-    local searchBtn = UI:CreateButton(titleBar, L["Search"], 80, 24)
-    searchBtn:SetPoint("RIGHT", syncBtn, "LEFT", -8, 0)
-    searchBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
-    searchBtn:SetScript("OnClick", function()
-        if BRutus.Search then BRutus.Search:Show() end
-    end)
-
-    -- Blizzard guild UI button — jump to the native guild pane (chat history, news,
-    -- protected officer actions) without the addon fully replacing it. Opens whichever
-    -- native UI the client uses (classic GuildFrame or the modern Communities frame).
-    local blizzBtn = UI:CreateButton(titleBar, L["Blizzard"], 80, 24)
-    blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -8, 0)
-    blizzBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
-    blizzBtn:SetScript("OnClick", function()
-        if BRutus.OpenBlizzardGuildUI then BRutus:OpenBlizzardGuildUI() end
-    end)
-
-    -- Title accent line
-    local titleLine = UI:CreateAccentLine(frame, 2)
-    titleLine:SetPoint("TOPLEFT", 0, -44)
-    titleLine:SetPoint("TOPRIGHT", 0, -44)
-
-    ----------------------------------------------------------------
-    -- Tab Bar
-    ----------------------------------------------------------------
-    local tabBar = CreateFrame("Frame", nil, frame)
-    tabBar:SetPoint("TOPLEFT", 0, -(44 + 2))
-    tabBar:SetPoint("TOPRIGHT", 0, -(44 + 2))
-    tabBar:SetHeight(TAB_HEIGHT)
-
-    local tabBarBg = tabBar:CreateTexture(nil, "BACKGROUND")
-    tabBarBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    tabBarBg:SetAllPoints()
-    tabBarBg:SetVertexColor(0.066, 0.066, 0.084, 1.0)
-
-    frame.tabs = {}
-    frame.tabPanels = {}
-    frame.activeTab = nil
-
-    -- Content area starts below tab bar
-    local contentTop = -(44 + 2 + TAB_HEIGHT)
-
-    local function CreateTab(key, label, officerOnly, condition)
-        local idx = #frame.tabs + 1
-        local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
-        tab:SetSize(100, TAB_HEIGHT)
-        tab:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-        tab:SetFrameLevel(tabBar:GetFrameLevel() + 2)
-
-        if idx == 1 then
-            tab:SetPoint("LEFT", 4, 0)
-        else
-            tab:SetPoint("LEFT", frame.tabs[idx - 1], "RIGHT", 2, 0)
-        end
-
-        local tabLabel = tab:CreateFontString(nil, "OVERLAY")
-        tabLabel:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-        tabLabel:SetPoint("CENTER")
-        tabLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-        tabLabel:SetShadowOffset(1, -1)
-        tabLabel:SetShadowColor(0, 0, 0, 0.6)
-        tabLabel:SetText(label)
-        tab.label = tabLabel
-        tab.key = key
-        tab.officerOnly = officerOnly
-        tab.condition   = condition  -- optional function() → bool; overrides officerOnly when present
-
-        -- Active underline indicator
-        local underline = tab:CreateTexture(nil, "OVERLAY")
-        underline:SetTexture("Interface\\Buttons\\WHITE8x8")
-        underline:SetHeight(2)
-        underline:SetPoint("BOTTOMLEFT", 3, 0)
-        underline:SetPoint("BOTTOMRIGHT", -3, 0)
-        underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
-        underline:Hide()
-        tab.underline = underline
-
-        tab:SetScript("OnClick", function()
-            frame:SetActiveTab(key)
-        end)
-        tab:SetScript("OnEnter", function(self)
-            if frame.activeTab ~= self.key then
-                self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
-                self.label:SetTextColor(C.text.r, C.text.g, C.text.b)
-            end
-        end)
-        tab:SetScript("OnLeave", function(self)
-            if frame.activeTab ~= self.key then
-                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-                self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            end
-        end)
-
-        frame.tabs[idx] = tab
-        return tab
-    end
-
-    function frame:SetActiveTab(key)
-        self.activeTab = key
-        for _, tab in ipairs(self.tabs) do
-            if tab.key == key then
-                tab:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-                tab.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                if tab.underline then tab.underline:Show() end
-            else
-                tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-                tab.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-                if tab.underline then tab.underline:Hide() end
-            end
-        end
-        for k, panel in pairs(self.tabPanels) do
-            if k == key then
-                panel:Show()
-            else
-                panel:Hide()
-            end
-        end
-    end
-
-    function frame:UpdateTabVisibility()
-        local prevTab = nil
-        for _, tab in ipairs(self.tabs) do
-            local visible = true
-            if tab.condition then
-                visible = tab.condition()
-            elseif tab.officerOnly then
-                visible = BRutus:IsOfficer()
-            end
-            if visible then
-                tab:ClearAllPoints()
-                if prevTab then
-                    tab:SetPoint("LEFT", prevTab, "RIGHT", 2, 0)
-                else
-                    tab:SetPoint("LEFT", 4, 0)
-                end
-                tab:Show()
-                prevTab = tab
-            else
-                -- If this was the active tab, clear active so we can fall back.
-                if self.activeTab == tab.key then
-                    self.activeTab = nil
-                end
-                tab:Hide()
-            end
-        end
-        -- Fall back to Home if the previously active tab is now hidden.
-        if not self.activeTab then
-            self:SetActiveTab("home")
-        end
-    end
-
-    -- Create tabs
-    CreateTab("home", L["Home"], false)
-    CreateTab("roster", L["Roster"], false)
-    CreateTab("guild", L["Guild"], false)
-    CreateTab("recipes", L["Recipes"], false)
-    -- Wishlist tab only when the guild's loot system is wishlist/TMB.
-    CreateTab("wishlist", L["Wishlist"], false, function()
-        return BRutus:IsOfficer() and BRutus:LootSystemShowsWishlist()
-    end)
-    CreateTab("raids", L["Raids"], false)
-    CreateTab("loot", L["Loot"], true)  -- officers always see loot history; items recorded only via ML
-    -- DKP tab only when the guild's loot system is DKP/Points.
-    CreateTab("dkp", L["DKP"], false, function() return BRutus:LootSystemShowsDKP() end)
-    CreateTab("trials", L["Trials"], true)
-    CreateTab("recruitment", L["Recruitment"], false)
-    -- Alliance tab: visible once a pact exists, and to officers who could found one.
-    CreateTab("alliance", L["Alliance"], false, function()
-        return (BRutus.Alliance and BRutus.Alliance:Get() ~= nil) or BRutus:IsOfficer()
-    end)
-    CreateTab("management", L["Leadership"], true)
-    CreateTab("settings", L["Settings"], false)
-
-    ----------------------------------------------------------------
-    -- HOME PANEL (dashboard — the default landing tab)
-    ----------------------------------------------------------------
-    local homePanel = CreateFrame("Frame", nil, frame)
-    homePanel:SetPoint("TOPLEFT", 0, contentTop)
-    homePanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    homePanel:Hide()
-    frame.tabPanels["home"] = homePanel
-    if BRutus.CreateDashboardPanel then BRutus:CreateDashboardPanel(homePanel, frame) end
-
-    ----------------------------------------------------------------
-    -- ROSTER PANEL  (dashboard layout: KPI band + left rail + table)
-    ----------------------------------------------------------------
-    local rosterPanel = CreateFrame("Frame", nil, frame)
-    rosterPanel:SetPoint("TOPLEFT", 0, contentTop)
-    rosterPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    frame.tabPanels["roster"] = rosterPanel
+----------------------------------------------------------------------
+-- Roster panel: KPI band + left rail + member table.
+-- `parent` is the container to fill; `host` is the frame that owns the
+-- roster's state and methods (the main window in expanded mode, the
+-- floating window otherwise). Both containers expose the same
+-- navigation interface, so nothing in here needs to know which it got.
+----------------------------------------------------------------------
+function BRutus:CreateRosterPanel(parent, host)
+    host = host or parent
+    rosterInstances = rosterInstances + 1
+    local uid = rosterInstances > 1 and tostring(rosterInstances) or ""
 
     ----------------------------------------------------------------
     -- KPI band (summary cards across the top)
     ----------------------------------------------------------------
-    local kpiBand = CreateFrame("Frame", nil, rosterPanel)
+    local kpiBand = CreateFrame("Frame", nil, parent)
     kpiBand:SetPoint("TOPLEFT", 0, 0)
     kpiBand:SetPoint("TOPRIGHT", 0, 0)
     kpiBand:SetHeight(KPI_BAND_HEIGHT)
 
+    host.kpiCards = {}
+
     -- subLabelText: optional; when given, the card gets a second, smaller
     -- caption line below the main label (e.g. "of 62 chars" under "Players").
     -- Returns the value FontString, and the sub-label FontString if requested.
-    local function MakeKpiCard(x, w, labelText, valueColor, subLabelText)
+    -- The card frame itself is filed under `key` so the layout pass can
+    -- move and hide it; position and width come from ResolveColumns, not
+    -- from here.
+    local function MakeKpiCard(key, labelText, valueColor, subLabelText)
         local card = UI:CreatePanel(kpiBand)
         -- CreatePanel pins level to 1; raise it above the main window's
         -- backdrop (level ~10) so the card and its text are actually visible.
         card:SetFrameLevel((kpiBand:GetFrameLevel() or 1) + 1)
-        card:SetPoint("TOPLEFT", x, -8)
-        card:SetSize(w, KPI_BAND_HEIGHT - 16)
+        card:SetHeight(KPI_BAND_HEIGHT - 16)
         card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.95)
+        host.kpiCards[key] = card
 
         local value = UI:CreateText(card, "—", 20, valueColor.r, valueColor.g, valueColor.b)
         value:SetPoint("TOPLEFT", 12, -7)
@@ -561,27 +319,23 @@ function BRutus.CreateRosterFrame()
         return value, sub
     end
 
-    -- 6 cards spread evenly across the band width (rosterPanel == FRAME_WIDTH)
-    local CARD_GAP, CARD_MARGIN, CARD_COUNT = 10, 12, 6
-    local CARD_W = math.floor((FRAME_WIDTH - CARD_MARGIN * 2 - CARD_GAP * (CARD_COUNT - 1)) / CARD_COUNT)
-    local function cardX(i) return CARD_MARGIN + (CARD_W + CARD_GAP) * i end
-    frame.kpiMembers = MakeKpiCard(cardX(0), CARD_W, L["MEMBERS"],        C.text)
-    frame.kpiPlayers, frame.kpiPlayersSub =
-                       MakeKpiCard(cardX(1), CARD_W, L["Players"],        C.text, "—")
-    frame.kpiOnline  = MakeKpiCard(cardX(2), CARD_W, L["ONLINE"],         C.online)
-    frame.kpiIlvl    = MakeKpiCard(cardX(3), CARD_W, L["AVG iLVL"],       C.gold)
-    frame.kpiAtt     = MakeKpiCard(cardX(4), CARD_W, L["AVG ATTENDANCE"], C.text)
-    frame.kpiAddon   = MakeKpiCard(cardX(5), CARD_W, L["WITH GUILD OS"],  C.accent)
+    host.kpiMembers = MakeKpiCard("members", L["MEMBERS"],        C.text)
+    host.kpiPlayers, host.kpiPlayersSub =
+                      MakeKpiCard("players", L["Players"],        C.text, "—")
+    host.kpiOnline  = MakeKpiCard("online",  L["ONLINE"],         C.online)
+    host.kpiIlvl    = MakeKpiCard("ilvl",    L["AVG iLVL"],       C.gold)
+    host.kpiAtt     = MakeKpiCard("att",     L["AVG ATTENDANCE"], C.text)
+    host.kpiAddon   = MakeKpiCard("addon",   L["WITH GUILD OS"],  C.accent)
 
     -- KPI band bottom separator
-    local bandLine = UI:CreateSeparator(rosterPanel)
+    local bandLine = UI:CreateSeparator(parent)
     bandLine:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
     bandLine:SetPoint("TOPRIGHT", 0, -KPI_BAND_HEIGHT)
 
     ----------------------------------------------------------------
     -- Left filter / segment rail
     ----------------------------------------------------------------
-    local rail = CreateFrame("Frame", nil, rosterPanel)
+    local rail = CreateFrame("Frame", nil, parent)
     rail:SetPoint("TOPLEFT", 0, -KPI_BAND_HEIGHT)
     rail:SetPoint("BOTTOMLEFT", 0, 0)
     rail:SetWidth(RAIL_WIDTH)
@@ -595,12 +349,12 @@ function BRutus.CreateRosterFrame()
     railDiv:SetPoint("TOPRIGHT", 0, 0)
     railDiv:SetPoint("BOTTOMRIGHT", 0, 0)
     railDiv:SetVertexColor(C.separator.r, C.separator.g, C.separator.b, C.separator.a)
-    frame.rail = rail
+    host.rail = rail
 
     ----------------------------------------------------------------
     -- Table area (toolbar + headers + rows) to the right of the rail
     ----------------------------------------------------------------
-    local tableArea = CreateFrame("Frame", nil, rosterPanel)
+    local tableArea = CreateFrame("Frame", nil, parent)
     tableArea:SetPoint("TOPLEFT", RAIL_WIDTH, -KPI_BAND_HEIGHT)
     tableArea:SetPoint("BOTTOMRIGHT", 0, 0)
 
@@ -618,7 +372,7 @@ function BRutus.CreateRosterFrame()
     -- Active-filter / result summary on the left of the toolbar
     local resultText = UI:CreateText(statsBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
     resultText:SetPoint("LEFT", 12, 0)
-    frame.resultText = resultText
+    host.resultText = resultText
 
     -- Filter: Show offline toggle
     local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
@@ -634,12 +388,12 @@ function BRutus.CreateRosterFrame()
             self.label:SetText(L["Online Only"])
             self:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
-        frame:RefreshRoster()
+        host:RefreshRoster()
     end)
-    frame.offlineBtn = offlineBtn
+    host.offlineBtn = offlineBtn
 
     -- Search box
-    local searchBox = CreateFrame("EditBox", "BRutusSearchBox", statsBar, "BackdropTemplate")
+    local searchBox = CreateFrame("EditBox", "BRutusSearchBox" .. uid, statsBar, "BackdropTemplate")
     searchBox:SetSize(160, 22)
     searchBox:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
     searchBox:SetBackdrop({
@@ -668,8 +422,8 @@ function BRutus.CreateRosterFrame()
         else
             searchPlaceholder:Show()
         end
-        frame.searchFilter = text
-        frame:RefreshRoster()
+        host.searchFilter = text
+        host:RefreshRoster()
     end)
     searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
@@ -680,7 +434,7 @@ function BRutus.CreateRosterFrame()
     searchBox:SetScript("OnEditFocusLost", function(self)
         self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     end)
-    frame.searchBox = searchBox
+    host.searchBox = searchBox
 
     -- Column Headers
     local headerFrame = CreateFrame("Frame", nil, tableArea)
@@ -693,13 +447,13 @@ function BRutus.CreateRosterFrame()
     headerBg:SetAllPoints()
     headerBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
-    local xOff = 10
-    frame.headerButtons = {}
+    -- Header buttons are built once and repositioned by the layout pass;
+    -- x and width come from ResolveColumns, never from a constant.
+    host.headerButtons = {}
     for _, col in ipairs(COLUMNS) do
-        if col.label ~= "" then
+        do
             local btn = CreateFrame("Button", nil, headerFrame)
-            btn:SetSize(col.width, HEADER_HEIGHT)
-            btn:SetPoint("LEFT", xOff, 0)
+            btn:SetHeight(HEADER_HEIGHT)
 
             local text = UI:CreateHeaderText(btn, col.label, 10)
             if col.align == "CENTER" then
@@ -727,7 +481,7 @@ function BRutus.CreateRosterFrame()
                     db.sortBy = col.key
                     db.sortAsc = (col.key == "name")
                 end
-                frame:RefreshRoster()
+                host:RefreshRoster()
             end)
 
             btn:SetScript("OnEnter", function(self)
@@ -737,9 +491,8 @@ function BRutus.CreateRosterFrame()
                 self.text:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
             end)
 
-            frame.headerButtons[col.key] = btn
+            host.headerButtons[col.key] = btn
         end
-        xOff = xOff + col.width
     end
 
     -- Header bottom line
@@ -748,25 +501,37 @@ function BRutus.CreateRosterFrame()
     headerLine:SetPoint("TOPRIGHT", 0, -(28 + HEADER_HEIGHT))
 
     -- Scroll Frame for roster rows
-    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer", tableArea)
+    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer" .. uid, tableArea)
     rosterContainer:SetPoint("TOPLEFT", 1, -(28 + HEADER_HEIGHT + 1))
     rosterContainer:SetPoint("BOTTOMRIGHT", -1, 0)
 
-    local scrollFrame = CreateFrame("ScrollFrame", "BRutusRosterScroll", rosterContainer, "FauxScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "BRutusRosterScroll" .. uid, rosterContainer, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
-    UI:SkinScrollBar(scrollFrame, "BRutusRosterScroll")
+    UI:SkinScrollBar(scrollFrame, "BRutusRosterScroll" .. uid)
 
-    frame.scrollFrame = scrollFrame
-    frame.rows = {}
+    host.scrollFrame = scrollFrame
+    host.rows = {}
+    host.visibleRows = 0
 
-    for i = 1, VISIBLE_ROWS do
-        frame.rows[i] = CreateRosterRow(rosterContainer, i)
+    -- Rows are pooled and grown on demand: how many exist depends on how
+    -- tall the window is right now, which changes while the grip is dragged.
+    -- A row is created once and reused for the rest of the session.
+    host.AcquireRows = function(n)
+        for i = #host.rows + 1, n do
+            local row = CreateRosterRow(rosterContainer, i, uid)
+            if host.colLayout then row:ApplyColumns(host.colLayout) end
+            host.rows[i] = row
+        end
+        for i = 1, #host.rows do
+            host.rows[i]:SetShown(i <= n)
+        end
+        host.visibleRows = n
     end
 
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
         FauxScrollFrame_OnVerticalScroll(self, offset, ROW_HEIGHT, function()
-            frame:UpdateRows()
+            host:UpdateRows()
         end)
     end)
 
@@ -777,11 +542,11 @@ function BRutus.CreateRosterFrame()
     local RAIL_PAD = 8
     local RAIL_BTN_W = RAIL_WIDTH - RAIL_PAD * 2 - 2
 
-    frame.segment = "all"     -- "all" | "online" | "rank:<index>"
-    frame.classFilter = nil   -- classFile or nil
-    frame.segBtns = {}
-    frame.rankBtns = {}       -- pooled, laid out in UpdateRail
-    frame.classChips = {}
+    host.segment = "all"     -- "all" | "online" | "rank:<index>"
+    host.classFilter = nil   -- classFile or nil
+    host.segBtns = {}
+    host.rankBtns = {}       -- pooled, laid out in UpdateRail
+    host.classChips = {}
 
     local function RailSectionHeader(text, yOff)
         local fs = UI:CreateText(rail, text, 9, C.gold.r, C.gold.g, C.gold.b)
@@ -835,14 +600,14 @@ function BRutus.CreateRosterFrame()
     local segAll = CreateRailButton()
     segAll:SetPoint("TOPLEFT", RAIL_PAD, -26)
     segAll.label:SetText(L["All"])
-    segAll:SetScript("OnClick", function() frame:SetSegment("all") end)
-    frame.segBtns.all = segAll
+    segAll:SetScript("OnClick", function() host:SetSegment("all") end)
+    host.segBtns.all = segAll
 
     local segOnline = CreateRailButton()
     segOnline:SetPoint("TOPLEFT", RAIL_PAD, -52)
     segOnline.label:SetText(L["Online"])
-    segOnline:SetScript("OnClick", function() frame:SetSegment("online") end)
-    frame.segBtns.online = segOnline
+    segOnline:SetScript("OnClick", function() host:SetSegment("online") end)
+    host.segBtns.online = segOnline
 
     -- RANKS (dynamic — populated from the guild's actual ranks in UpdateRail)
     RailSectionHeader(L["RANKS"], -86)
@@ -893,7 +658,7 @@ function BRutus.CreateRosterFrame()
         chip:SetScript("OnLeave", function(self)
             if not self.active then self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0) end
         end)
-        chip:SetScript("OnClick", function() frame:SetClassFilter(classFile) end)
+        chip:SetScript("OnClick", function() host:SetClassFilter(classFile) end)
         return chip
     end
 
@@ -905,13 +670,13 @@ function BRutus.CreateRosterFrame()
         local x = RAIL_PAD + col * (CHIP_W + CHIP_GAP)
         local y = 10 + (4 - rowI) * CHIP_ROW_H   -- bottom-up; 5 rows (row 0 highest)
         chip:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", x, y)
-        frame.classChips[classFile] = chip
+        host.classChips[classFile] = chip
     end
     local classHeader = UI:CreateText(rail, L["CLASSES"], 9, C.gold.r, C.gold.g, C.gold.b)
     classHeader:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
     classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + 5 * CHIP_ROW_H + 2)
 
-    function frame:UpdateRailActive()
+    function host:UpdateRailActive()
         self.segBtns.all:SetActive(self.segment == "all")
         self.segBtns.online:SetActive(self.segment == "online")
         for _, b in ipairs(self.rankBtns) do
@@ -922,7 +687,7 @@ function BRutus.CreateRosterFrame()
         end
     end
 
-    function frame:UpdateRail()
+    function host:UpdateRail()
         local total, online = 0, 0
         local rankCount, rankName = {}, {}
         local classCount = {}
@@ -959,7 +724,7 @@ function BRutus.CreateRosterFrame()
             b.rankIndex = idx
             b.label:SetText(rankName[idx] or string.format(L["Rank %d"], idx))
             b.count:SetText(rankCount[idx] or 0)
-            b:SetScript("OnClick", function() frame:SetSegment("rank:" .. idx) end)
+            b:SetScript("OnClick", function() host:SetSegment("rank:" .. idx) end)
             b:Show()
         end
         for slot = #indices + 1, #self.rankBtns do
@@ -975,7 +740,7 @@ function BRutus.CreateRosterFrame()
         self:UpdateRailActive()
     end
 
-    function frame:GetSegmentLabel()
+    function host:GetSegmentLabel()
         if self.segment == "online" then
             return L["Online"]
         elseif type(self.segment) == "string" and self.segment:find("^rank:") then
@@ -988,13 +753,13 @@ function BRutus.CreateRosterFrame()
         return L["All"]
     end
 
-    function frame:SetSegment(id)
+    function host:SetSegment(id)
         self.segment = id
         self:UpdateRailActive()
         self:RefreshRoster()
     end
 
-    function frame:SetClassFilter(classFile)
+    function host:SetClassFilter(classFile)
         -- Toggle: clicking the active class clears it. NOTE: do not use the
         -- "cond and nil or x" idiom here — `and nil` short-circuits so it can
         -- never return nil, which made the filter impossible to clear.
@@ -1008,241 +773,19 @@ function BRutus.CreateRosterFrame()
     end
 
     ----------------------------------------------------------------
-    -- RECIPES PANEL
-    ----------------------------------------------------------------
-    local recipesPanel = CreateFrame("Frame", nil, frame)
-    recipesPanel:SetPoint("TOPLEFT", 0, contentTop)
-    recipesPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    recipesPanel:Hide()
-    frame.tabPanels["recipes"] = recipesPanel
-    BRutus:CreateRecipesPanel(recipesPanel, frame)
-
-    ----------------------------------------------------------------
-    -- RECRUITMENT PANEL (officer only)
-    ----------------------------------------------------------------
-    local recruitPanel = CreateFrame("Frame", nil, frame)
-    recruitPanel:SetPoint("TOPLEFT", 0, contentTop)
-    recruitPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    recruitPanel:Hide()
-    frame.tabPanels["recruitment"] = recruitPanel
-    BRutus:CreateRecruitmentPanel(recruitPanel, frame)
-
-    ----------------------------------------------------------------
-    -- LISTA DE DESEJOS (WISHLIST) PANEL
-    ----------------------------------------------------------------
-    local wishlistPanel = CreateFrame("Frame", nil, frame)
-    wishlistPanel:SetPoint("TOPLEFT", 0, contentTop)
-    wishlistPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    wishlistPanel:Hide()
-    frame.tabPanels["wishlist"] = wishlistPanel
-    BRutus:CreateWishlistGuildPanel(wishlistPanel, frame)
-
-    ----------------------------------------------------------------
-    -- RAID HUB PANEL  (Sessions | Cores | Audit | Raid Tools)
-    ----------------------------------------------------------------
-    local raidsPanel = CreateFrame("Frame", nil, frame)
-    raidsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    raidsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    raidsPanel:Hide()
-    frame.tabPanels["raids"] = raidsPanel
-    BRutus:CreateRaidHubPanel(raidsPanel, frame)
-
-    ----------------------------------------------------------------
-    -- LOOT HISTORY PANEL
-    ----------------------------------------------------------------
-    local lootPanel = CreateFrame("Frame", nil, frame)
-    lootPanel:SetPoint("TOPLEFT", 0, contentTop)
-    lootPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    lootPanel:Hide()
-    frame.tabPanels["loot"] = lootPanel
-    BRutus:CreateLootPanel(lootPanel, frame)
-
-    ----------------------------------------------------------------
-    -- TRIAL TRACKER PANEL (officer only)
-    ----------------------------------------------------------------
-    local trialsPanel = CreateFrame("Frame", nil, frame)
-    trialsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    trialsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    trialsPanel:Hide()
-    frame.tabPanels["trials"] = trialsPanel
-    BRutus:CreateTrialsPanel(trialsPanel, frame)
-
-    ----------------------------------------------------------------
-    -- MANAGEMENT / LEADERSHIP PANEL (officer only)
-    ----------------------------------------------------------------
-    local managementPanel = CreateFrame("Frame", nil, frame)
-    managementPanel:SetPoint("TOPLEFT", 0, contentTop)
-    managementPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    managementPanel:Hide()
-    frame.tabPanels["management"] = managementPanel
-    BRutus:CreateManagementPanel(managementPanel, frame)
-
-    ----------------------------------------------------------------
-    -- GUILD HUB PANEL (activity / bulletin / polls)
-
-    ----------------------------------------------------------------
-    -- GUILD HUB PANEL (activity / bulletin / polls)
-    ----------------------------------------------------------------
-    local guildPanel = CreateFrame("Frame", nil, frame)
-    guildPanel:SetPoint("TOPLEFT", 0, contentTop)
-    guildPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    guildPanel:Hide()
-    frame.tabPanels["guild"] = guildPanel
-    BRutus:CreateGuildHub(guildPanel, frame)
-
-    ----------------------------------------------------------------
-    -- ALLIANCE PANEL (overview / manage)
-    ----------------------------------------------------------------
-    local alliancePanel = CreateFrame("Frame", nil, frame)
-    alliancePanel:SetPoint("TOPLEFT", 0, contentTop)
-    alliancePanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    alliancePanel:Hide()
-    frame.tabPanels["alliance"] = alliancePanel
-    if BRutus.CreateAlliancePanel then
-        BRutus:CreateAlliancePanel(alliancePanel, frame)
-    end
-
-    ----------------------------------------------------------------
-    -- DKP / POINTS PANEL
-    ----------------------------------------------------------------
-    local dkpPanel = CreateFrame("Frame", nil, frame)
-    dkpPanel:SetPoint("TOPLEFT", 0, contentTop)
-    dkpPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    dkpPanel:Hide()
-    frame.tabPanels["dkp"] = dkpPanel
-    BRutus:CreateDKPPanel(dkpPanel, frame)
-
-    ----------------------------------------------------------------
-    -- SETTINGS PANEL
-    ----------------------------------------------------------------
-    local settingsPanel = CreateFrame("Frame", nil, frame)
-    settingsPanel:SetPoint("TOPLEFT", 0, contentTop)
-    settingsPanel:SetPoint("BOTTOMRIGHT", 0, 30)
-    settingsPanel:Hide()
-    frame.tabPanels["settings"] = settingsPanel
-    BRutus:CreateSettingsPanel(settingsPanel, frame)
-
-    ----------------------------------------------------------------
-    -- Bottom Bar
-    ----------------------------------------------------------------
-    local bottomBar = CreateFrame("Frame", nil, frame)
-    bottomBar:SetPoint("BOTTOMLEFT", 0, 0)
-    bottomBar:SetPoint("BOTTOMRIGHT", 0, 0)
-    bottomBar:SetHeight(30)
-
-    local bottomBg = bottomBar:CreateTexture(nil, "BACKGROUND")
-    bottomBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bottomBg:SetAllPoints()
-    bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-
-    local bottomLine = UI:CreateAccentLine(frame, 1)
-    bottomLine:SetPoint("BOTTOMLEFT", 0, 30)
-    bottomLine:SetPoint("BOTTOMRIGHT", 0, 30)
-
-    local helpText = UI:CreateText(bottomBar, "/guildos scan  |  /guildos sync  |  /guildos wish", 9, 0.4, 0.4, 0.5)
-    helpText:SetPoint("LEFT", 12, 0)
-
-    -- Loot quick-access buttons. Wishlist and DKP share the same slot —
-    -- only the one matching the active loot system is shown (see
-    -- BRutus:UpdateLootSystemUI), so /roll guilds see neither.
-    local wishBtn = UI:CreateButton(bottomBar, L["My Wishlist"], 120, 22)
-    wishBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
-    wishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
-    wishBtn:SetShown(BRutus:LootSystemShowsWishlist())
-    frame.wishBtn = wishBtn
-
-    local dkpBtn = UI:CreateButton(bottomBar, L["Loot & DKP"], 110, 22)
-    dkpBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
-    dkpBtn:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
-    dkpBtn:SetShown(BRutus:LootSystemShowsDKP())
-    frame.dkpBtn = dkpBtn
-
-    -- Core Sign-up — always visible, shows available cores and role coverage
-    local signupCoreBtn = UI:CreateButton(bottomBar, L["Core Sign-up"], 110, 22)
-    signupCoreBtn:SetPoint("LEFT", helpText, "RIGHT", 148, 0)   -- clears 120px wishBtn + gap
-    signupCoreBtn:SetScript("OnClick", function() BRutus:ShowCoreSignupFrame() end)
-    frame.signupCoreBtn = signupCoreBtn
-
-    -- Guild Invite (visible only if player can invite)
-    local inviteBox = CreateFrame("EditBox", nil, bottomBar, "BackdropTemplate")
-    inviteBox:SetSize(140, 22)
-    inviteBox:SetPoint("RIGHT", -90, 0)
-    inviteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    inviteBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    inviteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    inviteBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    inviteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    inviteBox:SetTextInsets(6, 6, 0, 0)
-    inviteBox:SetAutoFocus(false)
-    inviteBox:SetMaxLetters(50)
-
-    local invitePlaceholder = inviteBox:CreateFontString(nil, "OVERLAY")
-    invitePlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
-    invitePlaceholder:SetPoint("LEFT", 6, 0)
-    invitePlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    invitePlaceholder:SetText(L["Player name..."])
-
-    inviteBox:SetScript("OnTextChanged", function(self)
-        local text = self:GetText()
-        if text and text ~= "" then
-            invitePlaceholder:Hide()
-        else
-            invitePlaceholder:Show()
-        end
-    end)
-
-    local inviteBtn = UI:CreateButton(bottomBar, L["Invite"], 70, 22)
-    inviteBtn:SetPoint("RIGHT", -12, 0)
-
-    local function DoInvite()
-        local target = strtrim(inviteBox:GetText() or "")
-        if target == "" then
-            BRutus:Print(L["Enter a player name to invite."])
-            return
-        end
-        GuildInvite(target)
-        BRutus:Print(string.format(L["Guild invite sent to %s."], target))
-        inviteBox:SetText("")
-        inviteBox:ClearFocus()
-    end
-
-    inviteBtn:SetScript("OnClick", DoInvite)
-    inviteBox:SetScript("OnEnterPressed", function(self)
-        DoInvite()
-        self:ClearFocus()
-    end)
-    inviteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-    frame.inviteBox = inviteBox
-    frame.inviteBtn = inviteBtn
-
-    -- Show/hide invite based on permission
-    local function UpdateInviteVisibility()
-        if CanGuildInvite() then
-            inviteBox:Show()
-            inviteBtn:Show()
-        else
-            inviteBox:Hide()
-            inviteBtn:Hide()
-        end
-    end
-
-    frame:HookScript("OnShow", UpdateInviteVisibility)
-
-    ----------------------------------------------------------------
     -- Data & Methods
     ----------------------------------------------------------------
-    frame.sortedMembers = {}
-    frame.searchFilter = ""
+    host.sortedMembers = {}
+    host.searchFilter = ""
 
-    function frame:RefreshRoster()
+    function host:RefreshRoster()
         self:BuildMemberList()
         self:UpdateSortIndicators()
         self:UpdateRows()
         self:UpdateStats()
     end
 
-    function frame:BuildMemberList()
+    function host:BuildMemberList()
         -- Reuse the existing table to avoid allocating a new one on every refresh.
         wipe(self.sortedMembers)
         local members = self.sortedMembers
@@ -1374,7 +917,7 @@ function BRutus.CreateRosterFrame()
         end)
     end
 
-    function frame:UpdateSortIndicators()
+    function host:UpdateSortIndicators()
         local sortBy = BRutus.db.settings.sortBy
         local sortAsc = BRutus.db.settings.sortAsc
 
@@ -1388,14 +931,19 @@ function BRutus.CreateRosterFrame()
         end
     end
 
-    function frame:UpdateRows()
+    function host:UpdateRows()
         local members = self.sortedMembers
         local numMembers = #members
         local offset = FauxScrollFrame_GetOffset(self.scrollFrame)
+        -- How many rows exist is decided by the layout pass, not a
+        -- constant: a window dragged short has fewer, and one dragged
+        -- tall has more.
+        local visible = self.visibleRows or 0
+        if visible < 1 then return end
 
-        FauxScrollFrame_Update(self.scrollFrame, numMembers, VISIBLE_ROWS, ROW_HEIGHT)
+        FauxScrollFrame_Update(self.scrollFrame, numMembers, visible, ROW_HEIGHT)
 
-        for i = 1, VISIBLE_ROWS do
+        for i = 1, visible do
             local row = self.rows[i]
             local dataIndex = offset + i
 
@@ -1409,7 +957,7 @@ function BRutus.CreateRosterFrame()
         end
     end
 
-    function frame:UpdateStats()
+    function host:UpdateStats()
         local numTotal = GetNumGuildMembers()
         local numOnline = 0
 
@@ -1446,7 +994,7 @@ function BRutus.CreateRosterFrame()
 
         -- Update guild name in subtitle
         local guildName = GetGuildInfo("player")
-        if guildName then
+        if guildName and self.subtitle then
             self.subtitle:SetText("< " .. guildName .. " >")
         end
 
@@ -1481,6 +1029,472 @@ function BRutus.CreateRosterFrame()
         if self.UpdateRail then self:UpdateRail() end
     end
 
+    ----------------------------------------------------------------
+    -- Layout: everything that depends on how big the container is right
+    -- now. Runs once on first show and once per frame while the grip is
+    -- dragged (UI:MakeResponsive coalesces the burst).
+    ----------------------------------------------------------------
+    UI:MakeResponsive(parent, function(_, w, h)
+        -- KPI band. Same drop-by-priority rule as the table, so the cards
+        -- vanish in a chosen order instead of sliding off the edge.
+        local kpi = UI:ResolveColumns(KPI_SPEC, w - KPI_MARGIN * 2, KPI_GAP)
+        for _, entry in ipairs(kpi) do
+            local card = host.kpiCards[entry.key]
+            if card then
+                card:SetShown(entry.shown)
+                if entry.shown then
+                    card:ClearAllPoints()
+                    card:SetPoint("TOPLEFT", KPI_MARGIN + entry.x, -8)
+                    card:SetWidth(entry.w)
+                end
+            end
+        end
+
+        -- Table columns.
+        local tableW = w - RAIL_WIDTH - ROW_INSET - SCROLL_GUTTER
+        local layout = UI:ResolveColumns(COLUMNS, tableW, COL_GAP)
+        host.colLayout = layout
+        for _, col in ipairs(layout) do
+            local btn = host.headerButtons[col.key]
+            if btn then
+                btn:SetShown(col.shown)
+                if col.shown then
+                    btn:ClearAllPoints()
+                    btn:SetPoint("LEFT", ROW_INSET + col.x, 0)
+                    btn:SetWidth(col.w)
+                end
+            end
+        end
+
+        -- Rows: how many fit, and where their cells sit.
+        host.AcquireRows(UI:ResolveRows(h - TABLE_RESERVED, ROW_HEIGHT, 0))
+        for i = 1, host.visibleRows do
+            host.rows[i]:ApplyColumns(layout)
+        end
+
+        BRutus:RefreshRosterUI()
+    end)
+
+    return parent
+end
+
+-- Every registered tab, ungated: officerOnly/condition are re-evaluated per
+-- call in UpdateTabVisibility, so the frames must exist unconditionally.
+local function TabFeatures()
+    local out = {}
+    for _, id in ipairs(UI.featureOrder) do
+        local d = UI.features[id]
+        if d.tab then out[#out + 1] = d end
+    end
+    return out
+end
+
+-- The one gate for a tab: enabled, and rank/condition allow it. Both
+-- UpdateTabVisibility (which button to draw) and SetActiveTab (which panel
+-- to open) ask this — a dashboard card can call SetActiveTab with no button
+-- involved at all. Delegates to the registry's single gate (UI/FeatureRegistry.lua)
+-- so this and every other opener (UI:OpenWindow, the slash verb) agree.
+local function TabAllowed(def)
+    return UI:IsFeatureAllowed(def)
+end
+
+function BRutus.CreateRosterFrame()
+    local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
+    frame:SetSize(EXPANDED_W, EXPANDED_H)
+    frame:SetPoint("CENTER")
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:SetClampedToScreen(true)
+    frame:SetFrameStrata("HIGH")
+    frame:SetFrameLevel(10)
+    frame:Hide()
+
+    -- Soft drop shadow so the window lifts off the game world (premium depth)
+    UI:CreateDropShadow(frame, 18, 0.5)
+
+    -- Smooth fade-in when opened
+    UI:EnableFadeIn(frame, 0.16)
+
+    -- Double border effect for premium feel
+    local outerBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    outerBorder:SetPoint("TOPLEFT", -2, 2)
+    outerBorder:SetPoint("BOTTOMRIGHT", 2, -2)
+    outerBorder:SetBackdrop({
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.22)
+    outerBorder:SetFrameLevel(9)
+
+    -- Inner glow effect (subtle gradient overlay at top)
+    local topGlow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+    topGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
+    topGlow:SetPoint("TOPLEFT", 1, -1)
+    topGlow:SetPoint("TOPRIGHT", -1, -1)
+    topGlow:SetHeight(70)
+    topGlow:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.07))
+
+    ----------------------------------------------------------------
+    -- Title Bar
+    ----------------------------------------------------------------
+    local titleBar = CreateFrame("Frame", nil, frame)
+    titleBar:SetPoint("TOPLEFT", 0, 0)
+    titleBar:SetPoint("TOPRIGHT", 0, 0)
+    titleBar:SetHeight(44)
+    titleBar:EnableMouse(true)
+    titleBar:RegisterForDrag("LeftButton")
+    titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
+    titleBar:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+
+    -- Title background accent
+    local titleBg = titleBar:CreateTexture(nil, "ARTWORK")
+    titleBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    titleBg:SetAllPoints()
+    titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
+
+    -- Guild emblem icon (3-layer tabard system)
+    -- Textures MUST have global names — SetGuildTabardTextures in TBC Classic
+    -- expects string names, not Lua object references.
+    local guildIcon = CreateFrame("Frame", nil, titleBar)
+    guildIcon:SetSize(28, 28)
+    guildIcon:SetPoint("LEFT", 12, 0)
+    local guildIconBg     = guildIcon:CreateTexture("GuildOSTabardBg",     "BACKGROUND")
+    local guildIconBorder = guildIcon:CreateTexture("GuildOSTabardBorder", "BORDER")
+    local guildIconEmblem = guildIcon:CreateTexture("GuildOSTabardEmblem", "ARTWORK")
+    guildIconBg:SetAllPoints(guildIcon)
+    guildIconBorder:SetAllPoints(guildIcon)
+    guildIconEmblem:SetAllPoints(guildIcon)
+
+    local function UpdateGuildIcon()
+        if IsInGuild() then
+            -- Pass global texture names — TBC Classic (bg, border, emblem) order.
+            SetGuildTabardTextures("GuildOSTabardBg", "GuildOSTabardBorder", "GuildOSTabardEmblem")
+            if guildIconEmblem:GetTexture() then
+                guildIconEmblem:SetVertexColor(1, 1, 1)
+                return
+            end
+        end
+        -- No guild, or guild has no purchased tabard — show generic guild logo
+        guildIconBg:SetTexture(nil)
+        guildIconBorder:SetTexture(nil)
+        guildIconEmblem:SetTexture("Interface\\GuildFrame\\GuildLogo-NoLogo")
+        guildIconEmblem:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
+    end
+    frame.UpdateGuildIcon = UpdateGuildIcon
+    frame:HookScript("OnShow", UpdateGuildIcon)
+
+    -- Title text
+    local title = UI:CreateTitle(titleBar, "|cffFFD700Guild|r |cffD4AC0DOS|r", 20)
+    title:SetPoint("LEFT", guildIcon, "RIGHT", 8, 2)
+
+    -- Subtitle (guild name)
+    local subtitle = UI:CreateText(titleBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
+    subtitle:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    frame.subtitle = subtitle
+
+    -- Version tag
+    local versionTag = UI:CreateText(titleBar, "v" .. BRutus.VERSION, 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
+    versionTag:SetPoint("LEFT", title, "RIGHT", 10, -10)
+
+    -- Close button
+    local closeBtn = UI:TitleBarButton(titleBar, "close")
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -10)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+
+    -- Sync button
+    local syncBtn = UI:TitleBarButton(titleBar, "text", L["Sync"], 70, 24)
+    syncBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
+    syncBtn:SetScript("OnClick", function()
+        if BRutus.CommSystem then
+            BRutus.CommSystem:FullSync()
+        end
+    end)
+
+    -- Global search button (always available in the header)
+    local searchBtn = UI:TitleBarButton(titleBar, "text", L["Search"], 80, 24)
+    searchBtn:SetPoint("RIGHT", syncBtn, "LEFT", -8, 0)
+    searchBtn:SetScript("OnClick", function()
+        if BRutus.Search then BRutus.Search:Show() end
+    end)
+
+    -- Blizzard guild UI button — jump to the native guild pane (chat history, news,
+    -- protected officer actions) without the addon fully replacing it. Opens whichever
+    -- native UI the client uses (classic GuildFrame or the modern Communities frame).
+    local blizzBtn = UI:TitleBarButton(titleBar, "text", L["Blizzard"], 80, 24)
+    blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -8, 0)
+    blizzBtn:SetScript("OnClick", function()
+        if BRutus.OpenBlizzardGuildUI then BRutus:OpenBlizzardGuildUI() end
+    end)
+
+    -- Title accent line
+    local titleLine = UI:CreateAccentLine(frame, 2)
+    titleLine:SetPoint("TOPLEFT", 0, -44)
+    titleLine:SetPoint("TOPRIGHT", 0, -44)
+
+    ----------------------------------------------------------------
+    -- Tab Bar
+    ----------------------------------------------------------------
+    local tabBar = CreateFrame("Frame", nil, frame)
+    tabBar:SetPoint("TOPLEFT", 0, -(44 + 2))
+    tabBar:SetPoint("TOPRIGHT", 0, -(44 + 2))
+    tabBar:SetHeight(TAB_HEIGHT)
+
+    local tabBarBg = tabBar:CreateTexture(nil, "BACKGROUND")
+    tabBarBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    tabBarBg:SetAllPoints()
+    tabBarBg:SetVertexColor(0.066, 0.066, 0.084, 1.0)
+
+    frame.tabs = {}
+    frame.tabPanels = {}
+    frame.activeTab = nil
+
+    -- Content area starts below tab bar
+    local contentTop = -(44 + 2 + TAB_HEIGHT)
+
+    local function CreateTab(key, label, officerOnly, condition)
+        local idx = #frame.tabs + 1
+        local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
+        tab:SetSize(100, TAB_HEIGHT)
+        tab:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+        tab:SetFrameLevel(tabBar:GetFrameLevel() + 2)
+
+        if idx == 1 then
+            tab:SetPoint("LEFT", 4, 0)
+        else
+            tab:SetPoint("LEFT", frame.tabs[idx - 1], "RIGHT", 2, 0)
+        end
+
+        local tabLabel = tab:CreateFontString(nil, "OVERLAY")
+        tabLabel:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        tabLabel:SetPoint("CENTER")
+        tabLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+        tabLabel:SetShadowOffset(1, -1)
+        tabLabel:SetShadowColor(0, 0, 0, 0.6)
+        tabLabel:SetText(label)
+        tab.label = tabLabel
+        tab.key = key
+        tab.officerOnly = officerOnly
+        tab.condition   = condition  -- optional function() → bool; overrides officerOnly when present
+
+        -- Active underline indicator
+        local underline = tab:CreateTexture(nil, "OVERLAY")
+        underline:SetTexture("Interface\\Buttons\\WHITE8x8")
+        underline:SetHeight(2)
+        underline:SetPoint("BOTTOMLEFT", 3, 0)
+        underline:SetPoint("BOTTOMRIGHT", -3, 0)
+        underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
+        underline:Hide()
+        tab.underline = underline
+
+        tab:SetScript("OnClick", function()
+            frame:SetActiveTab(key)
+        end)
+        tab:SetScript("OnEnter", function(self)
+            if frame.activeTab ~= self.key then
+                self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
+                self.label:SetTextColor(C.text.r, C.text.g, C.text.b)
+            end
+        end)
+        tab:SetScript("OnLeave", function(self)
+            if frame.activeTab ~= self.key then
+                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+                self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            end
+        end)
+
+        frame.tabs[idx] = tab
+        return tab
+    end
+
+    function frame:SetActiveTab(key)
+        local def = UI:GetFeature(key)
+        if not TabAllowed(def) then return end
+        local panel = self.tabPanels[key]
+        if panel and not panel.built then
+            panel.built = true
+            def.build(panel, self)
+        end
+        self.activeTab = key
+        for _, tab in ipairs(self.tabs) do
+            if tab.key == key then
+                tab:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
+                tab.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                if tab.underline then tab.underline:Show() end
+            else
+                tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
+                tab.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+                if tab.underline then tab.underline:Hide() end
+            end
+        end
+        for k, p in pairs(self.tabPanels) do
+            if k == key then
+                p:Show()
+            else
+                p:Hide()
+            end
+        end
+    end
+
+    function frame:UpdateTabVisibility()
+        local prevTab = nil
+        for _, tab in ipairs(self.tabs) do
+            local visible = TabAllowed(UI:GetFeature(tab.key))
+            if visible then
+                tab:ClearAllPoints()
+                if prevTab then
+                    tab:SetPoint("LEFT", prevTab, "RIGHT", 2, 0)
+                else
+                    tab:SetPoint("LEFT", 4, 0)
+                end
+                tab:Show()
+                prevTab = tab
+            else
+                -- If this was the active tab, clear active so we can fall back.
+                if self.activeTab == tab.key then
+                    self.activeTab = nil
+                end
+                tab:Hide()
+            end
+        end
+        -- Fall back to Home if the previously active tab is now hidden.
+        if not self.activeTab then
+            self:SetActiveTab("home")
+        end
+    end
+
+    -- Tabs come from the feature registry: one entry, every surface.
+    -- TabFeatures, not AllFeatures/VisibleFeatures — officerOnly and
+    -- condition are re-evaluated live by UpdateTabVisibility (rank changes,
+    -- loot-system switches, alliance pacts forming, all without a reload),
+    -- and a toggle-hidden tab must still exist so it can be brought back.
+    -- Every tab frame and panel is created unconditionally; only visibility
+    -- is gated, and only in UpdateTabVisibility.
+    for _, def in ipairs(TabFeatures()) do
+        CreateTab(def.id, def.label, def.officerOnly, def.condition)
+    end
+
+    ----------------------------------------------------------------
+    -- Tab panels: one empty container per registered tab, filled by the
+    -- feature's build() the first time that tab is activated. This used
+    -- to construct all thirteen panels (and every sub-panel) up front.
+    ----------------------------------------------------------------
+    for _, def in ipairs(TabFeatures()) do
+        local panel = CreateFrame("Frame", nil, frame)
+        panel:SetPoint("TOPLEFT", 0, contentTop)
+        panel:SetPoint("BOTTOMRIGHT", 0, BOTTOM_BAR_H)
+        panel:Hide()
+        panel.featureId = def.id
+        frame.tabPanels[def.id] = panel
+    end
+
+    ----------------------------------------------------------------
+    -- Bottom Bar
+    ----------------------------------------------------------------
+    local bottomBar = CreateFrame("Frame", nil, frame)
+    bottomBar:SetPoint("BOTTOMLEFT", 0, 0)
+    bottomBar:SetPoint("BOTTOMRIGHT", 0, 0)
+    bottomBar:SetHeight(30)
+
+    local bottomBg = bottomBar:CreateTexture(nil, "BACKGROUND")
+    bottomBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    bottomBg:SetAllPoints()
+    bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
+
+    local bottomLine = UI:CreateAccentLine(frame, 1)
+    bottomLine:SetPoint("BOTTOMLEFT", 0, 30)
+    bottomLine:SetPoint("BOTTOMRIGHT", 0, 30)
+
+    local helpText = UI:CreateText(bottomBar, "/guildos scan  |  /guildos sync  |  /guildos wish", 9, 0.4, 0.4, 0.5)
+    helpText:SetPoint("LEFT", 12, 0)
+
+    -- Loot quick-access buttons. Wishlist and DKP share the same slot —
+    -- only the one matching the active loot system is shown (see
+    -- BRutus:UpdateLootSystemUI), so /roll guilds see neither.
+    local wishBtn = UI:CreateButton(bottomBar, L["My Wishlist"], 120, 22)
+    wishBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
+    wishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
+    wishBtn:SetShown(BRutus:LootSystemShowsWishlist())
+    frame.wishBtn = wishBtn
+
+    local dkpBtn = UI:CreateButton(bottomBar, L["Loot & DKP"], 110, 22)
+    dkpBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
+    dkpBtn:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
+    dkpBtn:SetShown(BRutus:LootSystemShowsDKP())
+    frame.dkpBtn = dkpBtn
+
+    -- Core Sign-up — always visible, shows available cores and role coverage
+    local signupCoreBtn = UI:CreateButton(bottomBar, L["Core Sign-up"], 110, 22)
+    signupCoreBtn:SetPoint("LEFT", helpText, "RIGHT", 148, 0)   -- clears 120px wishBtn + gap
+    signupCoreBtn:SetScript("OnClick", function() BRutus:ShowCoreSignupFrame() end)
+    frame.signupCoreBtn = signupCoreBtn
+
+    -- Guild Invite (visible only if player can invite)
+    local inviteBox = CreateFrame("EditBox", nil, bottomBar, "BackdropTemplate")
+    inviteBox:SetSize(140, 22)
+    inviteBox:SetPoint("RIGHT", -90, 0)
+    inviteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    inviteBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
+    inviteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+    inviteBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    inviteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
+    inviteBox:SetTextInsets(6, 6, 0, 0)
+    inviteBox:SetAutoFocus(false)
+    inviteBox:SetMaxLetters(50)
+
+    local invitePlaceholder = inviteBox:CreateFontString(nil, "OVERLAY")
+    invitePlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+    invitePlaceholder:SetPoint("LEFT", 6, 0)
+    invitePlaceholder:SetTextColor(0.4, 0.4, 0.4)
+    invitePlaceholder:SetText(L["Player name..."])
+
+    inviteBox:SetScript("OnTextChanged", function(self)
+        local text = self:GetText()
+        if text and text ~= "" then
+            invitePlaceholder:Hide()
+        else
+            invitePlaceholder:Show()
+        end
+    end)
+
+    local inviteBtn = UI:CreateButton(bottomBar, L["Invite"], 70, 22)
+    inviteBtn:SetPoint("RIGHT", -12, 0)
+
+    local function DoInvite()
+        local target = strtrim(inviteBox:GetText() or "")
+        if target == "" then
+            BRutus:Print(L["Enter a player name to invite."])
+            return
+        end
+        GuildInvite(target)
+        BRutus:Print(string.format(L["Guild invite sent to %s."], target))
+        inviteBox:SetText("")
+        inviteBox:ClearFocus()
+    end
+
+    inviteBtn:SetScript("OnClick", DoInvite)
+    inviteBox:SetScript("OnEnterPressed", function(self)
+        DoInvite()
+        self:ClearFocus()
+    end)
+    inviteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    frame.inviteBox = inviteBox
+    frame.inviteBtn = inviteBtn
+
+    -- Show/hide invite based on permission
+    local function UpdateInviteVisibility()
+        if CanGuildInvite() then
+            inviteBox:Show()
+            inviteBtn:Show()
+        else
+            inviteBox:Hide()
+            inviteBtn:Hide()
+        end
+    end
+
+    frame:HookScript("OnShow", UpdateInviteVisibility)
+
     -- ESC to close
     table.insert(UISpecialFrames, "BRutusRosterFrame")
 
@@ -1509,8 +1523,8 @@ end
 ----------------------------------------------------------------------
 -- Create a single roster row
 ----------------------------------------------------------------------
-function CreateRosterRow(parent, rowIndex)
-    local row = CreateFrame("Button", "BRutusRow" .. rowIndex, parent, "BackdropTemplate")
+function CreateRosterRow(parent, rowIndex, uid)
+    local row = CreateFrame("Button", "BRutusRow" .. (uid or "") .. rowIndex, parent, "BackdropTemplate")
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:SetHeight(ROW_HEIGHT)
     row:SetPoint("TOPLEFT", 0, -((rowIndex - 1) * ROW_HEIGHT))
@@ -1524,28 +1538,25 @@ function CreateRosterRow(parent, rowIndex)
     row:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
     row.defaultBg = bgColor
 
-    -- Row elements
-    local xOff = 10
+    -- Row elements. None of them is positioned here: ApplyColumns below
+    -- places every cell from a resolved layout, so the same row works at
+    -- any window width.
 
-    -- Status indicator (online dot)
+    -- Status indicator (online dot) — rides inside the name cell
     local statusDot = row:CreateTexture(nil, "OVERLAY")
     statusDot:SetSize(8, 8)
-    statusDot:SetPoint("LEFT", xOff + 6, 0)
     statusDot:SetTexture("Interface\\COMMON\\Indicator-Green")
     row.statusDot = statusDot
-    xOff = xOff + COLUMNS[1].width
 
     -- Class icon + Name
     local classIcon = row:CreateTexture(nil, "OVERLAY")
     classIcon:SetSize(20, 20)
-    classIcon:SetPoint("LEFT", xOff, 0)
     classIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.classIcon = classIcon
 
     local nameText = row:CreateFontString(nil, "OVERLAY")
     nameText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     nameText:SetPoint("LEFT", classIcon, "RIGHT", 5, 0)
-    nameText:SetWidth(COLUMNS[2].width - 28)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
     row.nameText = nameText
@@ -1558,73 +1569,75 @@ function CreateRosterRow(parent, rowIndex)
     addonDot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
     addonDot:Hide()
     row.addonDot = addonDot
-    xOff = xOff + COLUMNS[2].width
 
-    -- Level
-    local levelText = row:CreateFontString(nil, "OVERLAY")
-    levelText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
-    levelText:SetPoint("LEFT", xOff, 0)
-    levelText:SetWidth(COLUMNS[3].width)
-    levelText:SetJustifyH("CENTER")
-    row.levelText = levelText
-    xOff = xOff + COLUMNS[3].width
+    local function cell(size, justify, colour)
+        local fs = row:CreateFontString(nil, "OVERLAY")
+        fs:SetFont("Fonts\\FRIZQT__.TTF", size, "OUTLINE")
+        fs:SetJustifyH(justify)
+        fs:SetWordWrap(false)
+        if colour then fs:SetTextColor(colour.r, colour.g, colour.b) end
+        return fs
+    end
 
-    -- Class name
-    local classText = row:CreateFontString(nil, "OVERLAY")
-    classText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    classText:SetPoint("LEFT", xOff, 0)
-    classText:SetWidth(COLUMNS[4].width)
-    classText:SetJustifyH("LEFT")
-    row.classText = classText
-    xOff = xOff + COLUMNS[4].width
+    row.levelText    = cell(13, "CENTER")
+    row.classText    = cell(11, "LEFT")
+    row.raceText     = cell(11, "LEFT", C.silver)
+    row.ilvlText     = cell(12, "CENTER")
+    row.profText     = cell(10, "LEFT")
+    row.zoneText     = cell(10, "LEFT")
+    row.lastSeenText = cell(10, "RIGHT", C.silver)
 
-    -- Race
-    local raceText = row:CreateFontString(nil, "OVERLAY")
-    raceText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    raceText:SetPoint("LEFT", xOff, 0)
-    raceText:SetWidth(COLUMNS[5].width)
-    raceText:SetJustifyH("LEFT")
-    raceText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    row.raceText = raceText
-    xOff = xOff + COLUMNS[5].width
+    -- Which elements belong to which column, so a dropped column takes
+    -- everything it owns with it.
+    row.cells = {
+        name        = { nameText, classIcon, statusDot, addonDot },
+        level       = { row.levelText },
+        class       = { row.classText },
+        avgIlvl     = { row.ilvlText },
+        race        = { row.raceText },
+        lastSeen    = { row.lastSeenText },
+        professions = { row.profText },
+        zone        = { row.zoneText },
+    }
 
-    -- Average iLvl
-    local ilvlText = row:CreateFontString(nil, "OVERLAY")
-    ilvlText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-    ilvlText:SetPoint("LEFT", xOff, 0)
-    ilvlText:SetWidth(COLUMNS[6].width)
-    ilvlText:SetJustifyH("CENTER")
-    row.ilvlText = ilvlText
-    xOff = xOff + COLUMNS[6].width
+    -- Reposition every cell from a resolved layout. Runs once per row per
+    -- resize, never per data update.
+    function row:ApplyColumns(layout)
+        for _, col in ipairs(layout) do
+            local group = self.cells[col.key]
+            if group then
+                for _, el in ipairs(group) do el:SetShown(col.shown) end
+            end
+        end
+        -- addonDot has its own visibility rule (set per member in
+        -- UpdateRosterRow); the layout must not force it back on.
+        if not self.__hasAddon then self.addonDot:Hide() end
 
-    -- Professions
-    local profText = row:CreateFontString(nil, "OVERLAY")
-    profText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    profText:SetPoint("LEFT", xOff, 0)
-    profText:SetWidth(COLUMNS[7].width)
-    profText:SetJustifyH("LEFT")
-    profText:SetWordWrap(false)
-    row.profText = profText
-    xOff = xOff + COLUMNS[7].width
+        local byKey = layout.byKey
+        local nameCol = byKey.name
+        if nameCol and nameCol.shown then
+            self.statusDot:ClearAllPoints()
+            self.statusDot:SetPoint("LEFT", ROW_INSET + nameCol.x + 6, 0)
+            self.classIcon:ClearAllPoints()
+            self.classIcon:SetPoint("LEFT", ROW_INSET + nameCol.x + 20, 0)
+            self.nameText:SetWidth(math.max(20, nameCol.w - 48))
+        end
 
-    -- Zone
-    local zoneText = row:CreateFontString(nil, "OVERLAY")
-    zoneText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    zoneText:SetPoint("LEFT", xOff, 0)
-    zoneText:SetWidth(COLUMNS[8].width)
-    zoneText:SetJustifyH("LEFT")
-    zoneText:SetWordWrap(false)
-    row.zoneText = zoneText
-    xOff = xOff + COLUMNS[8].width
-
-    -- Last Seen
-    local lastSeenText = row:CreateFontString(nil, "OVERLAY")
-    lastSeenText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    lastSeenText:SetPoint("LEFT", xOff, 0)
-    lastSeenText:SetWidth(COLUMNS[9].width)
-    lastSeenText:SetJustifyH("RIGHT")
-    lastSeenText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    row.lastSeenText = lastSeenText
+        local function place(key, fs)
+            local col = byKey[key]
+            if not col or not col.shown then return end
+            fs:ClearAllPoints()
+            fs:SetPoint("LEFT", ROW_INSET + col.x, 0)
+            fs:SetWidth(col.w)
+        end
+        place("level",       self.levelText)
+        place("class",       self.classText)
+        place("avgIlvl",     self.ilvlText)
+        place("race",        self.raceText)
+        place("lastSeen",    self.lastSeenText)
+        place("professions", self.profText)
+        place("zone",        self.zoneText)
+    end
 
     -- Hover effects
     row:SetScript("OnEnter", function(self)
@@ -1698,7 +1711,10 @@ function UpdateRosterRow(row, data, rowIndex)
     row.nameText:SetText(data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
-    -- Addon data indicator
+    -- Addon data indicator. __hasAddon is remembered so a later layout
+    -- pass (which shows every element the name column owns) does not
+    -- resurrect the dot on a member who has no addon data.
+    row.__hasAddon = data.hasAddonData and true or false
     if data.hasAddonData then
         row.addonDot:Show()
         if data.addonVersion and CompareVersions(data.addonVersion, BRutus.VERSION) < 0 then
@@ -2625,6 +2641,9 @@ end
 -- Recruitment Panel UI
 ----------------------------------------------------------------------
 function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
+    recruitInstances = recruitInstances + 1
+    local uid = recruitInstances > 1 and tostring(recruitInstances) or ""
+
     ----------------------------------------------------------------
     -- Member view (non-officer): read-only recruitment status
     ----------------------------------------------------------------
@@ -2641,12 +2660,17 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         discordHeader:SetPoint("TOPLEFT", 20, -60)
         local discordText = UI:CreateText(parent, "—", 11, C.accent.r, C.accent.g, C.accent.b)
         discordText:SetPoint("LEFT", discordHeader, "RIGHT", 8, 0)
-        discordText:SetWidth(400)
 
         -- Recruitment message preview
         local msgText = UI:CreateText(parent, "", 11, C.silver.r, C.silver.g, C.silver.b)
         msgText:SetPoint("TOPLEFT", 20, -84)
-        msgText:SetWidth(700)
+
+        -- Both were fixed at 400/700, which is wider than the window this
+        -- panel now opens in.
+        UI:MakeResponsive(parent, function(_, w)
+            discordText:SetWidth(math.max(120, w - 200))
+            msgText:SetWidth(math.max(160, w - 40))
+        end)
 
         -- Action row separator
         local actionSep = UI:CreateSeparator(parent)
@@ -2735,10 +2759,11 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     local root = parent
 
+    -- Left-anchored: UI:FlowBar reads GetWidth, and a frame pinned on both
+    -- sides reports a stale width in the frame its container was resized.
     local bar = CreateFrame("Frame", nil, root)
     bar:SetPoint("TOPLEFT", 10, -8)
-    bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetSize(300, 28)
 
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, root)
@@ -2780,20 +2805,42 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         { key = "recruiting", label = L["Recruiting"] },
         { key = "scanner",    label = L["Scanner"] },
     }
-    local x = 0
+    local subTabList = {}
     for _, t in ipairs(RECRUIT_SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 116)
-        btn:SetPoint("LEFT", x, 0)
+        local btn = UI:CreateTab(bar, t.label, 90)
+        btn:SetWidth(math.max(90, math.ceil(btn.label:GetStringWidth()) + 20))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + 120
+        subTabList[#subTabList + 1] = btn
     end
+
+    -- The Recruiting sub-tab is a tall stack of sections (Auto-Recruit,
+    -- Welcome, Beacon) whose natural height is well over the window's.
+    -- Anchoring alone cannot fix that, so it gets a real scroll frame and
+    -- the stack builds into the scroll child.
+    --
+    -- CreateScrollFrame does NOT anchor the frame it returns: without
+    -- these four points the content clips to 0x0 and the whole panel
+    -- renders blank, with no Lua error to explain it.
+    local recruitScroll, recruitContent =
+        UI:CreateScrollFrame(recruitingSub, "GuildOSRecruitScroll" .. uid)
+    recruitScroll:SetPoint("TOPLEFT", 0, 0)
+    recruitScroll:SetPoint("BOTTOMRIGHT", -22, 0)
+    recruitContent:SetSize(1, 1)
 
     -- Everything below builds onto `parent`, unchanged since before the
     -- sub-tabs existed. Retargeting it here means the whole "Auto-Recruit
-    -- / Welcome / Beacon" block transparently becomes the content of the
-    -- "Recruiting" sub-tab with no further edits required below.
-    parent = recruitingSub
+    -- / Welcome / Beacon" block transparently becomes the scrolling
+    -- content of the "Recruiting" sub-tab with no further edits below.
+    parent = recruitContent
+
+    -- Widgets whose width has to follow the panel instead of a constant.
+    -- `left` is the widget's x inset, `reserve` the room to leave on the
+    -- right (an attached Save button, say).
+    local flex = {}
+    local function flexWidth(widget, left, reserve)
+        flex[#flex + 1] = { widget = widget, left = left, reserve = reserve or 0 }
+    end
 
     local yOff = -15
 
@@ -2822,7 +2869,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Info note about Blizzard restriction
     local infoNote = UI:CreateText(parent, L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."], 10, 0.7, 0.55, 0.2)
     infoNote:SetPoint("TOPLEFT", 30, yOff)
-    infoNote:SetWidth(700)
+    flexWidth(infoNote, 30)
     yOff = yOff - 18
 
     -- Status + toggle
@@ -2934,7 +2981,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Message
     RowLabel(L["Message:"], yOff)
     local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    msgBox:SetSize(680, 40)
+    msgBox:SetHeight(40)
+    flexWidth(msgBox, 30, 66)   -- 66 = the attached Save button
     msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3001,7 +3049,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Discord link
     RowLabel(L["Discord:"], yOff)
     local discordBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    discordBox:SetSize(400, 22)
+    discordBox:SetHeight(22)
+    flexWidth(discordBox, 140, 66)
     discordBox:SetPoint("TOPLEFT", 140, yOff)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3025,7 +3074,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Welcome message
     RowLabel(L["Welcome Msg:"], yOff)
     local welcomeBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    welcomeBox:SetSize(680, 40)
+    welcomeBox:SetHeight(40)
+    flexWidth(welcomeBox, 30, 66)
     welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3094,5 +3144,22 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
     root:SetScript("OnShow", function()
         selectSub(root.activeSub or "recruiting")
+    end)
+
+    ----------------------------------------------------------------
+    -- Layout: the sub-tab bar wraps, and every flexible widget follows
+    -- the scroll content's width. The stack's own height is fixed by how
+    -- far yOff walked, which is what gives the scroll frame its range.
+    ----------------------------------------------------------------
+    local stackHeight = math.max(1, -yOff + 60)
+    UI:MakeResponsive(root, function(_, w, _)
+        bar:SetWidth(math.max(180, w - 20))
+        UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = 28 })
+
+        local contentW = math.max(200, w - 24)
+        recruitContent:SetSize(contentW, stackHeight)
+        for _, f in ipairs(flex) do
+            f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
+        end
     end)
 end

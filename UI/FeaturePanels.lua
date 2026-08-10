@@ -358,8 +358,9 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     UI:SkinScrollBar(sessionScroll, "BRutusRaidSessionScroll")
 
     local sessionContent = CreateFrame("Frame", nil, sessionScroll)
-    sessionContent:SetSize(800, 1)
+    sessionContent:SetSize(1, 1)
     sessionScroll:SetScrollChild(sessionContent)
+    UI:BindScrollChildWidth(sessionScroll, sessionContent)
 
     ----------------------------------------------------------------
     -- Attendance section (bottom ~50%)
@@ -374,8 +375,9 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     UI:SkinScrollBar(attScroll, "BRutusAttendanceScroll")
 
     local attContent = CreateFrame("Frame", nil, attScroll)
-    attContent:SetSize(800, 1)
+    attContent:SetSize(1, 1)
     attScroll:SetScrollChild(attContent)
+    UI:BindScrollChildWidth(attScroll, attContent)
 
     ----------------------------------------------------------------
     -- Filter button wiring
@@ -926,8 +928,9 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     UI:SkinScrollBar(lootScroll, "BRutusLootScroll")
 
     local lootContent = CreateFrame("Frame", nil, lootScroll)
-    lootContent:SetSize(800, 1)
+    lootContent:SetSize(1, 1)
     lootScroll:SetScrollChild(lootContent)
+    UI:BindScrollChildWidth(lootScroll, lootContent)
 
     ----------------------------------------------------------------
     -- Equity view
@@ -962,8 +965,9 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     UI:SkinScrollBar(eqScroll, "BRutusLootEquityScroll")
 
     local eqContent = CreateFrame("Frame", nil, eqScroll)
-    eqContent:SetSize(800, 1)
+    eqContent:SetSize(1, 1)
     eqScroll:SetScrollChild(eqContent)
+    UI:BindScrollChildWidth(eqScroll, eqContent)
 
     ----------------------------------------------------------------
     -- SoftRes view
@@ -1000,8 +1004,9 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     UI:SkinScrollBar(srScroll, "BRutusSoftResScroll")
 
     local srContent = CreateFrame("Frame", nil, srScroll)
-    srContent:SetSize(800, 1)
+    srContent:SetSize(1, 1)
     srScroll:SetScrollChild(srContent)
+    UI:BindScrollChildWidth(srScroll, srContent)
 
     local function refreshSR()
         for _, child in pairs({ srContent:GetChildren() }) do child:Hide() end
@@ -1280,8 +1285,9 @@ function BRutus:CreateTrialsPanel(parent, _mainFrame)
     UI:SkinScrollBar(trialScroll, "BRutusTrialScroll")
 
     local trialContent = CreateFrame("Frame", nil, trialScroll)
-    trialContent:SetSize(800, 1)
+    trialContent:SetSize(1, 1)
     trialScroll:SetScrollChild(trialContent)
+    UI:BindScrollChildWidth(trialScroll, trialContent)
 
     parent.trialContent = trialContent
     parent.statusText = statusText
@@ -1723,6 +1729,118 @@ function BRutus:ShowSoftResImportPopup()
 end
 
 ----------------------------------------------------------------------
+-- Companion import popup: paste the roster string from the website.
+-- Invite and group sit on the same window because they are the next two
+-- things a raid leader does, and making them hunt for a slash command
+-- while twenty-five people wait is how a feature goes unused.
+----------------------------------------------------------------------
+function BRutus:ShowImportPopup()
+    if self.companionImportPopup then self.companionImportPopup:Hide() end
+
+    local f = CreateFrame("Frame", "BRutusCompanionImportPopup", UIParent, "BackdropTemplate")
+    f:SetSize(520, 380)
+    f:SetPoint("CENTER")
+    f:SetBackdrop({
+        bgFile   = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
+
+    local titleText = f:CreateFontString(nil, "OVERLAY")
+    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    titleText:SetPoint("TOP", 0, -10)
+    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    titleText:SetText(L["Raid roster from the website"])
+
+    local hint = f:CreateFontString(nil, "OVERLAY")
+    hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    hint:SetPoint("TOP", 0, -28)
+    hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    hint:SetText(L["Paste the roster string, then Load. Invite and Groups work after that."])
+
+    local status = f:CreateFontString(nil, "OVERLAY")
+    status:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    status:SetPoint("BOTTOMLEFT", 14, 16)
+    status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+
+    -- Whatever was loaded earlier survives a reload, so say so on open.
+    local existing = BRutus.CompanionImport and BRutus.CompanionImport:Current()
+    if existing then
+        status:SetText(string.format(L["Loaded: %s (%d)"], existing.title, #existing.members))
+    end
+
+    local scrollFrame = CreateFrame("ScrollFrame", "BRutusCompanionImportScroll", f, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 12, -50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -12, 76)
+    UI:SkinScrollBar(scrollFrame, "BRutusCompanionImportScroll")
+
+    local editBox = CreateFrame("EditBox", nil, scrollFrame)
+    editBox:SetMultiLine(true)
+    editBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
+    editBox:SetWidth(scrollFrame:GetWidth() - 10)
+    editBox:SetAutoFocus(true)
+    editBox:SetScript("OnEscapePressed", function() f:Hide() end)
+    scrollFrame:SetScrollChild(editBox)
+
+    local closeBtn = UI:CreateCloseButton(f)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
+    loadBtn:SetPoint("BOTTOMRIGHT", -12, 44)
+    loadBtn:SetScript("OnClick", function()
+        local n, err = BRutus.CompanionImport:Load(editBox:GetText())
+        if err then
+            status:SetTextColor(1, 0.35, 0.35)
+            status:SetText(err)
+        else
+            local r = BRutus.CompanionImport:Current()
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(string.format(L["Loaded: %s (%d)"], r.title, n))
+        end
+    end)
+
+    local inviteBtn = UI:CreateButton(f, L["Invite all"], 90, 26)
+    inviteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -6, 0)
+    inviteBtn:SetScript("OnClick", function()
+        local n, skipped, err = BRutus.CompanionImport:InviteAll()
+        if err then
+            status:SetTextColor(1, 0.35, 0.35)
+            status:SetText(err)
+        else
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(string.format(L["Invited %d, already here %d."], n, skipped))
+        end
+    end)
+
+    local groupsBtn = UI:CreateButton(f, L["Groups"], 90, 26)
+    groupsBtn:SetPoint("RIGHT", inviteBtn, "LEFT", -6, 0)
+    groupsBtn:SetScript("OnClick", function()
+        local moved, err = BRutus.CompanionImport:OrganizeGroups()
+        if err then
+            status:SetTextColor(1, 0.35, 0.35)
+            status:SetText(err)
+        else
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(string.format(L["Moved %d into their groups."], moved))
+        end
+    end)
+
+    f:Show()
+    self.companionImportPopup = f
+end
+
+----------------------------------------------------------------------
 -- SETTINGS PANEL
 ----------------------------------------------------------------------
 function BRutus:CreateSettingsPanel(parent, _mainFrame)
@@ -1810,66 +1928,67 @@ function BRutus:RefreshSettingsPanel(content, category)
     yOff = yOff + 12
 
     --------------------------------------------------------------------
+    -- UI SCALE
+    --------------------------------------------------------------------
+    local scaleLabel = UI:CreateText(content, L["UI scale"], 11, C.text.r, C.text.g, C.text.b)
+    scaleLabel:SetPoint("TOPLEFT", 0, -yOff)
+
+    local scale = CreateFrame("Slider", "GuildOSScaleSlider", content, "OptionsSliderTemplate")
+    scale:SetPoint("TOPLEFT", 120, -yOff)
+    scale:SetWidth(180)
+    scale:SetMinMaxValues(0.8, 1.2)
+    scale:SetValueStep(0.05)
+    scale:SetObeyStepOnDrag(true)
+    scale:SetValue(BRutus:GetSetting("uiScale") or 1)
+    _G[scale:GetName() .. "Low"]:SetText("80%")
+    _G[scale:GetName() .. "High"]:SetText("120%")
+    _G[scale:GetName() .. "Text"]:SetText(string.format("%d%%", (BRutus:GetSetting("uiScale") or 1) * 100))
+    scale:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value * 20 + 0.5) / 20   -- snap to the 0.05 step
+        BRutus:SetSetting("uiScale", value)
+        _G[self:GetName() .. "Text"]:SetText(string.format("%d%%", value * 100))
+        UI:ApplyScale()
+    end)
+    yOff = yOff + 40
+
+    --------------------------------------------------------------------
     -- MODULE TOGGLES
     --------------------------------------------------------------------
     local sectionTitle = UI:CreateHeaderText(content, L["MODULES"], 12)
     sectionTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
-    -- Ensure modules table exists
-    if not BRutus.db.settings.modules then
-        BRutus.db.settings.modules = {
-            raidTracker = true, lootTracker = true, lootMaster = true,
-            consumableChecker = true, recruitment = true, trialTracker = true,
-            officerNotes = true, commSystem = true,
-            raidHUD = true,
-        }
-    end
-    local mods = BRutus.db.settings.modules
-
-    local modules = {
-        { key = "raidTracker",       label = L["Raid Tracker"],         desc = L["Track raid attendance, penalties, and sessions"], officerOnly = true },
-        { key = "lootTracker",       label = L["Loot Tracker"],         desc = L["Record loot drops from boss kills"] },
-        { key = "lootMaster",        label = L["Loot Master"],          desc = L["Master Loot with wishlist auto-council"] },
-        { key = "consumableChecker", label = L["Consumable Checker"],   desc = L["Scan raid for missing flasks/food/elixirs"] },
-        { key = "raidHUD",           label = L["Raid CD Tracker"],      desc = L["Floating tracker for raid cooldowns and consumable check"] },
-
-        { key = "trialTracker",      label = L["Trial Tracker"],        desc = L["Track trial member progress (officer)"], officerOnly = true },
-        { key = "officerNotes",      label = L["Officer Notes"],        desc = L["Private notes on guild members (officer)"], officerOnly = true },
-        { key = "recruitment",       label = L["Recruitment"],          desc = L["Auto-post recruitment messages (officer)"], officerOnly = true },
-        { key = "commSystem",        label = L["Comm System"],          desc = L["Sync member data between addon users"] },
-    }
-
-    for _, mod in ipairs(modules) do
-        if not mod.officerOnly or isOfficer then
+    -- Toggles come from the feature registry. AllFeatures, not
+    -- VisibleFeatures: a disabled feature must keep its checkbox, or
+    -- there is no way left to switch it back on. `core` features have no
+    -- switch at all — turning Settings or Roster off would lock the user out.
+    for _, def in ipairs(UI:AllFeatures(nil)) do
+        if not def.core then
         local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
         row:SetSize(content:GetWidth() - 10, 36)
         row:SetPoint("TOPLEFT", 0, -yOff)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         row:SetBackdropColor(0.082, 0.082, 0.105, 0.5)
 
-        local cb = UI:CreateCheckbox(row, mod.label, 18)
+        local cb = UI:CreateCheckbox(row, def.label, 18)
         cb:SetPoint("LEFT", 8, 0)
-        cb.checkbox:SetChecked(mods[mod.key] ~= false)
+        cb.checkbox:SetChecked(BRutus:IsFeatureEnabled(def.id))
         cb.checkbox.onChanged = function(_, checked)
-            -- GetChecked() returns true or nil (never false) in WoW TBC.
-            -- Explicitly store false so modEnabled() sees ~= false correctly.
-            mods[mod.key] = checked and true or false
-            -- Loot Master supports live toggling (SetEnabled); other modules
-            -- still register their events only at Initialize, so they need a reload.
-            if mod.key == "lootMaster" and BRutus.LootMaster and BRutus.LootMaster.SetEnabled then
-                BRutus.LootMaster:SetEnabled(mods[mod.key])
-                BRutus:Print(mod.label .. (checked
-                    and L[" |cff00ff00enabled|r."]
-                    or  L[" |cffFF4444disabled|r."]))
-            elseif checked then
-                BRutus:Print(mod.label .. L[" |cff00ff00enabled|r. Reload UI to apply."])
-            else
-                BRutus:Print(mod.label .. L[" |cffFF4444disabled|r. Reload UI to apply."])
+            BRutus:SetFeatureEnabled(def.id, checked)
+            -- Windows are lazy, so UI features toggle live. Background
+            -- modules register their events at Initialize, so only those
+            -- still need a reload.
+            local needsReload = def.module and not def.hub
+            BRutus:Print(def.label .. (checked
+                and L[" |cff00ff00enabled|r."]
+                or  L[" |cffFF4444disabled|r."])
+                .. (needsReload and L[" Reload UI to apply."] or ""))
+            if def.id == "lootMaster" and BRutus.LootMaster and BRutus.LootMaster.SetEnabled then
+                BRutus.LootMaster:SetEnabled(checked and true or false)
             end
         end
 
-        local desc = UI:CreateText(row, mod.desc, 9, C.silver.r, C.silver.g, C.silver.b)
+        local desc = UI:CreateText(row, def.desc or "", 9, C.silver.r, C.silver.g, C.silver.b)
         desc:SetPoint("LEFT", 240, 0)
         desc:SetWidth(400)
 
@@ -1962,6 +2081,17 @@ function BRutus:RefreshSettingsPanel(content, category)
     digestCb.checkbox.onChanged = function(_, checked)
         BRutus.db.digest = BRutus.db.digest or {}
         BRutus.db.digest.enabled = checked and true or false
+    end
+    yOff = yOff + 30
+
+    local pulseCb = UI:CreateCheckbox(content, L["Show live info on the hub"], 18)
+    pulseCb:SetPoint("TOPLEFT", 8, -yOff)
+    pulseCb.checkbox:SetChecked((BRutus:GetSetting("hub") or {}).pulse ~= false)
+    pulseCb.checkbox.onChanged = function(_, checked)
+        local h = BRutus:GetSetting("hub")
+        if type(h) ~= "table" then h = {}; BRutus:SetSetting("hub", h) end
+        h.pulse = checked and true or false
+        if UI.Hub and UI.Hub.Refresh then UI.Hub:Refresh() end
     end
     yOff = yOff + 30
 

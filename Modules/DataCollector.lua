@@ -573,10 +573,12 @@ function DataCollector:StoreReceivedData(playerKey, data)
         BRutus.TrialTracker:UpdateSnapshots()
     end
 
-    -- Refresh UI if open
-    if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-        BRutus.RosterFrame:RefreshRoster()
-    end
+    -- Refresh UI if open. Routed through RefreshRosterUI (not a direct
+    -- BRutus.RosterFrame:RefreshRoster() call) because the Roster tab builds
+    -- lazily now — RefreshRoster does not exist until that tab has been
+    -- activated at least once, and RefreshRosterUI nil-guards for that and
+    -- also covers the floating roster window.
+    BRutus:RefreshRosterUI()
 end
 
 ----------------------------------------------------------------------

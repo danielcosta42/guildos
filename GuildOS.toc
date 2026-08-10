@@ -81,6 +81,7 @@ Modules\Readiness.lua
 Modules\Resistances.lua
 Modules\ExportImport.lua
 Modules\CompanionExport.lua
+Modules\CompanionImport.lua
 Modules\Points.lua
 Modules\LootEquity.lua
 Modules\Digest.lua
@@ -103,6 +104,10 @@ Modules\PugInspector.lua
 
 # UI
 UI\Helpers.lua
+UI\Layout.lua
+UI\FeatureRegistry.lua
+UI\Window.lua
+UI\Hub.lua
 UI\Dashboard.lua
 UI\RaiderPanel.lua
 UI\RecipesPanel.lua
@@ -124,3 +129,4 @@ UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
 UI\RaidHUD.lua
+UI\Features.lua

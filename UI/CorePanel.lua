@@ -142,6 +142,7 @@ function BRutus:CreateCoresPanel(panel)
     local listContent = CreateFrame("Frame", nil, listScroll)
     listContent:SetSize(LIST_W - 14, 1)
     listScroll:SetScrollChild(listContent)
+    UI:BindScrollChildWidth(listScroll, listContent)
 
     -- "New core" input + button at the bottom of the list column
     local newInput = MakeInput(leftCol, LIST_W - 80, false, L["Core name"])
@@ -158,8 +159,11 @@ function BRutus:CreateCoresPanel(panel)
     UI:SkinScrollBar(rightScroll, "GuildOSCoreSettingsScroll")
 
     local rightContent = CreateFrame("Frame", nil, rightScroll)
+    -- CFG_W was derived from the old fixed panel width; the settings
+    -- column now follows whatever the window actually is.
     rightContent:SetSize(CFG_W - 20, 1)
     rightScroll:SetScrollChild(rightContent)
+    UI:BindScrollChildWidth(rightScroll, rightContent)
 
     -- Placeholder shown when no core is selected
     local noCoreLbl = MakeLabel(rightContent, L["Select or create a core on the left."],

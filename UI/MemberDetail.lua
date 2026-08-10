@@ -184,9 +184,8 @@ function CreateDetailFrame()
     frame.altTagText = altTagText
 
     -- Close button
-    local closeBtn = UI:CreateCloseButton(titleBar)
+    local closeBtn = UI:TitleBarButton(titleBar, "close")
     closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -12)
-    closeBtn:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
     -- Title line

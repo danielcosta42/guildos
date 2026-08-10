@@ -130,6 +130,10 @@ local function JsonDecode(s)
     return parseValue()
 end
 
+-- Shared, because the companion import needs the same parser and a second
+-- hand-written JSON decoder in one addon is one too many.
+BRutus.JsonDecode = JsonDecode
+
 ----------------------------------------------------------------------
 -- Initialize: ensure DB keys exist
 ----------------------------------------------------------------------

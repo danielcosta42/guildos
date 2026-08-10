@@ -302,9 +302,7 @@ function TrialTracker:HandleIncoming(data)
     end
 
     -- Refresh UI if open
-    if BRutus.RosterFrame and BRutus.RosterFrame:IsShown() then
-        BRutus.RosterFrame:RefreshRoster()
-    end
+    BRutus:RefreshRosterUI()
 end
 
 -- Merge notes from incoming into existing, avoiding duplicates
