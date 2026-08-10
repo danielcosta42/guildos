@@ -184,6 +184,26 @@ function UI:FlowBar(bar, buttons, opts)
 end
 
 ----------------------------------------------------------------------
+-- Keep a scroll frame's child as wide as the frame itself.
+--
+-- A scroll child is sized in code, not by anchors: SetScrollChild ignores
+-- the child's points for width. That is why every scrolling panel in the
+-- addon had a hardcoded width baked in, which either clipped its rows or
+-- let them spill once the window stopped being the one fixed size.
+----------------------------------------------------------------------
+function UI:BindScrollChildWidth(scrollFrame, child, inset)
+    inset = inset or 0
+    local function apply()
+        local w = scrollFrame:GetWidth()
+        if w and w > 1 then child:SetWidth(math.max(1, w - inset)) end
+    end
+    scrollFrame:SetScript("OnSizeChanged", apply)
+    scrollFrame:HookScript("OnShow", apply)
+    apply()
+    return apply
+end
+
+----------------------------------------------------------------------
 -- Re-run `layoutFn` whenever the container is resized. A grip drag
 -- fires OnSizeChanged many times per second, so the work is coalesced
 -- into one call per frame. Also fires once on the first OnShow, so the
@@ -351,6 +371,25 @@ function UI:_RegisterLayoutTests()
     -- bar swallows it. UI/RosterFrame.lua had the fix inline; every other
     -- title bar was missing it, which killed every close button in the
     -- addon. UI:TitleBarButton is now the only way to build one.
+    S:Register("layout.scroll_child_follows_frame", function()
+        if not UI.BindScrollChildWidth then return false, "BindScrollChildWidth missing" end
+        local scroll = CreateFrame("ScrollFrame", nil, UIParent)
+        local child  = CreateFrame("Frame", nil, scroll)
+        scroll:SetWidth(600)
+        UI:BindScrollChildWidth(scroll, child, 10)
+        if child:GetWidth() ~= 590 then
+            return false, "initial width " .. child:GetWidth() .. ", want 590"
+        end
+        scroll:SetWidth(300)
+        local onSize = scroll:GetScript("OnSizeChanged")
+        if not onSize then return false, "OnSizeChanged was not registered" end
+        onSize(scroll)
+        if child:GetWidth() ~= 290 then
+            return false, "after resize width " .. child:GetWidth() .. ", want 290"
+        end
+        return true
+    end)
+
     S:Register("ui.titlebar_button_outranks_bar", function()
         if not UI.TitleBarButton then return false, "UI:TitleBarButton missing" end
         local host = CreateFrame("Frame", nil, UIParent)

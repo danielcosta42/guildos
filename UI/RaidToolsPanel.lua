@@ -26,6 +26,7 @@ local function MakeScrollList(panel, name, topInset)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(1, 1)
     scroll:SetScrollChild(content)
+    UI:BindScrollChildWidth(scroll, content)
     return scroll, content
 end
 

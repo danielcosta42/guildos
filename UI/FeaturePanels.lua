@@ -358,8 +358,9 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     UI:SkinScrollBar(sessionScroll, "BRutusRaidSessionScroll")
 
     local sessionContent = CreateFrame("Frame", nil, sessionScroll)
-    sessionContent:SetSize(800, 1)
+    sessionContent:SetSize(1, 1)
     sessionScroll:SetScrollChild(sessionContent)
+    UI:BindScrollChildWidth(sessionScroll, sessionContent)
 
     ----------------------------------------------------------------
     -- Attendance section (bottom ~50%)
@@ -374,8 +375,9 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     UI:SkinScrollBar(attScroll, "BRutusAttendanceScroll")
 
     local attContent = CreateFrame("Frame", nil, attScroll)
-    attContent:SetSize(800, 1)
+    attContent:SetSize(1, 1)
     attScroll:SetScrollChild(attContent)
+    UI:BindScrollChildWidth(attScroll, attContent)
 
     ----------------------------------------------------------------
     -- Filter button wiring
@@ -926,8 +928,9 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     UI:SkinScrollBar(lootScroll, "BRutusLootScroll")
 
     local lootContent = CreateFrame("Frame", nil, lootScroll)
-    lootContent:SetSize(800, 1)
+    lootContent:SetSize(1, 1)
     lootScroll:SetScrollChild(lootContent)
+    UI:BindScrollChildWidth(lootScroll, lootContent)
 
     ----------------------------------------------------------------
     -- Equity view
@@ -962,8 +965,9 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     UI:SkinScrollBar(eqScroll, "BRutusLootEquityScroll")
 
     local eqContent = CreateFrame("Frame", nil, eqScroll)
-    eqContent:SetSize(800, 1)
+    eqContent:SetSize(1, 1)
     eqScroll:SetScrollChild(eqContent)
+    UI:BindScrollChildWidth(eqScroll, eqContent)
 
     ----------------------------------------------------------------
     -- SoftRes view
@@ -1000,8 +1004,9 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
     UI:SkinScrollBar(srScroll, "BRutusSoftResScroll")
 
     local srContent = CreateFrame("Frame", nil, srScroll)
-    srContent:SetSize(800, 1)
+    srContent:SetSize(1, 1)
     srScroll:SetScrollChild(srContent)
+    UI:BindScrollChildWidth(srScroll, srContent)
 
     local function refreshSR()
         for _, child in pairs({ srContent:GetChildren() }) do child:Hide() end
@@ -1280,8 +1285,9 @@ function BRutus:CreateTrialsPanel(parent, _mainFrame)
     UI:SkinScrollBar(trialScroll, "BRutusTrialScroll")
 
     local trialContent = CreateFrame("Frame", nil, trialScroll)
-    trialContent:SetSize(800, 1)
+    trialContent:SetSize(1, 1)
     trialScroll:SetScrollChild(trialContent)
+    UI:BindScrollChildWidth(trialScroll, trialContent)
 
     parent.trialContent = trialContent
     parent.statusText = statusText

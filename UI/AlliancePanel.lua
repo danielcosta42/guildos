@@ -11,6 +11,18 @@ local C  = BRutus.Colors
 local L  = BRutus.L
 
 local ROW_H = 22
+local TAB_H = 28        -- UI:CreateTab's fixed height
+local TAB_MIN_W = 80    -- narrowest a sub-tab may be drawn
+local TAB_PAD = 20      -- label padding inside a sub-tab
+
+-- Wrapped hint texts whose width has to follow the panel rather than the
+-- fixed 460px they used to assume. Collected per CreateAlliancePanel call
+-- (the builder runs once per container), so the expanded-mode tab and the
+-- floating window never fight over one shared list.
+local flexHints = nil
+local function addFlexHint(fs)
+    if flexHints then flexHints[#flexHints + 1] = fs end
+end
 
 local function ALLY() return BRutus.Alliance end
 
@@ -990,7 +1002,7 @@ local function BuildManage(panel)
     -- normally supplies the contact, so asking up front would be friction
     -- charged to everyone to cover a minority case.
     local joinWarn = UI:CreateText(body, "", 10, C.gold.r, C.gold.g, C.gold.b)
-    joinWarn:SetWidth(460)
+    addFlexHint(joinWarn)
     joinWarn:SetJustifyH("LEFT")
     joinWarn:SetWordWrap(true)
     local contactBox = makeInput(body, 200)
@@ -1046,7 +1058,7 @@ local function BuildManage(panel)
         10, C.textDim.r, C.textDim.g, C.textDim.b)
     -- Vacancy state: shown instead of the list when the guild lost them all.
     local ambWarn = UI:CreateText(body, "", 11, C.red.r, C.red.g, C.red.b)
-    ambWarn:SetWidth(460)
+    addFlexHint(ambWarn)
     ambWarn:SetJustifyH("LEFT")
     ambWarn:SetWordWrap(true)
     local ambClaimBtn = UI:CreateButton(body, L["Claim ambassador"], 170, 24)
@@ -1063,7 +1075,7 @@ local function BuildManage(panel)
     local codeHint = UI:CreateText(body,
         L["A guild with this code joins without anyone having to approve. Anyone in the alliance can be the contact."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    codeHint:SetWidth(460)
+    addFlexHint(codeHint)
     codeHint:SetJustifyH("LEFT")
     codeHint:SetWordWrap(true)
 
@@ -1088,7 +1100,7 @@ local function BuildManage(panel)
     local chatHint = UI:CreateText(body,
         L["A custom channel is public: anyone who guesses the name can join. Keep secrets out of it."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    chatHint:SetWidth(460)
+    addFlexHint(chatHint)
     chatHint:SetJustifyH("LEFT")
     chatHint:SetWordWrap(true)
 
@@ -1450,10 +1462,11 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = nil
 
+    -- Left-anchored: UI:FlowBar reads GetWidth, and a frame pinned on both
+    -- sides reports a stale width in the frame its container was resized.
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
-    bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetSize(400, 28)
 
     local btns = {}
     local function selectSub(key)
@@ -1466,33 +1479,39 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
     parent.SelectSub = selectSub
 
     for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 120)
+        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W)
+        btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         btns[t.key] = btn
     end
 
-    -- Re-anchor left to right over the VISIBLE tabs only, so hiding Chat and
-    -- Bulletin without a pact leaves no gap in the bar.
+    -- Flow the VISIBLE tabs only, so hiding Chat and Bulletin without a
+    -- pact leaves no gap in the bar. UI:FlowBar wraps to a second row when
+    -- the window is too narrow, and its returned height is what pushes the
+    -- sub-panels down.
+    local hasPactNow = false
     local function layoutTabs(hasPact)
-        local x, first = 0, nil
+        hasPactNow = hasPact
+        local visible, first = {}, nil
         for _, t in ipairs(SUBTABS) do
             local btn = btns[t.key]
             local show = hasPact or not t.needsPact
             setShown(btn, show)
             if show then
-                btn:ClearAllPoints()
-                btn:SetPoint("LEFT", x, 0)
-                x = x + 124
+                visible[#visible + 1] = btn
                 first = first or t.key
             end
         end
+        UI:FlowBar(bar, visible, { gap = 4, rowGap = 4, rowH = TAB_H })
         return first
     end
 
+    -- Anchored to the bar, not a fixed offset, so a wrapped two-row tab
+    -- bar pushes the content down instead of hiding behind it.
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", 12, -42)
-        p:SetPoint("BOTTOMRIGHT", -12, 10)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -8)
+        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 10)
         p:Hide()
         return p
     end
@@ -1501,10 +1520,15 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
         chat = BuildChat, overview = BuildOverview,
         bulletin = BuildBulletin, manage = BuildManage,
     }
+    flexHints = {}
     for _, t in ipairs(SUBTABS) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
     end
+    -- Take this instance's list and close the collector, so a second
+    -- container starts a fresh one.
+    local myHints = flexHints
+    flexHints = nil
 
     -- Unread count on the Chat tab, so a message that lands while you are on
     -- another tab is not silently missed.
@@ -1533,5 +1557,16 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
         end
         selectSub(want)
         paintUnread()
+    end)
+
+    ----------------------------------------------------------------
+    -- Layout: the tab bar rewraps and the wrapped hint texts follow the
+    -- panel instead of the fixed 460px they used to assume.
+    ----------------------------------------------------------------
+    UI:MakeResponsive(parent, function(_, w, _)
+        bar:SetWidth(math.max(TAB_MIN_W, w - 20))
+        layoutTabs(hasPactNow)
+        local hintW = math.max(220, w - 90)
+        for _, fs in ipairs(myHints) do fs:SetWidth(hintW) end
     end)
 end
