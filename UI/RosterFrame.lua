@@ -85,6 +85,9 @@ local BOTTOM_BAR_H = 30  -- bottom bar height; every tab panel insets its BOTTOM
 -- container (expanded-mode tab and floating window). The first instance
 -- keeps the historical names so nothing that hardcodes them breaks.
 local rosterInstances = 0
+-- Same reason as rosterInstances: the recruitment builder also runs once
+-- per container, and its scroll frame needs a globally unique name.
+local recruitInstances = 0
 
 ----------------------------------------------------------------------
 -- Re-apply loot-system-dependent visibility (bottom-bar buttons + the
@@ -2638,6 +2641,9 @@ end
 -- Recruitment Panel UI
 ----------------------------------------------------------------------
 function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
+    recruitInstances = recruitInstances + 1
+    local uid = recruitInstances > 1 and tostring(recruitInstances) or ""
+
     ----------------------------------------------------------------
     -- Member view (non-officer): read-only recruitment status
     ----------------------------------------------------------------
@@ -2654,12 +2660,17 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         discordHeader:SetPoint("TOPLEFT", 20, -60)
         local discordText = UI:CreateText(parent, "—", 11, C.accent.r, C.accent.g, C.accent.b)
         discordText:SetPoint("LEFT", discordHeader, "RIGHT", 8, 0)
-        discordText:SetWidth(400)
 
         -- Recruitment message preview
         local msgText = UI:CreateText(parent, "", 11, C.silver.r, C.silver.g, C.silver.b)
         msgText:SetPoint("TOPLEFT", 20, -84)
-        msgText:SetWidth(700)
+
+        -- Both were fixed at 400/700, which is wider than the window this
+        -- panel now opens in.
+        UI:MakeResponsive(parent, function(_, w)
+            discordText:SetWidth(math.max(120, w - 200))
+            msgText:SetWidth(math.max(160, w - 40))
+        end)
 
         -- Action row separator
         local actionSep = UI:CreateSeparator(parent)
@@ -2748,10 +2759,11 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     local root = parent
 
+    -- Left-anchored: UI:FlowBar reads GetWidth, and a frame pinned on both
+    -- sides reports a stale width in the frame its container was resized.
     local bar = CreateFrame("Frame", nil, root)
     bar:SetPoint("TOPLEFT", 10, -8)
-    bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetSize(300, 28)
 
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, root)
@@ -2793,20 +2805,42 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         { key = "recruiting", label = L["Recruiting"] },
         { key = "scanner",    label = L["Scanner"] },
     }
-    local x = 0
+    local subTabList = {}
     for _, t in ipairs(RECRUIT_SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 116)
-        btn:SetPoint("LEFT", x, 0)
+        local btn = UI:CreateTab(bar, t.label, 90)
+        btn:SetWidth(math.max(90, math.ceil(btn.label:GetStringWidth()) + 20))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + 120
+        subTabList[#subTabList + 1] = btn
     end
+
+    -- The Recruiting sub-tab is a tall stack of sections (Auto-Recruit,
+    -- Welcome, Beacon) whose natural height is well over the window's.
+    -- Anchoring alone cannot fix that, so it gets a real scroll frame and
+    -- the stack builds into the scroll child.
+    --
+    -- CreateScrollFrame does NOT anchor the frame it returns: without
+    -- these four points the content clips to 0x0 and the whole panel
+    -- renders blank, with no Lua error to explain it.
+    local recruitScroll, recruitContent =
+        UI:CreateScrollFrame(recruitingSub, "GuildOSRecruitScroll" .. uid)
+    recruitScroll:SetPoint("TOPLEFT", 0, 0)
+    recruitScroll:SetPoint("BOTTOMRIGHT", -22, 0)
+    recruitContent:SetSize(1, 1)
 
     -- Everything below builds onto `parent`, unchanged since before the
     -- sub-tabs existed. Retargeting it here means the whole "Auto-Recruit
-    -- / Welcome / Beacon" block transparently becomes the content of the
-    -- "Recruiting" sub-tab with no further edits required below.
-    parent = recruitingSub
+    -- / Welcome / Beacon" block transparently becomes the scrolling
+    -- content of the "Recruiting" sub-tab with no further edits below.
+    parent = recruitContent
+
+    -- Widgets whose width has to follow the panel instead of a constant.
+    -- `left` is the widget's x inset, `reserve` the room to leave on the
+    -- right (an attached Save button, say).
+    local flex = {}
+    local function flexWidth(widget, left, reserve)
+        flex[#flex + 1] = { widget = widget, left = left, reserve = reserve or 0 }
+    end
 
     local yOff = -15
 
@@ -2835,7 +2869,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Info note about Blizzard restriction
     local infoNote = UI:CreateText(parent, L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."], 10, 0.7, 0.55, 0.2)
     infoNote:SetPoint("TOPLEFT", 30, yOff)
-    infoNote:SetWidth(700)
+    flexWidth(infoNote, 30)
     yOff = yOff - 18
 
     -- Status + toggle
@@ -2947,7 +2981,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Message
     RowLabel(L["Message:"], yOff)
     local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    msgBox:SetSize(680, 40)
+    msgBox:SetHeight(40)
+    flexWidth(msgBox, 30, 66)   -- 66 = the attached Save button
     msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3014,7 +3049,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Discord link
     RowLabel(L["Discord:"], yOff)
     local discordBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    discordBox:SetSize(400, 22)
+    discordBox:SetHeight(22)
+    flexWidth(discordBox, 140, 66)
     discordBox:SetPoint("TOPLEFT", 140, yOff)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3038,7 +3074,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Welcome message
     RowLabel(L["Welcome Msg:"], yOff)
     local welcomeBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    welcomeBox:SetSize(680, 40)
+    welcomeBox:SetHeight(40)
+    flexWidth(welcomeBox, 30, 66)
     welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3107,5 +3144,22 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
     root:SetScript("OnShow", function()
         selectSub(root.activeSub or "recruiting")
+    end)
+
+    ----------------------------------------------------------------
+    -- Layout: the sub-tab bar wraps, and every flexible widget follows
+    -- the scroll content's width. The stack's own height is fixed by how
+    -- far yOff walked, which is what gives the scroll frame its range.
+    ----------------------------------------------------------------
+    local stackHeight = math.max(1, -yOff + 60)
+    UI:MakeResponsive(root, function(_, w, _)
+        bar:SetWidth(math.max(180, w - 20))
+        UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = 28 })
+
+        local contentW = math.max(200, w - 24)
+        recruitContent:SetSize(contentW, stackHeight)
+        for _, f in ipairs(flex) do
+            f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
+        end
     end)
 end
