@@ -25,8 +25,10 @@ local FMT = "GOSCOMP1"
 
 -- Payload version. 1 was roster, spec, professions, attunements and
 -- attendance. 2 adds the enchant summary, which is what lets the site say
--- "four slots unenchanted" instead of just showing an item level.
-local PAYLOAD_VERSION = 2
+-- "four slots unenchanted" instead of just showing an item level. 3 adds the
+-- nights RaidTracker has been recording all along — who was actually there,
+-- which is the half of "the signup that doesn't lie" the site never had.
+local PAYLOAD_VERSION = 3
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -143,6 +145,96 @@ local function professionsFor(data)
 end
 
 ----------------------------------------------------------------------
+-- Nights
+--
+-- RaidTracker has recorded these since long before the site could receive
+-- them: encounters, five-minute snapshots, who was in the group, whether they
+-- were online, whether they had consumables. This is the first time any of it
+-- leaves the game.
+--
+-- The roll-up happens here rather than on the site because the addon holds
+-- presence per *snapshot*: a four-hour night with 25 people is over a thousand
+-- entries, and `{ snapshots, first, last, offline, consumes }` per person says
+-- everything those screens ask while being an order of magnitude smaller. The
+-- person's count against the session's is the fraction of the night they were
+-- there, which is partial attendance without the whole timeline.
+----------------------------------------------------------------------
+local function rollUpPlayers(session)
+    local seen = {}
+    for _, snap in ipairs(session.snapshots or {}) do
+        local at = tonumber(snap.time) or 0
+        for key, m in pairs(snap.members or {}) do
+            local p = seen[key]
+            if not p then
+                p = { key = key, snapshots = 0, first = at, last = at,
+                      offline = false, consumes = false }
+                seen[key] = p
+            end
+            p.snapshots = p.snapshots + 1
+            if at < p.first then p.first = at end
+            if at > p.last then p.last = at end
+            -- Both flags are "at least once". Someone who dropped for one
+            -- snapshot dropped; someone who had a flask for one had one.
+            if m.online == false then p.offline = true end
+            if m.hasConsumes then p.consumes = true end
+        end
+    end
+
+    local out = {}
+    for _, p in pairs(seen) do out[#out + 1] = p end
+    table.sort(out, function(a, b) return a.key < b.key end)
+    return out
+end
+
+local function raidSessions()
+    local db = BRutus.db and BRutus.db.raidTracker
+    if not db then return nil, nil end
+
+    local sessions = {}
+    for id, s in pairs(db.sessions or {}) do
+        local startTime = tonumber(s.startTime) or tonumber(id) or 0
+        if startTime > 0 then
+            local encounters = {}
+            for _, e in ipairs(s.encounters or {}) do
+                encounters[#encounters + 1] = {
+                    id = tonumber(e.id) or 0,
+                    name = e.name or "",
+                    start = math.floor(tonumber(e.startTime) or 0),
+                    -- Absent, not zero: a night that ended mid-pull has no end
+                    -- and no verdict, which is different from a wipe.
+                    ["end"] = e.endTime and math.floor(e.endTime) or nil,
+                    success = e.success,
+                }
+            end
+            sessions[#sessions + 1] = {
+                id = math.floor(tonumber(id) or startTime),
+                groupTag = s.groupTag or "",
+                instanceID = tonumber(s.instanceID) or 0,
+                name = s.name or "",
+                startTime = math.floor(startTime),
+                endTime = s.endTime and math.floor(s.endTime) or nil,
+                -- The denominator every player's count is read against.
+                snapshots = #(s.snapshots or {}),
+                encounters = encounters,
+                players = rollUpPlayers(s),
+            }
+        end
+    end
+    table.sort(sessions, function(a, b) return a.startTime < b.startTime end)
+
+    -- Tombstones travel as a list of ids. Without them a night an officer
+    -- deleted here comes back from another officer's export, forever.
+    local deleted = {}
+    for id in pairs(db.deletedSessions or {}) do
+        local n = tonumber(id)
+        if n then deleted[#deleted + 1] = math.floor(n) end
+    end
+    table.sort(deleted)
+
+    return sessions, deleted
+end
+
+----------------------------------------------------------------------
 -- The switch
 --
 -- Everything that crosses between the game and the site goes through here —
@@ -228,6 +320,8 @@ function Companion:BuildPayload()
         end
     end
 
+    local sessions, deletedSessions = raidSessions()
+
     return {
         fmt = FMT,
         v = PAYLOAD_VERSION,
@@ -240,6 +334,8 @@ function Companion:BuildPayload()
         count = count,
         members = members,
         loot = loot,
+        sessions = sessions,
+        deletedSessions = deletedSessions,
     }
 end
 

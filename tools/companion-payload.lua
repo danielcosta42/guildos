@@ -69,6 +69,40 @@ BRutus = {
                 [9]="Wrist", [10]="Hands", [15]="Back", [16]="Main Hand" },
   db = { members = {}, lootHistory = {}, settings = { companion = true } },
 }
+
+-- A night as RaidTracker actually stores one: two snapshots, one boss, and a
+-- person who dropped out for the second half. The third guild member never
+-- appears, because she was not there — and that is the whole point.
+local NIGHT = 1754380000
+BRutus.db.raidTracker = {
+  sessions = {
+    [NIGHT] = {
+      instanceID = 565,
+      name = "Gruul's Lair",
+      groupTag = "",
+      startTime = NIGHT,
+      endTime = NIGHT + 4 * 3600,
+      encounters = {
+        { id = 649, name = "Gruul the Dragonkiller",
+          startTime = NIGHT + 7200, endTime = NIGHT + 7500, success = true },
+        -- Ended mid-pull: no endTime, no verdict. Not a wipe — an unfinished try.
+        { id = 650, name = "High King Maulgar", startTime = NIGHT + 14000 },
+      },
+      players = { ["Chehul-Firemaw"] = true, ["Fulano-Firemaw"] = true },
+      snapshots = {
+        { time = NIGHT, reason = "session_start", count = 2, members = {
+            ["Chehul-Firemaw"] = { name = "Chehul", class = "HUNTER", online = true,  hasConsumes = true },
+            ["Fulano-Firemaw"] = { name = "Fulano", class = "PRIEST", online = true,  hasConsumes = false },
+        } },
+        { time = NIGHT + 7200, reason = "encounter_start", count = 2, members = {
+            ["Chehul-Firemaw"] = { name = "Chehul", class = "HUNTER", online = true,  hasConsumes = true },
+            ["Fulano-Firemaw"] = { name = "Fulano", class = "PRIEST", online = false, hasConsumes = false },
+        } },
+      },
+    },
+  },
+  deletedSessions = { [1754000000] = true },
+}
 function BRutus:GetPlayerKey(name, realm)
   return name .. "-" .. (realm or GetRealmName())
 end
