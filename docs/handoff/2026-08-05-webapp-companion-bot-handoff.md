@@ -45,6 +45,19 @@ into the game, signed/auto-updating installer. Don't build these yet.
 Only `web` is publicly exposed (for the OAuth redirect). The bot receives slash commands / button
 clicks over the outbound Discord gateway, so it needs no inbound port.
 
+### Canonical URLs (domain: `guildos.gg`)
+
+| Purpose | URL |
+| --- | --- |
+| Web app (root) | `https://guildos.gg` |
+| Ingest endpoint (companion → web) | `https://guildos.gg/api/ingest` |
+| Discord OAuth callback (Auth.js default) | `https://guildos.gg/api/auth/callback/discord` |
+
+`guildos.gg` is registered (not via Route 53 — AWS credits don't cover domain registration). Point an
+A record at the Lightsail static IP; Caddy provisions the Let's Encrypt cert. The companion's default
+API URL config is `https://guildos.gg`. If a marketing landing page is wanted later, move the app to
+`app.guildos.gg` and update the callback + companion URL accordingly.
+
 ---
 
 ## 3. THE WIRE CONTRACT — `GOSCOMP1` (read this carefully)

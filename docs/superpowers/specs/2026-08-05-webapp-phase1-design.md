@@ -254,6 +254,10 @@ receives slash commands / button clicks over the outbound gateway), so only `web
 ```
 Escape hatch: if web traffic ever spikes, move only `web` to Vercel without touching the bot.
 
+**Domain: `guildos.gg`** (registered outside Route 53 — AWS credits don't cover domain registration).
+An A record points at the Lightsail static IP; Caddy provisions HTTPS. App at `https://guildos.gg`,
+ingest at `/api/ingest`, Discord OAuth callback at `/api/auth/callback/discord`.
+
 **Login:** Discord OAuth. Scopes: `identify`, `guilds` (to confirm membership in the community's
 Discord). On first login create a `DiscordAccount`.
 
