@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.1] - 2026-08-11
+
+### Other
+- The nights finally leave the game
+
+
 ## [0.46.0] - 2026-08-10
 
 ### Added
