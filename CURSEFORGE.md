@@ -36,6 +36,42 @@ No spreadsheets. No external sites. No manual inspecting. **Install it, press `J
 
 ---
 
+## 🌐 New — Guild OS is on the web
+
+### **[guildos.ferion.com.br](https://guildos.ferion.com.br)**
+
+Your roster, loot and attendance, lifted out of the game and onto a page you can send
+to anyone. It is optional, it is off until you turn it on, and the addon behaves
+exactly the same if you never touch it.
+
+**Discord signups that already know who is signing.** A raid signup comes back carrying
+that character's item level, spec and attendance, so you are not opening the armory or
+asking "what's your gear?" for the twentieth time. Someone who has never linked a
+character can still sign up; they show as unlinked and get sent the claim link.
+
+**Plan on the web, run it in game.** The site plans the raid, and the addon pulls it
+back in:
+
+| Command | What it does |
+| --- | --- |
+| `/gos roster` | Brings in the roster the website planned |
+| `/gos roster invite` | Invites everyone on it |
+| `/gos roster groups` | Moves them into their assigned groups |
+
+**Nothing to copy on raid night.** WoW cannot talk to the internet, so Guild OS writes
+an encoded blob into its saved variables and a small Windows companion forwards it when
+you log out. You set it up once and then forget it exists. The site walks you through it
+and hands you the download and the guild token.
+
+**Portuguese and English**, roster pages included.
+
+Turn it on with `/gos web on`, off with `/gos web off`.
+
+> The companion is Windows-only. Everything else, the site and the Discord bot, works
+> anywhere.
+
+---
+
 ## Why Guild OS?
 
 The default guild frame shows a name and a level. That's it. Guild OS gives officers and members **instant visibility** into what people are wearing, what they're attuned to, who showed up on time with their consumables, and who walked away with the loot — all in one clean, dark-themed window that opens where your old guild frame used to.
