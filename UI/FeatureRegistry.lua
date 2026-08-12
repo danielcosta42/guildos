@@ -255,6 +255,69 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
+    -- The Web panel greys a button and prints the reason beside it, while the
+    -- slash command refuses with the same words. Both read these predicates,
+    -- so a change to the rule reaches the button and the command together.
+    S:Register("companion.predicates_exist", function()
+        local I = BRutus.CompanionImport
+        if not I then return false, "CompanionImport missing" end
+        if type(I.CanInvite) ~= "function" then return false, "CanInvite missing" end
+        if type(I.CanOrganize) ~= "function" then return false, "CanOrganize missing" end
+        return true
+    end)
+
+    S:Register("companion.can_invite_needs_roster", function()
+        local I = BRutus.CompanionImport
+        local saved = BRutus.db.companionRoster
+        BRutus.db.companionRoster = nil
+        local ok, reason = I:CanInvite()
+        BRutus.db.companionRoster = saved
+        if ok then return false, "allowed inviting with no roster loaded" end
+        if not reason or reason == "" then return false, "refused without saying why" end
+        return true
+    end)
+
+    S:Register("companion.can_organize_needs_roster", function()
+        local I = BRutus.CompanionImport
+        local saved = BRutus.db.companionRoster
+        BRutus.db.companionRoster = nil
+        local ok, reason = I:CanOrganize()
+        BRutus.db.companionRoster = saved
+        if ok then return false, "allowed organising with no roster loaded" end
+        if not reason or reason == "" then return false, "refused without saying why" end
+        return true
+    end)
+
+    -- A greyed button with no reason under it is the exact failure this
+    -- feature exists to remove, so every refusal must carry text.
+    S:Register("companion.refusals_always_explain", function()
+        local I = BRutus.CompanionImport
+        for _, name in ipairs({ "CanInvite", "CanOrganize" }) do
+            local ok, reason = I[name](I)
+            if not ok and (type(reason) ~= "string" or reason == "") then
+                return false, name .. " refused with no reason"
+            end
+        end
+        return true
+    end)
+
+    -- InviteAll must not re-implement its own gate: it has to answer with
+    -- exactly what the predicate said, or the button and the command disagree.
+    S:Register("companion.action_agrees_with_predicate", function()
+        local I = BRutus.CompanionImport
+        local saved = BRutus.db.companionRoster
+        BRutus.db.companionRoster = nil
+        local ok, want = I:CanInvite()
+        local _, _, got = I:InviteAll()
+        BRutus.db.companionRoster = saved
+        if ok then return false, "expected the no-roster case to refuse" end
+        if got ~= want then
+            return false, string.format("InviteAll said [%s], predicate said [%s]",
+                tostring(got), tostring(want))
+        end
+        return true
+    end)
+
     S:Register("window.geometry_roundtrip", function()
         if not UI.SaveWindowGeometry then return false, "SaveWindowGeometry missing" end
         local probe = CreateFrame("Frame", nil, UIParent)

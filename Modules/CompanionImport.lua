@@ -93,14 +93,37 @@ end
 -- Inviting
 ----------------------------------------------------------------------
 
+----------------------------------------------------------------------
+-- Can this action run right now, and if not, why?
+--
+-- The Web panel greys a button and prints the reason beside it; the
+-- slash command refuses with the same words. Both ask these, so a change
+-- to the rule reaches the button and the command together instead of
+-- drifting into two versions of the truth.
+----------------------------------------------------------------------
+function Import:CanInvite()
+    if not self:Current() then return false, L["Import a roster first."] end
+    if not (BRutus.Companion and BRutus.Companion:IsEnabled()) then
+        return false, L["The web companion is off. Turn it on with /gos web on."]
+    end
+    return true
+end
+
+function Import:CanOrganize()
+    if not self:Current() then return false, L["Import a roster first."] end
+    if not IsInRaid() then return false, L["You need to be in a raid to organise groups."] end
+    if not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
+        return false, L["Only the raid leader can organise groups."]
+    end
+    return true
+end
+
 --- Invite everyone on the loaded roster who is not already in the group.
 --- Returns (invited, skipped, err).
 function Import:InviteAll()
+    local allowed, reason = self:CanInvite()
+    if not allowed then return nil, nil, reason end
     local roster = self:Current()
-    if not roster then return nil, nil, L["Import a roster first."] end
-    if not (BRutus.Companion and BRutus.Companion:IsEnabled()) then
-        return nil, nil, L["The web companion is off. Turn it on with /gos web on."]
-    end
 
     -- Who is already here. Inviting someone in the raid produces an error
     -- message in their chat for no reason.
@@ -138,12 +161,9 @@ end
 --- Move raid members into the parties the website planned.
 --- Returns (moved, err). Only works while in a raid and leading it.
 function Import:OrganizeGroups()
+    local allowed, reason = self:CanOrganize()
+    if not allowed then return nil, reason end
     local roster = self:Current()
-    if not roster then return nil, L["Import a roster first."] end
-    if not IsInRaid() then return nil, L["You need to be in a raid to organise groups."] end
-    if not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
-        return nil, L["Only the raid leader can organise groups."]
-    end
 
     -- Where the website wants each person.
     local want = {}

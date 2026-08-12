@@ -383,5 +383,9 @@ writer:SetScript("OnEvent", function()
     -- string beats replacing a good payload with nothing.
     if ok and type(text) == "string" then
         GuildOSDB.__companion = text
+        -- When the addon WROTE it. Not when it was delivered: the companion
+        -- does that and never reports back, so the Web panel can only ever
+        -- say "last written".
+        GuildOSDB.__companionAt = time()
     end
 end)
