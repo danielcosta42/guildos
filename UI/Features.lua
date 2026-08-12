@@ -110,6 +110,16 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
+    id = "web", label = L["Web"], order = 95,
+    icon = ICON .. "INV_Misc_Spyglass_02",
+    -- Not officerOnly: publishing is each player's own choice, and the
+    -- guild's picture on the site gets better the more members opt in. The
+    -- raid actions gate themselves on raid leadership instead.
+    w = 460, h = 440, minW = 380, minH = 320,
+    build = function(c, win) BRutus:CreateWebPanel(c, win) end,
+})
+
+UI:RegisterFeature({
     id = "settings", label = L["Settings"], order = 100, core = true,
     icon = ICON .. "INV_Misc_Gear_01",
     w = 560, h = 520, resizable = false,

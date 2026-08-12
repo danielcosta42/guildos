@@ -105,6 +105,7 @@ Modules\PugInspector.lua
 # UI
 UI\Helpers.lua
 UI\Layout.lua
+UI\WebPanel.lua
 UI\FeatureRegistry.lua
 UI\Window.lua
 UI\Hub.lua
