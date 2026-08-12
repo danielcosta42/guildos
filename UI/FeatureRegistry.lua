@@ -362,6 +362,61 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
+    -- A raid planned on the site becomes one guild event, not one per officer.
+    -- Calendar:Create mints a random id and publishes it, so every officer
+    -- running the companion would have created the same night as a different
+    -- event and broadcast it. The id has to come from the site's raidId.
+    S:Register("calendar.web_raid_has_a_stable_id", function()
+        local Cal = BRutus.Calendar
+        if not Cal or type(Cal.UpsertWebRaid) ~= "function" then
+            return false, "Calendar:UpsertWebRaid missing"
+        end
+        local roster = {
+            raidId = "clx123", title = "Karazhan", instance = "Karazhan",
+            startsAt = GetServerTime() + 86400, members = { {}, {}, {} },
+        }
+        local a = Cal:WebEventId(roster)
+        local b = Cal:WebEventId({ raidId = "clx123" })
+        if not a or a == "" then return false, "no id derived" end
+        if a ~= b then return false, "two clients derived different ids: " .. a .. " vs " .. b end
+        if a == Cal:WebEventId({ raidId = "other" }) then
+            return false, "different raids collapsed onto one id"
+        end
+        return true
+    end)
+
+    S:Register("calendar.web_raid_upsert_is_idempotent", function()
+        local Cal = BRutus.Calendar
+        if not Cal or type(Cal.UpsertWebRaid) ~= "function" then
+            return false, "Calendar:UpsertWebRaid missing"
+        end
+        local roster = {
+            raidId = "clx-idem", title = "Gruul", instance = "Gruul's Lair",
+            startsAt = GetServerTime() + 3600, members = { {}, {} },
+        }
+        local id = Cal:WebEventId(roster)
+        local events = Cal:GetEvents()
+        events[id] = nil
+
+        local first = Cal:UpsertWebRaid(roster)
+        if not first then
+            events[id] = nil
+            return true   -- not an officer here; publishing is correctly refused
+        end
+        local createdAt = first.createdAt
+        -- Not republishing is the point: an unchanged raid that goes out on the
+        -- guild channel again bumps a revision for a change nobody made, once
+        -- per officer, every login.
+        local before = _G.__published
+        local second = Cal:UpsertWebRaid(roster)
+        local same = (second == nil) or (second.createdAt == createdAt)
+        local quiet = (before == nil) or (_G.__published == before)
+        events[id] = nil
+        if not same then return false, "the second upsert rebuilt the event" end
+        if not quiet then return false, "an unchanged raid was published again" end
+        return true
+    end)
+
     S:Register("window.geometry_roundtrip", function()
         if not UI.SaveWindowGeometry then return false, "SaveWindowGeometry missing" end
         local probe = CreateFrame("Frame", nil, UIParent)

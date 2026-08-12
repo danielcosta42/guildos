@@ -1639,3 +1639,4 @@ L["Address selected — press Ctrl+C"] = "Endereço selecionado — aperte Ctrl+
 
 -- Modules/CompanionImport.lua (a caixa de entrada do companion)
 L["Roster from the website: %d signed up."] = "Roster do site: %d inscritos."
+L["Planned on the website."] = "Planejada no site."

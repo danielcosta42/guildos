@@ -639,3 +639,4 @@ L["Address selected — press Ctrl+C"] = "Address selected — press Ctrl+C"
 
 -- Modules/CompanionImport.lua (the companion's drop box)
 L["Roster from the website: %d signed up."] = "Roster from the website: %d signed up."
+L["Planned on the website."] = "Planned on the website."

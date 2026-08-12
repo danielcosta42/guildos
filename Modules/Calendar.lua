@@ -268,6 +268,84 @@ function Calendar:Create(title, when, size, note, kind, shareAlliance)
     return e
 end
 
+----------------------------------------------------------------------
+-- A raid planned on the website, as one guild event.
+--
+-- The id is derived from the site's raidId rather than minted, and that
+-- is the whole point: Calendar:Create mints a random one and publishes
+-- it, so every officer running the companion would have turned the same
+-- night into a different event and broadcast it. Sharing the id lets the
+-- sync converge on one, whoever gets there first.
+--
+-- Officers only, like every other write here. A member running the
+-- companion simply does not publish; the event reaches them the ordinary
+-- way, from an officer who did.
+----------------------------------------------------------------------
+local WEB_ID_PREFIX = "web:"
+
+function Calendar:WebEventId(roster)
+    if not roster or roster.raidId == nil or roster.raidId == "" then return nil end
+    return WEB_ID_PREFIX .. tostring(roster.raidId)
+end
+
+--- Create or refresh the guild event for a roster that came from the site.
+--- Returns the event, or nil when there is nothing to publish.
+function Calendar:UpsertWebRaid(roster)
+    local id = self:WebEventId(roster)
+    if not id then return nil end
+    if not BRutus:IsOfficer() then return nil end
+
+    local when = tonumber(roster.startsAt) or 0
+    if when <= 0 then return nil end
+
+    local title = strtrim(roster.title or "")
+    if title == "" then title = roster.instance or L["Raid"] end
+    local size = #(roster.members or {})
+    if size < 1 then size = 25 end
+
+    local events = self:GetEvents()
+    local e = events[id]
+
+    -- Nothing moved: republishing would only churn the guild channel and bump
+    -- a revision for a change nobody made.
+    if e and not e.canceled and e.title == title and e.when == when and e.size == size then
+        return e
+    end
+
+    local isNew = (e == nil)
+    if isNew then
+        e = {
+            id = id, author = UnitName("player"), createdAt = GetServerTime(),
+            canceled = false, rsvps = {},
+            -- Private to the guild, like anything else born here. The site
+            -- hands over a roster; it does not get to widen the audience.
+            shareAlliance = false,
+        }
+        events[id] = e
+    end
+
+    e.canceled = false
+    e.title = title
+    e.when  = when
+    e.size  = size
+    e.kind  = "RAID"
+    e.note  = L["Planned on the website."]
+    -- Signups live on the site for a web raid; a second RSVP list in the game
+    -- would be a second answer to the same question.
+    e.web   = true
+
+    if BRutus.SyncService then
+        local rev = BRutus.SyncService:NextRevision("event", id)
+        BRutus.SyncService:Publish("event", isNew and "create" or "update", { event = {
+            id = e.id, title = e.title, when = e.when, size = e.size,
+            note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
+            shareAlliance = e.shareAlliance,
+        } }, { rev = rev })
+    end
+    self:Refresh()
+    return e
+end
+
 function Calendar:Cancel(id)
     if not BRutus:IsOfficer() then return end
     local e = self:GetEvents()[id]

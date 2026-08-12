@@ -120,6 +120,15 @@ function Import:ConsumeInbox()
 
     self._lastInbox = raw
     BRutus.db.companionRoster = roster
+
+    -- And put it on the guild calendar, so the raid is visible to people who
+    -- never open the Web panel. Keyed off the site's raidId, so every officer
+    -- running the companion converges on one event instead of each publishing
+    -- their own copy of the same night.
+    if BRutus.Calendar and BRutus.Calendar.UpsertWebRaid then
+        BRutus:SafeCall(function() BRutus.Calendar:UpsertWebRaid(roster) end)
+    end
+
     return true, #roster.members
 end
 
