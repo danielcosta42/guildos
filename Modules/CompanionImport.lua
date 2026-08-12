@@ -110,26 +110,47 @@ end
 -- running. See specs/009-a-volta-para-o-jogo/spec.md in guildos-web.
 ----------------------------------------------------------------------
 function Import:ConsumeInbox()
-    local raw = _G.GuildOSInbox
-    if type(raw) ~= "string" or raw == "" then return false end
-    -- Same string twice (a /reload with no new roster) is not a new import.
-    if raw == self._lastInbox then return false end
-
-    local roster = self:Parse(raw)
-    if not roster then return false end
-
-    self._lastInbox = raw
-    BRutus.db.companionRoster = roster
-
-    -- And put it on the guild calendar, so the raid is visible to people who
-    -- never open the Web panel. Keyed off the site's raidId, so every officer
-    -- running the companion converges on one event instead of each publishing
-    -- their own copy of the same night.
-    if BRutus.Calendar and BRutus.Calendar.UpsertWebRaid then
-        BRutus:SafeCall(function() BRutus.Calendar:UpsertWebRaid(roster) end)
+    -- A table of strings from a current companion, a bare string from one that
+    -- has not been updated. The two halves ship separately, so both shapes have
+    -- to work rather than the older one silently importing nothing.
+    local inbox = _G.GuildOSInbox
+    local raws = {}
+    if type(inbox) == "table" then
+        for _, v in ipairs(inbox) do
+            if type(v) == "string" and v ~= "" then raws[#raws + 1] = v end
+        end
+    elseif type(inbox) == "string" and inbox ~= "" then
+        raws[1] = inbox
+    elseif type(_G.GuildOSInboxFirst) == "string" and _G.GuildOSInboxFirst ~= "" then
+        raws[1] = _G.GuildOSInboxFirst
     end
+    if #raws == 0 then return false end
 
-    return true, #roster.members
+    -- The whole set is the unit: a raid added or dropped changes it even when
+    -- the first one did not move.
+    local key = table.concat(raws, "|")
+    if key == self._lastInbox then return false end
+
+    -- Every raid goes on the calendar; the soonest is the one the Web panel's
+    -- invite and group buttons act on.
+    local soonest, imported = nil, 0
+    for _, raw in ipairs(raws) do
+        local roster = self:Parse(raw)
+        if roster then
+            imported = imported + 1
+            if BRutus.Calendar and BRutus.Calendar.UpsertWebRaid then
+                BRutus:SafeCall(function() BRutus.Calendar:UpsertWebRaid(roster) end)
+            end
+            if not soonest or (roster.startsAt or 0) < (soonest.startsAt or 0) then
+                soonest = roster
+            end
+        end
+    end
+    if imported == 0 then return false end
+
+    self._lastInbox = key
+    BRutus.db.companionRoster = soonest
+    return true, #soonest.members
 end
 
 ----------------------------------------------------------------------

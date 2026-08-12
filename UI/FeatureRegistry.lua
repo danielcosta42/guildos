@@ -329,7 +329,10 @@ function UI:_RegisterFeatureTests()
         local saved, savedGlobal = BRutus.db.companionRoster, GuildOSInbox
         BRutus.db.companionRoster = { title = "kept", members = { {} } }
 
-        local junk = { "", "not a roster", "GOSROST1:", "GOSCOMP1:abc", 42, {}, true }
+        -- A table is the current shape, a bare string the older one, and junk
+        -- in either must be ignored rather than wipe what the officer has.
+        local junk = { "", "not a roster", "GOSROST1:", "GOSCOMP1:abc", 42, true,
+                       {}, { "" }, { "nope" }, { 7 }, { "GOSCOMP1:abc" } }
         for _, v in ipairs(junk) do
             GuildOSInbox = v
             I:ConsumeInbox()
