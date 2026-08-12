@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.47.0] - 2026-08-12
+
+### Added
+- a raid planned on the site lands on the guild calendar
+- the planned raid arrives from the site by itself
+- Web panel puts the companion's commands behind buttons
+
+### Fixed
+- every upcoming raid travels, and a cancelled one never does
+
+### Changed
+- one definition for whether the companion actions can run
+
+
 ## [0.46.2] - 2026-08-12
 
 ### Fixed
