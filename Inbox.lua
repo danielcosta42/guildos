@@ -1,0 +1,16 @@
+----------------------------------------------------------------------
+-- Guild OS - Inbox
+--
+-- Overwritten by the Guild OS companion with the roster for the next
+-- planned raid, as a GOSROST1 string. Nothing here edits it; the addon
+-- only reads the global at login (Modules/CompanionImport.lua).
+--
+-- It ships as this stub on purpose. The client only discovers NEW addon
+-- folders when it starts, while a file that already exists is picked up
+-- by a plain /reload -- which is what makes "click Publish now and the
+-- raid is there" possible at all.
+--
+-- Contract and reasoning: specs/009-a-volta-para-o-jogo/spec.md in the
+-- guildos-web repository.
+----------------------------------------------------------------------
+GuildOSInbox = nil

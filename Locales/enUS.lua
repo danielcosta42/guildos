@@ -636,3 +636,6 @@ L["2. Download the companion and paste the token"] = "2. Download the companion 
 L["3. Log out of the game once"] = "3. Log out of the game once"
 L["Copy"] = "Copy"
 L["Address selected — press Ctrl+C"] = "Address selected — press Ctrl+C"
+
+-- Modules/CompanionImport.lua (the companion's drop box)
+L["Roster from the website: %d signed up."] = "Roster from the website: %d signed up."

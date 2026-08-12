@@ -94,6 +94,36 @@ end
 ----------------------------------------------------------------------
 
 ----------------------------------------------------------------------
+-- The inbox: what the companion left for us.
+--
+-- The companion writes Interface/AddOns/GuildOS/Inbox.lua, which the client
+-- executes at load, setting the GuildOSInbox global. That makes it untrusted
+-- input even though our own tool produced it, so it goes through the same
+-- Parse a hand-pasted string does and a bad one is dropped on the floor.
+--
+-- Silent on failure on purpose: a damaged inbox is the companion's problem to
+-- report in its own panel, and a chat error at every login about a file the
+-- player cannot see or fix is just noise.
+--
+-- The site is where raids are planned, so a valid inbox wins over whatever was
+-- stored. Pasting by hand stays the fallback for when the companion is not
+-- running. See specs/009-a-volta-para-o-jogo/spec.md in guildos-web.
+----------------------------------------------------------------------
+function Import:ConsumeInbox()
+    local raw = _G.GuildOSInbox
+    if type(raw) ~= "string" or raw == "" then return false end
+    -- Same string twice (a /reload with no new roster) is not a new import.
+    if raw == self._lastInbox then return false end
+
+    local roster = self:Parse(raw)
+    if not roster then return false end
+
+    self._lastInbox = raw
+    BRutus.db.companionRoster = roster
+    return true, #roster.members
+end
+
+----------------------------------------------------------------------
 -- Can this action run right now, and if not, why?
 --
 -- The Web panel greys a button and prints the reason beside it; the
@@ -188,3 +218,24 @@ function Import:OrganizeGroups()
     end
     return moved, nil
 end
+
+----------------------------------------------------------------------
+-- Read the companion's drop box once the database exists.
+--
+-- PLAYER_LOGIN rather than ADDON_LOADED: Parse asks whether the web
+-- companion is switched on, and that setting lives in the saved
+-- variables, which are not there yet at ADDON_LOADED.
+--
+-- Errors are swallowed by SafeCall. A roster that fails to arrive must
+-- never be the reason someone cannot log in.
+----------------------------------------------------------------------
+local reader = CreateFrame("Frame")
+reader:RegisterEvent("PLAYER_LOGIN")
+reader:SetScript("OnEvent", function()
+    BRutus:SafeCall(function()
+        local ok, count = Import:ConsumeInbox()
+        if ok then
+            BRutus:Print(string.format(L["Roster from the website: %d signed up."], count))
+        end
+    end)
+end)

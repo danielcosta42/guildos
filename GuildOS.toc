@@ -21,6 +21,10 @@ Libs\ChatThrottleLib.lua
 Libs\AceComm-3.0.lua
 Libs\LibChehulMesh.lua
 
+# The companion's drop box. Loaded before anything reads it; the companion
+# overwrites this file in place and a /reload picks it up.
+Inbox.lua
+
 # Core
 Core\Config.lua
 

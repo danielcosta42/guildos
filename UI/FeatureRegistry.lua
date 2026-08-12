@@ -318,6 +318,50 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
+    -- The companion writes Inbox.lua into the addon folder and the game executes
+    -- it, so what lands in GuildOSInbox is untrusted input even though it came
+    -- from our own tool. A damaged one must be ignored, never allowed to wipe the
+    -- roster the officer already has.
+    S:Register("companion.inbox_ignores_junk", function()
+        local I = BRutus.CompanionImport
+        if type(I.ConsumeInbox) ~= "function" then return false, "ConsumeInbox missing" end
+
+        local saved, savedGlobal = BRutus.db.companionRoster, GuildOSInbox
+        BRutus.db.companionRoster = { title = "kept", members = { {} } }
+
+        local junk = { "", "not a roster", "GOSROST1:", "GOSCOMP1:abc", 42, {}, true }
+        for _, v in ipairs(junk) do
+            GuildOSInbox = v
+            I:ConsumeInbox()
+            local now = BRutus.db.companionRoster
+            if not now or now.title ~= "kept" then
+                BRutus.db.companionRoster, GuildOSInbox = saved, savedGlobal
+                return false, "a junk inbox replaced the loaded roster: " .. tostring(v)
+            end
+        end
+
+        BRutus.db.companionRoster, GuildOSInbox = saved, savedGlobal
+        return true
+    end)
+
+    -- Consuming twice must not re-import: a /reload with the same inbox should
+    -- leave the stored roster exactly where it was.
+    S:Register("companion.inbox_is_idempotent", function()
+        local I = BRutus.CompanionImport
+        local saved, savedGlobal = BRutus.db.companionRoster, GuildOSInbox
+        BRutus.db.companionRoster = nil
+        GuildOSInbox = "GOSROST1:notarealpayload"
+
+        I:ConsumeInbox()
+        local first = BRutus.db.companionRoster
+        I:ConsumeInbox()
+        local second = BRutus.db.companionRoster
+
+        BRutus.db.companionRoster, GuildOSInbox = saved, savedGlobal
+        if first ~= second then return false, "the second consume changed the store" end
+        return true
+    end)
+
     S:Register("window.geometry_roundtrip", function()
         if not UI.SaveWindowGeometry then return false, "SaveWindowGeometry missing" end
         local probe = CreateFrame("Frame", nil, UIParent)
