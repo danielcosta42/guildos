@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.2] - 2026-08-12
+
+### Fixed
+- minimap button stays where you drop it, now wearing the guild crest
+
+
 ## [0.46.1] - 2026-08-11
 
 ### Other
