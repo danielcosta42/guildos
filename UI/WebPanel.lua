@@ -6,7 +6,9 @@
 --
 -- What this panel may claim is bounded by what the addon can know: it
 -- writes GuildOSDB.__companion at logout and the Go companion forwards
--- it without ever reporting back. So this says "written", never "sent".
+-- it. The addon never sees the send, so this still says "written" about
+-- its own half — but the companion now leaves what the site answered in
+-- the inbox, and that line is allowed to say "the site has it".
 ----------------------------------------------------------------------
 local UI = BRutus.UI
 local C  = BRutus.Colors
@@ -18,6 +20,11 @@ local GAP     = 8    -- between stacked lines
 local SECTION = 14   -- extra space above a section caption
 local BTN_H   = 22
 local ROW_H   = 16
+
+-- The cut for both lists. This is a column inside another panel, not a roster
+-- browser: a standby of eight people is a question for the website, and the two
+-- names a raid leader is about to call are the two at the top.
+local LIST_ROWS = 5
 
 -- Same shape as UI/Dashboard.lua's countdown, kept local so this panel
 -- does not depend on the dashboard having been built.
@@ -31,12 +38,70 @@ local function fmtCountdown(dt)
     return string.format(L["in %dm"], math.max(1, m))
 end
 
-local function writtenAgo()
-    local at = GuildOSDB and GuildOSDB.__companionAt
+local function stamp(at)
     if not at or at <= 0 then return L["never"] end
     local dt = (GetServerTime() or time()) - at
     if dt < 120 then return L["just now"] end
     return date("%d/%m %H:%M", at)
+end
+
+local function writtenAgo()
+    return stamp(GuildOSDB and GuildOSDB.__companionAt)
+end
+
+-- "WARRIOR" is a token, not a word. The client already holds the word, in the
+-- player's own language, so nothing here needs translating.
+local function className(token)
+    if type(token) ~= "string" or token == "" then return "" end
+    local names = _G.LOCALIZED_CLASS_NAMES_MALE
+    return (names and names[token]) or token
+end
+
+----------------------------------------------------------------------
+-- What the panel says about a roster, out of the v2 signup list.
+--
+-- Returns nil for a v1 payload, where `signups` is absent. Absent is not empty:
+-- an older website sends no list at all, and reporting "0 declined" from that
+-- would be an invention dressed as a measurement.
+----------------------------------------------------------------------
+local function summarise(roster)
+    local list = roster and roster.signups
+    if type(list) ~= "table" then return nil end
+
+    local s = {
+        size = tonumber(roster.size) or 0,
+        coming = 0, tanks = 0, healers = 0, dps = 0,
+        declined = 0, tentative = 0,
+        standby = {}, look = {},
+    }
+
+    for _, p in ipairs(list) do
+        if p.invite then
+            s.coming = s.coming + 1
+            if p.slot == "TANK" then
+                s.tanks = s.tanks + 1
+            elseif p.slot == "HEALER" then
+                s.healers = s.healers + 1
+            else
+                s.dps = s.dps + 1
+            end
+        elseif p.why == "wait" then
+            s.standby[#s.standby + 1] = p
+        elseif p.why == "unknown" or p.why == "pending" then
+            -- The only two anybody can act on from here. Somebody who said no has
+            -- already said no; that is not a surprise and it does not earn a row.
+            s.look[#s.look + 1] = p
+        elseif p.why == "tentative" then
+            s.tentative = s.tentative + 1
+        else
+            -- "no" and "refused" together. From this chair they are one fact: not
+            -- coming, and not waiting on anything that can be done tonight.
+            s.declined = s.declined + 1
+        end
+    end
+
+    table.sort(s.standby, function(a, b) return (a.wait or 99) < (b.wait or 99) end)
+    return s
 end
 
 ----------------------------------------------------------------------
@@ -69,8 +134,14 @@ function BRutus:CreateWebPanel(parent, _win)
 
     local countText   = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     local writtenText = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    -- The other half of the round trip, and the only line on this panel that is not
+    -- about what the game did. The companion leaves it in the inbox after the site
+    -- accepts an export.
+    local ackText     = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     countText:SetJustifyH("LEFT")
     countText:SetWordWrap(true)
+    ackText:SetJustifyH("LEFT")
+    ackText:SetWordWrap(false)
 
     local publishBtn  = UI:CreateButton(panel, L["Publish now"], 120, BTN_H)
     local publishWhy  = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
@@ -90,12 +161,51 @@ function BRutus:CreateWebPanel(parent, _win)
     raidTitle:SetWordWrap(false)
     raidWhen:SetJustifyH("LEFT")
 
+    -- The composition, and the people who are not in it. Both are silent on a v1
+    -- payload: an older site sends no `signups`, and inventing zeroes from that
+    -- would report a raid nobody declined as one nobody wanted.
+    local raidRoles = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    local raidOut   = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    raidRoles:SetJustifyH("LEFT")
+    raidOut:SetJustifyH("LEFT")
+
     local bringBtn  = UI:CreateButton(panel, L["Bring roster"], 110, BTN_H)
     local inviteBtn = UI:CreateButton(panel, L["Invite"], 90, BTN_H)
     local groupsBtn = UI:CreateButton(panel, L["Groups"], 90, BTN_H)
     local raidWhy   = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
     raidWhy:SetJustifyH("LEFT")
     raidWhy:SetWordWrap(true)
+
+    ----------------------------------------------------------------
+    -- STANDBY / NEEDS A LOOK
+    --
+    -- Two fixed pools rather than frames created per refresh: this panel
+    -- redraws every ten seconds while it is open, and a raid roster that
+    -- allocates on a ticker is a garbage collector pause during a pull.
+    ----------------------------------------------------------------
+    local function makeList(headText)
+        -- Zeroed, not nil: a resize can reach Relayout before the first Refresh has
+        -- ever run, and the layout reads these to decide it can skip the section.
+        local list = { head = UI:CreateHeaderText(panel, headText, 10), rows = {}, shown = 0, rest = 0 }
+        for i = 1, LIST_ROWS do
+            local left  = UI:CreateText(panel, "", 10, C.text.r, C.text.g, C.text.b)
+            local right = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            left:SetJustifyH("LEFT");  left:SetWordWrap(false)
+            right:SetJustifyH("LEFT"); right:SetWordWrap(false)
+            list.rows[i] = { left = left, right = right }
+        end
+        list.more = UI:CreateText(panel, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        list.more:SetJustifyH("LEFT")
+        return list
+    end
+
+    local standby = makeList(L["STANDBY"])
+    local look    = makeList(L["NEEDS A LOOK"])
+    for _, list in ipairs({ standby, look }) do
+        list.head:Hide()
+        list.more:Hide()
+        for _, row in ipairs(list.rows) do row.left:Hide(); row.right:Hide() end
+    end
 
     ----------------------------------------------------------------
     -- FIRST TIME?
@@ -207,6 +317,31 @@ function BRutus:CreateWebPanel(parent, _win)
         end
     end
 
+    --- lines is an array of { leftText, rightText }. Everything past LIST_ROWS
+    --- becomes one "+N on the site", because the site is where the rest of them
+    --- can actually be dealt with.
+    local function fillList(list, lines)
+        local shown = math.min(#lines, LIST_ROWS)
+        for i = 1, LIST_ROWS do
+            local row = list.rows[i]
+            if i <= shown then
+                row.left:SetText(lines[i][1] or "")
+                row.right:SetText(lines[i][2] or "")
+            end
+            row.left:SetShown(i <= shown)
+            row.right:SetShown(i <= shown)
+        end
+
+        local rest = #lines - shown
+        list.more:SetText(rest > 0 and string.format(L["+%d on the site"], rest) or "")
+        list.more:SetShown(rest > 0)
+        list.head:SetShown(#lines > 0)
+
+        -- Read by Relayout, so an empty list costs no height at all.
+        list.shown = shown
+        list.rest = rest
+    end
+
     function panel:Refresh()
         local co = BRutus.Companion
         local on = (co and co:IsEnabled()) and true or false
@@ -217,25 +352,36 @@ function BRutus:CreateWebPanel(parent, _win)
         stateText:SetText(on and L["On"] or L["Off"])
         toggleBtn.label:SetText(on and L["Turn off"] or L["Turn on"])
 
+        local I = BRutus.CompanionImport
+
         if on then
             -- Build walks the whole guild, so it runs here and nowhere else.
             local _, count = co:Build()
             countText:SetText(type(count) == "number"
                 and string.format(L["%d members go out next time"], count) or "")
             writtenText:SetText(string.format(L["Last written: %s"], writtenAgo()))
+
+            local ackAt, ackCount = nil, 0
+            if I then ackAt, ackCount = I:Ack() end
+            ackText:SetText(ackAt
+                and string.format(L["Site updated %s, %d members"], stamp(ackAt), ackCount)
+                or L["The site has not confirmed anything yet."])
+
             publishNote:SetText(L["Writes and reloads the interface. The companion sends it on from your PC."])
         else
             countText:SetText(L["Nothing leaves the game while this is off."])
             writtenText:SetText("")
+            ackText:SetText("")
             publishNote:SetText("")
         end
+        ackText:SetShown(on)
 
         local pubOk, pubWhy = canPublishNow()
         setEnabled(publishBtn, pubOk)
         publishWhy:SetText(pubOk and "" or (pubWhy or ""))
 
-        local I = BRutus.CompanionImport
         local roster = I and I:Current()
+        local sum
         if roster then
             local title = roster.title
             if not title or title == "" then title = roster.instance or "?" end
@@ -247,12 +393,46 @@ function BRutus:CreateWebPanel(parent, _win)
             else
                 raidWhen:SetText("")
             end
-            raidCount:SetText(string.format(L["%d signed up"], #roster.members))
+
+            sum = summarise(roster)
+            if sum then
+                -- The denominator is the point. "18 signed up" does not answer the
+                -- question being asked, which is whether anybody is missing.
+                raidCount:SetText(string.format(L["%d of %d coming"], sum.coming, sum.size))
+                raidRoles:SetText(string.format(L["%d tanks · %d healers · %d dps"],
+                    sum.tanks, sum.healers, sum.dps))
+                raidOut:SetText((sum.declined + sum.tentative) > 0
+                    and string.format(L["%d declined · %d tentative"], sum.declined, sum.tentative)
+                    or "")
+            else
+                raidCount:SetText(string.format(L["%d signed up"], #roster.members))
+                raidRoles:SetText("")
+                raidOut:SetText("")
+            end
         else
             raidTitle:SetText(L["Nothing loaded."])
             raidWhen:SetText("")
             raidCount:SetText("")
+            raidRoles:SetText("")
+            raidOut:SetText("")
         end
+
+        local standbyLines, lookLines = {}, {}
+        if sum then
+            for _, p in ipairs(sum.standby) do
+                standbyLines[#standbyLines + 1] =
+                    { string.format("%d  %s", p.wait or 0, p.name or "?"), className(p.class) }
+            end
+            for _, p in ipairs(sum.look) do
+                lookLines[#lookLines + 1] = {
+                    p.name or "?",
+                    p.why == "pending" and L["waiting for your approval on the site"]
+                        or L["the game has never seen this character"],
+                }
+            end
+        end
+        fillList(standby, standbyLines)
+        fillList(look, lookLines)
 
         -- Default to refused, with a reason. If the import module is missing
         -- the actions cannot run, and an enabled button that does nothing
@@ -331,7 +511,12 @@ function BRutus:CreateWebPanel(parent, _win)
         place(countText); countText:SetWidth(inner)
         y = y + ROW_H
         place(writtenText); writtenText:SetWidth(inner)
-        y = y + ROW_H + GAP
+        y = y + ROW_H
+        if ackText:IsShown() then
+            place(ackText); ackText:SetWidth(inner)
+            y = y + ROW_H
+        end
+        y = y + GAP
 
         local on = self.publishing
         publishBtn:SetShown(on)
@@ -355,7 +540,18 @@ function BRutus:CreateWebPanel(parent, _win)
         place(raidTitle); raidTitle:SetWidth(inner)
         y = y + ROW_H + 2
         place(raidWhen); raidWhen:SetWidth(inner)
-        y = y + ROW_H + GAP
+        y = y + ROW_H
+
+        -- Both go quiet on a v1 payload rather than drawing an empty row.
+        if raidRoles:GetText() ~= "" then
+            place(raidRoles); raidRoles:SetWidth(inner)
+            y = y + ROW_H
+        end
+        if raidOut:GetText() ~= "" then
+            place(raidOut); raidOut:SetWidth(inner)
+            y = y + ROW_H
+        end
+        y = y + GAP
 
         bringBtn:ClearAllPoints()
         bringBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -y)
@@ -366,6 +562,30 @@ function BRutus:CreateWebPanel(parent, _win)
         y = y + BTN_H + 2
         place(raidWhy); raidWhy:SetWidth(inner)
         y = y + ROW_H
+
+        -- The name column is fixed rather than measured: two columns that reflow per
+        -- row read as a ragged mess, and a name long enough to reach the second
+        -- column is a name the player chose to make everybody's problem.
+        local NAME_W = math.min(120, math.floor(inner * 0.38))
+        local function placeList(list)
+            if list.shown == 0 and list.rest == 0 then return end
+            y = y + GAP
+            place(list.head)
+            y = y + ROW_H + 2
+            for i = 1, list.shown do
+                local row = list.rows[i]
+                place(row.left, 4); row.left:SetWidth(NAME_W)
+                place(row.right, 4 + NAME_W + 8)
+                row.right:SetWidth(math.max(40, inner - NAME_W - 12))
+                y = y + ROW_H
+            end
+            if list.rest > 0 then
+                place(list.more, 4); list.more:SetWidth(inner)
+                y = y + ROW_H
+            end
+        end
+        placeList(standby)
+        placeList(look)
 
         if self.showFirstRun then
             y = y + SECTION

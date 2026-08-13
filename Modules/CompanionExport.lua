@@ -209,6 +209,10 @@ local function raidSessions()
             sessions[#sessions + 1] = {
                 id = math.floor(tonumber(id) or startTime),
                 groupTag = s.groupTag or "",
+                -- The planned raid this night was stamped with when it started, so the
+                -- site does not have to guess from an instance name and a clock. Absent
+                -- for a night nobody planned, which is most of them.
+                raidId = type(s.raidId) == "string" and s.raidId ~= "" and s.raidId or nil,
                 instanceID = tonumber(s.instanceID) or 0,
                 name = s.name or "",
                 startTime = math.floor(startTime),

@@ -9,12 +9,19 @@ local L = BRutus.L
 local _mergeDebounceTimer = nil  -- debounce handle for post-broadcast dedup
 
 -- TBC Raid instance IDs
+--
+-- This table is also the gate: StartSession only opens a session for an id it
+-- knows, so a raid missing from here is a raid the addon records nothing about.
+-- Zul'Aman was missing, and every ZA night was therefore invisible — no presence,
+-- no encounters, no session at all — while the website listed it in its catalogue
+-- and waited.
 RaidTracker.RAID_INSTANCES = {
     [532]  = "Karazhan",
     [544]  = "Magtheridon",
     [565]  = "Gruul's Lair",
     [548]  = "Serpentshrine Cavern",
     [550]  = "Tempest Keep",
+    [568]  = "Zul'Aman",
     [534]  = "Hyjal Summit",
     [564]  = "Black Temple",
     [580]  = "Sunwell Plateau",
@@ -24,6 +31,27 @@ RaidTracker.RAID_INSTANCES = {
     [309]  = "Zul'Gurub",
     [469]  = "BWL",
     [409]  = "Molten Core",
+}
+
+-- The same places, by the website's key rather than by name.
+--
+-- Names are how a session used to be matched to a planned raid, and it was a
+-- string comparison across two codebases: "Magtheridon" here against
+-- "Magtheridon's Lair" there was enough to lose a night. Keys are shared
+-- deliberately, they are short, and neither side ever translates them.
+--
+-- Only the nine the site plans. A vanilla raid has no key because the site has no
+-- catalogue entry for it, and stamping one would be inventing a raid.
+RaidTracker.RAID_KEYS = {
+    [532] = "kara",
+    [544] = "mag",
+    [565] = "gruul",
+    [548] = "ssc",
+    [550] = "tk",
+    [568] = "za",
+    [534] = "hyjal",
+    [564] = "bt",
+    [580] = "swp",
 }
 
 -- Raids that count for attendance (25-man progression)
@@ -154,12 +182,29 @@ end
 
 function RaidTracker:StartSession(instanceID)
     local raidName = self.RAID_INSTANCES[instanceID] or L["Unknown"]
+    local now = GetServerTime()
+
+    -- Which planned raid this is, if the site planned one.
+    --
+    -- Stamped now rather than worked out later: "what was booked for tonight" has a clean
+    -- answer at 21:03 and a murky one three days after, when the website has to guess from
+    -- an instance name and a clock. It is a hint, not a claim — the site verifies the raid
+    -- belongs to this guild before believing any of it.
+    local raidId
+    local key = self.RAID_KEYS[instanceID]
+    if key and BRutus.CompanionImport then
+        BRutus:SafeCall(function()
+            raidId = BRutus.CompanionImport:RaidFor(key, now)
+        end)
+    end
+
     self.trackingActive = true
     self.currentRaid = {
         instanceID = instanceID,
         name = raidName,
+        raidId = raidId,
         groupTag = self:GetCurrentGroup(),  -- tag this session with the active group
-        startTime = GetServerTime(),
+        startTime = now,
         endTime = nil,
         snapshots = {},
         encounters = {},
