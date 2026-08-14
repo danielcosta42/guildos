@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.49.0] - 2026-08-14
+
+### Added
+- the panel says when the companion has stopped getting through
+
+
 ## [0.48.1] - 2026-08-14
 
 
