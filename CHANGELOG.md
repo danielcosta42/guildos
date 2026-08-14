@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.48.0] - 2026-08-14
+
+### Added
+- the game learns who signed up, and tells the site which night it was
+
+
 ## [0.47.0] - 2026-08-12
 
 ### Added
