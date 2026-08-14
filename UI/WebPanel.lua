@@ -14,7 +14,7 @@ local UI = BRutus.UI
 local C  = BRutus.Colors
 local L  = BRutus.L
 
-local SITE    = "guildos.ferion.com.br"
+local SITE    = "guildos.me"
 local PAD     = 14   -- panel edge to content
 local GAP     = 8    -- between stacked lines
 local SECTION = 14   -- extra space above a section caption

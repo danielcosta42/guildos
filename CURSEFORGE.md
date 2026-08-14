@@ -38,7 +38,7 @@ No spreadsheets. No external sites. No manual inspecting. **Install it, press `J
 
 ## 🌐 New — Guild OS is on the web
 
-### **[guildos.ferion.com.br](https://guildos.ferion.com.br)**
+### **[guildos.me](https://guildos.me)**
 
 Your roster, loot and attendance, lifted out of the game and onto a page you can send
 to anyone. It is optional, it is off until you turn it on, and the addon behaves
