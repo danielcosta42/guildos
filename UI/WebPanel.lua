@@ -26,6 +26,14 @@ local ROW_H   = 16
 -- names a raid leader is about to call are the two at the top.
 local LIST_ROWS = 5
 
+-- How old the companion's last word can be before it is worth saying something.
+--
+-- Days rather than hours, and deliberately generous: the game reads Inbox.lua
+-- when the client loads, so somebody logged in all evening is looking at a value
+-- that was already hours old when they saw it. The companion refreshes it every
+-- hour while it can reach the site, so three days means three days of failing.
+local ACK_STALE = 3 * 24 * 60 * 60
+
 -- Same shape as UI/Dashboard.lua's countdown, kept local so this panel
 -- does not depend on the dashboard having been built.
 local function fmtCountdown(dt)
@@ -361,11 +369,28 @@ function BRutus:CreateWebPanel(parent, _win)
                 and string.format(L["%d members go out next time"], count) or "")
             writtenText:SetText(string.format(L["Last written: %s"], writtenAgo()))
 
+            -- The companion's side of the round trip, and the only place in the
+            -- game that can tell somebody their companion has stopped working.
+            --
+            -- It is worth the three branches: this is the one warning that reaches
+            -- a person whose companion is pointed at an address that no longer
+            -- answers, because nothing here depends on that address.
             local ackAt, ackCount = nil, 0
             if I then ackAt, ackCount = I:Ack() end
-            ackText:SetText(ackAt
-                and string.format(L["Site updated %s, %d members"], stamp(ackAt), ackCount)
-                or L["The site has not confirmed anything yet."])
+
+            local dim, gold = C.textDim, C.gold
+            if not ackAt then
+                -- A companion from before this existed never writes the value at
+                -- all, so its absence is the signature of an old one.
+                ackText:SetText(string.format(L["Companion out of date. Download it again at %s"], SITE))
+                ackText:SetTextColor(gold.r, gold.g, gold.b)
+            elseif (GetServerTime() or time()) - ackAt > ACK_STALE then
+                ackText:SetText(string.format(L["The companion has sent nothing since %s"], stamp(ackAt)))
+                ackText:SetTextColor(gold.r, gold.g, gold.b)
+            else
+                ackText:SetText(string.format(L["Site updated %s, %d members"], stamp(ackAt), ackCount))
+                ackText:SetTextColor(dim.r, dim.g, dim.b)
+            end
 
             publishNote:SetText(L["Writes and reloads the interface. The companion sends it on from your PC."])
         else
