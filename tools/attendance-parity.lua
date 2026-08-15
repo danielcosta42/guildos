@@ -142,6 +142,25 @@ night(T + 3 * WEEK, { isGuildRaid = false, startTime = T + 3 * WEEK, snapshots =
   snap(T + 3*WEEK, { ["Fantasma-Firemaw"] = who("Fantasma", true, true) }),
 } })
 
+-- A night that arrived from another officer. The broadcast carries `players` and
+-- leaves the frames behind, so this is what an exporter holds for every night they
+-- did not personally record — and it is most of them. The addon scores it whole
+-- because its late and left-early guards have no frame to check against.
+SESSIONS[T + 4 * WEEK] = {
+  instanceID = 565, name = "Gruul's Lair", groupTag = "", startTime = T + 4 * WEEK,
+  endTime = T + 4 * WEEK + 4 * HOUR, encounters = {}, snapshots = {},
+  players = { ["Ana-Firemaw"] = true, ["Ouvida-Firemaw"] = true },
+}
+
+-- And the mixed case: one officer's frames merged with both officers' people. Whoever
+-- only the peer knew about is in `players` and in no frame, which the game reads as
+-- absent from the first and from the last.
+night(T + 5 * WEEK, { startTime = T + 5 * WEEK, snapshots = {
+  snap(T + 5*WEEK,        { ["Ana-Firemaw"] = who("Ana", true, true) }),
+  snap(T + 5*WEEK + HOUR, { ["Ana-Firemaw"] = who("Ana", true, true) }),
+} })
+SESSIONS[T + 5 * WEEK].players["Mesclada-Firemaw"] = true
+
 BRutus.db = { raidTracker = { sessions = SESSIONS, attendance = {}, deletedSessions = {} } }
 RT:RebuildAttendanceFromSessions()
 
@@ -182,8 +201,11 @@ for i, id in ipairs(ids) do
         if m.hasConsumes then hits = hits + 1 end
       end
     end
+    -- Same rule CompanionExport uses: somebody in `players` and in no frame travels
+    -- with a count of zero, stamped at the session's start. The zero is the signal.
     players[#players + 1] = string.format(
-      '{"key":%s,"snapshots":%d,"first":%d,"last":%d,"chits":%d}', q(key), n, first, last, hits)
+      '{"key":%s,"snapshots":%d,"first":%d,"last":%d,"chits":%d}',
+      q(key), n, first or s.startTime, last or s.startTime, hits)
   end
   out[#out + 1] = string.format(
     '{"instanceID":%d,"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',

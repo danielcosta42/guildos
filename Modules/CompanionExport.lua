@@ -162,7 +162,7 @@ end
 -- person's count against the session's is the fraction of the night they were
 -- there, which is partial attendance without the whole timeline.
 ----------------------------------------------------------------------
-local function rollUpPlayers(session)
+local function rollUpPlayers(session, startTime)
     local seen = {}
     for _, snap in ipairs(session.snapshots or {}) do
         local at = tonumber(snap.time) or 0
@@ -186,6 +186,31 @@ local function rollUpPlayers(session)
             -- "At least once" cannot answer that, so the site could never arrive at
             -- the same number the game shows.
             if m.hasConsumes then p.chits = (p.chits or 0) + 1 end
+        end
+    end
+
+    -- Whoever the session knows was there but no snapshot ever caught.
+    --
+    -- Snapshots do not travel between officers, and the broadcast says so in as many
+    -- words: it carries `players`, the encounters and the already-computed attendance,
+    -- and leaves the frames behind. So an officer who received a night from a peer
+    -- holds everyone who was there and evidence of none of them, and a night the two
+    -- clients merged holds one officer's frames and both officers' people.
+    --
+    -- Emitting only what the frames saw is how the site ended up with three of five
+    -- nights empty and a roster split between perfect and terrible, while the game
+    -- showed a sane number for the same guild — the addon's own rule reads
+    -- `session.players`, which survives the broadcast, and this did not.
+    --
+    -- `snapshots = 0` is the entire signal, and it needs no field of its own: it says
+    -- "in the group, never in a frame". The addon's late and left-early guards check
+    -- membership of the first and last frame, so with no frame to check they do not
+    -- fire, and the site reads the zero the same way.
+    for key in pairs(session.players or {}) do
+        if not seen[key] then
+            local at = tonumber(startTime) or tonumber(session.startTime) or 0
+            seen[key] = { key = key, snapshots = 0, first = at, last = at,
+                          offline = false, consumes = false }
         end
     end
 
@@ -272,7 +297,7 @@ local function raidSessions()
                 -- The denominator every player's count is read against.
                 snapshots = #(s.snapshots or {}),
                 encounters = encounters,
-                players = rollUpPlayers(s),
+                players = rollUpPlayers(s, startTime),
             }
         end
     end
