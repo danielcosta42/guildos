@@ -2982,7 +2982,7 @@ function BRutus:RefreshSettingsPanel(content, category)
         BRutus:ShowExportPopup(L["Guild OS Links"],
             "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
-            .. "Wago:  https://addons.wago.io/addons/b6XeDxKp")
+            .. "Wago:  https://addons.wago.io/addons/rNkyABKa")
     end)
     local linksNote = UI:CreateText(content, L["Project page, bug reports and updates"], 9, C.silver.r, C.silver.g, C.silver.b)
     linksNote:SetPoint("LEFT", linksBtn, "RIGHT", 10, 0)

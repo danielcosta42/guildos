@@ -9,7 +9,7 @@
 ## X-Category: Guild
 ## X-Website: https://github.com/danielcosta42/GuildOS
 ## X-Curse-Project-ID: 1549177
-## X-Wago-ID: b6XeDxKp
+## X-Wago-ID: rNkyABKa
 
 
 # Libraries
