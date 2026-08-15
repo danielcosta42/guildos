@@ -100,8 +100,36 @@ BRutus.db.raidTracker = {
         } },
       },
     },
+    -- An alt run somebody marked as not a guild raid. It travels so the site can
+    -- see it on the night screens, and attendance on both sides has to skip it.
+    [NIGHT + 86400] = {
+      instanceID = 565,
+      name = "Gruul's Lair",
+      groupTag = "Core 2",
+      isGuildRaid = false,
+      startTime = NIGHT + 86400,
+      endTime = NIGHT + 86400 + 3600,
+      encounters = {},
+      players = { ["Chehul-Firemaw"] = true },
+      snapshots = {
+        { time = NIGHT + 86400, reason = "session_start", count = 1, members = {
+            ["Chehul-Firemaw"] = { name = "Chehul", class = "HUNTER", online = true, hasConsumes = false },
+        } },
+      },
+    },
   },
   deletedSessions = { [1754000000] = true },
+}
+
+-- Two cores with different weights, because the whole reason the rules travel is
+-- that an officer can change them and the site cannot assume 10/10/10.
+BRutus.CoreManager = {
+  GetPenalties = function(_, coreName)
+    if coreName == "Core 2" then
+      return { LATE = 25, LEFT_EARLY = 5, NO_CONSUMES = 0 }
+    end
+    return { LATE = 10, LEFT_EARLY = 10, NO_CONSUMES = 10 }
+  end,
 }
 function BRutus:GetPlayerKey(name, realm)
   return name .. "-" .. (realm or GetRealmName())

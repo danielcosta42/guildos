@@ -27,8 +27,11 @@ local FMT = "GOSCOMP1"
 -- attendance. 2 adds the enchant summary, which is what lets the site say
 -- "four slots unenchanted" instead of just showing an item level. 3 adds the
 -- nights RaidTracker has been recording all along — who was actually there,
--- which is the half of "the signup that doesn't lie" the site never had.
-local PAYLOAD_VERSION = 3
+-- which is the half of "the signup that doesn't lie" the site never had. 4 adds
+-- what the site needs to arrive at the same attendance number the game shows:
+-- the consumable count behind the flag, the non-guild-raid mark, and each core's
+-- penalty weights.
+local PAYLOAD_VERSION = 4
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -177,6 +180,12 @@ local function rollUpPlayers(session)
             -- snapshot dropped; someone who had a flask for one had one.
             if m.online == false then p.offline = true end
             if m.hasConsumes then p.consumes = true end
+            -- The count as well as the flag, because the attendance penalty is a
+            -- ratio: `RaidTracker:UpdateAttendanceForLockout` docks the score when
+            -- consumables show up in under half the snapshots that saw the person.
+            -- "At least once" cannot answer that, so the site could never arrive at
+            -- the same number the game shows.
+            if m.hasConsumes then p.chits = (p.chits or 0) + 1 end
         end
     end
 
@@ -184,6 +193,39 @@ local function rollUpPlayers(session)
     for _, p in pairs(seen) do out[#out + 1] = p end
     table.sort(out, function(a, b) return a.key < b.key end)
     return out
+end
+
+----------------------------------------------------------------------
+-- What each core docks from a perfect night.
+--
+-- Attendance is a score, not a count: a lockout is worth 100 and arriving late,
+-- leaving early or raiding dry each take a bite out of it. The weights are per
+-- core and an officer can change them, so the site cannot assume 10/10/10 and
+-- still promise the same number the game shows.
+--
+-- Current config, not a stamp on each session: the addon recomputes its whole
+-- history with today's weights every time it rebuilds, and freezing them per
+-- night would make the two drift the moment somebody edited a core.
+----------------------------------------------------------------------
+local function attendanceRules(sessions)
+    if not BRutus.CoreManager then return nil end
+    local rules, any = {}, false
+    local seen = {}
+    for _, s in ipairs(sessions or {}) do
+        local tag = s.groupTag or ""
+        if not seen[tag] then
+            seen[tag] = true
+            local p = BRutus.CoreManager:GetPenalties(tag)
+            rules[tag] = { late = p.LATE, early = p.LEFT_EARLY, dry = p.NO_CONSUMES }
+            any = true
+        end
+    end
+    return any and rules or nil
+end
+
+local function guildRaidFlag(session)
+    if session.isGuildRaid == false then return false end
+    return nil
 end
 
 local function raidSessions()
@@ -214,6 +256,16 @@ local function raidSessions()
                 -- for a night nobody planned, which is most of them.
                 raidId = type(s.raidId) == "string" and s.raidId ~= "" and s.raidId or nil,
                 instanceID = tonumber(s.instanceID) or 0,
+                -- Only when false, mirroring the addon's own `isGuildRaid ~= false`:
+                -- every session recorded before the flag existed is a guild raid, and
+                -- absent has to keep meaning that on the far side too. Attendance
+                -- ignores the ones marked false, so without this the site would count
+                -- somebody's pug alt run against the guild's roster.
+                --
+                -- Spelled out rather than `x and false or nil`, which is the Lua trap
+                -- that cannot ever yield false and would have shipped every alt run as
+                -- a guild raid.
+                guildRaid = guildRaidFlag(s),
                 name = s.name or "",
                 startTime = math.floor(startTime),
                 endTime = s.endTime and math.floor(s.endTime) or nil,
@@ -340,6 +392,7 @@ function Companion:BuildPayload()
         loot = loot,
         sessions = sessions,
         deletedSessions = deletedSessions,
+        attendanceRules = attendanceRules(sessions),
     }
 end
 
