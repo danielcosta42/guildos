@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.51.0] - 2026-08-15
+
+### Added
+- the links list opens with the site the addon feeds
+
+
 ## [0.50.1] - 2026-08-15
 
 ### Fixed
