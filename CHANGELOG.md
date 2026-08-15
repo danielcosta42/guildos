@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.0] - 2026-08-15
+
+### Added
+- the whole guild roster is published, not only who has synced
+
+
 ## [0.51.0] - 2026-08-15
 
 ### Added
