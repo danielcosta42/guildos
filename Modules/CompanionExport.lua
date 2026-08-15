@@ -353,33 +353,51 @@ function Companion:BuildPayload()
             local key = BRutus:GetPlayerKey(short, memberRealm)
             local data = BRutus.db.members[key]
 
-            -- Only members whose own client has published something. A row
-            -- built from the guild roster alone would carry a level and a
-            -- class and nothing the site cannot already guess, and it would
-            -- look confirmed on the site while being nothing of the sort.
-            if data and (data.lastUpdate or 0) > 0 then
-                count = count + 1
-                local att = BRutus.RaidTracker
-                    and BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0
+            -- Everybody on the guild roster, including whoever has never published.
+            --
+            -- This used to send only clients that had synced, and the reason was
+            -- sound: a row built from the guild roster alone carries a level and a
+            -- class and nothing the site cannot already guess, and it would look
+            -- confirmed while being nothing of the sort.
+            --
+            -- What that cost only became visible against real data. One guild
+            -- published 34 members and 48 different people were recorded raiding,
+            -- overlapping by five — and the site had no way to tell "our member who
+            -- has not installed it" from "somebody who is not in the guild". Those
+            -- are different conversations, and both were invisible.
+            --
+            -- `lastUpdate = 0` carries it, the same trick as `snapshots = 0`: a value
+            -- that already exists saying one more thing, with no field of its own.
+            -- The site marks those rows, and that mark is the condition for sending
+            -- them at all — without it this recreates exactly what the filter avoided.
 
-                members[count] = {
-                    key = key,
-                    name = short,
-                    class = classFile or "",
-                    race = data.race or "",
-                    level = level or 0,
-                    rank = rankName or "",
-                    rankIndex = rankIndex or 0,
-                    avgIlvl = math.floor(tonumber(data.avgIlvl) or 0),
-                    lastUpdate = math.floor(tonumber(data.lastUpdate) or 0),
-                    spec = data.spec,
-                    prefRoles = data.prefRoles or {},
-                    professions = professionsFor(data),
-                    attunements = attunementsFor(key),
-                    att25 = tonumber(att) or 0,
-                    enchants = enchantSummary(data.gear),
-                }
-            end
+            -- Nothing published means no record at all, so everything below reads
+            -- through an empty table rather than guarding each field.
+            data = data or {}
+            count = count + 1
+            local att = BRutus.RaidTracker
+                and BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0
+
+            members[count] = {
+                key = key,
+                -- Name, class, level and rank come from the guild roster, so they are
+                -- known for everybody. Everything after them comes from the person's
+                -- own client and is absent until it has spoken.
+                name = short,
+                class = classFile or "",
+                race = data.race or "",
+                level = level or 0,
+                rank = rankName or "",
+                rankIndex = rankIndex or 0,
+                avgIlvl = math.floor(tonumber(data.avgIlvl) or 0),
+                lastUpdate = math.floor(tonumber(data.lastUpdate) or 0),
+                spec = data.spec,
+                prefRoles = data.prefRoles or {},
+                professions = professionsFor(data),
+                attunements = attunementsFor(key),
+                att25 = tonumber(att) or 0,
+                enchants = enchantSummary(data.gear),
+            }
         end
     end
 
