@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.50.0] - 2026-08-15
+
+### Added
+- the payload carries what attendance is actually made of
+
+### Fixed
+- a night that came from another officer arrives with its people
+
+
 ## [0.49.0] - 2026-08-14
 
 ### Added
