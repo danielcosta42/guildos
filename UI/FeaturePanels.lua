@@ -2980,7 +2980,10 @@ function BRutus:RefreshSettingsPanel(content, category)
     linksBtn:SetPoint("TOPLEFT", 8, -yOff)
     linksBtn:SetScript("OnClick", function()
         BRutus:ShowExportPopup(L["Guild OS Links"],
-            "GitHub:  https://github.com/danielcosta42/GuildOS\n"
+            -- The site first: it is the one link here that does something for the
+            -- person reading it. The other three are where the addon comes from.
+            "App:  https://guildos.me\n"
+            .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")
     end)
