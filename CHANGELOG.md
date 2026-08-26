@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.1] - 2026-08-26
+
+### Fixed
+- the guild roster is standing right here, so ask it
+
+
 ## [0.52.0] - 2026-08-15
 
 ### Added
