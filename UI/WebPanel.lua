@@ -76,6 +76,12 @@ local function summarise(roster)
     local list = roster and roster.signups
     if type(list) ~= "table" then return nil end
 
+    -- Same answer the invite button acts on. Listing somebody under "the game has never
+    -- seen this character" a second after inviting them off the guild roster is exactly
+    -- the disagreement this panel exists to remove.
+    local I = BRutus.CompanionImport
+    local rescued = (I and I.Rescued) and I:Rescued(roster) or {}
+
     local s = {
         size = tonumber(roster.size) or 0,
         coming = 0, tanks = 0, healers = 0, dps = 0,
@@ -84,7 +90,7 @@ local function summarise(roster)
     }
 
     for _, p in ipairs(list) do
-        if p.invite then
+        if p.invite or rescued[p.name] then
             s.coming = s.coming + 1
             if p.slot == "TANK" then
                 s.tanks = s.tanks + 1

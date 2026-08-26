@@ -281,6 +281,40 @@ function Import:CanOrganize()
     return true
 end
 
+--- Short names of everyone on the live guild roster.
+local function guildNames()
+    local names = {}
+    for i = 1, (GetNumGuildMembers() or 0) do
+        local full = GetGuildRosterInfo(i)
+        if full then names[full:match("^([^-]+)") or full] = true end
+    end
+    return names
+end
+
+--- The people the site could not vouch for but the game can, by short name.
+---
+--- The site only calls a character confirmed once an ingested roster has carried the
+--- same "Name-Realm". A guild that has never published has confirmed nobody, and on its
+--- first night that is everyone who signed up — the leader pastes a roster and invites
+--- one person. The roster is standing right here in the client, so ask it.
+---
+--- Only "unknown" is rescued. Somebody on standby, refused, or waiting for approval is
+--- not missing a confirmation; they are missing a decision, and that one is not ours.
+---
+--- The panel and the invite button both read this, for the reason every predicate in
+--- this file is shared: a button that says "the game has never seen this character"
+--- beside somebody it just invited is two versions of the truth.
+function Import:Rescued(roster)
+    local out, guild = {}, nil
+    for _, p in ipairs((roster and roster.signups) or {}) do
+        if p.why == "unknown" and not p.invite and type(p.name) == "string" then
+            guild = guild or guildNames()
+            if guild[p.name] then out[p.name] = true end
+        end
+    end
+    return out
+end
+
 --- Invite everyone on the loaded roster who is not already in the group.
 --- Returns (invited, skipped, err).
 function Import:InviteAll()
@@ -299,21 +333,31 @@ function Import:InviteAll()
         if n then present[n] = true end
     end
 
+    -- C_PartyInfo is the modern call; InviteUnit is the Classic one.
+    -- Both exist in TBC Anniversary depending on the build.
+    local function ask(name)
+        if C_PartyInfo and C_PartyInfo.InviteUnit then
+            C_PartyInfo.InviteUnit(name)
+        elseif InviteUnit then
+            InviteUnit(name)
+        end
+    end
+
     local invited, skipped = 0, 0
-    for _, m in ipairs(roster.members) do
-        if present[m.name] then
+    local function send(name)
+        if present[name] then
             skipped = skipped + 1
         else
-            -- C_PartyInfo is the modern call; InviteUnit is the Classic one.
-            -- Both exist in TBC Anniversary depending on the build.
-            if C_PartyInfo and C_PartyInfo.InviteUnit then
-                C_PartyInfo.InviteUnit(m.name)
-            elseif InviteUnit then
-                InviteUnit(m.name)
-            end
+            ask(name)
+            -- Marked here as well as counted: two signups can name the same character,
+            -- and a second invite to a name already asked is an error in their chat.
+            present[name] = true
             invited = invited + 1
         end
     end
+
+    for _, m in ipairs(roster.members) do send(m.name) end
+    for name in pairs(self:Rescued(roster)) do send(name) end
     return invited, skipped, nil
 end
 

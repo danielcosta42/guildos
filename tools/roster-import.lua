@@ -35,6 +35,12 @@ function UnitName(unit)
   local i = tonumber(tostring(unit):match("%d+") or "")
   return i and RAID[i] and RAID[i][1] or nil
 end
+-- The guild standing in the client. Novato signed up and the site could not vouch
+-- for him; the game can, and that is the whole point of the rescue. Vex is here too
+-- and must still not be invited: standby is a decision, not a missing confirmation.
+local GUILD = { "Chehul-Firemaw", "Novato-Firemaw", "Vex-Firemaw", "Estranho-Firemaw" }
+function GetNumGuildMembers() return #GUILD end
+function GetGuildRosterInfo(i) return GUILD[i] end
 function UnitIsGroupLeader() return true end
 function UnitIsGroupAssistant() return false end
 function GetRealmName() return "Firemaw" end
@@ -104,6 +110,19 @@ end
 local invited, skipped, ierr = BRutus.CompanionImport:InviteAll()
 assert(not ierr, ierr)
 print(string.format("invited=%d skipped=%d -> %s", invited, skipped, table.concat(INVITED, ",")))
+
+-- Who got asked, and who did not. The site can only vouch for a character some
+-- ingested roster confirmed, so a guild that has never published has confirmed
+-- nobody — and on its first night that is everyone who signed up.
+local asked = {}
+for _, name in ipairs(INVITED) do asked[name] = true end
+assert(asked["Ciclano"], "the name the site vouched for was not invited")
+assert(asked["Novato"], "the game has this name on the guild roster; nobody asked them")
+assert(not asked["Vex"], "standby is a decision, not a missing confirmation")
+assert(not asked["Chehul"] and not asked["Fulano"], "inviting the people already here")
+assert(not asked["Estranho"], "invited somebody who never signed up")
+assert(invited == 2 and skipped == 2,
+  "invited/skipped drifted: " .. invited .. "/" .. skipped)
 
 local moved, gerr = BRutus.CompanionImport:OrganizeGroups()
 assert(not gerr, gerr)
