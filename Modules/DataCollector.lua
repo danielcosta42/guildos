@@ -69,6 +69,15 @@ function DataCollector:CollectMyData()
     local _, class = UnitClass("player")
     local level = UnitLevel("player")
     local race = UnitRace("player") or ""
+    -- The SECOND return, which is the English token: "Orc", "BloodElf". The first one
+    -- is localized, so a client in Portuguese has been publishing "Orco" all along --
+    -- readable by a person, meaningless to anything that has to draw the character.
+    -- `race` is left exactly as it was: it is a field the site already stores, and
+    -- changing what an existing field means is how working things break.
+    local raceToken = select(2, UnitRace("player")) or ""
+    -- 1 unknown, 2 male, 3 female. Never collected before, and a model cannot be
+    -- dressed without it.
+    local sex = UnitSex("player") or 1
 
     local data = BRutus.db.members[key] or {}
     data.name = name
@@ -76,6 +85,8 @@ function DataCollector:CollectMyData()
     data.class = class
     data.level = level
     data.race = race
+    data.raceToken = raceToken
+    data.sex = sex
     data.lastUpdate = time()
 
     -- Collect gear
@@ -597,6 +608,8 @@ function DataCollector:GetBroadcastData()
         class = myData.class,
         level = myData.level,
         race = myData.race,
+        raceToken = myData.raceToken,
+        sex = myData.sex,
         avgIlvl = myData.avgIlvl,
         lastUpdate = myData.lastUpdate,
         professions = myData.professions,

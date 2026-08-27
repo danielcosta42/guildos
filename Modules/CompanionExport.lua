@@ -30,8 +30,11 @@ local FMT = "GOSCOMP1"
 -- which is the half of "the signup that doesn't lie" the site never had. 4 adds
 -- what the site needs to arrive at the same attendance number the game shows:
 -- the consumable count behind the flag, the non-guild-raid mark, and each core's
--- penalty weights.
-local PAYLOAD_VERSION = 4
+-- penalty weights. 5 adds the equipment itself -- collected since the first version,
+-- synced between clients since the first version, and discarded by this file every
+-- time -- plus the two things a character cannot be drawn without: the player's sex
+-- and the English race token.
+local PAYLOAD_VERSION = 5
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -122,6 +125,50 @@ local function enchantSummary(gear)
     end
     if checked == 0 then return nil end
     return { checked = checked, missing = missing }
+end
+
+-- Every equipped slot, as a DENSE list rather than a map keyed by slot id.
+--
+-- The JSON encoder in this file is hand-written, and a Lua table with the keys 1, 2, 3,
+-- 5 is a sparse array -- exactly what a simple encoder gets wrong. A list of entries
+-- carrying their own slot has no holes in it.
+--
+-- The name rides along even though the id would be enough for a tooltip link: the
+-- character page on the site is public, and a sheet that only becomes readable once
+-- somebody else's script has loaded is not readable. Item names repeat across a guild,
+-- so deflate charges very little for them.
+local function gearFor(data)
+    if not data or not data.gear then return nil end
+
+    local out = {}
+    for _, slotInfo in ipairs(BRutus.SlotIDs) do
+        local item = data.gear[slotInfo.id]
+        if item and item.id then
+            local entry = {
+                slot = slotInfo.id,
+                id = item.id,
+                name = item.name or "",
+                quality = tonumber(item.quality) or 0,
+                ilvl = tonumber(item.ilvl) or 0,
+            }
+            -- Absent, not zero: a slot with no enchant and a slot nobody read are
+            -- different claims, and the site is built to tell them apart.
+            if item.enchantId and item.enchantId > 0 then entry.enchant = item.enchantId end
+            if item.gems and #item.gems > 0 then
+                local gems = {}
+                for _, gem in ipairs(item.gems) do
+                    local id = tonumber(gem.id or gem)
+                    if id and id > 0 then gems[#gems + 1] = id end
+                end
+                if #gems > 0 then entry.gems = gems end
+            end
+            out[#out + 1] = entry
+        end
+    end
+
+    -- Nothing equipped at all is a client that has not looked yet, not a naked raider.
+    if #out == 0 then return nil end
+    return out
 end
 
 local function attunementsFor(key)
@@ -397,6 +444,11 @@ function Companion:BuildPayload()
                 attunements = attunementsFor(key),
                 att25 = tonumber(att) or 0,
                 enchants = enchantSummary(data.gear),
+                -- v5. Absent for anybody whose client has never published, which is
+                -- most of a guild's roster and is the honest answer for them.
+                gear = gearFor(data),
+                sex = data.sex,
+                raceToken = data.raceToken,
             }
         end
     end
