@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.53.0] - 2026-08-28
+
+### Added
+- o equipamento atravessa (payload v5)
+
+### Fixed
+- luacheck não conhecia UnitSex
+
+
 ## [0.52.1] - 2026-08-26
 
 ### Fixed
