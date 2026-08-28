@@ -72,6 +72,7 @@ read_globals = {
     "UnitClass",
     "UnitLevel",
     "UnitRace",
+    "UnitSex",
     "UnitFactionGroup",
     "UnitGUID",
     "UnitHealthMax",
