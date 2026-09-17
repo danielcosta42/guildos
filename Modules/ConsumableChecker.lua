@@ -126,10 +126,11 @@ function ConsumableChecker:CheckRaid()
 
     for i = 1, numMembers do
         local unit = "raid" .. i
-        if UnitExists(unit) and UnitIsConnected(unit) then
-            local name = UnitName(unit)
-            local class = select(2, UnitClass(unit))
-            local playerKey = BRutus:GetPlayerKey(name, (select(2, UnitName(unit))))
+        -- A member whose identity is secret, or who reports no name, is skipped.
+        local name, realm, class
+        if UnitExists(unit) and UnitIsConnected(unit) then name, realm, class = BRutus.Compat.UnitIdentity(unit) end
+        if name then
+            local playerKey = BRutus:GetPlayerKey(name, realm)
 
             local playerResult = {
                 name = name,

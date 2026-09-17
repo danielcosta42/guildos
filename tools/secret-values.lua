@@ -145,7 +145,9 @@ C_ChatInfo = { SendAddonMessage = function() sent = sent + 1 end }
 recorded = {}
 Compat.SendAddonMessage("GuildOS", secret(), "GUILD")
 check(sent == 0, "a secret text is not sent (SendAddonMessage refuses secret arguments)")
-check(#recorded >= 1, "and the refusal is recorded")
+-- On the client a secret string's type is "string", so only the guard stands before #msg.text; the
+-- fake is a table, which the type check would also refuse, so the reason is what proves the guard.
+check(recorded[#recorded] and recorded[#recorded]:find("result secret", 1, true), "and it is recorded as secret")
 Compat.SendAddonMessage("GuildOS", "hello", "GUILD", secret())
 check(sent == 0, "a secret target is not sent either")
 Compat.SendAddonMessage("GuildOS", "hello", "GUILD")
@@ -180,14 +182,29 @@ BRutus.db = {
 local mentions = handlerOf(function() BRutus.Mentions:_SetupHook() end)
 check(fires(mentions, nil, "CHAT_MSG_GUILD", secret(), secret()), "Mentions: a secret line and sender do not raise")
 check(fires(mentions, nil, "CHAT_MSG_GUILD", "raid tonight", secret()), "Mentions: a secret sender alone does not raise")
+local mentioned
+BRutus.Mentions._cd = {}  -- made by Initialize, which this test does not run
+BRutus.Mentions._Record = function(_, term, sender) mentioned = { term, sender } end
+check(fires(mentions, nil, "CHAT_MSG_GUILD", "raid tonight", "Bob-Forever") and mentioned
+      and mentioned[1] == "raid" and mentioned[2] == "Bob", "Mentions: a readable line still records the mention")
 
 local note = handlerOf(function() BRutus.NoteCommand:_SetupHook() end)
 check(fires(note, nil, "CHAT_MSG_GUILD", secret(), secret()), "NoteCommand: a secret line does not raise")
 check(fires(note, nil, "CHAT_MSG_GUILD", "!note main tank", secret()), "NoteCommand: a secret sender does not raise")
+local parsed
+BRutus.NoteCommand._Parse = function(_, msg) parsed = msg; return nil end
+check(fires(note, nil, "CHAT_MSG_GUILD", secret(), "Bob-Forever") and parsed == nil, "NoteCommand: a secret line is never parsed")
+check(fires(note, nil, "CHAT_MSG_GUILD", "!note main tank", "Bob-Forever") and parsed == "!note main tank",
+      "NoteCommand: a readable line is parsed as before")
 
 local roster = handlerOf(function() BRutus.RosterLog:_SetupDetection() end)
 BRutus.RosterLog._ready = true  -- after setup, which starts it unready
 check(fires(roster, nil, "CHAT_MSG_SYSTEM", secret()), "RosterLog: a secret system line does not raise")
+local logged
+BRutus.RosterLog._ParseSystem = function(_, msg) return { action = "join", target = msg } end
+BRutus.RosterLog.Add = function(_, evt) logged = evt end
+check(fires(roster, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and logged and logged.action == "join",
+      "RosterLog: a readable system line is still logged")
 
 BRutus.RecruitScanner._contactCd = { Bob = true }
 local scanner = handlerOf(function() BRutus.RecruitScanner:_RegisterEvents() end)
@@ -200,17 +217,40 @@ local ban = handlerOf(function() BRutus.BanList:_SetupDetection() end)
 BRutus.BanList._ready = true
 check(fires(ban, nil, "CHAT_MSG_SYSTEM", secret()), "BanList: a secret join line does not raise")
 check(fires(ban, nil, "CHAT_MSG_WHISPER", "hello", secret()), "BanList: a secret whisperer does not raise")
+local alerted = 0
+BRutus.BanList.IsBanned = function() return true end
+BRutus.BanList.Get = function(_, n) return { name = n } end
+BRutus.BanList._Alert = function() alerted = alerted + 1 end
+BRutus.BanList._ParseJoin = function() return "Bob" end
+check(fires(ban, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and alerted == 1, "BanList: a readable join still alerts")
+check(fires(ban, nil, "CHAT_MSG_WHISPER", "hello", "Bob-Forever") and alerted == 2, "BanList: a readable whisper still alerts")
 
 local welcome = handlerOf(function() BRutus.Recruitment:RegisterWelcomeEvent() end)
 BRutus.Recruitment._rosterReady = true
 check(fires(welcome, nil, "CHAT_MSG_SYSTEM", secret()), "Recruitment welcome: a secret system line does not raise")
+local joined
+BRutus.RecruitEngagement = { RecordJoin = function(_, who) joined = who end }
+BRutus.db.recruitment.welcomeEnabled = false
+check(fires(welcome, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and joined == "Bob",
+      "Recruitment welcome: a readable join is still credited")
 local autoInvite = handlerOf(function() BRutus.Recruitment:RegisterAutoInviteEvent() end)
 check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", secret(), secret()), "Recruitment auto-invite: a secret whisper does not raise")
+local invited
+BRutus.Recruitment._MatchKeyword = function() return true end
+BRutus.Recruitment._HandleKeywordWhisper = function(_, who) invited = who end
+check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", "inv pls", "Bob-Forever") and invited == "Bob",
+      "Recruitment auto-invite: a readable whisper still invites")
 
 local LootMaster = BRutus.LootMaster
 LootMaster.listeningForRolls, LootMaster.activeLoot = true, { itemId = 1 }
 LootMaster.rollPattern = "(.+) rolls (%d+) %((%d+)%-(%d+)%)"
 check(fires(function() LootMaster:OnSystemMessage(secret()) end), "LootMaster: a secret roll line does not raise")
+local rolled
+local realProcess = LootMaster.ProcessSystemRoll
+LootMaster.ProcessSystemRoll = function(_, msg) rolled = msg end
+check(fires(function() LootMaster:OnSystemMessage("Bob rolls 55 (1-100)") end) and rolled == "Bob rolls 55 (1-100)",
+      "LootMaster: a readable roll line is still processed")
+LootMaster.ProcessSystemRoll = realProcess
 
 -- ── 5. Group units: the unreadable member is skipped, the rest kept ─────
 local RaidTracker = BRutus.RaidTracker

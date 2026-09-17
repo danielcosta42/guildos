@@ -69,16 +69,18 @@ indexing or doing arithmetic with it raises.
   - `LootMaster`'s roll capture (a roll made while chat is locked down is missed, not misread);
   - `AllianceChat` on its channel.
 - **Group-unit loops skip a member they cannot read:** `RaidTracker`, `Points`, `LootMaster` (seven places plus
-  the trade window), `PugInspector`, `SoftRes`, `RaidTools`, `CompanionImport` and `SpecChecker`.
+  the trade window), `PugInspector`, `SoftRes`, `RaidTools`, `CompanionImport`, `SpecChecker` and
+  `ConsumableChecker` (Anniversary only today).
 - **Own stats:** `DataCollector:CollectStats` leaves a restricted stat out instead of serialising it.
 - **The addon-message path** records a secret argument as `"secret"` and never sends it.
 - **`ChehulNet` (`DetectLayer`)** skips a secret GUID. The file is shared verbatim with the other Chehul addons:
   copy the change there.
 - **Two small ones:** `RecipeTracker:ScanCraft` checks `GetCraftInfo` too, and `ChatTweaks` checks
   `ChatFrame_AddMessageEventFilter` before registering.
-- **The test.** `tools/secret-values.lua` (luajit, 39 checks) loads the real Core, Compat, Utils and eleven modules
-  under a stubbed client, with a secret that raises on every use.
-  - **Mutation check:** 16 of 17 hand mutants are killed.
+- **The test.** `tools/secret-values.lua` (luajit, 48 checks) loads the real Core, Compat, Utils and eleven modules
+  under a stubbed client, with a secret that raises on every use. Each handler also gets a readable line, so one that
+  returns unconditionally fails too.
+  - **Mutation check:** 23 of 24 hand mutants are killed.
   - **The survivor is the trade window's guard.** Lua 5.1 never calls `__eq` between a table and a string, so the
     stub cannot make that comparison raise the way the client does.
 
@@ -115,6 +117,8 @@ Nothing the probe inventory lists as documented on Anniversary is missing from F
 - **Chat lockdown.** When it starts on Forever: combat, instances, encounters? This decides how often roll capture
   and mention alerts go quiet.
 - **Group members' identity.** Whether it is restricted outside instances.
+- **`GetRaidRosterInfo`.** Whether its names come back secret too. It is not in the documentation's secret list,
+  and RaidTools, PugInspector, LootMaster's master looter, CompanionImport and RaidHUD read names from it.
 - **The interface number.** `GetBuildInfo()` on the client itself: is it really 16001?
 - **The TOC suffix.** Whether Forever reads a `_Camelot.toc`. `GuildOS.toc` loads either way.
 - **Recipes and specs.** The shapes of `C_TradeSkillUI` and `C_ClassTalents` / `C_Traits` for a real character,
