@@ -155,6 +155,24 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 
 ---
 
+## Testing on the Forever beta
+
+Beta builds for WoW: Forever are published only as
+[GitHub pre-releases](https://github.com/danielcosta42/GuildOS/releases), never to CurseForge or Wago. The stores
+keep shipping the TBC Anniversary version.
+
+1. **Point the Guild OS companion at Anniversary first.** If you use the desktop companion, make sure it reads your
+   `_anniversary_` folder before you install the beta, so it keeps syncing the right guild.
+2. **Download** the latest `GuildOS-vX.Y.Z-beta.N.zip` from the pre-releases.
+3. **Install** it into the beta client's own `Interface/AddOns` folder, not into `_anniversary_`.
+4. **Load it.** If the beta's interface number is newer than the build lists, tick **Load out of date AddOns** on
+   the AddOns screen at character select.
+5. **Run the probe.** In game, type `/guildos probe`, then `/reload` so the result is written to disk. The probe
+   records which client this is and which of the APIs, events and templates Guild OS uses exist.
+6. **Send back** `WTF/Account/<account>/SavedVariables/GuildOS.lua` from the beta client's folder. It holds Guild
+   OS's saved data for your guilds, including guild members' character names, officer notes and chat messages:
+   share it only with the Guild OS maintainers.
+
 ## Libraries
 
 - [LibStub](https://www.wowace.com/projects/libstub)

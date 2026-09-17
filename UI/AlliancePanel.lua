@@ -45,7 +45,7 @@ local function makeInput(parent, width)
                     edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     b:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    b:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(b, 11)
     b:SetTextColor(C.text.r, C.text.g, C.text.b)
     b:SetTextInsets(6, 6, 0, 0)
     b:SetAutoFocus(false)
@@ -330,8 +330,9 @@ local function ensureAllyCard()
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
     })
-    f:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.98)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.8)
+    -- A floating card is elevation 4: popup surface, lineHi border.
+    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    f:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
     f:EnableMouse(true)
     f:SetMovable(true)
     f:RegisterForDrag("LeftButton")
@@ -575,7 +576,7 @@ local function BuildChat(panel)
         hide:SetSize(16, 16)
         hide:SetPoint("TOPRIGHT", -4, -4)
         hide.fs = hide:CreateFontString(nil, "OVERLAY")
-        hide.fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+        BRutus:ApplyFont(hide.fs, 12)
         hide.fs:SetPoint("CENTER")
         hide.fs:SetText("\195\151")
         hide.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
@@ -675,7 +676,9 @@ local function BuildChat(panel)
 
             if g.sys then
                 -- Events stand apart: no card, no speaker, just a marked line.
-                local col = (g.sys == "warn") and "E0B040" or "8F7BD1"
+                local lbl = BRutus.Colors.label
+                local col = (g.sys == "warn") and "E0B040"
+                    or string.format("%02x%02x%02x", lbl.r * 255, lbl.g * 255, lbl.b * 255)
                 b.card:SetBackdropColor(0, 0, 0, 0)
                 b.card:SetBackdropBorderColor(0, 0, 0, 0)
                 b.accent:Hide()
@@ -870,7 +873,7 @@ local function BuildBulletin(panel)
         del:SetSize(18, 18)
         del:SetPoint("TOPRIGHT", -5, -5)
         del.fs = del:CreateFontString(nil, "OVERLAY")
-        del.fs:SetFont("Fonts\\FRIZQT__.TTF", 13, "")
+        BRutus:ApplyFont(del.fs, 13)
         del.fs:SetPoint("CENTER")
         del.fs:SetText("\195\151")
         del.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
@@ -1467,6 +1470,7 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
     bar:SetSize(400, 28)
+    UI:StyleSubTabBar(bar)
 
     local btns = {}
     local function selectSub(key)
@@ -1479,7 +1483,7 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
     parent.SelectSub = selectSub
 
     for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W)
+        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W, true)
         btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         btns[t.key] = btn

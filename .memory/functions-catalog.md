@@ -47,6 +47,89 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 
 ---
 
+## v0.54 — Forever skin (#13)
+
+| Symbol | Description |
+|---|---|
+| `BRutus.Colors.<token>` | Handoff tokens: `bg`, `panel`, `popup`, `well`, `line`, `lineHi`, `text`, `textSoft`, `label`, `labelDim`, `disabled`, `gold`, `onGold`, `ok`, `danger`, `info`, `epic`. Legacy keys (`silver`, `accent`, `border`…) are copies of the token that plays their role (ADR-0013) |
+| `BRutus.Fonts` | Files `serif`, `serifStrong`, `mono`, `monoStrong`; roles `wordmark`, `windowTitle`, `sectionTitle`, `body`, `memberName`, `itemName`, `caption`, `tableNum`, `colHeader`, `metricValue`, `countdown`, `badge` as `{ file, size }`; `normal`/`number` alias `mono` |
+| `BRutus:ApplyFont(fontString, size, role)` | Sets a font: a role wins, else Spectral from 14px and IBM Plex Mono below (clamped to 10px); never outlined; falls back to `STANDARD_TEXT_FONT` only when `SetFont` returns false |
+| `BRutus.UI:SetButtonVariant(btn, variant)` | Switches a `CreateButton` button to `"primary"` (gold fill, `glow-gold.tga`), `"secondary"` (default), `"ghost"` (underlined label) or `"danger"`; returns the button |
+| `BRutus.UI:CreateMetricChip(parent, value, caption, size)` | Metric chip: mono value, 1px gold rule (34px), `labelDim` caption; `chip:SetValue(text)` |
+| `BRutus.UI:_ButtonState(btn, state)` | Internal: paints `"rest"`, `"hover"`, `"pressed"` or `"disabled"` for the button's variant, in the same frame |
+
+Removed: `BRutus.ACCENT_PRESETS`, `BRutus:ApplyTheme()`.
+
+---
+
+## v0.55 — One window (#14)
+
+| Symbol | Description |
+|---|---|
+| `UI:OpenWindow(id, sub, filter)` | The one opener: refuses an unknown id or a background module, then says disabled / could not start / officer-only; shows the window, unfolds it when the saved fold says so, opens tab `id` (remembered), then `panel.SelectSub(sub, filter)`; true when the tab opened (ADR-0016) |
+| `UI:ToggleMain()` | Shows or hides the window on the remembered tab |
+| `UI:GetMainWindow()` | The window (`BRutus.RosterFrame`, frame `GuildOSWindow`), created on first use; nil before the saved data loads |
+| `UI:ApplyScale()` / `UI:OnFeatureToggled()` | Pushes `uiScale` onto the window / re-checks its tabs after a Settings toggle |
+| `UI:ClampWindowRect(left, top, w, h, sw, sh)` | Pure: a saved rectangle pulled onto a screen of sw × sh, between 320×28 and the screen's size |
+| `UI:SaveWindowGeometry(frame)` / `UI:RestoreWindowGeometry(frame)` | `settings.window.left/top/w/h`; restore clamps, or 1000×620 centred (capped to the scaled screen) when nothing is saved |
+| `window:SetActiveTab(key, byUser)` | Opens a tab, building its panel the first time (one that raised stays refused); `byUser` remembers it |
+| `window:UpdateTabVisibility()` | Re-checks every tab with `UI:IsFeatureAllowed`; falls back to Now when the open tab is gone |
+| `window:LayoutTabs(width)` | Places the tabs that fit (`UI:FitTabs`) and folds the rest into "»n", or shows the selector in the watch band |
+| `window:LayoutFooter(width)` | Footer actions by priority through `UI:ResolveColumns`; the invite field only for who can invite |
+| `window:Layout(width)` | Applies the band, measured on the content area (the width less its padding): title bar height, padding, rule or selector, the switch to Now and back, the bar |
+| `window:ToggleCollapsed()` / `window:Settle()` | Folds to or restores from the 28px bar / after the grip, folds into or out of the bar band |
+| `window:RefreshTitle()` | Guarded: guild and online count (a dash while the roster loads), sync time, and the bar's three numbers only in the bar band |
+| `UI.LADDER` / `UI.LADDER_HYSTERESIS` / `UI:ResolveBand(width, current)` | The handoff §6 bands (full, wide, medium, compact, narrow, watch, bar) and the band for a width, which moves only 16px past a line |
+| `UI:FitTabs(widths, available, gap, moreW, active)` | Pure: the tab indices that fit beside "»n" and how many fold; the active tab always stays |
+| `UI:CreateTab(parent, text, width, sub)` / `UI:StyleSubTabBar(bar)` | `sub = true` draws the 1px sub-tab rule / puts a sub-tab bar on `panel` |
+| `UI.Agora:NextRaid()` / `Agora.Clock(dt)` / `Agora.Short(dt)` | The next future RAID (or kindless) calendar event; "4:12:38" or "2d 4h"; "4h12" |
+| `UI.Agora:NeedsMe()` | `{ text, urgent, id, sub, filter }` items, urgent first, only for screens the player can open; an unanswered raid carries its time as the calendar's filter |
+| `UI.Agora:Activity(limit)` | The last 48 hours, newest first, at most 12: roster log (with the member when exactly one saved member has that name), loot (with the member), milestones, raids tracked (at their end); `{ ts, text, id, sub, key }` |
+| `UI.Agora:OnlineCount()` / `RosterLoading()` / `LastSync()` / `BarText()` | Members online; in a guild with the roster not in yet; newest member sync; "online · time to raid · pending", with dashes for the counts while the roster loads |
+| `BRutus:CreateNowPanel(panel, win)` | Builds Now: the live column, and the home cards beside it from 780px. Fetches on show, every tenth tick of its 1s clock and on roster updates; a resize only repaints |
+| `panel.SelectSub(key, filter)` / `subPanel.ApplyFilter(value)` | Deep links: every panel with sub-tabs exposes `SelectSub`; the Guild tab hands `filter` to a sub-panel's `ApplyFilter`, and the calendar's selects the day of a timestamp |
+
+Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:GetWindow`, `UI:CloseAllWindows`, `UI:RaiseWindow`, `BRutus:ToggleExpanded`, `BRutus.CreateRosterFrame`; the registry's `hub`, `w`, `h`, `minW`, `minH`, `resizable` and `icon`.
+
+---
+
+## v0.56 — Member keys without a realm (#8)
+
+| Symbol | Description |
+|---|---|
+| `BRutus:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing) |
+| `BRutus:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018) |
+| `PugInspector:Classify(name, srcs)` | Builds its table key with the same rule inline, so it stays free of globals |
+
+Every hand-built member key now goes through the rule: CommSystem's own-message check, `/gos trial` and `/gos note`,
+RaidTracker snapshots, the consumable check, the export's `guildKey`, LootMaster's context, awards, rolls and DKP
+charge, the wishlist and received broadcasts. `tools/member-keys.lua` scans the TOC's files, so a new `.. "-" ..`
+join, `"%s-%s"` format or literal realm fallback fails the test.
+
+---
+
+## v0.57 — Compat core loop (#10)
+
+| Symbol | Description |
+|---|---|
+| `Compat.GetItemInfo(item)` | `C_Item.GetItemInfo`, else `GetItemInfo`; every return passed through; nothing when neither exists |
+| `Compat.GetSpellInfo(spell)` / `Compat.GetSpellTexture(spell)` | `C_Spell` (its table mapped to the global's order: name, rank, icon, castTime, minRange, maxRange, spellID), else the globals |
+| `Compat.UnitBuff(unit, index)` | `C_UnitAuras.GetBuffDataByIndex` mapped to `UnitBuff`'s order (spellId tenth), else `UnitBuff` |
+| `Compat.GetContainerNumSlots` / `GetContainerItemLink` / `GetContainerItemInfo` / `UseContainerItem` | `C_Container`, else the old globals; 0 slots with neither; item info is always the namespaced table |
+| `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
+| `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
+| `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |
+| `Compat.SendAddonMessageNow(prefix, text, channel, target)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send |
+| `Compat.FlushHeldMessages()` | Sends what a lockdown held, in order and one at a time under pcall (one that raises is recorded, the rest still go); while it lasts, each is held again |
+| `DataCollector:CollectProfessions()` | nil without a skill-line API, so `professions` is left out of the record, the broadcast and the export |
+| `SpecChecker:CollectOwnSpec()` | `nil, "no-api"` without a talent API: the saved spec is removed and no re-collect is waited for |
+| `DataCollector:CollectMyData()` / `GetBroadcastData()` / `StoreReceivedData(key, data)` | A field left out because its API is missing is named in `absent`; the broadcast carries it, and a receiver drops the `spec` or `professions` it held for that member |
+| `tools/compat-guard.lua` | CI lint step: exits 1 naming each file:line that reaches a version-sensitive API outside `Core/Compat.lua` (a call, an existence check, a concatenation, `_G.Name`, a quoted string index on a plain name on the same line, a namespace, ChatThrottleLib or `_G` alias, a single-name `Compat` alias, `getfenv`, a sender on anything but Compat), or a TOC file missing on disk (Probe and ChehulNet exempt); it reads names, not expressions |
+
+Removed: `Compat.NewTimer`.
+
+---
+
 ## Core.lua — BRutus global
 
 | Function | Description |
@@ -54,11 +137,20 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 | `BRutus:Initialize()` | Bootstrap: registers addon message prefix, prints version |
 | `BRutus:ResolveGuildDB()` | Resolves/creates per-guild SavedVariables DB; migrates flat structure |
 | `BRutus:OnLogin()` | Handles PLAYER_LOGIN, retries guild DB resolution up to 5 times |
-| `BRutus:InitModules()` | Initializes all subsystem modules in load order, respects enable flags |
+| `BRutus:InitModules()` | Starts every module from the `MODULE_START` list (then `OFFICER_START` after 5s), each isolated; respects enable flags |
+| `BRutus:StartModule(entry)` | Starts one start-list entry (`{ name, feature, ui, method, after }`); skipped (not failed) when not loaded or switched off |
+| `BRutus:RunStartup(name, entry, fn, ...)` | xpcall one start-up step; on failure records `State.startup.failed[name]` (stack in `State.startup.stacks[name]`), marks `entry.feature` / `entry.ui` as failed, and hands the error to `geterrorhandler()` in debug mode |
+| `BRutus:ListStartupProblems()` | Sorted lines for every start-up failure and missing capability; `/guildos errors` prints them before the capped error ring |
+| `BRutus:FeatureStartFailed(id)` | Module name whose failed start-up took feature `id` down, or nil; the window refuses to open |
+| `BRutus:RecordMissing(what)` | Records, once per session, an event or tooltip script this client lacks (`State.missing`) |
+| `BRutus:ReportStartup()` | One localized chat line when start-up had failures or misses; silent otherwise |
+| `BRutus:RecordError(msg)` | Pushes a message into the `/guildos errors` ring (shared by SafeCall and start-up) |
 | `BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)` | Collects/broadcasts data on initial login or reload only |
 | `BRutus:OnGuildRosterUpdate()` | Refreshes roster frame on GUILD_ROSTER_UPDATE / PLAYER_GUILD_UPDATE |
 | `BRutus:HookGuildFrame()` | Replaces ToggleGuildFrame / ToggleFriendsFrame(tab 3) to open BRutus |
-| `BRutus:ToggleRoster()` | Shows/hides main roster frame, creating it if needed |
+| `BRutus:ToggleRoster()` | Opens or closes the Guild OS window (`UI:ToggleMain`); guildless, opens the recruitment finder instead |
+| `BRutus:IsFrontDoorShown()` / `BRutus:HideFrontDoor()` | Whether the window is on screen / closes it; the guild-frame hook mirrors Blizzard's open and close onto them |
+| `BRutus:RefreshRosterUI()` | Refreshes the roster when the window is shown and the roster tab has been built |
 | `BRutus:Print(msg)` | Gold `[BRutus]`-prefixed message to DEFAULT_CHAT_FRAME |
 | `BRutus:IsOfficer()` | true if local rank index ≤ officerMaxRank setting |
 | `BRutus:IsOfficerByName(fullName)` | Checks officer status by scanning guild roster |
@@ -70,7 +162,7 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 | `BRutus:GetClassColorHex(class)` | Returns 6-char hex string for a class color |
 | `BRutus:ColorText(text, r, g, b)` | Wraps text in WoW `\|cff...` color escape |
 | `BRutus:FormatItemLevel(ilvl)` | Quality-color-coded item level string |
-| `BRutus:GetPlayerKey(name, realm)` | Returns "Name-Realm" composite key |
+| `BRutus:GetPlayerKey(name, realm)` | "Name-Realm", byte for byte as in 0.53.0; the name alone when neither the caller nor `BRutus:GetClientRealm()` has a realm (nil or ""); nil for no name (ADR-0018) |
 | `BRutus:TimeAgo(timestamp)` | Returns "Xm ago / Xh ago / Xd ago" string |
 | `BRutus:HookChatInvite()` | Alt+Click player names → guild invite via SetItemRef hook |
 | `BRutus:GetStaleProfessions()` | Returns primary professions with recipe scan age > 24h |
@@ -84,12 +176,21 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 | `BRutus.Logger.Debug(msg)` | Structured log at DEBUG level (prints only when `BRutus.Logger.debug == true`) |
 | `BRutus.Logger.Info(msg)` | Structured log at INFO level |
 | `BRutus.Logger.Warn(msg)` | Structured log at WARN level (always prints) |
-| `BRutus.Compat.RegisterAddonPrefix(prefix)` | Guards `C_ChatInfo.RegisterAddonMessagePrefix` (Rule 4) |
+| `BRutus.Compat.RegisterAddonPrefix(prefix)` | `C_ChatInfo.RegisterAddonMessagePrefix`, else the legacy `RegisterAddonMessagePrefix` (Rule 4, #10) |
 | `BRutus.Compat.GuildRoster()` | Guards `C_GuildInfo.GuildRoster()` / `GuildRoster()` fallback (Rule 4) |
 | `BRutus.Compat.IsQuestComplete(questId)` | Guards `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted` fallback (Rule 4) |
 | `BRutus.Compat.After(delay, fn)` | Guards `C_Timer.After` (Rule 4) |
 | `BRutus.Compat.NewTicker(interval, fn, iterations)` | Guards `C_Timer.NewTicker` (Rule 4) |
-| `BRutus.Compat.NewTimer(delay, fn)` | Guards `C_Timer.NewTimer` (Rule 4) |
+| `BRutus.Compat.RegisterEvent(frame, event)` | `RegisterEvent` that tolerates an event the client does not know; records the miss (`BRutus:RecordMissing`) and returns false (ADR-0012) |
+| `BRutus.Compat.HookTooltip(tooltip, script, fn)` | `HookScript` only when the tooltip has `script`; nil tooltip skipped silently, missing script recorded (ADR-0012) |
+| `BRutus.Compat.FindGuildRosterIndex(name, realm)` | Roster index for `Name` or `Name-Realm` (an exact `Name-Realm` wins; a short name only when unique), or nil and why: `"absent"` or `"ambiguous"` |
+| `BRutus.Compat.GetGuildPublicNote(name, realm)` | The member's public note, or nil and the same reason |
+| `BRutus.Compat.SetGuildPublicNote(name, text, realm)` | Writes a sanitized, 31-byte public note through `C_GuildInfo.SetNote(guid, note, true)`, falling back to `GuildRosterSetPublicNote(index, note)`; returns true, or false and why: `"no-permission"`, `"absent"`, `"ambiguous"`, `"no-guid"`, `"no-api"` (#5) |
+| `BRutus.NoteCommand:_Refused(sender, why)` | Tells the officer whose client tried a `!note` write why it did not happen (absent, ambiguous, no GUID, no API, permission lost before the write). The chat hook tells the member who typed a `!note` their character cannot apply, on their own client only |
+| `BRutus.Client` | Which client this is, read once at load: `version`, `build`, `date`, `interface`, `projectId` (diagnostics only), `isAnniversary` (TBC Classic project id and interface 20500–29999 together) and `has.secrets` / `chatLockdown` / `tradeSkillUI` / `tooltipData` / `guildSetNote` (ADR-0014) |
+| `BRutus.Probe:Run()` | `/guildos probe`: records the build, project id, `BRutus.Client`, game mode, the Secret Values APIs and whether they are enforced (`C_Secrets.HasSecretRestrictions`), chat lockdown and instance type, the first roster name, `GetNormalizedRealmName()` and `GetRealmName()`, one GUILD addon message on the `GuildOSProbe` prefix, and present or missing for every inventory API, template, tooltip script and event, into `GuildOSDB.probe` (overwritten each run). Refuses in combat; never raises (ADR-0015) |
+| `BRutus.Probe.APIS` / `TEMPLATES` / `SCRIPTS` / `EVENTS` | The inventory the probe checks; `tools/probe.lua` fails when the source registers an event missing from `EVENTS` |
+| `BRutus.Probe:PrintSummary(result)` | One-screen chat summary of a probe result |
 
 ---
 
@@ -133,7 +234,7 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 |---|---|
 | `CommSystem:Initialize()` | Registers CHAT_MSG_ADDON, starts 5-min sync ticker |
 | `CommSystem:SendMessage(msgType, data, target, priority)` | Compress, encode, chunk, send |
-| `CommSystem:SendRaw(msg, target, priority)` | ChatThrottleLib:SendAddonMessage wrapper |
+| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019) |
 | `CommSystem:OnMessageReceived(msg, _, sender)` | Reassembles chunks, decompresses, routes by MSG_TYPE |
 | `CommSystem:BroadcastMyData()` | Throttled (5s) broadcast of local player data |
 | `CommSystem:HandleBroadcast(sender, data)` | Deserializes and stores received player data |
@@ -393,7 +494,7 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 | `RaidTracker:GetMissedStreak(key, group, cap)` | Consecutive recent 25-man guild raids missed |
 | `CommSystem:GetSyncHealth()` | (rows, withAddon, outdated) addon adoption / version / last sync |
 | `RaidTools:GetSource()` | (list, label) raid → party → online guild fallback |
-| `RaidTools:GetClassCounts(list)` / `:ResolveCoverage(defs, counts)` | Class tally + buff/CD coverage resolution |
+| `RaidTools:GetClassCounts(list)` / `:ResolveCoverage(defs, counts)` | Class tally + buff/CD coverage resolution; definitions with `tbc = true` are skipped outside TBC Anniversary (ADR-0014) |
 | `BRutus:ExportRoster()` / `:ExportLoot()` | Tab-separated exports for Sheets (English headers) |
 | `BRutus:RecordFirstSeen()` / `:GetFirstSeen(key)` | "Known to GuildOS since" tracking (no join-date API) |
 | `BRutus:CreateMinimapButton()` / `:ToggleMinimapButton()` | Draggable minimap button (angle/hide in settings.minimap) |
@@ -436,21 +537,21 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 
 | Function | Description |
 |---|---|
-| `UI:CreatePanel(parent, name, level)` | BackdropTemplate frame with panel colors/border |
+| `UI:CreatePanel(parent, name, level)` | Window surface: `bg` fill with a 1px `line` border |
 | `UI:CreateDarkPanel(parent, name, level)` | Darker sub-panel variant |
 | `UI:CreateAccentLine(parent, thickness)` | Horizontal accent-colored texture strip |
 | `UI:CreateSeparator(parent)` | Dim separator line texture |
-| `UI:CreateTitle(parent, text, size)` | Gold FRIZQT__ FontString with shadow |
-| `UI:CreateText(parent, text, size, r, g, b)` | Standard FontString |
-| `UI:CreateHeaderText(parent, text, size)` | Gold 90%-opacity column header text |
-| `UI:CreateButton(parent, text, width, height)` | Styled button with accent border + hover effects |
-| `UI:CreateCheckbox(parent, labelText, size)` | Custom checkbox with "X" check mark and label |
-| `UI:CreateCloseButton(parent)` | Red-tinted × close button with hover |
-| `UI:SkinScrollBar(scrollFrame, scrollName)` | Hides default buttons, adds thin 6px accent track+thumb |
+| `UI:CreateTitle(parent, text, size)` | Window title: Spectral 16 in `text` (paper), no outline or shadow |
+| `UI:CreateText(parent, text, size, r, g, b)` | Body or table text, font by size through `ApplyFont` (mono below 14px); paper unless a colour is given |
+| `UI:CreateHeaderText(parent, text, size)` | Column header: IBM Plex Mono Medium 10 (`colHeader`) in `label` |
+| `UI:CreateButton(parent, text, width, height)` | Button, secondary by default (1px `line` border, paper label); 26px unless a height is given; see `SetButtonVariant` |
+| `UI:CreateCheckbox(parent, labelText, size)` | 14px `well` box, 1px border, solid 8px gold mark; `checkbox.onChanged(cb, checked)` |
+| `UI:CreateCloseButton(parent)` | × in `label`; paper on a `popup` square with a `lineHi` border when hovered |
+| `UI:SkinScrollBar(scrollFrame, scrollName)` | Hides the default buttons; 8px `well` track, `lineHi` thumb (`label` on hover) |
 | `UI:CreateScrollFrame(parent, name)` | UIPanelScrollFrameTemplate + child + skinned scrollbar |
 | `UI:CreateIcon(parent, size, iconPath)` | Bordered icon frame with inner texture |
 | `UI:SetIconQuality(iconFrame, quality)` | Sets icon border color to quality color |
-| `UI:CreateProgressBar(parent, width, height)` | Progress bar with frame:SetProgress(value) method |
+| `UI:CreateProgressBar(parent, width, height, ramp)` | Progress bar with frame:SetProgress(value) method. Gold while in progress, ok when complete; `ramp = true` for scores that can be bad (ok ≥80%, gold ≥60%, danger below) |
 
 ---
 
@@ -458,14 +559,11 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 
 | Function | Description |
 |---|---|
-| `BRutus.CreateRosterFrame()` | Creates entire main window (title bar, tabs, all panels) |
-| `frame:SetActiveTab(key)` | Switches active tab, shows/hides tabPanels |
-| `frame:UpdateTabVisibility()` | Repositions tabs based on officer status |
 | `frame:RefreshRoster()` | BuildMemberList → UpdateSortIndicators → UpdateRows → UpdateStats |
 | `frame:BuildMemberList()` | Queries GetGuildRosterInfo, merges db.members, sort/filter |
 | `frame:UpdateSortIndicators()` | Sets sort arrow text on active sort column header |
 | `frame:UpdateRows()` | FauxScrollFrame offset + populates VISIBLE_ROWS rows |
-| `frame:UpdateStats()` | Updates member/online/addon-user counts and guild subtitle |
+| `frame:UpdateStats()` | Updates member/online/addon-user counts |
 | `CreateRosterRow(parent, rowIndex)` | Creates a single roster row with all column text fields |
 | `UpdateRosterRow(row, data, i)` | Populates row: class color, ilvl, attunements, attendance |
 | `ShowRowTooltip(row)` | Shows rich hover tooltip with spec, gear, attunements, wishlist |
@@ -540,7 +638,7 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 | Function | Description |
 |---|---|
 | `BRutus:CreateRaidHUD()` | Floating raid CD tracker frame |
-| `BRutus:UpdateRaidHUDVisibility()` | Shows/hides HUD based on module flag + IsInRaid + IsLeaderOrAssist |
+| `BRutus:UpdateRaidHUDVisibility()` | Shows/hides HUD based on module flag + TBC Anniversary (`BRutus.Client.isAnniversary`) + IsInRaid + IsLeaderOrAssist |
 | `BRutus:ShowConsumablePopup()` | Creates or shows consumable check popup |
 | `local FormatTime(s)` | Formats seconds as "Xm Ys" or "Xs" |
 | `local IsLeaderOrAssist()` | Returns true if raid leader or officer rank ≥ 1 |

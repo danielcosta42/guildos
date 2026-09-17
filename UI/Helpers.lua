@@ -1,254 +1,259 @@
 ----------------------------------------------------------------------
 -- Guild OS - UI Helpers
--- Reusable UI factory functions for the "Obsidian" premium style:
--- near-black neutral surfaces, subtle vertical gradients for depth, a
--- restrained desaturated-violet accent that only appears on interaction,
--- and softened champagne gold reserved for the brand / key emphasis.
+-- Reusable factories for the "Forever" skin (design handoff §3-5 and §8;
+-- docs/superpowers/specs/2026-09-14-forever-skin-design.md): opaque
+-- surfaces told apart by a 1px line, gold as the only accent, IBM Plex
+-- Mono for labels and numbers, and state changes that land in the same
+-- frame. Public names, signatures and fields are unchanged from Obsidian.
 ----------------------------------------------------------------------
 local Helpers = {}
 BRutus.UI = Helpers
 
 local C = BRutus.Colors
-local FONT = (BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF"
 local WHITE = "Interface\\Buttons\\WHITE8x8"
+local MEDIA = "Interface\\AddOns\\GuildOS\\Media\\"
 
--- Lighten/darken a colour table by a factor (>1 lightens, <1 darkens).
-local function shade(col, f)
-    return math.min(1, col.r * f), math.min(1, col.g * f), math.min(1, col.b * f)
+local BUTTON_HEIGHT  = 26    -- default button height (handoff §8)
+local GLOW_BLEED     = 20    -- px the primary button's glow reaches past its edges
+local GLOW_ALPHA     = 0.5   -- strength of that glow
+local HOVER_LIFT     = 0.08  -- white added over gold while a primary button is hovered
+local PRESSED_DARKEN = 0.85  -- gold under the cursor while a primary button is held
+local DANGER_WASH    = 0.12  -- danger tint behind a hovered danger button
+local DISABLED_GOLD  = 0.35  -- alpha of a disabled primary button or checkbox mark
+local SHADOW_SIZE    = 12    -- px a popup's shadow reaches past its edges
+local SHADOW_ALPHA   = C.shadow.a  -- darkest point of that shadow: the texture's own peak
+local FADE_MAX       = 0.1   -- seconds; the only motion the skin allows
+local SCROLL_WIDTH   = 8
+local CHECK_BOX      = 14
+local CHECK_MARK     = 8
+local PROGRESS_OK    = 0.8   -- at or above: ok
+local PROGRESS_WARN  = 0.6   -- at or above: gold; below: danger
+local CHIP_RULE      = 34    -- px width of the gold rule under a metric value
+
+-- A FontString with the skin's text settings: font by size (BRutus:ApplyFont),
+-- no outline, no shadow.
+local function newText(parent, size, role)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    BRutus:ApplyFont(fs, size, role)
+    fs:SetShadowOffset(0, 0)
+    return fs
 end
 
 ----------------------------------------------------------------------
--- Internal: paint a subtle top-down gradient sheen onto a frame so flat
--- panels gain depth without looking colourful.
+-- Surfaces
 ----------------------------------------------------------------------
-local function applySheen(frame, topAlpha)
-    topAlpha = topAlpha or 0.05
-    local sheen = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    sheen:SetTexture(WHITE)
-    sheen:SetPoint("TOPLEFT", 1, -1)
-    sheen:SetPoint("BOTTOMRIGHT", -1, 1)
-    -- Lighter at the top, fading to nothing — pure white at very low alpha
-    -- reads as a soft sheen on a dark surface.
-    sheen:SetGradient("VERTICAL",
-        CreateColor(1, 1, 1, 0),
-        CreateColor(1, 1, 1, topAlpha))
-    frame.sheen = sheen
-    return sheen
-end
 
-----------------------------------------------------------------------
--- Create a premium background panel with subtle gradient + border
-----------------------------------------------------------------------
+-- Create a window surface (elevation 2): `bg` with a 1px `line` border.
 function Helpers:CreatePanel(parent, name, level)
     local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
     f:SetFrameLevel(level or 1)
-    f:SetBackdrop({
-        bgFile   = WHITE,
-        edgeFile = WHITE,
-        edgeSize = 1,
-    })
-    f:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, C.panel.a)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    applySheen(f, 0.045)
+    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    f:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 1)
+    f:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
     return f
 end
 
-----------------------------------------------------------------------
--- Create a dark sub-panel (for insets)
-----------------------------------------------------------------------
+-- Create an inset surface (elevation 1: table body, field, scroll area).
 function Helpers:CreateDarkPanel(parent, name, level)
     local f = self:CreatePanel(parent, name, level)
-    f:SetBackdropColor(C.panelDark.r, C.panelDark.g, C.panelDark.b, C.panelDark.a)
-    if f.sheen then f.sheen:SetGradient("VERTICAL", CreateColor(1,1,1,0), CreateColor(1,1,1,0.03)) end
+    f:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     return f
 end
 
-----------------------------------------------------------------------
--- Create a soft drop shadow behind a frame (4 fading edge strips).
--- Portable: uses WHITE8x8 + gradients, no external textures required.
-----------------------------------------------------------------------
+-- Soft shadow behind a popup (elevation 4). Eight pieces of
+-- Media/drop-shadow.tga around the frame and none under it, so it holds at
+-- any size. `spread` is the reach in px; `alpha` scales the texture's peak.
 function Helpers:CreateDropShadow(frame, spread, alpha)
-    spread = spread or 14
-    alpha  = alpha or C.shadow.a or 0.5
-    -- Parent the shadow to the frame itself so it shows/hides and moves with
-    -- it. The strips sit entirely OUTSIDE the frame's rectangle, so a lower
-    -- frame level keeps them behind the window without being clipped.
+    spread = spread or SHADOW_SIZE
+    local strength = math.min(1, (alpha or SHADOW_ALPHA) / SHADOW_ALPHA)
+    -- Parented to the frame so it shows, hides and moves with it; the lower
+    -- level keeps it behind, and it sits entirely outside the frame's rectangle.
     local s = CreateFrame("Frame", nil, frame)
     s:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
-    s:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    s:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    s:SetAllPoints(frame)
 
-    local function strip(point1, rel1, point2, rel2, orient, nearTop)
-        local t = s:CreateTexture(nil, "BACKGROUND")
-        t:SetTexture(WHITE)
-        t:SetPoint(point1, frame, rel1, 0, 0)
-        t:SetPoint(point2, frame, rel2, 0, 0)
-        local near = CreateColor(0, 0, 0, alpha)
-        local far  = CreateColor(0, 0, 0, 0)
-        if nearTop then
-            t:SetGradient(orient, far, near)   -- darkest toward the frame
-        else
-            t:SetGradient(orient, near, far)
-        end
-        return t
+    local function piece(left, right, top, bottom)
+        local tex = s:CreateTexture(nil, "BACKGROUND")
+        tex:SetTexture(MEDIA .. "drop-shadow.tga")
+        tex:SetTexCoord(left, right, top, bottom)
+        tex:SetAlpha(strength)
+        return tex
     end
 
-    -- Top
-    local top = strip("BOTTOMLEFT", "TOPLEFT", "BOTTOMRIGHT", "TOPRIGHT", "VERTICAL", false)
-    top:ClearAllPoints()
-    top:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 0)
-    top:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 0)
+    -- Corners: one quadrant of the radial each, its centre on the frame's corner.
+    local tl = piece(0, 0.5, 0, 0.5)
+    tl:SetSize(spread, spread)
+    tl:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT")
+    local tr = piece(0.5, 1, 0, 0.5)
+    tr:SetSize(spread, spread)
+    tr:SetPoint("BOTTOMLEFT", frame, "TOPRIGHT")
+    local bl = piece(0, 0.5, 0.5, 1)
+    bl:SetSize(spread, spread)
+    bl:SetPoint("TOPRIGHT", frame, "BOTTOMLEFT")
+    local br = piece(0.5, 1, 0.5, 1)
+    br:SetSize(spread, spread)
+    br:SetPoint("TOPLEFT", frame, "BOTTOMRIGHT")
+
+    -- Edges: a thin slice through the middle of the radial, stretched along the side.
+    local MID_A, MID_B = 0.49, 0.51
+    local top = piece(MID_A, MID_B, 0, 0.5)
+    top:SetPoint("BOTTOMLEFT", frame, "TOPLEFT")
+    top:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT")
     top:SetHeight(spread)
-    -- Bottom
-    local bot = strip("TOPLEFT", "BOTTOMLEFT", "TOPRIGHT", "BOTTOMRIGHT", "VERTICAL", true)
-    bot:ClearAllPoints()
-    bot:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, 0)
-    bot:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    bot:SetHeight(spread)
-    -- Left
-    local left = s:CreateTexture(nil, "BACKGROUND")
-    left:SetTexture(WHITE)
-    left:SetPoint("TOPRIGHT", frame, "TOPLEFT", 0, 0)
-    left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", 0, 0)
+    local bottom = piece(MID_A, MID_B, 0.5, 1)
+    bottom:SetPoint("TOPLEFT", frame, "BOTTOMLEFT")
+    bottom:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT")
+    bottom:SetHeight(spread)
+    local left = piece(0, 0.5, MID_A, MID_B)
+    left:SetPoint("TOPRIGHT", frame, "TOPLEFT")
+    left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT")
     left:SetWidth(spread)
-    left:SetGradient("HORIZONTAL", CreateColor(0,0,0,0), CreateColor(0,0,0,alpha))
-    -- Right
-    local right = s:CreateTexture(nil, "BACKGROUND")
-    right:SetTexture(WHITE)
-    right:SetPoint("TOPLEFT", frame, "TOPRIGHT", 0, 0)
-    right:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 0, 0)
+    local right = piece(0.5, 1, MID_A, MID_B)
+    right:SetPoint("TOPLEFT", frame, "TOPRIGHT")
+    right:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT")
     right:SetWidth(spread)
-    right:SetGradient("HORIZONTAL", CreateColor(0,0,0,alpha), CreateColor(0,0,0,0))
 
     frame.dropShadow = s
     return s
 end
 
-----------------------------------------------------------------------
--- Fade a frame in when shown (cheap, runs once per OnShow).
-----------------------------------------------------------------------
+-- Fade a frame in when shown. Capped at 0.1s: the skin allows no other motion.
 function Helpers:EnableFadeIn(frame, duration)
-    duration = duration or 0.18
+    duration = math.min(duration or FADE_MAX, FADE_MAX)
     frame:HookScript("OnShow", function(self)
         if self.__fadingDisabled then return end
         UIFrameFadeIn(self, duration, 0, 1)
     end)
 end
 
-----------------------------------------------------------------------
--- Give any pop-up frame the same premium depth as the main window:
--- a soft top sheen, an outer drop shadow, and a fade-in on show.
--- Does NOT touch the backdrop colours — callers set those from the
--- palette themselves. Call once, after the frame's level/strata is set.
-----------------------------------------------------------------------
+-- Give a popup its elevation: the drop shadow and the short fade-in. Does NOT
+-- touch backdrop colours; callers set those from the palette. `opts.noSheen`
+-- is accepted and ignored (the skin has no sheen).
 function Helpers:StylePopup(frame, opts)
     opts = opts or {}
-    if not opts.noSheen  then applySheen(frame, opts.sheen or 0.04) end
-    if not opts.noShadow then self:CreateDropShadow(frame, opts.shadowSize or 14, opts.shadowAlpha or 0.5) end
-    if not opts.noFade   then self:EnableFadeIn(frame, opts.fadeDuration or 0.15) end
+    if not opts.noShadow then self:CreateDropShadow(frame, opts.shadowSize, opts.shadowAlpha) end
+    if not opts.noFade then self:EnableFadeIn(frame, opts.fadeDuration) end
     return frame
 end
 
-----------------------------------------------------------------------
--- Create a glowing accent line (horizontal separator)
-----------------------------------------------------------------------
+-- Create a gold rule: 2px by default (under an active tab); pass 1 for a
+-- metric chip or an active sub-tab.
 function Helpers:CreateAccentLine(parent, thickness)
-    thickness = thickness or 2
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
-    line:SetHeight(thickness)
-    -- Horizontal fade so the accent reads as a soft highlight, not a hard bar.
-    line:SetGradient("HORIZONTAL",
-        CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.0),
-        CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.55))
-    line.__solidColor = C.accent
+    line:SetHeight(thickness or 2)
+    line:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    line.__solidColor = C.gold
     return line
 end
 
-----------------------------------------------------------------------
--- Create a separator line (dimmer)
-----------------------------------------------------------------------
+-- Create a 1px separator in `line`.
 function Helpers:CreateSeparator(parent)
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
     line:SetHeight(1)
-    line:SetVertexColor(C.separator.r, C.separator.g, C.separator.b, C.separator.a)
+    line:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
     return line
 end
 
 ----------------------------------------------------------------------
--- Create premium gold title text
+-- Text
 ----------------------------------------------------------------------
+
+-- Create a window title: Spectral from 14px, paper.
 function Helpers:CreateTitle(parent, text, size)
-    size = size or 18
-    local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(FONT, size, "OUTLINE")
-    fs:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    local fs = newText(parent, size or 16)
+    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
     fs:SetText(text or "")
-    fs:SetShadowOffset(1, -1)
-    fs:SetShadowColor(0, 0, 0, 0.9)
     return fs
 end
 
-----------------------------------------------------------------------
--- Create standard text (off-white body text with a soft shadow)
-----------------------------------------------------------------------
+-- Create body or table text: IBM Plex Mono below 14px, paper unless a colour is given.
 function Helpers:CreateText(parent, text, size, r, g, b)
-    size = size or 12
-    local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(FONT, size, "OUTLINE")
+    local fs = newText(parent, size or 12)
     fs:SetTextColor(r or C.text.r, g or C.text.g, b or C.text.b)
     fs:SetText(text or "")
-    fs:SetShadowOffset(1, -1)
-    fs:SetShadowColor(0, 0, 0, 0.6)
     return fs
 end
 
-----------------------------------------------------------------------
--- Create header text (for column headers) — muted, letter-spaced feel
-----------------------------------------------------------------------
+-- Create a column or section header: IBM Plex Mono Medium in `label`.
 function Helpers:CreateHeaderText(parent, text, size)
-    size = size or 11
-    local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(FONT, size, "OUTLINE")
-    fs:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.85)
+    local fs = newText(parent, size or 10, "colHeader")
+    fs:SetTextColor(C.label.r, C.label.g, C.label.b)
     fs:SetText(text or "")
-    fs:SetShadowOffset(1, -1)
-    fs:SetShadowColor(0, 0, 0, 0.7)
     return fs
 end
 
 ----------------------------------------------------------------------
--- Create a premium styled button (subtle gradient, accent on hover)
+-- Buttons
 ----------------------------------------------------------------------
+
+-- Paint one button state: "rest", "hover", "pressed" or "disabled". Internal.
+-- Every colour lands in the same frame; there is no transition.
+function Helpers:_ButtonState(btn, state)
+    btn.__hovered = (state == "hover")
+    local variant = btn.variant
+    local base, text, border = btn.baseColor, btn.baseLabelColor, btn.baseBorder
+    local r, g, b, a = base[1], base[2], base[3], base[4]
+    local tr, tg, tb = text[1], text[2], text[3]
+    local dy = 0
+
+    if state == "disabled" then
+        tr, tg, tb = C.disabled.r, C.disabled.g, C.disabled.b
+        if variant == "primary" then a = DISABLED_GOLD end
+    elseif state == "hover" then
+        if variant == "primary" then
+            r, g, b = math.min(1, r + HOVER_LIFT), math.min(1, g + HOVER_LIFT), math.min(1, b + HOVER_LIFT)
+        elseif variant == "danger" then
+            r, g, b, a = C.danger.r, C.danger.g, C.danger.b, DANGER_WASH
+        else
+            tr, tg, tb = C.text.r, C.text.g, C.text.b
+            if variant == "secondary" then border = C.lineHi end
+        end
+    elseif state == "pressed" then
+        if variant == "primary" then
+            r, g, b = r * PRESSED_DARKEN, g * PRESSED_DARKEN, b * PRESSED_DARKEN
+            dy = -1
+        elseif variant ~= "ghost" then
+            r, g, b, a = C.popup.r, C.popup.g, C.popup.b, 1
+        end
+    end
+
+    btn:SetBackdropColor(r, g, b, a)
+    if border then
+        btn:SetBackdropBorderColor(border.r, border.g, border.b, 1)
+    else
+        btn:SetBackdropBorderColor(0, 0, 0, 0)
+    end
+    btn.label:SetTextColor(tr, tg, tb)
+    -- Only a primary button moves its label, and only by the press: other
+    -- buttons may have had their label re-anchored by the screen that owns them.
+    if variant == "primary" then
+        btn.label:ClearAllPoints()
+        btn.label:SetPoint("CENTER", 0, dy)
+    end
+    if btn.underline then btn.underline:SetVertexColor(tr, tg, tb, 1) end
+    if btn.glow then btn.glow:SetShown(variant == "primary" and state ~= "disabled") end
+end
+
+-- Create a button. Secondary by default (1px `line` border, paper text on no
+-- fill); Helpers:SetButtonVariant switches it to primary, ghost or danger.
+-- Toggle buttons keep calling btn:SetBaseColor so a resting colour survives
+-- the hover; setting btn.baseLabelColor does the same for the label.
 function Helpers:CreateButton(parent, text, width, height)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    btn:SetSize(width or 120, height or 28)
-    btn:SetBackdrop({
-        bgFile   = WHITE,
-        edgeFile = WHITE,
-        edgeSize = 1,
-    })
-    btn:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
-    btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    btn:SetSize(width or 120, height or BUTTON_HEIGHT)
+    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
 
-    -- Subtle top sheen for a raised feel
-    applySheen(btn, 0.05)
-
-    local label = btn:CreateFontString(nil, "OVERLAY")
-    label:SetFont(FONT, 11, "OUTLINE")
+    local label = newText(btn, 11)
     label:SetPoint("CENTER")
-    label:SetTextColor(C.text.r, C.text.g, C.text.b)
-    label:SetShadowOffset(1, -1)
-    label:SetShadowColor(0, 0, 0, 0.7)
     label:SetText(text or "")
     btn.label = label
 
-    -- Default visual state. Toggle buttons should call SetBaseColor so the
-    -- resting colour persists after the cursor leaves (the hover effect is
-    -- only temporary).
-    btn.baseColor = { C.bg2.r, C.bg2.g, C.bg2.b, 0.92 }
+    btn.variant = "secondary"
+    btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
     btn.baseLabelColor = { C.text.r, C.text.g, C.text.b }
+    btn.baseBorder = C.line
 
     function btn:SetBaseColor(r, g, b, a)
         self.baseColor = { r, g, b, a or 1 }
@@ -257,21 +262,62 @@ function Helpers:CreateButton(parent, text, width, height)
         end
     end
 
+    local function idle(self) return self:IsEnabled() and "rest" or "disabled" end
     btn:SetScript("OnEnter", function(self)
-        self.__hovered = true
-        self:SetBackdropColor(C.accent.r * 0.32, C.accent.g * 0.32, C.accent.b * 0.32, 0.95)
-        self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.85)
-        self.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        Helpers:_ButtonState(self, self:IsEnabled() and "hover" or "disabled")
     end)
-    btn:SetScript("OnLeave", function(self)
-        self.__hovered = false
-        local b = self.baseColor
-        self:SetBackdropColor(b[1], b[2], b[3], b[4])
-        self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-        local l = self.baseLabelColor
-        self.label:SetTextColor(l[1], l[2], l[3])
+    btn:SetScript("OnLeave", function(self) Helpers:_ButtonState(self, idle(self)) end)
+    btn:SetScript("OnMouseDown", function(self)
+        if self:IsEnabled() then Helpers:_ButtonState(self, "pressed") end
     end)
+    btn:SetScript("OnMouseUp", function(self)
+        Helpers:_ButtonState(self, self:IsEnabled() and (self:IsMouseOver() and "hover" or "rest") or "disabled")
+    end)
+    btn:HookScript("OnDisable", function(self) Helpers:_ButtonState(self, "disabled") end)
+    btn:HookScript("OnEnable", function(self) Helpers:_ButtonState(self, "rest") end)
 
+    self:_ButtonState(btn, "rest")
+    return btn
+end
+
+-- Switch a button to one of the handoff's variants: "primary" (gold fill
+-- with a glow; one per screen), "secondary", "ghost" (underlined label, no
+-- border) or "danger". Returns the button.
+function Helpers:SetButtonVariant(btn, variant)
+    variant = variant or "secondary"
+    btn.variant = variant
+    local label = btn.label
+    if variant == "primary" then
+        btn.baseColor = { C.gold.r, C.gold.g, C.gold.b, 1 }
+        btn.baseLabelColor = { C.onGold.r, C.onGold.g, C.onGold.b }
+        btn.baseBorder = C.gold
+        BRutus:ApplyFont(label, 11, "colHeader")  -- IBM Plex Mono Medium
+        if not btn.glow then
+            local glow = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
+            glow:SetTexture(MEDIA .. "glow-gold.tga")
+            glow:SetBlendMode("ADD")
+            glow:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, GLOW_ALPHA)
+            glow:SetPoint("TOPLEFT", -GLOW_BLEED, GLOW_BLEED)
+            glow:SetPoint("BOTTOMRIGHT", GLOW_BLEED, -GLOW_BLEED)
+            btn.glow = glow
+        end
+    else
+        BRutus:ApplyFont(label, 11)
+        local ink = (variant == "ghost" and C.label) or (variant == "danger" and C.danger) or C.text
+        btn.baseLabelColor = { ink.r, ink.g, ink.b }
+        btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
+        btn.baseBorder = (variant == "danger" and C.danger) or (variant ~= "ghost" and C.line) or nil
+        if variant == "ghost" and not btn.underline then
+            local u = btn:CreateTexture(nil, "ARTWORK")
+            u:SetTexture(WHITE)
+            u:SetHeight(1)
+            u:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -3)
+            u:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -3)
+            btn.underline = u
+        end
+        if btn.underline then btn.underline:SetShown(variant == "ghost") end
+    end
+    self:_ButtonState(btn, btn:IsEnabled() and "rest" or "disabled")
     return btn
 end
 
@@ -317,82 +363,68 @@ function Helpers:AttachSaveButton(editBox, onSave, opts)
 end
 
 ----------------------------------------------------------------------
--- Create a styled checkbox with label (real checkmark glyph)
+-- Checkbox
 ----------------------------------------------------------------------
+
+-- Create a checkbox with a label: a 14px box in `well` with a 1px border
+-- and, when checked, a solid 8px gold mark (a texture, not a glyph).
+-- `frame.checkbox.onChanged(cb, checked)` fires on click; SetChecked repaints.
 function Helpers:CreateCheckbox(parent, labelText, size)
     size = size or 20
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(size + 200, size)
 
     local cb = CreateFrame("CheckButton", nil, frame)
-    cb:SetSize(size, size)
-    cb:SetPoint("LEFT", 0, 0)
+    cb:SetSize(CHECK_BOX, CHECK_BOX)
+    cb:SetPoint("LEFT", math.floor((size - CHECK_BOX) / 2), 0)
 
-    -- Box background
-    local bg = cb:CreateTexture(nil, "BACKGROUND")
-    bg:SetTexture(WHITE)
-    bg:SetAllPoints()
-    bg:SetVertexColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.95)
-
-    local border = cb:CreateTexture(nil, "BORDER")
+    -- A texture one pixel larger on every side, under the fill, is the border.
+    local border = cb:CreateTexture(nil, "BACKGROUND", nil, 0)
     border:SetTexture(WHITE)
     border:SetPoint("TOPLEFT", -1, 1)
     border:SetPoint("BOTTOMRIGHT", 1, -1)
-    border:SetVertexColor(C.border.r, C.border.g, C.border.b, 0.7)
+    local fill = cb:CreateTexture(nil, "BACKGROUND", nil, 1)
+    fill:SetTexture(WHITE)
+    fill:SetAllPoints()
+    fill:SetVertexColor(C.well.r, C.well.g, C.well.b, 1)
 
-    -- Real checkmark texture (tinted gold), shown when checked
-    local check = cb:CreateTexture(nil, "OVERLAY")
-    check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-    check:SetPoint("CENTER", 0, 0)
-    check:SetSize(size + 4, size + 4)
-    check:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
-    check:Hide()
-    cb.checkMark = check
+    local mark = cb:CreateTexture(nil, "OVERLAY")
+    mark:SetTexture(WHITE)
+    mark:SetSize(CHECK_MARK, CHECK_MARK)
+    mark:SetPoint("CENTER")
+    mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    mark:Hide()
+    cb.checkMark = mark
 
-    local function refresh(checked)
-        if checked then
-            check:Show()
-            border:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.9)
-        else
-            check:Hide()
-            border:SetVertexColor(C.border.r, C.border.g, C.border.b, 0.7)
-        end
+    local function paint()
+        local enabled = cb:IsEnabled()
+        -- GetChecked() returns true or nil (never false) in TBC.
+        mark:SetShown(cb:GetChecked() and true or false)
+        mark:SetAlpha(enabled and 1 or DISABLED_GOLD)
+        local edge = (not enabled and C.disabled) or (cb.__hovered and C.lineHi) or C.line
+        border:SetVertexColor(edge.r, edge.g, edge.b, 1)
     end
 
     cb:SetScript("OnClick", function(self)
-        refresh(self:GetChecked())
+        paint()
         if self.onChanged then self:onChanged(self:GetChecked()) end
     end)
-
     local origSetChecked = cb.SetChecked
     cb.SetChecked = function(self, val)
         origSetChecked(self, val)
-        refresh(val)
+        paint()
     end
+    cb:SetScript("OnEnter", function(self) self.__hovered = true; paint() end)
+    cb:SetScript("OnLeave", function(self) self.__hovered = false; paint() end)
+    cb:SetScript("OnMouseDown", function() fill:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1) end)
+    cb:SetScript("OnMouseUp", function() fill:SetVertexColor(C.well.r, C.well.g, C.well.b, 1) end)
+    cb:HookScript("OnDisable", paint)
+    cb:HookScript("OnEnable", paint)
+    paint()
 
-    cb:SetScript("OnEnter", function()
-        bg:SetVertexColor(shade(C.bg2, 1.6))
-    end)
-    cb:SetScript("OnLeave", function()
-        bg:SetVertexColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.95)
-    end)
-
-    -- Reflect disabled state visually
-    cb:HookScript("OnDisable", function()
-        bg:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.9)
-        check:SetVertexColor(C.offline.r, C.offline.g, C.offline.b)
-    end)
-    cb:HookScript("OnEnable", function()
-        check:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
-    end)
-
-    -- Label
-    local label = frame:CreateFontString(nil, "OVERLAY")
-    label:SetFont(FONT, 11, "OUTLINE")
+    local label = newText(frame, 11)
     label:SetPoint("LEFT", cb, "RIGHT", 6, 0)
     label:SetTextColor(C.text.r, C.text.g, C.text.b)
-    label:SetShadowOffset(1, -1)
-    label:SetShadowColor(0, 0, 0, 0.6)
     label:SetText(labelText or "")
     frame.label = label
 
@@ -400,36 +432,29 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     return frame
 end
 
-----------------------------------------------------------------------
--- Create close button (X) — subtle, reveals red tint on hover
-----------------------------------------------------------------------
+-- Create a close button (×): `label` at rest, paper on a `popup` square when hovered.
 function Helpers:CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(20, 20)
-    btn:SetBackdrop({
-        bgFile   = WHITE,
-        edgeFile = WHITE,
-        edgeSize = 1,
-    })
-    btn:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.0)
-    btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
+    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    btn:SetBackdropColor(0, 0, 0, 0)
+    btn:SetBackdropBorderColor(0, 0, 0, 0)
 
-    local x = btn:CreateFontString(nil, "OVERLAY")
-    x:SetFont(FONT, 14, "OUTLINE")
+    local x = newText(btn, 14)
     x:SetPoint("CENTER", 0, 0)
-    x:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    x:SetTextColor(C.label.r, C.label.g, C.label.b)
     x:SetText("\195\151")  -- multiplication sign (×) reads cleaner than letter X
     btn.x = x
 
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.70, 0.18, 0.20, 0.85)
-        self:SetBackdropBorderColor(0.90, 0.30, 0.32, 0.9)
-        self.x:SetTextColor(1, 1, 1)
+        self:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
+        self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+        self.x:SetTextColor(C.text.r, C.text.g, C.text.b)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.0)
-        self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.0)
-        self.x:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+        self:SetBackdropColor(0, 0, 0, 0)
+        self:SetBackdropBorderColor(0, 0, 0, 0)
+        self.x:SetTextColor(C.label.r, C.label.g, C.label.b)
     end)
 
     return btn
@@ -459,9 +484,12 @@ function Helpers:TitleBarButton(bar, kind, ...)
 end
 
 ----------------------------------------------------------------------
--- Skin a default WoW scrollbar into a thin, subtle track+thumb
--- Works with both UIPanelScrollFrameTemplate and FauxScrollFrameTemplate
+-- Scrolling
 ----------------------------------------------------------------------
+
+-- Skin a default WoW scrollbar: 8px, no arrows, a `well` track and a
+-- `lineHi` thumb with 1px of margin. Works with UIPanelScrollFrameTemplate
+-- and FauxScrollFrameTemplate.
 function Helpers:SkinScrollBar(scrollFrame, scrollName)
     local scrollBar = scrollFrame.ScrollBar
         or (scrollName and _G[scrollName .. "ScrollBar"])
@@ -481,26 +509,22 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
     if downBtn then downBtn:SetAlpha(0); downBtn:SetSize(1, 1); downBtn:EnableMouse(false) end
     if thumbTex then thumbTex:SetAlpha(0) end
 
-    -- Make the scrollbar thin and positioned inside the frame
-    scrollBar:SetWidth(5)
+    scrollBar:SetWidth(SCROLL_WIDTH)
     scrollBar:ClearAllPoints()
     scrollBar:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", -2, -2)
     scrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", -2, 2)
 
-    -- Track background
     local track = scrollBar:CreateTexture(nil, "BACKGROUND")
     track:SetAllPoints()
     track:SetTexture(WHITE)
-    track:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.5)
+    track:SetVertexColor(C.well.r, C.well.g, C.well.b, 1)
 
-    -- Custom thumb overlay
     local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
     thumb:SetTexture(WHITE)
-    thumb:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.45)
-    thumb:SetSize(5, 40)
+    thumb:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    thumb:SetSize(SCROLL_WIDTH - 2, 40)
     scrollBar.customThumb = thumb
 
-    -- Update thumb position on scroll
     local function UpdateThumb()
         local min, max = scrollBar:GetMinMaxValues()
         local val = scrollBar:GetValue()
@@ -515,25 +539,20 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
         thumb:Show()
         local ratio = (val - min) / (max - min)
         local travel = trackHeight - thumbHeight
-        local yOff = -(ratio * travel)
         thumb:ClearAllPoints()
-        thumb:SetPoint("TOPRIGHT", scrollBar, "TOPRIGHT", 0, yOff)
+        thumb:SetPoint("TOPRIGHT", scrollBar, "TOPRIGHT", -1, -(ratio * travel))
     end
 
     scrollBar:HookScript("OnValueChanged", function() UpdateThumb() end)
     scrollBar:HookScript("OnMinMaxChanged", function() UpdateThumb() end)
-    -- Brighten thumb on hover for feedback
-    scrollBar:HookScript("OnEnter", function() thumb:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.75) end)
-    scrollBar:HookScript("OnLeave", function() thumb:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.45) end)
-    -- Initial
-    C_Timer.After(0.05, UpdateThumb)
+    scrollBar:HookScript("OnEnter", function() thumb:SetVertexColor(C.label.r, C.label.g, C.label.b, 1) end)
+    scrollBar:HookScript("OnLeave", function() thumb:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    BRutus.Compat.After(0.05, UpdateThumb)
 
     return scrollBar
 end
 
-----------------------------------------------------------------------
--- Create a scroll frame with custom scrollbar
-----------------------------------------------------------------------
+-- Create a scroll frame with the skinned scrollbar.
 function Helpers:CreateScrollFrame(parent, name)
     local scrollFrame = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")
     local scrollChild = CreateFrame("Frame", name and (name .. "Child") or nil, scrollFrame)
@@ -541,26 +560,24 @@ function Helpers:CreateScrollFrame(parent, name)
     scrollChild:SetWidth(scrollFrame:GetWidth())
     scrollChild:SetHeight(1)
 
-    -- Apply thin scrollbar skin
     self:SkinScrollBar(scrollFrame, name)
 
     return scrollFrame, scrollChild
 end
 
 ----------------------------------------------------------------------
--- Create an icon frame with border
+-- Icons, badges, progress, metrics
 ----------------------------------------------------------------------
+
+-- Create an icon with a 1px `line` frame over `well`. The game art is
+-- cropped 8% per side to drop its own border; SetIconQuality recolours the frame.
 function Helpers:CreateIcon(parent, size, iconPath)
     size = size or 32
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(size + 4, size + 4)
-    frame:SetBackdrop({
-        bgFile   = WHITE,
-        edgeFile = WHITE,
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(0, 0, 0, 0.85)
-    frame:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
     local icon = frame:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", 2, -2)
@@ -568,108 +585,123 @@ function Helpers:CreateIcon(parent, size, iconPath)
     if iconPath then
         icon:SetTexture(iconPath)
     end
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- Trim default icon borders
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     frame.icon = icon
 
     return frame
 end
 
-----------------------------------------------------------------------
--- Create a quality-colored icon border
-----------------------------------------------------------------------
+-- Frame an icon in its item-quality colour (never a palette colour).
 function Helpers:SetIconQuality(iconFrame, quality)
     quality = quality or 1
     local color = BRutus.QualityColors[quality] or BRutus.QualityColors[1]
-    iconFrame:SetBackdropBorderColor(color.r, color.g, color.b, 0.9)
+    iconFrame:SetBackdropBorderColor(color.r, color.g, color.b, 1)
 end
 
-----------------------------------------------------------------------
--- Create a small rounded "badge"/pill for counts or status labels.
-----------------------------------------------------------------------
+-- Create a badge: mono 10 in a 1px frame. A gold badge (the officer mark) is
+-- the only filled one, gold with `onGold` text; a danger badge takes a danger
+-- frame; any other colour is text on a `line` frame. Defaults to `label`.
 function Helpers:CreateBadge(parent, text, color)
-    color = color or C.accent
     local b = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-    b:SetBackdropColor(color.r * 0.22, color.g * 0.22, color.b * 0.22, 0.9)
-    b:SetBackdropBorderColor(color.r, color.g, color.b, 0.55)
-    local fs = b:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(FONT, 10, "OUTLINE")
+    local fs = newText(b, 10)
     fs:SetPoint("CENTER", 0, 0)
-    fs:SetTextColor(color.r, color.g, color.b)
-    fs:SetText(text or "")
     b.label = fs
+
+    local function paint(col)
+        col = col or C.label
+        if col == C.gold or col == C.accent then
+            b:SetBackdropColor(C.gold.r, C.gold.g, C.gold.b, 1)
+            b:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1)
+            fs:SetTextColor(C.onGold.r, C.onGold.g, C.onGold.b)
+        else
+            local edge = (col == C.danger or col == C.red) and col or C.line
+            b:SetBackdropColor(0, 0, 0, 0)
+            b:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
+            fs:SetTextColor(col.r, col.g, col.b)
+        end
+    end
+
+    paint(color)
+    fs:SetText(text or "")
     b:SetSize((fs:GetStringWidth() or 10) + 14, 16)
     function b:SetText(t, col)
         self.label:SetText(t or "")
-        if col then
-            self:SetBackdropColor(col.r * 0.22, col.g * 0.22, col.b * 0.22, 0.9)
-            self:SetBackdropBorderColor(col.r, col.g, col.b, 0.55)
-            self.label:SetTextColor(col.r, col.g, col.b)
-        end
+        if col then paint(col) end
         self:SetWidth((self.label:GetStringWidth() or 10) + 14)
     end
     return b
 end
 
-----------------------------------------------------------------------
--- Create a progress bar
-----------------------------------------------------------------------
-function Helpers:CreateProgressBar(parent, width, height)
+-- Create an 8px progress bar: `well` track, 1px `line` frame, solid fill.
+-- By default the fill is gold while in progress and ok when complete:
+-- progress toward a goal (a profession rank, an attunement) is not a
+-- failure. Pass `ramp = true` for a score that can be bad (attendance):
+-- ok at 80% and up, gold from 60%, danger below.
+function Helpers:CreateProgressBar(parent, width, height, ramp)
     width = width or 100
     height = height or 8
 
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(width, height)
-    frame:SetBackdrop({
-        bgFile   = WHITE,
-        edgeFile = WHITE,
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.85)
-    frame:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
     local bar = frame:CreateTexture(nil, "ARTWORK")
     bar:SetTexture(WHITE)
     bar:SetPoint("TOPLEFT", 1, -1)
-    bar:SetHeight(height - 2)
+    bar:SetHeight(math.max(1, height - 2))
     bar:SetWidth(1)
-    bar:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.85)
     frame.bar = bar
-
-    -- Soft top highlight on the fill for a glassy look
-    local gloss = frame:CreateTexture(nil, "OVERLAY")
-    gloss:SetTexture(WHITE)
-    gloss:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-    gloss:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, -math.max(1, (height - 2) / 2))
-    gloss:SetGradient("VERTICAL", CreateColor(1,1,1,0), CreateColor(1,1,1,0.18))
-    frame.gloss = gloss
 
     function frame:SetProgress(value)
         value = math.max(0, math.min(1, value or 0))
-        local barWidth = math.max(1, (width - 2) * value)
-        self.bar:SetWidth(barWidth)
-
-        if value >= 1 then
-            self.bar:SetVertexColor(C.green.r, C.green.g, C.green.b, 0.9)
-        elseif value > 0 then
-            self.bar:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.85)
+        self.bar:SetWidth(math.max(1, (width - 2) * value))
+        local col
+        if ramp then
+            col = (value >= PROGRESS_OK and C.ok) or (value >= PROGRESS_WARN and C.gold) or C.danger
         else
-            self.bar:SetVertexColor(C.red.r, C.red.g, C.red.b, 0.5)
+            col = (value >= 1 and C.ok) or C.gold
         end
+        self.bar:SetVertexColor(col.r, col.g, col.b, 1)
     end
+    frame:SetProgress(0)
 
     return frame
 end
 
-----------------------------------------------------------------------
--- Create a tooltip-enhanced frame
-----------------------------------------------------------------------
+-- Create a metric chip: a mono value, a 1px gold rule and a `labelDim`
+-- caption under it. Never a box. chip:SetValue(text) updates the number.
+function Helpers:CreateMetricChip(parent, value, caption, size)
+    local chip = CreateFrame("Frame", nil, parent)
+    local v = newText(chip, size, "metricValue")
+    v:SetPoint("TOPLEFT")
+    v:SetTextColor(C.text.r, C.text.g, C.text.b)
+    v:SetText(value or "")
+
+    local rule = self:CreateAccentLine(chip, 1)
+    rule:SetWidth(CHIP_RULE)
+    rule:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -3)
+
+    local l = newText(chip, 10, "caption")
+    l:SetPoint("TOPLEFT", rule, "BOTTOMLEFT", 0, -3)
+    l:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    l:SetText(caption or "")
+
+    chip.value, chip.rule, chip.label = v, rule, l
+    function chip:SetValue(t) self.value:SetText(t or "") end
+    chip:SetSize(math.max(CHIP_RULE, v:GetStringWidth() or 0, l:GetStringWidth() or 0), (size or 22) + 20)
+    return chip
+end
+
+-- Tooltip on hover: a paper title and white lines.
 function Helpers:AddTooltip(frame, title, lines)
     frame:EnableMouse(true)
     frame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if title then
-            GameTooltip:AddLine(title, C.gold.r, C.gold.g, C.gold.b)
+            GameTooltip:AddLine(title, C.text.r, C.text.g, C.text.b)
         end
         if lines then
             for _, line in ipairs(lines) do
@@ -688,64 +720,60 @@ function Helpers:AddTooltip(frame, title, lines)
 end
 
 ----------------------------------------------------------------------
--- Create a tab button with an active underline indicator
+-- Tabs
 ----------------------------------------------------------------------
-function Helpers:CreateTab(parent, text, width)
+
+-- Create a tab: `label` text at rest, paper when hovered or active, and a 2px
+-- gold rule under the active one; `sub` makes it a sub-tab, with a 1px rule.
+-- No box around it.
+function Helpers:CreateTab(parent, text, width, sub)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
     tab:SetSize(width or 100, 28)
-    tab:SetBackdrop({
-        bgFile   = WHITE,
-        edgeFile = WHITE,
-        edgeSize = 1,
-    })
+    tab:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    tab:SetBackdropBorderColor(0, 0, 0, 0)
 
-    local label = tab:CreateFontString(nil, "OVERLAY")
-    label:SetFont(FONT, 11, "OUTLINE")
+    local label = newText(tab, 11)
     label:SetPoint("CENTER")
-    label:SetShadowOffset(1, -1)
-    label:SetShadowColor(0, 0, 0, 0.6)
     label:SetText(text or "")
     tab.label = label
 
-    -- Active underline indicator
     local underline = tab:CreateTexture(nil, "OVERLAY")
     underline:SetTexture(WHITE)
-    underline:SetHeight(2)
+    underline:SetHeight(sub and 1 or 2)
     underline:SetPoint("BOTTOMLEFT", 2, 0)
     underline:SetPoint("BOTTOMRIGHT", -2, 0)
-    underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
+    underline:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     underline:Hide()
     tab.underline = underline
 
+    local function paint(self, hovered)
+        local ink = (self.isActive or hovered) and C.text or C.label
+        self:SetBackdropColor(0, 0, 0, 0)
+        self.label:SetTextColor(ink.r, ink.g, ink.b)
+        self.underline:SetShown(self.isActive and true or false)
+    end
+
     function tab:SetActive(active)
         tab.isActive = active
-        if active then
-            tab:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-            tab:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-            tab.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            tab.underline:Show()
-        else
-            tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-            tab:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.25)
-            tab.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            tab.underline:Hide()
-        end
+        paint(tab, false)
     end
 
     tab:SetActive(false)
 
-    tab:SetScript("OnEnter", function(self)
-        if not self.isActive then
-            self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
-            self.label:SetTextColor(C.text.r, C.text.g, C.text.b)
-        end
-    end)
-    tab:SetScript("OnLeave", function(self)
-        if not self.isActive then
-            self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-            self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-        end
-    end)
+    tab:SetScript("OnEnter", function(self) paint(self, true) end)
+    tab:SetScript("OnLeave", function(self) paint(self, false) end)
+    tab:SetScript("OnMouseDown", function(self) self:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 1) end)
+    tab:SetScript("OnMouseUp", function(self) paint(self, self:IsMouseOver()) end)
 
     return tab
+end
+
+-- Paint a sub-tab bar: sub-tabs sit on the `panel` surface.
+function Helpers:StyleSubTabBar(bar)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture(WHITE)
+    bg:SetAllPoints()
+    bg:SetVertexColor(C.panel.r, C.panel.g, C.panel.b, 1)
+    bar.bg = bg
+    return bar
 end

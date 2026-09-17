@@ -73,44 +73,29 @@ local SCROLL_GUTTER = 18        -- rows stop short of the scrollbar
 local TABLE_RESERVED = KPI_BAND_HEIGHT + 28 + HEADER_HEIGHT + 1
 local KPI_GAP = 10
 local KPI_MARGIN = 12
--- Expanded mode's default size. Only a starting point now: the panels
--- inside lay themselves out from whatever size the frame actually has.
-local EXPANDED_W = 1236
-local EXPANDED_H = 844
-
-local TAB_HEIGHT = 28
-local BOTTOM_BAR_H = 30  -- bottom bar height; every tab panel insets its BOTTOMRIGHT by this
-
--- Global frame names must stay unique: this builder now runs once per
--- container (expanded-mode tab and floating window). The first instance
--- keeps the historical names so nothing that hardcodes them breaks.
+-- Global frame names must stay unique if a builder ever runs twice. The
+-- first instance keeps the historical names so nothing that hardcodes them breaks.
 local rosterInstances = 0
 -- Same reason as rosterInstances: the recruitment builder also runs once
 -- per container, and its scroll frame needs a globally unique name.
 local recruitInstances = 0
 
 ----------------------------------------------------------------------
--- Re-apply loot-system-dependent visibility (bottom-bar buttons + the
--- wishlist tab) without a reload. Called when the loot system changes.
+-- Re-apply loot-system-dependent visibility (the DKP and wishlist tabs)
+-- without a reload. Called when the loot system changes.
 ----------------------------------------------------------------------
 function BRutus:UpdateLootSystemUI()
     local f = self.RosterFrame
-    if not f then return end
-    if f.wishBtn then f.wishBtn:SetShown(self:LootSystemShowsWishlist()) end
-    if f.dkpBtn  then f.dkpBtn:SetShown(self:LootSystemShowsDKP()) end
-    if f.UpdateTabVisibility then f:UpdateTabVisibility() end
+    if f then f:UpdateTabVisibility() end
 end
 
-----------------------------------------------------------------------
--- Create the main roster frame
 ----------------------------------------------------------------------
 ----------------------------------------------------------------------
 -- Raid Hub: single container with a sub-tab bar that hosts the four
 -- raid-related panels (Sessions, Cores, Audit, Raid Tools).
 ----------------------------------------------------------------------
 function BRutus:CreateRaidHubPanel(container, mainFrame)
-    local WHITE = "Interface\\Buttons\\WHITE8x8"
-    local SUB_H = 26  -- sub-tab bar height
+    local SUB_H = 28  -- sub-tab bar height
 
     ----------------------------------------------------------------
     -- Sub-tab bar
@@ -120,17 +105,7 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     subBar:SetPoint("TOPRIGHT", 0, 0)
     subBar:SetHeight(SUB_H)
 
-    local subBarBg = subBar:CreateTexture(nil, "BACKGROUND")
-    subBarBg:SetTexture(WHITE)
-    subBarBg:SetAllPoints()
-    subBarBg:SetVertexColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.7)
-
-    local subBarLine = subBar:CreateTexture(nil, "ARTWORK")
-    subBarLine:SetTexture(WHITE)
-    subBarLine:SetHeight(1)
-    subBarLine:SetPoint("BOTTOMLEFT", 0, 0)
-    subBarLine:SetPoint("BOTTOMRIGHT", 0, 0)
-    subBarLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.35)
+    UI:StyleSubTabBar(subBar)
 
     ----------------------------------------------------------------
     -- Sub-panels (all fill the area below the sub-tab bar)
@@ -179,17 +154,7 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
             if st.key == key and st.officerOnly and not BRutus:IsOfficer() then return end
         end
         activeSubTab = key
-        for _, t in ipairs(subTabBtns) do
-            if t.key == key then
-                t:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-                t.lbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                if t.underline then t.underline:Show() end
-            else
-                t:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-                t.lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-                if t.underline then t.underline:Hide() end
-            end
-        end
+        for _, t in ipairs(subTabBtns) do t:SetActive(t.key == key) end
         for _, st in ipairs(SUBTABS) do
             if st.key == key then st.panel:Show() else st.panel:Hide() end
         end
@@ -200,49 +165,14 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
         -- Skip officer-only sub-tabs for non-officers
         local visible = not st.officerOnly or BRutus:IsOfficer()
         if visible then
-            local btn = CreateFrame("Button", nil, subBar, "BackdropTemplate")
-            btn:SetSize(110, SUB_H)
-            btn:SetBackdrop({ bgFile = WHITE })
-            btn:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-            btn:SetFrameLevel(subBar:GetFrameLevel() + 2)
+            local btn = UI:CreateTab(subBar, st.label, 110, true)
             if prevBtn then
                 btn:SetPoint("LEFT", prevBtn, "RIGHT", 2, 0)
             else
                 btn:SetPoint("LEFT", 4, 0)
             end
-
-            local lbl = btn:CreateFontString(nil, "OVERLAY")
-            lbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-            lbl:SetPoint("CENTER")
-            lbl:SetShadowOffset(1, -1)
-            lbl:SetShadowColor(0, 0, 0, 0.6)
-            lbl:SetText(st.label)
-            lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            btn.lbl = lbl
-
-            local underline = btn:CreateTexture(nil, "OVERLAY")
-            underline:SetTexture(WHITE)
-            underline:SetHeight(2)
-            underline:SetPoint("BOTTOMLEFT", 3, 0)
-            underline:SetPoint("BOTTOMRIGHT", -3, 0)
-            underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
-            underline:Hide()
-            btn.underline = underline
-
             btn.key = st.key
             btn:SetScript("OnClick", function() SetSubTab(st.key) end)
-            btn:SetScript("OnEnter", function(self)
-                if activeSubTab ~= self.key then
-                    self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
-                    self.lbl:SetTextColor(C.text.r, C.text.g, C.text.b)
-                end
-            end)
-            btn:SetScript("OnLeave", function(self)
-                if activeSubTab ~= self.key then
-                    self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-                    self.lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-                end
-            end)
 
             subTabBtns[#subTabBtns + 1] = btn
             prevBtn = btn
@@ -403,14 +333,14 @@ function BRutus:CreateRosterPanel(parent, host)
     })
     searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    searchBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(searchBox, 11)
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     searchBox:SetTextInsets(8, 8, 0, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(30)
 
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
-    searchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(searchPlaceholder, 11)
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     searchPlaceholder:SetText(L["Search / 60-70 / >=60"])
@@ -467,7 +397,7 @@ function BRutus:CreateRosterPanel(parent, host)
 
             -- Sort indicator
             local sortArrow = btn:CreateFontString(nil, "OVERLAY")
-            sortArrow:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(sortArrow, 10)
             sortArrow:SetPoint("LEFT", text, "RIGHT", 3, 0)
             sortArrow:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
             sortArrow:Hide()
@@ -992,15 +922,6 @@ function BRutus:CreateRosterPanel(parent, host)
         end
         local avgAtt = attCount > 0 and math.floor(attSum / attCount + 0.5) or 0
 
-        -- Update guild name in subtitle
-        local guildName = GetGuildInfo("player")
-        if guildName and self.subtitle then
-            self.subtitle:SetText("< " .. guildName .. " >")
-        end
-
-        -- Refresh guild emblem
-        if self.UpdateGuildIcon then self.UpdateGuildIcon() end
-
         -- True Roster: unique players behind the guild's alt/main links.
         if self.kpiPlayers and BRutus.GetTrueRoster then
             local tr = BRutus:GetTrueRoster()
@@ -1078,448 +999,6 @@ function BRutus:CreateRosterPanel(parent, host)
     return parent
 end
 
--- Every registered tab, ungated: officerOnly/condition are re-evaluated per
--- call in UpdateTabVisibility, so the frames must exist unconditionally.
-local function TabFeatures()
-    local out = {}
-    for _, id in ipairs(UI.featureOrder) do
-        local d = UI.features[id]
-        if d.tab then out[#out + 1] = d end
-    end
-    return out
-end
-
--- The one gate for a tab: enabled, and rank/condition allow it. Both
--- UpdateTabVisibility (which button to draw) and SetActiveTab (which panel
--- to open) ask this — a dashboard card can call SetActiveTab with no button
--- involved at all. Delegates to the registry's single gate (UI/FeatureRegistry.lua)
--- so this and every other opener (UI:OpenWindow, the slash verb) agree.
-local function TabAllowed(def)
-    return UI:IsFeatureAllowed(def)
-end
-
-function BRutus.CreateRosterFrame()
-    local frame = UI:CreatePanel(UIParent, "BRutusRosterFrame")
-    frame:SetSize(EXPANDED_W, EXPANDED_H)
-    frame:SetPoint("CENTER")
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:SetClampedToScreen(true)
-    frame:SetFrameStrata("HIGH")
-    frame:SetFrameLevel(10)
-    frame:Hide()
-
-    -- Soft drop shadow so the window lifts off the game world (premium depth)
-    UI:CreateDropShadow(frame, 18, 0.5)
-
-    -- Smooth fade-in when opened
-    UI:EnableFadeIn(frame, 0.16)
-
-    -- Double border effect for premium feel
-    local outerBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    outerBorder:SetPoint("TOPLEFT", -2, 2)
-    outerBorder:SetPoint("BOTTOMRIGHT", 2, -2)
-    outerBorder:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    outerBorder:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.22)
-    outerBorder:SetFrameLevel(9)
-
-    -- Inner glow effect (subtle gradient overlay at top)
-    local topGlow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-    topGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
-    topGlow:SetPoint("TOPLEFT", 1, -1)
-    topGlow:SetPoint("TOPRIGHT", -1, -1)
-    topGlow:SetHeight(70)
-    topGlow:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(C.accent.r, C.accent.g, C.accent.b, 0.07))
-
-    ----------------------------------------------------------------
-    -- Title Bar
-    ----------------------------------------------------------------
-    local titleBar = CreateFrame("Frame", nil, frame)
-    titleBar:SetPoint("TOPLEFT", 0, 0)
-    titleBar:SetPoint("TOPRIGHT", 0, 0)
-    titleBar:SetHeight(44)
-    titleBar:EnableMouse(true)
-    titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
-    titleBar:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-
-    -- Title background accent
-    local titleBg = titleBar:CreateTexture(nil, "ARTWORK")
-    titleBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    titleBg:SetAllPoints()
-    titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
-
-    -- Guild emblem icon (3-layer tabard system)
-    -- Textures MUST have global names — SetGuildTabardTextures in TBC Classic
-    -- expects string names, not Lua object references.
-    local guildIcon = CreateFrame("Frame", nil, titleBar)
-    guildIcon:SetSize(28, 28)
-    guildIcon:SetPoint("LEFT", 12, 0)
-    local guildIconBg     = guildIcon:CreateTexture("GuildOSTabardBg",     "BACKGROUND")
-    local guildIconBorder = guildIcon:CreateTexture("GuildOSTabardBorder", "BORDER")
-    local guildIconEmblem = guildIcon:CreateTexture("GuildOSTabardEmblem", "ARTWORK")
-    guildIconBg:SetAllPoints(guildIcon)
-    guildIconBorder:SetAllPoints(guildIcon)
-    guildIconEmblem:SetAllPoints(guildIcon)
-
-    local function UpdateGuildIcon()
-        if IsInGuild() then
-            -- Pass global texture names — TBC Classic (bg, border, emblem) order.
-            SetGuildTabardTextures("GuildOSTabardBg", "GuildOSTabardBorder", "GuildOSTabardEmblem")
-            if guildIconEmblem:GetTexture() then
-                guildIconEmblem:SetVertexColor(1, 1, 1)
-                return
-            end
-        end
-        -- No guild, or guild has no purchased tabard — show generic guild logo
-        guildIconBg:SetTexture(nil)
-        guildIconBorder:SetTexture(nil)
-        guildIconEmblem:SetTexture("Interface\\GuildFrame\\GuildLogo-NoLogo")
-        guildIconEmblem:SetVertexColor(C.gold.r, C.gold.g, C.gold.b)
-    end
-    frame.UpdateGuildIcon = UpdateGuildIcon
-    frame:HookScript("OnShow", UpdateGuildIcon)
-
-    -- Title text
-    local title = UI:CreateTitle(titleBar, "|cffFFD700Guild|r |cffD4AC0DOS|r", 20)
-    title:SetPoint("LEFT", guildIcon, "RIGHT", 8, 2)
-
-    -- Subtitle (guild name)
-    local subtitle = UI:CreateText(titleBar, "", 11, C.silver.r, C.silver.g, C.silver.b)
-    subtitle:SetPoint("LEFT", title, "RIGHT", 10, 0)
-    frame.subtitle = subtitle
-
-    -- Version tag
-    local versionTag = UI:CreateText(titleBar, "v" .. BRutus.VERSION, 9, C.accentDim.r, C.accentDim.g, C.accentDim.b)
-    versionTag:SetPoint("LEFT", title, "RIGHT", 10, -10)
-
-    -- Close button
-    local closeBtn = UI:TitleBarButton(titleBar, "close")
-    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -10)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
-
-    -- Sync button
-    local syncBtn = UI:TitleBarButton(titleBar, "text", L["Sync"], 70, 24)
-    syncBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
-    syncBtn:SetScript("OnClick", function()
-        if BRutus.CommSystem then
-            BRutus.CommSystem:FullSync()
-        end
-    end)
-
-    -- Global search button (always available in the header)
-    local searchBtn = UI:TitleBarButton(titleBar, "text", L["Search"], 80, 24)
-    searchBtn:SetPoint("RIGHT", syncBtn, "LEFT", -8, 0)
-    searchBtn:SetScript("OnClick", function()
-        if BRutus.Search then BRutus.Search:Show() end
-    end)
-
-    -- Blizzard guild UI button — jump to the native guild pane (chat history, news,
-    -- protected officer actions) without the addon fully replacing it. Opens whichever
-    -- native UI the client uses (classic GuildFrame or the modern Communities frame).
-    local blizzBtn = UI:TitleBarButton(titleBar, "text", L["Blizzard"], 80, 24)
-    blizzBtn:SetPoint("RIGHT", searchBtn, "LEFT", -8, 0)
-    blizzBtn:SetScript("OnClick", function()
-        if BRutus.OpenBlizzardGuildUI then BRutus:OpenBlizzardGuildUI() end
-    end)
-
-    -- Title accent line
-    local titleLine = UI:CreateAccentLine(frame, 2)
-    titleLine:SetPoint("TOPLEFT", 0, -44)
-    titleLine:SetPoint("TOPRIGHT", 0, -44)
-
-    ----------------------------------------------------------------
-    -- Tab Bar
-    ----------------------------------------------------------------
-    local tabBar = CreateFrame("Frame", nil, frame)
-    tabBar:SetPoint("TOPLEFT", 0, -(44 + 2))
-    tabBar:SetPoint("TOPRIGHT", 0, -(44 + 2))
-    tabBar:SetHeight(TAB_HEIGHT)
-
-    local tabBarBg = tabBar:CreateTexture(nil, "BACKGROUND")
-    tabBarBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    tabBarBg:SetAllPoints()
-    tabBarBg:SetVertexColor(0.066, 0.066, 0.084, 1.0)
-
-    frame.tabs = {}
-    frame.tabPanels = {}
-    frame.activeTab = nil
-
-    -- Content area starts below tab bar
-    local contentTop = -(44 + 2 + TAB_HEIGHT)
-
-    local function CreateTab(key, label, officerOnly, condition)
-        local idx = #frame.tabs + 1
-        local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
-        tab:SetSize(100, TAB_HEIGHT)
-        tab:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-        tab:SetFrameLevel(tabBar:GetFrameLevel() + 2)
-
-        if idx == 1 then
-            tab:SetPoint("LEFT", 4, 0)
-        else
-            tab:SetPoint("LEFT", frame.tabs[idx - 1], "RIGHT", 2, 0)
-        end
-
-        local tabLabel = tab:CreateFontString(nil, "OVERLAY")
-        tabLabel:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-        tabLabel:SetPoint("CENTER")
-        tabLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-        tabLabel:SetShadowOffset(1, -1)
-        tabLabel:SetShadowColor(0, 0, 0, 0.6)
-        tabLabel:SetText(label)
-        tab.label = tabLabel
-        tab.key = key
-        tab.officerOnly = officerOnly
-        tab.condition   = condition  -- optional function() → bool; overrides officerOnly when present
-
-        -- Active underline indicator
-        local underline = tab:CreateTexture(nil, "OVERLAY")
-        underline:SetTexture("Interface\\Buttons\\WHITE8x8")
-        underline:SetHeight(2)
-        underline:SetPoint("BOTTOMLEFT", 3, 0)
-        underline:SetPoint("BOTTOMRIGHT", -3, 0)
-        underline:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 1)
-        underline:Hide()
-        tab.underline = underline
-
-        tab:SetScript("OnClick", function()
-            frame:SetActiveTab(key)
-        end)
-        tab:SetScript("OnEnter", function(self)
-            if frame.activeTab ~= self.key then
-                self:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 1.0)
-                self.label:SetTextColor(C.text.r, C.text.g, C.text.b)
-            end
-        end)
-        tab:SetScript("OnLeave", function(self)
-            if frame.activeTab ~= self.key then
-                self:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-                self.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            end
-        end)
-
-        frame.tabs[idx] = tab
-        return tab
-    end
-
-    function frame:SetActiveTab(key)
-        local def = UI:GetFeature(key)
-        if not TabAllowed(def) then return end
-        local panel = self.tabPanels[key]
-        if panel and not panel.built then
-            panel.built = true
-            def.build(panel, self)
-        end
-        self.activeTab = key
-        for _, tab in ipairs(self.tabs) do
-            if tab.key == key then
-                tab:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-                tab.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                if tab.underline then tab.underline:Show() end
-            else
-                tab:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.9)
-                tab.label:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-                if tab.underline then tab.underline:Hide() end
-            end
-        end
-        for k, p in pairs(self.tabPanels) do
-            if k == key then
-                p:Show()
-            else
-                p:Hide()
-            end
-        end
-    end
-
-    function frame:UpdateTabVisibility()
-        local prevTab = nil
-        for _, tab in ipairs(self.tabs) do
-            local visible = TabAllowed(UI:GetFeature(tab.key))
-            if visible then
-                tab:ClearAllPoints()
-                if prevTab then
-                    tab:SetPoint("LEFT", prevTab, "RIGHT", 2, 0)
-                else
-                    tab:SetPoint("LEFT", 4, 0)
-                end
-                tab:Show()
-                prevTab = tab
-            else
-                -- If this was the active tab, clear active so we can fall back.
-                if self.activeTab == tab.key then
-                    self.activeTab = nil
-                end
-                tab:Hide()
-            end
-        end
-        -- Fall back to Home if the previously active tab is now hidden.
-        if not self.activeTab then
-            self:SetActiveTab("home")
-        end
-    end
-
-    -- Tabs come from the feature registry: one entry, every surface.
-    -- TabFeatures, not AllFeatures/VisibleFeatures — officerOnly and
-    -- condition are re-evaluated live by UpdateTabVisibility (rank changes,
-    -- loot-system switches, alliance pacts forming, all without a reload),
-    -- and a toggle-hidden tab must still exist so it can be brought back.
-    -- Every tab frame and panel is created unconditionally; only visibility
-    -- is gated, and only in UpdateTabVisibility.
-    for _, def in ipairs(TabFeatures()) do
-        CreateTab(def.id, def.label, def.officerOnly, def.condition)
-    end
-
-    ----------------------------------------------------------------
-    -- Tab panels: one empty container per registered tab, filled by the
-    -- feature's build() the first time that tab is activated. This used
-    -- to construct all thirteen panels (and every sub-panel) up front.
-    ----------------------------------------------------------------
-    for _, def in ipairs(TabFeatures()) do
-        local panel = CreateFrame("Frame", nil, frame)
-        panel:SetPoint("TOPLEFT", 0, contentTop)
-        panel:SetPoint("BOTTOMRIGHT", 0, BOTTOM_BAR_H)
-        panel:Hide()
-        panel.featureId = def.id
-        frame.tabPanels[def.id] = panel
-    end
-
-    ----------------------------------------------------------------
-    -- Bottom Bar
-    ----------------------------------------------------------------
-    local bottomBar = CreateFrame("Frame", nil, frame)
-    bottomBar:SetPoint("BOTTOMLEFT", 0, 0)
-    bottomBar:SetPoint("BOTTOMRIGHT", 0, 0)
-    bottomBar:SetHeight(30)
-
-    local bottomBg = bottomBar:CreateTexture(nil, "BACKGROUND")
-    bottomBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bottomBg:SetAllPoints()
-    bottomBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
-
-    local bottomLine = UI:CreateAccentLine(frame, 1)
-    bottomLine:SetPoint("BOTTOMLEFT", 0, 30)
-    bottomLine:SetPoint("BOTTOMRIGHT", 0, 30)
-
-    local helpText = UI:CreateText(bottomBar, "/guildos scan  |  /guildos sync  |  /guildos wish", 9, 0.4, 0.4, 0.5)
-    helpText:SetPoint("LEFT", 12, 0)
-
-    -- Loot quick-access buttons. Wishlist and DKP share the same slot —
-    -- only the one matching the active loot system is shown (see
-    -- BRutus:UpdateLootSystemUI), so /roll guilds see neither.
-    local wishBtn = UI:CreateButton(bottomBar, L["My Wishlist"], 120, 22)
-    wishBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
-    wishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
-    wishBtn:SetShown(BRutus:LootSystemShowsWishlist())
-    frame.wishBtn = wishBtn
-
-    local dkpBtn = UI:CreateButton(bottomBar, L["Loot & DKP"], 110, 22)
-    dkpBtn:SetPoint("LEFT", helpText, "RIGHT", 16, 0)
-    dkpBtn:SetScript("OnClick", function() BRutus:ShowPointsFrame() end)
-    dkpBtn:SetShown(BRutus:LootSystemShowsDKP())
-    frame.dkpBtn = dkpBtn
-
-    -- Core Sign-up — always visible, shows available cores and role coverage
-    local signupCoreBtn = UI:CreateButton(bottomBar, L["Core Sign-up"], 110, 22)
-    signupCoreBtn:SetPoint("LEFT", helpText, "RIGHT", 148, 0)   -- clears 120px wishBtn + gap
-    signupCoreBtn:SetScript("OnClick", function() BRutus:ShowCoreSignupFrame() end)
-    frame.signupCoreBtn = signupCoreBtn
-
-    -- Guild Invite (visible only if player can invite)
-    local inviteBox = CreateFrame("EditBox", nil, bottomBar, "BackdropTemplate")
-    inviteBox:SetSize(140, 22)
-    inviteBox:SetPoint("RIGHT", -90, 0)
-    inviteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    inviteBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    inviteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    inviteBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    inviteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    inviteBox:SetTextInsets(6, 6, 0, 0)
-    inviteBox:SetAutoFocus(false)
-    inviteBox:SetMaxLetters(50)
-
-    local invitePlaceholder = inviteBox:CreateFontString(nil, "OVERLAY")
-    invitePlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
-    invitePlaceholder:SetPoint("LEFT", 6, 0)
-    invitePlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    invitePlaceholder:SetText(L["Player name..."])
-
-    inviteBox:SetScript("OnTextChanged", function(self)
-        local text = self:GetText()
-        if text and text ~= "" then
-            invitePlaceholder:Hide()
-        else
-            invitePlaceholder:Show()
-        end
-    end)
-
-    local inviteBtn = UI:CreateButton(bottomBar, L["Invite"], 70, 22)
-    inviteBtn:SetPoint("RIGHT", -12, 0)
-
-    local function DoInvite()
-        local target = strtrim(inviteBox:GetText() or "")
-        if target == "" then
-            BRutus:Print(L["Enter a player name to invite."])
-            return
-        end
-        GuildInvite(target)
-        BRutus:Print(string.format(L["Guild invite sent to %s."], target))
-        inviteBox:SetText("")
-        inviteBox:ClearFocus()
-    end
-
-    inviteBtn:SetScript("OnClick", DoInvite)
-    inviteBox:SetScript("OnEnterPressed", function(self)
-        DoInvite()
-        self:ClearFocus()
-    end)
-    inviteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-    frame.inviteBox = inviteBox
-    frame.inviteBtn = inviteBtn
-
-    -- Show/hide invite based on permission
-    local function UpdateInviteVisibility()
-        if CanGuildInvite() then
-            inviteBox:Show()
-            inviteBtn:Show()
-        else
-            inviteBox:Hide()
-            inviteBtn:Hide()
-        end
-    end
-
-    frame:HookScript("OnShow", UpdateInviteVisibility)
-
-    -- ESC to close
-    table.insert(UISpecialFrames, "BRutusRosterFrame")
-
-    -- Re-evaluate conditional tabs when group or loot method changes.
-    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
-    frame:RegisterEvent("RAID_ROSTER_UPDATE")
-    frame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
-    -- Refresh guild emblem when tabard/guild data becomes available
-    frame:RegisterEvent("GUILD_ROSTER_UPDATE")
-    frame:RegisterEvent("PLAYER_GUILD_UPDATE")
-    frame:SetScript("OnEvent", function(self, event)
-        if event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
-            if self.UpdateGuildIcon then self.UpdateGuildIcon() end
-        else
-            self:UpdateTabVisibility()
-        end
-    end)
-
-    -- Initialize tab system
-    frame:UpdateTabVisibility()
-    frame:SetActiveTab("home")
-
-    return frame
-end
-
 ----------------------------------------------------------------------
 -- Create a single roster row
 ----------------------------------------------------------------------
@@ -1555,7 +1034,7 @@ function CreateRosterRow(parent, rowIndex, uid)
     row.classIcon = classIcon
 
     local nameText = row:CreateFontString(nil, "OVERLAY")
-    nameText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(nameText, 12)
     nameText:SetPoint("LEFT", classIcon, "RIGHT", 5, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
@@ -1572,7 +1051,7 @@ function CreateRosterRow(parent, rowIndex, uid)
 
     local function cell(size, justify, colour)
         local fs = row:CreateFontString(nil, "OVERLAY")
-        fs:SetFont("Fonts\\FRIZQT__.TTF", size, "OUTLINE")
+        BRutus:ApplyFont(fs, size)
         fs:SetJustifyH(justify)
         fs:SetWordWrap(false)
         if colour then fs:SetTextColor(colour.r, colour.g, colour.b) end
@@ -2039,7 +1518,7 @@ function ShowRowTooltip(row)
     -- Attunement detail
     -- Uses GetEffectiveAttunements so only game-API-verified data is shown
     -- (no alt-propagation that could produce false "Done" for cross-account alts).
-    local effAtts = BRutus.AttunementTracker:GetEffectiveAttunements(data.key)
+    local effAtts = BRutus.AttunementTracker and BRutus.AttunementTracker:GetEffectiveAttunements(data.key)
     if effAtts and #effAtts > 0 then
         local done, inProg, pending = {}, {}, {}
         for _, att in ipairs(effAtts) do
@@ -2163,7 +1642,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     searchBar:SetHeight(26)
 
     local searchIcon = searchBar:CreateFontString(nil, "OVERLAY")
-    searchIcon:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(searchIcon, 12)
     searchIcon:SetPoint("LEFT", 8, 0)
     searchIcon:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
     searchIcon:SetText(L["Search:"])
@@ -2174,7 +1653,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     wishSearch:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     wishSearch:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     wishSearch:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    wishSearch:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(wishSearch, 11)
     wishSearch:SetTextColor(C.white.r, C.white.g, C.white.b)
     wishSearch:SetTextInsets(6, 6, 0, 0)
     wishSearch:SetAutoFocus(false)
@@ -2182,7 +1661,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     wishSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
     local wishSearchPlaceholder = wishSearch:CreateFontString(nil, "OVERLAY")
-    wishSearchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(wishSearchPlaceholder, 11)
     wishSearchPlaceholder:SetPoint("LEFT", 6, 0)
     wishSearchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     wishSearchPlaceholder:SetText(L["Player name..."])
@@ -2280,7 +1759,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Expand indicator
             local arrow = charRow:CreateFontString(nil, "OVERLAY")
-            arrow:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(arrow, 10)
             arrow:SetPoint("LEFT", 8, 0)
             arrow:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
             arrow:SetText(isExpanded and "v" or ">")
@@ -2288,14 +1767,14 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             -- Character name
             local cc = BRutus.ClassColors and BRutus.ClassColors[(charData.class or ""):upper()] or C.white
             local nameStr = charRow:CreateFontString(nil, "OVERLAY")
-            nameStr:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+            BRutus:ApplyFont(nameStr, 11)
             nameStr:SetPoint("LEFT", 24, 0)
             nameStr:SetTextColor(cc.r, cc.g, cc.b)
             nameStr:SetText(charData.name or charKey)
 
             -- Class
             local classStr = charRow:CreateFontString(nil, "OVERLAY")
-            classStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(classStr, 10)
             classStr:SetPoint("LEFT", 180, 0)
             classStr:SetTextColor(cc.r, cc.g, cc.b, 0.7)
             classStr:SetText(charData.class or "")
@@ -2303,7 +1782,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             -- Wishlist count
             local wishItems = charData.wishlist or {}
             local wishCount = charRow:CreateFontString(nil, "OVERLAY")
-            wishCount:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(wishCount, 10)
             wishCount:SetPoint("LEFT", 310, 0)
             wishCount:SetWidth(60)
             if #wishItems > 0 then
@@ -2332,7 +1811,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                 end
             end
             local attPct = charRow:CreateFontString(nil, "OVERLAY")
-            attPct:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(attPct, 10)
             attPct:SetPoint("LEFT", 400, 0)
             attPct:SetWidth(50)
             attPct:SetTextColor(attR, attG, attB)
@@ -2353,7 +1832,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             end
             if hasPrio then
                 local prioStar = charRow:CreateFontString(nil, "OVERLAY")
-                prioStar:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+                BRutus:ApplyFont(prioStar, 12)
                 prioStar:SetPoint("LEFT", 460, 0)
                 prioStar:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 prioStar:SetText("|cffFFD700*|r")
@@ -2394,7 +1873,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
                 -- Section label
                 local secLabel = listChild:CreateFontString(nil, "OVERLAY")
-                secLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                BRutus:ApplyFont(secLabel, 9)
                 secLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                 secLabel:SetTextColor(wColor.r, wColor.g, wColor.b)
                 secLabel:SetText(string.format(L["WISHLIST  (%d)"], #wishItems))
@@ -2419,7 +1898,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     -- Order
                     local orderStr = iRow:CreateFontString(nil, "OVERLAY")
-                    orderStr:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                    BRutus:ApplyFont(orderStr, 9)
                     orderStr:SetPoint("LEFT", 8, 0)
                     orderStr:SetWidth(22)
                     orderStr:SetJustifyH("RIGHT")
@@ -2434,7 +1913,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     end
                     local itemName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                     local itemStr = iRow:CreateFontString(nil, "OVERLAY")
-                    itemStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+                    BRutus:ApplyFont(itemStr, 10)
                     itemStr:SetPoint("LEFT", 34, 0)
                     itemStr:SetWidth(childWidth - 140)
                     itemStr:SetJustifyH("LEFT")
@@ -2445,7 +1924,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     -- OS badge
                     if item.isOffspec then
                         local osBadge = iRow:CreateFontString(nil, "OVERLAY")
-                        osBadge:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+                        BRutus:ApplyFont(osBadge, 8)
                         osBadge:SetPoint("RIGHT", -8, 0)
                         osBadge:SetTextColor(0.7, 0.7, 0.7, 0.7)
                         osBadge:SetText(L["OS"])
@@ -2456,7 +1935,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                         for prioIdx, prioEntry in ipairs(BRutus.db.lootPrios[item.itemId]) do
                             if strlower(prioEntry.name or "") == charKey then
                                 local prioBadge = iRow:CreateFontString(nil, "OVERLAY")
-                                prioBadge:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                                BRutus:ApplyFont(prioBadge, 9)
                                 local rightOff = item.isOffspec and -28 or -8
                                 prioBadge:SetPoint("RIGHT", rightOff, 0)
                                 prioBadge:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
@@ -2509,7 +1988,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     detailLy = detailLy - 5
 
                     local prioLabel = listChild:CreateFontString(nil, "OVERLAY")
-                    prioLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                    BRutus:ApplyFont(prioLabel, 9)
                     prioLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                     prioLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                     prioLabel:SetText(string.format(L["OFFICIAL PRIORITY  (%d)"], #prioBadges))
@@ -2532,9 +2011,9 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                         goldBar:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
 
                         local starStr = pRow:CreateFontString(nil, "OVERLAY")
-                        starStr:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                        BRutus:ApplyFont(starStr, 9)
                         starStr:SetPoint("LEFT", 8, 0)
-                        starStr:SetWidth(28)
+                        starStr:SetWidth(32)  -- "* #12" at 10px mono needs 30px
                         starStr:SetJustifyH("RIGHT")
                         starStr:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                         starStr:SetText("|cffFFD700*|r #" .. badge.order)
@@ -2546,7 +2025,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                             pqColor = BRutus.QualityColors[q] or C.white
                         end
                         local pItemStr = pRow:CreateFontString(nil, "OVERLAY")
-                        pItemStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+                        BRutus:ApplyFont(pItemStr, 10)
                         pItemStr:SetPoint("LEFT", 40, 0)
                         pItemStr:SetWidth(childWidth - 150)
                         pItemStr:SetJustifyH("LEFT")
@@ -2577,7 +2056,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
         if count == 0 and totalCount == 0 then
             local noData = listChild:CreateFontString(nil, "OVERLAY")
-            noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+            BRutus:ApplyFont(noData, 11)
             noData:SetPoint("TOP", listChild, "TOP", 0, ly - 30)
             noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
             noData:SetText(L["No member has synced their wishlist yet.\nUse the Sync button in the My Wishlist window to send your data."])
@@ -2586,7 +2065,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             ly = ly - 60
         elseif count == 0 then
             local noMatch = listChild:CreateFontString(nil, "OVERLAY")
-            noMatch:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+            BRutus:ApplyFont(noMatch, 11)
             noMatch:SetPoint("TOP", listChild, "TOP", 0, ly - 20)
             noMatch:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
             noMatch:SetText(L["No character found."])
@@ -2617,7 +2096,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
     -- Re-render when the client finishes loading a queued item (async cache population).
     -- Debounce: batch rapid arrivals into a single repopulate 0.3 s later.
-    parent:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    BRutus.Compat.RegisterEvent(parent, "GET_ITEM_INFO_RECEIVED")
     parent:SetScript("OnEvent", function(self, event)
         if event == "GET_ITEM_INFO_RECEIVED" and self:IsVisible() then
             if not self._itemInfoTimer then
@@ -2764,6 +2243,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local bar = CreateFrame("Frame", nil, root)
     bar:SetPoint("TOPLEFT", 10, -8)
     bar:SetSize(300, 28)
+    UI:StyleSubTabBar(bar)
 
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, root)
@@ -2800,6 +2280,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local info = root.subPanels[key]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
+    root.SelectSub = selectSub   -- deep links: the Now tab, /gos open recruitment <sub>
 
     local RECRUIT_SUBTABS = {
         { key = "recruiting", label = L["Recruiting"] },
@@ -2807,7 +2288,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     }
     local subTabList = {}
     for _, t in ipairs(RECRUIT_SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 90)
+        local btn = UI:CreateTab(bar, t.label, 90, true)
         btn:SetWidth(math.max(90, math.ceil(btn.label:GetStringWidth()) + 20))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
@@ -2918,7 +2399,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     intervalBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     intervalBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     intervalBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    intervalBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(intervalBox, 11)
     intervalBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     intervalBox:SetTextInsets(6, 6, 0, 0)
     intervalBox:SetAutoFocus(false)
@@ -2987,7 +2468,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     msgBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    msgBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(msgBox, 11)
     msgBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     msgBox:SetTextInsets(8, 8, 6, 6)
     msgBox:SetAutoFocus(false)
@@ -3055,7 +2536,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    discordBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(discordBox, 11)
     discordBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
     discordBox:SetTextInsets(6, 6, 0, 0)
     discordBox:SetAutoFocus(false)
@@ -3080,7 +2561,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     welcomeBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    welcomeBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(welcomeBox, 11)
     welcomeBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     welcomeBox:SetTextInsets(8, 8, 6, 6)
     welcomeBox:SetAutoFocus(false)

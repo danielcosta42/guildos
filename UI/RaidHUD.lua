@@ -184,7 +184,10 @@ end
 -- COMBAT LOG — detect CD usage for all raid members
 ----------------------------------------------------------------------
 local _clFrame = CreateFrame("Frame")
-_clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+-- The cooldown HUD is TBC content: elsewhere it never reads the combat log (ADR-0014).
+if BRutus.Client.isAnniversary then
+    BRutus.Compat.RegisterEvent(_clFrame, "COMBAT_LOG_EVENT_UNFILTERED")
+end
 _clFrame:SetScript("OnEvent", function()
     local _, event, _, _, srcName, _, _, _, _, _, _, spellID =
         CombatLogGetCurrentEventInfo()
@@ -256,13 +259,13 @@ local function BuildHUDRows(f)
             local icon = row:CreateTexture(nil, "ARTWORK")
             icon:SetSize(ICON_W, ICON_W)
             icon:SetPoint("LEFT", 2, 0)
-            local spellTex = GetSpellTexture(cd.iconID)
+            local spellTex = BRutus.Compat.GetSpellTexture(cd.iconID)
             icon:SetTexture(spellTex or "Interface\\Icons\\INV_Misc_QuestionMark")
             icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
             -- CD label
             local lbl = row:CreateFontString(nil, "OVERLAY")
-            lbl:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(lbl, 9)
             lbl:SetPoint("LEFT", ICON_W + 4, 0)
             lbl:SetWidth(LABEL_W)
             lbl:SetJustifyH("LEFT")
@@ -271,7 +274,7 @@ local function BuildHUDRows(f)
 
             -- Player name list (colored, updated by ticker)
             local pText = row:CreateFontString(nil, "OVERLAY")
-            pText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(pText, 9)
             pText:SetPoint("LEFT", ICON_W + LABEL_W + 6, 0)
             pText:SetPoint("RIGHT", -2, 0)
             pText:SetJustifyH("LEFT")
@@ -326,7 +329,7 @@ function BRutus:CreateRaidHUD()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    f:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 0.92)
+    f:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 0.92)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 1)
     f:SetFrameStrata("MEDIUM")
     f:SetFrameLevel(50)
@@ -364,7 +367,7 @@ function BRutus:CreateRaidHUD()
     header:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1)
 
     local titleText = header:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(titleText, 11)
     titleText:SetPoint("LEFT", 8, 0)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(L["Guild OS — Raid CDs"])
@@ -377,7 +380,7 @@ function BRutus:CreateRaidHUD()
     colBtn:SetPoint("RIGHT", -22, 0)
 
     local colBtnText = colBtn:CreateFontString(nil, "OVERLAY")
-    colBtnText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(colBtnText, 13)
     colBtnText:SetAllPoints()
     colBtnText:SetJustifyH("CENTER")
     colBtnText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -403,7 +406,7 @@ function BRutus:CreateRaidHUD()
     closeBtn:SetPoint("RIGHT", -2, 0)
 
     local closeTxt = closeBtn:CreateFontString(nil, "OVERLAY")
-    closeTxt:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(closeTxt, 13)
     closeTxt:SetAllPoints()
     closeTxt:SetJustifyH("CENTER")
     closeTxt:SetTextColor(0.85, 0.20, 0.20)
@@ -462,7 +465,8 @@ function BRutus:UpdateRaidHUDVisibility()
     local moduleEnabled = not BRutus.db or not BRutus.db.settings
         or not BRutus.db.settings.modules
         or BRutus.db.settings.modules.raidHUD ~= false
-    local shouldShow = moduleEnabled and IsInRaid() and IsLeaderOrAssist()
+    -- The raid cooldown HUD is TBC content (ADR-0014).
+    local shouldShow = moduleEnabled and BRutus.Client.isAnniversary and IsInRaid() and IsLeaderOrAssist()
     if shouldShow then
         if not _hudFrame:IsShown() and not _hudManuallyClosed then
             _hudFrame:Show()
@@ -485,9 +489,9 @@ end
 -- EVENT HANDLING — auto show/hide on roster changes
 ----------------------------------------------------------------------
 local _evtFrame = CreateFrame("Frame")
-_evtFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-_evtFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-_evtFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+BRutus.Compat.RegisterEvent(_evtFrame, "PLAYER_ENTERING_WORLD")
+BRutus.Compat.RegisterEvent(_evtFrame, "GROUP_ROSTER_UPDATE")
+BRutus.Compat.RegisterEvent(_evtFrame, "RAID_ROSTER_UPDATE")
 
 _evtFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -499,7 +503,7 @@ _evtFrame:SetScript("OnEvent", function(_, event)
                 if BRutus.db.settings then
                     _hudManuallyClosed = BRutus.db.settings.raidHUDDismissed and true or false
                 end
-                BRutus:CreateRaidHUD()
+                if BRutus.Client.isAnniversary then BRutus:CreateRaidHUD() end  -- TBC content (ADR-0014)
                 BRutus:UpdateRaidHUDVisibility()
             end
         end)
@@ -611,7 +615,7 @@ function BRutus:ShowConsumablePopup()
     f:SetSize(CP_W, 160)
     f:SetPoint("CENTER")
     f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-    f:SetBackdropColor(C.panel.r, C.panel.g, C.panel.b, 0.97)
+    f:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 1)
     f:SetFrameStrata("HIGH")
     f:SetFrameLevel(60)

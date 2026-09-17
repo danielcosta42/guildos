@@ -155,7 +155,8 @@ Alliance.HUE_SPAN = 320
 
 function Alliance.GuildColor(guildName)
     if type(guildName) ~= "string" or guildName == "" then
-        return 0.56, 0.48, 0.82   -- the addon accent, for "guild unknown"
+        local c = BRutus.Colors.label   -- a neutral label colour for "guild unknown"
+        return c.r, c.g, c.b
     end
     local hue = Alliance.HUE_MIN + (Alliance.Hash(guildName) % Alliance.HUE_SPAN)
     return hsvToRgb(hue, 0.42, 0.86)
@@ -2040,7 +2041,7 @@ function Alliance:Initialize()
     registerPopups()
     -- The roster class/level cache is only valid until the roster changes.
     local rf = CreateFrame("Frame")
-    rf:RegisterEvent("GUILD_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(rf, "GUILD_ROSTER_UPDATE")
     rf:SetScript("OnEvent", function() GuildOS.Alliance._rosterInfo = nil end)
     if BRutus.SyncService then
         BRutus.SyncService:On("allyboard", function(env) GuildOS.Alliance:OnBoardSync(env) end)

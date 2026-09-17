@@ -101,7 +101,7 @@ local function buildEditor()
         box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         box:SetBackdropColor(0.05, 0.05, 0.066, 1)
         box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        box:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        BRutus:ApplyFont(box, 11)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetTextInsets(6, 6, multiline and 4 or 0, 0)
         box:SetAutoFocus(false)
@@ -151,7 +151,7 @@ local function buildEditor()
             p:SetPoint("TOPLEFT", 14 + (i - 1) * 55, -98)
             p:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             local fs = p:CreateFontString(nil, "OVERLAY")
-            fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(fs, 10)
             fs:SetPoint("CENTER"); fs:SetText(kindLabel(k))
             p.fs = fs; p.kind = k
             p:SetScript("OnClick", function() f.kind = k; refreshKinds() end)
@@ -291,10 +291,10 @@ function BRutus:CreateCalendarSub(panel)
         local cell = CreateFrame("Button", nil, f, "BackdropTemplate")
         cell:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         cell.dayFS = cell:CreateFontString(nil, "OVERLAY")
-        cell.dayFS:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(cell.dayFS, 11)
         cell.dayFS:SetPoint("TOPLEFT", 4, -3)
         cell.evtFS = cell:CreateFontString(nil, "OVERLAY")
-        cell.evtFS:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+        BRutus:ApplyFont(cell.evtFS, 9)
         cell.evtFS:SetPoint("BOTTOMLEFT", 3, 3)
         cell.evtFS:SetPoint("BOTTOMRIGHT", -3, 3)
         cell.evtFS:SetJustifyH("LEFT"); cell.evtFS:SetWordWrap(false)
@@ -432,8 +432,8 @@ function BRutus:CreateCalendarSub(panel)
             -- Shared events carry a mark so an officer can see what is exposed
             -- without opening each one. Marking the SHARED ones (not the
             -- private ones) because exposure is the state that wants attention.
-            -- A gold [A] rather than a globe glyph: FRIZQT has no symbol
-            -- coverage and unicode marks render as a box in this font.
+            -- A gold [A] rather than a globe glyph: the skin fonts have no symbol
+            -- coverage and unicode marks render as a box in these fonts.
             local shareMark = e.shareAlliance and "  |cffEDCC7B[A]|r" or ""
             local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or 25) .. ")|r" .. shareMark,
                 12, C.gold.r, C.gold.g, C.gold.b)
@@ -568,6 +568,13 @@ function BRutus:CreateCalendarSub(panel)
     -- Initial view = current month, today selected.
     local t = date("*t", GetServerTime())
     f.viewYear, f.viewMonth, f.selectedKey = t.year, t.month, dayKey(t.year, t.month, t.day)
+
+    -- A deep link (the Now tab's raid) opens on that day, its events listed.
+    panel.ApplyFilter = function(when)
+        local d = date("*t", when)
+        f.viewYear, f.viewMonth, f.selectedKey = d.year, d.month, dayKey(d.year, d.month, d.day)
+        f.Render()
+    end
 
     -- Live-refresh while visible as synced events/RSVPs arrive.
     if BRutus.Calendar then

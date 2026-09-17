@@ -26,7 +26,7 @@ function ChatTweaks:Initialize()
     self._cache = {}
 
     local f = CreateFrame("Frame")
-    f:RegisterEvent("GUILD_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     f:SetScript("OnEvent", function() ChatTweaks:_RefreshCache() end)
 
     self:_RegisterFilters()

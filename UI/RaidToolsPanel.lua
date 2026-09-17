@@ -187,7 +187,8 @@ function BRutus:CreateRaidToolsPanel(parent, _mainFrame)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
     bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetHeight(28)
+    UI:StyleSubTabBar(bar)
 
     local subTabBtns = {}
     local function selectSub(key)
@@ -197,6 +198,7 @@ function BRutus:CreateRaidToolsPanel(parent, _mainFrame)
         local info = parent.subPanels[key]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
+    parent.SelectSub = selectSub
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
@@ -204,7 +206,7 @@ function BRutus:CreateRaidToolsPanel(parent, _mainFrame)
 
     local x = 0
     for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 130)
+        local btn = UI:CreateTab(bar, t.label, 130, true)
         btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn

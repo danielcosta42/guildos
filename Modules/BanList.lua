@@ -190,8 +190,8 @@ end
 
 function BanList:_SetupDetection()
     local f = CreateFrame("Frame")
-    f:RegisterEvent("CHAT_MSG_SYSTEM")
-    f:RegisterEvent("CHAT_MSG_WHISPER")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     -- give the db time to load before trusting cold-login join spam
     self._ready = false
     self._whisperCd = {}
@@ -215,18 +215,16 @@ function BanList:_SetupDetection()
     end)
 
     -- Tooltip flag on banned units
-    if GameTooltip and GameTooltip.HookScript then
-        GameTooltip:HookScript("OnTooltipSetUnit", function(tt)
-            local _, unit = tt:GetUnit()
-            local name = unit and UnitName(unit)
-            if name and BanList:IsBanned(name) then
-                local e = BanList:Get(name)
-                tt:AddLine("\226\155\148 " .. L["BANNED"] .. " — " ..
-                    (e.reason or "?") .. " (" .. (e.author or "?") .. ")", 1, 0.2, 0.2)
-                tt:Show()
-            end
-        end)
-    end
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetUnit", function(tt)
+        local _, unit = tt:GetUnit()
+        local name = unit and UnitName(unit)
+        if name and BanList:IsBanned(name) then
+            local e = BanList:Get(name)
+            tt:AddLine("\226\155\148 " .. L["BANNED"] .. " — " ..
+                (e.reason or "?") .. " (" .. (e.author or "?") .. ")", 1, 0.2, 0.2)
+            tt:Show()
+        end
+    end)
 end
 
 ----------------------------------------------------------------------

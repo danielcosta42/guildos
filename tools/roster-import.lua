@@ -77,7 +77,7 @@ BRutus = {
 }
 function BRutus:GetSetting(k) return self.db.settings[k] end
 function BRutus:SetSetting(k, v) self.db.settings[k] = v end
-function BRutus:GetPlayerKey(n, r) return n .. "-" .. (r or GetRealmName()) end
+dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
 function BRutus:Print(...) print(...) end
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")

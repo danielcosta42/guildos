@@ -26,11 +26,11 @@ RaidTools.BUFFS = {
 
 -- Key raid cooldowns and their provider classes.
 RaidTools.COOLDOWNS = {
-    { name = L["Bloodlust/Heroism"], classes = { SHAMAN = true } },
+    { name = L["Bloodlust/Heroism"], classes = { SHAMAN = true }, tbc = true },  -- TBC spells (ADR-0014)
     { name = L["Battle Rez"],        classes = { DRUID = true } },
     { name = L["Innervate"],         classes = { DRUID = true } },
     { name = L["Power Infusion"],    classes = { PRIEST = true } },
-    { name = L["Misdirection"],      classes = { HUNTER = true } },
+    { name = L["Misdirection"],      classes = { HUNTER = true }, tbc = true },
     { name = L["Soulstone"],         classes = { WARLOCK = true } },
     { name = L["Salvation"],         classes = { PALADIN = true } },
 }
@@ -87,17 +87,19 @@ end
 function RaidTools:ResolveCoverage(defs, classCounts)
     local result = {}
     for _, def in ipairs(defs) do
-        local providers = {}
-        for classFile in pairs(def.classes) do
-            if (classCounts[classFile] or 0) > 0 then
-                providers[#providers + 1] = classFile
+        if not def.tbc or BRutus.Client.isAnniversary then  -- TBC-only spells stay off other clients (ADR-0014)
+            local providers = {}
+            for classFile in pairs(def.classes) do
+                if (classCounts[classFile] or 0) > 0 then
+                    providers[#providers + 1] = classFile
+                end
             end
+            result[#result + 1] = {
+                name = def.name,
+                covered = #providers > 0,
+                providers = providers,
+            }
         end
-        result[#result + 1] = {
-            name = def.name,
-            covered = #providers > 0,
-            providers = providers,
-        }
     end
     return result
 end

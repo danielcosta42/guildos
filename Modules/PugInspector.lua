@@ -125,7 +125,7 @@ function PugInspector:_LiveSources()
         guildShort = guildShort,
         altLinks   = db.altLinks or {},
         log        = log,
-        realm      = (GetRealmName and GetRealmName()) or "",
+        realm      = BRutus:GetClientRealm() or "",
         banEntry   = function(short)
             if BRutus.BanList and BRutus.BanList:IsBanned(short) then
                 return BRutus.BanList:Get(short)
@@ -156,8 +156,8 @@ end
 
 ----------------------------------------------------------------------
 -- Classify one player by name. `name` may be "Name" or "Name-Realm".
--- KEY-FORM: db.altLinks / db.officerNotes keys are "Name-Realm"
--- (GetPlayerKey), while the group/guild APIs hand back bare "Name". We
+-- KEY-FORM: db.altLinks / db.officerNotes keys are "Name-Realm", or the
+-- name alone without a realm (GetPlayerKey), while the group/guild APIs hand back bare "Name". We
 -- normalize BOTH sides here: short + realm -> "Name-Realm" for the table
 -- lookups, short (lowercased) for the roster / ban short-name checks.
 ----------------------------------------------------------------------
@@ -165,7 +165,7 @@ function PugInspector:Classify(name, srcs)
     srcs = srcs or self:_LiveSources()
     local short = (name and (name:match("^([^-]+)") or name)) or ""
     local realm = (name and name:match("%-(.+)$")) or srcs.realm or ""
-    local key   = short .. "-" .. realm
+    local key   = realm ~= "" and (short .. "-" .. realm) or short
     local shortLower = short:lower()
 
     local f = {}
@@ -283,7 +283,7 @@ end
 function PugInspector:_SetupEvents()
     if self._eventFrame then return end
     local f = CreateFrame("Frame")
-    f:RegisterEvent("GROUP_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(f, "GROUP_ROSTER_UPDATE")
     f:SetScript("OnEvent", function() PugInspector:_OnGroupUpdate() end)
     self._eventFrame = f
 end

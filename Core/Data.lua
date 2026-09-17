@@ -5,68 +5,137 @@
 ----------------------------------------------------------------------
 
 -- UI color constants
--- ── "Obsidian" theme ──────────────────────────────────────────────
--- Near-black neutral charcoal surfaces with a barely-perceptible cool
--- tint, a restrained desaturated-violet accent used only on interaction
--- / active states, and a softened champagne gold reserved for the brand
--- and key emphasis. Sleek and understated rather than colourful.
+-- ── "Forever" skin ────────────────────────────────────────────────
+-- Derived from the guildos.me production tokens (design handoff; see
+-- docs/superpowers/specs/2026-09-14-forever-skin-design.md). Near-monochrome
+-- with ONE accent: gold is the only colour allowed as a background, and violet
+-- only ever means epic item quality. Class and item-quality colours never
+-- live here; they come from the game.
+local function rgb(r, g, b, a) return { r = r, g = g, b = b, a = a or 1 } end
+
+-- A legacy key gets its own copy, so code that tweaks a colour in place can
+-- never recolour the token behind it.
+local function alias(t, a) return rgb(t.r, t.g, t.b, a or t.a) end
+
+local T = {
+    bg       = rgb(0.063, 0.059, 0.086),  -- #100f16 window background (elevation 2)
+    panel    = rgb(0.090, 0.086, 0.122),  -- #17161f card, title bar, column header (3)
+    popup    = rgb(0.114, 0.106, 0.149),  -- #1d1b26 popup, dropdown, tooltip, selected row (4)
+    well     = rgb(0.047, 0.043, 0.063),  -- #0c0b10 table body, input, scroll area (1)
+    line     = rgb(0.165, 0.153, 0.200),  -- #2a2733 1px border and separator
+    lineHi   = rgb(0.227, 0.212, 0.275),  -- #3a3646 popup border, border hover, scroll thumb
+    text     = rgb(0.925, 0.906, 0.878),  -- #ece7e0 primary text
+    textSoft = rgb(0.663, 0.635, 0.690),  -- #a9a2b0 supporting text
+    label    = rgb(0.592, 0.565, 0.624),  -- #97909f mono label, section caption
+    labelDim = rgb(0.435, 0.408, 0.471),  -- #6f6878 metric label, secondary column, footer
+    disabled = rgb(0.294, 0.271, 0.325),  -- #4b4553 disabled and ghost text
+    gold     = rgb(0.851, 0.663, 0.310),  -- #d9a94f the only brand accent
+    onGold   = rgb(0.090, 0.075, 0.039),  -- #17130a text on gold
+    ok       = rgb(0.490, 0.847, 0.561),  -- #7dd88f present, online, confirmed
+    danger   = rgb(0.812, 0.357, 0.322),  -- #cf5b52 absence, penalty, kick, ban, error
+    info     = rgb(0.357, 0.576, 0.812),  -- #5b93cf link to the site, sync, bot
+    epic     = rgb(0.659, 0.435, 0.878),  -- #a86fe0 epic item quality, nothing else
+}
+
+local ACCENT_DIM  = 0.54  -- dimmed gold for secondary marks
+local ACCENT_WASH = 0.14  -- alpha of the faint gold wash
+local SHADOW      = 0.55  -- drop-shadow alpha (elevation 4 only)
+
 BRutus.Colors = {
-    -- Brand / emphasis
-    gold      = { r = 0.93, g = 0.80, b = 0.48 },           -- champagne gold (softened)
-    darkGold  = { r = 0.70, g = 0.58, b = 0.30 },
-    silver    = { r = 0.70, g = 0.72, b = 0.78 },           -- cool silver
+    bg = T.bg, panel = T.panel, popup = T.popup, well = T.well,
+    line = T.line, lineHi = T.lineHi,
+    text = T.text, textSoft = T.textSoft, label = T.label, labelDim = T.labelDim,
+    disabled = T.disabled,
+    gold = T.gold, onGold = T.onGold,
+    ok = T.ok, danger = T.danger, info = T.info, epic = T.epic,
 
-    -- Surfaces (deepest → most elevated)
-    bg0       = { r = 0.035, g = 0.035, b = 0.050, a = 1.0 }, -- wells / scroll backgrounds
-    bg1       = { r = 0.050, g = 0.050, b = 0.066, a = 1.0 }, -- inputs / popups
-    bg2       = { r = 0.066, g = 0.066, b = 0.084, a = 1.0 }, -- elevated sub-panels
-    panel     = { r = 0.066, g = 0.066, b = 0.082, a = 0.98 },
-    panelDark = { r = 0.044, g = 0.044, b = 0.058, a = 1.0 },
-
-    -- Roster rows
-    row1      = { r = 0.102, g = 0.102, b = 0.122, a = 1.0 },
-    row2      = { r = 0.076, g = 0.076, b = 0.094, a = 1.0 },
-    rowHover  = { r = 0.150, g = 0.142, b = 0.196, a = 1.0 }, -- subtle violet lift on hover
-
-    -- Accent (use sparingly: borders on hover, active tabs, key marks)
-    accent    = { r = 0.56, g = 0.48, b = 0.82 },           -- refined desaturated violet
-    accentDim = { r = 0.30, g = 0.26, b = 0.44 },
-    accentSoft= { r = 0.56, g = 0.48, b = 0.82, a = 0.14 },  -- faint accent wash for gradients
-
-    -- Status / semantic
-    online    = { r = 0.42, g = 0.84, b = 0.46 },
-    offline   = { r = 0.46, g = 0.46, b = 0.52 },
-    white     = { r = 1.0, g = 1.0, b = 1.0 },              -- pure (kept for vertex resets)
-    text      = { r = 0.90, g = 0.90, b = 0.94 },           -- off-white body text
-    textDim   = { r = 0.60, g = 0.61, b = 0.68 },           -- muted secondary text
-    red       = { r = 0.90, g = 0.36, b = 0.40 },
-    green     = { r = 0.42, g = 0.82, b = 0.46 },
-    blue      = { r = 0.40, g = 0.58, b = 0.95 },
-
-    -- Chrome
-    headerBg  = { r = 0.094, g = 0.094, b = 0.118, a = 1.0 },
-    border    = { r = 0.30, g = 0.29, b = 0.40, a = 0.55 },  -- cool, subtle
-    separator = { r = 0.26, g = 0.25, b = 0.34, a = 0.35 },
-    shadow    = { r = 0.0,  g = 0.0,  b = 0.0,  a = 0.55 },  -- drop-shadow tint
+    -- Legacy keys. Screens older than the Forever skin still read these; each
+    -- one points at the token that plays its role now. New code uses the tokens.
+    silver     = alias(T.textSoft),
+    textDim    = alias(T.label),
+    white      = rgb(1, 1, 1),        -- pure white: vertex resets on icons and textures
+    border     = alias(T.line),
+    separator  = alias(T.line),
+    accent     = alias(T.gold),
+    accentDim  = rgb(T.gold.r * ACCENT_DIM, T.gold.g * ACCENT_DIM, T.gold.b * ACCENT_DIM),
+    accentSoft = alias(T.gold, ACCENT_WASH),
+    headerBg   = alias(T.panel),
+    bg0        = alias(T.well),
+    bg1        = alias(T.well),
+    bg2        = alias(T.panel),
+    panelDark  = alias(T.well),
+    row1       = alias(T.well),
+    row2       = alias(T.bg),         -- faint zebra until tables get 1px separators (#15)
+    rowHover   = alias(T.panel),
+    red        = alias(T.danger),
+    green      = alias(T.ok),
+    blue       = alias(T.info),
+    online     = alias(T.ok),
+    offline    = alias(T.disabled),
+    shadow     = rgb(0, 0, 0, SHADOW),
 }
 
--- Accent color presets (themes). The accent drives hover borders, active
--- tabs and key highlights; BRutus:ApplyTheme() recolors the palette from
--- the chosen preset on load.
-BRutus.ACCENT_PRESETS = {
-    { key = "violet",  label = "Violet",  r = 0.56, g = 0.48, b = 0.82 },
-    { key = "gold",    label = "Gold",    r = 0.85, g = 0.70, b = 0.35 },
-    { key = "teal",    label = "Teal",    r = 0.30, g = 0.74, b = 0.72 },
-    { key = "crimson", label = "Crimson", r = 0.82, g = 0.36, b = 0.42 },
-    { key = "emerald", label = "Emerald", r = 0.36, g = 0.74, b = 0.48 },
-    { key = "azure",   label = "Azure",   r = 0.38, g = 0.60, b = 0.92 },
-}
+-- Fonts. Four OFL files ship in Media/Fonts with their licences. Serif only
+-- from 14px up; everything smaller is IBM Plex Mono, never under 10px; no
+-- outline anywhere (design handoff §2).
+local FONT_DIR     = "Interface\\AddOns\\GuildOS\\Media\\Fonts\\"
+local SERIF        = FONT_DIR .. "Spectral-Regular.ttf"
+local SERIF_STRONG = FONT_DIR .. "Spectral-SemiBold.ttf"
+local MONO         = FONT_DIR .. "IBMPlexMono-Regular.ttf"
+local MONO_STRONG  = FONT_DIR .. "IBMPlexMono-Medium.ttf"
 
--- Preferred fonts (centralised so new UI can reference one source).
 BRutus.Fonts = {
-    normal = "Fonts\\FRIZQT__.TTF",
-    number = "Fonts\\ARIALN.TTF",  -- condensed; good for dense numeric columns
+    serif = SERIF, serifStrong = SERIF_STRONG, mono = MONO, monoStrong = MONO_STRONG,
+
+    -- Roles from the handoff type scale.
+    wordmark     = { file = SERIF_STRONG, size = 18 },
+    windowTitle  = { file = SERIF,        size = 16 },
+    sectionTitle = { file = SERIF_STRONG, size = 15 },
+    body         = { file = SERIF,        size = 14 },
+    memberName   = { file = SERIF_STRONG, size = 14 },
+    itemName     = { file = SERIF_STRONG, size = 17 },
+    caption      = { file = MONO,         size = 10 },
+    tableNum     = { file = MONO,         size = 12 },
+    colHeader    = { file = MONO_STRONG,  size = 10 },
+    metricValue  = { file = MONO,         size = 22 },
+    countdown    = { file = MONO,         size = 38 },
+    badge        = { file = MONO,         size = 10 },
+
+    -- Older readers expect one font for everything.
+    normal = MONO,
+    number = MONO,
 }
+
+local SERIF_MIN = 14  -- serif blurs below this at UI scale 1.0
+local MONO_MIN  = 10  -- nothing reads below this
+
+-- Set a FontString's font. A role from BRutus.Fonts picks the file (and the
+-- size unless one is given); otherwise 14px and up is Spectral and anything
+-- smaller is IBM Plex Mono. Either way serif never lands under 14px (it reads
+-- as mono instead) and mono is clamped to 10px. Never outlined. Returns the
+-- file and size used.
+function BRutus:ApplyFont(fontString, size, role)
+    local spec = role and BRutus.Fonts[role]
+    local file, px
+    if type(spec) == "table" then
+        file, px = spec.file, tonumber(size) or spec.size
+    else
+        px = tonumber(size) or MONO_MIN
+        file = (px >= SERIF_MIN) and SERIF or MONO
+    end
+    if (file == SERIF or file == SERIF_STRONG) and px < SERIF_MIN then
+        file = MONO
+    end
+    if file ~= SERIF and file ~= SERIF_STRONG then
+        px = math.max(MONO_MIN, px)
+    end
+    -- Only an explicit false means the file did not load; clients that return
+    -- nothing on success must not be pushed onto the fallback.
+    if fontString:SetFont(file, px, "") == false then
+        fontString:SetFont(STANDARD_TEXT_FONT, px, "")
+    end
+    return file, px
+end
 
 -- Class colors (TBC)
 BRutus.ClassColors = {

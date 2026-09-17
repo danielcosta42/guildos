@@ -347,7 +347,7 @@ function PopulateDetail(frame, data)
 
                     -- Label clipped to segment width; text adapts to available space
                     local segLabel = barFrame:CreateFontString(nil, "OVERLAY")
-                    segLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                    BRutus:ApplyFont(segLabel, 9)
                     segLabel:SetPoint("TOPLEFT", xPos + 4, -1)
                     segLabel:SetSize(segW - 8, 18)
                     segLabel:SetJustifyH("CENTER")
@@ -381,7 +381,7 @@ function PopulateDetail(frame, data)
 
         -- Text label: e.g.  "41 / 5 / 15  (Protection)"
         local specText = _pFS(child)
-        specText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+        BRutus:ApplyFont(specText, 13)
         specText:SetPoint("TOPLEFT", 10, yOff)
         specText:SetTextColor(cr, cg, cb)
         specText:SetText(specLabel)
@@ -399,7 +399,7 @@ function PopulateDetail(frame, data)
                 ageStr = math.floor(age / 86400) .. L["d ago"]
             end
             local scanText = _pFS(child)
-            scanText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(scanText, 9)
             scanText:SetPoint("TOPLEFT", 10, yOff)
             scanText:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
             scanText:SetText(L["Last scanned: "] .. ageStr)
@@ -408,7 +408,7 @@ function PopulateDetail(frame, data)
         end
     else
         local noSpec = _pFS(child)
-        noSpec:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        BRutus:ApplyFont(noSpec, 11)
         noSpec:SetPoint("TOPLEFT", 15, yOff)
         noSpec:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
         noSpec:SetText(L["No spec data. Use /guildos specs to scan the group."])
@@ -437,14 +437,14 @@ function PopulateDetail(frame, data)
             local sc = stat.color and C[stat.color] or C.white
 
             local label = _pFS(child)
-            label:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(label, 9)
             label:SetPoint("TOPLEFT", statsGrid, "TOPLEFT", col * colWidth, -(row * 20))
             label:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
             label:SetText(stat.label)
             label:Show()
 
             local value = _pFS(child)
-            value:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+            BRutus:ApplyFont(value, 11)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
             value:SetTextColor(sc.r, sc.g, sc.b)
             value:SetText(tostring(data.stats[stat.key] or 0))
@@ -467,7 +467,7 @@ function PopulateDetail(frame, data)
         end
     else
         local noData = _pFS(child)
-        noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        BRutus:ApplyFont(noData, 11)
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
         noData:SetText(L["No gear data available. Player needs Guild OS addon."])
@@ -488,7 +488,7 @@ function PopulateDetail(frame, data)
         end
     else
         local noData = _pFS(child)
-        noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        BRutus:ApplyFont(noData, 11)
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
         noData:SetText(L["No profession data available."])
@@ -497,31 +497,34 @@ function PopulateDetail(frame, data)
     end
 
     ----------------------------------------------------------------
-    -- Section: Attunements (account-wide propagation from linked chars)
+    -- Section: Attunements (account-wide propagation from linked chars).
+    -- TBC content: only on TBC Anniversary (ADR-0014).
     ----------------------------------------------------------------
-    yOff = yOff - 10
-    yOff = CreateSectionHeader(child, L["RAID ATTUNEMENTS"], yOff, contentWidth)
-    yOff = yOff - 5
+    if BRutus.Client.isAnniversary then
+        yOff = yOff - 10
+        yOff = CreateSectionHeader(child, L["RAID ATTUNEMENTS"], yOff, contentWidth)
+        yOff = yOff - 5
 
-    local attsToShow
-    if BRutus.AttunementTracker then
-        attsToShow = BRutus.AttunementTracker:GetEffectiveAttunements(playerKey)
-    else
-        attsToShow = data.attunements
-    end
-
-    if attsToShow and #attsToShow > 0 then
-        for _, att in ipairs(attsToShow) do
-            yOff = CreateAttunementRow(child, att, yOff, contentWidth)
+        local attsToShow
+        if BRutus.AttunementTracker then
+            attsToShow = BRutus.AttunementTracker:GetEffectiveAttunements(playerKey)
+        else
+            attsToShow = data.attunements
         end
-    else
-        local noData = _pFS(child)
-        noData:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
-        noData:SetPoint("TOPLEFT", 15, yOff)
-        noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-        noData:SetText(L["No attunement data available."])
-        noData:Show()
-        yOff = yOff - 25
+
+        if attsToShow and #attsToShow > 0 then
+            for _, att in ipairs(attsToShow) do
+                yOff = CreateAttunementRow(child, att, yOff, contentWidth)
+            end
+        else
+            local noData = _pFS(child)
+            BRutus:ApplyFont(noData, 11)
+            noData:SetPoint("TOPLEFT", 15, yOff)
+            noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            noData:SetText(L["No attunement data available."])
+            noData:Show()
+            yOff = yOff - 25
+        end
     end
 
     ----------------------------------------------------------------
@@ -544,7 +547,7 @@ function PopulateDetail(frame, data)
             local localName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or (L["Item #"] .. (item.itemId or "?"))
             local osStr = item.isOffspec and " |cffAAAAAA(OS)|r" or ""
             local itemStr = _pFS(child)
-            itemStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(itemStr, 10)
             itemStr:SetPoint("TOPLEFT", 20, yOff)
             itemStr:SetWidth(contentWidth - 30)
             itemStr:SetJustifyH("LEFT")
@@ -575,7 +578,7 @@ function PopulateDetail(frame, data)
 
         if att.lastRaid > 0 then
             local lastStr = _pFS(child)
-            lastStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(lastStr, 10)
             lastStr:SetPoint("TOPLEFT", 15, yOff - 5)
             lastStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             lastStr:SetText(L["Last raid: "] .. date("%m/%d/%Y", att.lastRaid))
@@ -598,14 +601,14 @@ function PopulateDetail(frame, data)
         for _, entry in ipairs(recentLoot) do
             local qColor = BRutus.QualityColors[entry.quality] or BRutus.QualityColors[1]
             local itemStr = _pFS(child)
-            itemStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(itemStr, 10)
             itemStr:SetPoint("TOPLEFT", 15, yOff - 5)
             itemStr:SetWidth(contentWidth - 30)
             itemStr:SetJustifyH("LEFT")
             itemStr:SetWordWrap(false)
             -- Resolve item name via GetItemInfo for correct client locale.
             -- GetItemInfo accepts itemLink directly, so no need to parse the ID.
-            local localItemName = GetItemInfo(entry.itemLink or entry.itemId or 0)
+            local localItemName = BRutus.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
             local displayName = localItemName or entry.itemName or "?"
             local dateStr = entry.timestamp and (" |cffAAAAAA" .. date("%m/%d", entry.timestamp) .. "|r") or ""
             local raidStr = entry.raid and entry.raid ~= "" and (" |cff888888(" .. entry.raid .. ")|r") or ""
@@ -638,7 +641,7 @@ function PopulateDetail(frame, data)
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
             local infoStr = _pFS(child)
-            infoStr:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(infoStr, 10)
             infoStr:SetPoint("TOPLEFT", 15, yOff - 5)
             infoStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             infoStr:SetText(L["Sponsor: "] .. (trial.sponsor or "?") .. L["  |  Day "] .. (daysSince or 0))
@@ -653,7 +656,7 @@ function PopulateDetail(frame, data)
                 local ilvlSign = progress.ilvlDelta > 0 and "+" or ""
                 local ilvlStr = format(L["iLvl: %d >> %d  (%s%d)"], progress.startIlvl, progress.currentIlvl, ilvlSign, progress.ilvlDelta)
                 local ilvlText = _pFS(child)
-                ilvlText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+                BRutus:ApplyFont(ilvlText, 10)
                 ilvlText:SetPoint("TOPLEFT", 15, yOff - 3)
                 ilvlText:SetTextColor(ilvlColor.r, ilvlColor.g, ilvlColor.b)
                 ilvlText:SetText(ilvlStr)
@@ -663,7 +666,7 @@ function PopulateDetail(frame, data)
                 local attColor = progress.attDelta > 0 and C.green or C.silver
                 local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
                 local attText = _pFS(child)
-                attText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+                BRutus:ApplyFont(attText, 10)
                 attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
                 attText:SetTextColor(attColor.r, attColor.g, attColor.b)
                 attText:SetText(attStr)
@@ -674,7 +677,7 @@ function PopulateDetail(frame, data)
             -- Trial notes (all of them, not just 3)
             if trial.notes and #trial.notes > 0 then
                 local notesLabel = _pFS(child)
-                notesLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                BRutus:ApplyFont(notesLabel, 9)
                 notesLabel:SetPoint("TOPLEFT", 15, yOff - 6)
                 notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 notesLabel:SetText(L["Officer Comments ("] .. #trial.notes .. ")")
@@ -683,7 +686,7 @@ function PopulateDetail(frame, data)
 
                 for _, note in ipairs(trial.notes) do
                     local noteFS = _pFS(child)
-                    noteFS:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                    BRutus:ApplyFont(noteFS, 9)
                     noteFS:SetPoint("TOPLEFT", 20, yOff - 2)
                     noteFS:SetWidth(contentWidth - 40)
                     noteFS:SetJustifyH("LEFT")
@@ -702,7 +705,7 @@ function PopulateDetail(frame, data)
             addNoteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             addNoteBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
             addNoteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            addNoteBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(addNoteBox, 10)
             addNoteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
             addNoteBox:SetTextInsets(6, 6, 2, 2)
             addNoteBox:SetAutoFocus(false)
@@ -710,7 +713,7 @@ function PopulateDetail(frame, data)
             addNoteBox:Show()
 
             local placeholder = addNoteBox:CreateFontString(nil, "OVERLAY")
-            placeholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(placeholder, 10)
             placeholder:SetPoint("LEFT", 6, 0)
             placeholder:SetTextColor(0.35, 0.35, 0.35)
             placeholder:SetText(L["Add officer comment..."])
@@ -762,7 +765,7 @@ function PopulateDetail(frame, data)
                 table.insert(tagParts, k .. ": " .. tostring(v))
             end
             local tagStr = _pFS(child)
-            tagStr:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(tagStr, 9)
             tagStr:SetPoint("TOPLEFT", 15, yOff - 5)
             tagStr:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
             tagStr:SetText(table.concat(tagParts, "  |  "))
@@ -774,7 +777,7 @@ function PopulateDetail(frame, data)
         for i = 1, math.min(3, #notes) do
             local note = notes[i]
             local noteStr = _pFS(child)
-            noteStr:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(noteStr, 9)
             noteStr:SetPoint("TOPLEFT", 15, yOff - 3)
             noteStr:SetWidth(contentWidth - 30)
             noteStr:SetJustifyH("LEFT")
@@ -804,7 +807,7 @@ function PopulateDetail(frame, data)
         yOff = yOff - 5
 
         local noteLabel = _pFS(child)
-        noteLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+        BRutus:ApplyFont(noteLabel, 9)
         noteLabel:SetPoint("TOPLEFT", 12, yOff)
         noteLabel:SetWidth(contentWidth - 20)
         noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
@@ -822,7 +825,7 @@ function PopulateDetail(frame, data)
             local selfIsMain = (altLinks[playerKey] == nil)
             local selfName = playerKey:match("^([^-]+)") or playerKey
             local selfLabel = _pFS(child)
-            selfLabel:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(selfLabel, 10)
             selfLabel:SetPoint("TOPLEFT", 12, yOff)
             selfLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             selfLabel:SetText(selfName
@@ -847,7 +850,7 @@ function PopulateDetail(frame, data)
                 local lkName = lk:match("^([^-]+)") or lk
                 local lkIsMain = (altLinks[lk] == nil)
                 local lkLabel = _pFS(child)
-                lkLabel:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+                BRutus:ApplyFont(lkLabel, 10)
                 lkLabel:SetPoint("TOPLEFT", 12, yOff)
                 lkLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 lkLabel:SetText(lkName .. (lkIsMain and ("  " .. L["(main)"]) or ""))
@@ -891,7 +894,7 @@ function PopulateDetail(frame, data)
         addLinkBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         addLinkBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
         addLinkBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        addLinkBox:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+        BRutus:ApplyFont(addLinkBox, 10)
         addLinkBox:SetTextColor(C.white.r, C.white.g, C.white.b)
         addLinkBox:SetTextInsets(6, 6, 2, 2)
         addLinkBox:SetAutoFocus(false)
@@ -899,7 +902,7 @@ function PopulateDetail(frame, data)
         addLinkBox:Show()
 
         local addLinkPlaceholder = addLinkBox:CreateFontString(nil, "OVERLAY")
-        addLinkPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+        BRutus:ApplyFont(addLinkPlaceholder, 10)
         addLinkPlaceholder:SetPoint("LEFT", 6, 0)
         addLinkPlaceholder:SetTextColor(0.35, 0.35, 0.35)
         addLinkPlaceholder:SetText(L["AltName (this is the main)"])
@@ -956,7 +959,7 @@ function CreateSectionHeader(parent, text, yOff, width)
     bg:Show()
 
     local label = _pFS(parent)
-    label:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(label, 10)
     label:SetPoint("LEFT", bg, "LEFT", 10, 0)
     label:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
     label:SetText(text)
@@ -990,7 +993,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
 
     -- Slot label
     local slotLabel = _pFS(parent)
-    slotLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+    BRutus:ApplyFont(slotLabel, 9)
     slotLabel:SetPoint("TOPLEFT", 10, yOff - 4)
     slotLabel:SetWidth(65)
     slotLabel:SetJustifyH("RIGHT")
@@ -1000,7 +1003,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
 
     if item and item.name and item.name ~= "" then
         -- Resolve localized item name and icon from client cache
-        local localName, _, _, _, _, _, _, _, _, itemIcon = GetItemInfo(item.id or 0)
+        local localName, _, _, _, _, _, _, _, _, itemIcon = BRutus.Compat.GetItemInfo(item.id or 0)
         local displayName = (localName and localName ~= "") and localName or item.name
         local icon = (itemIcon and itemIcon ~= "") and itemIcon or ""
 
@@ -1015,7 +1018,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
         -- Item name (colored by quality)
         local qColor = BRutus.QualityColors[item.quality] or BRutus.QualityColors[1]
         local nameText = _pFS(parent)
-        nameText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+        BRutus:ApplyFont(nameText, 10)
         nameText:SetPoint("TOPLEFT", 106, yOff - 5)
         nameText:SetJustifyH("LEFT")
         nameText:SetWordWrap(false)
@@ -1030,7 +1033,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
         local gemAnchor = nameText
         if item.gems and #item.gems > 0 then
             for _, gem in ipairs(item.gems) do
-                local _, _, _, _, _, _, _, _, _, gemIcon = GetItemInfo(gem.id or 0)
+                local _, _, _, _, _, _, _, _, _, gemIcon = BRutus.Compat.GetItemInfo(gem.id or 0)
                 if gemIcon and gemIcon ~= "" then
                     local gemFrame = UI:CreateIcon(parent, 12, gemIcon)
                     gemFrame:SetPoint("LEFT", gemAnchor, "RIGHT", 4, 0)
@@ -1055,7 +1058,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
 
         -- Item level
         local ilvlText = _pFS(parent)
-        ilvlText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(ilvlText, 10)
         ilvlText:SetPoint("TOPRIGHT", -10, yOff - 5)
         ilvlText:SetText(BRutus:FormatItemLevel(item.ilvl))
         ilvlText:Show()
@@ -1066,7 +1069,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             and BRutus.DataCollector and BRutus.DataCollector:GetEnchantName(item.enchantId)
         if enchantName then
             local enchText = _pFS(parent)
-            enchText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(enchText, 9)
             enchText:SetPoint("TOPLEFT", 106, enchantY)
             enchText:SetTextColor(0.0, 0.8, 0.0)
             enchText:SetText(enchantName)
@@ -1074,7 +1077,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             hasExtra = true
         elseif item.enchantId and item.enchantId > 0 then
             local enchText = _pFS(parent)
-            enchText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(enchText, 9)
             enchText:SetPoint("TOPLEFT", 106, enchantY)
             enchText:SetTextColor(0.0, 0.8, 0.0)
             enchText:SetText(L["Enchanted"])
@@ -1082,7 +1085,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             hasExtra = true
         elseif ENCHANT_WARNING_SLOTS[slotId] then
             local warnText = _pFS(parent)
-            warnText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(warnText, 9)
             warnText:SetPoint("TOPLEFT", 106, enchantY)
             warnText:SetTextColor(C.red.r, C.red.g, C.red.b, 0.7)
             warnText:SetText(L["Not enchanted"])
@@ -1092,7 +1095,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
     else
         -- Empty slot
         local emptyText = _pFS(parent)
-        emptyText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+        BRutus:ApplyFont(emptyText, 10)
         emptyText:SetPoint("TOPLEFT", 82, yOff - 5)
         emptyText:SetTextColor(0.3, 0.3, 0.3)
         emptyText:SetText(L["- Empty -"])
@@ -1121,7 +1124,7 @@ function CreateProfessionRow(parent, prof, yOff, width)
     -- Profession name
     local nameColor = prof.isPrimary and C.gold or C.silver
     local nameText = _pFS(parent)
-    nameText:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(nameText, 11)
     nameText:SetPoint("TOPLEFT", 15, yOff - 3)
     nameText:SetTextColor(nameColor.r, nameColor.g, nameColor.b)
     nameText:SetText(prof.name)
@@ -1129,7 +1132,7 @@ function CreateProfessionRow(parent, prof, yOff, width)
 
     -- Skill level text
     local skillText = _pFS(parent)
-    skillText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(skillText, 10)
     skillText:SetPoint("TOPRIGHT", -10, yOff - 4)
     skillText:SetTextColor(C.white.r, C.white.g, C.white.b)
     skillText:SetText(string.format("%d / %d", prof.rank, prof.maxRank))
@@ -1164,7 +1167,7 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Tier badge
     local tierBadge = _pFS(parent)
-    tierBadge:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    BRutus:ApplyFont(tierBadge, 8)
     tierBadge:SetPoint("TOPLEFT", 10, yOff - 4)
     tierBadge:SetTextColor(C.accentDim.r, C.accentDim.g, C.accentDim.b)
     tierBadge:SetText("[" .. att.tier .. "]")
@@ -1172,13 +1175,13 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Raid name
     local nameText = _pFS(parent)
-    nameText:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(nameText, 11)
     nameText:SetPoint("LEFT", tierBadge, "RIGHT", 5, 0)
     nameText:Show()
 
     -- Status
     local statusText = _pFS(parent)
-    statusText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(statusText, 10)
     statusText:SetPoint("TOPRIGHT", -10, yOff - 4)
     statusText:Show()
 
@@ -1224,7 +1227,7 @@ local TV_ICON_SIZE = 34   -- inner texture size
 local TV_COLS      = 4
 local TV_ROWS      = 9    -- max tier rows in TBC talent trees
 local TV_W         = TV_COLS * TV_SLOT_SIZE + 22          -- 174
-local TV_H         = 36 + 26 + 4 + TV_ROWS * TV_SLOT_SIZE + 10  -- 418
+local TV_H         = 36 + 30 + 4 + TV_ROWS * TV_SLOT_SIZE + 10  -- 422
 
 local function CreateTalentViewerFrame()
     local f = UI:CreatePanel(UIParent, "BRutusTalentViewer")
@@ -1256,7 +1259,7 @@ local function CreateTalentViewerFrame()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
     local titleText = titleBar:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(titleText, 10)
     titleText:SetPoint("LEFT", 8, 0)
     titleText:SetPoint("RIGHT", -26, 0)
     titleText:SetJustifyH("LEFT")
@@ -1282,7 +1285,7 @@ local function CreateTalentViewerFrame()
     local tabs = {}
     for i = 1, 3 do
         local tab = CreateFrame("Button", nil, f, "BackdropTemplate")
-        tab:SetSize(tabW - 2, 24)
+        tab:SetSize(tabW - 2, 28)  -- two lines of 10px text: name, then points
         tab:SetPoint("TOPLEFT", 4 + (i - 1) * tabW, -38)
         tab:SetBackdrop({
             bgFile   = "Interface\\Buttons\\WHITE8x8",
@@ -1293,7 +1296,7 @@ local function CreateTalentViewerFrame()
         tab:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
 
         local lbl = tab:CreateFontString(nil, "OVERLAY")
-        lbl:SetFont("Fonts\\FRIZQT__.TTF", 7, "OUTLINE")
+        BRutus:ApplyFont(lbl, 7)
         lbl:SetAllPoints()
         lbl:SetJustifyH("CENTER")
         lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -1312,7 +1315,7 @@ local function CreateTalentViewerFrame()
     -- Icon slots — pre-created grid; repositioned on refresh
     ----------------------------------------------------------------
     local gridX = 11
-    local gridY = -66  -- below title bar + tabs + gap
+    local gridY = -70  -- below title bar + tabs + gap
     local slots = {}
     for row = 1, TV_ROWS do
         slots[row] = {}
@@ -1337,9 +1340,19 @@ local function CreateTalentViewerFrame()
             slot.icon = icon
 
             local rankText = slot:CreateFontString(nil, "OVERLAY")
-            rankText:SetFont("Fonts\\FRIZQT__.TTF", 7, "OUTLINE")
+            BRutus:ApplyFont(rankText, 7)
             rankText:SetPoint("BOTTOMRIGHT", -1, 2)
             slot.rankText = rankText
+
+            -- The rank sits over icon art with no outline: a dark chip behind it
+            -- keeps "5/5" readable. Shown only while there is a rank to read.
+            local rankBg = slot:CreateTexture(nil, "ARTWORK", nil, 7)
+            rankBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+            rankBg:SetPoint("TOPLEFT", rankText, "TOPLEFT", -1, 1)
+            rankBg:SetPoint("BOTTOMRIGHT", rankText, "BOTTOMRIGHT", 1, -1)
+            rankBg:SetVertexColor(C.well.r, C.well.g, C.well.b, 0.85)  -- dark enough over bright icon art
+            rankBg:Hide()
+            slot.rankBg = rankBg
 
             local dimOverlay = slot:CreateTexture(nil, "OVERLAY")
             dimOverlay:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -1402,6 +1415,7 @@ local function CreateTalentViewerFrame()
                 slot.talentData = nil
                 slot.icon:SetTexture("")
                 slot.rankText:SetText("")
+                slot.rankBg:Hide()
                 slot.dimOverlay:Show()
                 slot:Hide()
             end
@@ -1431,6 +1445,7 @@ local function CreateTalentViewerFrame()
                         slot.rankText:SetTextColor(1.0, 0.85, 0.0)
                     end
                     slot.rankText:SetText(td.currentRank .. "/" .. td.maxRank)
+                    slot.rankBg:Show()
                 else
                     slot.icon:SetDesaturated(true)
                     slot.icon:SetAlpha(0.4)
@@ -1438,6 +1453,7 @@ local function CreateTalentViewerFrame()
                     slot:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
                     slot.rankText:SetTextColor(0.35, 0.35, 0.35)
                     slot.rankText:SetText("0/" .. td.maxRank)
+                    slot.rankBg:Show()
                 end
                 slot:Show()
             end

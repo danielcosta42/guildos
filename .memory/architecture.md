@@ -262,7 +262,7 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 - Single ≤253 bytes: `S:<encoded>`
 - Multi-chunk: `M:<msgId>:<idx>:<total>:<chunk>`
 - Priority: `"BULK"` default — `"NORMAL"` only for time-sensitive (e.g. WELCOME_CLAIM)
-- All sends via `ChatThrottleLib:SendAddonMessage`
+- Sync sends go through `Compat.SendAddonMessage` (ChatThrottleLib underneath) and loot messages through `Compat.SendAddonMessageNow`; both act on the send result (ADR-0019)
 
 ### Message Types (CommSystem.MSG_TYPES)
 
@@ -291,7 +291,7 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 
 - All UI factory functions live in `BRutus.UI` (from `UI/Helpers.lua`)
 - Theme colors in `C` table (local alias inside each UI file)
-- Main window: `BRutus.RosterFrame` — tabs: roster, tmb, raids, loot, trials*, recruitment*, settings*
+- Main window: `BRutus.RosterFrame` (frame `GuildOSWindow`, `UI/Window.lua`) — the one window; every registry feature with `tab` is a tab (ADR-0016)
 - Virtual scroll (lists): `FauxScrollFrameTemplate` + `FauxScrollFrame_Update/GetOffset`
 - Content scroll (panels): `UIPanelScrollFrameTemplate`
 - All scroll bars skinned with `UI:SkinScrollBar()` (6px accent track)

@@ -1,6 +1,6 @@
 # BRutus — UI Architecture
 
-_Last updated: 2026-04-26_
+_Last updated: 2026-09-14_
 
 ---
 
@@ -8,8 +8,12 @@ _Last updated: 2026-04-26_
 
 ```
 UI/
-├── Helpers.lua      ← Mistura: tema (C table), factory functions, backdrop helpers, scroll skinning
-├── RosterFrame.lua  ← Janela principal + FauxScrollFrame de membros + tabs
+├── Helpers.lua      ← Componentes do skin Forever: superfícies, texto, botões, abas e sub-abas, scroll
+├── Layout.lua       ← Resolvedores puros: colunas, linhas, barras, escada de largura (ResolveBand), abas que cabem (FitTabs)
+├── Window.lua       ← A janela única (#14, ADR-0016): título, régua de abas + »n, seletor, rodapé, alça; UI:OpenWindow / UI:ToggleMain
+├── Agora.lua        ← Aba Agora: coluna viva (próxima raide, precisa de mim, atividade) e os dados dela, sem frames
+├── Dashboard.lua    ← Cards da home ao lado da coluna da Agora (redesenho em #15)
+├── RosterFrame.lua  ← Painel do roster, hub de raides e recrutamento
 ├── MemberDetail.lua ← Painel slide-in de detalhe do membro
 ├── FeaturePanels.lua← Raids, Loot, Trials, Settings, Wishlist, Recruitment panels
 ├── RecipesPanel.lua ← Browser de receitas com filtros por profissão
@@ -22,16 +26,15 @@ UI/
 
 ```
 UIParent
-└── BRutus.RosterFrame (BRutusMainFrame)
-      ├── TitleBar (drag)
-      ├── Tabs (roster, tmb, raids, loot, trials*, recruitment*, settings*)
-      ├── tabPanels["roster"]   ← FauxScrollFrame + rows
-      ├── tabPanels["tmb"]      ← Guild wishlist panel
-      ├── tabPanels["raids"]    ← Sessions scroll + attendance scroll
-      ├── tabPanels["loot"]     ← Loot history scroll
-      ├── tabPanels["trials"]   ← Trials list (officer)
-      ├── tabPanels["recruit"]  ← Recruitment config (officer)
-      └── tabPanels["settings"] ← Module toggles + LM options
+└── BRutus.RosterFrame (GuildOSWindow) — a janela única: 1000×620 por padrão, redimensionável até 320×28
+      ├── titleBar (arrasta): wordmark · guilda e online · sync · — · ×   (na barra: online · raide · pendências)
+      ├── rule: as abas que cabem + »n (menu); abaixo de 520px, o seletor de uma linha
+      ├── content (recorta) → tabPanels[id], cada um construído na primeira abertura
+      │     ├── tabPanels["home"]   ← Agora: coluna viva; cards da home ao lado a partir de 780px
+      │     ├── tabPanels["roster"] ← KPI + trilho + tabela
+      │     └── … uma por feature com aba (UI/Features.lua)
+      ├── footer: buscar · sincronizar · convite · core sign-up · Blizzard (somem por prioridade)
+      └── grip 16×16
 
 UIParent
 └── BRutusDetailFrame (slide-in)
@@ -63,8 +66,8 @@ UIParent
 -- Mas as cores originais estão em BRutus.Colors em Core.lua
 -- UI arquivos usam: local C = BRutus.UI.Colors
 C.row1, C.row2, C.rowHover    -- cores de linha alternadas
-C.accent                      -- cor de destaque (roxo)
-C.gold                        -- dourado para headers
+C.accent                      -- cópia de C.gold (o único destaque)
+C.gold                        -- dourado: wordmark, botão primário, regra da aba ativa
 C.online, C.offline           -- status de jogador
 C.red, C.green, C.blue        -- feedback
 C.panel, C.panelDark          -- backgrounds
@@ -77,17 +80,17 @@ UI:CreatePanel(parent, name, level)           -- frame com BackdropTemplate
 UI:CreateDarkPanel(parent, name, level)       -- variante mais escura
 UI:CreateAccentLine(parent, thickness)         -- linha horizontal de destaque
 UI:CreateSeparator(parent)                     -- separador tênue
-UI:CreateTitle(parent, text, size)             -- FontString dourado FRIZQT__
+UI:CreateTitle(parent, text, size)             -- título de janela: Spectral 16, cor text (papel)
 UI:CreateText(parent, text, size, r, g, b)    -- FontString padrão
 UI:CreateHeaderText(parent, text, size)        -- texto de cabeçalho de coluna
 UI:CreateButton(parent, text, width, height)  -- botão estilizado com hover
 UI:CreateCheckbox(parent, labelText, size)    -- checkbox customizado
-UI:CreateCloseButton(parent)                   -- botão × vermelho
-UI:SkinScrollBar(scrollFrame, scrollName)     -- track 6px + thumb (sem botões padrão)
+UI:CreateCloseButton(parent)                   -- botão × em label, papel no hover
+UI:SkinScrollBar(scrollFrame, scrollName)     -- track 8px (well) + thumb lineHi (sem botões padrão)
 UI:CreateScrollFrame(parent, name)            -- UIPanelScrollFrameTemplate skinned
 UI:CreateIcon(parent, size, iconPath)         -- frame de ícone com borda
 UI:SetIconQuality(iconFrame, quality)          -- borda por quality color
-UI:CreateProgressBar(parent, width, height)   -- barra de progresso com :SetProgress(v)
+UI:CreateProgressBar(parent, width, height, ramp) -- barra com :SetProgress(v); dourada até completar, ok ao completar; ramp=true: ok ≥80% / dourado ≥60% / perigo
 ```
 
 ---
@@ -97,12 +100,12 @@ UI:CreateProgressBar(parent, width, height)   -- barra de progresso com :SetProg
 ### Cores por Contexto
 | Contexto | Usar |
 |---|---|
-| Fundo de painel principal | `C.panel` |
+| Fundo de janela | `C.bg` (card dentro dela: `C.panel`) |
 | Fundo de sub-painel | `C.panelDark` |
 | Linha par | `C.row1` |
 | Linha ímpar | `C.row2` |
 | Linha hover | `C.rowHover` |
-| Texto de header/título | `C.gold` |
+| Título de janela / header de coluna | `C.text` / `C.label` |
 | Player online | `C.online` |
 | Player offline | `C.offline` |
 | Destaque/botão ativo | `C.accent` |
@@ -113,15 +116,15 @@ UI:CreateProgressBar(parent, width, height)   -- barra de progresso com :SetProg
 ### Tamanhos de Fonte
 | Uso | Tamanho |
 |---|---|
-| Títulos de janela | 14pt |
-| Headers de coluna | 12pt |
+| Títulos de janela | 16 (Spectral) |
+| Headers de coluna | 10 (IBM Plex Mono Medium) |
 | Texto de linha | 11pt |
 | Texto secundário | 10pt |
 | Tooltips | 11pt |
 
 ### Botões
 - Usar sempre `UI:CreateButton()` — nunca bare Frame + SetScript
-- Tamanho padrão: width=100, height=22
+- Tamanho padrão: width=120, height=26 (secundário; `UI:SetButtonVariant` troca para primary, ghost ou danger)
 - Hover effect incluído na factory
 
 ---

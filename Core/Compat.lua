@@ -7,11 +7,39 @@
 BRutus.Compat = {}
 local Compat = BRutus.Compat
 
--- Register the addon message prefix (C_ChatInfo vs legacy RegisterAddonMessagePrefix)
+----------------------------------------------------------------------
+-- Which client this is and what it can do (ADR-0014). Read once, before any
+-- module file loads, so a file can decide whether its content exists here.
+-- WoW: Forever has no WOW_PROJECT_ID of its own yet: TBC Anniversary is
+-- recognised by its project id and its interface together, and every other
+-- client, an unknown one included, is "not Anniversary".
+----------------------------------------------------------------------
+local version, build, buildDate, interface = GetBuildInfo()
+interface = tonumber(interface) or 0
+local TBC_PROJECT = WOW_PROJECT_BURNING_CRUSADE_CLASSIC  -- nil on a client without the constant
+BRutus.Client = {
+    version = version,
+    build = build,
+    date = buildDate,
+    interface = interface,
+    projectId = WOW_PROJECT_ID,  -- diagnostics only; never branch on it
+    isAnniversary = TBC_PROJECT ~= nil and WOW_PROJECT_ID == TBC_PROJECT
+        and interface >= 20500 and interface < 30000,
+    has = {
+        secrets = issecretvalue ~= nil,
+        chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
+        tradeSkillUI = C_TradeSkillUI ~= nil,
+        tooltipData = TooltipDataProcessor ~= nil,
+        guildSetNote = (C_GuildInfo and C_GuildInfo.SetNote) ~= nil,
+    },
+}
+
+-- Register the addon message prefix (C_ChatInfo, else the legacy global)
 function Compat.RegisterAddonPrefix(prefix)
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
-        C_ChatInfo.RegisterAddonMessagePrefix(prefix)
+        return C_ChatInfo.RegisterAddonMessagePrefix(prefix)
     end
+    if RegisterAddonMessagePrefix then return RegisterAddonMessagePrefix(prefix) end
 end
 
 -- Request a guild roster update
@@ -27,6 +55,9 @@ end
 function Compat.IsQuestComplete(questId)
     if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
         return C_QuestLog.IsQuestFlaggedCompleted(questId)
+    end
+    if IsQuestFlaggedCompleted then
+        return IsQuestFlaggedCompleted(questId)
     end
     return false
 end
@@ -44,32 +75,6 @@ function Compat.NewTicker(interval, fn, iterations)
         return C_Timer.NewTicker(interval, fn, iterations)
     end
     return nil
-end
-
--- Create a one-shot timer (returns a timer object with :Cancel())
-function Compat.NewTimer(delay, fn)
-    if C_Timer and C_Timer.NewTimer then
-        return C_Timer.NewTimer(delay, fn)
-    end
-    return nil
-end
-
--- Send an addon message through ChatThrottleLib
-function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName, callbackFn, callbackArg)
-    if ChatThrottleLib then
-        ChatThrottleLib:SendAddonMessage(
-            prio or "BULK",
-            prefix,
-            text,
-            channel,
-            target,
-            queueName,
-            callbackFn,
-            callbackArg
-        )
-    elseif C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage(prefix, text, channel, target)
-    end
 end
 
 -- Send a /who query (C_FriendList on BCC/modern; legacy global fallback)
@@ -196,7 +201,7 @@ end
 -- accepted only when it is unique, and anything ambiguous returns nil rather
 -- than guessing.
 function Compat.FindGuildRosterIndex(name, realm)
-    if not name or name == "" then return nil end
+    if not name or name == "" then return nil, "absent" end
     local short = name:match("^([^-]+)") or name
     realm = realm or name:match("^[^-]+%-(.+)$")
     local n = GetNumGuildMembers() or 0
@@ -216,28 +221,283 @@ function Compat.FindGuildRosterIndex(name, realm)
         end
     end
     if hits == 1 then return onlyIdx end
-    return nil                                  -- absent, or ambiguous
+    return nil, hits == 0 and "absent" or "ambiguous"
 end
 
--- Current public note for a guild member, or nil when they cannot be resolved.
+-- Current public note for a guild member, or nil and why ("absent", "ambiguous").
 function Compat.GetGuildPublicNote(name, realm)
-    local idx = Compat.FindGuildRosterIndex(name, realm)
-    if not idx then return nil end
+    local idx, why = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return nil, why end
     local _, _, _, _, _, _, note = GetGuildRosterInfo(idx)
     return note or ""
 end
 
--- Set a guild member's public note by name (finds the roster index).
--- Returns true if applied. No-op (false) if the API/permission is absent, or
--- if the name cannot be resolved to exactly one roster row.
+-- Set a guild member's public note by name. Returns true when written, or false
+-- and why: "no-permission", "absent", "ambiguous", "no-guid" or "no-api".
+-- 2.5.6 documents C_GuildInfo.SetNote(guid, note, isPublic) and not the old
+-- GuildRosterSetPublicNote(index, note), which stays as the fallback (issue #5).
 function Compat.SetGuildPublicNote(name, text, realm)
-    if not name or not GuildRosterSetPublicNote or not (CanEditPublicNote and CanEditPublicNote()) then
-        return false
-    end
-    local idx = Compat.FindGuildRosterIndex(name, realm)
-    if not idx then return false end
+    if not (CanEditPublicNote and CanEditPublicNote()) then return false, "no-permission" end
+    local idx, why = Compat.FindGuildRosterIndex(name, realm)
+    if not idx then return false, why end
     -- Member-authored text: strip UI escapes and cap without splitting a
     -- codepoint (shared helper, Core/Utils.lua).
-    GuildRosterSetPublicNote(idx, BRutus:SanitizeUserText(text, 31))
-    return true
+    local note = BRutus:SanitizeUserText(text, 31)
+    local guid = select(17, GetGuildRosterInfo(idx))
+    if C_GuildInfo and C_GuildInfo.SetNote and guid then
+        C_GuildInfo.SetNote(guid, note, true)
+        return true
+    end
+    if GuildRosterSetPublicNote then
+        GuildRosterSetPublicNote(idx, note)
+        return true
+    end
+    return false, (C_GuildInfo and C_GuildInfo.SetNote) and "no-guid" or "no-api"
 end
+
+----------------------------------------------------------------------
+-- Events and tooltip hooks a client may not have
+----------------------------------------------------------------------
+
+-- Register `event` on `frame`. RegisterEvent raises on an event name the
+-- client does not know, and a new client (WoW: Forever) may lack TBC-era
+-- ones such as CRAFT_SHOW. The miss is recorded for /guildos errors instead
+-- of stopping the module that asked. Returns true when registered.
+function Compat.RegisterEvent(frame, event)
+    local ok = pcall(frame.RegisterEvent, frame, event)
+    if not ok then BRutus:RecordMissing("event " .. event) end
+    return ok
+end
+
+-- Hook `script` on a tooltip only where the tooltip has it. OnTooltipSetItem
+-- and friends are the Classic-era hooks, and HookScript raises on a script
+-- the frame does not support. A tooltip that is not built (nil) is skipped
+-- silently. Returns true when hooked.
+-- ponytail: a missing script is skipped and recorded; add a
+-- TooltipDataProcessor path when a client that needs it shows up.
+function Compat.HookTooltip(tooltip, script, fn)
+    if not tooltip then return false end
+    if tooltip.HasScript and tooltip:HasScript(script) then
+        tooltip:HookScript(script, fn)
+        return true
+    end
+    BRutus:RecordMissing("tooltip script " .. script)
+    return false
+end
+
+----------------------------------------------------------------------
+-- Items, spells, auras and bags (issue #10)
+-- Each prefers the namespaced API, falls back to the old global, and returns
+-- nothing when the client has neither, so a caller degrades instead of raising.
+----------------------------------------------------------------------
+
+function Compat.GetItemInfo(item)
+    if C_Item and C_Item.GetItemInfo then return C_Item.GetItemInfo(item) end
+    if GetItemInfo then return GetItemInfo(item) end
+end
+
+-- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
+function Compat.GetSpellInfo(spell)
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spell)
+        if not info then return nil end
+        return info.name, nil, info.iconID, info.castTime, info.minRange, info.maxRange, info.spellID
+    end
+    if GetSpellInfo then return GetSpellInfo(spell) end
+end
+
+function Compat.GetSpellTexture(spell)
+    if C_Spell and C_Spell.GetSpellTexture then return C_Spell.GetSpellTexture(spell) end
+    if GetSpellTexture then return GetSpellTexture(spell) end
+end
+
+-- In UnitBuff's order: name, icon, count, debuffType, duration, expirationTime,
+-- source, isStealable, nameplateShowPersonal, spellId.
+function Compat.UnitBuff(unit, index)
+    if C_UnitAuras and C_UnitAuras.GetBuffDataByIndex then
+        local a = C_UnitAuras.GetBuffDataByIndex(unit, index)
+        if not a then return nil end
+        return a.name, a.icon, a.applications, a.dispelName, a.duration, a.expirationTime,
+            a.sourceUnit, a.isStealable, a.nameplateShowPersonal, a.spellId
+    end
+    if UnitBuff then return UnitBuff(unit, index) end
+end
+
+function Compat.GetContainerNumSlots(bag)
+    if C_Container and C_Container.GetContainerNumSlots then return C_Container.GetContainerNumSlots(bag) or 0 end
+    if GetContainerNumSlots then return GetContainerNumSlots(bag) or 0 end
+    return 0
+end
+
+function Compat.GetContainerItemLink(bag, slot)
+    if C_Container and C_Container.GetContainerItemLink then return C_Container.GetContainerItemLink(bag, slot) end
+    if GetContainerItemLink then return GetContainerItemLink(bag, slot) end
+end
+
+-- The namespaced table ({ itemID, hyperlink, ... }), built from the old global's
+-- returns when that is all the client has.
+function Compat.GetContainerItemInfo(bag, slot)
+    if C_Container and C_Container.GetContainerItemInfo then return C_Container.GetContainerItemInfo(bag, slot) end
+    if GetContainerItemInfo then
+        local icon, count, locked, quality, readable, lootable, link, filtered, noValue, itemID = GetContainerItemInfo(bag, slot)
+        if not link then return nil end
+        return { iconFileID = icon, stackCount = count, isLocked = locked, quality = quality, isReadable = readable,
+                 hasLoot = lootable, hyperlink = link, isFiltered = filtered, hasNoValue = noValue,
+                 itemID = itemID or tonumber(link:match("item:(%d+)")) }
+    end
+end
+
+function Compat.UseContainerItem(bag, slot)
+    if C_Container and C_Container.UseContainerItem then return C_Container.UseContainerItem(bag, slot) end
+    if UseContainerItem then return UseContainerItem(bag, slot) end
+end
+
+----------------------------------------------------------------------
+-- Talents and skill lines (issue #10)
+-- nil, "no-api" when the client has no such function, so own-character
+-- collection leaves the field out instead of raising.
+----------------------------------------------------------------------
+
+function Compat.GetNumTalentTabs(isInspect)
+    if not GetNumTalentTabs then return nil, "no-api" end
+    if isInspect == nil then return GetNumTalentTabs() end
+    return GetNumTalentTabs(isInspect)
+end
+
+function Compat.GetNumTalents(tab, isInspect)
+    if not GetNumTalents then return nil, "no-api" end
+    return GetNumTalents(tab, isInspect)
+end
+
+function Compat.GetTalentInfo(tab, index, isInspect)
+    if not GetTalentInfo then return nil end
+    return GetTalentInfo(tab, index, isInspect)
+end
+
+function Compat.GetNumSkillLines()
+    if not GetNumSkillLines then return nil, "no-api" end
+    return GetNumSkillLines()
+end
+
+function Compat.GetSkillLineInfo(index)
+    if not GetSkillLineInfo then return nil end
+    return GetSkillLineInfo(index)
+end
+
+----------------------------------------------------------------------
+-- Addon messages, with their result (issue #10)
+--
+-- Sync goes through ChatThrottleLib, which re-queues AddonMessageThrottle itself
+-- and hands every other result to the callback; loot goes out at once, as it
+-- always did, because its roll timer starts at send. Either way the result decides:
+--   - a chat lockdown holds the message, and everything sent after it so the
+--     order stays; the queue is flushed when combat ends, when the zone changes,
+--     and by a 2-second poll while anything waits, since a restriction can lift
+--     with neither event;
+--   - a channel throttle, and an addon-message throttle on a message sent now,
+--     is retried after 1, 2, 4 and 8 seconds;
+--   - anything else, or a message the client would refuse outright, is recorded
+--     once per reason for /guildos errors and dropped: never silent, never
+--     retried forever.
+----------------------------------------------------------------------
+local RESULT = (Enum and Enum.SendAddonMessageResult) or {}
+local SUCCESS = RESULT.Success or 0
+local CHANNEL_THROTTLE = RESULT.ChannelThrottle or 8
+local ADDON_THROTTLE = RESULT.AddonMessageThrottle or 3
+local LOCKDOWN = RESULT.AddOnMessageLockdown or RESULT.AddonMessageLockdown or 11
+local RETRY_DELAYS = { 1, 2, 4, 8 }
+local PRIORITIES = { BULK = true, NORMAL = true, ALERT = true }
+Compat.HELD_MAX, Compat.HELD_POLL = 200, 2
+Compat._held, Compat._reported = {}, {}
+
+local function inLockdown()
+    return (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()) and true or false
+end
+
+local function record(msg, reason)
+    reason = tostring(reason)
+    if Compat._reported[reason] then return end
+    Compat._reported[reason] = true
+    BRutus:RecordError(string.format("Addon message on %s was not sent (result %s)", tostring(msg.channel), reason))
+end
+
+local polling = false
+local function poll()
+    polling = false
+    Compat.FlushHeldMessages()
+end
+
+local function hold(msg)
+    local held = Compat._held
+    -- ponytail: past the cap the oldest message goes; sync re-broadcasts anyway.
+    if #held >= Compat.HELD_MAX then table.remove(held, 1) end
+    held[#held + 1] = msg
+    if not polling then
+        polling = true
+        Compat.After(Compat.HELD_POLL, poll)
+    end
+end
+
+local send
+
+local function onResult(msg, didSend, result)
+    if didSend or result == SUCCESS then return end
+    if result == LOCKDOWN then return hold(msg) end
+    -- ChatThrottleLib re-queues AddonMessageThrottle on its own path; a message sent now retries it here.
+    local throttled = result == CHANNEL_THROTTLE or (msg.now and result == ADDON_THROTTLE)
+    if throttled and msg.tries <= #RETRY_DELAYS then
+        local delay = RETRY_DELAYS[msg.tries]
+        msg.tries = msg.tries + 1
+        return Compat.After(delay, function() send(msg) end)
+    end
+    record(msg, result)
+end
+
+send = function(msg)
+    if inLockdown() or #Compat._held > 0 then return hold(msg) end
+    if ChatThrottleLib and not msg.now then
+        ChatThrottleLib:SendAddonMessage(msg.prio, msg.prefix, msg.text, msg.channel, msg.target, msg.queue,
+            function(_, didSend, result) onResult(msg, didSend, result) end)
+    elseif C_ChatInfo and C_ChatInfo.SendAddonMessage then
+        local r = C_ChatInfo.SendAddonMessage(msg.prefix, msg.text, msg.channel, msg.target)
+        onResult(msg, r == nil or r == true or r == SUCCESS, r)
+    else
+        record(msg, "no-api")
+    end
+end
+
+-- What ChatThrottleLib or the client would refuse outright is recorded, never queued.
+local function queue(msg)
+    if type(msg.prefix) ~= "string" or msg.prefix == "" or #msg.prefix > 16 or type(msg.text) ~= "string"
+        or #msg.text > 255 or type(msg.channel) ~= "string" or not PRIORITIES[msg.prio] then
+        return record(msg, "invalid")
+    end
+    send(msg)
+end
+
+-- Send an addon message through ChatThrottleLib; prio is its "BULK" (default), "NORMAL" or "ALERT".
+function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
+    queue({ prefix = prefix, text = text, channel = channel, target = target,
+            prio = prio or "BULK", queue = queueName, tries = 1 })
+end
+
+-- Send an addon message now, past ChatThrottleLib's queue, with the same results: loot, whose timers start at send.
+function Compat.SendAddonMessageNow(prefix, text, channel, target)
+    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1 })
+end
+
+-- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the
+-- rest still go. While the lockdown lasts, send() holds each one again.
+function Compat.FlushHeldMessages()
+    local pending = Compat._held
+    Compat._held = {}
+    for _, msg in ipairs(pending) do
+        local ok = pcall(send, msg)
+        if not ok then record(msg, "error") end
+    end
+end
+
+local flusher = CreateFrame("Frame")
+Compat.RegisterEvent(flusher, "PLAYER_REGEN_ENABLED")
+Compat.RegisterEvent(flusher, "ZONE_CHANGED_NEW_AREA")
+flusher:SetScript("OnEvent", function() Compat.FlushHeldMessages() end)

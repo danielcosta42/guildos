@@ -84,8 +84,8 @@ end
 
 function Mentions:_SetupHook()
     local f = CreateFrame("Frame")
-    f:RegisterEvent("CHAT_MSG_GUILD")
-    f:RegisterEvent("CHAT_MSG_OFFICER")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_OFFICER")
     f:SetScript("OnEvent", function(_, event, msg, author)
         local cfg = BRutus.db.mentions
         if not cfg or not cfg.enabled then return end

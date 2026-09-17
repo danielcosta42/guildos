@@ -102,14 +102,14 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     })
     searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    searchBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(searchBox, 11)
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     searchBox:SetTextInsets(8, 8, 0, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
-    searchPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(searchPlaceholder, 11)
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     searchPlaceholder:SetText(L["Search recipes..."])
@@ -148,7 +148,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         local icon
         local label = btn:CreateFontString(nil, "OVERLAY")
-        label:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(label, 10)
 
         if profName == "All" then
             btn:SetWidth(40)
@@ -305,7 +305,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         -- Recipe name
         local recipeName = row:CreateFontString(nil, "OVERLAY")
-        recipeName:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(recipeName, 11)
         recipeName:SetJustifyH("LEFT")
         recipeName:SetWordWrap(false)
         row.recipeName = recipeName
@@ -316,7 +316,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         row.profIcon = profIcon
 
         local profName = row:CreateFontString(nil, "OVERLAY")
-        profName:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(profName, 10)
         profName:SetPoint("LEFT", profIcon, "RIGHT", 4, 0)
         profName:SetJustifyH("LEFT")
         profName:SetWordWrap(false)
@@ -324,7 +324,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         -- Player name
         local playerName = row:CreateFontString(nil, "OVERLAY")
-        playerName:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(playerName, 11)
         playerName:SetJustifyH("LEFT")
         playerName:SetWordWrap(false)
         row.playerName = playerName
@@ -492,7 +492,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                     if firstOnlineCrafter then
                         local itemLink
                         if entry.itemId then
-                            itemLink = select(2, GetItemInfo(entry.itemId))
+                            itemLink = select(2, BRutus.Compat.GetItemInfo(entry.itemId))
                         end
                         if itemLink then
                             ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. L[" Can you craft "] .. itemLink .. L[" ?"])

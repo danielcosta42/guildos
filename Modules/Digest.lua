@@ -108,7 +108,8 @@ function Digest:Build(since)
             end
         end
         if count > 0 then
-            lines[#lines + 1] = "|cff8F7BD1" ..
+            local gold = BRutus.Colors.gold
+            lines[#lines + 1] = string.format("|cff%02x%02x%02x", gold.r * 255, gold.g * 255, gold.b * 255) ..
                 string.format(L["%d allied event(s) this week"], count) .. "|r"
         end
     end

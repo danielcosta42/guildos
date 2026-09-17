@@ -2,6 +2,11 @@
 -- BRutus Guild Manager - Consumable Checker
 -- Inspects raid members for expected buffs/consumables before pulls
 ----------------------------------------------------------------------
+-- TBC content (flask and elixir buff ids): outside TBC Anniversary this module
+-- does not exist, and every reader already treats a missing module as absent
+-- (ADR-0014).
+if not BRutus.Client.isAnniversary then return end
+
 local ConsumableChecker = {}
 BRutus.ConsumableChecker = ConsumableChecker
 local L = BRutus.L
@@ -124,9 +129,7 @@ function ConsumableChecker:CheckRaid()
         if UnitExists(unit) and UnitIsConnected(unit) then
             local name = UnitName(unit)
             local class = select(2, UnitClass(unit))
-            local realm = select(2, UnitName(unit))
-            realm = realm and realm ~= "" and realm or GetRealmName()
-            local playerKey = name .. "-" .. realm
+            local playerKey = BRutus:GetPlayerKey(name, (select(2, UnitName(unit))))
 
             local playerResult = {
                 name = name,
@@ -172,13 +175,13 @@ end
 function ConsumableChecker:UnitHasBuff(unit, spellID, _nameHint)
     -- Pre-resolve the localized spell name from the client so the match
     -- works on any locale (PT-BR, EN-US, etc.) without hardcoded strings.
-    local localizedName = GetSpellInfo and GetSpellInfo(spellID) or nil
+    local localizedName = BRutus.Compat.GetSpellInfo(spellID)
 
     for i = 1, 40 do
         -- TBC Anniversary UnitBuff returns (pos 10 = spellId):
         --   name, icon, count, debuffType, duration, expirationTime,
         --   source, isStealable, nameplateShowPersonal, spellId, ...
-        local name, _, _, _, _, _, _, _, _, auraId = UnitBuff(unit, i)
+        local name, _, _, _, _, _, _, _, _, auraId = BRutus.Compat.UnitBuff(unit, i)
         if not name then break end
         -- Primary check: spell ID match (locale-independent)
         if auraId == spellID then

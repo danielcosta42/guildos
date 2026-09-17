@@ -36,16 +36,36 @@ function NoteCommand:_Parse(msg)
     return rest
 end
 
+-- Why a write this client tried did not happen (issue #5). Only clients that
+-- had the permission when the line arrived get this far.
+local REFUSED = {
+    absent            = "Could not set %s's note: not found in the guild roster.",
+    ambiguous         = "Could not set %s's note: more than one guild member has that name.",
+    ["no-guid"]       = "Could not set %s's note: the guild roster did not return the member's GUID.",
+    ["no-api"]        = "Could not set %s's note: this client has no public note API.",
+    ["no-permission"] = "Could not set %s's note: this character can no longer edit public notes.",
+}
+
+function NoteCommand:_Refused(sender, why)
+    if REFUSED[why] then BRutus:Print(string.format(L[REFUSED[why]], sender)) end
+end
+
 -- Applies the note after the jitter window. Everything is re-checked here
 -- because several seconds have passed since the chat line arrived.
 function NoteCommand:_Apply(sender, realm, text)
     local Compat = BRutus.Compat
-    if not Compat.CanEditPublicNote() then return end
+    -- It had the permission when the line arrived; a rank change in the jitter window takes it away.
+    if not Compat.CanEditPublicNote() then return self:_Refused(sender, "no-permission") end
     local want = BRutus:SanitizeUserText(text, NOTE_MAX)
-    local current = Compat.GetGuildPublicNote(sender, realm)
-    if current == nil then return end       -- not on the roster, or ambiguous name
+    local current, why = Compat.GetGuildPublicNote(sender, realm)
+    if current == nil then
+        -- An empty roster has not loaded yet: "not found" would be wrong, and another officer can apply it.
+        if why == "absent" and (GetNumGuildMembers() or 0) == 0 then return end
+        return self:_Refused(sender, why)
+    end
     if current == want then return end      -- somebody else already applied it
-    if not Compat.SetGuildPublicNote(sender, want, realm) then return end
+    local ok, failure = Compat.SetGuildPublicNote(sender, want, realm)
+    if not ok then return self:_Refused(sender, failure) end
     local who = realm and (sender .. "-" .. realm) or sender
     if BRutus.GuildManager and BRutus.GuildManager.LogAction then
         BRutus.GuildManager:LogAction("note", who, want ~= "" and want or L["(cleared)"])
@@ -55,17 +75,26 @@ end
 
 function NoteCommand:_SetupHook()
     local f = CreateFrame("Frame")
-    f:RegisterEvent("CHAT_MSG_GUILD")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
     f:SetScript("OnEvent", function(_, _, msg, author)
         local cfg = BRutus.db.noteCommand
         if not cfg or not cfg.enabled then return end
         local text = NoteCommand:_Parse(msg)
         if text == nil then return end
-        if not BRutus.Compat.CanEditPublicNote() then return end
         if not author then return end
         local sender = author:match("^([^-]+)") or author
         local realm  = author:match("^[^-]+%-(.+)$")
         if not sender or sender == "" then return end
+        if not BRutus.Compat.CanEditPublicNote() then
+            -- Every member's client sees the line; only the sender's own client says why
+            -- nothing happens here, so the member who typed it is told and nobody else is.
+            -- ponytail: short-name match; a same-named member on another realm would see the
+            -- hint too, which is local and harmless. Compare the realm if that ever matters.
+            if sender == UnitName("player") then
+                BRutus:Print(L["You cannot edit public notes. Only an officer who is online now and running Guild OS can apply !note; if none is, type it again later."])
+            end
+            return
+        end
         -- Per-sender only, deliberately. A module-wide gate would silently
         -- discard a second member's legitimate !note typed moments after the
         -- first, and the write volume is already bounded: one command converges
@@ -121,7 +150,7 @@ function NoteCommand:_RegisterTests()
         return true
     end)
     S:Register("notecmd.sanitize", function()
-        -- UI escapes must not reach GuildRosterSetPublicNote.
+        -- UI escapes must not reach the note write (C_GuildInfo.SetNote or the old global).
         if NoteCommand:_Parse("!note |cffFF0000LFG|r Kara") ~= "cffFF0000LFGr Kara" then
             return false, "colour escape survived"
         end

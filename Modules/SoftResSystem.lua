@@ -404,7 +404,7 @@ end
 -- Tooltip: show soft reservers when hovering an item
 ----------------------------------------------------------------------
 function SoftRes:HookTooltips()
-    GameTooltip:HookScript("OnTooltipSetItem", function(tt)
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", function(tt)
         local _, link = tt:GetItem()
         if not link then return end
         local itemId = tonumber(link:match("item:(%d+)"))

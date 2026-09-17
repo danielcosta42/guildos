@@ -25,6 +25,22 @@ jobs:
       - name: Run Luacheck
         run: luacheck . --config .luacheckrc
 
+      - name: No hard-coded client font
+        # The Forever skin sets every font through BRutus:ApplyFont (Core/Data.lua),
+        # which is what keeps serif at 14px and up and mono at 10px and up.
+        # ChehulNet.lua is shared verbatim with other Chehul addons and cannot call
+        # into BRutus, so it keeps the client font.
+        run: |
+          if grep -rn 'FRIZQT__' --include='*.lua' --exclude='ChehulNet.lua' Core Modules UI; then
+            echo "Hard-coded client font found; use BRutus:ApplyFont." >&2
+            exit 1
+          fi
+
+      - name: Version-sensitive calls go through Compat
+        # Rule 4 (issue #10): items, spells, auras, bags, talents, skill lines, the roster
+        # request and addon messages are called only from Core/Compat.lua.
+        run: lua5.1 tools/compat-guard.lua
+
   release:
     name: Version & Release
     needs: lint

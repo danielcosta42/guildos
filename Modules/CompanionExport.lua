@@ -387,7 +387,7 @@ end
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
-    local realm = GetRealmName()
+    local realm = BRutus:GetClientRealm()
 
     local members, count = {}, 0
     local n = GetNumGuildMembers() or 0
@@ -424,6 +424,10 @@ function Companion:BuildPayload()
             count = count + 1
             local att = BRutus.RaidTracker
                 and BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0
+            -- Absent, not [], for a client that published without a skill-line API (issue #10).
+            -- A row that never published, and every Anniversary record, keeps its list.
+            local professions = professionsFor(data)
+            if (tonumber(data.lastUpdate) or 0) > 0 and data.professions == nil then professions = nil end
 
             members[count] = {
                 key = key,
@@ -440,7 +444,7 @@ function Companion:BuildPayload()
                 lastUpdate = math.floor(tonumber(data.lastUpdate) or 0),
                 spec = data.spec,
                 prefRoles = data.prefRoles or {},
-                professions = professionsFor(data),
+                professions = professions,
                 attunements = attunementsFor(key),
                 att25 = tonumber(att) or 0,
                 enchants = enchantSummary(data.gear),
@@ -476,7 +480,7 @@ function Companion:BuildPayload()
     return {
         fmt = FMT,
         v = PAYLOAD_VERSION,
-        guildKey = guildName .. "-" .. realm,
+        guildKey = BRutus:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
         guildName = guildName,
         realm = realm,
         exportedAt = math.floor(time()),

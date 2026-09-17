@@ -35,8 +35,8 @@ local function printHelp()
     BRutus:Print(HELP_CMD_COLOR .. L["Guild OS commands (/gos or /guildos):"] .. "|r")
 
     helpHeader(L["General"])
-    helpLine("/gos",             L["Open the roster window"])
-    helpLine("/gos open <feature>", L["Open a feature window (roster, raids, loot, guild...)"])
+    helpLine("/gos",             L["Open Guild OS"])
+    helpLine("/gos open <feature>", L["Open a tab (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
     helpLine("/gos map",         L["Open the live guild map"])
@@ -49,7 +49,9 @@ local function printHelp()
     helpHeader(L["Raid and loot"])
     helpLine("/gos lm",            L["Master Loot helper status"])
     helpLine("/gos points",        L["Points and DKP window"])
-    helpLine("/gos cons",          L["Check raid consumables"])
+    if BRutus.ConsumableChecker then  -- TBC content (ADR-0014)
+        helpLine("/gos cons",      L["Check raid consumables"])
+    end
     helpLine("/gos specs",         L["Scan group talent specs"])
     helpLine("/gos export <what>", L["Export roster, attendance or loot"])
     helpLine("/gos web [on|off]",  L["Copy your guild into the web companion"])
@@ -60,13 +62,16 @@ local function printHelp()
     helpLine("/gos signup <core>", L["Sign up for a raid core"])
     helpLine("/gos mentions",      L["Name mention alerts"])
     helpLine("/gos myalts",        L["Detect and link your own alts"])
-    helpLine("/gos attune",        L["Your attunement progress"])
+    if BRutus.AttunementTracker then  -- TBC content (ADR-0014)
+        helpLine("/gos attune",    L["Your attunement progress"])
+    end
     helpLine("/gos craft <item>",  L["Who can craft an item"])
 
     helpHeader(L["Diagnostics"])
     helpLine("/gos sync",     L["Force a full data sync"])
     helpLine("/gos selftest", L["Run the built-in self test"])
     helpLine("/gos errors",   L["Show recent errors"])
+    helpLine("/gos probe",    L["Record this client's facts for the Forever beta"])
     helpLine("/gos debug",    L["Toggle debug output"])
 
     -- These verbs are refused inside their own modules for non-officers, so
@@ -154,7 +159,7 @@ local function handleCommand(msg)
                 BRutus:Print(L["Usage: /guildos craft [item link or id]"])
             end
         else
-            local itemName = GetItemInfo(itemId) or ("item:" .. itemId)
+            local itemName = BRutus.Compat.GetItemInfo(itemId) or ("item:" .. itemId)
             local seen = {}
             -- Guild crafters are already known locally (RecipeTracker sync).
             local guild = BRutus.RecipeTracker and BRutus.RecipeTracker:GetCraftersForItem(itemId)
@@ -235,15 +240,33 @@ local function handleCommand(msg)
             BRutus:Print("Resistance scan unavailable.")
         end
     elseif msg == "errors" then
-        local ring = (BRutus.State and BRutus.State.errors) or {}
-        if #ring == 0 then
-            BRutus:Print(L["No errors recorded this session."])
-        else
-            BRutus:Print(string.format(L["%d recent error(s):"], #ring))
-            for i = math.max(1, #ring - 9), #ring do
-                BRutus:Print("|cffFF4444" .. (ring[i].msg or "?") .. "|r")
+        -- Start-up problems first: the ring below is capped and shared with
+        -- runtime errors, so it can already have lost them.
+        local startup = BRutus:ListStartupProblems()
+        local shown = {}
+        if #startup > 0 then
+            BRutus:Print(string.format(L["%d start-up problem(s):"], #startup))
+            for _, line in ipairs(startup) do
+                shown[line] = true
+                BRutus:Print("|cffFF8800" .. line .. "|r")
             end
         end
+        -- The ring also holds the start-up problems just listed; skip those.
+        local ring, rest = (BRutus.State and BRutus.State.errors) or {}, {}
+        for _, e in ipairs(ring) do
+            if not shown[e.msg] then rest[#rest + 1] = e end
+        end
+        if #rest == 0 then
+            if #startup == 0 then BRutus:Print(L["No errors recorded this session."]) end
+        else
+            BRutus:Print(string.format(L["%d recent error(s):"], #rest))
+            for i = math.max(1, #rest - 9), #rest do
+                BRutus:Print("|cffFF4444" .. (rest[i].msg or "?") .. "|r")
+            end
+        end
+    elseif msg == "probe" then
+        -- Client facts for the WoW: Forever beta, into GuildOSDB.probe (ADR-0015).
+        if BRutus.Probe then BRutus.Probe:Run() end
     elseif msg == "reset" then
         if BRutus.guildKey then
             if GuildOSDB then GuildOSDB[BRutus.guildKey] = nil end
@@ -266,17 +289,20 @@ local function handleCommand(msg)
                 local missing = BRutus.ConsumableChecker:GetMissingCount(results)
                 BRutus:Print(string.format(L["Consumable check done. %d players missing buffs."], missing))
             end
+        else
+            BRutus:Print(L["Not available on this client."])
         end
     elseif msg == "consreport" then
         if BRutus.ConsumableChecker then
             BRutus.ConsumableChecker:ReportToChat("RAID")
+        else
+            BRutus:Print(L["Not available on this client."])
         end
     elseif msg:match("^trial") then
         local rest = msg:gsub("^trial%s*", "")
         local name = rest:match("^(%S+)")
         if name and BRutus.TrialTracker then
-            local realm = GetRealmName()
-            local key = name .. "-" .. realm
+            local key = BRutus:GetPlayerKey(name)
             BRutus.TrialTracker:AddTrial(key)
         else
             BRutus:Print(L["Usage: /guildos trial <PlayerName>"])
@@ -285,8 +311,7 @@ local function handleCommand(msg)
         local rest = msg:gsub("^note%s*", "")
         local target, noteText = rest:match("^(%S+)%s+(.+)$")
         if target and noteText and BRutus.OfficerNotes then
-            local realm = GetRealmName()
-            local key = target .. "-" .. realm
+            local key = BRutus:GetPlayerKey(target)
             if BRutus.OfficerNotes:AddNote(key, noteText) then
                 BRutus:Print(L["Note added for "] .. target)
             end
@@ -419,6 +444,8 @@ local function handleCommand(msg)
                     BRutus:Print(format("  [%s] %s \226\128\148 %s", att.tier, att.name, status))
                 end
             end
+        else
+            BRutus:Print(L["Not available on this client."])
         end
     elseif msg == "attune debug" or msg == "attunements debug" then
         -- Debug mode: prints per-quest IsQuestFlaggedCompleted results.
@@ -449,6 +476,8 @@ local function handleCommand(msg)
                     end
                 end
             end
+        else
+            BRutus:Print(L["Not available on this client."])
         end
     elseif msg == "attune dumpquests" then
         -- Dumps all completed quest IDs in the TBC attunement range.
@@ -456,7 +485,8 @@ local function handleCommand(msg)
         BRutus:Print("|cffFFD700Completed quests in range 9800-11500:|r")
         local found = 0
         for qid = 9800, 11500 do
-            if BRutus.AttunementTracker:IsQuestComplete(qid) then
+            -- Compat, not the tracker: the tracker does not exist outside TBC Anniversary.
+            if BRutus.Compat.IsQuestComplete(qid) then
                 -- Try to get the quest title (may be nil for hidden server-side quests)
                 local title = nil
                 if C_QuestLog and C_QuestLog.GetTitleForQuestID then
@@ -530,9 +560,7 @@ local function handleCommand(msg)
             BRutus:Print(L["Unbanned "] .. name)
         end
     elseif msg == "banlist" then
-        -- Task 6 adds the "ban" sub-tab to UI/ManagementPanel.lua; until then
-        -- this lands on the Leadership window without a sub-tab pre-selected.
-        BRutus.UI:OpenWindow("management")
+        BRutus.UI:OpenWindow("management", "ban")
     elseif msg == "autoinvite" or msg:match("^autoinvite%s") or msg == "ai" or msg:match("^ai%s") then
         if BRutus.Recruitment then
             local rest = strtrim((msg:gsub("^ai%s*", ""):gsub("^autoinvite%s*", "")))
@@ -567,7 +595,7 @@ local function handleCommand(msg)
         end
     elseif msg == "open" or msg:match("^open%s") then
         -- /gos open <feature> [sub] — one uniform way to open any feature
-        -- window. A dedicated verb rather than a bare-id fallback: several
+        -- tab. A dedicated verb rather than a bare-id fallback: several
         -- feature ids (roster, trials, dkp, alliance) are already verbs
         -- above, and "^trial" would even prefix-match "trials" and eat the
         -- "s" as a player name. "open" itself is not a prefix of, nor
@@ -575,7 +603,7 @@ local function handleCommand(msg)
         local id  = msg:match("^open%s+(%S+)")
         local sub = msg:match("^open%s+%S+%s+(%S+)")
         local def = id and BRutus.UI and BRutus.UI.GetFeature and BRutus.UI:GetFeature(id)
-        if def and def.hub then
+        if def and def.tab then
             BRutus.UI:OpenWindow(id, sub)
         else
             BRutus:Print(L["Usage: /gos open <feature>. Try /gos open roster."])

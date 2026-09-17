@@ -200,7 +200,7 @@ local function BuildInactiveSub(panel)
     daysBox:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     daysBox:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     daysBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    daysBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(daysBox, 11)
     daysBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     daysBox:SetJustifyH("CENTER")
     daysBox:SetAutoFocus(false)
@@ -391,7 +391,7 @@ local function MakeTextArea(parent, height)
     box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     box:SetMultiLine(true)
-    box:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(box, 11)
     box:SetTextColor(C.white.r, C.white.g, C.white.b)
     box:SetTextInsets(6, 6, 4, 4)
     box:SetAutoFocus(false)
@@ -705,7 +705,7 @@ local function BuildEngageSub(panel)
     local trendFS = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     trendFS:SetPoint("TOPLEFT", 2, -22)
 
-    -- Invite sparkline as texture bars (glyph blocks do not render in FRIZQT).
+    -- Invite sparkline as texture bars (glyph blocks do not render in the skin fonts).
     -- One bar per day, oldest on the left, newest on the right; heights scaled
     -- to the busiest day. Anchored just right of the trend text.
     local sparkFrame = CreateFrame("Frame", nil, panel)
@@ -872,7 +872,7 @@ local function BuildPresetsSub(panel)
         box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
         box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
         box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        box:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(box, 11)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetJustifyH("CENTER")
         box:SetAutoFocus(false)
@@ -1045,6 +1045,7 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
     bar:SetSize(400, TAB_H)
+    UI:StyleSubTabBar(bar)
 
     local subTabBtns = {}
     local subTabList = {}
@@ -1060,6 +1061,7 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
         local info = parent.subPanels[key]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
+    parent.SelectSub = selectSub   -- deep links: /gos banlist, the Now tab
 
     -- Refresh whatever sub-panel is currently visible (used by GuildManager).
     parent.RefreshActive = function()
@@ -1071,7 +1073,7 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
     -- fixed 120px needed 960px inside a 760px window, which is how the
     -- bar ended up running off the right edge.
     for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W)
+        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W, true)
         btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn

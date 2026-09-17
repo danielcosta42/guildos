@@ -248,7 +248,7 @@ function BRutus:CreateWebPanel(parent, _win)
     })
     copyBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     copyBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    copyBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(copyBox, 11)
     copyBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
     copyBox:SetTextInsets(6, 6, 0, 0)
     copyBox:SetAutoFocus(false)
@@ -321,13 +321,13 @@ function BRutus:CreateWebPanel(parent, _win)
     ----------------------------------------------------------------
     -- Refresh: recompute every state, then lay out what is visible.
     ----------------------------------------------------------------
+    -- These are UI:CreateButton buttons: their own disabled state already greys
+    -- the label, and dimming the whole button on top of that made it vanish.
     local function setEnabled(btn, ok)
         if ok then
             btn:Enable()
-            btn:SetAlpha(1)
         else
             btn:Disable()
-            btn:SetAlpha(0.4)
         end
     end
 
@@ -643,9 +643,9 @@ function BRutus:CreateWebPanel(parent, _win)
     -- Live while shown: combat gates the publish button, group changes
     -- gate the raid buttons, and the countdown moves on its own.
     ----------------------------------------------------------------
-    panel:RegisterEvent("PLAYER_REGEN_DISABLED")
-    panel:RegisterEvent("PLAYER_REGEN_ENABLED")
-    panel:RegisterEvent("GROUP_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(panel, "PLAYER_REGEN_DISABLED")
+    BRutus.Compat.RegisterEvent(panel, "PLAYER_REGEN_ENABLED")
+    BRutus.Compat.RegisterEvent(panel, "GROUP_ROSTER_UPDATE")
     panel:SetScript("OnEvent", function(self)
         if self:IsShown() then self:Refresh() end
     end)

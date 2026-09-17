@@ -9,17 +9,17 @@ BRutus.DataCollector = DataCollector
 function DataCollector:Initialize()
     -- Register inventory change events
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-    frame:RegisterEvent("SKILL_LINES_CHANGED")
-    frame:RegisterEvent("CHAT_MSG_SKILL")
+    BRutus.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
+    BRutus.Compat.RegisterEvent(frame, "SKILL_LINES_CHANGED")
+    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_SKILL")
     -- Cache/talent readiness events: on a cold first login the item cache and
     -- talents may not be loaded when we first collect, producing a snapshot with
     -- avgIlvl=0 / no spec. These let us correct and re-broadcast the moment the
     -- data becomes available, instead of leaving peers with a partial snapshot
-    -- until the next 5-minute tick. (pcall: not all client flavors expose them.)
-    pcall(function() frame:RegisterEvent("GET_ITEM_INFO_RECEIVED") end)
-    pcall(function() frame:RegisterEvent("PLAYER_TALENT_UPDATE") end)
-    pcall(function() frame:RegisterEvent("CHARACTER_POINTS_CHANGED") end)
+    -- until the next 5-minute tick. (Compat.RegisterEvent: not every client has them.)
+    BRutus.Compat.RegisterEvent(frame, "GET_ITEM_INFO_RECEIVED")
+    BRutus.Compat.RegisterEvent(frame, "PLAYER_TALENT_UPDATE")
+    BRutus.Compat.RegisterEvent(frame, "CHARACTER_POINTS_CHANGED")
     frame:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
             C_Timer.After(0.5, function()
@@ -96,6 +96,8 @@ function DataCollector:CollectMyData()
 
     -- Collect professions
     data.professions = self:CollectProfessions()
+    local absent = {}
+    if data.professions == nil then absent.professions = true end   -- no skill-line API
 
     -- Collect basic stats
     data.stats = self:CollectStats()
@@ -103,9 +105,18 @@ function DataCollector:CollectMyData()
     -- Collect own spec (requires talents to be loaded)
     local specMissing = false
     if BRutus.SpecChecker then
-        local spec = BRutus.SpecChecker:CollectOwnSpec()
-        if spec then data.spec = spec else specMissing = true end
+        local spec, why = BRutus.SpecChecker:CollectOwnSpec()
+        if spec then
+            data.spec = spec
+        elseif why == "no-api" then
+            data.spec = nil   -- no talent API on this client: absent, and nothing to wait for
+            absent.spec = true
+        else
+            specMissing = true
+        end
     end
+    -- Named in the broadcast, so the other officers drop what they still hold for these fields (issue #10).
+    data.absent = next(absent) and absent or nil
 
     -- Collect resistance gear: the MAX wearable resistance per school from everything
     -- I own (equipped + bags), NOT just what's equipped now — so officers can see who
@@ -224,11 +235,8 @@ function DataCollector:CollectResistances()
         if l then links[#links + 1] = l end
     end
     for bag = 0, 4 do
-        local n = (C_Container and C_Container.GetContainerNumSlots
-            and C_Container.GetContainerNumSlots(bag)) or 0
-        for slot = 1, n do
-            local l = C_Container and C_Container.GetContainerItemLink
-                and C_Container.GetContainerItemLink(bag, slot)
+        for slot = 1, BRutus.Compat.GetContainerNumSlots(bag) do
+            local l = BRutus.Compat.GetContainerItemLink(bag, slot)
             if l then links[#links + 1] = l end
         end
     end
@@ -236,7 +244,7 @@ function DataCollector:CollectResistances()
     -- pool[bucket][school] = list of resistance values seen for that slot bucket.
     local pool = {}
     for _, link in ipairs(links) do
-        local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(link)
+        local _, _, _, _, _, _, _, _, equipLoc = BRutus.Compat.GetItemInfo(link)
         local bucket = equipLoc and RES_LOC_TO_BUCKET[equipLoc]
         if bucket then
             local itemRes = ItemResistances(link)
@@ -284,7 +292,7 @@ function DataCollector:CollectGear()
         local itemLink = GetInventoryItemLink("player", slotId)
 
         if itemLink then
-            local itemName, _, itemQuality, itemLevel, _, _, _, _, _, _ = GetItemInfo(itemLink)
+            local itemName, _, itemQuality, itemLevel, _, _, _, _, _, _ = BRutus.Compat.GetItemInfo(itemLink)
             if not itemName or not itemLevel or itemLevel == 0 then
                 incomplete = true  -- item not in cache yet; name/ilvl unresolved
             end
@@ -397,14 +405,15 @@ end
 ----------------------------------------------------------------------
 -- Collect professions
 ----------------------------------------------------------------------
+-- nil when the client has no skill-line API: the field is left out of the record, the
+-- broadcast and the export, and the rest of the collection carries on (issue #10).
 function DataCollector:CollectProfessions()
+    local numSkills = BRutus.Compat.GetNumSkillLines()
+    if not numSkills then return nil end
     local profs = {}
 
-    -- Get primary professions
-    local numSkills = GetNumSkillLines()
-
     for i = 1, numSkills do
-        local skillName, isHeader_, _, skillRank, _, _, skillMaxRank = GetSkillLineInfo(i)
+        local skillName, isHeader_, _, skillRank, _, _, skillMaxRank = BRutus.Compat.GetSkillLineInfo(i)
 
         -- Check if it's a profession (locale-independent)
         if not isHeader_ and self:IsProfession(skillName) then
@@ -549,6 +558,13 @@ function DataCollector:StoreReceivedData(playerKey, data)
             existing[k] = v
         end
     end
+    -- A field the sender's client cannot collect at all is dropped, not kept stale (issue #10).
+    if type(data.absent) == "table" then
+        if data.absent.spec then existing.spec = nil end
+        if data.absent.professions then existing.professions = nil end
+    else
+        existing.absent = nil
+    end
     existing.lastSync = time()
 
     BRutus.db.members[playerKey] = existing
@@ -613,6 +629,7 @@ function DataCollector:GetBroadcastData()
         avgIlvl = myData.avgIlvl,
         lastUpdate = myData.lastUpdate,
         professions = myData.professions,
+        absent = myData.absent,
         stats = myData.stats,
         addonVersion = BRutus.VERSION,
     }

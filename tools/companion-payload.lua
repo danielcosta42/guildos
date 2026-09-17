@@ -65,6 +65,9 @@ LibStub = setmetatable({
 BRutus = {
   VERSION = "0.46.0",
   L = setmetatable({}, { __index = function(_, k) return k end }),
+  -- Core/Data.lua's slot list, as far as this roster's gear goes.
+  SlotIDs = { { id = 1, name = "HeadSlot" }, { id = 3, name = "ShoulderSlot" }, { id = 5, name = "ChestSlot" },
+              { id = 7, name = "LegsSlot" }, { id = 15, name = "BackSlot" }, { id = 16, name = "MainHandSlot" } },
   SlotNames = { [1]="Head", [3]="Shoulder", [5]="Chest", [7]="Legs", [8]="Feet",
                 [9]="Wrist", [10]="Hands", [15]="Back", [16]="Main Hand" },
   db = { members = {}, lootHistory = {}, settings = { companion = true } },
@@ -131,9 +134,7 @@ BRutus.CoreManager = {
     return { LATE = 10, LEFT_EARLY = 10, NO_CONSUMES = 10 }
   end,
 }
-function BRutus:GetPlayerKey(name, realm)
-  return name .. "-" .. (realm or GetRealmName())
-end
+dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
 function BRutus:GetSetting(key) return self.db.settings[key] end
 function BRutus:SetSetting(key, v) self.db.settings[key] = v end
 
