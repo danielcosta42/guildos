@@ -145,6 +145,7 @@ function RecruitScanner:_RegisterEvents()
     local f = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     f:SetScript("OnEvent", function(_, _, msg, author)
+        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local short = author and (author:match("^([^-]+)") or author)
         if short and RecruitScanner._contactCd[short] then
             local inbox = BRutus.db.recruitScanner.inbox

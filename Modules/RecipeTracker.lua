@@ -195,7 +195,8 @@ end
 -- Scan Craft window (Enchanting in some TBC clients)
 ----------------------------------------------------------------------
 function RecipeTracker:ScanCraft()
-    if not GetCraftDisplaySkillLine then return end
+    -- WoW: Forever has no Craft frame at all: the whole family is absent.
+    if not GetCraftDisplaySkillLine or not GetCraftInfo then return end
 
     local rawSkillName = GetCraftDisplaySkillLine()
     if not rawSkillName or rawSkillName == "" or rawSkillName == "UNKNOWN" then return end

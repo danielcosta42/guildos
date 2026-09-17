@@ -513,16 +513,26 @@ end
 -- Collect basic stats
 ----------------------------------------------------------------------
 function DataCollector:CollectStats()
+    -- While stats are restricted they are secret: left out, never serialised or compared.
+    local function readable(v)
+        if BRutus.Compat.IsSecret(v) then return nil end
+        return v
+    end
+    local function base(i)
+        local v = UnitStat("player", i)
+        if BRutus.Compat.IsSecret(v) then return nil end
+        return v or 0
+    end
     local stats = {}
-    stats.health = UnitHealthMax("player")
-    stats.mana = UnitPowerMax("player", 0) -- Mana
+    stats.health = readable(UnitHealthMax("player"))
+    stats.mana = readable(UnitPowerMax("player", 0)) -- Mana
 
     -- Base stats
-    stats.strength  = UnitStat("player", 1) or 0
-    stats.agility   = UnitStat("player", 2) or 0
-    stats.stamina   = UnitStat("player", 3) or 0
-    stats.intellect = UnitStat("player", 4) or 0
-    stats.spirit    = UnitStat("player", 5) or 0
+    stats.strength  = base(1)
+    stats.agility   = base(2)
+    stats.stamina   = base(3)
+    stats.intellect = base(4)
+    stats.spirit    = base(5)
 
     return stats
 end

@@ -214,10 +214,9 @@ function Points:AwardRaidGroup(amount, reason)
     local n = GetNumGroupMembers()
     for i = 1, n do
         local unit = "raid" .. i
-        if UnitExists(unit) then
-            local nm = UnitName(unit)
-            local _, cls = UnitClass(unit)
-            local realm = select(2, UnitName(unit))
+        local nm, realm, cls
+        if UnitExists(unit) then nm, realm, cls = BRutus.Compat.UnitIdentity(unit) end
+        if nm then
             realm = (realm and realm ~= "") and realm or GetRealmName()
             local key = BRutus:GetPlayerKey(nm, realm)
             local e = self:MakeEntry(key, math.abs(amount), reason, "raid")

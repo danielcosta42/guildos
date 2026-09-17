@@ -516,6 +516,8 @@ function AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
     if not mine or not chanBaseName or chanBaseName:lower() ~= mine:lower() then
         return
     end
+    -- The channel's name is never secret; its line and sender are, in lockdown.
+    if BRutus.Compat.IsSecret(msg, author) then return end
     local ally = GuildOS.Alliance
     local short = (Ambiguate and Ambiguate(author or "", "short")) or author
     self:Push({

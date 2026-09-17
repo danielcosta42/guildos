@@ -331,7 +331,7 @@ function SoftRes:GetReservesForDisplay(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
     for i = 1, numMembers do
-        local n = UnitName("raid" .. i)
+        local n = BRutus.Compat.UnitIdentity("raid" .. i)
         if n then inRaid[strlower(n)] = true end
     end
     -- Solo / test: treat the local player as "in raid"

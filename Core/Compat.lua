@@ -34,6 +34,26 @@ BRutus.Client = {
     },
 }
 
+-- Secret Values (WoW: Forever runs the retail system): a chat payload in messaging lockdown, or a
+-- unit whose identity is restricted, arrives as a value addon code may pass along but not read.
+-- Matching, comparing, concatenating or indexing with one raises, so a reader asks first.
+-- True when any argument is secret; always false on a client without the system.
+function Compat.IsSecret(...)
+    if not issecretvalue then return false end
+    for i = 1, select("#", ...) do
+        if issecretvalue((select(i, ...))) then return true end
+    end
+    return false
+end
+
+-- A group unit's name, realm and class file, or nothing when the client keeps who it is secret.
+function Compat.UnitIdentity(unit)
+    local name, realm = UnitName(unit)
+    local _, classFile = UnitClass(unit)
+    if Compat.IsSecret(name, realm, classFile) then return end
+    return name, realm, classFile
+end
+
 -- Register the addon message prefix (C_ChatInfo, else the legacy global)
 function Compat.RegisterAddonPrefix(prefix)
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -468,6 +488,10 @@ end
 
 -- What ChatThrottleLib or the client would refuse outright is recorded, never queued.
 local function queue(msg)
+    -- C_ChatInfo.SendAddonMessage refuses secret arguments outright (SecretArguments = NotAllowed).
+    if Compat.IsSecret(msg.prefix, msg.text, msg.channel, msg.target) then
+        return record(msg, "secret")
+    end
     if type(msg.prefix) ~= "string" or msg.prefix == "" or #msg.prefix > 16 or type(msg.text) ~= "string"
         or #msg.text > 255 or type(msg.channel) ~= "string" or not PRIORITIES[msg.prio] then
         return record(msg, "invalid")

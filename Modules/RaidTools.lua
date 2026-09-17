@@ -53,9 +53,10 @@ function RaidTools:GetSource()
         list[#list + 1] = { name = UnitName("player"), class = classFile or "" }
         for i = 1, (GetNumGroupMembers() or 1) - 1 do
             local unit = "party" .. i
-            if UnitExists(unit) then
-                local _, cf = UnitClass(unit)
-                list[#list + 1] = { name = UnitName(unit), class = cf or "" }
+            local nm, _, cf
+            if UnitExists(unit) then nm, _, cf = BRutus.Compat.UnitIdentity(unit) end
+            if nm then
+                list[#list + 1] = { name = nm, class = cf or "" }
             end
         end
         return list, L["Current party"]

@@ -87,6 +87,7 @@ function Mentions:_SetupHook()
     BRutus.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
     BRutus.Compat.RegisterEvent(f, "CHAT_MSG_OFFICER")
     f:SetScript("OnEvent", function(_, event, msg, author)
+        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = BRutus.db.mentions
         if not cfg or not cfg.enabled then return end
         if event == "CHAT_MSG_GUILD" and not cfg.guild then return end

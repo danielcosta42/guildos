@@ -227,8 +227,7 @@ function PugInspector:_GroupMembers()
         for i = 1, (GetNumGroupMembers() or 1) - 1 do
             local unit = "party" .. i
             if UnitExists(unit) then
-                local nm = UnitName(unit)
-                local _, cf = UnitClass(unit)
+                local nm, _, cf = BRutus.Compat.UnitIdentity(unit)
                 if nm then
                     out[#out + 1] = { name = nm:match("^([^-]+)") or nm, full = nm, class = cf or "" }
                 end

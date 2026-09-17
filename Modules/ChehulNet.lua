@@ -96,7 +96,8 @@ local function DetectLayer(unit)
         return
     end
     local guid = UnitGUID(unit)
-    if not guid then
+    -- A restricted unit's GUID is a secret value; it cannot be split, so no layer is read from it.
+    if not guid or (issecretvalue and issecretvalue(guid)) then
         return
     end
     local kind, _, _, _, zoneUID = strsplit("-", guid)

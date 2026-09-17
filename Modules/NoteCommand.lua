@@ -77,6 +77,7 @@ function NoteCommand:_SetupHook()
     local f = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
     f:SetScript("OnEvent", function(_, _, msg, author)
+        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = BRutus.db.noteCommand
         if not cfg or not cfg.enabled then return end
         local text = NoteCommand:_Parse(msg)

@@ -315,12 +315,12 @@ function RaidTracker:TakeSnapshot(reason)
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         if UnitExists(unit) then
-            local name, realm = UnitName(unit)
+            local name, realm, classFile = BRutus.Compat.UnitIdentity(unit)
             if name then
                 local key = BRutus:GetPlayerKey(name, realm)
                 members[key] = {
                     name = name,
-                    class = select(2, UnitClass(unit)) or "UNKNOWN",
+                    class = classFile or "UNKNOWN",
                     online = UnitIsConnected(unit),
                     hasConsumes = self:CheckPlayerConsumes(unit),
                 }

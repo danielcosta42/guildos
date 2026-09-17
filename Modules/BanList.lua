@@ -197,6 +197,7 @@ function BanList:_SetupDetection()
     self._whisperCd = {}
     BRutus.Compat.After(8, function() BanList._ready = true end)
     f:SetScript("OnEvent", function(_, event, arg1, arg2)
+        if BRutus.Compat.IsSecret(arg1, arg2) then return end  -- chat in lockdown: nothing readable
         if not BRutus:IsOfficer() then return end
         if event == "CHAT_MSG_SYSTEM" then
             if not BanList._ready then return end

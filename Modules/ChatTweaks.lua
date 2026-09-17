@@ -95,6 +95,7 @@ function ChatTweaks:_MakeFilter()
 end
 
 function ChatTweaks:_RegisterFilters()
+    if not ChatFrame_AddMessageEventFilter then return end
     if BRutus.db.chatTweaks.guild ~= false then
         ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", self:_MakeFilter())
     end

@@ -162,7 +162,7 @@ function SpecChecker:ScanGroup()
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         if UnitExists(unit) and UnitIsConnected(unit) then
-            local name, realm = UnitName(unit)
+            local name, realm = BRutus.Compat.UnitIdentity(unit)
             if name then
                 realm = (realm and realm ~= "") and realm or GetRealmName()
                 local key = BRutus:GetPlayerKey(name, realm)

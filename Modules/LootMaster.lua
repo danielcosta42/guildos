@@ -302,6 +302,8 @@ end
 
 -- Called on every CHAT_MSG_SYSTEM event
 function LootMaster:OnSystemMessage(message)
+    -- In lockdown a roll's line cannot be read, so it is not counted: the roll is missed, not misread.
+    if BRutus.Compat.IsSecret(message) then return end
     if not self.listeningForRolls or not self.activeLoot then return end
     self:ProcessSystemRoll(message)
 end
@@ -340,7 +342,7 @@ function LootMaster:ProcessSystemRoll(message)
     if not inRaid then
         local numMembers = GetNumGroupMembers() or 0
         for i = 1, numMembers do
-            local uName = UnitName("raid" .. i)
+            local uName = BRutus.Compat.UnitIdentity("raid" .. i)
             if uName and (uName == cleanName or uName == roller) then
                 inRaid = true
                 break
@@ -452,9 +454,9 @@ function LootMaster:ResolveWishlistCouncil(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
-        local name = UnitName("raid" .. i)
+        local name, _, classFile = BRutus.Compat.UnitIdentity("raid" .. i)
         if name then
-            inRaid[strlower(name)] = select(2, UnitClass("raid" .. i)) or "UNKNOWN"
+            inRaid[strlower(name)] = classFile or "UNKNOWN"
         end
     end
     -- In testMode, treat the current player as in raid so council logic is testable
@@ -494,7 +496,7 @@ function LootMaster:ResolvePrioList(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
-        local name = UnitName("raid" .. i)
+        local name = BRutus.Compat.UnitIdentity("raid" .. i)
         if name then inRaid[strlower(name)] = true end
     end
     if self.testMode then
@@ -1011,9 +1013,9 @@ function LootMaster:RegisterRoll(name, rollType, roll)
     if numMembers > 0 then
         for i = 1, numMembers do
             local unit = "raid" .. i
-            local uName = UnitName(unit)
+            local uName, _, classFile = BRutus.Compat.UnitIdentity(unit)
             if uName and uName == name then
-                class = select(2, UnitClass(unit)) or "UNKNOWN"
+                class = classFile or "UNKNOWN"
                 break
             end
         end
@@ -1282,9 +1284,11 @@ end
 -- When trade window opens, try to auto-add pending items
 function LootMaster:OnTradeShow()
     local tradeName = UnitName("NPC") or GetUnitName("NPC", false)
+    if BRutus.Compat.IsSecret(tradeName) then return end  -- who the trade is with cannot be read
     if not tradeName then
         -- Try TradeFrame target
         tradeName = TradeFrameRecipientNameText and TradeFrameRecipientNameText:GetText()
+        if BRutus.Compat.IsSecret(tradeName) then return end
     end
     if not tradeName or tradeName == "" then return end
 
@@ -1465,9 +1469,9 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local name = UnitName(unit)
+        local name, _, classFile = BRutus.Compat.UnitIdentity(unit)
         if name then
-            inGroup[strlower(name)] = select(2, UnitClass(unit)) or "UNKNOWN"
+            inGroup[strlower(name)] = classFile or "UNKNOWN"
         end
     end
     -- Always include self (covers solo testing and the local player's row highlight)
@@ -1984,10 +1988,9 @@ function LootMaster:ShowLootFrame(items)
         if numMembers > 0 then
             for i = 1, numMembers do
                 local unit = (IsInRaid() and ("raid" .. i)) or ("party" .. i)
-                local name = UnitName(unit)
+                local name, _, classFile = BRutus.Compat.UnitIdentity(unit)
                 if name then
-                    local class = select(2, UnitClass(unit)) or "UNKNOWN"
-                    table.insert(members, { name = name, class = class })
+                    table.insert(members, { name = name, class = classFile or "UNKNOWN" })
                 end
             end
         end
@@ -2204,9 +2207,9 @@ function LootMaster:ShowLootFrame(items)
         local n = GetNumGroupMembers()
         for i = 1, n do
             local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-            local name = UnitName(unit)
+            local name, _, classFile = BRutus.Compat.UnitIdentity(unit)
             if name then
-                map[strlower(name)] = select(2, UnitClass(unit)) or "UNKNOWN"
+                map[strlower(name)] = classFile or "UNKNOWN"
             end
         end
         local myName = UnitName("player")

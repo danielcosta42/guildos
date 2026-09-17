@@ -206,6 +206,7 @@ function Recruitment:RegisterAutoInviteEvent()
     local f = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     f:SetScript("OnEvent", function(_, _, msg, author)
+        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
         if not CanGuildInvite() then return end
@@ -1122,6 +1123,7 @@ function Recruitment:RegisterWelcomeEvent()
     local frame = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")
     frame:SetScript("OnEvent", function(_, event, msg)
+        if BRutus.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if event ~= "CHAT_MSG_SYSTEM" then return end
         if not IsInGuild() then return end
         if not Recruitment._rosterReady then return end
