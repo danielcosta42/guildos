@@ -238,8 +238,12 @@ check(headings.index("Testing on the Forever beta") == headings.index("Installat
       "right after Installation")
 section = readme.split("## Testing on the Forever beta", 1)[1].split("\n## ", 1)[0]
 for needle, what in (
-    ("pre-release", "where the beta build comes from"),
-    ("never to CurseForge or Wago", "that the stores do not carry it"),
+    # How the beta build ships is not decided yet (2026-09-17): the stores if they add a Forever flavour,
+    # a direct download if not. The section says so rather than promising either.
+    ("is not settled yet", "that the distribution is not decided yet"),
+    ("CurseForge and Wago", "the stores it ships through if they add Forever"),
+    ("direct download", "the fallback when they don't"),
+    ("discord.gg/8XA6gmNjja", "where the build is announced"),
     ("into the beta client's own `Interface/AddOns` folder, not into `_anniversary_`",
      "to install into the beta client's own AddOns folder, not Anniversary's"),
     ("Load out of date AddOns", "how to load it when the interface is newer"),

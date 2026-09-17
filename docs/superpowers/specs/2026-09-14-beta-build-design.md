@@ -45,6 +45,9 @@ Multi-interface TOC lines are already common among the addons installed on this 
 Placed right after Installation. In order:
 1. Point the Guild OS companion at the `_anniversary_` folder before installing the beta.
 2. Download the latest `GuildOS-vX.Y.Z-beta.N.zip` from the GitHub pre-releases. The section says it is never on CurseForge or Wago.
+   **Revised 2026-09-17:** how the beta build ships is not decided. If CurseForge and Wago add a WoW: Forever flavour
+   it ships there; if not, as a direct download (this workflow's pre-release is that fallback). The README says so and
+   points at the GuildOS Discord, where the build is announced.
 3. Install into the beta client's own `Interface/AddOns`, not into `_anniversary_`.
 4. Tick **Load out of date AddOns** if the beta's interface is newer than the build lists.
 5. Run `/guildos probe`, then `/reload` to write the result to disk.

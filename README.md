@@ -161,13 +161,14 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 
 ## Testing on the Forever beta
 
-Beta builds for WoW: Forever are published only as
-[GitHub pre-releases](https://github.com/danielcosta42/GuildOS/releases), never to CurseForge or Wago. The stores
-keep shipping the TBC Anniversary version.
+How Guild OS will be distributed for WoW: Forever is not settled yet. If CurseForge and Wago add a WoW: Forever
+flavour, the beta build ships there like every release; if they don't, it is posted as a direct download. Either
+way, it is announced first on the [GuildOS Discord](https://discord.gg/8XA6gmNjja).
 
 1. **Point the Guild OS companion at Anniversary first.** If you use the desktop companion, make sure it reads your
    `_anniversary_` folder before you install the beta, so it keeps syncing the right guild.
-2. **Download** the latest `GuildOS-vX.Y.Z-beta.N.zip` from the pre-releases.
+2. **Get the beta build** from wherever it is announced. An addon manager that supports WoW: Forever installs it for
+   you.
 3. **Install** it into the beta client's own `Interface/AddOns` folder, not into `_anniversary_`.
 4. **Load it.** If the beta's interface number is newer than the build lists, tick **Load out of date AddOns** on
    the AddOns screen at character select.
