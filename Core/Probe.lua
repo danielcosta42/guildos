@@ -64,6 +64,12 @@ Probe.APIS = {
     "GameFontNormalSmall", "STANDARD_TEXT_FONT", "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS",
     "LOCALIZED_CLASS_NAMES_MALE", "SOUNDKIT", "RANDOM_ROLL_RESULT", "RESISTANCE2_NAME", "RESISTANCE3_NAME",
     "RESISTANCE4_NAME", "RESISTANCE5_NAME", "RESISTANCE6_NAME",
+    -- What the Forever port reads or will read (docs/forever/README.md): the Secret Values checks,
+    -- the retail talents and professions that replace talent tabs and the trade-skill window, and
+    -- the chat filter's retail home.
+    "issecretvalue", "canaccessvalue", "C_Secrets.ShouldUnitIdentityBeSecret", "C_ClassTalents.GetActiveConfigID",
+    "C_Traits.GetConfigInfo", "C_TradeSkillUI.GetAllProfessionTradeSkillLines", "C_TradeSkillUI.GetBaseProfessionInfo",
+    "ChatFrameUtil.AddMessageEventFilter",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
