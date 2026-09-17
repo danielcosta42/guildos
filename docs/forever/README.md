@@ -13,6 +13,32 @@ questions in game (`/guildos probe`). Most of them can be answered from the buil
 The files come from wago.tools' CASC endpoint, pinned to the build. `tools/forever-scan/` does all of it again for
 a new build (see the end of this page).
 
+## Checked against the installed client
+
+Once the beta finished downloading (`WOW-69893patch1.60.1_ForeverBeta`), `tools/forever-scan/casc_local.py` read
+the same files out of the local CASC storage (`E:\World of Warcraft\Data`), without wago.
+
+- **Blizzard's Lua and TOCs: 2,749 files byte-identical, none different.**
+- **wago fills gaps from other builds.** For 175 of the files it served under this build number, the build has no
+  such file. Everything below was redone on the local files alone, and nothing changed:
+  - every API and event the addon uses keeps its classification;
+  - the `camelot` directives (182, in 52 TOCs) are there;
+  - the compat shims and their load filters are there;
+  - every Lua definition relied on is there.
+- **The API documentation is identical:** 6,554 functions, 1,794 events, 4,229 entries with Secret fields.
+- **Unencrypted game tables are byte-identical** to wago's: ChrClasses, ChrRaces, ChrSpecialization, TraitTree,
+  Difficulty.
+- **Some tables have encrypted sections** under keys the client does not ship; it receives them from the server
+  when content opens. wago has zeros there too, so its CSVs show only the readable records. Every readable region
+  matches byte for byte.
+
+| Table | Records | Encrypted | Hidden |
+|---|---|---|---|
+| Map | 81 | 8 (keys `0DA4670DB36FB2A9`, `D2C028CB7AC14D0B`, `DA0E7785727A0A65`) | IDs up to 3164; the highest readable is 3109 |
+| MapDifficulty | 146 | 4 | IDs up to 6448; the highest readable is 6345 |
+| DungeonEncounter | 398 | 57 | bosses not yet visible |
+| Item | 9,065 | 56 | items not yet visible |
+
 ## What Forever is, to an addon
 
 - **Its game type is `camelot`**, the "Project Camelot" name. Blizzard's TOCs filter on it
@@ -98,7 +124,10 @@ Nothing the probe inventory lists as documented on Anniversary is missing from F
 
 ## The game data (wago.tools DB2 exports for this build)
 
-- **No new raids.** Six new instances, all five-player dungeons:
+Readable records only; eight maps and 57 encounters are still encrypted (see above).
+
+- **No new raid among the readable maps.** Raids open on 2026-12-09, and the encrypted maps and encounters may be
+  them. Six new instances, all five-player dungeons:
   - **City of Dalaran:** 9 bosses;
   - **Ruins of Lordaeron:** 7;
   - **Excavation Site: Wetlands:** 4;
@@ -133,7 +162,9 @@ python tools/forever-scan/scan.py <forever-build> <anniversary-build> <work-dir>
 python tools/forever-scan/scan.py 1.60.1.69893 2.5.6.69795 %TEMP%/forever-scan "E:/World of Warcraft/_classic_beta_/WowB.exe" "E:/World of Warcraft/_anniversary_/WowClassic.exe"
 ```
 
-It needs Python 3, `luajit` on the PATH and network access to wago.tools, and writes `<work-dir>/report.txt`:
+It needs Python 3, `luajit` on the PATH and network access to wago.tools, and writes `<work-dir>/report.txt`. Given
+the Forever executable, it reads the installed client's own storage (`casc_local.py`) and drops every file wago
+served that the build does not have. The report covers:
 
 - documented functions removed, new, flagged or present;
 - undocumented globals that are gone, defined in Forever's Lua, or unknown.

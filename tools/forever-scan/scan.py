@@ -60,6 +60,29 @@ def main():
     fetch = os.path.join(HERE, "fetch_casc.py")
     run(sys.executable, fetch, forever, fdir, DOCS, "interface/addons/blizzard_")
     run(sys.executable, fetch, anniversary, adir, DOCS)
+    if fexe:
+        # wago serves a file from another build when this one lacks it: keep only what the installed build has.
+        sys.path.insert(0, HERE)
+        from casc_local import Encrypted, Storage
+        import json
+        import urllib.parse
+        import urllib.request
+        storage = Storage(os.path.dirname(os.path.dirname(os.path.abspath(fexe))), "wow_classic_beta")
+        for prefix in (DOCS, "interface/addons/blizzard_"):
+            req = urllib.request.Request("https://wago.tools/api/files?search=" + urllib.parse.quote(prefix),
+                                         headers={"User-Agent": "guildos-addon-research/1.0"})
+            listing = json.loads(urllib.request.urlopen(req, timeout=120).read() or b"{}")
+            for fdid, path in listing.items():
+                local = os.path.join(fdir, *path.split("/"))
+                if not os.path.exists(local):
+                    continue
+                try:
+                    data = storage.read_fdid(int(fdid))
+                except (KeyError, Encrypted):
+                    os.remove(local)
+                    continue
+                with open(local, "wb") as f:
+                    f.write(data)
     fv = index(fdir, os.path.join(work, "forever.tsv"))
     an = index(adir, os.path.join(work, "anniversary.tsv"))
 
