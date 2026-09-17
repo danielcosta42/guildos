@@ -38,8 +38,20 @@ jobs:
 
       - name: Version-sensitive calls go through Compat
         # Rule 4 (issue #10): items, spells, auras, bags, talents, skill lines, the roster
-        # request and addon messages are called only from Core/Compat.lua.
+        # request, addon messages and what a tooltip is showing are called only from
+        # Core/Compat.lua.
         run: lua5.1 tools/compat-guard.lua
+
+      - name: The harnesses
+        # Each tools/*.lua runs the real addon code under a stubbed client and exits 1 on the
+        # first failed check. Until now nothing ran them: tools/roster-import.lua had been red
+        # since ae991c2 and no one found out for a month.
+        run: |
+          sudo apt-get install -y -qq luajit > /dev/null
+          for f in tools/*.lua; do
+            luajit -e 'ADDON="."' "$f" > /dev/null || { echo "$f failed" >&2; exit 1; }
+            echo "ok $f"
+          done
 
   release:
     name: Version & Release
