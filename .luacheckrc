@@ -12,6 +12,7 @@ globals = {
     -- Written by the companion into Inbox.lua and read once at login.
     -- specs/009-a-volta-para-o-jogo/spec.md in guildos-web.
     "GuildOSInbox",
+    "GuildOSInboxAck",  -- the companion writes it beside the inbox; CompanionImport reads it
     "BRutusDB",
 
     -- Slash commands
