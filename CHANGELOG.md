@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.54.0] - 2026-09-17
+
+### Added
+- the retail tooltip, and an event this client never had
+- /guildos probe records what the Forever port reads next
+- groundwork for the WoW: Forever beta (#5 to #11), and the Forever skin and one window in progress (#13, #14)
+
+### Fixed
+- the harnesses run in CI, and the roster import one loads Compat
+- review of the Secret Values pass
+- chat handlers and group loops survive Secret Values on WoW: Forever
+
+
 ## [0.53.0] - 2026-08-28
 
 ### Added
