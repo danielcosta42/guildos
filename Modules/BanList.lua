@@ -217,8 +217,12 @@ function BanList:_SetupDetection()
 
     -- Tooltip flag on banned units
     BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetUnit", function(tt)
-        local _, unit = tt:GetUnit()
-        local name = unit and UnitName(unit)
+        local _, unit = BRutus.Compat.TooltipUnit(tt)
+        -- Not UnitName: on a client that keeps a unit's identity secret the name
+        -- comes back as a value the match inside IsBanned raises on
+        -- (docs/forever/README.md). Reachable only since the hook started
+        -- landing on that client.
+        local name = unit and BRutus.Compat.UnitIdentity(unit)
         if name and BanList:IsBanned(name) then
             local e = BanList:Get(name)
             tt:AddLine("\226\155\148 " .. L["BANNED"] .. " — " ..

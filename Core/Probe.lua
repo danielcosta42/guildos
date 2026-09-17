@@ -70,6 +70,11 @@ Probe.APIS = {
     "issecretvalue", "canaccessvalue", "C_Secrets.ShouldUnitIdentityBeSecret", "C_ClassTalents.GetActiveConfigID",
     "C_Traits.GetConfigInfo", "C_TradeSkillUI.GetAllProfessionTradeSkillLines", "C_TradeSkillUI.GetBaseProfessionInfo",
     "ChatFrameUtil.AddMessageEventFilter",
+    -- The retail tooltip (issue #19): where the OnTooltipSet* scripts below are absent, the hook
+    -- and the reading happen through these instead. A client with the processor and no TooltipUtil
+    -- can hook and not read, so both are asked for.
+    "TooltipDataProcessor.AddTooltipPostCall", "TooltipUtil.GetDisplayedItem",
+    "TooltipUtil.GetDisplayedSpell", "TooltipUtil.GetDisplayedUnit",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.

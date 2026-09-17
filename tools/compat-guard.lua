@@ -18,14 +18,20 @@ local GLOBALS = {
   "GetNumTalentTabs", "GetNumTalents", "GetTalentInfo", "GetNumSkillLines", "GetSkillLineInfo",
   "GetContainerNumSlots", "GetContainerItemLink", "GetContainerItemInfo", "UseContainerItem",
   "GuildRoster", "RegisterAddonMessagePrefix", "SendAddonMessage", "SendAddonMessageLogged",
+  -- What a tooltip is showing: the Classic readers, and the data type the retail client
+  -- registers by (issue #19). Reading one behind Compat's back is a feature that goes quiet
+  -- on the other client, which is the failure this guard exists to make loud.
+  "GetItem", "GetSpell", "GetUnit", "TooltipDataType",
 }
 -- Names only these APIs have: as a field or method of anything but Compat they are flagged too.
 local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAddonMessage = true,
-                   SendAddonMessageLogged = true }
+                   SendAddonMessageLogged = true,
+                   GetItem = true, GetSpell = true, GetUnit = true, TooltipDataType = true }
 -- What a local named Compat may be.
 local COMPAT_SOURCES = { ["BRutus.Compat"] = true, ["GuildOS.Compat"] = true, ["self.Compat"] = true }
 -- Namespaces and the library only Compat may touch: flagged wherever the name appears (an alias included).
-local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "ChatThrottleLib" }
+local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "ChatThrottleLib",
+                     "TooltipUtil", "TooltipDataProcessor" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

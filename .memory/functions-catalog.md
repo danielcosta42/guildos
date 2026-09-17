@@ -181,8 +181,9 @@ Removed: `Compat.NewTimer`.
 | `BRutus.Compat.IsQuestComplete(questId)` | Guards `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted` fallback (Rule 4) |
 | `BRutus.Compat.After(delay, fn)` | Guards `C_Timer.After` (Rule 4) |
 | `BRutus.Compat.NewTicker(interval, fn, iterations)` | Guards `C_Timer.NewTicker` (Rule 4) |
-| `BRutus.Compat.RegisterEvent(frame, event)` | `RegisterEvent` that tolerates an event the client does not know; records the miss (`BRutus:RecordMissing`) and returns false (ADR-0012) |
-| `BRutus.Compat.HookTooltip(tooltip, script, fn)` | `HookScript` only when the tooltip has `script`; nil tooltip skipped silently, missing script recorded (ADR-0012) |
+| `BRutus.Compat.RegisterEvent(frame, event, expected)` | `RegisterEvent` that tolerates an event the client does not know; records the miss (`BRutus:RecordMissing`) and returns false. `expected` marks an event only some clients ever had: recorded, but not a start-up problem (ADR-0012, ADR-0020) |
+| `BRutus.Compat.HookTooltip(tooltip, script, fn)` | `HookScript` where the tooltip has `script`, else one `TooltipDataProcessor.AddTooltipPostCall` per script and function, answering only for the tooltips that asked and never for a forbidden one; `fn(tooltip, data)` on both. Nil tooltip skipped silently, a client with neither path recorded (ADR-0012, ADR-0020) |
+| `BRutus.Compat.TooltipItem(tooltip)` / `TooltipSpell` / `TooltipUnit` | What the tooltip is showing: the frame's own `GetItem`/`GetSpell`/`GetUnit` first, then `TooltipUtil.GetDisplayed*`. Name and link, name and spell id, name and unit; the retail client adds a third return (ADR-0020) |
 | `BRutus.Compat.FindGuildRosterIndex(name, realm)` | Roster index for `Name` or `Name-Realm` (an exact `Name-Realm` wins; a short name only when unique), or nil and why: `"absent"` or `"ambiguous"` |
 | `BRutus.Compat.GetGuildPublicNote(name, realm)` | The member's public note, or nil and the same reason |
 | `BRutus.Compat.SetGuildPublicNote(name, text, realm)` | Writes a sanitized, 31-byte public note through `C_GuildInfo.SetNote(guid, note, true)`, falling back to `GuildRosterSetPublicNote(index, note)`; returns true, or false and why: `"no-permission"`, `"absent"`, `"ambiguous"`, `"no-guid"`, `"no-api"` (#5) |

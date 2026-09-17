@@ -416,9 +416,17 @@ end
 
 -- Record something this client does not have (an event, a tooltip script),
 -- once per session, so /guildos errors lists it without repeating it.
-function BRutus:RecordMissing(what)
-    if self.State.missing[what] then return end
-    self.State.missing[what] = true
+--
+-- `expected` marks one only some clients ever had — the old craft window's
+-- event on a client that never had a craft window. It is still remembered, so
+-- the second caller is not recorded either, and left out of the start-up list:
+-- a client being itself is not a problem with the addon. What exists on this
+-- client is the probe's inventory to answer (Core/Probe.lua), not this one's.
+function BRutus:RecordMissing(what, expected)
+    local seen = self.State.missing[what]
+    if seen == true or (seen and expected) then return end  -- a real miss still wins over an expected one
+    self.State.missing[what] = expected and "expected" or true
+    if expected then return end
     self:RecordError(what .. " is not available on this client")
 end
 
@@ -430,8 +438,8 @@ function BRutus:ListStartupProblems()
     for name, err in pairs(self.State.startup.failed) do
         lines[#lines + 1] = name .. ": " .. err
     end
-    for what in pairs(self.State.missing) do
-        lines[#lines + 1] = what .. " is not available on this client"
+    for what, how in pairs(self.State.missing) do
+        if how == true then lines[#lines + 1] = what .. " is not available on this client" end
     end
     table.sort(lines)
     return lines

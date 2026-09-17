@@ -11,6 +11,12 @@
 -- other officers follow; that sends hold, retry or record by result; and that the guard CI runs
 -- finds these APIs reached by name outside Compat.
 --
+-- Section 10 is the tooltip (issue #19), the other half of the same problem: the retail client
+-- replaced the OnTooltipSet* scripts with one registration per data type, for every tooltip at
+-- once, so it proves the hook on each client, the tooltip arriving as the callback's first
+-- argument, the caller's own tooltips being the only ones answered, and a miss that is the client
+-- being itself staying out of the start-up list while a real one does not.
+--
 --   luajit -e 'ADDON="."' tools/compat-core.lua
 --
 -- Exits 1 on the first failed check.
@@ -653,5 +659,112 @@ check(select(2, source("Modules/CommSystem.lua"):gsub("Compat%.SendAddonMessage%
       and source("Modules/LootMaster.lua"):find("Compat.SendAddonMessageNow(", 1, true),
       "SendAddonMessage carries sync, and SendAddonMessageNow carries loot")
 check(source("Core/Commands.lua"):find("Compat.IsQuestComplete(", 1, true), "IsQuestComplete answers /gos attunement checks")
+
+-- ── 10. The tooltip: the frame's script, or the retail processor ─────────
+-- Four of the Forever beta's start-up problems: the three OnTooltipSet* scripts the retail tooltip
+-- replaced with one call per data type, and CRAFT_SHOW, the old craft window's event on a client
+-- built without a craft window.
+local function classicTip()
+  local tip = { hooks = {} }
+  function tip:HasScript(name) return name:find("^OnTooltip") ~= nil end
+  function tip:HookScript(name, fn) self.hooks[name] = fn end
+  function tip:GetItem() return "Hood", HOOD end
+  function tip:GetSpell() return "Enchant", 27967 end
+  function tip:GetUnit() return "Bob", "raid1" end
+  return tip
+end
+
+local classic = classicTip()
+local function onItem() end
+check(Compat.HookTooltip(classic, "OnTooltipSetItem", onItem) == true, "the script the tooltip has is hooked")
+check(classic.hooks.OnTooltipSetItem == onItem, "on that very tooltip")
+check(Compat.HookTooltip(nil, "OnTooltipSetItem", onItem) == false, "a tooltip that is not built yet is skipped")
+check(select(2, Compat.TooltipItem(classic)) == HOOD, "and what is under the mouse comes from the frame")
+check(select(2, Compat.TooltipSpell(classic)) == 27967, "the spell too")
+check(select(2, Compat.TooltipUnit(classic)) == "raid1", "and the unit")
+check(BRutus.State.missing["tooltip script OnTooltipSetItem"] == nil, "nothing is missing on a client that has it")
+
+-- The retail client: no such script, one call per data type, and Item is 0, so the branch has to
+-- read it as a value and not as a truth.
+local posted = {}
+TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn) posted[#posted + 1] = { kind = kind, fn = fn } end }
+TooltipUtil = {
+  GetDisplayedItem = function(tip) return "Hood", tip.link, 30107 end,
+  GetDisplayedSpell = function() return "Enchant", 27967 end,
+  GetDisplayedUnit = function() return "Bob", "raid1", "Player-1" end,
+}
+Enum.TooltipDataType = { Item = 0, Spell = 1, Unit = 2 }
+dofile(ADDON .. "/Core/Compat.lua")  -- what was handed to the processor is remembered per load
+Compat = BRutus.Compat
+
+local retail, shopping = { link = HOOD }, { link = HOOD }
+function retail:HasScript() return false end
+local seen
+local function onRetailItem(tip) seen = tip end
+check(Compat.HookTooltip(retail, "OnTooltipSetItem", onRetailItem) == true, "the retail client takes the hook another way")
+check(Compat.HookTooltip(shopping, "OnTooltipSetItem", onRetailItem) == true, "a second tooltip asks for the same function")
+check(#posted == 1, "and it is registered once, not once per tooltip (" .. #posted .. ")")
+check(posted[1].kind == Enum.TooltipDataType.Item, "under the data type that names it")
+
+-- The whole change rests on this: the post-call hands the tooltip over the way the script did.
+posted[1].fn(retail, { type = Enum.TooltipDataType.Item })
+check(seen == retail, "the post-call calls the hook with the tooltip as its first argument")
+seen = nil
+posted[1].fn(shopping, {})
+check(seen == shopping, "for every tooltip that asked")
+seen = nil
+posted[1].fn({ link = HOOD }, {})
+check(seen == nil, "and for no other: one registration serves them all, this caller asked for two")
+local forbidden = { link = HOOD, IsForbidden = function() return true end }
+Compat.HookTooltip(forbidden, "OnTooltipSetItem", onRetailItem)
+posted[1].fn(forbidden, {})
+check(seen == nil, "a forbidden tooltip is left alone, where writing a line would raise")
+
+local function other() end
+Compat.HookTooltip(retail, "OnTooltipSetItem", other)
+Compat.HookTooltip(retail, "OnTooltipSetSpell", onRetailItem)
+Compat.HookTooltip(retail, "OnTooltipSetUnit", onRetailItem)
+check(#posted == 4, "another function, and the other two data types, each register once")
+check(posted[3].kind == Enum.TooltipDataType.Spell and posted[4].kind == Enum.TooltipDataType.Unit,
+      "spell and unit in their own types")
+check(select(2, Compat.TooltipItem(retail)) == HOOD, "the item is read the way this client answers")
+check(select(2, Compat.TooltipSpell(retail)) == 27967, "the spell too")
+check(select(2, Compat.TooltipUnit(retail)) == "raid1", "and the unit")
+check(select("#", Compat.TooltipItem(retail)) == 3, "with the id this client adds after the link")
+
+-- A client with both: the reading follows the hook, and the hook took the frame's own script.
+local hybrid = classicTip()
+check(Compat.HookTooltip(hybrid, "OnTooltipSetItem", onItem) == true and hybrid.hooks.OnTooltipSetItem == onItem,
+      "with both paths the frame's own script wins")
+check(select(2, Compat.TooltipItem(hybrid)) == HOOD, "and the reading follows it, not the global table")
+local quiet = { link = HOOD, GetItem = function() return nil end }
+check(select(2, Compat.TooltipItem(quiet)) == HOOD, "a frame with nothing to say falls through instead of going quiet")
+
+-- An event only some clients ever had, against one the addon expects everywhere.
+local craft = { events = {} }
+function craft:RegisterEvent(e)
+  if e:find("^CRAFT") then error("unknown event") end
+  self.events[e] = true
+end
+local errorsBefore = #errors
+check(Compat.RegisterEvent(craft, "CRAFT_SHOW", true) == false, "an event this client lacks does not register")
+check(BRutus.State.missing["event CRAFT_SHOW"] == "expected" and #errors == errorsBefore,
+      "it is remembered, and it is not an error")
+check(not table.concat(BRutus:ListStartupProblems(), "\n"):find("CRAFT_SHOW", 1, true),
+      "a client being itself is not a start-up problem")
+check(Compat.RegisterEvent(craft, "TRADE_SKILL_SHOW", true) == true and craft.events.TRADE_SKILL_SHOW,
+      "where the event exists, expected changes nothing")
+local always = { RegisterEvent = function() error("unknown event") end }
+check(Compat.RegisterEvent(always, "GUILD_ROSTER_UPDATE") == false, "an event the addon expects everywhere is missing")
+check(#errors == errorsBefore + 1 and table.concat(BRutus:ListStartupProblems(), "\n"):find("GUILD_ROSTER_UPDATE", 1, true),
+      "and that one is an error and a start-up problem, which is the difference expected makes")
+
+-- And the guard CI runs keeps all of it out of the modules, as it does the item and spell APIs.
+check(flags("local _, link = TooltipUtil.GetDisplayedItem(tip)") == 1, "a retail tooltip read outside Compat is a hit")
+check(flags("TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, f)") == 2,
+      "so are the registration and the data type it needs")
+check(flags("local _, link = tip:GetItem()") == 1 and flags("local _, u = tip:GetUnit()") == 1,
+      "and the Classic readers, as a method of anything but Compat")
+check(flags("local _, link = BRutus.Compat.TooltipItem(tip)") == 0, "while the wrapper itself is not")
 
 print("compat-core: " .. checks .. " checks passed")

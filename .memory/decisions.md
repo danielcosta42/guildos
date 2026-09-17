@@ -533,3 +533,38 @@ dropped sync without a trace. Two shims in `Core/Compat.lua` had no callers.
 - (−) A lockdown that splits a chunked message can let the receiver's 30-second reassembly expire; the next broadcast
   repairs it.
 - (−) Forever's result names are unconfirmed until `/guildos probe` runs on the beta; the fallbacks are the retail codes.
+
+## ADR-0020 — The retail tooltip: one registration per data type, filtered to the tooltips that asked
+
+### Context
+On the WoW: Forever beta the addon opened with four start-up problems: `event CRAFT_SHOW` and the three
+`OnTooltipSetItem/Spell/Unit` scripts. Forever runs the retail tooltip, which has neither those scripts nor
+`tooltip:GetItem()`; it has `TooltipDataProcessor.AddTooltipPostCall(dataType, fn)` and
+`TooltipUtil.GetDisplayedItem/Spell/Unit(tooltip)`. `CRAFT_SHOW` belongs to a craft window this client never had.
+`Compat.HookTooltip` recorded all four and moved on, so nothing raised — but SoftRes reserves, wishlist marks, the
+recipe crafters and the ban flag were all silently absent, and the fourth line was noise.
+
+### Decision
+- `Compat.HookTooltip` asks the frame first: where the script exists (Anniversary) it is a `HookScript`, as before.
+  Where it does not but the client has the processor, the same function is registered **once** per script — the
+  registration is global, one per data type, so registering per tooltip would add its lines once per tooltip.
+- What is registered is a wrapper, not the caller's function: it answers only for the tooltips that asked for it and
+  never for a forbidden one. A hook on GameTooltip alone stays a hook on GameTooltip alone, on both clients.
+- The callback receives `(tooltip, data)`, the tooltip first, the way the script did.
+- `Compat.TooltipItem/TooltipSpell/TooltipUnit` read what is under the mouse, asking the frame first — the same
+  question the hook asked, so on a client with both the reading matches the hook — and falling through to
+  `TooltipUtil`. The first two returns are the same on both; the retail client adds a third.
+- `Compat.RegisterEvent(frame, event, expected)`: `expected` is an event only some clients ever had. It still
+  registers where it exists, and where it does not it is recorded once and left out of `ListStartupProblems`. A later
+  miss of the same name without `expected` still wins and becomes an error. `CRAFT_SHOW` is the only caller.
+- `tools/compat-guard.lua` covers `TooltipUtil`, `TooltipDataProcessor`, `Enum.TooltipDataType` and the `GetItem`,
+  `GetSpell`, `GetUnit` methods, so CI keeps them inside Compat. Every harness now runs in CI as well.
+
+### Consequences
+- (+) Reserves, wishlist, crafters and the ban flag work on Forever, and the beta's start-up list is quiet.
+- (+) Anniversary takes the same path as always: the frame's script, and the frame's own readers.
+- (+) The ban flag stopped reading `UnitName` raw, which would have raised on a unit whose identity is secret — the
+  bug was dormant only because the hook never landed there.
+- (−) The dedupe is keyed on the function itself, so a module that hooks twice with two closures registers twice.
+  `InitModules` runs once per session; a future re-init would double the lines with nothing to catch it.
+- (−) A client with the processor but without `TooltipUtil` hooks and reads nothing. `/guildos probe` asks for both.

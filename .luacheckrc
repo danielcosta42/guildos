@@ -203,6 +203,7 @@ read_globals = {
     "issecretvalue",
     "C_TradeSkillUI",
     "TooltipDataProcessor",
+    "TooltipUtil",                           -- the retail tooltip; absent on Anniversary (Compat.lua, issue #19)
     "C_GameRules",                           -- /guildos probe (Core/Probe.lua, ADR-0015)
     "C_Secrets",
     "C_RestrictedActions",

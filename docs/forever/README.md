@@ -117,7 +117,8 @@ In Anniversary's executable, and in neither Forever's executable nor its Lua:
 | Function | What it means for GuildOS |
 |---|---|
 | `GetNumTradeSkills`, `GetTradeSkillInfo`, `GetTradeSkillLine`, `GetTradeSkillItemLink`, `GetTradeSkillRecipeLink` | Classic professions are gone; Forever has retail's `C_TradeSkillUI`. `RecipeTracker` already reads them guarded, so it finds no recipes rather than raising. Reading recipes through `C_TradeSkillUI` is the next piece of work, best designed with the beta open. |
-| `GetCraftInfo`, `GetNumCrafts`, `GetCraftItemLink`, `GetCraftDisplaySkillLine`, `CRAFT_SHOW` | No Craft frame at all. |
+| `GetCraftInfo`, `GetNumCrafts`, `GetCraftItemLink`, `GetCraftDisplaySkillLine`, `CRAFT_SHOW` | No Craft frame at all. `CRAFT_SHOW` is registered as expected-missing (ADR-0020), so it is recorded without being called a start-up problem. |
+| `OnTooltipSetItem`, `OnTooltipSetSpell`, `OnTooltipSetUnit` (as tooltip scripts), `tooltip:GetItem`, `tooltip:GetSpell`, `tooltip:GetUnit` | The retail tooltip, read out of the build's own `Blizzard_SharedXMLGame/Tooltip` (`casc_local.py`, see below). Hooking is `TooltipDataProcessor.AddTooltipPostCall(dataType, fn)` — one registration per data type, serving every tooltip at once and calling `fn(tooltip, data)`. Reading is `TooltipUtil.GetDisplayedItem` (name, link, id), `GetDisplayedSpell` (name, id), `GetDisplayedUnit` (name, unit, guid). `OnTooltipCleared` is still a script. Compat takes this path where the frame has no script (ADR-0020). |
 | `GetNumTalentTabs`, `GetNumTalents` | No talent tabs. Forever uses `C_ClassTalents` and `C_Traits` (17 trait trees), and `ChrSpecialization` has one row per class, named after the class. `SpecChecker` degrades to "spec absent" today. A spec read from trait trees needs the beta's real data. |
 
 Nothing the probe inventory lists as documented on Anniversary is missing from Forever's documentation.

@@ -345,7 +345,7 @@ function Wishlist:HookTooltips()
     local function OnTooltipSetItem(tooltip)
         if not self.itemIndex then return end
 
-        local _, link = tooltip:GetItem()
+        local _, link = BRutus.Compat.TooltipItem(tooltip)
         if not link then return end
 
         local itemId = tonumber(link:match("item:(%d+)"))

@@ -15,8 +15,9 @@ function RecipeTracker:Initialize()
 
     local frame = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(frame, "TRADE_SKILL_SHOW")
-    -- Craft API event (Enchanting in some clients)
-    BRutus.Compat.RegisterEvent(frame, "CRAFT_SHOW")
+    -- The old craft window (Enchanting in some clients). A client built without
+    -- it — Forever runs the retail tradeskill UI — never fires this.
+    BRutus.Compat.RegisterEvent(frame, "CRAFT_SHOW", true)
     frame:SetScript("OnEvent", function(_, event)
         if event == "TRADE_SKILL_SHOW" then
             RecipeTracker:DebounceScan("trade")
@@ -703,7 +704,7 @@ function RecipeTracker:HookTooltips()
     local function OnTooltipSetItem(tooltip)
         if not BRutus.db or not BRutus.db.recipes then return end
 
-        local _, link = tooltip:GetItem()
+        local _, link = BRutus.Compat.TooltipItem(tooltip)
         if not link then return end
 
         local itemId = tonumber(link:match("item:(%d+)"))
@@ -717,7 +718,7 @@ function RecipeTracker:HookTooltips()
     local function OnTooltipSetSpell(tooltip)
         if not BRutus.db or not BRutus.db.recipes then return end
 
-        local _, spellId = tooltip:GetSpell()
+        local _, spellId = BRutus.Compat.TooltipSpell(tooltip)
         if not spellId then return end
 
         local crafters = RecipeTracker:GetCraftersForSpell(spellId)

@@ -283,26 +283,99 @@ end
 -- client does not know, and a new client (WoW: Forever) may lack TBC-era
 -- ones such as CRAFT_SHOW. The miss is recorded for /guildos errors instead
 -- of stopping the module that asked. Returns true when registered.
-function Compat.RegisterEvent(frame, event)
+--
+-- `expected` is for an event only some clients ever had: it still registers
+-- where it exists, and where it does not it is a fact about the client rather
+-- than a problem with the addon, so it stays out of the start-up list. The
+-- probe reports it either way.
+function Compat.RegisterEvent(frame, event, expected)
     local ok = pcall(frame.RegisterEvent, frame, event)
-    if not ok then BRutus:RecordMissing("event " .. event) end
+    if not ok then BRutus:RecordMissing("event " .. event, expected) end
     return ok
 end
 
--- Hook `script` on a tooltip only where the tooltip has it. OnTooltipSetItem
--- and friends are the Classic-era hooks, and HookScript raises on a script
--- the frame does not support. A tooltip that is not built (nil) is skipped
--- silently. Returns true when hooked.
--- ponytail: a missing script is skipped and recorded; add a
--- TooltipDataProcessor path when a client that needs it shows up.
+-- The Classic-era tooltip scripts and what the retail client calls the same
+-- thing. Forever runs the retail tooltip: the frame has no OnTooltipSet*
+-- script, and one call per data type covers every tooltip at once.
+local TOOLTIP_TYPES = {
+    OnTooltipSetItem = "Item",
+    OnTooltipSetSpell = "Spell",
+    OnTooltipSetUnit = "Unit",
+}
+
+-- What has already been handed to TooltipDataProcessor, by script and function,
+-- and which tooltips each one is for: a caller asks for GameTooltip,
+-- ItemRefTooltip and both shopping tooltips, and registering the same function
+-- four times would add its lines four times.
+local posted = {}
+
+-- Hook `script` on a tooltip. Where the frame has it (Anniversary), that is a
+-- HookScript. Where it does not but the client has the retail tooltip
+-- (Forever), the same function is registered once through
+-- TooltipDataProcessor, which calls it with the tooltip as its first argument,
+-- the way the script did. That registration is for every tooltip of its type at
+-- once, so what goes in is a wrapper that answers only for the tooltips this
+-- caller asked for — otherwise a hook on GameTooltip alone would start writing
+-- into every tooltip in the game, Blizzard's forbidden ones included, where a
+-- line raises. A tooltip that is not built (nil) is skipped silently, and a
+-- client with neither path is recorded for /guildos errors. Returns true when
+-- this tooltip is covered.
 function Compat.HookTooltip(tooltip, script, fn)
     if not tooltip then return false end
     if tooltip.HasScript and tooltip:HasScript(script) then
         tooltip:HookScript(script, fn)
         return true
     end
+    local kind = TOOLTIP_TYPES[script]
+    local dataType = kind and Enum and Enum.TooltipDataType and Enum.TooltipDataType[kind]
+    if dataType and TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall then
+        posted[script] = posted[script] or {}
+        local wanted = posted[script][fn]
+        if not wanted then
+            wanted = {}
+            posted[script][fn] = wanted
+            TooltipDataProcessor.AddTooltipPostCall(dataType, function(tip, data)
+                if not tip or not wanted[tip] then return end
+                if tip.IsForbidden and tip:IsForbidden() then return end
+                return fn(tip, data)
+            end)
+        end
+        wanted[tooltip] = true
+        return true
+    end
     BRutus:RecordMissing("tooltip script " .. script)
     return false
+end
+
+-- What a tooltip is showing. `tooltip:GetItem()` and its siblings are the
+-- Classic-era readers and the retail client answers through TooltipUtil, so
+-- each asks the frame first — the same question HookTooltip asks to choose its
+-- path, and on a client with both the reading then matches the hook — and falls
+-- through when the frame has no answer. First two returns are the same on both:
+-- name and link, name and spell id, name and unit. TooltipUtil adds a third
+-- (the item id, the unit's guid); nothing reads it yet.
+function Compat.TooltipItem(tooltip)
+    if tooltip.GetItem then
+        local name, link = tooltip:GetItem()
+        if link then return name, link end
+    end
+    if TooltipUtil and TooltipUtil.GetDisplayedItem then return TooltipUtil.GetDisplayedItem(tooltip) end
+end
+
+function Compat.TooltipSpell(tooltip)
+    if tooltip.GetSpell then
+        local name, spellId = tooltip:GetSpell()
+        if spellId then return name, spellId end
+    end
+    if TooltipUtil and TooltipUtil.GetDisplayedSpell then return TooltipUtil.GetDisplayedSpell(tooltip) end
+end
+
+function Compat.TooltipUnit(tooltip)
+    if tooltip.GetUnit then
+        local name, unit = tooltip:GetUnit()
+        if unit then return name, unit end
+    end
+    if TooltipUtil and TooltipUtil.GetDisplayedUnit then return TooltipUtil.GetDisplayedUnit(tooltip) end
 end
 
 ----------------------------------------------------------------------
