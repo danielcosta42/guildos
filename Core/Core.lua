@@ -24,7 +24,11 @@ BRutus.State = {
     raid        = {},
     consumables = {},
     raidCD      = { state = {}, members = {} },
-    errors      = {},  -- session error ring (see BRutus:SafeCall / /guildos errors)
+    errors      = {},  -- session error ring (see BRutus:RecordError / /guildos errors)
+    -- What failed to start (BRutus:RunStartup) and what this client lacks
+    -- (BRutus:RecordMissing). Feeds /guildos errors and the login line.
+    startup     = { failed = {}, failedFeatures = {}, stacks = {} },
+    missing     = {},
 }
 
 ----------------------------------------------------------------------
@@ -137,10 +141,8 @@ function BRutus:Initialize()
     end
 
     -- Register both prefixes so we can receive messages from older BRutus clients
-    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
-        C_ChatInfo.RegisterAddonMessagePrefix(self.PREFIX)
-        C_ChatInfo.RegisterAddonMessagePrefix(self.LEGACY_PREFIX)
-    end
+    self.Compat.RegisterAddonPrefix(self.PREFIX)
+    self.Compat.RegisterAddonPrefix(self.LEGACY_PREFIX)
 
     self:Print("v" .. self.VERSION .. " |cffFFD700by Chehul|r" .. L[" loaded. Type |cffFFD700/guildos|r to open."])
 end
@@ -232,143 +234,84 @@ function BRutus:OnLogin()
     self:InitModules()
 end
 
-function BRutus:InitModules()
-    -- Module enabled helper (delegates to the public API; call sites below
-    -- keep the short local name).
-    local function modEnabled(key)
-        return self:IsFeatureEnabled(key)
-    end
-
-    -- Apply the chosen accent theme before any frame is built.
-    self:ApplyTheme()
-
-    -- Core helper tests (Utils loads before SelfTest, so it cannot self-register).
-    self:RegisterUtilTests()
-
-    -- Initialize subsystems (always-on)
-    if BRutus.DataCollector then
-        BRutus.DataCollector:Initialize()
-    end
-    if BRutus.AttunementTracker then
-        BRutus.AttunementTracker:Initialize()
-    end
-    if BRutus.SyncService then
-        BRutus.SyncService:Initialize()
-    end
-    if BRutus.Alliance then
-        BRutus.Alliance:Initialize()
-    end
-    if BRutus.AllianceSync then
-        BRutus.AllianceSync:Initialize()
-    end
-    if BRutus.AllianceChat then
-        BRutus.AllianceChat:Initialize()
-    end
-    if BRutus.RosterLog then
-        BRutus.RosterLog:Initialize()
-    end
-    if BRutus.BanList then
-        BRutus.BanList:Initialize()
-    end
-    if BRutus.CommSystem and modEnabled("commSystem") then
-        BRutus.CommSystem:Initialize()
-    end
-    if BRutus.Wishlist then
-        BRutus.Wishlist:Initialize()
-    end
-    if BRutus.SoftRes then
-        BRutus.SoftRes:Initialize()
-    end
-    if BRutus.CoreManager then
-        BRutus.CoreManager:Initialize()
-    end
-    if BRutus.RaidTracker and modEnabled("raidTracker") then
-        BRutus.RaidTracker:Initialize()
-    end
-    if BRutus.LootTracker and modEnabled("lootTracker") then
-        BRutus.LootTracker:Initialize()
-    end
-    if BRutus.LootMaster and modEnabled("lootMaster") then
-        BRutus.LootMaster:Initialize()
-    end
-    if BRutus.Points and modEnabled("points") then
-        BRutus.Points:Initialize()
-    end
-    if BRutus.Digest then
-        BRutus.Digest:Initialize()
-    end
-    if BRutus.Bulletin then
-        BRutus.Bulletin:Initialize()
-    end
-    if BRutus.Polls then
-        BRutus.Polls:Initialize()
-    end
-    if BRutus.Calendar then
-        BRutus.Calendar:Initialize()
-    end
-    if BRutus.Milestones then
-        BRutus.Milestones:Initialize()
-    end
-    if BRutus.ConsumableChecker and modEnabled("consumableChecker") then
-        BRutus.ConsumableChecker:Initialize()
-    end
-    if BRutus.SpecChecker then
-        BRutus.SpecChecker:Initialize()
-    end
-    if BRutus.GuildAnalytics then
-        BRutus.GuildAnalytics:Initialize()
-    end
-    if BRutus.Mentions then
-        BRutus.Mentions:Initialize()
-    end
-    if BRutus.NoteCommand then BRutus.NoteCommand:Initialize() end
-    if BRutus.LevelQuery then BRutus.LevelQuery:Initialize() end
-    if BRutus.LFGBoard then BRutus.LFGBoard:Initialize() end
-    if BRutus.GuildMap then BRutus.GuildMap:Initialize() end
-    if BRutus.PugInspector then BRutus.PugInspector:Initialize() end
-    if BRutus.RecipeTracker then
-        BRutus.RecipeTracker:Initialize()
-    end
-    if BRutus.CraftNet then
-        BRutus.CraftNet:Initialize()
-    end
-    if BRutus.RecruitBeacon then
-        BRutus.RecruitBeacon:Initialize()
-    end
-    if BRutus.RecruitScanner then
-        BRutus.RecruitScanner:Initialize()
-    end
+----------------------------------------------------------------------
+-- Module start-up list. Order matters (DataCollector before the sync that
+-- reads it), so this is a list, not a set. Per entry:
+--   [1]      module name under BRutus
+--   feature  Settings toggle that can switch the module off
+--   ui       window the module backs: if the module fails to start, the
+--            window refuses to open instead of erroring while it builds
+--   method   start function, when it is not Initialize
+--   after    second function, run only when the first one succeeded
+----------------------------------------------------------------------
+local MODULE_START = {
+    { "DataCollector" },
+    { "AttunementTracker" },
+    { "SyncService" },
+    { "Alliance", ui = "alliance" },
+    { "AllianceSync" },
+    { "AllianceChat" },
+    { "RosterLog" },
+    { "BanList" },
+    { "CommSystem", feature = "commSystem" },
+    { "Wishlist", ui = "wishlist" },
+    { "SoftRes" },
+    { "CoreManager" },
+    { "RaidTracker", feature = "raidTracker", ui = "raids" },
+    { "LootTracker", feature = "lootTracker" },
+    { "LootMaster", feature = "lootMaster", ui = "loot" },
+    { "Points", feature = "points", ui = "dkp" },
+    { "Digest" },
+    { "Bulletin" },
+    { "Polls" },
+    { "Calendar" },
+    { "Milestones" },
+    { "ConsumableChecker", feature = "consumableChecker" },
+    { "SpecChecker" },
+    { "GuildAnalytics" },
+    { "Mentions" },
+    { "NoteCommand" },
+    { "LevelQuery" },
+    { "LFGBoard" },
+    { "GuildMap" },
+    { "PugInspector" },
+    { "RecipeTracker", ui = "recipes" },
+    { "CraftNet" },
+    { "RecruitBeacon" },
+    { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only
-    -- Initialize below handles just the officer auto-post/welcome flow).
-    if BRutus.Recruitment and modEnabled("recruitment") then
-        BRutus.Recruitment:InitParticipation()
-    end
+    -- Initialize in OFFICER_START handles just the auto-post/welcome flow).
+    { "Recruitment", feature = "recruitment", method = "InitParticipation" },
     -- Recruitment engagement stats: every client tracks its own activity and
     -- self-reports; officers aggregate for the Leadership dashboard.
-    if BRutus.RecruitEngagement then
-        BRutus.RecruitEngagement:Initialize()
-    end
+    { "RecruitEngagement" },
     -- Raider roster (officer-curated, everyone stores/views it).
-    if BRutus.RaiderRoster then
-        BRutus.RaiderRoster:Initialize()
-    end
-    if BRutus.AltRoster then
-        BRutus.AltRoster:Initialize()
-    end
-    if BRutus.AltAutoDetect then
-        BRutus.AltAutoDetect:Initialize()
-    end
-    if BRutus.ChatTweaks then
-        BRutus.ChatTweaks:Initialize()
-    end
-    if BRutus.GuildManager and modEnabled("guildManager") then
-        BRutus.GuildManager:Initialize()
-    end
-    if BRutus.ModPresets then
-        BRutus.ModPresets:Initialize()
+    { "RaiderRoster" },
+    { "AltRoster" },
+    { "AltAutoDetect" },
+    { "ChatTweaks" },
+    { "GuildManager", feature = "guildManager", ui = "management" },
+    { "ModPresets" },
+}
+
+-- Officer-only modules, started once guild info is available.
+local OFFICER_START = {
+    { "Recruitment", feature = "recruitment" },
+    { "OfficerNotes", feature = "officerNotes" },
+    { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckExpired" },
+}
+
+local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN
+
+function BRutus:InitModules()
+    -- Core helper tests (Utils loads before SelfTest, so it cannot self-register).
+    self:RunStartup("UtilTests", nil, self.RegisterUtilTests, self)
+
+    for _, entry in ipairs(MODULE_START) do
+        self:StartModule(entry)
     end
     if BRutus.CreateMinimapButton then
-        BRutus:CreateMinimapButton()
+        self:RunStartup("MinimapButton", nil, self.CreateMinimapButton, self)
     end
     -- First-run welcome (once); delayed so guild info + frames are ready.
     if BRutus.MaybeShowOnboarding then
@@ -380,32 +323,134 @@ function BRutus:InitModules()
         BRutus.Compat.After(9, function() BRutus.Digest:ShowOnLogin() end)
     end
 
-    -- Officer-only modules: defer init until guild info is available
-    C_Timer.After(5, function()
-        if not BRutus:IsOfficer() then return end
-
-        if BRutus.Recruitment and modEnabled("recruitment") then
-            BRutus.Recruitment:Initialize()
+    -- Officer-only modules: defer init until guild info is available. The
+    -- start-up report waits for them, so it counts every problem exactly once.
+    BRutus.Compat.After(OFFICER_START_DELAY, function()
+        if BRutus:IsOfficer() then
+            for _, entry in ipairs(OFFICER_START) do
+                BRutus:StartModule(entry)
+            end
         end
-        if BRutus.OfficerNotes and modEnabled("officerNotes") then
-            BRutus.OfficerNotes:Initialize()
-        end
-        if BRutus.TrialTracker and modEnabled("trialTracker") then
-            BRutus.TrialTracker:Initialize()
-            BRutus.TrialTracker:CheckExpired()
-        end
+        BRutus:ReportStartup()
     end)
 
     -- Hook chat player links for guild invite
-    BRutus:HookChatInvite()
+    self:RunStartup("ChatInviteHook", nil, self.HookChatInvite, self)
 
     -- Request guild roster
     if IsInGuild() then
-        C_GuildInfo.GuildRoster()
+        BRutus.Compat.GuildRoster()
     end
 
     -- Hook into default guild frame so Guild OS opens instead
-    BRutus:HookGuildFrame()
+    self:RunStartup("GuildFrameHook", nil, self.HookGuildFrame, self)
+end
+
+----------------------------------------------------------------------
+-- Start-up isolation. One API missing on a new client (WoW: Forever) is
+-- enough to make a module raise while it starts, and every module after
+-- it in the list used to stay unstarted: the addon was dead.
+----------------------------------------------------------------------
+
+-- xpcall handler: keeps the stack a bare pcall would throw away, so a real
+-- bug in a module's start-up is still traceable.
+local function withStack(err)
+    return { msg = tostring(err), stack = debugstack and debugstack(2) or nil }
+end
+
+-- Run one start-up step. A failure is recorded against `name`, and against
+-- the features `entry` names (their windows then refuse to open); the
+-- caller carries on with the next step. Returns true when the step ran.
+function BRutus:RunStartup(name, entry, fn, ...)
+    local ok, res
+    if type(fn) == "function" then
+        local args, n = { ... }, select("#", ...)
+        ok, res = xpcall(function() return fn(unpack(args, 1, n)) end, withStack)
+        -- When the handler itself fails (out of memory, an error object whose
+        -- __tostring raises), xpcall returns a plain value, not our table.
+        if not ok and type(res) ~= "table" then
+            local printable, text = pcall(tostring, res)
+            res = { msg = printable and text or "start-up error" }
+        end
+    else
+        ok, res = false, { msg = "no start-up function" }
+    end
+    if not ok then
+        local startup = self.State.startup
+        startup.failed[name] = res.msg
+        startup.stacks[name] = res.stack
+        if entry and entry.feature then startup.failedFeatures[entry.feature] = name end
+        if entry and entry.ui then startup.failedFeatures[entry.ui] = name end
+        self:RecordError(name .. ": " .. res.msg)
+        -- Debug mode hands the whole error to the client's handler (BugSack,
+        -- scriptErrors), the way an unguarded start-up always did.
+        if self.Logger.debug and geterrorhandler then
+            geterrorhandler()(name .. ": " .. res.msg .. (res.stack and ("\n" .. res.stack) or ""))
+        end
+    end
+    return ok
+end
+
+-- Start one module from a start-list entry. A module that is not loaded or
+-- is switched off in Settings is skipped, which is not a failure.
+function BRutus:StartModule(entry)
+    local name = entry[1]
+    local mod = self[name]
+    if not mod then return false end
+    if entry.feature and not self:IsFeatureEnabled(entry.feature) then return false end
+    local method = entry.method or "Initialize"
+    -- "Module:Method" for anything but Initialize, so two stages of one
+    -- module (Recruitment, TrialTracker) never overwrite each other's record.
+    local label = method == "Initialize" and name or (name .. ":" .. method)
+    local ok = self:RunStartup(label, entry, mod[method], mod)
+    if ok and entry.after then
+        ok = self:RunStartup(name .. ":" .. entry.after, entry, mod[entry.after], mod)
+    end
+    return ok
+end
+
+-- Name of the module whose failed start-up took feature `id` down, or nil.
+function BRutus:FeatureStartFailed(id)
+    return self.State.startup.failedFeatures[id]
+end
+
+-- Record something this client does not have (an event, a tooltip script),
+-- once per session, so /guildos errors lists it without repeating it.
+--
+-- `expected` marks one only some clients ever had — the old craft window's
+-- event on a client that never had a craft window. It is still remembered, so
+-- the second caller is not recorded either, and left out of the start-up list:
+-- a client being itself is not a problem with the addon. What exists on this
+-- client is the probe's inventory to answer (Core/Probe.lua), not this one's.
+function BRutus:RecordMissing(what, expected)
+    local seen = self.State.missing[what]
+    if seen == true or (seen and expected) then return end  -- a real miss still wins over an expected one
+    self.State.missing[what] = expected and "expected" or true
+    if expected then return end
+    self:RecordError(what .. " is not available on this client")
+end
+
+-- Every start-up failure and every missing capability, one line each,
+-- sorted. /guildos errors prints these before the error ring, which is
+-- capped and shared with runtime errors and can already have lost them.
+function BRutus:ListStartupProblems()
+    local lines = {}
+    for name, err in pairs(self.State.startup.failed) do
+        lines[#lines + 1] = name .. ": " .. err
+    end
+    for what, how in pairs(self.State.missing) do
+        if how == true then lines[#lines + 1] = what .. " is not available on this client" end
+    end
+    table.sort(lines)
+    return lines
+end
+
+-- One chat line when start-up hit problems; silent when everything started.
+function BRutus:ReportStartup()
+    local n = #self:ListStartupProblems()
+    if n > 0 then
+        self:Print(string.format(L["%d start-up problem(s) on this client. Type /guildos errors for details."], n))
+    end
 end
 
 function BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)
@@ -486,8 +531,7 @@ function BRutus:HookGuildFrame()
                     self:ToggleRoster()
                 end
             elseif self:IsFrontDoorShown() then
-                -- The toggle just closed the native frame: close ours to match,
-                -- whichever container (hub or expanded) is actually open.
+                -- The toggle just closed the native frame: close ours to match.
                 self:HideFrontDoor()
             end
         end)
@@ -581,7 +625,7 @@ function BRutus:SetupNativeGuildButtons()
 end
 
 ----------------------------------------------------------------------
--- Toggle main roster window
+-- Toggle the Guild OS window
 ----------------------------------------------------------------------
 function BRutus:ToggleRoster()
     if not self.db then
@@ -594,64 +638,28 @@ function BRutus:ToggleRoster()
         if self.ShowRecruitInbox then self:ShowRecruitInbox() end
         return
     end
-    if IsInGuild() then
-        C_GuildInfo.GuildRoster()
-    end
-    if BRutus.UI and BRutus.UI.Hub then
-        BRutus.UI.Hub:Toggle()
+    self.Compat.GuildRoster()
+    if BRutus.UI and BRutus.UI.ToggleMain then
+        BRutus.UI:ToggleMain()
     end
 end
 
 ----------------------------------------------------------------------
--- Expanded mode: the full tabbed window. The hub is the default front
--- door; this is the opt-in for people who want everything at once.
-----------------------------------------------------------------------
-function BRutus:ToggleExpanded()
-    if not (self.db and IsInGuild()) then return end
-    if not self.RosterFrame then
-        self.RosterFrame = BRutus.CreateRosterFrame()
-    end
-    if self.RosterFrame:IsShown() then
-        self.RosterFrame:Hide()
-        return
-    end
-    C_GuildInfo.GuildRoster()
-    self.RosterFrame:UpdateTabVisibility()
-    self.RosterFrame:Show()
-end
-
-----------------------------------------------------------------------
--- Is Guild OS's front door on screen? Either container counts: the hub
--- card or the expanded window. The guild-frame hook mirrors Blizzard's
--- open/close onto us and must not care which one the user is using.
+-- Is the Guild OS window on screen? The guild-frame hook mirrors
+-- Blizzard's open and close onto it.
 ----------------------------------------------------------------------
 function BRutus:IsFrontDoorShown()
-    local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
-    if hub and hub:IsShown() then return true end
     return (self.RosterFrame and self.RosterFrame:IsShown()) and true or false
 end
 
-----------------------------------------------------------------------
--- Close whichever front door is open. The counterpart to
--- IsFrontDoorShown: the guild-frame hook mirrors Blizzard's close onto
--- us and must not care which container the user is actually using.
-----------------------------------------------------------------------
 function BRutus:HideFrontDoor()
-    local hub = self.UI and self.UI.Hub and self.UI.Hub.frame
-    if hub and hub:IsShown() then hub:Hide() end
-    if self.RosterFrame and self.RosterFrame:IsShown() then self.RosterFrame:Hide() end
+    if self.RosterFrame then self.RosterFrame:Hide() end
 end
 
-----------------------------------------------------------------------
--- Refresh whichever container is currently showing the roster panel:
--- the expanded window, the floating window, or neither.
-----------------------------------------------------------------------
+-- Refresh the roster when the window is up and the roster tab has been built.
 function BRutus:RefreshRosterUI()
-    local hosts = { self.RosterFrame }
-    if self.UI and self.UI.GetWindow then hosts[#hosts + 1] = self.UI:GetWindow("roster") end
-    for _, host in ipairs(hosts) do
-        if host and host:IsShown() and host.RefreshRoster then host:RefreshRoster() end
-    end
+    local f = self.RosterFrame
+    if f and f:IsShown() and f.RefreshRoster then f:RefreshRoster() end
 end
 
 ----------------------------------------------------------------------
@@ -686,19 +694,22 @@ end
 
 local ERROR_RING_MAX = 50
 
+-- Push one message into the session error ring shown by /guildos errors.
+function BRutus:RecordError(msg)
+    local ring = BRutus.State.errors
+    ring[#ring + 1] = { msg = tostring(msg), when = (GetServerTime and GetServerTime()) or 0 }
+    while #ring > ERROR_RING_MAX do table.remove(ring, 1) end
+    if BRutus.Logger.debug then
+        BRutus:Print("|cffFF4444[error]|r " .. tostring(msg))
+    end
+end
+
 -- pcall a function, capturing any error into BRutus.State.errors.
 -- Returns (ok, errOrResult). Use for event handlers and panel refreshes.
 function BRutus:SafeCall(fn, ...)
     if type(fn) ~= "function" then return false end
     local ok, err = pcall(fn, ...)
-    if not ok then
-        local ring = BRutus.State.errors
-        ring[#ring + 1] = { msg = tostring(err), when = (GetServerTime and GetServerTime()) or 0 }
-        while #ring > ERROR_RING_MAX do table.remove(ring, 1) end
-        if BRutus.Logger.debug then
-            BRutus:Print("|cffFF4444[error]|r " .. tostring(err))
-        end
-    end
+    if not ok then BRutus:RecordError(err) end
     return ok, err
 end
 
@@ -847,24 +858,3 @@ function BRutus:SetMyRoles(roles)
     if self.RaiderRoster then self.RaiderRoster:Refresh() end
 end
 
-----------------------------------------------------------------------
--- Theme: recolor the palette from the chosen accent preset. Mutates the
--- shared color tables in place so frames built afterwards pick it up.
--- Existing frames keep their colors until a reload.
-----------------------------------------------------------------------
-function BRutus:ApplyTheme()
-    local key = self:GetSetting("theme") or "violet"
-    local preset
-    for _, p in ipairs(BRutus.ACCENT_PRESETS or {}) do
-        if p.key == key then preset = p break end
-    end
-    if not preset then return end
-    local C = BRutus.Colors
-    local r, g, b = preset.r, preset.g, preset.b
-    C.accent.r, C.accent.g, C.accent.b = r, g, b
-    C.accentDim.r, C.accentDim.g, C.accentDim.b = r * 0.54, g * 0.54, b * 0.54
-    C.accentSoft.r, C.accentSoft.g, C.accentSoft.b = r, g, b
-    C.rowHover.r, C.rowHover.g, C.rowHover.b = r * 0.20 + 0.09, g * 0.20 + 0.09, b * 0.20 + 0.09
-    C.border.r, C.border.g, C.border.b = r * 0.45 + 0.06, g * 0.45 + 0.06, b * 0.45 + 0.06
-    C.separator.r, C.separator.g, C.separator.b = r * 0.40 + 0.06, g * 0.40 + 0.06, b * 0.40 + 0.06
-end

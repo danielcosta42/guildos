@@ -8,6 +8,10 @@ Guild OS replaces the default guild frame with a modern, feature-rich management
 
 > **Client:** WoW TBC Anniversary (Interface 20506)
 
+[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
+
+> **Help, bugs and the WoW: Forever beta:** join the [GuildOS support server on Discord](https://discord.gg/8XA6gmNjja).
+
 ---
 
 ## Features
@@ -155,6 +159,25 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 
 ---
 
+## Testing on the Forever beta
+
+How Guild OS will be distributed for WoW: Forever is not settled yet. If CurseForge and Wago add a WoW: Forever
+flavour, the beta build ships there like every release; if they don't, it is posted as a direct download. Either
+way, it is announced first on the [GuildOS Discord](https://discord.gg/8XA6gmNjja).
+
+1. **Point the Guild OS companion at Anniversary first.** If you use the desktop companion, make sure it reads your
+   `_anniversary_` folder before you install the beta, so it keeps syncing the right guild.
+2. **Get the beta build** from wherever it is announced. An addon manager that supports WoW: Forever installs it for
+   you.
+3. **Install** it into the beta client's own `Interface/AddOns` folder, not into `_anniversary_`.
+4. **Load it.** If the beta's interface number is newer than the build lists, tick **Load out of date AddOns** on
+   the AddOns screen at character select.
+5. **Run the probe.** In game, type `/guildos probe`, then `/reload` so the result is written to disk. The probe
+   records which client this is and which of the APIs, events and templates Guild OS uses exist.
+6. **Send back** `WTF/Account/<account>/SavedVariables/GuildOS.lua` from the beta client's folder. It holds Guild
+   OS's saved data for your guilds, including guild members' character names, officer notes and chat messages:
+   share it only with the Guild OS maintainers.
+
 ## Libraries
 
 - [LibStub](https://www.wowace.com/projects/libstub)
@@ -184,7 +207,7 @@ Third-party libraries are included under their own respective licenses (MIT, zli
 
 ## Contributing
 
-Bug reports and feature requests are welcome! Please use the [GitHub Issues](https://github.com/danielcosta42/GuildOS/issues) page.
+Bug reports and feature requests are welcome! Please use the [GitHub Issues](https://github.com/danielcosta42/GuildOS/issues) page, or talk to us on the [GuildOS Discord](https://discord.gg/8XA6gmNjja).
 
 ---
 

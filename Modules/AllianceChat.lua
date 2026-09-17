@@ -516,6 +516,8 @@ function AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
     if not mine or not chanBaseName or chanBaseName:lower() ~= mine:lower() then
         return
     end
+    -- The channel's name is never secret; its line and sender are, in lockdown.
+    if BRutus.Compat.IsSecret(msg, author) then return end
     local ally = GuildOS.Alliance
     local short = (Ambiguate and Ambiguate(author or "", "short")) or author
     self:Push({
@@ -613,11 +615,11 @@ function AllianceChat:Initialize()
     -- the feed logs each line exactly once no matter how many chat tabs show
     -- the channel.
     local f = CreateFrame("Frame")
-    f:RegisterEvent("PLAYER_ENTERING_WORLD")
-    f:RegisterEvent("CHAT_MSG_CHANNEL")
+    BRutus.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
     -- Fires whenever the channel list changes, which after a reload is exactly
     -- the moment joining starts working.
-    f:RegisterEvent("CHANNEL_UI_UPDATE")
+    BRutus.Compat.RegisterEvent(f, "CHANNEL_UI_UPDATE")
     f:SetScript("OnEvent", function(_, event, msg, author, _, _, _, _, _, _, chanBaseName)
         if event == "CHAT_MSG_CHANNEL" then
             BRutus:SafeCall(function()

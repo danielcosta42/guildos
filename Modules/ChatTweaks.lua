@@ -26,7 +26,7 @@ function ChatTweaks:Initialize()
     self._cache = {}
 
     local f = CreateFrame("Frame")
-    f:RegisterEvent("GUILD_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     f:SetScript("OnEvent", function() ChatTweaks:_RefreshCache() end)
 
     self:_RegisterFilters()
@@ -95,6 +95,7 @@ function ChatTweaks:_MakeFilter()
 end
 
 function ChatTweaks:_RegisterFilters()
+    if not ChatFrame_AddMessageEventFilter then return end
     if BRutus.db.chatTweaks.guild ~= false then
         ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", self:_MakeFilter())
     end

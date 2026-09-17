@@ -64,7 +64,7 @@ local function MinimapMenu_Init(_, level)
     info.text = "|cffFFD700Guild|r |cffD4AC0DOS|r"
     UIDropDownMenu_AddButton(info, level)
 
-    for _, def in ipairs(BRutus.UI:VisibleFeatures("hub")) do
+    for _, def in ipairs(BRutus.UI:VisibleFeatures("tab")) do
         info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
         info.text = def.label
         info.func = function() BRutus.UI:OpenWindow(def.id); CloseDropDownMenus() end

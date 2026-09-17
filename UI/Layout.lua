@@ -238,6 +238,116 @@ function UI:MakeResponsive(container, layoutFn)
     end
 end
 
+----------------------------------------------------------------------
+-- The resize ladder (issue #14, handoff §6). The window reorganises its
+-- content by the width of the panel hosting the table (its content area,
+-- inside the padding), not by the window's own width.
+-- Bands, widest first; `min` is the narrowest width that still gets the band.
+----------------------------------------------------------------------
+UI.LADDER = {
+    { name = "full",    min = 880 },   -- pleno 1000-880: 10 tabs, every roster column, home in two columns
+    { name = "wide",    min = 780 },   -- cheio 880-780: the note column goes
+    { name = "medium",  min = 700 },   -- confortável 780-700: "visto" goes, tabs 6 + »4, home stacks
+    { name = "compact", min = 600 },   -- estreito 700-600: rank becomes a badge, tabs 4 + »6
+    { name = "narrow",  min = 520 },   -- mínimo de tabela 600-520: presence dot, toolbar "filtros · n"
+    { name = "watch",   min = 420 },   -- vigia 520-420: one-line tab selector, content switches to agora
+    { name = "bar",     min = 0 },     -- barra 420-320: only the 28px title bar with the mono summary
+}
+UI.LADDER_HYSTERESIS = 16  -- px past a threshold before the band changes
+
+-- The band for `width`, given the band shown now (`current`, a name or nil).
+-- Without a current band the thresholds are plain. With one, the band moves
+-- up only once the width is past each threshold by the hysteresis, and down
+-- only once it is below each threshold by the same amount, so dragging the
+-- edge across a line does not flip the layout back and forth. Nothing here
+-- animates: callers apply the band in the same frame.
+function UI:ResolveBand(width, current)
+    local ladder, h = self.LADDER, self.LADDER_HYSTERESIS
+    width = width or 0
+
+    local plain = #ladder
+    for i, band in ipairs(ladder) do
+        if width >= band.min then plain = i; break end
+    end
+
+    local cur
+    for i, band in ipairs(ladder) do
+        if band.name == current then cur = i; break end
+    end
+    if not cur or cur == plain then return ladder[plain].name end
+
+    local i = cur
+    if plain < cur then
+        while i > 1 and width >= ladder[i - 1].min + h do i = i - 1 end
+    else
+        while i < #ladder and width < ladder[i].min - h do i = i + 1 end
+    end
+    return ladder[i].name
+end
+
+----------------------------------------------------------------------
+-- Which tabs fit in the tab rule (issue #14, handoff §6). Tabs that do not
+-- fit go into one "»n" control; a tab never shrinks to an icon.
+--   widths    -> each tab's width, in tab order
+--   available -> the rule's width
+--   gap       -> px between neighbours (also before "»n")
+--   moreW     -> the "»n" control's width
+--   active    -> index of the active tab, which always stays visible: when it
+--                would overflow it takes the last visible slot
+-- Returns the visible indices in tab order and how many went into "»n".
+----------------------------------------------------------------------
+function UI:FitTabs(widths, available, gap, moreW, active)
+    local n = #widths
+    gap = gap or 0
+
+    local total = 0
+    for i = 1, n do total = total + widths[i] + (i > 1 and gap or 0) end
+    local visible = {}
+    if total <= available then
+        for i = 1, n do visible[i] = i end
+        return visible, 0
+    end
+
+    -- Room left for tabs once "»n" and the gap before it are reserved.
+    local budget = available - moreW - gap
+    local used = 0
+    for i = 1, n do
+        local w = widths[i] + (#visible > 0 and gap or 0)
+        if used + w > budget then break end
+        visible[#visible + 1] = i
+        used = used + w
+    end
+
+    if active and active >= 1 and active <= n then
+        local shown = false
+        for _, i in ipairs(visible) do if i == active then shown = true end end
+        if not shown then
+            -- Free the last slots until the active tab fits after what is left.
+            -- Work on a copy: an active tab that cannot fit at all leaves the
+            -- tabs that did fit where they were.
+            local keep = {}
+            for k, i in ipairs(visible) do keep[k] = i end
+            local function width(list)
+                local w = 0
+                for k, i in ipairs(list) do w = w + widths[i] + (k > 1 and gap or 0) end
+                return w
+            end
+            local function fits(list)
+                return width(list) + (#list > 0 and gap or 0) + widths[active] <= budget
+            end
+            while #keep > 0 and not fits(keep) do
+                table.remove(keep)
+            end
+            if fits(keep) then
+                keep[#keep + 1] = active
+                visible = keep
+            end
+        end
+    end
+
+    return visible, n - #visible
+end
+
 function UI:_RegisterLayoutTests()
     if not BRutus.SelfTest then return end
     local S = BRutus.SelfTest

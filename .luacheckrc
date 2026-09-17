@@ -12,6 +12,7 @@ globals = {
     -- Written by the companion into Inbox.lua and read once at login.
     -- specs/009-a-volta-para-o-jogo/spec.md in guildos-web.
     "GuildOSInbox",
+    "GuildOSInboxAck",  -- the companion writes it beside the inbox; CompanionImport reads it
     "BRutusDB",
 
     -- Slash commands
@@ -38,6 +39,10 @@ globals = {
 
     -- Tables written to
     "UISpecialFrames",
+
+    -- Key binding labels (Bindings.xml)
+    "BINDING_HEADER_GUILDOS",
+    "BINDING_NAME_GUILDOS_TOGGLE",
     "StaticPopupDialogs",  -- GuildManager registers confirmation dialogs
 }
 
@@ -66,6 +71,9 @@ read_globals = {
     "C_GuildInfo",
     "C_Map",
     "C_QuestLog",
+    "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
+    "C_Spell",
+    "C_UnitAuras",
 
     -- WoW API: Unit functions
     "UnitName",
@@ -189,6 +197,18 @@ read_globals = {
 
     -- WoW API: Miscellaneous
     "GetLocale",
+    "GetBuildInfo",                          -- client detection (Compat.lua, ADR-0014)
+    "WOW_PROJECT_ID",
+    "WOW_PROJECT_BURNING_CRUSADE_CLASSIC",   -- absent on clients without TBC Classic
+    "issecretvalue",
+    "C_TradeSkillUI",
+    "TooltipDataProcessor",
+    "TooltipUtil",                           -- the retail tooltip; absent on Anniversary (Compat.lua, issue #19)
+    "C_GameRules",                           -- /guildos probe (Core/Probe.lua, ADR-0015)
+    "C_Secrets",
+    "C_RestrictedActions",
+    "GetNormalizedRealmName",
+    "C_XMLUtil",
     "GetRealmName",
     "Minimap",
     "GetCursorPosition",
@@ -199,6 +219,8 @@ read_globals = {
     "PlaySound",
     "hooksecurefunc",
     "securecallfunction",
+    "debugstack",          -- start-up isolation keeps the stack (Core.lua RunStartup)
+    "geterrorhandler",     -- and hands it to the client's handler in debug mode
     "StaticPopup_Show",
 
     -- WoW API: Instance & Raid
@@ -321,6 +343,7 @@ read_globals = {
     -- Libraries
     "LibStub",
     "ChatThrottleLib",
+    "Enum",          -- Enum.SendAddonMessageResult (Compat.lua, issue #10)
 
     -- UI / alerts
     "RaidNotice_AddMessage",

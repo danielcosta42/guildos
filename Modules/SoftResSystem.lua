@@ -331,7 +331,7 @@ function SoftRes:GetReservesForDisplay(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
     for i = 1, numMembers do
-        local n = UnitName("raid" .. i)
+        local n = BRutus.Compat.UnitIdentity("raid" .. i)
         if n then inRaid[strlower(n)] = true end
     end
     -- Solo / test: treat the local player as "in raid"
@@ -404,8 +404,8 @@ end
 -- Tooltip: show soft reservers when hovering an item
 ----------------------------------------------------------------------
 function SoftRes:HookTooltips()
-    GameTooltip:HookScript("OnTooltipSetItem", function(tt)
-        local _, link = tt:GetItem()
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", function(tt)
+        local _, link = BRutus.Compat.TooltipItem(tt)
         if not link then return end
         local itemId = tonumber(link:match("item:(%d+)"))
         if not itemId then return end

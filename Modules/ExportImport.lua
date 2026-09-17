@@ -109,7 +109,7 @@ function Exporter:LootData()
     local headers = { "Date", "Item", "Player", "Raid" }
     local rows = {}
     for _, e in ipairs(BRutus.db.lootHistory or {}) do
-        local itemName = (e.itemLink and GetItemInfo(e.itemLink)) or e.itemName or "?"
+        local itemName = (e.itemLink and BRutus.Compat.GetItemInfo(e.itemLink)) or e.itemName or "?"
         local dateStr = e.timestamp and date("%Y-%m-%d %H:%M", e.timestamp) or ""
         rows[#rows + 1] = { dateStr, itemName, e.player or "?", e.raid or "" }
     end

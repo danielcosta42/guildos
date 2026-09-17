@@ -68,7 +68,7 @@ function RecruitScanner:Scan(onDone)
         self._whoFrame = CreateFrame("Frame")
         self._whoFrame:SetScript("OnEvent", function() RecruitScanner:_OnWhoResult() end)
     end
-    self._whoFrame:RegisterEvent("WHO_LIST_UPDATE")
+    BRutus.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
     self._onScanDone = onDone
     BRutus.Compat.SetWhoToUI(true)
     -- level-range query; Blizzard caps results (~50). classes filtered post-hoc.
@@ -143,8 +143,9 @@ end
 ----------------------------------------------------------------------
 function RecruitScanner:_RegisterEvents()
     local f = CreateFrame("Frame")
-    f:RegisterEvent("CHAT_MSG_WHISPER")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     f:SetScript("OnEvent", function(_, _, msg, author)
+        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local short = author and (author:match("^([^-]+)") or author)
         if short and RecruitScanner._contactCd[short] then
             local inbox = BRutus.db.recruitScanner.inbox

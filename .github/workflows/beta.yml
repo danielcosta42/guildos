@@ -1,0 +1,56 @@
+name: Beta build
+
+# A vX.Y.Z-beta.N tag becomes a GitHub pre-release and nothing else (issue #11,
+# ADR-0017). The stores keep shipping the Anniversary TOC through release.yml and
+# publish.yml: this job never runs them, never pushes to main, and only edits the
+# TOC and the version constant inside its own checkout.
+on:
+  push:
+    tags:
+      - 'v*.*.*-beta.*'
+
+permissions:
+  contents: write
+
+jobs:
+  beta:
+    name: Package the beta pre-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Keeps the job token out of .git/config, so no later step (the third-party
+          # packager included) can push with it; gh gets it through GH_TOKEN only.
+          persist-credentials: false
+
+      - name: Stamp the beta version and interfaces
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # The committed Anniversary interface stays first, so Anniversary shows no
+          # out-of-date warning and a client patch bump carries over. 16000 and 16001
+          # are WoW: Forever's 1.60.x build line by the %d%02d%02d rule; replace them
+          # as soon as the beta shows its real interface number.
+          sed -i -E 's/^## Interface: ([0-9]+)$/## Interface: \1, 16000, 16001/' GuildOS.toc
+          # A committed interface line the sed cannot extend fails the job here,
+          # instead of shipping a zip without Forever's interfaces.
+          grep -qE '^## Interface: [0-9]+, 16000, 16001$' GuildOS.toc
+          sed -i "s/^## Version: .*/## Version: ${VERSION}/" GuildOS.toc
+          sed -i -E "s/^(GuildOS\.VERSION[[:space:]]*=[[:space:]]*)\"[^\"]*\"/\1\"${VERSION}\"/" Core/Config.lua
+          grep -E '^## (Interface|Version):' GuildOS.toc
+          grep -E '^GuildOS\.VERSION' Core/Config.lua
+
+      - name: Package without uploading anywhere
+        uses: BigWigsMods/packager@6d50adb6e8517eefef63f4afb16a6518166a6b28 # v2
+        with:
+          args: -d
+
+      - name: Create the GitHub pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" .release/GuildOS-*.zip \
+            --prerelease \
+            --title "GuildOS ${GITHUB_REF_NAME} (WoW: Forever beta)" \
+            --notes "Beta build for testing on the WoW: Forever beta. Not published to CurseForge or Wago. Install and test steps: README, \"Testing on the Forever beta\"."

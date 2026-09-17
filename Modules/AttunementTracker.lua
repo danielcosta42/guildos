@@ -17,6 +17,10 @@
 -- Therefore, attunement status for alts with account-wide access
 -- will show as incomplete in this addon. This is a known limitation.
 ----------------------------------------------------------------------
+-- TBC content: outside TBC Anniversary this module does not exist, and every
+-- reader already treats a missing module as absent (ADR-0014).
+if not BRutus.Client.isAnniversary then return end
+
 local AttunementTracker = {}
 BRutus.AttunementTracker = AttunementTracker
 local L = BRutus.L
@@ -183,7 +187,7 @@ AttunementTracker.HEROIC_KEYS = {
 
 function AttunementTracker:Initialize()
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("QUEST_TURNED_IN")
+    BRutus.Compat.RegisterEvent(frame, "QUEST_TURNED_IN")
     frame:SetScript("OnEvent", function(_, event)
         if event == "QUEST_TURNED_IN" then
             C_Timer.After(1, function() AttunementTracker:ScanAttunements() end)

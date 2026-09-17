@@ -63,7 +63,7 @@ local function RefreshCoreSignupFrame()
 
     if #coreNames == 0 then
         local noL = content:CreateFontString(nil, "OVERLAY")
-        noL:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(noL, 11)
         noL:SetPoint("TOPLEFT", 8, -12)
         noL:SetTextColor(0.45, 0.45, 0.45)
         noL:SetText(L["No cores configured yet."])
@@ -88,13 +88,13 @@ local function RefreshCoreSignupFrame()
         hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.88)
 
         local hdrLbl = content:CreateFontString(nil, "OVERLAY")
-        hdrLbl:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(hdrLbl, 11)
         hdrLbl:SetPoint("TOPLEFT", 8, y - 5)
         hdrLbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
         hdrLbl:SetText(coreName)
 
         local cntLbl = content:CreateFontString(nil, "OVERLAY")
-        cntLbl:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        BRutus:ApplyFont(cntLbl, 9)
         cntLbl:SetPoint("TOPRIGHT", -8, y - 6)
         cntLbl:SetTextColor(0.5, 0.5, 0.5)
         local sz = CM:GetRaidSize(coreName)
@@ -129,7 +129,7 @@ local function RefreshCoreSignupFrame()
             -- Highlight the player's role
             local isMine  = (rd.key == playerRole)
             local rlbl = content:CreateFontString(nil, "OVERLAY")
-            rlbl:SetFont("Fonts\\FRIZQT__.TTF", isMine and 12 or 10, "OUTLINE")
+            BRutus:ApplyFont(rlbl, isMine and 12 or 10)
             rlbl:SetPoint("TOPLEFT", rx, y - 8)
             rlbl:SetTextColor(rcol.r, rcol.g, rcol.b)
             rlbl:SetText(string.format("%s:%d/%d", rd.short, cnt, rd.target))
@@ -152,7 +152,7 @@ local function RefreshCoreSignupFrame()
         noteInp:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
         noteInp:SetBackdropColor(0.05, 0.05, 0.07, 1)
         noteInp:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        noteInp:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        BRutus:ApplyFont(noteInp, 9)
         noteInp:SetTextColor(C.white.r, C.white.g, C.white.b)
         noteInp:SetTextInsets(4, 4, 0, 0)
         noteInp:SetAutoFocus(false)
@@ -160,7 +160,7 @@ local function RefreshCoreSignupFrame()
         noteInp:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         -- Placeholder
         local ph = noteInp:CreateFontString(nil, "OVERLAY")
-        ph:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+        BRutus:ApplyFont(ph, 9)
         ph:SetPoint("LEFT", 4, 0)
         ph:SetTextColor(0.35, 0.35, 0.35)
         ph:SetText(L["Note (optional)"])
@@ -173,7 +173,7 @@ local function RefreshCoreSignupFrame()
         actBtn:SetPoint("TOPRIGHT", -4, y - 5)
         actBtn:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
         local actLbl = actBtn:CreateFontString(nil, "OVERLAY")
-        actLbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(actLbl, 10)
         actLbl:SetPoint("CENTER")
 
         if isMember then
@@ -265,7 +265,7 @@ local function BuildCoreSignupFrame()
     tLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
 
     local tTitle = f:CreateFontString(nil, "OVERLAY")
-    tTitle:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(tTitle, 13)
     tTitle:SetPoint("TOPLEFT", 10, -7)
     tTitle:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     tTitle:SetText(L["Core Sign-ups"])
@@ -284,7 +284,7 @@ local function BuildCoreSignupFrame()
     roleBg:SetVertexColor(0.05, 0.05, 0.08, 1)
 
     f.playerRoleLbl = f:CreateFontString(nil, "OVERLAY")
-    f.playerRoleLbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(f.playerRoleLbl, 10)
     f.playerRoleLbl:SetPoint("TOPLEFT", 10, -37)
     f.playerRoleLbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
 
@@ -314,7 +314,7 @@ function BRutus:ShowCoreSignupFrame()
     end
     -- Anchor next to the main window; fall back to screen center if unavailable
     _coreSignupFrame:ClearAllPoints()
-    local main = _G["BRutusRosterFrame"]
+    local main = BRutus.RosterFrame
     if main and main:IsShown() then
         _coreSignupFrame:SetPoint("TOPLEFT", main, "TOPRIGHT", 6, 0)
     else
@@ -504,7 +504,8 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
         gRow:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
         -- Expand arrow
-        UI:CreateText(gRow, isGroupExp and "▼" or "▶", 9, C.accent.r, C.accent.g, C.accent.b)
+        -- ASCII marks: IBM Plex Mono has no ▶ or ▼ glyph.
+        UI:CreateText(gRow, isGroupExp and "-" or "+", 9, C.accent.r, C.accent.g, C.accent.b)
             :SetPoint("LEFT", 4, 0)
 
         -- Raid name (gold for 25-man, silver for 10-man)
@@ -565,7 +566,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
 
                 -- Expand arrow
-                UI:CreateText(row, isExp and "▼" or "▶", 8, C.accent.r, C.accent.g, C.accent.b)
+                UI:CreateText(row, isExp and "-" or "+", 8, C.accent.r, C.accent.g, C.accent.b)
                     :SetPoint("LEFT", 4, 0)
 
                 -- Date + time
@@ -789,7 +790,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
 
         -- Group tag column
         local gtLabel = entry.groupTag ~= "" and entry.groupTag or "-"
-        UI:CreateText(row, gtLabel, 9, 0.56, 0.48, 0.82):SetPoint("LEFT", 145, 0)
+        UI:CreateText(row, gtLabel, 9, C.label.r, C.label.g, C.label.b):SetPoint("LEFT", 145, 0)
 
         local total25g = BRutus.RaidTracker:GetTotal25ManSessions(entry.groupTag)
         local pct      = BRutus.RaidTracker:GetAttendance25ManPercent(entry.key, entry.groupTag)
@@ -834,7 +835,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             GameTooltip:ClearLines()
             GameTooltip:AddLine(shortName, cr, cg, cb)
             local gLabel = capturedEntry.groupTag ~= "" and capturedEntry.groupTag or L["(no group)"]
-            GameTooltip:AddLine(L["Group: "] .. gLabel, 0.56, 0.48, 0.82)
+            GameTooltip:AddLine(L["Group: "] .. gLabel, C.label.r, C.label.g, C.label.b)
             GameTooltip:AddLine(L["25-man Attendance"], C.gold.r, C.gold.g, C.gold.b)
             GameTooltip:AddLine(" ")
             GameTooltip:AddDoubleLine(L["Raids:"], raids25 .. "/" .. total25g, 1,1,1, C.silver.r,C.silver.g,C.silver.b)
@@ -1027,7 +1028,7 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
             row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a or 0.4)
 
             -- Item name / link
-            local itemName, _, _, _, _, _, _, _, _, itemTexture = GetItemInfo(itemId)
+            local itemName, _, _, _, _, _, _, _, _, itemTexture = BRutus.Compat.GetItemInfo(itemId)
             local itemText = UI:CreateText(row, itemName or ("Item #" .. itemId), 11,
                 C.white.r, C.white.g, C.white.b)
             itemText:SetPoint("LEFT", 6, 0)
@@ -1141,7 +1142,7 @@ function BRutus:RefreshLootPanel(content, countText)
         -- Item name with quality color (always resolve via GetItemInfo for correct locale).
         -- GetItemInfo accepts itemLink directly, so no need to parse the ID.
         local qColor = BRutus.QualityColors[entry.quality] or BRutus.QualityColors[1]
-        local localItemName, _, _, _, _, _, _, _, _, _, localItemQuality = GetItemInfo(entry.itemLink or entry.itemId or 0)
+        local localItemName, _, _, _, _, _, _, _, _, _, localItemQuality = BRutus.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
         if localItemQuality then
             qColor = BRutus.QualityColors[localItemQuality] or qColor
         end
@@ -1443,7 +1444,7 @@ function BRutus:RefreshTrialsPanel(parent)
             local startStr = date("%m/%d/%y", data.startDate or 0)
             local daysSince = BRutus.TrialTracker:GetDaysSinceStart(trial.key)
             local infoFS = detailFrame:CreateFontString(nil, "OVERLAY")
-            infoFS:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(infoFS, 9)
             infoFS:SetPoint("TOPLEFT", 10, dY)
             infoFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             infoFS:SetText(format(L["Started: %s  |  Day %d  |  Sponsor: %s"], startStr, daysSince or 0, data.sponsor or "?"))
@@ -1453,7 +1454,7 @@ function BRutus:RefreshTrialsPanel(parent)
             -- Officer comments
             if data.notes and #data.notes > 0 then
                 local notesLabel = detailFrame:CreateFontString(nil, "OVERLAY")
-                notesLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                BRutus:ApplyFont(notesLabel, 9)
                 notesLabel:SetPoint("TOPLEFT", 10, dY)
                 notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 notesLabel:SetText(L["Comments:"])
@@ -1462,7 +1463,7 @@ function BRutus:RefreshTrialsPanel(parent)
 
                 for _, note in ipairs(data.notes) do
                     local noteFS = detailFrame:CreateFontString(nil, "OVERLAY")
-                    noteFS:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                    BRutus:ApplyFont(noteFS, 9)
                     noteFS:SetPoint("TOPLEFT", 14, dY)
                     noteFS:SetWidth(content:GetWidth() - 60)
                     noteFS:SetJustifyH("LEFT")
@@ -1481,7 +1482,7 @@ function BRutus:RefreshTrialsPanel(parent)
             addBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             addBox:SetBackdropColor(0.038, 0.038, 0.052, 1)
             addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-            addBox:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(addBox, 9)
             addBox:SetTextColor(C.white.r, C.white.g, C.white.b)
             addBox:SetTextInsets(4, 4, 2, 2)
             addBox:SetAutoFocus(false)
@@ -1489,7 +1490,7 @@ function BRutus:RefreshTrialsPanel(parent)
             addBox:Show()
 
             local ph = addBox:CreateFontString(nil, "OVERLAY")
-            ph:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(ph, 9)
             ph:SetPoint("LEFT", 4, 0)
             ph:SetTextColor(0.3, 0.3, 0.3)
             ph:SetText(L["Add comment..."])
@@ -1616,13 +1617,13 @@ function BRutus:ShowExportPopup(titleStr, text)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(titleText, 13)
     titleText:SetPoint("TOP", 0, -10)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(titleStr or L["Export"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
-    hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(hint, 10)
     hint:SetPoint("TOP", 0, -28)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     hint:SetText(L["Press Ctrl+A to select all, then Ctrl+C to copy"])
@@ -1635,7 +1636,7 @@ function BRutus:ShowExportPopup(titleStr, text)
 
     local editBox = CreateFrame("EditBox", nil, scrollFrame)
     editBox:SetMultiLine(true)
-    editBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(editBox, 11)
     editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     editBox:SetWidth(scrollFrame:GetWidth() - 10)
     editBox:SetAutoFocus(true)
@@ -1681,13 +1682,13 @@ function BRutus:ShowSoftResImportPopup()
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(titleText, 13)
     titleText:SetPoint("TOP", 0, -10)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(L["Import SoftRes from softres.it"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
-    hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(hint, 10)
     hint:SetPoint("TOP", 0, -28)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     hint:SetText(L["Paste the Gargul export string (or CSV) from softres.it, then click Import."])
@@ -1699,7 +1700,7 @@ function BRutus:ShowSoftResImportPopup()
 
     local editBox = CreateFrame("EditBox", nil, scrollFrame)
     editBox:SetMultiLine(true)
-    editBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(editBox, 11)
     editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     editBox:SetWidth(scrollFrame:GetWidth() - 10)
     editBox:SetAutoFocus(true)
@@ -1756,19 +1757,19 @@ function BRutus:ShowImportPopup()
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(titleText, 13)
     titleText:SetPoint("TOP", 0, -10)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(L["Raid roster from the website"])
 
     local hint = f:CreateFontString(nil, "OVERLAY")
-    hint:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(hint, 10)
     hint:SetPoint("TOP", 0, -28)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     hint:SetText(L["Paste the roster string, then Load. Invite and Groups work after that."])
 
     local status = f:CreateFontString(nil, "OVERLAY")
-    status:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(status, 11)
     status:SetPoint("BOTTOMLEFT", 14, 16)
     status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
 
@@ -1785,7 +1786,7 @@ function BRutus:ShowImportPopup()
 
     local editBox = CreateFrame("EditBox", nil, scrollFrame)
     editBox:SetMultiLine(true)
-    editBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(editBox, 11)
     editBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     editBox:SetWidth(scrollFrame:GetWidth() - 10)
     editBox:SetAutoFocus(true)
@@ -1975,10 +1976,10 @@ function BRutus:RefreshSettingsPanel(content, category)
         cb.checkbox:SetChecked(BRutus:IsFeatureEnabled(def.id))
         cb.checkbox.onChanged = function(_, checked)
             BRutus:SetFeatureEnabled(def.id, checked)
-            -- Windows are lazy, so UI features toggle live. Background
+            -- Tabs build lazily, so UI features toggle live. Background
             -- modules register their events at Initialize, so only those
             -- still need a reload.
-            local needsReload = def.module and not def.hub
+            local needsReload = def.module and not def.tab
             BRutus:Print(def.label .. (checked
                 and L[" |cff00ff00enabled|r."]
                 or  L[" |cffFF4444disabled|r."])
@@ -2084,17 +2085,6 @@ function BRutus:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
-    local pulseCb = UI:CreateCheckbox(content, L["Show live info on the hub"], 18)
-    pulseCb:SetPoint("TOPLEFT", 8, -yOff)
-    pulseCb.checkbox:SetChecked((BRutus:GetSetting("hub") or {}).pulse ~= false)
-    pulseCb.checkbox.onChanged = function(_, checked)
-        local h = BRutus:GetSetting("hub")
-        if type(h) ~= "table" then h = {}; BRutus:SetSetting("hub", h) end
-        h.pulse = checked and true or false
-        if UI.Hub and UI.Hub.Refresh then UI.Hub:Refresh() end
-    end
-    yOff = yOff + 30
-
     local welcomeBtn = UI:CreateButton(content, L["Show welcome again"], 160, 24)
     welcomeBtn:SetPoint("TOPLEFT", 8, -yOff)
     welcomeBtn:SetScript("OnClick", function()
@@ -2102,34 +2092,6 @@ function BRutus:RefreshSettingsPanel(content, category)
     end)
     local welcomeNote = UI:CreateText(content, L["Replay the first-run intro"], 9, C.silver.r, C.silver.g, C.silver.b)
     welcomeNote:SetPoint("LEFT", welcomeBtn, "RIGHT", 10, 0)
-    yOff = yOff + 34
-
-    -- Accent theme swatches
-    local themeLbl = UI:CreateText(content, L["Accent theme:"], 11, C.white.r, C.white.g, C.white.b)
-    themeLbl:SetPoint("TOPLEFT", 8, -yOff)
-    local curTheme = BRutus:GetSetting("theme") or "violet"
-    local sx = 130
-    for _, p in ipairs(BRutus.ACCENT_PRESETS or {}) do
-        local sw = CreateFrame("Button", nil, content, "BackdropTemplate")
-        sw:SetSize(50, 22)
-        sw:SetPoint("TOPLEFT", sx, -yOff + 2)
-        sw:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = (p.key == curTheme) and 2 or 1 })
-        sw:SetBackdropColor(p.r * 0.5, p.g * 0.5, p.b * 0.5, 0.95)
-        if p.key == curTheme then
-            sw:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1)
-        else
-            sw:SetBackdropBorderColor(p.r, p.g, p.b, 0.85)
-        end
-        local themeKey = p.key
-        sw:SetScript("OnClick", function()
-            BRutus:SetSetting("theme", themeKey)
-            BRutus:ApplyTheme()
-            BRutus:Print(L["Theme set. Reload for full effect."])
-            BRutus:RefreshSettingsPanel(content)
-        end)
-        sx = sx + 54
-    end
     yOff = yOff + 34
 
     --------------------------------------------------------------------
@@ -2233,7 +2195,7 @@ function BRutus:RefreshSettingsPanel(content, category)
             box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             box:SetBackdropColor(0.05, 0.05, 0.066, 1)
             box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-            box:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+            BRutus:ApplyFont(box, 11)
             box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             box:SetAutoFocus(false)
             box:SetNumeric(true)
@@ -2314,7 +2276,7 @@ function BRutus:RefreshSettingsPanel(content, category)
     durBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     durBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
     durBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-    durBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(durBox, 11)
     durBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     durBox:SetNumeric(true)
     durBox:SetMaxLetters(3)
@@ -2388,7 +2350,7 @@ function BRutus:RefreshSettingsPanel(content, category)
     minAttBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     minAttBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
     minAttBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-    minAttBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(minAttBox, 11)
     minAttBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     minAttBox:SetNumeric(true)
     minAttBox:SetMaxLetters(3)
@@ -2433,10 +2395,10 @@ function BRutus:RefreshSettingsPanel(content, category)
     deBox:SetSize(160, 22)
     deBox:SetPoint("LEFT", deLabel, "RIGHT", 10, 0)
     deBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-    deBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
-    deBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-    deBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    deBox:SetTextColor(0.56, 0.48, 0.82)
+    deBox:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    deBox:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    BRutus:ApplyFont(deBox, 11)
+    deBox:SetTextColor(C.text.r, C.text.g, C.text.b)
     deBox:SetMaxLetters(64)
     deBox:SetAutoFocus(false)
     deBox:SetText((BRutus.LootMaster and BRutus.LootMaster:GetDisenchanter()) or "")
@@ -2515,10 +2477,10 @@ function BRutus:RefreshSettingsPanel(content, category)
         groupBox:SetSize(160, 22)
         groupBox:SetPoint("LEFT", groupLabel, "RIGHT", 10, 0)
         groupBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        groupBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
-        groupBox:SetBackdropBorderColor(0.56, 0.48, 0.82, 0.5)
-        groupBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-        groupBox:SetTextColor(0.56, 0.48, 0.82)
+        groupBox:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        groupBox:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+        BRutus:ApplyFont(groupBox, 11)
+        groupBox:SetTextColor(C.text.r, C.text.g, C.text.b)
         groupBox:SetMaxLetters(64)
         groupBox:SetAutoFocus(false)
         groupBox:SetText(BRutus.db.raidTracker and BRutus.db.raidTracker.currentGroupTag or "")
@@ -2612,11 +2574,11 @@ function BRutus:RefreshSettingsPanel(content, category)
     testNote:SetWidth(content:GetWidth() - 20)
     yOff = yOff + 22
 
-    -- Test: Consumable Check
-    local testCons = UI:CreateButton(content, L["Test Consumable Check"], 200, 26)
-    testCons:SetPoint("TOPLEFT", 8, -yOff)
-    testCons:SetScript("OnClick", function()
-        if BRutus.ConsumableChecker then
+    -- Test: Consumable Check. TBC content: only where the checker exists (ADR-0014).
+    if BRutus.ConsumableChecker then
+        local testCons = UI:CreateButton(content, L["Test Consumable Check"], 200, 26)
+        testCons:SetPoint("TOPLEFT", 8, -yOff)
+        testCons:SetScript("OnClick", function()
             local results = BRutus.ConsumableChecker:CheckRaid()
             if results then
                 local missing = BRutus.ConsumableChecker:GetMissingCount(results)
@@ -2625,13 +2587,11 @@ function BRutus:RefreshSettingsPanel(content, category)
             else
                 BRutus:Print(L["Consumable check returned no results (not in a raid?)."])
             end
-        else
-            BRutus:Print(L["|cffFF4444Consumable Checker module is disabled.|r"])
-        end
-    end)
-    local testConsDesc = UI:CreateText(content, L["Scans your current raid for missing consumables"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testConsDesc:SetPoint("LEFT", testCons, "RIGHT", 10, 0)
-    yOff = yOff + 32
+        end)
+        local testConsDesc = UI:CreateText(content, L["Scans your current raid for missing consumables"], 9, C.silver.r, C.silver.g, C.silver.b)
+        testConsDesc:SetPoint("LEFT", testCons, "RIGHT", 10, 0)
+        yOff = yOff + 32
+    end
 
     -- Test: Loot Master Roll Popup
     local testLM = UI:CreateButton(content, L["Test Roll Popup"], 200, 26)
@@ -3031,7 +2991,7 @@ local function BuildWishlistFrame()
     table.insert(UISpecialFrames, "BRutusWishlistFrame")
 
     -- Refresh rows whenever a queued item arrives from the server
-    f:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    BRutus.Compat.RegisterEvent(f, "GET_ITEM_INFO_RECEIVED")
     f:SetScript("OnEvent", function(self, event)
         if event == "GET_ITEM_INFO_RECEIVED" and self:IsShown() then
             if not self._itemInfoTimer then
@@ -3055,7 +3015,7 @@ local function BuildWishlistFrame()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    BRutus:ApplyFont(titleText, 14)
     titleText:SetPoint("LEFT", 14, 0)
     titleText:SetPoint("TOP", 0, -12)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
@@ -3064,7 +3024,7 @@ local function BuildWishlistFrame()
 
     -- Counter (N/50)
     local counterText = f:CreateFontString(nil, "OVERLAY")
-    counterText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(counterText, 11)
     counterText:SetPoint("RIGHT", -42, 0)
     counterText:SetPoint("TOP",    0, -14)
     counterText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -3091,7 +3051,7 @@ local function BuildWishlistFrame()
 
     local function Hdr(lbl, x, w, justify)
         local t = f:CreateFontString(nil, "OVERLAY")
-        t:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(t, 10)
         t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
         t:SetPoint("TOPLEFT", x, -44)
         t:SetWidth(w)
@@ -3152,7 +3112,7 @@ local function BuildWishlistFrame()
 
         -- Order number
         local numText = row:CreateFontString(nil, "OVERLAY")
-        numText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(numText, 11)
         numText:SetPoint("LEFT", 10, 0)
         numText:SetWidth(24)
         numText:SetJustifyH("CENTER")
@@ -3161,7 +3121,7 @@ local function BuildWishlistFrame()
 
         -- Item link text
         local itemText = row:CreateFontString(nil, "OVERLAY")
-        itemText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+        BRutus:ApplyFont(itemText, 12)
         itemText:SetPoint("LEFT", 38, 0)
         itemText:SetWidth(262)
         itemText:SetJustifyH("LEFT")
@@ -3170,7 +3130,7 @@ local function BuildWishlistFrame()
 
         -- MS/OS badge
         local typeText = row:CreateFontString(nil, "OVERLAY")
-        typeText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(typeText, 10)
         typeText:SetPoint("LEFT", 308, 0)
         typeText:SetWidth(50)
         typeText:SetJustifyH("CENTER")
@@ -3213,7 +3173,7 @@ local function BuildWishlistFrame()
         removeBtn:SetSize(18, 18)
         removeBtn:SetPoint("LEFT", 410, 0)
         local removeTex = removeBtn:CreateFontString(nil, "OVERLAY")
-        removeTex:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+        BRutus:ApplyFont(removeTex, 14)
         removeTex:SetPoint("CENTER")
         removeTex:SetTextColor(0.7, 0.2, 0.2)
         removeTex:SetText("×")
@@ -3343,14 +3303,14 @@ local function BuildWishlistFrame()
     })
     addBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
-    addBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(addBox, 11)
     addBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     addBox:SetTextInsets(6, 6, 0, 0)
     addBox:SetAutoFocus(false)
     addBox:SetMaxLetters(200)
 
     local addPlaceholder = addBox:CreateFontString(nil, "OVERLAY")
-    addPlaceholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(addPlaceholder, 11)
     addPlaceholder:SetPoint("LEFT", 6, 0)
     addPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     addPlaceholder:SetText(L["Search item or paste link..."])
@@ -3368,8 +3328,9 @@ local function BuildWishlistFrame()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    dropdown:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.98)
-    dropdown:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    -- A dropdown is elevation 4: popup surface, lineHi border.
+    dropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    dropdown:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
     UI:StylePopup(dropdown, { shadowSize = 10 })
     dropdown:SetFrameLevel(f:GetFrameLevel() + 20)
     dropdown:Hide()
@@ -3382,9 +3343,9 @@ local function BuildWishlistFrame()
         dr:SetPoint("TOPLEFT",  1, -((i - 1) * DROP_ROW_H) - 1)
         dr:SetPoint("TOPRIGHT", -1, -((i - 1) * DROP_ROW_H) - 1)
         dr:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
-        dr:GetHighlightTexture():SetVertexColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, 0.3)
+        dr:GetHighlightTexture():SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
         local drText = dr:CreateFontString(nil, "OVERLAY")
-        drText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(drText, 11)
         drText:SetPoint("LEFT", 6, 0)
         drText:SetPoint("RIGHT", -6, 0)
         drText:SetJustifyH("LEFT")
@@ -3414,7 +3375,7 @@ local function BuildWishlistFrame()
         local results = {}
         if BRutus.Wishlist and BRutus.Wishlist.itemIndex then
             for itemId in pairs(BRutus.Wishlist.itemIndex) do
-                local name, link, quality = GetItemInfo(itemId)
+                local name, link, quality = BRutus.Compat.GetItemInfo(itemId)
                 if name and strlower(name):find(query, 1, true) then
                     tinsert(results, { itemId = itemId, name = name, link = link, quality = quality or 1 })
                 end
@@ -3473,7 +3434,7 @@ local function BuildWishlistFrame()
         elseif tonumber(text) then
             -- Typed a raw item ID
             itemId = tonumber(text)
-            local _, lnk = GetItemInfo(itemId)
+            local _, lnk = BRutus.Compat.GetItemInfo(itemId)
             itemLink = lnk or ""
         end
         if not itemId then
@@ -3522,7 +3483,7 @@ function BRutus:ShowWishlistFrame()
     -- fetches any uncached items before (or just after) we display them.
     local list = (BRutus.Wishlist and BRutus.Wishlist:GetMyList()) or {}
     for _, entry in ipairs(list) do
-        GetItemInfo(entry.itemId)
+        BRutus.Compat.GetItemInfo(entry.itemId)
     end
     self:RefreshWishlistFrame()
     self.WishlistFrame:Show()
@@ -3585,7 +3546,7 @@ function BRutus:RefreshWishlistFrame()
             end
 
             -- Item display
-            local localName, localLink = GetItemInfo(entry.itemId)
+            local localName, localLink = BRutus.Compat.GetItemInfo(entry.itemId)
             local displayText
             if localLink then
                 displayText = localLink
@@ -3667,7 +3628,7 @@ local function BuildPrioModal()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1.0)
 
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(titleText, 13)
     titleText:SetPoint("LEFT", 14, 0); titleText:SetPoint("TOP", 0, -12)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(L["MANAGE PRIORITIES"])
@@ -3682,7 +3643,7 @@ local function BuildPrioModal()
 
     -- Subtitle: shows currently loaded item
     local subtitleText = f:CreateFontString(nil, "OVERLAY")
-    subtitleText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(subtitleText, 11)
     subtitleText:SetPoint("LEFT", 14, 0); subtitleText:SetPoint("TOP", 0, -28)
     subtitleText:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
     subtitleText:SetText(L["Search for an item to manage priorities"])
@@ -3702,14 +3663,14 @@ local function BuildPrioModal()
     searchBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    searchBox:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(searchBox, 11)
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     searchBox:SetTextInsets(6, 6, 0, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(200)
 
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY")
-    placeholder:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(placeholder, 11)
     placeholder:SetPoint("LEFT", 6, 0)
     placeholder:SetTextColor(0.4, 0.4, 0.4)
     placeholder:SetText(L["Search item, paste link or ID..."])
@@ -3727,8 +3688,9 @@ local function BuildPrioModal()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    prioDropdown:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 0.98)
-    prioDropdown:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    -- A dropdown is elevation 4: popup surface, lineHi border.
+    prioDropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
+    prioDropdown:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
     UI:StylePopup(prioDropdown, { shadowSize = 10 })
     prioDropdown:SetFrameLevel(f:GetFrameLevel() + 20)
     prioDropdown:Hide()
@@ -3740,9 +3702,9 @@ local function BuildPrioModal()
         dr:SetPoint("TOPLEFT",  1, -((i - 1) * PDROP_ROW_H) - 1)
         dr:SetPoint("TOPRIGHT", -1, -((i - 1) * PDROP_ROW_H) - 1)
         dr:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
-        dr:GetHighlightTexture():SetVertexColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, 0.3)
+        dr:GetHighlightTexture():SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
         local drText = dr:CreateFontString(nil, "OVERLAY")
-        drText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(drText, 11)
         drText:SetPoint("LEFT", 6, 0)
         drText:SetPoint("RIGHT", -6, 0)
         drText:SetJustifyH("LEFT")
@@ -3771,7 +3733,7 @@ local function BuildPrioModal()
         local results = {}
         if BRutus.Wishlist and BRutus.Wishlist.itemIndex then
             for itemId in pairs(BRutus.Wishlist.itemIndex) do
-                local name, _, quality = GetItemInfo(itemId)
+                local name, _, quality = BRutus.Compat.GetItemInfo(itemId)
                 if name and strlower(name):find(query, 1, true) then
                     tinsert(results, { itemId = itemId, name = name, quality = quality or 1 })
                 end
@@ -3820,7 +3782,7 @@ local function BuildPrioModal()
 
     -- Status line
     local statusText = f:CreateFontString(nil, "OVERLAY")
-    statusText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(statusText, 10)
     statusText:SetPoint("LEFT", loadBtn, "RIGHT", 10, 0)
     statusText:SetWidth(120)
     statusText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -3836,7 +3798,7 @@ local function BuildPrioModal()
 
     local function PrioHdr(lbl, x, w, justify)
         local t = f:CreateFontString(nil, "OVERLAY")
-        t:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(t, 10)
         t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
         t:SetPoint("TOPLEFT", x, -82)
         t:SetWidth(w); t:SetJustifyH(justify or "LEFT")
@@ -3870,20 +3832,20 @@ local function BuildPrioModal()
 
         -- #PRIO number
         local prioOrderText = row:CreateFontString(nil, "OVERLAY")
-        prioOrderText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        BRutus:ApplyFont(prioOrderText, 11)
         prioOrderText:SetPoint("LEFT", 10, 0); prioOrderText:SetWidth(40); prioOrderText:SetJustifyH("CENTER")
         prioOrderText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
         row.prioOrderText = prioOrderText
 
         -- Character name (class-colored)
         local nameText = row:CreateFontString(nil, "OVERLAY")
-        nameText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+        BRutus:ApplyFont(nameText, 12)
         nameText:SetPoint("LEFT", 56, 0); nameText:SetWidth(170); nameText:SetJustifyH("LEFT")
         row.nameText = nameText
 
         -- WL order
         local wlOrderText = row:CreateFontString(nil, "OVERLAY")
-        wlOrderText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(wlOrderText, 10)
         wlOrderText:SetPoint("LEFT", 230, 0); wlOrderText:SetWidth(50); wlOrderText:SetJustifyH("CENTER")
         row.wlOrderText = wlOrderText
 
@@ -3905,7 +3867,7 @@ local function BuildPrioModal()
         local removeBtn = CreateFrame("Button", nil, row)
         removeBtn:SetSize(18, 18); removeBtn:SetPoint("LEFT", 338, 0)
         local removeTex = removeBtn:CreateFontString(nil, "OVERLAY")
-        removeTex:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+        BRutus:ApplyFont(removeTex, 14)
         removeTex:SetPoint("CENTER")
         removeTex:SetTextColor(0.7, 0.2, 0.2)
         removeTex:SetText("x")
@@ -4027,7 +3989,7 @@ local function BuildPrioModal()
             f.prioData = wishEntries
         end
 
-        local itemName = GetItemInfo(itemId) or (L["Item #"] .. itemId)
+        local itemName = BRutus.Compat.GetItemInfo(itemId) or (L["Item #"] .. itemId)
         f.statusText:SetText("|cffFFD700" .. itemName .. "|r  " .. format(L["%d interested"], #f.prioData))
         subtitleText:SetText(itemName)
         BRutus:RefreshPrioModal()

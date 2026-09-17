@@ -44,7 +44,7 @@ end
 
 function LootMaster:SafeSendAddon(prefix, payload, channel)
     if IsInRaid() and not self.testMode then
-        C_ChatInfo.SendAddonMessage(prefix, payload, channel)
+        BRutus.Compat.SendAddonMessageNow(prefix, payload, channel)
     end
 end
 
@@ -126,12 +126,12 @@ function LootMaster:Initialize()
     end
 
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("LOOT_OPENED")
-    frame:RegisterEvent("LOOT_CLOSED")
-    frame:RegisterEvent("CHAT_MSG_ADDON")
-    frame:RegisterEvent("CHAT_MSG_SYSTEM")  -- capture /roll results
-    frame:RegisterEvent("TRADE_SHOW")
-    frame:RegisterEvent("TRADE_ACCEPT_UPDATE")
+    BRutus.Compat.RegisterEvent(frame, "LOOT_OPENED")
+    BRutus.Compat.RegisterEvent(frame, "LOOT_CLOSED")
+    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
+    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")  -- capture /roll results
+    BRutus.Compat.RegisterEvent(frame, "TRADE_SHOW")
+    BRutus.Compat.RegisterEvent(frame, "TRADE_ACCEPT_UPDATE")
     -- GROUP_LEFT: disenchanter is now persisted to DB, no need to clear
     -- START_LOOT_ROLL intentionally NOT registered: it only fires under native
     -- Group Loot (need/greed/pass), where there is no BRutus master looter
@@ -157,7 +157,7 @@ function LootMaster:Initialize()
         end
     end)
 
-    C_ChatInfo.RegisterAddonMessagePrefix("BRutusLM")
+    BRutus.Compat.RegisterAddonPrefix("BRutusLM")
     self.eventFrame = frame
 
     -- Alt+Click on any bag item starts a BRutus roll for that item (ML only).
@@ -219,8 +219,7 @@ function LootMaster:GetPlayerContext(playerName)
         if sessionStart == 0 then
             sessionStart = GetServerTime() - (8 * 3600)
         end
-        local realm  = GetRealmName() or ""
-        local pKey   = playerName .. "-" .. realm
+        local pKey   = BRutus:GetPlayerKey(playerName)
         for _, entry in ipairs(BRutus.db.lootHistory) do
             if entry.fromML
                 and entry.playerKey == pKey
@@ -303,6 +302,8 @@ end
 
 -- Called on every CHAT_MSG_SYSTEM event
 function LootMaster:OnSystemMessage(message)
+    -- In lockdown a roll's line cannot be read, so it is not counted: the roll is missed, not misread.
+    if BRutus.Compat.IsSecret(message) then return end
     if not self.listeningForRolls or not self.activeLoot then return end
     self:ProcessSystemRoll(message)
 end
@@ -341,7 +342,7 @@ function LootMaster:ProcessSystemRoll(message)
     if not inRaid then
         local numMembers = GetNumGroupMembers() or 0
         for i = 1, numMembers do
-            local uName = UnitName("raid" .. i)
+            local uName = BRutus.Compat.UnitIdentity("raid" .. i)
             if uName and (uName == cleanName or uName == roller) then
                 inRaid = true
                 break
@@ -393,7 +394,7 @@ function LootMaster:OnLootOpened()
             local isBoE = false
             local itemId = tonumber(link:match("item:(%d+)"))
             if itemId then
-                local bindType = select(14, GetItemInfo(itemId))
+                local bindType = select(14, BRutus.Compat.GetItemInfo(itemId))
                 isBoE = bindType == 2
             end
             if meetsThreshold or isBoE then
@@ -453,9 +454,9 @@ function LootMaster:ResolveWishlistCouncil(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
-        local name = UnitName("raid" .. i)
+        local name, _, classFile = BRutus.Compat.UnitIdentity("raid" .. i)
         if name then
-            inRaid[strlower(name)] = select(2, UnitClass("raid" .. i)) or "UNKNOWN"
+            inRaid[strlower(name)] = classFile or "UNKNOWN"
         end
     end
     -- In testMode, treat the current player as in raid so council logic is testable
@@ -495,7 +496,7 @@ function LootMaster:ResolvePrioList(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
-        local name = UnitName("raid" .. i)
+        local name = BRutus.Compat.UnitIdentity("raid" .. i)
         if name then inRaid[strlower(name)] = true end
     end
     if self.testMode then
@@ -767,14 +768,14 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
 
     -- Title
     local title = f:CreateFontString(nil, "OVERLAY")
-    title:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(title, 13)
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     title:SetText(L["Wishlist Council"])
 
     -- Item
     local itemText = f:CreateFontString(nil, "OVERLAY")
-    itemText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(itemText, 12)
     itemText:SetPoint("TOP", 0, -26)
     itemText:SetText(itemLink or L["Unknown Item"])
 
@@ -782,7 +783,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     local CLASS_COLORS = RAID_CLASS_COLORS
     local cc = CLASS_COLORS[winner.class] or { r = 0.8, g = 0.8, b = 0.8 }
     local winText = f:CreateFontString(nil, "OVERLAY")
-    winText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(winText, 11)
     winText:SetPoint("TOP", 0, -44)
     local winLabel = winner.isPrio
         and L["|cffFFD700Official Prio #1|r"]
@@ -807,7 +808,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
             local ctx = LootMaster:GetPlayerContext(c.name)
             local attColor = ctx.att25 >= 60 and "00FF00" or ctx.att25 >= 40 and "FFFF00" or "FF4444"
             local row = f:CreateFontString(nil, "OVERLAY")
-            row:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(row, 10)
             row:SetPoint("TOPLEFT", 14, yOff)
             local prefix = (i == 1) and "|cff00ff00>>|r " or "   "
             row:SetText(string.format(
@@ -928,15 +929,14 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
                 and BRutus:IsOfficerByName(senderName)
                 and BRutus.LootTracker
             then
-                local realm = GetRealmName() or "Unknown"
-                local itemName = GetItemInfo(link)
+                local itemName = BRutus.Compat.GetItemInfo(link)
                 local quality  = tonumber(awardQuality) or 4
                 BRutus.LootTracker:RecordMLAward({
                     itemLink   = link,
                     itemName   = itemName or "",
                     quality    = quality,
                     player     = awardedTo,
-                    playerKey  = awardedTo .. "-" .. realm,
+                    playerKey  = BRutus:GetPlayerKey(awardedTo),
                     count      = 1,
                     timestamp  = GetServerTime(),
                     raid       = awardRaid or "",
@@ -956,7 +956,7 @@ end
 function LootMaster:RegisterRoll(name, rollType, roll)
     if not self.activeLoot then return end
 
-    local key = name .. "-" .. (GetRealmName() or "")
+    local key = BRutus:GetPlayerKey(name)
 
     -- Attendance gate: auto-downgrade MS → OS if below minimum threshold
     local ctx = self:GetPlayerContext(name)
@@ -1013,9 +1013,9 @@ function LootMaster:RegisterRoll(name, rollType, roll)
     if numMembers > 0 then
         for i = 1, numMembers do
             local unit = "raid" .. i
-            local uName = UnitName(unit)
+            local uName, _, classFile = BRutus.Compat.UnitIdentity(unit)
             if uName and uName == name then
-                class = select(2, UnitClass(unit)) or "UNKNOWN"
+                class = classFile or "UNKNOWN"
                 break
             end
         end
@@ -1180,15 +1180,13 @@ function LootMaster:AwardLoot(playerName, silent)
     end
 
     -- Gather extra context for history and broadcast
-    local _, _, itemQuality = GetItemInfo(itemLink)
+    local _, _, itemQuality = BRutus.Compat.GetItemInfo(itemLink)
     itemQuality = itemQuality or 4
     local _, _, _, _, _, _, _, instanceID = GetInstanceInfo()
     local raidName = ""
     if BRutus.RaidTracker and BRutus.RaidTracker.RAID_INSTANCES then
         raidName = BRutus.RaidTracker.RAID_INSTANCES[instanceID] or ""
     end
-    local realm = GetRealmName() or "Unknown"
-
     -- Broadcast award (extended format: playerName|itemId|quality|raidName|itemLink)
     -- Peers with BRutus will record this to their loot history after verifying
     -- the sender is an officer.
@@ -1216,13 +1214,13 @@ function LootMaster:AwardLoot(playerName, silent)
 
     -- Record to the central loot history (ML-awarded items only, officer action)
     if BRutus.LootTracker then
-        local itemName = GetItemInfo(itemLink)
+        local itemName = BRutus.Compat.GetItemInfo(itemLink)
         BRutus.LootTracker:RecordMLAward({
             itemLink   = itemLink,
             itemName   = itemName or "",
             quality    = itemQuality,
             player     = playerName,
-            playerKey  = playerName .. "-" .. realm,
+            playerKey  = BRutus:GetPlayerKey(playerName),
             count      = 1,
             timestamp  = GetServerTime(),
             raid       = raidName,
@@ -1237,8 +1235,8 @@ function LootMaster:AwardLoot(playerName, silent)
         local _pdb = BRutus.Points and BRutus.Points:GetDB()
         local cost = (_pdb and _pdb.config and _pdb.config.itemCost) or 0
         if cost > 0 then
-            local pKey = BRutus:GetPlayerKey(playerName, realm)
-            BRutus.Points:Charge(pKey, cost, GetItemInfo(itemLink) or itemLink)
+            local pKey = BRutus:GetPlayerKey(playerName)
+            BRutus.Points:Charge(pKey, cost, BRutus.Compat.GetItemInfo(itemLink) or itemLink)
             self:SafeSendChat(string.format(L["[DKP] %s charged %d points for %s"],
                 playerName, cost, itemLink), "RAID")
         end
@@ -1273,23 +1271,10 @@ end
 -- Find an item in bags by itemId
 function LootMaster:FindItemInBags(itemId)
     for bag = 0, 4 do
-        local numSlots = C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bag)
-            or GetContainerNumSlots and GetContainerNumSlots(bag) or 0
-        for slot = 1, numSlots do
-            local info = C_Container and C_Container.GetContainerItemInfo and C_Container.GetContainerItemInfo(bag, slot)
+        for slot = 1, BRutus.Compat.GetContainerNumSlots(bag) do
+            local info = BRutus.Compat.GetContainerItemInfo(bag, slot)
             if info and info.itemID == itemId then
                 return bag, slot
-            else
-                -- Fallback for older API
-                if GetContainerItemInfo then
-                    local link = select(7, GetContainerItemInfo(bag, slot))
-                    if link then
-                        local id = tonumber(link:match("item:(%d+)"))
-                        if id == itemId then
-                            return bag, slot
-                        end
-                    end
-                end
             end
         end
     end
@@ -1299,9 +1284,11 @@ end
 -- When trade window opens, try to auto-add pending items
 function LootMaster:OnTradeShow()
     local tradeName = UnitName("NPC") or GetUnitName("NPC", false)
+    if BRutus.Compat.IsSecret(tradeName) then return end  -- who the trade is with cannot be read
     if not tradeName then
         -- Try TradeFrame target
         tradeName = TradeFrameRecipientNameText and TradeFrameRecipientNameText:GetText()
+        if BRutus.Compat.IsSecret(tradeName) then return end
     end
     if not tradeName or tradeName == "" then return end
 
@@ -1314,11 +1301,7 @@ function LootMaster:OnTradeShow()
             local bag, slot = self:FindItemInBags(pending.itemId)
             if bag and slot and tradeSlot <= 6 then
                 -- Place item in trade window
-                if C_Container and C_Container.UseContainerItem then
-                    C_Container.UseContainerItem(bag, slot)
-                elseif UseContainerItem then
-                    UseContainerItem(bag, slot)
-                end
+                BRutus.Compat.UseContainerItem(bag, slot)
                 BRutus:Print(string.format(L["|cff00ff00Auto-added:|r %s to trade."], pending.link))
                 pending.addedToTrade = true
                 itemsAdded = itemsAdded + 1
@@ -1486,9 +1469,9 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local name = UnitName(unit)
+        local name, _, classFile = BRutus.Compat.UnitIdentity(unit)
         if name then
-            inGroup[strlower(name)] = select(2, UnitClass(unit)) or "UNKNOWN"
+            inGroup[strlower(name)] = classFile or "UNKNOWN"
         end
     end
     -- Always include self (covers solo testing and the local player's row highlight)
@@ -1547,20 +1530,20 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
     -- Title
     local title = f:CreateFontString(nil, "OVERLAY")
-    title:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(title, 12)
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     title:SetText(L["Guild OS Loot Master"])
 
     -- Item link
     local itemText = f:CreateFontString(nil, "OVERLAY")
-    itemText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(itemText, 11)
     itemText:SetPoint("TOP", 0, -26)
     itemText:SetText(itemLink or L["Unknown Item"])
 
     -- Player's own prio / wishlist status
     local tmbText = f:CreateFontString(nil, "OVERLAY")
-    tmbText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(tmbText, 10)
     tmbText:SetPoint("TOP", 0, -44)
     tmbText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
 
@@ -1614,7 +1597,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
         -- Column headers
         local function MakeHdr(lbl, xOff)
             local h = f:CreateFontString(nil, "OVERLAY")
-            h:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+            BRutus:ApplyFont(h, 8)
             h:SetPoint("TOPLEFT", xOff, listY - 2)
             h:SetTextColor(0.5, 0.5, 0.5)
             h:SetText(lbl)
@@ -1648,7 +1631,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
             -- # (index)
             local idxT = row:CreateFontString(nil, "OVERLAY")
-            idxT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(idxT, 9)
             idxT:SetPoint("LEFT", 4, 0)
             idxT:SetTextColor(
                 e.inRaid and C.gold.r or 0.35,
@@ -1658,7 +1641,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
             -- TYPE (PRIO / WISH)
             local typeT = row:CreateFontString(nil, "OVERLAY")
-            typeT:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+            BRutus:ApplyFont(typeT, 8)
             typeT:SetPoint("LEFT", 18, 0)
             local tc = e.typeCat == "prio" and C.accent or C.gold
             typeT:SetTextColor(
@@ -1669,7 +1652,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
             -- Order (#N)
             local ordT = row:CreateFontString(nil, "OVERLAY")
-            ordT:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+            BRutus:ApplyFont(ordT, 8)
             ordT:SetPoint("LEFT", 60, 0)
             ordT:SetTextColor(
                 e.inRaid and 0.65 or 0.3,
@@ -1679,7 +1662,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
             -- Name (class-colored when in group / is self)
             local nameT = row:CreateFontString(nil, "OVERLAY")
-            nameT:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(nameT, 10)
             nameT:SetPoint("LEFT", 92, 0)
             nameT:SetWidth(134)
             if e.inRaid or isMe then
@@ -1693,7 +1676,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
             -- ATT% (25-man attendance)
             local attCtx = self:GetPlayerContext(e.name)
             local attT   = row:CreateFontString(nil, "OVERLAY")
-            attT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(attT, 9)
             attT:SetPoint("LEFT", 228, 0)
             attT:SetWidth(40)
             attT:SetJustifyH("CENTER")
@@ -1708,7 +1691,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
             -- RECV (items received this lockout)
             local recvT = row:CreateFontString(nil, "OVERLAY")
-            recvT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(recvT, 9)
             recvT:SetPoint("LEFT", 270, 0)
             recvT:SetWidth(32)
             recvT:SetJustifyH("CENTER")
@@ -1723,7 +1706,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
             -- IN RAID indicator
             local raidT = row:CreateFontString(nil, "OVERLAY")
-            raidT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(raidT, 9)
             raidT:SetPoint("LEFT", 306, 0)
             if e.inRaid then
                 raidT:SetTextColor(0.3, 1.0, 0.3)
@@ -1739,7 +1722,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
         -- Overflow label when list is clipped
         if numEntries > MAX_VISIBLE then
             local moreT = f:CreateFontString(nil, "OVERLAY")
-            moreT:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            BRutus:ApplyFont(moreT, 9)
             moreT:SetPoint("TOPLEFT", 12, listY - 2)
             moreT:SetTextColor(0.5, 0.5, 0.5)
             moreT:SetText(format(L["+ %d more interested"], numEntries - MAX_VISIBLE))
@@ -1747,7 +1730,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     else
         -- No wishlist/prio data for this item
         local noDataT = f:CreateFontString(nil, "OVERLAY")
-        noDataT:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+        BRutus:ApplyFont(noDataT, 9)
         noDataT:SetPoint("TOPLEFT", 12, listY - 4)
         noDataT:SetTextColor(0.5, 0.5, 0.5)
         noDataT:SetText(L["No wishlist data for this item."])
@@ -1795,7 +1778,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
     -- Warning label (hidden until last 5s)
     local warnText = f:CreateFontString(nil, "OVERLAY")
-    warnText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(warnText, 13)
     warnText:SetPoint("BOTTOM", 0, 14)
     warnText:SetTextColor(1.0, 0.2, 0.2)
     warnText:Hide()
@@ -1892,14 +1875,14 @@ function LootMaster:ShowLootFrame(items)
 
     -- Title
     local titleText = f:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(titleText, 13)
     titleText:SetPoint("TOPLEFT", 12, -10)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(L["Master Loot"])
 
     -- Instance name
     local instText = f:CreateFontString(nil, "OVERLAY")
-    instText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(instText, 10)
     instText:SetPoint("TOPLEFT", 132, -12)
     instText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     local instName = GetInstanceInfo and (select(1, GetInstanceInfo())) or ""
@@ -1936,14 +1919,14 @@ function LootMaster:ShowLootFrame(items)
 
     -- Current DE name shown inline
     local deNameText = f:CreateFontString(nil, "OVERLAY")
-    deNameText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    BRutus:ApplyFont(deNameText, 9)
     deNameText:SetPoint("RIGHT", dePickBtn, "LEFT", -4, 1)
     deNameText:SetWidth(120)
     deNameText:SetJustifyH("LEFT")
 
     -- Static "DE:" label
     local deTitleLabel = f:CreateFontString(nil, "OVERLAY")
-    deTitleLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    BRutus:ApplyFont(deTitleLabel, 9)
     deTitleLabel:SetPoint("RIGHT", deNameText, "LEFT", -3, 0)
     deTitleLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     deTitleLabel:SetText(L["DE:"])
@@ -1964,7 +1947,7 @@ function LootMaster:ShowLootFrame(items)
 
     -- Popup header
     local dePopHdr = dePickerPopup:CreateFontString(nil, "OVERLAY")
-    dePopHdr:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    BRutus:ApplyFont(dePopHdr, 8)
     dePopHdr:SetPoint("TOPLEFT", 6, -4)
     dePopHdr:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
     dePopHdr:SetText(L["DISENCHANTER"])
@@ -2005,10 +1988,9 @@ function LootMaster:ShowLootFrame(items)
         if numMembers > 0 then
             for i = 1, numMembers do
                 local unit = (IsInRaid() and ("raid" .. i)) or ("party" .. i)
-                local name = UnitName(unit)
+                local name, _, classFile = BRutus.Compat.UnitIdentity(unit)
                 if name then
-                    local class = select(2, UnitClass(unit)) or "UNKNOWN"
-                    table.insert(members, { name = name, class = class })
+                    table.insert(members, { name = name, class = classFile or "UNKNOWN" })
                 end
             end
         end
@@ -2048,7 +2030,7 @@ function LootMaster:ShowLootFrame(items)
 
             local cr, cg, cb = BRutus:GetClassColor(m.class)
             local rowText = row:CreateFontString(nil, "OVERLAY")
-            rowText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(rowText, 10)
             rowText:SetPoint("LEFT", 6, 0)
             rowText:SetTextColor(cr, cg, cb)
             rowText:SetText(m.name)
@@ -2080,7 +2062,7 @@ function LootMaster:ShowLootFrame(items)
         clearRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         clearRow:SetBackdropColor(0, 0, 0, 0)
         local clearText = clearRow:CreateFontString(nil, "OVERLAY")
-        clearText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(clearText, 10)
         clearText:SetPoint("LEFT", 6, 0)
         clearText:SetTextColor(0.4, 0.4, 0.4)
         clearText:SetText(L["--- None ---"])
@@ -2117,7 +2099,7 @@ function LootMaster:ShowLootFrame(items)
     -- Left panel: items list
     ----------------------------------------------------------------
     local itemsLabel = f:CreateFontString(nil, "OVERLAY")
-    itemsLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    BRutus:ApplyFont(itemsLabel, 9)
     itemsLabel:SetPoint("TOPLEFT", 8, -30)
     itemsLabel:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
     itemsLabel:SetText(L["LOOT  ("] .. #items .. ")")
@@ -2130,7 +2112,7 @@ function LootMaster:ShowLootFrame(items)
     -- Right panel: selected item header + column headers
     ----------------------------------------------------------------
     local selItemText = f:CreateFontString(nil, "OVERLAY")
-    selItemText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(selItemText, 12)
     selItemText:SetPoint("TOPLEFT", RIGHT_X, -30)
     selItemText:SetWidth(rightW - 10)
     selItemText:SetJustifyH("LEFT")
@@ -2144,7 +2126,7 @@ function LootMaster:ShowLootFrame(items)
     prioHdr:SetBackdropColor(0.040, 0.040, 0.055, 1)
     local function PH(txt, x)
         local t = prioHdr:CreateFontString(nil, "OVERLAY")
-        t:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+        BRutus:ApplyFont(t, 8)
         t:SetPoint("LEFT", x, 0)
         t:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
         t:SetText(txt)
@@ -2172,7 +2154,7 @@ function LootMaster:ShowLootFrame(items)
 
     -- Bottom row: status text + Roll + Award buttons
     local statusText = f:CreateFontString(nil, "OVERLAY")
-    statusText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(statusText, 10)
     statusText:SetPoint("BOTTOMLEFT", RIGHT_X, 14)
     statusText:SetWidth(rightW - 290)
     statusText:SetJustifyH("LEFT")
@@ -2225,9 +2207,9 @@ function LootMaster:ShowLootFrame(items)
         local n = GetNumGroupMembers()
         for i = 1, n do
             local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-            local name = UnitName(unit)
+            local name, _, classFile = BRutus.Compat.UnitIdentity(unit)
             if name then
-                map[strlower(name)] = select(2, UnitClass(unit)) or "UNKNOWN"
+                map[strlower(name)] = classFile or "UNKNOWN"
             end
         end
         local myName = UnitName("player")
@@ -2269,7 +2251,7 @@ function LootMaster:ShowLootFrame(items)
 
         local function NoData(msg)
             local t = prioChild:CreateFontString(nil, "OVERLAY")
-            t:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+            BRutus:ApplyFont(t, 10)
             t:SetPoint("TOPLEFT", 6, -14)
             t:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             t:SetText(msg)
@@ -2371,7 +2353,7 @@ function LootMaster:ShowLootFrame(items)
 
             -- Column: index
             local idxT = row:CreateFontString(nil, "OVERLAY")
-            idxT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(idxT, 9)
             idxT:SetPoint("LEFT", 4, 0)
             idxT:SetText(idx)
             idxT:SetTextColor(
@@ -2381,7 +2363,7 @@ function LootMaster:ShowLootFrame(items)
 
             -- Column: type
             local typeT = row:CreateFontString(nil, "OVERLAY")
-            typeT:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+            BRutus:ApplyFont(typeT, 8)
             typeT:SetPoint("LEFT", 22, 0)
             typeT:SetText(e.type == "prio" and L["PRIO"] or L["WISH"])
             local tc2 = e.type == "prio" and C.accent or C.gold
@@ -2392,7 +2374,7 @@ function LootMaster:ShowLootFrame(items)
 
             -- Column: order
             local ordT = row:CreateFontString(nil, "OVERLAY")
-            ordT:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+            BRutus:ApplyFont(ordT, 8)
             ordT:SetPoint("LEFT", 64, 0)
             ordT:SetText("#" .. (e.order or "?"))
             ordT:SetTextColor(
@@ -2402,7 +2384,7 @@ function LootMaster:ShowLootFrame(items)
 
             -- Column: player name (class-colored if in raid)
             local nameT = row:CreateFontString(nil, "OVERLAY")
-            nameT:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+            BRutus:ApplyFont(nameT, 10)
             nameT:SetPoint("LEFT", 106, 0)
             nameT:SetWidth(100)
             if isPresent then
@@ -2417,7 +2399,7 @@ function LootMaster:ShowLootFrame(items)
             -- Column: ATT% (25-man attendance)
             local attCtx = LootMaster:GetPlayerContext(e.name)
             local attT = row:CreateFontString(nil, "OVERLAY")
-            attT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(attT, 9)
             attT:SetPoint("LEFT", 210, 0)
             attT:SetWidth(40)
             attT:SetJustifyH("CENTER")
@@ -2432,7 +2414,7 @@ function LootMaster:ShowLootFrame(items)
 
             -- Column: RECV (items received this lockout)
             local recvT = row:CreateFontString(nil, "OVERLAY")
-            recvT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(recvT, 9)
             recvT:SetPoint("LEFT", 255, 0)
             recvT:SetWidth(35)
             recvT:SetJustifyH("CENTER")
@@ -2447,7 +2429,7 @@ function LootMaster:ShowLootFrame(items)
 
             -- Column: in-raid indicator
             local raidT = row:CreateFontString(nil, "OVERLAY")
-            raidT:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(raidT, 9)
             raidT:SetPoint("LEFT", 295, 0)
             if isPresent then
                 raidT:SetTextColor(0.3, 1.0, 0.3)
@@ -2501,14 +2483,14 @@ function LootMaster:ShowLootFrame(items)
             if #recvList > 0 then
                 yOff = yOff + 6
                 local recvHdr = prioChild:CreateFontString(nil, "OVERLAY")
-                recvHdr:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                BRutus:ApplyFont(recvHdr, 9)
                 recvHdr:SetPoint("TOPLEFT", 4, -yOff)
                 recvHdr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
                 recvHdr:SetText(L["Already received:"])
                 yOff = yOff + 16
                 for _, e in ipairs(recvList) do
                     local rt = prioChild:CreateFontString(nil, "OVERLAY")
-                    rt:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                    BRutus:ApplyFont(rt, 9)
                     rt:SetPoint("TOPLEFT", 12, -yOff)
                     rt:SetTextColor(0.5, 0.5, 0.5)
                     rt:SetText(e.name .. (e.receivedAt and " (" .. e.receivedAt .. ")" or ""))
@@ -2539,7 +2521,7 @@ function LootMaster:ShowLootFrame(items)
         -- Quality-colored item name
         local qc = BRutus.QualityColors[item.quality] or BRutus.QualityColors[4]
         local nameT = btn:CreateFontString(nil, "OVERLAY")
-        nameT:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(nameT, 10)
         nameT:SetPoint("TOPLEFT", 6, -4)
         nameT:SetWidth(LEFT_W - 24)
         nameT:SetJustifyH("LEFT")
@@ -2548,7 +2530,7 @@ function LootMaster:ShowLootFrame(items)
 
         -- "✓ awarded" badge (hidden initially)
         local aText = btn:CreateFontString(nil, "OVERLAY")
-        aText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+        BRutus:ApplyFont(aText, 8)
         aText:SetPoint("BOTTOMLEFT", 6, 3)
         aText:SetTextColor(0.3, 1.0, 0.3)
         aText:SetText(L["awarded"])
@@ -2595,7 +2577,7 @@ function LootMaster:ShowLootFrame(items)
         LootMaster:SaveCfgKey("wishlistOnlyMode", val)
     end)
     local tmbLabel = f:CreateFontString(nil, "OVERLAY")
-    tmbLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    BRutus:ApplyFont(tmbLabel, 9)
     tmbLabel:SetPoint("LEFT", tmbCheck, "RIGHT", 2, 0)
     tmbLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     tmbLabel:SetText(L["Wishlist Council"])
@@ -2671,20 +2653,20 @@ function LootMaster:ShowRollFrame()
 
     -- Title
     local title = f:CreateFontString(nil, "OVERLAY")
-    title:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(title, 13)
     title:SetPoint("TOP", 0, -8)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     title:SetText(L["Roll Tracker"])
 
     -- Item display
     local itemText = f:CreateFontString(nil, "OVERLAY")
-    itemText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(itemText, 12)
     itemText:SetPoint("TOP", 0, -28)
     f.itemText = itemText
 
     -- Timer
     local timerText = f:CreateFontString(nil, "OVERLAY")
-    timerText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    BRutus:ApplyFont(timerText, 10)
     timerText:SetPoint("TOP", 0, -44)
     timerText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     f.timerText = timerText
@@ -2701,7 +2683,7 @@ function LootMaster:ShowRollFrame()
     local headers = { { L["Player"], 6 }, { L["Type"], 145 }, { L["Roll"], 195 }, { L["Prio/WL"], 245 }, { L["ATT%"], 325 }, { L["RECV"], 375 } }
     for _, h in ipairs(headers) do
         local ht = f:CreateFontString(nil, "OVERLAY")
-        ht:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        BRutus:ApplyFont(ht, 9)
         ht:SetPoint("TOPLEFT", h[2], -62)
         ht:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
         ht:SetText(h[1])
@@ -2788,7 +2770,7 @@ function LootMaster:ShowRollFrame()
 
     -- Roll label
     local rollLabel = f:CreateFontString(nil, "OVERLAY")
-    rollLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    BRutus:ApplyFont(rollLabel, 8)
     rollLabel:SetPoint("BOTTOM", msRollBtn, "TOP", 32, 2)
     rollLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
     rollLabel:SetText(L["Your roll:"])
@@ -2869,14 +2851,14 @@ function LootMaster:RefreshRollFrame()
         -- Player name (class colored)
         local cc = CLASS_COLORS[r.class] or { r = 0.8, g = 0.8, b = 0.8 }
         local nameText = row:CreateFontString(nil, "OVERLAY")
-        nameText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(nameText, 10)
         nameText:SetPoint("LEFT", 6, 0)
         nameText:SetTextColor(cc.r, cc.g, cc.b)
         nameText:SetText(r.name)
 
         -- Roll type
         local typeText = row:CreateFontString(nil, "OVERLAY")
-        typeText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(typeText, 10)
         typeText:SetPoint("LEFT", 150, 0)
         if r.rollType == "MS" then
             typeText:SetTextColor(0.3, 1.0, 0.3)
@@ -2889,14 +2871,14 @@ function LootMaster:RefreshRollFrame()
 
         -- Roll number
         local rollText = row:CreateFontString(nil, "OVERLAY")
-        rollText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(rollText, 10)
         rollText:SetPoint("LEFT", 200, 0)
         rollText:SetTextColor(1, 1, 1)
         rollText:SetText(r.rollType ~= "PASS" and tostring(r.roll) or "-")
 
         -- Prio / Wishlist info
         local tmbText = row:CreateFontString(nil, "OVERLAY")
-        tmbText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(tmbText, 10)
         tmbText:SetPoint("LEFT", 250, 0)
         if lootSystem == "dkp" then
             tmbText:SetText(string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
@@ -2911,7 +2893,7 @@ function LootMaster:RefreshRollFrame()
 
         -- ATT% (25-man attendance)
         local attText = row:CreateFontString(nil, "OVERLAY")
-        attText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(attText, 10)
         attText:SetPoint("LEFT", 330, 0)
         attText:SetWidth(42)
         attText:SetJustifyH("RIGHT")
@@ -2927,7 +2909,7 @@ function LootMaster:RefreshRollFrame()
 
         -- RECV (items received this lockout)
         local recvText = row:CreateFontString(nil, "OVERLAY")
-        recvText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        BRutus:ApplyFont(recvText, 10)
         recvText:SetPoint("LEFT", 378, 0)
         recvText:SetWidth(32)
         recvText:SetJustifyH("CENTER")
@@ -2950,7 +2932,7 @@ function LootMaster:RefreshRollFrame()
             awardBtn:SetBackdropColor(0.0, 0.3, 0.0, 0.6)
             awardBtn:SetBackdropBorderColor(0.0, 0.5, 0.0, 0.4)
             local aText = awardBtn:CreateFontString(nil, "OVERLAY")
-            aText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            BRutus:ApplyFont(aText, 9)
             aText:SetPoint("CENTER")
             aText:SetText(L["Award"])
             aText:SetTextColor(0.3, 1.0, 0.3)
@@ -3083,17 +3065,12 @@ function LootMaster:RollFromBag(bag, slot)
     end
 
     -- Get item link from bag slot
-    local itemLink
-    if C_Container and C_Container.GetContainerItemLink then
-        itemLink = C_Container.GetContainerItemLink(bag, slot)
-    elseif GetContainerItemLink then
-        itemLink = GetContainerItemLink(bag, slot)  -- luacheck: ignore
-    end
+    local itemLink = BRutus.Compat.GetContainerItemLink(bag, slot)
 
     if not itemLink then return end
 
     -- Respect the configured rarity threshold; skip if info not cached yet
-    local _, _, quality = GetItemInfo(itemLink)
+    local _, _, quality = BRutus.Compat.GetItemInfo(itemLink)
     if quality and quality < (self.LOOT_THRESHOLD or 3) then
         BRutus:Print("|cffFF9900[LootMaster]|r " .. L["Item below the configured rarity threshold."])
         return

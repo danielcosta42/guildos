@@ -14,9 +14,10 @@ function RecipeTracker:Initialize()
     self.lastScanTime = {}
 
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("TRADE_SKILL_SHOW")
-    -- Craft API event (Enchanting in some clients)
-    frame:RegisterEvent("CRAFT_SHOW")
+    BRutus.Compat.RegisterEvent(frame, "TRADE_SKILL_SHOW")
+    -- The old craft window (Enchanting in some clients). A client built without
+    -- it — Forever runs the retail tradeskill UI — never fires this.
+    BRutus.Compat.RegisterEvent(frame, "CRAFT_SHOW", true)
     frame:SetScript("OnEvent", function(_, event)
         if event == "TRADE_SKILL_SHOW" then
             RecipeTracker:DebounceScan("trade")
@@ -57,7 +58,7 @@ function RecipeTracker:EnrichStoredRecipes()
                     if r.name then
                         profLookup[profName][strlower(r.name)] = r.spellId
                     end
-                    local localName = GetSpellInfo(r.spellId)
+                    local localName = BRutus.Compat.GetSpellInfo(r.spellId)
                     if localName and localName ~= "" then
                         profLookup[profName][strlower(localName)] = r.spellId
                     end
@@ -195,7 +196,8 @@ end
 -- Scan Craft window (Enchanting in some TBC clients)
 ----------------------------------------------------------------------
 function RecipeTracker:ScanCraft()
-    if not GetCraftDisplaySkillLine then return end
+    -- WoW: Forever has no Craft frame at all: the whole family is absent.
+    if not GetCraftDisplaySkillLine or not GetCraftInfo then return end
 
     local rawSkillName = GetCraftDisplaySkillLine()
     if not rawSkillName or rawSkillName == "" or rawSkillName == "UNKNOWN" then return end
@@ -401,13 +403,13 @@ function RecipeTracker:BuildRecipeIndex()
                     if not grouped[recipeKey] then
                         local displayName = recipe.name
                         if recipe.spellId then
-                            local spellName = GetSpellInfo(recipe.spellId)
+                            local spellName = BRutus.Compat.GetSpellInfo(recipe.spellId)
                             if spellName and spellName ~= "" then
                                 displayName = spellName
                             end
                         end
                         if recipe.itemId and (not displayName or displayName == recipe.name) then
-                            local itemName = GetItemInfo(recipe.itemId)
+                            local itemName = BRutus.Compat.GetItemInfo(recipe.itemId)
                             if itemName and itemName ~= "" then
                                 displayName = itemName
                             end
@@ -702,7 +704,7 @@ function RecipeTracker:HookTooltips()
     local function OnTooltipSetItem(tooltip)
         if not BRutus.db or not BRutus.db.recipes then return end
 
-        local _, link = tooltip:GetItem()
+        local _, link = BRutus.Compat.TooltipItem(tooltip)
         if not link then return end
 
         local itemId = tonumber(link:match("item:(%d+)"))
@@ -716,7 +718,7 @@ function RecipeTracker:HookTooltips()
     local function OnTooltipSetSpell(tooltip)
         if not BRutus.db or not BRutus.db.recipes then return end
 
-        local _, spellId = tooltip:GetSpell()
+        local _, spellId = BRutus.Compat.TooltipSpell(tooltip)
         if not spellId then return end
 
         local crafters = RecipeTracker:GetCraftersForSpell(spellId)
@@ -724,26 +726,18 @@ function RecipeTracker:HookTooltips()
     end
 
     -- Clear online cache when tooltip hides
-    GameTooltip:HookScript("OnTooltipCleared", function()
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipCleared", function()
         onlineSet = nil
     end)
 
-    -- Item hooks
-    GameTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    if ItemRefTooltip then
-        ItemRefTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    end
-    if ShoppingTooltip1 then
-        ShoppingTooltip1:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    end
-    if ShoppingTooltip2 then
-        ShoppingTooltip2:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    end
+    -- Item hooks (a tooltip that is not built yet is skipped)
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    BRutus.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    BRutus.Compat.HookTooltip(ShoppingTooltip1, "OnTooltipSetItem", OnTooltipSetItem)
+    BRutus.Compat.HookTooltip(ShoppingTooltip2, "OnTooltipSetItem", OnTooltipSetItem)
 
     -- Spell/enchant hooks: OnTooltipSetSpell fires for both tradeskill hover AND
     -- enchant: hyperlinks, so no need for a separate SetHyperlink hook.
-    GameTooltip:HookScript("OnTooltipSetSpell", OnTooltipSetSpell)
-    if ItemRefTooltip then
-        ItemRefTooltip:HookScript("OnTooltipSetSpell", OnTooltipSetSpell)
-    end
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetSpell", OnTooltipSetSpell)
+    BRutus.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetSpell", OnTooltipSetSpell)
 end

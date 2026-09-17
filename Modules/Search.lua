@@ -57,7 +57,7 @@ function Search:Query(text)
 
     -- Loot history items
     for _, e in ipairs(BRutus.db.lootHistory or {}) do
-        local iname = (e.itemLink and GetItemInfo(e.itemLink)) or e.itemName or ""
+        local iname = (e.itemLink and BRutus.Compat.GetItemInfo(e.itemLink)) or e.itemName or ""
         if iname ~= "" and strlower(iname):find(text, 1, true) and #res.loot < CAP then
             res.loot[#res.loot + 1] = { item = iname, player = e.player or "?", ts = e.timestamp or 0 }
         end
@@ -101,13 +101,13 @@ function Search:Show(initial)
         box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         box:SetBackdropColor(0.05, 0.05, 0.066, 1)
         box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-        box:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+        BRutus:ApplyFont(box, 12)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetTextInsets(8, 8, 0, 0)
         box:SetAutoFocus(true)
         box:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
         local ph = box:CreateFontString(nil, "OVERLAY")
-        ph:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        BRutus:ApplyFont(ph, 11)
         ph:SetPoint("LEFT", 8, 0)
         ph:SetTextColor(0.4, 0.4, 0.4)
         ph:SetText(L["Search members, recipes, loot..."])

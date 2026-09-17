@@ -25,6 +25,34 @@ jobs:
       - name: Run Luacheck
         run: luacheck . --config .luacheckrc
 
+      - name: No hard-coded client font
+        # The Forever skin sets every font through BRutus:ApplyFont (Core/Data.lua),
+        # which is what keeps serif at 14px and up and mono at 10px and up.
+        # ChehulNet.lua is shared verbatim with other Chehul addons and cannot call
+        # into BRutus, so it keeps the client font.
+        run: |
+          if grep -rn 'FRIZQT__' --include='*.lua' --exclude='ChehulNet.lua' Core Modules UI; then
+            echo "Hard-coded client font found; use BRutus:ApplyFont." >&2
+            exit 1
+          fi
+
+      - name: Version-sensitive calls go through Compat
+        # Rule 4 (issue #10): items, spells, auras, bags, talents, skill lines, the roster
+        # request, addon messages and what a tooltip is showing are called only from
+        # Core/Compat.lua.
+        run: lua5.1 tools/compat-guard.lua
+
+      - name: The harnesses
+        # Each tools/*.lua runs the real addon code under a stubbed client and exits 1 on the
+        # first failed check. Until now nothing ran them: tools/roster-import.lua had been red
+        # since ae991c2 and no one found out for a month.
+        run: |
+          sudo apt-get install -y -qq luajit > /dev/null
+          for f in tools/*.lua; do
+            luajit -e 'ADDON="."' "$f" > /dev/null || { echo "$f failed" >&2; exit 1; }
+            echo "ok $f"
+          done
+
   release:
     name: Version & Release
     needs: lint

@@ -41,6 +41,7 @@ Core\Compat.lua
 Core\Data.lua
 Core\Utils.lua
 Core\Commands.lua
+Core\Probe.lua
 
 # Cross-addon presence mesh (shared singleton; identical file in each Chehul addon)
 Modules\ChehulNet.lua
@@ -112,7 +113,7 @@ UI\Layout.lua
 UI\WebPanel.lua
 UI\FeatureRegistry.lua
 UI\Window.lua
-UI\Hub.lua
+UI\Agora.lua
 UI\Dashboard.lua
 UI\RaiderPanel.lua
 UI\RecipesPanel.lua

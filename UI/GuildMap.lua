@@ -24,7 +24,6 @@ local UI = BRutus.UI
 local C  = BRutus.Colors
 local L  = BRutus.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
-local FONT  = (BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF"
 
 local PIN_SIZE          = 12
 local LIST_ROW_H        = 20
@@ -336,10 +335,19 @@ local function BuildDotsFrame()
         f.dots[i] = d
     end
     local more = f:CreateFontString(nil, "OVERLAY")
-    more:SetFont(FONT, 9, "OUTLINE")
+    BRutus:ApplyFont(more, 9)
     more:SetPoint("LEFT", f.dots[MINIMAP_DOTS_MAX], "RIGHT", 3, 0)
     more:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     f.more = more
+    -- "+N" sits on the minimap with no outline: a dark chip behind it keeps it
+    -- readable over bright terrain. Shown and hidden together with the text.
+    local moreBg = f:CreateTexture(nil, "ARTWORK")
+    moreBg:SetTexture(WHITE)
+    moreBg:SetPoint("TOPLEFT", more, "TOPLEFT", -2, 1)
+    moreBg:SetPoint("BOTTOMRIGHT", more, "BOTTOMRIGHT", 2, -1)
+    moreBg:SetVertexColor(C.well.r, C.well.g, C.well.b, 0.85)  -- dark enough over bright terrain
+    moreBg:Hide()
+    f.moreBg = moreBg
 
     f:EnableMouse(true)
     f:SetScript("OnEnter", function(self)
@@ -377,8 +385,10 @@ RefreshMinimapDots = function()
     if n > MINIMAP_DOTS_MAX then
         dotsFrame.more:SetText("+" .. (n - MINIMAP_DOTS_MAX))
         dotsFrame.more:Show()
+        dotsFrame.moreBg:Show()
     else
         dotsFrame.more:Hide()
+        dotsFrame.moreBg:Hide()
     end
     dotsFrame.here = here
     dotsFrame:SetShown(n > 0)
@@ -452,8 +462,8 @@ function BRutus:SetupGuildMapPresence()
 
     -- Our own zone change alters who counts as "in your zone".
     local ev = CreateFrame("Frame")
-    ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    BRutus.Compat.RegisterEvent(ev, "ZONE_CHANGED_NEW_AREA")
+    BRutus.Compat.RegisterEvent(ev, "PLAYER_ENTERING_WORLD")
     ev:SetScript("OnEvent", function() BRutus:SafeCall(RefreshData) end)
     BRutus._guildMapPresenceFrame = ev
 

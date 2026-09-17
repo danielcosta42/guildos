@@ -329,7 +329,7 @@ function Import:InviteAll()
     present[me] = true
     for i = 1, (GetNumGroupMembers() or 0) do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local n = UnitName(unit)
+        local n = BRutus.Compat.UnitIdentity(unit)
         if n then present[n] = true end
     end
 

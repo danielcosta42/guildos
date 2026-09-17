@@ -26,7 +26,7 @@ function LootEquity:GetReport()
         grand = grand + qty
 
         local q = e.quality
-        if not q and e.itemLink then q = select(3, GetItemInfo(e.itemLink)) end
+        if not q and e.itemLink then q = select(3, BRutus.Compat.GetItemInfo(e.itemLink)) end
         if q and q >= 4 then rec.epics = rec.epics + 1 end
 
         if (e.timestamp or 0) > rec.last then rec.last = e.timestamp or 0 end

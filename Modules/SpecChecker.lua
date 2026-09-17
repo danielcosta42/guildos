@@ -37,10 +37,10 @@ local CLASS_SPEC_NAMES = {
 ----------------------------------------------------------------------
 local function CountTabPoints(tabIndex, isInspect)
     local total = 0
-    local numTalents = GetNumTalents(tabIndex, isInspect)
+    local numTalents = BRutus.Compat.GetNumTalents(tabIndex, isInspect)
     if not numTalents then return 0 end
     for t = 1, numTalents do
-        local _, _, _, _, currentRank = GetTalentInfo(tabIndex, t, isInspect)
+        local _, _, _, _, currentRank = BRutus.Compat.GetTalentInfo(tabIndex, t, isInspect)
         total = total + (tonumber(currentRank) or 0)
     end
     return total
@@ -52,11 +52,11 @@ end
 ----------------------------------------------------------------------
 local function CollectTabTalents(tabIndex, isInspect)
     local talents    = {}
-    local numTalents = GetNumTalents(tabIndex, isInspect)
+    local numTalents = BRutus.Compat.GetNumTalents(tabIndex, isInspect)
     if not numTalents then return talents end
     for t = 1, numTalents do
         local tName, tIcon, tier, col, curRank, maxRank =
-            GetTalentInfo(tabIndex, t, isInspect)
+            BRutus.Compat.GetTalentInfo(tabIndex, t, isInspect)
         talents[t] = {
             name        = tName   or "",
             icon        = tIcon   or "",
@@ -74,7 +74,8 @@ end
 -- Stores result in Guild OS.db.members[key].spec and returns it.
 ----------------------------------------------------------------------
 function SpecChecker:CollectOwnSpec()
-    local numTabs = GetNumTalentTabs()
+    local numTabs, why = BRutus.Compat.GetNumTalentTabs()
+    if why then return nil, why end
     if not numTabs or numTabs == 0 then return nil end
 
     local _, classToken = UnitClass("player")
@@ -161,7 +162,7 @@ function SpecChecker:ScanGroup()
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         if UnitExists(unit) and UnitIsConnected(unit) then
-            local name, realm = UnitName(unit)
+            local name, realm = BRutus.Compat.UnitIdentity(unit)
             if name then
                 realm = (realm and realm ~= "") and realm or GetRealmName()
                 local key = BRutus:GetPlayerKey(name, realm)
@@ -205,7 +206,7 @@ end
 function SpecChecker:OnInspectReady()
     if not inspectPending then return end
 
-    local numTabs = GetNumTalentTabs(true)   -- true = isInspect
+    local numTabs = BRutus.Compat.GetNumTalentTabs(true)   -- true = isInspect
     if not numTabs or numTabs == 0 then
         C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
         return
@@ -245,7 +246,7 @@ end
 ----------------------------------------------------------------------
 function SpecChecker:Initialize()
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("INSPECT_READY")
+    BRutus.Compat.RegisterEvent(frame, "INSPECT_READY")
     frame:SetScript("OnEvent", function(_, event)
         if event == "INSPECT_READY" then
             SpecChecker:OnInspectReady()

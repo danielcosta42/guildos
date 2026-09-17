@@ -138,8 +138,24 @@ function BRutus:FormatItemLevel(ilvl)
     return self:ColorText(tostring(ilvl), color.r, color.g, color.b)
 end
 
+-- The client's realm for member keys: GetRealmName(), else GetNormalizedRealmName() (a
+-- client with no realm name may still suffix roster names with a normalized one), else
+-- nil; "" counts as nothing. Anniversary always answers the first, so its keys keep their bytes.
+function BRutus:GetClientRealm()
+    local realm = GetRealmName()
+    if not realm or realm == "" then realm = GetNormalizedRealmName and GetNormalizedRealmName() end
+    if realm == "" then return nil end
+    return realm
+end
+
+-- A member's key is "Name-Realm", byte for byte as it has always been. WoW: Forever has
+-- no realms: when neither the caller nor the client gives one, the key is the name alone.
+-- "First Last" and "Anne-Marie" then split on the first hyphen and rejoin to themselves,
+-- so every split-and-rejoin site keeps a stable key.
 function BRutus:GetPlayerKey(name, realm)
-    realm = realm or GetRealmName()
+    if not name or name == "" then return nil end
+    if not realm or realm == "" then realm = BRutus:GetClientRealm() end
+    if not realm then return name end
     return name .. "-" .. realm
 end
 
@@ -389,7 +405,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
 
     -- Title
     local titleFS = frame:CreateFontString(nil, "OVERLAY")
-    titleFS:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(titleFS, 11)
     titleFS:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -2)
     titleFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleFS:SetText(L["Guild OS — Profession Sync Required"])
@@ -397,7 +413,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     -- Description
     local profNames = table.concat(staleProfessions, ", ")
     local descFS = frame:CreateFontString(nil, "OVERLAY")
-    descFS:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+    BRutus:ApplyFont(descFS, 10)
     descFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -4)
     descFS:SetWidth(320)
     descFS:SetJustifyH("LEFT")
@@ -412,7 +428,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     closeBtn:SetNormalFontObject(GameFontNormalSmall)
 
     local closeFS = closeBtn:CreateFontString(nil, "OVERLAY")
-    closeFS:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    BRutus:ApplyFont(closeFS, 12)
     closeFS:SetPoint("CENTER", 0, 0)
     closeFS:SetText("x")
     closeFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -526,7 +542,7 @@ end
 function BRutus:ExportLoot()
     local lines = { "Date\tItem\tPlayer\tRaid" }
     for _, e in ipairs(self.db.lootHistory or {}) do
-        local itemName = (e.itemLink and GetItemInfo(e.itemLink)) or e.itemName or "?"
+        local itemName = (e.itemLink and BRutus.Compat.GetItemInfo(e.itemLink)) or e.itemName or "?"
         local dateStr = e.timestamp and date("%Y-%m-%d %H:%M", e.timestamp) or ""
         lines[#lines + 1] = table.concat({ dateStr, itemName, e.player or "?", e.raid or "" }, "\t")
     end

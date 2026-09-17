@@ -77,7 +77,14 @@ BRutus = {
 }
 function BRutus:GetSetting(k) return self.db.settings[k] end
 function BRutus:SetSetting(k, v) self.db.settings[k] = v end
-function BRutus:GetPlayerKey(n, r) return n .. "-" .. (r or GetRealmName()) end
+dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
+-- The real identity rule too. This harness has been red since ae991c2, which
+-- made CompanionImport read who is already in the raid through Compat while
+-- the stub below still had no Compat at all; nothing ran the harnesses, so
+-- nobody found out.
+function GetBuildInfo() return "2.5.6", "1", "", 20506 end
+function UnitClass(unit) return UnitName(unit), "WARRIOR" end
+dofile(ADDON .. "/Core/Compat.lua")
 function BRutus:Print(...) print(...) end
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")

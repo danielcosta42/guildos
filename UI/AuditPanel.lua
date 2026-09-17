@@ -11,8 +11,8 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local SUBTABS = {
     { key = "ready",   label = L["Readiness"] },
-    { key = "attune",  label = L["Attunements"] },
-    { key = "resist",  label = L["Resistances"] },
+    { key = "attune",  label = L["Attunements"], tbc = true },  -- TBC content (ADR-0014)
+    { key = "resist",  label = L["Resistances"], tbc = true },  -- targets are TBC fights
     { key = "enchant", label = L["Enchants"] },
     { key = "sync",    label = L["Sync"] },
 }
@@ -542,10 +542,16 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "ready"
 
+    local subtabs = {}
+    for _, t in ipairs(SUBTABS) do
+        if not t.tbc or BRutus.Client.isAnniversary then subtabs[#subtabs + 1] = t end
+    end
+
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
     bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetHeight(28)
+    UI:StyleSubTabBar(bar)
 
     local subTabBtns = {}
     local function selectSub(key)
@@ -555,6 +561,7 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
         local info = parent.subPanels[key]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
     end
+    parent.SelectSub = selectSub
 
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
@@ -562,8 +569,8 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
     end
 
     local x = 0
-    for _, t in ipairs(SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 130)
+    for _, t in ipairs(subtabs) do
+        local btn = UI:CreateTab(bar, t.label, 130, true)
         btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
@@ -580,7 +587,7 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
 
     local builders = { ready = BuildReadySub, attune = BuildAttuneSub, resist = BuildResistSub,
         enchant = BuildEnchantSub, sync = BuildSyncSub }
-    for _, t in ipairs(SUBTABS) do
+    for _, t in ipairs(subtabs) do
         local p = makeSubPanel()
         parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
     end

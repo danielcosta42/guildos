@@ -1,6 +1,6 @@
 ----------------------------------------------------------------------
 -- Guild OS - Home Dashboard
--- The default landing tab: a card grid that surfaces the most useful
+-- The home cards beside the Now column (UI/Agora.lua): a grid that surfaces the most useful
 -- at-a-glance info (next raid + your RSVP, your readiness, guild pulse,
 -- recruitment, your loot, recent activity), each card clicking through to
 -- its full tab. Everything is read from existing modules; nothing here
@@ -10,7 +10,7 @@ local UI = BRutus.UI
 local C  = BRutus.Colors
 local L  = BRutus.L
 
--- Font-safe status marks (FRIZQT lacks many symbol glyphs, so use the native
+-- Font-safe status marks (the skin fonts lack many symbol glyphs, so use the native
 -- Indicator textures instead of unicode ticks/dots — see the circle-glyph bug).
 local TICK  = "|TInterface\\COMMON\\Indicator-Green:12|t "
 local CROSS = "|TInterface\\COMMON\\Indicator-Red:12|t "
@@ -45,19 +45,12 @@ end
 ----------------------------------------------------------------------
 -- Build the dashboard into a tab panel; return its refresh fn.
 ----------------------------------------------------------------------
-function BRutus:CreateDashboardPanel(panel, mainFrame)
+function BRutus:CreateDashboardPanel(panel)
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
-    -- Navigate to a tab (and optional sub-tab of a hub panel).
-    local function goTab(tabKey, subKey)
-        if not (mainFrame and mainFrame.SetActiveTab) then return end
-        mainFrame:SetActiveTab(tabKey)
-        if subKey then
-            local gp = mainFrame.tabPanels and mainFrame.tabPanels[tabKey]
-            if gp and gp.SelectSub then gp.SelectSub(subKey) end
-        end
-    end
+    -- A card opens its tab, and the sub-tab when it names one.
+    local function goTab(tabKey, subKey) UI:OpenWindow(tabKey, subKey) end
 
     -- Card = dark panel with a gold header + a body frame + click-through.
     local function makeCard(title, tabKey, subKey)

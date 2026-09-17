@@ -185,8 +185,9 @@ function RosterLog:_SetupDetection()
     self._ready = false
     BRutus.Compat.After(8, function() RosterLog._ready = true end)
     local f = CreateFrame("Frame")
-    f:RegisterEvent("CHAT_MSG_SYSTEM")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
     f:SetScript("OnEvent", function(_, _, msg)
+        if BRutus.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if not RosterLog._ready then return end
         local evt = RosterLog:_ParseSystem(msg)
         if evt then RosterLog:Add(evt) end

@@ -34,7 +34,7 @@ local function makeInput(parent, w, multiline)
     b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     b:SetBackdropColor(0.05, 0.05, 0.066, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    b:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(b, 11)
     b:SetTextColor(C.white.r, C.white.g, C.white.b)
     b:SetTextInsets(6, 6, multiline and 4 or 0, 0)
     b:SetAutoFocus(false)
@@ -243,21 +243,24 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
     bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(26)
+    bar:SetHeight(28)
+    UI:StyleSubTabBar(bar)
 
     local subTabBtns = {}
-    local function selectSub(key)
+    local function selectSub(key, filter)
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
         if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        -- A deep link's filter goes to the sub-panel that takes one (the calendar: a day).
+        if filter ~= nil and info and info.panel.ApplyFilter then BRutus:SafeCall(info.panel.ApplyFilter, filter) end
     end
-    parent.SelectSub = selectSub   -- exposed so /guildos calendar can jump here
+    parent.SelectSub = selectSub   -- deep links: /guildos calendar, the Now tab
 
     local x = 0
     for _, t in ipairs(HUB_SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 120)
+        local btn = UI:CreateTab(bar, t.label, 120, true)
         btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn

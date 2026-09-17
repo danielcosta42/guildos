@@ -18,7 +18,7 @@ function Wishlist:Initialize()
     end
     -- One-time migration: move flat myWishlist to per-char slot
     if BRutus.db.myWishlist and #BRutus.db.myWishlist > 0 then
-        local charKey = (UnitName("player") or "Unknown") .. "-" .. (GetRealmName() or "Unknown")
+        local charKey = BRutus:GetPlayerKey(UnitName("player") or "Unknown")
         if not BRutus.db.wishlists[charKey] or #BRutus.db.wishlists[charKey] == 0 then
             BRutus.db.wishlists[charKey] = BRutus.db.myWishlist
         end
@@ -119,10 +119,13 @@ function Wishlist:RebuildItemIndex()
         end)
     end
 
-    -- Seed static catalog so all raid items appear in search
-    for _, itemId in ipairs(RAID_CATALOG) do
-        if not index[itemId] then
-            index[itemId] = {}
+    -- Seed static catalog so all raid items appear in search. They are TBC raid
+    -- drops, so only on TBC Anniversary (ADR-0014).
+    if BRutus.Client.isAnniversary then
+        for _, itemId in ipairs(RAID_CATALOG) do
+            if not index[itemId] then
+                index[itemId] = {}
+            end
         end
     end
 
@@ -142,13 +145,13 @@ end
 ----------------------------------------------------------------------
 function Wishlist:GetItemName(itemId)
     if not itemId then return L["Item #?"] end
-    local name = GetItemInfo(itemId)
+    local name = BRutus.Compat.GetItemInfo(itemId)
     return name or (L["Item #"] .. itemId)
 end
 
 function Wishlist:GetItemQuality(itemId)
     if not itemId then return 1 end
-    local _, _, quality = GetItemInfo(itemId)
+    local _, _, quality = BRutus.Compat.GetItemInfo(itemId)
     return quality or 1
 end
 
@@ -161,7 +164,7 @@ local WISHLIST_MAX = 50
 function Wishlist:GetMyList()
     if not BRutus.db then return {} end
     if not BRutus.db.wishlists then BRutus.db.wishlists = {} end
-    local charKey = (UnitName("player") or "Unknown") .. "-" .. (GetRealmName() or "Unknown")
+    local charKey = BRutus:GetPlayerKey(UnitName("player") or "Unknown")
     if not BRutus.db.wishlists[charKey] then
         BRutus.db.wishlists[charKey] = {}
     end
@@ -189,7 +192,7 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
         return
     end
 
-    local name = GetItemInfo(itemId)
+    local name = BRutus.Compat.GetItemInfo(itemId)
     if not name then
         BRutus:Print(L["|cffFF4444[Wishlist]|r Unknown item. Try again in a few seconds."])
         return
@@ -214,8 +217,7 @@ function Wishlist:IsItemDelivered(itemId)
     local history = BRutus.db and BRutus.db.lootHistory
     if not history then return false end
     local myName = UnitName("player")
-    local realm  = GetRealmName() or ""
-    local myKey  = myName .. "-" .. realm
+    local myKey  = BRutus:GetPlayerKey(myName)
     for _, entry in ipairs(history) do
         if entry.fromML and entry.playerKey == myKey then
             -- Match by itemId stored in entry, or extract from itemLink
@@ -343,7 +345,7 @@ function Wishlist:HookTooltips()
     local function OnTooltipSetItem(tooltip)
         if not self.itemIndex then return end
 
-        local _, link = tooltip:GetItem()
+        local _, link = BRutus.Compat.TooltipItem(tooltip)
         if not link then return end
 
         local itemId = tonumber(link:match("item:(%d+)"))
@@ -367,17 +369,11 @@ function Wishlist:HookTooltips()
         tooltip:Show()
     end
 
-    GameTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-
-    if ItemRefTooltip then
-        ItemRefTooltip:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    end
-    if ShoppingTooltip1 then
-        ShoppingTooltip1:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    end
-    if ShoppingTooltip2 then
-        ShoppingTooltip2:HookScript("OnTooltipSetItem", OnTooltipSetItem)
-    end
+    -- A tooltip that is not built yet, or lacks the script, is skipped.
+    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    BRutus.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    BRutus.Compat.HookTooltip(ShoppingTooltip1, "OnTooltipSetItem", OnTooltipSetItem)
+    BRutus.Compat.HookTooltip(ShoppingTooltip2, "OnTooltipSetItem", OnTooltipSetItem)
 end
 
 ----------------------------------------------------------------------

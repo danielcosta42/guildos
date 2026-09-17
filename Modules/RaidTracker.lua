@@ -112,12 +112,12 @@ function RaidTracker:Initialize()
     self:MigrateAttendanceIfNeeded()
 
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    frame:RegisterEvent("RAID_ROSTER_UPDATE")
-    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
-    frame:RegisterEvent("ENCOUNTER_START")
-    frame:RegisterEvent("ENCOUNTER_END")
-    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    BRutus.Compat.RegisterEvent(frame, "ZONE_CHANGED_NEW_AREA")
+    BRutus.Compat.RegisterEvent(frame, "RAID_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(frame, "GROUP_ROSTER_UPDATE")
+    BRutus.Compat.RegisterEvent(frame, "ENCOUNTER_START")
+    BRutus.Compat.RegisterEvent(frame, "ENCOUNTER_END")
+    BRutus.Compat.RegisterEvent(frame, "PLAYER_ENTERING_WORLD")
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "ZONE_CHANGED_NEW_AREA" then
             RaidTracker:CheckZone()
@@ -315,13 +315,12 @@ function RaidTracker:TakeSnapshot(reason)
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         if UnitExists(unit) then
-            local name, realm = UnitName(unit)
+            local name, realm, classFile = BRutus.Compat.UnitIdentity(unit)
             if name then
-                realm = realm and realm ~= "" and realm or GetRealmName()
-                local key = name .. "-" .. realm
+                local key = BRutus:GetPlayerKey(name, realm)
                 members[key] = {
                     name = name,
-                    class = select(2, UnitClass(unit)) or "UNKNOWN",
+                    class = classFile or "UNKNOWN",
                     online = UnitIsConnected(unit),
                     hasConsumes = self:CheckPlayerConsumes(unit),
                 }
@@ -332,8 +331,7 @@ function RaidTracker:TakeSnapshot(reason)
 
     -- Include self
     local myName = UnitName("player")
-    local myRealm = GetRealmName()
-    local myKey = myName .. "-" .. myRealm
+    local myKey = BRutus:GetPlayerKey(myName)
     members[myKey] = {
         name = myName,
         class = select(2, UnitClass("player")),

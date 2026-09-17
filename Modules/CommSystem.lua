@@ -40,7 +40,7 @@ function CommSystem:Initialize()
     -- Register for addon messages on both the new prefix and the legacy BRutus prefix
     -- so this client can receive messages from older addon versions during guild transitions.
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("CHAT_MSG_ADDON")
+    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
     frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
         if prefix == BRutus.PREFIX or prefix == BRutus.LEGACY_PREFIX then
             CommSystem:OnMessageReceived(msg, channel, sender)
@@ -148,9 +148,9 @@ end
 
 function CommSystem:SendRaw(msg, target, priority)
     if target then
-        ChatThrottleLib:SendAddonMessage("NORMAL", BRutus.PREFIX, msg, "WHISPER", target)
+        BRutus.Compat.SendAddonMessage(BRutus.PREFIX, msg, "WHISPER", target, "NORMAL")
     else
-        ChatThrottleLib:SendAddonMessage(priority or "BULK", BRutus.PREFIX, msg, "GUILD")
+        BRutus.Compat.SendAddonMessage(BRutus.PREFIX, msg, "GUILD", nil, priority or "BULK")
     end
 end
 
@@ -165,7 +165,7 @@ end
 function CommSystem:OnMessageReceived(msg, channel, sender)
     -- Don't process our own messages
     local myName = UnitName("player")
-    if sender == myName or sender == myName .. "-" .. GetRealmName() then
+    if sender == myName or sender == BRutus:GetPlayerKey(myName) then
         return
     end
 
@@ -369,8 +369,10 @@ function CommSystem:HandleBroadcast(sender, data)
     local ok, playerData = LibSerialize:Deserialize(data)
     if not ok or type(playerData) ~= "table" then return end
 
-    -- Build player key
-    local realm = playerData.realm or GetRealmName()
+    -- Build player key: the payload's realm, else the client's, as in 0.53.0. Only a client with no
+    -- realm at all takes the sender's own suffix, so it agrees with a roster that suffixes names (issue #8).
+    local realm = playerData.realm
+    if (not realm or realm == "") and not BRutus:GetClientRealm() then realm = sender:match("^[^-]+%-(.+)$") end
     local name = playerData.name or sender:match("^([^-]+)")
     local key = BRutus:GetPlayerKey(name, realm)
 

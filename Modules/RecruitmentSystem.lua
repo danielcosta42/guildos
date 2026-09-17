@@ -204,8 +204,9 @@ end
 ----------------------------------------------------------------------
 function Recruitment:RegisterAutoInviteEvent()
     local f = CreateFrame("Frame")
-    f:RegisterEvent("CHAT_MSG_WHISPER")
+    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     f:SetScript("OnEvent", function(_, _, msg, author)
+        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
         if not CanGuildInvite() then return end
@@ -251,7 +252,7 @@ function Recruitment:_QualifyAndInvite(sender)
         self._whoFrame = CreateFrame("Frame")
         self._whoFrame:SetScript("OnEvent", function() Recruitment:_OnWhoResult() end)
     end
-    self._whoFrame:RegisterEvent("WHO_LIST_UPDATE")
+    BRutus.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
     BRutus.Compat.SetWhoToUI(true)   -- results to the API, not the Social frame
     BRutus.Compat.SendWho('n-"' .. sender .. '"')
     -- Timeout: /who is throttled; give it 6s then fail-safe.
@@ -731,7 +732,7 @@ function Recruitment:CreatePopupFrame()
 
     -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment").
     local title = f:CreateFontString(nil, "OVERLAY")
-    title:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+    BRutus:ApplyFont(title, 13)
     title:SetPoint("TOPLEFT", PAD, -12)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     title:SetText("Guild OS  |cff6c6c78" .. L["Recruitment"] .. "|r")
@@ -745,7 +746,7 @@ function Recruitment:CreatePopupFrame()
     dismiss:SetSize(20, 20)
     dismiss:SetPoint("TOPRIGHT", -4, -6)
     local dText = dismiss:CreateFontString(nil, "OVERLAY")
-    dText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    BRutus:ApplyFont(dText, 14)
     dText:SetPoint("CENTER")
     dText:SetText("x")
     dText:SetTextColor(0.6, 0.6, 0.6)
@@ -755,7 +756,7 @@ function Recruitment:CreatePopupFrame()
 
     -- Target channel line.
     local channelLine = f:CreateFontString(nil, "OVERLAY")
-    channelLine:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    BRutus:ApplyFont(channelLine, 11)
     channelLine:SetPoint("TOPLEFT", PAD, -38)
     channelLine:SetWidth(cw)
     channelLine:SetJustifyH("LEFT")
@@ -764,7 +765,7 @@ function Recruitment:CreatePopupFrame()
 
     -- Message preview (wrapped; sized in ShowSendPopup).
     local msgText = f:CreateFontString(nil, "OVERLAY")
-    msgText:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 12, "")
+    BRutus:ApplyFont(msgText, 12)
     msgText:SetPoint("TOPLEFT", PAD, -58)
     msgText:SetWidth(cw)
     msgText:SetJustifyH("LEFT")
@@ -773,7 +774,7 @@ function Recruitment:CreatePopupFrame()
 
     -- "Join a channel" hint, shown instead of a dead Postar when nothing is joined.
     local hint = f:CreateFontString(nil, "OVERLAY")
-    hint:SetFont((BRutus.Fonts and BRutus.Fonts.normal) or "Fonts\\FRIZQT__.TTF", 11, "")
+    BRutus:ApplyFont(hint, 11)
     hint:SetWidth(cw)
     hint:SetJustifyH("LEFT")
     hint:SetTextColor(C.red.r, C.red.g, C.red.b)
@@ -1120,8 +1121,9 @@ function Recruitment:RegisterWelcomeEvent()
     end)
 
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("CHAT_MSG_SYSTEM")
+    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")
     frame:SetScript("OnEvent", function(_, event, msg)
+        if BRutus.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if event ~= "CHAT_MSG_SYSTEM" then return end
         if not IsInGuild() then return end
         if not Recruitment._rosterReady then return end
