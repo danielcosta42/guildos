@@ -61,7 +61,17 @@ the same files out of the local CASC storage (`E:\World of Warcraft\Data`), with
 - **No detection API.** There is no `C_GameRules.IsCamelot`, and `WOW_PROJECT_ID` has no Forever constant in the
   UI code that could be read. `BRutus.Client` keeps reading the interface number.
 - **Interface: 16001**, by the `GetBuildInfo` rule for 1.60.1 (`%d%02d%02d`). No Blizzard TOC carries an
-  `## Interface` line to confirm it; `beta.yml` stamps `16000, 16001`.
+  `## Interface` line, and the client only tells an addon already running. What it is published on (#20):
+  - the client's own crash reports, `_classic_beta_/Errors/*.txt`, carry `<Exception.Branch> 1.60.1` and
+    `<Exception.WowProject> Camelot`, so the branch the rule reads is 1.60.1 and not 1.60.0;
+  - Wago's registry lists exactly one Forever patch, `1.60.1`;
+  - every addon already published for Forever declares 16001 (WowForeverTwitchEmotes,
+    WordHunter-Learning-Forever, BetterBags, WoW-Translator).
+
+  `GuildOS.toc` carries `20506, 16001`. The beta did load GuildOS, but that proves only that one of the two
+  numbers the beta zip stamped matched. **If 16001 were wrong the upload would still go through** — see below —
+  and the cost would be in game: out of date on Forever until someone ticks Load out of date AddOns.
+  `/guildos probe` on the beta reads `select(4, GetBuildInfo())` and settles it outright.
 
 ## Secret Values: the retail system, in full
 
@@ -149,12 +159,27 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
 - **Group members' identity.** Whether it is restricted outside instances.
 - **`GetRaidRosterInfo`.** Whether its names come back secret too. It is not in the documentation's secret list,
   and RaidTools, PugInspector, LootMaster's master looter, CompanionImport and RaidHUD read names from it.
-- **The interface number.** `GetBuildInfo()` on the client itself: is it really 16001?
-- **The TOC suffix.** Whether Forever reads a `_Camelot.toc`. `GuildOS.toc` loads either way.
+- **The TOC suffix.** Whether Forever reads a `_Camelot.toc`. `GuildOS.toc` loads either way — it already did
+  on the beta, from the plain file.
 - **Recipes and specs.** The shapes of `C_TradeSkillUI` and `C_ClassTalents` / `C_Traits` for a real character,
   before recipes and specs are read from them.
 
 `/guildos probe` records most of these in one run.
+
+## Publishing for it
+
+The CurseForge flavor exists (`gameVersionTypeId=88568`, beside Retail, Classic, TBC, Wrath, Cata, MoP and
+Titan Reforged), and `BigWigsMods/packager` knows it as `forever`, alias `camelot`, TOC suffix `_Camelot`,
+interface range `16???`. GuildOS publishes one file for both clients: `publish.yml` passes no `-g`, so the
+game versions come from `## Interface: 20506, 16001` — a flavor named there would publish to that one and
+drop the other without saying so. Verified by running the pinned packager against this tree: `Game version:
+2.5.6, 1.60.1`, one zip, both ids in one upload.
+
+**The publish never fails over a version.** An interface the store does not list falls back to the nearest one
+of that flavor, and failing that is dropped with a `WARNING ... ignoring` — the job still goes green. So a
+Forever version that stopped resolving would publish the file under Anniversary alone, quietly. **Read the
+publish log** for `Game version:` and for `ignoring`; that is the only thing that says it landed. This is also
+why the 16000 the beta used to stamp as a hedge costs nothing to drop: it would resolve to 1.60.1 anyway.
 
 ## Running the scan on a new build
 

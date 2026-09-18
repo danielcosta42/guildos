@@ -1,12 +1,12 @@
 # ![Guild OS](https://img.shields.io/badge/Guild%20OS-Guild%20Manager-blueviolet?style=for-the-badge) 
 
-### Premium Guild Management Addon for WoW TBC Anniversary
+### Premium Guild Management Addon for WoW TBC Anniversary and WoW: Forever
 
 > Made with care by **Chehul** 🛡️
 
 Guild OS replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
 
-> **Client:** WoW TBC Anniversary (Interface 20506)
+> **Clients:** WoW TBC Anniversary (Interface 20506) and WoW: Forever (16001) — one build serves both
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
@@ -161,14 +161,15 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 
 ## Testing on the Forever beta
 
-How Guild OS will be distributed for WoW: Forever is not settled yet. If CurseForge and Wago add a WoW: Forever
-flavour, the beta build ships there like every release; if they don't, it is posted as a direct download. Either
-way, it is announced first on the [GuildOS Discord](https://discord.gg/8XA6gmNjja).
+Guild OS ships **one build for both clients**: the release on CurseForge and Wago is marked for TBC
+Anniversary and for WoW: Forever, so an addon manager pointed at the beta installs it like any other addon.
+Builds between releases are posted as a GitHub pre-release and announced on the
+[GuildOS Discord](https://discord.gg/8XA6gmNjja).
 
 1. **Point the Guild OS companion at Anniversary first.** If you use the desktop companion, make sure it reads your
    `_anniversary_` folder before you install the beta, so it keeps syncing the right guild.
-2. **Get the beta build** from wherever it is announced. An addon manager that supports WoW: Forever installs it for
-   you.
+2. **Get the build** from CurseForge or Wago — an addon manager that supports WoW: Forever installs it for you —
+   or the pre-release announced on Discord.
 3. **Install** it into the beta client's own `Interface/AddOns` folder, not into `_anniversary_`.
 4. **Load it.** If the beta's interface number is newer than the build lists, tick **Load out of date AddOns** on
    the AddOns screen at character select.

@@ -12,11 +12,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # As in beta.yml: the job token stays out of .git/config, so the packager
+          # cannot push with it. This is the job that also holds the store keys.
+          persist-credentials: false
 
       - name: Package and publish to CurseForge & Wago
-        uses: BigWigsMods/packager@v2
+        # Pinned to a commit, like beta.yml: this is the job that holds the store keys,
+        # and a moving tag would hand them to whatever that tag points at tomorrow.
+        uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
         with:
-          args: -g bcc
+          # No -g: the game versions come from the TOC's own interface line, which
+          # carries Anniversary and Forever, so one upload is marked for both (#20).
+          # A flavor fixed here publishes to that one and drops the other in silence.
+          args: ''
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
