@@ -33,6 +33,7 @@ No spreadsheets. No external sites. No manual inspecting. **Install it, press `J
 *Made with care by **Chehul**.*
 
 ![Interface: 20506, 16001](https://img.shields.io/badge/Client-TBC%20Anniversary%20%2B%20Forever-blueviolet)
+[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
 ---
 
@@ -267,8 +268,13 @@ Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, inte
 
 ## Support
 
-Found a bug or have an idea? Open an issue on the project page — feedback is welcome.
+**[Join the Guild OS Discord](https://discord.gg/8XA6gmNjja)** — questions get answered there, bugs get looked
+at, and new builds are announced there first. For the Forever beta it has a channel for whatever the addon could
+not find on that client and one for `/guildos probe` results, which is how the rest of it gets fixed.
+
+Rather write it down? Open an issue on the project page — feedback is welcome either way.
 
 If Guild OS has been useful to your guild and you'd like to help keep it maintained, you can [buy me a coffee ☕](https://www.paypal.com/donate/?business=daniel.cfdutra13%40gmail.com&no_recurring=0&currency_code=USD).
 
+[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 [![GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)
