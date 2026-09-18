@@ -4,6 +4,12 @@ Issue: danielcosta42/guildos#11 · Epic: #4 · Depends on #6, #7, #9 · ADR-0017
 
 Condensed spec + plan + tasks.
 
+> **Read with #20 (ADR-0021).** Two premises below expired: the stores now have the Forever flavour, and the
+> packager knows it from commit `e50a250f` on. So the committed TOC carries `20506, 16001`, `publish.yml` names
+> no flavour and one upload serves both clients, and `beta.yml` no longer stamps interfaces — it refuses a TOC
+> that lost Forever's. What still holds: a `-beta.N` tag is a GitHub pre-release, built with `-d`, with no store
+> credentials anywhere near it.
+
 ## 1. Problem
 
 - **The stores cannot carry it yet.** CurseForge, Wago and WoWInterface have no WoW: Forever flavour.

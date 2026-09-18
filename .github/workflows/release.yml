@@ -48,8 +48,15 @@ jobs:
         # since ae991c2 and no one found out for a month.
         run: |
           sudo apt-get install -y -qq luajit > /dev/null
+          python3 -m pip install --quiet pyyaml
           for f in tools/*.lua; do
             luajit -e 'ADDON="."' "$f" > /dev/null || { echo "$f failed" >&2; exit 1; }
+            echo "ok $f"
+          done
+          # tools/beta-workflow.py is the only test of beta.yml and publish.yml, and it was red
+          # through the whole of #20 because nothing ran it either.
+          for f in tools/*.py; do
+            python3 "$f" > /dev/null || { echo "$f failed" >&2; exit 1; }
             echo "ok $f"
           done
 

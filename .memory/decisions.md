@@ -447,6 +447,10 @@ Forever handoff (§6) specifies one window that reorganises by width.
 
 ## ADR-0017 — Beta builds ship as GitHub pre-releases, outside the stores
 
+> **Superseded in part by ADR-0021.** The stores added the flavour, so the committed TOC now carries Forever's
+> interface and `publish.yml` names no flavour. What stays: a `-beta.N` tag is a GitHub pre-release and nothing
+> else. What goes: the stamp that added the interfaces, and the reason for it.
+
 ### Context
 WoW: Forever's beta opens before CurseForge, Wago or WoWInterface know the flavour, and the BigWigs packager labels
 an interface it does not know as retail. Adding Forever's interface to the committed TOC and publishing through
@@ -568,3 +572,33 @@ recipe crafters and the ban flag were all silently absent, and the fourth line w
 - (−) The dedupe is keyed on the function itself, so a module that hooks twice with two closures registers twice.
   `InitModules` runs once per session; a future re-init would double the lines with nothing to catch it.
 - (−) A client with the processor but without `TooltipUtil` hooks and reads nothing. `/guildos probe` asks for both.
+
+---
+
+## ADR-0021 — One build for both clients, and the store decides from the TOC
+
+### Context
+ADR-0017 kept Forever's interface out of the committed TOC because no store knew the flavour and the packager
+called an unknown interface retail. Both have changed: CurseForge lists **Forever** (`gameVersionTypeId=88568`),
+Wago's registry carries `forever: 1.60.1`, and the packager maps `16???` to `forever` (alias `camelot`, TOC suffix
+`_Camelot`) from commit `e50a250f` on. GuildOS was publishing to TBC only, with `-g bcc`.
+
+### Decision
+- `GuildOS.toc` carries `## Interface: 20506, 16001` — Anniversary first, so it shows no out-of-date warning
+  there. One file, two clients; no `_Camelot.toc`, which the beta showed is not needed.
+- `publish.yml` names **no** flavour. The versions come from that interface line, so one upload is marked for
+  both (`Game version: 2.5.6, 1.60.1`). A flavour named there publishes to that one and drops the other.
+- Both workflows pin the packager by commit, not by the `v2` tag: `publish.yml` runs third-party code with the
+  store keys.
+- `beta.yml` stops stamping interfaces and instead **refuses to build** a TOC that lost Forever's, which is the
+  one thing about that zip nothing else would notice.
+
+### Consequences
+- (+) The beta client installs GuildOS from the store like any other addon, and a release reaches both at once.
+- (+) The version the store shows follows the TOC, so a client patch bump is one line in one place.
+- (−) The zip and the store's display name lose the `-bcc` suffix: the file is no longer one flavour's.
+- (−) **A version the store stops listing does not fail the publish.** The packager falls back to the nearest
+  version of that flavour, else drops it with a warning, and the job still goes green — so the publish log is the
+  only place that says Forever was tagged. Read `Game version:` and `ignoring` there.
+- (−) 16001 is read from the client's crash reports and the rule, not from `GetBuildInfo` on a running client.
+  Wrong, it costs an out-of-date warning in game, not a failed upload.

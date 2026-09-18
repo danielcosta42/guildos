@@ -7,7 +7,7 @@ feature list are kept in sync with the current release.
 
 ## Project Title (pick one)
 
-**Recommended:** `Guild OS — All-in-One Guild Manager (TBC Anniversary)`
+**Recommended:** `Guild OS — All-in-One Guild Manager (TBC Anniversary & Forever)`
 
 Alternatives:
 - `Guild OS — Roster, Raid & Loot Suite for TBC`
@@ -32,7 +32,7 @@ No spreadsheets. No external sites. No manual inspecting. **Install it, press `J
 
 *Made with care by **Chehul**.*
 
-![Interface: 20506](https://img.shields.io/badge/Client-TBC%20Anniversary%20(20506)-blueviolet)
+![Interface: 20506, 16001](https://img.shields.io/badge/Client-TBC%20Anniversary%20%2B%20Forever-blueviolet)
 
 ---
 

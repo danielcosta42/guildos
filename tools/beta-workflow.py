@@ -20,6 +20,11 @@ import tempfile
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The packager both workflows pin, by commit and not by tag: this is third-party code that runs with
+# the store keys in publish.yml. The commit is what `v2` points at, and the first one that knows the
+# forever flavour — the one before it called interface 16001 retail (#20).
+PIN = "e50a250f8705041e40f2fa1ddcb280a686d65aa0"
 checks = 0
 
 
@@ -74,7 +79,7 @@ job = beta["jobs"]["beta"]
 check("permissions" not in job, "which does not widen its permissions")
 check(set(beta) == {"name", "on", "permissions", "jobs"}, "the workflow sets nothing else at its top level")
 check(set(job) == {"name", "runs-on", "steps"}, "the job has no condition, environment or permissions of its own")
-check([s.get("name") for s in job["steps"]] == ["Checkout", "Stamp the beta version and interfaces",
+check([s.get("name") for s in job["steps"]] == ["Checkout", "Stamp the beta version",
       "Package without uploading anywhere", "Create the GitHub pre-release"],
       "the steps run in this order: checkout, stamp, package, release")
 for s in job["steps"]:
@@ -84,7 +89,7 @@ check(job["steps"][0] == {"name": "Checkout", "uses": "actions/checkout@v4",
                           "with": {"fetch-depth": 0, "persist-credentials": False}},
       "the checkout is the tagged commit, in the workspace root, with its history, and stores no token in .git/config")
 packager = step(job, "Package without uploading anywhere")
-check(packager and packager.get("uses") == "BigWigsMods/packager@6d50adb6e8517eefef63f4afb16a6518166a6b28"
+check(packager and packager.get("uses") == "BigWigsMods/packager@" + PIN
       and packager.get("with") == {"args": "-d"} and "env" not in packager,
       "it packages with the BigWigs packager pinned to the commit of its v2 tag, in -d mode, with no store credentials")
 release = step(job, "Create the GitHub pre-release")
@@ -98,13 +103,15 @@ for forbidden in ("git push", "git commit", "CF_API_KEY", "WAGO_API_TOKEN", "cre
 # ── The stamp and release steps, run for real ───────────────────────────
 # Both run under bash, as on the runner, for two tags: a value copied from one tag
 # instead of read from GITHUB_REF_NAME fails on the other.
-stamp = step(job, "Stamp the beta version and interfaces")
-check(stamp is not None and "run" in stamp, "the beta job stamps the version and interfaces")
+stamp = step(job, "Stamp the beta version")
+check(stamp is not None and "run" in stamp, "the beta job stamps the version")
 toc_before = read("GuildOS.toc")
 config_before = read("Core", "Config.lua")
-ANNIVERSARY = toc_before.split("\n", 1)[0]  # the committed interface line, "## Interface: 20506" today
-check(re.fullmatch(r"## Interface: 205\d\d", ANNIVERSARY) is not None,
-      "the committed TOC declares one interface, Anniversary's: %s" % ANNIVERSARY)
+INTERFACES = toc_before.split("\n", 1)[0]  # "## Interface: 20506, 16001" today
+# Anniversary first so it shows no out-of-date warning there, then Forever's 16001 (#20). Both are
+# committed now: the stamp step no longer adds them, and what is published is read from this line.
+check(re.fullmatch(r"## Interface: 205\d\d, 16001", INTERFACES) is not None,
+      "the committed TOC declares Anniversary's interface and Forever's: %s" % INTERFACES)
 bash = shutil.which("bash")
 check(bash is not None, "bash is available to run the steps")
 git = shutil.which("git")
@@ -168,11 +175,9 @@ for tag in ("v0.54.0-beta.1", "v1.2.3-beta.10"):
     before, after = toc_before.split("\n"), toc_after.split("\n")
     check(len(before) == len(after), "%s: the stamped TOC keeps every line" % tag)
     changed = [(b, a) for b, a in zip(before, after) if b != a]
-    check([a for _, a in changed] == [ANNIVERSARY + ", 16000, 16001", "## Version: " + version],
-          "%s: the zip's TOC lists Anniversary first, then 16000 and 16001, and carries the tag's version: %r"
-          % (tag, changed))
-    check(changed[0][0] == ANNIVERSARY and changed[1][0].startswith("## Version: "),
-          "%s: only the interface and version lines change" % tag)
+    check([a for _, a in changed] == ["## Version: " + version],
+          "%s: the version is the only line the zip's TOC changes: %r" % (tag, changed))
+    check(after[0] == INTERFACES, "%s: and the interfaces are the committed ones, untouched" % tag)
     cb, ca = config_before.split("\n"), config_after.split("\n")
     cchanged = [(b, a) for b, a in zip(cb, ca) if b != a]
     check(len(cb) == len(ca) and len(cchanged) == 1 and cchanged[0][0].startswith("GuildOS.VERSION")
@@ -180,7 +185,7 @@ for tag in ("v0.54.0-beta.1", "v1.2.3-beta.10"):
           and cchanged[0][1].endswith("-- kept in sync with GuildOS.toc by the release workflow"),
           "%s: GuildOS.VERSION takes the tag's version, so /guildos probe records the beta build; its comment stays"
           % tag)
-    check("16000" in done.stdout and version in done.stdout, "%s: the step prints what it stamped" % tag)
+    check("16001" in done.stdout and version in done.stdout, "%s: the step prints what it stamped" % tag)
 
     ran, calls = run_release(tag, 0)
     check(ran.returncode == 0, "%s: the release step runs cleanly: %s" % (tag, ran.stderr.strip()))
@@ -192,14 +197,15 @@ for tag in ("v0.54.0-beta.1", "v1.2.3-beta.10"):
     check(failed.returncode != 0,
           "%s: a failing gh release create fails the step, so the job never goes green without a release" % tag)
 
-# A client patch bumps Anniversary's interface in the committed TOC: the beta zip has to follow it.
-done, toc_after, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(ANNIVERSARY, "## Interface: 20599", 1))
-check(done.returncode == 0 and toc_after.split("\n", 1)[0] == "## Interface: 20599, 16000, 16001",
-      "the stamp keeps whatever Anniversary interface the committed TOC has, so a patch bump reaches the beta zip")
-# An interface line the stamp cannot extend fails the step, rather than shipping a zip without Forever's interfaces.
-for line in ("## Interface: 20506, 20507", "## Interface: 20506 "):
-    done, _, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(ANNIVERSARY, line, 1))
-    check(done.returncode != 0, "a committed %r fails the stamp step instead of shipping without 16000, 16001" % line)
+# A client patch bumps Anniversary's interface in the committed TOC: the beta zip carries it as committed.
+done, toc_after, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(INTERFACES, "## Interface: 20599, 16001", 1))
+check(done.returncode == 0 and toc_after.split("\n", 1)[0] == "## Interface: 20599, 16001",
+      "the stamp keeps whatever interfaces the committed TOC has, so a patch bump reaches the beta zip")
+# Forever's interface dropped from the committed TOC fails the step, rather than shipping a zip the beta
+# client will not load — which is the one thing in this pipeline nothing else would notice.
+for line in ("## Interface: 20506", "## Interface: 20506, 16000", "## Interface: 20506,16001"):
+    done, _, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(INTERFACES, line, 1))
+    check(done.returncode != 0, "a committed %r fails the stamp step instead of shipping without 16001" % line)
 
 # ── The store flow stays as it was ──────────────────────────────────────
 rel_text, rel = workflow("release.yml")
@@ -222,7 +228,16 @@ check(rel_text.count("createWorkflowDispatch") == 1 and "ref: 'v${{ steps.versio
       "release.yml dispatches publish.yml only for the store tag it just made")
 pub_text, pub = workflow("publish.yml")
 check(set(pub["on"]) == {"workflow_dispatch"}, "publish.yml runs only when dispatched")
-check("args: -g bcc" in pub_text, "and still publishes the Anniversary flavour")
+pub_steps = pub["jobs"]["publish"]["steps"]
+pub_packager = [x for x in pub_steps if str(x.get("uses", "")).startswith("BigWigsMods/packager")]
+check(len(pub_packager) == 1 and pub_packager[0]["uses"] == "BigWigsMods/packager@" + PIN,
+      "it publishes with the same pinned packager as the beta job, not a tag that moves under the store keys")
+# No -g: the flavours come from the TOC's own interface line, so one upload is marked for both clients
+# (#20). A flavour named here publishes to that one and drops the other without saying so.
+check(pub_packager[0].get("with", {}).get("args", "") == "" and "-g " not in pub_text,
+      "and names no flavour, so the game versions come from the TOC")
+check(pub_steps[0].get("with", {}).get("persist-credentials") is False,
+      "and its checkout stores no token in .git/config either")
 
 # ── The zip and the README ──────────────────────────────────────────────
 pkgmeta = yaml.safe_load(read(".pkgmeta"))
@@ -232,17 +247,17 @@ for kept_out in ("tools", ".github", "*.md"):
     check(kept_out in pkgmeta.get("ignore", []), "the zip leaves out %s" % kept_out)
 
 readme = read("README.md")
+check("16001" in readme, "the README names the interface the one build carries for Forever")
 headings = re.findall(r"^## (.+)$", readme, re.M)
 check("Testing on the Forever beta" in headings, "README has a Testing on the Forever beta section")
 check(headings.index("Testing on the Forever beta") == headings.index("Installation") + 1,
       "right after Installation")
 section = readme.split("## Testing on the Forever beta", 1)[1].split("\n## ", 1)[0]
 for needle, what in (
-    # How the beta build ships is not decided yet (2026-09-17): the stores if they add a Forever flavour,
-    # a direct download if not. The section says so rather than promising either.
-    ("is not settled yet", "that the distribution is not decided yet"),
-    ("CurseForge and Wago", "the stores it ships through if they add Forever"),
-    ("direct download", "the fallback when they don't"),
+    # One build serves both clients: the stores carry it under Forever's flavour too (#20).
+    ("one build for both clients", "that one build serves both clients"),
+    ("CurseForge and Wago", "the stores it ships through"),
+    ("pre-release", "where the builds between releases go"),
     ("discord.gg/8XA6gmNjja", "where the build is announced"),
     ("into the beta client's own `Interface/AddOns` folder, not into `_anniversary_`",
      "to install into the beta client's own AddOns folder, not Anniversary's"),
