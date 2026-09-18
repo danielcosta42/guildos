@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.55.0] - 2026-09-18
+
+### Added
+- one build for both clients, published under Forever too
+
+
 ## [0.54.0] - 2026-09-17
 
 ### Added
