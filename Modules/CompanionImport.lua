@@ -19,10 +19,22 @@ BRutus.CompanionImport = Import
 --- The name to invite, and to match a raid slot or a guild roster row by.
 --- On TBC Anniversary a name that arrives with its realm ("Chehul-Mankrik") is cut back
 --- to the plain name the invite API wants for a same-realm player. WoW: Forever has no
---- realms and writes the surname with a hyphen ("Chehul-Costa"): cutting there would
---- invite somebody else, so the whole name is the name (the site's specs/036).
+--- realms and writes the surname with a hyphen ("Chehul-Costa"): cutting at the first
+--- hyphen would invite somebody else. What comes off there is exactly the client's own
+--- realm, if it reports one ("Chehul-Costa-70") — as it writes it, or without spaces the
+--- way a roster row does — compared as plain text, never as a pattern. The site does the
+--- same with the keys it receives (the site's specs/036).
 function Import.PlainName(name)
     if BRutus.Client.isAnniversary then return name:match("^([^-]+)") or name end
+    local realm = BRutus:GetClientRealm()
+    if realm and realm ~= "" then
+        local compact = (realm:gsub("%s", ""))
+        for _, suffix in ipairs({ "-" .. realm, "-" .. compact }) do
+            if #name > #suffix and name:sub(-#suffix) == suffix then
+                return name:sub(1, #name - #suffix)
+            end
+        end
+    end
     return name
 end
 

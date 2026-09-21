@@ -226,7 +226,23 @@ assert(BRutus.Client.isAnniversary, "this harness runs as the Anniversary client
 assert(PN("Chehul-Mankrik") == "Chehul", "Anniversary lost its realm cut")
 assert(PN("Chehul") == "Chehul")
 BRutus.Client.isAnniversary = false
+local realRealm = GetRealmName
+-- A client that reports no realm: the whole name is the name.
+GetRealmName = function() return "" end
+GetNormalizedRealmName = function() return "" end
 assert(PN("Chehul-Costa") == "Chehul-Costa", "Forever cut the surname off")
 assert(PN("Chehul") == "Chehul")
+-- A client that calls its one world something: exactly that comes off, and nothing else.
+GetRealmName = function() return "70" end
+assert(PN("Chehul-Costa-70") == "Chehul-Costa", "the client's own realm stayed on")
+assert(PN("Chehul-Costa") == "Chehul-Costa", "a name without the realm lost its surname")
+-- Spaces in the realm, the way the roster writes it without them.
+GetRealmName = function() return "Classic Beta PvE 2" end
+assert(PN("Chehul-Costa-ClassicBetaPvE2") == "Chehul-Costa", "the roster's realm spelling stayed on")
+-- A realm made of pattern characters is still plain text.
+GetRealmName = function() return "a.b" end
+assert(PN("Chehul-Costa-axb") == "Chehul-Costa-axb", "the realm was read as a pattern")
+GetRealmName = realRealm
+GetNormalizedRealmName = nil
 BRutus.Client.isAnniversary = true
 print("forever: the whole name is the name")
