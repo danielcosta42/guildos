@@ -64,6 +64,8 @@ LibStub = setmetatable({
 -- ── The addon's own globals ───────────────────────────────────────────
 BRutus = {
   VERSION = "0.46.0",
+  -- Core/Compat.lua reads this off the client; the export only asks which game it is.
+  Client = { isAnniversary = true },
   L = setmetatable({}, { __index = function(_, k) return k end }),
   -- Core/Data.lua's slot list, as far as this roster's gear goes.
   SlotIDs = { { id = 1, name = "HeadSlot" }, { id = 3, name = "ShoulderSlot" }, { id = 5, name = "ChestSlot" },
@@ -202,6 +204,15 @@ BRutus.LootTracker = {
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 dofile(ADDON .. "/Modules/CompanionExport.lua")
+
+-- The payload says which game the client is, so the site can build a Forever guild's
+-- keys itself and refuse a roster from the other game (the site's specs/036).
+local anniversary = BRutus.Companion:BuildPayload()
+assert(anniversary.game == "ANNIVERSARY", "an Anniversary client did not say so")
+assert(anniversary.v >= 6, "the payload that says its game is v6")
+BRutus.Client.isAnniversary = false
+assert(BRutus.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
+BRutus.Client.isAnniversary = true
 
 local text, countOrErr = BRutus.Companion:Build()
 if not text then

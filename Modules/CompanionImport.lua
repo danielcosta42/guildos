@@ -16,6 +16,16 @@
 local Import = {}
 BRutus.CompanionImport = Import
 
+--- The name to invite, and to match a raid slot or a guild roster row by.
+--- On TBC Anniversary a name that arrives with its realm ("Chehul-Mankrik") is cut back
+--- to the plain name the invite API wants for a same-realm player. WoW: Forever has no
+--- realms and writes the surname with a hyphen ("Chehul-Costa"): cutting there would
+--- invite somebody else, so the whole name is the name (the site's specs/036).
+function Import.PlainName(name)
+    if BRutus.Client.isAnniversary then return name:match("^([^-]+)") or name end
+    return name
+end
+
 local L = BRutus.L
 local WIRE_PREFIX = "GOSROST1:"
 
@@ -57,7 +67,7 @@ function Import:Parse(raw)
             members[#members + 1] = {
                 key = m.key or m.name,
                 -- The invite API wants the plain name for a same-realm player.
-                name = m.name:match("^([^-]+)") or m.name,
+                name = Import.PlainName(m.name),
                 class = m.class or "",
                 spec = m.spec or "",
                 slot = m.slot or "RANGED",
@@ -79,7 +89,7 @@ function Import:Parse(raw)
             if type(s) == "table" and type(s.name) == "string" and s.name ~= "" then
                 signups[#signups + 1] = {
                     key = type(s.key) == "string" and s.key or nil,
-                    name = s.name:match("^([^-]+)") or s.name,
+                    name = Import.PlainName(s.name),
                     class = s.class or "",
                     spec = s.spec or "",
                     slot = s.slot or "RANGED",
@@ -286,7 +296,7 @@ local function guildNames()
     local names = {}
     for i = 1, (GetNumGuildMembers() or 0) do
         local full = GetGuildRosterInfo(i)
-        if full then names[full:match("^([^-]+)") or full] = true end
+        if full then names[Import.PlainName(full)] = true end
     end
     return names
 end
@@ -382,8 +392,7 @@ function Import:OrganizeGroups()
     for i = 1, 40 do
         local name, _, subgroup = GetRaidRosterInfo(i)
         if name then
-            local short = name:match("^([^-]+)") or name
-            local target = want[short]
+            local target = want[Import.PlainName(name)]
             -- Only move people who are in the wrong place. Setting a group that
             -- is already correct still costs a server call and can shuffle
             -- someone else out of a full party.

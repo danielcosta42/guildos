@@ -83,6 +83,11 @@ dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not 
 -- the stub below still had no Compat at all; nothing ran the harnesses, so
 -- nobody found out.
 function GetBuildInfo() return "2.5.6", "1", "", 20506 end
+-- A TBC Anniversary client, which is what this fixture's roster is: Compat recognises it
+-- by the project id and the interface together, and a name's realm only comes off on
+-- that client (the site's specs/036).
+WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 5
+WOW_PROJECT_ID = 5
 function UnitClass(unit) return UnitName(unit), "WARRIOR" end
 dofile(ADDON .. "/Core/Compat.lua")
 function BRutus:Print(...) print(...) end
@@ -210,3 +215,18 @@ assert(offErr and offErr:find("off"), "import ran with the companion switched of
 local _, _, offErr2 = BRutus.CompanionImport:InviteAll()
 assert(offErr2 and offErr2:find("off"), "invite ran with the companion switched off")
 print("gate: holds when the companion is off")
+
+-- ── WoW: Forever ──────────────────────────────────────────────────────
+--
+-- No realms, and the surname is written with a hyphen. On Anniversary the part after the
+-- hyphen is a realm and comes off before an invite; on Forever it is half the person's
+-- name, and cutting it would invite somebody else (the site's specs/036).
+local PN = BRutus.CompanionImport.PlainName
+assert(BRutus.Client.isAnniversary, "this harness runs as the Anniversary client")
+assert(PN("Chehul-Mankrik") == "Chehul", "Anniversary lost its realm cut")
+assert(PN("Chehul") == "Chehul")
+BRutus.Client.isAnniversary = false
+assert(PN("Chehul-Costa") == "Chehul-Costa", "Forever cut the surname off")
+assert(PN("Chehul") == "Chehul")
+BRutus.Client.isAnniversary = true
+print("forever: the whole name is the name")
