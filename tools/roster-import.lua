@@ -83,6 +83,11 @@ dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not 
 -- the stub below still had no Compat at all; nothing ran the harnesses, so
 -- nobody found out.
 function GetBuildInfo() return "2.5.6", "1", "", 20506 end
+-- A TBC Anniversary client, which is what this fixture's roster is: Compat recognises it
+-- by the project id and the interface together, and a name's realm only comes off on
+-- that client (the site's specs/036).
+WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 5
+WOW_PROJECT_ID = 5
 function UnitClass(unit) return UnitName(unit), "WARRIOR" end
 dofile(ADDON .. "/Core/Compat.lua")
 function BRutus:Print(...) print(...) end
@@ -210,3 +215,34 @@ assert(offErr and offErr:find("off"), "import ran with the companion switched of
 local _, _, offErr2 = BRutus.CompanionImport:InviteAll()
 assert(offErr2 and offErr2:find("off"), "invite ran with the companion switched off")
 print("gate: holds when the companion is off")
+
+-- ── WoW: Forever ──────────────────────────────────────────────────────
+--
+-- No realms, and the surname is written with a hyphen. On Anniversary the part after the
+-- hyphen is a realm and comes off before an invite; on Forever it is half the person's
+-- name, and cutting it would invite somebody else (the site's specs/036).
+local PN = BRutus.CompanionImport.PlainName
+assert(BRutus.Client.isAnniversary, "this harness runs as the Anniversary client")
+assert(PN("Chehul-Mankrik") == "Chehul", "Anniversary lost its realm cut")
+assert(PN("Chehul") == "Chehul")
+BRutus.Client.isAnniversary = false
+local realRealm = GetRealmName
+-- A client that reports no realm: the whole name is the name.
+GetRealmName = function() return "" end
+GetNormalizedRealmName = function() return "" end
+assert(PN("Chehul-Costa") == "Chehul-Costa", "Forever cut the surname off")
+assert(PN("Chehul") == "Chehul")
+-- A client that calls its one world something: exactly that comes off, and nothing else.
+GetRealmName = function() return "70" end
+assert(PN("Chehul-Costa-70") == "Chehul-Costa", "the client's own realm stayed on")
+assert(PN("Chehul-Costa") == "Chehul-Costa", "a name without the realm lost its surname")
+-- Spaces in the realm, the way the roster writes it without them.
+GetRealmName = function() return "Classic Beta PvE 2" end
+assert(PN("Chehul-Costa-ClassicBetaPvE2") == "Chehul-Costa", "the roster's realm spelling stayed on")
+-- A realm made of pattern characters is still plain text.
+GetRealmName = function() return "a.b" end
+assert(PN("Chehul-Costa-axb") == "Chehul-Costa-axb", "the realm was read as a pattern")
+GetRealmName = realRealm
+GetNormalizedRealmName = nil
+BRutus.Client.isAnniversary = true
+print("forever: the whole name is the name")

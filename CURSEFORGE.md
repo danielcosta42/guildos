@@ -10,13 +10,13 @@ feature list are kept in sync with the current release.
 **Recommended:** `Guild OS — All-in-One Guild Manager (TBC Anniversary & Forever)`
 
 Alternatives:
-- `Guild OS — Roster, Raid & Loot Suite for TBC`
+- `Guild OS — Roster, Raid & Loot Suite`
 - `Guild OS — Guild Manager, Attunements, Raids & Loot`
-- `Guild OS — The Guild Operating System for TBC Classic`
+- `Guild OS — The Guild Operating System`
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> Turn the bare guild panel into a full management hub: auto-synced gear, professions & account-wide attunements, TMB wishlists, raid attendance, loot history, guild-wide enchant audits, raid buff/cooldown coverage, and a Gargul-style loot master. Zero setup.
+> One file for TBC Anniversary and WoW: Forever. Turns the bare guild panel into a management hub: synced gear, professions & attunements, TMB wishlists, raid attendance, loot history, enchant audits, buff & cooldown coverage, and a loot master.
 
 ---
 
@@ -26,13 +26,39 @@ Alternatives:
 
 # Guild OS — All-in-One Guild Manager
 
-**Guild OS replaces the bare-bones Blizzard guild panel with a full management hub.** It quietly collects and shares each member's gear, professions, account-wide attunements, raid attendance and loot — then layers on the officer tools a serious TBC guild actually needs: enchant audits, raid composition & cooldown coverage, attendance scoring, and a built-in loot master.
+**Guild OS replaces the bare-bones Blizzard guild panel with a full management hub.** It quietly collects and shares each member's gear, professions, account-wide attunements, raid attendance and loot — then layers on the officer tools a serious raiding guild actually needs: enchant audits, raid composition & cooldown coverage, attendance scoring, and a built-in loot master.
 
 No spreadsheets. No external sites. No manual inspecting. **Install it, press `J`, and the data fills itself in.**
 
 *Made with care by **Chehul**.*
 
 ![Interface: 20506, 16001](https://img.shields.io/badge/Client-TBC%20Anniversary%20%2B%20Forever-blueviolet)
+[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
+
+---
+
+## 🐉 On WoW: Forever
+
+**One download serves both clients.** The same file is marked for TBC Anniversary (2.5.6) and for WoW: Forever
+(1.60.1), so an addon manager pointed at the beta installs it like any other addon — there is no separate build.
+
+Guild OS was read against the Forever client before the beta opened, and it runs there today:
+
+- **The guild half works:** roster and alts, raid attendance, loot history and wishlists, recruiting, the officer
+  tools, and everything that reaches the website and the Discord bot.
+- **It was hardened for Forever's Secret Values.** When the client keeps a player's identity or a chat line
+  private, Guild OS skips that one instead of throwing errors at you.
+- **It uses Forever's own tooltip.** The retail tooltip replaced the old hooks; Guild OS follows it, so reserves,
+  wishlist marks and the ban flag still show up where you point the mouse.
+
+**Being straight about what does not apply there.** Several trackers below are about *TBC content* — raid
+attunements, TBC consumables — and a Classic-era client simply has nothing for them to find. Profession recipes
+and specs read APIs that Forever replaced; they come back empty for now rather than wrong, and they are the next
+thing on the list. Nothing about that stops the rest from working.
+
+Found something off on Forever? `/guildos errors` says what the addon could not find on that client, and
+`/guildos probe` records what it does have — both are welcome in the
+[support Discord](https://discord.gg/8XA6gmNjja).
 
 ---
 
@@ -230,7 +256,9 @@ Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, inte
 
 ## Notes
 
-- Built specifically for **WoW TBC Anniversary** (Interface `20506`)
+- One file for **WoW TBC Anniversary** (Interface `20506`) and **WoW: Forever** (`16001`)
+- The TBC-content trackers — raid attunements, TBC consumables — are for the Anniversary client; on Forever they
+  have nothing to track
 - Channel messages (LookingForGroup, Trade) require a hardware click due to Blizzard restrictions — Guild OS uses a clickable popup instead of sending silently
 - Officer status is a configurable guild-rank threshold, adjustable in Settings by current officers
 - Data is stored per-guild in SavedVariables (isolated per guild name + realm)
@@ -240,8 +268,13 @@ Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, inte
 
 ## Support
 
-Found a bug or have an idea? Open an issue on the project page — feedback is welcome.
+**[Join the Guild OS Discord](https://discord.gg/8XA6gmNjja)** — questions get answered there, bugs get looked
+at, and new builds are announced there first. For the Forever beta it has a channel for whatever the addon could
+not find on that client and one for `/guildos probe` results, which is how the rest of it gets fixed.
+
+Rather write it down? Open an issue on the project page — feedback is welcome either way.
 
 If Guild OS has been useful to your guild and you'd like to help keep it maintained, you can [buy me a coffee ☕](https://www.paypal.com/donate/?business=daniel.cfdutra13%40gmail.com&no_recurring=0&currency_code=USD).
 
+[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 [![GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)

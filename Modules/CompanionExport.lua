@@ -33,8 +33,10 @@ local FMT = "GOSCOMP1"
 -- penalty weights. 5 adds the equipment itself -- collected since the first version,
 -- synced between clients since the first version, and discarded by this file every
 -- time -- plus the two things a character cannot be drawn without: the player's sex
--- and the English race token.
-local PAYLOAD_VERSION = 5
+-- and the English race token. 6 says which game the client is: WoW: Forever has no
+-- realms and its names carry a hyphen, so the site builds a Forever guild's keys itself
+-- and refuses a roster from the other game (the site's specs/036).
+local PAYLOAD_VERSION = 6
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -483,6 +485,9 @@ function Companion:BuildPayload()
         guildKey = BRutus:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
         guildName = guildName,
         realm = realm,
+        -- The client, not a guess about it: TBC Anniversary is recognised positively and
+        -- everything else is Forever, which is the only other client this addon loads on.
+        game = BRutus.Client.isAnniversary and "ANNIVERSARY" or "FOREVER",
         exportedAt = math.floor(time()),
         exportedBy = BRutus:GetPlayerKey(UnitName("player")),
         addonVersion = BRutus.VERSION or "0",
