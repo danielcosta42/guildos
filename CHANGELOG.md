@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.56.0] - 2026-09-21
+
+### Added
+- o payload diz o jogo, e o import do Forever não corta o sobrenome
+
+### Fixed
+- no Forever o nome perde só o reino do próprio cliente
+
+
 ## [0.55.0] - 2026-09-18
 
 ### Added
