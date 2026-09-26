@@ -848,7 +848,7 @@ end
 function BRutus:SetMyRoles(roles)
     self.db.profile = self.db.profile or {}
     self.db.profile.prefRoles = roles or {}
-    local key = self:GetPlayerKey(UnitName("player"), GetRealmName())
+    local key = self:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
     self.db.members = self.db.members or {}
     self.db.members[key] = self.db.members[key] or {}
     self.db.members[key].prefRoles = self.db.profile.prefRoles

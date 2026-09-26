@@ -23,7 +23,7 @@ function OfficerNotes:AddNote(playerKey, text)
 
     local entry = {
         text = text,
-        author = UnitName("player"),
+        author = BRutus.Compat.PlayerName(),
         timestamp = GetServerTime(),
     }
     table.insert(BRutus.db.officerNotes[playerKey].notes, 1, entry)

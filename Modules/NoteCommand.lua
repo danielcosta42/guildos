@@ -91,7 +91,7 @@ function NoteCommand:_SetupHook()
             -- nothing happens here, so the member who typed it is told and nobody else is.
             -- ponytail: short-name match; a same-named member on another realm would see the
             -- hint too, which is local and harmless. Compare the realm if that ever matters.
-            if sender == UnitName("player") then
+            if sender == BRutus.Compat.PlayerName() then
                 BRutus:Print(L["You cannot edit public notes. Only an officer who is online now and running Guild OS can apply !note; if none is, type it again later."])
             end
             return

@@ -136,6 +136,10 @@ BRutus.CoreManager = {
     return { LATE = 10, LEFT_EARLY = 10, NO_CONSUMES = 10 }
   end,
 }
+-- TBC Anniversary, as the real Compat recognises it, for my own name through Compat.PlayerName (issue #26).
+WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
+function GetBuildInfo() return "2.5.6", "1", "", 20506 end
+dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
 function BRutus:GetSetting(key) return self.db.settings[key] end
 function BRutus:SetSetting(key, v) self.db.settings[key] = v end

@@ -53,7 +53,7 @@ function Polls:Create(question, options)
     end
     local p = {
         id = newId(), question = question, options = options, votes = {},
-        author = UnitName("player"), ts = GetServerTime(), closed = false,
+        author = BRutus.Compat.PlayerName(), ts = GetServerTime(), closed = false,
     }
     self:GetList()[p.id] = p
     if BRutus.SyncService then
@@ -69,7 +69,7 @@ function Polls:Vote(id, opt)
     local p = self:GetList()[id]
     if not p or p.closed then return end
     p.votes = p.votes or {}
-    p.votes[keyOf(UnitName("player"))] = opt
+    p.votes[keyOf(BRutus.Compat.PlayerName())] = opt
     if BRutus.SyncService then
         BRutus.SyncService:Publish("poll", "vote", { id = id, opt = opt })
     end
@@ -216,7 +216,7 @@ function Polls:Show()
 
         local polls = BRutus.Polls:GetSorted()
         local isOfficer = BRutus:IsOfficer()
-        local myKey = keyOf(UnitName("player"))
+        local myKey = keyOf(BRutus.Compat.PlayerName())
         local y = 0
         for _, p in ipairs(polls) do
             -- Question

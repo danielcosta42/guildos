@@ -33,7 +33,7 @@ local function RefreshCoreSignupFrame()
     if not CM then return end
 
     -- Identify the current player
-    local playerName  = UnitName("player") or ""
+    local playerName  = BRutus.Compat.PlayerName() or ""
     local _, pClass   = UnitClass("player")
     local playerKey   = BRutus:GetPlayerKey(playerName, GetRealmName())
     local playerRole  = CM.CLASS_DEFAULT_ROLE[pClass] or "rdps"
@@ -2621,7 +2621,7 @@ function BRutus:RefreshSettingsPanel(content, category)
         if BRutus.LootMaster then
             BRutus.LootMaster.testMode = true
             -- Show council frame with fake data
-            local fakeWinner = { name = UnitName("player"), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
+            local fakeWinner = { name = BRutus.Compat.PlayerName(), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
             local fakeCandidates = {
                 fakeWinner,
                 { name = "TestPlayer", class = "WARRIOR", wishlistType = "wishlist", order = 2 },

@@ -47,7 +47,7 @@ local function getOrNew(key)
 end
 
 local function touch(r)
-    r.updatedBy = UnitName("player")
+    r.updatedBy = BRutus.Compat.PlayerName()
     r.updatedAt = GetServerTime()
 end
 

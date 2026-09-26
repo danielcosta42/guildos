@@ -241,7 +241,7 @@ end
 -- Store scanned recipes for local player
 ----------------------------------------------------------------------
 function RecipeTracker:StoreMyRecipes(profName, recipes)
-    local name = UnitName("player")
+    local name = BRutus.Compat.PlayerName()
     local realm = GetRealmName()
     local key = BRutus:GetPlayerKey(name, realm)
 
@@ -648,7 +648,7 @@ end
 function RecipeTracker:LocalCrafts(itemId)
     itemId = tonumber(itemId)
     if not itemId then return nil end
-    local key = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    local key = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
     local professions = BRutus.db and BRutus.db.recipes and BRutus.db.recipes[key]
     if not professions then return nil end
     for profName, recipes in pairs(professions) do

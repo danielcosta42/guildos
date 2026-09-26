@@ -174,7 +174,7 @@ local function BuildPollsSub(panel)
         child:SetWidth(holder:GetWidth() - 12)
         local polls = (BRutus.Polls and BRutus.Polls:GetSorted()) or {}
         local isOfficer = BRutus:IsOfficer()
-        local myKey = keyOf(UnitName("player"))
+        local myKey = keyOf(BRutus.Compat.PlayerName())
         local y = 0
         for _, p in ipairs(polls) do
             local q = UI:CreateText(child, (p.closed and "|cff888888[" .. L["closed"] .. "]|r " or "") .. p.question,

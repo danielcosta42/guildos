@@ -291,7 +291,7 @@ end
 -- Append an entry to the local action log (capped ring buffer).
 function GuildManager:LogAction(action, target, detail)
     if BRutus.RosterLog then
-        BRutus.RosterLog:Record(action, target, UnitName("player"), detail)
+        BRutus.RosterLog:Record(action, target, BRutus.Compat.PlayerName(), detail)
         return
     end
     local log = BRutus.db.managementLog
@@ -304,7 +304,7 @@ function GuildManager:LogAction(action, target, detail)
         action    = action,
         target    = short,
         detail    = detail,
-        author    = UnitName("player"),
+        author    = BRutus.Compat.PlayerName(),
         timestamp = GetServerTime(),
     })
     -- Trim the oldest entries beyond the cap.

@@ -83,7 +83,7 @@ function BanList:Add(name, reason, durationSec)
     local entry = {
         name    = name:match("^([^-]+)") or name,
         reason  = strtrim(reason or "") ~= "" and strtrim(reason) or L["(no reason)"],
-        author  = UnitName("player"),
+        author  = BRutus.Compat.PlayerName(),
         ts      = now,
         expiry  = durationSec and (now + durationSec) or nil,
     }
@@ -99,7 +99,7 @@ function BanList:Remove(name)
     local existing = BRutus.db.banList[key]
     local tomb = {
         name = (existing and existing.name) or (name:match("^([^-]+)") or name),
-        author = UnitName("player"), ts = GetServerTime(), removed = true,
+        author = BRutus.Compat.PlayerName(), ts = GetServerTime(), removed = true,
     }
     BRutus.db.banList[key] = tomb
     self:_Publish(key, tomb)

@@ -160,10 +160,9 @@ end
 
 local function IsLeaderOrAssist()
     if not IsInRaid() then return false end
-    local myName = UnitName("player")
     for i = 1, GetNumGroupMembers() do
-        local rName, rank = GetRaidRosterInfo(i)
-        if rName == myName then
+        local _, rank = GetRaidRosterInfo(i)
+        if BRutus.Compat.IsPlayer("raid" .. i) then
             return rank >= 1
         end
     end

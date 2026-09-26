@@ -526,7 +526,7 @@ local function handleCommand(msg)
         if coreName == "" then
             BRutus:Print(L["Usage: /gos unsignup <CoreName>"])
         elseif BRutus.CoreManager then
-            local playerKey = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+            local playerKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
             BRutus.CoreManager:DeclineSignup(playerKey, coreName)
             BRutus:Print(string.format(L["Sign-up withdrawn from core: %s"], coreName))
         end

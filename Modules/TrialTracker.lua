@@ -37,14 +37,14 @@ function TrialTracker:AddTrial(playerKey, sponsor)
         endDate = now + self.DEFAULT_DURATION,
         status = self.STATUS.TRIAL,
         notes = {},
-        sponsor = sponsor or UnitName("player"),
+        sponsor = sponsor or BRutus.Compat.PlayerName(),
         snapshots = {},
     }
 
     -- Take initial snapshot
     self:TakeSnapshot(playerKey)
 
-    BRutus:Print(playerKey .. L[" marked as trial by "] .. (sponsor or UnitName("player")))
+    BRutus:Print(playerKey .. L[" marked as trial by "] .. (sponsor or BRutus.Compat.PlayerName()))
     self:BroadcastTrials()
     return true
 end
@@ -57,7 +57,7 @@ function TrialTracker:UpdateStatus(playerKey, newStatus)
     trial.status = newStatus
     if newStatus == self.STATUS.APPROVED or newStatus == self.STATUS.DENIED then
         trial.resolvedDate = GetServerTime()
-        trial.resolvedBy = UnitName("player")
+        trial.resolvedBy = BRutus.Compat.PlayerName()
     end
     self:BroadcastTrials()
 end
@@ -69,7 +69,7 @@ function TrialTracker:AddTrialNote(playerKey, text)
 
     table.insert(trial.notes, {
         text = text,
-        author = UnitName("player"),
+        author = BRutus.Compat.PlayerName(),
         timestamp = GetServerTime(),
     })
     self:BroadcastTrials()

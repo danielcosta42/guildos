@@ -32,7 +32,7 @@ end
 function AltAutoDetect:RecordSelf()
     if not GuildOSDB then return end
     GuildOSDB.accountChars = GuildOSDB.accountChars or {}
-    local name = UnitName("player")
+    local name = BRutus.Compat.PlayerName()
     if not name then return end
     local key = BRutus:GetPlayerKey(name, GetRealmName())
     local _, classFile = UnitClass("player")

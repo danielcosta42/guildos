@@ -248,7 +248,7 @@ function Calendar:Create(title, when, size, note, kind, shareAlliance)
     local e = {
         id = newId(), title = title, when = when, size = tonumber(size) or 25,
         note = note or "", kind = normalizeKind(kind),
-        author = UnitName("player"), createdAt = GetServerTime(),
+        author = BRutus.Compat.PlayerName(), createdAt = GetServerTime(),
         canceled = false, rsvps = {},
         -- OPT IN. An event is private to the guild unless an officer says so,
         -- and a MISSING field means private, so every event that existed
@@ -315,7 +315,7 @@ function Calendar:UpsertWebRaid(roster)
     local isNew = (e == nil)
     if isNew then
         e = {
-            id = id, author = UnitName("player"), createdAt = GetServerTime(),
+            id = id, author = BRutus.Compat.PlayerName(), createdAt = GetServerTime(),
             canceled = false, rsvps = {},
             -- Private to the guild, like anything else born here. The site
             -- hands over a roster; it does not get to widen the audience.
@@ -417,9 +417,9 @@ function Calendar:Rsvp(id, status, role)
     if not e or e.canceled then return end
     e.rsvps = e.rsvps or {}
     local _, class = UnitClass("player")
-    e.rsvps[keyOf(UnitName("player"))] = {
+    e.rsvps[keyOf(BRutus.Compat.PlayerName())] = {
         status = status, role = role, class = class,
-        name = UnitName("player"), ts = GetServerTime(),
+        name = BRutus.Compat.PlayerName(), ts = GetServerTime(),
     }
     if BRutus.SyncService then
         BRutus.SyncService:Publish("event", "rsvp", { id = id, status = status, role = role, class = class })
@@ -428,7 +428,7 @@ function Calendar:Rsvp(id, status, role)
 end
 
 function Calendar:MyRsvp(e)
-    return e and e.rsvps and e.rsvps[keyOf(UnitName("player"))] or nil
+    return e and e.rsvps and e.rsvps[keyOf(BRutus.Compat.PlayerName())] or nil
 end
 
 ----------------------------------------------------------------------

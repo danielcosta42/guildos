@@ -254,7 +254,7 @@ function AttunementTracker:ScanAttunements()
     end
 
     -- Store in player data
-    local name = UnitName("player")
+    local name = BRutus.Compat.PlayerName()
     local realm = GetRealmName()
     local key = BRutus:GetPlayerKey(name, realm)
 

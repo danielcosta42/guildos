@@ -489,7 +489,7 @@ function Companion:BuildPayload()
         -- everything else is Forever, which is the only other client this addon loads on.
         game = BRutus.Client.isAnniversary and "ANNIVERSARY" or "FOREVER",
         exportedAt = math.floor(time()),
-        exportedBy = BRutus:GetPlayerKey(UnitName("player")),
+        exportedBy = BRutus:GetPlayerKey(BRutus.Compat.PlayerName()),
         addonVersion = BRutus.VERSION or "0",
         count = count,
         members = members,

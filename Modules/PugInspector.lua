@@ -210,7 +210,6 @@ end
 ----------------------------------------------------------------------
 function PugInspector:_GroupMembers()
     local out = {}
-    local myName = UnitName and UnitName("player")
 
     if IsInRaid and IsInRaid() then
         local n = GetNumGroupMembers() or 0
@@ -218,7 +217,7 @@ function PugInspector:_GroupMembers()
             local name, _, _, _, _, classFile = GetRaidRosterInfo(i)
             if name then
                 local short = name:match("^([^-]+)") or name
-                if short ~= myName then
+                if not BRutus.Compat.IsPlayer("raid" .. i) then
                     out[#out + 1] = { name = short, full = name, class = classFile or "" }
                 end
             end

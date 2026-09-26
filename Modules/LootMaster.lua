@@ -268,9 +268,7 @@ function LootMaster:IsMasterLooter()
             if masterLootPartyID == 0 then return true end
             -- Raid case: compare against local player's raid index
             if masterLooterRaidID and IsInRaid() then
-                local myName = UnitName("player")
-                local name = GetRaidRosterInfo(masterLooterRaidID)
-                if name and name == myName then return true end
+                if BRutus.Compat.IsPlayer("raid" .. masterLooterRaidID) then return true end
             end
         end
     end
@@ -280,9 +278,7 @@ function LootMaster:IsMasterLooter()
         local method, masterLooterRaidID = C_PartyInfo.GetLootMethod()
         -- method 2 = master loot in the C_PartyInfo enum
         if method == 2 and masterLooterRaidID then
-            local myName = UnitName("player")
-            local name = GetRaidRosterInfo(masterLooterRaidID)
-            if name and name == myName then return true end
+            if BRutus.Compat.IsPlayer("raid" .. masterLooterRaidID) then return true end
         end
     end
 
@@ -349,7 +345,7 @@ function LootMaster:ProcessSystemRoll(message)
             end
         end
         -- Also accept own roll (solo / testMode outside raid)
-        if not inRaid and cleanName == UnitName("player") then
+        if not inRaid and cleanName == BRutus.Compat.PlayerName() then
             inRaid = true
         end
     end
@@ -461,7 +457,7 @@ function LootMaster:ResolveWishlistCouncil(itemId)
     end
     -- In testMode, treat the current player as in raid so council logic is testable
     if self.testMode then
-        local myName = UnitName("player")
+        local myName = BRutus.Compat.PlayerName()
         if myName then
             inRaid[strlower(myName)] = select(2, UnitClass("player")) or "UNKNOWN"
         end
@@ -500,7 +496,7 @@ function LootMaster:ResolvePrioList(itemId)
         if name then inRaid[strlower(name)] = true end
     end
     if self.testMode then
-        local myName = UnitName("player")
+        local myName = BRutus.Compat.PlayerName()
         if myName then inRaid[strlower(myName)] = true end
     end
 
@@ -925,7 +921,7 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
             -- Record to loot history only if the sender is an officer and not ourselves
             -- (the awarder already recorded locally in AwardLoot).
             local senderName = sender and sender:match("^([^-]+)") or ""
-            if senderName ~= UnitName("player")
+            if senderName ~= BRutus.Compat.PlayerName()
                 and BRutus:IsOfficerByName(senderName)
                 and BRutus.LootTracker
             then
@@ -1025,7 +1021,7 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         local memberData = BRutus.db.members and BRutus.db.members[pKey]
         if memberData and memberData.class then
             class = memberData.class
-        elseif name == UnitName("player") then
+        elseif name == BRutus.Compat.PlayerName() then
             class = select(2, UnitClass("player")) or "UNKNOWN"
         end
     end
@@ -1173,7 +1169,7 @@ function LootMaster:AwardLoot(playerName, silent)
 
     -- Path 2: No ML API or loot window closed -> queue for trade
     if not awarded then
-        local isMe = (playerName == UnitName("player"))
+        local isMe = (playerName == BRutus.Compat.PlayerName())
         if not isMe then
             self:QueueForTrade(playerName, itemLink, itemId)
         end
@@ -1412,7 +1408,7 @@ end
 ----------------------------------------------------------------------
 function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     local C      = BRutus.Colors
-    local myName = UnitName("player")
+    local myName = BRutus.Compat.PlayerName()
 
     if self.rollPopup then
         self.rollPopup:Hide()
@@ -1996,7 +1992,7 @@ function LootMaster:ShowLootFrame(items)
         end
         -- In testMode (or outside a group) include the local player
         if LootMaster.testMode or numMembers == 0 then
-            local myName  = UnitName("player")
+            local myName  = BRutus.Compat.PlayerName()
             local myClass = select(2, UnitClass("player")) or "UNKNOWN"
             if myName then
                 local found = false
@@ -2212,7 +2208,7 @@ function LootMaster:ShowLootFrame(items)
                 map[strlower(name)] = classFile or "UNKNOWN"
             end
         end
-        local myName = UnitName("player")
+        local myName = BRutus.Compat.PlayerName()
         if myName then
             map[strlower(myName)] = select(2, UnitClass("player")) or "UNKNOWN"
         end

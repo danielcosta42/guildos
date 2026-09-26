@@ -50,7 +50,7 @@ function RaidTools:GetSource()
         return list, L["Current raid"]
     elseif IsInGroup() then
         local _, classFile = UnitClass("player")
-        list[#list + 1] = { name = UnitName("player"), class = classFile or "" }
+        list[#list + 1] = { name = BRutus.Compat.PlayerName(), class = classFile or "" }
         for i = 1, (GetNumGroupMembers() or 1) - 1 do
             local unit = "party" .. i
             local nm, _, cf

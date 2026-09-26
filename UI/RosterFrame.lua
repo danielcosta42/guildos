@@ -1298,7 +1298,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     end
 
     local info = UIDropDownMenu_CreateInfo()
-    local myName = UnitName("player")
+    local myName = BRutus.Compat.PlayerName()
     local isMe = (data.name == myName)
 
     -- Header: player name
