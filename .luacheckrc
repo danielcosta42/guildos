@@ -357,6 +357,7 @@ read_globals = {
 -- Third-party libraries — skip
 exclude_files = {
     "Libs/**",
+    "Data/ProfCatalogForever.lua",  -- generated data (tools/prof_catalog.py)
     -- Host-side harnesses. They run under lua5.1 outside the game and their whole
     -- job is to define the WoW API themselves, so every stub reads to luacheck as
     -- writing a read-only global. Linting them against the addon's own config was

@@ -71,6 +71,7 @@ Modules\LootTracker.lua
 Modules\LootMaster.lua
 Modules\RecipeTracker.lua
 Modules\CraftNet.lua
+Data\ProfCatalogForever.lua
 Modules\RecruitBeacon.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
