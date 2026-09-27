@@ -602,3 +602,36 @@ Wago's registry carries `forever: 1.60.1`, and the packager maps `16???` to `for
   only place that says Forever was tagged. Read `Game version:` and `ignoring` there.
 - (−) 16001 is read from the client's crash reports and the rule, not from `GetBuildInfo` on a running client.
   Wrong, it costs an out-of-date warning in game, not a failed upload.
+
+---
+
+## ADR-0022 — Professions on Forever by ID: passive IsPlayerSpell over a generated catalog, hash-summarized sync
+
+### Context
+On WoW: Forever the Classic profession API is gone, so GuildOS collected nothing: no levels, no recipes, and every
+surface that reads them was empty. A throwaway probe in the beta (2026-09-27) showed that `GetProfessionInfo`
+gives exact ranks with the window closed, that `IsPlayerSpell(recipeID)` matches the window's learned list
+exactly (while `C_SpellBook.IsSpellInSpellBook` does not), and that the Communities roster names every member's
+primary professions, addon or not, with no rank. Professions are expected to be central in Forever (epic #30).
+
+### Decision
+- Key professions by skill-line ID and recipes by recipe ID, never by name.
+- Ship a static catalog generated from the build's DB2 (`tools/prof_catalog.py`) and learn recipes by asking
+  `IsPlayerSpell` for each recipe of each owned line: no window, no reminder. The own window only adds recipes
+  the catalog lacks (`extra`), which bridges a beta build newer than the catalog.
+- Sync through a `prof` SyncService domain: a small summary with a hash per profession on login, on change and
+  every 10 min; a list only when a hash changes, answered once per burst (whisper, or GUILD for several).
+  The member broadcast stops carrying recipes on Forever.
+- Members without the addon come from the Communities roster, as a native record an addon record replaces.
+- An adapter projects the model into the legacy shapes, so every existing surface works unchanged.
+- Forever only. Anniversary keeps its path untouched.
+
+### Consequences
+- (+) Every member's professions and recipes, with nobody opening a window; lists travel once per change.
+- (+) Members without the addon still show their professions.
+- (+) The catalog (outputs, reagents, stations, specializations) is the base the directory, coverage and site
+  sub-projects build on.
+- (−) The catalog must be regenerated per beta build; `/guildos probe` reports the catalog build and how many
+  extra recipes the client found, the signal to regenerate.
+- (−) Recipe required skill for trainer recipes is not in the client data.
+- (−) Names in `db.recipes` are the reader's client's language, as before.

@@ -227,8 +227,10 @@ function Professions:CraftersOf(recipeID)
             for _, e in pairs(rec.profs) do
                 for _, list in ipairs({ e.recipes or {}, e.extra or {} }) do
                     for _, id in ipairs(list) do
-                        index[id] = index[id] or {}
-                        index[id][#index[id] + 1] = key
+                        local keys = index[id] or {}
+                        index[id] = keys
+                        -- A recipe two of this member's professions share is listed once.
+                        if keys[#keys] ~= key then keys[#keys + 1] = key end
                     end
                 end
             end

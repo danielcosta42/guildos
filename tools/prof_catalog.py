@@ -104,6 +104,11 @@ def build_catalog(t):
             rid, cnt = num(rg.get(f"Reagent_{i}")), num(rg.get(f"ReagentCount_{i}"))
             if rid and cnt:
                 flat += [rid, cnt]
+        by_line[line].append(spell)
+        # A recipe two professions learn (Synthetic Gordok Ogre Suit: Tailoring and
+        # Leatherworking) is listed on both lines and recorded once, under the lowest line.
+        if spell in recipes and recipes[spell][0] < line:
+            continue
         recipes[spell] = [
             line, num(r.get("TrivialSkillLineRankLow")), num(r.get("TrivialSkillLineRankHigh")),
             num(creates[0]["EffectItemType"]) if creates else 0,
@@ -116,10 +121,10 @@ def build_catalog(t):
             num(r.get("TradeSkillCategoryID")),
             flat,
         ]
-        by_line[line].append(spell)
     stations = {f: focus_names.get(f, "") for f in sorted({v[8] for v in recipes.values() if v[8]})}
     return {"professions": professions, "recipes": recipes, "specs": specs, "stations": stations,
-            "byLine": {line: sorted(ids) for line, ids in by_line.items()}}
+            # A spell can have several rows on one line (per race or class): listed once.
+            "byLine": {line: sorted(set(ids)) for line, ids in by_line.items()}}
 
 
 def lua_str(s):
@@ -158,8 +163,11 @@ def selftest():
     assert smelt[F["line"]] == 186 and smelt[F["out"]] == 2840 and smelt[F["outCount"]] == 1, smelt
     assert smelt[F["reagents"]] == [2770, 1] and smelt[F["src"]] == 3 and smelt[F["focus"]] > 0, smelt
     assert cat["recipes"][3304][F["src"]] == 1, "a recipe no item teaches comes from a trainer"
-    assert all(ids == sorted(ids) for ids in cat["byLine"].values()), "byLine is sorted"
-    assert all(cat["recipes"][i][F["line"]] == line for line, ids in cat["byLine"].items() for i in ids)
+    assert all(ids == sorted(set(ids)) for ids in cat["byLine"].values()), "byLine is sorted, no duplicates"
+    assert all(i in cat["recipes"] for ids in cat["byLine"].values() for i in ids), "every listed recipe exists"
+    assert all(s in cat["byLine"][v[F["line"]]] for s, v in cat["recipes"].items()), "a recipe's line lists it"
+    assert 461692 in cat["byLine"][165] and 461692 in cat["byLine"][197], "a two-profession recipe is on both lines"
+    assert cat["recipes"][461692][F["line"]] == 165, "and recorded under the lowest one"
     assert cat["specs"].get(9788) == 164, cat["specs"]
     plan = cat["recipes"][15296]
     assert plan[F["spec"]] == 9788 and plan[F["src"]] == 2 and plan[F["recipeItem"]] == 11612, plan

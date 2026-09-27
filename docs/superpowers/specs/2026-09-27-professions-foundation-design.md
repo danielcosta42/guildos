@@ -73,6 +73,10 @@ memory note and the epic):
   - `recipes[recipeID] = { line, yellow, grey, out, outCount, enchant, reqSkill, spec, focus,
     src, recipeItem, category, reagents }` as a positional array; `reagents` is a flat
     `{itemID, count, ...}` list; `src` is 1 trainer/other, 2 recipe item, 3 automatic.
+  - A recipe two professions learn (Synthetic Gordok Ogre Suit, Tailoring and Leatherworking) is
+    listed in both lines' `byLine` and recorded once, under the lowest line; a spell with several
+    rows on one line is listed once.
+  - `stations[focusID]` — the English name of each crafting station a recipe requires.
   - `byLine[line] = { recipeID, ... }` sorted — the passive scan's work list.
 - Left out: the test profession (2933/2934), rank spells, rows with `AcquireMethod` 3 (retired),
   rows with no create/enchant effect. No names: the client localizes them at run time
@@ -118,7 +122,9 @@ memory note and the epic):
 - Requests for the same line within 3s are aggregated: one requester gets a whisper, two or more
   get one GUILD `list`.
 - A receiver stores a `list` only if the hash it recomputes equals the `h` in the list and the
-  `h` of the latest `sum` it holds from that sender (or it holds none yet).
+  `h` of the latest `sum` it holds from that sender, and it does not hold that list yet. A list with
+  no summary before it is dropped: whoever asked always has the summary.
+- A request that got no list is asked again after 120s, when the next summary still carries that hash.
 - Trust: the member key comes from the sender, never from the payload; a sender that is not in the
   guild roster (`GetMemberRecord`) is ignored, whatever the channel.
 - Size: ~300 recipes serialize and deflate to ~1.5 KB (about 7 chunks at BULK), sent once per
@@ -137,9 +143,11 @@ memory note and the epic):
   `MemberDetail` (fixes the nil-rank raise); `CompanionExport` sends only ranked professions.
 
 ### 3.7 Compat, probe, CI
-- New `Compat` wrappers: `GetProfessions`, `GetProfessionInfo`, `IsPlayerSpell`, `GetSpellName`,
-  `TradeSkillOwnView` (window open, settled, not linked/guild) and `TradeSkillLearned` (learned IDs
-  of the open window). `compat-guard` lists the raw globals so nothing else reaches them.
+- New `Compat` wrappers: `GetProfessions`, `GetProfessionInfo`, `IsPlayerSpell`, `TradeSkillLearned`
+  (the open window's line and learned IDs, only for the player's own settled view) and
+  `GuildMemberProfessions` (the Communities roster's profession lines, secret fields skipped). Names
+  come through the existing `Compat.GetSpellInfo`. `compat-guard` lists `GetProfessions`,
+  `GetProfessionInfo`, `C_TradeSkillUI` and `C_Club` so nothing else reaches them.
 - `/guildos probe` records `GetProfessions`, `GetProfessionInfo`, `IsPlayerSpell`,
   `C_TradeSkillUI.GetAllRecipeIDs`, `GetRecipeInfo`, `C_Club.GetMemberInfo`, the catalog build and
   the number of extra IDs.
@@ -168,11 +176,15 @@ memory note and the epic):
   recipes without opening a window; learning a recipe shows up on the other within ~15s.
 
 ## 6. Tasks
-- [ ] Catalog generator + fixture self-test + generated catalog for 1.60.1.70009
-- [ ] Compat wrappers, compat-guard, luacheck, probe
-- [ ] `Professions` (collection, model, native, API, adapter)
-- [ ] `ProfSync`
-- [ ] Integration points (DataCollector, reminder, rankless rendering, export)
-- [ ] `tools/professions.lua`
-- [ ] Spec, functions catalog, decisions
+- [x] Catalog generator + fixture self-test + generated catalog for 1.60.1.70009 (2,490 recipes,
+  10 specializations, 21 stations)
+- [x] Compat wrappers, compat-guard, luacheck, probe
+- [x] `Professions` (collection, model, native, API, adapter)
+- [x] `ProfSync`
+- [x] Integration points (DataCollector, reminder, rankless rendering, export)
+- [x] `tools/professions.lua` (7,553 checks, most of them the real catalog's per-recipe checks);
+  mutants of the native guard, the hash compare, the extra filter, the list guard, the roster
+  check, aggregation, re-ask, hash verification, the broadcast gate, the reminder gate, pruning,
+  the own-list scan and the crafter dedupe are all killed
+- [x] Spec, functions catalog, decisions (ADR-0022)
 - [ ] Manual check on the beta (maintainer)

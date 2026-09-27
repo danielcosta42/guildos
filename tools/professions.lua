@@ -376,4 +376,45 @@ BRutus:PruneStaleData()
 check(BRutus.db.professions[BOB] == nil and BRutus.db.recipes[BOB] == nil and BRutus.db.professions[ME],
       "a member who left loses the profession record and its projection")
 
+table.insert(BRutus.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
+check(P:Scan() == true and #P:CraftersOf(2657) == 1, "a recipe two of my professions share lists me once")
+table.remove(BRutus.ProfCatalog.byLine[185], 1)
+
+-- ── 6. The real catalog ─────────────────────────────────────────────────
+local fixture = BRutus.ProfCatalog
+dofile(ADDON .. "/Data/ProfCatalogForever.lua")
+local real = BRutus.ProfCatalog
+BRutus.ProfCatalog = fixture
+check(real ~= fixture and real.build:match("^1%.60%.") ~= nil, "the generated catalog loads: " .. tostring(real.build))
+check(real.recipes[2657] and real.recipes[2657][real.F.line] == 186 and real.recipes[2657][real.F.out] == 2840,
+      "Smelt Copper is a Mining recipe making Copper Bar")
+local total = 0
+for line, ids in pairs(real.byLine) do
+  check(real.professions[line] ~= nil, "byLine " .. line .. " is a profession")
+  for i, id in ipairs(ids) do
+    total = total + 1
+    check(real.recipes[id] ~= nil, "recipe " .. id .. " listed on " .. line .. " exists")
+    check(i == 1 or ids[i - 1] < id, "byLine " .. line .. " is sorted")
+  end
+end
+for id, r in pairs(real.recipes) do
+  local listed = false
+  for _, x in ipairs(real.byLine[r[real.F.line]] or {}) do if x == id then listed = true end end
+  check(listed, "recipe " .. id .. " is listed on its own line")
+end
+check(total > 2000 and real.professions[2933] == nil and real.professions[40] == nil,
+      "about 2,500 recipes, no test profession, no Poisons")
+
+-- ── 7. Anniversary: none of it exists ───────────────────────────────────
+BRutus.Client.isAnniversary = true
+local keep = { BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog }
+BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog = nil, nil, nil
+dofile(ADDON .. "/Data/ProfCatalogForever.lua")
+dofile(ADDON .. "/Modules/Professions.lua")
+dofile(ADDON .. "/Modules/ProfSync.lua")
+check(BRutus.Professions == nil and BRutus.ProfSync == nil and BRutus.ProfCatalog == nil,
+      "on Anniversary the catalog, Professions and ProfSync do not exist")
+BRutus.Client.isAnniversary = false
+BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog = keep[1], keep[2], keep[3]
+
 print("professions: " .. checks .. " checks passed")
