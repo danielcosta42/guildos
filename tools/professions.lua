@@ -182,7 +182,7 @@ BRutus.SyncService = {
   handlers = {},
   On = function(self, dom, fn) self.handlers[dom] = fn end,
   Publish = function(_, dom, act, data, opts)
-    sent[#sent + 1] = { dom = dom, act = act, data = data, target = opts and opts.target }
+    sent[#sent + 1] = { dom = dom, act = act, data = data, target = opts and opts.target, at = NOW }
     return "id"
   end,
 }
@@ -269,8 +269,10 @@ KNOWN[999001] = nil
 check(P:Scan() == true and #BRutus.db.professions[ME].profs[186].extra == 0, "an extra no longer known is dropped")
 KNOWN[777001] = true
 fire("NEW_RECIPE_LEARNED", 777001)
+check(#BRutus.db.professions[ME].profs[186].extra == 0, "a learned recipe waits for the scan, so the stored hash stays true")
 runTimers()
-check(BRutus.db.professions[ME].profs[186].extra[1] == 777001,
+rec = BRutus.db.professions[ME]
+check(rec.profs[186].extra[1] == 777001 and rec.profs[186].h == P.Hash(rec.profs[186].recipes, rec.profs[186].extra),
       "a recipe the catalog lacks, learned with the window closed, is kept as extra on its line")
 KNOWN[777001] = nil
 P:Scan()
@@ -288,7 +290,8 @@ check(BRutus.db.professions[ME].src == "addon" and BRutus.db.professions[ME].pro
 local bobLegacy = P:LegacyList(BOB)
 check(#bobLegacy == 1 and bobLegacy[1].name == "Mining" and bobLegacy[1].rank == nil, "a native profession has no rank")
 check(BRutus.db.members[BOB] == nil, "a member without the addon gets no members row")
-check(P.KeyFor("Bob") == BOB and P.KeyFor("Bob-Elsewhere") == BOB, "a key from a name ignores a suffix when the client has a realm")
+check(P.KeyFor("Bob") == BOB and P.KeyFor("Bob-Elsewhere") == BRutus:GetPlayerKey("Bob", "Elsewhere"),
+      "a key from a name follows the roster's rule: its suffix, else the client's realm")
 CLUB[1].profession1ID = 164
 fire("GUILD_ROSTER_UPDATE")
 runTimers()
@@ -362,6 +365,13 @@ check(#BRutus.db.recipes[BOB].Mining == 2 and BRutus.db.professions[BOB].profs[1
       "the new list replaces it")
 runTimers()
 check(#sentOf("req") == 0, "a list that arrived meanwhile is not asked for")
+local CID = BRutus:GetPlayerKey("Cid")
+BRutus.db.professions[CID] = { src = "addon", ts = NOW, profs = { [185] = { rank = 5, max = 75, h = 1, n = 1,
+  recipes = {}, extra = { 2538 } } } }
+P:Project(CID)
+check(BRutus.db.recipes[CID].Cooking[1].itemId == 2679, "an extra this client's catalog knows keeps its output item")
+BRutus.db.professions[CID] = nil
+P:Project(CID)
 local projected, realProject = 0, P.Project
 P.Project = function(self, key) projected = projected + 1; return realProject(self, key) end
 deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
@@ -396,9 +406,11 @@ deliver("req", { l = "x" }, "Bob")
 runTimers()
 check(#sentOf("list") == 0, "a line I do not have, a stranger, or junk gets no answer")
 sent = {}
+local asked = NOW
+S:ScheduleSummary(100)
 deliver("ask", {}, "Cid")
 runTimers()
-check(#sentOf("sum") == 1, "an ask is answered with my summary")
+check(#sentOf("sum") == 2 and sentOf("sum")[1].at <= asked + 8, "an ask is answered at once, whatever change is pending")
 sent = {}
 local t0 = NOW
 S:ScheduleSummary()

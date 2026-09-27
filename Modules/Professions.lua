@@ -29,13 +29,12 @@ function Professions.OwnKey()
     return BRutus:GetPlayerKey(Compat.PlayerName())
 end
 
--- The member key for a name as a sender or the Communities roster writes it: the client's realm,
--- unless the client has none and the name carries a suffix (as CommSystem's broadcasts do).
+-- The member key for a name as the guild roster, the Communities roster or a sender writes it,
+-- by the roster's own rule (the name's suffix, else the client's realm), so every record lands
+-- under the key the roster, the fallback and the prune look up.
 function Professions.KeyFor(name)
     if type(name) ~= "string" or name == "" then return nil end
-    local short = name:match("^([^-]+)") or name
-    local suffix = name:match("-(.+)$")
-    return BRutus:GetPlayerKey(short, (not BRutus:GetClientRealm()) and suffix or nil)
+    return BRutus:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
 end
 
 -- Sorted copy of a list of positive integer IDs, duplicates dropped; nil when it is not a
@@ -115,10 +114,18 @@ function Professions:ReadLine(line, rank, maxRank, old)
     for _, id in ipairs(cat.byLine[line] or {}) do
         if Compat.IsPlayerSpell(id) then recipes[#recipes + 1] = id end
     end
-    -- An extra the catalog now lists (it was regenerated) is a plain recipe again.
-    for _, id in ipairs((old and old.extra) or {}) do
-        if not cat.recipes[id] and Compat.IsPlayerSpell(id) then extra[#extra + 1] = id end
+    -- The extras held, and any NEW_RECIPE_LEARNED brought since the last scan; one the catalog now
+    -- lists (it was regenerated) is a plain recipe again.
+    local seen = {}
+    for _, source in ipairs({ (old and old.extra) or {}, (self.pendingExtra and self.pendingExtra[line]) or {} }) do
+        for _, id in ipairs(source) do
+            if not seen[id] and #extra < self.MAX_EXTRA and not cat.recipes[id] and Compat.IsPlayerSpell(id) then
+                seen[id] = true
+                extra[#extra + 1] = id
+            end
+        end
     end
+    table.sort(extra)
     local spec
     for specID, specLine in pairs(cat.specs) do
         if specLine == line and Compat.IsPlayerSpell(specID) and (not spec or specID < spec) then spec = specID end
@@ -153,6 +160,7 @@ function Professions:Scan()
             end
         end
     end
+    self.pendingExtra = nil
     local changed = not old or old.src ~= "addon"
     for line, p in pairs(profs) do
         if not sameLine(p, oldProfs[line]) then changed = true end
@@ -195,15 +203,11 @@ function Professions:AddLearned(recipeID)
     local cat = catalog()
     if type(recipeID) == "number" and cat and not cat.recipes[recipeID] then
         local line = Compat.RecipeLine(recipeID)
-        local rec = BRutus.db.professions[self.OwnKey()]
-        local e = line and rec and rec.src == "addon" and rec.profs[line]
-        if e and #(e.extra or {}) < self.MAX_EXTRA then
-            local extra = { recipeID }
-            for _, id in ipairs(e.extra or {}) do
-                if id ~= recipeID then extra[#extra + 1] = id end
-            end
-            table.sort(extra)
-            e.extra = extra
+        if line then
+            -- Held until the scan, which rebuilds the line and its hash together.
+            self.pendingExtra = self.pendingExtra or {}
+            self.pendingExtra[line] = self.pendingExtra[line] or {}
+            table.insert(self.pendingExtra[line], recipeID)
         end
     end
     self:ScheduleScan()
@@ -429,15 +433,16 @@ function Professions:Project(key)
         local meta = cat.professions[line]
         local recipes, extra = lists(e)
         if meta and (#recipes > 0 or #extra > 0) then
+            -- Both lists through this client's catalog: an ID the crafter holds as extra may be one
+            -- this (newer) catalog knows, and the tooltips and CraftFinder look crafters up by item.
             local out = {}
-            for _, id in ipairs(recipes) do
-                local r = cat.recipes[id]
-                local item = r and r[cat.F.out]
-                out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id),
-                                  itemId = (item and item > 0) and item or nil, spellId = id }
-            end
-            for _, id in ipairs(extra) do
-                out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id), spellId = id }
+            for _, list in ipairs({ recipes, extra }) do
+                for _, id in ipairs(list) do
+                    local r = cat.recipes[id]
+                    local item = r and r[cat.F.out]
+                    out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id),
+                                      itemId = (item and item > 0) and item or nil, spellId = id }
+                end
             end
             byProf[meta.en] = out
         end

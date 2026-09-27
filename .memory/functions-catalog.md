@@ -676,7 +676,7 @@ once on Anniversary. See ADR-0022 and `docs/superpowers/specs/2026-09-27-profess
 | `Professions:OwnSummary()` / `:OwnLine(line)` | What `ProfSync` sends |
 | `Professions:ApplySummary(key, p)` | A guildmate's summary (validated, capped); returns the lines whose list it still needs, nil when malformed |
 | `Professions:ApplyList(key, line, h, recipes, extra)` | Stores a list only if it hashes to `h` and `h` is the latest summary's, and it is not held yet |
-| `Professions.KeyFor(name)` | Member key for a roster name or a sender: the client's realm, the name's suffix only on a realm-less client |
+| `Professions.KeyFor(name)` | Member key for a roster name or a sender, by the roster's rule: the name's suffix, else the client's realm |
 | `Professions:AddLearned(recipeID)` | `NEW_RECIPE_LEARNED`: a recipe the catalog lacks goes to its line's extra, then a scan |
 | `Professions:LegacyList(key)` | `{ name = en, rank, maxRank, isPrimary }` for a member (no rank if native), or nil; the roster and `GetMemberRecord` fall back to it |
 | `Professions:Project(key)` | Legacy adapter: `db.recipes[key][en]` (`{ name, itemId, spellId }`) only — it never creates a `db.members` row; a pending list shows the previous one |

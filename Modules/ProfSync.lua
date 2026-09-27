@@ -74,7 +74,15 @@ function ProfSync:OnEnvelope(env, sender)
     if env.act == "sum" then
         self:OnSummary(key, sender, data.p)
     elseif env.act == "ask" then
-        self:ScheduleSummary(math.random(1, 8))
+        -- On its own short timer: a member busy levelling (the change debounce keeps moving) still
+        -- answers a guildmate who just logged in.
+        if not self.askPending then
+            self.askPending = true
+            Compat.After(math.random(1, 8), function()
+                self.askPending = false
+                self:PublishSummary()
+            end)
+        end
     elseif env.act == "req" then
         self:OnRequest(sender, data.l)
     elseif env.act == "list" then
