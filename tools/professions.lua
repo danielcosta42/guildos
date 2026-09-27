@@ -278,4 +278,82 @@ check(summary[186].r == 21 and summary[186].h == BRutus.db.professions[ME].profs
       "the own summary carries rank, hash and count per line")
 check(P:OwnLine(186).recipes[1] == 2657 and P:OwnLine(999) == nil, "OwnLine")
 
+-- ── 4. Sync ─────────────────────────────────────────────────────────────
+dofile(ADDON .. "/Modules/ProfSync.lua")
+local S = BRutus.ProfSync
+sent = {}
+S:Initialize()
+runTimers()
+check(#sentOf("sum") == 1 and #sentOf("ask") == 1 and sentOf("sum")[1].target == nil,
+      "login publishes my summary and asks the guild for theirs")
+check(sentOf("sum")[1].data.p[186].h == BRutus.db.professions[ME].profs[186].h, "the summary is my own")
+local function deliver(act, data, sender)
+  BRutus.SyncService.handlers.prof({ dom = "prof", act = act, data = data }, sender)
+end
+local h1 = P.Hash({ 2657 })
+sent = {}
+deliver("sum", { p = { [186] = { r = 50, m = 75, h = h1, n = 1 } } }, "Zed")
+runTimers()
+check(BRutus.db.professions[BRutus:GetPlayerKey("Zed")] == nil and #sent == 0, "a sender outside the guild is ignored")
+deliver("sum", { p = { [186] = { r = 50, m = 75, h = h1, n = 1 } }, key = "Dee-Classic Beta PvE 2" }, "Bob")
+check(BRutus.db.professions[BOB].src == "addon" and BRutus.db.professions[BOB].profs[186].rank == 50
+      and BRutus.db.professions[BOB].profs[186].recipes == nil, "a summary replaces the native record, list pending")
+check(BRutus.db.professions[BRutus:GetPlayerKey("Dee")] == nil, "the key comes from the sender, not the payload")
+runTimers()
+local req = sentOf("req")
+check(#req == 1 and req[1].target == "Bob" and req[1].data.l[1] == 186, "a new hash asks the sender for that list")
+sent = {}
+deliver("sum", { p = { [186] = { r = 51, m = 75, h = h1, n = 1 } } }, "Bob")
+runTimers()
+check(#sentOf("req") == 0, "the same hash is not asked for again at once")
+NOW = NOW + 121
+deliver("sum", { p = { [186] = { r = 51, m = 75, h = h1, n = 1 } } }, "Bob")
+runTimers()
+check(#sentOf("req") == 1, "a list that never came is asked for again after two minutes")
+deliver("list", { l = 186, h = h1 + 1, r = { 2657 }, x = {} }, "Bob")
+check(BRutus.db.professions[BOB].profs[186].recipes == nil, "a list whose hash is not the summary's is refused")
+deliver("list", { l = 186, h = h1, r = { 2660 }, x = {} }, "Bob")
+check(BRutus.db.professions[BOB].profs[186].recipes == nil, "a list that does not hash to its h is refused")
+deliver("list", { l = 186, h = h1, r = { "x" }, x = {} }, "Bob")
+deliver("list", { l = 186, h = h1, r = "x" }, "Bob")
+deliver("list", "junk", "Bob")
+check(BRutus.db.professions[BOB].profs[186].recipes == nil, "malformed lists are dropped without raising")
+deliver("list", { l = 186, h = h1, r = { 2657 }, x = {} }, "Bob")
+check(BRutus.db.professions[BOB].profs[186].recipes[1] == 2657 and P:KnowsRecipe(BOB, 2657)
+      and #P:CraftersOf(2657) == 2, "a list matching the summary is stored and indexed")
+check(BRutus.db.recipes[BOB].Mining[1].itemId == 2840, "and reaches the recipe tracker's shape")
+check(P:ApplyList(BOB, 186, h1, { 2657 }, {}) == false, "a list already held is not applied twice")
+local before = BRutus.db.professions[BOB].profs[186].rank
+deliver("sum", { p = { [186] = { r = "x", m = 75, h = h1, n = 1 } } }, "Bob")
+deliver("sum", { p = { [999] = { r = 1, m = 75, h = h1, n = 1 } } }, "Bob")
+deliver("sum", { p = { ["186"] = { r = 1, m = 75, h = h1, n = 1 } } }, "Bob")
+local eight = {}
+for i = 1, 8 do eight[i] = { r = 1, m = 75, h = h1, n = 1 } end
+deliver("sum", { p = eight }, "Bob")
+check(BRutus.db.professions[BOB].profs[186].rank == before, "a malformed summary changes nothing")
+deliver("sum", { p = { [185] = { r = 5, m = 75, h = 1, n = 0 } } }, "Cid")
+check(#BRutus.db.professions[BRutus:GetPlayerKey("Cid")].profs[185].recipes == 0, "a line with no recipes needs no list")
+sent = {}
+deliver("req", { l = { 186 } }, "Bob")
+runTimers()
+local lists = sentOf("list")
+check(#lists == 1 and lists[1].target == "Bob" and lists[1].data.h == BRutus.db.professions[ME].profs[186].h
+      and #lists[1].data.r == 2, "one requester gets my list by whisper")
+sent = {}
+deliver("req", { l = { 186 } }, "Bob")
+deliver("req", { l = { 186 } }, "Cid")
+runTimers()
+lists = sentOf("list")
+check(#lists == 1 and lists[1].target == nil, "two requesters within the window get one guild answer")
+sent = {}
+deliver("req", { l = { 164 } }, "Bob")
+deliver("req", { l = { 186 } }, "Zed")
+deliver("req", { l = "x" }, "Bob")
+runTimers()
+check(#sentOf("list") == 0, "a line I do not have, a stranger, or junk gets no answer")
+sent = {}
+deliver("ask", {}, "Cid")
+runTimers()
+check(#sentOf("sum") == 1, "an ask is answered with my summary")
+
 print("professions: " .. checks .. " checks passed")
