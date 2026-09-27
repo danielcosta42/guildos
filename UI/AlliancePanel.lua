@@ -1329,7 +1329,7 @@ local function BuildManage(panel)
         ------------------------------------------------------------------
         local entry = ally:_MyEntry()
         local list = (entry and entry.ambassadors) or {}
-        local me = (Ambiguate and Ambiguate(UnitName("player") or "", "short")) or UnitName("player")
+        local me = (Ambiguate and Ambiguate(BRutus.Compat.PlayerName() or "", "short")) or BRutus.Compat.PlayerName()
         local vacancy = GuildOS.Alliance._CanClaimAmbassador(list, ally:_GuildRosterShortSet())
         local canEdit = ally:CanAdminister()
 

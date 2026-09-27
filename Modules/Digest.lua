@@ -15,7 +15,7 @@ function Digest:Initialize()
 end
 
 local function myKey()
-    return BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
 end
 
 ----------------------------------------------------------------------

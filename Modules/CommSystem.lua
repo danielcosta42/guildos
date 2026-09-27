@@ -164,7 +164,7 @@ end
 -- chunk; every chunk of one message travels over the same distribution.
 function CommSystem:OnMessageReceived(msg, channel, sender)
     -- Don't process our own messages
-    local myName = UnitName("player")
+    local myName = BRutus.Compat.PlayerName()
     if sender == myName or sender == BRutus:GetPlayerKey(myName) then
         return
     end
@@ -373,7 +373,10 @@ function CommSystem:HandleBroadcast(sender, data)
     -- realm at all takes the sender's own suffix, so it agrees with a roster that suffixes names (issue #8).
     local realm = playerData.realm
     if (not realm or realm == "") and not BRutus:GetClientRealm() then realm = sender:match("^[^-]+%-(.+)$") end
-    local name = playerData.name or sender:match("^([^-]+)")
+    -- The name is the sender's: a broadcast is always its own author's data, and on WoW: Forever
+    -- 0.56.0 sends only the first name while the sender carries the surname (issue #26).
+    local name = sender:match("^([^-]+)") or playerData.name
+    playerData.name = name
     local key = BRutus:GetPlayerKey(name, realm)
 
     -- Store the data

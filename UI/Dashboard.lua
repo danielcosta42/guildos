@@ -17,7 +17,7 @@ local CROSS = "|TInterface\\COMMON\\Indicator-Red:12|t "
 
 local function CAL() return BRutus.Calendar end
 local function nowT() return (GetServerTime and GetServerTime()) or time() end
-local function myKey() return BRutus:GetPlayerKey(UnitName("player"), GetRealmName()) end
+local function myKey() return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName()) end
 
 -- Hide everything a previous fill created inside a card body.
 local function clearBody(body)
@@ -317,7 +317,7 @@ function BRutus:CreateDashboardPanel(panel)
 
         -- One readiness scan powers both the readiness + pulse cards.
         local rows = BRutus.Readiness and BRutus.Readiness:GetReport() or {}
-        local myShort = UnitName("player")
+        local myShort = BRutus.Compat.PlayerName()
         local myRow
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 

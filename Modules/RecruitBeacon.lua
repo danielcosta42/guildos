@@ -176,10 +176,10 @@ function RB:Broadcast()
         guild = guild, faction = faction,
         needsList = ad.needs, days = ad.days, note = ad.note,
         langsList = ad.langs, focusList = ad.focus,
-        version = ad.version, expiry = expiry, author = UnitName("player"),
+        version = ad.version, expiry = expiry, author = BRutus.Compat.PlayerName(),
     })
 
-    self:Ingest(payload, UnitName("player"))     -- seed our own cache (we relay it too)
+    self:Ingest(payload, BRutus.Compat.PlayerName())     -- seed our own cache (we relay it too)
     mesh:Guild(self.PREFIX, payload)
     mesh:Realm(self.PREFIX, payload, self.PREFIX .. ":" .. guild)
 end

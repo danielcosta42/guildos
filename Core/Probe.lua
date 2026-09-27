@@ -40,8 +40,8 @@ Probe.APIS = {
     "SetChannelOwner", "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
     "ShowUIPanel", "StaticPopup_Show", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
     "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "UIDropDownMenu_Initialize", "UIFrameFadeIn",
-    "UnitBuff", "UnitClass", "UnitExists", "UnitFactionGroup", "UnitGUID", "UnitHealthMax", "UnitIsConnected",
-    "UnitIsGroupAssistant", "UnitIsGroupLeader", "UnitIsPlayer", "UnitLevel", "UnitName", "UnitPlayerControlled",
+    "UnitBuff", "UnitClass", "UnitExists", "UnitFactionGroup", "UnitFullName", "UnitGUID", "UnitHealthMax", "UnitIsConnected",
+    "UnitIsGroupAssistant", "UnitIsGroupLeader", "UnitIsPlayer", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPlayerControlled",
     "UnitPowerMax", "UnitRace", "UnitSex", "UnitStat", "UseContainerItem", "debugstack", "geterrorhandler",
     "hooksecurefunc", "securecallfunction", "tContains",
     -- hooksecurefunc targets not listed above
@@ -51,7 +51,7 @@ Probe.APIS = {
     "C_Container.GetContainerItemLink", "C_Container.GetContainerNumSlots", "C_Container.UseContainerItem",
     "C_FriendList.GetNumWhoResults", "C_FriendList.GetWhoInfo", "C_FriendList.SendWho", "C_FriendList.SetWhoToUI",
     "C_GuildInfo.GuildRoster", "C_GuildInfo.SetNote", "C_Map.GetBestMapForUnit", "C_Map.GetMapInfo",
-    "C_Map.GetPlayerMapPosition", "C_PartyInfo.GetLootMethod", "C_PartyInfo.InviteUnit",
+    "C_Map.GetPlayerMapPosition", "C_PartyInfo.GetLootMethod", "C_PartyInfo.InviteUnit", "C_PlayerInfo.ShouldDisplaySurname",
     "C_QuestLog.GetTitleForQuestID", "C_QuestLog.IsQuestFlaggedCompleted", "C_Timer.After", "C_Timer.NewTicker",
     "C_Timer.NewTimer",
     -- Read only by the bundled libraries

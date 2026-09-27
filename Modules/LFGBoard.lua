@@ -286,7 +286,7 @@ end
 -- Self declare (publishes only your OWN entry)
 ----------------------------------------------------------------------
 local function myKey()
-    return BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
 end
 
 -- Returns the stored entry so callers print exactly what was published

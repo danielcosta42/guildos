@@ -74,9 +74,12 @@ read_globals = {
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
     "C_Spell",
     "C_UnitAuras",
+    "C_PlayerInfo",
 
     -- WoW API: Unit functions
     "UnitName",
+    "UnitFullName",
+    "UnitIsUnit",
     "UnitClass",
     "UnitLevel",
     "UnitRace",

@@ -38,7 +38,7 @@ function Bulletin:Post(text)
     text = strtrim(text or "")
     if text == "" then return end
     local msgs = self:GetMessages()
-    table.insert(msgs, 1, { id = newId(), text = text, author = UnitName("player"), ts = GetServerTime() })
+    table.insert(msgs, 1, { id = newId(), text = text, author = BRutus.Compat.PlayerName(), ts = GetServerTime() })
     while #msgs > MAX do table.remove(msgs) end
     self:Broadcast()
     self:Refresh()

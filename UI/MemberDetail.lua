@@ -793,7 +793,7 @@ function PopulateDetail(frame, data)
     -- Section: Linked Characters (officers manage anyone; members manage
     -- their own alts on the current character via self-claim)
     ----------------------------------------------------------------
-    local myKey = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    local myKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
     local isSelfManage = (playerKey == myKey)
     if BRutus:IsOfficer() or isSelfManage then
         yOff = yOff - 10

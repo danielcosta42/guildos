@@ -314,7 +314,8 @@ function RaidTracker:TakeSnapshot(reason)
     local isRaid = IsInRaid()
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
-        if UnitExists(unit) then
+        -- I am added below under my whole name; my raid unit may carry only the first (issue #26).
+        if UnitExists(unit) and not BRutus.Compat.IsPlayer(unit) then
             local name, realm, classFile = BRutus.Compat.UnitIdentity(unit)
             if name then
                 local key = BRutus:GetPlayerKey(name, realm)
@@ -330,7 +331,7 @@ function RaidTracker:TakeSnapshot(reason)
     end
 
     -- Include self
-    local myName = UnitName("player")
+    local myName = BRutus.Compat.PlayerName()
     local myKey = BRutus:GetPlayerKey(myName)
     members[myKey] = {
         name = myName,

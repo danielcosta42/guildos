@@ -95,7 +95,7 @@ function SpecChecker:CollectOwnSpec()
     end
     spec.talents = talentsPerTab
 
-    local key = BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    local key = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
     if BRutus.db and BRutus.db.members then
         if not BRutus.db.members[key] then
             BRutus.db.members[key] = {}

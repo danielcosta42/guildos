@@ -92,10 +92,11 @@ function Mentions:_SetupHook()
         if not cfg or not cfg.enabled then return end
         if event == "CHAT_MSG_GUILD" and not cfg.guild then return end
         if event == "CHAT_MSG_OFFICER" and not cfg.officer then return end
-        local me = UnitName("player")
+        local me = BRutus.Compat.PlayerName()
         local sender = author and (author:match("^([^-]+)") or author)
         if sender == me then return end     -- don't alert on your own messages
-        local term = Mentions:_Match(msg, me, cfg.watchWords, cfg.ownName)
+        -- Chat calls me by my first name; on WoW: Forever `me` also carries the surname (issue #26).
+        local term = Mentions:_Match(msg, me:match("^%S+") or me, cfg.watchWords, cfg.ownName)
         if not term then return end
         -- per (sender+term) cooldown so one burst doesn't spam
         local key = (sender or "?") .. "|" .. term

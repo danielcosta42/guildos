@@ -458,7 +458,7 @@ function Recruitment:BroadcastStatus(quiet, reassert)
         message    = r.message or "",
         channels   = r.channels or {},
         interval   = r.interval or 120,
-        updatedBy  = UnitName("player"),
+        updatedBy  = BRutus.Compat.PlayerName(),
         updatedAt  = r.updatedAt,
     })
     BRutus.CommSystem:SendMessage("RI", payload)
@@ -467,7 +467,7 @@ function Recruitment:BroadcastStatus(quiet, reassert)
     BRutus.db.guildRecruitment = {
         enabled = r.enabled, discord = r.discord or "", message = r.message or "",
         channels = r.channels or {}, interval = r.interval or 120,
-        updatedAt = r.updatedAt, updatedBy = UnitName("player"),
+        updatedAt = r.updatedAt, updatedBy = BRutus.Compat.PlayerName(),
     }
     if not quiet then BRutus:Print(L["Recruitment status broadcast to guild members."]) end
 end
@@ -1145,7 +1145,7 @@ function Recruitment:RegisterWelcomeEvent()
         if not newMember then return end
 
         -- Don't act on our own join.
-        local myName = UnitName("player")
+        local myName = BRutus.Compat.PlayerName()
         if newMember == myName then return end
 
         -- Credit a recruitment join to whoever invited this player. This runs

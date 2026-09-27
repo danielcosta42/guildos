@@ -17,20 +17,23 @@ local Compat = BRutus.Compat
 local version, build, buildDate, interface = GetBuildInfo()
 interface = tonumber(interface) or 0
 local TBC_PROJECT = WOW_PROJECT_BURNING_CRUSADE_CLASSIC  -- nil on a client without the constant
+local isAnniversary = TBC_PROJECT ~= nil and WOW_PROJECT_ID == TBC_PROJECT
+    and interface >= 20500 and interface < 30000
 BRutus.Client = {
     version = version,
     build = build,
     date = buildDate,
     interface = interface,
     projectId = WOW_PROJECT_ID,  -- diagnostics only; never branch on it
-    isAnniversary = TBC_PROJECT ~= nil and WOW_PROJECT_ID == TBC_PROJECT
-        and interface >= 20500 and interface < 30000,
+    isAnniversary = isAnniversary,
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
         tradeSkillUI = C_TradeSkillUI ~= nil,
         tooltipData = TooltipDataProcessor ~= nil,
         guildSetNote = (C_GuildInfo and C_GuildInfo.SetNote) ~= nil,
+        -- Never on Anniversary, where UnitFullName's second slot is the realm (issue #26).
+        surnames = not isAnniversary and (C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname) ~= nil,
     },
 }
 
@@ -52,6 +55,29 @@ function Compat.UnitIdentity(unit)
     local _, classFile = UnitClass(unit)
     if Compat.IsSecret(name, realm, classFile) then return end
     return name, realm, classFile
+end
+
+-- My own name the way the guild roster and every addon-message sender write it. WoW: Forever
+-- 1.60.1.70009 cut UnitName("player") to the first name ("Chehul") while the roster says
+-- "Chehul Druida"; there UnitFullName("player") returns the first name and the surname apart,
+-- where every other client returns the realm in that slot (issue #26).
+function Compat.PlayerName()
+    if BRutus.Client.has.surnames then
+        local first, surname = UnitFullName("player")
+        if not Compat.IsSecret(first, surname) and first and surname and surname ~= "" then
+            return first .. " " .. surname
+        end
+    end
+    return (UnitName("player"))
+end
+
+-- Whether a group unit is me, by identity rather than by name: on WoW: Forever the name shapes
+-- disagree (UnitName gives the first name, the roster and chat the whole name; issue #26).
+-- A comparison the client keeps secret counts as not me.
+function Compat.IsPlayer(unit)
+    local same = UnitIsUnit(unit, "player")
+    if Compat.IsSecret(same) then return false end
+    return same and true or false
 end
 
 -- Register the addon message prefix (C_ChatInfo, else the legacy global)

@@ -466,7 +466,7 @@ function Alliance:MyGuildName()
 end
 
 function Alliance:MyKey()
-    return BRutus:GetPlayerKey(UnitName("player"), GetRealmName())
+    return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
 end
 
 function Alliance:IsMemberGuild(guildName)
@@ -695,7 +695,7 @@ function Alliance:Create(tag, name)
         return false, L["The alliance tag must contain letters or numbers."]
     end
     local now = (GetServerTime and GetServerTime()) or time()
-    local me = shortName(UnitName("player"))
+    local me = shortName(BRutus.Compat.PlayerName())
     local display = BRutus:SanitizeUserText(name, Alliance.NAME_MAX)
     BRutus.db.alliance = {
         tag      = t,
@@ -724,7 +724,7 @@ function Alliance:Invite(officerName)
         return false, L["Name an officer of the guild you want to invite."]
     end
     local myGuild = self:MyGuildName()
-    if not Alliance.IsAmbassador(pact, myGuild, UnitName("player")) then
+    if not Alliance.IsAmbassador(pact, myGuild, BRutus.Compat.PlayerName()) then
         return false, L["Only an alliance ambassador can invite."]
     end
     self._invitesSent = self._invitesSent or {}
@@ -756,7 +756,7 @@ function Alliance:Leave()
         return false, L["Only officers can do that."]
     end
     local myGuild = self:MyGuildName()
-    if not Alliance.IsAmbassador(pact, myGuild, UnitName("player")) then
+    if not Alliance.IsAmbassador(pact, myGuild, BRutus.Compat.PlayerName()) then
         return false, L["Only an alliance ambassador can do that."]
     end
     local now = (GetServerTime and GetServerTime()) or time()
@@ -863,7 +863,7 @@ function Alliance:OnMessage(payload, sender, dist)
     if proto ~= self.PROTO or not op then
         return   -- unknown protocol version: ignore silently, like the rest of the mesh
     end
-    if shortName(sender) == UnitName("player") then
+    if shortName(sender) == BRutus.Compat.PlayerName() then
         return
     end
     local data = Alliance.Decode(blob)
@@ -968,7 +968,7 @@ function Alliance:AcceptInvite(pact, sender)
         return
     end
     local now = (GetServerTime and GetServerTime()) or time()
-    local me = shortName(UnitName("player"))
+    local me = shortName(BRutus.Compat.PlayerName())
     pact.blocked = {}
     pact.guilds[myGuild] = pact.guilds[myGuild]
         or { ambassadors = { me }, joinedAt = now, addedBy = shortName(sender) }
@@ -1033,7 +1033,7 @@ function Alliance:_OnAck(data, sender)
     pact.guilds[guild] = {
         ambassadors = ambassadors,
         joinedAt    = now,
-        addedBy     = shortName(UnitName("player")),
+        addedBy     = shortName(BRutus.Compat.PlayerName()),
     }
     pact.revision = now
     self._invitesSent[senderShort:lower()] = nil
@@ -1203,7 +1203,7 @@ function Alliance:ClaimAmbassador()
     if not Alliance._CanClaimAmbassador(entry.ambassadors, self:_GuildRosterShortSet()) then
         return false, L["This guild still has an ambassador in the roster."]
     end
-    entry.ambassadors[#entry.ambassadors + 1] = shortName(UnitName("player"))
+    entry.ambassadors[#entry.ambassadors + 1] = shortName(BRutus.Compat.PlayerName())
     self:Get().revision = (GetServerTime and GetServerTime()) or time()
     self:BroadcastPact(true)
     return true
@@ -1412,7 +1412,7 @@ function Alliance:CanAdminister()
     if not pact or not BRutus:IsOfficer() then
         return false
     end
-    return Alliance.IsAmbassador(pact, self:MyGuildName(), UnitName("player"))
+    return Alliance.IsAmbassador(pact, self:MyGuildName(), BRutus.Compat.PlayerName())
 end
 
 -- We were removed from the pact. Only the OWNER guild may do this, and the
@@ -1724,7 +1724,7 @@ function Alliance:PostBoard(text)
     local post = {
         id   = string.format("%X%04X", now, math.random(0, 0xFFFF)),
         text = clean,
-        by   = shortName(UnitName("player")),
+        by   = shortName(BRutus.Compat.PlayerName()),
         ts   = now,
     }
     local store = self:BoardStore()

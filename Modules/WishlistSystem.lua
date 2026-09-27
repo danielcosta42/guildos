@@ -18,7 +18,7 @@ function Wishlist:Initialize()
     end
     -- One-time migration: move flat myWishlist to per-char slot
     if BRutus.db.myWishlist and #BRutus.db.myWishlist > 0 then
-        local charKey = BRutus:GetPlayerKey(UnitName("player") or "Unknown")
+        local charKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName() or "Unknown")
         if not BRutus.db.wishlists[charKey] or #BRutus.db.wishlists[charKey] == 0 then
             BRutus.db.wishlists[charKey] = BRutus.db.myWishlist
         end
@@ -164,7 +164,7 @@ local WISHLIST_MAX = 50
 function Wishlist:GetMyList()
     if not BRutus.db then return {} end
     if not BRutus.db.wishlists then BRutus.db.wishlists = {} end
-    local charKey = BRutus:GetPlayerKey(UnitName("player") or "Unknown")
+    local charKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName() or "Unknown")
     if not BRutus.db.wishlists[charKey] then
         BRutus.db.wishlists[charKey] = {}
     end
@@ -216,7 +216,7 @@ end
 function Wishlist:IsItemDelivered(itemId)
     local history = BRutus.db and BRutus.db.lootHistory
     if not history then return false end
-    local myName = UnitName("player")
+    local myName = BRutus.Compat.PlayerName()
     local myKey  = BRutus:GetPlayerKey(myName)
     for _, entry in ipairs(history) do
         if entry.fromML and entry.playerKey == myKey then
@@ -284,7 +284,7 @@ function Wishlist:BroadcastMyWishlist()
     -- guildie's panel showing the character with 0 items.
     if #list == 0 then return end
 
-    local myName  = UnitName("player")
+    local myName  = BRutus.Compat.PlayerName()
     local myClass = select(2, UnitClass("player")) or ""
 
     -- Store own data locally immediately (WoW does not echo addon messages back to sender)
@@ -324,7 +324,7 @@ function Wishlist:HandleWishlistBroadcast(sender, data)
     if not wishlist or type(wishlist) ~= "table" then return end
 
     -- Don't overwrite our own data with a stale broadcast of ourselves
-    if strlower(name) == strlower(UnitName("player") or "") then return end
+    if strlower(name) == strlower(BRutus.Compat.PlayerName() or "") then return end
 
     if not BRutus.db.guildWishlists then
         BRutus.db.guildWishlists = {}

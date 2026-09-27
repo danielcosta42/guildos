@@ -99,6 +99,11 @@ function UnitName(unit)
   if unit == "raid1" then return "Bob", "Forever" end
   if unit == SECRET_UNIT then return secret(), secret() end
 end
+-- Comparing with a restricted unit comes back secret, as UnitIsUnit declares on WoW: Forever.
+function UnitIsUnit(a, b)
+  if a == SECRET_UNIT or b == SECRET_UNIT then return secret() end
+  return a == b
+end
 function UnitClass(unit)
   if unit == SECRET_UNIT then return secret(), secret() end
   return "Priest", "PRIEST"

@@ -128,7 +128,7 @@ function Points:MakeEntry(key, delta, reason, kind)
     return {
         op = newOp(), key = key, name = short, class = class,
         delta = delta, reason = reason or "", kind = kind or "adjust",
-        author = UnitName("player"), ts = GetServerTime(),
+        author = BRutus.Compat.PlayerName(), ts = GetServerTime(),
         core = coreName,
     }
 end

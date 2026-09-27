@@ -48,6 +48,8 @@ function debugstack() return "" end
 -- consumable check loads.
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
 function GetBuildInfo() return "2.5.6", "1", "", 20506 end
+-- An Anniversary client that grew the surname API still keeps UnitName (issue #26).
+C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 strlower = string.lower
 C_Timer = { After = function() end }
@@ -58,6 +60,8 @@ function UnitName(unit)
   local m = GROUP[tonumber(tostring(unit):match("%d+$") or "")]
   if m then return m[1], m[2] end
 end
+local SELF_UNIT   -- the raid unit that is me, if any (issue #26)
+function UnitIsUnit(a, b) return a == b or (b == "player" and a == SELF_UNIT) end
 function IsInRaid() return true end
 function IsInGroup() return true end
 function GetNumGroupMembers() return #GROUP end
@@ -438,8 +442,50 @@ for line in toc:gmatch("[^\r\n]+") do
     check(fallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
           and clientFallbacks == (rel == "Modules/PugInspector.lua" and 1 or 0),
           rel .. " falls back from the client's realm to a literal")
+    -- ChehulNet ships identical in other addons, so it cannot reach GuildOS's Compat.
+    check(rel == "Core/Compat.lua" or rel == "Modules/ChehulNet.lua" or not src:find('UnitName%(%s*["\']player["\']%s*%)'),
+          rel .. ' reads UnitName("player"), which is only the first name on WoW: Forever; use Compat.PlayerName()')
   end
 end
 check(scanned > 50, "the scan read the addon's files (" .. scanned .. ")")
+
+-- ── 15. WoW: Forever 1.60.1.70009: my own name has a surname (issue #26) ──
+-- UnitName("player") there is the first name alone ("Chehul"), while the roster and every
+-- addon-message sender write "Chehul Druida". UnitFullName("player") returns the two parts
+-- apart, where every other client returns the realm in that slot.
+local FULL = { "Ana", "Firemaw" }
+function UnitFullName(unit) if unit == "player" then return FULL[1], FULL[2] end end
+local P = BRutus.Compat.PlayerName
+check(P() == "Ana", "Anniversary: my name is UnitName's, never UnitFullName's name and realm joined")
+BRutus.Client.has.surnames = true
+REALM, ME, FULL = "Classic Beta PvE 2", "Chehul", { "Chehul", "Druida" }
+check(P() == "Chehul Druida", "Forever: my name is the first name and the surname, as the roster writes it")
+check(K(P()) == "Chehul Druida-Classic Beta PvE 2", "Forever: my key is the one the roster row gives me")
+check(not reads("Chehul Druida"), "Forever: my own message is skipped")
+check(reads("Chehul Shammy"), "Forever: a namesake with another surname is read")
+local names = {}
+BRutus.DataCollector = { StoreReceivedData = function(_, key, data) stored[#stored + 1] = key; names[key] = data.name end }
+check(received("Chehul Shammy", { name = "Chehul", realm = "Classic Beta PvE 2" }) == "Chehul Shammy-Classic Beta PvE 2"
+      and names["Chehul Shammy-Classic Beta PvE 2"] == "Chehul Shammy",
+      "Forever: a broadcast from 0.56.0, which sends the first name only, lands under the sender's whole name")
+FULL = { "Chehul", "" }
+check(P() == "Chehul", "Forever: a character with no surname keeps UnitName's answer")
+FULL = { "Chehul", "Druida" }
+issecretvalue = function(v) return v == "Druida" end
+check(P() == "Chehul", "Forever: a secret surname is never read; UnitName's answer stands")
+issecretvalue = nil
+-- My own raid unit answers UnitName with the first name alone; I am recorded once, under my whole name.
+GROUP, SELF_UNIT = { { "Chehul" }, { "Bob" } }, "raid1"
+local players = snapshot()
+check(players == "Bob-Classic Beta PvE 2,Chehul Druida-Classic Beta PvE 2",
+      "Forever: a raid snapshot records me once, under my whole name: " .. players)
+check(BRutus.Compat.IsPlayer("raid1") and not BRutus.Compat.IsPlayer("raid2"), "Forever: my raid unit is me by identity")
+issecretvalue = function(v) return v == "secret" end
+local realUnitIsUnit = UnitIsUnit
+UnitIsUnit = function() return "secret" end
+check(BRutus.Compat.IsPlayer("raid1") == false, "a comparison the client keeps secret counts as not me")
+UnitIsUnit, issecretvalue, GROUP, SELF_UNIT = realUnitIsUnit, nil, {}, nil
+BRutus.Client.has.surnames, REALM, ME, UnitFullName = false, "Firemaw", "Ana", nil
+BRutus.DataCollector = dataCollector
 
 print("member-keys: " .. checks .. " checks passed")

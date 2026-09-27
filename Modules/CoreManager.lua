@@ -358,7 +358,7 @@ end
 function CoreManager:IsRaidLeader()
     if BRutus:IsOfficer() then return true end
     local ranks = self:GetRaidLeaderRanks()
-    local myName = UnitName("player")
+    local myName = BRutus.Compat.PlayerName()
     local n = GetNumGuildMembers and GetNumGuildMembers() or 0
     for i = 1, n do
         local name, rank = GetGuildRosterInfo(i)
@@ -525,7 +525,7 @@ end
 -- SyncService bridge — sign-ups and roster sync between officers
 ----------------------------------------------------------------------
 function CoreManager:BroadcastSignup(coreName, note)
-    local playerName = UnitName("player")
+    local playerName = BRutus.Compat.PlayerName()
     local _, cls     = UnitClass("player")
     local playerKey  = BRutus:GetPlayerKey(playerName, GetRealmName())
     local info = {

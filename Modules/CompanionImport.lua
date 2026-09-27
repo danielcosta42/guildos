@@ -347,7 +347,7 @@ function Import:InviteAll()
     -- Who is already here. Inviting someone in the raid produces an error
     -- message in their chat for no reason.
     local present = {}
-    local me = UnitName("player")
+    local me = BRutus.Compat.PlayerName()
     present[me] = true
     for i = 1, (GetNumGroupMembers() or 0) do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)

@@ -161,7 +161,7 @@ function AllianceChat:ModeratorState()
     if not id or id == 0 or not GetChannelRosterInfo then
         return "unknown"
     end
-    local me = UnitName("player")
+    local me = BRutus.Compat.PlayerName()
     for i = 1, 400 do
         local ok, who, owner, moderator = pcall(GetChannelRosterInfo, id, i)
         if not ok or not who then
@@ -238,7 +238,7 @@ function AllianceChat:EnsureAmbassadorOwnership()
     if self:ModeratorState() ~= "owner" then
         return false   -- only the owner can pass it on
     end
-    local me = UnitName("player")
+    local me = BRutus.Compat.PlayerName()
     if GuildOS.Alliance.IsAmbassadorAnywhere(pact, me) then
         return false   -- already in the right hands
     end

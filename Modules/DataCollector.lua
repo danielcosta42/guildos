@@ -62,7 +62,7 @@ end
 -- Collect all local player data
 ----------------------------------------------------------------------
 function DataCollector:CollectMyData()
-    local name = UnitName("player")
+    local name = BRutus.Compat.PlayerName()
     local realm = GetRealmName()
     local key = BRutus:GetPlayerKey(name, realm)
 
