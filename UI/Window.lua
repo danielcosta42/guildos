@@ -205,7 +205,7 @@ local function inviteField(parent)
     box:SetScript("OnEnterPressed", function(self) invite(); self:ClearFocus() end)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    holder:SetSize(130 + 4 + 64, 18)
+    holder:SetSize(130 + 4 + btn:GetWidth(), 18)  -- the invite label may have grown its button (issue #28)
     holder.box = box
     return holder
 end

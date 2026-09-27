@@ -81,7 +81,7 @@ Removed: `BRutus.ACCENT_PRESETS`, `BRutus:ApplyTheme()`.
 | `window:RefreshTitle()` | Guarded: guild and online count (a dash while the roster loads), sync time, and the bar's three numbers only in the bar band |
 | `UI.LADDER` / `UI.LADDER_HYSTERESIS` / `UI:ResolveBand(width, current)` | The handoff §6 bands (full, wide, medium, compact, narrow, watch, bar) and the band for a width, which moves only 16px past a line |
 | `UI:FitTabs(widths, available, gap, moreW, active)` | Pure: the tab indices that fit beside "»n" and how many fold; the active tab always stays |
-| `UI:CreateTab(parent, text, width, sub)` / `UI:StyleSubTabBar(bar)` | `sub = true` draws the 1px sub-tab rule / puts a sub-tab bar on `panel` |
+| `UI:CreateTab(parent, text, width, sub)` / `UI:StyleSubTabBar(bar)` | `sub = true` draws the 1px sub-tab rule / puts a sub-tab bar on `panel`; a tab grows to its label like a button (issue #28) |
 | `UI.Agora:NextRaid()` / `Agora.Clock(dt)` / `Agora.Short(dt)` | The next future RAID (or kindless) calendar event; "4:12:38" or "2d 4h"; "4h12" |
 | `UI.Agora:NeedsMe()` | `{ text, urgent, id, sub, filter }` items, urgent first, only for screens the player can open; an unanswered raid carries its time as the calendar's filter |
 | `UI.Agora:Activity(limit)` | The last 48 hours, newest first, at most 12: roster log (with the member when exactly one saved member has that name), loot (with the member), milestones, raids tracked (at their end); `{ ts, text, id, sub, key }` |
@@ -547,7 +547,7 @@ Removed: `Compat.NewTimer`.
 | `UI:CreateTitle(parent, text, size)` | Window title: Spectral 16 in `text` (paper), no outline or shadow |
 | `UI:CreateText(parent, text, size, r, g, b)` | Body or table text, font by size through `ApplyFont` (mono below 14px); paper unless a colour is given |
 | `UI:CreateHeaderText(parent, text, size)` | Column header: IBM Plex Mono Medium 10 (`colHeader`) in `label` |
-| `UI:CreateButton(parent, text, width, height)` | Button, secondary by default (1px `line` border, paper label); 26px unless a height is given; see `SetButtonVariant` |
+| `UI:CreateButton(parent, text, width, height)` | Button, secondary by default (1px `line` border, paper label); 26px unless a height is given; see `SetButtonVariant`. A label that spills past it (inside 2px margins) grows it to the label + 16px, at creation and on every later `btn.label:SetText`; a label that fits leaves the width alone, and it never shrinks (issue #28) |
 | `UI:CreateCheckbox(parent, labelText, size)` | 14px `well` box, 1px border, solid 8px gold mark; `checkbox.onChanged(cb, checked)` |
 | `UI:CreateCloseButton(parent)` | × in `label`; paper on a `popup` square with a `lineHi` border when hovered |
 | `UI:SkinScrollBar(scrollFrame, scrollName)` | Hides the default buttons; 8px `well` track, `lineHi` thumb (`label` on hover) |

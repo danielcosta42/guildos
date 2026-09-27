@@ -306,7 +306,7 @@ function BRutus:CreateCoresPanel(panel)
                 activeRightTab = captureTab
                 BuildSettings(coreName)
             end)
-            rtabX = rtabX + 98
+            rtabX = rtabX + tb:GetWidth() + 6  -- a button its label grew pushes the next one (issue #28)
         end
 
         local y = -56

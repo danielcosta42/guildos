@@ -118,7 +118,7 @@ function GuildAnalytics:Show()
                 if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
             end)
             tabs[def.dim] = tab
-            tabX = tabX + 106
+            tabX = tabX + tab:GetWidth() + 6  -- a tab its label grew pushes the next one (issue #28)
         end
         f.tabs = tabs
 

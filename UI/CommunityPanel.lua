@@ -264,7 +264,7 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
         btn:SetPoint("LEFT", x, 0)
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + 124
+        x = x + btn:GetWidth() + 4  -- a tab its label grew pushes the next one (issue #28)
     end
 
     local function makeSubPanel()

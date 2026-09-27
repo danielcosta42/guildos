@@ -34,6 +34,7 @@ local function region()
   function r:SetWidth(w) self.w = w end
   function r:SetHeight(h) self.h = h end
   function r:GetHeight() return self.h or 0 end
+  function r:GetWidth() return self.w or 0 end
   function r:Show() self.shown = true end
   function r:Hide() self.shown = false end
   function r:SetShown(v) self.shown = v and true or false end
@@ -408,5 +409,19 @@ subTab:SetActive(true)
 check(subTab.underline.shown and same(subTab.label.color, C.text), "an active sub-tab: paper label over its rule")
 local subBar = UI:StyleSubTabBar(CreateFrame("Frame"))
 check(subBar.bg and subBar.bg.layer == "BACKGROUND" and same(subBar.bg.color, C.panel, 1), "a sub-tab bar sits on panel")
+
+-- ── A label always fits its button or tab (issue #28) ─────────────────
+-- The stub measures 6px a glyph; the pad is 16px.
+check(UI:CreateButton(parent, "ok", 80, 22).w == 80, "a label that fits keeps the caller's width")
+check(UI:CreateButton(parent, "Tentative", 58, 18).w == 58, "a label that fits snugly (inside its 2px margins) keeps it too")
+local long = UI:CreateButton(parent, "Definir como main", 90, 18)
+check(long.w == 17 * 6 + 16, "a label wider than the button grows it to the label and its pad")
+long.label:SetText("Desvincular personagem")
+check(long.w == 22 * 6 + 16, "a later, longer label grows it again")
+long.label:SetText("ok")
+check(long.w == 22 * 6 + 16, "a shorter label never shrinks it, so a layout's own width survives")
+check(long.label.text == "ok", "the label still takes its text")
+check(UI:CreateTab(parent, "Caixa de entrada", 90).w == 16 * 6 + 16, "a tab grows to its label too")
+check(UI:CreateButton(parent, "", 22, 22).w == 22, "an empty label leaves an icon button alone")
 
 io.write(string.format("forever-components: %d checks passed\n", checks))

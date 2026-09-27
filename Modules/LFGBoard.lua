@@ -633,18 +633,21 @@ function LFGBoard:Show()
             forFS:SetJustifyH("LEFT")
             forFS:SetWordWrap(false)
 
+            -- The note stops short of the invite button, which its label may have grown (issue #28).
+            local noteReserve = 66
             if isMe then
                 local youFS = UI:CreateText(child, L["(you)"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
                 youFS:SetPoint("TOPRIGHT", -8, -(y + 4))
             else
                 local inviteBtn = UI:CreateButton(child, L["Invite"], 56, 18)
                 inviteBtn:SetPoint("TOPRIGHT", -4, -(y + 2))
+                noteReserve = math.max(noteReserve, inviteBtn:GetWidth() + 10)
                 inviteBtn:SetScript("OnClick", function() InviteUnit(entry.name) end)
             end
 
             local noteFS = UI:CreateText(child, entry.note or "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
             noteFS:SetPoint("TOPLEFT", 298, -(y + 4))
-            noteFS:SetWidth(math.max(10, child:GetWidth() - 298 - 66))
+            noteFS:SetWidth(math.max(10, child:GetWidth() - 298 - noteReserve))
             noteFS:SetJustifyH("LEFT")
             noteFS:SetWordWrap(false)
 

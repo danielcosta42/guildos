@@ -162,3 +162,18 @@ ladder (#14); the minimap "G" wordmark (#17).
   `tools/forever-components.lua` (138 checks; #14 added 4 for sub-tabs, 142 now)
 - [x] Docs: ADR-0013, functions catalog, Media README
 - [ ] Manual check with screenshots on Anniversary
+
+## 6. Fix: labels wider than their buttons (issue #28)
+
+- **What broke.** Every text below 14px is IBM Plex Mono, 0.6 em a glyph (6.6px at a button's 11px), wider than the proportional font the fixed widths were picked for; the translations run longer still. A scan of every `CreateButton`/`CreateTab` against the five locales found 52 labels wider than their button (18 of them in pt-BR), e.g. "Definir como main" (113px) on 90px and "Caixa de entrada" (106px) on a 90px tab; the text spilled over the border and over the next control.
+- **Rule.** When a `CreateButton` or `CreateTab` label spills past its frame (wider than the width minus 2px margins), the frame grows to the label + 16px, at creation and on every later `label:SetText` (toggles that swap their text). A label that fits, even snugly, leaves the caller's width untouched, so buttons that were fine keep their size; an empty label leaves an icon button alone. It never shrinks, so a width a layout sets afterwards (the window's tab strip, `Layout`) is kept.
+- **Layouts that assumed the fixed width now read the real one:**
+  - rows that advanced by a fixed step (`x = x + 134`) advance by `GetWidth()`: the Audit, Raid Tools and Community sub-tab strips, the analytics tabs, the Cores result tabs, the export format, category, quick-action, loot-system and mode buttons, the management type chooser; the quick-action row wraps on the button's real width, keeping its 20px margin;
+  - the LFG board's note column stops short of the invite button's real width;
+  - the loot council popup chains "Send to DE" after the award button (whose label carries the winner's whole name) and widens to fit its three buttons; the roll window keeps "End Rolling" centred unless the pair on its left reaches it;
+  - the member detail's linked characters: buttons right-aligned, names cut short of them, the note wraps, and the window is 460px (was 420);
+  - the calendar's RSVP buttons are chained instead of sitting at fixed offsets; the footer's invite holder takes the invite button's real width; the recruitment "Send Now" is anchored to the enable toggle; the raider role picker advances by the real width.
+- **Checked and left:** buttons with one anchor or chained anchors grow away from what they are tied to; list-row buttons anchored right grow 13 to 20px over columns whose text is short; no checkbox grid is laid out by a fixed step; the three single-line FontStrings that carry a locale sentence are player notes, log lines and unbounded instructions.
+- **Found, not changed:** `LootMaster` calls the Button's own `SetText` on the loot window's award and roll buttons (`awardTopBtn`, `openRollBtn` in `LootMaster:ShowLootFrame`); those buttons have no registered FontString, so their visible label never changes. Pre-existing, follow-up.
+- **Tests.** `tools/forever-components.lua`: a label that fits keeps the caller's width, one that fits snugly keeps it too, a wider one grows the button to label + pad, a later longer label grows it again, a shorter one never shrinks it, a tab grows too, an empty label leaves an icon button alone.
+- **Manual.** In pt-BR on the Forever beta: member detail, Audit/Raid Tools/Community sub-tabs, recruit scanner tabs, loot council and roll windows, points toolbar.

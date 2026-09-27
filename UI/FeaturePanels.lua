@@ -1586,7 +1586,7 @@ function BRutus:ShowExportChooser()
                 local text, t = BRutus.Exporter:Build(d.key, fmt)
                 if text then BRutus:ShowExportPopup(string.format("%s (%s)", t or d.label, fmt), text) end
             end)
-            fx = fx + 70
+            fx = fx + b:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
         end
         y = y - 32
     end
@@ -1897,7 +1897,7 @@ function BRutus:RefreshSettingsPanel(content, category)
                 b.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             end
             b:SetScript("OnClick", function() BRutus:RefreshSettingsPanel(content, c.key) end)
-            cx = cx + 96
+            cx = cx + b:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
         end
     end
     yOff = yOff + 34
@@ -2040,13 +2040,13 @@ function BRutus:RefreshSettingsPanel(content, category)
         if BRutus.ShowExportChooser then BRutus:ShowExportChooser() end
     end }
     local qx, qrow = 0, 0
-    local qMaxX = content:GetWidth() - 150
     for _, qb in ipairs(quickButtons) do
-        if qx > qMaxX then qx = 0; qrow = qrow + 30 end
         local b = UI:CreateButton(content, qb.label, 130, 24)
+        -- Wrap on the button's real width: its label may have grown it (issue #28).
+        if qx > 0 and qx + b:GetWidth() > content:GetWidth() - 20 then qx = 0; qrow = qrow + 30 end
         b:SetPoint("TOPLEFT", qx, -(yOff + qrow))
         b:SetScript("OnClick", qb.fn)
-        qx = qx + 136
+        qx = qx + b:GetWidth() + 6
     end
     yOff = yOff + 36 + qrow
 
@@ -2170,7 +2170,7 @@ function BRutus:RefreshSettingsPanel(content, category)
             BRutus:Print(string.format(L["Loot system set to %s."], sys.label))
             BRutus:RefreshSettingsPanel(content)
         end)
-        lx = lx + 136
+        lx = lx + b:GetWidth() + 6  -- a button its label grew pushes the next one (issue #28)
     end
     yOff = yOff + 34
 
@@ -2230,7 +2230,7 @@ function BRutus:RefreshSettingsPanel(content, category)
                 BRutus.Points:SetMode(m.k)
                 BRutus:RefreshSettingsPanel(content)
             end)
-            mx = mx + 94
+            mx = mx + mb:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
         end
         yOff = yOff + 30
 
