@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.56.1] - 2026-09-27
+
+### Fixed
+- no Forever o próprio nome volta a ter sobrenome
+
+
 ## [0.56.0] - 2026-09-21
 
 ### Added
