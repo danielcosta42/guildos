@@ -504,6 +504,75 @@ function Compat.GetSkillLineInfo(index)
 end
 
 ----------------------------------------------------------------------
+-- Professions on the retail tradeskill API (WoW: Forever, issue #31)
+----------------------------------------------------------------------
+
+-- The spell-book indices of the player's professions (two primaries, First Aid, Fishing,
+-- Cooking, ...), nils included; nothing on a client without the API.
+function Compat.GetProfessions()
+    if not GetProfessions then return end
+    return GetProfessions()
+end
+
+-- name, icon, rank, maxRank, numSpells, spellOffset, skillLine, ... for a GetProfessions index.
+function Compat.GetProfessionInfo(index)
+    if not GetProfessionInfo then return nil end
+    return GetProfessionInfo(index)
+end
+
+-- Whether the player knows a spell. On Forever this answers for a recipe with the profession
+-- window closed (verified 2026-09-27); C_SpellBook.IsSpellInSpellBook does not.
+function Compat.IsPlayerSpell(spellID)
+    if not IsPlayerSpell then return false end
+    return IsPlayerSpell(spellID) and true or false
+end
+
+-- The profession window's skill line and learned recipe IDs, when it shows the player's OWN
+-- profession and its data has settled. Nothing for a linked or guild view, a window still
+-- loading, or a client without the API.
+function Compat.TradeSkillLearned()
+    local T = C_TradeSkillUI
+    if not (T and T.GetAllRecipeIDs and T.GetRecipeInfo and T.GetBaseProfessionInfo) then return nil end
+    if T.IsDataSourceChanging and T.IsDataSourceChanging() then return nil end
+    if (T.IsTradeSkillLinked and T.IsTradeSkillLinked())
+        or (T.IsTradeSkillGuild and T.IsTradeSkillGuild())
+        or (T.IsTradeSkillGuildMember and T.IsTradeSkillGuildMember()) then
+        return nil
+    end
+    local base = T.GetBaseProfessionInfo()
+    local line = base and base.professionID
+    if not line or line == 0 then return nil end
+    local learned = {}
+    for _, id in ipairs(T.GetAllRecipeIDs() or {}) do
+        local info = T.GetRecipeInfo(id)
+        if info and info.learned then learned[#learned + 1] = id end
+    end
+    return line, learned
+end
+
+-- Every guild member's primary professions as the Communities roster reports them, addon or
+-- not: { { name = "First Last", lines = { skillLine, ... } }, ... }. The rank it gives is always
+-- 1 on Forever and is left out. Secret fields (chat messaging lockdown) skip the member.
+function Compat.GuildMemberProfessions()
+    if not (C_Club and C_Club.GetGuildClubId and C_Club.GetClubMembers and C_Club.GetMemberInfo) then return nil end
+    local clubId = C_Club.GetGuildClubId()
+    if not clubId then return nil end
+    local ids = C_Club.GetClubMembers(clubId)
+    if Compat.IsSecret(ids) or type(ids) ~= "table" then return nil end
+    local out = {}
+    for _, memberId in ipairs(ids) do
+        local m = C_Club.GetMemberInfo(clubId, memberId)
+        if m and not Compat.IsSecret(m.name, m.profession1ID, m.profession2ID) and type(m.name) == "string" then
+            local lines = {}
+            if type(m.profession1ID) == "number" and m.profession1ID > 0 then lines[#lines + 1] = m.profession1ID end
+            if type(m.profession2ID) == "number" and m.profession2ID > 0 then lines[#lines + 1] = m.profession2ID end
+            out[#out + 1] = { name = m.name, lines = lines }
+        end
+    end
+    return out
+end
+
+----------------------------------------------------------------------
 -- Addon messages, with their result (issue #10)
 --
 -- Sync goes through ChatThrottleLib, which re-queues AddonMessageThrottle itself

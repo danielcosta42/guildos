@@ -205,6 +205,10 @@ read_globals = {
     "WOW_PROJECT_BURNING_CRUSADE_CLASSIC",   -- absent on clients without TBC Classic
     "issecretvalue",
     "C_TradeSkillUI",
+    "C_Club",
+    "GetProfessions",
+    "GetProfessionInfo",
+    "IsPlayerSpell",
     "TooltipDataProcessor",
     "TooltipUtil",                           -- the retail tooltip; absent on Anniversary (Compat.lua, issue #19)
     "C_GameRules",                           -- /guildos probe (Core/Probe.lua, ADR-0015)

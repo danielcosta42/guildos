@@ -16,6 +16,8 @@ local EXEMPT = { ["Core/Compat.lua"] = true, ["Core/Probe.lua"] = true, ["Module
 local GLOBALS = {
   "GetItemInfo", "GetSpellInfo", "GetSpellTexture", "UnitBuff",
   "GetNumTalentTabs", "GetNumTalents", "GetTalentInfo", "GetNumSkillLines", "GetSkillLineInfo",
+  -- WoW: Forever professions (issue #31).
+  "GetProfessions", "GetProfessionInfo",
   "GetContainerNumSlots", "GetContainerItemLink", "GetContainerItemInfo", "UseContainerItem",
   "GuildRoster", "RegisterAddonMessagePrefix", "SendAddonMessage", "SendAddonMessageLogged",
   -- What a tooltip is showing: the Classic readers, and the data type the retail client
@@ -30,7 +32,7 @@ local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAd
 -- What a local named Compat may be.
 local COMPAT_SOURCES = { ["BRutus.Compat"] = true, ["GuildOS.Compat"] = true, ["self.Compat"] = true }
 -- Namespaces and the library only Compat may touch: flagged wherever the name appears (an alias included).
-local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "ChatThrottleLib",
+local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_TradeSkillUI", "C_Club", "ChatThrottleLib",
                      "TooltipUtil", "TooltipDataProcessor" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
