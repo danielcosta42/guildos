@@ -39,6 +39,25 @@ local function newText(parent, size, role)
     return fs
 end
 
+-- Grow a button or tab whose label spills past it: the mono font and longer
+-- translations run past the widths callers pass (issue #28). A label that fits,
+-- even snugly, leaves the caller's width alone; one that spills grows it to the
+-- label plus a pad. It never shrinks, so a width a layout sets later is kept, and
+-- it follows every later label change, so a toggle that swaps its text still fits.
+local LABEL_PAD = 16
+local function fitToLabel(frame)
+    local label, setText = frame.label, frame.label.SetText
+    local function fit()
+        local w = label:GetStringWidth()
+        if w > frame:GetWidth() - 4 then frame:SetWidth(math.ceil(w) + LABEL_PAD) end
+    end
+    label.SetText = function(self, text)
+        setText(self, text)
+        fit()
+    end
+    fit()
+end
+
 ----------------------------------------------------------------------
 -- Surfaces
 ----------------------------------------------------------------------
@@ -249,6 +268,7 @@ function Helpers:CreateButton(parent, text, width, height)
     label:SetPoint("CENTER")
     label:SetText(text or "")
     btn.label = label
+    fitToLabel(btn)
 
     btn.variant = "secondary"
     btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
@@ -736,6 +756,7 @@ function Helpers:CreateTab(parent, text, width, sub)
     label:SetPoint("CENTER")
     label:SetText(text or "")
     tab.label = label
+    fitToLabel(tab)
 
     local underline = tab:CreateTexture(nil, "OVERLAY")
     underline:SetTexture(WHITE)

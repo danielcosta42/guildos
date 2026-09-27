@@ -6,7 +6,7 @@ local UI = BRutus.UI
 local C = BRutus.Colors
 local L = BRutus.L
 
-local DETAIL_WIDTH = 420
+local DETAIL_WIDTH = 460
 local DETAIL_HEIGHT = 620
 
 -- Static stat list — defined once at module level to avoid per-call allocation.
@@ -724,6 +724,7 @@ function PopulateDetail(frame, data)
 
             local addBtn = UI:CreateButton(child, L["Add"], 60, 22)
             addBtn:SetPoint("LEFT", addNoteBox, "RIGHT", 6, 0)
+            addNoteBox:SetWidth(contentWidth - 12 - 15 - 6 - addBtn:GetWidth())
             addBtn:SetScript("OnClick", function()
                 local text = addNoteBox:GetText()
                 if text and strtrim(text) ~= "" then
@@ -809,12 +810,18 @@ function PopulateDetail(frame, data)
         local noteLabel = _pFS(child)
         BRutus:ApplyFont(noteLabel, 9)
         noteLabel:SetPoint("TOPLEFT", 12, yOff)
-        noteLabel:SetWidth(contentWidth - 20)
+        noteLabel:SetWidth(contentWidth - 24)
+        noteLabel:SetJustifyH("LEFT")
+        noteLabel:SetWordWrap(true)
         noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
         noteLabel:SetText(BRutus:IsOfficer() and L["Linked chars share attunements account-wide."]
             or L["Add your own alts (any account). An officer's client applies them guild-wide."])
         noteLabel:Show()
-        yOff = yOff - 16
+        yOff = yOff - noteLabel:GetStringHeight() - 6
+
+        -- Each row's buttons end here, right-aligned; a button's RIGHT is anchored to its
+        -- row label's LEFT (x = 12) so it also sits on the label's vertical centre.
+        local rightX = contentWidth - 12
 
         -- The viewed character is excluded from the list below, so without this
         -- row you could not promote your CURRENT character to main (you would
@@ -834,7 +841,9 @@ function PopulateDetail(frame, data)
             selfLabel:Show()
             if not selfIsMain then
                 local setSelfMain = UI:CreateButton(child, L["Set as main"], 90, 18)
-                setSelfMain:SetPoint("LEFT", selfLabel, "RIGHT", 10, 0)
+                setSelfMain:SetPoint("RIGHT", selfLabel, "LEFT", rightX - 12, 0)
+                selfLabel:SetWidth(rightX - 12 - 8 - setSelfMain:GetWidth())
+                selfLabel:SetJustifyH("LEFT")
                 setSelfMain:SetScript("OnClick", function()
                     if BRutus:IsOfficer() then BRutus:SetMain(playerKey)
                     else BRutus.AltAutoDetect:SetOwnMain(playerKey) end
@@ -856,9 +865,8 @@ function PopulateDetail(frame, data)
                 lkLabel:SetText(lkName .. (lkIsMain and ("  " .. L["(main)"]) or ""))
                 lkLabel:Show()
 
-                -- Unlink button
+                -- Unlink button (placed below: rightmost, or left of "Set as main")
                 local unlinkBtn = UI:CreateButton(child, L["Unlink"], 80, 18)
-                unlinkBtn:SetPoint("LEFT", lkLabel, "RIGHT", 10, 0)
                 local capturedKey = lk
                 unlinkBtn:SetScript("OnClick", function()
                     -- If lk is the main, unlink playerKey from it; else unlink lk.
@@ -874,15 +882,23 @@ function PopulateDetail(frame, data)
                 -- "Set as main" on every listed char that is NOT the current
                 -- main. Officers apply directly; members route through the
                 -- self-claim (SetOwnMain is sender-bound, same as Unlink).
+                local buttonsWidth = unlinkBtn:GetWidth()
                 if not lkIsMain then
                     local setMainBtn = UI:CreateButton(child, L["Set as main"], 90, 18)
-                    setMainBtn:SetPoint("LEFT", unlinkBtn, "RIGHT", 6, 0)
+                    setMainBtn:SetPoint("RIGHT", lkLabel, "LEFT", rightX - 12, 0)
+                    unlinkBtn:SetPoint("RIGHT", setMainBtn, "LEFT", -6, 0)
+                    buttonsWidth = buttonsWidth + 6 + setMainBtn:GetWidth()
                     setMainBtn:SetScript("OnClick", function()
                         if BRutus:IsOfficer() then BRutus:SetMain(capturedKey)
                         else BRutus.AltAutoDetect:SetOwnMain(capturedKey) end
                         PopulateDetail(frame, data)
                     end)
+                else
+                    unlinkBtn:SetPoint("RIGHT", lkLabel, "LEFT", rightX - 12, 0)
                 end
+                -- A long name is cut short of the buttons instead of running under them.
+                lkLabel:SetWidth(rightX - 12 - 8 - buttonsWidth)
+                lkLabel:SetJustifyH("LEFT")
                 yOff = yOff - 22
             end
         end
@@ -913,6 +929,7 @@ function PopulateDetail(frame, data)
 
         local addLinkBtn = UI:CreateButton(child, L["Link alt"], 90, 22)
         addLinkBtn:SetPoint("LEFT", addLinkBox, "RIGHT", 6, 0)
+        addLinkBox:SetWidth(rightX - 12 - 6 - addLinkBtn:GetWidth())
 
         local doLink = function()
             local altName = strtrim(addLinkBox:GetText())

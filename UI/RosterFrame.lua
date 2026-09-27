@@ -2363,7 +2363,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Manual send button
     local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, 22)
-    sendNowBtn:SetPoint("TOPLEFT", 390, yOff + 3)
+    sendNowBtn:SetPoint("LEFT", toggleBtn, "RIGHT", 10, 0)  -- pushed by a grown toggle label (issue #28)
     sendNowBtn:SetScript("OnClick", function()
         if BRutus.Recruitment then
             BRutus.Recruitment:DoSendRecruitmentMessage()

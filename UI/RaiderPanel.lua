@@ -84,9 +84,11 @@ function BRutus:CreateRolePicker(parent)
             end
         end
     end
+    local x = 0
     for i, role in ipairs(ROLE_ORDER) do
         local b = UI:CreateButton(pick, roleName(role), 62, 22)
-        b:SetPoint("LEFT", (i - 1) * 66, 0)
+        b:SetPoint("LEFT", x, 0)
+        x = x + b:GetWidth() + 4  -- a role its label grew pushes the next one (issue #28)
         b.role = role
         b:SetScript("OnClick", function()
             local roles = BRutus:GetMyRoles()

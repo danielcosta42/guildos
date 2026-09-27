@@ -915,7 +915,7 @@ local function BuildPresetsSub(panel)
                         refresh()
                     end
                 end)
-                bx = bx + 136
+                bx = bx + b:GetWidth() + 6  -- a button its label grew pushes the next one (issue #28)
             end
             yOff = yOff + ROW_H + 4
         end

@@ -472,16 +472,17 @@ function BRutus:CreateCalendarSub(panel)
                 roleBtn.role = ROLES[(i % #ROLES) + 1]
                 roleBtn.label:SetText(roleLabel(roleBtn.role))
             end)
-            local function rsvpBtn(text, status, xoff, col)
+            -- Chained, so a label that grew its button pushes the next one (issue #28).
+            local function rsvpBtn(text, status, anchor, xoff, col)
                 local b = UI:CreateButton(child, text, 64, 18)
-                b:SetPoint("LEFT", roleBtn, "RIGHT", xoff, 0)
+                b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0)
                 if mine and mine.status == status then b:SetBaseColor(col.r * 0.34, col.g * 0.34, col.b * 0.34, 0.95) end
                 b:SetScript("OnClick", function() CAL():Rsvp(id, status, roleBtn.role) end)
                 return b
             end
-            rsvpBtn(L["Going"],     "yes",       8,   C.online)
-            rsvpBtn(L["Tentative"], "tentative", 76,  C.gold)
-            rsvpBtn(L["Absent"],    "no",        144, C.red)
+            local goingBtn = rsvpBtn(L["Going"],     "yes",       roleBtn,  8, C.online)
+            local tentBtn  = rsvpBtn(L["Tentative"], "tentative", goingBtn, 4, C.gold)
+            rsvpBtn(L["Absent"],    "no",        tentBtn,  4, C.red)
             yy = yy + 24
 
             local going = {}

@@ -827,7 +827,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
 
     -- Send to disenchanter
     local deCouncilBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
-    deCouncilBtn:SetPoint("BOTTOM", 0, 10)
+    deCouncilBtn:SetPoint("LEFT", awardBtn, "RIGHT", 8, 0)
     deCouncilBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deCouncilBtn:SetScript("OnClick", function()
         local loot = LootMaster.activeLoot
@@ -853,6 +853,10 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
 
     local rollBtn = UI:CreateButton(f, L["Open Roll Instead"], 130, 26)
     rollBtn:SetPoint("BOTTOMRIGHT", -10, 10)
+    -- The three share the bottom edge; their labels (the winner's whole name among them)
+    -- set how wide the popup has to be (issue #28).
+    f:SetWidth(math.max(460, 10 + awardBtn:GetWidth() + 8 + deCouncilBtn:GetWidth() + 8
+        + rollBtn:GetWidth() + 10))
     rollBtn:SetScript("OnClick", function()
         f:Hide()
         -- Fall back to normal announce
@@ -2713,6 +2717,11 @@ function LootMaster:ShowRollFrame()
     -- Send to Disenchanter (between Cancel and End Rolling)
     local deRollBtn = UI:CreateButton(f, L["Send to DE"], 100, 24)
     deRollBtn:SetPoint("LEFT", cancelBtn, "RIGHT", 8, 0)
+    -- End Rolling stays centred unless the pair on its left, grown by its labels, reaches it (issue #28).
+    if 10 + cancelBtn:GetWidth() + 8 + deRollBtn:GetWidth() + 8 > (f:GetWidth() - endBtn:GetWidth()) / 2 then
+        endBtn:ClearAllPoints()
+        endBtn:SetPoint("LEFT", deRollBtn, "RIGHT", 8, 0)
+    end
     deRollBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deRollBtn:SetScript("OnClick", function()
         if not LootMaster.activeLoot then
