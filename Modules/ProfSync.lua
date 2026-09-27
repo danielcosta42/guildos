@@ -35,14 +35,27 @@ function ProfSync:Initialize()
 end
 
 function ProfSync:PublishSummary()
-    self.summaryPending = false
     BRutus.SyncService:Publish(DOMAIN, "sum", { p = BRutus.Professions:OwnSummary() })
 end
 
+-- Publish once things have been quiet for `delay` seconds (CHANGE_DELAY by default): a later
+-- call pushes the summary back, so levelling a profession sends one summary, not one per craft.
 function ProfSync:ScheduleSummary(delay)
+    delay = delay or self.CHANGE_DELAY
+    local due = GetServerTime() + delay
+    if not self.summaryDue or due > self.summaryDue then self.summaryDue = due end
     if self.summaryPending then return end
     self.summaryPending = true
-    Compat.After(delay or self.CHANGE_DELAY, function() self:PublishSummary() end)
+    local function fire()
+        local wait = (self.summaryDue or 0) - GetServerTime()
+        if wait > 0 then
+            Compat.After(wait, fire)
+            return
+        end
+        self.summaryPending, self.summaryDue = false, nil
+        self:PublishSummary()
+    end
+    Compat.After(delay, fire)
 end
 
 -- The member key of a guildmate sender, or nil when the sender is not in the guild roster.
@@ -50,9 +63,8 @@ end
 function ProfSync:SenderKey(sender)
     if type(sender) ~= "string" then return nil end
     local short = sender:match("^([^-]+)") or sender
-    local suffix = sender:match("-(.+)$")
-    if not BRutus:GetMemberRecord(short, suffix) then return nil end
-    return BRutus:GetPlayerKey(short, (not BRutus:GetClientRealm()) and suffix or nil)
+    if not BRutus:GetMemberRecord(short, sender:match("-(.+)$")) then return nil end
+    return BRutus.Professions.KeyFor(sender)
 end
 
 function ProfSync:OnEnvelope(env, sender)
@@ -87,7 +99,13 @@ function ProfSync:OnSummary(key, sender, p)
     end
     if #ask == 0 then return end
     Compat.After(math.random(2, 6), function()
-        BRutus.SyncService:Publish(DOMAIN, "req", { l = ask }, { target = sender })
+        -- A guild-wide answer to someone else may have brought the list meanwhile.
+        local still, current = {}, BRutus.Professions:Get(key)
+        for _, line in ipairs(ask) do
+            local e = current and current.profs[line]
+            if e and not e.recipes and e.h == self.asked[sender .. ":" .. line].h then still[#still + 1] = line end
+        end
+        if #still > 0 then BRutus.SyncService:Publish(DOMAIN, "req", { l = still }, { target = sender }) end
     end)
 end
 

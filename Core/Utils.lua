@@ -231,7 +231,8 @@ function BRutus:GetMemberRecord(name, realm)
         status       = status or "",
         avgIlvl      = data.avgIlvl or 0,
         gear         = data.gear,
-        professions  = data.professions,
+        -- WoW: Forever: the guild roster's professions for a member whose client sent none (issue #31).
+        professions  = data.professions or (self.Professions and self.Professions:LegacyList(key)),
         attunements  = data.attunements,
         stats        = data.stats,
         spec         = data.spec,

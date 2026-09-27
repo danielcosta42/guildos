@@ -550,6 +550,15 @@ function Compat.TradeSkillLearned()
     return line, learned
 end
 
+-- The parent skill line a recipe belongs to (GetTradeSkillLineForRecipe returns the child
+-- line, its name, then the parent), for a recipe the catalog does not know yet.
+function Compat.RecipeLine(recipeID)
+    local T = C_TradeSkillUI
+    if not (T and T.GetTradeSkillLineForRecipe) then return nil end
+    local _, _, parent = T.GetTradeSkillLineForRecipe(recipeID)
+    return parent
+end
+
 -- Every guild member's primary professions as the Communities roster reports them, addon or
 -- not: { { name = "First Last", lines = { skillLine, ... } }, ... }. The rank it gives is always
 -- 1 on Forever and is left out. Secret fields (chat messaging lockdown) skip the member.

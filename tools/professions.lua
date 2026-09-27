@@ -18,14 +18,24 @@ end
 
 -- ── The client: WoW: Forever ────────────────────────────────────────────
 local NOW = 1790500000
-local timers = {}
-C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end, NewTicker = function() return {} end }
+local timers, seq = {}, 0
+C_Timer = {
+  After = function(delay, fn)
+    seq = seq + 1
+    timers[#timers + 1] = { at = NOW + (delay or 0), seq = seq, fn = fn }
+  end,
+  NewTicker = function() return {} end,
+}
+-- Runs every pending timer in due order, moving the clock to each one's time.
 local function runTimers()
   local guard = 0
   while #timers > 0 do
     guard = guard + 1
     assert(guard < 1000, "timer loop")
-    table.remove(timers, 1)()
+    table.sort(timers, function(a, b) return a.at < b.at or (a.at == b.at and a.seq < b.seq) end)
+    local t = table.remove(timers, 1)
+    if t.at > NOW then NOW = t.at end
+    t.fn()
   end
 end
 function GetBuildInfo() return "1.60.1", "70009", "", 16001 end
@@ -77,6 +87,7 @@ C_TradeSkillUI = {
   IsTradeSkillGuildMember = function() return false end,
   GetBaseProfessionInfo = function() return { professionID = WINDOW and WINDOW.line or 0 } end,
   GetAllRecipeIDs = function() return WINDOW and WINDOW.all or {} end,
+  GetTradeSkillLineForRecipe = function() return 2946, "Mining", 186 end,
   GetRecipeInfo = function(id)
     for _, x in ipairs(WINDOW and WINDOW.learned or {}) do
       if x == id then return { learned = true } end
@@ -207,7 +218,7 @@ check(rec and rec.src == "addon" and rec.profs[186].rank == 21 and rec.profs[186
 check(#rec.profs[186].recipes == 1 and rec.profs[186].recipes[1] == 2657 and rec.profs[186].n == 1
       and rec.profs[186].h == P.Hash({ 2657 }), "learned recipes come from IsPlayerSpell over the catalog")
 check(rec.profs[185] and rec.profs[40] == nil, "a skill line the catalog does not list (Poisons) is ignored")
-local legacy = BRutus.db.members[ME].professions
+local legacy = P:LegacyList(ME)
 check(#legacy == 2 and legacy[1].name == "Cooking" and legacy[2].name == "Mining" and legacy[2].rank == 21
       and legacy[2].maxRank == 75 and legacy[2].isPrimary == true and legacy[1].isPrimary == false,
       "the adapter writes DataCollector's shape, canonical English names")
@@ -223,7 +234,7 @@ check(rec.profs[164] and rec.profs[164].spec == 9788 and rec.profs[164].recipes[
 SLOTS[2] = nil
 fire("LEARNED_SPELL_IN_SKILL_LINE")
 runTimers()
-check(BRutus.db.professions[ME].profs[164] == nil and #BRutus.db.members[ME].professions == 2,
+check(BRutus.db.professions[ME].profs[164] == nil and #P:LegacyList(ME) == 2,
       "a profession dropped disappears on the next scan")
 KNOWN[3304] = true
 fire("NEW_RECIPE_LEARNED", 3304)
@@ -246,8 +257,23 @@ runTimers()
 check(#BRutus.db.professions[ME].profs[186].extra == 1, "someone else's window adds nothing")
 WINDOW = nil
 check(P:Scan() == false, "an extra still known survives a scan")
+BRutus.ProfCatalog.recipes[999001] = { 186, 1, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, {} }
+table.insert(BRutus.ProfCatalog.byLine[186], 999001)
+P:Scan()
+rec = BRutus.db.professions[ME]
+check(#rec.profs[186].extra == 0 and rec.profs[186].recipes[3] == 999001 and #BRutus.db.recipes[ME].Mining == 3,
+      "an extra the regenerated catalog lists becomes a plain recipe, listed once")
+BRutus.ProfCatalog.recipes[999001] = nil
+table.remove(BRutus.ProfCatalog.byLine[186])
 KNOWN[999001] = nil
 check(P:Scan() == true and #BRutus.db.professions[ME].profs[186].extra == 0, "an extra no longer known is dropped")
+KNOWN[777001] = true
+fire("NEW_RECIPE_LEARNED", 777001)
+runTimers()
+check(BRutus.db.professions[ME].profs[186].extra[1] == 777001,
+      "a recipe the catalog lacks, learned with the window closed, is kept as extra on its line")
+KNOWN[777001] = nil
+P:Scan()
 
 -- ── 3. Native records and queries ───────────────────────────────────────
 CLUB = { { name = "Bob", profession1ID = 186, profession2ID = 333 }, { name = "Ana Silva", profession1ID = 164 } }
@@ -259,8 +285,10 @@ check(BRutus.db.professions[BOB] and BRutus.db.professions[BOB].src == "native"
       "a member without the addon gets the catalog's professions the roster names")
 check(BRutus.db.professions[ME].src == "addon" and BRutus.db.professions[ME].profs[186],
       "a native record never replaces an addon one")
-local bobLegacy = BRutus.db.members[BOB].professions
+local bobLegacy = P:LegacyList(BOB)
 check(#bobLegacy == 1 and bobLegacy[1].name == "Mining" and bobLegacy[1].rank == nil, "a native profession has no rank")
+check(BRutus.db.members[BOB] == nil, "a member without the addon gets no members row")
+check(P.KeyFor("Bob") == BOB and P.KeyFor("Bob-Elsewhere") == BOB, "a key from a name ignores a suffix when the client has a realm")
 CLUB[1].profession1ID = 164
 fire("GUILD_ROSTER_UPDATE")
 runTimers()
@@ -323,6 +351,22 @@ check(BRutus.db.professions[BOB].profs[186].recipes[1] == 2657 and P:KnowsRecipe
       and #P:CraftersOf(2657) == 2, "a list matching the summary is stored and indexed")
 check(BRutus.db.recipes[BOB].Mining[1].itemId == 2840, "and reaches the recipe tracker's shape")
 check(P:ApplyList(BOB, 186, h1, { 2657 }, {}) == false, "a list already held is not applied twice")
+local h2 = P.Hash({ 2657, 3304 })
+sent = {}
+deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
+check(BRutus.db.professions[BOB].profs[186].recipes == nil and BRutus.db.recipes[BOB]
+      and #BRutus.db.recipes[BOB].Mining == 1
+      and P:KnowsRecipe(BOB, 2657), "while a changed list is on its way the previous one still stands")
+deliver("list", { l = 186, h = h2, r = { 2657, 3304 }, x = {} }, "Bob")
+check(#BRutus.db.recipes[BOB].Mining == 2 and BRutus.db.professions[BOB].profs[186].stale == nil,
+      "the new list replaces it")
+runTimers()
+check(#sentOf("req") == 0, "a list that arrived meanwhile is not asked for")
+local projected, realProject = 0, P.Project
+P.Project = function(self, key) projected = projected + 1; return realProject(self, key) end
+deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
+check(projected == 0, "a summary with nothing new rebuilds nothing")
+P.Project = realProject
 local before = BRutus.db.professions[BOB].profs[186].rank
 deliver("sum", { p = { [186] = { r = "x", m = 75, h = h1, n = 1 } } }, "Bob")
 deliver("sum", { p = { [999] = { r = 1, m = 75, h = h1, n = 1 } } }, "Bob")
@@ -355,6 +399,12 @@ sent = {}
 deliver("ask", {}, "Cid")
 runTimers()
 check(#sentOf("sum") == 1, "an ask is answered with my summary")
+sent = {}
+local t0 = NOW
+S:ScheduleSummary()
+S:ScheduleSummary(20)
+runTimers()
+check(#sentOf("sum") == 1 and NOW >= t0 + 20, "changes in a row send one summary, once things are quiet")
 
 -- ── 5. Integration points ───────────────────────────────────────────────
 dofile(ADDON .. "/Modules/DataCollector.lua")
@@ -371,6 +421,16 @@ BRutus.ShowProfessionReminder = function() reminded = true end
 BRutus.db.myData.professions = { { name = "Blacksmithing", rank = 210, maxRank = 300, isPrimary = true } }
 BRutus:CheckProfessionFreshness()
 check(not reminded, "the open-your-window reminder never shows on Forever")
+CLUB = { { name = "Dee", profession1ID = 164 } }
+NOW = NOW + 61
+fire("GUILD_ROSTER_UPDATE")
+local DEE = BRutus:GetPlayerKey("Dee")
+check(BRutus.db.professions[DEE] and BRutus.db.members[DEE] == nil, "Dee is known from the guild roster only")
+BRutus.RefreshRosterUI = function() end
+DC:StoreReceivedData(DEE, { name = "Dee", class = "MAGE", lastUpdate = NOW, absent = { professions = true } })
+local dee = BRutus:GetMemberRecord("Dee")
+check(BRutus.db.members[DEE].professions == nil and dee.professions and dee.professions[1].name == "Blacksmithing",
+      "a broadcast from a version that sends no professions does not hide the roster's")
 ROSTER = { "Ana Silva", "Cid" }
 BRutus:PruneStaleData()
 check(BRutus.db.professions[BOB] == nil and BRutus.db.recipes[BOB] == nil and BRutus.db.professions[ME],

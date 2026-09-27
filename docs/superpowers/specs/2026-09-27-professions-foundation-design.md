@@ -91,19 +91,25 @@ memory note and the epic):
   recipe IDs from `GetAllRecipeIDs` + `GetRecipeInfo().learned` that the catalog does not have
   are kept in the line's `extra` list (a newer build than the catalog). Persisted with the record.
 - **Hash:** `LibDeflate:Adler32` of the sorted recipe and extra IDs joined by commas.
-- **Triggers:** login + 4s (full scan); `SKILL_LINES_CHANGED` (levels, debounced 2s);
-  `NEW_RECIPE_LEARNED` (add that ID, rehash); `LEARNED_SPELL_IN_SKILL_LINE` (full scan, debounced
-  2s); `TRADE_SKILL_LIST_UPDATE` with the own window settled (extra). A line no longer owned
-  disappears on the next full scan.
-- A change republishes the summary (3.5) after 10s of quiet.
+- **Triggers:** login + 4s (full scan); `SKILL_LINES_CHANGED` and `LEARNED_SPELL_IN_SKILL_LINE`
+  (full scan, debounced 2s — a scan is ~1,500 `IsPlayerSpell` calls); `NEW_RECIPE_LEARNED` (a recipe
+  the catalog lacks goes to its line's extra, found through `GetTradeSkillLineForRecipe`, then a
+  scan); `TRADE_SKILL_LIST_UPDATE` with the own window settled (extra). A line no longer owned
+  disappears on the next full scan. An extra the (regenerated) catalog lists becomes a plain recipe.
+- A change republishes the summary (3.5) once things have been quiet for 10s: a later change pushes
+  it back, so levelling a profession sends one summary, not one per craft.
 
 ### 3.4 Model and storage
 - `db.professions[memberKey] = { src = "addon"|"native", ts, profs = { [line] = { rank, max,
   spec, h, n, recipes = {...}|nil, extra = {...}|nil } } }` in the per-guild DB. `recipes` is nil
   until the list for the current hash arrived.
 - Native records come from `C_Club` (primary professions, no rank) for members without an addon
-  record, refreshed on `GUILD_ROSTER_UPDATE` at most every 60s, skipping secret values. An addon
-  record replaces a native one and is never downgraded by it.
+  record, refreshed on `GUILD_ROSTER_UPDATE` at most every 60s, skipping secret values (the read is
+  protected). An addon record replaces a native one and is never downgraded by it. Both kinds are
+  keyed by one rule (`Professions.KeyFor`), the same for a roster name and a message sender.
+- While a changed list is on its way, the previous one (`stale`) still stands for projection and
+  queries, so a crafter who learned one recipe does not vanish from tooltips meanwhile.
+- A summary identical to the one held (the heartbeat, an ask's answer) rebuilds nothing.
 - Query API: `Professions:Get(key)`, `:KnowsRecipe(key, id)`, `:CraftersOf(recipeID)` (cached
   inverted index, rebuilt when a record changes), `:Members(line)`, `:Catalog()`.
 - Hygiene: `PruneStaleData` also drops `db.professions` rows no longer in the roster; a newer
@@ -125,16 +131,22 @@ memory note and the epic):
   `h` of the latest `sum` it holds from that sender, and it does not hold that list yet. A list with
   no summary before it is dropped: whoever asked always has the summary.
 - A request that got no list is asked again after 120s, when the next summary still carries that hash.
+- A deferred `req` is dropped for lines whose list arrived meanwhile (a guild-wide answer to
+  someone else).
 - Trust: the member key comes from the sender, never from the payload; a sender that is not in the
   guild roster (`GetMemberRecord`) is ignored, whatever the channel.
 - Size: ~300 recipes serialize and deflate to ~1.5 KB (about 7 chunks at BULK), sent once per
   change instead of every 300s.
 
 ### 3.6 Legacy adapter and integration points
-- On every record change, the adapter writes the legacy shapes the existing surfaces read:
-  - `members[key].professions = { { name = en, rank, maxRank, isPrimary }, ... }` (ranked lines
-    only; native records produce `{ name = en, isPrimary = true }` with no rank);
-  - `db.recipes[key][en] = { { name = localized spell name, itemId = out, spellId = recipeID } }`.
+- On every record change, the adapter writes `db.recipes[key][en] = { { name = localized spell
+  name, itemId = out, spellId = recipeID } }`, which the recipes panel, tooltips, CraftFinder,
+  CraftNet and the alliance directory read.
+- It never writes `db.members`: a row there means the member's own client has spoken, and trials,
+  the alliance and Agora read it so. The roster and `GetMemberRecord` instead fall back to
+  `Professions:LegacyList(key)` (`{ name = en, rank, maxRank, isPrimary }`, no rank for a native
+  record) when the member's row has no professions — members without the addon, and those on a
+  version whose broadcast says `absent.professions`, which therefore cannot hide them.
 - `DataCollector:CollectProfessions` takes the own list from `Professions` on Forever, so `BC`
   stops carrying `absent.professions` there and cannot wipe peers' copies.
 - `DataCollector:GetBroadcastData` stops including `recipes` on Forever (ProfSync carries them).

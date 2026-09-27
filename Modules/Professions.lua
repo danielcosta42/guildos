@@ -29,6 +29,15 @@ function Professions.OwnKey()
     return BRutus:GetPlayerKey(Compat.PlayerName())
 end
 
+-- The member key for a name as a sender or the Communities roster writes it: the client's realm,
+-- unless the client has none and the name carries a suffix (as CommSystem's broadcasts do).
+function Professions.KeyFor(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    local short = name:match("^([^-]+)") or name
+    local suffix = name:match("-(.+)$")
+    return BRutus:GetPlayerKey(short, (not BRutus:GetClientRealm()) and suffix or nil)
+end
+
 -- Sorted copy of a list of positive integer IDs, duplicates dropped; nil when it is not a
 -- table of IDs or runs past cap.
 function Professions.IdList(t, cap)
@@ -63,15 +72,17 @@ function Professions:Initialize()
                              "TRADE_SKILL_LIST_UPDATE", "GUILD_ROSTER_UPDATE" }) do
         Compat.RegisterEvent(f, event)
     end
-    f:SetScript("OnEvent", function(_, event) Professions:OnEvent(event) end)
+    f:SetScript("OnEvent", function(_, event, ...) Professions:OnEvent(event, ...) end)
     Compat.After(4, function() Professions:Scan() end)
 end
 
-function Professions:OnEvent(event)
+function Professions:OnEvent(event, arg1)
     if event == "TRADE_SKILL_LIST_UPDATE" then
         self:ScheduleWindow()
     elseif event == "GUILD_ROSTER_UPDATE" then
         self:ReadNative()
+    elseif event == "NEW_RECIPE_LEARNED" then
+        self:AddLearned(arg1)
     else
         self:ScheduleScan()
     end
@@ -104,8 +115,9 @@ function Professions:ReadLine(line, rank, maxRank, old)
     for _, id in ipairs(cat.byLine[line] or {}) do
         if Compat.IsPlayerSpell(id) then recipes[#recipes + 1] = id end
     end
+    -- An extra the catalog now lists (it was regenerated) is a plain recipe again.
     for _, id in ipairs((old and old.extra) or {}) do
-        if Compat.IsPlayerSpell(id) then extra[#extra + 1] = id end
+        if not cat.recipes[id] and Compat.IsPlayerSpell(id) then extra[#extra + 1] = id end
     end
     local spec
     for specID, specLine in pairs(cat.specs) do
@@ -116,7 +128,9 @@ function Professions:ReadLine(line, rank, maxRank, old)
 end
 
 local function sameLine(a, b)
+    -- The hash covers recipes and extra together: an extra the catalog now lists moves between them.
     return b ~= nil and a.rank == b.rank and a.max == b.max and a.spec == b.spec and a.h == b.h
+        and #a.extra == #(b.extra or {})
 end
 
 -- Read the player's professions, specializations and learned recipes. Returns true when the
@@ -175,6 +189,26 @@ function Professions:ReadWindow()
     if BRutus.ProfSync then BRutus.ProfSync:ScheduleSummary() end
 end
 
+-- NEW_RECIPE_LEARNED: a recipe the catalog lacks, learned with the window closed, becomes extra
+-- on its line; the scan that follows picks up everything the catalog has.
+function Professions:AddLearned(recipeID)
+    local cat = catalog()
+    if type(recipeID) == "number" and cat and not cat.recipes[recipeID] then
+        local line = Compat.RecipeLine(recipeID)
+        local rec = BRutus.db.professions[self.OwnKey()]
+        local e = line and rec and rec.src == "addon" and rec.profs[line]
+        if e and #(e.extra or {}) < self.MAX_EXTRA then
+            local extra = { recipeID }
+            for _, id in ipairs(e.extra or {}) do
+                if id ~= recipeID then extra[#extra + 1] = id end
+            end
+            table.sort(extra)
+            e.extra = extra
+        end
+    end
+    self:ScheduleScan()
+end
+
 ----------------------------------------------------------------------
 -- Members without the addon: the Communities roster's professions, no rank
 ----------------------------------------------------------------------
@@ -183,12 +217,12 @@ function Professions:ReadNative()
     if now - (self.nativeAt or 0) < NATIVE_EVERY then return end
     self.nativeAt = now
     local cat = catalog()
-    local members = Compat.GuildMemberProfessions()
-    if not (cat and members) then return end
+    -- Protected: the roster's fields can be secret in a chat lockdown.
+    local ok, members = pcall(Compat.GuildMemberProfessions)
+    if not (cat and ok and members) then return end
     local db = BRutus.db.professions
     for _, m in ipairs(members) do
-        local short = m.name:match("^([^-]+)") or m.name
-        local key = BRutus:GetPlayerKey(short, m.name:match("-(.+)$"))
+        local key = self.KeyFor(m.name)
         local rec = key and db[key]
         if key and (not rec or rec.src == "native") then
             local profs = {}
@@ -220,12 +254,19 @@ end
 ----------------------------------------------------------------------
 function Professions:Get(key) return BRutus.db.professions[key] end
 
+-- A line's recipe and extra lists: the current ones, or while a changed list is on its way the
+-- previous ones, so a crafter who learned one recipe does not vanish meanwhile.
+local function lists(e)
+    if e.recipes then return e.recipes, e.extra or {} end
+    return e.stale or {}, e.staleExtra or {}
+end
+
 function Professions:CraftersOf(recipeID)
     if not self.index then
         local index = {}
         for key, rec in pairs(BRutus.db.professions) do
             for _, e in pairs(rec.profs) do
-                for _, list in ipairs({ e.recipes or {}, e.extra or {} }) do
+                for _, list in ipairs({ lists(e) }) do
                     for _, id in ipairs(list) do
                         local keys = index[id] or {}
                         index[id] = keys
@@ -298,7 +339,24 @@ function Professions:ApplySummary(key, p)
     local db = BRutus.db.professions
     local old = db[key]
     local oldProfs = (old and old.src == "addon" and old.profs) or {}
-    local profs, need = {}, {}
+    local same = old ~= nil and old.src == "addon"
+    for line, s in pairs(lines) do
+        local o = oldProfs[line]
+        if not (o and o.rank == s.r and o.max == s.m and o.spec == s.s and o.h == s.h) then same = false end
+    end
+    for line in pairs(oldProfs) do
+        if not lines[line] then same = false end
+    end
+    local need = {}
+    if same then
+        -- The heartbeat or an ask's answer: nothing to rebuild, only lists still missing to ask for.
+        for line, e in pairs(oldProfs) do
+            if not e.recipes then need[#need + 1] = line end
+        end
+        table.sort(need)
+        return need
+    end
+    local profs = {}
     for line, s in pairs(lines) do
         local o = oldProfs[line]
         local e = { rank = s.r, max = s.m, spec = s.s, h = s.h, n = s.n }
@@ -308,6 +366,7 @@ function Professions:ApplySummary(key, p)
             e.recipes, e.extra = {}, {}
         else
             need[#need + 1] = line
+            if o then e.stale, e.staleExtra = lists(o) end
         end
         profs[line] = e
     end
@@ -326,7 +385,7 @@ function Professions:ApplyList(key, line, h, recipes, extra)
     recipes = self.IdList(recipes or {}, self.MAX_RECIPES)
     extra = self.IdList(extra or {}, self.MAX_EXTRA)
     if not recipes or not extra or self.Hash(recipes, extra) ~= h then return false end
-    e.recipes, e.extra = recipes, extra
+    e.recipes, e.extra, e.stale, e.staleExtra = recipes, extra, nil, nil
     self:Changed(key)
     return true
 end
@@ -339,42 +398,50 @@ function Professions:Changed(key)
     self:Project(key)
 end
 
--- Write the shapes the existing surfaces read: members[key].professions (DataCollector's
--- { name, rank, maxRank, isPrimary }, canonical English name) and db.recipes[key][name]
--- (RecipeTracker's { name, itemId, spellId }). A native record has no rank.
-function Professions:Project(key)
+-- A member's professions in DataCollector's shape ({ name, rank, maxRank, isPrimary }, canonical
+-- English name), or nil when there is no record. A native record has no rank. The roster and
+-- GetMemberRecord fall back to this when the member's own row has none: members without the
+-- addon, and those on a version that sends no professions on Forever.
+function Professions:LegacyList(key)
     local cat = catalog()
-    local rec = BRutus.db.professions[key]
-    local members = BRutus.db.members
-    BRutus.db.recipes = BRutus.db.recipes or {}
-    if not rec then
-        if members[key] then members[key].professions = nil end
-        BRutus.db.recipes[key] = nil
-        return
-    end
-    local list, byProf = {}, {}
+    local rec = key and BRutus.db.professions[key]
+    if not (cat and rec) then return nil end
+    local list = {}
     for line, e in pairs(rec.profs) do
         local meta = cat.professions[line]
         if meta then
             list[#list + 1] = { name = meta.en, rank = e.rank, maxRank = e.max, isPrimary = meta.primary }
-            if e.recipes then
-                local out = {}
-                for _, id in ipairs(e.recipes) do
-                    local r = cat.recipes[id]
-                    local item = r and r[cat.F.out]
-                    out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id),
-                                      itemId = (item and item > 0) and item or nil, spellId = id }
-                end
-                for _, id in ipairs(e.extra or {}) do
-                    out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id), spellId = id }
-                end
-                byProf[meta.en] = out
-            end
         end
     end
     table.sort(list, function(a, b) return a.name < b.name end)
-    members[key] = members[key] or {}
-    members[key].professions = list
+    return list
+end
+
+-- Write db.recipes[key][name] in RecipeTracker's shape ({ name, itemId, spellId }), which the
+-- recipes panel, tooltips, CraftFinder, CraftNet and the alliance directory read. It never
+-- creates a db.members row: a row there means the member's own client has spoken.
+function Professions:Project(key)
+    local cat = catalog()
+    local rec = BRutus.db.professions[key]
+    BRutus.db.recipes = BRutus.db.recipes or {}
+    local byProf = {}
+    for line, e in pairs((rec and rec.profs) or {}) do
+        local meta = cat.professions[line]
+        local recipes, extra = lists(e)
+        if meta and (#recipes > 0 or #extra > 0) then
+            local out = {}
+            for _, id in ipairs(recipes) do
+                local r = cat.recipes[id]
+                local item = r and r[cat.F.out]
+                out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id),
+                                  itemId = (item and item > 0) and item or nil, spellId = id }
+            end
+            for _, id in ipairs(extra) do
+                out[#out + 1] = { name = Compat.GetSpellInfo(id) or ("#" .. id), spellId = id }
+            end
+            byProf[meta.en] = out
+        end
+    end
     BRutus.db.recipes[key] = next(byProf) and byProf or nil
 end
 
@@ -382,6 +449,5 @@ end
 -- if the login scan has not run yet, so the broadcast never goes out empty.
 function Professions:OwnLegacyList()
     if not self.scanned then self:Scan() end
-    local m = BRutus.db.members[self.OwnKey()]
-    return (m and m.professions) or {}
+    return self:LegacyList(self.OwnKey()) or {}
 end
