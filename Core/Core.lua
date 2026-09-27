@@ -277,6 +277,8 @@ local MODULE_START = {
     { "PugInspector" },
     { "RecipeTracker", ui = "recipes" },
     { "CraftNet" },
+    -- WoW: Forever only (issue #31); on Anniversary the module does not exist and is skipped.
+    { "Professions" },
     { "RecruitBeacon" },
     { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only

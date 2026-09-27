@@ -147,4 +147,135 @@ check(select("#", Compat.GetProfessions()) == 0, "no API, nothing")
 GetProfessions = saved
 CLUB, SLOTS, PROFS, KNOWN = {}, {}, {}, {}
 
+-- ── Fixture catalog and a fake SyncService bus ──────────────────────────
+BRutus.ProfCatalog = {
+  build = "fixture",
+  F = { line = 1, yellow = 2, grey = 3, out = 4, outCount = 5, enchant = 6, reqSkill = 7, spec = 8, focus = 9,
+        src = 10, recipeItem = 11, category = 12, reagents = 13 },
+  professions = { [186] = { child = 2946, primary = true, en = "Mining" },
+                  [164] = { child = 2938, primary = true, en = "Blacksmithing" },
+                  [185] = { child = 2939, primary = false, en = "Cooking" } },
+  specs = { [9788] = 164 },
+  stations = {},
+  byLine = { [186] = { 2657, 3304 }, [164] = { 2660, 9950 }, [185] = { 2538 } },
+  recipes = {
+    [2657] = { 186, 1, 25, 2840, 1, 0, 0, 0, 0, 3, 0, 0, { 2770, 1 } },
+    [3304] = { 186, 65, 90, 3576, 1, 0, 0, 0, 0, 1, 0, 0, { 2771, 1 } },
+    [2660] = { 164, 1, 15, 2862, 1, 0, 0, 0, 0, 1, 0, 0, { 2835, 1 } },
+    [9950] = { 164, 210, 230, 7934, 1, 0, 210, 9788, 0, 2, 7978, 0, {} },
+    [2538] = { 185, 1, 45, 2679, 1, 0, 0, 0, 0, 1, 0, 0, { 2672, 1 } },
+  },
+}
+local sent = {}
+BRutus.SyncService = {
+  handlers = {},
+  On = function(self, dom, fn) self.handlers[dom] = fn end,
+  Publish = function(_, dom, act, data, opts)
+    sent[#sent + 1] = { dom = dom, act = act, data = data, target = opts and opts.target }
+    return "id"
+  end,
+}
+local function sentOf(act)
+  local out = {}
+  for _, m in ipairs(sent) do if m.act == act then out[#out + 1] = m end end
+  return out
+end
+math.random = function(a) return a end
+BRutus.db = { members = {}, settings = {} }
+dofile(ADDON .. "/Modules/Professions.lua")
+local P = BRutus.Professions
+check(P ~= nil, "Professions exists on Forever")
+local ME = P.OwnKey()
+check(ME == "Ana Silva-Classic Beta PvE 2", "my key is my whole name and the client's realm: " .. tostring(ME))
+
+-- ── 2. Collection ───────────────────────────────────────────────────────
+check(P.Hash({ 3, 1, 2 }) == P.Hash({ 1, 2, 3 }) and P.Hash({ 1 }, { 2 }) == P.Hash({ 1, 2 }),
+      "the hash ignores order and where an ID sits")
+check(P.IdList({ 3, 1, 3 }, 10)[1] == 1 and #P.IdList({ 3, 1, 3 }, 10) == 2, "IdList sorts and drops duplicates")
+check(P.IdList({ "x" }, 10) == nil and P.IdList({ 1.5 }, 10) == nil and P.IdList({ 1, 2 }, 1) == nil
+      and P.IdList("x", 10) == nil, "IdList refuses non-IDs and lists past the cap")
+SLOTS = { 1, nil, 2, 3 }
+PROFS[1] = { "Mineração", 21, 75, 186 }
+PROFS[2] = { "Culinária", 1, 75, 185 }
+PROFS[3] = { "Venenos", 10, 300, 40 }
+KNOWN[2657], KNOWN[2538] = true, true
+P:Initialize()
+runTimers()
+local rec = BRutus.db.professions[ME]
+check(rec and rec.src == "addon" and rec.profs[186].rank == 21 and rec.profs[186].max == 75,
+      "rank and max come from GetProfessionInfo, keyed by skill line")
+check(#rec.profs[186].recipes == 1 and rec.profs[186].recipes[1] == 2657 and rec.profs[186].n == 1
+      and rec.profs[186].h == P.Hash({ 2657 }), "learned recipes come from IsPlayerSpell over the catalog")
+check(rec.profs[185] and rec.profs[40] == nil, "a skill line the catalog does not list (Poisons) is ignored")
+local legacy = BRutus.db.members[ME].professions
+check(#legacy == 2 and legacy[1].name == "Cooking" and legacy[2].name == "Mining" and legacy[2].rank == 21
+      and legacy[2].maxRank == 75 and legacy[2].isPrimary == true and legacy[1].isPrimary == false,
+      "the adapter writes DataCollector's shape, canonical English names")
+local mine = BRutus.db.recipes[ME].Mining
+check(mine and mine[1].spellId == 2657 and mine[1].itemId == 2840 and mine[1].name == "Spell 2657",
+      "the adapter writes the recipe tracker's shape, localized name and output item")
+SLOTS[2], PROFS[4], KNOWN[9788], KNOWN[9950] = 4, { "Ferraria", 210, 300, 164 }, true, true
+fire("SKILL_LINES_CHANGED")
+runTimers()
+rec = BRutus.db.professions[ME]
+check(rec.profs[164] and rec.profs[164].spec == 9788 and rec.profs[164].recipes[1] == 9950,
+      "a specialization is read from the catalog's spells")
+SLOTS[2] = nil
+fire("LEARNED_SPELL_IN_SKILL_LINE")
+runTimers()
+check(BRutus.db.professions[ME].profs[164] == nil and #BRutus.db.members[ME].professions == 2,
+      "a profession dropped disappears on the next scan")
+KNOWN[3304] = true
+fire("NEW_RECIPE_LEARNED", 3304)
+runTimers()
+rec = BRutus.db.professions[ME]
+check(#rec.profs[186].recipes == 2 and rec.profs[186].h == P.Hash({ 2657, 3304 }), "a new recipe is picked up")
+check(P:Scan() == false, "a scan that finds nothing new changes nothing")
+WINDOW = { line = 186, all = { 2657, 3304, 999001 }, learned = { 2657, 3304, 999001 } }
+KNOWN[999001] = true
+fire("TRADE_SKILL_LIST_UPDATE")
+runTimers()
+rec = BRutus.db.professions[ME]
+check(rec.profs[186].extra[1] == 999001 and rec.profs[186].n == 3
+      and rec.profs[186].h == P.Hash({ 2657, 3304 }, { 999001 }),
+      "the own window adds a learned recipe the catalog lacks as extra")
+check(BRutus.db.recipes[ME].Mining[3].spellId == 999001, "an extra recipe reaches the recipe tracker too")
+WINDOW = { line = 186, linked = true, all = { 888001 }, learned = { 888001 } }
+fire("TRADE_SKILL_LIST_UPDATE")
+runTimers()
+check(#BRutus.db.professions[ME].profs[186].extra == 1, "someone else's window adds nothing")
+WINDOW = nil
+check(P:Scan() == false, "an extra still known survives a scan")
+KNOWN[999001] = nil
+check(P:Scan() == true and #BRutus.db.professions[ME].profs[186].extra == 0, "an extra no longer known is dropped")
+
+-- ── 3. Native records and queries ───────────────────────────────────────
+CLUB = { { name = "Bob", profession1ID = 186, profession2ID = 333 }, { name = "Ana Silva", profession1ID = 164 } }
+fire("GUILD_ROSTER_UPDATE")
+runTimers()
+local BOB = BRutus:GetPlayerKey("Bob")
+check(BRutus.db.professions[BOB] and BRutus.db.professions[BOB].src == "native"
+      and BRutus.db.professions[BOB].profs[186] and BRutus.db.professions[BOB].profs[333] == nil,
+      "a member without the addon gets the catalog's professions the roster names")
+check(BRutus.db.professions[ME].src == "addon" and BRutus.db.professions[ME].profs[186],
+      "a native record never replaces an addon one")
+local bobLegacy = BRutus.db.members[BOB].professions
+check(#bobLegacy == 1 and bobLegacy[1].name == "Mining" and bobLegacy[1].rank == nil, "a native profession has no rank")
+CLUB[1].profession1ID = 164
+fire("GUILD_ROSTER_UPDATE")
+runTimers()
+check(BRutus.db.professions[BOB].profs[186], "the roster is read at most once a minute")
+NOW = NOW + 61
+fire("GUILD_ROSTER_UPDATE")
+runTimers()
+check(BRutus.db.professions[BOB].profs[164] and not BRutus.db.professions[BOB].profs[186],
+      "a minute later the change is read")
+check(P:KnowsRecipe(ME, 2657) and not P:KnowsRecipe(BOB, 2657), "KnowsRecipe")
+check(#P:CraftersOf(2657) == 1 and P:CraftersOf(2657)[1] == ME and #P:CraftersOf(1) == 0, "CraftersOf")
+check(#P:Members(186) == 1 and #P:Members(164) == 1, "Members by line")
+local summary = P:OwnSummary()
+check(summary[186].r == 21 and summary[186].h == BRutus.db.professions[ME].profs[186].h and summary[186].n == 2,
+      "the own summary carries rank, hash and count per line")
+check(P:OwnLine(186).recipes[1] == 2657 and P:OwnLine(999) == nil, "OwnLine")
+
 print("professions: " .. checks .. " checks passed")
