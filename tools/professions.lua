@@ -356,4 +356,24 @@ deliver("ask", {}, "Cid")
 runTimers()
 check(#sentOf("sum") == 1, "an ask is answered with my summary")
 
+-- ── 5. Integration points ───────────────────────────────────────────────
+dofile(ADDON .. "/Modules/DataCollector.lua")
+local DC = BRutus.DataCollector
+local own = DC:CollectProfessions()
+check(type(own) == "table" and #own == 2 and own[2].name == "Mining", "CollectProfessions reads Professions on Forever")
+BRutus.db.members[ME], BRutus.db.professions[ME], P.scanned = nil, nil, false
+check(#DC:CollectProfessions() == 2, "and scans first when the login scan has not run, never empty")
+BRutus.db.myData = { name = "Ana Silva", realm = "Classic Beta PvE 2", lastUpdate = NOW }
+check(BRutus.db.recipes[ME] ~= nil and DC:GetBroadcastData().recipes == nil,
+      "the member broadcast carries no recipes on Forever")
+local reminded = false
+BRutus.ShowProfessionReminder = function() reminded = true end
+BRutus.db.myData.professions = { { name = "Blacksmithing", rank = 210, maxRank = 300, isPrimary = true } }
+BRutus:CheckProfessionFreshness()
+check(not reminded, "the open-your-window reminder never shows on Forever")
+ROSTER = { "Ana Silva", "Cid" }
+BRutus:PruneStaleData()
+check(BRutus.db.professions[BOB] == nil and BRutus.db.recipes[BOB] == nil and BRutus.db.professions[ME],
+      "a member who left loses the profession record and its projection")
+
 print("professions: " .. checks .. " checks passed")

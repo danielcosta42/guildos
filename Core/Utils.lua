@@ -356,6 +356,7 @@ function BRutus:GetStaleProfessions()
 end
 
 function BRutus:CheckProfessionFreshness()
+    if self.Professions then return end   -- WoW: Forever reads recipes without a window (issue #31)
     local stale = self:GetStaleProfessions()
     if #stale == 0 then return end
 
@@ -607,6 +608,12 @@ function BRutus:PruneStaleData()
     for key in pairs(self.db.firstSeen or {}) do
         if not roster[key] then
             self.db.firstSeen[key] = nil
+        end
+    end
+    for key in pairs(self.db.professions or {}) do
+        if not roster[key] then
+            self.db.professions[key] = nil
+            if self.Professions then self.Professions:Changed(key) end
         end
     end
     return removed

@@ -408,6 +408,8 @@ end
 -- nil when the client has no skill-line API: the field is left out of the record, the
 -- broadcast and the export, and the rest of the collection carries on (issue #10).
 function DataCollector:CollectProfessions()
+    -- WoW: Forever reads them through Professions, by skill line and with no window (issue #31).
+    if BRutus.Professions then return BRutus.Professions:OwnLegacyList() end
     local numSkills = BRutus.Compat.GetNumSkillLines()
     if not numSkills then return nil end
     local profs = {}
@@ -688,9 +690,10 @@ function DataCollector:GetBroadcastData()
         clean.resistances = myData.resistances
     end
 
-    -- Include recipes (keyed by profession)
+    -- Include recipes (keyed by profession). On WoW: Forever ProfSync carries them, by hash,
+    -- instead of every broadcast (issue #31).
     local myKey = BRutus:GetPlayerKey(myData.name, myData.realm or GetRealmName())
-    if BRutus.db.recipes and BRutus.db.recipes[myKey] then
+    if not BRutus.Professions and BRutus.db.recipes and BRutus.db.recipes[myKey] then
         clean.recipes = BRutus.db.recipes[myKey]
     end
 

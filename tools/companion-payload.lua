@@ -173,7 +173,8 @@ BRutus.db.members["Chehul-Firemaw"] = {
   race = "Orc", avgIlvl = 132, lastUpdate = 1754399000,
   spec = { tree = "Beast Mastery", treeIndex = 1, points = { 41, 20, 0 } },
   prefRoles = { "DPS" },
-  professions = { { name = "Leatherworking", rank = 375 }, { name = "Skinning", rank = 375 } },
+  -- Alchemy has no rank: known from the guild roster only (issue #31); it is not exported.
+  professions = { { name = "Leatherworking", rank = 375 }, { name = "Skinning", rank = 375 }, { name = "Alchemy" } },
   gear = {
     [1]  = { name = "Cursed Vision", enchantId = 2999 },
     [3]  = { name = "Wastewalker Shoulderpads", enchantId = 0 },   -- unenchanted
@@ -217,6 +218,12 @@ assert(anniversary.v >= 6, "the payload that says its game is v6")
 BRutus.Client.isAnniversary = false
 assert(BRutus.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
 BRutus.Client.isAnniversary = true
+for _, m in ipairs(anniversary.members) do
+  if m.key == "Chehul-Firemaw" then
+    assert(#m.professions == 2 and m.professions[1].name == "Leatherworking" and m.professions[2].name == "Skinning",
+      "a profession with no rank is not exported (issue #31)")
+  end
+end
 
 local text, countOrErr = BRutus.Companion:Build()
 if not text then
