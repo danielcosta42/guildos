@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.56.2] - 2026-09-27
+
+### Fixed
+- botões e abas cabem o próprio texto
+
+
 ## [0.56.1] - 2026-09-27
 
 ### Fixed
