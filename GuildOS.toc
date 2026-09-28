@@ -74,6 +74,7 @@ Modules\CraftNet.lua
 Data\ProfCatalogForever.lua
 Modules\Professions.lua
 Modules\ProfSync.lua
+Modules\ProfDirectory.lua
 Modules\RecruitBeacon.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua

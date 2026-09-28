@@ -98,9 +98,11 @@ C_TradeSkillUI = {
 
 -- The guild: roster names and the Communities roster's profession fields.
 local ROSTER = { "Ana Silva", "Bob", "Cid", "Dee" }
+local OFFLINE, CLASS = {}, {}
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i)
-  if ROSTER[i] then return ROSTER[i], "Member", 3, 20, "Mage", "", "", "", true, 0, "MAGE" end
+  local n = ROSTER[i]
+  if n then return n, "Member", 3, 20, "Mage", "", "", "", not OFFLINE[n], 0, CLASS[n] or "MAGE" end
 end
 local CLUB = {}
 C_Club = {
@@ -452,6 +454,66 @@ table.insert(BRutus.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professi
 check(P:Scan() == true and #P:CraftersOf(2657) == 1, "a recipe two of my professions share lists me once")
 table.remove(BRutus.ProfCatalog.byLine[185], 1)
 
+-- ── 8. Directory (issue #33) ────────────────────────────────────────────
+dofile(ADDON .. "/Modules/ProfDirectory.lua")
+local D = BRutus.ProfDirectory
+check(D ~= nil, "ProfDirectory exists on Forever")
+ROSTER = { "Ana Silva", "Bob", "Cid", "Dee" }
+OFFLINE, CLASS = { Cid = true }, { Bob = "WARRIOR" }
+local BOBK, CIDK, DEEK = BRutus:GetPlayerKey("Bob"), BRutus:GetPlayerKey("Cid"), BRutus:GetPlayerKey("Dee")
+BRutus.db.professions = {
+  [ME] = { src = "addon", ts = NOW, profs = {
+    [186] = { rank = 21, max = 75, h = P.Hash({ 2657, 3304 }), n = 2, recipes = { 2657, 3304 }, extra = {} },
+    [185] = { rank = 1, max = 75, h = P.Hash({ 2538 }), n = 1, recipes = { 2538 }, extra = {} } } },
+  [BOBK] = { src = "addon", ts = NOW, profs = {
+    [164] = { rank = 210, max = 300, spec = 9788, h = P.Hash({ 9950 }), n = 1, recipes = { 9950 }, extra = {} } } },
+  [CIDK] = { src = "native", ts = NOW, profs = { [164] = {} } },
+  -- Rank 0 with the addon still comes before a member known from the roster only.
+  [DEEK] = { src = "addon", ts = NOW, profs = { [164] = { rank = 0, max = 75, h = 1, n = 0, recipes = {}, extra = {} } } },
+}
+P.index = nil
+local order = D.Lines()
+check(#order == 3 and order[1] == 164 and order[2] == 186 and order[3] == 185,
+      "lines: primaries by name, then secondaries")
+check(D.DisplayName(186) == "Mining" and D.DisplayName(999) == "#999", "display names come from the locale")
+local cov = D.Coverage(164)
+check(cov.total == 2 and cov.covered == 1 and cov.crafters == 3, "coverage counts recipes someone knows and members")
+check(D.Coverage(186).covered == 2 and D.Coverage(186).crafters == 1, "coverage of a line fully known")
+local rows = D.RecipeRows(164, "all")
+check(#rows == 2 and rows[1].id == 2660 and rows[2].id == 9950, "rows sort by the yellow rank")
+check(rows[2].crafters[1] == BOBK and rows[2].spec == 9788 and rows[2].src == 2 and rows[2].recipeItem == 7978
+      and rows[2].reqSkill == 210 and rows[2].out == 7934 and #rows[1].crafters == 0,
+      "a row carries its crafters and the catalog's facts")
+check(#D.RecipeRows(164, "gaps") == 1 and D.RecipeRows(164, "gaps")[1].id == 2660, "gaps: recipes nobody knows")
+check(#D.RecipeRows(164, "guild") == 1 and D.RecipeRows(164, "guild")[1].id == 9950, "guild: recipes someone knows")
+check(#D.RecipeRows(nil, "all") == 5, "no line: every recipe once")
+table.insert(BRutus.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
+check(#D.RecipeRows(nil, "all") == 5, "a recipe on two lines is listed once")
+table.remove(BRutus.ProfCatalog.byLine[185], 1)
+check(#D.RecipeRows(nil, "all", "SPELL 99") == 1 and D.RecipeRows(nil, "all", "spell 99")[1].id == 9950,
+      "the search matches the localized name, case-insensitive")
+check(#D.RecipeRows(nil, "all", "(") == 0 and #D.RecipeRows(nil, "all", "%") == 0, "the search is plain text")
+local members = D.MemberRows(164)
+check(#members == 3 and members[1].name == "Bob" and members[1].rank == 210 and members[1].spec == 9788
+      and members[1].count == 1 and members[1].class == "WARRIOR" and members[1].online == true
+      and members[2].name == "Dee" and members[3].name == "Cid" and members[3].native == true
+      and members[3].online == false,
+      "members: ranked first, native last, name/class/online from the roster")
+check(#D.ItemRecipes(2840) == 1 and D.ItemRecipes(2840)[1] == 2657 and #D.ItemRecipes(1) == 0, "item to recipes")
+local crafters = D.CraftersForItem(2840)
+check(crafters and #crafters == 1 and crafters[1].playerName == "Ana Silva" and crafters[1].playerKey == ME
+      and crafters[1].profName == "Mining" and crafters[1].class == "MAGE",
+      "crafters for an item in the recipe tracker's shape")
+check(D.CraftersForItem(2862) == nil and D.CraftersForItem(1) == nil, "nobody crafts it: nil")
+check(D.CraftersForSpell(9950)[1].playerName == "Bob", "crafters for a spell")
+local reagents = D.Reagents(2657)
+check(#reagents == 1 and reagents[1].itemID == 2770 and reagents[1].count == 1 and #D.Reagents(9950) == 0,
+      "reagents from the catalog")
+dofile(ADDON .. "/Modules/RecipeTracker.lua")
+check(BRutus.RecipeTracker:GetCraftersForItem(2840)[1].playerName == "Ana Silva"
+      and BRutus.RecipeTracker:GetCraftersForSpell(9950)[1].playerName == "Bob",
+      "the recipe tracker reads the directory on Forever")
+
 -- ── 6. The real catalog ─────────────────────────────────────────────────
 local fixture = BRutus.ProfCatalog
 dofile(ADDON .. "/Data/ProfCatalogForever.lua")
@@ -484,8 +546,12 @@ BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog = nil, nil, nil
 dofile(ADDON .. "/Data/ProfCatalogForever.lua")
 dofile(ADDON .. "/Modules/Professions.lua")
 dofile(ADDON .. "/Modules/ProfSync.lua")
-check(BRutus.Professions == nil and BRutus.ProfSync == nil and BRutus.ProfCatalog == nil,
-      "on Anniversary the catalog, Professions and ProfSync do not exist")
+local keepDir = BRutus.ProfDirectory
+BRutus.ProfDirectory = nil
+dofile(ADDON .. "/Modules/ProfDirectory.lua")
+check(BRutus.Professions == nil and BRutus.ProfSync == nil and BRutus.ProfCatalog == nil
+      and BRutus.ProfDirectory == nil, "on Anniversary the catalog, Professions, ProfSync and ProfDirectory do not exist")
+BRutus.ProfDirectory = keepDir
 BRutus.Client.isAnniversary = false
 BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog = keep[1], keep[2], keep[3]
 

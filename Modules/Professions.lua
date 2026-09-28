@@ -264,6 +264,7 @@ local function lists(e)
     if e.recipes then return e.recipes, e.extra or {} end
     return e.stale or {}, e.staleExtra or {}
 end
+Professions.Lists = lists
 
 function Professions:CraftersOf(recipeID)
     if not self.index then

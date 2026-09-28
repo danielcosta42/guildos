@@ -618,6 +618,8 @@ end
 
 function RecipeTracker:GetCraftersForItem(itemId)
     if not itemId then return nil end
+    -- WoW: Forever reads the professions model: no index to rebuild (issue #33).
+    if BRutus.ProfDirectory then return BRutus.ProfDirectory.CraftersForItem(itemId) end
     -- Rebuild cache every 30 seconds
     if not self._itemCrafterIndex or not self._itemCrafterIndexTime
        or (GetTime() - self._itemCrafterIndexTime) > 30 then
@@ -630,6 +632,7 @@ end
 
 function RecipeTracker:GetCraftersForSpell(spellId)
     if not spellId then return nil end
+    if BRutus.ProfDirectory then return BRutus.ProfDirectory.CraftersForSpell(spellId) end
     -- Rebuild cache every 30 seconds
     if not self._spellCrafterIndex or not self._itemCrafterIndexTime
        or (GetTime() - self._itemCrafterIndexTime) > 30 then
@@ -712,6 +715,12 @@ function RecipeTracker:HookTooltips()
 
         local crafters = RecipeTracker:GetCraftersForItem(itemId)
         AppendCrafters(tooltip, crafters, L["Crafted by:"])
+        -- WoW: Forever knows every recipe, so it can say when nobody in the guild makes this (issue #33).
+        if not crafters and BRutus.ProfDirectory and #BRutus.ProfDirectory.ItemRecipes(itemId) > 0 then
+            tooltip:AddLine(" ")
+            tooltip:AddLine(L["Nobody in the guild crafts this"], C.textDim.r, C.textDim.g, C.textDim.b)
+            tooltip:Show()
+        end
     end
 
     -- Spell tooltip handler (tradeskill window, spellbook, action bars)
