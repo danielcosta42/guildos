@@ -1152,13 +1152,14 @@ function CreateProfessionRow(parent, prof, yOff, width)
     BRutus:ApplyFont(skillText, 10)
     skillText:SetPoint("TOPRIGHT", -10, yOff - 4)
     skillText:SetTextColor(C.white.r, C.white.g, C.white.b)
-    skillText:SetText(string.format("%d / %d", prof.rank, prof.maxRank))
+    -- A profession known from the guild roster only has no rank (issue #31).
+    skillText:SetText(prof.rank and string.format("%d / %d", prof.rank, prof.maxRank or 0) or "")
     skillText:Show()
 
     -- Progress bar
     local progressBar = UI:CreateProgressBar(parent, width - 30, 6)
     progressBar:SetPoint("TOPLEFT", 15, yOff - 18)
-    progressBar:SetProgress(prof.maxRank > 0 and (prof.rank / prof.maxRank) or 0)
+    progressBar:SetProgress((prof.rank and (prof.maxRank or 0) > 0) and (prof.rank / prof.maxRank) or 0)
     progressBar:Show()
 
     return yOff - ROW_H

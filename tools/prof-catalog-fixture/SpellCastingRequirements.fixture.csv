@@ -1,0 +1,5 @@
+ID,SpellID,FacingCasterFlags,MinFactionID,MinReputation,RequiredAreasID,RequiredAuraVision,RequiresSpellFocus
+112842,2657,0,0,0,0,0,3
+113568,3304,0,0,0,0,0,3
+122754,15296,0,0,0,0,0,623
+229099,1240345,0,0,0,0,0,3

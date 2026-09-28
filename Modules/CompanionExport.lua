@@ -191,7 +191,8 @@ end
 local function professionsFor(data)
     local out = {}
     for _, p in ipairs(data.professions or {}) do
-        if p.name then out[#out + 1] = { name = p.name, rank = tonumber(p.rank) or 0 } end
+        -- A profession known from the guild roster only has no rank: nothing to export (issue #31).
+        if p.name and tonumber(p.rank) then out[#out + 1] = { name = p.name, rank = tonumber(p.rank) } end
     end
     return out
 end

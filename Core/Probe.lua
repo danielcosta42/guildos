@@ -69,6 +69,9 @@ Probe.APIS = {
     -- the chat filter's retail home.
     "issecretvalue", "canaccessvalue", "C_Secrets.ShouldUnitIdentityBeSecret", "C_ClassTalents.GetActiveConfigID",
     "C_Traits.GetConfigInfo", "C_TradeSkillUI.GetAllProfessionTradeSkillLines", "C_TradeSkillUI.GetBaseProfessionInfo",
+    -- WoW: Forever professions (issue #31).
+    "GetProfessions", "GetProfessionInfo", "IsPlayerSpell", "C_TradeSkillUI.GetAllRecipeIDs",
+    "C_TradeSkillUI.GetRecipeInfo", "C_TradeSkillUI.IsDataSourceChanging", "C_Club.GetGuildClubId", "C_Club.GetMemberInfo",
     "ChatFrameUtil.AddMessageEventFilter",
     -- The retail tooltip (issue #19): where the OnTooltipSet* scripts below are absent, the hook
     -- and the reading happen through these instead. A client with the processor and no TooltipUtil
@@ -182,6 +185,18 @@ function Probe:Run()
         r.guildMessage = capture(member(C_ChatInfo, "SendAddonMessage"), PREFIX, "probe", "GUILD")
     else
         r.roster, r.guildMessage = "not in guild", "not in guild"
+    end
+
+    -- WoW: Forever professions (issue #31): which catalog build the client carries, and how many
+    -- learned recipes it found that the catalog does not have (a sign to regenerate it).
+    if BRutus.Professions and BRutus.ProfCatalog then
+        local own = BRutus.db and BRutus.db.professions and BRutus.db.professions[BRutus.Professions.OwnKey()]
+        local lines, extra = 0, 0
+        for _, e in pairs((own and own.profs) or {}) do
+            lines = lines + 1
+            extra = extra + #(e.extra or {})
+        end
+        r.professions = { catalog = BRutus.ProfCatalog.build, lines = lines, extra = extra }
     end
 
     r.apis, r.missingApis = {}, {}

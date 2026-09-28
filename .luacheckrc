@@ -205,6 +205,10 @@ read_globals = {
     "WOW_PROJECT_BURNING_CRUSADE_CLASSIC",   -- absent on clients without TBC Classic
     "issecretvalue",
     "C_TradeSkillUI",
+    "C_Club",
+    "GetProfessions",
+    "GetProfessionInfo",
+    "IsPlayerSpell",
     "TooltipDataProcessor",
     "TooltipUtil",                           -- the retail tooltip; absent on Anniversary (Compat.lua, issue #19)
     "C_GameRules",                           -- /guildos probe (Core/Probe.lua, ADR-0015)
@@ -357,6 +361,7 @@ read_globals = {
 -- Third-party libraries — skip
 exclude_files = {
     "Libs/**",
+    "Data/ProfCatalogForever.lua",  -- generated data (tools/prof_catalog.py)
     -- Host-side harnesses. They run under lua5.1 outside the game and their whole
     -- job is to define the WoW API themselves, so every stub reads to luacheck as
     -- writing a read-only global. Linting them against the addon's own config was

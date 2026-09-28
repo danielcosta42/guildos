@@ -788,7 +788,10 @@ function BRutus:CreateRosterPanel(parent, host)
                         -- Addon data
                         avgIlvl = addonData.avgIlvl or 0,
                         gear = addonData.gear,
-                        professions = addonData.professions,
+                        -- On WoW: Forever a member without the addon (or on a version that sends none)
+                        -- still has the professions the guild roster names (issue #31).
+                        professions = addonData.professions
+                            or (BRutus.Professions and BRutus.Professions:LegacyList(key)),
                         attunements = addonData.attunements,
                         stats = addonData.stats,
                         race = addonData.race or "",
@@ -1239,7 +1242,9 @@ function UpdateRosterRow(row, data, rowIndex)
         for _, prof in ipairs(data.professions) do
             if prof.isPrimary then
                 local pr, pg, pb = textColor(C.gold.r, C.gold.g, C.gold.b)
-                table.insert(parts, BRutus:ColorText(prof.name:sub(1, 5) .. " " .. prof.rank, pr, pg, pb))
+                -- A profession known from the guild roster only has no rank (issue #31).
+                local label = prof.name:sub(1, 5) .. (prof.rank and (" " .. prof.rank) or "")
+                table.insert(parts, BRutus:ColorText(label, pr, pg, pb))
             end
         end
         row.profText:SetText(table.concat(parts, " / "))
@@ -1510,8 +1515,9 @@ function ShowRowTooltip(row)
         GameTooltip:AddLine(L["Professions:"], C.gold.r, C.gold.g, C.gold.b)
         for _, prof in ipairs(data.professions) do
             local profColor = prof.isPrimary and C.gold or C.silver
-            GameTooltip:AddLine(string.format("  %s  %d / %d", prof.name, prof.rank, prof.maxRank),
-                profColor.r, profColor.g, profColor.b)
+            local line = prof.rank and string.format("  %s  %d / %d", prof.name, prof.rank, prof.maxRank or 0)
+                or ("  " .. prof.name)   -- known from the guild roster only: no rank (issue #31)
+            GameTooltip:AddLine(line, profColor.r, profColor.g, profColor.b)
         end
     end
 
