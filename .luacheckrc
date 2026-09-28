@@ -283,6 +283,7 @@ read_globals = {
     "FauxScrollFrame_Update",
     "FauxScrollFrame_GetOffset",
     "FauxScrollFrame_OnVerticalScroll",
+    "FauxScrollFrame_SetOffset",
 
     -- WoW API: Frame management
     "GuildFrame",

@@ -103,6 +103,7 @@ local function roster()
     end
     return out
 end
+ProfDirectory.Roster = roster
 
 -- Members with the line: { key, name, class, online, rank, max, spec, count, native }, the
 -- ranked ones first by rank, members known from the guild roster only (native) last.

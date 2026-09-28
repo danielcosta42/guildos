@@ -687,3 +687,24 @@ once on Anniversary. See ADR-0022 and `docs/superpowers/specs/2026-09-27-profess
 | `ProfSync:FlushLine(line)` | One `list`: whisper for one requester, GUILD for several |
 | `tools/prof_catalog.py` | No args: self-test on `tools/prof-catalog-fixture/`; `<build> [--cache dir]`: writes the catalog from wago.tools DB2 |
 | `tools/professions.lua` | Harness: Compat, collection, native, sync, integration points, the real catalog, Anniversary |
+
+---
+
+## v0.58 — Profession directory on WoW: Forever (#33)
+
+Forever only (`Modules/ProfDirectory.lua`, `UI/ProfessionsPanel.lua` return at once on Anniversary). Reads only.
+
+| Symbol | Description |
+|---|---|
+| `ProfDirectory.Lines()` | Catalog profession lines: primaries, then secondaries, each by localized name |
+| `ProfDirectory.DisplayName(line)` | `L[en]` for a line (pt-BR names in `Locales/ptBR.lua`) |
+| `ProfDirectory.RecipeName(id)` | Localized recipe name via `Compat.GetSpellInfo`, cached once resolved; `"#id"` until then |
+| `ProfDirectory.Coverage(line)` | `{ total, covered, crafters }` |
+| `ProfDirectory.RecipeRows(line, mode, query)` | Catalog recipes (every line when nil, each once) filtered by `mode` (`all`/`guild`/`gaps`) and a plain, case-insensitive query; sorted by yellow rank, then name |
+| `ProfDirectory.MemberRows(line)` | `{ key, name, class, online, rank, max, spec, count, native }`, ranked first, native last |
+| `ProfDirectory.Roster()` | `key -> { name, class, online }` from the guild roster, read once per call |
+| `ProfDirectory.ItemRecipes(itemID)` | Catalog recipes creating an item (map built once per catalog) |
+| `ProfDirectory.CraftersForItem(itemID)` / `CraftersForSpell(spellID)` | RecipeTracker's `{ { playerName, playerKey, class, profName } }` or nil; `RecipeTracker:GetCraftersFor*` route here on Forever |
+| `ProfDirectory.Reagents(id)` | `{ { itemID, count } }` |
+| `BRutus:CreateProfessionsPanel(parent, win)` | The Professions tab on Forever: profession rail with coverage, Recipes / Crafters views, search, All / In the guild / Nobody crafts filters, recipe card with reagents, source, requirements and whisper buttons |
+| `tools/professions-panel.lua` | Builds the panel under a permissive frame stub and drives it like a user |

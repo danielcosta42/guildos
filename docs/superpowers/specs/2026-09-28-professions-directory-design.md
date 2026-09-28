@@ -67,3 +67,14 @@ not in the catalog yet).
   roster name/class/online), item → recipes, crafters in RecipeTracker's shape, reagents.
 - `RecipeTracker:GetCraftersForItem` routes to the directory on Forever.
 - The panel and the card are checked in game (maintainer): layout at narrow and wide sizes, pt-BR.
+
+## 4. Done
+- [x] `Modules/ProfDirectory.lua` with its harness section (mutants of the gap/guild filter, the plain-text
+  search, the primaries-first order, native-last and the one-listing of a two-line recipe are killed)
+- [x] `RecipeTracker:GetCraftersForItem` / `GetCraftersForSpell` read the directory on Forever; the tooltip
+  says when nobody in the guild crafts a catalog item
+- [x] `UI/ProfessionsPanel.lua`, the Recipes tab relabelled Professions on Forever
+- [x] pt-BR strings (the 12 profession names and the panel's texts)
+- [x] `tools/professions-panel.lua`: builds the panel and drives it — rail, filters, search, card, whisper,
+  Crafters view, empty states, a narrow window
+- [ ] In-game check (maintainer): layout at narrow and wide sizes, pt-BR
