@@ -37,8 +37,9 @@ local FMT = "GOSCOMP1"
 -- realms and its names carry a hyphen, so the site builds a Forever guild's keys itself
 -- and refuses a roster from the other game (the site's specs/036). 7 adds `crafting` on
 -- WoW: Forever: each member's profession lines by skill-line ID with the recipes they know
--- (issue #35, the site's specs/037).
-local PAYLOAD_VERSION = 7
+-- (issue #35, the site's specs/037). 8 adds `look` on WoW: Forever: the {option, choice}
+-- pairs a member's addon read in the barber's chair (issue #37, the site's specs/038).
+local PAYLOAD_VERSION = 8
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -488,6 +489,8 @@ function Companion:BuildPayload()
                 sex = data.sex,
                 raceToken = data.raceToken,
                 crafting = craftingFor(key),
+                -- v8. Absent until the member has sat in a barber's chair with the addon.
+                look = type(data.look) == "table" and data.look or nil,
             }
         end
     end

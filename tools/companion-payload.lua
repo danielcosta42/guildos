@@ -266,6 +266,20 @@ BRutus.db.professions["Semdados-Firemaw"].profs[164].stale = nil
 for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
 assert(stale["Semdados-Firemaw"].crafting == nil, "a list still on its way: no crafting key, the site keeps its own")
 BRutus.Professions, BRutus.db.professions = nil, nil
+
+-- v8 (issue #37): the look the member's addon read in the barber's chair, as {option, choice}
+-- pairs; absent for everyone who has not sat in one.
+assert(anniversary.v >= 8, "the payload that carries the look is v8")
+BRutus.db.members["Chehul-Firemaw"].look = { { 19, 359 }, { 9493, 78927 } }
+local looks = {}
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
+assert(looks["Chehul-Firemaw"] and #looks["Chehul-Firemaw"] == 2 and looks["Chehul-Firemaw"][2][2] == 78927,
+  "a member with a look carries it")
+assert(looks["Fulano-Firemaw"] == nil, "a member with none carries no look key")
+BRutus.db.members["Chehul-Firemaw"].look = "junk"
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
+assert(looks["Chehul-Firemaw"] == nil, "a look that is not a list is not exported")
+BRutus.db.members["Chehul-Firemaw"].look = nil
 BRutus.Client.isAnniversary = true
 
 for _, m in ipairs(anniversary.members) do

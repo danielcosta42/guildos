@@ -280,6 +280,8 @@ local MODULE_START = {
     -- WoW: Forever only (issue #31); on Anniversary the module does not exist and is skipped.
     { "Professions" },
     { "ProfSync" },
+    -- WoW: Forever only (issue #37): the look, read in the barber's chair.
+    { "Look" },
     { "RecruitBeacon" },
     { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only
