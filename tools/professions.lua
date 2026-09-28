@@ -307,6 +307,11 @@ runTimers()
 check(BRutus.db.professions[BOB].profs[164] and not BRutus.db.professions[BOB].profs[186],
       "a minute later the change is read")
 check(BRutus.db.professions[GONE] == nil, "a member no longer on the roster loses the record")
+local keepRoster = ROSTER
+ROSTER = { "Bob", "Cid", "Dee" }
+P:DropDeparted()
+check(BRutus.db.professions[ME] ~= nil, "the player's own record is never dropped, even missing from the roster")
+ROSTER = keepRoster
 check(P:KnowsRecipe(ME, 2657) and not P:KnowsRecipe(BOB, 2657), "KnowsRecipe")
 check(#P:CraftersOf(2657) == 1 and P:CraftersOf(2657)[1] == ME and #P:CraftersOf(1) == 0, "CraftersOf")
 check(#P:Members(186) == 1 and #P:Members(164) == 1, "Members by line")

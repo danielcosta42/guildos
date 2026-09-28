@@ -216,12 +216,16 @@ local function at(region, x, y)
     region:SetPoint("TOPLEFT", x, y)
 end
 
-local function ShowCard(e, anchor, who)
+-- `repaint` keeps the card where it is (the user may have dragged it); a click places it beside
+-- the window.
+local function ShowCard(e, anchor, who, repaint)
     if not card then BuildCard() end
     local D = BRutus.ProfDirectory
     card.last = { e = e, anchor = anchor, who = who }   -- repainted when an item's data arrives
-    card:ClearAllPoints()
-    card:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
+    if not repaint then
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
+    end
 
     card.icon.icon:SetTexture(recipeIcon(e))
     card.title:SetText(e.name)
@@ -417,9 +421,13 @@ function BRutus:CreateProfessionsPanel(parent, _win)
     placeholder:SetPoint("LEFT", 8, 0)
     placeholder:SetTextColor(0.4, 0.4, 0.4)
     placeholder:SetText(L["Search recipes..."])
+    -- The placeholder only while the box is empty and wide enough to hold it.
+    local function paintPlaceholder()
+        placeholder:SetShown((search:GetText() or "") == "" and (search:GetWidth() or 0) >= 130)
+    end
     search:SetScript("OnTextChanged", function(self)
         local text = self:GetText() or ""
-        placeholder:SetShown(text == "")
+        paintPlaceholder()
         state.query = text
         panel:Refresh(true)
     end)
@@ -682,7 +690,8 @@ function BRutus:CreateProfessionsPanel(parent, _win)
         -- The search box gives way to the filter tabs in a narrow window.
         local filtersW = 0
         for _, t in ipairs(filterTabs) do filtersW = filtersW + (t:GetWidth() or 0) + 4 end
-        search:SetWidth(math.max(100, math.min(220, inner - filtersW - 12)))
+        search:SetWidth(math.max(60, math.min(220, inner - filtersW - 12)))
+        paintPlaceholder()
 
         local layout = UI:ResolveColumns(COLUMNS[state.mode], inner - ROW_GUTTER - ROW_INSET, COL_GAP)
         for _, col in ipairs(layout) do
@@ -714,7 +723,9 @@ function BRutus:CreateProfessionsPanel(parent, _win)
         BRutus.Compat.After(0.3, function()
             panel.itemsPending = false
             panel:UpdateRows()
-            if card and card:IsShown() and card.last then ShowCard(card.last.e, card.last.anchor, card.last.who) end
+            if card and card:IsShown() and card.last then
+                ShowCard(card.last.e, card.last.anchor, card.last.who, true)
+            end
         end)
     end)
     panel.itemEvents = itemEvents

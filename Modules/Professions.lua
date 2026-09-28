@@ -259,7 +259,9 @@ end
 function Professions:DropDeparted()
     local n = GetNumGuildMembers() or 0
     if n == 0 then return end
-    local present = {}
+    -- The player's own record always stays: were the own key ever to differ from the roster's
+    -- (a surname the client did not give), dropping it would publish an empty summary.
+    local present = { [self.OwnKey()] = true }
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
         local key = full and self.KeyFor(full)

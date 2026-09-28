@@ -65,6 +65,7 @@ function Proxy:GetParent() return self.parent end
 function Proxy:CreateTexture() return Proxy.new("Texture", self) end
 function Proxy:CreateFontString() return Proxy.new("FontString", self) end
 function Proxy:SetFont() return true end
+function Proxy:SetPoint(point) self.movedTo = point end
 function CreateFrame(kind, name, parent)
   local f = Proxy.new(kind, parent)
   f.name = name
@@ -223,8 +224,11 @@ local card = _G.BRutusRecipeCard
 check(card and card.shown, "a click opens the recipe card")
 check(not showing("Item 7978") and showing("Recipe item"), "an uncached recipe item shows as a plain source")
 UNCACHED[7978] = nil
+card:ClearAllPoints()
+card:SetPoint("CENTER", UIParent, "CENTER", 40, 40)   -- the user drags it away
 panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 7978)
 runTimers()
+check(card.movedTo == "CENTER", "a repaint keeps the card where the user dragged it")
 check(showing("Item 7978"), "the card repaints when the item's data arrives")
 check(card.h > 100 and card.h < 300, "the card is as tall as what it shows: " .. tostring(card.h))
 local whispered = false
@@ -261,7 +265,16 @@ check(#st.results == 0 and showing("Nobody in the guild has this profession yet.
 panel:Relayout(520, 400)
 check(panel.visibleRows > 0, "a narrow window still lays out")
 panel:Relayout(560, 500)
-check(panel.search.w == 100, "the search box gives way to the filters in a narrow window: " .. tostring(panel.search.w))
+local filtersW = 0
+for _, t in ipairs(panel.filterTabs) do filtersW = filtersW + t.w + 4 end
+local inner = 560 - 10 * 2 - 176 - 12
+check(panel.search.w < 220 and panel.search.w + filtersW + 12 <= inner,
+      "the search box gives way to the filters in a narrow window: " .. tostring(panel.search.w))
+local placeholderShown = false
+for _, o in ipairs(all) do
+  if o.kind == "FontString" and o.parent == panel.search and o.text == "Search recipes..." then placeholderShown = o.shown end
+end
+check(not placeholderShown, "a box too narrow for its placeholder hides it")
 panel:Relayout(1200, 500)
 check(panel.search.w == 220, "and takes its full width in a wide one")
 panel:Relayout(900, 100)
