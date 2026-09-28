@@ -708,3 +708,9 @@ Forever only (`Modules/ProfDirectory.lua`, `UI/ProfessionsPanel.lua` return at o
 | `ProfDirectory.Reagents(id)` | `{ { itemID, count } }` |
 | `BRutus:CreateProfessionsPanel(parent, win)` | The Professions tab on Forever: profession rail with coverage, Recipes / Crafters views, search, All / In the guild / Nobody crafts filters, recipe card with reagents, source, requirements and whisper buttons |
 | `tools/professions-panel.lua` | Builds the panel under a permissive frame stub and drives it like a user |
+
+## v0.58 — Professions in the companion export (#35)
+
+| Symbol | Description |
+|---|---|
+| `CompanionExport` payload v7 | Each member row carries `crafting` on WoW: Forever (`craftingFor(key)`): `[{ line, rank, max, spec?, recipes }]` for an addon record, `[{ line, native = true }]` for a guild-roster-only one; absent without a profession model or a record |

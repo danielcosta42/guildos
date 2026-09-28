@@ -218,6 +218,45 @@ assert(anniversary.v >= 6, "the payload that says its game is v6")
 BRutus.Client.isAnniversary = false
 assert(BRutus.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
 BRutus.Client.isAnniversary = true
+
+-- v7 (issue #35): on Forever each member carries the profession model's lines by skill-line
+-- ID -- rank, max, specialization and the recipes they know, or only the line for a member
+-- known from the guild roster. Absent where there is no model, or no record of the member.
+assert(anniversary.v >= 7, "the payload that carries crafting is v7")
+for _, m in ipairs(anniversary.members) do
+  assert(m.crafting == nil, "no profession model (Anniversary): no crafting key for " .. m.key)
+end
+BRutus.Professions = {
+  Lists = function(e) return e.recipes or e.stale or {}, e.extra or e.staleExtra or {} end,
+  Get = function(_, key)
+    if key == "Chehul-Firemaw" then
+      return { src = "addon", profs = {
+        [393] = { rank = 300, max = 300, recipes = {}, extra = {} },
+        [165] = { rank = 285, max = 300, spec = 10656, recipes = { 3304, 2657 }, extra = { 999001 } } } }
+    elseif key == "Fulano-Firemaw" then
+      return { src = "native", profs = { [171] = {} } }
+    end
+  end,
+}
+local forever = BRutus.Companion:BuildPayload()
+BRutus.Professions = nil
+local byKey = {}
+for _, m in ipairs(forever.members) do byKey[m.key] = m end
+local c = byKey["Chehul-Firemaw"].crafting
+assert(c and #c == 2 and c[1].line == 165 and c[2].line == 393, "crafting lists every line, by ID, in order")
+assert(c[1].rank == 285 and c[1].max == 300 and c[1].spec == 10656, "a line carries rank, max and specialization")
+assert(#c[1].recipes == 3 and c[1].recipes[1] == 2657 and c[1].recipes[3] == 999001,
+  "and every recipe it knows, catalog and extra, sorted")
+assert(#c[2].recipes == 0 and c[2].spec == nil, "a line with no recipes carries an empty list")
+local n = byKey["Fulano-Firemaw"].crafting
+assert(n and #n == 1 and n[1].line == 171 and n[1].native == true and n[1].rank == nil and n[1].recipes == nil,
+  "a member known from the guild roster only carries the line, marked native")
+for key, m in pairs(byKey) do
+  if key ~= "Chehul-Firemaw" and key ~= "Fulano-Firemaw" then
+    assert(m.crafting == nil, "no record of the member: no crafting key for " .. key)
+  end
+end
+
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then
     assert(#m.professions == 2 and m.professions[1].name == "Leatherworking" and m.professions[2].name == "Skinning",
