@@ -56,6 +56,17 @@ function ProfDirectory.Coverage(line)
     return { total = #ids, covered = covered, crafters = #P:Members(line) }
 end
 
+-- The same over every line, each recipe once (a recipe two professions learn counts once).
+function ProfDirectory.CoverageAll()
+    local P, cat = BRutus.Professions, catalog()
+    local total, covered = 0, 0
+    for id in pairs(cat.recipes) do
+        total = total + 1
+        if #P:CraftersOf(id) > 0 then covered = covered + 1 end
+    end
+    return { total = total, covered = covered }
+end
+
 -- The catalog's recipes on `line` (every line when nil), filtered by `mode` ("all", "guild":
 -- someone knows it, "gaps": nobody does) and a plain-text, case-insensitive `query` on the
 -- localized name; sorted by the yellow rank, then name.
@@ -158,8 +169,18 @@ local function crafters(recipeIDs)
                 seen[key] = true
                 who = who or roster()
                 local w = who[key] or {}
+                -- A recipe two professions learn is recorded under one line: name the member's own.
+                local line = r and r[cat.F.line]
+                local rec = P:Get(key)
+                if rec and line and not rec.profs[line] then
+                    for l in pairs(rec.profs) do
+                        for _, x in ipairs(cat.byLine[l] or {}) do
+                            if x == id then line = l end
+                        end
+                    end
+                end
                 out[#out + 1] = { playerName = w.name or key:match("^([^-]+)") or key, playerKey = key,
-                                  class = w.class, profName = r and ProfDirectory.DisplayName(r[cat.F.line]) or "" }
+                                  class = w.class, profName = line and ProfDirectory.DisplayName(line) or "" }
             end
         end
     end

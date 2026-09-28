@@ -77,4 +77,11 @@ not in the catalog yet).
 - [x] pt-BR strings (the 12 profession names and the panel's texts)
 - [x] `tools/professions-panel.lua`: builds the panel and drives it — rail, filters, search, card, whisper,
   Crafters view, empty states, a narrow window
+- [x] Independent review fixes: the level bar's fill follows its column width (`UI:CreateProgressBar`);
+  the rail shrinks its rows to the window height; the search box gives way to the filter tabs; the
+  card is as tall as its content and says how many crafters past eight; members no longer on the
+  roster lose their record (`Professions:DropDeparted` on the roster read), so coverage counts only the
+  guild; items arriving from the server repaint the rows and the card; the card closes with the panel;
+  "All" counts each recipe once; a shared recipe names the profession each crafter knows it by;
+  pt-BR stations and headers
 - [ ] In-game check (maintainer): layout at narrow and wide sizes, pt-BR

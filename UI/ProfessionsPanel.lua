@@ -79,8 +79,9 @@ local function recipeIcon(e)
     return itemIcon(e.out) or select(3, BRutus.Compat.GetSpellInfo(e.id)) or QUESTION
 end
 
--- A whisper to a guildmate, by the client's own tell box when it has one: names can carry a
--- surname with a space on Forever.
+-- A whisper to a guildmate through the client's tell box. A name with a surname ("First Last") is
+-- resolved by the chat parser's completion of online guildmates, which is why only online
+-- crafters get the button.
 local function whisper(name)
     if ChatFrame_SendTell then ChatFrame_SendTell(name) else ChatFrame_OpenChat("/w " .. name .. " ") end
 end
@@ -139,13 +140,13 @@ local function whoText(keys, who)
 end
 
 ----------------------------------------------------------------------
--- The recipe card: a popup beside the window
+-- The recipe card: a popup beside the window, as tall as what it shows
 ----------------------------------------------------------------------
 local card
 
 local function BuildCard()
     card = UI:CreatePanel(UIParent, "BRutusRecipeCard")
-    card:SetSize(320, 440)
+    card:SetSize(320, 200)
     card:SetFrameStrata("DIALOG")
     card:SetClampedToScreen(true)
     card:SetMovable(true)
@@ -169,26 +170,19 @@ local function BuildCard()
     card.subtitle = UI:CreateText(card, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     card.subtitle:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -4)
 
-    local y = -64
-    local function line(label)
+    local function detail(label)
         local l = UI:CreateText(card, label, 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        l:SetPoint("TOPLEFT", 14, y)
         local v = UI:CreateText(card, "", 10, C.text.r, C.text.g, C.text.b)
-        v:SetPoint("TOPLEFT", 110, y)
         v:SetWidth(196)
         v:SetJustifyH("LEFT")
-        y = y - 18
-        return l, v
+        return { label = l, value = v }
     end
-    card.makesL, card.makes = line(L["Makes"])
-    card.sourceL, card.source = line(L["Source"])
-    card.skillL, card.skill = line(L["Skill"])
-    card.specL, card.spec = line(L["Specialization"])
-    card.stationL, card.station = line(L["Station"])
+    card.details = {
+        makes = detail(L["Makes"]), source = detail(L["Source"]), skill = detail(L["Skill"]),
+        spec = detail(L["Specialization"]), station = detail(L["Station"]),
+    }
 
-    y = y - 6
     card.reagentsHeader = UI:CreateHeaderText(card, L["REAGENTS"], 10)
-    card.reagentsHeader:SetPoint("TOPLEFT", 14, y)
     card.reagents = {}
     for i = 1, CARD_LINES do
         local icon = card:CreateTexture(nil, "ARTWORK")
@@ -212,12 +206,20 @@ local function BuildCard()
         local btn = UI:CreateButton(card, L["Whisper"], 60, 18)
         card.crafters[i] = { text = text, btn = btn }
     end
+    card.more = UI:CreateText(card, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     card.none = UI:CreateText(card, "", 10, C.red.r, C.red.g, C.red.b)
+end
+
+-- Anchor a region at x, y from the card's top-left.
+local function at(region, x, y)
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", x, y)
 end
 
 local function ShowCard(e, anchor, who)
     if not card then BuildCard() end
     local D = BRutus.ProfDirectory
+    card.last = { e = e, anchor = anchor, who = who }   -- repainted when an item's data arrives
     card:ClearAllPoints()
     card:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
 
@@ -226,28 +228,39 @@ local function ShowCard(e, anchor, who)
     card.subtitle:SetText(string.format("%s  ·  %d–%d", D.DisplayName(e.line), e.yellow, e.grey))
 
     local outLink = e.out and e.out > 0 and select(2, BRutus.Compat.GetItemInfo(e.out))
-    card.makes:SetText(outLink or (e.out and e.out > 0 and ("#" .. e.out)) or L["Enchantment"])
-    card.source:SetText(sourceText(e))
-    local rows = {
-        { card.skillL, card.skill, e.reqSkill and e.reqSkill > 0 and tostring(e.reqSkill) or nil },
-        { card.specL, card.spec, specName(e.spec) },
-        { card.stationL, card.station, stationName(e.focus) },
+    local values = {
+        { card.details.makes, outLink or (e.out and e.out > 0 and ("#" .. e.out)) or L["Enchantment"] },
+        { card.details.source, sourceText(e) },
+        { card.details.skill, e.reqSkill and e.reqSkill > 0 and tostring(e.reqSkill) or nil },
+        { card.details.spec, specName(e.spec) },
+        { card.details.station, stationName(e.focus) },
     }
-    for _, r in ipairs(rows) do
-        r[1]:SetShown(r[3] ~= nil)
-        r[2]:SetShown(r[3] ~= nil)
-        r[2]:SetText(r[3] or "")
+    local y = -64
+    for _, v in ipairs(values) do
+        local d, text = v[1], v[2]
+        d.label:SetShown(text ~= nil)
+        d.value:SetShown(text ~= nil)
+        if text then
+            at(d.label, 14, y)
+            at(d.value, 110, y)
+            d.value:SetText(text)
+            y = y - 18
+        end
     end
 
-    local y = -64 - 18 * 5 - 6 - 18
     local reagents = D.Reagents(e.id)
+    card.reagentsHeader:SetShown(#reagents > 0)
+    if #reagents > 0 then
+        y = y - 8
+        at(card.reagentsHeader, 14, y)
+        y = y - 18
+    end
     for i, slot in ipairs(card.reagents) do
         local rg = reagents[i]
         slot.icon:SetShown(rg ~= nil)
         slot.text:SetShown(rg ~= nil)
         if rg then
-            slot.icon:ClearAllPoints()
-            slot.icon:SetPoint("TOPLEFT", 14, y)
+            at(slot.icon, 14, y)
             slot.icon:SetTexture(itemIcon(rg.itemID) or QUESTION)
             local name = BRutus.Compat.GetItemInfo(rg.itemID) or ("#" .. rg.itemID)
             slot.text:SetText(string.format("%s  |cff%sx%d|r", name, hex(C.gold), rg.count))
@@ -255,9 +268,8 @@ local function ShowCard(e, anchor, who)
         end
     end
 
-    y = y - 10
-    card.craftersHeader:ClearAllPoints()
-    card.craftersHeader:SetPoint("TOPLEFT", 14, y)
+    y = y - 8
+    at(card.craftersHeader, 14, y)
     y = y - 20
     local list = crafterList(e.crafters, who)
     for i, slot in ipairs(card.crafters) do
@@ -265,8 +277,7 @@ local function ShowCard(e, anchor, who)
         slot.text:SetShown(c ~= nil)
         slot.btn:SetShown(c ~= nil and c.online)
         if c then
-            slot.text:ClearAllPoints()
-            slot.text:SetPoint("TOPLEFT", 14, y)
+            at(slot.text, 14, y)
             slot.text:SetText(c.online and ("|cff" .. classHex(c.class) .. c.name .. "|r")
                 or ("|cff777777" .. c.name .. "  " .. L["(offline)"] .. "|r"))
             slot.btn:ClearAllPoints()
@@ -276,10 +287,19 @@ local function ShowCard(e, anchor, who)
             y = y - 22
         end
     end
+    card.more:SetShown(#list > CARD_LINES)
+    if #list > CARD_LINES then
+        at(card.more, 14, y)
+        card.more:SetText(string.format(L["+%d more crafters"], #list - CARD_LINES))
+        y = y - 18
+    end
     card.none:SetShown(#list == 0)
-    card.none:ClearAllPoints()
-    card.none:SetPoint("TOPLEFT", 14, y)
-    card.none:SetText(L["Nobody in the guild crafts this"])
+    if #list == 0 then
+        at(card.none, 14, y)
+        card.none:SetText(L["Nobody in the guild crafts this"])
+        y = y - 18
+    end
+    card:SetHeight(-y + 14)
     card:Show()
 end
 
@@ -318,6 +338,7 @@ function BRutus:CreateProfessionsPanel(parent, _win)
         name:SetWidth(RAIL_W - 42)
         name:SetJustifyH("LEFT")
         name:SetWordWrap(false)
+        b.icon, b.name = icon, name
         b.sub = UI:CreateText(b, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
         b.sub:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 8, -2)
         b.sub:SetWidth(RAIL_W - 42)
@@ -340,11 +361,9 @@ function BRutus:CreateProfessionsPanel(parent, _win)
     for i, line in ipairs(D.Lines()) do RailButton(i + 1, line) end
 
     function panel:PaintRail()
-        local known, total = 0, 0
         for _, b in ipairs(railButtons) do
             if b.line then
                 local cov = D.Coverage(b.line)
-                known, total = known + cov.covered, total + cov.total
                 local pct = cov.total > 0 and math.floor(cov.covered * 100 / cov.total + 0.5) or 0
                 b.sub:SetText(string.format(L["%d crafters · %d%%"], cov.crafters, pct))
             end
@@ -354,8 +373,10 @@ function BRutus:CreateProfessionsPanel(parent, _win)
                 b:SetBackdropColor(0, 0, 0, 0)
             end
         end
-        railButtons[1].sub:SetText(string.format(L["%d of %d recipes known"], known, total))
-        return known, total
+        -- Every recipe once: one two professions learn is not counted twice.
+        local all = D.CoverageAll()
+        railButtons[1].sub:SetText(string.format(L["%d / %d recipes"], all.covered, all.total))
+        return all.covered, all.total
     end
 
     ----------------------------------------------------------------
@@ -639,6 +660,30 @@ function BRutus:CreateProfessionsPanel(parent, _win)
         h = h or parent:GetHeight()
         if not w or not h or w < 1 or h < 1 then return end
         local inner = w - SIDE * 2 - RAIL_W - 12
+
+        -- The rail shrinks its rows to the height it has; the second line goes when they get short.
+        local railRow = math.max(20, math.min(RAIL_ROW, math.floor((h - TOP - SIDE) / #railButtons)))
+        for i, b in ipairs(railButtons) do
+            b:SetHeight(railRow - 2)
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", 0, -((i - 1) * railRow))
+            local tall = railRow >= 30
+            b.sub:SetShown(tall)
+            b.icon:SetSize(tall and 22 or 16, tall and 22 or 16)
+            b.name:ClearAllPoints()
+            if tall then
+                b.name:SetPoint("TOPLEFT", b.icon, "TOPRIGHT", 8, 2)
+            else
+                b.name:SetPoint("LEFT", b.icon, "RIGHT", 8, 0)
+            end
+        end
+        panel.railRow = railRow
+
+        -- The search box gives way to the filter tabs in a narrow window.
+        local filtersW = 0
+        for _, t in ipairs(filterTabs) do filtersW = filtersW + (t:GetWidth() or 0) + 4 end
+        search:SetWidth(math.max(100, math.min(220, inner - filtersW - 12)))
+
         local layout = UI:ResolveColumns(COLUMNS[state.mode], inner - ROW_GUTTER - ROW_INSET, COL_GAP)
         for _, col in ipairs(layout) do
             local fs = headerCells[col.key]
@@ -657,7 +702,22 @@ function BRutus:CreateProfessionsPanel(parent, _win)
     end
 
     parent:SetScript("OnShow", function() panel:Refresh() end)
+    parent:HookScript("OnHide", function() if card then card:Hide() end end)
     UI:MakeResponsive(parent, function(_, w, h) panel:Relayout(w, h) end)
+
+    -- Items the client had not cached arrive later: repaint names, icons and links once they do.
+    local itemEvents = CreateFrame("Frame")
+    BRutus.Compat.RegisterEvent(itemEvents, "GET_ITEM_INFO_RECEIVED")
+    itemEvents:SetScript("OnEvent", function()
+        if panel.itemsPending or not parent:IsVisible() then return end
+        panel.itemsPending = true
+        BRutus.Compat.After(0.3, function()
+            panel.itemsPending = false
+            panel:UpdateRows()
+            if card and card:IsShown() and card.last then ShowCard(card.last.e, card.last.anchor, card.last.who) end
+        end)
+    end)
+    panel.itemEvents = itemEvents
 
     -- Reachable by the caller and by tools/professions-panel.lua, which drives the panel like a user.
     panel.state, panel.railButtons, panel.rows = state, railButtons, rows

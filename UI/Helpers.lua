@@ -677,7 +677,11 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
 
     function frame:SetProgress(value)
         value = math.max(0, math.min(1, value or 0))
-        self.bar:SetWidth(math.max(1, (width - 2) * value))
+        -- The frame's current width: a caller may resize the bar after creating it (a table
+        -- column); the width it was created with is the fallback before it is laid out.
+        local w = self:GetWidth()
+        if not w or w < 3 then w = width end
+        self.bar:SetWidth(math.max(1, (w - 2) * value))
         local col
         if ramp then
             col = (value >= PROGRESS_OK and C.ok) or (value >= PROGRESS_WARN and C.gold) or C.danger

@@ -295,6 +295,9 @@ check(BRutus.db.members[BOB] == nil, "a member without the addon gets no members
 check(P.KeyFor("Bob") == BOB and P.KeyFor("Bob-Elsewhere") == BRutus:GetPlayerKey("Bob", "Elsewhere"),
       "a key from a name follows the roster's rule: its suffix, else the client's realm")
 CLUB[1].profession1ID = 164
+local GONE = BRutus:GetPlayerKey("Gone")
+BRutus.db.professions[GONE] = { src = "addon", ts = NOW, profs = { [186] = { rank = 300, max = 300, h = 1, n = 0,
+  recipes = {}, extra = {} } } }
 fire("GUILD_ROSTER_UPDATE")
 runTimers()
 check(BRutus.db.professions[BOB].profs[186], "the roster is read at most once a minute")
@@ -303,6 +306,7 @@ fire("GUILD_ROSTER_UPDATE")
 runTimers()
 check(BRutus.db.professions[BOB].profs[164] and not BRutus.db.professions[BOB].profs[186],
       "a minute later the change is read")
+check(BRutus.db.professions[GONE] == nil, "a member no longer on the roster loses the record")
 check(P:KnowsRecipe(ME, 2657) and not P:KnowsRecipe(BOB, 2657), "KnowsRecipe")
 check(#P:CraftersOf(2657) == 1 and P:CraftersOf(2657)[1] == ME and #P:CraftersOf(1) == 0, "CraftersOf")
 check(#P:Members(186) == 1 and #P:Members(164) == 1, "Members by line")
@@ -489,7 +493,20 @@ check(#D.RecipeRows(164, "guild") == 1 and D.RecipeRows(164, "guild")[1].id == 9
 check(#D.RecipeRows(nil, "all") == 5, "no line: every recipe once")
 table.insert(BRutus.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
 check(#D.RecipeRows(nil, "all") == 5, "a recipe on two lines is listed once")
+local allCov = D.CoverageAll()
+check(allCov.total == 5 and allCov.covered == 4, "All counts every recipe once: " .. allCov.covered .. "/" .. allCov.total)
+BRutus.db.professions[DEEK] = { src = "addon", ts = NOW, profs = { [185] = { rank = 50, max = 75, h = 1, n = 1,
+  recipes = { 2657 }, extra = {} } } }
+P.index = nil
+local shared = D.CraftersForSpell(2657)
+local byName = {}
+for _, c in ipairs(shared) do byName[c.playerName] = c.profName end
+check(byName["Ana Silva"] == "Mining" and byName["Dee"] == "Cooking",
+      "a shared recipe names the profession each crafter knows it by")
 table.remove(BRutus.ProfCatalog.byLine[185], 1)
+BRutus.db.professions[DEEK] = { src = "addon", ts = NOW, profs = { [164] = { rank = 0, max = 75, h = 1, n = 0,
+  recipes = {}, extra = {} } } }
+P.index = nil
 check(#D.RecipeRows(nil, "all", "SPELL 99") == 1 and D.RecipeRows(nil, "all", "spell 99")[1].id == 9950,
       "the search matches the localized name, case-insensitive")
 check(#D.RecipeRows(nil, "all", "(") == 0 and #D.RecipeRows(nil, "all", "%") == 0, "the search is plain text")

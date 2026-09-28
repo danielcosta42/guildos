@@ -71,10 +71,18 @@ function CreateFrame(kind, name, parent)
   if name then _G[name] = f end
   return f
 end
+-- Shown, and every parent shown too.
+local function visible(o)
+  while o do
+    if not o.shown then return false end
+    o = o.parent
+  end
+  return true
+end
 local function texts()
   local out = {}
   for _, o in ipairs(all) do
-    if o.kind == "FontString" and o.shown and o.text ~= "" then out[#out + 1] = o.text end
+    if o.kind == "FontString" and visible(o) and o.text ~= "" then out[#out + 1] = o.text end
   end
   return out
 end
@@ -104,9 +112,13 @@ function UnitName(u) if u == "player" then return "Ana" end end
 function UnitFullName(u) if u == "player" then return "Ana", "Silva" end end
 C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
 C_Spell = { GetSpellInfo = function(id) return { name = "Spell " .. id, iconID = 136000 } end }
-C_Item = { GetItemInfo = function(id) return "Item " .. id, "|Hitem:" .. id .. "|h[Item " .. id .. "]|h", 1, 1, 1,
-  "", "", 1, "", 134400 end }
+local UNCACHED = {}
+C_Item = { GetItemInfo = function(id)
+  if UNCACHED[id] then return nil end
+  return "Item " .. id, "|Hitem:" .. id .. "|h[Item " .. id .. "]|h", 1, 1, 1, "", "", 1, "", 134400
+end }
 local ROSTER, OFFLINE = { "Ana Silva", "Bob", "Cid" }, { Cid = true }
+for i = 1, 9 do ROSTER[#ROSTER + 1] = "Miner" .. i end
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i)
   local n = ROSTER[i]
@@ -162,6 +174,11 @@ BRutus.db = { members = {}, recipes = {}, professions = {
     [164] = { rank = 210, max = 300, spec = 9788, h = 1, n = 1, recipes = { 9950 }, extra = {} } } },
   [CID] = { src = "native", ts = NOW, profs = { [164] = {} } },
 } }
+-- Nine more who smelt copper: the card lists eight crafters and says how many more.
+for i = 1, 9 do
+  BRutus.db.professions[BRutus:GetPlayerKey("Miner" .. i)] = { src = "addon", ts = NOW, profs = {
+    [186] = { rank = 30, max = 75, h = 1, n = 1, recipes = { 2657 }, extra = {} } } }
+end
 
 -- ── The panel ───────────────────────────────────────────────────────────
 local container = CreateFrame("Frame")
@@ -200,10 +217,16 @@ for _, r in ipairs(panel.rows) do
 end
 row.scripts.OnEnter(row)
 row.scripts.OnLeave(row)
+UNCACHED[7978] = true
 row.scripts.OnClick(row)
-check(_G.BRutusRecipeCard and _G.BRutusRecipeCard.shown, "a click opens the recipe card")
-check(showing("Item 7978") and showing("210") and showing("Spell 9788"),
-      "the card shows the recipe item as source, the required skill and the specialization")
+local card = _G.BRutusRecipeCard
+check(card and card.shown, "a click opens the recipe card")
+check(not showing("Item 7978") and showing("Recipe item"), "an uncached recipe item shows as a plain source")
+UNCACHED[7978] = nil
+panel.itemEvents.scripts.OnEvent(panel.itemEvents, "GET_ITEM_INFO_RECEIVED", 7978)
+runTimers()
+check(showing("Item 7978"), "the card repaints when the item's data arrives")
+check(card.h > 100 and card.h < 300, "the card is as tall as what it shows: " .. tostring(card.h))
 local whispered = false
 for _, o in ipairs(all) do
   local label = rawget(o, "label")
@@ -214,6 +237,19 @@ for _, o in ipairs(all) do
   end
 end
 check(whispered and told == "Bob", "Whisper opens a tell to the online crafter")
+local smelt
+panel.railButtons[1].scripts.OnClick(panel.railButtons[1])
+for _, r in ipairs(panel.rows) do
+  local d = rawget(r, "data")
+  if d and d.id == 2657 then smelt = r end
+end
+smelt.scripts.OnClick(smelt)
+check(showing("+2 more crafters"), "past eight crafters the card says how many more")
+local tall = card.h
+check(tall > 300, "and grows to hold them: " .. tostring(tall))
+container.scripts.OnHide(container)
+check(not card.shown, "the card closes with the panel")
+panel.railButtons[2].scripts.OnClick(panel.railButtons[2])
 panel.tabCrafters.scripts.OnClick(panel.tabCrafters)
 check(st.mode == "crafters" and #st.results == 2 and st.results[1].name == "Bob" and st.results[2].native,
       "Crafters lists the members, native last")
@@ -224,5 +260,14 @@ panel.railButtons[4].scripts.OnClick(panel.railButtons[4])
 check(#st.results == 0 and showing("Nobody in the guild has this profession yet."), "an empty profession says so")
 panel:Relayout(520, 400)
 check(panel.visibleRows > 0, "a narrow window still lays out")
+panel:Relayout(560, 500)
+check(panel.search.w == 100, "the search box gives way to the filters in a narrow window: " .. tostring(panel.search.w))
+panel:Relayout(1200, 500)
+check(panel.search.w == 220, "and takes its full width in a wide one")
+panel:Relayout(900, 100)
+check(panel.railRow == 20 and panel.railButtons[1].h == 18 and not panel.railButtons[1].sub.shown,
+      "a short window shrinks the rail rows and drops their second line")
+panel:Relayout(900, 600)
+check(panel.railRow == 36 and panel.railButtons[1].sub.shown, "a tall one gives them back")
 
 print("professions-panel: " .. checks .. " checks passed")
