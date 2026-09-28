@@ -193,7 +193,9 @@ end
 -- v7, WoW: Forever only: every profession line of a member by skill-line ID. For one whose
 -- own addon reported it, the rank, max, specialization and every recipe they know (catalog
 -- and extra IDs, sorted); for one known from the guild roster only, the line marked native.
--- Nil -- the key absent -- where the client has no profession model or no record of them.
+-- Nil -- the key absent -- where the client has no profession model or no record of them,
+-- and while a list is still on its way with no earlier one to stand in: the site keeps what
+-- it had instead of learning that they know nothing.
 local function craftingFor(key)
     local P = BRutus.Professions
     local rec = P and P:Get(key)
@@ -202,6 +204,8 @@ local function craftingFor(key)
     for line, e in pairs(rec.profs) do
         if rec.src == "native" then
             out[#out + 1] = { line = line, native = true }
+        elseif not e.recipes and not e.stale then
+            return nil
         else
             local recipes, extra = P.Lists(e)
             local ids = {}

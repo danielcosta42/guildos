@@ -15,12 +15,16 @@ member without the addon who has a profession. The foundation (#31) holds all of
   - a native record (guild roster only): `{ line, native = true }`;
   - lines sorted by ID.
 - **Absent, not empty:** no key where the client has no profession model (Anniversary, older versions) or no
-  record of the member — the site keeps what it had (`COALESCE`, specs/037).
+  record of the member — the site keeps what it had (`COALESCE`, specs/037). Also no key for a member while
+  a line's list is on its way with no previous one to stand in (a summary heard, the list not yet): sending
+  `recipes: []` then would overwrite, on the site, the full list another officer published.
+- Stacked on #34 (the directory), which exports `Professions.Lists`.
 - `professions` is unchanged, so a site reading v6 reads the same.
 - Size: about 150 members × 2 lines × 300 IDs ≈ 0.6 MB of JSON before deflate, inside the site's 4 MiB body
   and 16 MiB inflated caps.
 
 ## Tests
-`tools/companion-payload.lua`: v7; no `crafting` without a model; with one, an addon member's lines (rank,
-max, spec, sorted recipes and extras, an empty list), a native member's line, no key for a member with no
-record. The Anniversary payload is the same length as before (only the version changed).
+`tools/companion-payload.lua`: v7; no `crafting` without a model; with the real `Modules/Professions.lua`
+over saved records, an addon member's lines (rank, max, spec, sorted recipes and extras, an empty list), a
+native member's line, no key for a member with no record, a stale list standing in, and no key while a list
+is on its way. The Anniversary payload is the same length as before (only the version changed).

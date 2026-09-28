@@ -226,20 +226,17 @@ assert(anniversary.v >= 7, "the payload that carries crafting is v7")
 for _, m in ipairs(anniversary.members) do
   assert(m.crafting == nil, "no profession model (Anniversary): no crafting key for " .. m.key)
 end
-BRutus.Professions = {
-  Lists = function(e) return e.recipes or e.stale or {}, e.extra or e.staleExtra or {} end,
-  Get = function(_, key)
-    if key == "Chehul-Firemaw" then
-      return { src = "addon", profs = {
-        [393] = { rank = 300, max = 300, recipes = {}, extra = {} },
-        [165] = { rank = 285, max = 300, spec = 10656, recipes = { 3304, 2657 }, extra = { 999001 } } } }
-    elseif key == "Fulano-Firemaw" then
-      return { src = "native", profs = { [171] = {} } }
-    end
-  end,
+-- The real module (it loads only on Forever), over its saved records -- a stub here once hid
+-- that the export called a function this branch did not have.
+BRutus.Client.isAnniversary = false
+BRutus.db.professions = {
+  ["Chehul-Firemaw"] = { src = "addon", ts = 1, profs = {
+    [393] = { rank = 300, max = 300, n = 0, h = 0, recipes = {}, extra = {} },
+    [165] = { rank = 285, max = 300, spec = 10656, n = 3, h = 1, recipes = { 3304, 2657 }, extra = { 999001 } } } },
+  ["Fulano-Firemaw"] = { src = "native", ts = 1, profs = { [171] = {} } },
 }
+dofile(ADDON .. "/Modules/Professions.lua")
 local forever = BRutus.Companion:BuildPayload()
-BRutus.Professions = nil
 local byKey = {}
 for _, m in ipairs(forever.members) do byKey[m.key] = m end
 local c = byKey["Chehul-Firemaw"].crafting
@@ -256,6 +253,20 @@ for key, m in pairs(byKey) do
     assert(m.crafting == nil, "no record of the member: no crafting key for " .. key)
   end
 end
+
+-- A changed list on its way: the previous one stands in. A list on its way with no previous
+-- one: no crafting key at all, so the site keeps what another officer published.
+BRutus.db.professions["Semdados-Firemaw"] = { src = "addon", ts = 1, profs = {
+  [164] = { rank = 120, max = 150, n = 4, h = 2, stale = { 2660, 2663 }, staleExtra = {} } } }
+local stale = {}
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
+local s = stale["Semdados-Firemaw"].crafting
+assert(s and #s == 1 and s[1].rank == 120 and #s[1].recipes == 2, "a stale list stands in while the new one travels")
+BRutus.db.professions["Semdados-Firemaw"].profs[164].stale = nil
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
+assert(stale["Semdados-Firemaw"].crafting == nil, "a list still on its way: no crafting key, the site keeps its own")
+BRutus.Professions, BRutus.db.professions = nil, nil
+BRutus.Client.isAnniversary = true
 
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then
