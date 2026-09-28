@@ -14,7 +14,6 @@ BRutus.Look = Look
 local Compat = BRutus.Compat
 local L = BRutus.L
 local MAX = 32          -- the site keeps at most this many; a body has about ten
-local SETTLE = 1        -- seconds: the chair's options fill in just after its events
 
 -- The chair's current choices as {optionID, choiceID}, one per option, by option; nil when
 -- the chair is not open (or offers nothing).
@@ -46,9 +45,8 @@ local function same(a, b)
     return true
 end
 
--- Keeps the chair's choices on the player's own record and tells the guild, once per change.
-function Look:Capture()
-    local look = Look.Read()
+-- Keeps a look on the player's own record and tells the guild, once per change.
+function Look:Keep(look)
     if not look then return end
     local key = BRutus:GetPlayerKey(Compat.PlayerName(), GetRealmName())
     local rec = BRutus.db.members[key]
@@ -66,10 +64,25 @@ function Look:Capture()
 end
 
 function Look:Initialize()
+    -- A purchase: what is being bought is the chair's selection at the moment it is applied.
+    -- By the time the game says it went through, it has already stood the player up and the
+    -- chair has nothing left to read.
+    if C_BarberShop and C_BarberShop.ApplyCustomizationChoices then
+        hooksecurefunc(C_BarberShop, "ApplyCustomizationChoices", function() Look.pending = Look.Read() end)
+    end
     local f = CreateFrame("Frame")
-    -- Sitting down reads the look the character has; buying a new one reads it again.
     for _, event in ipairs({ "BARBER_SHOP_OPEN", "BARBER_SHOP_APPEARANCE_APPLIED" }) do
         Compat.RegisterEvent(f, event)
     end
-    f:SetScript("OnEvent", function() Compat.After(SETTLE, function() Look:Capture() end) end)
+    f:SetScript("OnEvent", function(_, event)
+        if event == "BARBER_SHOP_APPEARANCE_APPLIED" then
+            Look:Keep(Look.pending)
+            Look.pending = nil
+        else
+            -- Sitting down: the look the character has, read on the next frame, once the chair
+            -- has set itself up and before anything can be previewed.
+            Look.pending = nil
+            Compat.After(0, function() Look:Keep(Look.Read()) end)
+        end
+    end)
 end

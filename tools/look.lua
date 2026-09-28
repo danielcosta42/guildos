@@ -43,7 +43,10 @@ local function fire(event, ...)
 end
 function GetServerTime() return 1790600000 end
 function time() return 1790600000 end
-function hooksecurefunc() end
+function hooksecurefunc(t, name, fn)
+  local orig = t[name]
+  t[name] = function(...) orig(...); fn(...) end
+end
 function debugstack() return "" end
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 function GetRealmName() return "Classic Beta PvE 2" end
@@ -59,7 +62,11 @@ local function option(id, choices, current)
   for i, c in ipairs(choices) do t[i] = { id = c, name = "" } end
   return { id = id, name = "", choices = t, currentChoiceIndex = current }
 end
-C_BarberShop = { GetAvailableCustomizations = function() return CHAIR end }
+local applied = 0
+C_BarberShop = {
+  GetAvailableCustomizations = function() return CHAIR end,
+  ApplyCustomizationChoices = function() applied = applied + 1 end,
+}
 
 local registry = {}
 LibStub = setmetatable({
@@ -119,12 +126,17 @@ fire("BARBER_SHOP_OPEN")
 runTimers()
 check(broadcasts == 1 and #chat == 1, "sitting down again with the same look says nothing")
 
--- ── A new look bought ───────────────────────────────────────────────────
-CHAIR[1].options[1].currentChoiceIndex = 1
+-- ── Previewing, then buying ─────────────────────────────────────────────
+CHAIR[1].options[1].currentChoiceIndex = 1          -- a preview: nothing is kept for it
+check(BRutus.db.members[KEY].look[2][2] == 422 and broadcasts == 1, "a preview is not a look")
+C_BarberShop.ApplyCustomizationChoices()            -- the purchase, still in the chair
+check(applied == 1, "the game's own purchase still runs")
+CHAIR = nil                                         -- the game stands the player up at once
 fire("BARBER_SHOP_APPEARANCE_APPLIED")
-runTimers()
-check(BRutus.db.members[KEY].look[2][2] == 415, "buying a new look replaces the old one")
-check(broadcasts == 2 and #chat == 2, "and tells the guild again")
+check(BRutus.db.members[KEY].look[2][2] == 415, "the look bought is the one kept, read at the purchase")
+check(broadcasts == 2 and #chat == 2, "and the guild is told again")
+fire("BARBER_SHOP_APPEARANCE_APPLIED")
+check(broadcasts == 2, "a second confirmation with nothing bought keeps quiet")
 
 -- ── Leaving the chair never erases it ───────────────────────────────────
 CHAIR = nil
