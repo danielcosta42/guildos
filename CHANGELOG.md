@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.57.0] - 2026-09-28
+
+### Added
+- telas e broadcast usam as profissões novas no Forever (#31)
+- sync de profissões por hash no Forever (#31)
+- profissões do próprio personagem e dos membros no Forever (#31)
+- Compat lê profissões e receitas do Forever (#31)
+- catálogo estático das profissões do Forever (#31)
+
+### Fixed
+- achados baixos da segunda revisão das profissões (#31)
+- revisão da fundação de profissões (#31)
+- receita de duas profissões e linhas repetidas no catálogo; docs da fundação (#31)
+
+
 ## [0.56.2] - 2026-09-27
 
 ### Fixed
