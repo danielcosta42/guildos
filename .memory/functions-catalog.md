@@ -714,3 +714,16 @@ Forever only (`Modules/ProfDirectory.lua`, `UI/ProfessionsPanel.lua` return at o
 | Symbol | Description |
 |---|---|
 | `CompanionExport` payload v7 | Each member row carries `crafting` on WoW: Forever (`craftingFor(key)`): `[{ line, rank, max, spec?, recipes }]` for an addon record, `[{ line, native = true }]` for a guild-roster-only one; absent without a profession model or a record |
+
+## v0.59 — The look, read in the barber's chair (#37)
+
+Forever only (`Modules/Look.lua` returns at once on Anniversary).
+
+| Symbol | Description |
+|---|---|
+| `Look.Read()` | The barber's chair's current choices as `{ {optionID, choiceID}, ... }`, one per option, by option, at most 32; nil outside the chair |
+| `Look:Keep(look)` | Keeps a look on the player's own `db.members[key].look` (and `db.myData`), prints one line and forces a broadcast, once per change |
+| `Look:Initialize()` | Keeps `Look.Read()` a frame after `BARBER_SHOP_OPEN`; hooks `C_BarberShop.ApplyCustomizationChoices` to read what is being bought and keeps it on `BARBER_SHOP_APPEARANCE_APPLIED` (the game stands the player up before that event) |
+| `DataCollector:GetBroadcastData()` | Carries `look`; receivers keep it through the generic merge |
+| `CompanionExport` payload v8 | Each member row carries `look` when the record has a list |
+| `tools/look.lua` | Drives the module through a stubbed chair: read, keep, quiet repeat, a preview is not kept, a purchase kept after the chair is gone, no erase, cap, Anniversary |

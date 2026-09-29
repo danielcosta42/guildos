@@ -206,6 +206,8 @@ read_globals = {
     "issecretvalue",
     "C_TradeSkillUI",
     "C_Club",
+    -- WoW: Forever: the look, read in the barber's chair (issue #37).
+    "C_BarberShop",
     "GetProfessions",
     "GetProfessionInfo",
     "IsPlayerSpell",

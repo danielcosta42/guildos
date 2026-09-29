@@ -638,6 +638,9 @@ function DataCollector:GetBroadcastData()
         race = myData.race,
         raceToken = myData.raceToken,
         sex = myData.sex,
+        -- WoW: Forever, once the player has sat in a barber's chair (issue #37). Absent until
+        -- then, and the receiver keeps what it had: StoreReceivedData merges key by key.
+        look = myData.look,
         avgIlvl = myData.avgIlvl,
         lastUpdate = myData.lastUpdate,
         professions = myData.professions,
