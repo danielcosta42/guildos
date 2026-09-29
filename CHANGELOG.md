@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.58.0] - 2026-09-29
+
+### Added
+- grava o visual do personagem no barbeiro e publica no site (payload v8) (#37)
+- export leva as receitas de cada membro no Forever (payload v7) (#35)
+- painel de Profissões no Forever — quem faz o quê e o que ninguém cobre (#33)
+- dados do diretório de profissões e tooltip rápido no Forever (#33)
+
+### Fixed
+- visual comprado no barbeiro é lido na compra, não depois dela (#37)
+- export usa o módulo real e não manda lista vazia enquanto ela viaja (#35)
+- registro próprio nunca some; ficha não pula ao repintar; busca estreita (#33)
+- revisão do painel de Profissões (#33)
+
+
 ## [0.57.0] - 2026-09-28
 
 ### Added
