@@ -74,6 +74,8 @@ Modules\CraftNet.lua
 Data\ProfCatalogForever.lua
 Modules\Professions.lua
 Modules\ProfSync.lua
+Modules\Look.lua
+Modules\ProfDirectory.lua
 Modules\RecruitBeacon.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
@@ -120,6 +122,7 @@ UI\Agora.lua
 UI\Dashboard.lua
 UI\RaiderPanel.lua
 UI\RecipesPanel.lua
+UI\ProfessionsPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
 UI\CalendarPanel.lua

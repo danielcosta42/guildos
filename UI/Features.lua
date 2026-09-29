@@ -43,9 +43,14 @@ UI:RegisterFeature({
     build = function(c, win) BRutus:CreateWishlistGuildPanel(c, win) end,
 })
 
+-- On WoW: Forever the Professions panel (issue #33) takes the Recipes tab: the whole catalog,
+-- who covers it and who does not. Anniversary keeps the recipe search.
 UI:RegisterFeature({
-    id = "recipes", label = L["Recipes"], order = 40,
-    build = function(c, win) BRutus:CreateRecipesPanel(c, win) end,
+    id = "recipes", label = BRutus.CreateProfessionsPanel and L["Professions"] or L["Recipes"], order = 40,
+    build = function(c, win)
+        if BRutus.CreateProfessionsPanel then return BRutus:CreateProfessionsPanel(c, win) end
+        return BRutus:CreateRecipesPanel(c, win)
+    end,
 })
 
 UI:RegisterFeature({

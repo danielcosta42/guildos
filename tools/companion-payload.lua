@@ -218,6 +218,70 @@ assert(anniversary.v >= 6, "the payload that says its game is v6")
 BRutus.Client.isAnniversary = false
 assert(BRutus.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
 BRutus.Client.isAnniversary = true
+
+-- v7 (issue #35): on Forever each member carries the profession model's lines by skill-line
+-- ID -- rank, max, specialization and the recipes they know, or only the line for a member
+-- known from the guild roster. Absent where there is no model, or no record of the member.
+assert(anniversary.v >= 7, "the payload that carries crafting is v7")
+for _, m in ipairs(anniversary.members) do
+  assert(m.crafting == nil, "no profession model (Anniversary): no crafting key for " .. m.key)
+end
+-- The real module (it loads only on Forever), over its saved records -- a stub here once hid
+-- that the export called a function this branch did not have.
+BRutus.Client.isAnniversary = false
+BRutus.db.professions = {
+  ["Chehul-Firemaw"] = { src = "addon", ts = 1, profs = {
+    [393] = { rank = 300, max = 300, n = 0, h = 0, recipes = {}, extra = {} },
+    [165] = { rank = 285, max = 300, spec = 10656, n = 3, h = 1, recipes = { 3304, 2657 }, extra = { 999001 } } } },
+  ["Fulano-Firemaw"] = { src = "native", ts = 1, profs = { [171] = {} } },
+}
+dofile(ADDON .. "/Modules/Professions.lua")
+local forever = BRutus.Companion:BuildPayload()
+local byKey = {}
+for _, m in ipairs(forever.members) do byKey[m.key] = m end
+local c = byKey["Chehul-Firemaw"].crafting
+assert(c and #c == 2 and c[1].line == 165 and c[2].line == 393, "crafting lists every line, by ID, in order")
+assert(c[1].rank == 285 and c[1].max == 300 and c[1].spec == 10656, "a line carries rank, max and specialization")
+assert(#c[1].recipes == 3 and c[1].recipes[1] == 2657 and c[1].recipes[3] == 999001,
+  "and every recipe it knows, catalog and extra, sorted")
+assert(#c[2].recipes == 0 and c[2].spec == nil, "a line with no recipes carries an empty list")
+local n = byKey["Fulano-Firemaw"].crafting
+assert(n and #n == 1 and n[1].line == 171 and n[1].native == true and n[1].rank == nil and n[1].recipes == nil,
+  "a member known from the guild roster only carries the line, marked native")
+for key, m in pairs(byKey) do
+  if key ~= "Chehul-Firemaw" and key ~= "Fulano-Firemaw" then
+    assert(m.crafting == nil, "no record of the member: no crafting key for " .. key)
+  end
+end
+
+-- A changed list on its way: the previous one stands in. A list on its way with no previous
+-- one: no crafting key at all, so the site keeps what another officer published.
+BRutus.db.professions["Semdados-Firemaw"] = { src = "addon", ts = 1, profs = {
+  [164] = { rank = 120, max = 150, n = 4, h = 2, stale = { 2660, 2663 }, staleExtra = {} } } }
+local stale = {}
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
+local s = stale["Semdados-Firemaw"].crafting
+assert(s and #s == 1 and s[1].rank == 120 and #s[1].recipes == 2, "a stale list stands in while the new one travels")
+BRutus.db.professions["Semdados-Firemaw"].profs[164].stale = nil
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
+assert(stale["Semdados-Firemaw"].crafting == nil, "a list still on its way: no crafting key, the site keeps its own")
+BRutus.Professions, BRutus.db.professions = nil, nil
+
+-- v8 (issue #37): the look the member's addon read in the barber's chair, as {option, choice}
+-- pairs; absent for everyone who has not sat in one.
+assert(anniversary.v >= 8, "the payload that carries the look is v8")
+BRutus.db.members["Chehul-Firemaw"].look = { { 19, 359 }, { 9493, 78927 } }
+local looks = {}
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
+assert(looks["Chehul-Firemaw"] and #looks["Chehul-Firemaw"] == 2 and looks["Chehul-Firemaw"][2][2] == 78927,
+  "a member with a look carries it")
+assert(looks["Fulano-Firemaw"] == nil, "a member with none carries no look key")
+BRutus.db.members["Chehul-Firemaw"].look = "junk"
+for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
+assert(looks["Chehul-Firemaw"] == nil, "a look that is not a list is not exported")
+BRutus.db.members["Chehul-Firemaw"].look = nil
+BRutus.Client.isAnniversary = true
+
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then
     assert(#m.professions == 2 and m.professions[1].name == "Leatherworking" and m.professions[2].name == "Skinning",

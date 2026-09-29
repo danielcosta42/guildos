@@ -206,6 +206,8 @@ read_globals = {
     "issecretvalue",
     "C_TradeSkillUI",
     "C_Club",
+    -- WoW: Forever: the look, read in the barber's chair (issue #37).
+    "C_BarberShop",
     "GetProfessions",
     "GetProfessionInfo",
     "IsPlayerSpell",
@@ -283,6 +285,7 @@ read_globals = {
     "FauxScrollFrame_Update",
     "FauxScrollFrame_GetOffset",
     "FauxScrollFrame_OnVerticalScroll",
+    "FauxScrollFrame_SetOffset",
 
     -- WoW API: Frame management
     "GuildFrame",

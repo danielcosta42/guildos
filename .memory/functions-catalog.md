@@ -687,3 +687,43 @@ once on Anniversary. See ADR-0022 and `docs/superpowers/specs/2026-09-27-profess
 | `ProfSync:FlushLine(line)` | One `list`: whisper for one requester, GUILD for several |
 | `tools/prof_catalog.py` | No args: self-test on `tools/prof-catalog-fixture/`; `<build> [--cache dir]`: writes the catalog from wago.tools DB2 |
 | `tools/professions.lua` | Harness: Compat, collection, native, sync, integration points, the real catalog, Anniversary |
+
+---
+
+## v0.58 — Profession directory on WoW: Forever (#33)
+
+Forever only (`Modules/ProfDirectory.lua`, `UI/ProfessionsPanel.lua` return at once on Anniversary). Reads only.
+
+| Symbol | Description |
+|---|---|
+| `ProfDirectory.Lines()` | Catalog profession lines: primaries, then secondaries, each by localized name |
+| `ProfDirectory.DisplayName(line)` | `L[en]` for a line (pt-BR names in `Locales/ptBR.lua`) |
+| `ProfDirectory.RecipeName(id)` | Localized recipe name via `Compat.GetSpellInfo`, cached once resolved; `"#id"` until then |
+| `ProfDirectory.Coverage(line)` | `{ total, covered, crafters }` |
+| `ProfDirectory.RecipeRows(line, mode, query)` | Catalog recipes (every line when nil, each once) filtered by `mode` (`all`/`guild`/`gaps`) and a plain, case-insensitive query; sorted by yellow rank, then name |
+| `ProfDirectory.MemberRows(line)` | `{ key, name, class, online, rank, max, spec, count, native }`, ranked first, native last |
+| `ProfDirectory.Roster()` | `key -> { name, class, online }` from the guild roster, read once per call |
+| `ProfDirectory.ItemRecipes(itemID)` | Catalog recipes creating an item (map built once per catalog) |
+| `ProfDirectory.CraftersForItem(itemID)` / `CraftersForSpell(spellID)` | RecipeTracker's `{ { playerName, playerKey, class, profName } }` or nil; `RecipeTracker:GetCraftersFor*` route here on Forever |
+| `ProfDirectory.Reagents(id)` | `{ { itemID, count } }` |
+| `BRutus:CreateProfessionsPanel(parent, win)` | The Professions tab on Forever: profession rail with coverage, Recipes / Crafters views, search, All / In the guild / Nobody crafts filters, recipe card with reagents, source, requirements and whisper buttons |
+| `tools/professions-panel.lua` | Builds the panel under a permissive frame stub and drives it like a user |
+
+## v0.58 — Professions in the companion export (#35)
+
+| Symbol | Description |
+|---|---|
+| `CompanionExport` payload v7 | Each member row carries `crafting` on WoW: Forever (`craftingFor(key)`): `[{ line, rank, max, spec?, recipes }]` for an addon record, `[{ line, native = true }]` for a guild-roster-only one; absent without a profession model or a record |
+
+## v0.59 — The look, read in the barber's chair (#37)
+
+Forever only (`Modules/Look.lua` returns at once on Anniversary).
+
+| Symbol | Description |
+|---|---|
+| `Look.Read()` | The barber's chair's current choices as `{ {optionID, choiceID}, ... }`, one per option, by option, at most 32; nil outside the chair |
+| `Look:Keep(look)` | Keeps a look on the player's own `db.members[key].look` (and `db.myData`), prints one line and forces a broadcast, once per change |
+| `Look:Initialize()` | Keeps `Look.Read()` a frame after `BARBER_SHOP_OPEN`; hooks `C_BarberShop.ApplyCustomizationChoices` to read what is being bought and keeps it on `BARBER_SHOP_APPEARANCE_APPLIED` (the game stands the player up before that event) |
+| `DataCollector:GetBroadcastData()` | Carries `look`; receivers keep it through the generic merge |
+| `CompanionExport` payload v8 | Each member row carries `look` when the record has a list |
+| `tools/look.lua` | Drives the module through a stubbed chair: read, keep, quiet repeat, a preview is not kept, a purchase kept after the chair is gone, no erase, cap, Anniversary |
