@@ -35,8 +35,11 @@ local FMT = "GOSCOMP1"
 -- time -- plus the two things a character cannot be drawn without: the player's sex
 -- and the English race token. 6 says which game the client is: WoW: Forever has no
 -- realms and its names carry a hyphen, so the site builds a Forever guild's keys itself
--- and refuses a roster from the other game (the site's specs/036).
-local PAYLOAD_VERSION = 6
+-- and refuses a roster from the other game (the site's specs/036). 7 adds `crafting` on
+-- WoW: Forever: each member's profession lines by skill-line ID with the recipes they know
+-- (issue #35, the site's specs/037). 8 adds `look` on WoW: Forever: the {option, choice}
+-- pairs a member's addon read in the barber's chair (issue #37, the site's specs/038).
+local PAYLOAD_VERSION = 8
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -185,6 +188,35 @@ local function attunementsFor(key)
             progress = tonumber(a.progress) or (a.complete and 1 or 0),
         }
     end
+    return out
+end
+
+-- v7, WoW: Forever only: every profession line of a member by skill-line ID. For one whose
+-- own addon reported it, the rank, max, specialization and every recipe they know (catalog
+-- and extra IDs, sorted); for one known from the guild roster only, the line marked native.
+-- Nil -- the key absent -- where the client has no profession model or no record of them,
+-- and while a list is still on its way with no earlier one to stand in: the site keeps what
+-- it had instead of learning that they know nothing.
+local function craftingFor(key)
+    local P = BRutus.Professions
+    local rec = P and P:Get(key)
+    if not rec then return nil end
+    local out = {}
+    for line, e in pairs(rec.profs) do
+        if rec.src == "native" then
+            out[#out + 1] = { line = line, native = true }
+        elseif not e.recipes and not e.stale then
+            return nil
+        else
+            local recipes, extra = P.Lists(e)
+            local ids = {}
+            for _, id in ipairs(recipes) do ids[#ids + 1] = id end
+            for _, id in ipairs(extra) do ids[#ids + 1] = id end
+            table.sort(ids)
+            out[#out + 1] = { line = line, rank = e.rank, max = e.max, spec = e.spec, recipes = ids }
+        end
+    end
+    table.sort(out, function(a, b) return a.line < b.line end)
     return out
 end
 
@@ -456,6 +488,9 @@ function Companion:BuildPayload()
                 gear = gearFor(data),
                 sex = data.sex,
                 raceToken = data.raceToken,
+                crafting = craftingFor(key),
+                -- v8. Absent until the member has sat in a barber's chair with the addon.
+                look = type(data.look) == "table" and data.look or nil,
             }
         end
     end
