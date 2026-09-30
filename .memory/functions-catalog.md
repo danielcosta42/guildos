@@ -175,6 +175,7 @@ Removed: `Compat.NewTimer`.
 | `BRutus:ShowExportPopup(titleStr, text)` | Creates copyable text export popup |
 | `BRutus:GetSetting(key)` | Config accessor — reads `BRutus.db.settings[key]` (Rule 8) |
 | `BRutus:SetSetting(key, value)` | Config mutator — writes `BRutus.db.settings[key]` (Rule 8) |
+| `BRutus:ShowsItemTooltipInfo(tooltip)` | Gate for the guild lines on item tooltips (crafters, wishlist, soft res): setting `itemTooltip` = `"always"` / `"shift"` / `"off"`; a clicked chat link (`ItemRefTooltip`) passes in shift mode |
 | `BRutus.Logger.Debug(msg)` | Structured log at DEBUG level (prints only when `BRutus.Logger.debug == true`) |
 | `BRutus.Logger.Info(msg)` | Structured log at INFO level |
 | `BRutus.Logger.Warn(msg)` | Structured log at WARN level (always prints) |

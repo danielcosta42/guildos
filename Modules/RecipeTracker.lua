@@ -706,6 +706,7 @@ function RecipeTracker:HookTooltips()
     -- Item tooltip handler
     local function OnTooltipSetItem(tooltip)
         if not BRutus.db or not BRutus.db.recipes then return end
+        if not BRutus:ShowsItemTooltipInfo(tooltip) then return end
 
         local _, link = BRutus.Compat.TooltipItem(tooltip)
         if not link then return end

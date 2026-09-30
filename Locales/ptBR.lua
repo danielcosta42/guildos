@@ -32,6 +32,8 @@ L["Usage: /gos tempban <name> <days> [reason]"] = "Uso: /gos tempban <nome> <dia
 
 -- Guild-button takeover (opt-out) + native <-> Guild OS toggle
 L["Guild button opens Guild OS"] = "Botão de guilda abre o Guild OS"
+L["Guild info on item tooltips"] = "Informações da guilda no tooltip de itens"
+L["Only while holding Shift"] = "Só segurando Shift"
 L["The guild button"] = "O botão de guilda"
 L["By default the guild button (and \"J\") opens Guild OS. Prefer Blizzard's own guild window — chat history, news? Turn this off; you can still open Guild OS from the minimap button."] =
     "Por padrão o botão de guilda (e o \"J\") abre o Guild OS. Prefere a janela de guilda da Blizzard — histórico de chat, novidades? Desligue isto; você ainda abre o Guild OS pelo botão do minimapa."

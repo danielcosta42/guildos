@@ -180,7 +180,7 @@ Account-wide on Anniversary: link a player's alts and attunements are shared acr
 
 ### 🎯 TMB Integration *(That's My BiS)*
 - Import TMB CSV exports with **wishlist**, **prio** and **received loot** data
-- **Tooltip integration** — hover any item to see who has it on their wishlist
+- **Tooltip integration** — hover any item to see who has it on their wishlist (Settings → General: always, only while holding Shift, or off)
 - Syncs imported data between officers via addon comms
 - Dedicated **Wishlist / Loot** tab for browsing everything
 

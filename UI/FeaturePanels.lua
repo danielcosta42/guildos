@@ -2076,6 +2076,24 @@ function BRutus:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
+    -- Guild lines on item tooltips (crafters, wishlist, soft reserves) — issue #39.
+    local ttCb = UI:CreateCheckbox(content, L["Guild info on item tooltips"], 18)
+    ttCb:SetPoint("TOPLEFT", 8, -yOff)
+    local ttShift = UI:CreateCheckbox(content, L["Only while holding Shift"], 16)
+    ttShift:SetPoint("TOPLEFT", 28, -(yOff + 26))
+    local ttMode = BRutus:GetSetting("itemTooltip")
+    ttCb.checkbox:SetChecked(ttMode ~= "off")
+    ttShift.checkbox:SetChecked(ttMode == "shift")
+    local function SaveTooltipMode()
+        local on = ttCb.checkbox:GetChecked() and true or false
+        BRutus:SetSetting("itemTooltip", not on and "off" or (ttShift.checkbox:GetChecked() and "shift" or "always"))
+        if on then ttShift.checkbox:Enable() else ttShift.checkbox:Disable() end
+    end
+    if ttMode == "off" then ttShift.checkbox:Disable() end
+    ttCb.checkbox.onChanged = SaveTooltipMode
+    ttShift.checkbox.onChanged = SaveTooltipMode
+    yOff = yOff + 52
+
     local digestCb = UI:CreateCheckbox(content, L["Show login digest"], 18)
     digestCb:SetPoint("TOPLEFT", 8, -yOff)
     digestCb.checkbox:SetChecked(not (BRutus.db.digest and BRutus.db.digest.enabled == false))

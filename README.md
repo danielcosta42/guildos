@@ -52,7 +52,7 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 
 ### TMB Integration (That's My BiS)
 - Import TMB CSV exports with wishlist, prio, and received loot data
-- Tooltip integration — hover any item to see who has it on their wishlist
+- Tooltip integration — hover any item to see who has it on their wishlist (Settings → General: always, only while holding Shift, or off)
 - Syncs imported TMB data between officers via addon comms
 - Dedicated TMB Loot tab for browsing all imported data
 
