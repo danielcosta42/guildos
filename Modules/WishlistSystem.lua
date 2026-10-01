@@ -344,6 +344,7 @@ end
 function Wishlist:HookTooltips()
     local function OnTooltipSetItem(tooltip)
         if not self.itemIndex then return end
+        if not BRutus:ShowsItemTooltipInfo(tooltip) then return end
 
         local _, link = BRutus.Compat.TooltipItem(tooltip)
         if not link then return end

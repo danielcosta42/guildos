@@ -43,6 +43,7 @@ local DB_DEFAULTS = {
         showOffline = true,
         minimap = { hide = false },
         hijackGuildButton = true,  -- guild micro button / "J" opens Guild OS (opt-out in General)
+        itemTooltip = "always",    -- guild lines on item tooltips: "always", "shift" or "off"
         officerMaxRank = 1,  -- rank indexes 0..officerMaxRank are officers (GM + rank 1 by default)
         -- Web companion. Off until someone turns it on: the export carries the
         -- whole guild's gear, attunements and attendance, and a guild that does
@@ -760,6 +761,17 @@ function BRutus:SetSetting(key, value)
     if self.db and self.db.settings then
         self.db.settings[key] = value
     end
+end
+
+-- Do the guild's lines (crafters, wishlist, soft reserves) go on this item tooltip?
+-- "always", "shift" or "off" (issue #39). A link clicked in chat counts as asked for:
+-- shift-clicking it pastes it into the chat box instead.
+-- ponytail: pressing Shift mid-hover only shows up where the owner refreshes its
+-- tooltip (bags, character, action bars, every 0.2s); elsewhere hover again.
+function BRutus:ShowsItemTooltipInfo(tooltip)
+    local mode = self:GetSetting("itemTooltip")
+    if mode == "off" then return false end
+    return mode ~= "shift" or tooltip == ItemRefTooltip or IsShiftKeyDown()
 end
 
 ----------------------------------------------------------------------

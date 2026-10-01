@@ -405,6 +405,7 @@ end
 ----------------------------------------------------------------------
 function SoftRes:HookTooltips()
     BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", function(tt)
+        if not BRutus:ShowsItemTooltipInfo(tt) then return end
         local _, link = BRutus.Compat.TooltipItem(tt)
         if not link then return end
         local itemId = tonumber(link:match("item:(%d+)"))
