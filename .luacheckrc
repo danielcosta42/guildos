@@ -208,6 +208,9 @@ read_globals = {
     "C_Club",
     -- WoW: Forever: the look, read in the barber's chair (issue #37).
     "C_BarberShop",
+    -- WoW: Forever: the talent tree, read node by node (issue #41).
+    "C_ClassTalents",
+    "C_Traits",
     "GetProfessions",
     "GetProfessionInfo",
     "IsPlayerSpell",

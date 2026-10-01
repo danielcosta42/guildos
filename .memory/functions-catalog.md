@@ -117,6 +117,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.UnitBuff(unit, index)` | `C_UnitAuras.GetBuffDataByIndex` mapped to `UnitBuff`'s order (spellId tenth), else `UnitBuff` |
 | `Compat.GetContainerNumSlots` / `GetContainerItemLink` / `GetContainerItemInfo` / `UseContainerItem` | `C_Container`, else the old globals; 0 slots with neither; item info is always the namespaced table |
 | `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
+| `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
 | `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |
 | `Compat.SendAddonMessageNow(prefix, text, channel, target)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send |
@@ -124,7 +125,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.PlayerName()` | My own name as the roster and addon-message senders write it: on a client with surnames (`BRutus.Client.has.surnames`, WoW: Forever) `UnitFullName("player")`'s first name and surname joined with a space, else `UnitName("player")`; a missing, empty or secret surname falls back too. Every own-name read goes through it (issue #26) |
 | `Compat.IsPlayer(unit)` | Whether a group unit is me by `UnitIsUnit(unit, "player")`, never by name; a secret comparison is false (issue #26) |
 | `DataCollector:CollectProfessions()` | nil without a skill-line API, so `professions` is left out of the record, the broadcast and the export |
-| `SpecChecker:CollectOwnSpec()` | `nil, "no-api"` without a talent API: the saved spec is removed and no re-collect is waited for |
+| `SpecChecker:CollectOwnSpec()` | `nil, "no-api"` without any talent API (neither tabs nor trait trees): the saved spec is removed and no re-collect is waited for. On Forever it reads the trait tree instead (issue #41) |
 | `DataCollector:CollectMyData()` / `GetBroadcastData()` / `StoreReceivedData(key, data)` | A field left out because its API is missing is named in `absent`; the broadcast carries it, and a receiver drops the `spec` or `professions` it held for that member |
 | `tools/compat-guard.lua` | CI lint step: exits 1 naming each file:line that reaches a version-sensitive API outside `Core/Compat.lua` (a call, an existence check, a concatenation, `_G.Name`, a quoted string index on a plain name on the same line, a namespace, ChatThrottleLib or `_G` alias, a single-name `Compat` alias, `getfenv`, a sender on anything but Compat), or a TOC file missing on disk (Probe and ChehulNet exempt); it reads names, not expressions |
 
@@ -529,6 +530,8 @@ Removed: `Compat.NewTimer`.
 | `local CollectTabTalents(tabIndex, isInspect)` | Returns array of {name,icon,tier,column,currentRank,maxRank} |
 | `SpecChecker:CollectOwnSpec()` | Scans own talent tabs, builds spec record with full talent data |
 | `SpecChecker:BuildSpecRecord(points, names)` | Finds max-point tab, returns spec record |
+| `SpecChecker:CollectOwnTraitSpec()` | WoW: Forever: points per classic tree from the trait tree; `nil, "no-points"` / `"no-config"` / `"no-trees"` while there is nothing to read; the collector does not hold the snapshot open for them, the periodic collect picks the spec up |
+| `SpecChecker.ColumnPoints(nodes)` | Pure: splits `{x, points}` nodes into the three classic trees (gap > 1200 starts a tree; the three biggest groups are the trees, a stray node counts for the nearest) and returns their points left to right, or nil |
 | `SpecChecker:GetSpecLabel(memberKey)` | Returns "41/5/15  (Protection)" string or nil |
 | `SpecChecker:ScanGroup()` | Builds inspect queue from group members |
 | `SpecChecker:ProcessNextInspect()` | Pops queue, calls NotifyInspect or skips if unreachable |
