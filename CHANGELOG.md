@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.0] - 2026-10-01
+
+### Added
+- opção para as linhas da guilda no tooltip de itens — sempre, só com Shift ou nunca (#39)
+
+
 ## [0.58.0] - 2026-09-29
 
 ### Added
