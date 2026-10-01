@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.2] - 2026-10-01
+
+### Fixed
+- convites e busca de itens passam pelo Compat, que tem o caminho do Forever (#43)
+
+
 ## [0.59.1] - 2026-10-01
 
 ### Fixed
