@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.1] - 2026-10-01
+
+### Fixed
+- Forever lê a spec da árvore de talentos (#41)
+
+
 ## [0.59.0] - 2026-10-01
 
 ### Added
