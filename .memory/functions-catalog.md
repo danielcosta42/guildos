@@ -360,6 +360,8 @@ Removed: `Compat.NewTimer`.
 | `LootMaster:Initialize()` | DB setup, builds roll pattern, registers events |
 | `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player |
 | `LootMaster:IsMasterLooter()` | 4-tier check: IsMasterLooter → GetLootMethod → C_PartyInfo → leader rank |
+| `LootMaster:HookBagClicks()` | Alt+click on a bag item → roll: hooks `ContainerFrameItemButton_OnModifiedClick` (Anniversary) or `HandleModifiedItemClick` with the item location (Forever), never both (issue #44) |
+| `LootMaster:RollFromBagClick(bagId, slotId)` | The click's checks (module on, Alt, master looter), then `RollFromBag` |
 | `LootMaster:StartListeningForRolls()` | Sets listeningForRolls = true |
 | `LootMaster:StopListeningForRolls()` | Sets listeningForRolls = false |
 | `LootMaster:OnSystemMessage(message)` | Routes CHAT_MSG_SYSTEM to ProcessSystemRoll if listening |

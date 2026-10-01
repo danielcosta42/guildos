@@ -160,17 +160,36 @@ function LootMaster:Initialize()
     BRutus.Compat.RegisterAddonPrefix("BRutusLM")
     self.eventFrame = frame
 
-    -- Alt+Click on any bag item starts a BRutus roll for that item (ML only).
-    -- Uses the trade-delivery path since there is no ML loot window for bag items.
-    -- Guard: only hook if the default UI function exists (TBC Anniversary).
+    self:HookBagClicks()
+end
+
+----------------------------------------------------------------------
+-- Alt+Click on any bag item starts a BRutus roll for that item (ML only).
+-- Uses the trade-delivery path since there is no ML loot window for bag items.
+----------------------------------------------------------------------
+function LootMaster:RollFromBagClick(bagId, slotId)
+    if not LootMaster:IsModuleEnabled() then return end
+    if not IsAltKeyDown() then return end
+    if not LootMaster:IsMasterLooter() then return end
+    LootMaster:RollFromBag(bagId, slotId)
+end
+
+-- Anniversary's bags call ContainerFrameItemButton_OnModifiedClick(button). WoW: Forever's
+-- are the retail container, with no such global: they call HandleModifiedItemClick(link,
+-- itemLocation), the bag and slot inside the location (issue #44). One hook, never both,
+-- so a click never starts two rolls. A chat link has no location and starts nothing.
+function LootMaster:HookBagClicks()
     if ContainerFrameItemButton_OnModifiedClick then
-        hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(btn, _button)
-            if not LootMaster:IsModuleEnabled() then return end
-            if not IsAltKeyDown() then return end
-            if not LootMaster:IsMasterLooter() then return end
-            local bagId  = btn:GetParent():GetID()
-            local slotId = btn:GetID()
-            LootMaster:RollFromBag(bagId, slotId)
+        hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(btn)
+            LootMaster:RollFromBagClick(btn:GetParent():GetID(), btn:GetID())
+        end)
+    elseif HandleModifiedItemClick then
+        hooksecurefunc("HandleModifiedItemClick", function(_, itemLocation)
+            if not (itemLocation and itemLocation.IsBagAndSlot and itemLocation:IsBagAndSlot()) then return end
+            local bagId, slotId = itemLocation:GetBagAndSlot()
+            -- The player's own bags: backpack 0, four bags, the reagent bag. The bank's are
+            -- bag-and-slot too, and the trade path cannot hand over what is in the bank.
+            if bagId and bagId >= 0 and bagId <= 5 then LootMaster:RollFromBagClick(bagId, slotId) end
         end)
     end
 end
@@ -273,12 +292,15 @@ function LootMaster:IsMasterLooter()
         end
     end
 
-    -- 3. C_PartyInfo shim (Anniversary / Retail fallback)
+    -- 3. C_PartyInfo, the only one WoW: Forever has. It answers method, party index,
+    --    raid index — the second is the party's, and reading it as the raid's never
+    --    recognised the master looter there (issue #44).
     if C_PartyInfo and C_PartyInfo.GetLootMethod then
-        local method, masterLooterRaidID = C_PartyInfo.GetLootMethod()
-        -- method 2 = master loot in the C_PartyInfo enum
-        if method == 2 and masterLooterRaidID then
-            if BRutus.Compat.IsPlayer("raid" .. masterLooterRaidID) then return true end
+        local method, partyID, raidID = C_PartyInfo.GetLootMethod()
+        local master = Enum and Enum.LootMethod and Enum.LootMethod.Masterlooter or 2
+        if method == master then
+            if partyID == 0 then return true end
+            if raidID and IsInRaid() and BRutus.Compat.IsPlayer("raid" .. raidID) then return true end
         end
     end
 

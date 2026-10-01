@@ -554,6 +554,74 @@ LM.testMode, LM.activeLoot = true, nil
 LM:RollFromBag(2, 3)
 check(announced == HOOD, "a roll from the bags reads the item link through Compat and announces it")
 
+-- WoW: Forever (issue #44): no IsMasterLooter, no GetLootMethod global, only
+-- C_PartyInfo.GetLootMethod, which answers method, partyID, raidID. Reading the second as
+-- the raid index never recognised the master looter there.
+do
+  -- Named, not pairs(): a global that was nil must go back to nil, or later sections run on a fake.
+  local NAMES = { "IsMasterLooter", "GetLootMethod", "C_PartyInfo", "IsInRaid", "Enum", "ContainerFrameItemButton_OnModifiedClick",
+                  "HandleModifiedItemClick", "hooksecurefunc", "IsAltKeyDown" }
+  local saved = {}
+  for _, k in ipairs(NAMES) do saved[k] = _G[k] end
+  local loot = { 2, nil, nil }
+  IsMasterLooter, GetLootMethod = nil, nil
+  C_PartyInfo = { GetLootMethod = function() return loot[1], loot[2], loot[3] end }
+  Enum = setmetatable({ LootMethod = { Masterlooter = 2 } }, { __index = saved.Enum })
+  local inRaid = true
+  IsInRaid = function() return inRaid end
+  local testMode = LM.testMode
+  LM.testMode = false   -- test mode makes everybody the master looter
+  local isMe = BRutus.Compat.IsPlayer
+  BRutus.Compat.IsPlayer = function(unit) return unit == "raid7" end
+  loot = { 2, nil, 7 }
+  check(LM:IsMasterLooter(), "Forever: master looter in a raid, by the raid index C_PartyInfo returns third")
+  loot = { 2, nil, 3 }
+  check(not LM:IsMasterLooter(), "and not when the raid's master looter is somebody else")
+  inRaid, loot = false, { 2, 0, nil }
+  check(LM:IsMasterLooter(), "in a party, party index 0 is the player")
+  loot = { 2, 1, nil }
+  check(not LM:IsMasterLooter(), "party index 1 is somebody else")
+  loot = { 3, 0, nil }
+  check(not LM:IsMasterLooter(), "group loot is not master loot")
+  BRutus.Compat.IsPlayer = isMe
+  LM.testMode = testMode
+
+  -- Forever's bags call HandleModifiedItemClick(link, itemLocation); Anniversary's call
+  -- ContainerFrameItemButton_OnModifiedClick. One hook, never both.
+  local hooks = {}
+  hooksecurefunc = function(name, fn) hooks[#hooks + 1] = { name, fn } end
+  ContainerFrameItemButton_OnModifiedClick, HandleModifiedItemClick = nil, function() end
+  LM:HookBagClicks()
+  check(#hooks == 1 and hooks[1][1] == "HandleModifiedItemClick", "on Forever the bag click is hooked through HandleModifiedItemClick")
+  local rolled
+  local roll = LM.RollFromBag
+  LM.RollFromBag = function(_, b, s) rolled = b .. ":" .. s end
+  local isML, enabled = LM.IsMasterLooter, LM.IsModuleEnabled
+  LM.IsMasterLooter, LM.IsModuleEnabled = function() return true end, function() return true end
+  IsAltKeyDown = function() return true end
+  local bagLoc = { IsBagAndSlot = function() return true end, GetBagAndSlot = function() return 2, 3 end }
+  hooks[1][2]("item:30107", bagLoc)
+  check(rolled == "2:3", "Alt+clicking a bag item on Forever starts the roll from that bag and slot")
+  rolled = nil
+  hooks[1][2]("item:30107", nil)
+  check(rolled == nil, "a chat link (no item location) starts nothing")
+  hooks[1][2]("item:30107", { IsBagAndSlot = function() return true end, GetBagAndSlot = function() return 6, 1 end })
+  check(rolled == nil, "a bank item starts nothing: the trade path cannot hand it over")
+  IsAltKeyDown = function() return false end
+  hooks[1][2]("item:30107", bagLoc)
+  check(rolled == nil, "nor a click without Alt")
+  hooks = {}
+  ContainerFrameItemButton_OnModifiedClick = function() end
+  LM:HookBagClicks()
+  check(#hooks == 1 and hooks[1][1] == "ContainerFrameItemButton_OnModifiedClick",
+        "on Anniversary the old bag function is hooked, and only it")
+  IsAltKeyDown = function() return true end
+  hooks[1][2]({ GetID = function() return 3 end, GetParent = function() return { GetID = function() return 2 end } end })
+  check(rolled == "2:3", "and Alt+clicking an Anniversary bag button rolls from its bag and slot")
+  LM.RollFromBag, LM.IsMasterLooter, LM.IsModuleEnabled = roll, isML, enabled
+  for _, k in ipairs(NAMES) do _G[k] = saved[k] end
+end
+
 -- ── 7. The roster request and the consumable check ──────────────────────
 local asked, opened = {}, false
 C_GuildInfo = { GuildRoster = function() asked[#asked + 1] = "ns" end }
