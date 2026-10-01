@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.3] - 2026-10-01
+
+### Fixed
+- LootMaster reconhece o Master Looter e o Alt+clique na bolsa no Forever (#44)
+
+
 ## [0.59.2] - 2026-10-01
 
 ### Fixed
