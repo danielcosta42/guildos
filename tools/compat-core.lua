@@ -791,8 +791,10 @@ check(flags("local _, link = BRutus.Compat.TooltipItem(tip)") == 0, "while the w
 -- The retail client moved these to C_PartyInfo and C_Item and dropped the globals; Forever
 -- has only the namespaced ones, so a direct call raised on the click.
 do
-  local saved = { C_PartyInfo = C_PartyInfo, InviteUnit = InviteUnit, InviteByName = InviteByName, C_Item = C_Item,
-                  GetItemQualityColor = GetItemQualityColor, GetItemCount = GetItemCount }
+  -- Named, not pairs(): a global that was nil must go back to nil, or later sections run on a fake.
+  local NAMES = { "C_PartyInfo", "InviteUnit", "InviteByName", "C_Item", "GetItemQualityColor", "GetItemCount" }
+  local saved = {}
+  for _, k in ipairs(NAMES) do saved[k] = _G[k] end
   local invited = {}
   C_PartyInfo = { InviteUnit = function(n) invited[#invited + 1] = "C:" .. n end }
   InviteUnit = function(n) invited[#invited + 1] = "G:" .. n end
@@ -818,7 +820,7 @@ do
   r, g, b = BRutus.Compat.GetItemQualityColor(4)
   check(r == 1 and g == 1 and b == 1 and BRutus.Compat.GetItemCount(24490) == 0,
         "with neither: white and none, rather than a raise")
-  for k, v in pairs(saved) do _G[k] = v end
+  for _, k in ipairs(NAMES) do _G[k] = saved[k] end
 end
 
 print("compat-core: " .. checks .. " checks passed")
