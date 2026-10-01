@@ -69,12 +69,91 @@ local function CollectTabTalents(tabIndex, isInspect)
     return talents
 end
 
+-- Keep the local player's spec on their own member row.
+local function KeepOwnSpec(spec)
+    local key = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    if BRutus.db and BRutus.db.members then
+        if not BRutus.db.members[key] then
+            BRutus.db.members[key] = {}
+        end
+        BRutus.db.members[key].spec = spec
+    end
+    return spec
+end
+
+----------------------------------------------------------------------
+-- WoW: Forever lays a class's three classic trees side by side in one trait tree, left
+-- to right in the classic tab order (issue #41). Read from the 1.60.1.70009 tables: the
+-- columns inside one tree are 600 apart and the trees are more than 2200 apart, so a gap
+-- over 1200 starts a new tree. The three biggest groups are the trees; a stray node —
+-- the Hunter tree carries a stale Lightning Reflexes far off to the right — counts for
+-- the nearest one. Takes { {x =, points =}, ... } and returns the points per tree, or nil
+-- when the layout is not three trees.
+----------------------------------------------------------------------
+local TREE_GAP = 1200
+
+function SpecChecker.ColumnPoints(nodes)
+    local sorted = {}
+    for i, n in ipairs(nodes) do sorted[i] = n end
+    table.sort(sorted, function(a, b) return a.x < b.x end)
+
+    local groups = {}
+    for _, n in ipairs(sorted) do
+        local g = groups[#groups]
+        if not g or n.x - g.hi > TREE_GAP then
+            g = { lo = n.x, hi = n.x, count = 0, points = 0 }
+            groups[#groups + 1] = g
+        end
+        g.hi, g.count, g.points = n.x, g.count + 1, g.points + n.points
+    end
+    if #groups < 3 then return nil end
+
+    local bySize = {}
+    for i, g in ipairs(groups) do bySize[i] = g end
+    table.sort(bySize, function(a, b) return a.count > b.count end)
+    for i = 1, 3 do bySize[i].tree = true end
+
+    local trees = {}
+    for _, g in ipairs(groups) do
+        if g.tree then trees[#trees + 1] = g end
+    end
+    for _, g in ipairs(groups) do
+        if not g.tree then
+            local nearest, best
+            for _, t in ipairs(trees) do
+                local d = math.max(t.lo - g.hi, g.lo - t.hi)
+                if not best or d < best then nearest, best = t, d end
+            end
+            nearest.points = nearest.points + g.points
+        end
+    end
+    return { trees[1].points, trees[2].points, trees[3].points }
+end
+
+-- The local player's spec on WoW: Forever, from the trait tree. Nil and why while there
+-- is nothing to read yet — the talents not loaded, or no point spent — rather than a tree
+-- nobody picked; the periodic collect reads it once there is one.
+function SpecChecker:CollectOwnTraitSpec()
+    local nodes, why = BRutus.Compat.TraitTreeNodes()
+    if not nodes then return nil, why end
+    local points = SpecChecker.ColumnPoints(nodes)
+    if not points then return nil, "no-trees" end
+    if points[1] + points[2] + points[3] == 0 then return nil, "no-points" end
+
+    local _, classToken = UnitClass("player")
+    local specNames = CLASS_SPEC_NAMES[classToken] or {}
+    local names = {}
+    for i = 1, 3 do names[i] = specNames[i] or ("Tree " .. i) end
+    return KeepOwnSpec(self:BuildSpecRecord(points, names))
+end
+
 ----------------------------------------------------------------------
 -- Collect the local player's own spec from their talent tabs.
 -- Stores result in Guild OS.db.members[key].spec and returns it.
 ----------------------------------------------------------------------
 function SpecChecker:CollectOwnSpec()
     local numTabs, why = BRutus.Compat.GetNumTalentTabs()
+    if why == "no-api" then return self:CollectOwnTraitSpec() end
     if why then return nil, why end
     if not numTabs or numTabs == 0 then return nil end
 
@@ -94,15 +173,7 @@ function SpecChecker:CollectOwnSpec()
         talentsPerTab[i] = CollectTabTalents(i, false)
     end
     spec.talents = talentsPerTab
-
-    local key = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
-    if BRutus.db and BRutus.db.members then
-        if not BRutus.db.members[key] then
-            BRutus.db.members[key] = {}
-        end
-        BRutus.db.members[key].spec = spec
-    end
-    return spec
+    return KeepOwnSpec(spec)
 end
 
 ----------------------------------------------------------------------

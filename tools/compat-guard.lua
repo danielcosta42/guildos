@@ -33,7 +33,7 @@ local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAd
 local COMPAT_SOURCES = { ["BRutus.Compat"] = true, ["GuildOS.Compat"] = true, ["self.Compat"] = true }
 -- Namespaces and the library only Compat may touch: flagged wherever the name appears (an alias included).
 local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_TradeSkillUI", "C_Club", "ChatThrottleLib",
-                     "TooltipUtil", "TooltipDataProcessor" }
+                     "TooltipUtil", "TooltipDataProcessor", "C_ClassTalents", "C_Traits" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

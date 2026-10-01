@@ -464,6 +464,26 @@ d = DC:CollectMyData()
 check(d.spec and d.spec.tree == "Holy" and DC._snapshotIncomplete and d.absent == nil,
       "talents not loaded yet: the old spec stays, a re-collect is flagged, and nothing is named absent")
 
+-- WoW: Forever (issue #41): no tabs, one trait tree with the three classic trees side by side.
+talents(false)
+local bought = 0
+C_ClassTalents = { GetActiveConfigID = function() return 1 end }
+C_Traits = {
+  GetConfigInfo = function() return { treeIDs = { 1 } } end,
+  GetTreeNodes = function() return { 1, 2, 3 } end,
+  GetNodeInfo = function(_, id) return { posX = id * 5000, ranksPurchased = id == 3 and bought or 0 } end,
+}
+d = DC:CollectMyData()
+-- Nothing bought yet is nothing to wait for: holding the snapshot open for it blocked the
+-- gear's corrective broadcast for every character below level 10.
+check(not DC._snapshotIncomplete and not (d.absent and d.absent.spec),
+      "Forever with no point bought: no re-collect held open, and the spec is not named absent")
+bought = 5
+d = DC:CollectMyData()
+check(d.spec and d.spec.tree == "Shadow" and not DC._snapshotIncomplete and d.absent == nil,
+      "Forever with points in the right-hand tree: the priest's third tree, read through the collector")
+C_ClassTalents, C_Traits = nil, nil
+
 local bobKey = BRutus:GetPlayerKey("Bob")
 BRutus.db.members[bobKey] = { name = "Bob", class = "PRIEST", lastUpdate = 1, spec = { tree = "Holy" },
                               professions = { { name = "Tailoring", rank = 375 } } }

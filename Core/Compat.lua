@@ -493,6 +493,29 @@ function Compat.GetTalentInfo(tab, index, isInspect)
     return GetTalentInfo(tab, index, isInspect)
 end
 
+-- WoW: Forever has no talent tabs: each class is one trait tree (issue #41). Returns the
+-- active tree's nodes as { {x = posX, points = ranks bought}, ... }, or nil and why:
+-- "no-api" on a client with no trait trees at all, "no-config" before the talents have
+-- loaded or been unlocked. Anniversary never gets here: it has GetNumTalentTabs.
+function Compat.TraitTreeNodes()
+    if not (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_Traits and C_Traits.GetConfigInfo
+            and C_Traits.GetTreeNodes and C_Traits.GetNodeInfo) then
+        return nil, "no-api"
+    end
+    local configID = C_ClassTalents.GetActiveConfigID()
+    local config = configID and C_Traits.GetConfigInfo(configID)
+    local treeID = config and config.treeIDs and config.treeIDs[1]
+    if not treeID then return nil, "no-config" end
+    local nodes = {}
+    for _, nodeID in ipairs(C_Traits.GetTreeNodes(treeID) or {}) do
+        local info = C_Traits.GetNodeInfo(configID, nodeID)
+        if info and info.posX then
+            nodes[#nodes + 1] = { x = info.posX, points = tonumber(info.ranksPurchased) or 0 }
+        end
+    end
+    return nodes
+end
+
 function Compat.GetNumSkillLines()
     if not GetNumSkillLines then return nil, "no-api" end
     return GetNumSkillLines()

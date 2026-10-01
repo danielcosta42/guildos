@@ -111,9 +111,12 @@ function DataCollector:CollectMyData()
         elseif why == "no-api" then
             data.spec = nil   -- no talent API on this client: absent, and nothing to wait for
             absent.spec = true
-        else
-            specMissing = true
+        elseif why == nil then
+            specMissing = true   -- the tabs have not loaded yet: the talent events re-collect
         end
+        -- WoW: Forever's reasons (no-config, no-points, no-trees) are waited on by nobody:
+        -- the periodic collect reads the tree once there is one, and holding the snapshot
+        -- open for them blocked the gear's corrective broadcast below level 10 (issue #41).
     end
     -- Named in the broadcast, so the other officers drop what they still hold for these fields (issue #10).
     data.absent = next(absent) and absent or nil
