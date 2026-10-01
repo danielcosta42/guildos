@@ -117,6 +117,8 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.UnitBuff(unit, index)` | `C_UnitAuras.GetBuffDataByIndex` mapped to `UnitBuff`'s order (spellId tenth), else `UnitBuff` |
 | `Compat.GetContainerNumSlots` / `GetContainerItemLink` / `GetContainerItemInfo` / `UseContainerItem` | `C_Container`, else the old globals; 0 slots with neither; item info is always the namespaced table |
 | `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
+| `Compat.InviteUnit(name)` | Group invite: `C_PartyInfo.InviteUnit`, else `InviteUnit`, else `InviteByName`; nothing on a client with none (issue #43) |
+| `Compat.GetItemQualityColor(quality)` / `Compat.GetItemCount(item, includeBank)` | `C_Item`'s, else the old global's; white / 0 with neither (issue #43) |
 | `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
 | `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |

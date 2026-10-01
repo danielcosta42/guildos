@@ -787,4 +787,40 @@ check(flags("local _, link = tip:GetItem()") == 1 and flags("local _, u = tip:Ge
       "and the Classic readers, as a method of anything but Compat")
 check(flags("local _, link = BRutus.Compat.TooltipItem(tip)") == 0, "while the wrapper itself is not")
 
+-- ── 11. What WoW: Forever dropped for a namespace (issue #43) ─────────────
+-- The retail client moved these to C_PartyInfo and C_Item and dropped the globals; Forever
+-- has only the namespaced ones, so a direct call raised on the click.
+do
+  -- Named, not pairs(): a global that was nil must go back to nil, or later sections run on a fake.
+  local NAMES = { "C_PartyInfo", "InviteUnit", "InviteByName", "C_Item", "GetItemQualityColor", "GetItemCount" }
+  local saved = {}
+  for _, k in ipairs(NAMES) do saved[k] = _G[k] end
+  local invited = {}
+  C_PartyInfo = { InviteUnit = function(n) invited[#invited + 1] = "C:" .. n end }
+  InviteUnit = function(n) invited[#invited + 1] = "G:" .. n end
+  BRutus.Compat.InviteUnit("Ana Costa")
+  C_PartyInfo = nil
+  BRutus.Compat.InviteUnit("Bob")
+  InviteUnit, InviteByName = nil, function(n) invited[#invited + 1] = "B:" .. n end
+  BRutus.Compat.InviteUnit("Cy")
+  InviteByName = nil
+  check(invited[1] == "C:Ana Costa" and invited[2] == "G:Bob" and invited[3] == "B:Cy" and #invited == 3,
+        "an invite goes through C_PartyInfo, and an old global only where it is all there is")
+  check(pcall(BRutus.Compat.InviteUnit, "Dee"), "with no invite API at all, nothing raises")
+
+  C_Item = { GetItemQualityColor = function(q) return q / 10, 0.5, 0.25, "ff" end, GetItemCount = function() return 3 end }
+  GetItemQualityColor, GetItemCount = function() return 9, 9, 9 end, function() return 9 end
+  local r, g, b = BRutus.Compat.GetItemQualityColor(4)
+  check(r == 0.4 and g == 0.5 and b == 0.25 and BRutus.Compat.GetItemCount(24490) == 3,
+        "item quality colour and count come from C_Item when it has them")
+  C_Item = nil
+  check(BRutus.Compat.GetItemQualityColor(4) == 9 and BRutus.Compat.GetItemCount(24490) == 9,
+        "and from the old globals where they are all there is")
+  GetItemQualityColor, GetItemCount = nil, nil
+  r, g, b = BRutus.Compat.GetItemQualityColor(4)
+  check(r == 1 and g == 1 and b == 1 and BRutus.Compat.GetItemCount(24490) == 0,
+        "with neither: white and none, rather than a raise")
+  for _, k in ipairs(NAMES) do _G[k] = saved[k] end
+end
+
 print("compat-core: " .. checks .. " checks passed")

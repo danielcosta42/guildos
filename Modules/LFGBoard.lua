@@ -642,7 +642,7 @@ function LFGBoard:Show()
                 local inviteBtn = UI:CreateButton(child, L["Invite"], 56, 18)
                 inviteBtn:SetPoint("TOPRIGHT", -4, -(y + 2))
                 noteReserve = math.max(noteReserve, inviteBtn:GetWidth() + 10)
-                inviteBtn:SetScript("OnClick", function() InviteUnit(entry.name) end)
+                inviteBtn:SetScript("OnClick", function() BRutus.Compat.InviteUnit(entry.name) end)
             end
 
             local noteFS = UI:CreateText(child, entry.note or "", 11, C.textDim.r, C.textDim.g, C.textDim.b)

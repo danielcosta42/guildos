@@ -355,14 +355,9 @@ function Import:InviteAll()
         if n then present[n] = true end
     end
 
-    -- C_PartyInfo is the modern call; InviteUnit is the Classic one.
-    -- Both exist in TBC Anniversary depending on the build.
+    -- Compat knows which invite the client has: WoW: Forever only has C_PartyInfo's (issue #43).
     local function ask(name)
-        if C_PartyInfo and C_PartyInfo.InviteUnit then
-            C_PartyInfo.InviteUnit(name)
-        elseif InviteUnit then
-            InviteUnit(name)
-        end
+        BRutus.Compat.InviteUnit(name)
     end
 
     local invited, skipped = 0, 0
