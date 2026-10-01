@@ -558,9 +558,11 @@ check(announced == HOOD, "a roll from the bags reads the item link through Compa
 -- C_PartyInfo.GetLootMethod, which answers method, partyID, raidID. Reading the second as
 -- the raid index never recognised the master looter there.
 do
-  local saved = { IsMasterLooter = IsMasterLooter, GetLootMethod = GetLootMethod, C_PartyInfo = C_PartyInfo,
-                  IsInRaid = IsInRaid, Enum = Enum, ContainerFrameItemButton_OnModifiedClick = ContainerFrameItemButton_OnModifiedClick,
-                  HandleModifiedItemClick = HandleModifiedItemClick, hooksecurefunc = hooksecurefunc, IsAltKeyDown = IsAltKeyDown }
+  -- Named, not pairs(): a global that was nil must go back to nil, or later sections run on a fake.
+  local NAMES = { "IsMasterLooter", "GetLootMethod", "C_PartyInfo", "IsInRaid", "Enum", "ContainerFrameItemButton_OnModifiedClick",
+                  "HandleModifiedItemClick", "hooksecurefunc", "IsAltKeyDown" }
+  local saved = {}
+  for _, k in ipairs(NAMES) do saved[k] = _G[k] end
   local loot = { 2, nil, nil }
   IsMasterLooter, GetLootMethod = nil, nil
   C_PartyInfo = { GetLootMethod = function() return loot[1], loot[2], loot[3] end }
@@ -613,8 +615,11 @@ do
   LM:HookBagClicks()
   check(#hooks == 1 and hooks[1][1] == "ContainerFrameItemButton_OnModifiedClick",
         "on Anniversary the old bag function is hooked, and only it")
+  IsAltKeyDown = function() return true end
+  hooks[1][2]({ GetID = function() return 3 end, GetParent = function() return { GetID = function() return 2 end } end })
+  check(rolled == "2:3", "and Alt+clicking an Anniversary bag button rolls from its bag and slot")
   LM.RollFromBag, LM.IsMasterLooter, LM.IsModuleEnabled = roll, isML, enabled
-  for k, v in pairs(saved) do _G[k] = v end
+  for _, k in ipairs(NAMES) do _G[k] = saved[k] end
 end
 
 -- ── 7. The roster request and the consumable check ──────────────────────
