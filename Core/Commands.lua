@@ -470,7 +470,7 @@ local function handleCommand(msg)
                         end
                     end
                     if attDef.keyItemId then
-                        local count = GetItemCount(attDef.keyItemId) or 0
+                        local count = BRutus.Compat.GetItemCount(attDef.keyItemId) or 0
                         local col = count > 0 and "|cff00FF00" or "|cffFF4444"
                         BRutus:Print(format("  %sKey item %d: %d in bags|r", col, attDef.keyItemId, count))
                     end

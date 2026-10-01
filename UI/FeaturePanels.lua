@@ -3410,7 +3410,7 @@ local function BuildWishlistFrame()
             local dr = dropdown.rows[i]
             if i <= shown then
                 local entry = results[i]
-                local r, g, b = GetItemQualityColor(entry.quality)
+                local r, g, b = BRutus.Compat.GetItemQualityColor(entry.quality)
                 dr.label:SetText(entry.name)
                 dr.label:SetTextColor(r, g, b)
                 dr.itemId   = entry.itemId
@@ -3768,7 +3768,7 @@ local function BuildPrioModal()
             local dr = prioDropdown.rows[i]
             if i <= shown then
                 local entry = results[i]
-                local r, g, b = GetItemQualityColor(entry.quality)
+                local r, g, b = BRutus.Compat.GetItemQualityColor(entry.quality)
                 dr.label:SetText(entry.name)
                 dr.label:SetTextColor(r, g, b)
                 dr.itemId   = entry.itemId

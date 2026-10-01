@@ -242,7 +242,7 @@ function AttunementTracker:ScanAttunements()
             -- flag is not yet cached but the character already has the key
             -- (e.g. Karazhan Master's Key, item 24490).
             if not entry.complete and attunement.keyItemId then
-                entry.complete = (GetItemCount(attunement.keyItemId) or 0) > 0
+                entry.complete = (BRutus.Compat.GetItemCount(attunement.keyItemId) or 0) > 0
             end
             entry.progress = total > 0 and (done / total) or 0
             entry.questsDone = done

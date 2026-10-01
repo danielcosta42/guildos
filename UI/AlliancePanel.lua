@@ -433,7 +433,7 @@ function BRutus:ShowAllyCard(name, guild, anchor)
     f.body:SetText(table.concat(lines, "\n\n"))
 
     f.whisper:SetScript("OnClick", function() ChatFrame_SendTell(name) end)
-    f.invite:SetScript("OnClick", function() InviteUnit(name) end)
+    f.invite:SetScript("OnClick", function() BRutus.Compat.InviteUnit(name) end)
 
     -- The full member sheet only exists for our OWN guild: an ally's gear and
     -- history are simply not data we hold.

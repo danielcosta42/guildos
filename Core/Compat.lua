@@ -493,6 +493,28 @@ function Compat.GetTalentInfo(tab, index, isInspect)
     return GetTalentInfo(tab, index, isInspect)
 end
 
+-- Invite somebody to the group. The retail client moved it to C_PartyInfo and dropped
+-- the globals; WoW: Forever has only C_PartyInfo, and its own /invite uses it (issue #43).
+function Compat.InviteUnit(name)
+    if C_PartyInfo and C_PartyInfo.InviteUnit then return C_PartyInfo.InviteUnit(name) end
+    if InviteUnit then return InviteUnit(name) end
+    if InviteByName then return InviteByName(name) end
+end
+
+-- r, g, b, hex for an item quality: C_Item's, or the old global's, or white (issue #43).
+function Compat.GetItemQualityColor(quality)
+    if C_Item and C_Item.GetItemQualityColor then return C_Item.GetItemQualityColor(quality) end
+    if GetItemQualityColor then return GetItemQualityColor(quality) end
+    return 1, 1, 1, "ffffffff"
+end
+
+-- How many of an item the player carries: C_Item's count, or the old global's (issue #43).
+function Compat.GetItemCount(item, includeBank)
+    if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(item, includeBank or false) end
+    if GetItemCount then return GetItemCount(item, includeBank) end
+    return 0
+end
+
 -- WoW: Forever has no talent tabs: each class is one trait tree (issue #41). Returns the
 -- active tree's nodes as { {x = posX, points = ranks bought}, ... }, or nil and why:
 -- "no-api" on a client with no trait trees at all, "no-config" before the talents have
