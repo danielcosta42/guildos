@@ -317,7 +317,7 @@ local function handleCommand(msg)
             -- the officer is told: "Lethaniel" on Forever is nobody's sheet.
             if BRutus.OfficerNotes:AddNote(key or BRutus:GetPlayerKey(target), noteText) then
                 BRutus:Print(key and (L["Note added for "] .. target)
-                    or string.format(L["Note added for %s, who is not on the guild roster: check the full name."], target))
+                    or string.format(L["Note added for %s, who matches no single guild member: check the full name."], target))
             end
         else
             BRutus:Print(L["Usage: /guildos note <PlayerName> <text>"])
