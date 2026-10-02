@@ -40,12 +40,15 @@ StaticPopupDialogs["GUILDOS_RAIDER_NOTE"] = {
     text = L["Officer note for %s"],
     button1 = L["Save"], button2 = CANCEL,
     hasEditBox = true, maxLetters = 120,
+    -- The box through Compat: WoW: Forever's popup has no `editBox` (issue #49).
     OnShow = function(self, data)
         local rec = data and RR():Get(data)
-        if self.editBox then self.editBox:SetText((rec and rec.note) or ""); self.editBox:HighlightText() end
+        local box = BRutus.Compat.PopupEditBox(self)
+        if box then box:SetText((rec and rec.note) or ""); box:HighlightText() end
     end,
     OnAccept = function(self, data)
-        if data and self.editBox then RR():SetNote(data, self.editBox:GetText()) end
+        local box = BRutus.Compat.PopupEditBox(self)
+        if data and box then RR():SetNote(data, box:GetText()) end
     end,
     EditBoxOnEnterPressed = function(editBox)
         local dlg = editBox:GetParent()

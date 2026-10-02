@@ -309,9 +309,10 @@ local function handleCommand(msg)
         end
     elseif msg == "note" or msg:match("^note%s") then
         local rest = msg:gsub("^note%s*", "")
-        local target, noteText = rest:match("^(%S+)%s+(.+)$")
+        -- A Forever name is two words, and the note lands on the key the roster gives (issue #49).
+        local target, noteText = BRutus:SplitNameAndText(rest)
         if target and noteText and BRutus.OfficerNotes then
-            local key = BRutus:GetPlayerKey(target)
+            local key = BRutus:RosterKey(target) or BRutus:GetPlayerKey(target)
             if BRutus.OfficerNotes:AddNote(key, noteText) then
                 BRutus:Print(L["Note added for "] .. target)
             end
