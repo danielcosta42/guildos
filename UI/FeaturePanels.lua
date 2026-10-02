@@ -629,6 +629,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     local snapshots = sd.snapshots or {}
                     local firstSnap = snapshots[1]
                     local lastSnap  = snapshots[#snapshots]
+                    local pen       = BRutus.RaidTracker:GetPenalties(sd.groupTag)
 
                     local playerList = {}
                     for key in pairs(sd.players or {}) do
@@ -649,9 +650,9 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         local noConsumes = consumeChecks > 0 and (consumeHits / consumeChecks) < 0.5
 
                         local score = 100
-                        if wasLate    then score = score - (BRutus.RaidTracker.PENALTIES.LATE       or 10) end
-                        if leftEarly  then score = score - (BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10) end
-                        if noConsumes then score = score - (BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10) end
+                        if wasLate    then score = score - pen.LATE end
+                        if leftEarly  then score = score - pen.LEFT_EARLY end
+                        if noConsumes then score = score - pen.NO_CONSUMES end
                         score = math.max(0, math.min(100, score))
 
                         table.insert(playerList, {
@@ -845,9 +846,10 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             end
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(L["Score starts at 100 per raid."], 0.6,0.6,0.6)
-            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.LATE or 10) .. L[" Arrived late"], 0.7,0.5,0.5)
-            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10) .. L[" Left early"], 0.7,0.5,0.5)
-            GameTooltip:AddLine("-" .. (BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10) .. L[" No consumables"], 0.7,0.5,0.5)
+            local pen = BRutus.RaidTracker:GetPenalties(capturedEntry.groupTag)
+            if pen.LATE > 0 then GameTooltip:AddLine("-" .. pen.LATE .. L[" Arrived late"], 0.7,0.5,0.5) end
+            if pen.LEFT_EARLY > 0 then GameTooltip:AddLine("-" .. pen.LEFT_EARLY .. L[" Left early"], 0.7,0.5,0.5) end
+            if pen.NO_CONSUMES > 0 then GameTooltip:AddLine("-" .. pen.NO_CONSUMES .. L[" No consumables"], 0.7,0.5,0.5) end
             GameTooltip:Show()
             local _ = capturedEntry
         end)
@@ -2520,19 +2522,72 @@ function BRutus:RefreshSettingsPanel(content, category)
         yOff = yOff + 30
     end -- isOfficer (Raid group tag)
 
-    local penaltyInfo = UI:CreateText(content, L["Penalties per session (base score = 100):"], 11, C.white.r, C.white.g, C.white.b)
+    -- The guild's weights (issue #55): what a raid outside any core scores with, and what a
+    -- core takes when it set none of its own (Raids > Cores). 0 turns one off.
+    local penaltyInfo = UI:CreateText(content, L["Attendance penalties (base score = 100, 0 turns one off):"], 11, C.white.r, C.white.g, C.white.b)
     penaltyInfo:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 20
+    yOff = yOff + 18
+    local penaltyScope = UI:CreateText(content, L["For raids outside a core, and for every core that set none of its own."], 9, C.silver.r, C.silver.g, C.silver.b)
+    penaltyScope:SetPoint("TOPLEFT", 8, -yOff)
+    yOff = yOff + 18
 
     local penalties = {
-        { label = L["Late (missed first snapshot)"], val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.LATE or 10 },
-        { label = L["Left Early (missed last snapshot)"], val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.LEFT_EARLY or 10 },
-        { label = L["No Consumables (<50% snapshots)"], val = BRutus.RaidTracker and BRutus.RaidTracker.PENALTIES.NO_CONSUMES or 10 },
+        { key = "LATE",        label = L["Late (missed first snapshot)"] },
+        { key = "LEFT_EARLY",  label = L["Left Early (missed last snapshot)"] },
+        { key = "NO_CONSUMES", label = L["No Consumables (<50% snapshots)"] },
     }
+    local pen = BRutus.RaidTracker:GetPenalties("")
+    local canEdit = isOfficer and BRutus.CoreManager
+    local penBoxes = {}
     for _, p in ipairs(penalties) do
-        local pt = UI:CreateText(content, "  -" .. p.val .. "  " .. p.label, 10, C.silver.r, C.silver.g, C.silver.b)
-        pt:SetPoint("TOPLEFT", 16, -yOff)
-        yOff = yOff + 16
+        if canEdit then
+            local box = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+            box:SetSize(44, 20)
+            box:SetPoint("TOPLEFT", 16, -yOff)
+            box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+            box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+            BRutus:ApplyFont(box, 11)
+            box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            box:SetNumeric(true)
+            box:SetMaxLetters(3)
+            box:SetAutoFocus(false)
+            box:SetText(tostring(pen[p.key]))
+            box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            UI:AttachSaveButton(box, function(b)
+                local val = tonumber(b:GetText())
+                if not val then   -- an empty box is a slip, not "off": 0 is typed
+                    b:SetText(tostring(BRutus.RaidTracker:GetPenalties("")[p.key]))
+                    return
+                end
+                BRutus.CoreManager:SetPenalty(p.key, val, "")
+                BRutus.RaidTracker:RebuildAttendanceFromSessions()
+                b:SetText(tostring(BRutus.RaidTracker:GetPenalties("")[p.key]))
+                BRutus:Print(L["Attendance penalty saved."])
+            end)
+            local lbl = UI:CreateText(content, p.label, 10, C.silver.r, C.silver.g, C.silver.b)
+            lbl:SetPoint("LEFT", box.saveButton, "RIGHT", 8, 0)
+            penBoxes[p.key] = box
+            yOff = yOff + 24
+        else
+            local shown = pen[p.key] > 0 and ("-" .. pen[p.key]) or "0"
+            local pt = UI:CreateText(content, "  " .. shown .. "  " .. p.label, 10, C.silver.r, C.silver.g, C.silver.b)
+            pt:SetPoint("TOPLEFT", 16, -yOff)
+            yOff = yOff + 16
+        end
+    end
+    if canEdit then
+        local offBtn = UI:CreateButton(content, L["Turn penalties off"], 160, 22)
+        offBtn:SetPoint("TOPLEFT", 16, -yOff)
+        offBtn:SetScript("OnClick", function()
+            for _, p in ipairs(penalties) do
+                BRutus.CoreManager:SetPenalty(p.key, 0, "")
+                penBoxes[p.key]:SetText("0")
+            end
+            BRutus.RaidTracker:RebuildAttendanceFromSessions()
+            BRutus:Print(L["Attendance penalties are off."])
+        end)
+        yOff = yOff + 28
     end
 
     yOff = yOff + 8

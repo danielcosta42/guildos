@@ -83,6 +83,12 @@ RaidTracker.PENALTIES = {
 }
 -- Max score per lockout = 100, penalties subtract from it
 
+-- The weights a raid of this group is scored with: its core's, else the guild's (issue #55).
+-- PENALTIES above are only the defaults; every screen and the score read this.
+function RaidTracker:GetPenalties(groupTag)
+    return (BRutus.CoreManager and BRutus.CoreManager:GetPenalties(groupTag or "")) or self.PENALTIES
+end
+
 -- TBC weekly reset epoch: 2006-01-03 00:00 UTC (a known Tuesday)
 local TUESDAY_EPOCH = 1136246400
 local WEEK_SECS     = 7 * 86400
@@ -809,9 +815,7 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
     local firstSnap = allSnapshots[1]
     local lastSnap  = allSnapshots[#allSnapshots]
 
-    -- Use per-core penalty weights when CoreManager is available
-    local penalties = (BRutus.CoreManager and BRutus.CoreManager:GetPenalties(groupTag))
-                      or self.PENALTIES
+    local penalties = self:GetPenalties(groupTag)
 
     for playerKey in pairs(allPlayers) do
         if not groupAtt[playerKey] then
