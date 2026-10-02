@@ -169,8 +169,8 @@ Removed: `Compat.NewTimer`.
 | `BRutus:ColorText(text, r, g, b)` | Wraps text in WoW `\|cff...` color escape |
 | `BRutus:FormatItemLevel(ilvl)` | Quality-color-coded item level string |
 | `BRutus:GetPlayerKey(name, realm)` | "Name-Realm", byte for byte as in 0.53.0; the name alone when neither the caller nor `BRutus:GetClientRealm()` has a realm (nil or ""); nil for no name (ADR-0018) |
-| `BRutus:RosterKey(name)` | The roster frame's key for somebody on the roster (roster name, its realm or the player's) and the shown name; nil when nobody has that name (issue #49) |
-| `BRutus:SplitNameAndText(rest)` | `<name> <text>` from a slash command: a Forever two-word name when it is on the roster, else the first word; nil when the whole text is a name (issue #49) |
+| `BRutus:RosterKey(name)` | The roster frame's key for somebody on the roster (roster name, its realm or the player's), the shown name and the roster's whole name; nil when nobody has that name (issue #49) |
+| `BRutus:SplitNameAndText(rest)` | `<name> <text>` from a slash command: a Forever two-word name when it is exactly somebody's roster name, else the first word; nil when the whole text is exactly a roster name, with or without realm (issue #49) |
 | `BRutus:TimeAgo(timestamp)` | Returns "Xm ago / Xh ago / Xd ago" string |
 | `BRutus:HookChatInvite()` | Alt+Click player names → guild invite via SetItemRef hook |
 | `BRutus:GetStaleProfessions()` | Returns primary professions with recipe scan age > 24h |

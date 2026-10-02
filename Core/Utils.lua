@@ -161,23 +161,32 @@ end
 
 -- The roster's own key for somebody on it, built the way the roster frame builds it (the
 -- roster name, on the realm its line gives or the player's), so a note typed for them lands
--- where their sheet reads it. Nil and nil when nobody on the roster has that name.
+-- where their sheet reads it; then the shown name and the roster's whole name. Nil when
+-- nobody on the roster has that name.
 function BRutus:RosterKey(name)
     local idx = self.Compat.FindGuildRosterIndex(name)
     local full = idx and GetGuildRosterInfo(idx)
     if not full then return nil end
     local shown = full:match("^([^-]+)") or full
-    return self:GetPlayerKey(shown, full:match("-(.+)$") or GetRealmName()), shown
+    return self:GetPlayerKey(shown, full:match("-(.+)$") or GetRealmName()), shown, full
+end
+
+-- Exactly somebody's roster name, with or without the realm. The roster lookup cuts at the
+-- hyphen, so "Bob-Spineshatter great" would otherwise pass for Bob.
+local function isRosterName(self, text)
+    local _, shown, full = self:RosterKey(text)
+    return shown ~= nil and (text == shown or text == full)
 end
 
 -- "<name> <text>" from a slash command. On WoW: Forever a name is two words ("Lethaniel
 -- Blightwood"), so the first two are the name when they are somebody on the roster;
 -- otherwise the first word, as it always was (issue #49).
 function BRutus:SplitNameAndText(rest)
+    rest = strtrim(rest)
     -- A whole name and nothing after it is a name with no note, not "Blightwood" as one.
-    if self.Compat.FindGuildRosterIndex(strtrim(rest)) then return nil end
+    if isRosterName(self, rest) then return nil end
     local first, second, after = rest:match("^(%S+)%s+(%S+)%s+(.+)$")
-    if first and self.Compat.FindGuildRosterIndex(first .. " " .. second) then
+    if first and isRosterName(self, first .. " " .. second) then
         return first .. " " .. second, after
     end
     return rest:match("^(%S+)%s+(.+)$")

@@ -58,6 +58,8 @@ local key, shown = BRutus:RosterKey("Lethaniel Blightwood")
 check(key == BRutus:GetPlayerKey("Lethaniel Blightwood", "Classic Beta PvE 2") and shown == "Lethaniel Blightwood",
       "the key is the roster frame's own: the roster name, on the player's realm")
 check(BRutus:RosterKey("Lethaniel") == nil, "the first name alone is nobody")
+name, text = BRutus:SplitNameAndText("Lethaniel late twice")
+check(name == "Lethaniel" and text == "late twice", "a first name alone reads as a one-word name, for the command to flag")
 
 -- ── Anniversary: Name-Realm on the roster ───────────────────────────────
 ROSTER = { "Ana-Firemaw", "Bob-Spineshatter" }
@@ -65,6 +67,14 @@ name, text = BRutus:SplitNameAndText("Bob great tank")
 check(name == "Bob" and text == "great tank", "Anniversary: the first word is the name")
 key = BRutus:RosterKey("Bob")
 check(key == BRutus:GetPlayerKey("Bob", "Spineshatter"), "a cross-realm member keeps the realm the roster gives")
+-- The roster lookup cuts at the hyphen; a name is only a name when it is the roster's whole
+-- name, with or without the realm. "Name-Realm" text is a name and a note, not a name alone.
+name, text = BRutus:SplitNameAndText("Bob-Spineshatter great tank")
+check(name == "Bob-Spineshatter" and text == "great tank", "Name-Realm then a note: the note survives")
+name, text = BRutus:SplitNameAndText("Ana-Firemaw needs work")
+check(name == "Ana-Firemaw" and text == "needs work", "the same for a same-realm Name-Realm")
+check(BRutus:SplitNameAndText("Bob-Spineshatter") == nil, "the whole Name-Realm and nothing else is no note")
+check(BRutus:RosterKey("Bob-Spineshatter") == BRutus:GetPlayerKey("Bob", "Spineshatter"), "and Name-Realm keys like the roster")
 
 -- ── The popup's edit box, on both clients ───────────────────────────────
 local classicBox, foreverBox = {}, {}
