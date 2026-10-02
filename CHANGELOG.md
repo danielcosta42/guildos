@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.6] - 2026-10-02
+
+### Fixed
+- o teto de nível do Forever é 60, não 70 (#53)
+
+
 ## [0.59.5] - 2026-10-02
 
 ### Fixed
