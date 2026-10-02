@@ -129,6 +129,14 @@ function BRutus:ApplyFont(fontString, size, role)
     if file ~= SERIF and file ~= SERIF_STRONG then
         px = math.max(MONO_MIN, px)
     end
+    -- The player's choice (issue #57): the client's own font at the same sizes. A personal
+    -- display preference, so it lives at the account root (GuildOSDB.font) and follows the
+    -- player to every alt and guild, as the minimap button's does. Read on every call; a
+    -- text drawn before a change keeps its font until the interface reloads.
+    if type(GuildOSDB) == "table" and GuildOSDB.font == "game" then
+        fontString:SetFont(STANDARD_TEXT_FONT, px, "")
+        return STANDARD_TEXT_FONT, px
+    end
     -- Only an explicit false means the file did not load; clients that return
     -- nothing on success must not be pushed onto the fallback.
     if fontString:SetFont(file, px, "") == false then
