@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.5] - 2026-10-02
+
+### Fixed
+- a tela de engajamento mostra os números de quem está olhando (#51)
+
+
 ## [0.59.4] - 2026-10-02
 
 ### Fixed
