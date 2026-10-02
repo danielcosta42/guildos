@@ -622,6 +622,72 @@ do
   for _, k in ipairs(NAMES) do _G[k] = saved[k] end
 end
 
+-- WoW: Forever (issue #48): inside a raid a /roll's line arrives secret, so the master
+-- looter could read no roll at all. There the roll is asked through the addon and the
+-- master looter's addon draws it.
+do
+  local NAMES = { "UnitName", "UnitFullName", "RandomRoll", "GetNumGroupMembers" }
+  local saved = {}
+  for _, k in ipairs(NAMES) do saved[k] = _G[k] end
+  UnitFullName = function() return "Ana", "Costa" end   -- Forever: first name and surname apart
+  local has = BRutus.Client.has
+  local secrets, surnames, random = has.secrets, has.surnames, math.random
+  local send, isML, testMode = LM.SafeSendAddon, LM.IsMasterLooter, LM.testMode
+  local sent, rolled = {}, {}
+  LM.SafeSendAddon = function(_, _, payload) sent[#sent + 1] = payload end
+  RandomRoll = function(lo, hi) rolled[#rolled + 1] = lo .. "-" .. hi end
+  math.random = function(_, hi) return hi end   -- the top of the range, so the range shows
+  LM.testMode = false
+
+  has.secrets, has.surnames = true, true
+  LM:SendMyRoll("MS")
+  check(sent[#sent] == "ROLL|MS" and #rolled == 0, "on Forever a roll is asked through the addon, never /roll")
+  LM:SendMyRoll("PASS")
+  check(sent[#sent] == "ROLL|MS" and #sent == 1, "and a pass asks for nothing")
+
+  -- The master looter's side. Forever's UnitName answers the first name and the surname
+  -- apart; the addon-message sender is the whole name.
+  UnitName = function(unit)
+    if unit == "player" then return "Ana" end
+    if unit == "raid1" then return "Bob", "Costa" end
+  end
+  GetNumGroupMembers = function() return 1 end
+  LM.IsMasterLooter = function() return true end
+  LM.activeLoot, LM.rolls, LM.listeningForRolls, LM.restrictedRollers = { link = HOOD, itemId = 30107 }, {}, true, nil
+  local bob = BRutus:GetPlayerKey("Bob Costa")
+  LM:OnAddonMessage("BRutusLM", "ROLL|MS", "RAID", "Bob Costa")
+  local first = LM.rolls[bob]
+  check(first and first.rollType == "MS" and first.roll == 100, "the master looter draws 1-100 for a raider's main-spec roll")
+  check(sent[#sent] == "ROLLED|Bob Costa|MS|100", "and tells the raid what came up")
+  LM:OnAddonMessage("BRutusLM", "ROLL|OS", "RAID", "Bob Costa")
+  check(LM.rolls[bob] == first, "asking again does not roll again: the first draw stands")
+  LM:OnAddonMessage("BRutusLM", "ROLL|MS", "RAID", "Stranger Who")
+  check(LM.rolls[BRutus:GetPlayerKey("Stranger Who")] == nil, "somebody not in the raid is not drawn for")
+  LM.rolls = {}
+  LM:OnAddonMessage("BRutusLM", "ROLL|OS", "RAID", "Bob Costa")
+  check(LM.rolls[bob] and LM.rolls[bob].roll == 99 and LM.rolls[bob].rollType == "OS", "an off-spec roll is drawn 1-99")
+  LM.rolls, LM.restrictedRollers = {}, { ["cy costa"] = true }
+  LM:OnAddonMessage("BRutusLM", "ROLL|MS", "RAID", "Bob Costa")
+  check(LM.rolls[bob] == nil, "a tie re-roll still takes only the tied")
+  LM.restrictedRollers = nil
+  LM:OnAddonMessage("BRutusLM", "ROLL|XX", "RAID", "Bob Costa")
+  check(LM.rolls[bob] == nil, "an unknown roll type is ignored")
+  LM.listeningForRolls = false
+  LM:OnAddonMessage("BRutusLM", "ROLL|MS", "RAID", "Bob Costa")
+  check(LM.rolls[bob] == nil, "and nothing is drawn when no roll is open")
+
+  -- Anniversary: the buttons /roll, as before.
+  has.secrets, has.surnames = false, false
+  sent = {}
+  LM:SendMyRoll("OS")
+  check(rolled[1] == "1-99" and #sent == 0, "on Anniversary a roll is still a /roll 1-99 for off-spec")
+
+  has.secrets, has.surnames, math.random = secrets, surnames, random
+  LM.SafeSendAddon, LM.IsMasterLooter, LM.testMode = send, isML, testMode
+  LM.activeLoot, LM.rolls, LM.listeningForRolls = nil, {}, false
+  for _, k in ipairs(NAMES) do _G[k] = saved[k] end
+end
+
 -- ── 7. The roster request and the consumable check ──────────────────────
 local asked, opened = {}, false
 C_GuildInfo = { GuildRoster = function() asked[#asked + 1] = "ns" end }

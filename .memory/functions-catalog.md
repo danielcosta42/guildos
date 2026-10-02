@@ -360,6 +360,9 @@ Removed: `Compat.NewTimer`.
 | `LootMaster:Initialize()` | DB setup, builds roll pattern, registers events |
 | `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player |
 | `LootMaster:IsMasterLooter()` | 4-tier check: IsMasterLooter → GetLootMethod → C_PartyInfo → leader rank |
+| `LootMaster:SendMyRoll(rollType)` | MS/OS: `/roll` on Anniversary; on a client with secrets (Forever) asks the master looter through the addon (`ROLL|`) (issue #48) |
+| `LootMaster:DrawRoll(sender, rollType)` | Master looter: draws 1-100/1-99 for an addon roll request, first draw per person stands, broadcasts `ROLLED|` |
+| `LootMaster:AcceptRoll(roller, rollType, roll)` | In-raid (incl. Forever first name + surname) and tie-restriction checks, then `RegisterRoll`; true when registered |
 | `LootMaster:HookBagClicks()` | Alt+click on a bag item → roll: hooks `ContainerFrameItemButton_OnModifiedClick` (Anniversary) or `HandleModifiedItemClick` with the item location (Forever), never both (issue #44) |
 | `LootMaster:RollFromBagClick(bagId, slotId)` | The click's checks (module on, Alt, master looter), then `RollFromBag` |
 | `LootMaster:StartListeningForRolls()` | Sets listeningForRolls = true |

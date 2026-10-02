@@ -352,6 +352,14 @@ function LootMaster:ProcessSystemRoll(message)
         return
     end
 
+    self:AcceptRoll(roller, rollType, roll)
+end
+
+----------------------------------------------------------------------
+-- Register a roll from somebody in the raid, by whichever door it came: a readable
+-- /roll line, or the addon (WoW: Forever). True when it was registered.
+----------------------------------------------------------------------
+function LootMaster:AcceptRoll(roller, rollType, roll)
     -- Strip realm suffix that may appear in some client versions
     local cleanName = roller:match("^([^%-]+)") or roller
 
@@ -360,8 +368,11 @@ function LootMaster:ProcessSystemRoll(message)
     if not inRaid then
         local numMembers = GetNumGroupMembers() or 0
         for i = 1, numMembers do
-            local uName = BRutus.Compat.UnitIdentity("raid" .. i)
-            if uName and (uName == cleanName or uName == roller) then
+            -- On WoW: Forever UnitName answers the first name and the surname apart, and the
+            -- roller is the whole name (issue #48).
+            local uName, uSecond = BRutus.Compat.UnitIdentity("raid" .. i)
+            if uName and (uName == cleanName or uName == roller
+                or (BRutus.Client.has.surnames and uSecond and uName .. " " .. uSecond == roller)) then
                 inRaid = true
                 break
             end
@@ -372,14 +383,37 @@ function LootMaster:ProcessSystemRoll(message)
         end
     end
 
-    if not inRaid then return end
+    if not inRaid then return false end
 
     -- Restricted-roll session: only allowed players may roll; ignore everyone else silently
     if self.restrictedRollers and not self.restrictedRollers[strlower(cleanName)] then
-        return
+        return false
     end
 
     self:RegisterRoll(cleanName, rollType, roll)
+    return true
+end
+
+----------------------------------------------------------------------
+-- WoW: Forever: inside a raid a /roll's line arrives secret, so it can never be read
+-- (issue #48). There a roll is asked through the addon, and the master looter's addon
+-- draws it. The sender is the server's word, so nobody rolls for somebody else; the
+-- first draw per person stands, or asking again would be rolling until it came up high.
+----------------------------------------------------------------------
+function LootMaster:UsesAddonRolls()
+    return BRutus.Client.has.secrets
+end
+
+function LootMaster:DrawRoll(sender, rollType)
+    if not self.listeningForRolls or not self.activeLoot then return end
+    if rollType ~= "MS" and rollType ~= "OS" then return end
+    if not sender or BRutus.Compat.IsSecret(sender) then return end
+    local name = sender:match("^([^%-]+)") or sender
+    if self.rolls and self.rolls[BRutus:GetPlayerKey(name)] then return end
+    local roll = math.random(1, rollType == "MS" and 100 or 99)
+    if not self:AcceptRoll(sender, rollType, roll) then return end
+    self:SafeSendAddon("BRutusLM", string.format("ROLLED|%s|%s|%d", name, rollType, roll), "RAID")
+    BRutus:Print(string.format(L["%s rolled %d (%s)"], name, roll, rollType))
 end
 
 ----------------------------------------------------------------------
@@ -931,6 +965,17 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
             self:ShowRollPopup(link, duration, itemId)
         end
 
+    elseif cmd == "ROLL" then
+        -- WoW: Forever: a raider asks; only the master looter draws (issue #48).
+        if self:IsMasterLooter() then self:DrawRoll(sender, rest) end
+
+    elseif cmd == "ROLLED" then
+        -- What the master looter drew, for everybody else with the addon to see.
+        local name, rollType, roll = rest:match("^([^|]+)|(%u%u)|(%d+)$")
+        if name and not self:IsMasterLooter() then
+            BRutus:Print(string.format(L["%s rolled %d (%s)"], name, tonumber(roll), rollType))
+        end
+
     elseif cmd == "AWARD" then
         -- ML awarded item.
         -- Extended format: playerName|itemId|quality|raidName|itemLink
@@ -1418,12 +1463,15 @@ end
 -- The ML captures the result via CHAT_MSG_SYSTEM — no addon comm needed.
 ----------------------------------------------------------------------
 function LootMaster:SendMyRoll(rollType)
-    if rollType == "MS" then
-        RandomRoll(1, 100)
-    elseif rollType == "OS" then
-        RandomRoll(1, 99)
-    end
     -- PASS: nothing to send — simply not rolling is sufficient
+    if rollType ~= "MS" and rollType ~= "OS" then return end
+    if not self:UsesAddonRolls() then
+        RandomRoll(1, rollType == "MS" and 100 or 99)
+    elseif IsInRaid() and not self.testMode then
+        self:SafeSendAddon("BRutusLM", "ROLL|" .. rollType, "RAID")
+    else
+        self:DrawRoll(BRutus.Compat.PlayerName(), rollType)   -- solo test: the master looter rolls alone
+    end
 end
 
 ----------------------------------------------------------------------
@@ -1766,7 +1814,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     msBtn:SetPoint("BOTTOMLEFT", 15, 12)
     msBtn:SetBackdropColor(0.0, 0.4, 0.0, 0.6)
     msBtn:SetScript("OnClick", function()
-        RandomRoll(1, 100)
+        LootMaster:SendMyRoll("MS")
         f:Hide()
         BRutus:Print(L["Rolled |cff00ff00MS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-100")
     end)
@@ -1775,7 +1823,7 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     osBtn:SetPoint("BOTTOM", 0, 12)
     osBtn:SetBackdropColor(0.3, 0.3, 0.0, 0.6)
     osBtn:SetScript("OnClick", function()
-        RandomRoll(1, 99)
+        LootMaster:SendMyRoll("OS")
         f:Hide()
         BRutus:Print(L["Rolled |cffFFFF00OS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-99")
     end)
@@ -2772,7 +2820,7 @@ function LootMaster:ShowRollFrame()
     osRollBtn:SetPoint("BOTTOMRIGHT", -10, 12)
     osRollBtn:SetBackdropColor(0.3, 0.3, 0.0, 0.6)
     osRollBtn:SetScript("OnClick", function()
-        RandomRoll(1, 99)   -- /roll 1-99 = OS; captured by ProcessSystemRoll
+        LootMaster:SendMyRoll("OS")   -- /roll 1-99, or through the addon on Forever (issue #48)
     end)
     osRollBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -2786,7 +2834,7 @@ function LootMaster:ShowRollFrame()
     msRollBtn:SetPoint("RIGHT", osRollBtn, "LEFT", -4, 0)
     msRollBtn:SetBackdropColor(0.0, 0.35, 0.0, 0.6)
     msRollBtn:SetScript("OnClick", function()
-        RandomRoll(1, 100)  -- /roll 1-100 = MS; captured by ProcessSystemRoll
+        LootMaster:SendMyRoll("MS")   -- /roll 1-100, or through the addon on Forever (issue #48)
     end)
     msRollBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")

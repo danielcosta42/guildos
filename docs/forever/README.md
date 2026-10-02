@@ -113,6 +113,7 @@ indexing or doing arithmetic with it raises.
   copy the change there.
 - **Two small ones:** `RecipeTracker:ScanCraft` checks `GetCraftInfo` too, and `ChatTweaks` checks
   `ChatFrame_AddMessageEventFilter` before registering.
+- **Loot rolls (issue #48).** `CHAT_MSG_SYSTEM` is `SecretInChatMessagingLockdown`, and inside a dungeon or raid that is always: the `/roll` line can never be read there, so the master looter counted no roll at all. On a client with secrets the roll buttons send `ROLL|MS` / `ROLL|OS` over `BRutusLM` (`CHAT_MSG_ADDON` carries no secret flag), the master looter's addon draws 1-100 / 1-99 and tells the raid (`ROLLED|`), the first draw per person stands, and the in-raid check also matches `UnitName`'s first name + surname. Only raiders with the addon can roll there, which a secret `/roll` already meant.
 - **The test.** `tools/secret-values.lua` (luajit, 48 checks) loads the real Core, Compat, Utils and eleven modules
   under a stubbed client, with a secret that raises on every use. Each handler also gets a readable line, so one that
   returns unconditionally fails too.
