@@ -291,19 +291,33 @@ function CoreManager:GetAwardHistory(coreName)
 end
 
 ----------------------------------------------------------------------
--- Attendance penalties — per-core with fallback to defaults
+-- Attendance penalties: a core's own weight, else the guild's, else the default. The guild's
+-- (`coreName` "", kept in db.attendancePenalties) score every raid outside a core and every
+-- core that set none of its own (issue #55): before them a guild without cores could not
+-- change a thing.
 ----------------------------------------------------------------------
 function CoreManager:GetPenalties(coreName)
     local core = self:GetCore(coreName)
-    local p = core and core.attendance and core.attendance.penalties or {}
-    return {
-        LATE        = (p.LATE        ~= nil) and p.LATE        or DEFAULT_PENALTIES.LATE,
-        LEFT_EARLY  = (p.LEFT_EARLY  ~= nil) and p.LEFT_EARLY  or DEFAULT_PENALTIES.LEFT_EARLY,
-        NO_CONSUMES = (p.NO_CONSUMES ~= nil) and p.NO_CONSUMES or DEFAULT_PENALTIES.NO_CONSUMES,
-    }
+    local own = core and core.attendance and core.attendance.penalties or {}
+    local guild = BRutus.db.attendancePenalties or {}
+    local out = {}
+    for key, default in pairs(DEFAULT_PENALTIES) do
+        if own[key] ~= nil then out[key] = own[key]
+        elseif guild[key] ~= nil then out[key] = guild[key]
+        else out[key] = default end
+    end
+    return out
 end
 
+-- A weight is a whole number of points from 0 (off) to 100.
 function CoreManager:SetPenalty(key, value, coreName)
+    if DEFAULT_PENALTIES[key] == nil then return end
+    value = math.max(0, math.min(100, math.floor(tonumber(value) or 0)))
+    if coreName == "" then
+        BRutus.db.attendancePenalties = BRutus.db.attendancePenalties or {}
+        BRutus.db.attendancePenalties[key] = value
+        return
+    end
     local core = self:GetCore(coreName)
     if not core then return end
     if not core.attendance           then core.attendance           = {} end

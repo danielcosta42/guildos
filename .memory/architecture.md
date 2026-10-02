@@ -229,6 +229,7 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
   officerNotes     = { [key] = { notes=[], tags={} } },
   managementLog    = [{ action, target, detail, author, timestamp }],  -- capped ring buffer (200)
   raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions },
+  attendancePenalties = { LATE, LEFT_EARLY, NO_CONSUMES },  -- the guild's weights (CoreManager, #55); cores override
   lootHistory      = [{ itemId, itemLink, playerName, raidName, timestamp }],
   lootMaster       = { rollDuration, autoAnnounce, wishlistOnlyMode, awardHistory },
   guildWishlists   = { [lowerName] = { name, class, wishlist=[] } },
