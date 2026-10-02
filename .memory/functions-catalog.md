@@ -738,3 +738,10 @@ Forever only (`Modules/Look.lua` returns at once on Anniversary).
 | `DataCollector:GetBroadcastData()` | Carries `look`; receivers keep it through the generic merge |
 | `CompanionExport` payload v8 | Each member row carries `look` when the record has a list |
 | `tools/look.lua` | Drives the module through a stubbed chair: read, keep, quiet repeat, a preview is not kept, a purchase kept after the chair is gone, no erase, cap, Anniversary |
+
+## RecruitEngagement.lua
+
+| Function | Purpose |
+|---|---|
+| `RecruitEngagement:GetAggregate(now)` | Rows and totals for the engagement screen: the reports received over GUILD, with the viewer's own built locally by `_OwnPacket` (CommSystem drops one's own messages, so the echo never carried it; issue #51). Shown, never stored |
+| `RecruitEngagement:BroadcastStats()` | Sends `_OwnPacket` over GUILD (`RECRUIT_STATS`), answering a REQUEST |
