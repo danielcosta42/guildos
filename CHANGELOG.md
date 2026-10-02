@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.7] - 2026-10-02
+
+### Fixed
+- penalidades de presença editáveis e desligáveis sem Core (#55)
+
+
 ## [0.59.6] - 2026-10-02
 
 ### Fixed
