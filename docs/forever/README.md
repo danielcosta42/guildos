@@ -154,6 +154,9 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
   (battlegrounds), and a winter Warsong Gulch.
 - **6,715 item ids** that Classic Era does not have. The same ten classes.
 - **The beta:** 2026-09-17 to 2026-10-21, level cap 30, no raids. Launch 2026-11-04; raids 2026-12-09.
+- **The level cap is 60.** `BRutus.Client.maxLevel` (70 on Anniversary) says it, and every check that means "the top
+  level" reads it: the dashboard's raid-ready count, the roster's level colour, the Raiders panel, the top level
+  bracket, the ding milestone and the recruit scan (issue #53). Before that, all of them assumed 70.
 
 ## Still for the game to answer
 

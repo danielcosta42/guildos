@@ -77,8 +77,10 @@ check(CL.version == "2.5.6" and CL.build == "63110" and CL.date == "Sep 1 2026" 
   "the build fields come from GetBuildInfo")
 check(CL.projectId == 5, "the project id is kept for diagnostics")
 check(CL.isAnniversary == true, "TBC Anniversary is recognised")
+-- maxLevel is the game's cap (issue #53), a fact that follows isAnniversary, not a guess.
+check(CL.maxLevel == 70, "Anniversary stops at 70")
 local DOCUMENTED = { version = true, build = true, date = true, interface = true, projectId = true,
-  isAnniversary = true, has = true }
+  isAnniversary = true, maxLevel = true, has = true }
 for key in pairs(CL) do
   check(DOCUMENTED[key], "BRutus.Client carries no flavour guess beyond its documented fields (" .. tostring(key) .. ")")
 end
@@ -86,6 +88,7 @@ end
 client(FOREVER)
 check(BRutus.Client.isAnniversary == false and BRutus.Client.projectId == 2 and BRutus.Client.interface == 16000,
   "a 1.60 client is not Anniversary")
+check(BRutus.Client.maxLevel == 60, "and WoW: Forever stops at 60")
 client(REUSED_ID)
 check(BRutus.Client.isAnniversary == false, "project id 5 on a 1.60 build is not Anniversary")
 client({ version = "2.5.6", build = "1", interface = 20506, project = 2, tbcProject = 5 })

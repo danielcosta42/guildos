@@ -14,7 +14,8 @@ end
 
 function GuildAnalytics:_LevelBracket(level)
     level = level or 0
-    if level >= 70 then return "70" end
+    local cap = BRutus.Client.maxLevel
+    if level >= cap then return tostring(cap) end
     local lo = math.floor(level / 10) * 10
     if lo == 0 then return "1-9" end
     return lo .. "-" .. (lo + 9)
@@ -226,8 +227,9 @@ function GuildAnalytics:_RegisterTests()
         return true
     end)
     S:Register("analytics.level_bracket", function()
-        if GuildAnalytics:_LevelBracket(70) ~= "70" then return false, "70" end
-        if GuildAnalytics:_LevelBracket(65) ~= "60-69" then return false, "60-69" end
+        local cap = BRutus.Client.maxLevel
+        if GuildAnalytics:_LevelBracket(cap) ~= tostring(cap) then return false, "cap" end
+        if GuildAnalytics:_LevelBracket(55) ~= "50-59" then return false, "50-59" end
         if GuildAnalytics:_LevelBracket(5) ~= "1-9" then return false, "1-9" end
         return true
     end)

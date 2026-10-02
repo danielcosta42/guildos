@@ -26,6 +26,9 @@ BRutus.Client = {
     interface = interface,
     projectId = WOW_PROJECT_ID,  -- diagnostics only; never branch on it
     isAnniversary = isAnniversary,
+    -- The game's level cap: TBC's 70, WoW: Forever's 60 (issue #53). The Forever beta caps
+    -- lower for a while; the game is 60, and that is what "the top" means to a guild.
+    maxLevel = isAnniversary and 70 or 60,
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
