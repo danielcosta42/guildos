@@ -296,12 +296,9 @@ end
 -- Layer 2: sync (CommSystem RECRUIT_STATS)
 ----------------------------------------------------------------------
 
--- Derive and broadcast this client's compact self-report over GUILD.
--- Answered from CommSystem:HandleRequest (login + periodic pull), so an
--- officer logging in converges on a fresh picture. Small; no throttle need.
-function RecruitEngagement:BroadcastStats()
-    if not BRutus.CommSystem or not IsInGuild() then return end
-    local now = time()
+-- This client's own self-report: what BroadcastStats sends, and what the screen shows for
+-- the viewer (GetAggregate).
+function RecruitEngagement:_OwnPacket(now)
     self:_PruneLocal(now)
     local s = self:_Stats()
     local function lastOf(list) return (#list > 0) and list[#list] or 0 end
@@ -324,8 +321,16 @@ function RecruitEngagement:BroadcastStats()
         part = part,
         last = last,
     }
+    return packet
+end
+
+-- Derive and broadcast this client's compact self-report over GUILD.
+-- Answered from CommSystem:HandleRequest (login + periodic pull), so an
+-- officer logging in converges on a fresh picture. Small; no throttle need.
+function RecruitEngagement:BroadcastStats()
+    if not BRutus.CommSystem or not IsInGuild() then return end
     BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RECRUIT_STATS,
-        LibSerialize:Serialize(packet))
+        LibSerialize:Serialize(self:_OwnPacket(time())))
 end
 
 -- Incoming self-report. Identity is the ENVELOPE sender (never the payload):
@@ -353,8 +358,17 @@ end
 -- Layer 3: aggregate for the UI (thin wrapper over the pure _Aggregate)
 ----------------------------------------------------------------------
 function RecruitEngagement:GetAggregate(now)
-    local store = (BRutus.db and BRutus.db.recruitStats) or {}
-    return self:_Aggregate(store, now or time())
+    now = now or time()
+    local store = {}
+    for key, entry in pairs((BRutus.db and BRutus.db.recruitStats) or {}) do store[key] = entry end
+    -- My own numbers from here, never from the wire: CommSystem drops my own messages, so a
+    -- report that relied on the echo never arrived on Anniversary, and on WoW: Forever
+    -- stopped arriving the day PlayerName learned the surname (issue #51). Shown, not stored.
+    if BRutus.db then
+        local me = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+        if me then store[me] = self:_SanitizeStats(self:_OwnPacket(now), now) end
+    end
+    return self:_Aggregate(store, now)
 end
 
 ----------------------------------------------------------------------
