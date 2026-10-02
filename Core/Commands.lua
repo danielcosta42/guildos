@@ -309,11 +309,15 @@ local function handleCommand(msg)
         end
     elseif msg == "note" or msg:match("^note%s") then
         local rest = msg:gsub("^note%s*", "")
-        local target, noteText = rest:match("^(%S+)%s+(.+)$")
+        -- A Forever name is two words, and the note lands on the key the roster gives (issue #49).
+        local target, noteText = BRutus:SplitNameAndText(rest)
         if target and noteText and BRutus.OfficerNotes then
-            local key = BRutus:GetPlayerKey(target)
-            if BRutus.OfficerNotes:AddNote(key, noteText) then
-                BRutus:Print(L["Note added for "] .. target)
+            local key = BRutus:RosterKey(target)
+            -- Somebody off the roster still gets the note (the PUG inspector reads them), but
+            -- the officer is told: "Lethaniel" on Forever is nobody's sheet.
+            if BRutus.OfficerNotes:AddNote(key or BRutus:GetPlayerKey(target), noteText) then
+                BRutus:Print(key and (L["Note added for "] .. target)
+                    or string.format(L["Note added for %s, who matches no single guild member: check the full name."], target))
             end
         else
             BRutus:Print(L["Usage: /guildos note <PlayerName> <text>"])

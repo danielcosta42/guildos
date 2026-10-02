@@ -119,6 +119,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
 | `Compat.InviteUnit(name)` | Group invite: `C_PartyInfo.InviteUnit`, else `InviteUnit`, else `InviteByName`; nothing on a client with none (issue #43) |
 | `Compat.GetItemQualityColor(quality)` / `Compat.GetItemCount(item, includeBank)` | `C_Item`'s, else the old global's; white / 0 with neither (issue #43) |
+| `Compat.PopupEditBox(dialog)` | A StaticPopup's edit box: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
 | `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
 | `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |
@@ -168,6 +169,8 @@ Removed: `Compat.NewTimer`.
 | `BRutus:ColorText(text, r, g, b)` | Wraps text in WoW `\|cff...` color escape |
 | `BRutus:FormatItemLevel(ilvl)` | Quality-color-coded item level string |
 | `BRutus:GetPlayerKey(name, realm)` | "Name-Realm", byte for byte as in 0.53.0; the name alone when neither the caller nor `BRutus:GetClientRealm()` has a realm (nil or ""); nil for no name (ADR-0018) |
+| `BRutus:RosterKey(name)` | The roster frame's key for somebody on the roster (roster name, its realm or the player's), the shown name and the roster's whole name; nil when nobody has that name (issue #49) |
+| `BRutus:SplitNameAndText(rest)` | `<name> <text>` from a slash command: a Forever two-word name when it is exactly somebody's roster name, else the first word; nil when the whole text is exactly a roster name, with or without realm (issue #49) |
 | `BRutus:TimeAgo(timestamp)` | Returns "Xm ago / Xh ago / Xd ago" string |
 | `BRutus:HookChatInvite()` | Alt+Click player names → guild invite via SetItemRef hook |
 | `BRutus:GetStaleProfessions()` | Returns primary professions with recipe scan age > 24h |

@@ -515,6 +515,14 @@ function Compat.GetItemCount(item, includeBank)
     return 0
 end
 
+-- A StaticPopup's edit box. Anniversary keeps it at `editBox`; WoW: Forever's popup (the
+-- retail one) at `EditBox`, behind `GetEditBox()`, with `editBox` nil (issue #49).
+function Compat.PopupEditBox(dialog)
+    if not dialog then return nil end
+    if dialog.GetEditBox then return dialog:GetEditBox() end
+    return dialog.editBox or dialog.EditBox
+end
+
 -- WoW: Forever has no talent tabs: each class is one trait tree (issue #41). Returns the
 -- active tree's nodes as { {x = posX, points = ranks bought}, ... }, or nil and why:
 -- "no-api" on a client with no trait trees at all, "no-config" before the talents have

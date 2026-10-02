@@ -6,6 +6,38 @@ local UI = BRutus.UI
 local C = BRutus.Colors
 local L = BRutus.L
 
+-- An officer note from the roster's right-click menu (issue #49). data = { key, name }: the
+-- key is the roster's own, the one the member sheet reads notes by.
+local function SaveOfficerNote(data, text)
+    text = text and strtrim(text) or ""
+    if not data or text == "" or not BRutus.OfficerNotes then return end
+    if BRutus.OfficerNotes:AddNote(data.key, text) then
+        BRutus:Print(L["Note added for "] .. data.name)
+    end
+end
+
+StaticPopupDialogs["GUILDOS_OFFICER_NOTE"] = {
+    text = L["Officer note for %s"],
+    button1 = L["Save"], button2 = CANCEL,
+    hasEditBox = true, maxLetters = 200,
+    -- The box through Compat: WoW: Forever's popup has no `editBox`.
+    OnShow = function(self)
+        local box = BRutus.Compat.PopupEditBox(self)
+        if box then box:SetText(""); box:SetFocus() end
+    end,
+    OnAccept = function(self, data)
+        local box = BRutus.Compat.PopupEditBox(self)
+        SaveOfficerNote(data, box and box:GetText())
+    end,
+    EditBoxOnEnterPressed = function(editBox, data)
+        local dialog = editBox:GetParent()
+        SaveOfficerNote(data or dialog.data, editBox:GetText())
+        dialog:Hide()
+    end,
+    EditBoxOnEscapePressed = function(editBox) editBox:GetParent():Hide() end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+
 -- Returns -1 if a < b, 0 if equal, 1 if a > b (semver major.minor.patch)
 local function CompareVersions(a, b)
     local function parts(v)
@@ -1432,8 +1464,9 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info.notCheckable = true
             info.text = L["|cff8888FFAdd Note|r"]
             info.func = function()
-                -- Simple note via chat input
-                BRutus:Print(string.format(L["Use: /guildos note %s <your note>"], data.name))
+                -- A box to type it in (issue #49): only printing the slash command left a Forever
+                -- officer with a command that read "Lethaniel" for "Lethaniel Blightwood".
+                StaticPopup_Show("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
             end
             UIDropDownMenu_AddButton(info, level)
         end

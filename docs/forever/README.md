@@ -113,6 +113,7 @@ indexing or doing arithmetic with it raises.
   copy the change there.
 - **Two small ones:** `RecipeTracker:ScanCraft` checks `GetCraftInfo` too, and `ChatTweaks` checks
   `ChatFrame_AddMessageEventFilter` before registering.
+- **Names with a surname, in commands (issue #49).** `/guildos note <name> <text>` read the name as the first word, so a Forever name ("Lethaniel Blightwood") lost its surname into the note. `BRutus:SplitNameAndText` takes the first two words when they are somebody on the roster, and `BRutus:RosterKey` keys the note the way the roster frame does. **The popup's edit box** is `EditBox` / `GetEditBox()` on Forever and `editBox` is nil: `Compat.PopupEditBox` reads either.
 - **The test.** `tools/secret-values.lua` (luajit, 48 checks) loads the real Core, Compat, Utils and eleven modules
   under a stubbed client, with a secret that raises on every use. Each handler also gets a readable line, so one that
   returns unconditionally fails too.
