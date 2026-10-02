@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.59.4] - 2026-10-02
+
+### Fixed
+- o aviso da nota fora do roster cobre também o nome ambíguo (#49)
+- o nome do comando de nota bate exatamente com o roster, e uma nota fora do roster avisa (#49)
+- notas de oficial funcionam no Forever — nome com sobrenome e popup com caixa (#49)
+
+
 ## [0.59.3] - 2026-10-01
 
 ### Fixed
