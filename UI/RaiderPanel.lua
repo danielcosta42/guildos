@@ -1,6 +1,6 @@
 ----------------------------------------------------------------------
 -- Guild OS - Raiders panel
--- Officer-curated pool of the guild's raiders (level 70), independent of any
+-- Officer-curated pool of the guild's raiders (at the level cap), independent of any
 -- one raid. Officers hand-manage Roles (multi), a Gear status, and a Note per
 -- player (no addon required on the listed player); the row auto-enriches with
 -- iLvl + spec read-only when that player DOES run the addon.
@@ -207,12 +207,12 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
         local child2 = f.child
         child2:SetWidth(f.holder:GetWidth())
 
-        -- Gather level-70 guild members (offline included).
+        -- Gather the guild's members at the level cap (offline included; issue #53).
         local list = {}
         local n = GetNumGuildMembers() or 0
         for i = 1, n do
             local name, _, _, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
-            if name and (level or 0) >= 70 then
+            if name and (level or 0) >= BRutus.Client.maxLevel then
                 local short = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
                 list[#list + 1] = { name = short, key = BRutus:GetPlayerKey(short, realm), class = classFile, online = online }
@@ -332,7 +332,7 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
 
         if #list == 0 then
             if not f.emptyFS then
-                f.emptyFS = UI:CreateText(child2, L["No level-70 members found."], 11, C.silver.r, C.silver.g, C.silver.b)
+                f.emptyFS = UI:CreateText(child2, string.format(L["No level-%d members found."], BRutus.Client.maxLevel), 11, C.silver.r, C.silver.g, C.silver.b)
                 f.emptyFS:SetPoint("TOPLEFT", 6, -6)
             end
             f.emptyFS:Show()

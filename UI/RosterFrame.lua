@@ -1240,12 +1240,12 @@ function UpdateRosterRow(row, data, rowIndex)
         row.addonDot:Hide()
     end
 
-    -- Level with color coding
+    -- Level with color coding: gold at the cap, green within ten of it
     local level = data.level
     local lr, lg, lb
-    if level >= 70 then
+    if level >= BRutus.Client.maxLevel then
         lr, lg, lb = C.gold.r, C.gold.g, C.gold.b
-    elseif level >= 60 then
+    elseif level >= BRutus.Client.maxLevel - 10 then
         lr, lg, lb = C.green.r, C.green.g, C.green.b
     else
         lr, lg, lb = C.white.r, C.white.g, C.white.b

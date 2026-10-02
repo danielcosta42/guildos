@@ -10,7 +10,7 @@ local L = BRutus.L
 RecruitScanner.DEFAULTS = {
     template    = "Hi [player], we're recruiting — whisper me if interested!",
     minLevel    = 0,
-    maxLevel    = 70,
+    maxLevel    = BRutus.Client.maxLevel,
     classes     = {},     -- set { WARRIOR=true }; empty = any
     batchMax    = 10,
     cooldownSec = 1800,
@@ -72,7 +72,9 @@ function RecruitScanner:Scan(onDone)
     self._onScanDone = onDone
     BRutus.Compat.SetWhoToUI(true)
     -- level-range query; Blizzard caps results (~50). classes filtered post-hoc.
-    local q = string.format("%d-%d", (cfg.minLevel or 1) > 0 and cfg.minLevel or 1, cfg.maxLevel or 70)
+    -- Capped at the game's top: a Forever client saved 70 here before it knew its cap (issue #53).
+    local cap = BRutus.Client.maxLevel
+    local q = string.format("%d-%d", (cfg.minLevel or 1) > 0 and cfg.minLevel or 1, math.min(cfg.maxLevel or cap, cap))
     BRutus.Compat.SendWho(q)
     BRutus.Compat.After(6, function()
         if RecruitScanner._scanBusy then RecruitScanner:_FinishScan() end
@@ -240,7 +242,7 @@ function RecruitScanner:BuildInto(container)
         minBox:SetText(tostring(cfg.minLevel or 0))
         minBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitMin(s)
-            cfg.minLevel = math.max(0, math.min(70, tonumber(s:GetText()) or 0))
+            cfg.minLevel = math.max(0, math.min(BRutus.Client.maxLevel, tonumber(s:GetText()) or 0))
             s:SetText(tostring(cfg.minLevel))
             s:ClearFocus()
         end
@@ -255,10 +257,11 @@ function RecruitScanner:BuildInto(container)
         maxBox:SetAutoFocus(false)
         maxBox:SetNumeric(true)
         maxBox:SetMaxLetters(2)
-        maxBox:SetText(tostring(cfg.maxLevel or 70))
+        local cap = BRutus.Client.maxLevel
+        maxBox:SetText(tostring(math.min(cfg.maxLevel or cap, cap)))
         maxBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitMax(s)
-            cfg.maxLevel = math.max(0, math.min(70, tonumber(s:GetText()) or 70))
+            cfg.maxLevel = math.max(0, math.min(cap, tonumber(s:GetText()) or cap))
             s:SetText(tostring(cfg.maxLevel))
             s:ClearFocus()
         end

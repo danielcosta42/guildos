@@ -182,7 +182,7 @@ function BRutus:CreateDashboardPanel(panel)
         end
         local avgIlvl = iN > 0 and math.floor(iSum / iN) or 0
 
-        -- Raid-ready = max-level (70) members, counted straight from the guild
+        -- Raid-ready = max-level members (70, or 60 on Forever), counted straight from the guild
         -- roster so offline members count too — a stable, motivating number even
         -- with the guild offline. Level is a roster field known for everyone, so
         -- this needs no synced data. (Future: also gate on attunement.)
@@ -190,7 +190,7 @@ function BRutus:CreateDashboardPanel(panel)
         local n = GetNumGuildMembers() or 0
         for i = 1, n do
             local _, _, _, level = GetGuildRosterInfo(i)
-            if (level or 0) >= 70 then ready = ready + 1 end
+            if (level or 0) >= BRutus.Client.maxLevel then ready = ready + 1 end
         end
         local stats = {
             { string.format("%d", online),  L["online"],     C.online },

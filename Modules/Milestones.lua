@@ -1,6 +1,6 @@
 ----------------------------------------------------------------------
 -- Guild OS - Milestones & Anniversaries
--- Detects guildmate milestones from synced data (dinged 70, completed a
+-- Detects guildmate milestones from synced data (dinged the level cap, completed a
 -- new attunement) and guild-join anniversaries (from first-seen). These
 -- surface in the login digest. Detection is fed by DataCollector when it
 -- stores received member data.
@@ -33,8 +33,9 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
     if not hadPrior or not data then return end
     local name = data.name or (key:match("^([^-]+)") or key)
 
-    if prevLevel and prevLevel < 70 and (data.level or 0) >= 70 then
-        self:Record("ding", key, name, "70")
+    local cap = BRutus.Client.maxLevel
+    if prevLevel and prevLevel < cap and (data.level or 0) >= cap then
+        self:Record("ding", key, name, tostring(cap))
     end
 
     local newCount = 0
