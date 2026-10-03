@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.4] - 2026-10-03
+
+### Fixed
+- no Forever, o Loot Master não manda linha de raide sem clique (#63)
+
+
 ## [0.61.3] - 2026-10-03
 
 ### Fixed
