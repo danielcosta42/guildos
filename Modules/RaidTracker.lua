@@ -967,6 +967,8 @@ function RaidTracker:BroadcastRaidData()
     BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RAID_DATA, serialized)
 end
 
+-- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
+-- and the channel GUILD (issue #78). Any other caller must check the same.
 function RaidTracker:HandleIncoming(data)
     if not BRutus:IsOfficer() then return end
 

@@ -244,6 +244,8 @@ function TrialTracker:BroadcastTrials()
     BRutus.CommSystem:SendMessage("TR", serialized)
 end
 
+-- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
+-- and the channel GUILD (issue #78). Any other caller must check the same.
 function TrialTracker:HandleIncoming(data)
     if not BRutus:IsOfficer() then return end
 

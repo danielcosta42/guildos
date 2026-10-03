@@ -239,11 +239,15 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             BRutus.Wishlist:HandleWishlistBroadcast(sender, data)
         end
     elseif msgType == "LP" then
-        if BRutus.Wishlist then
+        -- Officer-set priorities, stored by everyone: only an officer's, over GUILD, replace them.
+        -- The channel matters as much as the name: IsOfficerByName drops the realm, so a
+        -- namesake on another realm could whisper as the officer (issue #78).
+        if BRutus.Wishlist and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             BRutus.Wishlist:HandleLootPriosBroadcast(sender, data)
         end
     elseif msgType == "ON" then
-        if BRutus.OfficerNotes then
+        -- Only an officer writes officer notes, and only an officer keeps them (issue #78).
+        if BRutus.OfficerNotes and BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             BRutus.OfficerNotes:HandleIncoming(data)
         end
     elseif msgType == "RC" then
@@ -251,7 +255,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             BRutus.RecipeTracker:HandleIncoming(sender, data)
         end
     elseif msgType == "TR" then
-        if BRutus.TrialTracker and BRutus:IsOfficer() then
+        if BRutus.TrialTracker and BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             BRutus.TrialTracker:HandleIncoming(data)
         end
     elseif msgType == "RR" then
@@ -274,7 +278,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     elseif msgType == CommSystem.MSG_TYPES.LFG then
         if BRutus.LFGBoard then BRutus.LFGBoard:HandleEntry(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DATA then
-        if BRutus:IsOfficer() and BRutus.RaidTracker then
+        if BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) and BRutus.RaidTracker then
             BRutus.RaidTracker:HandleIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DELETE then
@@ -283,7 +287,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             BRutus.RaidTracker:HandleDeleteIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.NOTES_ALL then
-        if BRutus:IsOfficer() and BRutus.OfficerNotes then
+        if BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) and BRutus.OfficerNotes then
             BRutus.OfficerNotes:HandleAllIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.SYNC_V2 then
@@ -293,8 +297,10 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             BRutus.SyncService:OnEnvelope(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_INTENT then
-        -- Another officer is also considering welcoming this member; record their intent
-        if BRutus.Recruitment and data and data ~= "" then
+        -- Another officer is also considering welcoming this member; record their intent. The
+        -- welcome race is the officers', over GUILD: anybody else could win the tie-break with a
+        -- low-sorting name, or suppress a welcome with a claim (issue #78).
+        if BRutus.Recruitment and data and data ~= "" and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             BRutus.Recruitment._welcomeIntents = BRutus.Recruitment._welcomeIntents or {}
             BRutus.Recruitment._welcomeIntents[data] = BRutus.Recruitment._welcomeIntents[data] or {}
             BRutus.Recruitment._welcomeIntents[data][sender] = true
@@ -302,7 +308,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_CLAIM then
         -- Another officer already sent the welcome — suppress ours. Every client gets this, and
         -- only an officer's Recruitment:Initialize creates the table (issue #77).
-        if BRutus.Recruitment and data and data ~= "" then
+        if BRutus.Recruitment and data and data ~= "" and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             BRutus.Recruitment._welcomedRecently = BRutus.Recruitment._welcomedRecently or {}
             BRutus.Recruitment._welcomedRecently[data] = true
             BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true

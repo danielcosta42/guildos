@@ -286,6 +286,13 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 | RC   | (raw string)  | Recipe broadcast |
 | TR   | (raw string)  | Trial data broadcast |
 
+**Who may send them (issue #78).** `WC`, `WI`, `LP`, `ON`, `OA`, `TR` and `RD` are believed only over
+GUILD from a current officer (`IsOfficerByName(sender)`); `RX` and `AL` check the officer, and `RI` binds
+trust to channel and sender in `Recruitment:ApplyIncoming`. Every legitimate sender of these is
+officer-gated at the source and sends over GUILD. `officerMaxRank` is stored per account and guild
+(`GuildOSDB[guild-realm].settings`) and never synced: a rank ticked as officer on one account (an "Officer
+Alt" rank, say) is not an officer to clients that did not tick it, and its messages are dropped there (#81).
+
 ---
 
 ## UI Architecture
