@@ -135,13 +135,35 @@ function Compat.SendWho(filter)
     end
 end
 
--- Route /who results to the API (true) or the Social frame (false)
+-- Route /who results to the API (true) or the Social frame (false). The function is
+-- C_FriendList.SetWhoToUi, lower-case i, on every client: the old spelling found nothing on
+-- either client, so a /who started here never reached WHO_LIST_UPDATE (issue #71). The other
+-- two stay as a fallback. Blizzard's own Who list turns the flag on while it is open; giving it
+-- back (false) while that list is up would stop the list refreshing, so then it stays on.
 function Compat.SetWhoToUI(toApi)
-    if C_FriendList and C_FriendList.SetWhoToUI then
+    if not toApi and ((WhoFrame and WhoFrame:IsVisible()) or (LFGWhoListFrame and LFGWhoListFrame:IsVisible())) then
+        toApi = true
+    end
+    if C_FriendList and C_FriendList.SetWhoToUi then
+        C_FriendList.SetWhoToUi(toApi and true or false)
+    elseif C_FriendList and C_FriendList.SetWhoToUI then
         C_FriendList.SetWhoToUI(toApi and true or false)
     elseif SetWhoToUI then
         SetWhoToUI(toApi and 1 or 0)
     end
+end
+
+-- The /who filter for one exact character, built the way each client's own UI builds it
+-- (ItemRefHandlers.lua): WHO_TAG_EXACT ("x-") plus the name, and on WoW: Forever the name with
+-- its surname separator swapped for the link one, which a name with a surname needs. A client
+-- with neither gets the n-"Name" filter (issue #71).
+function Compat.WhoExact(name)
+    if WHO_TAG_EXACT and C_NameUtil and C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator then
+        return WHO_TAG_EXACT .. C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator(name)
+    elseif WHO_TAG_EXACT then
+        return WHO_TAG_EXACT .. name
+    end
+    return 'n-"' .. name .. '"'
 end
 
 -- Best map ID for a unit (C_Map on BCC/modern). Returns nil when the API is

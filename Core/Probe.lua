@@ -49,7 +49,8 @@ Probe.APIS = {
     -- C_ namespaces
     "C_ChatInfo.RegisterAddonMessagePrefix", "C_ChatInfo.SendAddonMessage", "C_Container.GetContainerItemInfo",
     "C_Container.GetContainerItemLink", "C_Container.GetContainerNumSlots", "C_Container.UseContainerItem",
-    "C_FriendList.GetNumWhoResults", "C_FriendList.GetWhoInfo", "C_FriendList.SendWho", "C_FriendList.SetWhoToUI",
+    "C_FriendList.GetNumWhoResults", "C_FriendList.GetWhoInfo", "C_FriendList.SendWho", "C_FriendList.SetWhoToUi",
+    "C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator",
     "C_GuildInfo.GuildRoster", "C_GuildInfo.SetNote", "C_Map.GetBestMapForUnit", "C_Map.GetMapInfo",
     "C_Map.GetPlayerMapPosition", "C_PartyInfo.GetLootMethod", "C_PartyInfo.InviteUnit", "C_PlayerInfo.ShouldDisplaySurname",
     "C_QuestLog.GetTitleForQuestID", "C_QuestLog.IsQuestFlaggedCompleted", "C_Timer.After", "C_Timer.NewTicker",

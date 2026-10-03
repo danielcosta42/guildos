@@ -161,6 +161,10 @@ read_globals = {
     -- /who lookups
     "SetWhoToUI",
     "C_FriendList",
+    "C_NameUtil",      -- WoW: Forever: the surname separator in a /who filter (issue #71)
+    "WHO_TAG_EXACT",
+    "WhoFrame",         -- Blizzard's Who lists: Anniversary's and Forever's
+    "LFGWhoListFrame",
 
     -- WoW API: Guild management
     "IsGuildLeader",

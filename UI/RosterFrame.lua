@@ -1429,7 +1429,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     info.notCheckable = true
     info.text = WHO or L["Who"]
     info.func = function()
-        BRutus.Compat.SendWho("n-" .. data.name)
+        BRutus.Compat.SendWho(BRutus.Compat.WhoExact(data.name))
     end
     UIDropDownMenu_AddButton(info, level)
 

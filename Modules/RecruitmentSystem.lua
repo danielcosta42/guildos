@@ -427,7 +427,7 @@ function Recruitment:_QualifyAndInvite(sender)
     end
     BRutus.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
     BRutus.Compat.SetWhoToUI(true)   -- results to the API, not the Social frame
-    BRutus.Compat.SendWho('n-"' .. sender .. '"')
+    BRutus.Compat.SendWho(BRutus.Compat.WhoExact(sender))
     -- Timeout: /who is throttled; give it 6s then fail-safe.
     BRutus.Compat.After(6, function()
         if Recruitment._whoBusy == sender then Recruitment:_FinishWho(sender, nil) end
