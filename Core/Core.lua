@@ -533,7 +533,12 @@ function BRutus:HookGuildFrame()
                 -- error, until /reload.
                 if GuildFrame then HideUIPanel(GuildFrame) end
                 if CommunitiesFrame then HideUIPanel(CommunitiesFrame) end
-                if not self:IsFrontDoorShown() then
+                -- With Guild OS already up this press is a close: we hid Blizzard's frame on
+                -- the press that opened us, so its toggle shows it again instead of hiding
+                -- it, and the key never closed anything (issue #66).
+                if self:IsFrontDoorShown() then
+                    self:HideFrontDoor()
+                else
                     self:ToggleRoster()
                 end
             elseif self:IsFrontDoorShown() then

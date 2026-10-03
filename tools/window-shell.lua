@@ -388,10 +388,19 @@ check(f:IsShown() and f.activeTab == "raids", "a tab picked there opens in the w
 f:Hide()
 BRutus:HookGuildFrame()
 check(type(hooks.ToggleGuildFrame) == "function", "the guild key is hooked after Blizzard's toggle, not replaced")
-GuildFrame:Show()
-hooks.ToggleGuildFrame()
+-- The guild key as the game runs it: Blizzard's toggle shows its frame when hidden and hides it
+-- when shown, and the hook runs after. Guild OS hid that frame, so the next press shows it again.
+local function pressJ()
+  if GuildFrame:IsShown() then GuildFrame:Hide() else GuildFrame:Show() end
+  hooks.ToggleGuildFrame()
+end
+pressJ()
 check(not GuildFrame:IsShown() and f:IsShown(), "the guild key opens Guild OS in place of Blizzard's frame")
-hooks.ToggleGuildFrame()
+pressJ()
+check(not f:IsShown() and not GuildFrame:IsShown(), "and the next press closes it, Blizzard's frame too (issue #66)")
+pressJ()
+check(f:IsShown(), "and the one after opens it again")
+pressJ()
 check(not f:IsShown(), "and closes it again")
 local native
 for _, c in ipairs(GuildFrame.children) do if c.kind == "Button" and c.text == "Guild OS" then native = c end end
