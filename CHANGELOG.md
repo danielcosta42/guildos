@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.6] - 2026-10-03
+
+### Fixed
+- cores fora da paleta viram tokens, e o roxo so quer dizer epico (#69)
+
+
 ## [0.61.5] - 2026-10-03
 
 ### Fixed
