@@ -37,6 +37,10 @@ function GetRealmName() return "Realm" end
 C_Timer = { After = function() end, NewTicker = function() end }
 Enum = { SendAddonMessageResult = {} }
 StaticPopupDialogs = {}
+-- The sender is an officer of this guild: since issue #78 nobody else's claim counts.
+function IsInGuild() return true end
+function GetNumGuildMembers() return 1 end
+function GetGuildRosterInfo(i) if i == 1 then return "Preaseance Rezplease", "Officer", 0 end end
 
 -- The wire: what the officer's client compressed and encoded, the stubs hand back as is.
 local registry = {}
