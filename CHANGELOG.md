@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.5] - 2026-10-03
+
+### Fixed
+- /who usa o SetWhoToUi certo e o filtro exato de cada cliente (#71)
+
+
 ## [0.61.4] - 2026-10-03
 
 ### Fixed
