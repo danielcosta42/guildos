@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.0] - 2026-10-03
+
+### Added
+- configurações que só existiam por comando ganham tela (#59)
+
+
 ## [0.60.0] - 2026-10-02
 
 ### Added
