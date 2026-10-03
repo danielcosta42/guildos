@@ -158,7 +158,8 @@ ladder (#14); the minimap "G" wordmark (#17).
 - [x] Fonts, licences and textures in `Media/`
 - [x] Font call sites through `ApplyFont` (242); CI guard against `FRIZQT__`
 - [x] Components in `UI/Helpers.lua`; legacy `panel` uses moved to `bg`
-- [x] `tools/forever-skin.lua` (348 checks; the violet scan adds one per file in the TOC) and
+- [x] `tools/forever-skin.lua` (348 checks; the violet scan adds one per file in the TOC; #69
+  added a scan for any violet by range and a guard on the fills it removed, 620 now) and
   `tools/forever-components.lua` (138 checks; #14 added 4 for sub-tabs, 142 now)
 - [x] Docs: ADR-0013, functions catalog, Media README
 - [ ] Manual check with screenshots on Anniversary

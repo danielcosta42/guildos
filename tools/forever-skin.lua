@@ -103,6 +103,67 @@ check(hasOldViolet("x(0.56 , 0.48 , 0.82)") and hasOldViolet("return .56, 0.480,
   and hasOldViolet('"|cff8F7BD1"') and hasOldViolet('CreateColorFromHexString("ff8f7ad1")')
   and not hasOldViolet("0.57, 0.48, 0.82") and not hasOldViolet('"|cffD9A94F"'),
   "the violet scan catches it in decimals, across lines and as hex")
+-- Any violet, not only the old one (issue #69): red beating green and blue leading
+-- both. A blue with more green than red is info. The palette's cool neutrals lean
+-- that way on purpose, by 0.048 at most (lineHi), so a token may lead by under
+-- 0.055; a colour written by hand may not lead by 0.02, since any lean it needs
+-- belongs to a token. The scan reads each Set*Color* call (SetColorTexture too),
+-- taking the first number in each of the first three arguments, so `sel and 0.14
+-- or 0` counts as 0.14.
+local function isViolet(r, g, b, lead)
+  return r > g and b - math.max(r, g) >= lead
+end
+local function colourLines(src, test)
+  local hits = {}
+  for pos, args in src:gmatch("()Set%a*Color%a*%s*(%b())") do
+    local ch, n = {}, 0
+    for arg in (args:sub(2, -2) .. ","):gmatch("([^,]*),") do
+      n = n + 1
+      ch[n] = tonumber(arg:match("%d*%.?%d+") or "")
+      if n == 3 then break end
+    end
+    if ch[1] and ch[2] and ch[3] and test(ch[1], ch[2], ch[3]) then
+      local _, newlines = src:sub(1, pos):gsub("\n", "")
+      hits[#hits + 1] = newlines + 1
+    end
+  end
+  return hits
+end
+local function violetLines(src)
+  return colourLines(src, function(r, g, b) return isViolet(r, g, b, 0.02) end)
+end
+for key, col in pairs(C) do
+  if key ~= "epic" and type(col) == "table" and col.r then
+    check(not isViolet(col.r, col.g, col.b, 0.055), key .. " does not read as violet")
+  end
+end
+check(#violetLines("b:SetBackdropColor(0.260, 0.160, 0.360, 0.7)") == 1
+  and #violetLines("self:SetBackdropColor(0.160, 0.150, 0.220, 1)") == 1
+  and #violetLines("x:SetVertexColor(0.56,0.48,0.82)") == 1
+  and violetLines("a()\nrow:SetBackdropColor(\n  sel and 0.14 or 0,\n  sel and 0.10 or 0,\n  sel and 0.26 or 0)")[1] == 2
+  and #violetLines("self:SetBackdropColor(0.160, 0.150, 0.210, 1.0)") == 1
+  and #violetLines("t:SetColorTexture(0.26, 0.16, 0.36, 1)") == 1
+  and #violetLines("b:SetBackdropColor (0.26, 0.16, 0.36)") == 1
+  and #violetLines("fb:SetBackdropColor(0.100, 0.100, 0.130, 1.0)") == 0
+  and #violetLines("x:SetTextColor(0.357, 0.576, 0.812)") == 0
+  and #violetLines("fs:SetTextColor(r, 0.82, 0, 1)") == 0
+  and #violetLines("bar:SetStatusBarColor(heat, 0.8, 0.2, 1)") == 0
+  and #violetLines("x:SetBackdropColor(C.epic.r, C.epic.g, C.epic.b)") == 0,
+  "the range scan catches violet and leaves neutrals, info, variables and tokens alone")
+-- The other fills #69 took out (olive, orange, brown), so none of them is pasted back,
+-- however it is spelled.
+local OFF_PALETTE = { { 0.3, 0.3, 0 }, { 0.4, 0.15, 0 }, { 0.6, 0.2, 0 }, { 0.10, 0.08, 0.03 }, { 0.18, 0.14, 0.04 } }
+local function offPaletteLines(src)
+  return colourLines(src, function(r, g, b)
+    for _, t in ipairs(OFF_PALETTE) do
+      if near3(r, g, b, t[1], t[2], t[3], 0.005) then return true end
+    end
+    return false
+  end)
+end
+check(#offPaletteLines("osBtn:SetBackdropColor(.30, .3, 0, 0.6)") == 1
+  and #offPaletteLines("x:SetBackdropColor(0.3, 0.3, 0.05, 1)") == 0,
+  "the off-palette guard reads numbers, not spellings")
 local toc = assert(io.open(ADDON .. "/GuildOS.toc", "r"), "GuildOS.toc")
 local scanned = 0
 for line in toc:lines() do
@@ -114,6 +175,10 @@ for line in toc:lines() do
       f:close()
       scanned = scanned + 1
       check(not hasOldViolet(src), path .. " has no hard-coded Obsidian violet")
+      local hits = violetLines(src)
+      check(#hits == 0, path .. " sets no violet by hand (line " .. table.concat(hits, ", ") .. ")")
+      hits = offPaletteLines(src)
+      check(#hits == 0, path .. " brings back no fill #69 removed (line " .. table.concat(hits, ", ") .. ")")
     end
   end
 end
