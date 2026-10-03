@@ -72,6 +72,7 @@ local function printHelp()
     helpLine("/gos selftest", L["Run the built-in self test"])
     helpLine("/gos errors",   L["Show recent errors"])
     helpLine("/gos probe",    L["Record this client's facts for the Forever beta"])
+    helpLine("/gos probe chat", L["Post two test lines in guild chat to see whether an addon may post on its own"])
     helpLine("/gos debug",    L["Toggle debug output"])
 
     -- These verbs are refused inside their own modules for non-officers, so
@@ -267,6 +268,9 @@ local function handleCommand(msg)
     elseif msg == "probe" then
         -- Client facts for the WoW: Forever beta, into GuildOSDB.probe (ADR-0015).
         if BRutus.Probe then BRutus.Probe:Run() end
+    elseif msg == "probe chat" then
+        -- Whether chat from a timer gets through, measured (issue #75).
+        if BRutus.Probe then BRutus.Probe:RunChat() end
     elseif msg == "reset" then
         if BRutus.guildKey then
             if GuildOSDB then GuildOSDB[BRutus.guildKey] = nil end

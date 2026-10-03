@@ -154,10 +154,13 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
   (battlegrounds), and a winter Warsong Gulch.
 - **6,715 item ids** that Classic Era does not have. The same ten classes.
 - **The beta:** 2026-09-17 to 2026-10-21, level cap 30, no raids. Launch 2026-11-04; raids 2026-12-09.
-- **Chat lines, guild invites and /who need a click.** `SendChatMessage` and `SendWho` are `HasRestrictions` (since
-  build 70009). In game on 2026-10-02 (build 70170) a GUILD line sent from a `C_Timer` callback went nowhere, with no
-  error, and an auto-invite answering a whisper printed but invited nobody, while the same invite from an Alt-click
-  worked. `Compat.NeedsClick()` says so. On Forever the welcome waits in a popup, a keyword whisper's invite waits in
+- **Chat lines, guild invites and /who need a click.** `SendChatMessage` is `HasRestrictions` in every beta build's API
+  documentation, 69893 included, and on Anniversary 2.5.6 too, so the flag says nothing about when it started to bite.
+  In game on 2026-10-02 (build 70170) a GUILD line sent from a `C_Timer` callback went nowhere; on 70205 the same line
+  printed "Interface action failed because of an AddOn". That line is printed once a session, on the first block of
+  any kind, so its absence on 70170 proves nothing. Also on 70170, an auto-invite answering a whisper printed but
+  invited nobody, while the same invite from an Alt-click worked.
+  `Compat.NeedsClick()` says so. On Forever the welcome waits in a popup, a keyword whisper's invite waits in
   another, and the scanner's whispers go one per click (issue #61). The welcome's claim still goes out when the
   officers decide, so the other officers stand down and the winner's popup stays up until it is sent or dismissed.
   The invite uses the whisper's name exactly as the game gave it, which is what an Alt-click's link invites with. The
@@ -165,6 +168,12 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
   timers prints for the loot master only on Forever (`SafeSendChatAuto`): the per-roll "MS converted to OS" and
   prio/wishlist lines, and "[WINNER]" or "No roll received" when time runs out; the countdown is not scheduled there, and the End Rolling
   button still announces the winner.
+  - **Measured, not assumed:** `/guildos probe chat` (issue #75) posts one line from the command and one from a timer,
+    checks each by its echo in `CHAT_MSG_GUILD`, and saves the result with every block the game raised and the
+    client's active addon restrictions (`C_RestrictedActions.IsAddOnRestrictionActive`: Combat, Encounter,
+    ChallengeMode, PvPMatch, Map or Chat) in `GuildOSDB.probeChat`.
+  - **Every block is named:** `ADDON_ACTION_BLOCKED`/`FORBIDDEN` (addon and function) and `MACRO_ACTION_BLOCKED`/
+    `FORBIDDEN` (function) go to `/guildos errors`, once per event, addon and function a session.
 - **The level cap is 60.** `BRutus.Client.maxLevel` (70 on Anniversary) says it, and every check that means "the top
   level" reads it: the dashboard's raid-ready count, the roster's level colour, the Raiders panel, the top level
   bracket, the ding milestone and the recruit scan (issue #53). Before that, all of them assumed 70.
