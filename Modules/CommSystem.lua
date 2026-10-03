@@ -300,8 +300,10 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             BRutus.Recruitment._welcomeIntents[data][sender] = true
         end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_CLAIM then
-        -- Another officer already sent the welcome — suppress ours
+        -- Another officer already sent the welcome — suppress ours. Every client gets this, and
+        -- only an officer's Recruitment:Initialize creates the table (issue #77).
         if BRutus.Recruitment and data and data ~= "" then
+            BRutus.Recruitment._welcomedRecently = BRutus.Recruitment._welcomedRecently or {}
             BRutus.Recruitment._welcomedRecently[data] = true
             BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true
         end
