@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.62.2] - 2026-10-03
+
+### Fixed
+- mensagens de oficial so valem vindas de um oficial, pelo GUILD (#78)
+
+
 ## [0.62.1] - 2026-10-03
 
 ### Fixed
