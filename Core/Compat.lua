@@ -742,6 +742,20 @@ function Compat.NeedsClick()
     return not BRutus.Client.isAnniversary
 end
 
+-- Does the server show this channel without raid icons? It is the ChatChannels table's
+-- DisableRaidIcons flag, which the chat event hands the client as suppressRaidIcons. On WoW:
+-- Forever (1.60.1.70170) that is General 1, Trade 2, LocalDefense 22, Services 42 and
+-- TradeLocal 46 (LookingForGroup is not); on Anniversary no channel. By zone channel id, so it
+-- holds in every language; a custom channel has none (issue #64).
+local NO_RAID_ICONS = { [1] = true, [2] = true, [22] = true, [42] = true, [46] = true }
+function Compat.ChannelHidesRaidIcons(name, number)
+    if BRutus.Client.isAnniversary then return false end
+    local get = C_ChatInfo and C_ChatInfo.GetChannelInfoFromIdentifier
+    if not get then return false end
+    local info = get(tostring(name or "")) or (number and get(tostring(number)))
+    return info ~= nil and NO_RAID_ICONS[info.zoneChannelID] == true
+end
+
 -- Send an addon message through ChatThrottleLib; prio is its "BULK" (default), "NORMAL" or "ALERT".
 function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
     queue({ prefix = prefix, text = text, channel = channel, target = target,

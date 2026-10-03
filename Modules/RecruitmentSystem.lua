@@ -178,6 +178,23 @@ function Recruitment:_CanSendNow(lastAt, now, gap)
     return (now - lastAt) >= (gap or 0)
 end
 
+----------------------------------------------------------------------
+-- Raid icons where the server hides them (issue #64). On WoW: Forever, Trade (and General,
+-- LocalDefense, Services) shows "{rt8}" as text while LookingForGroup shows the skull
+-- (Compat.ChannelHidesRaidIcons). The copy posted there leaves the codes out.
+----------------------------------------------------------------------
+-- `{rt1}`..`{rt8}` and the icon words the game knows (ICON_TAG_LIST, localized) come out; a
+-- code between two words leaves a space, so "LFM{rt8}Heroic" stays two words. Braces that are
+-- no icon stay.
+function Recruitment:_StripRaidIcons(msg)
+    local words = ICON_TAG_LIST or {}
+    local out = tostring(msg or ""):gsub("%b{}", function(tag)
+        local t = tag:sub(2, -2):lower()
+        if t:match("^rt[1-8]$") or words[t] then return " " end
+    end)
+    return strtrim((out:gsub("%s%s+", " ")))
+end
+
 -- Should the member AUTO ticker keep firing given how many popups it has shown
 -- this session? Pure so a self test pins the cap without a live ticker.
 function Recruitment:_AutoShouldContinue(popupCount, cap)
@@ -1087,7 +1104,8 @@ function Recruitment:ShowSendPopup()
 
     -- Message preview == exactly what DoSendRecruitmentMessage will post (same
     -- source, same sanitize, same MSG_MAX cap), so the member consents to the
-    -- real content with no hidden tail. The frame auto-sizes to the wrapped text.
+    -- real content with no hidden tail (a channel that hides raid icons gets it without
+    -- their codes, issue #64). The frame auto-sizes to the wrapped text.
     local full = BRutus:SanitizeUserText(raw, self.MSG_MAX)
     f.msgText:SetText("\"" .. full .. "\"")
 
@@ -1140,19 +1158,26 @@ function Recruitment:DoSendRecruitmentMessage()
     -- Sanitize before it ever reaches a public channel under the player's name:
     -- strip chat escapes (textures / unterminated colour / fake links) and cap
     -- at the SendChatMessage limit. Officer and member paths alike. Same cap the
-    -- consent popup previewed, so the member posts exactly what they saw.
+    -- consent popup previewed, so the member posts exactly what they saw (minus raid-icon
+    -- codes where the channel would show them as text, issue #64).
     msg = BRutus:SanitizeUserText(msg, self.MSG_MAX)
     if msg == "" then
         BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
         return
     end
 
-    local sent = false
+    local sent, iconsOnly = false, false
     for _, channelName in ipairs(settings.channels or {}) do
         local channelNum = GetChannelName(channelName)
         if channelNum and channelNum > 0 then
-            SendChatMessage(msg, "CHANNEL", nil, channelNum)
-            sent = true
+            -- Where the server hides raid icons, the copy goes without their codes (issue #64).
+            local text = BRutus.Compat.ChannelHidesRaidIcons(channelName, channelNum) and self:_StripRaidIcons(msg) or msg
+            if text ~= "" then
+                SendChatMessage(text, "CHANNEL", nil, channelNum)
+                sent = true
+            else
+                iconsOnly = true
+            end
         end
     end
 
@@ -1161,6 +1186,8 @@ function Recruitment:DoSendRecruitmentMessage()
         self.lastSend = GetTime()
         if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordPost() end
         BRutus:Print(L["Recruitment message sent!"])
+    elseif iconsOnly then
+        BRutus:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
     else
         BRutus:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
     end
