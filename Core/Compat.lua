@@ -732,6 +732,16 @@ local function queue(msg)
     send(msg)
 end
 
+-- Does a chat line, a guild invite or a /who need a click behind it? On WoW: Forever the game
+-- drops them when an addon starts them from a timer or an event, without an error: in game
+-- (2026-10-02, build 1.60.1.70170) a GUILD line from a C_Timer callback went nowhere, and an
+-- auto-invite answering a whisper printed but invited nobody, while the same invite from an
+-- Alt-click worked. SendChatMessage and SendWho are HasRestrictions there. Anniversary does
+-- them on its own. Anything that has to happen by itself asks for the click on Forever (#61).
+function Compat.NeedsClick()
+    return not BRutus.Client.isAnniversary
+end
+
 -- Send an addon message through ChatThrottleLib; prio is its "BULK" (default), "NORMAL" or "ALERT".
 function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
     queue({ prefix = prefix, text = text, channel = channel, target = target,

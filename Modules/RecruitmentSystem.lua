@@ -288,31 +288,112 @@ function Recruitment:RegisterAutoInviteEvent()
         if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
         local sender = author and (author:match("^([^-]+)") or author)
         if sender and sender ~= "" then
-            Recruitment:_HandleKeywordWhisper(sender)
+            Recruitment:_HandleKeywordWhisper(sender, author)
         end
     end)
 end
 
-function Recruitment:_DoInvite(name)
+-- An invite the whisper earned. On WoW: Forever the game only invites from a click, so the
+-- name waits in the auto-invite popup for the officer (issue #61); elsewhere it goes now.
+-- `full` is the name exactly as the whisper carried it, which is what an Alt-click's link
+-- invites with; Forever invites with it.
+function Recruitment:_DoInvite(name, full)
+    if BRutus.Compat.NeedsClick() then
+        self:QueueInvite(name, full)
+        return
+    end
+    self:_InviteNow(name)
+end
+
+function Recruitment:_InviteNow(name, full)
     local cfg = BRutus.db.recruitment.autoInvite
-    GuildInvite(name)
+    GuildInvite(full or name)
     if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
     BRutus:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
 end
 
-function Recruitment:_HandleKeywordWhisper(sender)
+function Recruitment:_HandleKeywordWhisper(sender, author)
     local cfg = BRutus.db.recruitment.autoInvite
     -- Ban gate (BanList already alerts on a banned whisper)
     if BRutus.BanList and BRutus.BanList:IsBanned(sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
-    -- Filters: no filter set → invite now. (Task 3 inserts the /who path when filters are set.)
-    if (cfg.minLevel or 0) == 0 and (not cfg.classes or next(cfg.classes) == nil) then
-        self:_DoInvite(sender)
-    else
+    -- Filters need a /who, which Forever runs only from a click: there the officer's click on
+    -- the popup is the check, and the filters stay for Anniversary.
+    local filtered = (cfg.minLevel or 0) > 0 or (cfg.classes and next(cfg.classes) ~= nil)
+    if filtered and not BRutus.Compat.NeedsClick() then
         self:_QualifyAndInvite(sender)
+    else
+        self:_DoInvite(sender, author)
     end
+end
+
+----------------------------------------------------------------------
+-- What waits for a click on WoW: Forever (issue #61): the welcome for whoever joined, and the
+-- invites whispers asked for. A queue each, so a burst of joins or whispers is one popup.
+----------------------------------------------------------------------
+local function addOnce(list, name, entry)
+    for _, n in ipairs(list) do
+        if (type(n) == "table" and n.name or n) == name then return false end
+    end
+    list[#list + 1] = entry or name
+    return true
+end
+
+function Recruitment:QueueWelcome(name)
+    self._pendingWelcomes = self._pendingWelcomes or {}
+    addOnce(self._pendingWelcomes, name)
+    self:ShowWelcomePopup()
+end
+
+-- The click: one welcome in guild chat for everyone waiting. False when nobody is.
+function Recruitment:SendPendingWelcome()
+    local list = self._pendingWelcomes
+    local msg = BRutus.db.recruitment and BRutus.db.recruitment.welcomeMessage
+    if not list or #list == 0 or not msg or msg == "" then return false end
+    SendChatMessage(msg, "GUILD")
+    BRutus:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
+    self._pendingWelcomes = {}
+    return true
+end
+
+function Recruitment:DismissPendingWelcome()
+    self._pendingWelcomes = {}
+end
+
+function Recruitment:QueueInvite(name, full)
+    self._pendingInvites = self._pendingInvites or {}
+    if addOnce(self._pendingInvites, name, { name = name, full = full }) then
+        BRutus:Print(string.format(L["|cffFFFFFF%s|r whispered the keyword: invite them from the popup."], name))
+    end
+    self:ShowInvitePopup()
+end
+
+-- The click: invite the one the popup shows, and only that one: on Forever the click is the
+-- only check there is. If they were banned since they were queued (a ban can arrive from
+-- another officer meanwhile) or already invited, they are dropped and the next waits for its
+-- own click. Returns how many are left.
+function Recruitment:InviteNext()
+    local list = self._pendingInvites or {}
+    local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+    local e = table.remove(list, 1)
+    if not (e and cfg) then return #list end
+    if BRutus.BanList and BRutus.BanList:IsBanned(e.name) then
+        BRutus:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
+    elseif not self:_OnInviteCooldown(e.name, GetServerTime()) then
+        self:_InviteNow(e.name, e.full)
+    end
+    return #list
+end
+
+-- Skipped: not invited, and not asked about again until the cooldown runs out.
+function Recruitment:SkipNext()
+    local list = self._pendingInvites or {}
+    local e = table.remove(list, 1)
+    local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+    if e and cfg then self:_MarkInvited(e.name, GetServerTime(), cfg.cooldownSec) end
+    return #list
 end
 
 -- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
@@ -877,6 +958,109 @@ function Recruitment:CreatePopupFrame()
 end
 
 ----------------------------------------------------------------------
+-- The popups that carry a click on WoW: Forever (issue #61), in the recruit popup's style:
+-- a title, a line, a note, and two buttons whose OnClick is the hardware event the game wants.
+----------------------------------------------------------------------
+local function ActionPopup(title, y, okText, laterText)
+    local C, UI = BRutus.Colors, BRutus.UI
+    local PAD, WIDTH = 14, 360
+    local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    f:SetSize(WIDTH, 120)
+    f:SetPoint("TOP", UIParent, "TOP", 0, y)
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    f:SetFrameStrata("DIALOG")
+    UI:StylePopup(f)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); self.moved = true end)
+    f:Hide()
+
+    local t = f:CreateFontString(nil, "OVERLAY")
+    BRutus:ApplyFont(t, 13)
+    t:SetPoint("TOPLEFT", PAD, -12)
+    t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    t:SetText("Guild OS  |cff6c6c78" .. title .. "|r")
+    local sep = UI:CreateSeparator(f)
+    sep:SetPoint("TOPLEFT", PAD, -30)
+    sep:SetPoint("TOPRIGHT", -PAD, -30)
+
+    f.line = f:CreateFontString(nil, "OVERLAY")
+    BRutus:ApplyFont(f.line, 12)
+    f.line:SetPoint("TOPLEFT", PAD, -38)
+    f.line:SetWidth(WIDTH - PAD * 2)
+    f.line:SetJustifyH("LEFT")
+    f.line:SetTextColor(C.text.r, C.text.g, C.text.b)
+
+    f.note = f:CreateFontString(nil, "OVERLAY")
+    BRutus:ApplyFont(f.note, 10)
+    f.note:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -4)
+    f.note:SetWidth(WIDTH - PAD * 2)
+    f.note:SetJustifyH("LEFT")
+    f.note:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+
+    f.okBtn = UI:CreateButton(f, okText, 140, 26)
+    f.okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 12)
+    f.okBtn:SetBaseColor(C.online.r * 0.30, C.online.g * 0.30, C.online.b * 0.30, 0.9)
+    f.laterBtn = UI:CreateButton(f, laterText, 140, 26)
+    f.laterBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 12)
+    -- Grow to the text, like the recruit popup: the note is the line the click posts.
+    function f:Fit()
+        self:SetHeight(38 + self.line:GetStringHeight() + 4 + self.note:GetStringHeight() + 12 + 26 + 12)
+    end
+    return f
+end
+
+function Recruitment:ShowWelcomePopup()
+    local f = self.welcomePopup
+    if not f then
+        -- Below the recruit popup (TOP -80), which grows with a long ad.
+        f = ActionPopup(L["Welcome"], -300, L["Send welcome"], L["Dismiss"])
+        f.okBtn:SetScript("OnClick", function() Recruitment:SendPendingWelcome(); f:Hide() end)
+        f.laterBtn:SetScript("OnClick", function() Recruitment:DismissPendingWelcome(); f:Hide() end)
+        self.welcomePopup = f
+    end
+    local list = self._pendingWelcomes or {}
+    if #list == 0 then f:Hide() return end
+    f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
+    f.note:SetText((BRutus.db.recruitment and BRutus.db.recruitment.welcomeMessage) or "")
+    f:Fit()
+    f:Show()
+    -- An invite popup already up moves under this one instead of being covered by it.
+    if self.invitePopup and self.invitePopup:IsShown() then self:ShowInvitePopup() end
+end
+
+function Recruitment:ShowInvitePopup()
+    local f = self.invitePopup
+    if not f then
+        f = ActionPopup(L["Auto-Invite"], -300, L["Invite"], L["Skip"])
+        f.okBtn:SetScript("OnClick", function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
+        f.laterBtn:SetScript("OnClick", function() Recruitment:SkipNext(); Recruitment:ShowInvitePopup() end)
+        self.invitePopup = f
+    end
+    local list = self._pendingInvites or {}
+    if #list == 0 then f:Hide() return end
+    local line = string.format(L["|cffFFFFFF%s|r whispered the keyword."], list[1].name)
+    if #list > 1 then line = line .. " " .. string.format(L["(+%d waiting)"], #list - 1) end
+    f.line:SetText(line)
+    f.note:SetText(L["On WoW: Forever the game only invites from a click, and level and class are not checked."])
+    f:Fit()
+    if not f.moved then
+        f:ClearAllPoints()
+        local w = self.welcomePopup
+        if w and w:IsShown() then
+            f:SetPoint("TOP", w, "BOTTOM", 0, -8)
+        else
+            f:SetPoint("TOP", UIParent, "TOP", 0, -300)
+        end
+    end
+    f:Show()
+end
+
+----------------------------------------------------------------------
 -- Show the consent popup, populated from the active config.
 ----------------------------------------------------------------------
 function Recruitment:ShowSendPopup()
@@ -1296,8 +1480,15 @@ function Recruitment:RegisterWelcomeEvent()
             local settings = BRutus.db.recruitment
             local welcomeMsg = settings.welcomeMessage
             if welcomeMsg and welcomeMsg ~= "" then
-                SendChatMessage(welcomeMsg, "GUILD")
-                BRutus:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
+                if BRutus.Compat.NeedsClick() then
+                    -- Forever drops a line sent from this timer: the officer's click sends it (#61).
+                    -- The claim above already went out, so the other officers stand down: the
+                    -- popup stays up until this officer sends or dismisses it.
+                    Recruitment:QueueWelcome(newMember)
+                else
+                    SendChatMessage(welcomeMsg, "GUILD")
+                    BRutus:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
+                end
             end
         end)
     end)

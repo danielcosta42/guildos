@@ -2691,7 +2691,9 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     fbHint:SetPoint("LEFT", fbBtn, "RIGHT", 8, 0)
     yOff = yOff - 28
 
-    local aiNote = UI:CreateText(parent, L["Banned players are never invited. Level and class filters are checked with /who."], 10, 0.6, 0.6, 0.65)
+    local aiNote = UI:CreateText(parent, BRutus.Compat.NeedsClick()
+        and L["On WoW: Forever each invite waits for your click in a popup, and level and class are not checked."]
+        or L["Banned players are never invited. Level and class filters are checked with /who."], 10, 0.6, 0.6, 0.65)
     aiNote:SetPoint("TOPLEFT", 30, yOff)
     flexWidth(aiNote, 30)
     yOff = yOff - 30

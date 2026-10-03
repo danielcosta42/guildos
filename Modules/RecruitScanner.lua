@@ -63,6 +63,7 @@ function RecruitScanner:Scan(onDone)
     if self._scanBusy then return end
     self._scanBusy = true
     self._results = {}
+    self._whisperQueue = nil    -- a new scan drops a Forever batch left half sent (issue #61)
     local cfg = BRutus.db.recruitScanner
     if not self._whoFrame then
         self._whoFrame = CreateFrame("Frame")
@@ -119,25 +120,50 @@ function RecruitScanner:WhisperSelected(names)
     if not BRutus:IsOfficer() then return end
     local cfg = BRutus.db.recruitScanner
     local now = GetServerTime()
-    local sent, delay = 0, 0
+    local plan = {}
     for _, name in ipairs(names or {}) do
-        if sent >= (cfg.batchMax or 10) then break end
+        if #plan >= (cfg.batchMax or 10) then break end
         local cd = self._contactCd[name]
         if not (cd and cd > now) then
             local cand
             for _, r in ipairs(self._results) do if r.name == name then cand = r; break end end
-            local msg = self:_ExpandTemplate(cfg.template, cand or { name = name })
-            self._contactCd[name] = now + (cfg.cooldownSec or 1800)
-            sent = sent + 1
-            delay = delay + 1.5    -- throttle: 1.5s between whispers
-            BRutus.Compat.After(delay, function()
-                SendChatMessage(msg, "WHISPER", nil, name)
-            end)
+            plan[#plan + 1] = { name = name, msg = self:_ExpandTemplate(cfg.template, cand or { name = name }) }
         end
     end
-    if sent > 0 then
-        BRutus:Print(string.format(BRutus.L["Whispering %d candidate(s)…"], sent))
+    if #plan == 0 then return end
+    if BRutus.Compat.NeedsClick() then
+        -- WoW: Forever drops a whisper sent from a timer (issue #61): the first goes out in
+        -- this click, the rest one per click on "Whisper next".
+        self._whisperQueue = plan
+        self:WhisperNext()
+        if #plan > 0 then
+            BRutus:Print(string.format(BRutus.L["%d more: click Whisper next to send each one."], #plan))
+        end
+        return
     end
+    for i, w in ipairs(plan) do
+        self._contactCd[w.name] = now + (cfg.cooldownSec or 1800)
+        BRutus.Compat.After(i * 1.5, function()    -- throttle: 1.5s between whispers
+            SendChatMessage(w.msg, "WHISPER", nil, w.name)
+        end)
+    end
+    BRutus:Print(string.format(BRutus.L["Whispering %d candidate(s)…"], #plan))
+end
+
+-- Whispers waiting for a click (WoW: Forever).
+function RecruitScanner:PendingWhispers()
+    return self._whisperQueue and #self._whisperQueue or 0
+end
+
+-- The click: send the next whisper waiting. Returns how many are left.
+function RecruitScanner:WhisperNext()
+    local q = self._whisperQueue
+    local w = q and table.remove(q, 1)
+    if w then
+        SendChatMessage(w.msg, "WHISPER", nil, w.name)
+        self._contactCd[w.name] = GetServerTime() + ((BRutus.db.recruitScanner or {}).cooldownSec or 1800)
+    end
+    return self:PendingWhispers()
 end
 
 ----------------------------------------------------------------------
@@ -168,9 +194,12 @@ if not StaticPopupDialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] then
     StaticPopupDialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] = {
         text = L["Whisper %d players?"],
         button1 = YES, button2 = NO,
-        OnAccept = function(dlg, data)
+        OnAccept = function(dlg, data, data2)
             local names = data or (dlg and dlg.data)
             if names then RecruitScanner:WhisperSelected(names) end
+            -- Repaint the panel that asked, so a Forever batch shows "Whisper next" (issue #61).
+            local refresh = data2 or (dlg and dlg.data2)
+            if type(refresh) == "function" then BRutus:SafeCall(refresh) end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -406,11 +435,17 @@ function RecruitScanner:BuildInto(container)
         local whisperBtn = UI:CreateButton(f, string.format(L["Whisper selected (%d)"], 0), 190, 28)
         whisperBtn:SetPoint("BOTTOMRIGHT", -16, 12)
         whisperBtn:SetScript("OnClick", function()
+            -- WoW: Forever: the last batch's whispers go out one per click (issue #61).
+            if RecruitScanner:PendingWhispers() > 0 then
+                RecruitScanner:WhisperNext()
+                BRutus:SafeCall(refresh)
+                return
+            end
             local names = {}
             for name in pairs(self._selected) do names[#names + 1] = name end
             if #names == 0 then return end
             local dlg = StaticPopup_Show("GUILDOS_SCOUT_WHISPER_CONFIRM", #names, nil, names)
-            if dlg then dlg.data = names end
+            if dlg then dlg.data, dlg.data2 = names, refresh end
         end)
         f.whisperBtn = whisperBtn
 
@@ -455,7 +490,9 @@ function RecruitScanner:BuildInto(container)
         local selCount = 0
         for _ in pairs(self._selected) do selCount = selCount + 1 end
         f.selectedText:SetText(string.format(L["%d selected"], selCount))
-        f.whisperBtn.label:SetText(string.format(L["Whisper selected (%d)"], selCount))
+        local pendingW = RecruitScanner:PendingWhispers()
+        f.whisperBtn.label:SetText(pendingW > 0 and string.format(L["Whisper next (%d)"], pendingW)
+                                   or string.format(L["Whisper selected (%d)"], selCount))
 
         local isResults = (self._view == "results")
         for _, hdr in ipairs(f.colHeader) do hdr:SetShown(isResults) end
