@@ -860,7 +860,6 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     -- Send to disenchanter
     local deCouncilBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
     deCouncilBtn:SetPoint("LEFT", awardBtn, "RIGHT", 8, 0)
-    deCouncilBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deCouncilBtn:SetScript("OnClick", function()
         local loot = LootMaster.activeLoot
         if loot then
@@ -1789,7 +1788,6 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
 
     local osBtn = UI:CreateButton(f, "OS", 90, 26)
     osBtn:SetPoint("BOTTOM", 0, 12)
-    osBtn:SetBackdropColor(0.3, 0.3, 0.0, 0.6)
     osBtn:SetScript("OnClick", function()
         RandomRoll(1, 99)
         f:Hide()
@@ -2060,11 +2058,7 @@ function LootMaster:ShowLootFrame(items)
             row:SetSize(rowW, ROW_H)
             row:SetPoint("TOPLEFT", 0, -yOff)
             row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            row:SetBackdropColor(
-                isSelected and 0.14 or 0,
-                isSelected and 0.10 or 0,
-                isSelected and 0.26 or 0,
-                isSelected and 1    or 0)
+            row:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, isSelected and C.accentSoft.a or 0)
 
             local cr, cg, cb = BRutus:GetClassColor(m.class)
             local rowText = row:CreateFontString(nil, "OVERLAY")
@@ -2085,7 +2079,7 @@ function LootMaster:ShowLootFrame(items)
             end)
             row:SetScript("OnLeave", function(self)
                 if LootMaster:GetDisenchanter() == capturedName then
-                    self:SetBackdropColor(0.160, 0.150, 0.220, 1)
+                    self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
                 else
                     self:SetBackdropColor(0, 0, 0, 0)
                 end
@@ -2208,7 +2202,6 @@ function LootMaster:ShowLootFrame(items)
     -- Send to disenchanter (for items nobody wants)
     local deLootBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
     deLootBtn:SetPoint("RIGHT", openRollBtn, "LEFT", -6, 0)
-    deLootBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deLootBtn:SetScript("OnClick", function()
         if not selectedItem then
             statusText:SetText(L["|cffFF4444Select an item first.|r"])
@@ -2585,7 +2578,7 @@ function LootMaster:ShowLootFrame(items)
         end)
         btn:SetScript("OnLeave", function(self)
             if selectedItem == capturedItem then
-                self:SetBackdropColor(0.180, 0.160, 0.250, 0.9)
+                self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
             else
                 self:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
             end
@@ -2596,7 +2589,7 @@ function LootMaster:ShowLootFrame(items)
                 selectedBtn:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
             end
             selectedBtn = self
-            self:SetBackdropColor(0.180, 0.160, 0.250, 0.9)
+            self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
             LoadItem(capturedItem)
         end)
 
@@ -2651,7 +2644,7 @@ function LootMaster:ShowLootFrame(items)
         local firstBtn = itemBtns[items[1].slot]
         if firstBtn then
             selectedBtn = firstBtn
-            firstBtn:SetBackdropColor(0.180, 0.160, 0.250, 0.9)
+            firstBtn:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
         end
         LoadItem(items[1])
     end
@@ -2760,7 +2753,6 @@ function LootMaster:ShowRollFrame()
         endBtn:ClearAllPoints()
         endBtn:SetPoint("LEFT", deRollBtn, "RIGHT", 8, 0)
     end
-    deRollBtn:SetBackdropColor(0.260, 0.160, 0.360, 0.7)
     deRollBtn:SetScript("OnClick", function()
         if not LootMaster.activeLoot then
             BRutus:Print(L["No active item to send to the disenchanter."])
@@ -2786,7 +2778,6 @@ function LootMaster:ShowRollFrame()
     -- OS button (right-most)
     local osRollBtn = UI:CreateButton(f, "OS", 64, 24)
     osRollBtn:SetPoint("BOTTOMRIGHT", -10, 12)
-    osRollBtn:SetBackdropColor(0.3, 0.3, 0.0, 0.6)
     osRollBtn:SetScript("OnClick", function()
         RandomRoll(1, 99)   -- /roll 1-99 = OS; captured by ProcessSystemRoll
     end)
