@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.3] - 2026-10-03
+
+### Fixed
+- a tecla J fecha o Guild OS (#66)
+
+
 ## [0.61.2] - 2026-10-03
 
 ### Fixed
