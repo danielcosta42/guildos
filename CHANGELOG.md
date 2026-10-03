@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.2] - 2026-10-03
+
+### Fixed
+- recrutamento sem {rt8} cru onde o servidor esconde ícones de raide (#64)
+
+
 ## [0.61.1] - 2026-10-03
 
 ### Fixed
