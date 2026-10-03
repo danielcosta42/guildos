@@ -96,11 +96,11 @@ Probe.SCRIPTS = { "OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit", "
 -- Every event the addon's own files register. tools/probe.lua fails when the
 -- source registers one that is not listed here.
 Probe.EVENTS = {
-    "ADDON_LOADED", "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
+    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED", "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
     "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER",
     "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
-    "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",
+    "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",
     "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_TALENT_UPDATE",
     "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UPDATE_MOUSEOVER_UNIT", "WHO_LIST_UPDATE",
@@ -267,4 +267,175 @@ function Probe:PrintSummary(r)
     if #r.missingApis > 0 then BRutus:Print(names(r.missingApis)) end
     if #r.missingEvents > 0 then BRutus:Print(names(r.missingEvents)) end
     BRutus:Print(L["Saved in GuildOSDB.probe. Type /reload to write it to disk."])
+end
+
+----------------------------------------------------------------------
+-- Blocked actions (issue #75)
+-- When the game blocks a protected call, chat gets "Interface action failed because of an
+-- AddOn", once a session: no Lua error and no function named. These events carry the addon
+-- (a macro's carry only the function) and the function, so /guildos errors can say who it
+-- was. Each pair is recorded once a session: a noisy addon blocks thousands of times and the
+-- ring holds 50. A chat probe that is running keeps every one.
+----------------------------------------------------------------------
+local BLOCKS_SHOWN = 5  -- blocks the chat probe's verdict prints; GuildOSDB.probeChat keeps all
+local seenBlocks = {}
+
+local blockedFrame = CreateFrame("Frame")
+BRutus.Compat.RegisterEvent(blockedFrame, "ADDON_ACTION_BLOCKED")
+BRutus.Compat.RegisterEvent(blockedFrame, "ADDON_ACTION_FORBIDDEN")
+BRutus.Compat.RegisterEvent(blockedFrame, "MACRO_ACTION_BLOCKED")
+BRutus.Compat.RegisterEvent(blockedFrame, "MACRO_ACTION_FORBIDDEN")
+blockedFrame:SetScript("OnEvent", function(_, event, addon, func)
+    if event:find("^MACRO_") then addon, func = "macro", addon end
+    if BRutus.Compat.IsSecret(addon, func) then addon, func = "?", "?" end
+    addon, func = tostring(addon), tostring(func)
+    local key = event .. "\0" .. addon .. "\0" .. func
+    if not seenBlocks[key] then
+        seenBlocks[key] = true
+        BRutus:RecordError(string.format("%s: %s tried %s", event, addon, func))
+    end
+    local run = Probe._chat
+    if run then
+        run.blocked[#run.blocked + 1] = { event = event, addon = addon, func = func, after = GetTime() - run.started }
+    end
+end)
+
+----------------------------------------------------------------------
+-- /guildos probe chat (issue #75)
+-- Whether this client lets an addon post to guild chat from a key press and from a timer,
+-- measured instead of assumed. Two lines go to guild chat: one straight from the command (the
+-- Enter that sent it is the key press) and one from a one-second timer, the way the welcome
+-- used to go. A line counts as sent when the game echoes it back in CHAT_MSG_GUILD. The verdict
+-- comes CHAT_WAIT seconds later, set against Compat.NeedsClick(), and goes to
+-- GuildOSDB.probeChat.
+----------------------------------------------------------------------
+local CHAT_WAIT = 6  -- seconds: the timer's line goes at 1, and echoes come back well inside this
+
+-- The retail client's own answer to "is something restricting addons right now": one of
+-- Combat, Encounter, ChallengeMode, PvPMatch, Map or Chat. The names that are active, sorted,
+-- or "missing" on a client without the API.
+local function activeRestrictions()
+    local types = Enum and Enum.AddOnRestrictionType
+    local isActive = member(C_RestrictedActions, "IsAddOnRestrictionActive")
+    if type(types) ~= "table" or not isActive then return "missing" end
+    local out = {}
+    for name, value in pairs(types) do
+        local ok, on = pcall(isActive, value)
+        if ok and on == true then out[#out + 1] = tostring(name) end
+    end
+    table.sort(out)
+    return out
+end
+
+function Probe:RunChat()
+    if InCombatLockdown and InCombatLockdown() then
+        BRutus:Print(L["The probe does not run in combat. Try again after the fight."])
+        return nil
+    end
+    if not (IsInGuild and IsInGuild()) then
+        BRutus:Print(L["The chat probe posts in guild chat. Join a guild first."])
+        return nil
+    end
+    if self._chat then
+        BRutus:Print(L["The chat probe is already running."])
+        return nil
+    end
+
+    -- English on purpose: it is matched against its own echo, and the guild reads it as a test.
+    local tag = "[Guild OS probe " .. math.random(1000, 9999) .. "]"
+    local clockOk, now = pcall(GetServerTime)
+    local b = capture(GetBuildInfo)
+    local run = {
+        at = (clockOk and now) or 0,
+        started = GetTime(),
+        -- Version and build: every Forever beta build is version 1.60.1.
+        build = b[2] and (tostring(first(b)) .. "." .. tostring(b[2])) or tostring(first(b)),
+        lockdown = first(capture(member(C_ChatInfo, "InChatMessagingLockdown"))),
+        restrictions = activeRestrictions(),
+        assumesClick = BRutus.Compat.NeedsClick(),
+        steps = {
+            { how = "command", text = tag .. " 1/2 sent from a command" },
+            { how = "timer", text = tag .. " 2/2 sent from a timer" },
+        },
+        blocked = {},
+    }
+    self._chat = run
+
+    self._chatFrame = self._chatFrame or CreateFrame("Frame")
+    self._chatFrame:SetScript("OnEvent", function(_, _, msg)
+        if BRutus.Compat.IsSecret(msg) then
+            run.unreadable = true
+            return
+        end
+        for _, step in ipairs(run.steps) do
+            if msg == step.text then step.echoed = true end
+        end
+    end)
+    BRutus.Compat.RegisterEvent(self._chatFrame, "CHAT_MSG_GUILD")
+
+    -- The same global the welcome calls, so this tests what the welcome does.
+    local function send(step)
+        step.echoed = false
+        step.sentAfter = GetTime() - run.started
+        step.restrictions = activeRestrictions()   -- what was restricting addons as this line went
+        local ok, err = pcall(SendChatMessage, step.text, "GUILD")
+        if not ok then step.error = tostring(err) end
+    end
+    BRutus:Print(L["Chat probe: one test line goes to guild chat now and one in a second. The verdict follows in a few seconds."])
+    send(run.steps[1])
+    BRutus.Compat.After(1, function()
+        if Probe._chat == run then send(run.steps[2]) end  -- never after the verdict
+    end)
+    BRutus.Compat.After(CHAT_WAIT, function() Probe:FinishChat() end)
+    return run
+end
+
+function Probe:FinishChat()
+    local run = self._chat
+    if not run then return end
+    self._chat = nil
+    pcall(self._chatFrame.UnregisterEvent, self._chatFrame, "CHAT_MSG_GUILD")
+
+    local fromCommand, fromTimer = run.steps[1], run.steps[2]
+    if not fromCommand.echoed or fromTimer.sentAfter == nil then
+        run.needsClick = "unknown"   -- not even the key press got through, or the timer's never went
+    elseif run.unreadable and not fromTimer.echoed then
+        run.needsClick = "unknown"   -- the timer's echo may have come back unreadable
+    else
+        run.needsClick = not fromTimer.echoed
+    end
+    run.started = nil
+    if not GuildOSDB then GuildOSDB = {} end
+    GuildOSDB.probeChat = run
+
+    BRutus:Print(string.format(L["Chat probe, build %s, chat lockdown %s:"], run.build, answer(run.lockdown)))
+    local r = run.restrictions
+    BRutus:Print("  " .. string.format(L["Addon restrictions: %s."],
+        r == "missing" and L["not on this client"] or (#r == 0 and L["none active"] or table.concat(r, ", "))))
+    local labels = { command = L["the line sent from the command"], timer = L["the line sent from a timer"] }
+    for _, step in ipairs(run.steps) do
+        local outcome = step.sentAfter == nil and L["not sent"]
+            or step.echoed and L["came back in guild chat"] or L["did not come back"]
+        if step.error then outcome = outcome .. " (" .. step.error .. ")" end
+        BRutus:Print(string.format("  %s (%.1fs): %s", labels[step.how], step.sentAfter or 0, outcome))
+    end
+    if #run.blocked == 0 then
+        BRutus:Print("  " .. L["The game reported no blocked action."])
+    end
+    for i = 1, math.min(#run.blocked, BLOCKS_SHOWN) do
+        local blk = run.blocked[i]
+        BRutus:Print(string.format("  " .. L["Blocked by the game (%.1fs): %s tried %s."], blk.after, blk.addon, blk.func))
+    end
+    if #run.blocked > BLOCKS_SHOWN then
+        BRutus:Print("  " .. string.format(L["... and %d more."], #run.blocked - BLOCKS_SHOWN))
+    end
+    if run.needsClick == "unknown" then
+        BRutus:Print(run.unreadable and L["Could not tell: this client keeps guild chat unreadable here."]
+            or not fromCommand.echoed and L["Could not tell: not even the line from the command came back."]
+            or L["Could not tell: the verdict came before the line from the timer went out."])
+    else
+        BRutus:Print(string.format(L["Chat needs a click: %s. Guild OS assumes: %s."],
+            answer(run.needsClick), answer(run.assumesClick)))
+    end
+    BRutus:Print(L["Saved in GuildOSDB.probeChat. Type /reload to write it to disk."])
 end
