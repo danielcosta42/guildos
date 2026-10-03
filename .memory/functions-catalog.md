@@ -370,6 +370,7 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `LootMaster:SafeSendChat(msg, channel)` | Sends to raid if in raid + not testMode, else prints locally |
+| `LootMaster:SafeSendChatAuto(msg, channel)` | A line sent from an event or a timer: on WoW: Forever (`Compat.NeedsClick`) it prints for the loot master only, else `SafeSendChat`. Used by `RegisterRoll`'s per-roll lines and the timer path of `EndRolling(byClick)`; `ScheduleCountdownWarnings` does nothing on Forever (issue #63) |
 | `LootMaster:SafeSendAddon(prefix, payload, channel)` | Sends addon message if in raid + not testMode |
 | `LootMaster:Initialize()` | DB setup, builds roll pattern, registers events |
 | `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player |
@@ -392,7 +393,7 @@ Removed: `Compat.NewTimer`.
 | `LootMaster:ShowCouncilResultFrame(...)` | Council confirm popup for ML |
 | `LootMaster:OnAddonMessage(...)` | Handles BRutusLM messages (ANNOUNCE, AWARD) |
 | `LootMaster:RegisterRoll(name, rollType, roll)` | Validates and stores /roll result |
-| `LootMaster:EndRolling()` | Stops roll capture, announces winner to raid |
+| `LootMaster:EndRolling(byClick)` | Stops roll capture and announces the winner to raid. `byClick` is the End Rolling button; the roll timer ends it without, and on WoW: Forever that winner line only prints for the loot master (issue #63) |
 | `LootMaster:AwardLoot(playerName)` | Awards via GiveMasterLoot or trade queue; records history |
 | `LootMaster:QueueForTrade(playerName, itemLink, itemId)` | Queues item for trade window delivery |
 | `LootMaster:FindItemInBags(itemId)` | Searches bags for itemId, returns bag/slot |
