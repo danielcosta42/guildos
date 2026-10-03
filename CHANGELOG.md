@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.61.1] - 2026-10-03
+
+### Fixed
+- no Forever, boas-vindas, auto-invite e whispers saem pelo clique (#61)
+
+
 ## [0.61.0] - 2026-10-03
 
 ### Added
