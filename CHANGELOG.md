@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.62.1] - 2026-10-03
+
+### Fixed
+- membro nao-oficial nao quebra mais ao receber o aviso de boas-vindas enviada (#77)
+
+
 ## [0.62.0] - 2026-10-03
 
 ### Added
