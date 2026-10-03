@@ -313,6 +313,8 @@ read_globals = {
     "GuildRosterSetPublicNote",
     "CanEditPublicNote",
 
+    -- The chat frame's raid-icon words ({skull}, {star}…, localized), issue #64
+    "ICON_TAG_LIST",
     -- Guild system messages
     "ERR_GUILD_JOIN_S",
     "ERR_GUILD_LEAVE_S",
