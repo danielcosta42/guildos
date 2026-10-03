@@ -42,6 +42,16 @@ function LootMaster:SafeSendChat(msg, channel)
     end
 end
 
+-- A line sent from an event or a timer, with no click behind it. WoW: Forever drops those
+-- (Compat.NeedsClick, #61), so there it prints for the loot master only (issue #63).
+function LootMaster:SafeSendChatAuto(msg, channel)
+    if BRutus.Compat.NeedsClick() then
+        BRutus:Print("|cff888888[" .. (channel or "CHAT") .. "]|r " .. msg)
+        return
+    end
+    self:SafeSendChat(msg, channel)
+end
+
 function LootMaster:SafeSendAddon(prefix, payload, channel)
     if IsInRaid() and not self.testMode then
         BRutus.Compat.SendAddonMessageNow(prefix, payload, channel)
@@ -985,7 +995,7 @@ function LootMaster:RegisterRoll(name, rollType, roll)
     local minAtt = self:GetCfg().minAttendancePct or 0
     if rollType == "MS" and minAtt > 0 and ctx.att25 < minAtt then
         rollType = "OS"
-        self:SafeSendChat(string.format(
+        self:SafeSendChatAuto(string.format(
             L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
             name, ctx.att25, minAtt), "RAID")
     end
@@ -1067,10 +1077,10 @@ function LootMaster:RegisterRoll(name, rollType, roll)
 
     -- Announce prio or wishlist position to raid
     if prioOrder then
-        self:SafeSendChat(string.format(L["[Loot] %s: %s (Official Prio #%d)"],
+        self:SafeSendChatAuto(string.format(L["[Loot] %s: %s (Official Prio #%d)"],
             name, rollType, prioOrder), "RAID")
     elseif wishInfo then
-        self:SafeSendChat(string.format(L["[Loot] %s: %s (Wishlist #%d)"],
+        self:SafeSendChatAuto(string.format(L["[Loot] %s: %s (Wishlist #%d)"],
             name, rollType, wishInfo.order), "RAID")
     end
 
@@ -1083,8 +1093,11 @@ end
 ----------------------------------------------------------------------
 -- End rolling and display results
 ----------------------------------------------------------------------
-function LootMaster:EndRolling()
+-- `byClick`: the End Rolling button. The roll timer ends it without one, and on WoW: Forever
+-- its winner line then only reaches the loot master (issue #63); the Award click announces.
+function LootMaster:EndRolling(byClick)
     if not self.activeLoot then return end
+    local say = byClick and self.SafeSendChat or self.SafeSendChatAuto
 
     self:StopListeningForRolls()
     self.restrictedRollers = nil
@@ -1148,10 +1161,10 @@ function LootMaster:EndRolling()
         elseif winner.wishlist then
             wishStr = string.format(L[" [Wishlist #%d]"], winner.wishlist.order)
         end
-        self:SafeSendChat(string.format(L["[WINNER] %s - %s (%d)%s - %s"],
+        say(self, string.format(L["[WINNER] %s - %s (%d)%s - %s"],
             winner.name, winner.rollType, winner.roll, wishStr, self.activeLoot.link), "RAID_WARNING")
     else
-        self:SafeSendChat(L["[Roll] No roll received for "] .. self.activeLoot.link, "RAID_WARNING")
+        say(self, L["[Roll] No roll received for "] .. self.activeLoot.link, "RAID_WARNING")
     end
 
     -- Refresh UI
@@ -1375,6 +1388,9 @@ end
 -- Only the ML sends these (called from DoNormalAnnounce/StartRestrictedRoll).
 ----------------------------------------------------------------------
 function LootMaster:ScheduleCountdownWarnings()
+    -- WoW: Forever drops these timer lines (issue #63); the raiders' popup has its own bar and
+    -- the loot master's frame shows the seconds left.
+    if BRutus.Compat.NeedsClick() then return end
     local dur = self.ROLL_DURATION
     local warnings = { 10, 5, 3, 2, 1 }
     for _, t in ipairs(warnings) do
@@ -2732,7 +2748,7 @@ function LootMaster:ShowRollFrame()
     local endBtn = UI:CreateButton(f, L["End Rolling"], 100, 24)
     endBtn:SetPoint("BOTTOM", 0, 12)
     endBtn:SetScript("OnClick", function()
-        LootMaster:EndRolling()
+        LootMaster:EndRolling(true)    -- a click: the winner line goes out on Forever too (#63)
     end)
     f.endBtn = endBtn
 

@@ -160,8 +160,11 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
   worked. `Compat.NeedsClick()` says so. On Forever the welcome waits in a popup, a keyword whisper's invite waits in
   another, and the scanner's whispers go one per click (issue #61). The welcome's claim still goes out when the
   officers decide, so the other officers stand down and the winner's popup stays up until it is sent or dismissed.
-  The invite uses the whisper's name exactly as the game gave it, which is what an Alt-click's link invites with. The loot master's raid announcements are still
-  sent from events; they are next.
+  The invite uses the whisper's name exactly as the game gave it, which is what an Alt-click's link invites with. The
+  loot master (issue #63) sends from clicks already: announce, award, cancel, disenchant. What it sent from events and
+  timers prints for the loot master only on Forever (`SafeSendChatAuto`): the per-roll "MS converted to OS" and
+  prio/wishlist lines, and "[WINNER]" or "No roll received" when time runs out; the countdown is not scheduled there, and the End Rolling
+  button still announces the winner.
 - **The level cap is 60.** `BRutus.Client.maxLevel` (70 on Anniversary) says it, and every check that means "the top
   level" reads it: the dashboard's raid-ready count, the roster's level colour, the Raiders panel, the top level
   bracket, the ding milestone and the recruit scan (issue #53). Before that, all of them assumed 70.
