@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.62.0] - 2026-10-03
+
+### Added
+- /guildos probe chat mede no jogo se o chat precisa de clique, e todo bloqueio vai para /guildos errors (#75)
+
+### Fixed
+- cores fora da paleta viram tokens, e o roxo so quer dizer epico (#69)
+
+
 ## [0.61.6] - 2026-10-03
 
 ### Fixed
