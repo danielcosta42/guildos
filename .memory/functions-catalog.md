@@ -157,7 +157,7 @@ Removed: `Compat.NewTimer`.
 | `BRutus:RecordError(msg)` | Pushes a message into the `/guildos errors` ring (shared by SafeCall and start-up) |
 | `BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)` | Collects/broadcasts data on initial login or reload only |
 | `BRutus:OnGuildRosterUpdate()` | Refreshes roster frame on GUILD_ROSTER_UPDATE / PLAYER_GUILD_UPDATE |
-| `BRutus:HookGuildFrame()` | Replaces ToggleGuildFrame / ToggleFriendsFrame(tab 3) to open BRutus |
+| `BRutus:HookGuildFrame()` | `hooksecurefunc` on ToggleGuildFrame (never replaced: replacing taints the social frame). After Blizzard's toggle: its frame came up and Guild OS is closed → hide it (HideUIPanel) and open Guild OS; came up while Guild OS is open → hide it and close Guild OS (the key's second press, issue #66); went down → close Guild OS too. `_suppressGuildHijack` (OpenBlizzardGuildUI) skips it |
 | `BRutus:ToggleRoster()` | Opens or closes the Guild OS window (`UI:ToggleMain`); guildless, opens the recruitment finder instead |
 | `BRutus:IsFrontDoorShown()` / `BRutus:HideFrontDoor()` | Whether the window is on screen / closes it; the guild-frame hook mirrors Blizzard's open and close onto them |
 | `BRutus:RefreshRosterUI()` | Refreshes the roster when the window is shown and the roster tab has been built |
@@ -491,7 +491,7 @@ Removed: `Compat.NewTimer`.
 | `GuildManager:GetRanks()` | Ordered `{index, name}` rank list (GuildControl 1-based → 0-based) |
 | `GuildManager:GetRankName(rankIndex)` | Display name for a 0-based rank index |
 | `GuildManager:Promote(name)` / `:Demote(name)` / `:SetRank(name)` / `:Kick(name)` | **Protected** in Classic — route to `_protectedNotice` handoff, do NOT call the restricted API |
-| `GuildManager:OpenNativeGuild()` | Opens Blizzard's native guild panel via `BRutus._origToggleGuildFrame` (handoff target) |
+| `GuildManager:OpenNativeGuild()` | Opens Blizzard's native guild panel through `BRutus:OpenBlizzardGuildUI` (Blizzard's toggle with the hijack suppressed); false when that is missing (handoff target) |
 | `GuildManager:_protectedNotice(actionLabel, name)` | Prints "protegido pela Blizzard" notice + opens native panel; returns false |
 | `GuildManager:SetMOTD(text)` / `:SetGuildInfo(text)` | Sets MOTD / Guild Info, permission-gated, logged (not protected) |
 | `GuildManager:GetMOTD()` / `:GetGuildInfo()` | Reads client-cached MOTD / Guild Info text |
