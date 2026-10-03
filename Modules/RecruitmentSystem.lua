@@ -79,6 +79,81 @@ function Recruitment:_PassesFilters(info, cfg)
 end
 
 ----------------------------------------------------------------------
+-- Settings, one door for the slash commands and the Recruitment screen (issue #59), so both
+-- hold the same rules. Each takes the table it writes and returns what it stored, or nil/false.
+----------------------------------------------------------------------
+Recruitment.KEYWORD_MAX = 20
+
+-- A keyword is one word, lowercase: the whisper is matched on its first word.
+function Recruitment:SetAutoInviteKeyword(cfg, word)
+    local kw = strtrim(tostring(word or "")):lower():match("^(%S+)")
+    if not kw or #kw > self.KEYWORD_MAX then return nil end
+    cfg.keyword = kw
+    return kw
+end
+
+-- 0 means any level; nothing above the game's cap.
+function Recruitment:SetAutoInviteMinLevel(cfg, n)
+    n = tonumber(n)
+    if not n then return nil end
+    cfg.minLevel = math.max(0, math.min(BRutus.Client.maxLevel, math.floor(n)))
+    return cfg.minLevel
+end
+
+function Recruitment:IsClass(token)
+    for _, c in ipairs(self.CLASSES) do
+        if c == token then return true end
+    end
+    return false
+end
+
+-- The command used to store whatever was typed: a "MAEG" left in the filter counted as a
+-- filter, matched nobody, and showed nowhere, so auto-invite went quiet. Dropped at start.
+function Recruitment:_DropUnknownClasses(classes)
+    for c in pairs(classes or {}) do
+        if not self:IsClass(c) then classes[c] = nil end
+    end
+end
+
+-- Only a class the game has.
+function Recruitment:SetAutoInviteClass(cfg, class, on)
+    class = tostring(class or ""):upper()
+    if not self:IsClass(class) then return false end
+    cfg.classes[class] = on and true or nil
+    return true
+end
+
+-- What to do when /who cannot confirm the player's level or class.
+function Recruitment:SetAutoInviteFallback(cfg, mode)
+    if mode ~= "skip" and mode ~= "invite" then return false end
+    cfg.whoFallback = mode
+    return true
+end
+
+-- A recruitment channel is listed once, whatever the case.
+function Recruitment:AddChannel(list, name)
+    name = strtrim(tostring(name or ""))
+    if name == "" then return false end
+    for _, c in ipairs(list) do
+        if c:lower() == name:lower() then return false end
+    end
+    list[#list + 1] = name
+    return true
+end
+
+function Recruitment:RemoveChannel(list, name)
+    name = strtrim(tostring(name or "")):lower()
+    local removed = false
+    for i = #list, 1, -1 do
+        if list[i]:lower() == name then
+            table.remove(list, i)
+            removed = true
+        end
+    end
+    return removed
+end
+
+----------------------------------------------------------------------
 -- Recruitment sync: pure trust + rate decisions (deterministic; unit-tested)
 ----------------------------------------------------------------------
 
@@ -321,6 +396,7 @@ function Recruitment:Initialize()
             r.autoInvite[k] = (type(v) == "table") and BRutus:DeepCopy(v) or v
         end
     end
+    self:_DropUnknownClasses(r.autoInvite.classes)
     self._inviteCd = {}
     self:_RegisterAutoInviteTests()
 
@@ -920,6 +996,12 @@ end
 ----------------------------------------------------------------------
 function Recruitment:HandleCommand(args)
     local cmd = args[1]
+    -- The settings exist once an officer's client has started recruitment; a member's never
+    -- has, and every branch below but `invite` reads them.
+    if not BRutus.db.recruitment and cmd and cmd ~= "invite" then
+        BRutus:Print(L["Recruitment settings are available to officers after login."])
+        return
+    end
 
     if cmd == "on" or cmd == "start" then
         self:StartAutoRecruit()
@@ -951,18 +1033,17 @@ function Recruitment:HandleCommand(args)
         local action = args[2]
         local chName = args[3]
         if action == "add" and chName then
-            table.insert(BRutus.db.recruitment.channels, chName)
-            BRutus:Print(L["Added channel: |cffFFFFFF"] .. chName .. "|r")
-        elseif action == "remove" and chName then
-            local channels = BRutus.db.recruitment.channels
-            for i = #channels, 1, -1 do
-                if channels[i]:lower() == chName:lower() then
-                    table.remove(channels, i)
-                    BRutus:Print(L["Removed channel: |cffFFFFFF"] .. chName .. "|r")
-                    return
-                end
+            if self:AddChannel(BRutus.db.recruitment.channels, chName) then
+                BRutus:Print(L["Added channel: |cffFFFFFF"] .. chName .. "|r")
+            else
+                BRutus:Print(L["Already posting to: |cffFFFFFF"] .. chName .. "|r")
             end
-            BRutus:Print(L["Channel not found: "] .. chName)
+        elseif action == "remove" and chName then
+            if self:RemoveChannel(BRutus.db.recruitment.channels, chName) then
+                BRutus:Print(L["Removed channel: |cffFFFFFF"] .. chName .. "|r")
+            else
+                BRutus:Print(L["Channel not found: "] .. chName)
+            end
         elseif action == "list" then
             local list = table.concat(BRutus.db.recruitment.channels, ", ")
             BRutus:Print(L["Channels: |cffFFFFFF"] .. (list ~= "" and list or L["(none)"]) .. "|r")
@@ -1056,37 +1137,52 @@ function Recruitment:HandleAutoInviteCommand(args)
         cfg.enabled = false
         BRutus:Print(L["Auto-invite |cffFF4444disabled|r."])
     elseif sub == "keyword" then
-        local kw = args[2] and strtrim(args[2]:lower())
-        if kw and kw ~= "" then
-            cfg.keyword = kw
+        local kw = args[2] and self:SetAutoInviteKeyword(cfg, args[2])
+        if kw then
             BRutus:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. kw .. "|r.")
+        elseif args[2] then
+            BRutus:Print(string.format(L["A keyword is one word of up to %d characters."], self.KEYWORD_MAX))
         else
             BRutus:Print(L["Current keyword: |cffFFFFFF"] .. cfg.keyword .. "|r.")
         end
     elseif sub == "minlevel" then
-        local n = tonumber(args[2])
-        if n and n >= 0 then
-            cfg.minLevel = n
+        local n = self:SetAutoInviteMinLevel(cfg, args[2])
+        if n then
             BRutus:Print(string.format(L["Auto-invite min level set to |cffFFFFFF%d|r."], n))
         else
-            BRutus:Print(L["Usage: /gos autoinvite minlevel <0-70>"])
+            BRutus:Print(string.format(L["Usage: /gos autoinvite minlevel <0-%d>"], BRutus.Client.maxLevel))
         end
     elseif sub == "class" then
-        local op, cls = args[2], args[3] and args[3]:upper()
+        local op, cls = args[2], args[3]
         if op == "clear" then
             cfg.classes = {}
             BRutus:Print(L["Auto-invite class filter cleared."])
         elseif (op == "add" or op == "remove") and cls then
-            cfg.classes[cls] = (op == "add") and true or nil
-            BRutus:Print(L["Auto-invite class filter updated."])
+            if self:SetAutoInviteClass(cfg, cls, op == "add") then
+                BRutus:Print(L["Auto-invite class filter updated."])
+            else
+                BRutus:Print(L["Unknown class: "] .. cls .. " (" .. table.concat(self.CLASSES, ", ") .. ")")
+            end
         else
             BRutus:Print(L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"])
         end
+    elseif sub == "fallback" then
+        if self:SetAutoInviteFallback(cfg, args[2]) then
+            BRutus:Print(L["When /who cannot confirm a player: |cffFFFFFF"] .. cfg.whoFallback .. "|r")
+        else
+            BRutus:Print(L["Usage: /gos autoinvite fallback <skip|invite>"])
+        end
     else
         local st = cfg.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
+        local classes = {}
+        for _, c in ipairs(self.CLASSES) do
+            if cfg.classes[c] then classes[#classes + 1] = c end
+        end
         BRutus:Print(L["Auto-invite: "] .. st .. L[" · keyword: |cffFFFFFF"] .. cfg.keyword ..
-            L["|r · min level: |cffFFFFFF"] .. tostring(cfg.minLevel) .. "|r")
-        BRutus:Print(L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|status>"])
+            L["|r · min level: |cffFFFFFF"] .. tostring(cfg.minLevel) .. "|r · " .. L["classes: "] ..
+            (#classes > 0 and table.concat(classes, ", ") or L["any"]) .. " · " .. L["unconfirmed: "] .. cfg.whoFallback)
+        BRutus:Print(L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|fallback|status>"])
+        BRutus:Print(string.format(L["Also in the %s tab, under %s."], L["Recruitment"], L["Recruiting"]))
     end
 end
 

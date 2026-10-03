@@ -67,6 +67,20 @@ function Mentions:_AddWatchWord(list, phrase)
     return "ok", p
 end
 
+-- Pure: remove `phrase` from `list`, matched the way _AddWatchWord stores it. Returns how
+-- many came off (issue #59: the Settings screen removes through this, as the command does).
+function Mentions:_RemoveWatchWord(list, phrase)
+    local p = strtrim(tostring(phrase or "")):lower()
+    local n = 0
+    for i = #list, 1, -1 do
+        if tostring(list[i]):lower() == p then
+            table.remove(list, i)
+            n = n + 1
+        end
+    end
+    return n
+end
+
 function Mentions:_Match(msg, ownName, watchWords, watchOwn)
     if not msg then return nil end
     if watchOwn and ownName and ownName ~= "" and hasWord(msg, ownName) then return ownName end
@@ -106,13 +120,13 @@ function Mentions:_SetupHook()
         Mentions:_Record(term, sender, msg)
         BRutus:Print(string.format(L["|cffFFD700Mention|r (%s): %s: %s"], term, sender or "?", msg))
         if cfg.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
-        -- Own-name matching is on by default and there is no settings UI for it,
-        -- so a player called Tank/Ally/Lol would get alerted on normal guild
-        -- chatter with no idea where it came from. Point at the off switch once
-        -- per session (flag set first, so later alerts stay quiet).
+        -- Own-name matching is on by default, so a player called Tank/Ally/Lol would get
+        -- alerted on normal guild chatter with no idea where it came from. Point at the
+        -- off switch once per session (flag set first, so later alerts stay quiet).
         if not Mentions._hinted then
             Mentions._hinted = true
-            BRutus:Print(L["Tip: turn these off with /gos mentions ownname off, /gos mentions sound off, or /gos mentions off."])
+            BRutus:Print(string.format(L["Tip: turn these off in %s > %s > %s, or with /gos mentions off."],
+                L["Settings"], L["General"], L["MENTIONS & ALERTS"]))
         end
     end)
 end
@@ -202,9 +216,7 @@ function Mentions:HandleCommand(args)
         end
     elseif sub == "remove" and args[2] then
         local t = strtrim(table.concat(args, " ", 2, #args)):lower()
-        for i = #cfg.watchWords, 1, -1 do
-            if tostring(cfg.watchWords[i]):lower() == t then table.remove(cfg.watchWords, i) end
-        end
+        Mentions:_RemoveWatchWord(cfg.watchWords, t)
         BRutus:Print(L["Watch-word removed: |cffFFFFFF"] .. t .. "|r")
     elseif sub == "clearwords" then
         cfg.watchWords = {}; BRutus:Print(L["Watch-words cleared."])

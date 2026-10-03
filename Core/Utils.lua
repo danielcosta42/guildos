@@ -276,6 +276,16 @@ function BRutus:GetMemberRecord(name, realm)
     }
 end
 
+-- A removable chip's label (issue #59): the text cut to `maxBytes` (14) on a character
+-- boundary, ".." when something was cut, then the remove mark. UI:SetChipText shortens it
+-- further until it fits the chip in whatever font is drawing it.
+function BRutus:ChipLabel(text, maxBytes)
+    local s = tostring(text or "")
+    local short = self:SanitizeUserText(s, maxBytes or 14)
+    if #short < #self:SanitizeUserText(s) then short = short .. ".." end
+    return short .. "  x"
+end
+
 function BRutus:SanitizeUserText(text, maxBytes)
     local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
     s = strtrim(s)
