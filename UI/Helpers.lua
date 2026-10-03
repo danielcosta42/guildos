@@ -383,6 +383,23 @@ function Helpers:AttachSaveButton(editBox, onSave, opts)
 end
 
 ----------------------------------------------------------------------
+-- A removable chip's text (issue #59): BRutus:ChipLabel, shortened until it fits `width`
+-- in the font that draws it (GuildOS's mono or the game's, #57), so the chip never grows
+-- over its neighbour and a click lands on the entry it shows.
+----------------------------------------------------------------------
+function Helpers:SetChipText(btn, text, width)
+    width = width or btn:GetWidth()
+    btn:SetWidth(width)
+    local maxBytes = 14
+    btn.label:SetText(BRutus:ChipLabel(text, maxBytes))
+    while btn.label:GetStringWidth() > width - 8 and maxBytes > 3 do
+        maxBytes = maxBytes - 1
+        btn.label:SetText(BRutus:ChipLabel(text, maxBytes))
+    end
+    btn:SetWidth(width)
+end
+
+----------------------------------------------------------------------
 -- Checkbox
 ----------------------------------------------------------------------
 

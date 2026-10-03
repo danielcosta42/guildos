@@ -2487,6 +2487,84 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     end
     yOff = yOff - 6 - math.ceil(#CHAN_LIST / CHAN_PER_ROW) * 26
 
+    -- An edit box styled like the interval's, for the rows below.
+    local function MakeBox(width, numeric, maxLetters)
+        local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+        box:SetSize(width, 22)
+        box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        box:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
+        box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+        BRutus:ApplyFont(box, 11)
+        box:SetTextColor(C.white.r, C.white.g, C.white.b)
+        box:SetTextInsets(6, 6, 0, 0)
+        box:SetAutoFocus(false)
+        box:SetNumeric(numeric and true or false)
+        box:SetMaxLetters(maxLetters)
+        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        return box
+    end
+
+    -- Channels beyond the three presets (issue #59): one box adds, a chip per channel removes.
+    RowLabel(L["Other channel:"], yOff)
+    local chanBox = MakeBox(130, false, 31)
+    chanBox:SetPoint("TOPLEFT", 140, yOff)
+    local CUSTOM_MAX, CUSTOM_PER_ROW = 6, 3
+    local customBtns = {}
+    local customMore = UI:CreateText(parent, "", 10, 0.6, 0.6, 0.65)
+    local function isPreset(name)
+        for _, p in ipairs(CHAN_LIST) do
+            if p:lower() == name:lower() then return true end
+        end
+        return false
+    end
+    local function refreshCustomChans()
+        local shown = 0
+        for _, ch in ipairs(BRutus.db.recruitment.channels) do
+            if not isPreset(ch) and shown < CUSTOM_MAX then
+                shown = shown + 1
+                local b = customBtns[shown]
+                b._ch = ch
+                UI:SetChipText(b, ch, 130)
+                b:Show()
+            end
+        end
+        for i = shown + 1, CUSTOM_MAX do customBtns[i]:Hide() end
+        local custom = 0
+        for _, ch in ipairs(BRutus.db.recruitment.channels) do
+            if not isPreset(ch) then custom = custom + 1 end
+        end
+        customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
+    end
+    UI:AttachSaveButton(chanBox, function(box)
+        if BRutus.Recruitment:AddChannel(BRutus.db.recruitment.channels, box:GetText()) then
+            box:SetText("")
+            refreshCustomChans()
+            refreshChanBtns()
+        elseif strtrim(box:GetText()) ~= "" then
+            BRutus:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
+        end
+    end, { text = L["Add"] })
+    local chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint:SetPoint("LEFT", chanBox.saveButton, "RIGHT", 8, 0)
+    yOff = yOff - 28
+    for i = 1, CUSTOM_MAX do
+        local col = (i - 1) % CUSTOM_PER_ROW
+        local row = math.floor((i - 1) / CUSTOM_PER_ROW)
+        local b = UI:CreateButton(parent, "", 130, 22)
+        b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+        b:SetScript("OnClick", function(self)
+            BRutus.Recruitment:RemoveChannel(BRutus.db.recruitment.channels, self._ch)
+            refreshCustomChans()
+            refreshChanBtns()
+        end)
+        b:Hide()
+        customBtns[i] = b
+    end
+    yOff = yOff - 4 - math.ceil(CUSTOM_MAX / CUSTOM_PER_ROW) * 26
+    customMore:SetPoint("TOPLEFT", 128, yOff + 4)
+    yOff = yOff - 12
+
     -- Message
     RowLabel(L["Message:"], yOff)
     local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
@@ -2520,6 +2598,112 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         if BRutus.Recruitment then BRutus.Recruitment:BroadcastStatus() end
     end)
     yOff = yOff - 36
+
+    ----------------------------------------------------------------
+    -- Auto-Invite (issue #59): everything /gos autoinvite sets, through the same
+    -- Recruitment setters the command uses.
+    ----------------------------------------------------------------
+    yOff = SectionHeader(L["Auto-Invite (whisper keyword)"], yOff)
+    local R = BRutus.Recruitment
+    local function aiCfg() return BRutus.db.recruitment and BRutus.db.recruitment.autoInvite end
+
+    local aiChk = UI:CreateCheckbox(parent, L["Invite players who whisper the keyword"], 18)
+    aiChk:SetPoint("TOPLEFT", 28, yOff)
+    aiChk.checkbox.onChanged = function(_, checked)
+        local cfg = aiCfg()
+        if cfg then cfg.enabled = checked and true or false end
+    end
+    yOff = yOff - 28
+
+    RowLabel(L["Keyword:"], yOff)
+    local kwBox = MakeBox(120, false, R.KEYWORD_MAX)
+    kwBox:SetPoint("TOPLEFT", 140, yOff)
+    UI:AttachSaveButton(kwBox, function(box)
+        local cfg = aiCfg()
+        if not cfg then return end
+        if not R:SetAutoInviteKeyword(cfg, box:GetText()) then box:SetText(cfg.keyword) return end
+        box:SetText(cfg.keyword)
+        BRutus:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. cfg.keyword .. "|r.")
+    end)
+    yOff = yOff - 28
+
+    RowLabel(L["Min level:"], yOff)
+    local lvlBox = MakeBox(50, true, 2)
+    lvlBox:SetPoint("TOPLEFT", 140, yOff)
+    UI:AttachSaveButton(lvlBox, function(box)
+        local cfg = aiCfg()
+        if not cfg then return end
+        R:SetAutoInviteMinLevel(cfg, box:GetText())
+        box:SetText(tostring(cfg.minLevel))
+    end)
+    local lvlHint = UI:CreateText(parent, L["0 = any level"], 10, 0.6, 0.6, 0.65)
+    lvlHint:SetPoint("LEFT", lvlBox.saveButton, "RIGHT", 8, 0)
+    yOff = yOff - 28
+
+    RowLabel(L["Classes:"], yOff)
+    local CLASS_PER_ROW = 3
+    local classBtns = {}
+    local function refreshClassBtns()
+        local cfg = aiCfg()
+        for _, b in ipairs(classBtns) do
+            local cc = BRutus.ClassColors[b._class] or C.silver
+            if cfg and cfg.classes[b._class] then
+                b:SetBaseColor(cc.r * 0.45, cc.g * 0.45, cc.b * 0.45, 0.9)
+            else
+                b:SetBaseColor(0.12, 0.12, 0.16, 0.85)
+            end
+        end
+    end
+    for i, class in ipairs(R.CLASSES) do
+        local col = (i - 1) % CLASS_PER_ROW
+        local row = math.floor((i - 1) / CLASS_PER_ROW)
+        local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
+        local b = UI:CreateButton(parent, name, 130, 22)
+        b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        b._class = class
+        b:SetScript("OnClick", function(self)
+            local cfg = aiCfg()
+            if not cfg then return end
+            R:SetAutoInviteClass(cfg, self._class, not cfg.classes[self._class])
+            refreshClassBtns()
+        end)
+        classBtns[i] = b
+    end
+    local classRows = math.ceil(#R.CLASSES / CLASS_PER_ROW)
+    local classHint = UI:CreateText(parent, L["None selected = any class."], 10, 0.6, 0.6, 0.65)
+    classHint:SetPoint("TOPLEFT", 128, yOff - classRows * 26)
+    yOff = yOff - classRows * 26 - 22
+
+    RowLabel(L["Not confirmed:"], yOff)
+    local fbBtn = UI:CreateButton(parent, "", 120, 22)
+    fbBtn:SetPoint("TOPLEFT", 140, yOff + 3)
+    local function refreshFallback()
+        local cfg = aiCfg()
+        fbBtn.label:SetText((cfg and cfg.whoFallback == "invite") and L["Invite them"] or L["Skip them"])
+    end
+    fbBtn:SetScript("OnClick", function()
+        local cfg = aiCfg()
+        if not cfg then return end
+        R:SetAutoInviteFallback(cfg, cfg.whoFallback == "invite" and "skip" or "invite")
+        refreshFallback()
+    end)
+    local fbHint = UI:CreateText(parent, L["When /who can't confirm the level or class."], 10, 0.6, 0.6, 0.65)
+    fbHint:SetPoint("LEFT", fbBtn, "RIGHT", 8, 0)
+    yOff = yOff - 28
+
+    local aiNote = UI:CreateText(parent, L["Banned players are never invited. Level and class filters are checked with /who."], 10, 0.6, 0.6, 0.65)
+    aiNote:SetPoint("TOPLEFT", 30, yOff)
+    flexWidth(aiNote, 30)
+    yOff = yOff - 30
+
+    local function refreshAutoInvite()
+        local cfg = aiCfg()
+        aiChk.checkbox:SetChecked(cfg and cfg.enabled or false)
+        kwBox:SetText(cfg and cfg.keyword or "")
+        lvlBox:SetText(cfg and tostring(cfg.minLevel or 0) or "")
+        refreshClassBtns()
+        refreshFallback()
+    end
 
     ----------------------------------------------------------------
     -- Welcome Message Section
@@ -2642,6 +2826,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local s = BRutus.db.recruitment
         intervalBox:SetText(tostring(s.interval or 120))
         refreshChanBtns()
+        refreshCustomChans()
+        refreshAutoInvite()
         msgBox:SetText(s.message or "")
         discordBox:SetText(s.discord or "")
         welcomeBox:SetText(s.welcomeMessage or "")

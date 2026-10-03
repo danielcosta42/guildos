@@ -2174,6 +2174,100 @@ function BRutus:RefreshSettingsPanel(content, category)
         end
     end
     yOff = yOff + 26
+
+    --------------------------------------------------------------------
+    -- MENTIONS & ALERTS (issue #59): what /gos mentions and /gos avail notify set.
+    -- Personal, never synced.
+    --------------------------------------------------------------------
+    local mcfg = BRutus.db.mentions
+    if mcfg then
+        local mTitle = UI:CreateHeaderText(content, L["MENTIONS & ALERTS"], 12)
+        mTitle:SetPoint("TOPLEFT", 0, -yOff)
+        yOff = yOff + 24
+
+        local function MentionCheck(label, key, indent, size)
+            local cb = UI:CreateCheckbox(content, label, size)
+            cb:SetPoint("TOPLEFT", indent, -yOff)
+            cb.checkbox:SetChecked(mcfg[key] and true or false)
+            cb.checkbox.onChanged = function(_, checked) mcfg[key] = checked and true or false end
+            yOff = yOff + (size == 18 and 26 or 22)
+        end
+        MentionCheck(L["Alert me when my name or a watch-word comes up in chat"], "enabled", 8, 18)
+        MentionCheck(L["My own name"], "ownName", 28, 16)
+        MentionCheck(L["Guild chat"], "guild", 28, 16)
+        MentionCheck(L["Officer chat"], "officer", 28, 16)
+        MentionCheck(L["Play a sound"], "sound", 28, 16)
+        yOff = yOff + 4
+
+        local wLabel = UI:CreateText(content, L["Watch-words:"], 11, C.white.r, C.white.g, C.white.b)
+        wLabel:SetPoint("TOPLEFT", 28, -yOff)
+        local wBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+        wBox:SetSize(160, 22)
+        wBox:SetPoint("LEFT", wLabel, "RIGHT", 10, 0)
+        wBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        wBox:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        wBox:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+        BRutus:ApplyFont(wBox, 11)
+        wBox:SetTextColor(C.text.r, C.text.g, C.text.b)
+        wBox:SetMaxLetters(40)
+        wBox:SetAutoFocus(false)
+        wBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        yOff = yOff + 30
+
+        -- One chip per watch-word; clicking a chip removes it.
+        local WORD_MAX, WORD_PER_ROW = 9, 3
+        local wordBtns = {}
+        local moreText = UI:CreateText(content, "", 9, C.silver.r, C.silver.g, C.silver.b)
+        local function refreshWords()
+            local words = mcfg.watchWords or {}
+            for i = 1, WORD_MAX do
+                local b, w = wordBtns[i], words[i]
+                if w then
+                    b._word = w
+                    UI:SetChipText(b, w, 130)
+                    b:Show()
+                else
+                    b:Hide()
+                end
+            end
+            moreText:SetText(#words > WORD_MAX and string.format(L["+%d more (/gos mentions list)"], #words - WORD_MAX) or "")
+        end
+        for i = 1, WORD_MAX do
+            local b = UI:CreateButton(content, "", 130, 20)
+            b:SetPoint("TOPLEFT", 28 + ((i - 1) % WORD_PER_ROW) * 136, -(yOff + math.floor((i - 1) / WORD_PER_ROW) * 24))
+            b:SetScript("OnClick", function(self)
+                BRutus.Mentions:_RemoveWatchWord(mcfg.watchWords, self._word)
+                refreshWords()
+            end)
+            wordBtns[i] = b
+        end
+        yOff = yOff + math.ceil(WORD_MAX / WORD_PER_ROW) * 24
+        moreText:SetPoint("TOPLEFT", 28, -yOff)
+        UI:AttachSaveButton(wBox, function(box)
+            mcfg.watchWords = mcfg.watchWords or {}
+            local status = BRutus.Mentions:_AddWatchWord(mcfg.watchWords, box:GetText())
+            if status == "ok" then
+                box:SetText("")
+                refreshWords()
+            elseif status == "short" then
+                BRutus:Print(L["Watch-words must be at least 3 characters."])
+            else
+                BRutus:Print(L["Already watching: |cffFFFFFF"] .. strtrim(box:GetText()):lower() .. "|r")
+            end
+        end, { text = L["Add"] })
+        local wHint = UI:CreateText(content, L["Click a word to remove it."], 9, C.silver.r, C.silver.g, C.silver.b)
+        wHint:SetPoint("LEFT", wBox.saveButton, "RIGHT", 8, 0)
+        refreshWords()
+        yOff = yOff + 18
+    end
+
+    if BRutus.db.lfgPrefs then
+        local lfgCb = UI:CreateCheckbox(content, L["Tell me when a guildmate posts on the LFG board"], 18)
+        lfgCb:SetPoint("TOPLEFT", 8, -yOff)
+        lfgCb.checkbox:SetChecked(BRutus.db.lfgPrefs.notify and true or false)
+        lfgCb.checkbox.onChanged = function(_, checked) BRutus.db.lfgPrefs.notify = checked and true or false end
+        yOff = yOff + 30
+    end
     end -- cat == "general"
 
     if isOfficer and cat == "loot" then
@@ -2929,31 +3023,39 @@ function BRutus:RefreshSettingsPanel(content, category)
     sep6:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
     --------------------------------------------------------------------
-    -- AUTO-INVITE (officer opt-in) — keyword/level/class filters live in
-    -- /gos autoinvite; this is just the on/off switch.
+    -- AUTO-INVITE moved to the Recruitment tab with all its filters (issue #59);
+    -- officers who look for it here find the way there.
     --------------------------------------------------------------------
     local aiTitle = UI:CreateHeaderText(content, L["AUTO-INVITE"], 12)
     aiTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
-    local aiChk = UI:CreateCheckbox(content, L["Auto-invite players who whisper the keyword"], 18)
-    aiChk:SetPoint("TOPLEFT", 8, -yOff)
-    aiChk.checkbox:SetChecked(BRutus.db.recruitment and BRutus.db.recruitment.autoInvite and BRutus.db.recruitment.autoInvite.enabled or false)
-    aiChk.checkbox.onChanged = function(_, checked)
-        if BRutus.db.recruitment and BRutus.db.recruitment.autoInvite then
-            BRutus.db.recruitment.autoInvite.enabled = checked and true or false
-        end
+    local aiBtn = UI:CreateButton(content, L["Open in Recruitment"], 170, 22)
+    aiBtn:SetPoint("TOPLEFT", 8, -yOff)
+    aiBtn:SetScript("OnClick", function() BRutus.UI:OpenWindow("recruitment", "recruiting") end)
+    local aiHint = UI:CreateText(content, string.format(L["Keyword, level and class filters are in %s > %s."], L["Recruitment"], L["Recruiting"]),
+        9, C.silver.r, C.silver.g, C.silver.b)
+    aiHint:SetPoint("LEFT", aiBtn, "RIGHT", 10, 0)
+    aiHint:SetWidth(math.max(120, content:GetWidth() - 200))
+    yOff = yOff + 34
+
+    --------------------------------------------------------------------
+    -- !NOTE (issue #59): members set their public note by typing !note in guild
+    -- chat, and a client that can edit notes applies it.
+    --------------------------------------------------------------------
+    local ncTitle = UI:CreateHeaderText(content, L["!NOTE COMMAND"], 12)
+    ncTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 22
+
+    local ncChk = UI:CreateCheckbox(content, L["Apply !note requests from guild chat on this client"], 18)
+    ncChk:SetPoint("TOPLEFT", 8, -yOff)
+    ncChk.checkbox:SetChecked(BRutus.db.noteCommand and BRutus.db.noteCommand.enabled or false)
+    ncChk.checkbox.onChanged = function(_, checked)
+        if BRutus.db.noteCommand then BRutus.db.noteCommand.enabled = checked and true or false end
     end
     yOff = yOff + 30
 
-    local aiHint = UI:CreateText(content,
-        L["Keyword & level/class filters: /gos autoinvite. Banned players are never invited."],
-        9, C.silver.r, C.silver.g, C.silver.b)
-    aiHint:SetPoint("TOPLEFT", 8, -yOff)
-    aiHint:SetWidth(content:GetWidth() - 20)
-    yOff = yOff + 20
-
-    end -- isOfficer and cat == "officer" (Auto-Invite)
+    end -- isOfficer and cat == "officer" (Auto-Invite, !note)
 
     if cat == "about" then
     -- Reload UI button

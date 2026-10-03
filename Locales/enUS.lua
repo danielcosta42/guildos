@@ -52,9 +52,9 @@ L["Current keyword: |cffFFFFFF"] = "Current keyword: |cffFFFFFF"
 L["Auto-invite: "] = "Auto-invite: "
 L[" · keyword: |cffFFFFFF"] = " · keyword: |cffFFFFFF"
 L["|r · min level: |cffFFFFFF"] = "|r · min level: |cffFFFFFF"
-L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|status>"] = "Usage: /gos autoinvite <on|off|keyword|minlevel|class|status>"
+L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|fallback|status>"] = "Usage: /gos autoinvite <on|off|keyword|minlevel|class|fallback|status>"
 L["Auto-invite min level set to |cffFFFFFF%d|r."] = "Auto-invite min level set to |cffFFFFFF%d|r."
-L["Usage: /gos autoinvite minlevel <0-70>"] = "Usage: /gos autoinvite minlevel <0-70>"
+L["Usage: /gos autoinvite minlevel <0-%d>"] = "Usage: /gos autoinvite minlevel <0-%d>"
 L["Auto-invite class filter cleared."] = "Auto-invite class filter cleared."
 L["Auto-invite class filter updated."] = "Auto-invite class filter updated."
 L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"] = "Usage: /gos autoinvite class <add|remove|clear> <CLASS>"
@@ -62,8 +62,8 @@ L["Auto-invite is available to officers after login."] = "Auto-invite is availab
 
 -- UI/FeaturePanels.lua
 L["AUTO-INVITE"] = "AUTO-INVITE"
-L["Auto-invite players who whisper the keyword"] = "Auto-invite players who whisper the keyword"
-L["Keyword & level/class filters: /gos autoinvite. Banned players are never invited."] = "Keyword & level/class filters: /gos autoinvite. Banned players are never invited."
+L["Open in Recruitment"] = "Open in Recruitment"
+L["Keyword, level and class filters are in %s > %s."] = "Keyword, level and class filters are in %s > %s."
 
 -- UI/ManagementPanel.lua (RosterLog Audit Log)
 L["Audit Log"] = "Audit Log"
@@ -176,7 +176,7 @@ L["Watch-words must be at least 3 characters."] = "Watch-words must be at least 
 L["Already watching: |cffFFFFFF"] = "Already watching: |cffFFFFFF"
 L["Own-name alerts: "] = "Own-name alerts: "
 L["Mention sound: "] = "Mention sound: "
-L["Tip: turn these off with /gos mentions ownname off, /gos mentions sound off, or /gos mentions off."] = "Tip: turn these off with /gos mentions ownname off, /gos mentions sound off, or /gos mentions off."
+L["Tip: turn these off in %s > %s > %s, or with /gos mentions off."] = "Tip: turn these off in %s > %s > %s, or with /gos mentions off."
 
 -- Modules/NoteCommand.lua / Core/Commands.lua (/gos notecmd)
 L["Set %s's note: |cffFFFFFF%s|r"] = "Set %s's note: |cffFFFFFF%s|r"

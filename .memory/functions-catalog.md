@@ -53,6 +53,8 @@ Branding: all user-facing "BRutus"/"/brutus" rebranded to "Guild OS"/"/guildos";
 |---|---|
 | `BRutus.Colors.<token>` | Handoff tokens: `bg`, `panel`, `popup`, `well`, `line`, `lineHi`, `text`, `textSoft`, `label`, `labelDim`, `disabled`, `gold`, `onGold`, `ok`, `danger`, `info`, `epic`. Legacy keys (`silver`, `accent`, `border`…) are copies of the token that plays their role (ADR-0013) |
 | `BRutus.Fonts` | Files `serif`, `serifStrong`, `mono`, `monoStrong`; roles `wordmark`, `windowTitle`, `sectionTitle`, `body`, `memberName`, `itemName`, `caption`, `tableNum`, `colHeader`, `metricValue`, `countdown`, `badge` as `{ file, size }`; `normal`/`number` alias `mono` |
+| `BRutus:ChipLabel(text, maxBytes)` | A removable chip's label: the text cut to `maxBytes` (14) on a character boundary (`SanitizeUserText`), `..` only when something was cut, then `  x` (issue #59) |
+| `UI:SetChipText(btn, text, width)` | Sets a chip's label from `ChipLabel`, shortening it until it fits `width` in the font drawing it, and keeps the chip at `width` (issue #59) |
 | `BRutus:ApplyFont(fontString, size, role)` | Sets a font: a role wins, else Spectral from 14px and IBM Plex Mono below (clamped to 10px); never outlined; falls back to `STANDARD_TEXT_FONT` only when `SetFont` returns false. With `GuildOSDB.font == "game"` (account-wide, Settings > General, issue #57) every text uses `STANDARD_TEXT_FONT` at the same size |
 | `BRutus.UI:SetButtonVariant(btn, variant)` | Switches a `CreateButton` button to `"primary"` (gold fill, `glow-gold.tga`), `"secondary"` (default), `"ghost"` (underlined label) or `"danger"`; returns the button |
 | `BRutus.UI:CreateMetricChip(parent, value, caption, size)` | Metric chip: mono value, 1px gold rule (34px), `labelDim` caption; `chip:SetValue(text)` |
@@ -271,7 +273,9 @@ Removed: `Compat.NewTimer`.
 | `Recruitment:ShowSendPopup()` | Shows popup; auto-hides after 30s |
 | `Recruitment:DoSendRecruitmentMessage()` | Sends to configured channels via SendChatMessage |
 | `Recruitment:HookChatInvite()` | No-op (dropdown hooks removed to avoid taint) |
-| `Recruitment:HandleCommand(args)` | Routes `/brutus recruit` subcommands |
+| `Recruitment:HandleCommand(args)` | Routes `/gos recruit` subcommands; with no `db.recruitment` (a member whose officers never started recruitment) it says so instead of raising (issue #59) |
+| `Recruitment:SetAutoInviteKeyword(cfg, word)` / `SetAutoInviteMinLevel(cfg, n)` / `SetAutoInviteClass(cfg, class, on)` / `SetAutoInviteFallback(cfg, mode)` | The auto-invite settings' one door, for `/gos autoinvite` and Recruitment > Recruiting: a keyword is one lowercase word (≤ 20), a level 0..`Client.maxLevel`, a class only one in `CLASSES` (`IsClass`; `_DropUnknownClasses` clears typos the old command stored, at `Initialize`), the fallback `skip`/`invite`. Return what they stored, or nil/false (issue #59) |
+| `Recruitment:AddChannel(list, name)` / `RemoveChannel(list, name)` | Recruitment channels, listed once whatever the case; used by `/gos recruit channel` and the Channels row (issue #59) |
 | `Recruitment:RegisterWelcomeEvent()` | Initialises roster snapshot, creates CHAT_MSG_SYSTEM frame — delegates to DetectGuildJoin/HandleGuildJoin (Rule 10) |
 | `Recruitment:DetectGuildJoin(msg)` | Pure pattern match: returns new member name from system message, or nil |
 | `Recruitment:HandleGuildJoin(newMember)` | All welcome business logic: dedup, delay, WELCOME_CLAIM comm, SendChatMessage (Rule 10) |
