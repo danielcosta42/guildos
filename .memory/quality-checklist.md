@@ -67,7 +67,7 @@ Run through this checklist before calling `task_complete` on any implementation.
 - [ ] All nil-paths handled (missing player key, empty tables, zero-length results)
 - [ ] Score values clamped: `math.max(0, math.min(100, score))`
 - [ ] `GetGuildRosterInfo` loop starts at 1 and nil-checks every return value
-- [ ] Incoming comm message handlers guard: `if not BRutus:IsOfficerByName(sender) then return end`
+- [ ] Incoming officer-only comm message handlers guard the channel and the officer: `if channel ~= "GUILD" or not BRutus:IsOfficerByName(sender) then return end` (a new SyncService domain goes in `OFFICER_DOMAINS` or `GUILD_ONLY_DOMAINS`)
 
 ## Luacheck
 

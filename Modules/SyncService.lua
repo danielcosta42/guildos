@@ -39,6 +39,14 @@ SyncService.OFFICER_DOMAINS = {
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
+    guildcfg  = true,  -- the guild's officer threshold (issue #81)
+}
+
+-- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
+-- Handlers never see the channel, so the GUILD rule is held here (issue #81).
+SyncService.GUILD_ONLY_DOMAINS = {
+    alliance       = true,   -- AllianceSync's trusted fan-out
+    ["core.roster"] = true,  -- CoreManager's officer roster updates
 }
 
 -- Actions any guild member may perform even inside an officer domain.
@@ -62,6 +70,7 @@ function SyncService:Initialize()
     self.seenIds = {}
     self.seenCount = 0
     self.pendingAcks = {}
+    self:On("guildcfg", function(env) BRutus:OnOfficerMaxRankSync(env) end)
 end
 
 local function newId()
@@ -150,7 +159,7 @@ end
 -- Entry point called by CommSystem when an "SV" wire message arrives.
 -- `raw` is the serialized v2 envelope (already de-chunked/decompressed).
 ----------------------------------------------------------------------
-function SyncService:OnEnvelope(sender, raw)
+function SyncService:OnEnvelope(sender, raw, channel)
     local ok, env = LibSerialize:Deserialize(raw)
     if not ok or type(env) ~= "table" then return end
 
@@ -161,7 +170,7 @@ function SyncService:OnEnvelope(sender, raw)
         return
     end
 
-    if not self:Validate(env, sender) then return end
+    if not self:Validate(env, sender, channel) then return end
 
     -- Duplicate: drop, but honour a re-ack request so a lost ACK recovers.
     if env.id and self:IsDuplicate(env.id) then
@@ -180,12 +189,15 @@ end
 ----------------------------------------------------------------------
 -- Validation: structure, protocol ceiling, and officer-domain writes.
 ----------------------------------------------------------------------
-function SyncService:Validate(env, sender)
+-- An officer write counts only over GUILD: IsOfficerByName drops the realm, so a namesake on
+-- another realm could otherwise whisper as the officer (issue #81, as #78 for the rest).
+function SyncService:Validate(env, sender, channel)
     if type(env) ~= "table" then return false end
     if not env.v or not env.id or not env.dom or not env.act then return false end
     if env.v > self.PROTOCOL_VERSION then return false end   -- newer protocol than we speak
+    if self.GUILD_ONLY_DOMAINS[env.dom] and channel ~= "GUILD" then return false end
     if self.OFFICER_DOMAINS[env.dom] and not self.MEMBER_ACTIONS[env.act] then
-        if not BRutus:IsOfficerByName(sender) then return false end
+        if channel ~= "GUILD" or not BRutus:IsOfficerByName(sender) then return false end
     end
     return true
 end

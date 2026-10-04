@@ -68,6 +68,8 @@ function CommSystem:Initialize()
                         BRutus.Recruitment:BroadcastStatus(true)
                     end)
                 end
+                -- And the guild's officer threshold, for a client that missed the change (issue #81).
+                C_Timer.After(15, function() BRutus:PublishOfficerMaxRank() end)
             end
         end
     end)
@@ -260,14 +262,14 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         end
     elseif msgType == "RR" then
         -- Raider roster: everyone stores it (members view); HandleIncoming
-        -- trusts it only when the sender is a verified officer.
-        if BRutus.RaiderRoster then
+        -- trusts it only when the sender is a verified officer, and only over GUILD (issue #81).
+        if BRutus.RaiderRoster and channel == "GUILD" then
             BRutus.RaiderRoster:HandleIncoming(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.ALT_LINK then
         -- Officer-authored, everyone stores: members need altLinks to see
-        -- alt/main grouping (True Roster, chat tags, inspector).
-        if BRutus:IsOfficerByName(sender) then
+        -- alt/main grouping (True Roster, chat tags, inspector). Over GUILD only (issue #81).
+        if channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             local ok, links = LibSerialize:Deserialize(data)
             if ok and type(links) == "table" then
                 BRutus.db.altLinks = links
@@ -282,8 +284,8 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             BRutus.RaidTracker:HandleIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DELETE then
-        -- Only apply if the sender is a verified officer in the guild roster
-        if BRutus:IsOfficerByName(sender) and BRutus.RaidTracker then
+        -- Only apply if the sender is a verified officer in the guild roster, over GUILD (issue #81)
+        if channel == "GUILD" and BRutus:IsOfficerByName(sender) and BRutus.RaidTracker then
             BRutus.RaidTracker:HandleDeleteIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.NOTES_ALL then
@@ -294,7 +296,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         -- Versioned envelope (protocol v2): dedup/validation/dispatch is
         -- handled entirely by SyncService.
         if BRutus.SyncService then
-            BRutus.SyncService:OnEnvelope(sender, data)
+            BRutus.SyncService:OnEnvelope(sender, data, channel)
         end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_INTENT then
         -- Another officer is also considering welcoming this member; record their intent. The
@@ -435,6 +437,11 @@ function CommSystem:HandleRequest(_sender, _data)
             C_Timer.After(2, function()
                 BRutus.RaidTracker:BroadcastRaidData()
             end)
+        end
+
+        -- And the guild's officer threshold (issue #81)
+        if BRutus:IsOfficer() then
+            C_Timer.After(3, function() BRutus:PublishOfficerMaxRank() end)
         end
 
         -- Share the guild recruitment config so alts/late-loggers reliably get

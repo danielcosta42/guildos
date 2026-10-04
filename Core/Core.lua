@@ -755,6 +755,54 @@ function BRutus:IsOfficer()
     return rankIndex <= maxRank
 end
 
+-- The officer threshold is the guild's, not each account's (issue #81). Stored per account, it
+-- let an officer tick an "Officer Alt" rank that no other client knew of, and since #78 every
+-- officer message from that alt was dropped everywhere else. An officer's change is stamped and
+-- published; every client keeps the newest stamp an officer sent over GUILD (SyncService's
+-- officer-domain check). Until somebody changes it, each client keeps the value it had.
+local RANK_FUTURE_SLACK = 300   -- seconds a stamp may run ahead of this client's clock, as RI's
+local MAX_RANK_INDEX = 9        -- guild ranks are 0..9
+
+-- The stamp only moves forward, past the one this client holds: a clock a second behind, or
+-- two clicks in one second, would otherwise stamp a change the rest of the guild rejects as
+-- old, and the guild would stay split. Only an officer changes it, and the change goes out
+-- even when it demotes that officer: the receivers judge the sender by their own threshold,
+-- which still counts them.
+function BRutus:SetOfficerMaxRank(maxRank)
+    if not self:IsOfficer() then return false end
+    local s = self.db.settings
+    s.officerMaxRank = maxRank
+    s.officerMaxRankAt = math.max(GetServerTime(), (s.officerMaxRankAt or 0) + 1)
+    self:PublishOfficerMaxRank(true)
+    return true
+end
+
+-- Officers re-send it on the 5-minute sync and when asked, so a client that missed the change
+-- still gets it. `justChanged` skips the officer check for the change SetOfficerMaxRank has
+-- just made, which may have demoted the sender.
+function BRutus:PublishOfficerMaxRank(justChanged)
+    local s = self.db and self.db.settings
+    if not (s and s.officerMaxRankAt and self.SyncService and (justChanged or self:IsOfficer())) then return end
+    self.SyncService:Publish("guildcfg", "officers", { max = s.officerMaxRank }, { rev = s.officerMaxRankAt })
+end
+
+function BRutus:OnOfficerMaxRankSync(env)
+    local data = env and env.data
+    local at = env and tonumber(env.rev)
+    local max = type(data) == "table" and type(data.max) == "number" and data.max
+    -- `at > 0` also turns away NaN, which compares false to everything and would switch
+    -- newest-wins off for good on the client that stored it.
+    if not (at and at > 0 and at < math.huge and max) then return end
+    if max < 0 or max > MAX_RANK_INDEX or max ~= math.floor(max) then return end
+    at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
+    local s = self.db.settings
+    -- Newest wins; two changes stamped in the same second settle on the lower threshold, the
+    -- same answer on every client whatever order they arrive in.
+    local held = s.officerMaxRankAt
+    if held and (at < held or (at == held and max >= (s.officerMaxRank or 1))) then return end
+    s.officerMaxRank, s.officerMaxRankAt = max, at
+end
+
 -- Check whether a named player (may include realm, e.g. "Name-Realm") is an officer
 -- by scanning the guild roster. Used to validate incoming officer-only messages.
 function BRutus:IsOfficerByName(fullName)
