@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.62.3] - 2026-10-04
+
+### Fixed
+- recrutamento desligado nao mostra popups, e oficial com rank atrasado nao fica sem o fluxo (#79)
+
+
 ## [0.62.2] - 2026-10-03
 
 ### Fixed
