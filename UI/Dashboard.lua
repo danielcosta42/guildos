@@ -211,6 +211,12 @@ function BRutus:CreateDashboardPanel(panel)
 
     local function fillRecruit(body)
         clearBody(body)
+        -- Switched off in Settings, no popup will come: say so instead of offering one (issue #84).
+        if not BRutus:IsFeatureEnabled("recruitment") then
+            local off = UI:CreateText(body, L["The Recruitment module is off. Turn it on in Settings > General > Modules."], 10, C.silver.r, C.silver.g, C.silver.b)
+            off:SetPoint("TOPLEFT", 2, -2); off:SetWidth(body:GetWidth() - 4); off:SetJustifyH("LEFT")
+            return
+        end
         local info = BRutus.db and BRutus.db.guildRecruitment
         local isOfficer = BRutus:IsOfficer()
         if not info or not info.enabled or not info.message or info.message == "" then
