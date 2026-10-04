@@ -555,6 +555,11 @@ function Recruitment:StartAutoRecruit()
         BRutus:Print(L["|cffFF4444You don't have permission to use recruitment.|r"])
         return false
     end
+    -- /gos recruit on reaches here with the module switched off and its tab hidden (issue #84).
+    if not BRutus:IsFeatureEnabled("recruitment") then
+        BRutus:Print(L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
+        return false
+    end
 
     local settings = BRutus.db.recruitment
     settings.enabled = true
@@ -569,19 +574,24 @@ function Recruitment:StartAutoRecruit()
 
     -- NOTE: SendChatMessage("CHANNEL") requires a hardware event (Blizzard restriction).
     -- We show a clickable popup instead of sending automatically.
-    self.ticker = C_Timer.NewTicker(interval, function()
-        self:ShowSendPopup()
-    end)
+    self.ticker = C_Timer.NewTicker(interval, function() self:_OfficerTick() end)
 
     -- Show first popup after a short delay
-    C_Timer.After(2, function()
-        self:ShowSendPopup()
-    end)
+    C_Timer.After(2, function() self:_OfficerTick() end)
 
      BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
     -- Push the (now enabled) config to guild members so they can help spread it.
     self:BroadcastStatus(true)
     return true
+end
+
+-- One officer popup. With the module switched off it shows nothing, and the ticker stays: the
+-- switch has no hook to start it again, so a stopped ticker would leave the tab saying ACTIVE
+-- with no popup ever coming. Running silent, the next tick after the module is back shows
+-- one (issue #84).
+function Recruitment:_OfficerTick()
+    if not BRutus:IsFeatureEnabled("recruitment") then return end
+    self:ShowSendPopup()
 end
 
 ----------------------------------------------------------------------
@@ -1221,7 +1231,8 @@ function Recruitment:HandleCommand(args)
     -- The settings exist once an officer's client has started recruitment; a member's never
     -- has, and every branch below but `invite` reads them.
     if not BRutus.db.recruitment and cmd and cmd ~= "invite" then
-        BRutus:Print(L["Recruitment settings are available to officers after login."])
+        BRutus:Print(BRutus:IsFeatureEnabled("recruitment") and L["Recruitment settings are available to officers after login."]
+            or L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
         return
     end
 
@@ -1243,9 +1254,16 @@ function Recruitment:HandleCommand(args)
         if secs and secs >= 60 then
             BRutus.db.recruitment.interval = secs
             BRutus:Print(string.format(L["Recruitment interval set to |cffFFFFFF%ds|r."], secs))
-            -- Restart if active
+            -- Restart if active. StartAutoRecruit replaces the ticker itself: going through
+            -- StopAutoRecruit would switch the guild's recruitment off (enabled = false, a
+            -- disabled ad broadcast) whenever the start then refused, as with the module off.
             if BRutus.db.recruitment.enabled then
-                self:StopAutoRecruit()
+                -- With the module off the start refuses, so the silent ticker takes the new
+                -- period here, or it would come back on at the old one.
+                if self.ticker and not BRutus:IsFeatureEnabled("recruitment") then
+                    self.ticker:Cancel()
+                    self.ticker = C_Timer.NewTicker(secs, function() self:_OfficerTick() end)
+                end
                 self:StartAutoRecruit()
             end
         else

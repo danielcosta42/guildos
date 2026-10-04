@@ -43,11 +43,11 @@ local ROSTER = { { "Officer", 0 }, { "Me", 5 } }
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i) local r = ROSTER[i]; if r then return r[1], "Rank", r[2] end end
 function time() return 1000 end
-local tickers = 0
-C_Timer = { After = function() end,
-            NewTicker = function()
+local tickers, delayed = 0, {}
+C_Timer = { After = function(_, fn) delayed[#delayed + 1] = fn end,
+            NewTicker = function(period, fn)
               tickers = tickers + 1
-              local t = { live = true }
+              local t = { live = true, fn = fn, period = period }
               function t:Cancel() if self.live then self.live = false; tickers = tickers - 1 end end
               return t
             end }
@@ -139,5 +139,70 @@ BRutus.db.recruitment = { enabled = false, message = "Officer ad", channels = { 
 R:Initialize()
 check(not R:IsMemberRecruitActive() and tickers == 0,
   "an officer whose own ad is off ends up with no ticker at all, not the member's")
+
+-- ── 5. The officer's own popups (issue #84) ────────────────────────────
+if R.ticker then R.ticker:Cancel(); R.ticker = nil end
+member({ recruitment = false })
+myRank = 0
+BRutus.db.recruitment = { enabled = false, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
+                          welcomeEnabled = false, welcomeMessage = "Hi" }
+printed = {}
+check(R:StartAutoRecruit() == false and R.ticker == nil and tickers == 0,
+  "module off: /gos recruit on starts no officer popups")
+check(BRutus.db.recruitment.enabled == false and printed[#printed]
+  and printed[#printed]:find("The Recruitment module is off. Turn it on in Settings > General > Modules.", 1, true),
+  "and says why, leaving the officer's setting as it was")
+
+BRutus.db.settings.modules.recruitment = nil
+delayed = {}
+check(R:StartAutoRecruit() and R.ticker and tickers == 1, "module on: the officer's popups start")
+BRutus.db.settings.modules.recruitment = false
+printed, popups = {}, 0
+for _, fn in ipairs(delayed) do fn() end                -- the first popup, two seconds in
+check(popups == 0, "switched off before the first popup: it does not show")
+check(R.ticker ~= nil, "and the officer's ticker keeps running, silent")
+R.ticker.fn()                                           -- a regular tick
+check(popups == 0 and #printed == 0 and BRutus.db.recruitment.enabled == true,
+  "nor does any tick while it is off, without a word, and the officer's setting stays on")
+BRutus.db.settings.modules.recruitment = nil
+R.ticker.fn()
+check(popups == 1, "switched back on in the same session: the next tick shows a popup again")
+
+-- /gos recruit interval with the module off: the guild's recruitment is not switched off.
+BRutus.db.settings.modules.recruitment = false
+printed, relayed = {}, {}
+R:HandleCommand({ "interval", "300" })
+check(BRutus.db.recruitment.enabled == true and BRutus.db.recruitment.interval == 300 and #relayed == 0,
+  "module off: changing the interval keeps recruitment on and broadcasts nothing")
+local saidStoppedNow = false
+for _, line in ipairs(printed) do
+  if line:find("stopped", 1, true) then saidStoppedNow = true end
+end
+check(not saidStoppedNow and printed[#printed]:find("The Recruitment module is off", 1, true),
+  "and says the module is off, not that recruitment stopped")
+check(R.ticker and R.ticker.period == 300 and tickers == 1,
+  "the silent ticker takes the new period, so the module comes back at 300s")
+
+-- Module on: changing the interval leaves one ticker, at the new period.
+BRutus.db.settings.modules.recruitment = nil
+R:HandleCommand({ "interval", "240" })
+check(R.ticker and R.ticker.period == 240 and tickers == 1, "module on: the interval change leaves one ticker, at 240s")
+
+-- Recruitment off: changing the interval does not start it.
+R:StopAutoRecruit()
+R:HandleCommand({ "interval", "180" })
+check(R.ticker == nil and tickers == 0 and BRutus.db.recruitment.enabled == false,
+  "recruitment off: changing the interval only changes the interval")
+BRutus.db.recruitment.enabled = true
+
+-- No settings at all, the module off since login: the refusal names the module.
+BRutus.db.settings.modules.recruitment = false
+local saved = BRutus.db.recruitment
+BRutus.db.recruitment = nil
+printed = {}
+R:HandleCommand({ "on" })
+check(printed[#printed] and printed[#printed]:find("The Recruitment module is off", 1, true),
+  "module off since login: /gos recruit on says the module is off")
+BRutus.db.recruitment = saved
 
 print(("recruit-module-off: %d checks passed"):format(checks))

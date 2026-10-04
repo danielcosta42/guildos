@@ -271,7 +271,8 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `Recruitment:Initialize()` | Officer stage: first drops a member popup ticker started while the rank was unknown (issue #79), then sets up DB defaults, hooks events, resumes if enabled |
 | `Recruitment:CanUseRecruitment()` | Checks rank index ≤ minRankIndex or CanGuildInvite() |
-| `Recruitment:StartAutoRecruit()` | Creates ticker, shows first popup after 2s |
+| `Recruitment:StartAutoRecruit()` | Creates ticker, shows first popup after 2s; refuses with the Recruitment module off (issue #84) |
+| `Recruitment:_OfficerTick()` | One officer popup; with the module switched off it shows nothing and keeps the ticker, so the next tick after the module is back shows one (issue #84) |
 | `Recruitment:StopAutoRecruit()` | Cancels ticker, hides popup |
 | `Recruitment:Toggle()` | Toggles enabled state |
 | `Recruitment:CreatePopupFrame()` | Creates click-to-send popup with glow, icon, dismiss button |
