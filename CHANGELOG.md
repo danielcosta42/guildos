@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.62.4] - 2026-10-04
+
+### Fixed
+- com o recrutamento desligado, o card do Dashboard e o fluxo do oficial respeitam o modulo (#84)
+
+
 ## [0.62.3] - 2026-10-04
 
 ### Fixed
