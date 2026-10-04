@@ -165,6 +165,7 @@ Removed: `Compat.NewTimer`.
 | `BRutus:Print(msg)` | Gold `[BRutus]`-prefixed message to DEFAULT_CHAT_FRAME |
 | `BRutus:IsOfficer()` | true if local rank index ≤ officerMaxRank setting |
 | `BRutus:IsOfficerByName(fullName)` | Checks officer status by scanning guild roster |
+| `BRutus:SetOfficerMaxRank(n)` / `PublishOfficerMaxRank(justChanged)` / `OnOfficerMaxRankSync(env)` | The guild's officer threshold (issue #81): an officer's change is stamped (`settings.officerMaxRankAt`) and published on the `guildcfg` SyncService officer domain; officers re-send it on the 5-minute sync and when asked; a local change is stamped past the one held and goes out even when it demotes the sender; every client keeps the newest stamp (a real time, held to 5 min ahead of its clock; a tie goes to the lower threshold), a whole rank 0..9, sent by an officer over GUILD. `SetOfficerMaxRank` returns false and does nothing for a non-officer. A threshold set before #81 that is not the default is shared by the Settings button |
 | `BRutus:LinkAlt(altKey, mainKey)` | Links alt to main in altLinks, broadcasts (officer only) |
 | `BRutus:UnlinkAlt(altKey)` | Removes alt link, broadcasts (officer only) |
 | `BRutus:GetLinkedChars(playerKey)` | Returns all keys in the same alt/main account group |

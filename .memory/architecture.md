@@ -219,7 +219,7 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 ```lua
 {
   version  = 1,
-  settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, modules },
+  settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules },
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
                                    addonVersion, lastUpdate, lastSync } },
@@ -289,9 +289,11 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 **Who may send them (issue #78).** `WC`, `WI`, `LP`, `ON`, `OA`, `TR` and `RD` are believed only over
 GUILD from a current officer (`IsOfficerByName(sender)`); `RX` and `AL` check the officer, and `RI` binds
 trust to channel and sender in `Recruitment:ApplyIncoming`. Every legitimate sender of these is
-officer-gated at the source and sends over GUILD. `officerMaxRank` is stored per account and guild
-(`GuildOSDB[guild-realm].settings`) and never synced: a rank ticked as officer on one account (an "Officer
-Alt" rank, say) is not an officer to clients that did not tick it, and its messages are dropped there (#81).
+officer-gated at the source and sends over GUILD. Since #81 `RX`, `AL`, `RR`, every officer
+SyncService domain and the two domains whose handlers check the officer themselves (`alliance`,
+`core.roster`, in `GUILD_ONLY_DOMAINS`) ask for GUILD as well. Who is an officer is the guild's
+choice: `officerMaxRank` changes go out stamped on the `guildcfg` domain, and every client keeps
+the newest one an officer sent (#81).
 
 ---
 

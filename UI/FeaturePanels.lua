@@ -2932,11 +2932,24 @@ function BRutus:RefreshSettingsPanel(content, category)
     yOff = yOff + 22
 
     local rankDesc = UI:CreateText(content,
-        L["Checked ranks will have access to officer features in Guild OS."],
+        L["Checked ranks are officers in Guild OS for the whole guild: a change goes to every member running it."],
         10, C.silver.r, C.silver.g, C.silver.b)
     rankDesc:SetPoint("TOPLEFT", 8, -yOff)
     rankDesc:SetWidth(content:GetWidth() - 20)
-    yOff = yOff + 18
+    yOff = yOff + math.max(18, (rankDesc:GetStringHeight() or 12) + 6)
+
+    -- Set before the threshold was the guild's (issue #81), a choice was never stamped, so nobody
+    -- sends it: one click shares it as it is. Only a choice, not the default: an officer who never
+    -- ticked anything and has not heard the guild's yet would otherwise overwrite it.
+    if not BRutus.db.settings.officerMaxRankAt and (BRutus.db.settings.officerMaxRank or 1) ~= 1 then
+        local shareBtn = UI:CreateButton(content, L["Share these ranks with the guild"], 220, 22)
+        shareBtn:SetPoint("TOPLEFT", 8, -yOff)
+        shareBtn:SetScript("OnClick", function(self)
+            BRutus:SetOfficerMaxRank(BRutus.db.settings.officerMaxRank or 1)
+            self:Hide()
+        end)
+        yOff = yOff + 30
+    end
 
     -- Read current max rank setting
     local currentMaxRank = BRutus.db.settings.officerMaxRank or 1
@@ -2996,7 +3009,8 @@ function BRutus:RefreshSettingsPanel(content, category)
                     newMax = capturedRankIndex - 1
                     if newMax < 0 then newMax = 0 end
                 end
-                BRutus.db.settings.officerMaxRank = newMax
+                -- No longer an officer (a change from elsewhere, the panel still open): nothing changed.
+                if not BRutus:SetOfficerMaxRank(newMax) then return end
                 local newRankName = GuildControlGetRankName and GuildControlGetRankName(newMax + 1) or (L["Rank "] .. newMax)
                 BRutus:Print(L["Officer threshold: ranks 0-"] .. newMax .. " (" .. newRankName .. L[" and above are officers)."])
             end

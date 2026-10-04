@@ -163,8 +163,10 @@ BRutus:SetSetting("showOffline", true)
 -- General officer check
 if not BRutus:IsOfficer() then return end
 
--- Validate incoming officer-only comm messages
-if not BRutus:IsOfficerByName(sender) then return end
+-- Validate incoming officer-only comm messages: the officer AND the channel. IsOfficerByName
+-- drops the realm, so without GUILD a namesake on another realm could whisper as the officer
+-- (issues #78, #81). A new SyncService domain goes in OFFICER_DOMAINS or GUILD_ONLY_DOMAINS.
+if channel ~= "GUILD" or not BRutus:IsOfficerByName(sender) then return end
 ```
 
 ---
