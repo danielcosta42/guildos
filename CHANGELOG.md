@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.63.0] - 2026-10-04
+
+### Added
+- quem e oficial passa a ser escolha da guilda, e RX, AL, RR e o SyncService exigem o GUILD (#81)
+
+
 ## [0.62.4] - 2026-10-04
 
 ### Fixed
