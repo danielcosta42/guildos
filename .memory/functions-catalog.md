@@ -148,7 +148,7 @@ Removed: `Compat.NewTimer`.
 | `BRutus:Initialize()` | Bootstrap: registers addon message prefix, prints version |
 | `BRutus:ResolveGuildDB()` | Resolves/creates per-guild SavedVariables DB; migrates flat structure |
 | `BRutus:OnLogin()` | Handles PLAYER_LOGIN, retries guild DB resolution up to 5 times |
-| `BRutus:InitModules()` | Starts every module from the `MODULE_START` list (then `OFFICER_START` after 5s), each isolated; respects enable flags |
+| `BRutus:InitModules()` | Starts every module from the `MODULE_START` list (then `OFFICER_START` once the guild rank is known, asked every 5s up to a minute, after which it gives up as the `OfficerModules` start-up problem, counted in the login line and listed in `/guildos errors`; issue #79), each isolated; respects enable flags |
 | `BRutus:StartModule(entry)` | Starts one start-list entry (`{ name, feature, ui, method, after }`); skipped (not failed) when not loaded or switched off |
 | `BRutus:RunStartup(name, entry, fn, ...)` | xpcall one start-up step; on failure records `State.startup.failed[name]` (stack in `State.startup.stacks[name]`), marks `entry.feature` / `entry.ui` as failed, and hands the error to `geterrorhandler()` in debug mode |
 | `BRutus:ListStartupProblems()` | Sorted lines for every start-up failure and missing capability; `/guildos errors` prints them before the capped error ring |
@@ -269,7 +269,7 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `Recruitment:Initialize()` | Sets up DB defaults, hooks events, resumes if enabled |
+| `Recruitment:Initialize()` | Officer stage: first drops a member popup ticker started while the rank was unknown (issue #79), then sets up DB defaults, hooks events, resumes if enabled |
 | `Recruitment:CanUseRecruitment()` | Checks rank index ≤ minRankIndex or CanGuildInvite() |
 | `Recruitment:StartAutoRecruit()` | Creates ticker, shows first popup after 2s |
 | `Recruitment:StopAutoRecruit()` | Cancels ticker, hides popup |

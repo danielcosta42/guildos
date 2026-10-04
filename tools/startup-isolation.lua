@@ -233,4 +233,49 @@ check(failed["Recruitment:InitParticipation"] and failed.Recruitment,
   "the member stage and the officer stage each keep their own record")
 check(countPrinted("2 start-up problem(s)") == 1, "both stages are counted")
 
+-- ── 9. The guild rank arrives late: the officer modules wait for it (issue #79) ──
+reset()
+module("Wishlist", RAISE)             -- one start-up problem, so the login line has something to say
+module("TrialTracker")
+local asks = 0
+function IsInGuild() return true end
+function GetGuildInfo()
+  asks = asks + 1
+  if asks < 3 then return "Guild" end      -- no rank yet
+  return "Guild", "Officer", 0
+end
+BRutus:InitModules()
+runTimers()
+check(not started["TrialTracker:Initialize"], "rank unknown at five seconds: the officer modules wait instead of giving up")
+check(countPrinted("start-up problem(s)") == 0, "and the login line waits with them")
+runTimers()
+check(not started["TrialTracker:Initialize"], "and keep waiting while it is unknown")
+runTimers()
+check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckExpired"], "they start once the rank is known")
+check(#timers == 0, "and nothing is left asking")
+check(countPrinted("1 start-up problem(s)") == 1, "the login line comes once, after the decision")
+
+-- ── 10. A rank that never arrives: given up on, and said ───────────────
+reset()
+module("Wishlist", RAISE)
+module("TrialTracker")
+function GetGuildInfo() return "Guild" end
+BRutus:InitModules()
+local ticks = 0
+repeat
+  runTimers()
+  ticks = ticks + 1
+until #timers == 0 or ticks > 50
+check(ticks == 12 and not started["TrialTracker:Initialize"], "after twelve asks, a minute, the officer modules give up")
+local saidSo = false
+for _, line in ipairs(BRutus:ListStartupProblems()) do
+  if line:find("OfficerModules: not started, the guild rank was still unknown", 1, true) then saidSo = true end
+end
+check(saidSo, "and the start-up problems say why")
+check(countPrinted("2 start-up problem(s)") == 1, "the login line counts it, once")
+check(BRutus:FeatureStartFailed("recruitment") == nil and BRutus:FeatureStartFailed("trials") == nil,
+  "giving up blocks no window: a member whose rank never loads keeps them all")
+function IsInGuild() return false end
+GetGuildInfo = nil
+
 io.write(string.format("startup-isolation: %d checks passed\n", checks))
