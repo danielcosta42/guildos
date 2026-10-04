@@ -308,6 +308,33 @@ local OFFICER_START = {
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN
+local OFFICER_START_TRIES = 12 -- asks, OFFICER_START_DELAY apart, before giving up on the rank
+
+-- The rank IsOfficer reads, or no guild at all: either way there is an answer to act on.
+local function rankKnown()
+    if not IsInGuild() then return true end
+    local _, _, rankIndex = GetGuildInfo("player")
+    return rankIndex ~= nil
+end
+
+-- Asked once at five seconds, a rank the client had not loaded yet read as "not an officer",
+-- and the officer's welcome, notes and trials stayed off all session, silently (issue #79).
+-- It asks again until the rank is known; the start-up report waits for the answer.
+local function startOfficerModules(try)
+    if not rankKnown() and try < OFFICER_START_TRIES then
+        BRutus.Compat.After(OFFICER_START_DELAY, function() startOfficerModules(try + 1) end)
+        return
+    end
+    if not rankKnown() then
+        BRutus.State.startup.failed.OfficerModules = "not started, the guild rank was still unknown after "
+            .. (OFFICER_START_DELAY * OFFICER_START_TRIES) .. "s"
+    elseif BRutus:IsOfficer() then
+        for _, entry in ipairs(OFFICER_START) do
+            BRutus:StartModule(entry)
+        end
+    end
+    BRutus:ReportStartup()
+end
 
 function BRutus:InitModules()
     -- Core helper tests (Utils loads before SelfTest, so it cannot self-register).
@@ -331,14 +358,7 @@ function BRutus:InitModules()
 
     -- Officer-only modules: defer init until guild info is available. The
     -- start-up report waits for them, so it counts every problem exactly once.
-    BRutus.Compat.After(OFFICER_START_DELAY, function()
-        if BRutus:IsOfficer() then
-            for _, entry in ipairs(OFFICER_START) do
-                BRutus:StartModule(entry)
-            end
-        end
-        BRutus:ReportStartup()
-    end)
+    BRutus.Compat.After(OFFICER_START_DELAY, function() startOfficerModules(1) end)
 
     -- Hook chat player links for guild invite
     self:RunStartup("ChatInviteHook", nil, self.HookChatInvite, self)

@@ -471,6 +471,9 @@ end
 -- Initialize
 ----------------------------------------------------------------------
 function Recruitment:Initialize()
+    -- An officer whose rank arrived late may have started as a member: the member's popups stop
+    -- here, or the officer's own would run beside them, twice the rate all session (issue #79).
+    if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
     -- Ensure DB settings exist
     if not BRutus.db.recruitment then
         BRutus.db.recruitment = BRutus:DeepCopy(self.DEFAULT_SETTINGS)
@@ -672,6 +675,12 @@ end
 -- self-pauses the ticker and says so once. The manual "Send Now" button calls
 -- ShowSendPopup directly and never routes through here, so it is never capped.
 function Recruitment:_AutoTick()
+    -- The module switched off while the popups ran: nothing more, and the ticker goes quietly.
+    -- The switch only refreshes the tabs, so this is where it is heard (issue #79).
+    if not BRutus:IsFeatureEnabled("recruitment") then
+        if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
+        return
+    end
     if not self:_AutoShouldContinue(self._autoPopups or 0, self.AUTO_SESSION_CAP) then
         self._autoCapReached = true
         if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
@@ -815,7 +824,9 @@ function Recruitment:SyncMemberParticipation()
     if BRutus:IsOfficer() then return end   -- officers use their own flow
     local info = BRutus.db.guildRecruitment
     local active = info and info.enabled and info.message and info.message ~= ""
-    if not active or not self:IsParticipating() then
+    -- The module switched off in Settings skips InitParticipation, but an officer's ad still
+    -- arrives and lands here: the ad is kept and relayed, the popups stay off (issue #79).
+    if not active or not self:IsParticipating() or not BRutus:IsFeatureEnabled("recruitment") then
         if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
         return
     end
