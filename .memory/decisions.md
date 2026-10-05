@@ -640,3 +640,45 @@ primary professions, addon or not, with no rank. Professions are expected to be 
   extra recipes the client found, the signal to regenerate.
 - (−) Recipe required skill for trainer recipes is not in the client data.
 - (−) Names in `db.recipes` are the reader's client's language, as before.
+
+---
+
+## ADR-0023 — A raid's core comes from its roster; the active core is the fallback
+
+### Context
+The active core (`RaidTracker.currentGroupTag`) is per client and set by hand, and it decides which core a raid's
+session, DKP pool and loot rules belong to. A guild on WoW: Forever plans 8 to 12 rosters of 20 (issue #99): an
+officer leading several had to switch before every raid, and forgetting sent the night to the wrong core silently.
+
+### Decision
+- Each snapshot inside the raid matches the group (that snapshot's members, never everyone the session has seen)
+  against each core's roster, an alt counting as their main (`CoreManager:CoreForGroup`).
+- A core takes the raid with the most of the group on its roster, if that is at least two people, at least half
+  the group, and no other core has as many. It becomes the active core and the session's, and a chat line names
+  it the first time and whenever it changes.
+- Until the first boss is pulled the raid follows the group, so one still being invited ends on the roster that
+  showed up; `encounter_start` settles it. Detection never runs once the raid is left: not in the 20-minute
+  grace period and not on the session's last snapshot.
+- An officer's pick (Raid Core's "Set Active", `RaidTracker:PickCore`) inside the raid is final for it. It is
+  kept for that character and instance while the raid goes on (each snapshot refreshes it; it lapses 30 minutes
+  after the last), so a /reload or a disconnect keeps it, and it ends with its session: a later raid, an alt or
+  another instance is asked afresh. A pick on a wipe's run-back (the grace period) is the raid's once it resumes;
+  outside any raid it is only what the next raid falls back to, and drops a kept one. A rename carries the raid,
+  the kept pick and the announced core along. A pick applied without a click right then (kept, or from the
+  run-back) is named in chat, so no pick takes a raid silently.
+- A /reload or a login inside a raid fires no zone change, so `PLAYER_ENTERING_WORLD` runs `CheckZone` once:
+  the session (attendance with it) picks back up at once instead of at the next wipe, and finds a kept pick
+  while it is fresh.
+- Any change of active core re-reads the loot rules cached from the core's config.
+- Nothing matches, a tie, or no rosters: the active core stands, silently, as before.
+
+### Consequences
+- (+) Every core is usable at once; the night goes to the roster that showed up.
+- (+) An officer's pick still wins, and fixes a wrong guess mid-raid.
+- (−) A raid formed mostly of pugs, or split evenly between two rosters, falls back to the hand-set core.
+- (−) Detection is local, like the active core: every officer tracking the raid works it out on their own client.
+- (−) Awards made before the first pull go to the core the raid was on at that moment.
+- (−) A guess made while the group formed stays when the formed raid matches no roster, rather than going back
+  to the hand-set core; the chat line names it, and "Set Active" fixes it.
+- (?) On WoW: Forever nobody has read whether `UnitName("raidN")` gives the whole name; if it gives the first name
+  only, raid keys miss every roster (attendance as much as detection). Verify when raids open.

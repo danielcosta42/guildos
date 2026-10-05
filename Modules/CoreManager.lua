@@ -193,6 +193,14 @@ function CoreManager:Rename(oldName, newName)
     if BRutus.RaidTracker and BRutus.RaidTracker.currentGroupTag == oldName then
         BRutus.RaidTracker:SetGroupTag(newName)
     end
+    -- And the raid in progress, and an officer's pick kept for it (issue #99).
+    local RT = BRutus.RaidTracker
+    local raid = RT and RT.currentRaid
+    if raid and raid.groupTag == oldName then raid.groupTag = newName end
+    if RT and RT.coreAnnounced == oldName then RT.coreAnnounced = newName end
+    if RT and RT.gracePick == oldName then RT.gracePick = newName end
+    local pick = rtDB and rtDB.corePick
+    if type(pick) == "table" and pick.tag == oldName then pick.tag = newName end
 
     return true
 end
@@ -212,6 +220,33 @@ function CoreManager:GetActiveName()
         return BRutus.RaidTracker:GetCurrentGroup()
     end
     return (BRutus.db.raidTracker and BRutus.db.raidTracker.currentGroupTag) or ""
+end
+
+-- The core a raid group is, by roster (issue #99): the one with the most of the group on it, an
+-- alt counting as their main, provided that is at least two people and at least half the group
+-- and no other core has as many. Nil otherwise, and the active core stands.
+-- Returns name, how many of the group are on its roster, and the group's size.
+function CoreManager:CoreForGroup(players)
+    local altLinks = (BRutus.db and BRutus.db.altLinks) or {}
+    local size = 0
+    for _ in pairs(players or {}) do size = size + 1 end
+    local counts, best, bestCount = {}, nil, 0
+    for name, core in pairs((BRutus.db and BRutus.db.cores) or {}) do
+        local members = type(core) == "table" and core.members
+        if type(members) == "table" then
+            local count = 0
+            for key in pairs(players or {}) do
+                if members[key] or members[altLinks[key]] then count = count + 1 end
+            end
+            counts[name] = count
+            if count > bestCount then best, bestCount = name, count end
+        end
+    end
+    if not best or bestCount < 2 or bestCount * 2 < size then return nil end
+    for name, count in pairs(counts) do
+        if count == bestCount and name ~= best then return nil end   -- a tie: no roster is the raid
+    end
+    return best, bestCount, size
 end
 
 -- Returns the core table for `name` (or the active core when name is nil).
