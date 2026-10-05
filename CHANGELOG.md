@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.63.5] - 2026-10-05
+
+### Fixed
+- no Forever, as chaves que chegam dentro dos pacotes passam a ser deste cliente (#97)
+
+
 ## [0.63.4] - 2026-10-05
 
 ### Fixed
