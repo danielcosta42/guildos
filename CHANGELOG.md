@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.63.3] - 2026-10-05
+
+### Fixed
+- no Forever, calendario de 10/20/40, sem buffs do TBC e papeis com dano primeiro (#92)
+
+
 ## [0.63.2] - 2026-10-05
 
 ### Fixed
