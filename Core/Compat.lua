@@ -29,6 +29,11 @@ BRutus.Client = {
     -- The game's level cap: TBC's 70, WoW: Forever's 60 (issue #53). The Forever beta caps
     -- lower for a while; the game is 60, and that is what "the top" means to a guild.
     maxLevel = isAnniversary and 70 or 60,
+    -- The raid sizes an event can have, and the one it starts at: TBC's 10 and 25, with 40 for
+    -- the old raids; WoW: Forever's 10 and 20 a tier, with Onyxia at 40. The default is each
+    -- game's main raid (issues #89, #92).
+    raidSizes = isAnniversary and { 10, 25, 40 } or { 10, 20, 40 },
+    defaultRaidSize = isAnniversary and 25 or 20,
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,

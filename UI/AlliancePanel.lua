@@ -259,10 +259,11 @@ local function BuildOverview(panel)
 
             for i = 1, math.min(#events, 8) do
                 local ev = events[i]
-                local full = (ev.yes or 0) >= (ev.size or 25)
+                local size = tonumber(ev.size) or BRutus.Client.defaultRaidSize   -- from another guild
+                local full = (ev.yes or 0) >= size
                 local when = date("%a %H:%M", ev.when)
                 local fs = UI:CreateText(content, string.format("%s  %s  |cff888888%s  %d/%d|r",
-                    when, ev.title or "?", ev.guild or "?", ev.yes or 0, ev.size or 25),
+                    when, ev.title or "?", ev.guild or "?", ev.yes or 0, size),
                     11, C.text.r, C.text.g, C.text.b)
                 fs:SetPoint("TOPLEFT", 10, -y)
                 fs:SetWidth(math.max(content:GetWidth() - 200, 200))

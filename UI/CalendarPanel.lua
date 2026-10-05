@@ -16,7 +16,8 @@ local function CAL() return BRutus.Calendar end
 
 local WEEKDAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 local ROLES    = { "TANK", "HEALER", "DPS" }
-local SIZES    = { 10, 25, 40 }
+local SIZES    = BRutus.Client.raidSizes   -- the game's: 10/25/40 on TBC, 10/20/40 on Forever (#92)
+local DEFAULT_SIZE = BRutus.Client.defaultRaidSize
 
 local COLS, ROWS = 7, 6
 local CELL_H  = 44
@@ -115,9 +116,9 @@ local function buildEditor()
     local timeBox  = fieldBox(140, -42, 66,  L["Time (HH:MM)"],      false, 5)
     local sizeLbl  = UI:CreateText(f, L["Size"], 10, C.silver.r, C.silver.g, C.silver.b)
     sizeLbl:SetPoint("TOPLEFT", 216, -42)
-    local sizeBtn  = UI:CreateButton(f, "25", 44, 22)
+    local sizeBtn  = UI:CreateButton(f, tostring(DEFAULT_SIZE), 44, 22)
     sizeBtn:SetPoint("TOPLEFT", 216, -56)
-    sizeBtn.sizeVal = 25
+    sizeBtn.sizeVal = DEFAULT_SIZE
     sizeBtn:SetScript("OnClick", function()
         local idx = 1
         for i, v in ipairs(SIZES) do if v == sizeBtn.sizeVal then idx = i break end end
@@ -216,10 +217,10 @@ local function buildEditor()
         if event then
             local t = date("*t", event.when)
             y, m, d, hh, mm = t.year, t.month, t.day, t.hour, t.min
-            size, title, note = event.size or 25, event.title or "", event.note or ""
+            size, title, note = event.size or DEFAULT_SIZE, event.title or "", event.note or ""
         else
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
-            hh, mm, size, title, note = 20, 0, 25, "", ""
+            hh, mm, size, title, note = 20, 0, DEFAULT_SIZE, "", ""
         end
         local inAlliance = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
         shareCb:SetShown(inAlliance)
@@ -435,7 +436,7 @@ function BRutus:CreateCalendarSub(panel)
             -- A gold [A] rather than a globe glyph: the skin fonts have no symbol
             -- coverage and unicode marks render as a box in these fonts.
             local shareMark = e.shareAlliance and "  |cffEDCC7B[A]|r" or ""
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or 25) .. ")|r" .. shareMark,
+            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or DEFAULT_SIZE) .. ")|r" .. shareMark,
                 12, C.gold.r, C.gold.g, C.gold.b)
             head:SetPoint("TOPLEFT", 4, -yy)
             if isOfficer then

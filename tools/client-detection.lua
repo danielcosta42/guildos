@@ -79,8 +79,10 @@ check(CL.projectId == 5, "the project id is kept for diagnostics")
 check(CL.isAnniversary == true, "TBC Anniversary is recognised")
 -- maxLevel is the game's cap (issue #53), a fact that follows isAnniversary, not a guess.
 check(CL.maxLevel == 70, "Anniversary stops at 70")
+-- The raid sizes follow isAnniversary too (issues #89, #92).
+check(table.concat(CL.raidSizes, ",") == "10,25,40" and CL.defaultRaidSize == 25, "Anniversary raids are 10, 25 and 40, 25 first")
 local DOCUMENTED = { version = true, build = true, date = true, interface = true, projectId = true,
-  isAnniversary = true, maxLevel = true, has = true }
+  isAnniversary = true, maxLevel = true, raidSizes = true, defaultRaidSize = true, has = true }
 for key in pairs(CL) do
   check(DOCUMENTED[key], "BRutus.Client carries no flavour guess beyond its documented fields (" .. tostring(key) .. ")")
 end
@@ -89,6 +91,8 @@ client(FOREVER)
 check(BRutus.Client.isAnniversary == false and BRutus.Client.projectId == 2 and BRutus.Client.interface == 16000,
   "a 1.60 client is not Anniversary")
 check(BRutus.Client.maxLevel == 60, "and WoW: Forever stops at 60")
+check(table.concat(BRutus.Client.raidSizes, ",") == "10,20,40" and BRutus.Client.defaultRaidSize == 20,
+  "and its raids are 10, 20 and 40, 20 first")
 client(REUSED_ID)
 check(BRutus.Client.isAnniversary == false, "project id 5 on a 1.60 build is not Anniversary")
 client({ version = "2.5.6", build = "1", interface = 20506, project = 2, tbcProject = 5 })

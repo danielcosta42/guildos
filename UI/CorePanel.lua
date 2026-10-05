@@ -825,20 +825,22 @@ function BRutus:CreateCoresPanel(panel)
         if clsCol > 0 then y = y - 16 end
         y = y - 6
 
-        -- Raid buff coverage
-        y = MakeSectionHeader(rightContent, L["Raid Buffs"], y)
-        y = y - 6
-        local bfCol = 0
-        for _, bs in ipairs(comp.buffStatus) do
-            local col_c = bs.covered and C.online or C.red
-            local icon  = bs.covered and "|cff00CC00+|r " or "|cffFF4444-|r "
-            local bfLbl = track(MakeLabel(rightContent, icon .. bs.name, 9, col_c.r, col_c.g, col_c.b))
-            bfLbl:SetPoint("TOPLEFT", bfCol * 200 + 4, y)
-            bfCol = bfCol + 1
-            if bfCol >= 3 then bfCol = 0; y = y - 15 end
+        -- Raid buff coverage, where the game has a list of them (none on Forever, issue #92)
+        if #comp.buffStatus > 0 then
+            y = MakeSectionHeader(rightContent, L["Raid Buffs"], y)
+            y = y - 6
+            local bfCol = 0
+            for _, bs in ipairs(comp.buffStatus) do
+                local col_c = bs.covered and C.online or C.red
+                local icon  = bs.covered and "|cff00CC00+|r " or "|cffFF4444-|r "
+                local bfLbl = track(MakeLabel(rightContent, icon .. bs.name, 9, col_c.r, col_c.g, col_c.b))
+                bfLbl:SetPoint("TOPLEFT", bfCol * 200 + 4, y)
+                bfCol = bfCol + 1
+                if bfCol >= 3 then bfCol = 0; y = y - 15 end
+            end
+            if bfCol > 0 then y = y - 15 end
+            y = y - 6
         end
-        if bfCol > 0 then y = y - 15 end
-        y = y - 6
 
         -- Member list (with inline role editing for RLs)
         local sortedMbrs = {}

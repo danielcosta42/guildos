@@ -80,7 +80,9 @@ function Calendar:_RegisterTests()
             return false, "canceled event"
         end
         if D(nil, 0, 1000) ~= "gone" then return false, "missing event" end
-        if D({ when = 2000 }, 25, 1000) ~= "full" then return false, "default size 25" end
+        local def = BRutus.Client.defaultRaidSize
+        if D({ when = 2000 }, def, 1000) ~= "full" then return false, "an event with no size is full at the game's default" end
+        if D({ when = 2000 }, def - 1, 1000) ~= "ok" then return false, "and open one below it" end
         return true
     end)
 
@@ -246,7 +248,7 @@ function Calendar:Create(title, when, size, note, kind, shareAlliance)
         return
     end
     local e = {
-        id = newId(), title = title, when = when, size = tonumber(size) or 25,
+        id = newId(), title = title, when = when, size = tonumber(size) or BRutus.Client.defaultRaidSize,
         note = note or "", kind = normalizeKind(kind),
         author = BRutus.Compat.PlayerName(), createdAt = GetServerTime(),
         canceled = false, rsvps = {},
@@ -300,8 +302,9 @@ function Calendar:UpsertWebRaid(roster)
 
     local title = strtrim(roster.title or "")
     if title == "" then title = roster.instance or L["Raid"] end
-    local size = #(roster.members or {})
-    if size < 1 then size = 25 end
+    local size = tonumber(roster.size) or 0               -- the site's capacity for the raid
+    if size < 1 then size = #(roster.members or {}) end
+    if size < 1 then size = BRutus.Client.defaultRaidSize end
 
     local events = self:GetEvents()
     local e = events[id]
@@ -375,7 +378,7 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     end
     e.title = title
     e.when  = when
-    e.size  = tonumber(size) or e.size or 25
+    e.size  = tonumber(size) or e.size or BRutus.Client.defaultRaidSize
     e.note  = note or ""
     e.kind  = normalizeKind(kind)
     -- nil leaves the current setting alone, so a caller that does not know
@@ -533,7 +536,7 @@ function Calendar._AllianceSlotDecision(event, yesCount, now)
     if (tonumber(event.when) or 0) <= (tonumber(now) or 0) then
         return "past"
     end
-    if (tonumber(yesCount) or 0) >= (tonumber(event.size) or 25) then
+    if (tonumber(yesCount) or 0) >= (tonumber(event.size) or BRutus.Client.defaultRaidSize) then
         return "full"
     end
     return "ok"
