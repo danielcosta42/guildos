@@ -306,7 +306,7 @@ function Wishlist:BroadcastMyWishlist()
             class    = myClass,
             wishlist = list,
         }
-        local LibSerialize = LibStub("LibSerialize")
+        local LibSerialize = LibStub("GuildOS-LibSerialize")
         local serialized  = LibSerialize:Serialize(payload)
         BRutus.CommSystem:SendMessage("WL", serialized)
     end
@@ -314,7 +314,7 @@ end
 
 -- Handle an incoming wishlist broadcast from another guild member.
 function Wishlist:HandleWishlistBroadcast(sender, data)
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 
@@ -385,7 +385,7 @@ end
 function Wishlist:BroadcastLootPrios()
     if not BRutus.CommSystem then return end
     if not BRutus.db or not BRutus.db.lootPrios then return end
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize(BRutus.db.lootPrios)
     BRutus.CommSystem:SendMessage("LP", serialized)
 end
@@ -393,7 +393,7 @@ end
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
 -- and the channel GUILD (issue #78). Any other caller must check the same.
 function Wishlist:HandleLootPriosBroadcast(sender, data)
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 

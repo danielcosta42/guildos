@@ -6,7 +6,7 @@ local CommSystem = {}
 BRutus.CommSystem = CommSystem
 local L = BRutus.L
 
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 local LibDeflate = LibStub("LibDeflate")
 
 -- Message types

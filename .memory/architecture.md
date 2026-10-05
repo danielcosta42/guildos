@@ -260,6 +260,9 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 
 - Prefix: `"BRutus"`
 - Format: `TYPE:PAYLOAD` → LibSerialize → LibDeflate compress → encode → chunk 230 bytes
+- LibSerialize is Guild OS's own copy, `LibStub("GuildOS-LibSerialize")`, never the shared name: LibStub hands the
+  highest minor to everyone, DBM-Core's minor 6 divides `1 / num`, and WoW: Forever raises on every division by
+  zero, so with DBM on no message ever left (issue #87). `tools/libserialize-private.lua` guards it.
 - Single ≤253 bytes: `S:<encoded>`
 - Multi-chunk: `M:<msgId>:<idx>:<total>:<chunk>`
 - Priority: `"BULK"` default — `"NORMAL"` only for time-sensitive (e.g. WELCOME_CLAIM)

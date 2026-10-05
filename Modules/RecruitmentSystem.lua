@@ -639,7 +639,7 @@ function Recruitment:BroadcastStatus(quiet, reassert)
     if not (reassert and r.updatedAt) then
         r.updatedAt = time()   -- genuine edit: stamp "last content edit"
     end
-    local payload = LibStub("LibSerialize"):Serialize({
+    local payload = LibStub("GuildOS-LibSerialize"):Serialize({
         enabled    = r.enabled,
         discord    = r.discord or "",
         message    = r.message or "",
@@ -745,7 +745,7 @@ function Recruitment:RespondToSync()
     -- still spreads member-to-member with no officer online. Gate on it being a
     -- real received ad, and carry its EXISTING updatedBy/updatedAt unchanged.
     if info and info.updatedAt and info.updatedBy and info.message and info.message ~= "" then
-        local payload = LibStub("LibSerialize"):Serialize({
+        local payload = LibStub("GuildOS-LibSerialize"):Serialize({
             enabled = info.enabled, discord = info.discord or "", message = info.message or "",
             channels = info.channels or {}, interval = info.interval or 120,
             updatedBy = info.updatedBy, updatedAt = info.updatedAt,

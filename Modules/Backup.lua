@@ -8,7 +8,7 @@ local Backup = {}
 BRutus.Backup = Backup
 local L = BRutus.L
 
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 local LibDeflate = LibStub("LibDeflate")
 
 local PREFIX = "GOSBKP1:"   -- format/version tag

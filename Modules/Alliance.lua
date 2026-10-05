@@ -25,7 +25,7 @@ local Alliance = {}
 GuildOS.Alliance = Alliance
 local L = BRutus.L
 
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 local LibDeflate   = LibStub("LibDeflate")
 
 -- Open protocol on the shared mesh transport, same family style as CraftNet

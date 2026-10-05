@@ -9,7 +9,7 @@ local AltAutoDetect = {}
 BRutus.AltAutoDetect = AltAutoDetect
 
 local L = BRutus.L
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 -- Stable signature for a detected group, used to dedupe the "declined"
 -- marker: same set of keys => same signature regardless of order.

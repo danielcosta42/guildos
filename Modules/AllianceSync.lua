@@ -24,7 +24,7 @@
 local AllianceSync = {}
 GuildOS.AllianceSync = AllianceSync
 
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 AllianceSync.TICK        = 120   -- seconds between bridge heartbeats
 AllianceSync.PUSH_WINDOW = 60    -- min seconds between two PUSHes of a domain to one peer

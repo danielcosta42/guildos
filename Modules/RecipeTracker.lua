@@ -285,7 +285,7 @@ function RecipeTracker:BroadcastRecipes(profName, recipes)
     if not BRutus.CommSystem then return end
     if not IsInGuild() then return end
 
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local data = {
         prof = profName,
         recipes = recipes,
@@ -298,7 +298,7 @@ end
 -- Handle incoming recipe data from another guild member
 ----------------------------------------------------------------------
 function RecipeTracker:HandleIncoming(sender, data)
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, recipeData = LibSerialize:Deserialize(data)
     if not ok or type(recipeData) ~= "table" then return end
 

@@ -58,7 +58,7 @@ local registry = {}
 LibStub = setmetatable({ NewLibrary = function(_, n) registry[n] = registry[n] or {}; return registry[n] end,
   GetLibrary = function(_, n) return registry[n] end },
   { __call = function(_, n) registry[n] = registry[n] or {}; return registry[n] end })
-LibStub("LibSerialize").Serialize = function() return "serialized" end
+LibStub("GuildOS-LibSerialize").Serialize = function() return "serialized" end
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
