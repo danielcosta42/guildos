@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.63.4] - 2026-10-05
+
+### Fixed
+- no Forever, os dados de um colega voltam a aparecer na linha dele do roster (#95)
+
+
 ## [0.63.3] - 2026-10-05
 
 ### Fixed
