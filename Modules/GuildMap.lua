@@ -20,7 +20,7 @@
 ----------------------------------------------------------------------
 local GuildMap = {}
 BRutus.GuildMap = GuildMap
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 local PEER_TTL           = 300   -- drop a peer we have not heard from in 5 min
 local BROADCAST_THROTTLE = 10    -- minimum seconds between our own position sends

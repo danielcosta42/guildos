@@ -5,7 +5,7 @@
 local OfficerNotes = {}
 BRutus.OfficerNotes = OfficerNotes
 
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 function OfficerNotes:Initialize()
     if not BRutus.db.officerNotes then

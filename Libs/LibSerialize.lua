@@ -568,7 +568,11 @@ The type byte uses the following formats to implement the above:
 [Writer protocol]: #writer-protocol
 END_README --]]
 
-local MAJOR, MINOR = "LibSerialize", 5
+-- Guild OS: registered under a name of its own (issue #87). LibStub gives every addon the highest
+-- minor of a shared name, so another addon's copy replaced this one, and DBM-Core's minor 6 starts
+-- its number writer with `1 / num`, which raises on WoW: Forever for every 0. Do not rename it
+-- back, and check any newer copy for division by a variable or by zero (tools/libserialize-private.lua).
+local MAJOR, MINOR = "GuildOS-LibSerialize", 5
 local LibSerialize
 if LibStub then
     LibSerialize = LibStub:NewLibrary(MAJOR, MINOR)
@@ -976,7 +980,7 @@ local function StringToFloat(str)
         if mant == 0 then
             n = sign * math_huge
         else
-            n = 0.0/0.0
+            n = math_huge - math_huge   -- NaN without dividing by zero, which raises on Forever (issue #87)
         end
     else
         n = sign * ldexp(1.0 + mant / 4503599627370496.0, expo - 0x3FF)

@@ -178,7 +178,7 @@ local function reads(sender)
   return decoded > before
 end
 local payloads, stored = {}, {}
-LibStub("LibSerialize").Deserialize = function(_, s) return true, payloads[s] end
+LibStub("GuildOS-LibSerialize").Deserialize = function(_, s) return true, payloads[s] end
 local dataCollector = BRutus.DataCollector
 BRutus.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
 local function received(sender, data)

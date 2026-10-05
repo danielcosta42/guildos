@@ -12,7 +12,7 @@
 ----------------------------------------------------------------------
 local RaiderRoster = {}
 BRutus.RaiderRoster = RaiderRoster
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 RaiderRoster.ROLES = { "TANK", "HEALER", "DPS" }
 -- Gear-readiness cycle (officer-set); "" = unset.

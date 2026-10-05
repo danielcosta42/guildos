@@ -7,7 +7,7 @@
 local LFGBoard = {}
 BRutus.LFGBoard = LFGBoard
 local L = BRutus.L
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 local DEFAULT_TTL = 5400   -- 90 minutes
 local TTL_MIN     = 1800   -- 30 minutes, the shortest duration the UI offers

@@ -19,7 +19,7 @@
 ----------------------------------------------------------------------
 local RecruitEngagement = {}
 BRutus.RecruitEngagement = RecruitEngagement
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 local DAY         = 86400
 local WEEK        = 7 * DAY          -- 604800: this-week window

@@ -887,7 +887,7 @@ function RaidTracker:BroadcastDeleteSession(sessionID)
     if not BRutus.CommSystem then return end
     if not IsInGuild() then return end
 
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize({ sessionID = sessionID })
     BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RAID_DELETE, serialized)
 end
@@ -897,7 +897,7 @@ end
 -- Sender is already verified as officer before this is called.
 ----------------------------------------------------------------------
 function RaidTracker:HandleDeleteIncoming(data)
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 
@@ -962,7 +962,7 @@ function RaidTracker:BroadcastRaidData()
     -- missed the point-in-time RAID_DELETE message.
     payload.deletedSessions = raidDB.deletedSessions or {}
 
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize(payload)
     BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RAID_DATA, serialized)
 end
@@ -972,7 +972,7 @@ end
 function RaidTracker:HandleIncoming(data)
     if not BRutus:IsOfficer() then return end
 
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 

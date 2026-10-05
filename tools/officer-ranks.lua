@@ -58,8 +58,8 @@ local registry, store, n = {}, {}, 0
 LibStub = setmetatable({ NewLibrary = function(_, k) registry[k] = registry[k] or {}; return registry[k] end,
   GetLibrary = function(_, k) return registry[k] end },
   { __call = function(_, k) registry[k] = registry[k] or {}; return registry[k] end })
-LibStub("LibSerialize").Serialize = function(_, t) n = n + 1; store["s" .. n] = t; return "s" .. n end
-LibStub("LibSerialize").Deserialize = function(_, s) if store[s] then return true, store[s] end return false end
+LibStub("GuildOS-LibSerialize").Serialize = function(_, t) n = n + 1; store["s" .. n] = t; return "s" .. n end
+LibStub("GuildOS-LibSerialize").Deserialize = function(_, s) if store[s] then return true, store[s] end return false end
 LibStub("LibDeflate").DecodeForWoWAddonChannel = function(_, s) return s end
 LibStub("LibDeflate").DecompressDeflate = function(_, s) return s end
 

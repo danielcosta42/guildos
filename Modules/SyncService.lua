@@ -21,7 +21,7 @@
 local SyncService = {}
 BRutus.SyncService = SyncService
 
-local LibSerialize = LibStub("LibSerialize")
+local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 SyncService.PROTOCOL_VERSION = 2
 SyncService.ENVELOPE_MSGTYPE = "SV"   -- CommSystem wire tag carrying a v2 envelope

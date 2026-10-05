@@ -239,7 +239,7 @@ function TrialTracker:BroadcastTrials()
     local trials = BRutus.db.trials
     if not trials or not next(trials) then return end
 
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize(trials)
     BRutus.CommSystem:SendMessage("TR", serialized)
 end
@@ -249,7 +249,7 @@ end
 function TrialTracker:HandleIncoming(data)
     if not BRutus:IsOfficer() then return end
 
-    local LibSerialize = LibStub("LibSerialize")
+    local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, incomingTrials = LibSerialize:Deserialize(data)
     if not ok or type(incomingTrials) ~= "table" then return end
 
