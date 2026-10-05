@@ -419,7 +419,7 @@ local ALLOWED = {
   ["Modules/Alliance.lua"] = 1,        -- a pair of guild ids
   ["Modules/GuildAnalytics.lua"] = 1,  -- a level bracket, "60-69"
   ["Modules/NoteCommand.lua"] = 1,     -- only when the author has a realm
-  ["Modules/PugInspector.lua"] = 1,    -- only when there is a realm
+  -- PugInspector goes through GetPlayerKey since issue #95.
 }
 local toc = assert(io.open(ADDON .. "/GuildOS.toc", "rb")):read("*a")
 local scanned = 0

@@ -165,7 +165,9 @@ function PugInspector:Classify(name, srcs)
     srcs = srcs or self:_LiveSources()
     local short = (name and (name:match("^([^-]+)") or name)) or ""
     local realm = (name and name:match("%-(.+)$")) or srcs.realm or ""
-    local key   = realm ~= "" and (short .. "-" .. realm) or short
+    -- The member key rule, so a guildmate in the group keys as their roster line does: on WoW:
+    -- Forever the group names a realm the roster never gives (issue #95).
+    local key   = realm ~= "" and BRutus:GetPlayerKey(short, realm) or short
     local shortLower = short:lower()
 
     local f = {}
@@ -433,7 +435,8 @@ function PugInspector:_RegisterTests()
         local srcs = {
             realm = "TestRealm",
             guildShort = { ["thordak"] = true, ["kaelra"] = true },
-            altLinks = { ["Bornax-TestRealm"] = "Thordak-TestRealm" },
+            -- Through the key rule: on WoW: Forever a realm never splits a key (issue #95).
+            altLinks = { [BRutus:GetPlayerKey("Bornax", "TestRealm")] = BRutus:GetPlayerKey("Thordak", "TestRealm") },
             banEntry = function(s) if s == "Zezinho" then return { reason = "ninja" } end end,
             noteFor = function() return nil end,
         }

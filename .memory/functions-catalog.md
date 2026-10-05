@@ -100,8 +100,9 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 | Symbol | Description |
 |---|---|
 | `BRutus:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing) |
-| `BRutus:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018) |
-| `PugInspector:Classify(name, srcs)` | Builds its table key with the same rule inline, so it stays free of globals |
+| `BRutus:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) |
+| `BRutus:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
+| `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95) |
 
 Every hand-built member key now goes through the rule: CommSystem's own-message check, `/gos trial` and `/gos note`,
 RaidTracker snapshots, the consumable check, the export's `guildKey`, LootMaster's context, awards, rolls and DKP

@@ -381,6 +381,7 @@ function CommSystem:HandleBroadcast(sender, data)
 
     -- Build player key: the payload's realm, else the client's, as in 0.53.0. Only a client with no
     -- realm at all takes the sender's own suffix, so it agrees with a roster that suffixes names (issue #8).
+    -- On WoW: Forever GetPlayerKey takes this client's realm whatever is passed (issue #95).
     local realm = playerData.realm
     if (not realm or realm == "") and not BRutus:GetClientRealm() then realm = sender:match("^[^-]+%-(.+)$") end
     -- The name is the sender's: a broadcast is always its own author's data, and on WoW: Forever

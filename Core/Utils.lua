@@ -152,11 +152,50 @@ end
 -- no realms: when neither the caller nor the client gives one, the key is the name alone.
 -- "First Last" and "Anne-Marie" then split on the first hyphen and rejoin to themselves,
 -- so every split-and-rejoin site keeps a stable key.
+--
+-- On WoW: Forever the realm is always this client's (issue #95). Forever has no realms that set
+-- players apart (a name is unique in its region) and its guild roster gives none, yet
+-- GetRealmName() answers a name, and not the same one across a guild: on the beta,
+-- "Classic Beta PvE" for one member and "Classic Beta PvE 2" for another. A realm taken from a
+-- broadcast or a sender keyed a guildmate apart from their own roster line.
 function BRutus:GetPlayerKey(name, realm)
     if not name or name == "" then return nil end
+    if BRutus.Client and not BRutus.Client.isAnniversary then realm = nil end
     if not realm or realm == "" then realm = BRutus:GetClientRealm() end
     if not realm then return name end
     return name .. "-" .. realm
+end
+
+-- Members a version before issue #95 stored under the sender's realm move to this client's key,
+-- the newer record winning, so nobody is shown without their data or counted twice. Forever
+-- only: on Anniversary another realm is another player.
+function BRutus:RekeyMembersToThisRealm()
+    if not (BRutus.Client and not BRutus.Client.isAnniversary) then return end
+    local members = self.db and self.db.members
+    if type(members) ~= "table" then return end
+    local moves = {}
+    for key, rec in pairs(members) do
+        local right = type(rec) == "table" and type(rec.name) == "string" and rec.name ~= ""
+            and not (BRutus.Compat.IsSecret and BRutus.Compat.IsSecret(rec.name)) and self:GetPlayerKey(rec.name)
+        if right and right ~= key then moves[#moves + 1] = { from = key, to = right, rec = rec } end
+    end
+    for _, mv in ipairs(moves) do
+        if members[mv.from] == mv.rec then
+            local held = members[mv.to]
+            local winner, loser = mv.rec, held
+            if held and (tonumber(held.lastUpdate) or 0) >= (tonumber(mv.rec.lastUpdate) or 0) then
+                winner, loser = held, mv.rec
+            end
+            -- What only the older record knew (a look, a spec) is kept, never what it got wrong.
+            if loser then
+                for k, v in pairs(loser) do
+                    if winner[k] == nil then winner[k] = v end
+                end
+            end
+            members[mv.to] = winner
+            members[mv.from] = nil
+        end
+    end
 end
 
 -- The roster's own key for somebody on it, built the way the roster frame builds it (the

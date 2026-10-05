@@ -504,6 +504,9 @@ back to "" in some places and "Unknown" in others, which split one member across
 
 ---
 
+
+**Amendment (issue #95).** On WoW: Forever the realm a caller passes is ignored and the client's own is used: Forever has no realms that set players apart, yet a guild's clients answer different `GetRealmName()` values (the beta's "Classic Beta PvE" and "Classic Beta PvE 2"), and a broadcast keyed with its sender's realm never met the receiver's roster line. Keys still agree only within a client: a key built by another client and carried inside a payload must be localized on receipt.
+
 ## ADR-0019 — Version-sensitive calls go through Compat, and sync and loot sends act on their result
 
 ### Context
