@@ -272,7 +272,13 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         if channel == "GUILD" and BRutus:IsOfficerByName(sender) then
             local ok, links = LibSerialize:Deserialize(data)
             if ok and type(links) == "table" then
-                BRutus.db.altLinks = links
+                -- Both sides keyed this client's way: on Forever the officer's keys carry its realm (#97).
+                local localized = {}
+                for alt, main in pairs(links) do
+                    local la, lm = BRutus:LocalMemberKey(alt), BRutus:LocalMemberKey(main)
+                    if la ~= lm then localized[la] = lm end   -- one split person is not their own alt
+                end
+                BRutus.db.altLinks = localized
             end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then

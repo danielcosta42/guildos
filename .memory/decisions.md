@@ -507,6 +507,8 @@ back to "" in some places and "Unknown" in others, which split one member across
 
 **Amendment (issue #95).** On WoW: Forever the realm a caller passes is ignored and the client's own is used: Forever has no realms that set players apart, yet a guild's clients answer different `GetRealmName()` values (the beta's "Classic Beta PvE" and "Classic Beta PvE 2"), and a broadcast keyed with its sender's realm never met the receiver's roster line. Keys still agree only within a client: a key built by another client and carried inside a payload must be localized on receipt.
 
+**Amendment (issue #97).** It is: `BRutus:LocalMemberKey` rebuilds a carried key from its name (Forever names hold no hyphen, so the name is what comes before the first one), and every receive path that takes a member key out of a payload goes through it, while the sign-up is filed under its envelope's sender rather than any key the payload names. Two of the sender's keys that turn out to be one member are settled by that table's own merge, which only ever sees two records; a value that is not a record never replaces one. What an earlier version stored that way is rekeyed by `LocalizeStoredMemberTables` once per database, each table under its own `SafeCall` so bad stored data in one neither stops start-up nor leaves the others behind. The alliance bridge hashes the name alone on Forever, so clients on different realms elect the same one. Anniversary keys pass through untouched: there a realm is part of who somebody is.
+
 ## ADR-0019 — Version-sensitive calls go through Compat, and sync and loot sends act on their result
 
 ### Context

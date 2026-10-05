@@ -166,6 +166,123 @@ function BRutus:GetPlayerKey(name, realm)
     return name .. "-" .. realm
 end
 
+-- A member key another client built, as this client keys that member (issue #97). On WoW: Forever
+-- a key carries its builder's realm and a guild's clients answer different ones, so a key that
+-- arrives inside a payload is rebuilt from its name. Forever names never hold a hyphen (the roster,
+-- the senders and UnitName all give "First Surname"), so the name is what comes before the first
+-- one. Anniversary keys pass through: there a realm is part of who somebody is.
+function BRutus:LocalMemberKey(key)
+    if type(key) ~= "string" or key == "" then return key end
+    if not (BRutus.Client and not BRutus.Client.isAnniversary) then return key end
+    if key:find("^ally:") then return key end   -- an allied guild's member, realm-free already
+    return self:GetPlayerKey(key:match("^([^-]+)") or key)
+end
+
+-- A table keyed by member keys, rekeyed with LocalMemberKey. `merge(held, incoming)` settles two
+-- records that turn out to be the same member, and only ever sees two tables: a record always
+-- beats a value that is not one, whichever came first. Without a merge the first record stays.
+function BRutus:LocalizeMemberTable(t, merge)
+    if type(t) ~= "table" then return t end
+    local out = {}
+    for k, v in pairs(t) do
+        local lk = self:LocalMemberKey(k)
+        local held = out[lk]
+        if held == nil or (type(held) ~= "table" and type(v) == "table") then
+            out[lk] = v
+        elseif merge and type(held) == "table" and type(v) == "table" then
+            out[lk] = merge(held, v)
+        end
+    end
+    return out
+end
+
+-- The member-keyed tables a version before issue #97 stored with another client's keys, rekeyed
+-- this client's way, each with its own merge for two keys that turn out to be one member. Forever
+-- only, at start-up next to RekeyMembersToThisRealm, and once per database: every receive path
+-- localizes since, so another pass would only rebuild the same tables (each session's snapshots
+-- among them) on every login. Each table is its own step: bad data in one leaves the rest moved,
+-- and the database is marked done only when every step was, so a failed one is retried.
+function BRutus:LocalizeStoredMemberTables()
+    if not (BRutus.Client and not BRutus.Client.isAnniversary) then return end
+    local db = self.db
+    if type(db) ~= "table" then return end
+    local realm = self:GetClientRealm()
+    if realm and db.storedKeysLocalized == realm then return end
+    local rt = type(db.raidTracker) == "table" and db.raidTracker or {}
+    local function points(pool)
+        if type(pool) ~= "table" or type(pool.standings) ~= "table" then return end
+        local start = tonumber(type(pool.config) == "table" and pool.config.startingPoints) or 0
+        pool.standings = self:LocalizeMemberTable(pool.standings, function(a, b)
+            a.current = (a.current or 0) + (b.current or 0) - start
+            a.earned  = (a.earned or 0) + (b.earned or 0)
+            a.spent   = (a.spent or 0) + (b.spent or 0)
+            return a
+        end)
+    end
+    local steps = {
+        function()
+            for group, recs in pairs(type(rt.attendance) == "table" and rt.attendance or {}) do
+                -- The pre-group flat format is RaidTracker:MigrateAttendanceIfNeeded's to spot and rebuild.
+                if type(recs) == "table" and recs.raids == nil and recs.lastRaid == nil and recs.raids25 == nil then
+                    rt.attendance[group] = self:LocalizeMemberTable(recs, function(a, b)
+                        local ra, rb = tonumber(a.raids) or 0, tonumber(b.raids) or 0
+                        if rb ~= ra then return rb > ra and b or a end
+                        return (tonumber(b.lastRaid) or 0) > (tonumber(a.lastRaid) or 0) and b or a
+                    end)
+                end
+            end
+        end,
+        -- A session names each player twice, in its player list and in every snapshot: both move,
+        -- or attendance rebuilt from them counts the same player late and gone early.
+        function()
+            for _, session in pairs(type(rt.sessions) == "table" and rt.sessions or {}) do
+                if type(session) == "table" then
+                    session.players = self:LocalizeMemberTable(session.players)
+                    for _, snap in ipairs(type(session.snapshots) == "table" and session.snapshots or {}) do
+                        if type(snap) == "table" then snap.members = self:LocalizeMemberTable(snap.members) end
+                    end
+                end
+            end
+        end,
+        function()
+            db.officerNotes = self:LocalizeMemberTable(db.officerNotes, function(a, b)
+                return BRutus.OfficerNotes:MergeSheet(a, b)
+            end)
+        end,
+        function()
+            db.trials = self:LocalizeMemberTable(db.trials, function(a, b) return BRutus.TrialTracker:Merge(a, b) end)
+        end,
+        function()
+            db.raiders = self:LocalizeMemberTable(db.raiders, function(a, b)
+                return (tonumber(b.updatedAt) or 0) > (tonumber(a.updatedAt) or 0) and b or a
+            end)
+        end,
+        function()
+            if type(db.altLinks) ~= "table" then return end
+            local links = {}
+            for alt, main in pairs(db.altLinks) do
+                local la, lm = self:LocalMemberKey(alt), self:LocalMemberKey(main)
+                if la ~= lm then links[la] = lm end
+            end
+            db.altLinks = links
+        end,
+        function() points(db.points) end,
+        function()
+            for _, core in pairs(type(db.cores) == "table" and db.cores or {}) do
+                if type(core) == "table" then
+                    local ok = self:SafeCall(points, core.points)
+                    core.members = self:LocalizeMemberTable(core.members)
+                    core.signups = self:LocalizeMemberTable(core.signups)
+                    if not ok then error("a core's points did not move") end   -- not done: retried
+                end
+            end
+        end,
+    }
+    local done = true
+    for _, step in ipairs(steps) do done = self:SafeCall(step) and done end
+    if done then db.storedKeysLocalized = realm end
+end
+
 -- Members a version before issue #95 stored under the sender's realm move to this client's key,
 -- the newer record winning, so nobody is shown without their data or counted twice. Forever
 -- only: on Anniversary another realm is another player.

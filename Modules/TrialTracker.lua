@@ -255,79 +255,58 @@ function TrialTracker:HandleIncoming(data)
 
     if not BRutus.db.trials then BRutus.db.trials = {} end
 
-    for playerKey, incoming in pairs(incomingTrials) do
+    for incomingKey, incoming in pairs(incomingTrials) do
+        local playerKey = BRutus:LocalMemberKey(incomingKey)   -- the sender's key, as this client's (#97)
         local existing = BRutus.db.trials[playerKey]
-        if not existing then
-            -- We don't have this trial at all — accept it
-            BRutus.db.trials[playerKey] = incoming
-        else
-            -- Merge: keep the one with more recent activity
-            -- Compare by most recent note timestamp, resolvedDate, or startDate
-            local incomingTime = incoming.startDate or 0
-            local existingTime = existing.startDate or 0
-
-            -- Check latest note
-            if incoming.notes and #incoming.notes > 0 then
-                local lastNote = incoming.notes[#incoming.notes]
-                if lastNote.timestamp and lastNote.timestamp > incomingTime then
-                    incomingTime = lastNote.timestamp
-                end
-            end
-            if existing.notes and #existing.notes > 0 then
-                local lastNote = existing.notes[#existing.notes]
-                if lastNote.timestamp and lastNote.timestamp > existingTime then
-                    existingTime = lastNote.timestamp
-                end
-            end
-
-            -- Check resolved date
-            if incoming.resolvedDate and incoming.resolvedDate > incomingTime then
-                incomingTime = incoming.resolvedDate
-            end
-            if existing.resolvedDate and existing.resolvedDate > existingTime then
-                existingTime = existing.resolvedDate
-            end
-
-            if incomingTime > existingTime then
-                -- Incoming is more recent — replace
-                BRutus.db.trials[playerKey] = incoming
-            elseif incomingTime == existingTime then
-                -- Same base — merge notes we don't have
-                self:MergeNotes(existing, incoming)
-                -- Keep more snapshots
-                if incoming.snapshots and existing.snapshots and #incoming.snapshots > #existing.snapshots then
-                    existing.snapshots = incoming.snapshots
-                end
-            end
-            -- If existingTime > incomingTime, we already have newer data — skip
-        end
+        BRutus.db.trials[playerKey] = existing and self:Merge(existing, incoming) or incoming
     end
 
     -- Refresh UI if open
     BRutus:RefreshRosterUI()
 end
 
+-- The trial to keep when two copies of one meet: the more recent activity (start, last note or
+-- resolution) wins, and a tie merges their notes. On receipt and in the stored-key migration (#97).
+function TrialTracker:Merge(existing, incoming)
+    local function latest(t)
+        local at = tonumber(t.startDate) or 0
+        local last = type(t.notes) == "table" and t.notes[#t.notes]
+        if type(last) == "table" and (tonumber(last.timestamp) or 0) > at then at = tonumber(last.timestamp) end
+        if (tonumber(t.resolvedDate) or 0) > at then at = tonumber(t.resolvedDate) end
+        return at
+    end
+    local it, et = latest(incoming), latest(existing)
+    if it > et then return incoming end
+    if it == et then
+        self:MergeNotes(existing, incoming)
+        -- Keep more snapshots
+        if incoming.snapshots and existing.snapshots and #incoming.snapshots > #existing.snapshots then
+            existing.snapshots = incoming.snapshots
+        end
+    end
+    return existing
+end
+
 -- Merge notes from incoming into existing, avoiding duplicates
 function TrialTracker:MergeNotes(existing, incoming)
-    if not incoming.notes or #incoming.notes == 0 then return end
-    if not existing.notes then existing.notes = {} end
+    if type(incoming.notes) ~= "table" or #incoming.notes == 0 then return end
+    if type(existing.notes) ~= "table" then existing.notes = {} end
 
     -- Build a set of existing note signatures (author+timestamp)
     local seen = {}
     for _, note in ipairs(existing.notes) do
-        seen[(note.author or "") .. ":" .. (note.timestamp or 0)] = true
+        if type(note) == "table" then seen[(note.author or "") .. ":" .. (note.timestamp or 0)] = true end
     end
 
     for _, note in ipairs(incoming.notes) do
-        local sig = (note.author or "") .. ":" .. (note.timestamp or 0)
-        if not seen[sig] then
+        local sig = type(note) == "table" and ((note.author or "") .. ":" .. (note.timestamp or 0))
+        if sig and not seen[sig] then
             table.insert(existing.notes, note)
             seen[sig] = true
         end
     end
 
-    -- Re-sort notes by timestamp
-    table.sort(existing.notes, function(a, b)
-        return (a.timestamp or 0) < (b.timestamp or 0)
-    end)
+    -- Re-sort notes by timestamp (anything that is not a note sorts first, as time 0)
+    local function at(n) return type(n) == "table" and tonumber(n.timestamp) or 0 end
+    table.sort(existing.notes, function(a, b) return at(a) < at(b) end)
 end

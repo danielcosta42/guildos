@@ -8,6 +8,8 @@ BRutus.DataCollector = DataCollector
 
 function DataCollector:Initialize()
     BRutus:RekeyMembersToThisRealm()   -- Forever: one key per member (issue #95)
+    -- and in every table synced from another client (#97); bad stored data must not stop start-up
+    BRutus:SafeCall(BRutus.LocalizeStoredMemberTables, BRutus)
     -- Register inventory change events
     local frame = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")

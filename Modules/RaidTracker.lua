@@ -1007,7 +1007,7 @@ function RaidTracker:HandleIncoming(data)
             if outerVal.raids ~= nil or outerVal.lastRaid ~= nil then
                 -- Old flat format: outerKey is playerKey, outerVal is attendance data
                 if not raidDB.attendance[""] then raidDB.attendance[""] = {} end
-                mergePlayerRecord(raidDB.attendance[""], outerKey, outerVal)
+                mergePlayerRecord(raidDB.attendance[""], BRutus:LocalMemberKey(outerKey), outerVal)
             else
                 -- New nested format: outerKey is groupTag, outerVal is { playerKey → data }
                 if not raidDB.attendance[outerKey] then
@@ -1015,7 +1015,8 @@ function RaidTracker:HandleIncoming(data)
                 end
                 local localGroup = raidDB.attendance[outerKey]
                 for playerKey, incoming in pairs(outerVal) do
-                    mergePlayerRecord(localGroup, playerKey, incoming)
+                    -- The sending officer's key, as this client keys the member (issue #97).
+                    mergePlayerRecord(localGroup, BRutus:LocalMemberKey(playerKey), incoming)
                 end
             end
         end
@@ -1033,6 +1034,9 @@ function RaidTracker:HandleIncoming(data)
     -- but never re-insert sessions that have been tombstoned.
     for sessionID, session in pairs(payload.sessions or {}) do
         if not deleted[sessionID] and not raidDB.sessions[sessionID] then
+            if type(session) == "table" and type(session.players) == "table" then
+                session.players = BRutus:LocalizeMemberTable(session.players)   -- issue #97
+            end
             raidDB.sessions[sessionID] = session
         end
     end
