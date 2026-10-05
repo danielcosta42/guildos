@@ -7,6 +7,7 @@ local DataCollector = {}
 BRutus.DataCollector = DataCollector
 
 function DataCollector:Initialize()
+    BRutus:RekeyMembersToThisRealm()   -- Forever: one key per member (issue #95)
     -- Register inventory change events
     local frame = CreateFrame("Frame")
     BRutus.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
