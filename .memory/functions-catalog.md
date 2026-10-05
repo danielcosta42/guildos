@@ -342,6 +342,7 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:MergeDuplicateSessions()` | Merges duplicate/nearby sessions within 30-min window |
 | `RaidTracker:RebuildAttendanceFromSessions()` | Rebuilds entire attendance table from scratch |
 | `RaidTracker:GetPenalties(groupTag)` | The late / left-early / no-consumables weights a raid of that group is scored with: `CoreManager:GetPenalties` (the core's own, else the guild's in `db.attendancePenalties` — raids outside a core and cores that set none — else 10). Every score and every screen reads it; `RaidTracker.PENALTIES` is only the defaults (issue #55) |
+| `CoreManager:RaidSizes()` / `NextRaidSize(size)` / `RaidTargets(size)` / `GetRaidSize(core)` / `SetRaidSize(core, size)` | The raid formats a core plans for, per game: 10 and 25 on Anniversary (default 25), 10, 20 and 40 on WoW: Forever (default 20); a saved size the game lacks reads as the default; `RaidTargets` is the T/H/M/R composition, which sums to the size (issue #89) |
 | `RaidTracker:UpdateAttendanceForLockout(lockout)` | Computes and stores attendance for a single lockout |
 | `RaidTracker:DeleteSession(sessionID)` | Deletes session, tombstones, broadcasts (officer only) |
 | `RaidTracker:BroadcastDeleteSession(sessionID)` | Sends RAID_DELETE comm message |

@@ -115,7 +115,7 @@ local function RefreshCoreSignupFrame()
         rowBg:SetVertexColor(0.04, 0.04, 0.06, 1)
 
         local raidSize = CM:GetRaidSize(coreName)
-        local T = CM.RAID_TARGETS[raidSize] or CM.RAID_TARGETS[25]
+        local T = CM:RaidTargets(raidSize)
         local ROLE_DEFS = {
             { key="tank",   short="T", target=T.tank },
             { key="healer", short="H", target=T.healer },
