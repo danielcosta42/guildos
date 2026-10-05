@@ -91,12 +91,17 @@ function Alliance.ElectBridge(onlineKeys)
     if type(onlineKeys) ~= "table" then
         return nil
     end
-    local best, bestHash
+    -- On WoW: Forever every client keys a member with its own realm, and a guild's clients answer
+    -- different ones, so the election hashes the name alone: every client elects the same member
+    -- (issue #97). On Anniversary the key is who somebody is.
+    local forever = BRutus.Client and not BRutus.Client.isAnniversary
+    local best, bestHash, bestId
     for _, key in ipairs(onlineKeys) do
         if type(key) == "string" and key ~= "" then
-            local h = Alliance.Hash(key)
-            if not best or h < bestHash or (h == bestHash and key < best) then
-                best, bestHash = key, h
+            local id = forever and (key:match("^([^-]+)") or key) or key
+            local h = Alliance.Hash(id)
+            if not best or h < bestHash or (h == bestHash and id < bestId) then
+                best, bestHash, bestId = key, h, id
             end
         end
     end
@@ -2107,8 +2112,11 @@ function Alliance:_RegisterTests()
         if Alliance.ElectBridge({ "Cid-R", "Ann-R", "Bob-R" }) ~= first then
             return false, "election depends on input order"
         end
+        -- What the election hashes: the name alone on WoW: Forever, the whole key elsewhere (#97).
+        local forever = BRutus.Client and not BRutus.Client.isAnniversary
+        local function id(k) return forever and (k:match("^([^-]+)") or k) or k end
         for _, k in ipairs(keys) do
-            if Alliance.Hash(k) < Alliance.Hash(first) then return false, "not the lowest hash" end
+            if Alliance.Hash(id(k)) < Alliance.Hash(id(first)) then return false, "not the lowest hash" end
         end
         if Alliance.ElectBridge({}) ~= nil then return false, "empty list must yield nil" end
         if Alliance.ElectBridge(nil) ~= nil then return false, "nil must not error" end

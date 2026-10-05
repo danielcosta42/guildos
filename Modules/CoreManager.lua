@@ -622,11 +622,17 @@ function CoreManager:InitSync()
     if not BRutus.SyncService then return end
 
     -- Any player may broadcast a signup; officers store it.
-    BRutus.SyncService:On("core.signup", function(env, _sender)
+    -- A sign-up is filed under who sent it, never under a key the payload names: that one carries
+    -- the sender's realm on Forever (#97), and trusting it let anybody sign somebody else up.
+    BRutus.SyncService:On("core.signup", function(env, sender)
         local d = env.data
-        if not d or not d.coreName or not d.playerKey then return end
+        if not d or not d.coreName or type(sender) ~= "string" or sender == "" then return end
         if not BRutus:IsOfficer() then return end
-        self:AddSignup(d.playerKey, d.info or {}, d.coreName)
+        local short = sender:match("^([^-]+)") or sender
+        local playerKey = BRutus:GetPlayerKey(short, sender:match("-(.+)$"))
+        local info = type(d.info) == "table" and d.info or {}
+        info.name = short
+        self:AddSignup(playerKey, info, d.coreName)
         if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
     end)
 
@@ -636,7 +642,7 @@ function CoreManager:InitSync()
         if not d or not d.coreName or not d.members then return end
         if not BRutus:IsOfficerByName(sender) then return end
         local core = self:GetCore(d.coreName)
-        if core then core.members = d.members end
+        if core then core.members = BRutus:LocalizeMemberTable(d.members) end   -- this client's keys (#97)
         if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
     end)
 end

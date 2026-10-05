@@ -120,7 +120,8 @@ function RaiderRoster:HandleIncoming(sender, data)
     if not ok or type(tbl) ~= "table" then return end
     BRutus.db.raiders = BRutus.db.raiders or {}
     local changed = false
-    for key, rec in pairs(tbl) do
+    for incomingKey, rec in pairs(tbl) do
+        local key = BRutus:LocalMemberKey(incomingKey)   -- the sender's key, as this client's (#97)
         if type(rec) == "table" then
             local cur = BRutus.db.raiders[key]
             if not cur or (rec.updatedAt or 0) >= (cur.updatedAt or 0) then

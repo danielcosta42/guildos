@@ -64,7 +64,8 @@ function AltAutoDetect:DetectOwnAlts(accountChars, guildSet, altLinks)
     altLinks = altLinks or {}
     local group = {}
     for key, info in pairs(accountChars or {}) do
-        if guildSet[key] then group[#group + 1] = { key = key, level = info.level or 0 } end
+        local lk = BRutus:LocalMemberKey(key)   -- recorded on another realm's client (#97)
+        if guildSet[lk] then group[#group + 1] = { key = lk, level = info.level or 0 } end
     end
     if #group < 2 then return nil end
     table.sort(group, function(a, b) return a.level > b.level end)
@@ -160,6 +161,14 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
     if not sShort then return end
     local sRealm = (sender:match("-(.+)$")) or GetRealmName()
     local senderKey = BRutus:GetPlayerKey(sShort, sRealm)
+    -- The claim's keys were built on the sender's client: as this client keys them (#97).
+    if claim.main then claim.main = BRutus:LocalMemberKey(claim.main) end
+    if type(claim.alts) == "table" then
+        for i, k in ipairs(claim.alts) do claim.alts[i] = BRutus:LocalMemberKey(k) end
+    end
+    if type(claim.unlink) == "table" then
+        for i, k in ipairs(claim.unlink) do claim.unlink[i] = BRutus:LocalMemberKey(k) end
+    end
 
     if claim.main and type(claim.alts) == "table" then
         -- Only apply if the sender is part of the group they're claiming
@@ -271,22 +280,22 @@ end
 function AltAutoDetect:_RegisterTests()
     if not BRutus.SelfTest then return end
     local S = BRutus.SelfTest
-    local acc = {
-        ["Main-R"] = { level = 70 }, ["Alt-R"] = { level = 61 }, ["Other-R"] = { level = 70 },
-    }
-    local guild = { ["Main-R"] = true, ["Alt-R"] = true }   -- Other-R not in this guild
+    -- Keyed the way this client keys: on WoW: Forever any other realm is rewritten to its own (#97).
+    local main, alt, other = BRutus:GetPlayerKey("Main"), BRutus:GetPlayerKey("Alt"), BRutus:GetPlayerKey("Other")
+    local acc = { [main] = { level = 70 }, [alt] = { level = 61 }, [other] = { level = 70 } }
+    local guild = { [main] = true, [alt] = true }   -- Other not in this guild
     S:Register("altauto.detect", function()
         local r = AltAutoDetect:DetectOwnAlts(acc, guild, {})
-        if not r or r.main ~= "Main-R" then return false, "main=highest level in guild" end
+        if not r or r.main ~= main then return false, "main=highest level in guild" end
         if #r.group ~= 2 then return false, "only guild members grouped" end
         return true
     end)
     S:Register("altauto.needs_two", function()
-        if AltAutoDetect:DetectOwnAlts(acc, { ["Main-R"] = true }, {}) ~= nil then return false, "need 2+" end
+        if AltAutoDetect:DetectOwnAlts(acc, { [main] = true }, {}) ~= nil then return false, "need 2+" end
         return true
     end)
     S:Register("altauto.already_linked", function()
-        if AltAutoDetect:DetectOwnAlts(acc, guild, { ["Alt-R"] = "Main-R" }) ~= nil then
+        if AltAutoDetect:DetectOwnAlts(acc, guild, { [alt] = main }) ~= nil then
             return false, "already linked => nil"
         end
         return true

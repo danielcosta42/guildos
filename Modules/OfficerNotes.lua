@@ -106,7 +106,7 @@ function OfficerNotes:HandleIncoming(data)
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 
-    local playerKey = payload.target
+    local playerKey = BRutus:LocalMemberKey(payload.target)   -- the sender's key, as this client's (#97)
     local note = payload.note
     if not playerKey or not note then return end
 
@@ -148,35 +148,36 @@ function OfficerNotes:HandleAllIncoming(data)
 
     if not BRutus.db.officerNotes then BRutus.db.officerNotes = {} end
 
-    for playerKey, playerData in pairs(incoming) do
+    for incomingKey, playerData in pairs(incoming) do
+        local playerKey = BRutus:LocalMemberKey(incomingKey)   -- the sender's key, as this client's (#97)
         if type(playerData) == "table" then
             if not BRutus.db.officerNotes[playerKey] then
                 BRutus.db.officerNotes[playerKey] = { notes = {}, tags = {} }
             end
-            local existing = BRutus.db.officerNotes[playerKey]
-
-            -- Merge notes: avoid duplicates by author+timestamp
-            local seen = {}
-            for _, n in ipairs(existing.notes or {}) do
-                seen[(n.author or "") .. "_" .. (n.timestamp or 0)] = true
-            end
-            for _, n in ipairs(playerData.notes or {}) do
-                local k = (n.author or "") .. "_" .. (n.timestamp or 0)
-                if not seen[k] then
-                    table.insert(existing.notes, n)
-                    seen[k] = true
-                end
-            end
-            table.sort(existing.notes, function(a, b)
-                return (a.timestamp or 0) > (b.timestamp or 0)
-            end)
-
-            -- Merge tags: incoming wins for non-empty values
-            for k, v in pairs(playerData.tags or {}) do
-                if v and v ~= "" then
-                    existing.tags[k] = v
-                end
-            end
+            self:MergeSheet(BRutus.db.officerNotes[playerKey], playerData)
         end
     end
+end
+
+-- One member's sheet folded into another: an incoming note is added unless one by the same author
+-- at the same time is already there, the sheet ends newest first, and the incoming tags win where
+-- they say something. Notes already held are all kept: two in one second exist on their author's
+-- client. On a bulk sync and in the stored-key migration (#97); a note that is not a note is
+-- dropped rather than breaking either.
+function OfficerNotes:MergeSheet(existing, incoming)
+    local notes, seen = {}, {}
+    local function key(n) return tostring(n.author or "") .. "_" .. tostring(n.timestamp or 0) end
+    for _, n in ipairs(type(existing.notes) == "table" and existing.notes or {}) do
+        if type(n) == "table" then notes[#notes + 1], seen[key(n)] = n, true end
+    end
+    for _, n in ipairs(type(incoming.notes) == "table" and incoming.notes or {}) do
+        if type(n) == "table" and not seen[key(n)] then notes[#notes + 1], seen[key(n)] = n, true end
+    end
+    table.sort(notes, function(a, b) return (tonumber(a.timestamp) or 0) > (tonumber(b.timestamp) or 0) end)
+    existing.notes = notes
+    if type(existing.tags) ~= "table" then existing.tags = {} end
+    for k, v in pairs(type(incoming.tags) == "table" and incoming.tags or {}) do
+        if v and v ~= "" then existing.tags[k] = v end
+    end
+    return existing
 end

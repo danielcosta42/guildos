@@ -103,6 +103,9 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 | `BRutus:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) |
 | `BRutus:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
 | `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95) |
+| `BRutus:LocalMemberKey(key)` | A member key another client built, as this client keys it: on Forever rebuilt from its name with this client's realm (`ally:` keys left alone); elsewhere unchanged (issue #97) |
+| `BRutus:LocalizeMemberTable(t, merge)` | `t` rekeyed with `LocalMemberKey`; `merge(held, incoming)` settles two records for one member and only sees two tables; a record beats a non-record, and with no merge the first record stays (issue #97) |
+| `BRutus:LocalizeStoredMemberTables()` | Forever only, at `DataCollector:Initialize`, once per database (`db.storedKeysLocalized` holds the realm it ran for), each table its own `SafeCall` step: rekeys stored attendance (not the old flat format), sessions' players and snapshots, officer notes, trials, raiders, alt links (a self-link dropped), DKP standings (summed, starting points once) and core rosters and sign-ups (issue #97) |
 
 Every hand-built member key now goes through the rule: CommSystem's own-message check, `/gos trial` and `/gos note`,
 RaidTracker snapshots, the consumable check, the export's `guildKey`, LootMaster's context, awards, rolls and DKP
@@ -459,6 +462,7 @@ Removed: `Compat.NewTimer`.
 | `OfficerNotes:HandleIncoming(data)` | Deserializes, deduplicates by author+timestamp, inserts note |
 | `OfficerNotes:BroadcastAllNotes()` | Serializes full officerNotes and sends "OA" comm message |
 | `OfficerNotes:HandleAllIncoming(data)` | Merges incoming bulk notes, deduplicates, sorts |
+| `OfficerNotes:MergeSheet(existing, incoming)` | Folds one member's sheet into another: every held note kept, an arriving one added unless the same author+timestamp is held, newest first, non-notes dropped; incoming non-empty tags win (issue #97) |
 
 ---
 
@@ -483,6 +487,7 @@ Removed: `Compat.NewTimer`.
 | `TrialTracker:UpdateSnapshots()` | Auto-snapshots active trials if last snapshot >1 day (officer only) |
 | `TrialTracker:BroadcastTrials()` | Serializes and sends "TR" comm message (officer only) |
 | `TrialTracker:HandleIncoming(data)` | Merges incoming trials: missing=accept, same=merge notes, newer=replace |
+| `TrialTracker:Merge(existing, incoming)` | The trial to keep: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
 | `TrialTracker:MergeNotes(existing, incoming)` | Merges notes by author:timestamp, re-sorts |
 
 ---

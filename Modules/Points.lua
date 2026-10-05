@@ -270,6 +270,7 @@ function Points:OnSync(env)
     if env.act == "delta" and d and d.entries then
         local applied = false
         for _, e in ipairs(d.entries) do
+            e.key = BRutus:LocalMemberKey(e.key)   -- the sending officer's key, as this client's (#97)
             local pool = self:GetDBForCore(e.core)
             if e.op and not pool.appliedOps[e.op] then
                 self:ApplyEntry(e, pool)
@@ -286,7 +287,16 @@ function Points:OnSync(env)
         if BRutus.SyncService:ShouldApply(domain, "standings", env.rev) then
             if d.mode     then pool.mode     = d.mode     end
             if d.config   then pool.config   = d.config   end
-            if d.standings then pool.standings = d.standings end
+            if d.standings then
+                -- Keyed this client's way; one member under two of the sender's keys adds up (#97).
+                pool.standings = BRutus:LocalizeMemberTable(d.standings, function(a, b)
+                    -- Each record began at the starting points: counted once (#97).
+                    a.current = (a.current or 0) + (b.current or 0) - ((pool.config and pool.config.startingPoints) or 0)
+                    a.earned  = (a.earned or 0) + (b.earned or 0)
+                    a.spent   = (a.spent or 0) + (b.spent or 0)
+                    return a
+                end)
+            end
             BRutus.SyncService:SetRevision(domain, "standings", env.rev)
             self:Refresh()
         end
