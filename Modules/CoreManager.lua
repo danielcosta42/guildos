@@ -26,24 +26,66 @@ CoreManager.ROLE_COLORS = {
 }
 CoreManager.ROLE_CYCLE = { "tank", "healer", "mdps", "rdps" }
 
--- Composition targets per raid format (T + H + M + R must sum to the size)
+-- Composition targets per raid format (T + H + M + R must sum to the size). TBC's raids are
+-- 10 and 25 players; WoW: Forever's are 10 and 20 a tier, and Onyxia at 40 (issue #89).
 CoreManager.RAID_TARGETS = {
-    [10] = { tank=2, healer=2, mdps=3, rdps=3 },
-    [25] = { tank=2, healer=6, mdps=9, rdps=8 },
+    [10] = { tank=2, healer=2,  mdps=3,  rdps=3 },
+    [20] = { tank=2, healer=5,  mdps=6,  rdps=7 },
+    [25] = { tank=2, healer=6,  mdps=9,  rdps=8 },
+    [40] = { tank=4, healer=10, mdps=13, rdps=13 },
 }
+
+-- The formats this guild's game has, and the one a new core starts with: each Forever tier's
+-- main raid is the 20-player one.
+local function sizesOfThisGame()
+    if BRutus.Client.isAnniversary then return { 10, 25 }, 25 end
+    return { 10, 20, 40 }, 20
+end
+
+function CoreManager:RaidSizes()
+    return (sizesOfThisGame())
+end
+
+local function isSizeOfThisGame(size)
+    for _, s in ipairs((sizesOfThisGame())) do
+        if s == size then return true end
+    end
+    return false
+end
+
+-- The next format after `size`, round the list. A size this game lacks counts as the default,
+-- as GetRaidSize reads it, so a saved 25 on Forever (shown as 20) moves on to 40.
+function CoreManager:NextRaidSize(size)
+    local sizes, default = sizesOfThisGame()
+    if not isSizeOfThisGame(size) then size = default end
+    for i, s in ipairs(sizes) do
+        if s == size then return sizes[(i % #sizes) + 1] end
+    end
+end
+
+function CoreManager:RaidTargets(size)
+    local _, default = sizesOfThisGame()
+    return self.RAID_TARGETS[isSizeOfThisGame(size) and size or default]
+end
 
 function CoreManager:GetRoleForClass(class)
     return self.CLASS_DEFAULT_ROLE[class] or "rdps"
 end
 
+-- A size this game lacks (a 25 saved by a version that only knew TBC) reads as the default.
 function CoreManager:GetRaidSize(coreName)
     local core = self:GetCore(coreName)
-    return (core and core.raidSize) or 25
+    local size = core and core.raidSize
+    if isSizeOfThisGame(size) then return size end
+    local _, default = sizesOfThisGame()
+    return default
 end
 
 function CoreManager:SetRaidSize(coreName, size)
     local core = self:GetCore(coreName)
-    if core then core.raidSize = (size == 10) and 10 or 25 end
+    if not core then return end
+    local _, default = sizesOfThisGame()
+    core.raidSize = isSizeOfThisGame(size) and size or default
 end
 
 -- Penalty fallbacks when a core hasn't overridden them

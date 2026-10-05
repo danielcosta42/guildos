@@ -321,12 +321,12 @@ function BRutus:CreateCoresPanel(panel)
         local curSize = CM:GetRaidSize(coreName)
         local szLbl = track(MakeLabel(rightContent, L["Raid format:"], 10))
         szLbl:SetPoint("TOPLEFT", 4, y)
-        local SZ_LABELS = { [10] = "10-man", [25] = "25-man" }
-        local szBtn = track(UI:CreateButton(rightContent, SZ_LABELS[curSize], 80, 20))
+        local szBtn = track(UI:CreateButton(rightContent, curSize .. "-man", 80, 20))
         szBtn:SetPoint("LEFT", szLbl, "RIGHT", 6, 1)
         szBtn:SetScript("OnClick", function(self)
-            curSize = (curSize == 25) and 10 or 25
-            self.label:SetText(SZ_LABELS[curSize])
+            -- This game's formats, round the list: 10 and 25 on TBC, 10, 20 and 40 on Forever (issue #89).
+            curSize = CM:NextRaidSize(curSize)
+            self.label:SetText(curSize .. "-man")
             CM:SetRaidSize(coreName, curSize)
         end)
         local szHint = track(MakeLabel(rightContent,
@@ -789,7 +789,7 @@ function BRutus:CreateCoresPanel(panel)
 
         local roles = comp.roleCounts
         local raidSize = CM:GetRaidSize(coreName)
-        local T = CM.RAID_TARGETS[raidSize] or CM.RAID_TARGETS[25]
+        local T = CM:RaidTargets(raidSize)
         local function roleColor(role, cnt)
             local t = T[role] or 0
             if cnt >= t then return "|cff44FF44"
