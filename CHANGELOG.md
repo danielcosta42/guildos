@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.64.0] - 2026-10-05
+
+### Added
+- a raid vai para o core cujo roster está no grupo, sem depender de um core ativo (#99)
+
+
 ## [0.63.5] - 2026-10-05
 
 ### Fixed
