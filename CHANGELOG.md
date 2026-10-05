@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.63.1] - 2026-10-05
+
+### Fixed
+- no Forever, o sync volta: o Guild OS usa o proprio LibSerialize (#87)
+
+
 ## [0.63.0] - 2026-10-04
 
 ### Added
