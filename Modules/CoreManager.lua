@@ -10,9 +10,14 @@ local CoreManager = {}
 BRutus.CoreManager = CoreManager
 local L = BRutus.L
 
-CoreManager.CLASS_DEFAULT_ROLE = {
+-- The role a class starts in. TBC's put the tanks and healers first; WoW: Forever's put damage
+-- first, as the site's Forever roles do, because tank-first was wrong there (issue #92).
+CoreManager.CLASS_DEFAULT_ROLE = BRutus.Client.isAnniversary and {
     WARRIOR="tank",  PALADIN="healer", HUNTER="rdps",  ROGUE="mdps",
     PRIEST="healer", SHAMAN="healer",  MAGE="rdps",    WARLOCK="rdps", DRUID="healer",
+} or {
+    WARRIOR="mdps",  PALADIN="mdps",   HUNTER="rdps",  ROGUE="mdps",
+    PRIEST="rdps",   SHAMAN="mdps",    MAGE="rdps",    WARLOCK="rdps", DRUID="mdps",
 }
 local CLASS_DEFAULT_ROLE = CoreManager.CLASS_DEFAULT_ROLE  -- internal alias
 
@@ -38,8 +43,8 @@ CoreManager.RAID_TARGETS = {
 -- The formats this guild's game has, and the one a new core starts with: each Forever tier's
 -- main raid is the 20-player one.
 local function sizesOfThisGame()
-    if BRutus.Client.isAnniversary then return { 10, 25 }, 25 end
-    return { 10, 20, 40 }, 20
+    if BRutus.Client.isAnniversary then return { 10, 25 }, BRutus.Client.defaultRaidSize end
+    return { 10, 20, 40 }, BRutus.Client.defaultRaidSize
 end
 
 function CoreManager:RaidSizes()
@@ -523,7 +528,9 @@ local CLASS_BUFFS_MAP = {
     ROGUE   = {},
 }
 
-local IMPORTANT_BUFFS_LIST = {
+-- TBC's raid buffs. WoW: Forever lists none, as the site's Forever catalogue does on purpose,
+-- and the core screen leaves the section out (issue #92).
+local IMPORTANT_BUFFS_LIST = not BRutus.Client.isAnniversary and {} or {
     { name = "Battle Shout",          src = "WARRIOR" },
     { name = "Blessing of Kings",     src = "PALADIN" },
     { name = "Blessing of Might",     src = "PALADIN" },
