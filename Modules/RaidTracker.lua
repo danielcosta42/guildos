@@ -143,6 +143,10 @@ function RaidTracker:Initialize()
             C_Timer.After(2, function()
                 RaidTracker:MergeDuplicateSessions()
             end)
+            -- A /reload or a login inside a raid fires no zone change: pick the session back up now,
+            -- not at the next wipe, or attendance goes dark and an officer's kept core pick lapses
+            -- before anything reads it (issue #99).
+            C_Timer.After(1, function() RaidTracker:CheckZone() end)
             -- Only fire once per session
             frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
         end
@@ -160,6 +164,12 @@ function RaidTracker:CheckZone()
                 self.endTimer:Cancel()
                 self.endTimer = nil
                 BRutus:Print(L["|cffFFAA00Raid resumed — session continuing.|r"])
+                if self.gracePick then   -- picked on the run-back: this raid's, now it is back (issue #99)
+                    local name = self.gracePick
+                    self.gracePick = nil
+                    self:PickCore(name)
+                    self:SayPicked()
+                end
                 self:TakeSnapshot("raid_resumed")
                 return
             else
@@ -186,6 +196,10 @@ function RaidTracker:CheckZone()
     end
 end
 
+-- How long an officer's pick outlives its session's last snapshot: long enough for a /reload or a
+-- disconnect to find it, never long enough to reach another raid (issue #99).
+local PICK_HOLD = 1800
+
 function RaidTracker:StartSession(instanceID)
     local raidName = self.RAID_INSTANCES[instanceID] or L["Unknown"]
     local now = GetServerTime()
@@ -204,6 +218,20 @@ function RaidTracker:StartSession(instanceID)
         end)
     end
 
+    -- A new raid: which core it is gets asked again, unless this character picked one inside this
+    -- instance moments ago and a /reload or a disconnect started the session over (issue #99).
+    self.coreSettled, self.coreAnnounced, self.gracePick = nil, nil, nil
+    local rtDB = BRutus.db.raidTracker
+    local pick = rtDB and rtDB.corePick
+    local kept = type(pick) == "table" and pick.instanceID == instanceID and pick.char == BRutus.Compat.PlayerName()
+        and now - (tonumber(pick.at) or 0) <= PICK_HOLD
+    if kept then
+        self:SetGroupTag(pick.tag)
+        self.coreSettled = true
+    elseif rtDB then
+        rtDB.corePick = nil
+    end
+
     self.trackingActive = true
     self.currentRaid = {
         instanceID = instanceID,
@@ -216,6 +244,8 @@ function RaidTracker:StartSession(instanceID)
         encounters = {},
         players = {},
     }
+    BRutus:Print(L["Raid tracking started: |cffFFD700"] .. raidName .. "|r")
+    if kept then self:SayPicked() end
     self:TakeSnapshot("session_start")
 
     -- Periodic snapshots every 5 minutes
@@ -224,8 +254,6 @@ function RaidTracker:StartSession(instanceID)
             self:TakeSnapshot("periodic")
         end
     end)
-
-    BRutus:Print(L["Raid tracking started: |cffFFD700"] .. raidName .. "|r")
 end
 
 function RaidTracker:IsGuildRaid(session)
@@ -266,6 +294,9 @@ end
 
 function RaidTracker:EndSession()
     if not self.currentRaid then return end
+    -- An officer's pick is its session's: the next raid is asked afresh (issue #99).
+    self.gracePick = nil
+    if BRutus.db.raidTracker then BRutus.db.raidTracker.corePick = nil end
 
     self:TakeSnapshot("session_end")
     local endTime = GetServerTime()
@@ -353,6 +384,11 @@ function RaidTracker:TakeSnapshot(reason)
         members = members,
         count = self:CountTable(members),
     })
+    BRutus:SafeCall(self.DetectCore, self, members, reason)   -- after the snapshot is kept (issue #99)
+    local pick = BRutus.db.raidTracker and BRutus.db.raidTracker.corePick
+    if type(pick) == "table" and pick.instanceID == self.currentRaid.instanceID and pick.char == myName then
+        pick.at = GetServerTime()   -- the pick lives as long as its raid does
+    end
 end
 
 ----------------------------------------------------------------------
@@ -451,6 +487,58 @@ function RaidTracker:SetGroupTag(name)
     if BRutus.db and BRutus.db.raidTracker then
         BRutus.db.raidTracker.currentGroupTag = name
     end
+    -- Loot rules cached from the old core's config follow the new one (issue #99).
+    if BRutus.LootMaster and BRutus.LootMaster.LoadCfg then BRutus.LootMaster:LoadCfg() end
+end
+
+-- An officer picking the active core (Raid Core's "Set Active"), issue #99.
+--  * Inside a raid it is that raid's core: the session moves to it, the roster detection stops
+--    for the rest of the raid, and the pick is kept for this character and instance while the
+--    raid goes on, so a /reload or a disconnect, which start the session over, keep it too.
+--  * On a run-back (the grace period after leaving the zone) it is the raid's once it resumes.
+--  * Outside any raid it is only the core the next raid falls back to.
+function RaidTracker:PickCore(name)
+    self:SetGroupTag(name)
+    local rtDB = BRutus.db.raidTracker
+    local raid = self.currentRaid
+    if raid and self.endTimer then
+        self.gracePick = self:GetCurrentGroup()
+        return
+    end
+    if not raid then
+        rtDB.corePick = nil
+        return
+    end
+    raid.groupTag = self:GetCurrentGroup()
+    self.coreSettled = true
+    rtDB.corePick = {
+        instanceID = raid.instanceID, tag = raid.groupTag, char = BRutus.Compat.PlayerName(), at = GetServerTime(),
+    }
+end
+
+-- A pick applied with no click right then (kept across a /reload, or made on the run-back) is
+-- named in chat, so a pick never takes a raid silently (issue #99).
+function RaidTracker:SayPicked()
+    BRutus:Print(string.format(L["Raid core: |cffFFD700%s|r, as you set it."], self:GetCurrentGroup()))
+end
+
+-- Which core this raid is, from who is in it now (issue #99): `group` is a snapshot's members,
+-- never everyone the session has seen. Until the first boss is pulled, each snapshot inside the
+-- raid follows the core whose roster covers the group, so a raid still being invited ends up on
+-- the roster that showed up; the pull settles it. The answer becomes the active core, so the
+-- session, the DKP pool and the loot rules all follow it. Never once the raid is left (the grace
+-- period and the session's last snapshot), and never after an officer picked one.
+function RaidTracker:DetectCore(group, reason)
+    if not self.currentRaid or self.coreSettled or self.endTimer or reason == "session_end" then return end
+    if not BRutus.CoreManager then return end
+    local name, count, size = BRutus.CoreManager:CoreForGroup(group)
+    if name and name ~= self.coreAnnounced then
+        self:SetGroupTag(name)
+        self.currentRaid.groupTag = name
+        self.coreAnnounced = name
+        BRutus:Print(string.format(L["Raid core: |cffFFD700%s|r, with %d of the %d in the group on its roster."], name, count, size))
+    end
+    if reason == "encounter_start" then self.coreSettled = true end
 end
 
 -- Returns the group tag where the player has the most raids recorded.

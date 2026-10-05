@@ -247,7 +247,7 @@ function BRutus:CreateCoresPanel(panel)
         setActiveBtn:SetPoint("LEFT", coreTitle, "RIGHT", 12, 0)
         setActiveBtn:SetScript("OnClick", function()
             if BRutus.RaidTracker then
-                BRutus.RaidTracker:SetGroupTag(coreName)
+                BRutus.RaidTracker:PickCore(coreName)
                 SetStatus(string.format(L["Active core set to: %s"], coreName), C.online)
                 -- Refresh row labels
                 for _, row in pairs(coreRows) do

@@ -335,7 +335,11 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
 | `RaidTracker:OnEncounterEnd(encounterID, encounterName, success)` | Updates encounter end/success |
 | `RaidTracker:GetCurrentGroup()` | Returns currentGroupTag string |
-| `RaidTracker:SetGroupTag(name)` | Sets group tag in memory and DB |
+| `RaidTracker:SetGroupTag(name)` | Sets group tag in memory and DB, and re-reads the loot rules (`LootMaster:LoadCfg`) (issue #99) |
+| `RaidTracker:DetectCore(group, reason)` | After each snapshot inside the raid, until settled: the core whose roster covers `group` (`CoreManager:CoreForGroup`) becomes the active core and the session's, named in chat when it first appears or changes; `encounter_start` settles it; never in the grace period or on `session_end` (ADR-0023, issue #99) |
+| `RaidTracker:PickCore(name)` | An officer's pick (CorePanel's Set Active): sets the active core. Inside a raid it also moves the session, settles detection and is kept in `db.raidTracker.corePick` for that character and instance while the raid goes on (refreshed by each snapshot, lapsing 30 min after the last; cleared by `EndSession`), so a /reload keeps it; on a run-back it waits in `gracePick` for the raid to resume; outside any raid it drops a kept pick (ADR-0023, issue #99) |
+| `RaidTracker:SayPicked()` | Names in chat a core pick applied with no click right then: a pick kept across a /reload, or one made on the run-back (issue #99) |
+| `CoreManager:CoreForGroup(players)` | The core with the most of a group on its roster (alts as their main), if at least 2 and at least half the group and untied; returns name, count, size; nil otherwise (ADR-0023, issue #99) |
 | `RaidTracker:GetPlayerGroup(playerKey)` | Returns group with most raids for player |
 | `RaidTracker:GetAttendance(playerKey, groupTag)` | Returns attendance record for player/group |
 | `RaidTracker:GetTotalSessions(groupTag)` | Counts unique guild-raid lockouts |
@@ -383,6 +387,7 @@ Removed: `Compat.NewTimer`.
 | `LootMaster:SafeSendChatAuto(msg, channel)` | A line sent from an event or a timer: on WoW: Forever (`Compat.NeedsClick`) it prints for the loot master only, else `SafeSendChat`. Used by `RegisterRoll`'s per-roll lines and the timer path of `EndRolling(byClick)`; `ScheduleCountdownWarnings` does nothing on Forever (issue #63) |
 | `LootMaster:SafeSendAddon(prefix, payload, channel)` | Sends addon message if in raid + not testMode |
 | `LootMaster:Initialize()` | DB setup, builds roll pattern, registers events |
+| `LootMaster:LoadCfg()` | Caches the active core's roll timer, auto-announce, wishlist-only mode, disenchanter and threshold; run at start-up and whenever the active core changes (issue #99) |
 | `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player |
 | `LootMaster:IsMasterLooter()` | 4-tier check: IsMasterLooter → GetLootMethod → C_PartyInfo → leader rank |
 | `LootMaster:HookBagClicks()` | Alt+click on a bag item → roll: hooks `ContainerFrameItemButton_OnModifiedClick` (Anniversary) or `HandleModifiedItemClick` with the item location (Forever), never both (issue #44) |

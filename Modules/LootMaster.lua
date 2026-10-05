@@ -71,6 +71,17 @@ function LootMaster:GetCfg()
     return BRutus.db.lootMaster or {}
 end
 
+-- Caches the active core's values (read via GetCfg so cores are respected from the start); run
+-- again whenever the active core changes (issue #99).
+function LootMaster:LoadCfg()
+    local cfg = self:GetCfg()
+    self.ROLL_DURATION      = cfg.rollDuration or 30
+    self.AUTO_ANNOUNCE      = cfg.autoAnnounce
+    self.WISHLIST_ONLY_MODE = cfg.wishlistOnlyMode or false
+    self.disenchanter       = cfg.disenchanter or ""
+    self.LOOT_THRESHOLD     = cfg.lootThreshold or 3
+end
+
 function LootMaster:SaveCfgKey(key, value)
     if BRutus.CoreManager then
         BRutus.CoreManager:SetLootConfigKey(key, value)
@@ -117,13 +128,7 @@ function LootMaster:Initialize()
     if lmdb.disenchanter     == nil then lmdb.disenchanter     = ""   end
     if lmdb.lootThreshold    == nil then lmdb.lootThreshold    = 3    end
 
-    -- Cache active values (read via GetCfg so cores are respected from the start)
-    local cfg = self:GetCfg()
-    self.ROLL_DURATION      = cfg.rollDuration or 30
-    self.AUTO_ANNOUNCE      = cfg.autoAnnounce
-    self.WISHLIST_ONLY_MODE = cfg.wishlistOnlyMode or false
-    self.disenchanter       = cfg.disenchanter or ""
-    self.LOOT_THRESHOLD     = cfg.lootThreshold or 3
+    self:LoadCfg()
     self.pendingTrades      = {}
 
     -- Build /roll detection pattern from localized RANDOM_ROLL_RESULT global
