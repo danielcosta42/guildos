@@ -54,6 +54,7 @@ local function load(game)
   function GetNumGuildMembers() return 0 end
   function GetGuildRosterInfo() end
   function IsInRaid() return true end
+  function GetInstanceInfo() return "Molten Core", "raid", 9, "", 40, 0, false, 409 end
   function GetNumGroupMembers() return #GROUP end
   function UnitExists(u) return u == "player" or GROUP[tonumber(u:match("%d+") or "")] ~= nil end
   function UnitIsConnected() return true end

@@ -682,3 +682,28 @@ officer leading several had to switch before every raid, and forgetting sent the
   to the hand-set core; the chat line names it, and "Set Active" fixes it.
 - (?) On WoW: Forever nobody has read whether `UnitName("raidN")` gives the whole name; if it gives the first name
   only, raid keys miss every roster (attendance as much as detection). Verify when raids open.
+
+---
+
+## ADR-0024 — On WoW: Forever every raid is tracked, and progression is the size the game gives
+
+### Context
+Progression attendance (the "25-man" figures: `raids25`, the score, the percentage every screen and the loot
+tiebreaker read) counted TBC's 25-player raids by instance id, and RaidTracker only tracked the raids it listed.
+WoW: Forever's raids open on 9 December 2026 with ids nobody has: on Forever no raid was recorded at all, and
+the screens said "25-man". Each Forever tier is a 10-player raid and a 20-player one; Onyxia at 40 was said in
+a Q&A (issue #90).
+
+### Decision (the owner's, 2026-10-05)
+- On Forever every instance of type "raid" is tracked, named by the game (`GetInstanceInfo`).
+- A session keeps `size`, the game's maxPlayers on the way in. On Forever a night counts for progression when
+  its size is 20 or more: the 20s and the 40, never the 10s, as Karazhan never counted on TBC.
+- The size travels with the officers' raid sync and with the companion payload (v9); merging two halves of a
+  night keeps it.
+- On Forever the "25-man" labels read "20+" (`RaidTracker:ProgLabel`, on the translated text).
+- Anniversary is unchanged: tracked and counted by its lists of ids.
+
+### Consequences
+- (+) The raids of 9 December, and every tier after, are tracked and counted with no release.
+- (−) A night recorded before sizes were kept has none, and on Forever does not count; there were none.
+- (−) The site must count the same way from the size, or its attendance disagrees with the game's.
