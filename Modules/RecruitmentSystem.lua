@@ -131,21 +131,77 @@ function Recruitment:SetAutoInviteFallback(cfg, mode)
 end
 
 -- A recruitment channel is listed once, whatever the case.
+-- The preset channels as each client names them: the game's own ChatChannels table
+-- (Anniversary 2.5.6 and Forever 1.60.1). The English names were all the addon knew, and
+-- GetChannelName("LookingForGroup") is 0 on a French client (issue #112). A zone channel goes by
+-- its shortcut ("Commerce" for "Commerce - Hurlevent"), LookingForGroup by its name: they differ
+-- only on Forever in Russian. Forever has no GuildRecruitment channel, and its Spanish
+-- LookingForGroup is BuscarGrupo.
+Recruitment.CHANNELS = {
+    { enUS = "Trade", deDE = "Handel", esES = "Comercio", esMX = "Comercio", frFR = "Commerce",
+      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易" },
+    { enUS = "LookingForGroup", deDE = "SucheNachGruppe", esES = "BuscandoGrupo", esMX = "BuscarGrupo",
+      frFR = "RechercheDeGroupe", ptBR = "ProcurandoGrupo", ruRU = "ПоискСпутников", koKR = "파티찾기",
+      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" } },
+    { enUS = "GuildRecruitment", deDE = "Gildenrekrutierung", esES = "BuscaHermandad", esMX = "BuscaHermandad",
+      frFR = "RecrutementDeGuilde", ptBR = "RecrutamentoDeGuilda", ruRU = "Гильдии", koKR = "길드모집",
+      zhCN = "公会招募", zhTW = "公會招募", anniversaryOnly = true },
+}
+
+local function channelFor(c)
+    local loc = GetLocale and GetLocale() or "enUS"
+    return (not BRutus.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
+end
+
+-- This client's preset channels, in order.
+function Recruitment:PresetChannels()
+    local out = {}
+    for _, c in ipairs(self.CHANNELS) do
+        if BRutus.Client.isAnniversary or not c.anniversaryOnly then out[#out + 1] = channelFor(c) end
+    end
+    return out
+end
+
+-- This client's name for a preset channel named in any language: saved before, typed, or sent
+-- by an officer on a client in another. Any other channel comes back as it is, and so does a
+-- preset this game does not have (on Forever a GuildRecruitment is a channel somebody made).
+function Recruitment:ChannelName(name)
+    local n = tostring(name or ""):lower()
+    for _, c in ipairs(self.CHANNELS) do
+        if BRutus.Client.isAnniversary or not c.anniversaryOnly then
+            for _, names in ipairs({ c, c.forever or {} }) do
+                for _, v in pairs(names) do
+                    if type(v) == "string" and v:lower() == n then return channelFor(c) end
+                end
+            end
+        end
+    end
+    return name
+end
+
+local function sameChannel(a, b)
+    return Recruitment:ChannelName(a):lower() == Recruitment:ChannelName(b):lower()
+end
+
+function Recruitment:HasChannel(list, name)
+    for _, c in ipairs(list) do
+        if sameChannel(c, name) then return true end
+    end
+    return false
+end
+
 function Recruitment:AddChannel(list, name)
     name = strtrim(tostring(name or ""))
-    if name == "" then return false end
-    for _, c in ipairs(list) do
-        if c:lower() == name:lower() then return false end
-    end
+    if name == "" or self:HasChannel(list, name) then return false end
     list[#list + 1] = name
     return true
 end
 
 function Recruitment:RemoveChannel(list, name)
-    name = strtrim(tostring(name or "")):lower()
+    name = strtrim(tostring(name or ""))
     local removed = false
     for i = #list, 1, -1 do
-        if list[i]:lower() == name then
+        if sameChannel(list[i], name) then
             table.remove(list, i)
             removed = true
         end
@@ -503,7 +559,7 @@ function Recruitment:Initialize()
 
     -- Set default channels if empty
     if #r.channels == 0 then
-        r.channels = { "LookingForGroup" }
+        r.channels = { self:ChannelName("LookingForGroup") }
     end
 
     -- Set default message if empty
@@ -885,11 +941,15 @@ end
 -- right now. GetChannelName returns 0 for a channel the player is not in, so
 -- with zero joined there is nothing to post to.
 function Recruitment:_ResolveChannels(settings)
-    local names, joined = {}, 0
+    local names, joined, seen = {}, 0, {}
     for _, ch in ipairs(settings and settings.channels or {}) do
-        names[#names + 1] = ch
-        local num = GetChannelName(ch)
-        if num and num > 0 then joined = joined + 1 end
+        ch = self:ChannelName(ch)
+        if not seen[ch:lower()] then   -- the same channel saved in two languages is one
+            seen[ch:lower()] = true
+            names[#names + 1] = ch
+            local num = GetChannelName(ch)
+            if num and num > 0 then joined = joined + 1 end
+        end
     end
     return names, joined
 end
@@ -1187,10 +1247,13 @@ function Recruitment:DoSendRecruitmentMessage()
         return
     end
 
-    local sent, iconsOnly = false, false
-    for _, channelName in ipairs(settings.channels or {}) do
+    local sent, iconsOnly, posted = false, false, {}
+    for _, saved in ipairs(settings.channels or {}) do
+        local channelName = self:ChannelName(saved)
         local channelNum = GetChannelName(channelName)
-        if channelNum and channelNum > 0 then
+        -- One post per channel: the same one saved in two languages resolves to one number.
+        if channelNum and channelNum > 0 and not posted[channelNum] then
+            posted[channelNum] = true
             -- Where the server hides raid icons, the copy goes without their codes (issue #64).
             local text = BRutus.Compat.ChannelHidesRaidIcons(channelName, channelNum) and self:_StripRaidIcons(msg) or msg
             if text ~= "" then

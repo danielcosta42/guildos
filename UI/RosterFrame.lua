@@ -2448,17 +2448,14 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Channels (multi-select toggles)
     RowLabel(L["Channels:"], yOff)
-    local CHAN_LIST = { "Trade", "LookingForGroup", "GuildRecruitment" }
+    -- As this client names them (issue #112): an English name is no channel on a French client.
+    local CHAN_LIST = BRutus.Recruitment:PresetChannels()
     local CHAN_PER_ROW = 4
     local chanBtns = {}
     local function refreshChanBtns()
         local chs = BRutus.db.recruitment.channels
         for _, b in ipairs(chanBtns) do
-            local active = false
-            for _, c in ipairs(chs) do
-                if c:lower() == b._ch:lower() then active = true; break end
-            end
-            if active then
+            if BRutus.Recruitment:HasChannel(chs, b._ch) then
                 b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
             else
                 b:SetBaseColor(0.12, 0.12, 0.16, 0.85)
@@ -2473,14 +2470,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         btn._ch = ch
         btn:SetScript("OnClick", function()
             local chs = BRutus.db.recruitment.channels
-            local found = false
-            for j = #chs, 1, -1 do
-                if chs[j]:lower() == ch:lower() then
-                    table.remove(chs, j)
-                    found = true
-                end
-            end
-            if not found then table.insert(chs, ch) end
+            if not BRutus.Recruitment:RemoveChannel(chs, ch) then BRutus.Recruitment:AddChannel(chs, ch) end
             refreshChanBtns()
         end)
         chanBtns[i] = btn
@@ -2512,10 +2502,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local customBtns = {}
     local customMore = UI:CreateText(parent, "", 10, 0.6, 0.6, 0.65)
     local function isPreset(name)
-        for _, p in ipairs(CHAN_LIST) do
-            if p:lower() == name:lower() then return true end
-        end
-        return false
+        return BRutus.Recruitment:HasChannel(CHAN_LIST, name)
     end
     local function refreshCustomChans()
         local shown = 0
