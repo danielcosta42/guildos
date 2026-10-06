@@ -707,3 +707,9 @@ a Q&A (issue #90).
 - (+) The raids of 9 December, and every tier after, are tracked and counted with no release.
 - (−) A night recorded before sizes were kept has none, and on Forever does not count; there were none.
 - (−) The site must count the same way from the size, or its attendance disagrees with the game's.
+- (?) Verify on 9 December: that `maxPlayers` is the raid's designed size (a flexible difficulty on a retail
+  engine reports 30, and would count a 10), and that a 10 and a 20 are different instance ids (lockouts are keyed
+  by id and week; one id hosting both would credit a 10's raiders). "Raid tracking started" names the size on
+  Forever so it shows on day one.
+- (−) A Forever session's name is the client's language and Forever has no `RAID_KEYS`, so no `raidId` is
+  stamped and the site matches it to a planned raid by name: a translated name can miss (site issue).

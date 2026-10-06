@@ -10,8 +10,9 @@ local _mergeDebounceTimer = nil  -- debounce handle for post-broadcast dedup
 
 -- TBC Raid instance IDs
 --
--- This table is also the gate: StartSession only opens a session for an id it
--- knows, so a raid missing from here is a raid the addon records nothing about.
+-- On Anniversary this table is also the gate (RaidTracker:IsTracked): a session only opens
+-- for an id it knows, so a raid missing from here is a raid the addon records nothing about.
+-- WoW: Forever tracks every raid instead (issue #90).
 -- Zul'Aman was missing, and every ZA night was therefore invisible — no presence,
 -- no encounters, no session at all — while the website listed it in its catalogue
 -- and waited.
@@ -264,7 +265,7 @@ function RaidTracker:StartSession(instanceID)
     self.currentRaid = {
         instanceID = instanceID,
         name = raidName,
-        size = tonumber(maxPlayers),   -- what Is25Man reads on Forever (issue #90)
+        size = (tonumber(maxPlayers) or 0) > 0 and tonumber(maxPlayers) or nil,   -- Is25Man on Forever (#90)
         raidId = raidId,
         groupTag = self:GetCurrentGroup(),  -- tag this session with the active group
         startTime = now,
@@ -273,7 +274,12 @@ function RaidTracker:StartSession(instanceID)
         encounters = {},
         players = {},
     }
-    BRutus:Print(L["Raid tracking started: |cffFFD700"] .. raidName .. "|r")
+    -- On Forever the size is what decides whether the night counts, so it is said (issue #90).
+    local said = raidName
+    if BRutus.Client and not BRutus.Client.isAnniversary and self.currentRaid.size then
+        said = raidName .. " (" .. self.currentRaid.size .. ")"
+    end
+    BRutus:Print(L["Raid tracking started: |cffFFD700"] .. said .. "|r")
     if kept then self:SayPicked() end
     self:TakeSnapshot("session_start")
 
@@ -414,6 +420,13 @@ function RaidTracker:TakeSnapshot(reason)
         count = self:CountTable(members),
     })
     BRutus:SafeCall(self.DetectCore, self, members, reason)   -- after the snapshot is kept (issue #99)
+    -- A size the game had not given at the start is read again while in the same raid (#90).
+    if not self.currentRaid.size then
+        local _, _, _, _, maxPlayers, _, _, id = GetInstanceInfo()
+        if id == self.currentRaid.instanceID and (tonumber(maxPlayers) or 0) > 0 then
+            self.currentRaid.size = tonumber(maxPlayers)
+        end
+    end
     local pick = BRutus.db.raidTracker and BRutus.db.raidTracker.corePick
     if type(pick) == "table" and pick.instanceID == self.currentRaid.instanceID and pick.char == myName then
         pick.at = GetServerTime()   -- the pick lives as long as its raid does
@@ -792,7 +805,9 @@ function RaidTracker:MergeDuplicateSessions()
                         a.data.endTime  = newEnd
                         a.data.duration = newEnd - (a.data.startTime or a.id)
 
-                        a.data.size = a.data.size or b.data.size   -- issue #90
+                        -- The larger size either half had; 0 is no size (issue #90).
+                        local sz = math.max(tonumber(a.data.size) or 0, tonumber(b.data.size) or 0)
+                        a.data.size = sz > 0 and sz or nil
 
                         -- Merge player sets
                         for k in pairs(b.data.players or {}) do
@@ -1072,6 +1087,9 @@ function RaidTracker:BroadcastRaidData()
             instanceID = session.instanceID,
             name       = session.name,
             size       = session.size,   -- issue #90
+            -- A pug night stays one on every officer's client: without it a peer counted it
+            -- as a guild raid and exported it as one.
+            isGuildRaid = session.isGuildRaid,
             groupTag   = session.groupTag or "",
             startTime  = session.startTime,
             endTime    = session.endTime,
@@ -1155,6 +1173,14 @@ function RaidTracker:HandleIncoming(data)
     -- Merge sessions: add any session we don't already have,
     -- but never re-insert sessions that have been tombstoned.
     for sessionID, session in pairs(payload.sessions or {}) do
+        -- A copy relayed by an officer on an older addon lost what that addon did not know to
+        -- send: the size and the pug-night mark. The next copy that carries them fills them in.
+        local mine = raidDB.sessions[sessionID]
+        if type(mine) == "table" and type(session) == "table" then
+            local sz = tonumber(session.size)
+            if mine.size == nil and sz and sz > 0 then mine.size = sz end
+            if mine.isGuildRaid == nil and session.isGuildRaid ~= nil then mine.isGuildRaid = session.isGuildRaid == true end
+        end
         if not deleted[sessionID] and not raidDB.sessions[sessionID] then
             if type(session) == "table" and type(session.players) == "table" then
                 session.players = BRutus:LocalizeMemberTable(session.players)   -- issue #97
