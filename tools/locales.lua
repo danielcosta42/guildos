@@ -82,6 +82,12 @@ do
   end
 end
 
+-- And the professions the roster stores by their English name and shows through L[name]
+-- (issue #114): every RegisterProf in DataCollector.
+for name in (read(ADDON .. "/Modules/DataCollector.lua") or ""):gmatch('RegisterProf%("([^"]+)"') do
+  if not used[name] then used[name] = true; nUsed = nUsed + 1 end
+end
+
 -- ── Each language as the client loads it ───────────────────────────────
 -- What a language's own file says, loaded alone as the client loads it (its guard reads
 -- GetLocale). enUS.lua is left out: it holds English values, which are not a translation.

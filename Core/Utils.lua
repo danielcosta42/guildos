@@ -631,7 +631,10 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     titleFS:SetText(L["Guild OS — Profession Sync Required"])
 
     -- Description
-    local profNames = table.concat(staleProfessions, ", ")
+    -- Kept in English as keys; shown in the reader's language (issue #114).
+    local shown = {}
+    for i, name in ipairs(staleProfessions) do shown[i] = L[name] end
+    local profNames = table.concat(shown, ", ")
     local descFS = frame:CreateFontString(nil, "OVERLAY")
     BRutus:ApplyFont(descFS, 10)
     descFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -4)

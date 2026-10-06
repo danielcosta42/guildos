@@ -1817,3 +1817,8 @@ L["[Call to Arms] %s: %s"] = "【集结令】%s：%s"
 L["here"] = "这里"
 L["{zone} is under attack, defend it!"] = "{zone}遭到攻击，快来防守！"
 L["|cffFF8800[Call to Arms]|r %s: %s |cff888888(%s, %s)|r"] = "|cffFF8800【集结令】|r %s：%s |cff888888（%s，%s）|r"
+
+-- Professions the roster stores in English, shown in this language (#114)
+L["Jewelcrafting"] = "珠宝加工"
+L["Opted out"] = "未参与"
+L["Poisons"] = "毒药"

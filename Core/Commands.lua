@@ -195,7 +195,7 @@ local function handleCommand(msg)
                     if not seen[c.name] then
                         seen[c.name] = true
                         BRutus:Print("   " .. string.format(L["%s of %s can craft %s (%s)"],
-                            c.name, c.guild, itemName, c.prof or "?")
+                            c.name, c.guild, itemName, L[c.prof or "?"])
                             .. (c.online and "" or " " .. L["(offline)"]))
                     end
                 end
@@ -205,7 +205,7 @@ local function handleCommand(msg)
                 BRutus.CraftNet:Query(itemId, function(short, label)
                     if seen[short] then return end
                     seen[short] = true
-                    BRutus:Print("   " .. string.format(L["%s can craft %s (%s)"], short, itemName, label or "?"))
+                    BRutus:Print("   " .. string.format(L["%s can craft %s (%s)"], short, itemName, L[label or "?"]))
                 end)
             end
         end

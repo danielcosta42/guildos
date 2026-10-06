@@ -418,7 +418,7 @@ function BRutus:ShowAllyCard(name, guild, anchor)
     if info.professions and #info.professions > 0 then
         local profs = {}
         for _, p in ipairs(info.professions) do
-            profs[#profs + 1] = string.format("%s %d", p.n or "?", p.r or 0)
+            profs[#profs + 1] = string.format("%s %d", L[p.n or "?"], p.r or 0)
         end
         lines[#lines + 1] = "|cffEDCC7B" .. L["Professions"] .. "|r\n  " .. table.concat(profs, "\n  ")
     end

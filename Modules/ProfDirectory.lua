@@ -158,7 +158,8 @@ function ProfDirectory.ItemRecipes(itemID)
     return byItem[itemID] or {}
 end
 
--- RecipeTracker's crafter shape { { playerName, playerKey, class, profName } }, or nil.
+-- RecipeTracker's crafter shape { { playerName, playerKey, class, profName } }, or nil. profName
+-- is the English name, as Anniversary's: the screens show it through L (issue #114).
 local function crafters(recipeIDs)
     local P, cat = BRutus.Professions, catalog()
     local who, out, seen = nil, {}, {}
@@ -180,7 +181,7 @@ local function crafters(recipeIDs)
                     end
                 end
                 out[#out + 1] = { playerName = w.name or key:match("^([^-]+)") or key, playerKey = key,
-                                  class = w.class, profName = line and ProfDirectory.DisplayName(line) or "" }
+                                  class = w.class, profName = line and cat.professions[line] and cat.professions[line].en or "" }
             end
         end
     end
