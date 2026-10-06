@@ -168,7 +168,13 @@ function CTA:Send(templateId, text)
     end
     if BRutus.SyncService then BRutus.SyncService:Publish("cta", "call", call) end
     BRutus.db.cta.lastSent = now
-    self:Remember(call, BRutus.Compat.PlayerName(), true)
+    -- The caller sees the popup the guild sees, and the count grow on it (issue #110), on the
+    -- same terms: not with popups off, nor mid-fight with quiet on.
+    local e = self:Remember(call, BRutus.Compat.PlayerName(), true)
+    if self:PopupsOn() and not self:Quiet() then
+        self.lastPopup = now
+        self:ShowPopup(e)
+    end
     BRutus:Print(string.format(L["Call to Arms sent: %s"], call.title))
     if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
     return true
@@ -235,13 +241,17 @@ end
 -- How a call reaches this player: a popup, a chat line only, or nothing. A line the caller
 -- already put in guild chat is not printed again. Popups from several officers at once are
 -- one popup and lines for the rest.
+-- In an instance or in combat, with quiet on: chat lines, not popups.
+function CTA:Quiet()
+    return self:QuietOn() and ((IsInInstance and select(2, IsInInstance()) ~= "none")
+        or (InCombatLockdown and InCombatLockdown())) and true or false
+end
+
 function CTA:Alert(e)
     if self:Muted(e.kind) then return "muted" end
     local now = GetServerTime()
-    local quiet = self:QuietOn() and ((IsInInstance and select(2, IsInInstance()) ~= "none")
-        or (InCombatLockdown and InCombatLockdown()))
     local crowded = self.lastPopup and now - self.lastPopup < self.POPUP_GAP
-    if not self:PopupsOn() or quiet or crowded then
+    if not self:PopupsOn() or self:Quiet() or crowded then
         if not e.chat then BRutus:Print(self:Line(e)) end
         return "line"
     end
@@ -349,6 +359,7 @@ function CTA:PaintCount(e)
     if not f then return end
     local n = self:GoingCount(e)
     f.count:SetText(n > 0 and string.format(L["%d on the way"], n) or "")
+    f.go:SetShown(not e.mine)   -- the caller does not answer their own call
     if e.answered then f.go:Disable() else f.go:Enable() end
 end
 
