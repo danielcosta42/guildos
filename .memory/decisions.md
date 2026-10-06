@@ -711,5 +711,9 @@ a Q&A (issue #90).
   engine reports 30, and would count a 10), and that a 10 and a 20 are different instance ids (lockouts are keyed
   by id and week; one id hosting both would credit a 10's raiders). "Raid tracking started" names the size on
   Forever so it shows on day one.
+- (−) The pug-night mark (`isGuildRaid = false`) now travels with the officers' raid sync on both games, and
+  fills in a copy that lacks it: a pug night stops counting on every officer's client and, through their
+  uploads, on the site, past nights included, as it always did on the officer who recorded it. That changes
+  Anniversary numbers where a pug night had spread without its mark.
 - (−) A Forever session's name is the client's language and Forever has no `RAID_KEYS`, so no `raidId` is
   stamped and the site matches it to a planned raid by name: a translated name can miss (site issue).

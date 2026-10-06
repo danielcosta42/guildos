@@ -120,6 +120,15 @@ UnitExists = function() return false end
 RT:TakeSnapshot("periodic")
 GROUPSIZE = 0
 check(RT.currentRaid.size == 20, "forever: and the next snapshot reads it")
+INSTANCE = { "Hyjal Summit", "raid", 14, "", 40, 0, false, 9001 }
+GROUPSIZE = 1
+RT:TakeSnapshot("periodic")
+check(RT.currentRaid.size == 20, "forever: a size already read is not read again")
+RT.currentRaid.size = nil
+INSTANCE = { "Deadmines", "party", 1, "", 5, 0, false, 36 }
+RT:TakeSnapshot("periodic")
+GROUPSIZE = 0
+check(RT.currentRaid.size == nil, "forever: nor is another instance's, as in a dungeon during the grace period")
 INSTANCE = { "Hyjal Summit", "raid", 14, "", 20, 0, false, 9001 }
 RT = load("forever")
 INSTANCE = { "Deadmines", "party", 1, "", 5, 0, false, 36 }
