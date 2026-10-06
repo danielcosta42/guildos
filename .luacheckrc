@@ -242,6 +242,8 @@ read_globals = {
     -- WoW API: Instance & Raid
     "GetInstanceInfo",
     "IsInInstance",
+    "GetZoneText",       -- Call to Arms: where the caller is (#108)
+    "GetSubZoneText",
     "GetNumGroupMembers",
     "IsInGroup",
     "IsInRaid",

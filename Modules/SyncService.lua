@@ -29,12 +29,13 @@ SyncService.ENVELOPE_MSGTYPE = "SV"   -- CommSystem wire tag carrying a v2 envel
 -- Domains whose WRITES require the sender to be a verified guild officer.
 -- Reads (snapshots applied locally) are still gated by these because the
 -- sender is the writer. Member-level actions inside an officer domain are
--- whitelisted in MEMBER_ACTIONS below.
+-- whitelisted per domain in MEMBER_ACTIONS below.
 SyncService.OFFICER_DOMAINS = {
     points   = true,   -- DKP / EPGP / loot council economy
     event    = true,   -- calendar event create/update/delete (rsvp is member-level)
     poll     = true,   -- poll create/close (vote is member-level)
     bulletin = true,   -- officer announcements
+    cta      = true,   -- an officer's call to arms (answering it is a member action, issue #108)
     ban      = true,   -- blacklist add/remove (officer-authoritative)
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
@@ -49,10 +50,13 @@ SyncService.GUILD_ONLY_DOMAINS = {
     ["core.roster"] = true,  -- CoreManager's officer roster updates
 }
 
--- Actions any guild member may perform even inside an officer domain.
+-- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:
+-- an action word that opened every domain let a member send the guild's officer threshold
+-- dressed as an RSVP, and so become an officer everywhere (issue #108).
 SyncService.MEMBER_ACTIONS = {
-    rsvp = true,   -- event signup
-    vote = true,   -- poll vote
+    event = { rsvp = true },    -- event signup
+    poll  = { vote = true },    -- poll vote
+    cta   = { going = true },   -- "On my way" to an officer's call to arms (issue #108)
 }
 
 SyncService.handlers    = {}   -- [domain] = function(env, sender)
@@ -196,8 +200,10 @@ function SyncService:Validate(env, sender, channel)
     if not env.v or not env.id or not env.dom or not env.act then return false end
     if env.v > self.PROTOCOL_VERSION then return false end   -- newer protocol than we speak
     if self.GUILD_ONLY_DOMAINS[env.dom] and channel ~= "GUILD" then return false end
-    if self.OFFICER_DOMAINS[env.dom] and not self.MEMBER_ACTIONS[env.act] then
-        if channel ~= "GUILD" or not BRutus:IsOfficerByName(sender) then return false end
+    if self.OFFICER_DOMAINS[env.dom] then
+        if channel ~= "GUILD" then return false end
+        local member = self.MEMBER_ACTIONS[env.dom]
+        if not (member and member[env.act]) and not BRutus:IsOfficerByName(sender) then return false end
     end
     return true
 end

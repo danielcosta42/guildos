@@ -264,6 +264,7 @@ local MODULE_START = {
     { "Points", feature = "points", ui = "dkp" },
     { "Digest" },
     { "Bulletin" },
+    { "CallToArms" },
     { "Polls" },
     { "Calendar" },
     { "Milestones" },

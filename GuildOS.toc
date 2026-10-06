@@ -101,6 +101,7 @@ Modules\LootEquity.lua
 Modules\Digest.lua
 Modules\Backup.lua
 Modules\Bulletin.lua
+Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua
 Modules\Milestones.lua

@@ -10,6 +10,9 @@ local UI = BRutus.UI
 local C = BRutus.Colors
 local L = BRutus.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
+local TAB_H = 28        -- UI:CreateTab's fixed height
+local TAB_MIN_W = 70    -- narrowest a sub-tab may be drawn
+local TAB_PAD = 20      -- label padding inside a sub-tab
 
 ----------------------------------------------------------------------
 -- Shared builders
@@ -135,6 +138,198 @@ local function BuildBulletinSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- CALL TO ARMS sub-panel (issue #108): officers send, everyone sees the
+-- recent calls, answers them and sets how they want to be told.
+----------------------------------------------------------------------
+local function BuildCallToArmsSub(panel)
+    local CTA = BRutus.CallToArms
+    local selected = "worldboss"
+    -- { row frame, its widgets, line height }: wrapped again on every resize. A row grows to the
+    -- lines it took, and what hangs below it moves down with it.
+    local rows = {}
+    local above             -- the last section placed; the next one hangs below it
+
+    local function reflow()
+        local w = (panel:GetWidth() or 0) - 8
+        if w < 200 then w = 600 end   -- not laid out yet: OnSizeChanged wraps it again
+        for _, r in ipairs(rows) do
+            r[1]:SetWidth(w)
+            UI:FlowBar(r[1], r[2], { gap = 4, rowGap = 4, rowH = r[3] })
+        end
+    end
+    panel:SetScript("OnSizeChanged", reflow)
+
+    if BRutus:IsOfficer() then
+        local head = UI:CreateText(panel, L["Send a call"], 11, C.gold.r, C.gold.g, C.gold.b)
+        head:SetPoint("TOPLEFT", 4, -2)
+        local tplRow, cells = CreateFrame("Frame", nil, panel), {}
+        tplRow:SetPoint("TOPLEFT", 4, -20)
+        rows[#rows + 1] = { tplRow, cells, 22 }
+
+        local msgBox = makeInput(panel, 0, false)
+        msgBox:SetPoint("TOPLEFT", tplRow, "BOTTOMLEFT", 0, -2)
+        msgBox:SetPoint("TOPRIGHT", tplRow, "BOTTOMRIGHT", -96, -2)   -- the row is as wide as the panel
+        msgBox:SetMaxBytes(CTA.TEXT_MAX + 1)   -- the call is cut at bytes, not letters: Cyrillic is two each
+        local function send()
+            if CTA:Send(selected, msgBox:GetText()) then msgBox:ClearFocus() end
+        end
+        local sendBtn = UI:CreateButton(panel, L["Send"], 88, 24)
+        sendBtn:SetPoint("LEFT", msgBox, "RIGHT", 8, 0)
+        sendBtn:SetScript("OnClick", send)
+        msgBox:SetScript("OnEnterPressed", send)   -- a key press is a hardware event, as a click is
+
+        local function paintSelected()
+            for _, cell in ipairs(cells) do
+                cell.btn.label:SetText((cell.id == selected and "> " or "") .. cell.name)
+                cell:SetWidth(cell.btn:GetWidth() + (cell.del and 19 or 0))
+            end
+            reflow()
+        end
+        -- Built again only when the list changes; picking one only relabels.
+        local function buildTemplates()
+            for i = #cells, 1, -1 do cells[i]:Hide(); cells[i] = nil end
+            for _, t in ipairs(CTA:Templates()) do
+                local cell = CreateFrame("Frame", nil, tplRow)
+                cell:SetHeight(22)
+                cell.id, cell.name = t.id, t.name
+                cell.btn = UI:CreateButton(cell, t.name, 112, 22)
+                cell.btn:SetPoint("TOPLEFT")
+                local id, text = t.id, t.text
+                cell.btn:SetScript("OnClick", function()
+                    selected = id
+                    msgBox:SetText(text)
+                    paintSelected()
+                end)
+                if not t.builtin then
+                    cell.del = UI:CreateButton(cell, "\195\151", 18, 22)
+                    cell.del:SetPoint("LEFT", cell.btn, "RIGHT", 1, 0)
+                    cell.del:SetScript("OnClick", function()
+                        CTA:DeleteTemplate(id)
+                        if selected == id then selected = "worldboss" end
+                        buildTemplates()
+                    end)
+                end
+                cells[#cells + 1] = cell
+            end
+            paintSelected()
+        end
+
+        local nameBox = makeInput(panel, 160, false)
+        nameBox:SetPoint("TOPLEFT", msgBox, "BOTTOMLEFT", 0, -6)
+        nameBox:SetMaxBytes(CTA.NAME_MAX + 1)
+        local saveBtn = UI:CreateButton(panel, L["Save as template"], 130, 24)
+        saveBtn:SetPoint("LEFT", nameBox, "RIGHT", 6, 0)
+        saveBtn:SetScript("OnClick", function()
+            local tpl = CTA:Template(selected)
+            local ok, why = CTA:SaveTemplate(nameBox:GetText(), msgBox:GetText(), tpl and tpl.kind)
+            if not ok then BRutus:Print(why) return end
+            nameBox:SetText("")
+            buildTemplates()
+        end)
+        local chatCb = UI:CreateCheckbox(panel, L["Also post in guild chat"], 16)
+        chatCb:SetPoint("LEFT", saveBtn, "RIGHT", 12, 0)
+        chatCb.checkbox:SetChecked(CTA:ChatOn())
+        chatCb.checkbox.onChanged = function(_, checked) BRutus:SetSetting("ctaChat", checked and true or false) end
+        above = nameBox
+
+        buildTemplates()
+        msgBox:SetText(CTA:Template(selected).text)
+    end
+
+    -- Everyone: how a call reaches me. A row of what to do with a call, then the types to hear.
+    local mine = UI:CreateText(panel, L["My alerts"], 11, C.gold.r, C.gold.g, C.gold.b)
+    if above then mine:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, -10) else mine:SetPoint("TOPLEFT", 4, -2) end
+    local function checkRow(anchor, items)
+        local row = CreateFrame("Frame", nil, panel)
+        row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+        local boxes = {}
+        for _, it in ipairs(items) do
+            local cb = UI:CreateCheckbox(row, it[1], 16)
+            cb:SetWidth(30 + (cb.label:GetStringWidth() or 100))
+            cb.checkbox:SetChecked(it[2]())
+            local set = it[3]
+            cb.checkbox.onChanged = function(_, checked) set(checked and true or false) end
+            boxes[#boxes + 1] = cb
+        end
+        rows[#rows + 1] = { row, boxes, 18 }
+        return row
+    end
+    local function setting(key) return function(v) BRutus:SetSetting(key, v) end end
+    local how = checkRow(mine, {
+        { L["Show popups"], function() return CTA:PopupsOn() end, setting("ctaPopups") },
+        { L["Play a sound"], function() return CTA:SoundOn() end, setting("ctaSound") },
+        { L["Quiet in instances and combat"], function() return CTA:QuietOn() end, setting("ctaQuiet") },
+    })
+    local kinds = {}
+    for _, k in ipairs(CTA.KINDS) do
+        local id = k.id
+        kinds[#kinds + 1] = { k.title, function() return not CTA:Muted(id) end,
+                              function(v) BRutus:SetSetting("ctaMute_" .. id, not v) end }
+    end
+    local hear = checkRow(how, kinds)
+
+    local recentHead = UI:CreateText(panel, L["Recent calls"], 11, C.gold.r, C.gold.g, C.gold.b)
+    recentHead:SetPoint("TOPLEFT", hear, "BOTTOMLEFT", 0, -10)
+    local holder, child = makeScroll(panel, "GuildOSHubCTAScroll", 0)
+    holder:ClearAllPoints()
+    holder:SetPoint("TOPLEFT", recentHead, "BOTTOMLEFT", -4, -6)
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    reflow()
+
+    -- The recent calls, one pooled line each (there are never more than CTA.KEEP): an answer
+    -- arriving repaints them in place rather than drawing them all again.
+    local lines = {}
+    local empty = UI:CreateText(child, L["No calls yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+    empty:SetPoint("TOPLEFT", 4, -4)
+    local function lineAt(i)
+        if lines[i] then return lines[i] end
+        local ln = {}
+        ln.text = UI:CreateText(child, "", 11, C.text.r, C.text.g, C.text.b)
+        ln.text:SetJustifyH("LEFT")
+        ln.meta = UI:CreateText(child, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        ln.go = UI:CreateButton(child, L["On my way"], 90, 18)
+        ln.go:SetScript("OnClick", function() CTA:Answer(ln.id) end)
+        lines[i] = ln
+        return ln
+    end
+
+    local function refresh()
+        reflow()
+        child:SetWidth(holder:GetWidth() - 12)
+        local now, y = GetServerTime(), 0
+        for i, e in ipairs(CTA.recent) do
+            local ln = lineAt(i)
+            ln.id = e.id
+            -- Anybody who has not answered can, from here too: with popups off, in quiet mode
+            -- or after dismissing one, this is the only place to.
+            local open = not e.mine and not e.answered and now - (tonumber(e.ts) or 0) <= CTA.MAX_AGE
+            ln.go:SetShown(open)
+            ln.go:SetPoint("TOPRIGHT", -4, -y)
+            ln.text:SetText(string.format("|cffFF8800%s|r  %s", e.title or "", e.text or ""))
+            ln.text:SetWidth(child:GetWidth() - (open and 104 or 10))
+            ln.text:SetPoint("TOPLEFT", 4, -y)
+            ln.text:Show()
+            local th = ln.text:GetStringHeight() or 14
+            local n = CTA:GoingCount(e)
+            ln.meta:SetText(string.format("|cff888888%s · %s · %s|r", e.zone or "",
+                (Ambiguate and Ambiguate(e.sender or "", "short")) or (e.sender or ""),
+                n > 0 and string.format(L["%d on the way"], n) or date("%H:%M", e.at or 0)))
+            ln.meta:SetPoint("TOPLEFT", 4, -(y + th + 2))
+            ln.meta:Show()
+            y = y + th + 22
+        end
+        for i = #CTA.recent + 1, #lines do
+            lines[i].text:Hide(); lines[i].meta:Hide(); lines[i].go:Hide()
+        end
+        empty:SetShown(#CTA.recent == 0)
+        child:SetHeight(math.max(1, y))
+    end
+    -- Answers arrive by the dozen while the tab is closed; it catches up when it opens.
+    CTA.uiRefresh = function() if panel:IsVisible() then refresh() end end
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- POLLS sub-panel
 ----------------------------------------------------------------------
 local function BuildPollsSub(panel)
@@ -233,6 +428,7 @@ local HUB_SUBTABS = {
     { key = "calendar", label = L["Calendar"] },
     { key = "activity", label = L["Activity"] },
     { key = "bulletin", label = L["Bulletin"] },
+    { key = "cta",      label = L["Call to Arms"] },
     { key = "polls",    label = L["Polls"] },
 }
 
@@ -240,10 +436,11 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "calendar"
 
+    -- Anchored on the left only: UI:FlowBar reads GetWidth to wrap, and a frame pinned on both
+    -- sides reports a stale width in the frame its container was resized (as ManagementPanel).
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetPoint("TOPLEFT", 10, -8)
-    bar:SetPoint("TOPRIGHT", -10, -8)
-    bar:SetHeight(28)
+    bar:SetSize(400, TAB_H)
     UI:StyleSubTabBar(bar)
 
     local subTabBtns = {}
@@ -258,18 +455,21 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
     end
     parent.SelectSub = selectSub   -- deep links: /guildos calendar, the Now tab
 
-    local x = 0
+    -- A tab is as wide as its label: five at a fixed 120px ran off a narrow window (issue #108).
+    local subTabList = {}
     for _, t in ipairs(HUB_SUBTABS) do
-        local btn = UI:CreateTab(bar, t.label, 120, true)
-        btn:SetPoint("LEFT", x, 0)
+        local btn = UI:CreateTab(bar, t.label, TAB_MIN_W, true)
+        btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        x = x + btn:GetWidth() + 4  -- a tab its label grew pushes the next one (issue #28)
+        subTabList[#subTabList + 1] = btn
     end
+    UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = TAB_H })
 
+    -- Hung from the bar, so a bar wrapped onto two rows pushes the content down.
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", 12, -42)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -6)
         p:SetPoint("BOTTOMRIGHT", -12, 10)
         p:Hide()
         return p
@@ -277,7 +477,7 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
 
     local builders = {
         calendar = function(p) return BRutus:CreateCalendarSub(p) end,
-        activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub,
+        activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
     }
     for _, t in ipairs(HUB_SUBTABS) do
         local p = makeSubPanel()
@@ -286,6 +486,10 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
 
     parent:SetScript("OnShow", function()
         selectSub(parent.activeSub or "calendar")
+    end)
+    UI:MakeResponsive(parent, function(_, w)
+        bar:SetWidth(math.max(TAB_MIN_W, w - 20))
+        UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = TAB_H })
     end)
 end
 
