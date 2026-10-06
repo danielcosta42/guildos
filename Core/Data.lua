@@ -109,6 +109,12 @@ BRutus.Fonts = {
 local SERIF_MIN = 14  -- serif blurs below this at UI scale 1.0
 local MONO_MIN  = 10  -- nothing reads below this
 
+-- Korean and Chinese clients (issue #103): IBM Plex Mono and Spectral carry Latin and Cyrillic but
+-- no Hangul and no Han, so every character, guild, item and zone name the client gave in those
+-- languages drew as boxes. There the client's own font, which has the language, is the only one
+-- used, whatever the setting says.
+BRutus.GameFontOnly = ({ koKR = true, zhCN = true, zhTW = true })[BRutus.Locale or ""] == true
+
 -- Set a FontString's font. A role from BRutus.Fonts picks the file (and the
 -- size unless one is given); otherwise 14px and up is Spectral and anything
 -- smaller is IBM Plex Mono. Either way serif never lands under 14px (it reads
@@ -133,7 +139,7 @@ function BRutus:ApplyFont(fontString, size, role)
     -- display preference, so it lives at the account root (GuildOSDB.font) and follows the
     -- player to every alt and guild, as the minimap button's does. Read on every call; a
     -- text drawn before a change keeps its font until the interface reloads.
-    if type(GuildOSDB) == "table" and GuildOSDB.font == "game" then
+    if BRutus.GameFontOnly or (type(GuildOSDB) == "table" and GuildOSDB.font == "game") then
         fontString:SetFont(STANDARD_TEXT_FONT, px, "")
         return STANDARD_TEXT_FONT, px
     end
