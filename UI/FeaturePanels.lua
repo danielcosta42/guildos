@@ -6,6 +6,11 @@ local UI = BRutus.UI
 local C = BRutus.Colors
 local L = BRutus.L
 
+-- A "25-man" label as this game says it ("20+" on WoW: Forever, issue #90).
+local function Prog(text)
+    return BRutus.RaidTracker and BRutus.RaidTracker:ProgLabel(text) or text
+end
+
 -- Session filter state: true = 25-man only, false = all raids
 local _raidFilter25 = true
 
@@ -388,7 +393,7 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
 
     -- Filter toggle buttons
     local filterAllBtn  = UI:CreateButton(scrollParent, L["All"], 58, 18)
-    local filter25Btn   = UI:CreateButton(scrollParent, L["25-man"], 62, 18)
+    local filter25Btn   = UI:CreateButton(scrollParent, Prog(L["25-man"]), 62, 18)
     filterAllBtn:SetPoint("LEFT", sessionsLabel, "RIGHT", 10, 0)
     filter25Btn:SetPoint("LEFT", filterAllBtn,   "RIGHT",  4, 0)
 
@@ -405,7 +410,7 @@ function BRutus:CreateRaidsPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     -- Attendance section (bottom ~50%)
     ----------------------------------------------------------------
-    local attLabel = UI:CreateHeaderText(scrollParent, L["Member Attendance — 25-man only"], 11)
+    local attLabel = UI:CreateHeaderText(scrollParent, Prog(L["Member Attendance — 25-man only"]), 11)
     attLabel:SetPoint("BOTTOMLEFT", 0, 236)
 
     local attScroll = CreateFrame("ScrollFrame", "BRutusAttendanceScroll", scrollParent, "UIPanelScrollFrameTemplate")
@@ -468,7 +473,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
     local groupStr  = curGroup ~= "" and ("|cffFFD700" .. curGroup .. "|r  ·  ") or ""
     local trackStr  = BRutus.RaidTracker.trackingActive
                       and "|cff00ff00" .. L["Tracking"] .. "|r" or "|cff888888" .. L["Idle"] .. "|r"
-    statusText:SetText(groupStr .. totalAll .. L[" lockouts ("] .. total25 .. L[" 25-man)  |  "] .. trackStr)
+    statusText:SetText(groupStr .. totalAll .. L[" lockouts ("] .. total25 .. Prog(L[" 25-man)  |  "]) .. trackStr)
 
     ----------------------------------------------------------------
     -- Sessions grouped by instance + TBC reset week (Tuesday reset)
@@ -495,6 +500,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             groups[groupKey] = {
                 key        = groupKey,
                 instanceID = sd.instanceID,
+                size       = 0,
                 name       = sd.name or L["Unknown"],
                 groupTag   = sgTag,
                 weekNum    = weekNum,
@@ -508,6 +514,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
         end
 
         local g = groups[groupKey]
+        g.size = math.max(g.size, tonumber(sd.size) or 0)
         table.insert(g.sessions, s)
 
         for k in pairs(sd.players or {}) do g.allPlayers[k] = true end
@@ -529,7 +536,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
     for _, groupKey in ipairs(groupOrder) do
         local g          = groups[groupKey]
         local isGroupExp = _groupExpanded[groupKey]
-        local is25       = BRutus.RaidTracker:Is25Man(g.instanceID)
+        local is25       = BRutus.RaidTracker:Is25Man(g.instanceID, g.size)
         local gRowH      = 26
 
         -- Count unique players
@@ -809,7 +816,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             local groupLabel = entry.groupTag ~= "" and entry.groupTag or L["(no group)"]
             local total25g = BRutus.RaidTracker:GetTotal25ManSessions(entry.groupTag)
             local ghText = UI:CreateText(ghRow,
-                "|cff9966FF" .. groupLabel .. "|r  —  " .. total25g .. L[" 25-man raids"],
+                "|cff9966FF" .. groupLabel .. "|r  —  " .. total25g .. Prog(L[" 25-man raids"]),
                 9, C.white.r, C.white.g, C.white.b)
             ghText:SetPoint("LEFT", 6, 0)
             yOff = yOff + 18
@@ -877,7 +884,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
             GameTooltip:AddLine(shortName, cr, cg, cb)
             local gLabel = capturedEntry.groupTag ~= "" and capturedEntry.groupTag or L["(no group)"]
             GameTooltip:AddLine(L["Group: "] .. gLabel, C.label.r, C.label.g, C.label.b)
-            GameTooltip:AddLine(L["25-man Attendance"], C.gold.r, C.gold.g, C.gold.b)
+            GameTooltip:AddLine(Prog(L["25-man Attendance"]), C.gold.r, C.gold.g, C.gold.b)
             GameTooltip:AddLine(" ")
             GameTooltip:AddDoubleLine(L["Raids:"], raids25 .. "/" .. total25g, 1,1,1, C.silver.r,C.silver.g,C.silver.b)
             GameTooltip:AddDoubleLine(L["Attendance %:"], pct .. "%", 1,1,1, pctClr.r,pctClr.g,pctClr.b)
@@ -902,7 +909,7 @@ function BRutus:RefreshRaidsPanel(sessionContent, attContent, statusText)
     end
 
     if #attList == 0 then
-        local emptyText = UI:CreateText(attContent, L["No 25-man attendance data yet."], 10, C.silver.r, C.silver.g, C.silver.b)
+        local emptyText = UI:CreateText(attContent, Prog(L["No 25-man attendance data yet."]), 10, C.silver.r, C.silver.g, C.silver.b)
         emptyText:SetPoint("TOPLEFT", 6, -yOff)
         yOff = yOff + 22
     end
@@ -2537,7 +2544,7 @@ function BRutus:RefreshSettingsPanel(content, category)
     yOff = yOff + 30
 
     -- Attendance as roll tiebreaker
-    local attTie = UI:CreateCheckbox(content, L["Use 25-man Attendance as Roll Tiebreaker"], 18)
+    local attTie = UI:CreateCheckbox(content, Prog(L["Use 25-man Attendance as Roll Tiebreaker"]), 18)
     attTie:SetPoint("TOPLEFT", 8, -yOff)
     attTie.checkbox:SetChecked(_lmCfg.attTiebreaker ~= false)
     attTie.checkbox.onChanged = function(_, checked)

@@ -1221,10 +1221,13 @@ function LootMaster:AwardLoot(playerName, silent)
     -- Gather extra context for history and broadcast
     local _, _, itemQuality = BRutus.Compat.GetItemInfo(itemLink)
     itemQuality = itemQuality or 4
-    local _, _, _, _, _, _, _, instanceID = GetInstanceInfo()
+    local zoneName, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
     local raidName = ""
-    if BRutus.RaidTracker and BRutus.RaidTracker.RAID_INSTANCES then
-        raidName = BRutus.RaidTracker.RAID_INSTANCES[instanceID] or ""
+    local RT = BRutus.RaidTracker
+    if RT and RT.RAID_INSTANCES then
+        -- A raid no list knows (every one on WoW: Forever) by the name the game gives (#90).
+        raidName = RT.RAID_INSTANCES[instanceID]
+            or (instanceType == "raid" and RT:IsTracked(instanceID) and zoneName) or ""
     end
     -- Broadcast award (extended format: playerName|itemId|quality|raidName|itemLink)
     -- Peers with BRutus will record this to their loot history after verifying

@@ -572,7 +572,7 @@ function PopulateDetail(frame, data)
         local total25      = BRutus.RaidTracker:GetTotal25ManSessions(playerGroup)
         local raids25      = att.raids25 or 0
         local groupSuffix  = playerGroup ~= "" and ("  [" .. playerGroup .. "]") or ""
-        local attStr = string.format(L["RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"],
+        local attStr = string.format(BRutus.RaidTracker:ProgLabel(L["RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"]),
             groupSuffix, pct, raids25, total25)
         yOff = CreateSectionHeader(child, attStr, yOff, contentWidth)
 

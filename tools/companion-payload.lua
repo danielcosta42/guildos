@@ -280,6 +280,13 @@ BRutus.db.members["Chehul-Firemaw"].look = "junk"
 for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
 assert(looks["Chehul-Firemaw"] == nil, "a look that is not a list is not exported")
 BRutus.db.members["Chehul-Firemaw"].look = nil
+
+-- v9 (issue #90): a session's raid size as the game gave it; absent for a night recorded before.
+assert(anniversary.v >= 9, "the payload that carries a session's size is v9")
+assert(anniversary.sessions[1].size == nil, "a night recorded before sizes were kept carries no size key")
+BRutus.db.raidTracker.sessions[NIGHT].size = 20
+assert(BRutus.Companion:BuildPayload().sessions[1].size == 20, "a night's size travels")
+BRutus.db.raidTracker.sessions[NIGHT].size = nil
 BRutus.Client.isAnniversary = true
 
 for _, m in ipairs(anniversary.members) do

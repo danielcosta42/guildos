@@ -16,6 +16,11 @@
 --
 -- Regenerate whenever either side's rule changes. A diff here is the two halves
 -- disagreeing, which is exactly what it is for.
+--
+-- WoW: Forever counts by the raid's size, not its id (issue #90). With FOREVER set it prints
+-- the Forever fixture instead, the same nights moved into raids nobody listed:
+--
+--   luajit -e 'ADDON="." FOREVER=true' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-forever.json
 ADDON = ADDON or "."
 package.path = ADDON .. "/?.lua;" .. package.path
 
@@ -161,6 +166,25 @@ night(T + 5 * WEEK, { startTime = T + 5 * WEEK, snapshots = {
 } })
 SESSIONS[T + 5 * WEEK].players["Mesclada-Firemaw"] = true
 
+-- WoW: Forever: the same nights in raids nobody listed, told apart by the size the game gave.
+-- Gruul's place is a 20, Magtheridon's a 40 and Karazhan's a 10, so the size decides exactly as
+-- TBC's ids did; and one more 20, recorded with no size, counts for nothing (issue #90).
+if FOREVER then
+  BRutus.Client = { isAnniversary = false }
+  local MOVED = { [565] = { 9001, 20 }, [544] = { 9002, 40 }, [532] = { 9010, 10 } }
+  for _, s in pairs(SESSIONS) do
+    local to = MOVED[s.instanceID]
+    s.instanceID, s.size = to[1], to[2]
+  end
+  -- Week 2's lockout has three recordings, and only the middle one came from an officer whose
+  -- addon kept a size: the lockout still counts, whichever recording is read first or last.
+  SESSIONS[T + WEEK].size = nil
+  SESSIONS[T + WEEK + 2 * DAY].size = nil
+  night(T + 6 * WEEK, { instanceID = 9001, name = "Hyjal Summit", startTime = T + 6 * WEEK, snapshots = {
+    snap(T + 6*WEEK, { ["Beto-Firemaw"] = who("Beto", true, true) }),
+  } })
+end
+
 BRutus.db = { raidTracker = { sessions = SESSIONS, attendance = {}, deletedSessions = {} } }
 RT:RebuildAttendanceFromSessions()
 
@@ -207,9 +231,11 @@ for i, id in ipairs(ids) do
       '{"key":%s,"snapshots":%d,"first":%d,"last":%d,"chits":%d}',
       q(key), n, first or s.startTime, last or s.startTime, hits)
   end
+  -- `size` only when the night has one, as CompanionExport sends it (issue #90).
   out[#out + 1] = string.format(
-    '{"instanceID":%d,"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',
-    s.instanceID, q(s.groupTag), (s.isGuildRaid == false) and "false" or "true",
+    '{"instanceID":%d,%s"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',
+    s.instanceID, s.size and string.format('"size":%d,', s.size) or "", q(s.groupTag),
+    (s.isGuildRaid == false) and "false" or "true",
     s.startTime, table.concat(players, ","), (i < #ids) and "," or "")
 end
 out[#out + 1] = "],"

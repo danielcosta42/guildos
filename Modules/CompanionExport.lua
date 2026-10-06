@@ -38,8 +38,10 @@ local FMT = "GOSCOMP1"
 -- and refuses a roster from the other game (the site's specs/036). 7 adds `crafting` on
 -- WoW: Forever: each member's profession lines by skill-line ID with the recipes they know
 -- (issue #35, the site's specs/037). 8 adds `look` on WoW: Forever: the {option, choice}
--- pairs a member's addon read in the barber's chair (issue #37, the site's specs/038).
-local PAYLOAD_VERSION = 8
+-- pairs a member's addon read in the barber's chair (issue #37, the site's specs/038). 9 adds
+-- each session's `size`, the raid size the game gave on the way in: on WoW: Forever it is what
+-- decides whether a night counts for attendance (issue #90).
+local PAYLOAD_VERSION = 9
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -363,6 +365,9 @@ local function raidSessions()
                 -- for a night nobody planned, which is most of them.
                 raidId = type(s.raidId) == "string" and s.raidId ~= "" and s.raidId or nil,
                 instanceID = tonumber(s.instanceID) or 0,
+                -- The raid's size as the game gave it on the way in: on WoW: Forever, 20 and up
+                -- is what counts for attendance (issue #90). Absent for a night recorded before.
+                size = tonumber(s.size),
                 -- Only when false, mirroring the addon's own `isGuildRaid ~= false`:
                 -- every session recorded before the flag existed is a guild raid, and
                 -- absent has to keep meaning that on the far side too. Attendance

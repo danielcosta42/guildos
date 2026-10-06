@@ -60,6 +60,7 @@ function IsInGuild() return true end
 function IsInRaid() return true end
 function IsInGroup() return true end
 function IsInInstance() return true, "party" end
+function GetInstanceInfo() return "Deadmines", "party", 1, "", 5, 0, false, 36 end
 function hooksecurefunc() end
 function debugstack() return "" end
 function GetBuildInfo() return "1.60.1", "69893", "", 16001 end
