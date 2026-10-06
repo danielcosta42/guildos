@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.65.0] - 2026-10-06
+
+### Added
+- a inscricao no core escolhe o papel entre os que a classe pode ter (#94)
+
+
 ## [0.64.0] - 2026-10-05
 
 ### Added
