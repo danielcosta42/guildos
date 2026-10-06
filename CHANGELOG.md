@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.68.1] - 2026-10-06
+
+### Fixed
+- o recrutamento posta nos canais com o nome do idioma do cliente (#112)
+
+
 ## [0.68.0] - 2026-10-06
 
 ### Added
