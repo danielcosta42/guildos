@@ -104,10 +104,23 @@ check(BRutus.db.settings.officerMaxRank == 2 and BRutus:IsOfficerByName("Alt"),
 client("Mem")
 deliver(change, "Off", "WHISPER")
 check(BRutus.db.settings.officerMaxRank == 1, "the change over a whisper is ignored")
+client("Off2")                  -- not Mem receiving it: a client drops its own messages unread
 deliver(change, "Mem")
 check(BRutus.db.settings.officerMaxRank == 1, "the change from a member is ignored")
+client("Mem")
 deliver(change, "Off-OtherRealm", "WHISPER")
 check(BRutus.db.settings.officerMaxRank == 1, "a namesake from another realm cannot whisper it in")
+-- A member's action word (an RSVP, a vote, an "On my way") opens only its own domain: dressed
+-- as one, the threshold from a member would make them an officer everywhere (issue #108).
+for _, act in ipairs({ "rsvp", "vote", "going" }) do
+  client("Mem")
+  SS:Publish("guildcfg", act, { max = 9 }, { rev = now })
+  local forged = sent[1]
+  client("Off2")
+  deliver(forged, "Mem")
+  deliver(forged, "Stranger-OtherRealm", "WHISPER")
+  check(BRutus.db.settings.officerMaxRank == 1, "a member cannot send it dressed as '" .. act .. "'")
+end
 
 client("Off")
 now = now + 100

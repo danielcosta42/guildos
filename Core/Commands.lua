@@ -44,6 +44,7 @@ local function printHelp()
     helpLine("/gos calendar",    L["Guild calendar and events"])
     helpLine("/gos polls",       L["Guild polls"])
     helpLine("/gos bulletin",    L["Guild bulletin board"])
+    helpLine("/gos cta [type] [message]", L["Call to Arms: rally the guild (officers)"])
     helpLine("/gos ally",        L["Alliance status and allied guilds"])
 
     helpHeader(L["Raid and loot"])
@@ -131,6 +132,18 @@ local function handleCommand(msg)
         if BRutus.Backup then BRutus.Backup:ShowRestore() end
     elseif msg == "bulletin" or msg == "board" then
         if BRutus.Bulletin then BRutus.Bulletin:Show() end
+    elseif msg == "cta" or msg:match("^cta%s") then
+        -- /gos cta: the panel. /gos cta <type> [message]: send it (issue #108).
+        local rest = strtrim((msg:gsub("^cta%s*", "")))
+        local kind = rest:match("^(%S+)")
+        local CTA = BRutus.CallToArms
+        if not kind then
+            BRutus.UI:OpenWindow("guild", "cta")
+        elseif CTA and CTA:Template(kind:lower()) then
+            CTA:Send(kind:lower(), rest:match("^%S+%s+(.+)$"))
+        else
+            BRutus:Print(L["Usage: /gos cta [worldboss|pvp|defend|event|rally] [message]"])
+        end
     elseif msg == "ally" or msg:match("^ally%s") or msg == "alliance" or msg:match("^alliance%s") then
         -- Cross-guild federation. Officer-only verbs refuse inside the module,
         -- so this stays a thin router.

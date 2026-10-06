@@ -776,3 +776,16 @@ Forever only (`Modules/Look.lua` returns at once on Anniversary).
 |---|---|
 | `RecruitEngagement:GetAggregate(now)` | Rows and totals for the engagement screen: the reports received over GUILD, with the viewer's own built locally by `_OwnPacket` (CommSystem drops one's own messages, so the echo never carried it; issue #51). Shown, never stored |
 | `RecruitEngagement:BroadcastStats()` | Sends `_OwnPacket` over GUILD (`RECRUIT_STATS`), answering a REQUEST |
+
+## CallToArms.lua — BRutus.CallToArms (issue #108)
+
+| Function | Description |
+|---|---|
+| `CTA:Templates()` / `Template(id)` | The five ready-made kinds (worldboss, pvp, defend, event, rally) then the officer's own (`db.cta.templates`, cap 12) |
+| `CTA:SaveTemplate(name, text, kind)` / `DeleteTemplate(id)` | An officer's own template; name and text sanitized (no escape codes), kind falls back to rally |
+| `CTA:Send(templateId, text)` | Officers only, one call per 60s (`db.cta.lastSent`, survives /reload): publishes `cta`/`call` with kind, title, text ({zone} filled with the caller's zone), zone and map position; posts a guild chat line first unless `ctaChat` is off (pcall; needs the click or slash behind it on Forever) and the call carries `chat = true` when it went |
+| `CTA:OnSync(env, sender)` | `call`: dedupe by id, drop calls older than 10 min or stamped over 5 min ahead and a second call from one sender inside 30s, sanitize every field, map position kept only inside 0-100, unknown kind = rally, then `Alert`. `going`: counts the sender once, and a repeat repaints nothing |
+| `CTA:Alert(e)` | Muted kind: nothing. Popups off, quiet in an instance/combat (`ctaQuiet`), or another popup inside 10s: a chat line, skipped when the caller's own guild line went (`chat`). Else the popup |
+| `CTA:ShowPopup(e)` / `Answer(id)` | One popup at a time (newest wins, hides after 30s, sound unless `ctaSound` is off); "On my way" publishes `cta`/`going` once |
+
+`cta` is in `SyncService.OFFICER_DOMAINS` (only an officer over GUILD may call); `going` is in `MEMBER_ACTIONS.cta` — member actions are keyed by domain and taken only over GUILD, or a member's `guildcfg` dressed as an RSVP made them an officer. The Guild hub's "Call to Arms" sub-tab (`BuildCallToArmsSub`) sends, lists recent calls with their own "On my way", and holds each player's settings; its rows flow and wrap (`flow`), and it repaints only while visible; `/gos cta [type] [message]` sends or opens it.

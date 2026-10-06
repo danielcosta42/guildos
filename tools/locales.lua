@@ -113,6 +113,7 @@ local function sameShape(key, val)
   if count(key, "|r") ~= count(val, "|r") then return "|r" end
   if count(key, "|T") ~= count(val, "|T") or count(key, "|t") ~= count(val, "|t") then return "textures" end
   if count(key, "|n") ~= count(val, "|n") or count(key, "\n") ~= count(val, "\n") then return "line breaks" end
+  if count(key, "{zone}") ~= count(val, "{zone}") then return "the {zone} placeholder" end
   -- French typography puts a space before ! ? : ; even when the fragment starts with one.
   local french = key:match("^[!?:;]") and val:sub(1, 2) == " " .. key:sub(1, 1)
   if not french and (key:match("^ +") or "") ~= (val:match("^ +") or "") then return "leading spaces" end

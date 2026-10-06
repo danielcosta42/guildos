@@ -56,6 +56,10 @@ function Frame:SetSize(w, h) self.w, self.h = w, h; fire(self, "OnSizeChanged", 
 function Frame:SetWidth(w) self.w = w; fire(self, "OnSizeChanged", self.w, self.h) end
 function Frame:SetHeight(h) self.h = h; fire(self, "OnSizeChanged", self.w, self.h) end
 function Frame:GetWidth() return self.w end
+-- A check button, as the Guild tab's Call to Arms settings draw (issue #108).
+function Frame:SetChecked(v) self.checked = v and true or nil end
+function Frame:GetChecked() return self.checked end
+function Frame:SetMaxBytes(n) self.maxBytes = n end
 function Frame:GetHeight() return self.h end
 function Frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
 function Frame:ClearAllPoints() self.points = {} end
@@ -1114,6 +1118,8 @@ end
 
 -- The calendar filter, through the real Guild tab and the real calendar.
 do
+  dofile(ADDON .. "/Modules/CallToArms.lua")   -- the TOC loads it before the panel
+  BRutus.CallToArms:Initialize()
   dofile(ADDON .. "/UI/CommunityPanel.lua")
   BRutus.RosterFrame, BRutus.db.settings.window = nil, nil
   local win = UI:GetMainWindow()
@@ -1134,8 +1140,8 @@ do
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 4 and open and open.label.text == "Calendar" and open.underline.shown,
-    "its four sub-tabs carry a 1px gold rule, shown under the open one")
+  check(subTabs == 5 and open and open.label.text == "Calendar" and open.underline.shown,
+    "its five sub-tabs (Call to Arms is the fifth, #108) carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
   local function drawn(text)
@@ -1150,6 +1156,119 @@ do
   UI:OpenWindow("guild", "calendar")
   check(cal.selectedKey == 20260115, "opening the calendar without a day leaves the selection alone")
   win:Hide()
+end
+
+-- The Call to Arms tab (issue #108), through the real Helpers.
+do
+  local CTA = BRutus.CallToArms
+  local function find(root, text)
+    for _, c in ipairs(root.children) do
+      if c.text == text or (c.label and c.label.text == text) then return c end
+      local hit = find(c, text)
+      if hit then return hit end
+    end
+  end
+  local function tick(cb, v) cb.checkbox:SetChecked(v); cb.checkbox.scripts.OnClick(cb.checkbox) end
+  local function open()
+    BRutus.RosterFrame, BRutus.db.settings.window = nil, nil
+    local win = UI:GetMainWindow()
+    UI:OpenWindow("guild", "cta")
+    return win, win.tabPanels.guild.subPanels.cta.panel
+  end
+
+  officer = false
+  local win, p = open()
+  check(p.shown and find(p, "My alerts") and not find(p, "Send") and not find(p, "Save as template"),
+    "a member gets the tab and their own settings, not the controls to send")
+  tick(find(p, "Show popups"), false)
+  tick(find(p, "World Boss"), false)
+  check(BRutus.db.settings.ctaPopups == false and CTA:SoundOn() and CTA:Muted("worldboss") and not CTA:Muted("pvp"),
+    "unticking 'Show popups' turns popups off, and unticking a type mutes that type alone")
+  tick(find(p, "Show popups"), true)
+  tick(find(p, "World Boss"), true)
+  check(CTA:PopupsOn() and not CTA:Muted("worldboss"), "and ticking them again undoes it")
+
+  -- A call the player has not answered can be answered from the list, then not again.
+  CTA.recent = { { id = "R1", kind = "pvp", title = "World PvP", text = "Go", zone = "Ashenvale", sender = "Ann-Realm",
+                   ts = NOW, at = NOW, going = {} } }
+  win.tabPanels.guild.subPanels.cta.refresh()
+  local go = find(p, "On my way")
+  check(go and go.shown, "a call nobody here answered has 'On my way' in the list")
+  go.scripts.OnClick(go)
+  check(CTA.recent[1].answered and CTA:GoingCount(CTA.recent[1]) == 1 and not go.shown,
+    "answering it counts, and the list repaints without the button")
+  win:Hide()
+  CTA.recent[1].title = "Later"
+  CTA.uiRefresh()
+  check(not find(p, "|cffFF8800Later|r  Go"), "with the window closed, an answer arriving repaints nothing")
+  UI:OpenWindow("guild", "cta")
+  check(find(p, "|cffFF8800Later|r  Go"), "it catches up when the tab opens")
+  win:Hide()
+  CTA.recent = {}
+
+  officer = true
+  local chatCb
+  win, p = open()
+  chatCb = find(p, "Also post in guild chat")
+  check(find(p, "Send") and chatCb and chatCb.checkbox:GetChecked(), "an officer sends, with the guild line on")
+  tick(chatCb, false)
+  check(BRutus.db.settings.ctaChat == false and not CTA:ChatOn(), "and can switch the guild line off")
+  win:Hide()
+
+  -- However many templates, of whatever length, none sits on another or on the message box.
+  local saved = BRutus.db.cta.templates
+  saved[1] = { id = "c1", name = "A very long template nam", text = "x", kind = "pvp" }
+  for i = 2, CTA.TEMPLATES_MAX do saved[i] = { id = "c" .. i, name = "t" .. i, text = "x", kind = "rally" } end
+  win, p = open()
+  local wb = find(p, "> World Boss")
+  local row = wb.parent.parent
+  local function laid()
+    local cells, lines = {}, {}
+    for _, c in ipairs(row.children) do
+      if c.shown then
+        local _, _, _, x, y = c:GetPoint(1)
+        cells[#cells + 1] = { x = x, y = -y, w = c.w }
+        lines[-y] = true
+      end
+    end
+    local clash = false
+    for i, a in ipairs(cells) do
+      if a.x + a.w > row.w then clash = true end
+      for j, b in ipairs(cells) do
+        if i ~= j and a.y == b.y and a.x < b.x + b.w and b.x < a.x + a.w then clash = true end
+      end
+    end
+    local n = 0
+    for _ in pairs(lines) do n = n + 1 end
+    return #cells, clash, n
+  end
+  local nCells, clash, nRows = laid()
+  check(nCells == 5 + CTA.TEMPLATES_MAX and not clash and nRows > 2, "seventeen templates flow over rows, none overlapping")
+  check(row.h == nRows * 22 + (nRows - 1) * 4, "and the row is as tall as the lines it took")
+  p:SetSize(408, 500)
+  local _, clash2, nRows2 = laid()
+  check(row.w == 400 and not clash2 and nRows2 > nRows, "a narrower tab wraps them again, at its own width")
+  local guild = win.tabPanels.guild
+  local bar
+  for _, c in ipairs(guild.children) do if c.bg then bar = c end end
+  guild:SetSize(300, 500)
+  flush()
+  local fits = true
+  for _, c in ipairs(bar.children) do
+    if c.underline then
+      local _, _, _, x = c:GetPoint(1)
+      if x + c.w > bar.w then fits = false end
+    end
+  end
+  check(bar.w == 280 and fits and bar.h > 28, "and the Guild tab's five sub-tabs wrap rather than run off a narrow window")
+  local msg
+  for _, c in ipairs(p.children) do
+    if c.kind == "EditBox" and c.points[1] and c.points[1][2] == row then msg = c end
+  end
+  check(msg ~= nil, "the message box hangs below the templates, so it moves down with them")
+  check(msg.maxBytes == CTA.TEXT_MAX + 1, "and holds what a call carries in bytes, not letters: Cyrillic is two each")
+  win:Hide()
+  BRutus.db.cta.templates = {}
 end
 
 do

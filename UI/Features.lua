@@ -55,7 +55,7 @@ UI:RegisterFeature({
 
 UI:RegisterFeature({
     id = "guild", label = L["Guild"], order = 50,
-    subs = { "calendar", "activity" },
+    subs = { "calendar", "activity", "cta" },
     build = function(c, win) BRutus:CreateGuildHub(c, win) end,
 })
 
