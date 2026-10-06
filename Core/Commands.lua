@@ -514,18 +514,23 @@ local function handleCommand(msg)
             BRutus:Print(format("|cffAAAAAA%d quests found. Run on main to compare IDs.|r", found))
         end
     elseif msg:match("^signup") then
-        -- /gos signup <CoreName> [note]
+        -- /gos signup <CoreName> [tank|healer|melee|ranged] [note]
         local rest     = strtrim((msg:gsub("^signup%s*", "")))
         local coreName = rest:match("^(%S+)")
         local note     = rest:match("^%S+%s+(.+)$") or ""
+        -- A role word right after the core is the role (issue #94); one the class cannot play
+        -- falls back to the class's own in BroadcastSignup.
+        local word = note:match("^(%S+)")
+        local role = word and BRutus.CoreManager and BRutus.CoreManager.ROLE_WORDS[word:lower()]
+        if role then note = note:match("^%S+%s+(.+)$") or "" end
         if not coreName or coreName == "" then
-            BRutus:Print(L["Usage: /gos signup <CoreName> [note]"])
+            BRutus:Print(L["Usage: /gos signup <CoreName> [tank|healer|melee|ranged] [note]"])
         elseif not BRutus.CoreManager then
             BRutus:Print(L["Core Manager not loaded."])
         elseif not BRutus.CoreManager:Exists(coreName) then
             BRutus:Print(string.format(L["Core \"%s\" not found."], coreName))
         else
-            BRutus.CoreManager:BroadcastSignup(coreName, note)
+            BRutus.CoreManager:BroadcastSignup(coreName, note, role)
             BRutus:Print(string.format(L["Sign-up sent for core: %s"], coreName))
         end
     elseif msg:match("^unsignup") then

@@ -36,15 +36,24 @@ local function RefreshCoreSignupFrame()
     local playerName  = BRutus.Compat.PlayerName() or ""
     local _, pClass   = UnitClass("player")
     local playerKey   = BRutus:GetPlayerKey(playerName, GetRealmName())
-    local playerRole  = CM.CLASS_DEFAULT_ROLE[pClass] or "rdps"
+    local playerRole  = CM:RoleFor(pClass, f.pickedRole)   -- the one picked, else the class's own (#94)
     local rc          = CM.ROLE_COLORS[playerRole] or { r=1, g=1, b=1 }
+
+    -- The role buttons: the picked one lit in its colour
+    for role, b in pairs(f.roleBtns or {}) do
+        local col = CM.ROLE_COLORS[role] or { r=1, g=1, b=1 }
+        local on  = role == playerRole
+        b:SetBackdropColor(col.r * (on and 0.30 or 0.08), col.g * (on and 0.30 or 0.08), col.b * (on and 0.30 or 0.08), 0.9)
+        b:SetBackdropBorderColor(col.r, col.g, col.b, on and 0.9 or 0.3)
+        b.lbl:SetTextColor(col.r, col.g, col.b, on and 1 or 0.55)
+    end
 
     -- Update role label
     f.playerRoleLbl:SetText(string.format(
         "%s |cff%02X%02X%02X%s|r  |cff888888(%s)|r",
         L["Your role:"],
         rc.r * 255, rc.g * 255, rc.b * 255,
-        CM.ROLE_LABELS[playerRole] or playerRole,
+        L[CM.ROLE_LABELS[playerRole] or playerRole],
         pClass:sub(1,1) .. pClass:sub(2):lower()
     ))
 
@@ -164,9 +173,12 @@ local function RefreshCoreSignupFrame()
         ph:SetPoint("LEFT", 4, 0)
         ph:SetTextColor(0.35, 0.35, 0.35)
         ph:SetText(L["Note (optional)"])
+        local noteCore = coreName
         noteInp:SetScript("OnTextChanged", function(self)
             if self:GetText() ~= "" then ph:Hide() else ph:Show() end
+            f.notes[noteCore] = self:GetText()   -- kept across a redraw, such as a role click (#94)
         end)
+        noteInp:SetText(f.notes[coreName] or "")
 
         local actBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
         actBtn:SetSize(BTN_W, 20)
@@ -212,7 +224,8 @@ local function RefreshCoreSignupFrame()
             local capCore = coreName
             actBtn:SetScript("OnClick", function()
                 local note = strtrim(noteInp:GetText() or "")
-                CM:BroadcastSignup(capCore, note)
+                CM:BroadcastSignup(capCore, note, playerRole)
+                f.notes[capCore] = nil
                 noteInp:SetText("")
                 if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
                 RefreshCoreSignupFrame()
@@ -287,6 +300,33 @@ local function BuildCoreSignupFrame()
     BRutus:ApplyFont(f.playerRoleLbl, 10)
     f.playerRoleLbl:SetPoint("TOPLEFT", 10, -37)
     f.playerRoleLbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+
+    -- The role to sign up as: one button per role the class can play, laid out from the right,
+    -- and none when there is only the one (issue #94).
+    f.roleBtns, f.notes = {}, {}
+    local CM = BRutus.CoreManager
+    local _, cls = UnitClass("player")
+    local roles = CM and CM:RolesFor(cls) or {}
+    if #roles > 1 then
+        local x = -8
+        for i = #roles, 1, -1 do
+            local role = roles[i]
+            local b = CreateFrame("Button", nil, f, "BackdropTemplate")
+            b:SetSize(54, 16)
+            b:SetPoint("TOPRIGHT", x, -35)
+            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
+            b.lbl = b:CreateFontString(nil, "OVERLAY")
+            BRutus:ApplyFont(b.lbl, 9)
+            b.lbl:SetPoint("CENTER")
+            b.lbl:SetText(L[CM.ROLE_LABELS[role] or role])
+            b:SetScript("OnClick", function()
+                f.pickedRole = role
+                RefreshCoreSignupFrame()
+            end)
+            f.roleBtns[role] = b
+            x = x - 58
+        end
+    end
 
     -- Scroll area for core list
     local scroll = CreateFrame("ScrollFrame", "GuildOSCoreSignupScroll", f, "UIPanelScrollFrameTemplate")
