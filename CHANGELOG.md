@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.68.0] - 2026-10-06
+
+### Added
+- quem chama as armas tambem ve o popup (#110)
+
+
 ## [0.67.0] - 2026-10-06
 
 ### Added
