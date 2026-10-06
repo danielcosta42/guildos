@@ -2147,13 +2147,18 @@ function BRutus:RefreshSettingsPanel(content, category)
     -- ApplyFont). Text is set when it is drawn, so the change shows after a reload.
     local fontCb = UI:CreateCheckbox(content, L["Use the game's font"], 18)
     fontCb:SetPoint("TOPLEFT", 8, -yOff)
-    fontCb.checkbox:SetChecked(GuildOSDB.font == "game")
+    fontCb.checkbox:SetChecked(GuildOSDB.font == "game" or BRutus.GameFontOnly)
     fontCb.checkbox.onChanged = function(_, checked)
         GuildOSDB.font = checked and "game" or nil
     end
     local fontReload = UI:CreateButton(content, L["Reload to apply"], 130, 22)
     fontReload:SetPoint("TOPLEFT", 28, -(yOff + 26))
     fontReload:SetScript("OnClick", function() ReloadUI() end)
+    -- A Korean or Chinese client always uses it: GuildOS's fonts cannot draw the language (#103).
+    if BRutus.GameFontOnly then
+        fontCb.checkbox:Disable()
+        fontReload:Hide()
+    end
     yOff = yOff + 56
 
     local digestCb = UI:CreateCheckbox(content, L["Show login digest"], 18)
