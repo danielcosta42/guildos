@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.65.1] - 2026-10-06
+
+### Fixed
+- o tamanho volta numa copia repassada, 0 nao e tamanho, a marca de pug viaja e o loot nomeia a raid do Forever (#90)
+- no Forever, toda raid e rastreada e a de 20 ou 40 conta como progressao (#90)
+
+
 ## [0.65.0] - 2026-10-06
 
 ### Added
