@@ -35,6 +35,10 @@ Locales\ptBR.lua
 Locales\esES.lua
 Locales\deDE.lua
 Locales\frFR.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
 
 Core\Core.lua
 Core\Compat.lua

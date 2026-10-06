@@ -1406,7 +1406,7 @@ function LootMaster:ScheduleCountdownWarnings()
             C_Timer.After(dur - secs, function()
                 if LootMaster.activeLoot and not LootMaster.activeLoot.ended then
                     LootMaster:SafeSendChat(
-                        L["[Roll] "] .. secs .. L[" second"] .. (secs == 1 and "" or L["s"]) .. "!",
+                        L["[Roll] "] .. string.format(secs == 1 and L["%d second!"] or L["%d seconds!"], secs),
                         "RAID_WARNING")
                 end
             end)

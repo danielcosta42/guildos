@@ -58,7 +58,7 @@ local function RefreshCoreSignupFrame()
         "%s |cff%02X%02X%02X%s|r  |cff888888(%s)|r",
         L["Your role:"],
         rc.r * 255, rc.g * 255, rc.b * 255,
-        L[CM.ROLE_LABELS[playerRole] or playerRole],
+        CM.ROLE_LABELS[playerRole] or playerRole,
         pClass:sub(1,1) .. pClass:sub(2):lower()
     ))
 
@@ -323,7 +323,7 @@ local function BuildCoreSignupFrame()
             b.lbl = b:CreateFontString(nil, "OVERLAY")
             BRutus:ApplyFont(b.lbl, 9)
             b.lbl:SetPoint("CENTER")
-            b.lbl:SetText(L[CM.ROLE_LABELS[role] or role])
+            b.lbl:SetText(CM.ROLE_LABELS[role] or role)
             b:SetScript("OnClick", function()
                 f.pickedRole = role
                 RefreshCoreSignupFrame()
@@ -1100,7 +1100,7 @@ function BRutus:CreateLootPanel(parent, _mainFrame)
                 names[#names+1] = r.name
             end
             local nameStr = table.concat(names, ", ")
-            if #nameStr > 40 then nameStr = nameStr:sub(1, 37) .. "..." end
+            if BRutus:Utf8Len(nameStr) > 40 then nameStr = BRutus:Utf8Head(nameStr, 37) .. "..." end
 
             local resText = UI:CreateText(row, nameStr, 11, C.silver.r, C.silver.g, C.silver.b)
             resText:SetPoint("LEFT", 300, 0)

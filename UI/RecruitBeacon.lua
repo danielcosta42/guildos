@@ -11,8 +11,8 @@ local function RB() return BRutus.RecruitBeacon end
 
 -- Friendly labels for guild-focus tokens.
 local FOCUS_LABEL = {
-    RAID = "Raid", PVP = "PvP", CASUAL = "Casual",
-    LEVELING = "Leveling", SOCIAL = "Social", RP = "RP",
+    RAID = L["Raid"], PVP = L["PvP"], CASUAL = L["Casual"],
+    LEVELING = L["Leveling"], SOCIAL = L["Social"], RP = L["RP"],
 }
 
 -- Display label for any token (role words, localized class names, focus, langs).
@@ -20,7 +20,7 @@ local function TokenLabel(t)
     if t == "TANK"   then return L["Tank"]   end
     if t == "HEALER" then return L["Healer"] end
     if t == "DPS"    then return L["DPS"]    end
-    if FOCUS_LABEL[t] then return L[FOCUS_LABEL[t]] end
+    if FOCUS_LABEL[t] then return FOCUS_LABEL[t] end
     local cn = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[t]
     if cn then return cn end
     return t   -- language codes (enUS/ptBR/…) show as-is
@@ -91,7 +91,7 @@ end
 local ROLES   = { "TANK", "HEALER", "DPS" }
 local CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
 local FOCUS   = { "RAID", "PVP", "CASUAL", "LEVELING", "SOCIAL", "RP" }
-local LANGS   = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU" }
+local LANGS   = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }
 local NEEDS   = {}
 for _, t in ipairs(ROLES)   do NEEDS[#NEEDS + 1] = t end
 for _, t in ipairs(CLASSES) do NEEDS[#NEEDS + 1] = t end

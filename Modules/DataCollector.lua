@@ -453,46 +453,78 @@ end
 -- English, Portuguese (BR), Spanish, French, German, Russian, Korean, Chinese
 RegisterProf("Alchemy", true, {
     "Alchemy", "Alquimia", "Alchimie", "Alchemie",
+    "Алхимия", "연금술", "炼金术", "鍊金術",
 })
 RegisterProf("Blacksmithing", true, {
     "Blacksmithing", "Ferraria", "Herrería", "Forge", "Schmiedekunst",
+    "Кузнечное дело", "대장기술", "锻造", "鍛造",
 })
 RegisterProf("Enchanting", true, {
     "Enchanting", "Encantamento", "Encantamiento", "Enchantement", "Verzauberkunst",
+    "Наложение чар", "마법부여", "附魔",
 })
 RegisterProf("Engineering", true, {
     "Engineering", "Engenharia", "Ingeniería", "Ingénierie", "Ingenieurskunst",
+    "Инженерное дело", "기계공학", "工程学", "工程學",
 })
 RegisterProf("Herbalism", true, {
     "Herbalism", "Herborismo", "Herboristería", "Herboristerie", "Kräuterkunde",
+    "Травничество", "약초채집", "草药学", "草藥學",
 }, true)
 RegisterProf("Jewelcrafting", true, {
     "Jewelcrafting", "Joalheria", "Joyería", "Joaillerie", "Juwelenschleifen",
+    "Ювелирное дело", "보석세공", "珠宝加工", "珠寶設計",
 })
 RegisterProf("Leatherworking", true, {
     "Leatherworking", "Couraria", "Peletería", "Travail du cuir", "Lederverarbeitung",
+    "Кожевничество", "가죽세공", "制皮", "製皮",
 })
 RegisterProf("Mining", true, {
     "Mining", "Mineração", "Minería", "Minage", "Bergbau",
+    "Горное дело", "채광", "采矿", "採礦",
 }, true)
 RegisterProf("Skinning", true, {
     "Skinning", "Esfolamento", "Desuello", "Dépeçage", "Kürschnerei",
+    "Снятие шкур", "무두질", "剥皮", "剝皮",
 }, true)
 RegisterProf("Tailoring", true, {
     "Tailoring", "Alfaiataria", "Sastrería", "Couture", "Schneiderei",
+    "Портняжное дело", "재봉술", "裁缝", "裁縫",
 })
 RegisterProf("Cooking", false, {
     "Cooking", "Culinária", "Cocina", "Cuisine", "Kochkunst",
+    "Кулинария", "요리", "烹饪", "烹飪",
 })
 RegisterProf("First Aid", false, {
     "First Aid", "Primeiros Socorros", "Primeros auxilios", "Secourisme", "Erste Hilfe",
+    "Первая помощь", "응급치료", "急救",
 })
 RegisterProf("Fishing", false, {
     "Fishing", "Pesca", "Pêche", "Angeln",
+    "Рыбная ловля", "낚시", "钓鱼", "釣魚",
 }, true)
 RegisterProf("Poisons", false, {
     "Poisons", "Venenos", "Venins", "Gifte",
+    "Яды", "독", "독 조제", "毒药", "毒藥",
 }, true)
+
+-- And whatever the client itself calls each profession's spell, in its own language (#104): a
+-- safety net under the lists above for any client whose word differs from them.
+do
+    local SPELLS = {
+        Alchemy = 2259, Blacksmithing = 2018, Enchanting = 7411, Engineering = 4036, Jewelcrafting = 25229,
+        Leatherworking = 2108, Tailoring = 3908, Mining = 2575, Skinning = 8613, Cooking = 2550,
+        ["First Aid"] = 3273, Fishing = 7620, Poisons = 2842,
+    }
+    for canonical, spell in pairs(SPELLS) do
+        local ok, name = pcall(BRutus.Compat.GetSpellInfo, spell)
+        local known = PROF_LOOKUP[canonical]
+        if ok and name ~= nil and not BRutus.Compat.IsSecret(name) and type(name) == "string"
+            and name ~= "" and known and not PROF_LOOKUP[name] then
+            PROF_LOOKUP[name] = known
+        end
+    end
+end
 
 function DataCollector:IsProfession(name)
     return PROF_LOOKUP[name] ~= nil

@@ -164,7 +164,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 icon:SetTexture(iconTex)
             else
                 label:SetPoint("CENTER")
-                label:SetText(profName:sub(1, 3))
+                label:SetText(BRutus:Utf8Head(profName, 3))
                 local pc = PROF_COLORS[profName] or C.silver
                 label:SetTextColor(pc.r, pc.g, pc.b)
             end
@@ -495,9 +495,9 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                             itemLink = select(2, BRutus.Compat.GetItemInfo(entry.itemId))
                         end
                         if itemLink then
-                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. L[" Can you craft "] .. itemLink .. L[" ?"])
+                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. " " .. string.format(L["Can you craft %s?"], itemLink))
                         else
-                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. L[" Can you craft "] .. (entry.name or L["this item"]) .. L[" ?"])
+                            ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. " " .. string.format(L["Can you craft %s?"], entry.name or L["this item"]))
                         end
                     end
                 end)

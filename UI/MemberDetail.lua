@@ -1415,7 +1415,7 @@ local function CreateTalentViewerFrame()
         for i, tabBtn in ipairs(self.tabs) do
             local pts  = (spec.points and spec.points[i]) or 0
             local name = (spec.names  and spec.names[i])  or (L["Tree "] .. i)
-            if #name > 8 then name = name:sub(1, 8) end
+            name = BRutus:Utf8Head(name, 8)
             tabBtn.label:SetText(name .. "\n" .. pts)
             if i == tab then
                 tabBtn:SetBackdropColor(cr * 0.35, cg * 0.35, cb * 0.35, 1)

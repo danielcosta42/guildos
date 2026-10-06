@@ -20,7 +20,7 @@ CoreManager.CLASS_DEFAULT_ROLE = BRutus.Client.isAnniversary and {
     PRIEST="rdps",   SHAMAN="mdps",    MAGE="rdps",    WARLOCK="rdps", DRUID="mdps",
 }
 
-CoreManager.ROLE_LABELS = { tank="Tank", healer="Healer", mdps="Melee", rdps="Ranged" }
+CoreManager.ROLE_LABELS = { tank=L["Tank"], healer=L["Healer"], mdps=L["Melee"], rdps=L["Ranged"] }
 CoreManager.ROLE_SHORT  = { tank="T",    healer="H",      mdps="M",     rdps="R" }
 CoreManager.ROLE_COLORS = {
     tank   = { r=0.40, g=0.60, b=1.00 },

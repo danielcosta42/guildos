@@ -442,6 +442,25 @@ function BRutus:ChipLabel(text, maxBytes)
     return short .. "  x"
 end
 
+-- The first `n` characters of `s`, never half of one. A byte cut splits the Cyrillic, Hangul and
+-- Han letters of four of the game's ten languages, and the names their players carry (#104).
+function BRutus:Utf8Head(s, n)
+    s = tostring(s or "")
+    local i, count = 1, 0
+    while i <= #s and count < n do
+        local c = s:byte(i)
+        i = i + ((c >= 240 and 4) or (c >= 224 and 3) or (c >= 192 and 2) or 1)
+        count = count + 1
+    end
+    return s:sub(1, i - 1)
+end
+
+-- How many characters `s` has, for the same cuts.
+function BRutus:Utf8Len(s)
+    local _, n = tostring(s or ""):gsub("[^\128-\191]", "")
+    return n
+end
+
 function BRutus:SanitizeUserText(text, maxBytes)
     local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
     s = strtrim(s)

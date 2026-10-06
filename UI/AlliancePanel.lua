@@ -283,7 +283,7 @@ local function BuildOverview(panel)
                     roleBtn:SetScript("OnClick", function()
                         local order = { TANK = "HEALER", HEALER = "DPS", DPS = "TANK" }
                         roleBtn.role = order[roleBtn.role] or "DPS"
-                        roleBtn.label:SetText(L[roleBtn.role])
+                        roleBtn.label:SetText(({ TANK = L["Tank"], HEALER = L["Healer"], DPS = L["DPS"] })[roleBtn.role])
                     end)
                     askBtn:SetScript("OnClick", function()
                         local ok, err = BRutus.Calendar:RequestAllianceSlot(

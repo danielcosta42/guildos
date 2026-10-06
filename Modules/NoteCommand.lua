@@ -39,15 +39,15 @@ end
 -- Why a write this client tried did not happen (issue #5). Only clients that
 -- had the permission when the line arrived get this far.
 local REFUSED = {
-    absent            = "Could not set %s's note: not found in the guild roster.",
-    ambiguous         = "Could not set %s's note: more than one guild member has that name.",
-    ["no-guid"]       = "Could not set %s's note: the guild roster did not return the member's GUID.",
-    ["no-api"]        = "Could not set %s's note: this client has no public note API.",
-    ["no-permission"] = "Could not set %s's note: this character can no longer edit public notes.",
+    absent            = L["Could not set %s's note: not found in the guild roster."],
+    ambiguous         = L["Could not set %s's note: more than one guild member has that name."],
+    ["no-guid"]       = L["Could not set %s's note: the guild roster did not return the member's GUID."],
+    ["no-api"]        = L["Could not set %s's note: this client has no public note API."],
+    ["no-permission"] = L["Could not set %s's note: this character can no longer edit public notes."],
 }
 
 function NoteCommand:_Refused(sender, why)
-    if REFUSED[why] then BRutus:Print(string.format(L[REFUSED[why]], sender)) end
+    if REFUSED[why] then BRutus:Print(string.format(REFUSED[why], sender)) end
 end
 
 -- Applies the note after the jitter window. Everything is re-checked here

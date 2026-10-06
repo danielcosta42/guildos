@@ -14,7 +14,7 @@ local L  = BRutus.L
 
 local function CAL() return BRutus.Calendar end
 
-local WEEKDAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
+local WEEKDAYS = { L["Sun"], L["Mon"], L["Tue"], L["Wed"], L["Thu"], L["Fri"], L["Sat"] }
 local ROLES    = { "TANK", "HEALER", "DPS" }
 local SIZES    = BRutus.Client.raidSizes   -- the game's: 10/25/40 on TBC, 10/20/40 on Forever (#92)
 local DEFAULT_SIZE = BRutus.Client.defaultRaidSize
@@ -283,7 +283,7 @@ function BRutus:CreateCalendarSub(panel)
     -- Weekday headers (repositioned in Render to match the dynamic grid width)
     f.wdFS = {}
     for i = 1, COLS do
-        f.wdFS[i] = UI:CreateText(f, L[WEEKDAYS[i]], 10, C.silver.r, C.silver.g, C.silver.b)
+        f.wdFS[i] = UI:CreateText(f, WEEKDAYS[i], 10, C.silver.r, C.silver.g, C.silver.b)
     end
 
     -- Day cells

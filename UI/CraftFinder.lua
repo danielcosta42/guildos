@@ -172,7 +172,7 @@ local function BuildFinder()
         row.whisperBtn:SetScript("OnClick", function()
             local link = itemId and select(2, BRutus.Compat.GetItemInfo(itemId))
             local subject = link or (f.itemName:GetText() ~= "" and f.itemName:GetText()) or L["this item"]
-            ChatFrame_OpenChat("/w " .. name .. L[" Can you craft "] .. subject .. L[" ?"])
+            ChatFrame_OpenChat("/w " .. name .. " " .. string.format(L["Can you craft %s?"], subject))
         end)
         row:Show()
     end
