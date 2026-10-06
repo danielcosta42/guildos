@@ -1154,7 +1154,7 @@ function BRutus:CreateCoresPanel(panel)
         y = y - 6
 
         local tipLbl = track(MakeLabel(rightContent,
-            L["Players apply with: /gos signup <core> [note]"],
+            L["Players apply in the Sign-up window or with: /gos signup <core> [role] [note]"],
             9, C.textDim.r, C.textDim.g, C.textDim.b))
         tipLbl:SetPoint("TOPLEFT", 4, y)
         y = y - 18

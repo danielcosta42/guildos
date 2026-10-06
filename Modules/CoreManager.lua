@@ -19,7 +19,6 @@ CoreManager.CLASS_DEFAULT_ROLE = BRutus.Client.isAnniversary and {
     WARRIOR="mdps",  PALADIN="mdps",   HUNTER="rdps",  ROGUE="mdps",
     PRIEST="rdps",   SHAMAN="mdps",    MAGE="rdps",    WARLOCK="rdps", DRUID="mdps",
 }
-local CLASS_DEFAULT_ROLE = CoreManager.CLASS_DEFAULT_ROLE  -- internal alias
 
 CoreManager.ROLE_LABELS = { tank="Tank", healer="Healer", mdps="Melee", rdps="Ranged" }
 CoreManager.ROLE_SHORT  = { tank="T",    healer="H",      mdps="M",     rdps="R" }
@@ -30,6 +29,41 @@ CoreManager.ROLE_COLORS = {
     rdps   = { r=1.00, g=0.85, b=0.10 },
 }
 CoreManager.ROLE_CYCLE = { "tank", "healer", "mdps", "rdps" }
+
+-- The roles each class can play, the same in both games: the site's lists, TBC's specs read as
+-- roles and WoW: Forever's roles as they are. A sign-up picks one of these (issue #94).
+CoreManager.CLASS_ROLES = {
+    WARRIOR = { tank=true, mdps=true },
+    PALADIN = { tank=true, healer=true, mdps=true },
+    HUNTER  = { rdps=true },
+    ROGUE   = { mdps=true },
+    PRIEST  = { healer=true, rdps=true },
+    SHAMAN  = { healer=true, mdps=true, rdps=true },
+    MAGE    = { rdps=true },
+    WARLOCK = { rdps=true },
+    DRUID   = { tank=true, healer=true, mdps=true, rdps=true },
+}
+
+-- A role as somebody types it ("/gos signup Main healer"): its label or its key, any case.
+CoreManager.ROLE_WORDS = { tank="tank", healer="healer", heal="healer", melee="mdps", mdps="mdps",
+                           ranged="rdps", rdps="rdps" }
+
+-- The roles a class can play, in ROLE_CYCLE order.
+function CoreManager:RolesFor(cls)
+    local can, out = self.CLASS_ROLES[cls] or {}, {}
+    for _, r in ipairs(self.ROLE_CYCLE) do
+        if can[r] then out[#out + 1] = r end
+    end
+    return out
+end
+
+-- `role` when the class can play it, else the class's own: a sign-up never carries a role its
+-- class cannot fill (issue #94).
+function CoreManager:RoleFor(cls, role)
+    local can = self.CLASS_ROLES[cls]
+    if can and can[role] then return role end
+    return self.CLASS_DEFAULT_ROLE[cls] or "rdps"
+end
 
 -- Composition targets per raid format (T + H + M + R must sum to the size). TBC's raids are
 -- 10 and 25 players; WoW: Forever's are 10 and 20 a tier, and Onyxia at 40 (issue #89).
@@ -622,14 +656,16 @@ end
 ----------------------------------------------------------------------
 -- SyncService bridge — sign-ups and roster sync between officers
 ----------------------------------------------------------------------
-function CoreManager:BroadcastSignup(coreName, note)
+-- `role` is the one picked in the sign-up window; nil, or one the class cannot play, is the
+-- class's own (issue #94).
+function CoreManager:BroadcastSignup(coreName, note, role)
     local playerName = BRutus.Compat.PlayerName()
     local _, cls     = UnitClass("player")
     local playerKey  = BRutus:GetPlayerKey(playerName, GetRealmName())
     local info = {
         name  = playerName,
         class = cls or "WARRIOR",
-        role  = CLASS_DEFAULT_ROLE[cls] or "rdps",
+        role  = self:RoleFor(cls, role),
         note  = note or "",
         ts    = time(),
     }
@@ -667,6 +703,13 @@ function CoreManager:InitSync()
         local playerKey = BRutus:GetPlayerKey(short, sender:match("-(.+)$"))
         local info = type(d.info) == "table" and d.info or {}
         info.name = short
+        -- The class the guild roster (the server's) gives the sender, else one the payload names
+        -- that exists, else warrior; the role is then one that class can play (#94).
+        local rec = BRutus:GetMemberRecord(short, sender:match("-(.+)$"))
+        local cls = rec and rec.class
+        if not self.CLASS_ROLES[cls] then cls = self.CLASS_ROLES[info.class] and info.class or "WARRIOR" end
+        info.class = cls
+        info.role = self:RoleFor(cls, info.role)
         self:AddSignup(playerKey, info, d.coreName)
         if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
     end)
