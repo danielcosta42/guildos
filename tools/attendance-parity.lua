@@ -176,6 +176,10 @@ if FOREVER then
     local to = MOVED[s.instanceID]
     s.instanceID, s.size = to[1], to[2]
   end
+  -- Week 2's lockout has three recordings, and only the middle one came from an officer whose
+  -- addon kept a size: the lockout still counts, whichever recording is read first or last.
+  SESSIONS[T + WEEK].size = nil
+  SESSIONS[T + WEEK + 2 * DAY].size = nil
   night(T + 6 * WEEK, { instanceID = 9001, name = "Hyjal Summit", startTime = T + 6 * WEEK, snapshots = {
     snap(T + 6*WEEK, { ["Beto-Firemaw"] = who("Beto", true, true) }),
   } })
