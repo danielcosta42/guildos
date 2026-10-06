@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.66.0] - 2026-10-06
+
+### Added
+- os 10 idiomas do jogo no addon (#104)
+
+
 ## [0.65.2] - 2026-10-06
 
 ### Fixed
