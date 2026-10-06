@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.67.0] - 2026-10-06
+
+### Added
+- chamado as armas, um popup para a guilda inteira (#108)
+
+
 ## [0.66.0] - 2026-10-06
 
 ### Added
