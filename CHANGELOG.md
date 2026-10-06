@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.65.2] - 2026-10-06
+
+### Fixed
+- em coreano e chines o addon usa a fonte do jogo, que tem esses alfabetos (#103)
+
+
 ## [0.65.1] - 2026-10-06
 
 ### Fixed
