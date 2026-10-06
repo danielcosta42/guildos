@@ -38,7 +38,7 @@ RB.ROLE_TOKENS  = { "TANK", "HEALER", "DPS" }
 RB.CLASS_TOKENS = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
                     "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
 RB.FOCUS_TOKENS = { "RAID", "PVP", "CASUAL", "LEVELING", "SOCIAL", "RP" }
-RB.LANG_TOKENS  = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU" }
+RB.LANG_TOKENS  = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }
 
 RB.onUpdate = nil        -- UI hook (inbox panel sets it)
 local relayCursor = 0

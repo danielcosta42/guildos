@@ -44,6 +44,7 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
+dofile(ADDON .. "/Core/Utils.lua")
 local texts, buttons = {}, {}
 BRutus.UI = setmetatable({
   GetFeature = function() return nil end,   -- no registry: IsFeatureEnabled reads the settings alone

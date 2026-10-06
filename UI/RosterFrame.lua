@@ -1275,7 +1275,7 @@ function UpdateRosterRow(row, data, rowIndex)
             if prof.isPrimary then
                 local pr, pg, pb = textColor(C.gold.r, C.gold.g, C.gold.b)
                 -- A profession known from the guild roster only has no rank (issue #31).
-                local label = prof.name:sub(1, 5) .. (prof.rank and (" " .. prof.rank) or "")
+                local label = BRutus:Utf8Head(prof.name, 5) .. (prof.rank and (" " .. prof.rank) or "")
                 table.insert(parts, BRutus:ColorText(label, pr, pg, pb))
             end
         end

@@ -519,9 +519,9 @@ function Recruitment:Initialize()
     if r.welcomeMessage == "" then
         local guildName = GetGuildInfo("player") or L["our guild"]
         if r.discord ~= "" then
-            r.welcomeMessage = L["Welcome to "] .. guildName .. L["! Join our Discord: "] .. r.discord .. L[" - Have fun!"]
+            r.welcomeMessage = string.format(L["Welcome to %s! Join our Discord: %s - Have fun!"], guildName, r.discord)
         else
-            r.welcomeMessage = L["Welcome to "] .. guildName .. L[" - Have fun!"]
+            r.welcomeMessage = string.format(L["Welcome to %s - Have fun!"], guildName)
         end
     end
 

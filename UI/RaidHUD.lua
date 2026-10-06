@@ -231,7 +231,7 @@ local function BuildHUDRows(f)
         local players = {}
         for name, classFile in pairs(_raidMembers) do
             if classFile == cd.class then
-                local shortName = name:sub(1, 12)
+                local shortName = BRutus:Utf8Head(name, 12)
                 local hex = BRutus:GetClassColorHex(classFile)
                 table.insert(players, { name = name, shortName = shortName, colorHex = hex })
             end

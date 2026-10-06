@@ -7,7 +7,8 @@
 --   * English is the implicit default,
 --   * any untranslated string degrades gracefully to English (never nil).
 --
--- Locale data files (enUS.lua, ptBR.lua, esES.lua, deDE.lua, frFR.lua)
+-- Locale data files: enUS, ptBR, esES (also esMX), deDE, frFR, ruRU, koKR, zhCN, zhTW --
+-- every language the game runs in (#104), checked by tools/locales.lua
 -- populate BRutus.L. enUS.lua loads unconditionally (the master list);
 -- every other locale file early-returns unless GetLocale() matches and
 -- then overrides only the keys it translates.

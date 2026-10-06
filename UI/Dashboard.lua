@@ -38,8 +38,8 @@ end
 
 local function truncate(s, n)
     s = tostring(s or "")
-    if #s <= n then return s end
-    return s:sub(1, n - 1) .. "..."
+    if BRutus:Utf8Len(s) <= n then return s end
+    return BRutus:Utf8Head(s, n - 1) .. "..."   -- by characters, never half of one (#104)
 end
 
 ----------------------------------------------------------------------

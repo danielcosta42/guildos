@@ -145,11 +145,11 @@ function Agora:NeedsMe()
 end
 
 local ROSTER_ACTION = {
-    join    = "%s joined the guild",
-    leave   = "%s left the guild",
-    kick    = "%s was removed from the guild",
-    promote = "%s was promoted to %s",
-    demote  = "%s was demoted to %s",
+    join    = L["%s joined the guild"],
+    leave   = L["%s left the guild"],
+    kick    = L["%s was removed from the guild"],
+    promote = L["%s was promoted to %s"],
+    demote  = L["%s was demoted to %s"],
 }
 
 -- The saved key for a short name, when exactly one member has it.
@@ -179,7 +179,7 @@ function Agora:Activity(limit)
     for _, e in ipairs((db.rosterLog and db.rosterLog.events) or {}) do
         local fmt = ROSTER_ACTION[e.action]
         if fmt then
-            add(e.timestamp, string.format(L[fmt], e.target or "?", e.detail or ""), "management", "log", nil, e.target)
+            add(e.timestamp, string.format(fmt, e.target or "?", e.detail or ""), "management", "log", nil, e.target)
         end
     end
     for _, e in ipairs(db.lootHistory or {}) do
