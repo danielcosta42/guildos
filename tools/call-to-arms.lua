@@ -30,6 +30,7 @@ local function widget()
   function w:SetText(t) self.text = t end
   function w:Show() self.shown = true end
   function w:Hide() self.shown = false end
+  function w:SetShown(v) self.shown = v and true or false end
   function w:Enable() self.enabled = true end
   function w:Disable() self.enabled = false end
   function w:SetTexture(t) self.texture = t end
@@ -150,6 +151,23 @@ check(sent.data.text == "World boss up in Dire Maul, Feralas, come now!" and sen
 check(last(chat) and last(chat).channel == "GUILD" and last(chat).msg:find("World Boss", 1, true),
   "a plain guild chat line goes with it")
 check(CTA.recent[1] and CTA.recent[1].mine, "and the officer sees it among the recent calls")
+-- The caller sees what the guild sees (issue #110).
+check(CTA.popup and CTA.popup.shown and CTA.popup.callId == sent.data.id and CTA.popup.title.text == "World Boss",
+  "the officer who called gets the popup too")
+check(CTA.popup.go.shown == false, "without 'On my way': they made the call")
+local ownTimer = last(timers)
+check(#sounds == 1 and sounds[1] == 8959 and ownTimer.secs == CTA.SHOW_FOR, "with the sound, for thirty seconds")
+handlers.cta({ act = "call", data = { id = "R7", kind = "pvp", title = "Other", text = "Go", zone = "Z", ts = now } }, "Dee-Realm")
+check(CTA.popup.callId == sent.data.id, "another officer's call a moment later does not cover it")
+handlers.cta({ act = "going", data = { id = sent.data.id } }, "Bob-Realm")
+check(CTA.popup.count.text == "1 on the way", "and watches the guild answer it")
+ownTimer.fn()
+check(not CTA.popup.shown, "until it goes away on its own")
+now = now + CTA.FROM_GAP
+handlers.cta({ act = "call", data = { id = "R9", kind = "pvp", title = "Other", text = "Go", zone = "Z", ts = now } }, "Ann-Realm")
+check(CTA.popup.callId == "R9" and CTA.popup.go.shown == true, "a call from somebody else has the button again")
+handlers.cta({ act = "call", data = { id = "R8", kind = "pvp", title = "Third", text = "Go", zone = "Z", ts = now } }, "Cid-Realm")
+check(CTA.popup.callId == "R9", "and a call landing within ten seconds of a popup does not cover it")
 local before = #published
 check(not CTA:Send("pvp") and #published == before, "a second call inside the cooldown is refused")
 now = now + CTA.COOLDOWN
@@ -196,6 +214,20 @@ now = now + CTA.COOLDOWN
 check(CTA:Send("pvp"), "which still runs out")
 handlers.cta({ act = "call", data = last(published).data }, "Off-Realm")
 check(#CTA.recent == 1, "the officer's own call, heard back, is not a second one")
+
+-- The caller's popup keeps the caller's own settings.
+CTA, handlers = load()
+officers = { Off = true, me = true }
+BRutus:SetSetting("ctaPopups", false)
+check(CTA:Send("worldboss") and not (CTA.popup and CTA.popup.shown), "with popups off, the caller gets no popup either")
+CTA, handlers = load()
+officers = { Off = true, me = true }
+combat = true
+check(CTA:Send("pvp") and not (CTA.popup and CTA.popup.shown) and #sounds == 0, "nor mid-fight with quiet on")
+BRutus:SetSetting("ctaQuiet", false)
+now = now + CTA.COOLDOWN
+check(CTA:Send("pvp") and CTA.popup and CTA.popup.shown, "unless they want popups there too")
+combat = false
 
 -- ── Receiving ──────────────────────────────────────────────────────────
 CTA, handlers = load()
