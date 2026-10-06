@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.68.2] - 2026-10-06
+
+### Fixed
+- profissoes e presets de moderacao no idioma de quem le (#114)
+
+
 ## [0.68.1] - 2026-10-06
 
 ### Fixed
