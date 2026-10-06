@@ -267,7 +267,7 @@ function RecipeTracker:StoreMyRecipes(profName, recipes)
     end
     BRutus.db.recipeScanTimes[profName] = time()
 
-    BRutus:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, profName))
+    BRutus:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, L[profName]))
 
     -- Dismiss the profession reminder if all professions are now scanned
     if BRutus.profReminderFrame then
@@ -697,7 +697,7 @@ function RecipeTracker:HookTooltips()
         for _, c in ipairs(sorted) do
             local cc = c.class and BRutus.ClassColors[c.class] or C.white
             local status = onlineSet[c.playerName] and L[" |cff00ff00(online)|r"] or L[" |cff666666(offline)|r"]
-            tooltip:AddDoubleLine("  " .. c.playerName .. status, c.profName, cc.r, cc.g, cc.b, 0.6, 0.6, 0.6)
+            tooltip:AddDoubleLine("  " .. c.playerName .. status, c.profName and L[c.profName] or "", cc.r, cc.g, cc.b, 0.6, 0.6, 0.6)
         end
 
         tooltip:Show()

@@ -2002,3 +2002,8 @@ L["[Call to Arms] %s: %s"] = "[Chamado às Armas] %s: %s"
 L["here"] = "minha posição"
 L["{zone} is under attack, defend it!"] = "Ataque em {zone}, venham defender!"
 L["|cffFF8800[Call to Arms]|r %s: %s |cff888888(%s, %s)|r"] = "|cffFF8800[Chamado às Armas]|r %s: %s |cff888888(%s, %s)|r"
+
+-- Professions the roster stores in English, shown in this language (#114)
+L["Jewelcrafting"] = "Joalheria"
+L["Opted out"] = "Fora"
+L["Poisons"] = "Venenos"

@@ -64,6 +64,13 @@ function ModPresets:GetPresets()
     return BRutus.db.modPresets or {}
 end
 
+-- A built-in preset reads in the language of now: the name it was saved with is the language
+-- it was created in, English for every guild seeded before its translation (issue #114).
+function ModPresets:Name(preset)
+    local t = preset and self.TYPES[preset.type]
+    return (t and t.name) or (preset and preset.name) or "?"
+end
+
 function ModPresets:GetAction(preset)
     local t = preset and self.TYPES[preset.type]
     return (t and t.action) or "kick"

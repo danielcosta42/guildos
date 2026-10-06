@@ -1144,7 +1144,7 @@ function CreateProfessionRow(parent, prof, yOff, width)
     BRutus:ApplyFont(nameText, 11)
     nameText:SetPoint("TOPLEFT", 15, yOff - 3)
     nameText:SetTextColor(nameColor.r, nameColor.g, nameColor.b)
-    nameText:SetText(prof.name)
+    nameText:SetText(L[prof.name])
     nameText:Show()
 
     -- Skill level text

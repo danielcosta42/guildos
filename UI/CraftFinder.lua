@@ -209,7 +209,7 @@ local function BuildFinder()
             for _, c in ipairs(guild) do
                 if not f.query.seen[c.playerName] then
                     f.query.seen[c.playerName] = true
-                    AddResult(c.playerName, c.profName, L["Guild"], c.class)
+                    AddResult(c.playerName, c.profName and L[c.profName], L["Guild"], c.class)
                 end
             end
         end
@@ -220,7 +220,7 @@ local function BuildFinder()
             for _, c in ipairs(BRutus.Alliance:FindCrafters(itemId)) do
                 if not f.query.seen[c.name] then
                     f.query.seen[c.name] = true
-                    local label = c.prof or "?"
+                    local label = L[c.prof or "?"]
                     if not c.online then
                         label = label .. " " .. L["(offline)"]
                     end
@@ -235,7 +235,7 @@ local function BuildFinder()
                 if not f.query or f.query.itemId ~= itemId then return end  -- stale
                 if f.query.seen[short] then return end
                 f.query.seen[short] = true
-                AddResult(short, label, L["Realm"], nil)
+                AddResult(short, label and L[label], L["Realm"], nil)
                 SetStatus()
             end)
             -- Close the "querying" state after the realm TTL so the status settles.

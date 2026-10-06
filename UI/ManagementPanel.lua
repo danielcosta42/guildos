@@ -693,7 +693,7 @@ local SPARK_H      = 12   -- max bar height in px
 
 -- Present a member's status from the two fields the data carries.
 local function statusOf(r, now)
-    if not r.part then return L["Off"], C.textDim end
+    if not r.part then return L["Opted out"], C.textDim end
     if r.last == 0 or (now - r.last) > 48 * 3600 then return L["Paused"], C.silver end
     return L["Active"], C.green
 end
@@ -845,7 +845,7 @@ local function presetApplyText(preset, matches)
     local line = (action == "promote")
         and format(L["Promote %d member(s):"], #matches)
         or  format(L["Remove %d member(s) from the guild:"], #matches)
-    return format(L["Apply preset \"%s\"?"], preset.name or "?") .. "\n"
+    return format(L["Apply preset \"%s\"?"], MP:Name(preset)) .. "\n"
         .. line .. " " .. list .. "\n\n"
         .. L["Rank and removal are Blizzard-protected: the guild panel opens, do them there."]
 end
@@ -943,10 +943,11 @@ local function BuildPresetsSub(panel)
             block:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
 
             -- Header line: name + criteria summary + remove.
-            local nameFS = UI:CreateText(block, preset.name or "?", 12, C.gold.r, C.gold.g, C.gold.b)
+            local nameFS = UI:CreateText(block, MP:Name(preset), 12, C.gold.r, C.gold.g, C.gold.b)
             nameFS:SetPoint("TOPLEFT", 8, -5)
             local sumFS = UI:CreateText(block, MP:Summarize(preset), 10, C.silver.r, C.silver.g, C.silver.b)
-            sumFS:SetPoint("TOPLEFT", 168, -6)
+            -- After the name when the name runs past the column: French ones do (#114).
+            sumFS:SetPoint("TOPLEFT", math.max(168, 8 + math.ceil(nameFS:GetStringWidth() or 0) + 16), -6)
 
             local delBtn = UI:CreateButton(block, "\195\151", 22, 18)  -- ×
             delBtn:SetPoint("TOPRIGHT", -8, -4)

@@ -164,7 +164,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 icon:SetTexture(iconTex)
             else
                 label:SetPoint("CENTER")
-                label:SetText(BRutus:Utf8Head(profName, 3))
+                label:SetText(BRutus:Utf8Head(L[profName], 3))
                 local pc = PROF_COLORS[profName] or C.silver
                 label:SetTextColor(pc.r, pc.g, pc.b)
             end
@@ -194,7 +194,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 self:SetBackdropColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1.0)
             end
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(profName, 1, 1, 1)
+            GameTooltip:SetText(L[profName], 1, 1, 1)
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function(self)
@@ -465,7 +465,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                     row.profIcon:Hide()
                 end
                 local pc = PROF_COLORS[entry.profName] or C.silver
-                row.profName:SetText(entry.profName or "")
+                row.profName:SetText(entry.profName and L[entry.profName] or "")
                 row.profName:SetTextColor(pc.r, pc.g, pc.b)
 
                 -- Crafters list (grouped, class-colored)

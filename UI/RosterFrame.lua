@@ -1275,7 +1275,7 @@ function UpdateRosterRow(row, data, rowIndex)
             if prof.isPrimary then
                 local pr, pg, pb = textColor(C.gold.r, C.gold.g, C.gold.b)
                 -- A profession known from the guild roster only has no rank (issue #31).
-                local label = BRutus:Utf8Head(prof.name, 5) .. (prof.rank and (" " .. prof.rank) or "")
+                local label = BRutus:Utf8Head(L[prof.name], 5) .. (prof.rank and (" " .. prof.rank) or "")
                 table.insert(parts, BRutus:ColorText(label, pr, pg, pb))
             end
         end
@@ -1537,8 +1537,8 @@ function ShowRowTooltip(row)
         GameTooltip:AddLine(L["Professions:"], C.gold.r, C.gold.g, C.gold.b)
         for _, prof in ipairs(data.professions) do
             local profColor = prof.isPrimary and C.gold or C.silver
-            local line = prof.rank and string.format("  %s  %d / %d", prof.name, prof.rank, prof.maxRank or 0)
-                or ("  " .. prof.name)   -- known from the guild roster only: no rank (issue #31)
+            local line = prof.rank and string.format("  %s  %d / %d", L[prof.name], prof.rank, prof.maxRank or 0)
+                or ("  " .. L[prof.name])   -- known from the guild roster only: no rank (issue #31)
             GameTooltip:AddLine(line, profColor.r, profColor.g, profColor.b)
         end
     end

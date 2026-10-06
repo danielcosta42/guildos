@@ -1937,3 +1937,8 @@ L["[Call to Arms] %s: %s"] = "[Ruf zu den Waffen] %s: %s"
 L["here"] = "meiner Nähe"
 L["{zone} is under attack, defend it!"] = "Angriff in {zone}, alle zur Verteidigung!"
 L["|cffFF8800[Call to Arms]|r %s: %s |cff888888(%s, %s)|r"] = "|cffFF8800[Ruf zu den Waffen]|r %s: %s |cff888888(%s, %s)|r"
+
+-- Professions the roster stores in English, shown in this language (#114)
+L["Jewelcrafting"] = "Juwelenschleifen"
+L["Opted out"] = "Abgemeldet"
+L["Poisons"] = "Gifte"

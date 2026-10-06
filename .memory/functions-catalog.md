@@ -229,7 +229,7 @@ Removed: `Compat.NewTimer`.
 | `DataCollector:CollectProfessions()` | Iterates GetSkillLineInfo, filters via PROF_LOOKUP |
 | `DataCollector:IsProfession(name)` | Returns PROF_LOOKUP[name] ~= nil |
 | `DataCollector:IsPrimaryProfession(name)` | Returns whether PROF_LOOKUP marks this as a primary profession |
-| `DataCollector:GetCanonicalProfName(localizedName)` | Returns canonical English name from PROF_LOOKUP |
+| `DataCollector:GetCanonicalProfName(localizedName)` | Returns canonical English name from PROF_LOOKUP. That is what is stored and synced; every screen shows it as `L[name]` (issue #114), and `tools/locales.lua` counts each RegisterProf name, so a profession without a translation fails CI |
 | `DataCollector:IsKnownProfession(name)` | Returns true if name is in PROF_LOOKUP |
 | `DataCollector:IsGatheringProfession(name)` | Returns PROF_LOOKUP[name].isGathering |
 | `DataCollector:CollectStats()` | Collects health/mana/STR/AGI/STA/INT/SPI via UnitStat |
