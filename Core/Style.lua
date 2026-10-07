@@ -192,3 +192,128 @@ function Style:PrintList()
         GuildOS:Print("  " .. id .. " - " .. self:Name(id) .. (tag and (" (" .. tag .. ")") or ""))
     end
 end
+
+----------------------------------------------------------------------
+-- Painting by role
+----------------------------------------------------------------------
+local WHITE = "Interface\\Buttons\\WHITE8x8"
+
+local function roleColor(role)
+    local C = GuildOS.Colors
+    if role == "well" or role == "input" then return C.well end
+    if role == "titlebar" then return C.panel end
+    return C.bg
+end
+
+-- Today's paint, unchanged: a WHITE8x8 backdrop with a 1px `line` border, or the title bar's band.
+-- A popup's colours are its caller's (Helpers:StylePopup never set them), so flat leaves it alone.
+function Style:_PaintFlat(frame, role)
+    local C = GuildOS.Colors
+    if role == "popup" then return "flat" end
+    if role == "titlebar" then
+        local bg = frame.__styleBg or frame:CreateTexture(nil, "BACKGROUND")
+        bg:SetTexture(WHITE)
+        bg:SetAllPoints()
+        bg:SetVertexColor(C.panel.r, C.panel.g, C.panel.b, 1)
+        frame.__styleBg = bg
+        return "flat"
+    end
+    local c = roleColor(role)
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdropColor(c.r, c.g, c.b, 1)
+    frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    return "flat"
+end
+
+local function setAtlasSized(tex, name, scale)
+    tex:SetAtlas(name)
+    local info = atlasInfo(name)
+    tex:SetSize((info and info.width or 0) * scale, (info and info.height or 0) * scale)
+end
+
+local NINE = { "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
+               "TopEdge", "BottomEdge", "LeftEdge", "RightEdge" }
+
+-- The border in nine pieces around the role's colour.
+function Style:_PaintNine(frame, art, role)
+    local c = roleColor(role)
+    frame:SetBackdrop({ bgFile = WHITE })
+    frame:SetBackdropColor(c.r, c.g, c.b, 1)
+    local p = frame.__nine or {}
+    frame.__nine = p
+    for _, key in ipairs(NINE) do
+        p[key] = p[key] or frame:CreateTexture(nil, "BORDER")
+        setAtlasSized(p[key], art[key], art.scale)
+        p[key]:ClearAllPoints()
+    end
+    p.TopLeftCorner:SetPoint("TOPLEFT")
+    p.TopRightCorner:SetPoint("TOPRIGHT")
+    p.BottomLeftCorner:SetPoint("BOTTOMLEFT")
+    p.BottomRightCorner:SetPoint("BOTTOMRIGHT")
+    p.TopEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "TOPRIGHT")
+    p.TopEdge:SetPoint("TOPRIGHT", p.TopRightCorner, "TOPLEFT")
+    p.BottomEdge:SetPoint("BOTTOMLEFT", p.BottomLeftCorner, "BOTTOMRIGHT")
+    p.BottomEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "BOTTOMLEFT")
+    p.LeftEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "BOTTOMLEFT")
+    p.LeftEdge:SetPoint("BOTTOMLEFT", p.BottomLeftCorner, "TOPLEFT")
+    p.RightEdge:SetPoint("TOPRIGHT", p.TopRightCorner, "BOTTOMRIGHT")
+    p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT")
+    if art.center then
+        p.Center = p.Center or frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+        p.Center:SetAtlas(art.center)
+        p.Center:ClearAllPoints()
+        p.Center:SetPoint("TOPLEFT", p.TopLeftCorner, "BOTTOMRIGHT")
+        p.Center:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPLEFT")
+    end
+    return "art"
+end
+
+-- Three pieces side by side, as tall as the frame. The caps keep their atlas proportions at that
+-- height and are squeezed together when the frame is narrower than both.
+function Style:_PaintThree(frame, art, layer)
+    local p = frame.__three or {}
+    frame.__three = p
+    for _, k in ipairs({ "Left", "Center", "Right" }) do
+        p[k] = p[k] or frame:CreateTexture(nil, layer or "BACKGROUND")
+        p[k]:SetAtlas(art[k])
+    end
+    local function layout()
+        local h, w = frame:GetHeight() or 0, frame:GetWidth() or 0
+        local li, ri = atlasInfo(art.Left), atlasInfo(art.Right)
+        local k = (li and li.height and li.height > 0) and (h / li.height) or 1
+        local lw, rw = (li and li.width or 0) * k, (ri and ri.width or 0) * k
+        if w > 0 and lw + rw > w then
+            local f = w / (lw + rw)
+            lw, rw = lw * f, rw * f
+        end
+        p.Left:ClearAllPoints(); p.Left:SetPoint("TOPLEFT"); p.Left:SetPoint("BOTTOMLEFT"); p.Left:SetWidth(lw)
+        p.Right:ClearAllPoints(); p.Right:SetPoint("TOPRIGHT"); p.Right:SetPoint("BOTTOMRIGHT"); p.Right:SetWidth(rw)
+        p.Center:ClearAllPoints()
+        p.Center:SetPoint("TOPLEFT", p.Left, "TOPRIGHT")
+        p.Center:SetPoint("BOTTOMRIGHT", p.Right, "BOTTOMLEFT")
+    end
+    layout()
+    if not frame.__threeHooked then
+        frame.__threeHooked = true
+        frame:HookScript("OnSizeChanged", layout)
+    end
+    return p
+end
+
+-- Paint `frame` as `role`. In the Forever style with the client's art, the role's art; otherwise,
+-- and for any piece the client lacks, today's flat paint.
+function Style:Paint(frame, role)
+    local art = (self.current == "forever") and self.FOREVER[role] or nil
+    if art and self:_HasArt(art) then
+        if art.kind == "nine" then return self:_PaintNine(frame, art, role) end
+        if role == "titlebar" then self:_PaintFlat(frame, role) end   -- the band behind the art
+        if role == "input" then
+            local c = roleColor(role)
+            frame:SetBackdrop({ bgFile = WHITE })
+            frame:SetBackdropColor(c.r, c.g, c.b, 1)
+        end
+        self:_PaintThree(frame, art, role == "titlebar" and "ARTWORK" or "BORDER")
+        return "art"
+    end
+    return self:_PaintFlat(frame, role)
+end

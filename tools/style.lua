@@ -34,6 +34,7 @@ local function newRegion(kind, parent)
   local r = { kind = kind, parent = parent, children = {}, points = {}, scripts = {}, w = 0, h = 0, shown = true }
   if parent then parent.children[#parent.children + 1] = r end
   return setmetatable(r, { __index = function(_, k)
+    if k:match("^[a-z_]") then return nil end   -- a field nobody set is nil; only methods answer
     return function(self, ...)
       local a = { ... }
       if k == "SetAtlas" then self.atlas = a[1]
@@ -184,5 +185,44 @@ check(C.ok.r == 0.490, "status colours keep theirs")
 local fs = newRegion("FontString")
 GuildOS:ApplyFont(fs, 12)
 check(S.gameFont and fs.font == STANDARD_TEXT_FONT, "and every text takes the game's font")
+
+-- ── 6. Painting by role ────────────────────────────────────────────────
+S = load({ db = {} }); S:Resolve()
+C = GuildOS.Colors
+local f = newRegion("Frame")
+check(S:Paint(f, "window") == "flat" and f.backdrop.bgFile == "Interface\\Buttons\\WHITE8x8"
+  and f.backdrop.edgeSize == 1 and f.bg[1] == C.bg.r and f.border[1] == C.line.r,
+  "guildos: a window is today's backdrop, bg with a 1px line")
+f = newRegion("Frame")
+S:Paint(f, "well")
+check(f.bg[1] == C.well.r, "a well is today's inset colour")
+f = newRegion("Frame")
+check(S:Paint(f, "popup") == "flat" and f.backdrop == nil, "a popup's colours stay its caller's")
+f = newRegion("Frame")
+S:Paint(f, "titlebar")
+check(f.__styleBg and f.__styleBg.color[1] == C.panel.r, "a title bar is today's panel band")
+
+S = load({ db = { style = "forever" } }); S:Resolve()
+f = newRegion("Frame")
+check(S:Paint(f, "window") == "art" and f.__nine.TopLeftCorner.atlas == "ui-frame-metal-cornertopleft-c60-2x",
+  "forever: a window gets the metal frame")
+check(f.__nine.TopLeftCorner.w == 190 * 0.25 and f.__nine.RightEdge.atlas == "!ui-frame-metal-edgeright-c60-2x",
+  "its corners are the atlas size times the scale, and its edges tile")
+check(f.backdrop.bgFile and not f.backdrop.edgeFile and f.bg[1] == GuildOS.Colors.bg.r, "the middle stays the role's colour")
+f = newRegion("Frame")
+S:Paint(f, "popup")
+check(f.__nine.Center and f.__nine.Center.atlas == "tooltip-nineslice-center-c60", "a popup gets the tooltip art and its centre")
+f = newRegion("Frame"); f.w, f.h = 200, 30
+S:Paint(f, "titlebar")
+check(f.__three.Left.atlas == "ui-frame-diamondmetal-header-cornerleft-c60-2x" and f.__styleBg,
+  "a title bar gets the diamond-metal band over its colour")
+
+S = load({ db = { style = "forever" }, without = { ["_ui-frame-metal-edgetop-c60-2x"] = true } }); S:Resolve()
+f = newRegion("Frame")
+local first = S:Paint(f, "window")
+S:Paint(newRegion("Frame"), "window")
+check(first == "flat" and f.backdrop.edgeSize == 1, "a missing atlas paints that piece flat, never a hole")
+check(#errors == 1 and errors[1]:find("_ui-frame-metal-edgetop-c60-2x", 1, true),
+  "and is recorded once, however often it is asked for")
 
 print(("style: %d checks passed"):format(checks))
