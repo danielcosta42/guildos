@@ -119,6 +119,8 @@ built the first time it opens):
 | `input` | an edit box | `well` with a 1px `line` | `common-search-border-left/middle/right-c60` |
 | `popup` / `tooltip` | a popup, a dialog, the addon's tooltips | `popup` + drop shadow | `tooltip-nineslice-*-c60` |
 
+**Naming, measured in game (2026-10-07, build 1.60.1.70245):** an addon asks for the atlas *element* (`UI-Frame-Metal-CornerTopLeft`, `128-RedButton-Left`, `common-internaltab`). Forever resolves an element to its `-c60` member through the active atlas set. The member names in the tables above are what the art is called in the data, but `GetAtlasInfo` answers nil for them. `Core/Style.lua` uses element names, and `tools/data/forever-atlas-elements.txt` lists the ones Forever draws with `-c60` art. The tooltip's `-c60` centre is not in that set, so the popup has no centre texture.
+
 The controls, through the Helpers that already build them:
 
 | control | `forever` (candidates) |
@@ -127,7 +129,7 @@ The controls, through the Helpers that already build them:
 | close | `redbutton-exit-c60` (+ `-pressed-c60`, `-disabled-c60`) |
 | scroll bar | `minimal-scrollbar-*-c60` |
 | checkbox | `checkbox-minimal-c60` with `talents-checkmark-c60` |
-| button (primary, secondary, danger, ghost) | not yet identified: `128-redbutton-*-c60` are square icon buttons; the rectangular panel button is found with the preview (4.6) |
+| button (primary, secondary, danger; ghost has no art) | the retail panel button, three-slice: `128-redbutton-left-c60`, `_128-redbutton-center-c60`, `128-redbutton-right-c60`, with `-pressed` and `-disabled` (found in the client's data; the square `128-redbutton-exit/minus-c60` are the close and minimise buttons) |
 
 - **Candidates, not final.** These atlases exist in the client's data, but how they look on screen has
   not been seen. The final pick of each piece is made from beta screenshots of the preview tool (4.6).

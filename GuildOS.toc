@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary and WoW: Forever
 ## Author: Chehul (danielcosta42)
-## Version: 0.69.0
+## Version: 0.70.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
 ## X-License: MIT
@@ -43,6 +43,7 @@ Locales\zhTW.lua
 Core\Core.lua
 Core\Compat.lua
 Core\Data.lua
+Core\Style.lua
 Core\Utils.lua
 Core\Commands.lua
 Core\Probe.lua
@@ -120,6 +121,7 @@ Modules\PugInspector.lua
 
 # UI
 UI\Helpers.lua
+UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua
 UI\FeatureRegistry.lua

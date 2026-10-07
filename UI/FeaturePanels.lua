@@ -2143,11 +2143,14 @@ function GuildOS:RefreshSettingsPanel(content, category)
     ttShift.checkbox.onChanged = SaveTooltipMode
     yOff = yOff + 52
 
+    -- The interface style (issue #122): the picker, where the client draws more than one.
+    yOff = GuildOS.Style:BuildPicker(content, yOff)
+
     -- The game's own font instead of GuildOS's (issue #57), for the whole account (see
     -- ApplyFont). Text is set when it is drawn, so the change shows after a reload.
     local fontCb = UI:CreateCheckbox(content, L["Use the game's font"], 18)
     fontCb:SetPoint("TOPLEFT", 8, -yOff)
-    fontCb.checkbox:SetChecked(GuildOSDB.font == "game" or GuildOS.GameFontOnly)
+    fontCb.checkbox:SetChecked(GuildOSDB.font == "game" or GuildOS.GameFontOnly or GuildOS.Style.gameFont)
     fontCb.checkbox.onChanged = function(_, checked)
         GuildOSDB.font = checked and "game" or nil
     end
@@ -2155,7 +2158,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
     fontReload:SetPoint("TOPLEFT", 28, -(yOff + 26))
     fontReload:SetScript("OnClick", function() ReloadUI() end)
     -- A Korean or Chinese client always uses it: GuildOS's fonts cannot draw the language (#103).
-    if GuildOS.GameFontOnly then
+    if GuildOS.GameFontOnly or GuildOS.Style.gameFont then
         fontCb.checkbox:Disable()
         fontReload:Hide()
     end
