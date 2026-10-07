@@ -1343,7 +1343,9 @@ do
     "a line from another day says which day; today's only the time")
 
   local holder = scroll.parent
+  holder:SetSize(400, 300)
   holder:SetSize(500, 300)
+  flush()
   check(card.w == 500 - 12 - 12, "a resized window lays the feed out again, at its new width")
 
   -- At the cap the oldest line can be a block of its own while the newest joins the last one:

@@ -907,7 +907,7 @@ L["Note: Blizzard requires a click to send channel messages. A popup will appear
 L["Nothing here yet."] = "这里还没有内容。"
 L["Nothing here yet. Say hello."] = "这里还没有内容。打个招呼吧。"
 L["No guild chat yet."] = "公会聊天里还没有消息。"
-L["Chat is locked during the encounter: your message is still in the box."] = "首领战期间聊天被锁定：你的消息仍在输入框中。"
+L["Chat is locked right now: your message is still in the box."] = "聊天暂时被锁定：你的消息仍在输入框中。"
 L["Nothing here yet. Welcome the allied guilds."] = "这里还没有内容。欢迎一下同盟公会吧。"
 L["Nothing in the last 48 hours."] = "过去 48 小时内没有内容。"
 L["Nothing leaves the game while this is off."] = "关闭时，不会有任何数据离开游戏。"

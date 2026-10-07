@@ -525,7 +525,7 @@ local function BuildGuildChatSub(panel)
         if ok then
             input:SetText("")
         elseif why == "locked" then
-            GuildOS:Print(L["Chat is locked during the encounter: your message is still in the box."])
+            GuildOS:Print(L["Chat is locked right now: your message is still in the box."])
         end
     end
     sendBtn:SetScript("OnClick", doSend)
@@ -534,8 +534,8 @@ local function BuildGuildChatSub(panel)
     GC:OnRefresh(function()
         if panel:IsVisible() then refresh() end
     end)
-    -- The cards are as wide as the view: a resized window lays them out again.
-    holder:SetScript("OnSizeChanged", function()
+    -- The cards are as wide as the view: a resized window lays them out again, once a frame.
+    UI:MakeResponsive(holder, function()
         if panel:IsVisible() then refresh() end
     end)
     return refresh

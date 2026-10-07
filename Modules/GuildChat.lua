@@ -70,7 +70,7 @@ function GuildChat:Send(text)
     end
     -- Forever drops a line sent in an encounter's chat lockdown without an error, so it is
     -- asked first and the text stays with the player (as Modules/CallToArms.lua does).
-    if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then
+    if GuildOS.Compat.InChatLockdown() then
         return false, "locked"
     end
     SendChatMessage(clean, "GUILD")
