@@ -49,9 +49,9 @@ local function load(game)
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Modules/Calendar.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")
-  BRutus.db = { settings = {}, cores = {} }
-  BRutus.Calendar:Initialize()
-  return BRutus.Calendar, BRutus.CoreManager
+  GuildOS.db = { settings = {}, cores = {} }
+  GuildOS.Calendar:Initialize()
+  return GuildOS.Calendar, GuildOS.CoreManager
 end
 
 local function read(path)
@@ -67,9 +67,9 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   local default = forever and 20 or 25
 
   -- ── The game's raid sizes ──────────────────────────────────────────
-  check(table.concat(BRutus.Client.raidSizes, ",") == (forever and "10,20,40" or "10,25,40"),
+  check(table.concat(GuildOS.Client.raidSizes, ",") == (forever and "10,20,40" or "10,25,40"),
     game .. ": the calendar's sizes are the game's")
-  check(BRutus.Client.defaultRaidSize == default, game .. ": the default size is the game's main raid")
+  check(GuildOS.Client.defaultRaidSize == default, game .. ": the default size is the game's main raid")
 
   -- ── The calendar falls back to it, not to 25 ──────────────────────
   local e = Cal:Create("Raid night", 1790100000, nil, "", nil, false)
@@ -78,9 +78,9 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   check(e.size == default, game .. ": updating it without a size keeps " .. default)
   local web = Cal:UpsertWebRaid({ raidId = "r1", startsAt = 1790200000, title = "Site raid", members = {} })
   check(web and web.size == default, game .. ": a site raid with nobody yet is " .. default)
-  BRutus.db.calendar.events.nosize = { id = "nosize", title = "Old", when = 1790100000, rsvps = {} }
+  GuildOS.db.calendar.events.nosize = { id = "nosize", title = "Old", when = 1790100000, rsvps = {} }
   Cal:Update("nosize", "Old", 1790100000, nil, "", nil, false)
-  check(BRutus.db.calendar.events.nosize.size == default, game .. ": updating an event saved without a size gives it " .. default)
+  check(GuildOS.db.calendar.events.nosize.size == default, game .. ": updating an event saved without a size gives it " .. default)
   local sized = Cal:UpsertWebRaid({ raidId = "r2", startsAt = 1790200000, title = "Barrow", size = 10, members = {} })
   check(sized and sized.size == 10, game .. ": a site raid keeps the site's own size, even with nobody invitable")
   local twenty = Cal._AllianceSlotDecision({ when = 1790300000 }, 20, 1790000000)
@@ -102,7 +102,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
 
   -- ── Raid buffs ─────────────────────────────────────────────────────
   CM:Create("Main")
-  BRutus.db.cores.Main.members = { a = { name = "A", class = "PRIEST", role = "healer" },
+  GuildOS.db.cores.Main.members = { a = { name = "A", class = "PRIEST", role = "healer" },
                                    b = { name = "B", class = "MAGE", role = "rdps" } }
   local comp = CM:GetComposition("Main")
   if forever then
@@ -117,7 +117,7 @@ local function code(path)
   return (read(path):gsub("%-%-%[(=*)%[.-%]%1%]", ""):gsub("%-%-[^\n]*", ""))
 end
 local panel = code("UI/CalendarPanel.lua")
-check(panel:find("local SIZES%s*=%s*BRutus%.Client%.raidSizes"), "the calendar's size button cycles through the game's sizes")
+check(panel:find("local SIZES%s*=%s*GuildOS%.Client%.raidSizes"), "the calendar's size button cycles through the game's sizes")
 -- No 25 left as a size anywhere in the calendar's code: every one is the game's default now.
 for _, path in ipairs({ "UI/CalendarPanel.lua", "Modules/Calendar.lua", "UI/AlliancePanel.lua" }) do
   check(not code(path):find("%f[%d]25%f[%D]"), path .. " holds no 25 of its own: sizes come from the game")

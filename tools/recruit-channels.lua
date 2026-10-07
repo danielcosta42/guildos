@@ -65,9 +65,9 @@ local function load(game, locale, joined, channels)
   local sent = {}
   function SendChatMessage(msg, chan, _, num) sent[#sent + 1] = { msg = msg, chan = chan, num = num } end
   function GetChannelName(name) return joined[name] or 0 end
-  BRutus.db = { recruitment = { message = "Guild is recruiting", channels = channels } }
-  function BRutus:IsOfficer() return true end
-  return BRutus.Recruitment, sent
+  GuildOS.db = { recruitment = { message = "Guild is recruiting", channels = channels } }
+  function GuildOS:IsOfficer() return true end
+  return GuildOS.Recruitment, sent
 end
 local function same(a, b) return table.concat(a, "|") == table.concat(b, "|") end
 local function nums(sent)
@@ -83,7 +83,7 @@ check(same(R:PresetChannels(), { "Commerce", "RechercheDeGroupe", "RecrutementDe
   "a French client is offered its channels by their French names")
 R:DoSendRecruitmentMessage()
 check(nums(sent) == "4,2", "the English names saved before post to the French channels of that kind")
-local names, joinedN = R:_ResolveChannels(BRutus.db.recruitment)
+local names, joinedN = R:_ResolveChannels(GuildOS.db.recruitment)
 check(same(names, { "RechercheDeGroupe", "Commerce" }) and joinedN == 2,
   "and the member's consent popup names them as the client does")
 
@@ -95,16 +95,16 @@ check(nums(sent) == "5,6,2", "a preset in another language (an officer's German)
 R, sent = load("anniversary", "frFR", FR, { "LookingForGroup", "RechercheDeGroupe" })
 R:DoSendRecruitmentMessage()
 check(nums(sent) == "4", "the same channel saved in two languages is posted to once")
-names, joinedN = R:_ResolveChannels(BRutus.db.recruitment)
+names, joinedN = R:_ResolveChannels(GuildOS.db.recruitment)
 check(same(names, { "RechercheDeGroupe" }) and joinedN == 1, "and named once in the consent popup")
 
 R = load("anniversary", "frFR", FR, {})
 R:Initialize()
-check(same(BRutus.db.recruitment.channels, { "RechercheDeGroupe" }), "a new setup starts on the French LookingForGroup")
+check(same(GuildOS.db.recruitment.channels, { "RechercheDeGroupe" }), "a new setup starts on the French LookingForGroup")
 
 -- The same channel twice in two languages is one channel.
 R = load("anniversary", "frFR", FR, { "LookingForGroup" })
-local list = BRutus.db.recruitment.channels
+local list = GuildOS.db.recruitment.channels
 check(not R:AddChannel(list, "RechercheDeGroupe") and #list == 1, "adding a channel already there in English adds nothing")
 check(R:RemoveChannel(list, "RechercheDeGroupe") and #list == 0, "and removing it by its French name takes the English one out")
 check(R:AddChannel(list, "MonCanal") and R:HasChannel(list, "moncanal") and not R:HasChannel(list, "Commerce"),

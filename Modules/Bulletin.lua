@@ -6,21 +6,21 @@
 -- in the login digest.
 ----------------------------------------------------------------------
 local Bulletin = {}
-BRutus.Bulletin = Bulletin
-local L = BRutus.L
+GuildOS.Bulletin = Bulletin
+local L = GuildOS.L
 
 local MAX = 20
 
 function Bulletin:Initialize()
-    BRutus.db.bulletin = BRutus.db.bulletin or { messages = {} }
-    BRutus.db.bulletin.messages = BRutus.db.bulletin.messages or {}
-    if BRutus.SyncService then
-        BRutus.SyncService:On("bulletin", function(env) Bulletin:OnSync(env) end)
+    GuildOS.db.bulletin = GuildOS.db.bulletin or { messages = {} }
+    GuildOS.db.bulletin.messages = GuildOS.db.bulletin.messages or {}
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("bulletin", function(env) Bulletin:OnSync(env) end)
     end
 end
 
 function Bulletin:GetMessages()
-    return (BRutus.db.bulletin and BRutus.db.bulletin.messages) or {}
+    return (GuildOS.db.bulletin and GuildOS.db.bulletin.messages) or {}
 end
 
 local function newId()
@@ -31,21 +31,21 @@ end
 -- Officer mutations
 ----------------------------------------------------------------------
 function Bulletin:Post(text)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Officers only.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
     end
     text = strtrim(text or "")
     if text == "" then return end
     local msgs = self:GetMessages()
-    table.insert(msgs, 1, { id = newId(), text = text, author = BRutus.Compat.PlayerName(), ts = GetServerTime() })
+    table.insert(msgs, 1, { id = newId(), text = text, author = GuildOS.Compat.PlayerName(), ts = GetServerTime() })
     while #msgs > MAX do table.remove(msgs) end
     self:Broadcast()
     self:Refresh()
 end
 
 function Bulletin:Remove(id)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     local msgs = self:GetMessages()
     for i, m in ipairs(msgs) do
         if m.id == id then table.remove(msgs, i); break end
@@ -55,8 +55,8 @@ function Bulletin:Remove(id)
 end
 
 function Bulletin:Clear()
-    if not BRutus:IsOfficer() then return end
-    BRutus.db.bulletin.messages = {}
+    if not GuildOS:IsOfficer() then return end
+    GuildOS.db.bulletin.messages = {}
     self:Broadcast()
     self:Refresh()
 end
@@ -65,9 +65,9 @@ end
 -- Sync (domain "bulletin")
 ----------------------------------------------------------------------
 function Bulletin:Broadcast()
-    if not BRutus:IsOfficer() or not BRutus.SyncService then return end
-    local rev = BRutus.SyncService:NextRevision("bulletin", "board")
-    BRutus.SyncService:Publish("bulletin", "snapshot", { messages = self:GetMessages() }, { rev = rev })
+    if not GuildOS:IsOfficer() or not GuildOS.SyncService then return end
+    local rev = GuildOS.SyncService:NextRevision("bulletin", "board")
+    GuildOS.SyncService:Publish("bulletin", "snapshot", { messages = self:GetMessages() }, { rev = rev })
 end
 
 -- Cold-sync backfill: re-broadcast the current board snapshot at its STORED
@@ -79,31 +79,31 @@ end
 -- means nothing authoritative has been posted yet, so there is nothing to
 -- backfill. Officers only. Called from CommSystem:HandleRequest.
 function Bulletin:Backfill()
-    if not BRutus:IsOfficer() or not BRutus.SyncService then return end
-    local rev = BRutus.SyncService:GetRevision("bulletin", "board")
+    if not GuildOS:IsOfficer() or not GuildOS.SyncService then return end
+    local rev = GuildOS.SyncService:GetRevision("bulletin", "board")
     if rev <= 0 then return end
-    BRutus.SyncService:Publish("bulletin", "snapshot", { messages = self:GetMessages() }, { rev = rev })
+    GuildOS.SyncService:Publish("bulletin", "snapshot", { messages = self:GetMessages() }, { rev = rev })
 end
 
 function Bulletin:OnSync(env)
     if env.act == "snapshot" and env.data
-        and BRutus.SyncService:ShouldApply("bulletin", "board", env.rev) then
-        BRutus.db.bulletin.messages = env.data.messages or {}
-        BRutus.SyncService:SetRevision("bulletin", "board", env.rev)
+        and GuildOS.SyncService:ShouldApply("bulletin", "board", env.rev) then
+        GuildOS.db.bulletin.messages = env.data.messages or {}
+        GuildOS.SyncService:SetRevision("bulletin", "board", env.rev)
         self:Refresh()
     end
 end
 
 function Bulletin:Refresh()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------
 -- UI
 ----------------------------------------------------------------------
 function Bulletin:Show()
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
 
     local f = self.frame
     if not f then
@@ -128,21 +128,21 @@ function Bulletin:Show()
         close:SetScript("OnClick", function() f:Hide() end)
 
         local listTop = -44
-        if BRutus:IsOfficer() then
+        if GuildOS:IsOfficer() then
             local box = CreateFrame("EditBox", nil, f, "BackdropTemplate")
             box:SetSize(330, 24)
             box:SetPoint("TOPLEFT", 16, -42)
             box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             box:SetBackdropColor(0.05, 0.05, 0.066, 1)
             box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            BRutus:ApplyFont(box, 11)
+            GuildOS:ApplyFont(box, 11)
             box:SetTextColor(C.white.r, C.white.g, C.white.b)
             box:SetTextInsets(6, 6, 0, 0)
             box:SetAutoFocus(false)
             box:SetMaxLetters(200)
             box:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
             local function doPost()
-                BRutus.Bulletin:Post(box:GetText())
+                GuildOS.Bulletin:Post(box:GetText())
                 box:SetText("")
                 box:ClearFocus()
             end
@@ -170,8 +170,8 @@ function Bulletin:Show()
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
         child:SetWidth(f.holder:GetWidth() - 12)
 
-        local msgs = BRutus.Bulletin:GetMessages()
-        local y, isOfficer = 0, BRutus:IsOfficer()
+        local msgs = GuildOS.Bulletin:GetMessages()
+        local y, isOfficer = 0, GuildOS:IsOfficer()
         for _, m in ipairs(msgs) do
             local textFS = UI:CreateText(child, m.text, 11, C.text.r, C.text.g, C.text.b)
             textFS:SetPoint("TOPLEFT", 4, -y)
@@ -186,7 +186,7 @@ function Bulletin:Show()
                 local del = UI:CreateButton(child, "\195\151", 22, 18)  -- ×
                 del:SetPoint("TOPRIGHT", -2, -y)
                 local id = m.id
-                del:SetScript("OnClick", function() BRutus.Bulletin:Remove(id) end)
+                del:SetScript("OnClick", function() GuildOS.Bulletin:Remove(id) end)
             end
             y = y + th + 22
         end

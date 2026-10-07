@@ -3,7 +3,7 @@
 --
 -- A new client can lack an API a module touches while it starts, or an event
 -- or tooltip script a module registers. Any of those used to raise inside
--- BRutus:InitModules and leave every later module unstarted. This proves the
+-- GuildOS:InitModules and leave every later module unstarted. This proves the
 -- failure now stays with the module that raised, that unknown events and
 -- tooltip scripts do not raise, that /guildos errors can always name what
 -- failed, and that the login line appears only when something went wrong.
@@ -59,15 +59,15 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
-BRutus.UI = {}
+GuildOS.UI = {}
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 
 -- Defined in files this harness does not load.
-function BRutus:RegisterUtilTests() end
-function BRutus:HookChatInvite() end
+function GuildOS:RegisterUtilTests() end
+function GuildOS:HookChatInvite() end
 local officer = true
-function BRutus:IsOfficer() return officer end
-BRutus.db = { settings = { modules = {} } }
+function GuildOS:IsOfficer() return officer end
+GuildOS.db = { settings = { modules = {} } }
 
 -- A fake module records every start function it runs; `raises` names the
 -- functions that raise instead.
@@ -81,23 +81,23 @@ local function module(name, raises)
       started[name .. ":" .. method] = true
     end
   end
-  BRutus[name] = mod
+  GuildOS[name] = mod
   defined[#defined + 1] = name
 end
 local RAISE = { Initialize = true }
 
 local function reset()
-  for _, name in ipairs(defined) do BRutus[name] = nil end
+  for _, name in ipairs(defined) do GuildOS[name] = nil end
   started, defined, printed, timers = {}, {}, {}, {}
   officer = true
-  BRutus.db.settings.modules = {}
-  BRutus.State.errors = {}
-  BRutus.State.startup = { failed = {}, failedFeatures = {}, stacks = {} }
-  BRutus.State.missing = {}
+  GuildOS.db.settings.modules = {}
+  GuildOS.State.errors = {}
+  GuildOS.State.startup = { failed = {}, failedFeatures = {}, stacks = {} }
+  GuildOS.State.missing = {}
 end
 
 local function boot()
-  BRutus:InitModules()
+  GuildOS:InitModules()
   runTimers()
 end
 
@@ -124,17 +124,17 @@ check(started["RecipeTracker:Initialize"], "a module after the failures started"
 check(started["ModPresets:Initialize"], "the last module started")
 check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckExpired"],
   "officer modules, follow-up step included, started after the failures")
-local startup = BRutus.State.startup
+local startup = GuildOS.State.startup
 check(startup.failed.Wishlist and startup.failed.Wishlist:find("exploded", 1, true),
   "the failure is recorded against the module")
 check(startup.stacks.Wishlist == "stack!", "the stack of the failure is kept")
-check(BRutus:FeatureStartFailed("wishlist") == "Wishlist", "the wishlist window knows its module failed")
-check(BRutus:FeatureStartFailed("points") == "Points" and BRutus:FeatureStartFailed("dkp") == "Points",
+check(GuildOS:FeatureStartFailed("wishlist") == "Wishlist", "the wishlist window knows its module failed")
+check(GuildOS:FeatureStartFailed("points") == "Points" and GuildOS:FeatureStartFailed("dkp") == "Points",
   "both the toggle and the window of a failed module are marked")
-check(BRutus:FeatureStartFailed("recipes") == nil, "a module that started does not mark its window")
-check(BRutus.UI:IsFeatureAllowed({ id = "wishlist" }) == false, "the window of a failed module refuses to open")
-check(BRutus.UI:IsFeatureAllowed({ id = "recipes" }) == true, "the window of a module that started still opens")
-local listed = table.concat(BRutus:ListStartupProblems(), "\n")
+check(GuildOS:FeatureStartFailed("recipes") == nil, "a module that started does not mark its window")
+check(GuildOS.UI:IsFeatureAllowed({ id = "wishlist" }) == false, "the window of a failed module refuses to open")
+check(GuildOS.UI:IsFeatureAllowed({ id = "recipes" }) == true, "the window of a module that started still opens")
+local listed = table.concat(GuildOS:ListStartupProblems(), "\n")
 check(listed:find("Wishlist: ", 1, true) and listed:find("Points: ", 1, true),
   "/guildos errors can name every start-up failure")
 check(countPrinted("2 start-up problem(s)") == 1, "one login line counts both failures")
@@ -142,26 +142,26 @@ check(countPrinted("2 start-up problem(s)") == 1, "one login line counts both fa
 -- ── 2. Unknown events and tooltip scripts do not raise ──────────────────
 reset()
 local f = CreateFrame()
-check(BRutus.Compat.RegisterEvent(f, "PLAYER_LOGIN") == true and f.events.PLAYER_LOGIN, "a known event registers")
-check(BRutus.Compat.RegisterEvent(f, "CRAFT_SHOW") == false, "an unknown event returns false instead of raising")
-BRutus.Compat.RegisterEvent(f, "CRAFT_SHOW")
-check(BRutus.State.missing["event CRAFT_SHOW"], "the unknown event is recorded")
-check(#BRutus.State.errors == 1, "the same unknown event is recorded once")
-check(table.concat(BRutus:ListStartupProblems(), "\n"):find("event CRAFT_SHOW", 1, true),
+check(GuildOS.Compat.RegisterEvent(f, "PLAYER_LOGIN") == true and f.events.PLAYER_LOGIN, "a known event registers")
+check(GuildOS.Compat.RegisterEvent(f, "CRAFT_SHOW") == false, "an unknown event returns false instead of raising")
+GuildOS.Compat.RegisterEvent(f, "CRAFT_SHOW")
+check(GuildOS.State.missing["event CRAFT_SHOW"], "the unknown event is recorded")
+check(#GuildOS.State.errors == 1, "the same unknown event is recorded once")
+check(table.concat(GuildOS:ListStartupProblems(), "\n"):find("event CRAFT_SHOW", 1, true),
   "/guildos errors can name the missing event")
 
 local tt = {
   HasScript = function(_, script) return script == "OnTooltipCleared" end,
   HookScript = function(self, script) self.hooked = script end,
 }
-check(BRutus.Compat.HookTooltip(tt, "OnTooltipSetItem", function() end) == false and tt.hooked == nil,
+check(GuildOS.Compat.HookTooltip(tt, "OnTooltipSetItem", function() end) == false and tt.hooked == nil,
   "a tooltip script the frame lacks is skipped")
-check(BRutus.State.missing["tooltip script OnTooltipSetItem"], "the missing tooltip script is recorded")
-check(BRutus.Compat.HookTooltip(tt, "OnTooltipCleared", function() end) == true and tt.hooked == "OnTooltipCleared",
+check(GuildOS.State.missing["tooltip script OnTooltipSetItem"], "the missing tooltip script is recorded")
+check(GuildOS.Compat.HookTooltip(tt, "OnTooltipCleared", function() end) == true and tt.hooked == "OnTooltipCleared",
   "a supported tooltip script is hooked")
-local before = #BRutus.State.errors
-check(BRutus.Compat.HookTooltip(nil, "OnTooltipSetItem", function() end) == false, "a tooltip not built yet is skipped")
-check(#BRutus.State.errors == before, "a tooltip not built yet is not reported as missing")
+local before = #GuildOS.State.errors
+check(GuildOS.Compat.HookTooltip(nil, "OnTooltipSetItem", function() end) == false, "a tooltip not built yet is skipped")
+check(#GuildOS.State.errors == before, "a tooltip not built yet is not reported as missing")
 
 -- ── 3. A clean start prints nothing ─────────────────────────────────────
 reset()
@@ -173,7 +173,7 @@ check(countPrinted("start-up problem") == 0, "a clean start prints no login line
 
 -- ── 4. Toggles and rank still decide what starts ────────────────────────
 reset()
-BRutus.db.settings.modules.raidTracker = false
+GuildOS.db.settings.modules.raidTracker = false
 module("RaidTracker")
 module("TrialTracker")
 officer = false
@@ -184,7 +184,7 @@ check(countPrinted("start-up problem") == 0, "skipped modules are not failures")
 
 -- ── 5. A missing event alone still gets the login line ──────────────────
 reset()
-BRutus.Compat.RegisterEvent(CreateFrame(), "CRAFT_SHOW")   -- as a file-scope registration would
+GuildOS.Compat.RegisterEvent(CreateFrame(), "CRAFT_SHOW")   -- as a file-scope registration would
 boot()
 check(countPrinted("1 start-up problem(s)") == 1, "a missing event alone gets the login line")
 
@@ -210,25 +210,25 @@ check(not started["TrialTracker:CheckExpired"], "the follow-up step does not run
 reset()
 module("TrialTracker", { CheckExpired = true })
 boot()
-check(BRutus.State.startup.failed["TrialTracker:CheckExpired"] and not BRutus.State.startup.failed.TrialTracker,
+check(GuildOS.State.startup.failed["TrialTracker:CheckExpired"] and not GuildOS.State.startup.failed.TrialTracker,
   "a failed follow-up step is recorded under its own label")
 
 -- ── 7b. A start-up step whose error handler cannot run still does not abort ──
 reset()
 module("Wishlist")
-BRutus.Wishlist.Initialize = function()
+GuildOS.Wishlist.Initialize = function()
   error(setmetatable({}, { __tostring = function() error("unprintable") end }))
 end
 module("ModPresets")
 boot()
 check(started["ModPresets:Initialize"], "an unprintable error in one module does not stop the modules after it")
-check(BRutus.State.startup.failed.Wishlist, "the unprintable error is still recorded")
+check(GuildOS.State.startup.failed.Wishlist, "the unprintable error is still recorded")
 
 -- ── 8. Two stages of one module are recorded separately ─────────────────
 reset()
 module("Recruitment", { InitParticipation = true, Initialize = true })
 boot()
-local failed = BRutus.State.startup.failed
+local failed = GuildOS.State.startup.failed
 check(failed["Recruitment:InitParticipation"] and failed.Recruitment,
   "the member stage and the officer stage each keep their own record")
 check(countPrinted("2 start-up problem(s)") == 1, "both stages are counted")
@@ -244,7 +244,7 @@ function GetGuildInfo()
   if asks < 3 then return "Guild" end      -- no rank yet
   return "Guild", "Officer", 0
 end
-BRutus:InitModules()
+GuildOS:InitModules()
 runTimers()
 check(not started["TrialTracker:Initialize"], "rank unknown at five seconds: the officer modules wait instead of giving up")
 check(countPrinted("start-up problem(s)") == 0, "and the login line waits with them")
@@ -260,7 +260,7 @@ reset()
 module("Wishlist", RAISE)
 module("TrialTracker")
 function GetGuildInfo() return "Guild" end
-BRutus:InitModules()
+GuildOS:InitModules()
 local ticks = 0
 repeat
   runTimers()
@@ -268,12 +268,12 @@ repeat
 until #timers == 0 or ticks > 50
 check(ticks == 12 and not started["TrialTracker:Initialize"], "after twelve asks, a minute, the officer modules give up")
 local saidSo = false
-for _, line in ipairs(BRutus:ListStartupProblems()) do
+for _, line in ipairs(GuildOS:ListStartupProblems()) do
   if line:find("OfficerModules: not started, the guild rank was still unknown", 1, true) then saidSo = true end
 end
 check(saidSo, "and the start-up problems say why")
 check(countPrinted("2 start-up problem(s)") == 1, "the login line counts it, once")
-check(BRutus:FeatureStartFailed("recruitment") == nil and BRutus:FeatureStartFailed("trials") == nil,
+check(GuildOS:FeatureStartFailed("recruitment") == nil and GuildOS:FeatureStartFailed("trials") == nil,
   "giving up blocks no window: a member whose rank never loads keeps them all")
 function IsInGuild() return false end
 GetGuildInfo = nil

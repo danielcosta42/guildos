@@ -27,11 +27,11 @@ local function read(path)
   return s
 end
 
-BRutus = {}
+GuildOS = {}
 function GetLocale() return "frFR" end
 dofile(ADDON .. "/Locales/Locale.lua")
 dofile(ADDON .. "/Locales/frFR.lua")
-local L = BRutus.L
+local L = GuildOS.L
 
 -- ── Professions ─────────────────────────────────────────────────────────
 for en, fr in pairs({ Tailoring = "Couture", Enchanting = "Enchantement", ["First Aid"] = "Secourisme",
@@ -57,13 +57,13 @@ for path, raw in pairs({
 end
 
 -- ── Moderation presets ──────────────────────────────────────────────────
-function BRutus:Print() end
-function BRutus:IsOfficer() return true end
-BRutus.db = { modPresets = { { type = "purge_inactive", name = "Purge inactive", thresholds = {} },
+function GuildOS:Print() end
+function GuildOS:IsOfficer() return true end
+GuildOS.db = { modPresets = { { type = "purge_inactive", name = "Purge inactive", thresholds = {} },
                              { type = "promote_regulars", name = "Promote regulars", thresholds = {} },
                              { type = "gone", name = "Old one", thresholds = {} } } }
 dofile(ADDON .. "/Modules/ModPresets.lua")
-local MP = BRutus.ModPresets
+local MP = GuildOS.ModPresets
 local P = MP:GetPresets()
 check(MP:Name(P[1]) == "Purge des membres inactifs" and MP:Name(P[2]) == "Promouvoir les membres réguliers",
   "a preset saved with its English name reads in French")

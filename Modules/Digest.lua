@@ -5,17 +5,17 @@
 -- Build() is pure data; the popup uses the UI factories at runtime.
 ----------------------------------------------------------------------
 local Digest = {}
-BRutus.Digest = Digest
-local L = BRutus.L
+GuildOS.Digest = Digest
+local L = GuildOS.L
 
 function Digest:Initialize()
-    BRutus.db.digest = BRutus.db.digest or {}
-    if BRutus.db.digest.enabled == nil then BRutus.db.digest.enabled = true end
-    if BRutus.db.digest.lastSeen == nil then BRutus.db.digest.lastSeen = 0 end
+    GuildOS.db.digest = GuildOS.db.digest or {}
+    if GuildOS.db.digest.enabled == nil then GuildOS.db.digest.enabled = true end
+    if GuildOS.db.digest.lastSeen == nil then GuildOS.db.digest.lastSeen = 0 end
 end
 
 local function myKey()
-    return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
 end
 
 ----------------------------------------------------------------------
@@ -23,12 +23,12 @@ end
 -- (a server timestamp). Returns an array of strings.
 ----------------------------------------------------------------------
 function Digest:Build(since)
-    since = since or BRutus.db.digest.lastSeen or 0
+    since = since or GuildOS.db.digest.lastSeen or 0
     local lines = {}
 
     -- New members (first observed by Guild OS since last login)
     local newCount, newNames = 0, {}
-    for key, ts in pairs(BRutus.db.firstSeen or {}) do
+    for key, ts in pairs(GuildOS.db.firstSeen or {}) do
         if ts and ts > since then
             newCount = newCount + 1
             if #newNames < 3 then newNames[#newNames + 1] = key:match("^([^-]+)") or key end
@@ -41,16 +41,16 @@ function Digest:Build(since)
     end
 
     -- Roster changes since last login (from the audit log)
-    if BRutus.RosterLog then
-        local c = BRutus.RosterLog:CountsSince(since)
+    if GuildOS.RosterLog then
+        local c = GuildOS.RosterLog:CountsSince(since)
         if c.kick > 0 then lines[#lines + 1] = string.format(L["%d member(s) removed"], c.kick) end
         if c.leave > 0 then lines[#lines + 1] = string.format(L["%d member(s) left"], c.leave) end
     end
 
     -- Raid sessions tracked since last login
     local raidCount = 0
-    if BRutus.db.raidTracker and BRutus.db.raidTracker.sessions then
-        for _, s in pairs(BRutus.db.raidTracker.sessions) do
+    if GuildOS.db.raidTracker and GuildOS.db.raidTracker.sessions then
+        for _, s in pairs(GuildOS.db.raidTracker.sessions) do
             if s.startTime and s.startTime > since then raidCount = raidCount + 1 end
         end
     end
@@ -60,7 +60,7 @@ function Digest:Build(since)
 
     -- Loot recorded since last login
     local lootCount = 0
-    for _, e in ipairs(BRutus.db.lootHistory or {}) do
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
         if (e.timestamp or 0) > since then lootCount = lootCount + 1 end
     end
     if lootCount > 0 then
@@ -68,27 +68,27 @@ function Digest:Build(since)
     end
 
     -- Your own points change since last login
-    if BRutus.Points and BRutus.db.points and BRutus.db.points.log then
+    if GuildOS.Points and GuildOS.db.points and GuildOS.db.points.log then
         local mk = myKey()
         local delta = 0
-        for _, e in ipairs(BRutus.db.points.log) do
+        for _, e in ipairs(GuildOS.db.points.log) do
             if e.key == mk and (e.ts or 0) > since then delta = delta + (e.delta or 0) end
         end
         if delta ~= 0 then
-            lines[#lines + 1] = string.format(L["Your points changed by %+d (now %d)"], delta, BRutus.Points:Get(mk))
+            lines[#lines + 1] = string.format(L["Your points changed by %+d (now %d)"], delta, GuildOS.Points:Get(mk))
         end
     end
 
     -- Milestones & guild anniversaries
-    if BRutus.Milestones then
-        for _, line in ipairs(BRutus.Milestones:GetDigestLines(since)) do
+    if GuildOS.Milestones then
+        for _, line in ipairs(GuildOS.Milestones:GetDigestLines(since)) do
             lines[#lines + 1] = line
         end
     end
 
     -- Upcoming raid reminder (event within the next 24h)
-    if BRutus.Calendar and BRutus.Calendar.GetDigestLines then
-        local calLines = BRutus.Calendar:GetDigestLines()
+    if GuildOS.Calendar and GuildOS.Calendar.GetDigestLines then
+        local calLines = GuildOS.Calendar:GetDigestLines()
         if calLines then
             for _, line in ipairs(calLines) do
                 lines[#lines + 1] = "|cff4CB8FF" .. line .. "|r"
@@ -98,26 +98,26 @@ function Digest:Build(since)
 
     -- Alliance: how many allied raids are coming up in the next week. One line,
     -- and only when this guild is federated and something is actually scheduled.
-    if BRutus.Alliance and BRutus.Alliance:Get() and BRutus.Calendar
-        and BRutus.Calendar.AllianceEvents then
+    if GuildOS.Alliance and GuildOS.Alliance:Get() and GuildOS.Calendar
+        and GuildOS.Calendar.AllianceEvents then
         local horizon = GetServerTime() + (7 * 86400)
         local count = 0
-        for _, e in ipairs(BRutus.Calendar:AllianceEvents()) do
+        for _, e in ipairs(GuildOS.Calendar:AllianceEvents()) do
             if (tonumber(e.when) or 0) <= horizon then
                 count = count + 1
             end
         end
         if count > 0 then
-            local gold = BRutus.Colors.gold
+            local gold = GuildOS.Colors.gold
             lines[#lines + 1] = string.format("|cff%02x%02x%02x", gold.r * 255, gold.g * 255, gold.b * 255) ..
                 string.format(L["%d allied event(s) this week"], count) .. "|r"
         end
     end
 
     -- New bulletin notices (most recent few)
-    if BRutus.Bulletin then
+    if GuildOS.Bulletin then
         local shown = 0
-        for _, m in ipairs(BRutus.Bulletin:GetMessages()) do
+        for _, m in ipairs(GuildOS.Bulletin:GetMessages()) do
             if (m.ts or 0) > since and shown < 3 then
                 lines[#lines + 1] = "|cffEDCC7B" .. L["Notice:"] .. "|r " .. (m.text or "")
                 shown = shown + 1
@@ -126,9 +126,9 @@ function Digest:Build(since)
     end
 
     -- New polls opened since last login
-    if BRutus.Polls then
+    if GuildOS.Polls then
         local newPolls = 0
-        for _, p in pairs(BRutus.Polls:GetList()) do
+        for _, p in pairs(GuildOS.Polls:GetList()) do
             if not p.closed and (p.ts or 0) > since then newPolls = newPolls + 1 end
         end
         if newPolls > 0 then
@@ -137,19 +137,19 @@ function Digest:Build(since)
     end
 
     -- Officer-only catch-up
-    if BRutus:IsOfficer() then
-        if BRutus.TrialTracker then
+    if GuildOS:IsOfficer() then
+        if GuildOS.TrialTracker then
             local due = 0
-            for _, t in ipairs(BRutus.TrialTracker:GetActiveTrials() or {}) do
-                local rem = BRutus.TrialTracker:GetDaysRemaining(t.key)
+            for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials() or {}) do
+                local rem = GuildOS.TrialTracker:GetDaysRemaining(t.key)
                 if rem ~= nil and rem <= 0 then due = due + 1 end
             end
             if due > 0 then
                 lines[#lines + 1] = string.format(L["%d trial(s) ready for decision"], due)
             end
         end
-        if BRutus.GuildManager and BRutus.GuildManager.GetInactiveMembers then
-            local inactive = BRutus.GuildManager:GetInactiveMembers(BRutus.GuildManager.DEFAULT_INACTIVE_DAYS)
+        if GuildOS.GuildManager and GuildOS.GuildManager.GetInactiveMembers then
+            local inactive = GuildOS.GuildManager:GetInactiveMembers(GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS)
             if inactive and #inactive > 0 then
                 lines[#lines + 1] = string.format(L["%d inactive member(s)"], #inactive)
             end
@@ -163,8 +163,8 @@ end
 -- The popup window.
 ----------------------------------------------------------------------
 function Digest:Show(lines)
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
     lines = lines or self:Build()
 
     local f = self.frame
@@ -198,7 +198,7 @@ function Digest:Show(lines)
         f.openBtn:SetPoint("BOTTOM", 0, 14)
         f.openBtn:SetScript("OnClick", function()
             f:Hide()
-            BRutus:ToggleRoster()
+            GuildOS:ToggleRoster()
         end)
         self.frame = f
     end
@@ -232,18 +232,18 @@ end
 -- Auto-show once on login (skipped on first run and when disabled).
 ----------------------------------------------------------------------
 function Digest:ShowOnLogin()
-    if not BRutus.db.digest or not BRutus.db.digest.enabled then return end
+    if not GuildOS.db.digest or not GuildOS.db.digest.enabled then return end
     if self.shownThisSession then return end
 
-    local since = BRutus.db.digest.lastSeen or 0
+    local since = GuildOS.db.digest.lastSeen or 0
     -- First ever run: nothing to compare against — just start the clock.
     if since == 0 then
-        BRutus.db.digest.lastSeen = GetServerTime()
+        GuildOS.db.digest.lastSeen = GetServerTime()
         return
     end
 
     local lines = self:Build(since)
-    BRutus.db.digest.lastSeen = GetServerTime()
+    GuildOS.db.digest.lastSeen = GetServerTime()
     self.shownThisSession = true
     if #lines > 0 then
         self:Show(lines)

@@ -14,8 +14,8 @@
 --   council  - points are informational only (no enforced spend)
 ----------------------------------------------------------------------
 local Points = {}
-BRutus.Points = Points
-local L = BRutus.L
+GuildOS.Points = Points
+local L = GuildOS.L
 
 local LOG_MAX = 500
 local OPS_MAX = 2000
@@ -26,18 +26,18 @@ local OPS_MAX = 2000
 -- db.points when no named core is active (ungrouped raids).
 ----------------------------------------------------------------------
 function Points:GetDB()
-    if BRutus.CoreManager then
-        return BRutus.CoreManager:GetPointsDB()
+    if GuildOS.CoreManager then
+        return GuildOS.CoreManager:GetPointsDB()
     end
-    return BRutus.db.points
+    return GuildOS.db.points
 end
 
 -- Returns the points DB for a specific core (used during sync routing).
 function Points:GetDBForCore(coreName)
-    if BRutus.CoreManager then
-        return BRutus.CoreManager:GetPointsDB(coreName)
+    if GuildOS.CoreManager then
+        return GuildOS.CoreManager:GetPointsDB(coreName)
     end
-    return BRutus.db.points
+    return GuildOS.db.points
 end
 
 ----------------------------------------------------------------------
@@ -45,8 +45,8 @@ end
 ----------------------------------------------------------------------
 function Points:Initialize()
     -- Ensure the global/ungrouped pool is well-formed
-    local p = BRutus.db.points or {}
-    BRutus.db.points = p
+    local p = GuildOS.db.points or {}
+    GuildOS.db.points = p
     p.mode = p.mode or "dkp"
     p.config = p.config or {}
     local c = p.config
@@ -61,8 +61,8 @@ function Points:Initialize()
     p.appliedOps   = p.appliedOps   or {}
     p.appliedCount = p.appliedCount or 0
 
-    if BRutus.SyncService then
-        BRutus.SyncService:On("points", function(env, sender) Points:OnSync(env, sender) end)
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("points", function(env, sender) Points:OnSync(env, sender) end)
     end
 end
 
@@ -80,7 +80,7 @@ end
 function Points:GetMode() return self:GetDB().mode end
 
 function Points:SetMode(mode)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     if mode ~= "dkp" and mode ~= "epgp" and mode ~= "council" then return end
     self:GetDB().mode = mode
     self:BroadcastSnapshot()
@@ -122,13 +122,13 @@ end
 ----------------------------------------------------------------------
 function Points:MakeEntry(key, delta, reason, kind)
     local short = key:match("^([^-]+)") or key
-    local class = (BRutus.db.members[key] and BRutus.db.members[key].class) or ""
+    local class = (GuildOS.db.members[key] and GuildOS.db.members[key].class) or ""
     -- Tag with the active core so receivers can route to the right pool
-    local coreName = BRutus.CoreManager and BRutus.CoreManager:GetActiveName() or ""
+    local coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
     return {
         op = newOp(), key = key, name = short, class = class,
         delta = delta, reason = reason or "", kind = kind or "adjust",
-        author = BRutus.Compat.PlayerName(), ts = GetServerTime(),
+        author = GuildOS.Compat.PlayerName(), ts = GetServerTime(),
         core = coreName,
     }
 end
@@ -177,8 +177,8 @@ function Points:MarkApplied(op, pool)
 end
 
 local function publishDelta(entries)
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("points", "delta", { entries = entries })
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("points", "delta", { entries = entries })
     end
 end
 
@@ -187,8 +187,8 @@ end
 ----------------------------------------------------------------------
 -- Award (positive) or charge (negative) a single player. reason is free text.
 function Points:Adjust(key, amount, reason, kind)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Points are officer-managed.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Points are officer-managed.|r"])
         return nil
     end
     if not key or not amount or amount == 0 then return nil end
@@ -205,9 +205,9 @@ function Points:Charge(key, amount, reason) return self:Adjust(key, -math.abs(am
 
 -- Award the same amount to every player currently in the raid.
 function Points:AwardRaidGroup(amount, reason)
-    if not BRutus:IsOfficer() then return 0 end
+    if not GuildOS:IsOfficer() then return 0 end
     if not IsInRaid() then
-        BRutus:Print(L["You are not in a raid."])
+        GuildOS:Print(L["You are not in a raid."])
         return 0
     end
     local entries = {}
@@ -215,10 +215,10 @@ function Points:AwardRaidGroup(amount, reason)
     for i = 1, n do
         local unit = "raid" .. i
         local nm, realm, cls
-        if UnitExists(unit) then nm, realm, cls = BRutus.Compat.UnitIdentity(unit) end
+        if UnitExists(unit) then nm, realm, cls = GuildOS.Compat.UnitIdentity(unit) end
         if nm then
             realm = (realm and realm ~= "") and realm or GetRealmName()
-            local key = BRutus:GetPlayerKey(nm, realm)
+            local key = GuildOS:GetPlayerKey(nm, realm)
             local e = self:MakeEntry(key, math.abs(amount), reason, "raid")
             if cls and cls ~= "" then e.class = cls end
             entries[#entries + 1] = e
@@ -232,7 +232,7 @@ end
 
 -- Weekly decay: subtract pct% of every player's current points.
 function Points:ApplyDecay(pct)
-    if not BRutus:IsOfficer() then return 0 end
+    if not GuildOS:IsOfficer() then return 0 end
     pct = pct or cfg().decayPct or 0
     if pct <= 0 then return 0 end
     local entries = {}
@@ -252,7 +252,7 @@ end
 -- exactly one client awards). No-op unless auto-award is enabled.
 function Points:OnBossKill(encounterName)
     if not cfg().autoAward then return end
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     if not (UnitIsGroupLeader and UnitIsGroupLeader("player")) then return end
     local amount = cfg().bossAward or 0
     if amount <= 0 then return end
@@ -270,7 +270,7 @@ function Points:OnSync(env)
     if env.act == "delta" and d and d.entries then
         local applied = false
         for _, e in ipairs(d.entries) do
-            e.key = BRutus:LocalMemberKey(e.key)   -- the sending officer's key, as this client's (#97)
+            e.key = GuildOS:LocalMemberKey(e.key)   -- the sending officer's key, as this client's (#97)
             local pool = self:GetDBForCore(e.core)
             if e.op and not pool.appliedOps[e.op] then
                 self:ApplyEntry(e, pool)
@@ -284,12 +284,12 @@ function Points:OnSync(env)
         -- Use a composite revision key so per-core snapshots don't
         -- overwrite each other's revision counter.
         local domain = d.core and ("points:" .. d.core) or "points"
-        if BRutus.SyncService:ShouldApply(domain, "standings", env.rev) then
+        if GuildOS.SyncService:ShouldApply(domain, "standings", env.rev) then
             if d.mode     then pool.mode     = d.mode     end
             if d.config   then pool.config   = d.config   end
             if d.standings then
                 -- Keyed this client's way; one member under two of the sender's keys adds up (#97).
-                pool.standings = BRutus:LocalizeMemberTable(d.standings, function(a, b)
+                pool.standings = GuildOS:LocalizeMemberTable(d.standings, function(a, b)
                     -- Each record began at the starting points: counted once (#97).
                     a.current = (a.current or 0) + (b.current or 0) - ((pool.config and pool.config.startingPoints) or 0)
                     a.earned  = (a.earned or 0) + (b.earned or 0)
@@ -297,7 +297,7 @@ function Points:OnSync(env)
                     return a
                 end)
             end
-            BRutus.SyncService:SetRevision(domain, "standings", env.rev)
+            GuildOS.SyncService:SetRevision(domain, "standings", env.rev)
             self:Refresh()
         end
     end
@@ -306,13 +306,13 @@ end
 -- Officer authoritative snapshot (mode + config + full standings).
 -- Broadcasts for the currently active core.
 function Points:BroadcastSnapshot()
-    if not BRutus:IsOfficer() then return end
-    if not BRutus.SyncService then return end
-    local coreName = BRutus.CoreManager and BRutus.CoreManager:GetActiveName() or ""
+    if not GuildOS:IsOfficer() then return end
+    if not GuildOS.SyncService then return end
+    local coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
     local pool  = self:GetDB()
     local domain = (coreName ~= "") and ("points:" .. coreName) or "points"
-    local rev = BRutus.SyncService:NextRevision(domain, "standings")
-    BRutus.SyncService:Publish("points", "snapshot", {
+    local rev = GuildOS.SyncService:NextRevision(domain, "standings")
+    GuildOS.SyncService:Publish("points", "snapshot", {
         core     = coreName,
         mode     = pool.mode,
         config   = pool.config,
@@ -324,5 +324,5 @@ end
 -- UI refresh hook (set by the Points window when built).
 ----------------------------------------------------------------------
 function Points:Refresh()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end

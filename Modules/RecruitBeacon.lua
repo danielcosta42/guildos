@@ -57,12 +57,12 @@ end
 --   enabled, needs={}, langs={}, focus={}, days="", note="", ttlDays, version }
 ----------------------------------------------------------------------
 function RB:GetAd()
-    if not BRutus.db then return nil end
-    local ad = BRutus.db.recruitBeacon
+    if not GuildOS.db then return nil end
+    local ad = GuildOS.db.recruitBeacon
     if not ad then
         ad = { enabled = false, needs = {}, langs = {}, focus = {},
                days = "", note = "", ttlDays = self.DEFAULT_TTL_DAYS, version = 0 }
-        BRutus.db.recruitBeacon = ad
+        GuildOS.db.recruitBeacon = ad
     end
     ad.needs   = ad.needs   or {}
     ad.langs   = ad.langs   or {}
@@ -92,9 +92,9 @@ end
 --   version, expiry, from }
 ----------------------------------------------------------------------
 function RB:Cache()
-    if not BRutus.db then return {} end
-    BRutus.db.recruitRelay = BRutus.db.recruitRelay or {}
-    return BRutus.db.recruitRelay
+    if not GuildOS.db then return {} end
+    GuildOS.db.recruitRelay = GuildOS.db.recruitRelay or {}
+    return GuildOS.db.recruitRelay
 end
 
 function RB:Prune()
@@ -163,7 +163,7 @@ end
 function RB:Broadcast()
     local ad = self:GetAd()
     if not ad or not ad.enabled then return end
-    if not (BRutus.IsOfficer and BRutus:IsOfficer()) then return end
+    if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
     if IsInGuild and not IsInGuild() then return end
     local guild = GetGuildInfo and GetGuildInfo("player")
     if not guild or guild == "" then return end
@@ -176,10 +176,10 @@ function RB:Broadcast()
         guild = guild, faction = faction,
         needsList = ad.needs, days = ad.days, note = ad.note,
         langsList = ad.langs, focusList = ad.focus,
-        version = ad.version, expiry = expiry, author = BRutus.Compat.PlayerName(),
+        version = ad.version, expiry = expiry, author = GuildOS.Compat.PlayerName(),
     })
 
-    self:Ingest(payload, BRutus.Compat.PlayerName())     -- seed our own cache (we relay it too)
+    self:Ingest(payload, GuildOS.Compat.PlayerName())     -- seed our own cache (we relay it too)
     mesh:Guild(self.PREFIX, payload)
     mesh:Realm(self.PREFIX, payload, self.PREFIX .. ":" .. guild)
 end

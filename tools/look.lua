@@ -79,22 +79,22 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
-check(not BRutus.Client.isAnniversary, "the stub is a Forever client")
+check(not GuildOS.Client.isAnniversary, "the stub is a Forever client")
 
-BRutus.db = { members = {} }
+GuildOS.db = { members = {} }
 local broadcasts = 0
-BRutus.CommSystem = { BroadcastMyData = function(_, force) if force then broadcasts = broadcasts + 1 end end }
+GuildOS.CommSystem = { BroadcastMyData = function(_, force) if force then broadcasts = broadcasts + 1 end end }
 dofile(ADDON .. "/Modules/Look.lua")
-local Look = BRutus.Look
+local Look = GuildOS.Look
 check(Look ~= nil, "the module loads on Forever")
 Look:Initialize()
-local KEY = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+local KEY = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
 
 -- ── Outside the chair: nothing ──────────────────────────────────────────
 check(Look.Read() == nil, "no chair, no look")
 fire("BARBER_SHOP_OPEN")
 runTimers()
-check(BRutus.db.members[KEY] == nil and broadcasts == 0, "an empty chair writes nothing and tells nobody")
+check(GuildOS.db.members[KEY] == nil and broadcasts == 0, "an empty chair writes nothing and tells nobody")
 
 -- ── Sitting down ────────────────────────────────────────────────────────
 CHAIR = {
@@ -107,16 +107,16 @@ CHAIR = {
   { name = "Aparência", options = { option(9493, { 78923, 78927 }, 2), option(19, { 1 }, 1) } },
   "junk",
 }
-BRutus.db.members[KEY] = { name = "Chehul Shammy", lastUpdate = 5 }
-BRutus.db.myData = BRutus.db.members[KEY]
+GuildOS.db.members[KEY] = { name = "Chehul Shammy", lastUpdate = 5 }
+GuildOS.db.myData = GuildOS.db.members[KEY]
 fire("BARBER_SHOP_OPEN")
-check(BRutus.db.members[KEY].look == nil, "the look is read once the chair settles, not on the event itself")
+check(GuildOS.db.members[KEY].look == nil, "the look is read once the chair settles, not on the event itself")
 runTimers()
-local look = BRutus.db.members[KEY].look
+local look = GuildOS.db.members[KEY].look
 check(type(look) == "table" and #look == 3, "three options with a current choice")
 check(look[1][1] == 19 and look[1][2] == 359 and look[2][1] == 22 and look[2][2] == 422
       and look[3][1] == 9493 and look[3][2] == 78927, "pairs of {option, choice}, by option, the first of an option wins")
-check(BRutus.db.members[KEY].lastUpdate == 5 and BRutus.db.members[KEY].name == "Chehul Shammy",
+check(GuildOS.db.members[KEY].lastUpdate == 5 and GuildOS.db.members[KEY].name == "Chehul Shammy",
       "the rest of the record is untouched")
 check(broadcasts == 1, "the guild is told at once")
 check(#chat == 1 and chat[1]:find("guildos.me", 1, true), "the player is told, once")
@@ -128,12 +128,12 @@ check(broadcasts == 1 and #chat == 1, "sitting down again with the same look say
 
 -- ── Previewing, then buying ─────────────────────────────────────────────
 CHAIR[1].options[1].currentChoiceIndex = 1          -- a preview: nothing is kept for it
-check(BRutus.db.members[KEY].look[2][2] == 422 and broadcasts == 1, "a preview is not a look")
+check(GuildOS.db.members[KEY].look[2][2] == 422 and broadcasts == 1, "a preview is not a look")
 C_BarberShop.ApplyCustomizationChoices()            -- the purchase, still in the chair
 check(applied == 1, "the game's own purchase still runs")
 CHAIR = nil                                         -- the game stands the player up at once
 fire("BARBER_SHOP_APPEARANCE_APPLIED")
-check(BRutus.db.members[KEY].look[2][2] == 415, "the look bought is the one kept, read at the purchase")
+check(GuildOS.db.members[KEY].look[2][2] == 415, "the look bought is the one kept, read at the purchase")
 check(broadcasts == 2 and #chat == 2, "and the guild is told again")
 fire("BARBER_SHOP_APPEARANCE_APPLIED")
 check(broadcasts == 2, "a second confirmation with nothing bought keeps quiet")
@@ -142,7 +142,7 @@ check(broadcasts == 2, "a second confirmation with nothing bought keeps quiet")
 CHAIR = nil
 fire("BARBER_SHOP_OPEN")
 runTimers()
-check(BRutus.db.members[KEY].look ~= nil and broadcasts == 2, "no chair afterwards keeps the look")
+check(GuildOS.db.members[KEY].look ~= nil and broadcasts == 2, "no chair afterwards keeps the look")
 
 -- ── A cap on what is kept ───────────────────────────────────────────────
 local many = {}
@@ -151,9 +151,9 @@ CHAIR = { { options = many } }
 check(#Look.Read() == 32, "at most 32 pairs, the site's cap")
 
 -- ── Anniversary: the module does not exist ──────────────────────────────
-BRutus.Look = nil
-BRutus.Client.isAnniversary = true
+GuildOS.Look = nil
+GuildOS.Client.isAnniversary = true
 dofile(ADDON .. "/Modules/Look.lua")
-check(BRutus.Look == nil, "no module on Anniversary")
+check(GuildOS.Look == nil, "no module on Anniversary")
 
 print(("look: %d checks passed"):format(checks))

@@ -1,4 +1,4 @@
-# BRutus — Sync Protocol
+# GuildOS — Sync Protocol
 
 _Last updated: 2026-04-26_
 
@@ -107,7 +107,7 @@ function SyncService:ValidateEnvelope(env, sender)
     -- Verificar que sender pertence à mesma guild
     if not IsGuildMember(sender) then return false, "not_guild" end
     -- Verificar permissão por domínio
-    if OFFICER_DOMAINS[env.dom] and not BRutus:IsOfficerByName(sender) then
+    if OFFICER_DOMAINS[env.dom] and not GuildOS:IsOfficerByName(sender) then
         return false, "permission_denied"
     end
     return true
@@ -187,7 +187,7 @@ Fluxo de recepção:
 
 ```
 Addon carregado:
-  Após 3s → Sync:Publish("presence", "version", { v = BRutus.VERSION })
+  Após 3s → Sync:Publish("presence", "version", { v = GuildOS.VERSION })
 
 Recepção de "version":
   Se version < MIN_VERSION → print aviso

@@ -48,9 +48,9 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/NoteCommand.lua")
-local Compat, NoteCommand = BRutus.Compat, BRutus.NoteCommand
+local Compat, NoteCommand = GuildOS.Compat, GuildOS.NoteCommand
 local logged = {}
-BRutus.GuildManager = { LogAction = function(_, action, who, what) logged[#logged + 1] = { action, who, what } end }
+GuildOS.GuildManager = { LogAction = function(_, action, who, what) logged[#logged + 1] = { action, who, what } end }
 
 -- ── A roster, the note APIs and the permission, per case ────────────────
 local ROSTER, writes, canEdit = {}, {}, true
@@ -215,7 +215,7 @@ check(#writes == 0 and said("can no longer edit public notes") and not said("mor
   "an officer who lost the permission is told that, before any name lookup")
 
 -- ── 6. The chat hook: who is told when the client cannot write ──────────
-BRutus.db = { noteCommand = { enabled = true } }
+GuildOS.db = { noteCommand = { enabled = true } }
 NoteCommand._cd = {}
 NoteCommand:_SetupHook()
 local onEvent = handlers[#handlers]
@@ -238,13 +238,13 @@ check(#printed == 0 and #timers == 2, "with the permission, the write is schedul
 for _, fn in ipairs(timers) do fn() end
 check(#writes == 1 and writes[1][3] == "LFG Kara", "the scheduled write happens")
 
-BRutus.db.noteCommand.enabled = false
+GuildOS.db.noteCommand.enabled = false
 client({ roster = ANA, setNote = true, canEdit = false })
 onEvent(nil, "CHAT_MSG_GUILD", "!note LFG Kara", "Ana-Firemaw")
 check(#printed == 0 and #timers == 0, "with !note turned off, even the member's own line prints and schedules nothing")
 client({ roster = ANA, setNote = true })
 onEvent(nil, "CHAT_MSG_GUILD", "!note LFG Kara", "Bob-RealmA")
 check(#printed == 0 and #timers == 0 and #writes == 0, "with !note turned off, an officer's client schedules no write either")
-BRutus.db.noteCommand.enabled = true
+GuildOS.db.noteCommand.enabled = true
 
 print(("public-note: %d checks passed"):format(checks))

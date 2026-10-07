@@ -1,4 +1,4 @@
-# BRutus — Decisões Arquiteturais (ADR)
+# GuildOS — Decisões Arquiteturais (ADR)
 
 _Last updated: 2026-04-26_
 
@@ -16,7 +16,7 @@ Formato:
 
 ---
 
-## 2026-04-26 — Namespace único `BRutus`
+## 2026-04-26 — Namespace único `GuildOS`
 > ADR-0001
 
 ### Contexto
@@ -24,7 +24,7 @@ Addons WoW compartilham ambiente global. Colisões entre addons são um risco re
 TBC Classic não suporta sistemas de módulos modernos Lua.
 
 ### Decisão
-Criar exatamente um global: `BRutus`. Todos os módulos como sub-tabelas (`BRutus.CommSystem`, etc.).
+Criar exatamente um global: `GuildOS`. Todos os módulos como sub-tabelas (`GuildOS.CommSystem`, etc.).
 Apenas `Core.lua` cria o global. Todos os outros arquivos assumem que ele existe.
 
 ### Motivo
@@ -32,7 +32,7 @@ Um único global para auditar. Sem vazamento acidental de globais.
 
 ### Impacto
 (+) Um global para auditar, sem vazamentos.
-(+) Sub-módulos fazem alias local: `local RT = BRutus.RaidTracker`.
+(+) Sub-módulos fazem alias local: `local RT = GuildOS.RaidTracker`.
 (-) Módulos devem ser carregados em ordem correta. Aplicado via `.toc`.
 
 ---
@@ -44,25 +44,25 @@ Um único global para auditar. Sem vazamento acidental de globais.
 Uma instalação pode ser usada em múltiplas guilds. Misturar dados seria catastrófico.
 
 ### Decisão
-`BRutusDB` usa `"GuildName-Realm"` como chave top-level. `BRutus.db` é o alias para a sub-tabela da guild atual.
+`GuildOSDB` usa `"GuildName-Realm"` como chave top-level. `GuildOS.db` é o alias para a sub-tabela da guild atual.
 
 ### Motivo
 Isolamento completo de dados por guild/realm.
 
 ### Impacto
 (+) Sem contaminação entre guilds.
-(-) Dados de guild antiga ficam em BRutusDB até limpeza manual.
+(-) Dados de guild antiga ficam em GuildOSDB até limpeza manual.
 
 ---
 
-## 2026-04-26 — Camada de compatibilidade (`BRutus.Compat`)
+## 2026-04-26 — Camada de compatibilidade (`GuildOS.Compat`)
 > ADR-0003
 
 ### Contexto
 TBC Anniversary tem superfície de API diferente de Classic/Retail. `C_Timer`, `C_GuildInfo`, etc. podem não existir.
 
 ### Decisão
-Todas as chamadas sensíveis à versão passam por `BRutus.Compat`. Nenhum módulo testa `C_ChatInfo` diretamente.
+Todas as chamadas sensíveis à versão passam por `GuildOS.Compat`. Nenhum módulo testa `C_ChatInfo` diretamente.
 
 ### Motivo
 Único ponto de atualização quando APIs mudam entre patches.
@@ -92,21 +92,21 @@ Recepção: reassembla chunks, desfaz o pipeline.
 
 ---
 
-## 2026-04-26 — Estado de sessão em `BRutus.State` (não em vars de módulo)
+## 2026-04-26 — Estado de sessão em `GuildOS.State` (não em vars de módulo)
 > ADR-0005
 
 ### Contexto
 Dados runtime (não persistidos) misturados com métodos de módulo tornavam difícil saber o que é salvo.
 
 ### Decisão
-Dados runtime ficam em `BRutus.State.*`. Módulos têm apenas métodos e constantes.
+Dados runtime ficam em `GuildOS.State.*`. Módulos têm apenas métodos e constantes.
 
 ### Motivo
-Fronteira clara: `BRutus.db.*` = persistido, `BRutus.State.*` = runtime-only.
+Fronteira clara: `GuildOS.db.*` = persistido, `GuildOS.State.*` = runtime-only.
 
 ### Impacto
 (+) Fácil de inspecionar/resetar estado de sessão.
-(-) Caminho de acesso mais verboso: `BRutus.State.lootMaster.activeLoot`.
+(-) Caminho de acesso mais verboso: `GuildOS.State.lootMaster.activeLoot`.
 
 ---
 
@@ -114,7 +114,7 @@ Fronteira clara: `BRutus.db.*` = persistido, `BRutus.State.*` = runtime-only.
 > ADR-0006
 
 ### Contexto
-BRutus tem frames de eventos espalhados por módulos. Um EventBus centralizado desacoplaria melhor.
+GuildOS tem frames de eventos espalhados por módulos. Um EventBus centralizado desacoplaria melhor.
 
 ### Decisão
 Sem EventBus por enquanto. Cada módulo cria seu próprio frame em `Initialize()`. Revisar quando a contagem de módulos crescer.
@@ -133,10 +133,10 @@ Mais simples de raciocinar sobre escopo por módulo. Sem risco de handlers de um
 > ADR-0007
 
 ### Contexto
-Callbacks de UI liam/escreviam `BRutus.db.settings.*` diretamente, acoplando UI ao schema interno.
+Callbacks de UI liam/escreviam `GuildOS.db.settings.*` diretamente, acoplando UI ao schema interno.
 
 ### Decisão
-Todas as leituras/escritas de settings passam por `BRutus:GetSetting(key)` / `BRutus:SetSetting(key, value)`.
+Todas as leituras/escritas de settings passam por `GuildOS:GetSetting(key)` / `GuildOS:SetSetting(key, value)`.
 
 ### Motivo
 Migrações de schema requerem apenas atualizar os accessors. UI não tem dependência de nomes de chave.
@@ -207,10 +207,10 @@ Sem um enum centralizado, é impossível auditar quais tipos de mensagem o addon
 > ADR-0011 (VIOLAÇÃO de ADR-0003)
 
 ### Contexto
-`CommSystem:Initialize()` usa `C_Timer.NewTicker(300, fn)` diretamente, sem passar por `BRutus.Compat.NewTicker`. Isso viola ADR-0003.
+`CommSystem:Initialize()` usa `C_Timer.NewTicker(300, fn)` diretamente, sem passar por `GuildOS.Compat.NewTicker`. Isso viola ADR-0003.
 
 ### Decisão (planejada — Fase 3)
-Substituir pela chamada via `BRutus.Compat.NewTicker` ao refatorar CommSystem para SyncService.
+Substituir pela chamada via `GuildOS.Compat.NewTicker` ao refatorar CommSystem para SyncService.
 
 ### Motivo
 Se `C_Timer.NewTicker` não existir em alguma versão do cliente, o ticker de sync silenciosamente não existirá sem logs de erro, pois o fallback está em Compat mas não está sendo usado.
@@ -225,7 +225,7 @@ Se `C_Timer.NewTicker` não existir em alguma versão do cliente, o ticker de sy
 > ADR-0012 (PROBLEMA — não uma decisão intencional)
 
 ### Contexto
-`BRutus.COMM_VERSION = 1` existe em `Core.lua`, mas não é incluído no envelope das mensagens de sync (pelo menos não em todas elas). Isso significa que mensagens de versões antigas do addon podem sobreescrever dados de versões novas.
+`GuildOS.COMM_VERSION = 1` existe em `Core.lua`, mas não é incluído no envelope das mensagens de sync (pelo menos não em todas elas). Isso significa que mensagens de versões antigas do addon podem sobreescrever dados de versões novas.
 
 ### Decisão (planejada — Fase 3)
 Envelope v2 inclui `protocolVersion`, `addonVersion`, e `rev` (revision counter). Receivers devem checar a versão e ignorar mensagens de protocolo incompatível.

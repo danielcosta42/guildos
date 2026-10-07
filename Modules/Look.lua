@@ -6,13 +6,13 @@
 -- Those are the ids guildos.me's model viewer draws, so the look is kept as {option, choice}
 -- pairs on the player's own member record, travels with the broadcast like race and sex, and
 -- goes out in the companion export (payload v8, the site's specs/038).
-if BRutus.Client.isAnniversary then return end
+if GuildOS.Client.isAnniversary then return end
 
 local Look = {}
-BRutus.Look = Look
+GuildOS.Look = Look
 
-local Compat = BRutus.Compat
-local L = BRutus.L
+local Compat = GuildOS.Compat
+local L = GuildOS.L
 local MAX = 32          -- the site keeps at most this many; a body has about ten
 
 -- The chair's current choices as {optionID, choiceID}, one per option, by option; nil when
@@ -48,18 +48,18 @@ end
 -- Keeps a look on the player's own record and tells the guild, once per change.
 function Look:Keep(look)
     if not look then return end
-    local key = BRutus:GetPlayerKey(Compat.PlayerName(), GetRealmName())
-    local rec = BRutus.db.members[key]
+    local key = GuildOS:GetPlayerKey(Compat.PlayerName(), GetRealmName())
+    local rec = GuildOS.db.members[key]
     if not rec then
         rec = {}
-        BRutus.db.members[key] = rec
+        GuildOS.db.members[key] = rec
     end
     if same(rec.look, look) then return end
     rec.look = look
-    if BRutus.db.myData and BRutus.db.myData ~= rec then BRutus.db.myData.look = look end
-    BRutus:Print(L["Your look is saved: guildos.me draws it after the next publish."])
-    if BRutus.CommSystem and BRutus.CommSystem.BroadcastMyData then
-        BRutus.CommSystem:BroadcastMyData(true)
+    if GuildOS.db.myData and GuildOS.db.myData ~= rec then GuildOS.db.myData.look = look end
+    GuildOS:Print(L["Your look is saved: guildos.me draws it after the next publish."])
+    if GuildOS.CommSystem and GuildOS.CommSystem.BroadcastMyData then
+        GuildOS.CommSystem:BroadcastMyData(true)
     end
 end
 

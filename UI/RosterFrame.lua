@@ -1,18 +1,18 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Roster Frame
+-- Guild OS - Roster Frame
 -- Premium guild roster UI with modern visual design
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 
 -- An officer note from the roster's right-click menu (issue #49). data = { key, name }: the
 -- key is the roster's own, the one the member sheet reads notes by.
 local function SaveOfficerNote(data, text)
     text = text and strtrim(text) or ""
-    if not data or text == "" or not BRutus.OfficerNotes then return end
-    if BRutus.OfficerNotes:AddNote(data.key, text) then
-        BRutus:Print(L["Note added for "] .. data.name)
+    if not data or text == "" or not GuildOS.OfficerNotes then return end
+    if GuildOS.OfficerNotes:AddNote(data.key, text) then
+        GuildOS:Print(L["Note added for "] .. data.name)
     end
 end
 
@@ -22,11 +22,11 @@ StaticPopupDialogs["GUILDOS_OFFICER_NOTE"] = {
     hasEditBox = true, maxLetters = 200,
     -- The box through Compat: WoW: Forever's popup has no `editBox`.
     OnShow = function(self)
-        local box = BRutus.Compat.PopupEditBox(self)
+        local box = GuildOS.Compat.PopupEditBox(self)
         if box then box:SetText(""); box:SetFocus() end
     end,
     OnAccept = function(self, data)
-        local box = BRutus.Compat.PopupEditBox(self)
+        local box = GuildOS.Compat.PopupEditBox(self)
         SaveOfficerNote(data, box and box:GetText())
     end,
     EditBoxOnEnterPressed = function(editBox, data)
@@ -116,7 +116,7 @@ local recruitInstances = 0
 -- Re-apply loot-system-dependent visibility (the DKP and wishlist tabs)
 -- without a reload. Called when the loot system changes.
 ----------------------------------------------------------------------
-function BRutus:UpdateLootSystemUI()
+function GuildOS:UpdateLootSystemUI()
     local f = self.RosterFrame
     if f then f:UpdateTabVisibility() end
 end
@@ -126,7 +126,7 @@ end
 -- Raid Hub: single container with a sub-tab bar that hosts the four
 -- raid-related panels (Sessions, Cores, Audit, Raid Tools).
 ----------------------------------------------------------------------
-function BRutus:CreateRaidHubPanel(container, mainFrame)
+function GuildOS:CreateRaidHubPanel(container, mainFrame)
     local SUB_H = 28  -- sub-tab bar height
 
     ----------------------------------------------------------------
@@ -157,11 +157,11 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     local rtPanel      = MakeSubPanel()
 
     -- Populate each sub-panel using the existing builders
-    BRutus:CreateRaidsPanel(sessPanel, mainFrame)
-    if BRutus.CreateRaiderPanel then BRutus:CreateRaiderPanel(raidersPanel, mainFrame) end
-    BRutus:CreateCoresPanel(coresPanel)           -- new signature (no contentTop)
-    BRutus:CreateAuditPanel(auditPanel, mainFrame)
-    BRutus:CreateRaidToolsPanel(rtPanel, mainFrame)
+    GuildOS:CreateRaidsPanel(sessPanel, mainFrame)
+    if GuildOS.CreateRaiderPanel then GuildOS:CreateRaiderPanel(raidersPanel, mainFrame) end
+    GuildOS:CreateCoresPanel(coresPanel)           -- new signature (no contentTop)
+    GuildOS:CreateAuditPanel(auditPanel, mainFrame)
+    GuildOS:CreateRaidToolsPanel(rtPanel, mainFrame)
 
     ----------------------------------------------------------------
     -- Sub-tab definitions (Cores is officer-only)
@@ -183,7 +183,7 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
         -- also reachable directly (deep link from /gos open raids <sub>),
         -- so a non-officer key must be refused here too.
         for _, st in ipairs(SUBTABS) do
-            if st.key == key and st.officerOnly and not BRutus:IsOfficer() then return end
+            if st.key == key and st.officerOnly and not GuildOS:IsOfficer() then return end
         end
         activeSubTab = key
         for _, t in ipairs(subTabBtns) do t:SetActive(t.key == key) end
@@ -195,7 +195,7 @@ function BRutus:CreateRaidHubPanel(container, mainFrame)
     local prevBtn = nil
     for _, st in ipairs(SUBTABS) do
         -- Skip officer-only sub-tabs for non-officers
-        local visible = not st.officerOnly or BRutus:IsOfficer()
+        local visible = not st.officerOnly or GuildOS:IsOfficer()
         if visible then
             local btn = UI:CreateTab(subBar, st.label, 110, true)
             if prevBtn then
@@ -232,7 +232,7 @@ end
 -- floating window otherwise). Both containers expose the same
 -- navigation interface, so nothing in here needs to know which it got.
 ----------------------------------------------------------------------
-function BRutus:CreateRosterPanel(parent, host)
+function GuildOS:CreateRosterPanel(parent, host)
     host = host or parent
     rosterInstances = rosterInstances + 1
     local uid = rosterInstances > 1 and tostring(rosterInstances) or ""
@@ -342,7 +342,7 @@ function BRutus:CreateRosterPanel(parent, host)
     offlineBtn.isToggled = true
     offlineBtn:SetScript("OnClick", function(self)
         self.isToggled = not self.isToggled
-        BRutus.db.settings.showOffline = self.isToggled
+        GuildOS.db.settings.showOffline = self.isToggled
         if self.isToggled then
             self.label:SetText(L["Show Offline"])
             self:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
@@ -355,7 +355,7 @@ function BRutus:CreateRosterPanel(parent, host)
     host.offlineBtn = offlineBtn
 
     -- Search box
-    local searchBox = CreateFrame("EditBox", "BRutusSearchBox" .. uid, statsBar, "BackdropTemplate")
+    local searchBox = CreateFrame("EditBox", "GuildOSSearchBox" .. uid, statsBar, "BackdropTemplate")
     searchBox:SetSize(160, 22)
     searchBox:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
     searchBox:SetBackdrop({
@@ -365,14 +365,14 @@ function BRutus:CreateRosterPanel(parent, host)
     })
     searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(searchBox, 11)
+    GuildOS:ApplyFont(searchBox, 11)
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     searchBox:SetTextInsets(8, 8, 0, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(30)
 
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(searchPlaceholder, 11)
+    GuildOS:ApplyFont(searchPlaceholder, 11)
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     searchPlaceholder:SetText(L["Search / 60-70 / >=60"])
@@ -429,14 +429,14 @@ function BRutus:CreateRosterPanel(parent, host)
 
             -- Sort indicator
             local sortArrow = btn:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(sortArrow, 10)
+            GuildOS:ApplyFont(sortArrow, 10)
             sortArrow:SetPoint("LEFT", text, "RIGHT", 3, 0)
             sortArrow:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
             sortArrow:Hide()
             btn.sortArrow = sortArrow
 
             btn:SetScript("OnClick", function()
-                local db = BRutus.db.settings
+                local db = GuildOS.db.settings
                 if db.sortBy == col.key then
                     db.sortAsc = not db.sortAsc
                 else
@@ -463,14 +463,14 @@ function BRutus:CreateRosterPanel(parent, host)
     headerLine:SetPoint("TOPRIGHT", 0, -(28 + HEADER_HEIGHT))
 
     -- Scroll Frame for roster rows
-    local rosterContainer = CreateFrame("Frame", "BRutusRosterContainer" .. uid, tableArea)
+    local rosterContainer = CreateFrame("Frame", "GuildOSRosterContainer" .. uid, tableArea)
     rosterContainer:SetPoint("TOPLEFT", 1, -(28 + HEADER_HEIGHT + 1))
     rosterContainer:SetPoint("BOTTOMRIGHT", -1, 0)
 
-    local scrollFrame = CreateFrame("ScrollFrame", "BRutusRosterScroll" .. uid, rosterContainer, "FauxScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRosterScroll" .. uid, rosterContainer, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
-    UI:SkinScrollBar(scrollFrame, "BRutusRosterScroll" .. uid)
+    UI:SkinScrollBar(scrollFrame, "GuildOSRosterScroll" .. uid)
 
     host.scrollFrame = scrollFrame
     host.rows = {}
@@ -601,7 +601,7 @@ function BRutus:CreateRosterPanel(parent, host)
         cnt:SetPoint("RIGHT", -6, 0)
         chip.count = cnt
 
-        local cc = BRutus.ClassColors[classFile] or C.silver
+        local cc = GuildOS.ClassColors[classFile] or C.silver
         function chip:SetActive(active)
             self.active = active
             if active then
@@ -751,9 +751,9 @@ function BRutus:CreateRosterPanel(parent, host)
         -- Reuse the existing table to avoid allocating a new one on every refresh.
         wipe(self.sortedMembers)
         local members = self.sortedMembers
-        local showOffline = BRutus.db.settings.showOffline
+        local showOffline = GuildOS.db.settings.showOffline
         local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
-        local levelMatch = (filter ~= "" and BRutus.LevelQuery) and BRutus.LevelQuery:Parse(filter) or nil
+        local levelMatch = (filter ~= "" and GuildOS.LevelQuery) and GuildOS.LevelQuery:Parse(filter) or nil
 
         -- Get guild roster info
         local numMembers = GetNumGuildMembers()
@@ -765,7 +765,7 @@ function BRutus:CreateRosterPanel(parent, host)
                 -- Strip realm from name for display
                 local displayName = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
-                local key = BRutus:GetPlayerKey(displayName, realm)
+                local key = GuildOS:GetPlayerKey(displayName, realm)
 
                 -- Apply filters
                 local passFilter = true
@@ -799,7 +799,7 @@ function BRutus:CreateRosterPanel(parent, host)
 
                 if passFilter then
                     -- Merge with stored addon data
-                    local addonData = BRutus.db.members[key] or {}
+                    local addonData = GuildOS.db.members[key] or {}
 
                     table.insert(members, {
                         index = i,
@@ -823,7 +823,7 @@ function BRutus:CreateRosterPanel(parent, host)
                         -- On WoW: Forever a member without the addon (or on a version that sends none)
                         -- still has the professions the guild roster names (issue #31).
                         professions = addonData.professions
-                            or (BRutus.Professions and BRutus.Professions:LegacyList(key)),
+                            or (GuildOS.Professions and GuildOS.Professions:LegacyList(key)),
                         attunements = addonData.attunements,
                         stats = addonData.stats,
                         race = addonData.race or "",
@@ -832,7 +832,7 @@ function BRutus:CreateRosterPanel(parent, host)
                         -- Prefer the live version a member is broadcasting on the mesh
                         -- (realm-wide, fresher than the last guild sync) over the stored
                         -- one, so an update shows up before CommSystem re-syncs.
-                        addonVersion = (BRutus.Mesh and BRutus.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
+                        addonVersion = (GuildOS.Mesh and GuildOS.Mesh:GetPeerVersion(displayName)) or addonData.addonVersion,
                         hasAddonData = (addonData.lastUpdate ~= nil and addonData.lastUpdate ~= 0),
                     })
                 end
@@ -840,8 +840,8 @@ function BRutus:CreateRosterPanel(parent, host)
         end
 
         -- Sort
-        local sortBy = BRutus.db.settings.sortBy or "level"
-        local sortAsc = BRutus.db.settings.sortAsc
+        local sortBy = GuildOS.db.settings.sortBy or "level"
+        local sortAsc = GuildOS.db.settings.sortAsc
 
         table.sort(members, function(a, b)
             -- Online always first
@@ -863,8 +863,8 @@ function BRutus:CreateRosterPanel(parent, host)
             elseif sortBy == "lastSeen" then
                 va, vb = a.lastUpdate, b.lastUpdate
             elseif sortBy == "attendance" then
-                local pa = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(a.key) or 0
-                local pb = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(b.key) or 0
+                local pa = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(a.key) or 0
+                local pb = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(b.key) or 0
                 va, vb = pa, pb
             else
                 va, vb = a.level, b.level
@@ -883,8 +883,8 @@ function BRutus:CreateRosterPanel(parent, host)
     end
 
     function host:UpdateSortIndicators()
-        local sortBy = BRutus.db.settings.sortBy
-        local sortAsc = BRutus.db.settings.sortAsc
+        local sortBy = GuildOS.db.settings.sortBy
+        local sortAsc = GuildOS.db.settings.sortAsc
 
         for key, btn in pairs(self.headerButtons) do
             if key == sortBy then
@@ -933,7 +933,7 @@ function BRutus:CreateRosterPanel(parent, host)
 
         -- Addon coverage + average item level (members with stored addon data)
         local numWithAddon, ilvlSum, ilvlCount = 0, 0, 0
-        for _, data in pairs(BRutus.db.members) do
+        for _, data in pairs(GuildOS.db.members) do
             if data.lastUpdate and data.lastUpdate > 0 then
                 numWithAddon = numWithAddon + 1
                 if data.avgIlvl and data.avgIlvl > 0 then
@@ -946,9 +946,9 @@ function BRutus:CreateRosterPanel(parent, host)
 
         -- Average 25-man raid attendance across known members
         local attSum, attCount = 0, 0
-        if BRutus.RaidTracker and BRutus.RaidTracker.GetAttendance25ManPercent then
-            for key in pairs(BRutus.db.members) do
-                local p = BRutus.RaidTracker:GetAttendance25ManPercent(key)
+        if GuildOS.RaidTracker and GuildOS.RaidTracker.GetAttendance25ManPercent then
+            for key in pairs(GuildOS.db.members) do
+                local p = GuildOS.RaidTracker:GetAttendance25ManPercent(key)
                 if p and p > 0 then
                     attSum = attSum + p
                     attCount = attCount + 1
@@ -958,8 +958,8 @@ function BRutus:CreateRosterPanel(parent, host)
         local avgAtt = attCount > 0 and math.floor(attSum / attCount + 0.5) or 0
 
         -- True Roster: unique players behind the guild's alt/main links.
-        if self.kpiPlayers and BRutus.GetTrueRoster then
-            local tr = BRutus:GetTrueRoster()
+        if self.kpiPlayers and GuildOS.GetTrueRoster then
+            local tr = GuildOS:GetTrueRoster()
             self.kpiPlayers:SetText(tr.uniqueCount)
             if self.kpiPlayersSub then
                 self.kpiPlayersSub:SetText(string.format(L["of %d chars"], tr.totalChars))
@@ -1028,7 +1028,7 @@ function BRutus:CreateRosterPanel(parent, host)
             host.rows[i]:ApplyColumns(layout)
         end
 
-        BRutus:RefreshRosterUI()
+        GuildOS:RefreshRosterUI()
     end)
 
     return parent
@@ -1038,7 +1038,7 @@ end
 -- Create a single roster row
 ----------------------------------------------------------------------
 function CreateRosterRow(parent, rowIndex, uid)
-    local row = CreateFrame("Button", "BRutusRow" .. (uid or "") .. rowIndex, parent, "BackdropTemplate")
+    local row = CreateFrame("Button", "GuildOSRow" .. (uid or "") .. rowIndex, parent, "BackdropTemplate")
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:SetHeight(ROW_HEIGHT)
     row:SetPoint("TOPLEFT", 0, -((rowIndex - 1) * ROW_HEIGHT))
@@ -1069,7 +1069,7 @@ function CreateRosterRow(parent, rowIndex, uid)
     row.classIcon = classIcon
 
     local nameText = row:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(nameText, 12)
+    GuildOS:ApplyFont(nameText, 12)
     nameText:SetPoint("LEFT", classIcon, "RIGHT", 5, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
@@ -1086,7 +1086,7 @@ function CreateRosterRow(parent, rowIndex, uid)
 
     local function cell(size, justify, colour)
         local fs = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(fs, size)
+        GuildOS:ApplyFont(fs, size)
         fs:SetJustifyH(justify)
         fs:SetWordWrap(false)
         if colour then fs:SetTextColor(colour.r, colour.g, colour.b) end
@@ -1170,9 +1170,9 @@ function CreateRosterRow(parent, rowIndex, uid)
     row:SetScript("OnClick", function(self, button)
         if not self.memberData then return end
         if button == "RightButton" then
-            BRutus:ShowMemberContextMenu(self, self.memberData)
+            GuildOS:ShowMemberContextMenu(self, self.memberData)
         else
-            BRutus:ShowMemberDetail(self.memberData)
+            GuildOS:ShowMemberDetail(self.memberData)
         end
     end)
 
@@ -1220,7 +1220,7 @@ function UpdateRosterRow(row, data, rowIndex)
     end
 
     -- Name (class-colored, grayscale if offline)
-    local cr, cg, cb = BRutus:GetClassColor(data.class)
+    local cr, cg, cb = GuildOS:GetClassColor(data.class)
     local nr, ng, nb = textColor(cr, cg, cb)
     row.nameText:SetText(data.name)
     row.nameText:SetTextColor(nr, ng, nb)
@@ -1231,7 +1231,7 @@ function UpdateRosterRow(row, data, rowIndex)
     row.__hasAddon = data.hasAddonData and true or false
     if data.hasAddonData then
         row.addonDot:Show()
-        if data.addonVersion and CompareVersions(data.addonVersion, BRutus.VERSION) < 0 then
+        if data.addonVersion and CompareVersions(data.addonVersion, GuildOS.VERSION) < 0 then
             row.addonDot:SetVertexColor(C.red.r, C.red.g, C.red.b, 0.9)
         else
             row.addonDot:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
@@ -1243,9 +1243,9 @@ function UpdateRosterRow(row, data, rowIndex)
     -- Level with color coding: gold at the cap, green within ten of it
     local level = data.level
     local lr, lg, lb
-    if level >= BRutus.Client.maxLevel then
+    if level >= GuildOS.Client.maxLevel then
         lr, lg, lb = C.gold.r, C.gold.g, C.gold.b
-    elseif level >= BRutus.Client.maxLevel - 10 then
+    elseif level >= GuildOS.Client.maxLevel - 10 then
         lr, lg, lb = C.green.r, C.green.g, C.green.b
     else
         lr, lg, lb = C.white.r, C.white.g, C.white.b
@@ -1263,7 +1263,7 @@ function UpdateRosterRow(row, data, rowIndex)
 
     -- Average iLvl
     if data.avgIlvl and data.avgIlvl > 0 then
-        row.ilvlText:SetText(BRutus:FormatItemLevel(data.avgIlvl))
+        row.ilvlText:SetText(GuildOS:FormatItemLevel(data.avgIlvl))
     else
         row.ilvlText:SetText("|cff666666-|r")
     end
@@ -1275,8 +1275,8 @@ function UpdateRosterRow(row, data, rowIndex)
             if prof.isPrimary then
                 local pr, pg, pb = textColor(C.gold.r, C.gold.g, C.gold.b)
                 -- A profession known from the guild roster only has no rank (issue #31).
-                local label = BRutus:Utf8Head(L[prof.name], 5) .. (prof.rank and (" " .. prof.rank) or "")
-                table.insert(parts, BRutus:ColorText(label, pr, pg, pb))
+                local label = GuildOS:Utf8Head(L[prof.name], 5) .. (prof.rank and (" " .. prof.rank) or "")
+                table.insert(parts, GuildOS:ColorText(label, pr, pg, pb))
             end
         end
         row.profText:SetText(table.concat(parts, " / "))
@@ -1296,7 +1296,7 @@ function UpdateRosterRow(row, data, rowIndex)
     if data.isOnline then
         row.lastSeenText:SetText(L["|cff4CFF4CNow|r"])
     elseif data.lastUpdate > 0 then
-        row.lastSeenText:SetText(BRutus:TimeAgo(data.lastUpdate))
+        row.lastSeenText:SetText(GuildOS:TimeAgo(data.lastUpdate))
     else
         row.lastSeenText:SetText("-")
     end
@@ -1305,7 +1305,7 @@ end
 ----------------------------------------------------------------------
 -- Right-click context menu (mimics default guild roster menu)
 ----------------------------------------------------------------------
-local memberDropdown = CreateFrame("Frame", "BRutusMemberDropdown", UIParent, "UIDropDownMenuTemplate")
+local memberDropdown = CreateFrame("Frame", "GuildOSMemberDropdown", UIParent, "UIDropDownMenuTemplate")
 
 local function MemberDropdown_Initialize(self, level, menuList)
     local data = self.memberData
@@ -1313,7 +1313,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
 
     -- Submenu: "Definir Rank" rank picker (level 2)
     if level == 2 and menuList == "SETRANK" then
-        local GM = BRutus.GuildManager
+        local GM = GuildOS.GuildManager
         if not GM then return end
         local currentRank = GM:GetRankIndex(data.name)
         for _, rank in ipairs(GM:GetRanks()) do
@@ -1325,7 +1325,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
                 rinfo.disabled = (rank.index == currentRank)
                 local targetRank = rank.index
                 rinfo.func = function()
-                    BRutus.GuildManager:ConfirmSetRank(data.name, targetRank)
+                    GuildOS.GuildManager:ConfirmSetRank(data.name, targetRank)
                     if CloseDropDownMenus then CloseDropDownMenus() end
                 end
                 UIDropDownMenu_AddButton(rinfo, level)
@@ -1335,7 +1335,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     end
 
     local info = UIDropDownMenu_CreateInfo()
-    local myName = BRutus.Compat.PlayerName()
+    local myName = GuildOS.Compat.PlayerName()
     local isMe = (data.name == myName)
 
     -- Header: player name
@@ -1361,7 +1361,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
         info = UIDropDownMenu_CreateInfo()
         info.notCheckable = true
         info.text = PARTY_INVITE or L["Invite"]
-        info.func = function() BRutus.Compat.InviteUnit(data.name) end
+        info.func = function() GuildOS.Compat.InviteUnit(data.name) end
         UIDropDownMenu_AddButton(info, level)
     end
 
@@ -1377,8 +1377,8 @@ local function MemberDropdown_Initialize(self, level, menuList)
     end
 
     -- Rank management (gated on actual guild permission, not just GM)
-    if not isMe and BRutus.GuildManager then
-        local GM = BRutus.GuildManager
+    if not isMe and GuildOS.GuildManager then
+        local GM = GuildOS.GuildManager
         local canPromote, canDemote = GM:CanPromote(), GM:CanDemote()
 
         if canPromote then
@@ -1386,8 +1386,8 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info.notCheckable = true
             info.text = "|cff66FF66" .. (GUILD_PROMOTE or L["Promote"]) .. "|r"
             info.func = function()
-                BRutus.GuildManager:Promote(data.name)
-                BRutus.GuildManager:RefreshUI()
+                GuildOS.GuildManager:Promote(data.name)
+                GuildOS.GuildManager:RefreshUI()
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -1397,8 +1397,8 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info.notCheckable = true
             info.text = "|cffFFCC66" .. (GUILD_DEMOTE or L["Demote"]) .. "|r"
             info.func = function()
-                BRutus.GuildManager:Demote(data.name)
-                BRutus.GuildManager:RefreshUI()
+                GuildOS.GuildManager:Demote(data.name)
+                GuildOS.GuildManager:RefreshUI()
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -1414,12 +1414,12 @@ local function MemberDropdown_Initialize(self, level, menuList)
     end
 
     -- Guild remove (with confirmation + action logging)
-    if not isMe and BRutus.GuildManager and BRutus.GuildManager:CanKick() then
+    if not isMe and GuildOS.GuildManager and GuildOS.GuildManager:CanKick() then
         info = UIDropDownMenu_CreateInfo()
         info.notCheckable = true
         info.text = "|cffFF6666" .. (GUILD_UNINVITE or L["Remove from guild"]) .. "|r"
         info.func = function()
-            BRutus.GuildManager:ConfirmKick(data.name)
+            GuildOS.GuildManager:ConfirmKick(data.name)
         end
         UIDropDownMenu_AddButton(info, level)
     end
@@ -1429,7 +1429,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     info.notCheckable = true
     info.text = WHO or L["Who"]
     info.func = function()
-        BRutus.Compat.SendWho(BRutus.Compat.WhoExact(data.name))
+        GuildOS.Compat.SendWho(GuildOS.Compat.WhoExact(data.name))
     end
     UIDropDownMenu_AddButton(info, level)
 
@@ -1438,28 +1438,28 @@ local function MemberDropdown_Initialize(self, level, menuList)
     info.notCheckable = true
     info.text = L["Guild OS Detail"]
     info.func = function()
-        BRutus:ShowMemberDetail(data)
+        GuildOS:ShowMemberDetail(data)
     end
     UIDropDownMenu_AddButton(info, level)
 
     -- Officer actions
-    if not isMe and BRutus:IsOfficer() then
+    if not isMe and GuildOS:IsOfficer() then
         -- Mark as trial
-        if BRutus.TrialTracker then
-            local key = data.key or BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-            if not BRutus.TrialTracker:IsTrial(key) then
+        if GuildOS.TrialTracker then
+            local key = data.key or GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+            if not GuildOS.TrialTracker:IsTrial(key) then
                 info = UIDropDownMenu_CreateInfo()
                 info.notCheckable = true
                 info.text = L["|cffFFAA00Mark as Trial|r"]
                 info.func = function()
-                    BRutus.TrialTracker:AddTrial(key)
+                    GuildOS.TrialTracker:AddTrial(key)
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
         end
 
         -- Add officer note
-        if BRutus.OfficerNotes then
+        if GuildOS.OfficerNotes then
             info = UIDropDownMenu_CreateInfo()
             info.notCheckable = true
             info.text = L["|cff8888FFAdd Note|r"]
@@ -1479,7 +1479,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     UIDropDownMenu_AddButton(info, level)
 end
 
-function BRutus:ShowMemberContextMenu(_anchor, memberData)
+function GuildOS:ShowMemberContextMenu(_anchor, memberData)
     memberDropdown.memberData = memberData
     UIDropDownMenu_Initialize(memberDropdown, MemberDropdown_Initialize, "MENU")
     ToggleDropDownMenu(1, nil, memberDropdown, "cursor", 3, -3)
@@ -1495,21 +1495,21 @@ function ShowRowTooltip(row)
     GameTooltip:SetOwner(row, "ANCHOR_BOTTOM", 0, -5)
 
     -- Header: Name colored by class
-    local cr, cg, cb = BRutus:GetClassColor(data.class)
+    local cr, cg, cb = GuildOS:GetClassColor(data.class)
     GameTooltip:AddLine(data.name, cr, cg, cb)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
 
     -- First seen by Guild OS (approximate "member since")
-    local firstSeen = BRutus.GetFirstSeen and BRutus:GetFirstSeen(data.key)
+    local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)
     if firstSeen then
         GameTooltip:AddLine(string.format(L["Tracked since %s"], date("%Y-%m-%d", firstSeen)), C.silver.r, C.silver.g, C.silver.b)
     end
 
     -- Talent spec
-    if BRutus.SpecChecker then
-        local memberKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local specLabel = BRutus.SpecChecker:GetSpecLabel(memberKey)
+    if GuildOS.SpecChecker then
+        local memberKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local specLabel = GuildOS.SpecChecker:GetSpecLabel(memberKey)
         if specLabel then
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(string.format(L["Spec: %s"], specLabel), cr, cg, cb)
@@ -1546,7 +1546,7 @@ function ShowRowTooltip(row)
     -- Attunement detail
     -- Uses GetEffectiveAttunements so only game-API-verified data is shown
     -- (no alt-propagation that could produce false "Done" for cross-account alts).
-    local effAtts = BRutus.AttunementTracker and BRutus.AttunementTracker:GetEffectiveAttunements(data.key)
+    local effAtts = GuildOS.AttunementTracker and GuildOS.AttunementTracker:GetEffectiveAttunements(data.key)
     if effAtts and #effAtts > 0 then
         local done, inProg, pending = {}, {}, {}
         for _, att in ipairs(effAtts) do
@@ -1585,9 +1585,9 @@ function ShowRowTooltip(row)
     if not data.hasAddonData then
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(L["Player does not have Guild OS installed"], C.red.r, C.red.g, C.red.b)
-    elseif data.addonVersion and data.addonVersion ~= BRutus.VERSION then
+    elseif data.addonVersion and data.addonVersion ~= GuildOS.VERSION then
         GameTooltip:AddLine(" ")
-        if CompareVersions(data.addonVersion, BRutus.VERSION) < 0 then
+        if CompareVersions(data.addonVersion, GuildOS.VERSION) < 0 then
             GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
         else
             GameTooltip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.gold.r, C.gold.g, C.gold.b)
@@ -1595,17 +1595,17 @@ function ShowRowTooltip(row)
     end
 
     -- Wishlist info (native)
-    if BRutus.db.guildWishlists then
+    if GuildOS.db.guildWishlists then
         local gKey = strlower(data.name or "")
-        local wData = BRutus.db.guildWishlists[gKey]
+        local wData = GuildOS.db.guildWishlists[gKey]
         if wData and wData.wishlist and #wData.wishlist > 0 then
-            local wColor = BRutus.Wishlist and BRutus.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
+            local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(L["Wishlist:"], C.gold.r, C.gold.g, C.gold.b)
             local shown = math.min(#wData.wishlist, 5)
             for j = 1, shown do
                 local item = wData.wishlist[j]
-                local iName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
+                local iName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                 local os = item.isOffspec and (" (" .. L["OS"] .. ")") or ""
                 GameTooltip:AddLine("  #" .. (item.order or j) .. ": " .. iName .. os,
                     wColor.r, wColor.g, wColor.b)
@@ -1626,7 +1626,7 @@ end
 ----------------------------------------------------------------------
 -- Lista de Desejos (Wishlist) Guild Panel UI
 ----------------------------------------------------------------------
-function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
+function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
     local expandedChar = nil  -- key of currently expanded character
 
     ----------------------------------------------------------------
@@ -1645,16 +1645,16 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     -- "Minha Wishlist" button — open personal wishlist manager
     local myWishBtn = UI:CreateButton(topBar, L["My Wishlist"], 120, 24)
     myWishBtn:SetPoint("RIGHT", -140, 0)
-    myWishBtn:SetScript("OnClick", function() BRutus:ShowWishlistFrame() end)
+    myWishBtn:SetScript("OnClick", function() GuildOS:ShowWishlistFrame() end)
 
     -- "Gerenciar Prios" button — officer only, opens prio modal
     local managePrioBtn = UI:CreateButton(topBar, L["Manage Prios"], 120, 24)
     managePrioBtn:SetPoint("RIGHT", -6, 0)
-    managePrioBtn:SetScript("OnClick", function() BRutus:ShowPrioModal() end)
+    managePrioBtn:SetScript("OnClick", function() GuildOS:ShowPrioModal() end)
 
     -- Hide officer button for non-officers; refresh on show
     parent:HookScript("OnShow", function()
-        if BRutus:IsOfficer() then
+        if GuildOS:IsOfficer() then
             managePrioBtn:Show()
         else
             managePrioBtn:Hide()
@@ -1670,7 +1670,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     searchBar:SetHeight(26)
 
     local searchIcon = searchBar:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(searchIcon, 12)
+    GuildOS:ApplyFont(searchIcon, 12)
     searchIcon:SetPoint("LEFT", 8, 0)
     searchIcon:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
     searchIcon:SetText(L["Search:"])
@@ -1681,7 +1681,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     wishSearch:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     wishSearch:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     wishSearch:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(wishSearch, 11)
+    GuildOS:ApplyFont(wishSearch, 11)
     wishSearch:SetTextColor(C.white.r, C.white.g, C.white.b)
     wishSearch:SetTextInsets(6, 6, 0, 0)
     wishSearch:SetAutoFocus(false)
@@ -1689,7 +1689,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     wishSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
     local wishSearchPlaceholder = wishSearch:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(wishSearchPlaceholder, 11)
+    GuildOS:ApplyFont(wishSearchPlaceholder, 11)
     wishSearchPlaceholder:SetPoint("LEFT", 6, 0)
     wishSearchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     wishSearchPlaceholder:SetText(L["Player name..."])
@@ -1723,12 +1723,12 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
     listContainer:SetPoint("TOPLEFT", 15, -94)
     listContainer:SetPoint("BOTTOMRIGHT", -15, 5)
 
-    local listScroll = CreateFrame("ScrollFrame", "BRutusWishlistGuildScroll", listContainer, "UIPanelScrollFrameTemplate")
+    local listScroll = CreateFrame("ScrollFrame", "GuildOSWishlistGuildScroll", listContainer, "UIPanelScrollFrameTemplate")
     listScroll:SetPoint("TOPLEFT", 0, 0)
     listScroll:SetPoint("BOTTOMRIGHT", 0, 0)
-    UI:SkinScrollBar(listScroll, "BRutusWishlistGuildScroll")
+    UI:SkinScrollBar(listScroll, "GuildOSWishlistGuildScroll")
 
-    local listChild = CreateFrame("Frame", "BRutusWishlistGuildChild", listScroll)
+    local listChild = CreateFrame("Frame", "GuildOSWishlistGuildChild", listScroll)
     listChild:SetWidth(listContainer:GetWidth() or 720)
     listChild:SetHeight(1)
     listScroll:SetScrollChild(listChild)
@@ -1747,7 +1747,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
         local regions = { listChild:GetRegions() }
         for _, rg in ipairs(regions) do rg:Hide() end
 
-        local guildWl = BRutus.db.guildWishlists
+        local guildWl = GuildOS.db.guildWishlists
         local childWidth = listChild:GetWidth()
         if childWidth < 100 then childWidth = 720 end
         local ly = -2
@@ -1767,7 +1767,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             return (a.data.name or a.key) < (b.data.name or b.key)
         end)
 
-        local wColor = BRutus.Wishlist and BRutus.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
+        local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
 
         for _, entry in ipairs(sorted) do
             local charData = entry.data
@@ -1787,22 +1787,22 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Expand indicator
             local arrow = charRow:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(arrow, 10)
+            GuildOS:ApplyFont(arrow, 10)
             arrow:SetPoint("LEFT", 8, 0)
             arrow:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
             arrow:SetText(isExpanded and "v" or ">")
 
             -- Character name
-            local cc = BRutus.ClassColors and BRutus.ClassColors[(charData.class or ""):upper()] or C.white
+            local cc = GuildOS.ClassColors and GuildOS.ClassColors[(charData.class or ""):upper()] or C.white
             local nameStr = charRow:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(nameStr, 11)
+            GuildOS:ApplyFont(nameStr, 11)
             nameStr:SetPoint("LEFT", 24, 0)
             nameStr:SetTextColor(cc.r, cc.g, cc.b)
             nameStr:SetText(charData.name or charKey)
 
             -- Class
             local classStr = charRow:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(classStr, 10)
+            GuildOS:ApplyFont(classStr, 10)
             classStr:SetPoint("LEFT", 180, 0)
             classStr:SetTextColor(cc.r, cc.g, cc.b, 0.7)
             classStr:SetText(charData.class or "")
@@ -1810,7 +1810,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             -- Wishlist count
             local wishItems = charData.wishlist or {}
             local wishCount = charRow:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(wishCount, 10)
+            GuildOS:ApplyFont(wishCount, 10)
             wishCount:SetPoint("LEFT", 310, 0)
             wishCount:SetWidth(60)
             if #wishItems > 0 then
@@ -1824,9 +1824,9 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             -- ATT%
             local attStr = "-"
             local attR, attG, attB = 0.35, 0.35, 0.35
-            if BRutus.RaidTracker then
-                local pKey = BRutus:GetPlayerKey(charData.name or charKey, GetRealmName())
-                local attVal = BRutus.RaidTracker:GetAttendance25ManPercent(pKey) or 0
+            if GuildOS.RaidTracker then
+                local pKey = GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
+                local attVal = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey) or 0
                 if attVal > 0 then
                     attStr = attVal .. "%"
                     if attVal >= 60 then
@@ -1839,7 +1839,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                 end
             end
             local attPct = charRow:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(attPct, 10)
+            GuildOS:ApplyFont(attPct, 10)
             attPct:SetPoint("LEFT", 400, 0)
             attPct:SetWidth(50)
             attPct:SetTextColor(attR, attG, attB)
@@ -1847,8 +1847,8 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Officer prio indicator: gold star if this character has any prios
             local hasPrio = false
-            if BRutus.db.lootPrios then
-                for _, prioList in pairs(BRutus.db.lootPrios) do
+            if GuildOS.db.lootPrios then
+                for _, prioList in pairs(GuildOS.db.lootPrios) do
                     for _, prioEntry in ipairs(prioList) do
                         if strlower(prioEntry.name or "") == charKey then
                             hasPrio = true
@@ -1860,7 +1860,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             end
             if hasPrio then
                 local prioStar = charRow:CreateFontString(nil, "OVERLAY")
-                BRutus:ApplyFont(prioStar, 12)
+                GuildOS:ApplyFont(prioStar, 12)
                 prioStar:SetPoint("LEFT", 460, 0)
                 prioStar:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 prioStar:SetText("|cffFFD700*|r")
@@ -1901,7 +1901,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
                 -- Section label
                 local secLabel = listChild:CreateFontString(nil, "OVERLAY")
-                BRutus:ApplyFont(secLabel, 9)
+                GuildOS:ApplyFont(secLabel, 9)
                 secLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                 secLabel:SetTextColor(wColor.r, wColor.g, wColor.b)
                 secLabel:SetText(string.format(L["WISHLIST  (%d)"], #wishItems))
@@ -1926,7 +1926,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     -- Order
                     local orderStr = iRow:CreateFontString(nil, "OVERLAY")
-                    BRutus:ApplyFont(orderStr, 9)
+                    GuildOS:ApplyFont(orderStr, 9)
                     orderStr:SetPoint("LEFT", 8, 0)
                     orderStr:SetWidth(22)
                     orderStr:SetJustifyH("RIGHT")
@@ -1935,13 +1935,13 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     -- Item name
                     local qColor = C.white
-                    if BRutus.Wishlist and BRutus.QualityColors then
-                        local q = BRutus.Wishlist:GetItemQuality(item.itemId)
-                        qColor = BRutus.QualityColors[q] or C.white
+                    if GuildOS.Wishlist and GuildOS.QualityColors then
+                        local q = GuildOS.Wishlist:GetItemQuality(item.itemId)
+                        qColor = GuildOS.QualityColors[q] or C.white
                     end
-                    local itemName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
+                    local itemName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                     local itemStr = iRow:CreateFontString(nil, "OVERLAY")
-                    BRutus:ApplyFont(itemStr, 10)
+                    GuildOS:ApplyFont(itemStr, 10)
                     itemStr:SetPoint("LEFT", 34, 0)
                     itemStr:SetWidth(childWidth - 140)
                     itemStr:SetJustifyH("LEFT")
@@ -1952,18 +1952,18 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     -- OS badge
                     if item.isOffspec then
                         local osBadge = iRow:CreateFontString(nil, "OVERLAY")
-                        BRutus:ApplyFont(osBadge, 8)
+                        GuildOS:ApplyFont(osBadge, 8)
                         osBadge:SetPoint("RIGHT", -8, 0)
                         osBadge:SetTextColor(0.7, 0.7, 0.7, 0.7)
                         osBadge:SetText(L["OS"])
                     end
 
                     -- Officer prio badge for this item + this character
-                    if BRutus.db.lootPrios and BRutus.db.lootPrios[item.itemId] then
-                        for prioIdx, prioEntry in ipairs(BRutus.db.lootPrios[item.itemId]) do
+                    if GuildOS.db.lootPrios and GuildOS.db.lootPrios[item.itemId] then
+                        for prioIdx, prioEntry in ipairs(GuildOS.db.lootPrios[item.itemId]) do
                             if strlower(prioEntry.name or "") == charKey then
                                 local prioBadge = iRow:CreateFontString(nil, "OVERLAY")
-                                BRutus:ApplyFont(prioBadge, 9)
+                                GuildOS:ApplyFont(prioBadge, 9)
                                 local rightOff = item.isOffspec and -28 or -8
                                 prioBadge:SetPoint("RIGHT", rightOff, 0)
                                 prioBadge:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
@@ -1991,8 +1991,8 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
                 -- Officer prio section: items where this character has prio but may not be on wishlist
                 local prioBadges = {}
-                if BRutus.db.lootPrios then
-                    for itemId, prioList in pairs(BRutus.db.lootPrios) do
+                if GuildOS.db.lootPrios then
+                    for itemId, prioList in pairs(GuildOS.db.lootPrios) do
                         for prioIdx, prioEntry in ipairs(prioList) do
                             if strlower(prioEntry.name or "") == charKey then
                                 table.insert(prioBadges, { itemId = itemId, order = prioIdx })
@@ -2016,7 +2016,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                     detailLy = detailLy - 5
 
                     local prioLabel = listChild:CreateFontString(nil, "OVERLAY")
-                    BRutus:ApplyFont(prioLabel, 9)
+                    GuildOS:ApplyFont(prioLabel, 9)
                     prioLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
                     prioLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                     prioLabel:SetText(string.format(L["OFFICIAL PRIORITY  (%d)"], #prioBadges))
@@ -2039,21 +2039,21 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
                         goldBar:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
 
                         local starStr = pRow:CreateFontString(nil, "OVERLAY")
-                        BRutus:ApplyFont(starStr, 9)
+                        GuildOS:ApplyFont(starStr, 9)
                         starStr:SetPoint("LEFT", 8, 0)
                         starStr:SetWidth(32)  -- "* #12" at 10px mono needs 30px
                         starStr:SetJustifyH("RIGHT")
                         starStr:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                         starStr:SetText("|cffFFD700*|r #" .. badge.order)
 
-                        local pName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(badge.itemId) or string.format(L["Item #%s"], badge.itemId)
+                        local pName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(badge.itemId) or string.format(L["Item #%s"], badge.itemId)
                         local pqColor = C.white
-                        if BRutus.QualityColors and BRutus.Wishlist then
-                            local q = BRutus.Wishlist:GetItemQuality(badge.itemId)
-                            pqColor = BRutus.QualityColors[q] or C.white
+                        if GuildOS.QualityColors and GuildOS.Wishlist then
+                            local q = GuildOS.Wishlist:GetItemQuality(badge.itemId)
+                            pqColor = GuildOS.QualityColors[q] or C.white
                         end
                         local pItemStr = pRow:CreateFontString(nil, "OVERLAY")
-                        BRutus:ApplyFont(pItemStr, 10)
+                        GuildOS:ApplyFont(pItemStr, 10)
                         pItemStr:SetPoint("LEFT", 40, 0)
                         pItemStr:SetWidth(childWidth - 150)
                         pItemStr:SetJustifyH("LEFT")
@@ -2084,7 +2084,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
         if count == 0 and totalCount == 0 then
             local noData = listChild:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(noData, 11)
+            GuildOS:ApplyFont(noData, 11)
             noData:SetPoint("TOP", listChild, "TOP", 0, ly - 30)
             noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
             noData:SetText(L["No member has synced their wishlist yet.\nUse the Sync button in the My Wishlist window to send your data."])
@@ -2093,7 +2093,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
             ly = ly - 60
         elseif count == 0 then
             local noMatch = listChild:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(noMatch, 11)
+            GuildOS:ApplyFont(noMatch, 11)
             noMatch:SetPoint("TOP", listChild, "TOP", 0, ly - 20)
             noMatch:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
             noMatch:SetText(L["No character found."])
@@ -2103,8 +2103,8 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
         end
 
         local total = 0
-        if BRutus.db.guildWishlists then
-            for _ in pairs(BRutus.db.guildWishlists) do total = total + 1 end
+        if GuildOS.db.guildWishlists then
+            for _ in pairs(GuildOS.db.guildWishlists) do total = total + 1 end
         end
         charCountText:SetText(string.format(L["%d / %d members"], count, total))
         listChild:SetHeight(math.abs(ly) + 20)
@@ -2124,7 +2124,7 @@ function BRutus:CreateWishlistGuildPanel(parent, _mainFrame)
 
     -- Re-render when the client finishes loading a queued item (async cache population).
     -- Debounce: batch rapid arrivals into a single repopulate 0.3 s later.
-    BRutus.Compat.RegisterEvent(parent, "GET_ITEM_INFO_RECEIVED")
+    GuildOS.Compat.RegisterEvent(parent, "GET_ITEM_INFO_RECEIVED")
     parent:SetScript("OnEvent", function(self, event)
         if event == "GET_ITEM_INFO_RECEIVED" and self:IsVisible() then
             if not self._itemInfoTimer then
@@ -2147,14 +2147,14 @@ end
 ----------------------------------------------------------------------
 -- Recruitment Panel UI
 ----------------------------------------------------------------------
-function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
+function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     recruitInstances = recruitInstances + 1
     local uid = recruitInstances > 1 and tostring(recruitInstances) or ""
 
     ----------------------------------------------------------------
     -- Member view (non-officer): read-only recruitment status
     ----------------------------------------------------------------
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         -- Status badge
         local statusLabel = UI:CreateTitle(parent, "", 15)
         statusLabel:SetPoint("TOPLEFT", 20, -15)
@@ -2188,7 +2188,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 130, 28)
         sendNowBtn:SetPoint("TOPLEFT", 20, -120)
         sendNowBtn:SetScript("OnClick", function()
-            if BRutus.Recruitment then BRutus.Recruitment:ShowSendPopup() end
+            if GuildOS.Recruitment then GuildOS.Recruitment:ShowSendPopup() end
         end)
 
         -- Auto-Send toggle
@@ -2201,11 +2201,11 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         local function updateAutoBtn()
             -- Opt-out: the member helps unless they turned it off, so the
             -- untouched default (nil) reads as ON. ~= false, not == true.
-            local participating = BRutus.db.recruitParticipate ~= false
+            local participating = GuildOS.db.recruitParticipate ~= false
             if participating then
                 autoBtn.label:SetText(L["Auto-Send: ON"])
                 autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
-                local interval = BRutus.db.guildRecruitment and BRutus.db.guildRecruitment.interval or 120
+                local interval = GuildOS.db.guildRecruitment and GuildOS.db.guildRecruitment.interval or 120
                 autoStatusText:SetText(string.format(L["(popup every %ds)"], interval))
             else
                 autoBtn.label:SetText(L["Auto-Send: OFF"])
@@ -2215,18 +2215,18 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         end
 
         autoBtn:SetScript("OnClick", function()
-            if not BRutus.Recruitment then return end
-            local participating = BRutus.db.recruitParticipate ~= false
-            BRutus.Recruitment:SetParticipation(not participating)
+            if not GuildOS.Recruitment then return end
+            local participating = GuildOS.db.recruitParticipate ~= false
+            GuildOS.Recruitment:SetParticipation(not participating)
             updateAutoBtn()
         end)
 
         -- Refresh function — reads from guildRecruitment (synced) or officer's own DB
         local function refresh()
-            local info = BRutus.db.guildRecruitment
+            local info = GuildOS.db.guildRecruitment
             -- Officers can also see their own configured data before any broadcast
-            if not info and BRutus:IsOfficer() then
-                info = BRutus.db.recruitment
+            if not info and GuildOS:IsOfficer() then
+                info = GuildOS.db.recruitment
             end
 
             if not info or info.enabled == nil then
@@ -2254,7 +2254,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
             updateAutoBtn()
         end
 
-        BRutus.recruitmentPanelRefresh = refresh
+        GuildOS.recruitmentPanelRefresh = refresh
         parent:SetScript("OnShow", refresh)
         return
     end
@@ -2292,7 +2292,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     root.activeSub = "recruiting"
 
     local scannerRefresh
-    if BRutus.RecruitScanner then scannerRefresh = BRutus.RecruitScanner:BuildInto(scannerSub) end
+    if GuildOS.RecruitScanner then scannerRefresh = GuildOS.RecruitScanner:BuildInto(scannerSub) end
     root.subPanels.scanner = { panel = scannerSub, refresh = scannerRefresh }
 
     local subTabBtns = {}
@@ -2306,7 +2306,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
             btn:SetActive(k == key)
         end
         local info = root.subPanels[key]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     root.SelectSub = selectSub   -- deep links: the Now tab, /gos open recruitment <sub>
 
@@ -2393,13 +2393,13 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, 22)
     sendNowBtn:SetPoint("LEFT", toggleBtn, "RIGHT", 10, 0)  -- pushed by a grown toggle label (issue #28)
     sendNowBtn:SetScript("OnClick", function()
-        if BRutus.Recruitment then
-            BRutus.Recruitment:DoSendRecruitmentMessage()
+        if GuildOS.Recruitment then
+            GuildOS.Recruitment:DoSendRecruitmentMessage()
         end
     end)
 
     local function UpdateRecruitStatus()
-        local s = BRutus.db.recruitment
+        local s = GuildOS.db.recruitment
         if s.enabled then
             statusText:SetText(L["|cff4CFF4CACTIVE|r"])
             toggleBtn.label:SetText(L["Disable"])
@@ -2412,8 +2412,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     end
 
     toggleBtn:SetScript("OnClick", function()
-        if BRutus.Recruitment then
-            BRutus.Recruitment:Toggle()
+        if GuildOS.Recruitment then
+            GuildOS.Recruitment:Toggle()
             UpdateRecruitStatus()
         end
     end)
@@ -2427,7 +2427,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     intervalBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     intervalBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     intervalBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(intervalBox, 11)
+    GuildOS:ApplyFont(intervalBox, 11)
     intervalBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     intervalBox:SetTextInsets(6, 6, 0, 0)
     intervalBox:SetAutoFocus(false)
@@ -2436,10 +2436,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitInterval(box)
         local val = tonumber(box:GetText())
         if val and val >= 60 then
-            BRutus.db.recruitment.interval = val
-            BRutus:Print(string.format(L["Interval set to %ds."], val))
+            GuildOS.db.recruitment.interval = val
+            GuildOS:Print(string.format(L["Interval set to %ds."], val))
         else
-            box:SetText(tostring(BRutus.db.recruitment.interval))
+            box:SetText(tostring(GuildOS.db.recruitment.interval))
         end
     end
     intervalBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -2449,13 +2449,13 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Channels (multi-select toggles)
     RowLabel(L["Channels:"], yOff)
     -- As this client names them (issue #112): an English name is no channel on a French client.
-    local CHAN_LIST = BRutus.Recruitment:PresetChannels()
+    local CHAN_LIST = GuildOS.Recruitment:PresetChannels()
     local CHAN_PER_ROW = 4
     local chanBtns = {}
     local function refreshChanBtns()
-        local chs = BRutus.db.recruitment.channels
+        local chs = GuildOS.db.recruitment.channels
         for _, b in ipairs(chanBtns) do
-            if BRutus.Recruitment:HasChannel(chs, b._ch) then
+            if GuildOS.Recruitment:HasChannel(chs, b._ch) then
                 b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
             else
                 b:SetBaseColor(0.12, 0.12, 0.16, 0.85)
@@ -2469,8 +2469,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         btn:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
         btn._ch = ch
         btn:SetScript("OnClick", function()
-            local chs = BRutus.db.recruitment.channels
-            if not BRutus.Recruitment:RemoveChannel(chs, ch) then BRutus.Recruitment:AddChannel(chs, ch) end
+            local chs = GuildOS.db.recruitment.channels
+            if not GuildOS.Recruitment:RemoveChannel(chs, ch) then GuildOS.Recruitment:AddChannel(chs, ch) end
             refreshChanBtns()
         end)
         chanBtns[i] = btn
@@ -2484,7 +2484,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         box:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
         box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        BRutus:ApplyFont(box, 11)
+        GuildOS:ApplyFont(box, 11)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetTextInsets(6, 6, 0, 0)
         box:SetAutoFocus(false)
@@ -2502,11 +2502,11 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local customBtns = {}
     local customMore = UI:CreateText(parent, "", 10, 0.6, 0.6, 0.65)
     local function isPreset(name)
-        return BRutus.Recruitment:HasChannel(CHAN_LIST, name)
+        return GuildOS.Recruitment:HasChannel(CHAN_LIST, name)
     end
     local function refreshCustomChans()
         local shown = 0
-        for _, ch in ipairs(BRutus.db.recruitment.channels) do
+        for _, ch in ipairs(GuildOS.db.recruitment.channels) do
             if not isPreset(ch) and shown < CUSTOM_MAX then
                 shown = shown + 1
                 local b = customBtns[shown]
@@ -2517,18 +2517,18 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         end
         for i = shown + 1, CUSTOM_MAX do customBtns[i]:Hide() end
         local custom = 0
-        for _, ch in ipairs(BRutus.db.recruitment.channels) do
+        for _, ch in ipairs(GuildOS.db.recruitment.channels) do
             if not isPreset(ch) then custom = custom + 1 end
         end
         customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
     end
     UI:AttachSaveButton(chanBox, function(box)
-        if BRutus.Recruitment:AddChannel(BRutus.db.recruitment.channels, box:GetText()) then
+        if GuildOS.Recruitment:AddChannel(GuildOS.db.recruitment.channels, box:GetText()) then
             box:SetText("")
             refreshCustomChans()
             refreshChanBtns()
         elseif strtrim(box:GetText()) ~= "" then
-            BRutus:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
+            GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
         end
     end, { text = L["Add"] })
     local chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
@@ -2541,7 +2541,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
         b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         b:SetScript("OnClick", function(self)
-            BRutus.Recruitment:RemoveChannel(BRutus.db.recruitment.channels, self._ch)
+            GuildOS.Recruitment:RemoveChannel(GuildOS.db.recruitment.channels, self._ch)
             refreshCustomChans()
             refreshChanBtns()
         end)
@@ -2561,7 +2561,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     msgBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(msgBox, 11)
+    GuildOS:ApplyFont(msgBox, 11)
     msgBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     msgBox:SetTextInsets(8, 8, 6, 6)
     msgBox:SetAutoFocus(false)
@@ -2570,8 +2570,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitMsg(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
-            BRutus.db.recruitment.message = txt
-            BRutus:Print(L["Recruitment message updated."])
+            GuildOS.db.recruitment.message = txt
+            GuildOS:Print(L["Recruitment message updated."])
         end
     end
     msgBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -2582,7 +2582,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local broadcastBtn = UI:CreateButton(parent, L["Broadcast to Members"], 180, 24)
     broadcastBtn:SetPoint("TOPLEFT", 30, yOff)
     broadcastBtn:SetScript("OnClick", function()
-        if BRutus.Recruitment then BRutus.Recruitment:BroadcastStatus() end
+        if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus() end
     end)
     yOff = yOff - 36
 
@@ -2591,8 +2591,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- Recruitment setters the command uses.
     ----------------------------------------------------------------
     yOff = SectionHeader(L["Auto-Invite (whisper keyword)"], yOff)
-    local R = BRutus.Recruitment
-    local function aiCfg() return BRutus.db.recruitment and BRutus.db.recruitment.autoInvite end
+    local R = GuildOS.Recruitment
+    local function aiCfg() return GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite end
 
     local aiChk = UI:CreateCheckbox(parent, L["Invite players who whisper the keyword"], 18)
     aiChk:SetPoint("TOPLEFT", 28, yOff)
@@ -2610,7 +2610,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
         if not cfg then return end
         if not R:SetAutoInviteKeyword(cfg, box:GetText()) then box:SetText(cfg.keyword) return end
         box:SetText(cfg.keyword)
-        BRutus:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. cfg.keyword .. "|r.")
+        GuildOS:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. cfg.keyword .. "|r.")
     end)
     yOff = yOff - 28
 
@@ -2633,7 +2633,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local function refreshClassBtns()
         local cfg = aiCfg()
         for _, b in ipairs(classBtns) do
-            local cc = BRutus.ClassColors[b._class] or C.silver
+            local cc = GuildOS.ClassColors[b._class] or C.silver
             if cfg and cfg.classes[b._class] then
                 b:SetBaseColor(cc.r * 0.45, cc.g * 0.45, cc.b * 0.45, 0.9)
             else
@@ -2678,7 +2678,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     fbHint:SetPoint("LEFT", fbBtn, "RIGHT", 8, 0)
     yOff = yOff - 28
 
-    local aiNote = UI:CreateText(parent, BRutus.Compat.NeedsClick()
+    local aiNote = UI:CreateText(parent, GuildOS.Compat.NeedsClick()
         and L["On WoW: Forever each invite waits for your click in a popup, and level and class are not checked."]
         or L["Banned players are never invited. Level and class filters are checked with /who."], 10, 0.6, 0.6, 0.65)
     aiNote:SetPoint("TOPLEFT", 30, yOff)
@@ -2708,7 +2708,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeToggle:SetPoint("TOPLEFT", 300, yOff + 3)
 
     local function UpdateWelcomeStatus()
-        local s = BRutus.db.recruitment
+        local s = GuildOS.db.recruitment
         if s.welcomeEnabled then
             welcomeStatusText:SetText(L["|cff4CFF4CON|r"])
             welcomeToggle.label:SetText(L["Disable"])
@@ -2721,10 +2721,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     end
 
     welcomeToggle:SetScript("OnClick", function()
-        BRutus.db.recruitment.welcomeEnabled = not BRutus.db.recruitment.welcomeEnabled
+        GuildOS.db.recruitment.welcomeEnabled = not GuildOS.db.recruitment.welcomeEnabled
         UpdateWelcomeStatus()
-        local state = BRutus.db.recruitment.welcomeEnabled and L["enabled"] or L["disabled"]
-        BRutus:Print(string.format(L["Welcome message %s."], state))
+        local state = GuildOS.db.recruitment.welcomeEnabled and L["enabled"] or L["disabled"]
+        GuildOS:Print(string.format(L["Welcome message %s."], state))
     end)
     yOff = yOff - 28
 
@@ -2737,7 +2737,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(discordBox, 11)
+    GuildOS:ApplyFont(discordBox, 11)
     discordBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
     discordBox:SetTextInsets(6, 6, 0, 0)
     discordBox:SetAutoFocus(false)
@@ -2745,8 +2745,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitDiscord(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
-            BRutus.db.recruitment.discord = txt
-            BRutus:Print(L["Discord link updated."])
+            GuildOS.db.recruitment.discord = txt
+            GuildOS:Print(L["Discord link updated."])
         end
     end
     discordBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -2762,7 +2762,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     welcomeBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(welcomeBox, 11)
+    GuildOS:ApplyFont(welcomeBox, 11)
     welcomeBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     welcomeBox:SetTextInsets(8, 8, 6, 6)
     welcomeBox:SetAutoFocus(false)
@@ -2771,8 +2771,8 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitWelcome(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
-            BRutus.db.recruitment.welcomeMessage = txt
-            BRutus:Print(L["Welcome message updated."])
+            GuildOS.db.recruitment.welcomeMessage = txt
+            GuildOS:Print(L["Welcome message updated."])
         end
     end
     welcomeBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -2789,10 +2789,10 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     local editBeaconBtn = UI:CreateButton(parent, L["Edit Beacon"], 130, 22)
     editBeaconBtn:SetPoint("TOPLEFT", 300, yOff + 3)
     editBeaconBtn:SetScript("OnClick", function()
-        if BRutus.ShowRecruitBeacon then BRutus:ShowRecruitBeacon() end
+        if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     end)
     local function UpdateBeaconStatus()
-        local ad = BRutus.RecruitBeacon and BRutus.RecruitBeacon:GetAd()
+        local ad = GuildOS.RecruitBeacon and GuildOS.RecruitBeacon:GetAd()
         if ad and ad.enabled then
             beaconStatus:SetText(L["|cff4CFF4CBroadcasting|r"])
         else
@@ -2812,7 +2812,7 @@ function BRutus:CreateRecruitmentPanel(parent, _mainFrame)
     -- never see a real hidden->shown transition on its own.
     ----------------------------------------------------------------
     local function recruitingRefresh()
-        local s = BRutus.db.recruitment
+        local s = GuildOS.db.recruitment
         intervalBox:SetText(tostring(s.interval or 120))
         refreshChanBtns()
         refreshCustomChans()

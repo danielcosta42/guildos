@@ -1,4 +1,4 @@
-# BRutus — Coding Standards
+# GuildOS — Coding Standards
 
 _Last updated: 2026-04-26_
 
@@ -16,18 +16,18 @@ _Last updated: 2026-04-26_
 ## Namespace
 
 ```lua
--- CORRETO: tudo sob BRutus
+-- CORRETO: tudo sob GuildOS
 local ModuleName = {}
-BRutus.ModuleName = ModuleName
+GuildOS.ModuleName = ModuleName
 
 -- ERRADO: globais soltas
 MyModule = {}
 function GlobalFunction() end
 ```
 
-- O único global criado pelo addon é `BRutus`
+- O único global criado pelo addon é `GuildOS`
 - Todas as variáveis em file scope são `local`
-- Dentro do arquivo, usar alias local: `local ModuleName = {}; BRutus.ModuleName = ModuleName`
+- Dentro do arquivo, usar alias local: `local ModuleName = {}; GuildOS.ModuleName = ModuleName`
 
 ---
 
@@ -35,7 +35,7 @@ function GlobalFunction() end
 
 | Elemento | Convenção | Exemplo |
 |---|---|---|
-| Módulos | PascalCase | `BRutus.RaidTracker` |
+| Módulos | PascalCase | `GuildOS.RaidTracker` |
 | Métodos de módulo | `:PascalCase()` | `RaidTracker:GetSnapshotScore()` |
 | Funções estáticas | `.PascalCase()` | `RaidTracker.GetWeekNum()` |
 | Variáveis locais | camelCase | `local memberKey` |
@@ -50,11 +50,11 @@ function GlobalFunction() end
 
 ```lua
 ----------------------------------------------------------------------
--- BRutus Guild Manager - NomeDoMódulo
+-- GuildOS Guild Manager - NomeDoMódulo
 -- Uma linha descrevendo a responsabilidade do módulo
 ----------------------------------------------------------------------
 local ModuleName = {}
-BRutus.ModuleName = ModuleName
+GuildOS.ModuleName = ModuleName
 
 -- Constantes locais
 local CONST_A = 10
@@ -65,8 +65,8 @@ local CONST_B = "string"
 ----------------------------------------------------------------------
 function ModuleName:Initialize()
     -- DB defaults
-    if not BRutus.db.moduleDomain then
-        BRutus.db.moduleDomain = {}
+    if not GuildOS.db.moduleDomain then
+        GuildOS.db.moduleDomain = {}
     end
     -- Registro de eventos, se necessário
 end
@@ -99,16 +99,16 @@ Cada arquivo tem uma responsabilidade. Se está misturando duas coisas diferente
 
 ### Rule 3 — One-Way Data Flow
 ```
-Game Events → Handlers → Módulos de Dados → BRutus.db / BRutus.State → UI
+Game Events → Handlers → Módulos de Dados → GuildOS.db / GuildOS.State → UI
 ```
 UI nunca escreve no db. UI chama métodos de módulos.
 
 ### Rule 4 — Compatibility Layer
-Toda chamada de API que pode não existir no TBC Anniversary passa por `BRutus.Compat`:
+Toda chamada de API que pode não existir no TBC Anniversary passa por `GuildOS.Compat`:
 ```lua
 -- CORRETO
-BRutus.Compat.After(1, fn)
-BRutus.Compat.IsQuestComplete(questId)
+GuildOS.Compat.After(1, fn)
+GuildOS.Compat.IsQuestComplete(questId)
 
 -- ERRADO
 C_Timer.After(1, fn)          -- direto sem guard
@@ -120,35 +120,35 @@ Event frames são criados dentro de `Initialize()`. Nunca em file scope.
 
 ### Rule 6 — State vs Storage
 ```lua
--- Session only → BRutus.State
-BRutus.State.lootMaster.activeLoot = item
+-- Session only → GuildOS.State
+GuildOS.State.lootMaster.activeLoot = item
 
--- Persistente → BRutus.db (via módulo dono)
-BRutus.LootTracker:RecordMLAward(item)
+-- Persistente → GuildOS.db (via módulo dono)
+GuildOS.LootTracker:RecordMLAward(item)
 ```
 
 ### Rule 7 — SavedVariables com defaults
 ```lua
-BRutus.db.field = BRutus.db.field or {}
-BRutus.db.counter = BRutus.db.counter or 0
+GuildOS.db.field = GuildOS.db.field or {}
+GuildOS.db.counter = GuildOS.db.counter or 0
 ```
 
 ### Rule 8 — Config Accessors
 ```lua
 -- CORRETO
-local val = BRutus:GetSetting("showOffline")
-BRutus:SetSetting("showOffline", true)
+local val = GuildOS:GetSetting("showOffline")
+GuildOS:SetSetting("showOffline", true)
 
 -- ERRADO (em UI files)
-BRutus.db.settings.showOffline = true
+GuildOS.db.settings.showOffline = true
 ```
 
 ### Rule 9 — Structured Logger
 ```lua
 -- CORRETO
-BRutus.Logger.Debug("mensagem de debug")
-BRutus.Logger.Info("mensagem informativa")
-BRutus.Logger.Warn("aviso importante")
+GuildOS.Logger.Debug("mensagem de debug")
+GuildOS.Logger.Info("mensagem informativa")
+GuildOS.Logger.Warn("aviso importante")
 
 -- ERRADO
 print("alguma coisa")                -- polui o chat
@@ -159,7 +159,7 @@ DEFAULT_CHAT_FRAME:AddMessage("...")  -- direto
 ```lua
 -- CORRETO: callback é uma linha
 Button:SetScript("OnClick", function()
-    BRutus.LootMaster:StartRoll()
+    GuildOS.LootMaster:StartRoll()
 end)
 
 -- ERRADO: business logic inline
@@ -190,7 +190,7 @@ C_Timer.After(CHUNK_DELAY * (i - 1), send)
 ```
 
 ### Rule 14 — Comentários
-- Toda função pública `BRutus.*` tem uma linha de descrição acima
+- Toda função pública `GuildOS.*` tem uma linha de descrição acima
 - Todo workaround de compatibilidade explica o POR QUÊ
 - Todo magic number tem comentário inline
 
@@ -200,7 +200,7 @@ C_Timer.After(CHUNK_DELAY * (i - 1), send)
 
 ```lua
 -- Verificar nil ANTES de acessar sub-campos
-local data = BRutus.db and BRutus.db.members and BRutus.db.members[key]
+local data = GuildOS.db and GuildOS.db.members and GuildOS.db.members[key]
 if not data then return end
 
 -- GetGuildRosterInfo: sempre nil-check
@@ -221,11 +221,11 @@ if not ok then return end
 ### Player Keys
 ```lua
 -- Sempre com realm
-local key = BRutus:GetPlayerKey(name, realm)  -- retorna "Name-Realm"
+local key = GuildOS:GetPlayerKey(name, realm)  -- retorna "Name-Realm"
 
 -- Nunca usar só o nome curto como chave
--- ERRADO: BRutus.db.members[name]
--- CORRETO: BRutus.db.members[name .. "-" .. realm]
+-- ERRADO: GuildOS.db.members[name]
+-- CORRETO: GuildOS.db.members[name .. "-" .. realm]
 ```
 
 ### itemId vs itemLink
@@ -254,11 +254,11 @@ end
 ### C_Timer Guards
 ```lua
 -- SEMPRE via Compat
-BRutus.Compat.After(delay, fn)
-BRutus.Compat.NewTicker(interval, fn)
+GuildOS.Compat.After(delay, fn)
+GuildOS.Compat.NewTicker(interval, fn)
 
 -- Guardar referência para cancelar
-State.raid.snapshotTimer = BRutus.Compat.NewTicker(300, fn)
+State.raid.snapshotTimer = GuildOS.Compat.NewTicker(300, fn)
 -- Depois:
 if State.raid.snapshotTimer then
     State.raid.snapshotTimer:Cancel()
@@ -274,7 +274,7 @@ end
 |---|---|
 | Global leakage | Conflito entre addons |
 | Business logic em SetScript | Difícil de testar e manter |
-| UI escrevendo BRutus.db direto | Acopla UI ao schema |
+| UI escrevendo GuildOS.db direto | Acopla UI ao schema |
 | Magic strings de tipo de mensagem | Difícil de auditar e refatorar |
 | Criar tabelas em loops de eventos frequentes | Garbage collection pressure |
 | NewTicker sem referência para Cancel | Timer fantasma duplicado em reload |

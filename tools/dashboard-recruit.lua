@@ -46,7 +46,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 local texts, buttons = {}, {}
-BRutus.UI = setmetatable({
+GuildOS.UI = setmetatable({
   GetFeature = function() return nil end,   -- no registry: IsFeatureEnabled reads the settings alone
   CreateText = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
   CreateButton = function(_, _, t) buttons[#buttons + 1] = tostring(t); return stub end,
@@ -55,10 +55,10 @@ dofile(ADDON .. "/UI/Dashboard.lua")
 
 local function show(modules, rank, ad)
   myRank = rank
-  BRutus.db = { settings = { modules = modules } }
-  if ad ~= false then BRutus.db.guildRecruitment = { enabled = true, message = "We recruit" } end
+  GuildOS.db = { settings = { modules = modules } }
+  if ad ~= false then GuildOS.db.guildRecruitment = { enabled = true, message = "We recruit" } end
   texts, buttons = {}, {}
-  local refresh = BRutus:CreateDashboardPanel(stub)
+  local refresh = GuildOS:CreateDashboardPanel(stub)
   local ok, err = pcall(refresh)
   check(ok, "the dashboard draws (" .. tostring(err) .. ")")
 end

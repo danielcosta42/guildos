@@ -1,4 +1,4 @@
-# BRutus — Refactor Plan
+# GuildOS — Refactor Plan
 
 _Last updated: 2026-04-26_
 _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não iniciada._
@@ -10,7 +10,7 @@ _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não inicia
 1. **Incremental** — o addon funciona 100% após cada fase
 2. **Backward compatible** — nunca quebrar dados de SavedVariables existentes
 3. **Sem novas features** — refatorar é reorganizar, não adicionar
-4. **Testar após cada fase** — `/reload` + `/brutus` deve funcionar sem erros Lua
+4. **Testar após cada fase** — `/reload` + `/gos` deve funcionar sem erros Lua
 
 ---
 
@@ -38,7 +38,7 @@ _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não inicia
 - [x] `.gitignore` atualizado
 
 ### Riscos mapeados:
-- ~~BRutus.db sem proteção~~
+- ~~GuildOS.db sem proteção~~
 - ~~Magic strings de sync~~
 - ~~UI escrevendo db diretamente~~
 - ~~Timers sem referência para Cancel~~
@@ -47,7 +47,7 @@ _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não inicia
 
 ## Fase 2 — StorageService + Repositories 🔲 PENDENTE
 
-**Objetivo**: Proteger `BRutus.db` com uma camada de acesso controlado.
+**Objetivo**: Proteger `GuildOS.db` com uma camada de acesso controlado.
 
 ### Pré-requisitos:
 - Fase 1 completa ✅
@@ -55,9 +55,9 @@ _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não inicia
 ### Passos:
 1. Criar `Storage/Storage.lua` com API básica: `Get`, `Set`, `GetAll`, `Delete`, `GetSetting`, `SetSetting`
 2. Adicionar ao `.toc` após `Core.lua`, antes dos módulos de domínio
-3. Mover `BRutus:GetSetting` / `BRutus:SetSetting` de `Core.lua` para delegarem ao Storage
+3. Mover `GuildOS:GetSetting` / `GuildOS:SetSetting` de `Core.lua` para delegarem ao Storage
 4. Criar `Repository/MemberRepository.lua` — primeiro repository
-5. Migrar `DataCollector` para usar `MemberRepository` em vez de `BRutus.db.members` direto
+5. Migrar `DataCollector` para usar `MemberRepository` em vez de `GuildOS.db.members` direto
 6. Verificar luacheck: 0 warnings
 7. Testar `/reload` + roster exibe membros corretamente
 8. Repetir para outros repositories: Raid, Loot, Wishlist...
@@ -67,10 +67,10 @@ _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não inicia
 - `DataCollector.lua`
 - `Storage/Storage.lua` (novo)
 - `Repository/MemberRepository.lua` (novo)
-- `BRutus.toc` (adicionar novos arquivos)
+- `GuildOS.toc` (adicionar novos arquivos)
 
 ### Critério de sucesso:
-- `BRutus.db.members` não é mais acessado diretamente por nenhum módulo de feature
+- `GuildOS.db.members` não é mais acessado diretamente por nenhum módulo de feature
 - Luacheck: 0 warnings
 - Addon funciona identicamente ao antes
 
@@ -82,7 +82,7 @@ _Status: Fase 1 — Análise e Documentação COMPLETA. Fase 2 ainda não inicia
 
 ### Passos:
 1. Criar `Sync/SyncService.lua`
-2. Registrar o MESMO prefix (`"BRutus"`) — aceitar AMBOS os formatos (v1 e v2)
+2. Registrar o MESMO prefix (`"GuildOS"`) — aceitar AMBOS os formatos (v1 e v2)
 3. Implementar `Publish`, `Request`, `RegisterHandler`
 4. Implementar envelope v2 (sem ACK ainda)
 5. Implementar deduplicação por messageId
@@ -138,9 +138,9 @@ Para cada domínio:
 
 ### Passos:
 1. Criar `Commands.lua`
-2. Mover `SlashCmdList["BRUTUS"]` e `SlashCmdList["BR"]` para Commands.lua
+2. Mover `SlashCmdList["GUILDOS"]` para Commands.lua
 3. Mover handlers de slash commands de Core.lua para Commands.lua
-4. Extrair `BRutus.Compat` para `Compat.lua` (atualmente em Core.lua)
+4. Extrair `GuildOS.Compat` para `Compat.lua` (atualmente em Core.lua)
 5. Extrair helpers utilitários para `Utils.lua` (DeepCopy, GetClassColor, TimeAgo, etc.)
 6. Core.lua fica apenas com: namespace creation, DB defaults, lifecycle events
 
@@ -157,9 +157,9 @@ Para cada domínio:
 
 ## Fase 8 — Debug Tools e Limpeza 🔲 PENDENTE
 
-1. Adicionar `/brutus sync status` — mostra queue, pendingMessages, last broadcast
-2. Adicionar `/brutus storage stats` — conta entries por domínio
-3. Adicionar `/brutus memory stats` — conta frames, timers ativos
+1. Adicionar `/gos sync status` — mostra queue, pendingMessages, last broadcast
+2. Adicionar `/gos storage stats` — conta entries por domínio
+3. Adicionar `/gos memory stats` — conta frames, timers ativos
 4. Remover código legado do CommSystem que foi migrado para SyncService
 5. Documentação final e limpeza de TODO comments
 
@@ -182,8 +182,8 @@ Fase 1 (✅) → Fase 2 → Fase 3 → Fase 4
 
 - [ ] Core.lua < 200 linhas (hoje: ~600+)
 - [ ] CommSystem ou SyncService centralizado, sem magic strings espalhadas
-- [ ] BRutus.db protegido por Storage/Repositories
-- [ ] UI desacoplada de persistência (zero writes diretos a BRutus.db em UI files)
+- [ ] GuildOS.db protegido por Storage/Repositories
+- [ ] UI desacoplada de persistência (zero writes diretos a GuildOS.db em UI files)
 - [ ] Sync documentada, versionada, com revision check
 - [ ] Sem risco de loop de sync
 - [ ] Sem timers duplicados

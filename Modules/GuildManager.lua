@@ -5,8 +5,8 @@
 -- action log. Business logic only — no UI frames (Rule 2 / Rule 10).
 ----------------------------------------------------------------------
 local GuildManager = {}
-BRutus.GuildManager = GuildManager
-local L = BRutus.L
+GuildOS.GuildManager = GuildManager
+local L = GuildOS.L
 
 -- Cap on the locally-stored action log (ring buffer; oldest entries dropped).
 local LOG_MAX = 200
@@ -18,9 +18,9 @@ GuildManager.DEFAULT_INACTIVE_DAYS = DEFAULT_INACTIVE_DAYS
 local PROMO_ATTENDANCE_MIN = 80
 
 function GuildManager:Initialize()
-    if not BRutus.db.managementLog then
+    if not GuildOS.db.managementLog then
         -- Ring buffer of { action, target, detail, author, timestamp }.
-        BRutus.db.managementLog = {}
+        GuildOS.db.managementLog = {}
     end
 end
 
@@ -109,11 +109,11 @@ end
 ----------------------------------------------------------------------
 
 -- Best-effort: open the default Blizzard guild window. Routes through
--- BRutus:OpenBlizzardGuildUI, which calls the native (unreplaced) toggle with
+-- GuildOS:OpenBlizzardGuildUI, which calls the native (unreplaced) toggle with
 -- the hijack redirect suppressed. Never calls a protected function.
 function GuildManager:OpenNativeGuild()
-    if BRutus.OpenBlizzardGuildUI then
-        BRutus:OpenBlizzardGuildUI()
+    if GuildOS.OpenBlizzardGuildUI then
+        GuildOS:OpenBlizzardGuildUI()
         return true
     end
     return false
@@ -123,7 +123,7 @@ end
 -- leader off to the native guild panel. Returns false (action not performed).
 function GuildManager:_protectedNotice(actionLabel, name)
     local short = name and (name:match("^([^-]+)") or name) or "?"
-    BRutus:Print(format(
+    GuildOS:Print(format(
         L["\"%s\" is Blizzard-protected \226\128\148 use the official guild panel. Target: |cffFFD700%s|r."],
         actionLabel, short))
     self:OpenNativeGuild()
@@ -150,7 +150,7 @@ end
 -- Set the guild Message of the Day.
 function GuildManager:SetMOTD(text)
     if not self:CanSetMOTD() then
-        BRutus:Print(L["|cffFF4444No permission to edit the MOTD.|r"])
+        GuildOS:Print(L["|cffFF4444No permission to edit the MOTD.|r"])
         return false
     end
     if GuildSetMOTD then GuildSetMOTD(text or "") end
@@ -161,7 +161,7 @@ end
 -- Set the guild Information text.
 function GuildManager:SetGuildInfo(text)
     if not self:CanSetGuildInfo() then
-        BRutus:Print(L["|cffFF4444No permission to edit the guild info.|r"])
+        GuildOS:Print(L["|cffFF4444No permission to edit the guild info.|r"])
         return false
     end
     if SetGuildInfoText then SetGuildInfoText(text or "") end
@@ -232,17 +232,17 @@ function GuildManager:GetSuggestions()
     local trialsReady, promoteCandidates = {}, {}
 
     -- Trials whose duration has elapsed → officer should approve / deny.
-    if BRutus.TrialTracker then
-        for _, t in ipairs(BRutus.TrialTracker:GetActiveTrials()) do
-            local daysRem = BRutus.TrialTracker:GetDaysRemaining(t.key)
+    if GuildOS.TrialTracker then
+        for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials()) do
+            local daysRem = GuildOS.TrialTracker:GetDaysRemaining(t.key)
             if daysRem ~= nil and daysRem <= 0 then
-                local progress = BRutus.TrialTracker:GetProgress(t.key)
-                local att = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(t.key) or 0
+                local progress = GuildOS.TrialTracker:GetProgress(t.key)
+                local att = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(t.key) or 0
                 local short = t.key:match("^([^-]+)") or t.key
                 table.insert(trialsReady, {
                     key        = t.key,
                     name       = short,
-                    daysSince  = BRutus.TrialTracker:GetDaysSinceStart(t.key) or 0,
+                    daysSince  = GuildOS.TrialTracker:GetDaysSinceStart(t.key) or 0,
                     attendance = att,
                     ilvlDelta  = progress and progress.ilvlDelta or 0,
                 })
@@ -252,19 +252,19 @@ function GuildManager:GetSuggestions()
     end
 
     -- Non-officer, non-trial members with strong attendance → promote candidates.
-    if BRutus.RaidTracker then
-        local officerMaxRank = BRutus:GetSetting("officerMaxRank") or 1
+    if GuildOS.RaidTracker then
+        local officerMaxRank = GuildOS:GetSetting("officerMaxRank") or 1
         local n = GetNumGuildMembers() or 0
         for i = 1, n do
             local name, rankName, rankIndex, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
             if name then
                 local short = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
-                local key = BRutus:GetPlayerKey(short, realm)
-                local isTrial = BRutus.TrialTracker and BRutus.TrialTracker:IsTrial(key)
+                local key = GuildOS:GetPlayerKey(short, realm)
+                local isTrial = GuildOS.TrialTracker and GuildOS.TrialTracker:IsTrial(key)
                 local isOfficer = rankIndex and rankIndex <= officerMaxRank
                 if not isTrial and not isOfficer then
-                    local att = BRutus.RaidTracker:GetAttendance25ManPercent(key)
+                    local att = GuildOS.RaidTracker:GetAttendance25ManPercent(key)
                     if att and att >= PROMO_ATTENDANCE_MIN then
                         table.insert(promoteCandidates, {
                             key        = key,
@@ -290,21 +290,21 @@ end
 ----------------------------------------------------------------------
 -- Append an entry to the local action log (capped ring buffer).
 function GuildManager:LogAction(action, target, detail)
-    if BRutus.RosterLog then
-        BRutus.RosterLog:Record(action, target, BRutus.Compat.PlayerName(), detail)
+    if GuildOS.RosterLog then
+        GuildOS.RosterLog:Record(action, target, GuildOS.Compat.PlayerName(), detail)
         return
     end
-    local log = BRutus.db.managementLog
+    local log = GuildOS.db.managementLog
     if not log then
         log = {}
-        BRutus.db.managementLog = log
+        GuildOS.db.managementLog = log
     end
     local short = target and (target:match("^([^-]+)") or target) or nil
     table.insert(log, {
         action    = action,
         target    = short,
         detail    = detail,
-        author    = BRutus.Compat.PlayerName(),
+        author    = GuildOS.Compat.PlayerName(),
         timestamp = GetServerTime(),
     })
     -- Trim the oldest entries beyond the cap.
@@ -315,8 +315,8 @@ end
 
 -- Return the action log newest-first (does not mutate stored order).
 function GuildManager:GetLog()
-    if BRutus.RosterLog then return BRutus.RosterLog:GetLog() end
-    local log = BRutus.db.managementLog or {}
+    if GuildOS.RosterLog then return GuildOS.RosterLog:GetLog() end
+    local log = GuildOS.db.managementLog or {}
     local out = {}
     for i = #log, 1, -1 do
         out[#out + 1] = log[i]
@@ -325,11 +325,11 @@ function GuildManager:GetLog()
 end
 
 function GuildManager:ClearLog()
-    if BRutus.RosterLog then
-        BRutus.RosterLog:Clear()
+    if GuildOS.RosterLog then
+        GuildOS.RosterLog:Clear()
         return
     end
-    BRutus.db.managementLog = {}
+    GuildOS.db.managementLog = {}
 end
 
 ----------------------------------------------------------------------
@@ -342,8 +342,8 @@ function GuildManager:RefreshUI()
     -- because the Roster tab builds lazily now — RefreshRoster does not exist
     -- until that tab has been activated at least once, and RefreshRosterUI
     -- nil-guards for that and also covers the floating roster window.
-    BRutus:RefreshRosterUI()
-    local rf = BRutus.RosterFrame
+    GuildOS:RefreshRosterUI()
+    local rf = GuildOS.RosterFrame
     if not rf or not rf:IsShown() then return end
     local mp = rf.tabPanels and rf.tabPanels.management
     if mp and mp:IsShown() and mp.RefreshActive then

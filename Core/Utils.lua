@@ -1,13 +1,13 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Utilities
+-- Guild OS - Utilities
 -- Pure helper functions. No business logic, no persistent state writes.
 ----------------------------------------------------------------------
-local L = BRutus.L
+local L = GuildOS.L
 
 ----------------------------------------------------------------------
 -- Alt / Main linking (account-wide attunement propagation)
 ----------------------------------------------------------------------
-function BRutus:LinkAlt(altKey, mainKey)
+function GuildOS:LinkAlt(altKey, mainKey)
     if not self:IsOfficer() then return false end
     if not altKey or not mainKey or altKey == mainKey then return false end
     self.db.altLinks = self.db.altLinks or {}
@@ -23,7 +23,7 @@ function BRutus:LinkAlt(altKey, mainKey)
     return true
 end
 
-function BRutus:UnlinkAlt(altKey)
+function GuildOS:UnlinkAlt(altKey)
     if not self:IsOfficer() then return false end
     self.db.altLinks = self.db.altLinks or {}
     self.db.altLinks[altKey] = nil
@@ -34,7 +34,7 @@ function BRutus:UnlinkAlt(altKey)
 end
 
 -- Returns all keys in the same account group as playerKey (includes playerKey itself)
-function BRutus:GetLinkedChars(playerKey)
+function GuildOS:GetLinkedChars(playerKey)
     local altLinks = (self.db and self.db.altLinks) or {}
     -- Resolve canonical main
     local mainKey = altLinks[playerKey] or playerKey
@@ -56,7 +56,7 @@ end
 -- for chars outside the group are copied through untouched. A group with
 -- fewer than 2 members is returned as an unchanged copy. Idempotent: if
 -- newMain is already the group's main the output equals the input.
-function BRutus:_RepointGroup(altLinks, group, newMain)
+function GuildOS:_RepointGroup(altLinks, group, newMain)
     local out = {}
     for k, v in pairs(altLinks or {}) do out[k] = v end
     if not group or #group < 2 or not newMain then return out end
@@ -75,7 +75,7 @@ end
 -- of fewer than 2 or when newMainKey is already the main, then re-points the
 -- whole group onto newMainKey and broadcasts once. No circular link can
 -- result because newMainKey's own entry is cleared.
-function BRutus:SetMain(newMainKey)
+function GuildOS:SetMain(newMainKey)
     if not self:IsOfficer() then return false end
     if not newMainKey then return false end
     self.db.altLinks = self.db.altLinks or {}
@@ -92,7 +92,7 @@ end
 ----------------------------------------------------------------------
 -- General helpers
 ----------------------------------------------------------------------
-function BRutus:DeepCopy(orig)
+function GuildOS:DeepCopy(orig)
     local copy = {}
     for k, v in pairs(orig) do
         if type(v) == "table" then
@@ -104,7 +104,7 @@ function BRutus:DeepCopy(orig)
     return copy
 end
 
-function BRutus:GetClassColor(class)
+function GuildOS:GetClassColor(class)
     local c = self.ClassColors[class]
     if c then
         return c.r, c.g, c.b
@@ -112,16 +112,16 @@ function BRutus:GetClassColor(class)
     return 1, 1, 1
 end
 
-function BRutus:GetClassColorHex(class)
+function GuildOS:GetClassColorHex(class)
     local r, g, b = self:GetClassColor(class)
     return string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
 end
 
-function BRutus:ColorText(text, r, g, b)
+function GuildOS:ColorText(text, r, g, b)
     return string.format("|cff%02x%02x%02x%s|r", r * 255, g * 255, b * 255, text)
 end
 
-function BRutus:FormatItemLevel(ilvl)
+function GuildOS:FormatItemLevel(ilvl)
     if not ilvl or ilvl == 0 then return "|cff888888--|r" end
     local color
     if ilvl >= 141 then      -- T6+
@@ -141,7 +141,7 @@ end
 -- The client's realm for member keys: GetRealmName(), else GetNormalizedRealmName() (a
 -- client with no realm name may still suffix roster names with a normalized one), else
 -- nil; "" counts as nothing. Anniversary always answers the first, so its keys keep their bytes.
-function BRutus:GetClientRealm()
+function GuildOS:GetClientRealm()
     local realm = GetRealmName()
     if not realm or realm == "" then realm = GetNormalizedRealmName and GetNormalizedRealmName() end
     if realm == "" then return nil end
@@ -158,10 +158,10 @@ end
 -- GetRealmName() answers a name, and not the same one across a guild: on the beta,
 -- "Classic Beta PvE" for one member and "Classic Beta PvE 2" for another. A realm taken from a
 -- broadcast or a sender keyed a guildmate apart from their own roster line.
-function BRutus:GetPlayerKey(name, realm)
+function GuildOS:GetPlayerKey(name, realm)
     if not name or name == "" then return nil end
-    if BRutus.Client and not BRutus.Client.isAnniversary then realm = nil end
-    if not realm or realm == "" then realm = BRutus:GetClientRealm() end
+    if GuildOS.Client and not GuildOS.Client.isAnniversary then realm = nil end
+    if not realm or realm == "" then realm = GuildOS:GetClientRealm() end
     if not realm then return name end
     return name .. "-" .. realm
 end
@@ -171,9 +171,9 @@ end
 -- arrives inside a payload is rebuilt from its name. Forever names never hold a hyphen (the roster,
 -- the senders and UnitName all give "First Surname"), so the name is what comes before the first
 -- one. Anniversary keys pass through: there a realm is part of who somebody is.
-function BRutus:LocalMemberKey(key)
+function GuildOS:LocalMemberKey(key)
     if type(key) ~= "string" or key == "" then return key end
-    if not (BRutus.Client and not BRutus.Client.isAnniversary) then return key end
+    if not (GuildOS.Client and not GuildOS.Client.isAnniversary) then return key end
     if key:find("^ally:") then return key end   -- an allied guild's member, realm-free already
     return self:GetPlayerKey(key:match("^([^-]+)") or key)
 end
@@ -181,7 +181,7 @@ end
 -- A table keyed by member keys, rekeyed with LocalMemberKey. `merge(held, incoming)` settles two
 -- records that turn out to be the same member, and only ever sees two tables: a record always
 -- beats a value that is not one, whichever came first. Without a merge the first record stays.
-function BRutus:LocalizeMemberTable(t, merge)
+function GuildOS:LocalizeMemberTable(t, merge)
     if type(t) ~= "table" then return t end
     local out = {}
     for k, v in pairs(t) do
@@ -202,8 +202,8 @@ end
 -- localizes since, so another pass would only rebuild the same tables (each session's snapshots
 -- among them) on every login. Each table is its own step: bad data in one leaves the rest moved,
 -- and the database is marked done only when every step was, so a failed one is retried.
-function BRutus:LocalizeStoredMemberTables()
-    if not (BRutus.Client and not BRutus.Client.isAnniversary) then return end
+function GuildOS:LocalizeStoredMemberTables()
+    if not (GuildOS.Client and not GuildOS.Client.isAnniversary) then return end
     local db = self.db
     if type(db) ~= "table" then return end
     local realm = self:GetClientRealm()
@@ -246,11 +246,11 @@ function BRutus:LocalizeStoredMemberTables()
         end,
         function()
             db.officerNotes = self:LocalizeMemberTable(db.officerNotes, function(a, b)
-                return BRutus.OfficerNotes:MergeSheet(a, b)
+                return GuildOS.OfficerNotes:MergeSheet(a, b)
             end)
         end,
         function()
-            db.trials = self:LocalizeMemberTable(db.trials, function(a, b) return BRutus.TrialTracker:Merge(a, b) end)
+            db.trials = self:LocalizeMemberTable(db.trials, function(a, b) return GuildOS.TrialTracker:Merge(a, b) end)
         end,
         function()
             db.raiders = self:LocalizeMemberTable(db.raiders, function(a, b)
@@ -286,14 +286,14 @@ end
 -- Members a version before issue #95 stored under the sender's realm move to this client's key,
 -- the newer record winning, so nobody is shown without their data or counted twice. Forever
 -- only: on Anniversary another realm is another player.
-function BRutus:RekeyMembersToThisRealm()
-    if not (BRutus.Client and not BRutus.Client.isAnniversary) then return end
+function GuildOS:RekeyMembersToThisRealm()
+    if not (GuildOS.Client and not GuildOS.Client.isAnniversary) then return end
     local members = self.db and self.db.members
     if type(members) ~= "table" then return end
     local moves = {}
     for key, rec in pairs(members) do
         local right = type(rec) == "table" and type(rec.name) == "string" and rec.name ~= ""
-            and not (BRutus.Compat.IsSecret and BRutus.Compat.IsSecret(rec.name)) and self:GetPlayerKey(rec.name)
+            and not (GuildOS.Compat.IsSecret and GuildOS.Compat.IsSecret(rec.name)) and self:GetPlayerKey(rec.name)
         if right and right ~= key then moves[#moves + 1] = { from = key, to = right, rec = rec } end
     end
     for _, mv in ipairs(moves) do
@@ -319,7 +319,7 @@ end
 -- roster name, on the realm its line gives or the player's), so a note typed for them lands
 -- where their sheet reads it; then the shown name and the roster's whole name. Nil when
 -- nobody on the roster has that name.
-function BRutus:RosterKey(name)
+function GuildOS:RosterKey(name)
     local idx = self.Compat.FindGuildRosterIndex(name)
     local full = idx and GetGuildRosterInfo(idx)
     if not full then return nil end
@@ -337,7 +337,7 @@ end
 -- "<name> <text>" from a slash command. On WoW: Forever a name is two words ("Lethaniel
 -- Blightwood"), so the first two are the name when they are somebody on the roster;
 -- otherwise the first word, as it always was (issue #49).
-function BRutus:SplitNameAndText(rest)
+function GuildOS:SplitNameAndText(rest)
     rest = strtrim(rest)
     -- A whole name and nothing after it is a name with no note, not "Blightwood" as one.
     if isRosterName(self, rest) then return nil end
@@ -389,7 +389,7 @@ end
 --
 -- Returns nil when the character is not on this guild's roster.
 ----------------------------------------------------------------------
-function BRutus:GetMemberRecord(name, realm)
+function GuildOS:GetMemberRecord(name, realm)
     if not name or name == "" then return nil end
     local short = name:match("^([^-]+)") or name
     realm = realm or GetRealmName()
@@ -435,7 +435,7 @@ end
 -- A removable chip's label (issue #59): the text cut to `maxBytes` (14) on a character
 -- boundary, ".." when something was cut, then the remove mark. UI:SetChipText shortens it
 -- further until it fits the chip in whatever font is drawing it.
-function BRutus:ChipLabel(text, maxBytes)
+function GuildOS:ChipLabel(text, maxBytes)
     local s = tostring(text or "")
     local short = self:SanitizeUserText(s, maxBytes or 14)
     if #short < #self:SanitizeUserText(s) then short = short .. ".." end
@@ -444,7 +444,7 @@ end
 
 -- The first `n` characters of `s`, never half of one. A byte cut splits the Cyrillic, Hangul and
 -- Han letters of four of the game's ten languages, and the names their players carry (#104).
-function BRutus:Utf8Head(s, n)
+function GuildOS:Utf8Head(s, n)
     s = tostring(s or "")
     local i, count = 1, 0
     while i <= #s and count < n do
@@ -456,12 +456,12 @@ function BRutus:Utf8Head(s, n)
 end
 
 -- How many characters `s` has, for the same cuts.
-function BRutus:Utf8Len(s)
+function GuildOS:Utf8Len(s)
     local _, n = tostring(s or ""):gsub("[^\128-\191]", "")
     return n
 end
 
-function BRutus:SanitizeUserText(text, maxBytes)
+function GuildOS:SanitizeUserText(text, maxBytes)
     local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
     s = strtrim(s)
     if maxBytes and #s > maxBytes then
@@ -470,7 +470,7 @@ function BRutus:SanitizeUserText(text, maxBytes)
     return s
 end
 
-function BRutus:RegisterUtilTests()
+function GuildOS:RegisterUtilTests()
     if not self.SelfTest then return end
     self.SelfTest:Register("utils.sanitize_escapes", function()
         if self:SanitizeUserText("|cffFF0000red|r") ~= "cffFF0000redr" then
@@ -519,7 +519,7 @@ function BRutus:RegisterUtilTests()
     end)
 end
 
-function BRutus:TimeAgo(timestamp)
+function GuildOS:TimeAgo(timestamp)
     if not timestamp or timestamp == 0 then return L["Never"] end
     local diff = time() - timestamp
     if diff < 60 then return L["Just now"]
@@ -533,7 +533,7 @@ end
 -- Chat Player Link: Guild Invite
 -- Alt+Click a player name in chat to send a guild invite
 ----------------------------------------------------------------------
-function BRutus:HookChatInvite()
+function GuildOS:HookChatInvite()
     hooksecurefunc("SetItemRef", function(link, _, button)
         if not CanGuildInvite() then return end
         if button ~= "LeftButton" or not IsAltKeyDown() then return end
@@ -542,7 +542,7 @@ function BRutus:HookChatInvite()
         local name = link:match("^player:([^:]+)")
         if name and name ~= "" then
             GuildInvite(name)
-            BRutus:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
+            GuildOS:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
         end
     end)
 end
@@ -552,7 +552,7 @@ end
 ----------------------------------------------------------------------
 local STALE_THRESHOLD = 86400 -- 24 hours
 
-function BRutus:GetStaleProfessions()
+function GuildOS:GetStaleProfessions()
     local myData = self.db and self.db.myData
     if not myData or not myData.professions then return {} end
 
@@ -574,7 +574,7 @@ function BRutus:GetStaleProfessions()
     return stale
 end
 
-function BRutus:CheckProfessionFreshness()
+function GuildOS:CheckProfessionFreshness()
     if self.Professions then return end   -- WoW: Forever reads recipes without a window (issue #31)
     local stale = self:GetStaleProfessions()
     if #stale == 0 then return end
@@ -583,7 +583,7 @@ function BRutus:CheckProfessionFreshness()
     self:Print(string.format(L["|cffFFAA00You have %d profession(s) with outdated recipe data.|r Open them to sync!"], #stale))
 end
 
-function BRutus:ShowProfessionReminder(staleProfessions)
+function GuildOS:ShowProfessionReminder(staleProfessions)
     if self.profReminderFrame then
         self.profReminderFrame:Hide()
         self.profReminderFrame = nil
@@ -591,7 +591,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
 
     local C = self.Colors
 
-    local frame = CreateFrame("Frame", "BRutusProfReminder", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "GuildOSProfReminder", UIParent, "BackdropTemplate")
     frame:SetSize(420, 70)
     frame:SetPoint("TOP", UIParent, "TOP", 0, -80)
     frame:SetFrameStrata("HIGH")
@@ -625,7 +625,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
 
     -- Title
     local titleFS = frame:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(titleFS, 11)
+    GuildOS:ApplyFont(titleFS, 11)
     titleFS:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -2)
     titleFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleFS:SetText(L["Guild OS — Profession Sync Required"])
@@ -636,7 +636,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     for i, name in ipairs(staleProfessions) do shown[i] = L[name] end
     local profNames = table.concat(shown, ", ")
     local descFS = frame:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(descFS, 10)
+    GuildOS:ApplyFont(descFS, 10)
     descFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -4)
     descFS:SetWidth(320)
     descFS:SetJustifyH("LEFT")
@@ -651,7 +651,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     closeBtn:SetNormalFontObject(GameFontNormalSmall)
 
     local closeFS = closeBtn:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(closeFS, 12)
+    GuildOS:ApplyFont(closeFS, 12)
     closeFS:SetPoint("CENTER", 0, 0)
     closeFS:SetText("x")
     closeFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -664,7 +664,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     end)
     closeBtn:SetScript("OnClick", function()
         frame:Hide()
-        BRutus.profReminderFrame = nil
+        GuildOS.profReminderFrame = nil
     end)
 
     -- Fade in
@@ -688,7 +688,7 @@ function BRutus:ShowProfessionReminder(staleProfessions)
     end
 end
 
-function BRutus:CheckAndDismissProfessionReminder()
+function GuildOS:CheckAndDismissProfessionReminder()
     if not self.profReminderFrame or not self.profReminderStale then return end
 
     local scanTimes = (self.db and self.db.recipeScanTimes) or {}
@@ -713,15 +713,15 @@ function BRutus:CheckAndDismissProfessionReminder()
             else
                 self:Hide()
                 self:SetScript("OnUpdate", nil)
-                BRutus.profReminderFrame = nil
-                BRutus.profReminderStale = nil
+                GuildOS.profReminderFrame = nil
+                GuildOS.profReminderStale = nil
             end
         end)
-        BRutus:Print(L["|cff00ff00All professions synced!|r Recipe data is up to date."])
+        GuildOS:Print(L["|cff00ff00All professions synced!|r Recipe data is up to date."])
     end
 end
 
-function BRutus:DismissProfessionReminder()
+function GuildOS:DismissProfessionReminder()
     if self.profReminderFrame then
         self.profReminderFrame:Hide()
         self.profReminderFrame = nil
@@ -734,7 +734,7 @@ end
 -- Headers stay in English on purpose so exports are a stable interchange
 -- format regardless of the client locale.
 ----------------------------------------------------------------------
-function BRutus:ExportRoster()
+function GuildOS:ExportRoster()
     local lines = { "Name\tClass\tLevel\tRank\tiLvl\tAttendance%\tAttunements\tLastSeen" }
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
@@ -762,10 +762,10 @@ function BRutus:ExportRoster()
     return table.concat(lines, "\n")
 end
 
-function BRutus:ExportLoot()
+function GuildOS:ExportLoot()
     local lines = { "Date\tItem\tPlayer\tRaid" }
     for _, e in ipairs(self.db.lootHistory or {}) do
-        local itemName = (e.itemLink and BRutus.Compat.GetItemInfo(e.itemLink)) or e.itemName or "?"
+        local itemName = (e.itemLink and GuildOS.Compat.GetItemInfo(e.itemLink)) or e.itemName or "?"
         local dateStr = e.timestamp and date("%Y-%m-%d %H:%M", e.timestamp) or ""
         lines[#lines + 1] = table.concat({ dateStr, itemName, e.player or "?", e.raid or "" }, "\t")
     end
@@ -777,7 +777,7 @@ end
 -- records when it first observed each member in the roster. This is a
 -- "known to GuildOS since" date, not the true join date.
 ----------------------------------------------------------------------
-function BRutus:RecordFirstSeen()
+function GuildOS:RecordFirstSeen()
     if not self.db then return end
     if not self.db.firstSeen then self.db.firstSeen = {} end
     local now = GetServerTime()
@@ -795,7 +795,7 @@ function BRutus:RecordFirstSeen()
     end
 end
 
-function BRutus:GetFirstSeen(playerKey)
+function GuildOS:GetFirstSeen(playerKey)
     return self.db and self.db.firstSeen and self.db.firstSeen[playerKey]
 end
 
@@ -805,7 +805,7 @@ end
 -- Prunes the volatile caches (members gear/spec, firstSeen) but keeps officer
 -- records (trials, officer notes) for historical reference.
 ----------------------------------------------------------------------
-function BRutus:PruneStaleData()
+function GuildOS:PruneStaleData()
     if not self.db then return 0 end
     local n = GetNumGuildMembers() or 0
     if n == 0 then return 0 end  -- roster not loaded yet; refuse to prune

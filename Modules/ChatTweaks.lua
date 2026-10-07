@@ -5,7 +5,7 @@
 -- Off by default. Cache refreshed on GUILD_ROSTER_UPDATE, never per line.
 ----------------------------------------------------------------------
 local ChatTweaks = {}
-BRutus.ChatTweaks = ChatTweaks
+GuildOS.ChatTweaks = ChatTweaks
 
 ChatTweaks.DEFAULTS = {
     enabled   = false,
@@ -19,14 +19,14 @@ ChatTweaks.DEFAULTS = {
 local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
 
 function ChatTweaks:Initialize()
-    BRutus.db.chatTweaks = BRutus.db.chatTweaks or {}
+    GuildOS.db.chatTweaks = GuildOS.db.chatTweaks or {}
     for k, v in pairs(self.DEFAULTS) do
-        if BRutus.db.chatTweaks[k] == nil then BRutus.db.chatTweaks[k] = v end
+        if GuildOS.db.chatTweaks[k] == nil then GuildOS.db.chatTweaks[k] = v end
     end
     self._cache = {}
 
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     f:SetScript("OnEvent", function() ChatTweaks:_RefreshCache() end)
 
     self:_RegisterFilters()
@@ -41,7 +41,7 @@ function ChatTweaks:_RefreshCache()
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            cache[short] = { classFile = classFile, level = level, fullKey = BRutus:GetPlayerKey(short, realm) }
+            cache[short] = { classFile = classFile, level = level, fullKey = GuildOS:GetPlayerKey(short, realm) }
         end
     end
     self._cache = cache
@@ -78,7 +78,7 @@ end
 ----------------------------------------------------------------------
 function ChatTweaks:_MakeFilter()
     return function(_, _, msg, author, ...)
-        local cfg = BRutus.db.chatTweaks
+        local cfg = GuildOS.db.chatTweaks
         if not cfg or not cfg.enabled then return false end
         local short = author and (author:match("^([^-]+)") or author)
         local cached = short and ChatTweaks._cache[short]
@@ -86,7 +86,7 @@ function ChatTweaks:_MakeFilter()
         local info = {
             classFile = cached.classFile,
             level     = cached.level,
-            altTag    = (BRutus.GetAltTag and cached.fullKey) and BRutus:GetAltTag(cached.fullKey) or nil,
+            altTag    = (GuildOS.GetAltTag and cached.fullKey) and GuildOS:GetAltTag(cached.fullKey) or nil,
         }
         local prefix = ChatTweaks:_BuildPrefix(info, cfg)
         if prefix == "" then return false end
@@ -96,10 +96,10 @@ end
 
 function ChatTweaks:_RegisterFilters()
     if not ChatFrame_AddMessageEventFilter then return end
-    if BRutus.db.chatTweaks.guild ~= false then
+    if GuildOS.db.chatTweaks.guild ~= false then
         ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", self:_MakeFilter())
     end
-    if BRutus.db.chatTweaks.officer ~= false then
+    if GuildOS.db.chatTweaks.officer ~= false then
         ChatFrame_AddMessageEventFilter("CHAT_MSG_OFFICER", self:_MakeFilter())
     end
 end
@@ -108,8 +108,8 @@ end
 -- Self-tests
 ----------------------------------------------------------------------
 function ChatTweaks:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     local cfg = { classIcon = true, level = true, altTag = true }
     S:Register("chattweaks.level", function()
         local p = ChatTweaks:_BuildPrefix({ level = 70 }, cfg)

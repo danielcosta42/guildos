@@ -210,7 +210,7 @@ Cada artboard no **tamanho real em pixels**. Onde há mínimo, entregue também 
 - Cada tela com **conteúdo real e plausível** — nomes de personagem brasileiros e de guild de verdade, item levels na faixa certa, datas coerentes. Nada de "Lorem" e nada de placeholder genérico.
 - Cada tela nos **estados que importam**: cheia, vazia, carregando, e o estado de largura mínima onde houver.
 - Anotações onde o design depende de uma decisão técnica (arte de quina, textura de glow, arquivo de fonte, ordem de descarte de coluna).
-- Ao final, uma **tabela de mapeamento de tokens**: cada token novo com o nome que ele terá em `BRutus.Colors` e em `BRutus.Fonts`, para a implementação em Lua ser mecânica.
+- Ao final, uma **tabela de mapeamento de tokens**: cada token novo com o nome que ele terá em `GuildOS.Colors` e em `GuildOS.Fonts`, para a implementação em Lua ser mecânica.
 
 ## 10. Anti-requisitos
 

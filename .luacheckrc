@@ -5,22 +5,18 @@ max_line_length = false
 
 -- Globals that the addon WRITES to
 globals = {
-    -- Addon tables (GuildOS is the primary namespace; BRutus is a legacy alias)
+    -- Addon tables
     "GuildOS",
-    "BRutus",
     "GuildOSDB",
     -- Written by the companion into Inbox.lua and read once at login.
     -- specs/009-a-volta-para-o-jogo/spec.md in guildos-web.
     "GuildOSInbox",
     "GuildOSInboxAck",  -- the companion writes it beside the inbox; CompanionImport reads it
-    "BRutusDB",
 
     -- Slash commands
     "SlashCmdList",
     "SLASH_GUILDOS1",
     "SLASH_GUILDOS2",
-    "SLASH_BRUTUS1",
-    "SLASH_BRUTUS2",
 
     -- Hooked/overwritten globals
     "ToggleGuildFrame",

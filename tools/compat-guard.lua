@@ -4,7 +4,7 @@
 -- of them reaches a listed API by name (it reads names, not expressions). Comments and string literals are blanked first, so a
 -- name in a comment or an error message is not a call. Exempt: Core/Compat.lua (where the calls
 -- belong), Core/Probe.lua (it records which of these APIs exist) and Modules/ChehulNet.lua (shared
--- verbatim with other addons; it cannot call into BRutus). A file the TOC lists that is not on disk
+-- verbatim with other addons; it cannot call into GuildOS). A file the TOC lists that is not on disk
 -- is a hit too.
 --
 --   lua5.1 tools/compat-guard.lua            (from the repository root; CI runs it in the lint job)
@@ -32,7 +32,7 @@ local API_ONLY = { GuildRoster = true, RegisterAddonMessagePrefix = true, SendAd
                    SendAddonMessageLogged = true,
                    GetItem = true, GetSpell = true, GetUnit = true, TooltipDataType = true }
 -- What a local named Compat may be.
-local COMPAT_SOURCES = { ["BRutus.Compat"] = true, ["GuildOS.Compat"] = true, ["self.Compat"] = true }
+local COMPAT_SOURCES = { ["GuildOS.Compat"] = true, ["GuildOS.Compat"] = true, ["self.Compat"] = true }
 -- Namespaces and the library only Compat may touch: flagged wherever the name appears (an alias included).
 local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_TradeSkillUI", "C_Club", "ChatThrottleLib",
                      "TooltipUtil", "TooltipDataProcessor", "C_ClassTalents", "C_Traits" }
@@ -93,7 +93,7 @@ local function scan(rel, src)
   for line in (blank(src) .. "\n"):gmatch("([^\n]*)\n") do
     lineNo = lineNo + 1
     -- A field or method is fine unless it hangs off _G, follows `..`, or `strict` names a sender off
-    -- anything but Compat. A receiver ending the line above (`BRutus.Compat` then `.SendAddonMessage(`) counts.
+    -- anything but Compat. A receiver ending the line above (`GuildOS.Compat` then `.SendAddonMessage(`) counts.
     local function each(name, strict)
       local from = 1
       while true do
@@ -120,7 +120,7 @@ local function scan(rel, src)
       from = e + 1
     end
     if line:find("%f[%w_]getfenv%f[^%w_]") then hit(lineNo, "getfenv") end
-    -- A Compat that is not BRutus.Compat.
+    -- A Compat that is not GuildOS.Compat.
     for rhs in line:gmatch("%f[%w_]Compat%s*=%s*([%w_%.]+)") do
       if not COMPAT_SOURCES[rhs] then hit(lineNo, "Compat") end
     end
@@ -179,7 +179,7 @@ if COMPAT_GUARD_LIBRARY then return M end
 local hits = M.run(ROOT)
 for _, h in ipairs(hits) do io.stderr:write(h .. "\n") end
 if #hits > 0 then
-  io.stderr:write(#hits .. " version-sensitive call(s) outside Core/Compat.lua; route them through BRutus.Compat.\n")
+  io.stderr:write(#hits .. " version-sensitive call(s) outside Core/Compat.lua; route them through GuildOS.Compat.\n")
   os.exit(1)
 end
 print("compat-guard: no version-sensitive call outside Core/Compat.lua")

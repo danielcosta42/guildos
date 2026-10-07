@@ -19,7 +19,7 @@
 --     SENT when the local player enabled it AND is not inside an instance.
 ----------------------------------------------------------------------
 local GuildMap = {}
-BRutus.GuildMap = GuildMap
+GuildOS.GuildMap = GuildMap
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 local PEER_TTL           = 300   -- drop a peer we have not heard from in 5 min
@@ -139,12 +139,12 @@ function GuildMap:_ResolveClassLevel(key)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            if BRutus:GetPlayerKey(short, realm) == key then
+            if GuildOS:GetPlayerKey(short, realm) == key then
                 return classFile, level
             end
         end
     end
-    local m = BRutus.db and BRutus.db.members and BRutus.db.members[key]
+    local m = GuildOS.db and GuildOS.db.members and GuildOS.db.members[key]
     if type(m) == "table" then return m.class, m.level end
     return nil, nil
 end
@@ -158,7 +158,7 @@ function GuildMap:_BuildOnlineSet()
         if name and isOnline then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            set[BRutus:GetPlayerKey(short, realm)] = true
+            set[GuildOS:GetPlayerKey(short, realm)] = true
         end
     end
     return set
@@ -172,12 +172,12 @@ end
 -- usable zone yet (loading screen). Always carries the mapID; carries exact
 -- x,y ONLY when the player enabled shareExact and is not inside an instance.
 function GuildMap:_ReadPosition()
-    local mapID = tonumber(BRutus.Compat.GetBestMapForUnit("player"))
+    local mapID = tonumber(GuildOS.Compat.GetBestMapForUnit("player"))
     if not mapID or mapID <= 0 then return nil end
     local packet = { mapID = mapID, exact = false }
-    local prefs = BRutus.db and BRutus.db.guildMapPrefs
+    local prefs = GuildOS.db and GuildOS.db.guildMapPrefs
     if prefs and prefs.shareExact and not inInstance() then
-        local x, y = BRutus.Compat.GetPlayerMapPosition(mapID, "player")
+        local x, y = GuildOS.Compat.GetPlayerMapPosition(mapID, "player")
         x, y = tonumber(x), tonumber(y)
         if x and y then
             packet.x = x
@@ -192,7 +192,7 @@ end
 -- seconds unless `force` (the login/periodic request answer, which must converge
 -- a guildmate who just logged in). Returns true when a packet actually went out.
 function GuildMap:Broadcast(force)
-    if not BRutus.CommSystem or not IsInGuild() then return false end
+    if not GuildOS.CommSystem or not IsInGuild() then return false end
     local now = GetTime()
     if not force and (now - (self._lastBroadcast or 0)) < BROADCAST_THROTTLE then
         return false
@@ -200,7 +200,7 @@ function GuildMap:Broadcast(force)
     local packet = self:_ReadPosition()
     if not packet then return false end
     self._lastBroadcast = now
-    BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.MAP_POS,
+    GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.MAP_POS,
         LibSerialize:Serialize(packet))
     return true
 end
@@ -216,7 +216,7 @@ function GuildMap:OnZoneEvent()
         self:Broadcast()
     elseif not self._pendingSend then
         self._pendingSend = true
-        BRutus.Compat.After((BROADCAST_THROTTLE - elapsed) + 0.05, function()
+        GuildOS.Compat.After((BROADCAST_THROTTLE - elapsed) + 0.05, function()
             self._pendingSend = false
             self:Broadcast()
         end)
@@ -241,12 +241,12 @@ function GuildMap:HandlePosition(sender, data, channel)
     if not mapID then return end
     local short = sender:match("^([^-]+)") or sender
     local realm = sender:match("-(.+)$") or GetRealmName()
-    local key = BRutus:GetPlayerKey(short, realm)
+    local key = GuildOS:GetPlayerKey(short, realm)
     local class, level = self:_ResolveClassLevel(key)
     local exact = (p.exact == true) and x ~= nil and y ~= nil
     local now = time()
-    BRutus.db.mapPeers = BRutus.db.mapPeers or {}
-    BRutus.db.mapPeers[key] = {
+    GuildOS.db.mapPeers = GuildOS.db.mapPeers or {}
+    GuildOS.db.mapPeers[key] = {
         mapID = mapID,
         x     = exact and x or nil,
         y     = exact and y or nil,
@@ -255,8 +255,8 @@ function GuildMap:HandlePosition(sender, data, channel)
         level = level,
         ts    = now,
     }
-    self:_Prune(BRutus.db.mapPeers, now)
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    self:_Prune(GuildOS.db.mapPeers, now)
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------
@@ -267,7 +267,7 @@ end
 -- this. Returns rows shaped like _ActivePeers documents.
 function GuildMap:GetPeers(now)
     now = now or time()
-    local store = (BRutus.db and BRutus.db.mapPeers) or {}
+    local store = (GuildOS.db and GuildOS.db.mapPeers) or {}
     return self:_ActivePeers(store, now, self:_BuildOnlineSet(), PEER_TTL)
 end
 
@@ -277,15 +277,15 @@ end
 
 -- True when the player opted in to sharing exact live x/y.
 function GuildMap:IsShareExact()
-    local prefs = BRutus.db and BRutus.db.guildMapPrefs
+    local prefs = GuildOS.db and GuildOS.db.guildMapPrefs
     return (prefs and prefs.shareExact) and true or false
 end
 
 -- Set the shareExact opt-in. Turning it on forces an immediate broadcast so
 -- peers get the new precision now instead of waiting for the next zone change.
 function GuildMap:SetShareExact(on)
-    BRutus.db.guildMapPrefs = BRutus.db.guildMapPrefs or {}
-    BRutus.db.guildMapPrefs.shareExact = on and true or false
+    GuildOS.db.guildMapPrefs = GuildOS.db.guildMapPrefs or {}
+    GuildOS.db.guildMapPrefs.shareExact = on and true or false
     self:Broadcast(true)
 end
 
@@ -293,16 +293,16 @@ end
 -- Init
 ----------------------------------------------------------------------
 function GuildMap:Initialize()
-    BRutus.db.guildMapPrefs = BRutus.db.guildMapPrefs or {}
-    if BRutus.db.guildMapPrefs.shareExact == nil then
-        BRutus.db.guildMapPrefs.shareExact = false
+    GuildOS.db.guildMapPrefs = GuildOS.db.guildMapPrefs or {}
+    if GuildOS.db.guildMapPrefs.shareExact == nil then
+        GuildOS.db.guildMapPrefs.shareExact = false
     end
-    BRutus.db.mapPeers = BRutus.db.mapPeers or {}
-    self:_Prune(BRutus.db.mapPeers, time())
+    GuildOS.db.mapPeers = GuildOS.db.mapPeers or {}
+    self:_Prune(GuildOS.db.mapPeers, time())
 
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "ZONE_CHANGED_NEW_AREA")
-    BRutus.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
+    GuildOS.Compat.RegisterEvent(f, "ZONE_CHANGED_NEW_AREA")
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
     f:SetScript("OnEvent", function()
         GuildMap:OnZoneEvent()
     end)
@@ -315,8 +315,8 @@ end
 -- Self tests (pure helpers only; no db/time/comm touched)
 ----------------------------------------------------------------------
 function GuildMap:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
 
     S:Register("guildmap.clamp_pos", function()
         local m, x, y = GuildMap:_ClampPos(1453, 0.5, 0.25)

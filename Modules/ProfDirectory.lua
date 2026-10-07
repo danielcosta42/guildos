@@ -2,19 +2,19 @@
 -- Guild OS - Profession directory (WoW: Forever, issue #33)
 --
 -- What the Professions panel and the item tooltips read: the static catalog crossed with
--- every member's professions (BRutus.Professions). Reads only; nothing here writes the
+-- every member's professions (GuildOS.Professions). Reads only; nothing here writes the
 -- database. Names are localized at run time: professions through the locale table, recipes
 -- through the client's spell names.
 ----------------------------------------------------------------------
-if BRutus.Client.isAnniversary then return end
+if GuildOS.Client.isAnniversary then return end
 
 local ProfDirectory = {}
-BRutus.ProfDirectory = ProfDirectory
+GuildOS.ProfDirectory = ProfDirectory
 
-local Compat = BRutus.Compat
-local L = BRutus.L
+local Compat = GuildOS.Compat
+local L = GuildOS.L
 
-local function catalog() return BRutus.ProfCatalog end
+local function catalog() return GuildOS.ProfCatalog end
 
 -- Recipe names the client has already resolved, by recipe ID.
 local names = {}
@@ -47,7 +47,7 @@ end
 -- { total, covered, crafters }: catalog recipes on the line, how many at least one member
 -- knows, and how many members have the line.
 function ProfDirectory.Coverage(line)
-    local P = BRutus.Professions
+    local P = GuildOS.Professions
     local ids = catalog().byLine[line] or {}
     local covered = 0
     for _, id in ipairs(ids) do
@@ -58,7 +58,7 @@ end
 
 -- The same over every line, each recipe once (a recipe two professions learn counts once).
 function ProfDirectory.CoverageAll()
-    local P, cat = BRutus.Professions, catalog()
+    local P, cat = GuildOS.Professions, catalog()
     local total, covered = 0, 0
     for id in pairs(cat.recipes) do
         total = total + 1
@@ -71,7 +71,7 @@ end
 -- someone knows it, "gaps": nobody does) and a plain-text, case-insensitive `query` on the
 -- localized name; sorted by the yellow rank, then name.
 function ProfDirectory.RecipeRows(line, mode, query)
-    local cat, P = catalog(), BRutus.Professions
+    local cat, P = catalog(), GuildOS.Professions
     local F = cat.F
     local q = (query and query ~= "") and query:lower() or nil
     local rows, seen = {}, {}
@@ -107,7 +107,7 @@ local function roster()
     local out = {}
     for i = 1, GetNumGuildMembers() or 0 do
         local full, _, _, _, _, _, _, _, online, _, class = GetGuildRosterInfo(i)
-        local key = full and BRutus.Professions.KeyFor(full)
+        local key = full and GuildOS.Professions.KeyFor(full)
         if key then
             out[key] = { name = full:match("^([^-]+)") or full, class = class, online = online and true or false }
         end
@@ -119,7 +119,7 @@ ProfDirectory.Roster = roster
 -- Members with the line: { key, name, class, online, rank, max, spec, count, native }, the
 -- ranked ones first by rank, members known from the guild roster only (native) last.
 function ProfDirectory.MemberRows(line)
-    local P = BRutus.Professions
+    local P = GuildOS.Professions
     local who = roster()
     local rows = {}
     for _, key in ipairs(P:Members(line)) do
@@ -161,7 +161,7 @@ end
 -- RecipeTracker's crafter shape { { playerName, playerKey, class, profName } }, or nil. profName
 -- is the English name, as Anniversary's: the screens show it through L (issue #114).
 local function crafters(recipeIDs)
-    local P, cat = BRutus.Professions, catalog()
+    local P, cat = GuildOS.Professions, catalog()
     local who, out, seen = nil, {}, {}
     for _, id in ipairs(recipeIDs) do
         local r = cat.recipes[id]

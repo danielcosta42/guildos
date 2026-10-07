@@ -24,9 +24,9 @@
 ADDON = ADDON or "."
 package.path = ADDON .. "/?.lua;" .. package.path
 
-BRutus = { L = setmetatable({}, { __index = function(_, k) return k end }) }
-function BRutus:Print() end
-function BRutus:IsOfficer() return true end
+GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }) }
+function GuildOS:Print() end
+function GuildOS:IsOfficer() return true end
 
 -- ── the WoW surface RaidTracker touches at load ───────────────────────
 function GetServerTime() return 1754380000 end
@@ -46,7 +46,7 @@ end
 function LibStub() return nil end
 
 dofile(ADDON .. "/Modules/RaidTracker.lua")
-local RT = BRutus.RaidTracker
+local RT = GuildOS.RaidTracker
 
 -- Two cores with different weights, because the whole reason the rules travel is
 -- that an officer can change them and the website cannot assume 10/10/10.
@@ -54,7 +54,7 @@ local RULES = {
   [""]       = { LATE = 10, LEFT_EARLY = 10, NO_CONSUMES = 10 },
   ["Core 2"] = { LATE = 25, LEFT_EARLY = 5,  NO_CONSUMES = 0  },
 }
-BRutus.CoreManager = {
+GuildOS.CoreManager = {
   GetPenalties = function(_, tag) return RULES[tag] or RULES[""] end,
 }
 
@@ -170,7 +170,7 @@ SESSIONS[T + 5 * WEEK].players["Mesclada-Firemaw"] = true
 -- Gruul's place is a 20, Magtheridon's a 40 and Karazhan's a 10, so the size decides exactly as
 -- TBC's ids did; and one more 20, recorded with no size, counts for nothing (issue #90).
 if FOREVER then
-  BRutus.Client = { isAnniversary = false }
+  GuildOS.Client = { isAnniversary = false }
   local MOVED = { [565] = { 9001, 20 }, [544] = { 9002, 40 }, [532] = { 9010, 10 } }
   for _, s in pairs(SESSIONS) do
     local to = MOVED[s.instanceID]
@@ -185,7 +185,7 @@ if FOREVER then
   } })
 end
 
-BRutus.db = { raidTracker = { sessions = SESSIONS, attendance = {}, deletedSessions = {} } }
+GuildOS.db = { raidTracker = { sessions = SESSIONS, attendance = {}, deletedSessions = {} } }
 RT:RebuildAttendanceFromSessions()
 
 ----------------------------------------------------------------------

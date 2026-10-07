@@ -64,18 +64,18 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
-local CS, R = BRutus.CommSystem, BRutus.Recruitment
+local CS, R = GuildOS.CommSystem, GuildOS.Recruitment
 CS.pendingMessages = CS.pendingMessages or {}
-check(BRutus:IsOfficer() and BRutus:IsOfficerByName(OFFICER) and not BRutus:IsOfficerByName(MEMBER),
+check(GuildOS:IsOfficer() and GuildOS:IsOfficerByName(OFFICER) and not GuildOS:IsOfficerByName(MEMBER),
   "the stub guild has one officer sender, one member sender, and this client is an officer")
 
 -- The officer modules are spies: the question is only whether CommSystem hands them the message.
 local got = {}
 local function spy(name) return function(...) got[name] = (got[name] or 0) + 1 end end
-BRutus.Wishlist     = { HandleLootPriosBroadcast = spy("LP") }
-BRutus.OfficerNotes = { HandleIncoming = spy("ON"), HandleAllIncoming = spy("OA") }
-BRutus.TrialTracker = { HandleIncoming = spy("TR") }
-BRutus.RaidTracker  = { HandleIncoming = spy("RD") }
+GuildOS.Wishlist     = { HandleLootPriosBroadcast = spy("LP") }
+GuildOS.OfficerNotes = { HandleIncoming = spy("ON"), HandleAllIncoming = spy("OA") }
+GuildOS.TrialTracker = { HandleIncoming = spy("TR") }
+GuildOS.RaidTracker  = { HandleIncoming = spy("RD") }
 
 local function receive(msgType, data, sender, channel)
   CS:OnMessageReceived("S:" .. msgType .. ":" .. data, channel or "GUILD", sender)

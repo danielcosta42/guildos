@@ -6,12 +6,12 @@
 -- a persisted pref via the module getters/setters, and a friendly solo
 -- state. The UI holds no classification logic (Rule 10).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
-local function Mod() return BRutus.PugInspector end
+local function Mod() return GuildOS.PugInspector end
 
 local ROW_H    = 22
 local HEADER_H = 34
@@ -86,7 +86,7 @@ local function Refresh()
 
     for i, e in ipairs(scan) do
         local row = GetRow(i)
-        local cr, cg, cb = BRutus:GetClassColor(e.class)
+        local cr, cg, cb = GuildOS:GetClassColor(e.class)
         row.nameFS:SetText(e.name or "?")
         row.nameFS:SetTextColor(cr, cg, cb)
 
@@ -99,7 +99,7 @@ local function Refresh()
             -- Banned reason reads best in parentheses; a note already carries
             -- its own "Note:" prefix. Both are dim so the tag stays primary.
             local d = (e.severity == "high") and ("(" .. e.detail .. ")") or e.detail
-            text = text .. "  " .. BRutus:ColorText(d, C.textDim.r, C.textDim.g, C.textDim.b)
+            text = text .. "  " .. GuildOS:ColorText(d, C.textDim.r, C.textDim.g, C.textDim.b)
         end
         row.tagFS:SetText(text)
         row.tagFS:SetTextColor(sev.r, sev.g, sev.b)
@@ -159,18 +159,18 @@ end
 ----------------------------------------------------------------------
 -- Public entry points (/gos pug + minimap menu)
 ----------------------------------------------------------------------
-function BRutus:ShowPugInspector()
+function GuildOS:ShowPugInspector()
     frame = frame or BuildFrame()
     Refresh()
     frame:Show(); frame:Raise()
 end
 
-function BRutus:TogglePugInspector()
+function GuildOS:TogglePugInspector()
     frame = frame or BuildFrame()
     if frame:IsShown() then
         frame:Hide()
     else
-        BRutus:ShowPugInspector()
+        GuildOS:ShowPugInspector()
     end
 end
 
@@ -179,11 +179,11 @@ end
 -- drives refresh + auto-open through these callbacks; refresh is a no-op
 -- unless the window is currently shown.
 ----------------------------------------------------------------------
-if BRutus.PugInspector then
-    BRutus.PugInspector.uiRefresh = function()
-        if frame and frame:IsShown() then BRutus:SafeCall(Refresh) end
+if GuildOS.PugInspector then
+    GuildOS.PugInspector.uiRefresh = function()
+        if frame and frame:IsShown() then GuildOS:SafeCall(Refresh) end
     end
-    BRutus.PugInspector.uiOpen = function()
-        BRutus:SafeCall(function() BRutus:ShowPugInspector() end)
+    GuildOS.PugInspector.uiOpen = function()
+        GuildOS:SafeCall(function() GuildOS:ShowPugInspector() end)
     end
 end

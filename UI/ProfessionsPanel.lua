@@ -4,14 +4,14 @@
 -- Who in the guild makes what. A rail of professions with their coverage; a Recipes view of
 -- every recipe the game has for the profession (who knows it, what it needs, what nobody
 -- covers) and a Crafters view of the members with it; a card per recipe with its reagents,
--- source and crafters. Everything comes from BRutus.ProfDirectory; this file only draws.
+-- source and crafters. Everything comes from GuildOS.ProfDirectory; this file only draws.
 -- Replaces the Recipes panel on Forever (UI/Features.lua).
 ----------------------------------------------------------------------
-if BRutus.Client.isAnniversary then return end
+if GuildOS.Client.isAnniversary then return end
 
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 
 local RAIL_W     = 176
 local RAIL_ROW   = 36
@@ -67,16 +67,16 @@ local HEADERS = {
 
 local function hex(c) return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) end
 local function classHex(class)
-    local r, g, b = BRutus:GetClassColor(class)
+    local r, g, b = GuildOS:GetClassColor(class)
     return string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
 end
 
 local function itemIcon(id)
-    return id and id > 0 and select(10, BRutus.Compat.GetItemInfo(id)) or nil
+    return id and id > 0 and select(10, GuildOS.Compat.GetItemInfo(id)) or nil
 end
 
 local function recipeIcon(e)
-    return itemIcon(e.out) or select(3, BRutus.Compat.GetSpellInfo(e.id)) or QUESTION
+    return itemIcon(e.out) or select(3, GuildOS.Compat.GetSpellInfo(e.id)) or QUESTION
 end
 
 -- A whisper to a guildmate through the client's tell box. A name with a surname ("First Last") is
@@ -89,18 +89,18 @@ end
 local function sourceText(e)
     if e.src == 3 then return L["Automatic"] end
     if e.src == 2 then
-        local link = e.recipeItem and e.recipeItem > 0 and select(2, BRutus.Compat.GetItemInfo(e.recipeItem))
+        local link = e.recipeItem and e.recipeItem > 0 and select(2, GuildOS.Compat.GetItemInfo(e.recipeItem))
         return link or L["Recipe item"]
     end
     return L["Trainer"]
 end
 
 local function specName(id)
-    return id and id > 0 and (BRutus.Compat.GetSpellInfo(id) or ("#" .. id)) or nil
+    return id and id > 0 and (GuildOS.Compat.GetSpellInfo(id) or ("#" .. id)) or nil
 end
 
 local function stationName(focus)
-    local name = focus and focus > 0 and BRutus.ProfCatalog.stations[focus]
+    local name = focus and focus > 0 and GuildOS.ProfCatalog.stations[focus]
     return name and name ~= "" and L[name] or nil
 end
 
@@ -145,7 +145,7 @@ end
 local card
 
 local function BuildCard()
-    card = UI:CreatePanel(UIParent, "BRutusRecipeCard")
+    card = UI:CreatePanel(UIParent, "GuildOSRecipeCard")
     card:SetSize(320, 200)
     card:SetFrameStrata("DIALOG")
     card:SetClampedToScreen(true)
@@ -155,7 +155,7 @@ local function BuildCard()
     card:SetScript("OnDragStart", card.StartMoving)
     card:SetScript("OnDragStop", card.StopMovingOrSizing)
     UI:StylePopup(card)
-    table.insert(UISpecialFrames, "BRutusRecipeCard")
+    table.insert(UISpecialFrames, "GuildOSRecipeCard")
 
     local close = UI:CreateCloseButton(card)
     close:SetPoint("TOPRIGHT", -6, -6)
@@ -220,7 +220,7 @@ end
 -- the window.
 local function ShowCard(e, anchor, who, repaint)
     if not card then BuildCard() end
-    local D = BRutus.ProfDirectory
+    local D = GuildOS.ProfDirectory
     card.last = { e = e, anchor = anchor, who = who }   -- repainted when an item's data arrives
     if not repaint then
         card:ClearAllPoints()
@@ -231,7 +231,7 @@ local function ShowCard(e, anchor, who, repaint)
     card.title:SetText(e.name)
     card.subtitle:SetText(string.format("%s  ·  %d–%d", D.DisplayName(e.line), e.yellow, e.grey))
 
-    local outLink = e.out and e.out > 0 and select(2, BRutus.Compat.GetItemInfo(e.out))
+    local outLink = e.out and e.out > 0 and select(2, GuildOS.Compat.GetItemInfo(e.out))
     local values = {
         { card.details.makes, outLink or (e.out and e.out > 0 and ("#" .. e.out)) or L["Enchantment"] },
         { card.details.source, sourceText(e) },
@@ -266,7 +266,7 @@ local function ShowCard(e, anchor, who, repaint)
         if rg then
             at(slot.icon, 14, y)
             slot.icon:SetTexture(itemIcon(rg.itemID) or QUESTION)
-            local name = BRutus.Compat.GetItemInfo(rg.itemID) or ("#" .. rg.itemID)
+            local name = GuildOS.Compat.GetItemInfo(rg.itemID) or ("#" .. rg.itemID)
             slot.text:SetText(string.format("%s  |cff%sx%d|r", name, hex(C.gold), rg.count))
             y = y - 20
         end
@@ -310,8 +310,8 @@ end
 ----------------------------------------------------------------------
 -- The panel
 ----------------------------------------------------------------------
-function BRutus:CreateProfessionsPanel(parent, _win)
-    local D = BRutus.ProfDirectory
+function GuildOS:CreateProfessionsPanel(parent, _win)
+    local D = GuildOS.ProfDirectory
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints()
     local state = { line = nil, mode = "recipes", filter = "all", query = "", results = {}, who = {} }
@@ -411,13 +411,13 @@ function BRutus:CreateProfessionsPanel(parent, _win)
     search:SetBackdrop({ bgFile = WHITE8, edgeFile = WHITE8, edgeSize = 1 })
     search:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     search:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(search, 11)
+    GuildOS:ApplyFont(search, 11)
     search:SetTextColor(C.white.r, C.white.g, C.white.b)
     search:SetTextInsets(8, 8, 0, 0)
     search:SetAutoFocus(false)
     search:SetMaxLetters(50)
     local placeholder = search:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(placeholder, 11)
+    GuildOS:ApplyFont(placeholder, 11)
     placeholder:SetPoint("LEFT", 8, 0)
     placeholder:SetTextColor(0.4, 0.4, 0.4)
     placeholder:SetText(L["Search recipes..."])
@@ -469,9 +469,9 @@ function BRutus:CreateProfessionsPanel(parent, _win)
     local list = CreateFrame("Frame", nil, main)
     list:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
     list:SetPoint("BOTTOMRIGHT", main, "BOTTOMRIGHT", 0, FOOTER_H)
-    local scroll = CreateFrame("ScrollFrame", "BRutusProfessionsScroll", list, "FauxScrollFrameTemplate")
+    local scroll = CreateFrame("ScrollFrame", "GuildOSProfessionsScroll", list, "FauxScrollFrameTemplate")
     scroll:SetAllPoints()
-    UI:SkinScrollBar(scroll, "BRutusProfessionsScroll")
+    UI:SkinScrollBar(scroll, "GuildOSProfessionsScroll")
 
     local empty = UI:CreateText(list, "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
     empty:SetPoint("CENTER", 0, 20)
@@ -495,7 +495,7 @@ function BRutus:CreateProfessionsPanel(parent, _win)
         row.bar = UI:CreateProgressBar(row, 100, 8)
         for _, k in ipairs({ "t1", "t2", "t3", "t4" }) do
             local fs = row:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(fs, k == "t1" and 11 or 10)
+            GuildOS:ApplyFont(fs, k == "t1" and 11 or 10)
             fs:SetJustifyH("LEFT")
             fs:SetWordWrap(false)
             row[k] = fs
@@ -716,11 +716,11 @@ function BRutus:CreateProfessionsPanel(parent, _win)
 
     -- Items the client had not cached arrive later: repaint names, icons and links once they do.
     local itemEvents = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(itemEvents, "GET_ITEM_INFO_RECEIVED")
+    GuildOS.Compat.RegisterEvent(itemEvents, "GET_ITEM_INFO_RECEIVED")
     itemEvents:SetScript("OnEvent", function()
         if panel.itemsPending or not parent:IsVisible() then return end
         panel.itemsPending = true
-        BRutus.Compat.After(0.3, function()
+        GuildOS.Compat.After(0.3, function()
             panel.itemsPending = false
             panel:UpdateRows()
             if card and card:IsShown() and card.last then

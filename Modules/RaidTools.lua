@@ -4,8 +4,8 @@
 -- (or online guild members when not grouped). Business logic only.
 ----------------------------------------------------------------------
 local RaidTools = {}
-BRutus.RaidTools = RaidTools
-local L = BRutus.L
+GuildOS.RaidTools = RaidTools
+local L = GuildOS.L
 
 -- Class display order for the composition breakdown.
 RaidTools.CLASS_ORDER = {
@@ -50,11 +50,11 @@ function RaidTools:GetSource()
         return list, L["Current raid"]
     elseif IsInGroup() then
         local _, classFile = UnitClass("player")
-        list[#list + 1] = { name = BRutus.Compat.PlayerName(), class = classFile or "" }
+        list[#list + 1] = { name = GuildOS.Compat.PlayerName(), class = classFile or "" }
         for i = 1, (GetNumGroupMembers() or 1) - 1 do
             local unit = "party" .. i
             local nm, _, cf
-            if UnitExists(unit) then nm, _, cf = BRutus.Compat.UnitIdentity(unit) end
+            if UnitExists(unit) then nm, _, cf = GuildOS.Compat.UnitIdentity(unit) end
             if nm then
                 list[#list + 1] = { name = nm, class = cf or "" }
             end
@@ -88,7 +88,7 @@ end
 function RaidTools:ResolveCoverage(defs, classCounts)
     local result = {}
     for _, def in ipairs(defs) do
-        if not def.tbc or BRutus.Client.isAnniversary then  -- TBC-only spells stay off other clients (ADR-0014)
+        if not def.tbc or GuildOS.Client.isAnniversary then  -- TBC-only spells stay off other clients (ADR-0014)
             local providers = {}
             for classFile in pairs(def.classes) do
                 if (classCounts[classFile] or 0) > 0 then

@@ -3,9 +3,9 @@
 -- A small welcome flow shown once (settings.onboarded) so new users
 -- understand what the addon does, how to open it, and what is shared.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 
 local STEPS = {
     {
@@ -72,13 +72,13 @@ local function BuildFrame()
     local gbToggle = UI:CreateCheckbox(f, L["Guild button opens Guild OS"], 18)
     gbToggle:SetPoint("TOPLEFT", 24, -196)
     gbToggle.checkbox.onChanged = function(_, checked)
-        BRutus:SetSetting("hijackGuildButton", checked and true or false)
+        GuildOS:SetSetting("hijackGuildButton", checked and true or false)
     end
     gbToggle:Hide()
     f.gbToggle = gbToggle
 
     -- Per-step self-service role picker (shown only on the roleStep).
-    local rolePick = BRutus:CreateRolePicker(f)
+    local rolePick = GuildOS:CreateRolePicker(f)
     rolePick:SetPoint("TOPLEFT", 24, -186)
     rolePick:Hide()
     f.rolePick = rolePick
@@ -94,7 +94,7 @@ local function BuildFrame()
     local settingsBtn = UI:CreateButton(f, L["Open Settings"], 120, 24)
     settingsBtn:SetPoint("BOTTOM", 0, 16)
     settingsBtn:SetScript("OnClick", function()
-        BRutus.UI:OpenWindow("settings")
+        GuildOS.UI:OpenWindow("settings")
     end)
     f.settingsBtn = settingsBtn
 
@@ -111,7 +111,7 @@ local function BuildFrame()
         f.settingsBtn:SetShown(f.step == #f.steps)
         -- Guild-button takeover toggle: only on its step, reflecting the live setting.
         if s.guildButtonToggle then
-            f.gbToggle.checkbox:SetChecked(BRutus:IsGuildButtonHijacked())
+            f.gbToggle.checkbox:SetChecked(GuildOS:IsGuildButtonHijacked())
             f.gbToggle:Show()
         else
             f.gbToggle:Hide()
@@ -133,7 +133,7 @@ local function BuildFrame()
             f.step = f.step + 1
             render()
         else
-            BRutus:SetSetting("onboarded", true)
+            GuildOS:SetSetting("onboarded", true)
             f:Hide()
         end
     end)
@@ -142,7 +142,7 @@ local function BuildFrame()
     return f
 end
 
-function BRutus:ShowOnboarding()
+function GuildOS:ShowOnboarding()
     if not self.onboardingFrame then
         self.onboardingFrame = BuildFrame()
     end
@@ -158,7 +158,7 @@ function BRutus:ShowOnboarding()
 end
 
 -- Show the wizard once, on first run in a guild.
-function BRutus:MaybeShowOnboarding()
+function GuildOS:MaybeShowOnboarding()
     if not IsInGuild() then return end
     if self:GetSetting("onboarded") then return end
     self:ShowOnboarding()

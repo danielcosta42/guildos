@@ -6,9 +6,9 @@
 -- Business logic only — UI calls ShowExportPopup with the result.
 ----------------------------------------------------------------------
 local Exporter = {}
-BRutus.Exporter = Exporter
+GuildOS.Exporter = Exporter
 local Importer = {}
-BRutus.Importer = Importer
+GuildOS.Importer = Importer
 
 ----------------------------------------------------------------------
 -- Rendering
@@ -64,13 +64,13 @@ function Exporter:RosterData()
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
-            local d = BRutus.db.members[key] or {}
-            local att = BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0
+            local key = GuildOS:GetPlayerKey(short, realm)
+            local d = GuildOS.db.members[key] or {}
+            local att = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
             local attDone, attTotal = 0, 0
-            if BRutus.AttunementTracker then
-                attTotal = #BRutus.AttunementTracker:GetGuildColumns()
-                for _, a in ipairs(BRutus.AttunementTracker:GetEffectiveAttunements(key)) do
+            if GuildOS.AttunementTracker then
+                attTotal = #GuildOS.AttunementTracker:GetGuildColumns()
+                for _, a in ipairs(GuildOS.AttunementTracker:GetEffectiveAttunements(key)) do
                     if a.complete and a.questsTotal and a.questsTotal > 0 then attDone = attDone + 1 end
                 end
             end
@@ -93,11 +93,11 @@ function Exporter:AttendanceData()
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
+            local key = GuildOS:GetPlayerKey(short, realm)
             local att, streak = 0, 0
-            if BRutus.RaidTracker then
-                att = BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0
-                streak = BRutus.RaidTracker:GetMissedStreak(key, nil, 99) or 0
+            if GuildOS.RaidTracker then
+                att = GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
+                streak = GuildOS.RaidTracker:GetMissedStreak(key, nil, 99) or 0
             end
             rows[#rows + 1] = { short, classFile or "", att, streak }
         end
@@ -108,8 +108,8 @@ end
 function Exporter:LootData()
     local headers = { "Date", "Item", "Player", "Raid" }
     local rows = {}
-    for _, e in ipairs(BRutus.db.lootHistory or {}) do
-        local itemName = (e.itemLink and BRutus.Compat.GetItemInfo(e.itemLink)) or e.itemName or "?"
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        local itemName = (e.itemLink and GuildOS.Compat.GetItemInfo(e.itemLink)) or e.itemName or "?"
         local dateStr = e.timestamp and date("%Y-%m-%d %H:%M", e.timestamp) or ""
         rows[#rows + 1] = { dateStr, itemName, e.player or "?", e.raid or "" }
     end
@@ -119,8 +119,8 @@ end
 function Exporter:ReadinessData()
     local headers = { "Name", "Status", "iLvl", "Attune", "MissingEnchants", "MissingConsumes" }
     local rows = {}
-    if BRutus.Readiness then
-        for _, r in ipairs(BRutus.Readiness:GetReport()) do
+    if GuildOS.Readiness then
+        for _, r in ipairs(GuildOS.Readiness:GetReport()) do
             rows[#rows + 1] = {
                 r.name, r.status, r.ilvl,
                 (r.attTotal > 0) and (r.attDone .. "/" .. r.attTotal) or "",
@@ -137,8 +137,8 @@ function Exporter:StandingsData()
     -- then it simply exports an empty table with the right header.
     local headers = { "Name", "Points", "Earned", "Spent" }
     local rows = {}
-    if BRutus.Points and BRutus.Points.GetStandings then
-        for _, s in ipairs(BRutus.Points:GetStandings()) do
+    if GuildOS.Points and GuildOS.Points.GetStandings then
+        for _, s in ipairs(GuildOS.Points:GetStandings()) do
             rows[#rows + 1] = { s.name, s.current or 0, s.earned or 0, s.spent or 0 }
         end
     end
@@ -148,8 +148,8 @@ end
 function Exporter:EquityData()
     local headers = { "Player", "Items", "Epics", "Share%", "LastLoot" }
     local rows = {}
-    if BRutus.LootEquity then
-        for _, r in ipairs(BRutus.LootEquity:GetReport()) do
+    if GuildOS.LootEquity then
+        for _, r in ipairs(GuildOS.LootEquity:GetReport()) do
             rows[#rows + 1] = {
                 r.name, r.total, r.epics, string.format("%.0f", r.share),
                 r.last > 0 and date("%Y-%m-%d", r.last) or "",

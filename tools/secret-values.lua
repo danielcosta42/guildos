@@ -124,11 +124,11 @@ for _, m in ipairs({ "DataCollector", "SpecChecker", "LootMaster", "Mentions", "
                      "RecruitScanner", "BanList", "RecruitmentSystem", "RaidTracker", "SoftResSystem" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
-local Compat = BRutus.Compat
+local Compat = GuildOS.Compat
 local recorded = {}
-BRutus.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
-BRutus.Print = function(_, msg) printed[#printed + 1] = msg end
-BRutus.IsOfficer = function() return true end
+GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+GuildOS.Print = function(_, msg) printed[#printed + 1] = msg end
+GuildOS.IsOfficer = function() return true end
 
 -- ── 1. Compat.IsSecret ──────────────────────────────────────────────────
 issecretvalue = nil
@@ -183,7 +183,7 @@ local function fires(fn, ...)
   return ok, err
 end
 
-BRutus.db = {
+GuildOS.db = {
   mentions = { enabled = true, guild = true, officer = true, ownName = true, watchWords = { "raid" }, sound = false, log = {} },
   noteCommand = { enabled = true },
   recruitScanner = { inbox = {} },
@@ -194,56 +194,56 @@ BRutus.db = {
   settings = {},
 }
 
-local mentions = handlerOf(function() BRutus.Mentions:_SetupHook() end)
+local mentions = handlerOf(function() GuildOS.Mentions:_SetupHook() end)
 check(fires(mentions, nil, "CHAT_MSG_GUILD", secret(), secret()), "Mentions: a secret line and sender do not raise")
 check(fires(mentions, nil, "CHAT_MSG_GUILD", "raid tonight", secret()), "Mentions: a secret sender alone does not raise")
 local mentioned
-BRutus.Mentions._cd = {}  -- made by Initialize, which this test does not run
-BRutus.Mentions._Record = function(_, term, sender) mentioned = { term, sender } end
+GuildOS.Mentions._cd = {}  -- made by Initialize, which this test does not run
+GuildOS.Mentions._Record = function(_, term, sender) mentioned = { term, sender } end
 check(fires(mentions, nil, "CHAT_MSG_GUILD", "raid tonight", "Bob-Forever") and mentioned
       and mentioned[1] == "raid" and mentioned[2] == "Bob", "Mentions: a readable line still records the mention")
 
-local note = handlerOf(function() BRutus.NoteCommand:_SetupHook() end)
+local note = handlerOf(function() GuildOS.NoteCommand:_SetupHook() end)
 check(fires(note, nil, "CHAT_MSG_GUILD", secret(), secret()), "NoteCommand: a secret line does not raise")
 check(fires(note, nil, "CHAT_MSG_GUILD", "!note main tank", secret()), "NoteCommand: a secret sender does not raise")
 local parsed
-BRutus.NoteCommand._Parse = function(_, msg) parsed = msg; return nil end
+GuildOS.NoteCommand._Parse = function(_, msg) parsed = msg; return nil end
 check(fires(note, nil, "CHAT_MSG_GUILD", secret(), "Bob-Forever") and parsed == nil, "NoteCommand: a secret line is never parsed")
 check(fires(note, nil, "CHAT_MSG_GUILD", "!note main tank", "Bob-Forever") and parsed == "!note main tank",
       "NoteCommand: a readable line is parsed as before")
 
-local roster = handlerOf(function() BRutus.RosterLog:_SetupDetection() end)
-BRutus.RosterLog._ready = true  -- after setup, which starts it unready
+local roster = handlerOf(function() GuildOS.RosterLog:_SetupDetection() end)
+GuildOS.RosterLog._ready = true  -- after setup, which starts it unready
 check(fires(roster, nil, "CHAT_MSG_SYSTEM", secret()), "RosterLog: a secret system line does not raise")
 local logged
-BRutus.RosterLog._ParseSystem = function(_, msg) return { action = "join", target = msg } end
-BRutus.RosterLog.Add = function(_, evt) logged = evt end
+GuildOS.RosterLog._ParseSystem = function(_, msg) return { action = "join", target = msg } end
+GuildOS.RosterLog.Add = function(_, evt) logged = evt end
 check(fires(roster, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and logged and logged.action == "join",
       "RosterLog: a readable system line is still logged")
 
-BRutus.RecruitScanner._contactCd = { Bob = true }
-local scanner = handlerOf(function() BRutus.RecruitScanner:_RegisterEvents() end)
+GuildOS.RecruitScanner._contactCd = { Bob = true }
+local scanner = handlerOf(function() GuildOS.RecruitScanner:_RegisterEvents() end)
 check(fires(scanner, nil, "CHAT_MSG_WHISPER", "hi", secret()), "RecruitScanner: a secret whisperer does not raise")
-check(#BRutus.db.recruitScanner.inbox == 0, "RecruitScanner: and nothing unreadable lands in the inbox")
+check(#GuildOS.db.recruitScanner.inbox == 0, "RecruitScanner: and nothing unreadable lands in the inbox")
 check(fires(scanner, nil, "CHAT_MSG_WHISPER", "hi there", "Bob-Forever"), "RecruitScanner: a readable whisper is handled")
-check(#BRutus.db.recruitScanner.inbox == 1, "RecruitScanner: and lands in the inbox as before")
+check(#GuildOS.db.recruitScanner.inbox == 1, "RecruitScanner: and lands in the inbox as before")
 
-local ban = handlerOf(function() BRutus.BanList:_SetupDetection() end)
-BRutus.BanList._ready = true
+local ban = handlerOf(function() GuildOS.BanList:_SetupDetection() end)
+GuildOS.BanList._ready = true
 check(fires(ban, nil, "CHAT_MSG_SYSTEM", secret()), "BanList: a secret join line does not raise")
 check(fires(ban, nil, "CHAT_MSG_WHISPER", "hello", secret()), "BanList: a secret whisperer does not raise")
 local alerted = 0
-BRutus.BanList.IsBanned = function() return true end
-BRutus.BanList.Get = function(_, n) return { name = n } end
-BRutus.BanList._Alert = function() alerted = alerted + 1 end
-BRutus.BanList._ParseJoin = function() return "Bob" end
+GuildOS.BanList.IsBanned = function() return true end
+GuildOS.BanList.Get = function(_, n) return { name = n } end
+GuildOS.BanList._Alert = function() alerted = alerted + 1 end
+GuildOS.BanList._ParseJoin = function() return "Bob" end
 check(fires(ban, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and alerted == 1, "BanList: a readable join still alerts")
 check(fires(ban, nil, "CHAT_MSG_WHISPER", "hello", "Bob-Forever") and alerted == 2, "BanList: a readable whisper still alerts")
 
 -- Its unit tooltip, on every mouseover: a restricted unit's tooltip hands over a secret token (#116).
 local hooks = {}
 GameTooltip = { HasScript = function() return true end, HookScript = function(_, s, fn) hooks[s] = fn end }
-BRutus.BanList:_SetupDetection()
+GuildOS.BanList:_SetupDetection()
 local function tooltip(name, unit)
   local tt = { lines = 0 }
   function tt:GetUnit() return name, unit end
@@ -257,23 +257,23 @@ check(hooks.OnTooltipSetUnit and fires(hooks.OnTooltipSetUnit, tt) and tt.lines 
 tt = tooltip("Bob", "raid1")
 check(fires(hooks.OnTooltipSetUnit, tt) and tt.lines == 1, "BanList: a banned player's readable tooltip is still flagged")
 
-local welcome = handlerOf(function() BRutus.Recruitment:RegisterWelcomeEvent() end)
-BRutus.Recruitment._rosterReady = true
+local welcome = handlerOf(function() GuildOS.Recruitment:RegisterWelcomeEvent() end)
+GuildOS.Recruitment._rosterReady = true
 check(fires(welcome, nil, "CHAT_MSG_SYSTEM", secret()), "Recruitment welcome: a secret system line does not raise")
 local joined
-BRutus.RecruitEngagement = { RecordJoin = function(_, who) joined = who end }
-BRutus.db.recruitment.welcomeEnabled = false
+GuildOS.RecruitEngagement = { RecordJoin = function(_, who) joined = who end }
+GuildOS.db.recruitment.welcomeEnabled = false
 check(fires(welcome, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and joined == "Bob",
       "Recruitment welcome: a readable join is still credited")
-local autoInvite = handlerOf(function() BRutus.Recruitment:RegisterAutoInviteEvent() end)
+local autoInvite = handlerOf(function() GuildOS.Recruitment:RegisterAutoInviteEvent() end)
 check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", secret(), secret()), "Recruitment auto-invite: a secret whisper does not raise")
 local invited
-BRutus.Recruitment._MatchKeyword = function() return true end
-BRutus.Recruitment._HandleKeywordWhisper = function(_, who) invited = who end
+GuildOS.Recruitment._MatchKeyword = function() return true end
+GuildOS.Recruitment._HandleKeywordWhisper = function(_, who) invited = who end
 check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", "inv pls", "Bob-Forever") and invited == "Bob",
       "Recruitment auto-invite: a readable whisper still invites")
 
-local LootMaster = BRutus.LootMaster
+local LootMaster = GuildOS.LootMaster
 LootMaster.listeningForRolls, LootMaster.activeLoot = true, { itemId = 1 }
 LootMaster.rollPattern = "(.+) rolls (%d+) %((%d+)%-(%d+)%)"
 check(fires(function() LootMaster:OnSystemMessage(secret()) end), "LootMaster: a secret roll line does not raise")
@@ -285,18 +285,18 @@ check(fires(function() LootMaster:OnSystemMessage("Bob rolls 55 (1-100)") end) a
 LootMaster.ProcessSystemRoll = realProcess
 
 -- ── 5. Group units: the unreadable member is skipped, the rest kept ─────
-local RaidTracker = BRutus.RaidTracker
+local RaidTracker = GuildOS.RaidTracker
 RaidTracker.currentRaid = { players = {}, snapshots = {} }
 RaidTracker.CheckPlayerConsumes = function() return nil end
 RaidTracker.BroadcastRaidData = function() end
 check(fires(function() RaidTracker:TakeSnapshot("test") end), "RaidTracker: a snapshot with a restricted member does not raise")
 local keys = 0
 for _ in pairs(RaidTracker.currentRaid.players) do keys = keys + 1 end
-check(keys == 2 and RaidTracker.currentRaid.players[BRutus:GetPlayerKey("Bob", "Forever")]
-      and RaidTracker.currentRaid.players[BRutus:GetPlayerKey("Ana")],
+check(keys == 2 and RaidTracker.currentRaid.players[GuildOS:GetPlayerKey("Bob", "Forever")]
+      and RaidTracker.currentRaid.players[GuildOS:GetPlayerKey("Ana")],
       "RaidTracker: the readable member and the player are recorded, and the restricted one is not")
 
-local SoftRes = BRutus.SoftRes
+local SoftRes = GuildOS.SoftRes
 SoftRes.GetReserves = function() return { { name = "Bob" } } end
 check(fires(function() SoftRes:GetReservesForDisplay(1) end), "SoftRes: reserves with a restricted member in the raid do not raise")
 
@@ -311,7 +311,7 @@ printed = {}
 check(fires(function() LootMaster:OnTradeShow() end), "LootMaster: a trade with a secret name returns quietly")
 check(not LootMaster.pendingTrades[1].addedToTrade and #printed == 0, "LootMaster: and adds nothing to the trade")
 UnitName = function(unit) if unit == "NPC" then return "Bob" end return oldName(unit) end
-BRutus.Compat.UseContainerItem = function() end
+GuildOS.Compat.UseContainerItem = function() end
 check(fires(function() LootMaster:OnTradeShow() end), "LootMaster: a trade with a readable name still runs")
 check(LootMaster.pendingTrades[1].addedToTrade == true, "LootMaster: and adds the pending item as before")
 UnitName = oldName
@@ -320,14 +320,14 @@ UnitName = oldName
 function UnitHealthMax() return secret() end
 function UnitPowerMax() return 3000 end
 function UnitStat(_, i) if i == 3 then return secret() end return 50 + i end
-local ok, stats = pcall(function() return BRutus.DataCollector:CollectStats() end)
+local ok, stats = pcall(function() return GuildOS.DataCollector:CollectStats() end)
 check(ok, "CollectStats: restricted stats do not raise")
 check(stats.health == nil and stats.stamina == nil, "CollectStats: the restricted ones are left out")
 check(stats.mana == 3000 and stats.strength == 51 and stats.spirit == 55, "CollectStats: the readable ones are kept")
 issecretvalue = nil
 function UnitHealthMax() return 4000 end
 function UnitStat(_, i) return 50 + i end
-stats = BRutus.DataCollector:CollectStats()
+stats = GuildOS.DataCollector:CollectStats()
 check(stats.health == 4000 and stats.stamina == 53, "CollectStats: on a client without the system every stat is read")
 issecretvalue = isSecret
 

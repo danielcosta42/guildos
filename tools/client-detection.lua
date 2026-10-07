@@ -3,7 +3,7 @@
 -- files that carry TBC content, under stubbed clients.
 --
 -- WoW: Forever is in the Classic family but has none of the TBC content, and
--- no WOW_PROJECT_ID of its own yet. This proves BRutus.Client recognises TBC
+-- no WOW_PROJECT_ID of its own yet. This proves GuildOS.Client recognises TBC
 -- Anniversary only by its project id and its interface together, reports each
 -- capability from the API behind it, and that attunements, consumables, the
 -- raid cooldown HUD toggle and the wishlist raid catalogue exist only there,
@@ -66,13 +66,13 @@ local CLIENTS = {
 }
 
 dofile(ADDON .. "/Core/Core.lua")
-function BRutus:IsOfficer() return true end
-function BRutus:LootSystemShowsWishlist() return true end
-function BRutus:LootSystemShowsDKP() return true end
+function GuildOS:IsOfficer() return true end
+function GuildOS:LootSystemShowsWishlist() return true end
+function GuildOS:LootSystemShowsDKP() return true end
 
 -- ── 1. Which client this is ─────────────────────────────────────────────
 client(ANNIVERSARY)
-local CL = BRutus.Client
+local CL = GuildOS.Client
 check(CL.version == "2.5.6" and CL.build == "63110" and CL.date == "Sep 1 2026" and CL.interface == 20506,
   "the build fields come from GetBuildInfo")
 check(CL.projectId == 5, "the project id is kept for diagnostics")
@@ -84,68 +84,68 @@ check(table.concat(CL.raidSizes, ",") == "10,25,40" and CL.defaultRaidSize == 25
 local DOCUMENTED = { version = true, build = true, date = true, interface = true, projectId = true,
   isAnniversary = true, maxLevel = true, raidSizes = true, defaultRaidSize = true, has = true }
 for key in pairs(CL) do
-  check(DOCUMENTED[key], "BRutus.Client carries no flavour guess beyond its documented fields (" .. tostring(key) .. ")")
+  check(DOCUMENTED[key], "GuildOS.Client carries no flavour guess beyond its documented fields (" .. tostring(key) .. ")")
 end
 
 client(FOREVER)
-check(BRutus.Client.isAnniversary == false and BRutus.Client.projectId == 2 and BRutus.Client.interface == 16000,
+check(GuildOS.Client.isAnniversary == false and GuildOS.Client.projectId == 2 and GuildOS.Client.interface == 16000,
   "a 1.60 client is not Anniversary")
-check(BRutus.Client.maxLevel == 60, "and WoW: Forever stops at 60")
-check(table.concat(BRutus.Client.raidSizes, ",") == "10,20,40" and BRutus.Client.defaultRaidSize == 20,
+check(GuildOS.Client.maxLevel == 60, "and WoW: Forever stops at 60")
+check(table.concat(GuildOS.Client.raidSizes, ",") == "10,20,40" and GuildOS.Client.defaultRaidSize == 20,
   "and its raids are 10, 20 and 40, 20 first")
 client(REUSED_ID)
-check(BRutus.Client.isAnniversary == false, "project id 5 on a 1.60 build is not Anniversary")
+check(GuildOS.Client.isAnniversary == false, "project id 5 on a 1.60 build is not Anniversary")
 client({ version = "2.5.6", build = "1", interface = 20506, project = 2, tbcProject = 5 })
-check(BRutus.Client.isAnniversary == false,
+check(GuildOS.Client.isAnniversary == false,
   "an Anniversary interface on another project id is not Anniversary, even with the constant defined")
 client({ version = "2.5.6", build = "1", interface = nil, project = 5, tbcProject = 5 })
-check(BRutus.Client.isAnniversary == false and BRutus.Client.interface == 0,
+check(GuildOS.Client.isAnniversary == false and GuildOS.Client.interface == 0,
   "a client that reports no interface is not Anniversary")
 client(UNKNOWN)
-check(BRutus.Client.isAnniversary == false and BRutus.Client.projectId == nil,
+check(GuildOS.Client.isAnniversary == false and GuildOS.Client.projectId == nil,
   "a client without project constants is not Anniversary, even at interface 20506")
 
 for _, edge in ipairs({ { 20499, false }, { 20500, true }, { 29999, true }, { 30000, false } }) do
   client({ version = "2.5.x", build = "1", interface = edge[1], project = 5, tbcProject = 5 })
-  check(BRutus.Client.isAnniversary == edge[2],
+  check(GuildOS.Client.isAnniversary == edge[2],
     "interface " .. edge[1] .. (edge[2] and " is" or " is not") .. " in the Anniversary range")
 end
 client({ version = "2.5.6", build = "1", interface = "20506", project = 5, tbcProject = 5 })
-check(BRutus.Client.interface == 20506 and BRutus.Client.isAnniversary, "an interface given as text still counts")
+check(GuildOS.Client.interface == 20506 and GuildOS.Client.isAnniversary, "an interface given as text still counts")
 
 -- ── 2. What it can do ───────────────────────────────────────────────────
 local FLAGS = { "secrets", "chatLockdown", "tradeSkillUI", "tooltipData", "guildSetNote" }
 client(ANNIVERSARY)
 for _, flag in ipairs(FLAGS) do
-  check(BRutus.Client.has[flag] == false, flag .. " is false when its API is absent")
+  check(GuildOS.Client.has[flag] == false, flag .. " is false when its API is absent")
 end
 for _, only in ipairs(FLAGS) do
   client(setmetatable({ api = { [only] = true } }, { __index = ANNIVERSARY }))
   for _, flag in ipairs(FLAGS) do
-    check(BRutus.Client.has[flag] == (flag == only),
+    check(GuildOS.Client.has[flag] == (flag == only),
       flag .. (flag == only and " follows its own API" or " ignores " .. only .. "'s API"))
   end
 end
 GetBuildInfo = function() return "0.0.0", "0", "", 0 end
 C_ChatInfo, C_GuildInfo = nil, nil
 dofile(ADDON .. "/Core/Compat.lua")
-check(BRutus.Client.has.chatLockdown == false and BRutus.Client.has.guildSetNote == false,
+check(GuildOS.Client.has.chatLockdown == false and GuildOS.Client.has.guildSetNote == false,
   "a client without C_ChatInfo or C_GuildInfo at all loads and reports neither")
 
 -- Quest completion, which /gos attune dumpquests reads on any client.
 C_QuestLog = { IsQuestFlaggedCompleted = function() return true end }
 IsQuestFlaggedCompleted = function() return false end
-check(BRutus.Compat.IsQuestComplete(1) == true, "C_QuestLog answers quest completion when it exists")
+check(GuildOS.Compat.IsQuestComplete(1) == true, "C_QuestLog answers quest completion when it exists")
 C_QuestLog = nil
 IsQuestFlaggedCompleted = function(id) return id == 1 end
-check(BRutus.Compat.IsQuestComplete(1) == true and BRutus.Compat.IsQuestComplete(2) == false,
+check(GuildOS.Compat.IsQuestComplete(1) == true and GuildOS.Compat.IsQuestComplete(2) == false,
   "without C_QuestLog, quest completion falls back to the global")
 IsQuestFlaggedCompleted = nil
-check(BRutus.Compat.IsQuestComplete(1) == false, "without either quest API, no quest reads complete")
+check(GuildOS.Compat.IsQuestComplete(1) == false, "without either quest API, no quest reads complete")
 
 -- ── 3. TBC modules exist only on Anniversary ────────────────────────────
 local WISHED, RAID_ITEM = 999001, 21882  -- 21882: the first Karazhan drop in the raid catalogue
-BRutus.db = {
+GuildOS.db = {
   members = {},
   settings = { modules = { consumableChecker = true } },
   guildWishlists = {
@@ -154,26 +154,26 @@ BRutus.db = {
 }
 for _, case in ipairs(CLIENTS) do
   client(case.c)
-  BRutus.AttunementTracker, BRutus.ConsumableChecker, BRutus.Wishlist = nil, nil, nil
-  BRutus.State.startup.failed = {}
+  GuildOS.AttunementTracker, GuildOS.ConsumableChecker, GuildOS.Wishlist = nil, nil, nil
+  GuildOS.State.startup.failed = {}
   dofile(ADDON .. "/Modules/AttunementTracker.lua")
   dofile(ADDON .. "/Modules/ConsumableChecker.lua")
   dofile(ADDON .. "/Modules/WishlistSystem.lua")
   dofile(ADDON .. "/Modules/RaidTools.lua")
   local on = case.tbc and " exists on " or " does not exist on "
-  check((BRutus.AttunementTracker ~= nil) == case.tbc, "the attunement tracker" .. on .. case.label)
-  check((BRutus.ConsumableChecker ~= nil) == case.tbc, "the consumable checker" .. on .. case.label)
-  check(BRutus:StartModule({ "AttunementTracker" }) == case.tbc
-    and BRutus:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == case.tbc,
+  check((GuildOS.AttunementTracker ~= nil) == case.tbc, "the attunement tracker" .. on .. case.label)
+  check((GuildOS.ConsumableChecker ~= nil) == case.tbc, "the consumable checker" .. on .. case.label)
+  check(GuildOS:StartModule({ "AttunementTracker" }) == case.tbc
+    and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == case.tbc,
     "the TBC modules start only where they exist (" .. case.label .. ")")
-  check(next(BRutus.State.startup.failed) == nil, "nothing is recorded as failed to start on " .. case.label)
-  check(BRutus.Wishlist ~= nil, "the wishlist exists on " .. case.label)
-  BRutus.Wishlist:RebuildItemIndex()
-  check(BRutus.Wishlist:GetItemInterest(WISHED) ~= nil, "a wished item is searchable on " .. case.label)
-  check((BRutus.Wishlist:GetItemInterest(RAID_ITEM) ~= nil) == case.tbc,
+  check(next(GuildOS.State.startup.failed) == nil, "nothing is recorded as failed to start on " .. case.label)
+  check(GuildOS.Wishlist ~= nil, "the wishlist exists on " .. case.label)
+  GuildOS.Wishlist:RebuildItemIndex()
+  check(GuildOS.Wishlist:GetItemInterest(WISHED) ~= nil, "a wished item is searchable on " .. case.label)
+  check((GuildOS.Wishlist:GetItemInterest(RAID_ITEM) ~= nil) == case.tbc,
     "the TBC raid catalogue is " .. (case.tbc and "" or "not ") .. "seeded on " .. case.label)
   local cds = {}
-  for _, cd in ipairs(BRutus.RaidTools:ResolveCoverage(BRutus.RaidTools.COOLDOWNS, { SHAMAN = 1, HUNTER = 1, DRUID = 1 })) do
+  for _, cd in ipairs(GuildOS.RaidTools:ResolveCoverage(GuildOS.RaidTools.COOLDOWNS, { SHAMAN = 1, HUNTER = 1, DRUID = 1 })) do
     cds[cd.name] = cd.covered
   end
   check((cds["Bloodlust/Heroism"] ~= nil) == case.tbc and (cds["Misdirection"] ~= nil) == case.tbc,
@@ -182,10 +182,10 @@ for _, case in ipairs(CLIENTS) do
 end
 
 -- ── 4. The hub and the Settings list ────────────────────────────────────
-BRutus.UI = {}
+GuildOS.UI = {}
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 dofile(ADDON .. "/UI/Features.lua")
-local UI = BRutus.UI
+local UI = GuildOS.UI
 local function listed(id)
   for _, def in ipairs(UI:AllFeatures(nil)) do
     if def.id == id then return true end
@@ -202,7 +202,7 @@ for _, case in ipairs(CLIENTS) do
   for _, id in ipairs({ "lootMaster", "lootTracker", "raidTracker", "wishlist" }) do
     check(listed(id), id .. " is not TBC content and stays listed on " .. case.label)
   end
-  check(BRutus.db.settings.modules.consumableChecker == true and BRutus.db.settings.modules.raidHUD == nil,
+  check(GuildOS.db.settings.modules.consumableChecker == true and GuildOS.db.settings.modules.raidHUD == nil,
     "the player's own toggles are untouched on " .. case.label)
 end
 

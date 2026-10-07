@@ -6,9 +6,9 @@
 --   * DKP: standings + officer controls
 -- Renders from the module data APIs (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 local TAB_H = 28        -- UI:CreateTab's fixed height
 local TAB_MIN_W = 70    -- narrowest a sub-tab may be drawn
@@ -37,7 +37,7 @@ local function makeInput(parent, w, multiline)
     b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     b:SetBackdropColor(0.05, 0.05, 0.066, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(b, 11)
+    GuildOS:ApplyFont(b, 11)
     b:SetTextColor(C.white.r, C.white.g, C.white.b)
     b:SetTextInsets(6, 6, multiline and 4 or 0, 0)
     b:SetAutoFocus(false)
@@ -58,9 +58,9 @@ local function BuildActivitySub(panel)
         clear(child)
         child:SetWidth(holder:GetWidth() - 12)
         local lines = {}
-        if BRutus.Digest then
+        if GuildOS.Digest then
             local since = GetServerTime() - 7 * 86400
-            lines = BRutus.Digest:Build(since)
+            lines = GuildOS.Digest:Build(since)
         end
         local y = 0
         for _, line in ipairs(lines) do
@@ -86,13 +86,13 @@ end
 local function BuildBulletinSub(panel)
     local listTop = 6
     local box
-    if BRutus:IsOfficer() then
+    if GuildOS:IsOfficer() then
         box = makeInput(panel, 0, false)
         box:SetPoint("TOPLEFT", 4, -4)
         box:SetPoint("TOPRIGHT", -96, -4)
         box:SetMaxLetters(200)
         local function doPost()
-            if BRutus.Bulletin then BRutus.Bulletin:Post(box:GetText()) end
+            if GuildOS.Bulletin then GuildOS.Bulletin:Post(box:GetText()) end
             box:SetText(""); box:ClearFocus()
         end
         box:SetScript("OnEnterPressed", doPost)
@@ -106,8 +106,8 @@ local function BuildBulletinSub(panel)
     local function refresh()
         clear(child)
         child:SetWidth(holder:GetWidth() - 12)
-        local msgs = (BRutus.Bulletin and BRutus.Bulletin:GetMessages()) or {}
-        local isOfficer = BRutus:IsOfficer()
+        local msgs = (GuildOS.Bulletin and GuildOS.Bulletin:GetMessages()) or {}
+        local isOfficer = GuildOS:IsOfficer()
         local y = 0
         for _, m in ipairs(msgs) do
             local textFS = UI:CreateText(child, m.text, 11, C.text.r, C.text.g, C.text.b)
@@ -123,7 +123,7 @@ local function BuildBulletinSub(panel)
                 local del = UI:CreateButton(child, "\195\151", 22, 18)
                 del:SetPoint("TOPRIGHT", -2, -y)
                 local id = m.id
-                del:SetScript("OnClick", function() if BRutus.Bulletin then BRutus.Bulletin:Remove(id) end end)
+                del:SetScript("OnClick", function() if GuildOS.Bulletin then GuildOS.Bulletin:Remove(id) end end)
             end
             y = y + th + 22
         end
@@ -133,7 +133,7 @@ local function BuildBulletinSub(panel)
         end
         child:SetHeight(math.max(1, y))
     end
-    if BRutus.Bulletin then BRutus.Bulletin.uiRefresh = refresh end
+    if GuildOS.Bulletin then GuildOS.Bulletin.uiRefresh = refresh end
     return refresh
 end
 
@@ -142,7 +142,7 @@ end
 -- recent calls, answers them and sets how they want to be told.
 ----------------------------------------------------------------------
 local function BuildCallToArmsSub(panel)
-    local CTA = BRutus.CallToArms
+    local CTA = GuildOS.CallToArms
     local selected = "worldboss"
     -- { row frame, its widgets, line height }: wrapped again on every resize. A row grows to the
     -- lines it took, and what hangs below it moves down with it.
@@ -159,7 +159,7 @@ local function BuildCallToArmsSub(panel)
     end
     panel:SetScript("OnSizeChanged", reflow)
 
-    if BRutus:IsOfficer() then
+    if GuildOS:IsOfficer() then
         local head = UI:CreateText(panel, L["Send a call"], 11, C.gold.r, C.gold.g, C.gold.b)
         head:SetPoint("TOPLEFT", 4, -2)
         local tplRow, cells = CreateFrame("Frame", nil, panel), {}
@@ -222,14 +222,14 @@ local function BuildCallToArmsSub(panel)
         saveBtn:SetScript("OnClick", function()
             local tpl = CTA:Template(selected)
             local ok, why = CTA:SaveTemplate(nameBox:GetText(), msgBox:GetText(), tpl and tpl.kind)
-            if not ok then BRutus:Print(why) return end
+            if not ok then GuildOS:Print(why) return end
             nameBox:SetText("")
             buildTemplates()
         end)
         local chatCb = UI:CreateCheckbox(panel, L["Also post in guild chat"], 16)
         chatCb:SetPoint("LEFT", saveBtn, "RIGHT", 12, 0)
         chatCb.checkbox:SetChecked(CTA:ChatOn())
-        chatCb.checkbox.onChanged = function(_, checked) BRutus:SetSetting("ctaChat", checked and true or false) end
+        chatCb.checkbox.onChanged = function(_, checked) GuildOS:SetSetting("ctaChat", checked and true or false) end
         above = nameBox
 
         buildTemplates()
@@ -254,7 +254,7 @@ local function BuildCallToArmsSub(panel)
         rows[#rows + 1] = { row, boxes, 18 }
         return row
     end
-    local function setting(key) return function(v) BRutus:SetSetting(key, v) end end
+    local function setting(key) return function(v) GuildOS:SetSetting(key, v) end end
     local how = checkRow(mine, {
         { L["Show popups"], function() return CTA:PopupsOn() end, setting("ctaPopups") },
         { L["Play a sound"], function() return CTA:SoundOn() end, setting("ctaSound") },
@@ -264,7 +264,7 @@ local function BuildCallToArmsSub(panel)
     for _, k in ipairs(CTA.KINDS) do
         local id = k.id
         kinds[#kinds + 1] = { k.title, function() return not CTA:Muted(id) end,
-                              function(v) BRutus:SetSetting("ctaMute_" .. id, not v) end }
+                              function(v) GuildOS:SetSetting("ctaMute_" .. id, not v) end }
     end
     local hear = checkRow(how, kinds)
 
@@ -334,7 +334,7 @@ end
 ----------------------------------------------------------------------
 local function BuildPollsSub(panel)
     local listTop = 6
-    if BRutus:IsOfficer() then
+    if GuildOS:IsOfficer() then
         local qBox = makeInput(panel, 0, false)
         qBox:SetPoint("TOPLEFT", 4, -4)
         qBox:SetPoint("TOPRIGHT", -120, -4)
@@ -350,7 +350,7 @@ local function BuildPollsSub(panel)
                 local t = strtrim(line)
                 if t ~= "" and #opts < 6 then opts[#opts + 1] = t end
             end
-            if BRutus.Polls then BRutus.Polls:Create(qBox:GetText(), opts) end
+            if GuildOS.Polls then GuildOS.Polls:Create(qBox:GetText(), opts) end
             qBox:SetText(""); oBox:SetText(""); qBox:ClearFocus(); oBox:ClearFocus()
         end)
         local hint = UI:CreateText(panel, L["One option per line (2-6)"], 8, C.textDim.r, C.textDim.g, C.textDim.b)
@@ -361,15 +361,15 @@ local function BuildPollsSub(panel)
 
     local function keyOf(name)
         local short = (name or ""):match("^([^-]+)") or name
-        return BRutus:GetPlayerKey(short, GetRealmName())
+        return GuildOS:GetPlayerKey(short, GetRealmName())
     end
 
     local function refresh()
         clear(child)
         child:SetWidth(holder:GetWidth() - 12)
-        local polls = (BRutus.Polls and BRutus.Polls:GetSorted()) or {}
-        local isOfficer = BRutus:IsOfficer()
-        local myKey = keyOf(BRutus.Compat.PlayerName())
+        local polls = (GuildOS.Polls and GuildOS.Polls:GetSorted()) or {}
+        local isOfficer = GuildOS:IsOfficer()
+        local myKey = keyOf(GuildOS.Compat.PlayerName())
         local y = 0
         for _, p in ipairs(polls) do
             local q = UI:CreateText(child, (p.closed and "|cff888888[" .. L["closed"] .. "]|r " or "") .. p.question,
@@ -381,7 +381,7 @@ local function BuildPollsSub(panel)
                 local closeBtn = UI:CreateButton(child, L["Close"], 56, 18)
                 closeBtn:SetPoint("TOPRIGHT", -2, -y)
                 local id = p.id
-                closeBtn:SetScript("OnClick", function() if BRutus.Polls then BRutus.Polls:Close(id) end end)
+                closeBtn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Close(id) end end)
             end
             y = y + math.max(18, (q:GetStringHeight() or 14) + 4)
 
@@ -401,7 +401,7 @@ local function BuildPollsSub(panel)
                 btn.label:SetPoint("LEFT", 8, 0)
                 if not p.closed then
                     local id, oi = p.id, idx
-                    btn:SetScript("OnClick", function() if BRutus.Polls then BRutus.Polls:Vote(id, oi) end end)
+                    btn:SetScript("OnClick", function() if GuildOS.Polls then GuildOS.Polls:Vote(id, oi) end end)
                 end
                 y = y + 22
             end
@@ -417,7 +417,7 @@ local function BuildPollsSub(panel)
         end
         child:SetHeight(math.max(1, y))
     end
-    if BRutus.Polls then BRutus.Polls.uiRefresh = refresh end
+    if GuildOS.Polls then GuildOS.Polls.uiRefresh = refresh end
     return refresh
 end
 
@@ -432,7 +432,7 @@ local HUB_SUBTABS = {
     { key = "polls",    label = L["Polls"] },
 }
 
-function BRutus:CreateGuildHub(parent, _mainFrame)
+function GuildOS:CreateGuildHub(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "calendar"
 
@@ -449,9 +449,9 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
         -- A deep link's filter goes to the sub-panel that takes one (the calendar: a day).
-        if filter ~= nil and info and info.panel.ApplyFilter then BRutus:SafeCall(info.panel.ApplyFilter, filter) end
+        if filter ~= nil and info and info.panel.ApplyFilter then GuildOS:SafeCall(info.panel.ApplyFilter, filter) end
     end
     parent.SelectSub = selectSub   -- deep links: /guildos calendar, the Now tab
 
@@ -476,7 +476,7 @@ function BRutus:CreateGuildHub(parent, _mainFrame)
     end
 
     local builders = {
-        calendar = function(p) return BRutus:CreateCalendarSub(p) end,
+        calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
         activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
     }
     for _, t in ipairs(HUB_SUBTABS) do
@@ -496,16 +496,16 @@ end
 ----------------------------------------------------------------------
 -- DKP panel (standings + officer controls), embedded as a main tab.
 ----------------------------------------------------------------------
-function BRutus:CreateDKPPanel(parent, _mainFrame)
+function GuildOS:CreateDKPPanel(parent, _mainFrame)
     local summary = UI:CreateText(parent, "", 11, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 12, -10)
 
     local openBtn = UI:CreateButton(parent, L["More..."], 90, 22)
     openBtn:SetPoint("TOPRIGHT", -12, -8)
-    openBtn:SetScript("OnClick", function() if BRutus.ShowPointsFrame then BRutus:ShowPointsFrame() end end)
+    openBtn:SetScript("OnClick", function() if GuildOS.ShowPointsFrame then GuildOS:ShowPointsFrame() end end)
 
     local controlsTop = -34
-    if BRutus:IsOfficer() then
+    if GuildOS:IsOfficer() then
         local nameInput = makeInput(parent, 150, false)
         nameInput:SetPoint("TOPLEFT", 12, -32)
         local amtInput = makeInput(parent, 60, false)
@@ -516,8 +516,8 @@ function BRutus:CreateDKPPanel(parent, _mainFrame)
         local function doAdjust(sign)
             local nm = strtrim(nameInput:GetText() or "")
             local amt = tonumber(amtInput:GetText())
-            if nm == "" or not amt or amt == 0 or not BRutus.Points then return end
-            BRutus.Points:Adjust(BRutus:GetPlayerKey(nm, GetRealmName()), sign * math.abs(amt),
+            if nm == "" or not amt or amt == 0 or not GuildOS.Points then return end
+            GuildOS.Points:Adjust(GuildOS:GetPlayerKey(nm, GetRealmName()), sign * math.abs(amt),
                 strtrim(reasonInput:GetText() or ""), sign > 0 and "award" or "spend")
             amtInput:SetText(""); reasonInput:SetText(""); nameInput:ClearFocus()
         end
@@ -552,17 +552,17 @@ function BRutus:CreateDKPPanel(parent, _mainFrame)
     local function refresh()
         clear(child)
         child:SetWidth(holder:GetWidth() - 12)
-        if BRutus.Points then
-            local mode = BRutus.Points:GetMode()
+        if GuildOS.Points then
+            local mode = GuildOS.Points:GetMode()
             summary:SetText(string.format(L["Mode: %s  ·  click More for decay / raid award / history"], mode))
         end
-        local list = (BRutus.Points and BRutus.Points:GetStandings()) or {}
+        local list = (GuildOS.Points and GuildOS.Points:GetStandings()) or {}
         local y = 0
         for idx, s in ipairs(list) do
             local row = CreateFrame("Frame", nil, child)
             row:SetSize(child:GetWidth(), 22)
             row:SetPoint("TOPLEFT", 0, -y)
-            local cr, cg, cb = BRutus:GetClassColor(s.class)
+            local cr, cg, cb = GuildOS:GetClassColor(s.class)
             local nameFS = UI:CreateText(row, idx .. ". " .. s.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 4, 0)
             local cur = UI:CreateText(row, tostring(s.current), 11, C.gold.r, C.gold.g, C.gold.b)

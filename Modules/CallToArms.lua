@@ -10,8 +10,8 @@
 -- a record: nothing is saved but an officer's own templates and each player's settings.
 ----------------------------------------------------------------------
 local CTA = {}
-BRutus.CallToArms = CTA
-local L = BRutus.L
+GuildOS.CallToArms = CTA
+local L = GuildOS.L
 
 CTA.COOLDOWN  = 60    -- seconds between two calls from one officer
 CTA.FROM_GAP  = 30    -- a second call from the same sender inside this is dropped on arrival
@@ -52,10 +52,10 @@ CTA.seen = {}       -- call id -> true
 CTA.lastFrom = {}   -- sender -> server time of their last call shown
 
 function CTA:Initialize()
-    BRutus.db.cta = BRutus.db.cta or {}
-    BRutus.db.cta.templates = BRutus.db.cta.templates or {}
-    if BRutus.SyncService then
-        BRutus.SyncService:On("cta", function(env, sender) CTA:OnSync(env, sender) end)
+    GuildOS.db.cta = GuildOS.db.cta or {}
+    GuildOS.db.cta.templates = GuildOS.db.cta.templates or {}
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("cta", function(env, sender) CTA:OnSync(env, sender) end)
     end
 end
 
@@ -63,13 +63,13 @@ end
 -- Settings: each player's own, true unless switched off
 ----------------------------------------------------------------------
 local function on(key)
-    return BRutus:GetSetting(key) ~= false
+    return GuildOS:GetSetting(key) ~= false
 end
 function CTA:PopupsOn() return on("ctaPopups") end
 function CTA:SoundOn() return on("ctaSound") end
 function CTA:QuietOn() return on("ctaQuiet") end
 function CTA:ChatOn() return on("ctaChat") end
-function CTA:Muted(kind) return BRutus:GetSetting("ctaMute_" .. tostring(kind)) == true end
+function CTA:Muted(kind) return GuildOS:GetSetting("ctaMute_" .. tostring(kind)) == true end
 
 ----------------------------------------------------------------------
 -- Templates: the ready-made kinds, then an officer's own
@@ -79,7 +79,7 @@ function CTA:Templates()
     for _, k in ipairs(self.KINDS) do
         out[#out + 1] = { id = k.id, name = k.title, text = k.text, kind = k.id, builtin = true }
     end
-    for _, t in ipairs((BRutus.db.cta and BRutus.db.cta.templates) or {}) do
+    for _, t in ipairs((GuildOS.db.cta and GuildOS.db.cta.templates) or {}) do
         out[#out + 1] = { id = t.id, name = t.name, text = t.text, kind = t.kind }
     end
     return out
@@ -92,10 +92,10 @@ function CTA:Template(id)
 end
 
 function CTA:SaveTemplate(name, text, kind)
-    name = BRutus:SanitizeUserText(name, self.NAME_MAX)
-    text = BRutus:SanitizeUserText(text, self.TEXT_MAX)
+    name = GuildOS:SanitizeUserText(name, self.NAME_MAX)
+    text = GuildOS:SanitizeUserText(text, self.TEXT_MAX)
     if name == "" or text == "" then return false, L["A template needs a name and a message."] end
-    local list = BRutus.db.cta.templates
+    local list = GuildOS.db.cta.templates
     if #list >= self.TEMPLATES_MAX then return false, L["Too many templates: delete one first."] end
     list[#list + 1] = { id = string.format("c%X%04X", GetServerTime(), math.random(0, 0xFFFF)),
                         name = name, text = text, kind = BY_ID[kind] and kind or "rally" }
@@ -103,7 +103,7 @@ function CTA:SaveTemplate(name, text, kind)
 end
 
 function CTA:DeleteTemplate(id)
-    local list = BRutus.db.cta.templates
+    local list = GuildOS.db.cta.templates
     for i = #list, 1, -1 do
         if list[i].id == id then table.remove(list, i) end
     end
@@ -118,9 +118,9 @@ function CTA:Where()
     local label = (sub ~= "" and sub ~= zone) and (sub .. ", " .. zone) or zone
     local x, y
     local ok = pcall(function()
-        local mapID = BRutus.Compat.GetBestMapForUnit("player")
-        local px, py = BRutus.Compat.GetPlayerMapPosition(mapID, "player")
-        if px and py and not BRutus.Compat.IsSecret(px, py) and px > 0 and py > 0 then
+        local mapID = GuildOS.Compat.GetBestMapForUnit("player")
+        local px, py = GuildOS.Compat.GetPlayerMapPosition(mapID, "player")
+        if px and py and not GuildOS.Compat.IsSecret(px, py) and px > 0 and py > 0 then
             x, y = math.floor(px * 1000 + 0.5) / 10, math.floor(py * 1000 + 0.5) / 10
         end
     end)
@@ -136,25 +136,25 @@ end
 -- Sending (officers, from a click or a command: the guild chat line needs that on Forever)
 ----------------------------------------------------------------------
 function CTA:Send(templateId, text)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Officers only.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return false
     end
     local now = GetServerTime()
-    local last = BRutus.db.cta.lastSent   -- saved, so a /reload does not skip the cooldown
+    local last = GuildOS.db.cta.lastSent   -- saved, so a /reload does not skip the cooldown
     if last and now - last < self.COOLDOWN and now >= last then
-        BRutus:Print(string.format(L["Wait %ds before the next call."], self.COOLDOWN - (now - last)))
+        GuildOS:Print(string.format(L["Wait %ds before the next call."], self.COOLDOWN - (now - last)))
         return false
     end
     local t = self:Template(templateId) or self:Template("rally")
     local zone, x, y = self:Where()
-    local body = BRutus:SanitizeUserText((text and strtrim(text) ~= "") and text or t.text, self.TEXT_MAX)
+    local body = GuildOS:SanitizeUserText((text and strtrim(text) ~= "") and text or t.text, self.TEXT_MAX)
     local call = {
         id = string.format("%X%04X", now, math.random(0, 0xFFFF)),
         kind = t.kind,
-        title = BRutus:SanitizeUserText(t.name, self.NAME_MAX),
-        text = BRutus:SanitizeUserText(fill(body, zone), self.TEXT_MAX),
-        zone = BRutus:SanitizeUserText(zone, 60),
+        title = GuildOS:SanitizeUserText(t.name, self.NAME_MAX),
+        text = GuildOS:SanitizeUserText(fill(body, zone), self.TEXT_MAX),
+        zone = GuildOS:SanitizeUserText(zone, 60),
         x = x, y = y, ts = now,
     }
     -- The guild line first, so the call can say it went: a player who takes calls as chat lines
@@ -166,17 +166,17 @@ function CTA:Send(templateId, text)
             and pcall(SendChatMessage, string.format(L["[Call to Arms] %s: %s"], call.title, call.text), "GUILD")
             or nil
     end
-    if BRutus.SyncService then BRutus.SyncService:Publish("cta", "call", call) end
-    BRutus.db.cta.lastSent = now
+    if GuildOS.SyncService then GuildOS.SyncService:Publish("cta", "call", call) end
+    GuildOS.db.cta.lastSent = now
     -- The caller sees the popup the guild sees, and the count grow on it (issue #110), on the
     -- same terms: not with popups off, nor mid-fight with quiet on.
-    local e = self:Remember(call, BRutus.Compat.PlayerName(), true)
+    local e = self:Remember(call, GuildOS.Compat.PlayerName(), true)
     if self:PopupsOn() and not self:Quiet() then
         self.lastPopup = now
         self:ShowPopup(e)
     end
-    BRutus:Print(string.format(L["Call to Arms sent: %s"], call.title))
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    GuildOS:Print(string.format(L["Call to Arms sent: %s"], call.title))
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
     return true
 end
 
@@ -184,7 +184,7 @@ end
 -- Receiving
 ----------------------------------------------------------------------
 local function clean(s, max)
-    return type(s) == "string" and BRutus:SanitizeUserText(s, max) or ""
+    return type(s) == "string" and GuildOS:SanitizeUserText(s, max) or ""
 end
 
 function CTA:Remember(call, sender, mine)
@@ -213,7 +213,7 @@ function CTA:OnSync(env, sender)
         if e and not e.going[sender] then
             e.going[sender] = true
             if self.popup and self.popup.callId == e.id then self:PaintCount(e) end
-            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+            if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
         end
     end
 end
@@ -234,7 +234,7 @@ function CTA:OnCall(d, sender)
     }
     if call.title == "" then call.title = self:Kind(call.kind).title end
     local e = self:Remember(call, sender, false)
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
     self:Alert(e)
 end
 
@@ -252,7 +252,7 @@ function CTA:Alert(e)
     local now = GetServerTime()
     local crowded = self.lastPopup and now - self.lastPopup < self.POPUP_GAP
     if not self:PopupsOn() or self:Quiet() or crowded then
-        if not e.chat then BRutus:Print(self:Line(e)) end
+        if not e.chat then GuildOS:Print(self:Line(e)) end
         return "line"
     end
     self.lastPopup = now
@@ -273,10 +273,10 @@ function CTA:Answer(id)
     local e = self:Find(id)
     if not e or e.answered then return end
     e.answered = true
-    e.going[BRutus.Compat.PlayerName()] = true
-    if BRutus.SyncService then BRutus.SyncService:Publish("cta", "going", { id = id }) end
+    e.going[GuildOS.Compat.PlayerName()] = true
+    if GuildOS.SyncService then GuildOS.SyncService:Publish("cta", "going", { id = id }) end
     if self.popup and self.popup.callId == id then self:PaintCount(e) end
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 function CTA:GoingCount(e)
@@ -295,7 +295,7 @@ local function ago(ts)
 end
 
 function CTA:BuildPopup()
-    local C = BRutus.Colors
+    local C = GuildOS.Colors
     local f = CreateFrame("Frame", "GuildOSCallToArms", UIParent, "BackdropTemplate")
     f:SetSize(440, 132)
     f:SetPoint("TOP", 0, -140)
@@ -311,30 +311,30 @@ function CTA:BuildPopup()
     f.icon:SetPoint("TOPLEFT", 12, -12)
 
     f.title = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f.title, 16)
+    GuildOS:ApplyFont(f.title, 16)
     f.title:SetPoint("TOPLEFT", f.icon, "TOPRIGHT", 10, 0)
     f.title:SetTextColor(1, 0.53, 0)
 
     f.text = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f.text, 12)
+    GuildOS:ApplyFont(f.text, 12)
     f.text:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -4)
     f.text:SetWidth(350)
     f.text:SetJustifyH("LEFT")
     if f.text.SetMaxLines then f.text:SetMaxLines(3) end   -- 140 wide letters would be four
     f.text:SetTextColor(C.white.r, C.white.g, C.white.b)
 
-    f.close = BRutus.UI:CreateButton(f, L["Dismiss"], 90, 22)
+    f.close = GuildOS.UI:CreateButton(f, L["Dismiss"], 90, 22)
     f.close:SetPoint("BOTTOMRIGHT", -12, 10)
     f.close:SetScript("OnClick", function() f:Hide() end)
 
-    f.go = BRutus.UI:CreateButton(f, L["On my way"], 100, 22)
+    f.go = GuildOS.UI:CreateButton(f, L["On my way"], 100, 22)
     f.go:SetPoint("RIGHT", f.close, "LEFT", -8, 0)
     f.go:SetScript("OnClick", function() CTA:Answer(f.callId) end)
 
     -- Where, who and when: the popup's full width, on one line above the buttons, so a long
     -- zone with its position does not push the sender off it.
     f.meta = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f.meta, 10)
+    GuildOS:ApplyFont(f.meta, 10)
     f.meta:SetPoint("BOTTOMLEFT", 12, 40)
     f.meta:SetPoint("BOTTOMRIGHT", -12, 40)
     f.meta:SetJustifyH("LEFT")
@@ -343,7 +343,7 @@ function CTA:BuildPopup()
 
     -- How many are coming, beside the buttons and stopping short of them.
     f.count = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f.count, 10)
+    GuildOS:ApplyFont(f.count, 10)
     f.count:SetPoint("BOTTOMLEFT", 12, 16)
     f.count:SetPoint("BOTTOMRIGHT", f.go, "BOTTOMLEFT", -8, 6)
     f.count:SetJustifyH("LEFT")

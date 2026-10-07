@@ -1,6 +1,6 @@
 -- Forever skin (issue #13), run against the real Core/Data.lua.
 --
--- Every existing screen reads BRutus.Colors and sets fonts, so the skin lives
+-- Every existing screen reads GuildOS.Colors and sets fonts, so the skin lives
 -- in two tables and one helper. This proves the tokens carry the design
 -- handoff's values, that each legacy key the old screens read points at the
 -- right token (as its own copy), that violet only ever means epic — in the
@@ -23,9 +23,9 @@ local function check(cond, what)
 end
 
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
-BRutus = {}
+GuildOS = {}
 dofile(ADDON .. "/Core/Data.lua")
-local C, F = BRutus.Colors, BRutus.Fonts
+local C, F = GuildOS.Colors, GuildOS.Fonts
 
 local EPS = 1e-9
 local function near(a, b) return math.abs(a - b) < EPS end
@@ -186,8 +186,8 @@ toc:close()
 check(scanned > 50, "the source scan covered the addon's files (" .. scanned .. ")")
 
 -- ── 4. The accent picker is gone ────────────────────────────────────────
-check(BRutus.ACCENT_PRESETS == nil, "no accent presets")
-check(BRutus.ApplyTheme == nil, "no ApplyTheme in Data.lua")
+check(GuildOS.ACCENT_PRESETS == nil, "no accent presets")
+check(GuildOS.ApplyTheme == nil, "no ApplyTheme in Data.lua")
 
 -- ── 5. ApplyFont enforces the type rules ────────────────────────────────
 local function fontString(result)
@@ -201,46 +201,46 @@ local function fontString(result)
 end
 
 local fs = fontString(true)
-BRutus:ApplyFont(fs, 18)
+GuildOS:ApplyFont(fs, 18)
 check(fs.calls[1].file == F.serif and fs.calls[1].size == 18, "18px is Spectral")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 14)
+GuildOS:ApplyFont(fs, 14)
 check(fs.calls[1].file == F.serif, "14px is the first serif size")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 13)
+GuildOS:ApplyFont(fs, 13)
 check(fs.calls[1].file == F.mono and fs.calls[1].size == 13, "13px is IBM Plex Mono")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 9)
+GuildOS:ApplyFont(fs, 9)
 check(fs.calls[1].file == F.mono and fs.calls[1].size == 10, "9px is clamped to 10px mono")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 7)
+GuildOS:ApplyFont(fs, 7)
 check(fs.calls[1].size == 10, "7px is clamped to 10px")
 fs = fontString(true)
-BRutus:ApplyFont(fs, nil)
+GuildOS:ApplyFont(fs, nil)
 check(fs.calls[1].file == F.mono and fs.calls[1].size == 10, "no size means 10px mono")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 15, "wordmark")
+GuildOS:ApplyFont(fs, 15, "wordmark")
 check(fs.calls[1].file == F.serifStrong and fs.calls[1].size == 15, "a role picks the file; a given size wins")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 11, "wordmark")
+GuildOS:ApplyFont(fs, 11, "wordmark")
 check(fs.calls[1].file == F.mono and fs.calls[1].size == 11, "a serif role asked under 14px reads as mono")
 fs = fontString(true)
-BRutus:ApplyFont(fs, 8, "colHeader")
+GuildOS:ApplyFont(fs, 8, "colHeader")
 check(fs.calls[1].file == F.monoStrong and fs.calls[1].size == 10, "a mono role keeps its weight and is clamped to 10px")
 fs = fontString(true)
-BRutus:ApplyFont(fs, nil, "countdown")
+GuildOS:ApplyFont(fs, nil, "countdown")
 check(fs.calls[1].file == F.mono and fs.calls[1].size == 38, "a role without a size uses the role size")
 for _, size in ipairs({ 7, 10, 14, 22 }) do
   fs = fontString(true)
-  BRutus:ApplyFont(fs, size)
+  GuildOS:ApplyFont(fs, size)
   check(fs.calls[1].flags == "", size .. "px is never outlined")
 end
 fs = fontString(false)
-BRutus:ApplyFont(fs, 12)
+GuildOS:ApplyFont(fs, 12)
 check(#fs.calls == 2 and fs.calls[2].file == STANDARD_TEXT_FONT and fs.calls[2].size == 12 and fs.calls[2].flags == "",
   "a font that fails to load falls back to the client font, still not outlined")
 fs = fontString(nil)
-BRutus:ApplyFont(fs, 12)
+GuildOS:ApplyFont(fs, 12)
 check(#fs.calls == 1, "a client that returns nothing on success is not pushed onto the fallback")
 
 -- ── 6. The type scale (spec §2.3), and every role follows the floors ─────

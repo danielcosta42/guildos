@@ -5,10 +5,10 @@
 -- the legacy CSV format (ItemId,Name,Class,Note,Plus).
 ----------------------------------------------------------------------
 local SoftRes = {}
-BRutus.SoftRes = SoftRes
+GuildOS.SoftRes = SoftRes
 
-local L = BRutus.L
-local C = BRutus.Colors
+local L = GuildOS.L
+local C = GuildOS.Colors
 
 ----------------------------------------------------------------------
 -- Base64 decoder (standard RFC 4648, no external library needed)
@@ -132,14 +132,14 @@ end
 
 -- Shared, because the companion import needs the same parser and a second
 -- hand-written JSON decoder in one addon is one too many.
-BRutus.JsonDecode = JsonDecode
+GuildOS.JsonDecode = JsonDecode
 
 ----------------------------------------------------------------------
 -- Initialize: ensure DB keys exist
 ----------------------------------------------------------------------
 function SoftRes:Initialize()
-    if not BRutus.db then return end
-    BRutus.db.softRes = BRutus.db.softRes or { items = {}, meta = {}, distributed = {} }
+    if not GuildOS.db then return end
+    GuildOS.db.softRes = GuildOS.db.softRes or { items = {}, meta = {}, distributed = {} }
     self:HookTooltips()
 end
 
@@ -148,7 +148,7 @@ end
 ----------------------------------------------------------------------
 function SoftRes:Import(raw)
     if not raw or raw == "" then
-        BRutus:Print(L["SoftRes: no data to import."])
+        GuildOS:Print(L["SoftRes: no data to import."])
         return false
     end
     raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
@@ -167,25 +167,25 @@ end
 function SoftRes:ImportGargul(raw)
     local compressed = Base64Decode(raw)
     if not compressed or #compressed == 0 then
-        BRutus:Print(L["SoftRes: could not base64-decode import string."])
+        GuildOS:Print(L["SoftRes: could not base64-decode import string."])
         return false
     end
 
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
     if not LibDeflate then
-        BRutus:Print(L["SoftRes: LibDeflate not available."])
+        GuildOS:Print(L["SoftRes: LibDeflate not available."])
         return false
     end
 
     local jsonStr = LibDeflate:DecompressZlib(compressed)
     if not jsonStr then
-        BRutus:Print(L["SoftRes: decompression failed. Make sure you copied the full Gargul export."])
+        GuildOS:Print(L["SoftRes: decompression failed. Make sure you copied the full Gargul export."])
         return false
     end
 
     local ok, data = pcall(JsonDecode, jsonStr)
     if not ok or type(data) ~= "table" then
-        BRutus:Print(L["SoftRes: failed to parse JSON. The import string may be corrupted."])
+        GuildOS:Print(L["SoftRes: failed to parse JSON. The import string may be corrupted."])
         return false
     end
 
@@ -279,7 +279,7 @@ end
 -- Commit item table to DB and print a summary
 ----------------------------------------------------------------------
 function SoftRes:LoadItems(items, source, meta)
-    BRutus.db.softRes = {
+    GuildOS.db.softRes = {
         items       = items,
         distributed = {},
         meta        = {
@@ -301,11 +301,11 @@ function SoftRes:LoadItems(items, source, meta)
     local playerCount = 0
     for _ in pairs(playerSeen) do playerCount = playerCount + 1 end
 
-    BRutus:Print(string.format(L["SoftRes imported: %d items, %d reservations (%s)"],
+    GuildOS:Print(string.format(L["SoftRes imported: %d items, %d reservations (%s)"],
         itemCount, playerCount, source))
 
     -- Notify UI to refresh if the SoftRes panel is visible
-    if BRutus.softResRefresh then BRutus.softResRefresh() end
+    if GuildOS.softResRefresh then GuildOS.softResRefresh() end
 
     return true
 end
@@ -314,7 +314,7 @@ end
 -- Accessors
 ----------------------------------------------------------------------
 function SoftRes:GetDB()
-    return BRutus.db and BRutus.db.softRes
+    return GuildOS.db and GuildOS.db.softRes
 end
 
 -- Raw list of reservers for an item (all players, any status)
@@ -331,11 +331,11 @@ function SoftRes:GetReservesForDisplay(itemId)
     local inRaid = {}
     local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
     for i = 1, numMembers do
-        local n = BRutus.Compat.UnitIdentity("raid" .. i)
+        local n = GuildOS.Compat.UnitIdentity("raid" .. i)
         if n then inRaid[strlower(n)] = true end
     end
     -- Solo / test: treat the local player as "in raid"
-    local me = BRutus.Compat.PlayerName()
+    local me = GuildOS.Compat.PlayerName()
     if me then inRaid[strlower(me)] = true end
 
     local out = {}
@@ -393,20 +393,20 @@ function SoftRes:IsDistributed(itemId, playerName)
 end
 
 function SoftRes:Clear()
-    if BRutus.db then
-        BRutus.db.softRes = { items = {}, meta = {}, distributed = {} }
+    if GuildOS.db then
+        GuildOS.db.softRes = { items = {}, meta = {}, distributed = {} }
     end
-    BRutus:Print(L["SoftRes data cleared."])
-    if BRutus.softResRefresh then BRutus.softResRefresh() end
+    GuildOS:Print(L["SoftRes data cleared."])
+    if GuildOS.softResRefresh then GuildOS.softResRefresh() end
 end
 
 ----------------------------------------------------------------------
 -- Tooltip: show soft reservers when hovering an item
 ----------------------------------------------------------------------
 function SoftRes:HookTooltips()
-    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", function(tt)
-        if not BRutus:ShowsItemTooltipInfo(tt) then return end
-        local _, link = BRutus.Compat.TooltipItem(tt)
+    GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", function(tt)
+        if not GuildOS:ShowsItemTooltipInfo(tt) then return end
+        local _, link = GuildOS.Compat.TooltipItem(tt)
         if not link then return end
         local itemId = tonumber(link:match("item:(%d+)"))
         if not itemId then return end

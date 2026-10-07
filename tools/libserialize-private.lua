@@ -86,20 +86,20 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/SyncService.lua")
 local sent = {}
-BRutus.CommSystem.SendMessage = function(_, t, data) sent[#sent + 1] = { t = t, data = data } end
-BRutus.db = { sync = {} }
-BRutus.SyncService:Initialize()
-local id = BRutus.SyncService:Publish("bulletin", "snapshot", { count = 0 }, { rev = 0 })
+GuildOS.CommSystem.SendMessage = function(_, t, data) sent[#sent + 1] = { t = t, data = data } end
+GuildOS.db = { sync = {} }
+GuildOS.SyncService:Initialize()
+local id = GuildOS.SyncService:Publish("bulletin", "snapshot", { count = 0 }, { rev = 0 })
 check(id ~= nil and #sent == 1 and sent[1].data ~= "theirs", "a SyncService envelope with zeros in it goes out, serialized by ours")
 local okEnv, env = ours:Deserialize(sent[1].data)
 check(okEnv and env.dom == "bulletin" and env.data.count == 0 and env.rev == 0, "and reads back whole")
 
 -- The call in the player's stack trace: a member's broadcast, zeros and all.
-BRutus.DataCollector = { CollectMyData = function() end,
+GuildOS.DataCollector = { CollectMyData = function() end,
   GetBroadcastData = function() return { name = "Chehul Costa", level = 60, avgIlvl = 0, gold = 0,
                                          professions = { { name = "Mining", rank = 0, maxRank = 300 } } } end }
 sent = {}
-local okB, errB = pcall(BRutus.CommSystem.BroadcastMyData, BRutus.CommSystem, true)
+local okB, errB = pcall(GuildOS.CommSystem.BroadcastMyData, GuildOS.CommSystem, true)
 check(okB and #sent == 1 and sent[1].t == "BC", "BroadcastMyData sends a member's data with zeros in it (" .. tostring(errB) .. ")")
 local okRead, data = ours:Deserialize(sent[1].data)
 check(okRead and data.avgIlvl == 0 and data.professions[1].rank == 0 and data.name == "Chehul Costa",

@@ -6,9 +6,9 @@
 -- Rule 10: no business logic here. Everything is rendered from
 -- Alliance:Summary() / Alliance:CanAdminister(); actions call module methods.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
 local ROW_H = 22
 local TAB_H = 28        -- UI:CreateTab's fixed height
@@ -24,7 +24,7 @@ local function addFlexHint(fs)
     if flexHints then flexHints[#flexHints + 1] = fs end
 end
 
-local function ALLY() return BRutus.Alliance end
+local function ALLY() return GuildOS.Alliance end
 
 -- Explicit Show/Hide instead of SetShown: everywhere else in this codebase
 -- SetShown is only ever called on Frames, and these groups mix in FontStrings
@@ -45,7 +45,7 @@ local function makeInput(parent, width)
                     edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     b:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(b, 11)
+    GuildOS:ApplyFont(b, 11)
     b:SetTextColor(C.text.r, C.text.g, C.text.b)
     b:SetTextInsets(6, 6, 0, 0)
     b:SetAutoFocus(false)
@@ -93,7 +93,7 @@ local function BuildOverview(panel)
             status:Hide()
             line:Hide()
             empty:Show()
-            empty:SetText(BRutus:IsOfficer()
+            empty:SetText(GuildOS:IsOfficer()
                 and L["This guild is not in an alliance yet. Use the Manage tab to join or found one."]
                 or L["This guild is not in an alliance yet."])
             return
@@ -123,7 +123,7 @@ local function BuildOverview(panel)
         -- Schedule conflicts. Only rendered when there is something to say,
         -- so a healthy week costs no vertical space at all.
         ------------------------------------------------------------------
-        local cal = BRutus.Calendar
+        local cal = GuildOS.Calendar
         local conflicts = (cal and cal.AllianceConflicts and cal:AllianceConflicts()) or {}
         if #conflicts > 0 then
             local hdr = UI:CreateText(content,
@@ -224,7 +224,7 @@ local function BuildOverview(panel)
             ambFs:SetJustifyH("LEFT")
             ambFs:SetWordWrap(false)
 
-            local age = g.ts and BRutus:TimeAgo(g.ts) or L["never"]
+            local age = g.ts and GuildOS:TimeAgo(g.ts) or L["never"]
             local ageFs = UI:CreateText(row, age, 11, C.textDim.r, C.textDim.g, C.textDim.b)
             ageFs:SetPoint("LEFT", 478, 0)
 
@@ -259,7 +259,7 @@ local function BuildOverview(panel)
 
             for i = 1, math.min(#events, 8) do
                 local ev = events[i]
-                local size = tonumber(ev.size) or BRutus.Client.defaultRaidSize   -- from another guild
+                local size = tonumber(ev.size) or GuildOS.Client.defaultRaidSize   -- from another guild
                 local full = (ev.yes or 0) >= size
                 local when = date("%a %H:%M", ev.when)
                 local fs = UI:CreateText(content, string.format("%s  %s  |cff888888%s  %d/%d|r",
@@ -286,12 +286,12 @@ local function BuildOverview(panel)
                         roleBtn.label:SetText(({ TANK = L["Tank"], HEALER = L["Healer"], DPS = L["DPS"] })[roleBtn.role])
                     end)
                     askBtn:SetScript("OnClick", function()
-                        local ok, err = BRutus.Calendar:RequestAllianceSlot(
+                        local ok, err = GuildOS.Calendar:RequestAllianceSlot(
                             ev.id, ev.guild, roleBtn.role, "")
                         if ok then
-                            BRutus:Print(string.format(L["Slot requested from %s."], ev.guild))
+                            GuildOS:Print(string.format(L["Slot requested from %s."], ev.guild))
                         elseif err then
-                            BRutus:Print(err)
+                            GuildOS:Print(err)
                         end
                     end)
                 end
@@ -385,11 +385,11 @@ local function ensureAllyCard()
     return f
 end
 
-function BRutus:ShowAllyCard(name, guild, anchor)
+function GuildOS:ShowAllyCard(name, guild, anchor)
     local f = ensureAllyCard()
-    local ally = BRutus.Alliance
+    local ally = GuildOS.Alliance
     local info = (ally and ally:SpeakerInfo(name)) or {}
-    local cr, cg, cb = BRutus:GetClassColor(info.class)
+    local cr, cg, cb = GuildOS:GetClassColor(info.class)
 
     f.accent:SetColorTexture(cr, cg, cb, 0.9)
     f.name:SetText(name or "?")
@@ -434,7 +434,7 @@ function BRutus:ShowAllyCard(name, guild, anchor)
     f.body:SetText(table.concat(lines, "\n\n"))
 
     f.whisper:SetScript("OnClick", function() ChatFrame_SendTell(name) end)
-    f.invite:SetScript("OnClick", function() BRutus.Compat.InviteUnit(name) end)
+    f.invite:SetScript("OnClick", function() GuildOS.Compat.InviteUnit(name) end)
 
     -- The full member sheet only exists for our OWN guild: an ally's gear and
     -- history are simply not data we hold.
@@ -443,19 +443,19 @@ function BRutus:ShowAllyCard(name, guild, anchor)
         f.sheet:SetScript("OnClick", function()
             -- MemberDetail needs the merged roster view, not the raw synced
             -- entry: rank and classDisplay only exist on the live roster.
-            local record = BRutus:GetMemberRecord(name)
-            if record and BRutus.ShowMemberDetail then
+            local record = GuildOS:GetMemberRecord(name)
+            if record and GuildOS.ShowMemberDetail then
                 f:Hide()
-                BRutus:ShowMemberDetail(record)
+                GuildOS:ShowMemberDetail(record)
             else
-                BRutus:Print(L["Could not load that character's sheet."])
+                GuildOS:Print(L["Could not load that character's sheet."])
             end
         end)
     end
 
     -- Moderating your own guildmates through a channel kick is the wrong tool:
     -- that is a guild matter, not an alliance one.
-    local chat = BRutus.AllianceChat
+    local chat = GuildOS.AllianceChat
     local canModerate = ally and ally:CanAdminister() and info.own ~= true
         and chat and chat:CanModerate()
     setShown(f.ban, canModerate)
@@ -483,7 +483,7 @@ end
 -- which is the one thing a default chat tab cannot do.
 ----------------------------------------------------------------------
 local function BuildChat(panel)
-    local CHAT = function() return BRutus.AllianceChat end
+    local CHAT = function() return GuildOS.AllianceChat end
 
     local status = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
     status:SetPoint("TOPLEFT", 6, -6)
@@ -568,8 +568,8 @@ local function BuildChat(panel)
             if col then nameFS:SetTextColor(col[1], col[2], col[3]) end
         end)
         hit:SetScript("OnClick", function(self)
-            if self.name and BRutus.ShowAllyCard then
-                BRutus:ShowAllyCard(self.name, self.guild, self)
+            if self.name and GuildOS.ShowAllyCard then
+                GuildOS:ShowAllyCard(self.name, self.guild, self)
             end
         end)
 
@@ -577,7 +577,7 @@ local function BuildChat(panel)
         hide:SetSize(16, 16)
         hide:SetPoint("TOPRIGHT", -4, -4)
         hide.fs = hide:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(hide.fs, 12)
+        GuildOS:ApplyFont(hide.fs, 12)
         hide.fs:SetPoint("CENTER")
         hide.fs:SetText("\195\151")
         hide.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
@@ -594,8 +594,8 @@ local function BuildChat(panel)
             GameTooltip:Hide()
         end)
         hide:SetScript("OnClick", function(self)
-            local ok, err = BRutus.AllianceChat:HideMessage(self.who, self.text)
-            if not ok and err then BRutus:Print(err) end
+            local ok, err = GuildOS.AllianceChat:HideMessage(self.who, self.text)
+            if not ok and err then GuildOS:Print(err) end
             refresh()
         end)
 
@@ -617,7 +617,7 @@ local function BuildChat(panel)
         if chat:Send(input:GetText()) then
             input:SetText("")
         else
-            BRutus:Print(L["Not connected to the alliance channel."])
+            GuildOS:Print(L["Not connected to the alliance channel."])
         end
         refresh()
     end
@@ -661,13 +661,13 @@ local function BuildChat(panel)
         local hidden = chat:HiddenSet()
         local log = {}
         for _, e in ipairs(rawLog) do
-            if e.sys or not hidden[BRutus.AllianceChat.HiddenKey(e.n, e.m)] then
+            if e.sys or not hidden[GuildOS.AllianceChat.HiddenKey(e.n, e.m)] then
                 log[#log + 1] = e
             end
         end
-        local groups = BRutus.AllianceChat.GroupLog(log, BRutus.AllianceChat.GROUP_WINDOW)
-        local canHide = BRutus.Alliance and BRutus.Alliance:CanAdminister()
-        local myGuild = BRutus.Alliance and BRutus.Alliance:MyGuildName()
+        local groups = GuildOS.AllianceChat.GroupLog(log, GuildOS.AllianceChat.GROUP_WINDOW)
+        local canHide = GuildOS.Alliance and GuildOS.Alliance:CanAdminister()
+        local myGuild = GuildOS.Alliance and GuildOS.Alliance:MyGuildName()
         local width = math.max(content:GetWidth() - 12, 200)
         local y = 0
 
@@ -677,7 +677,7 @@ local function BuildChat(panel)
 
             if g.sys then
                 -- Events stand apart: no card, no speaker, just a marked line.
-                local lbl = BRutus.Colors.label
+                local lbl = GuildOS.Colors.label
                 local col = (g.sys == "warn") and "E0B040"
                     or string.format("%02x%02x%02x", lbl.r * 255, lbl.g * 255, lbl.b * 255)
                 b.card:SetBackdropColor(0, 0, 0, 0)
@@ -697,8 +697,8 @@ local function BuildChat(panel)
                 b.card:Show()
                 y = y + h + 2
             else
-                local info = BRutus.Alliance and BRutus.Alliance:SpeakerInfo(g.name)
-                local cr, cg, cb = BRutus:GetClassColor(info and info.class)
+                local info = GuildOS.Alliance and GuildOS.Alliance:SpeakerInfo(g.name)
+                local cr, cg, cb = GuildOS:GetClassColor(info and info.class)
                 local own = (g.guild == myGuild)
 
                 b.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, own and 0.35 or 0.55)
@@ -769,13 +769,13 @@ local function BuildChat(panel)
         -- height lands, so scrolling to the bottom in this frame would clamp
         -- against the OLD range and leave the newest line off screen.
         local target = math.max(0, y - holder:GetHeight())
-        BRutus.Compat.After(0, function()
+        GuildOS.Compat.After(0, function()
             if panel:IsVisible() then scroll:SetVerticalScroll(target) end
         end)
     end
 
-    if BRutus.AllianceChat then
-        BRutus.AllianceChat:OnRefresh(function()
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:OnRefresh(function()
             if panel:IsVisible() then refresh() end
         end)
     end
@@ -874,7 +874,7 @@ local function BuildBulletin(panel)
         del:SetSize(18, 18)
         del:SetPoint("TOPRIGHT", -5, -5)
         del.fs = del:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(del.fs, 13)
+        GuildOS:ApplyFont(del.fs, 13)
         del.fs:SetPoint("CENTER")
         del.fs:SetText("\195\151")
         del.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
@@ -882,7 +882,7 @@ local function BuildBulletin(panel)
         del:SetScript("OnLeave", function() del.fs:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b) end)
         del:SetScript("OnClick", function(self)
             local ok, err = ALLY():RemoveBoardPost(self.postId)
-            if not ok and err then BRutus:Print(err) end
+            if not ok and err then GuildOS:Print(err) end
             refresh()
         end)
 
@@ -895,7 +895,7 @@ local function BuildBulletin(panel)
         if ok then
             box:SetText("")
         elseif err then
-            BRutus:Print(err)
+            GuildOS:Print(err)
         end
         refresh()
     end)
@@ -945,7 +945,7 @@ local function BuildBulletin(panel)
 
             c.who:SetText(string.format("|cff%s%s|r  |cff666666\194\183|r  %s",
                 Ally.GuildColorHex(p.guild), (p.guild or "?"):upper(), p.by or "?"))
-            c.when:SetText(p.ts and BRutus:TimeAgo(p.ts) or "")
+            c.when:SetText(p.ts and GuildOS:TimeAgo(p.ts) or "")
 
             c.body:SetWidth(width - 40)
             c.body:SetText(p.text or "")
@@ -1113,11 +1113,11 @@ local function BuildManage(panel)
     -- in one action. Only the owner can, so it hides for everyone else.
     local modBtn = UI:CreateButton(body, L["Give ambassadors channel moderation"], 250, 24)
     modBtn:SetScript("OnClick", function()
-        local n = BRutus.AllianceChat and BRutus.AllianceChat:PromoteAmbassadors() or 0
+        local n = GuildOS.AllianceChat and GuildOS.AllianceChat:PromoteAmbassadors() or 0
         if n > 0 then
-            BRutus:Print(string.format(L["Asked the server to promote %d ambassador(s)."], n))
+            GuildOS:Print(string.format(L["Asked the server to promote %d ambassador(s)."], n))
         else
-            BRutus:Print(L["Only the channel owner can do that."])
+            GuildOS:Print(L["Only the channel owner can do that."])
         end
     end)
 
@@ -1134,7 +1134,7 @@ local function BuildManage(panel)
                           codeHdr, codeBox, codeNewBtn, codeHint }
 
     local function say(ok, err)
-        if not ok and err then BRutus:Print(err) end
+        if not ok and err then GuildOS:Print(err) end
     end
 
     local refresh   -- forward declaration so handlers can re-render
@@ -1204,7 +1204,7 @@ local function BuildManage(panel)
         local ok, err = ALLY():AddAmbassador(who)
         say(ok, err)
         if ok then
-            BRutus:Print(string.format(L["%s is now an ambassador."], who))
+            GuildOS:Print(string.format(L["%s is now an ambassador."], who))
             ambBox:SetText("")
         end
         refresh()
@@ -1213,9 +1213,9 @@ local function BuildManage(panel)
     codeNewBtn:SetScript("OnClick", function()
         local ok, res = ALLY():RegenerateCode()
         if ok then
-            BRutus:Print(string.format(L["New join code: %s"], res))
+            GuildOS:Print(string.format(L["New join code: %s"], res))
         elseif res then
-            BRutus:Print(res)
+            GuildOS:Print(res)
         end
         refresh()
     end)
@@ -1223,14 +1223,14 @@ local function BuildManage(panel)
     ambClaimBtn:SetScript("OnClick", function()
         local ok, err = ALLY():ClaimAmbassador()
         say(ok, err)
-        if ok then BRutus:Print(L["You are now an ambassador of this guild."]) end
+        if ok then GuildOS:Print(L["You are now an ambassador of this guild."]) end
         refresh()
     end)
 
     local function tryJoin(contact)
         local ok, err, marker = ALLY():JoinWithToken(joinBox:GetText(), contact)
         if ok then
-            BRutus:Print(L["Join sent. If somebody from that alliance is online you are in."])
+            GuildOS:Print(L["Join sent. If somebody from that alliance is online you are in."])
             joinBox:SetText("")
             contactBox:SetText("")
             needContact = false
@@ -1239,7 +1239,7 @@ local function BuildManage(panel)
             if needContact then
                 joinWarn:SetText(L["Nobody from that alliance is visible right now. Name anyone in it and try again."])
             end
-            if err then BRutus:Print(err) end
+            if err then GuildOS:Print(err) end
         end
         refresh()
     end
@@ -1255,7 +1255,7 @@ local function BuildManage(panel)
         if ok then
             tagBox:SetText("")
             nameBox:SetText("")
-            if BRutus.AllianceChat then BRutus.AllianceChat:Join() end
+            if GuildOS.AllianceChat then GuildOS.AllianceChat:Join() end
         end
         refresh()
     end)
@@ -1265,7 +1265,7 @@ local function BuildManage(panel)
         local ok, err = ALLY():Invite(target)
         say(ok, err)
         if ok then
-            BRutus:Print(string.format(L["Invite sent to %s."], target))
+            GuildOS:Print(string.format(L["Invite sent to %s."], target))
             inviteBox:SetText("")
         end
         refresh()
@@ -1291,7 +1291,7 @@ local function BuildManage(panel)
     end)
 
     chatBtn:SetScript("OnClick", function()
-        local chat = BRutus.AllianceChat
+        local chat = GuildOS.AllianceChat
         if not chat then return end
         chat:SetEnabled(not chat:Prefs().chat)
         refresh()
@@ -1305,7 +1305,7 @@ local function BuildManage(panel)
 
     refresh = function()
         local ally = ALLY()
-        local isOfficer = BRutus:IsOfficer()
+        local isOfficer = GuildOS:IsOfficer()
         setShown(notOfficer, not isOfficer)
         setShown(body, isOfficer)
         if not isOfficer then return end
@@ -1330,7 +1330,7 @@ local function BuildManage(panel)
         ------------------------------------------------------------------
         local entry = ally:_MyEntry()
         local list = (entry and entry.ambassadors) or {}
-        local me = (Ambiguate and Ambiguate(BRutus.Compat.PlayerName() or "", "short")) or BRutus.Compat.PlayerName()
+        local me = (Ambiguate and Ambiguate(GuildOS.Compat.PlayerName() or "", "short")) or GuildOS.Compat.PlayerName()
         local vacancy = GuildOS.Alliance._CanClaimAmbassador(list, ally:_GuildRosterShortSet())
         local canEdit = ally:CanAdminister()
 
@@ -1349,7 +1349,7 @@ local function BuildManage(panel)
                     local ok, err = ALLY():RemoveAmbassador(amb)
                     say(ok, err)
                     if ok then
-                        BRutus:Print(string.format(L["%s is no longer an ambassador."], amb))
+                        GuildOS:Print(string.format(L["%s is no longer an ambassador."], amb))
                     end
                     refresh()
                 end)
@@ -1398,7 +1398,7 @@ local function BuildManage(panel)
             end
         end
 
-        local chat = BRutus.AllianceChat
+        local chat = GuildOS.AllianceChat
         local on = chat and chat:Prefs().chat
         -- UI:CreateButton has no SetText; the label is a child FontString.
         chatBtn.label:SetText(on and L["Alliance chat: on"] or L["Alliance chat: off"])
@@ -1418,8 +1418,8 @@ local function registerPopups()
         OnAccept = function(self)
             local d = self and self.data
             if not d then return end
-            local ok, err = BRutus.Alliance:RemoveGuild(d.guild)
-            if not ok and err then BRutus:Print(err) end
+            local ok, err = GuildOS.Alliance:RemoveGuild(d.guild)
+            if not ok and err then GuildOS:Print(err) end
             if d.after then d.after() end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
@@ -1429,8 +1429,8 @@ local function registerPopups()
         text = "%s", button1 = L["Ban"], button2 = L["Cancel"],
         OnAccept = function(self)
             local d = self and self.data
-            if d and d.name and BRutus.AllianceChat:Ban(d.name) then
-                BRutus:Print(string.format(L["Asked the server to ban %s from the channel."], d.name))
+            if d and d.name and GuildOS.AllianceChat:Ban(d.name) then
+                GuildOS:Print(string.format(L["Asked the server to ban %s from the channel."], d.name))
             end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
@@ -1439,8 +1439,8 @@ local function registerPopups()
     StaticPopupDialogs["GUILDOS_ALLY_LEAVE"] = {
         text = "%s", button1 = L["Leave"], button2 = L["Cancel"],
         OnAccept = function(self)
-            local ok, err = BRutus.Alliance:Leave()
-            if not ok and err then BRutus:Print(err) end
+            local ok, err = GuildOS.Alliance:Leave()
+            if not ok and err then GuildOS:Print(err) end
             local d = self and self.data
             if d and d.after then d.after() end
         end,
@@ -1461,7 +1461,7 @@ local SUBTABS = {
     { key = "manage",   label = L["Manage"] },
 }
 
-function BRutus:CreateAlliancePanel(parent, _mainFrame)
+function GuildOS:CreateAlliancePanel(parent, _mainFrame)
     registerPopups()
     parent.subPanels = {}
     parent.activeSub = nil
@@ -1479,7 +1479,7 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(btns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     parent.SelectSub = selectSub
 
@@ -1538,20 +1538,20 @@ function BRutus:CreateAlliancePanel(parent, _mainFrame)
     -- Unread count on the Chat tab, so a message that lands while you are on
     -- another tab is not silently missed.
     local function paintUnread()
-        local chat = BRutus.AllianceChat
+        local chat = GuildOS.AllianceChat
         local n = (chat and chat.unread) or 0
         local btn = btns["chat"]
         if not btn then return end
         btn.label:SetText(n > 0 and string.format("%s (%d)", L["Chat"], n) or L["Chat"])
     end
-    if BRutus.AllianceChat then
-        BRutus.AllianceChat:OnRefresh(function()
+    if GuildOS.AllianceChat then
+        GuildOS.AllianceChat:OnRefresh(function()
             if parent:IsVisible() then paintUnread() end
         end)
     end
 
     parent:SetScript("OnShow", function()
-        local hasPact = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
+        local hasPact = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         local first = layoutTabs(hasPact)
         local want = parent.activeSub
         -- Falling out of a pact must not strand the panel on a hidden tab, and

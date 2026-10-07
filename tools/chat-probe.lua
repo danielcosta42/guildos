@@ -93,7 +93,7 @@ local function load(game, opts)
   dofile(ADDON .. "/Core/Core.lua")
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Probe.lua")
-  return BRutus.Probe
+  return GuildOS.Probe
 end
 
 -- Run the timers due by `untilT`, in order, moving the clock with them.
@@ -122,7 +122,7 @@ local function listening(event)
 end
 local function recorded(text)
   local n = 0
-  for _, e in ipairs(BRutus.State.errors) do
+  for _, e in ipairs(GuildOS.State.errors) do
     if e.msg:find(text, 1, true) then n = n + 1 end
   end
   return n
@@ -277,7 +277,7 @@ fire("MACRO_ACTION_BLOCKED", "SendChatMessage")
 check(recorded("MACRO_ACTION_BLOCKED: macro tried SendChatMessage") == 1, "a macro's block is recorded as the macro's")
 fire("ADDON_ACTION_BLOCKED", SECRET, SECRET)
 check(recorded("ADDON_ACTION_BLOCKED: ? tried ?") == 1, "a block whose names are secret is recorded without reading them")
-BRutus:RecordError("a real GuildOS error")
+GuildOS:RecordError("a real GuildOS error")
 for _ = 1, 80 do fire("ADDON_ACTION_BLOCKED", "NoisyAddon", "TargetUnit") end
 check(recorded("a real GuildOS error") == 1 and recorded("NoisyAddon") == 1,
   "a noisy addon blocked eighty times takes one line and pushes no real error out")

@@ -65,10 +65,10 @@ local function load(game)
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Modules/LootMaster.lua")
-  local LM = BRutus.LootMaster
-  BRutus.db = { lootMaster = {}, lootPrios = { [30627] = { { name = "Ana", order = 1 } } } }
+  local LM = GuildOS.LootMaster
+  GuildOS.db = { lootMaster = {}, lootPrios = { [30627] = { { name = "Ana", order = 1 } } } }
   local printed = {}
-  function BRutus:Print(m) printed[#printed + 1] = m end
+  function GuildOS:Print(m) printed[#printed + 1] = m end
   -- What a roll needs around it, kept to the lines under test.
   LM.GetPlayerContext = function() return { att25 = 40, recvThisLockout = 0 } end
   LM.GetCfg = function() return { minAttendancePct = 50 } end
@@ -88,10 +88,10 @@ check(#sent == 0, "Forever: a roll arriving sends no 'MS converted to OS' line, 
 check(printed[#printed]:find("MS converted to OS"), "the loot master still reads it")
 LM:RegisterRoll("Ana", "OS", 50)
 check(#sent == 0 and printed[#printed]:find("Official Prio"), "nor the prio line")
-BRutus.Wishlist = { GetItemInterest = function() return { { name = "Cid", order = 2 } } end }
+GuildOS.Wishlist = { GetItemInterest = function() return { { name = "Cid", order = 2 } } end }
 LM:RegisterRoll("Cid", "OS", 40)
 check(#sent == 0 and printed[#printed]:find("Wishlist"), "nor the wishlist line")
-BRutus.Wishlist = nil
+GuildOS.Wishlist = nil
 LM:EndRolling()
 check(#sent == 0 and printed[#printed]:find("WINNER"), "time running out ends the roll and tells the loot master only")
 LM.activeLoot = { link = "[Tsunami Talisman]", itemId = 30627, startTime = 0, endTime = 30 }

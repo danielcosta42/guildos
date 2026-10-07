@@ -1,10 +1,10 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Communication System
+-- Guild OS - Communication System
 -- Handles addon-to-addon communication for syncing member data
 ----------------------------------------------------------------------
 local CommSystem = {}
-BRutus.CommSystem = CommSystem
-local L = BRutus.L
+GuildOS.CommSystem = CommSystem
+local L = GuildOS.L
 
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 local LibDeflate = LibStub("LibDeflate")
@@ -37,12 +37,11 @@ CommSystem.THROTTLE_INTERVAL = 5  -- seconds between broadcasts
 CommSystem.lastBroadcast = 0
 
 function CommSystem:Initialize()
-    -- Register for addon messages on both the new prefix and the legacy BRutus prefix
-    -- so this client can receive messages from older addon versions during guild transitions.
+    -- Addon messages on Guild OS's prefix.
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
+    GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
     frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
-        if prefix == BRutus.PREFIX or prefix == BRutus.LEGACY_PREFIX then
+        if prefix == GuildOS.PREFIX then
             CommSystem:OnMessageReceived(msg, channel, sender)
         end
     end)
@@ -51,25 +50,25 @@ function CommSystem:Initialize()
     C_Timer.NewTicker(300, function()
         if IsInGuild() then
             CommSystem:BroadcastMyData()
-            if BRutus:IsOfficer() then
-                if BRutus.TrialTracker then
+            if GuildOS:IsOfficer() then
+                if GuildOS.TrialTracker then
                     C_Timer.After(5, function()
-                        BRutus.TrialTracker:BroadcastTrials()
+                        GuildOS.TrialTracker:BroadcastTrials()
                     end)
                 end
-                if BRutus.RaidTracker then
+                if GuildOS.RaidTracker then
                     C_Timer.After(10, function()
-                        BRutus.RaidTracker:BroadcastRaidData()
+                        GuildOS.RaidTracker:BroadcastRaidData()
                     end)
                 end
                 -- Keep members' copy of the recruitment ad fresh while enabled.
-                if BRutus.Recruitment and BRutus.db.recruitment and BRutus.db.recruitment.enabled then
+                if GuildOS.Recruitment and GuildOS.db.recruitment and GuildOS.db.recruitment.enabled then
                     C_Timer.After(13, function()
-                        BRutus.Recruitment:BroadcastStatus(true)
+                        GuildOS.Recruitment:BroadcastStatus(true)
                     end)
                 end
                 -- And the guild's officer threshold, for a client that missed the change (issue #81).
-                C_Timer.After(15, function() BRutus:PublishOfficerMaxRank() end)
+                C_Timer.After(15, function() GuildOS:PublishOfficerMaxRank() end)
             end
         end
     end)
@@ -95,8 +94,8 @@ function CommSystem:Initialize()
     -- up to 5 minutes for the first periodic tick.
     C_Timer.After(3, function()
         if not IsInGuild() then return end
-        if BRutus.DataCollector then BRutus.DataCollector:CollectMyData() end
-        if BRutus.AttunementTracker then BRutus.AttunementTracker:ScanAttunements() end
+        if GuildOS.DataCollector then GuildOS.DataCollector:CollectMyData() end
+        if GuildOS.AttunementTracker then GuildOS.AttunementTracker:ScanAttunements() end
         C_Timer.After(2, function()
             if IsInGuild() then CommSystem:BroadcastMyData() end
         end)
@@ -150,9 +149,9 @@ end
 
 function CommSystem:SendRaw(msg, target, priority)
     if target then
-        BRutus.Compat.SendAddonMessage(BRutus.PREFIX, msg, "WHISPER", target, "NORMAL")
+        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
     else
-        BRutus.Compat.SendAddonMessage(BRutus.PREFIX, msg, "GUILD", nil, priority or "BULK")
+        GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "GUILD", nil, priority or "BULK")
     end
 end
 
@@ -166,8 +165,8 @@ end
 -- chunk; every chunk of one message travels over the same distribution.
 function CommSystem:OnMessageReceived(msg, channel, sender)
     -- Don't process our own messages
-    local myName = BRutus.Compat.PlayerName()
-    if sender == myName or sender == BRutus:GetPlayerKey(myName) then
+    local myName = GuildOS.Compat.PlayerName()
+    if sender == myName or sender == GuildOS:GetPlayerKey(myName) then
         return
     end
 
@@ -237,89 +236,89 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     elseif msgType == CommSystem.MSG_TYPES.VERSION then
         self:HandleVersionCheck(sender, data)
     elseif msgType == "WL" then
-        if BRutus.Wishlist then
-            BRutus.Wishlist:HandleWishlistBroadcast(sender, data)
+        if GuildOS.Wishlist then
+            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data)
         end
     elseif msgType == "LP" then
         -- Officer-set priorities, stored by everyone: only an officer's, over GUILD, replace them.
         -- The channel matters as much as the name: IsOfficerByName drops the realm, so a
         -- namesake on another realm could whisper as the officer (issue #78).
-        if BRutus.Wishlist and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
-            BRutus.Wishlist:HandleLootPriosBroadcast(sender, data)
+        if GuildOS.Wishlist and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+            GuildOS.Wishlist:HandleLootPriosBroadcast(sender, data)
         end
     elseif msgType == "ON" then
         -- Only an officer writes officer notes, and only an officer keeps them (issue #78).
-        if BRutus.OfficerNotes and BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
-            BRutus.OfficerNotes:HandleIncoming(data)
+        if GuildOS.OfficerNotes and GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+            GuildOS.OfficerNotes:HandleIncoming(data)
         end
     elseif msgType == "RC" then
-        if BRutus.RecipeTracker then
-            BRutus.RecipeTracker:HandleIncoming(sender, data)
+        if GuildOS.RecipeTracker then
+            GuildOS.RecipeTracker:HandleIncoming(sender, data)
         end
     elseif msgType == "TR" then
-        if BRutus.TrialTracker and BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
-            BRutus.TrialTracker:HandleIncoming(data)
+        if GuildOS.TrialTracker and GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+            GuildOS.TrialTracker:HandleIncoming(data)
         end
     elseif msgType == "RR" then
         -- Raider roster: everyone stores it (members view); HandleIncoming
         -- trusts it only when the sender is a verified officer, and only over GUILD (issue #81).
-        if BRutus.RaiderRoster and channel == "GUILD" then
-            BRutus.RaiderRoster:HandleIncoming(sender, data)
+        if GuildOS.RaiderRoster and channel == "GUILD" then
+            GuildOS.RaiderRoster:HandleIncoming(sender, data)
         end
     elseif msgType == CommSystem.MSG_TYPES.ALT_LINK then
         -- Officer-authored, everyone stores: members need altLinks to see
         -- alt/main grouping (True Roster, chat tags, inspector). Over GUILD only (issue #81).
-        if channel == "GUILD" and BRutus:IsOfficerByName(sender) then
+        if channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
             local ok, links = LibSerialize:Deserialize(data)
             if ok and type(links) == "table" then
                 -- Both sides keyed this client's way: on Forever the officer's keys carry its realm (#97).
                 local localized = {}
                 for alt, main in pairs(links) do
-                    local la, lm = BRutus:LocalMemberKey(alt), BRutus:LocalMemberKey(main)
+                    local la, lm = GuildOS:LocalMemberKey(alt), GuildOS:LocalMemberKey(main)
                     if la ~= lm then localized[la] = lm end   -- one split person is not their own alt
                 end
-                BRutus.db.altLinks = localized
+                GuildOS.db.altLinks = localized
             end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
-        if BRutus.AltAutoDetect then BRutus.AltAutoDetect:HandleSelfClaim(sender, data) end
+        if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:HandleSelfClaim(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.LFG then
-        if BRutus.LFGBoard then BRutus.LFGBoard:HandleEntry(sender, data) end
+        if GuildOS.LFGBoard then GuildOS.LFGBoard:HandleEntry(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DATA then
-        if BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) and BRutus.RaidTracker then
-            BRutus.RaidTracker:HandleIncoming(data)
+        if GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.RaidTracker then
+            GuildOS.RaidTracker:HandleIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DELETE then
         -- Only apply if the sender is a verified officer in the guild roster, over GUILD (issue #81)
-        if channel == "GUILD" and BRutus:IsOfficerByName(sender) and BRutus.RaidTracker then
-            BRutus.RaidTracker:HandleDeleteIncoming(data)
+        if channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.RaidTracker then
+            GuildOS.RaidTracker:HandleDeleteIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.NOTES_ALL then
-        if BRutus:IsOfficer() and channel == "GUILD" and BRutus:IsOfficerByName(sender) and BRutus.OfficerNotes then
-            BRutus.OfficerNotes:HandleAllIncoming(data)
+        if GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.OfficerNotes then
+            GuildOS.OfficerNotes:HandleAllIncoming(data)
         end
     elseif msgType == CommSystem.MSG_TYPES.SYNC_V2 then
         -- Versioned envelope (protocol v2): dedup/validation/dispatch is
         -- handled entirely by SyncService.
-        if BRutus.SyncService then
-            BRutus.SyncService:OnEnvelope(sender, data, channel)
+        if GuildOS.SyncService then
+            GuildOS.SyncService:OnEnvelope(sender, data, channel)
         end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_INTENT then
         -- Another officer is also considering welcoming this member; record their intent. The
         -- welcome race is the officers', over GUILD: anybody else could win the tie-break with a
         -- low-sorting name, or suppress a welcome with a claim (issue #78).
-        if BRutus.Recruitment and data and data ~= "" and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
-            BRutus.Recruitment._welcomeIntents = BRutus.Recruitment._welcomeIntents or {}
-            BRutus.Recruitment._welcomeIntents[data] = BRutus.Recruitment._welcomeIntents[data] or {}
-            BRutus.Recruitment._welcomeIntents[data][sender] = true
+        if GuildOS.Recruitment and data and data ~= "" and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+            GuildOS.Recruitment._welcomeIntents = GuildOS.Recruitment._welcomeIntents or {}
+            GuildOS.Recruitment._welcomeIntents[data] = GuildOS.Recruitment._welcomeIntents[data] or {}
+            GuildOS.Recruitment._welcomeIntents[data][sender] = true
         end
     elseif msgType == CommSystem.MSG_TYPES.WELCOME_CLAIM then
         -- Another officer already sent the welcome — suppress ours. Every client gets this, and
         -- only an officer's Recruitment:Initialize creates the table (issue #77).
-        if BRutus.Recruitment and data and data ~= "" and channel == "GUILD" and BRutus:IsOfficerByName(sender) then
-            BRutus.Recruitment._welcomedRecently = BRutus.Recruitment._welcomedRecently or {}
-            BRutus.Recruitment._welcomedRecently[data] = true
-            BRutus.Recruitment._welcomedRecently[data .. "_sent"] = true
+        if GuildOS.Recruitment and data and data ~= "" and channel == "GUILD" and GuildOS:IsOfficerByName(sender) then
+            GuildOS.Recruitment._welcomedRecently = GuildOS.Recruitment._welcomedRecently or {}
+            GuildOS.Recruitment._welcomedRecently[data] = true
+            GuildOS.Recruitment._welcomedRecently[data .. "_sent"] = true
         end
     elseif msgType == CommSystem.MSG_TYPES.RECRUIT_INFO then
         -- Direct officer broadcast OR a member relay. Trust is bound to the
@@ -327,16 +326,16 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         -- arrive over GUILD, name a current officer as author, and be sent by a
         -- current guildmate. Passing channel is what kills the whisper-injection.
         local ok, info = LibSerialize:Deserialize(data)
-        if ok and BRutus.Recruitment then
-            BRutus.Recruitment:ApplyIncoming(info, sender, channel)
+        if ok and GuildOS.Recruitment then
+            GuildOS.Recruitment:ApplyIncoming(info, sender, channel)
         end
     elseif msgType == CommSystem.MSG_TYPES.RECRUIT_STATS then
         -- Self-reported engagement stats. Identity is the envelope sender and it
         -- must arrive over GUILD; HandleStats keys the entry by that sender and
         -- clamps every number, so a member can only file under their own name and
         -- a hostile packet cannot break the officer UI.
-        if BRutus.RecruitEngagement then
-            BRutus.RecruitEngagement:HandleStats(sender, data, channel)
+        if GuildOS.RecruitEngagement then
+            GuildOS.RecruitEngagement:HandleStats(sender, data, channel)
         end
     elseif msgType == CommSystem.MSG_TYPES.MAP_POS then
         -- Live guild-map position. Identity is the envelope sender and it must
@@ -344,8 +343,8 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         -- clamps every number, so a peer can only ever place its OWN pin and a
         -- hostile packet cannot break the map UI. channel is threaded exactly
         -- like RECRUIT_STATS so the GUILD-only rule can be enforced.
-        if BRutus.GuildMap then
-            BRutus.GuildMap:HandlePosition(sender, data, channel)
+        if GuildOS.GuildMap then
+            GuildOS.GuildMap:HandlePosition(sender, data, channel)
         end
     end
 end
@@ -365,14 +364,14 @@ function CommSystem:BroadcastMyData(force)
     self.lastBroadcast = now
 
     -- Collect fresh data
-    if BRutus.DataCollector then
-        BRutus.DataCollector:CollectMyData()
+    if GuildOS.DataCollector then
+        GuildOS.DataCollector:CollectMyData()
     end
-    if BRutus.AttunementTracker then
-        BRutus.AttunementTracker:ScanAttunements()
+    if GuildOS.AttunementTracker then
+        GuildOS.AttunementTracker:ScanAttunements()
     end
 
-    local data = BRutus.DataCollector:GetBroadcastData()
+    local data = GuildOS.DataCollector:GetBroadcastData()
     local serialized = LibSerialize:Serialize(data)
 
     self:SendMessage(self.MSG_TYPES.BROADCAST, serialized)
@@ -389,15 +388,15 @@ function CommSystem:HandleBroadcast(sender, data)
     -- realm at all takes the sender's own suffix, so it agrees with a roster that suffixes names (issue #8).
     -- On WoW: Forever GetPlayerKey takes this client's realm whatever is passed (issue #95).
     local realm = playerData.realm
-    if (not realm or realm == "") and not BRutus:GetClientRealm() then realm = sender:match("^[^-]+%-(.+)$") end
+    if (not realm or realm == "") and not GuildOS:GetClientRealm() then realm = sender:match("^[^-]+%-(.+)$") end
     -- The name is the sender's: a broadcast is always its own author's data, and on WoW: Forever
     -- 0.56.0 sends only the first name while the sender carries the surname (issue #26).
     local name = sender:match("^([^-]+)") or playerData.name
     playerData.name = name
-    local key = BRutus:GetPlayerKey(name, realm)
+    local key = GuildOS:GetPlayerKey(name, realm)
 
     -- Store the data
-    BRutus.DataCollector:StoreReceivedData(key, playerData)
+    GuildOS.DataCollector:StoreReceivedData(key, playerData)
 end
 
 ----------------------------------------------------------------------
@@ -426,43 +425,43 @@ function CommSystem:HandleRequest(_sender, _data)
         -- re-REQUEST ticker) lands on, so this is what lets a member who
         -- logs in later actually converge on altLinks without an officer
         -- having to run a manual /gos sync.
-        if BRutus:IsOfficer() then
+        if GuildOS:IsOfficer() then
             C_Timer.After(0.5, function()
                 self:BroadcastAltLinks()
             end)
         end
 
         -- Officers also send trial data
-        if BRutus:IsOfficer() and BRutus.TrialTracker then
+        if GuildOS:IsOfficer() and GuildOS.TrialTracker then
             C_Timer.After(1, function()
-                BRutus.TrialTracker:BroadcastTrials()
+                GuildOS.TrialTracker:BroadcastTrials()
             end)
         end
 
         -- Officers also send raid attendance data
-        if BRutus:IsOfficer() and BRutus.RaidTracker then
+        if GuildOS:IsOfficer() and GuildOS.RaidTracker then
             C_Timer.After(2, function()
-                BRutus.RaidTracker:BroadcastRaidData()
+                GuildOS.RaidTracker:BroadcastRaidData()
             end)
         end
 
         -- And the guild's officer threshold (issue #81)
-        if BRutus:IsOfficer() then
-            C_Timer.After(3, function() BRutus:PublishOfficerMaxRank() end)
+        if GuildOS:IsOfficer() then
+            C_Timer.After(3, function() GuildOS:PublishOfficerMaxRank() end)
         end
 
         -- Share the guild recruitment config so alts/late-loggers reliably get
         -- it: officers push their own, members relay the cached copy.
-        if BRutus.Recruitment then
+        if GuildOS.Recruitment then
             C_Timer.After(2.5, function()
-                BRutus.Recruitment:RespondToSync()
+                GuildOS.Recruitment:RespondToSync()
             end)
         end
 
         -- Officers answer with the curated raider roster (login backfill).
-        if BRutus:IsOfficer() and BRutus.RaiderRoster then
+        if GuildOS:IsOfficer() and GuildOS.RaiderRoster then
             C_Timer.After(3, function()
-                BRutus.RaiderRoster:RespondToSync()
+                GuildOS.RaiderRoster:RespondToSync()
             end)
         end
 
@@ -471,26 +470,26 @@ function CommSystem:HandleRequest(_sender, _data)
         -- the post would see an empty board until it was posted again.
         -- Rebroadcast carries the age of the entry, not a fresh timestamp, so
         -- answering requests can never extend a listing.
-        if BRutus.LFGBoard and BRutus.LFGBoard:AmAvailable() then
+        if GuildOS.LFGBoard and GuildOS.LFGBoard:AmAvailable() then
             C_Timer.After(3.5, function()
-                BRutus.LFGBoard:Rebroadcast()
+                GuildOS.LFGBoard:Rebroadcast()
             end)
         end
 
         -- Every member answers with its own recruitment engagement self-report,
         -- so an officer logging in converges on a fresh picture of who is active.
-        if BRutus.RecruitEngagement then
+        if GuildOS.RecruitEngagement then
             C_Timer.After(4, function()
-                BRutus.RecruitEngagement:BroadcastStats()
+                GuildOS.RecruitEngagement:BroadcastStats()
             end)
         end
 
         -- Every member answers with its own current map position (forced past
         -- the throttle), so a guildmate logging in converges on where everyone
         -- is instead of waiting for each peer's next zone change.
-        if BRutus.GuildMap then
+        if GuildOS.GuildMap then
             C_Timer.After(4.5, function()
-                BRutus.GuildMap:Broadcast(true)
+                GuildOS.GuildMap:Broadcast(true)
             end)
         end
 
@@ -501,21 +500,21 @@ function CommSystem:HandleRequest(_sender, _data)
         -- the SyncService revision check (or audit id-dedup) drops it for a
         -- peer already current and applies it only for one that missed the
         -- change. Members must never re-broadcast these, hence the gate.
-        if BRutus:IsOfficer() and BRutus.BanList then
+        if GuildOS:IsOfficer() and GuildOS.BanList then
             C_Timer.After(5, function()
-                BRutus.BanList:Backfill()
+                GuildOS.BanList:Backfill()
             end)
         end
 
-        if BRutus:IsOfficer() and BRutus.RosterLog then
+        if GuildOS:IsOfficer() and GuildOS.RosterLog then
             C_Timer.After(5.5, function()
-                BRutus.RosterLog:Backfill()
+                GuildOS.RosterLog:Backfill()
             end)
         end
 
-        if BRutus:IsOfficer() and BRutus.Bulletin then
+        if GuildOS:IsOfficer() and GuildOS.Bulletin then
             C_Timer.After(6, function()
-                BRutus.Bulletin:Backfill()
+                GuildOS.Bulletin:Backfill()
             end)
         end
     end)
@@ -533,7 +532,7 @@ end
 -- Handle ping (presence check)
 ----------------------------------------------------------------------
 function CommSystem:HandlePing(sender)
-    self:SendMessage(self.MSG_TYPES.PONG, BRutus.VERSION, sender)
+    self:SendMessage(self.MSG_TYPES.PONG, GuildOS.VERSION, sender)
 end
 
 ----------------------------------------------------------------------
@@ -541,8 +540,8 @@ end
 ----------------------------------------------------------------------
 function CommSystem:HandleVersionCheck(_sender, data)
     -- Could notify user of newer versions
-    if data and data ~= BRutus.VERSION then
-        BRutus:Print(L["A different Guild OS version detected: "] .. tostring(data))
+    if data and data ~= GuildOS.VERSION then
+        GuildOS:Print(L["A different Guild OS version detected: "] .. tostring(data))
     end
 end
 
@@ -550,9 +549,9 @@ end
 -- Broadcast alt link table to all officers in guild
 ----------------------------------------------------------------------
 function CommSystem:BroadcastAltLinks()
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     if not IsInGuild() then return end
-    local serialized = LibSerialize:Serialize(BRutus.db.altLinks or {})
+    local serialized = LibSerialize:Serialize(GuildOS.db.altLinks or {})
     self:SendMessage(self.MSG_TYPES.ALT_LINK, serialized)
 end
 
@@ -563,7 +562,7 @@ end
 ----------------------------------------------------------------------
 function CommSystem:FullSync()
     if not IsInGuild() then
-        BRutus:Print(L["Not in a guild."])
+        GuildOS:Print(L["Not in a guild."])
         return
     end
 
@@ -573,33 +572,33 @@ function CommSystem:FullSync()
     -- Request fresh data from all online guild members
     self:RequestAllData()
 
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["Syncing data with guild..."])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["Syncing data with guild..."])
         return
     end
 
     -- Officer-only staggered broadcasts
-    BRutus:Print(L["Syncing all guild data (officer mode)..."])
+    GuildOS:Print(L["Syncing all guild data (officer mode)..."])
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
     end)
 
     C_Timer.After(2, function()
-        if BRutus.TrialTracker then
-            BRutus.TrialTracker:BroadcastTrials()
+        if GuildOS.TrialTracker then
+            GuildOS.TrialTracker:BroadcastTrials()
         end
     end)
 
     C_Timer.After(3, function()
-        if BRutus.RaidTracker then
-            BRutus.RaidTracker:BroadcastRaidData()
+        if GuildOS.RaidTracker then
+            GuildOS.RaidTracker:BroadcastRaidData()
         end
     end)
 
     C_Timer.After(4, function()
-        if BRutus.OfficerNotes then
-            BRutus.OfficerNotes:BroadcastAllNotes()
+        if GuildOS.OfficerNotes then
+            GuildOS.OfficerNotes:BroadcastAllNotes()
         end
     end)
 end
@@ -612,15 +611,15 @@ end
 ----------------------------------------------------------------------
 function CommSystem:GetSyncHealth()
     local rows, withAddon, outdated = {}, 0, 0
-    local cur = BRutus.VERSION
+    local cur = GuildOS.VERSION
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, _, _, _, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
-            local d = BRutus.db.members[key]
+            local key = GuildOS:GetPlayerKey(short, realm)
+            local d = GuildOS.db.members[key]
             local has = (d and d.lastUpdate and d.lastUpdate > 0) and true or false
             local ver = d and d.addonVersion or nil
             local isOld = (has and ver and ver ~= cur) and true or false

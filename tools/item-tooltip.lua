@@ -34,9 +34,9 @@ function IsShiftKeyDown() return shift end
 GameTooltip, ItemRefTooltip = {}, {}
 
 local function shows(mode, tooltip, held)
-  BRutus.db = { settings = { itemTooltip = mode } }
+  GuildOS.db = { settings = { itemTooltip = mode } }
   shift = held
-  return BRutus:ShowsItemTooltipInfo(tooltip)
+  return GuildOS:ShowsItemTooltipInfo(tooltip)
 end
 
 check(shows(nil, GameTooltip, false), "a saved setting from before #39 (no key) keeps the lines, as they always were")

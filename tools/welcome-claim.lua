@@ -56,7 +56,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
-local CS, R = BRutus.CommSystem, BRutus.Recruitment
+local CS, R = GuildOS.CommSystem, GuildOS.Recruitment
 CS.pendingMessages = CS.pendingMessages or {}
 
 -- A member: Recruitment was never initialized, the way OFFICER_START leaves it.

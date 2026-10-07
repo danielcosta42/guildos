@@ -1,10 +1,10 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Raid Attendance Tracker
+-- Guild OS - Raid Attendance Tracker
 -- Tracks raid attendance, logs raid sessions, computes attendance %
 ----------------------------------------------------------------------
 local RaidTracker = {}
-BRutus.RaidTracker = RaidTracker
-local L = BRutus.L
+GuildOS.RaidTracker = RaidTracker
+local L = GuildOS.L
 
 local _mergeDebounceTimer = nil  -- debounce handle for post-broadcast dedup
 
@@ -73,7 +73,7 @@ RaidTracker.RAID_25MAN = {
 -- so does every tier after.
 RaidTracker.FOREVER_PROGRESSION_SIZE = 20
 function RaidTracker:Is25Man(instanceID, size)
-    if BRutus.Client and not BRutus.Client.isAnniversary then
+    if GuildOS.Client and not GuildOS.Client.isAnniversary then
         return (tonumber(size) or 0) >= self.FOREVER_PROGRESSION_SIZE
     end
     return self.RAID_25MAN[instanceID] == true
@@ -82,7 +82,7 @@ end
 -- Whether a raid instance is tracked at all: on Anniversary the ones RAID_INSTANCES knows, on
 -- WoW: Forever every raid, whose ids nobody has yet (issue #90).
 function RaidTracker:IsTracked(instanceID)
-    if BRutus.Client and not BRutus.Client.isAnniversary then return true end
+    if GuildOS.Client and not GuildOS.Client.isAnniversary then return true end
     return self.RAID_INSTANCES[instanceID] ~= nil
 end
 
@@ -90,7 +90,7 @@ end
 -- the 20- and 40-player raids are the ones that count (issue #90). It works on the translated
 -- text, which every locale writes with the digits ("25er", "25 jogadores", "à 25").
 function RaidTracker:ProgLabel(text)
-    if BRutus.Client and not BRutus.Client.isAnniversary and type(text) == "string" then
+    if GuildOS.Client and not GuildOS.Client.isAnniversary and type(text) == "string" then
         return (text:gsub("25%-man", "20+ man"):gsub("25", "20+"))
     end
     return text
@@ -113,7 +113,7 @@ RaidTracker.PENALTIES = {
 -- The weights a raid of this group is scored with: its core's, else the guild's (issue #55).
 -- PENALTIES above are only the defaults; every screen and the score read this.
 function RaidTracker:GetPenalties(groupTag)
-    return (BRutus.CoreManager and BRutus.CoreManager:GetPenalties(groupTag or "")) or self.PENALTIES
+    return (GuildOS.CoreManager and GuildOS.CoreManager:GetPenalties(groupTag or "")) or self.PENALTIES
 end
 
 -- TBC weekly reset epoch: 2006-01-03 00:00 UTC (a known Tuesday)
@@ -129,12 +129,12 @@ function RaidTracker:GetWeekNum(timestamp)
 end
 
 function RaidTracker:Initialize()
-    if not BRutus.db.raidTracker then
-        BRutus.db.raidTracker = { sessions = {}, attendance = {}, currentGroupTag = "" }
+    if not GuildOS.db.raidTracker then
+        GuildOS.db.raidTracker = { sessions = {}, attendance = {}, currentGroupTag = "" }
     end
 
     -- Ensure currentGroupTag field exists (added later)
-    local rtDB = BRutus.db.raidTracker
+    local rtDB = GuildOS.db.raidTracker
     if rtDB.currentGroupTag == nil then rtDB.currentGroupTag = "" end
     self.currentGroupTag = rtDB.currentGroupTag
 
@@ -145,12 +145,12 @@ function RaidTracker:Initialize()
     self:MigrateAttendanceIfNeeded()
 
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "ZONE_CHANGED_NEW_AREA")
-    BRutus.Compat.RegisterEvent(frame, "RAID_ROSTER_UPDATE")
-    BRutus.Compat.RegisterEvent(frame, "GROUP_ROSTER_UPDATE")
-    BRutus.Compat.RegisterEvent(frame, "ENCOUNTER_START")
-    BRutus.Compat.RegisterEvent(frame, "ENCOUNTER_END")
-    BRutus.Compat.RegisterEvent(frame, "PLAYER_ENTERING_WORLD")
+    GuildOS.Compat.RegisterEvent(frame, "ZONE_CHANGED_NEW_AREA")
+    GuildOS.Compat.RegisterEvent(frame, "RAID_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(frame, "GROUP_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(frame, "ENCOUNTER_START")
+    GuildOS.Compat.RegisterEvent(frame, "ENCOUNTER_END")
+    GuildOS.Compat.RegisterEvent(frame, "PLAYER_ENTERING_WORLD")
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "ZONE_CHANGED_NEW_AREA" then
             RaidTracker:CheckZone()
@@ -190,7 +190,7 @@ function RaidTracker:CheckZone()
                 -- Same raid: cancel the pending end and resume
                 self.endTimer:Cancel()
                 self.endTimer = nil
-                BRutus:Print(L["|cffFFAA00Raid resumed — session continuing.|r"])
+                GuildOS:Print(L["|cffFFAA00Raid resumed — session continuing.|r"])
                 if self.gracePick then   -- picked on the run-back: this raid's, now it is back (issue #99)
                     local name = self.gracePick
                     self.gracePick = nil
@@ -214,7 +214,7 @@ function RaidTracker:CheckZone()
         if self.trackingActive and not self.endTimer then
             -- Start a 20-minute grace period before actually ending the session.
             -- This covers wipes (zone to graveyard + run back) and short DCs.
-            BRutus:Print(L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"])
+            GuildOS:Print(L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"])
             self.endTimer = C_Timer.NewTimer(1200, function()
                 self.endTimer = nil
                 RaidTracker:EndSession()
@@ -241,18 +241,18 @@ function RaidTracker:StartSession(instanceID)
     -- belongs to this guild before believing any of it.
     local raidId
     local key = self.RAID_KEYS[instanceID]
-    if key and BRutus.CompanionImport then
-        BRutus:SafeCall(function()
-            raidId = BRutus.CompanionImport:RaidFor(key, now)
+    if key and GuildOS.CompanionImport then
+        GuildOS:SafeCall(function()
+            raidId = GuildOS.CompanionImport:RaidFor(key, now)
         end)
     end
 
     -- A new raid: which core it is gets asked again, unless this character picked one inside this
     -- instance moments ago and a /reload or a disconnect started the session over (issue #99).
     self.coreSettled, self.coreAnnounced, self.gracePick = nil, nil, nil
-    local rtDB = BRutus.db.raidTracker
+    local rtDB = GuildOS.db.raidTracker
     local pick = rtDB and rtDB.corePick
-    local kept = type(pick) == "table" and pick.instanceID == instanceID and pick.char == BRutus.Compat.PlayerName()
+    local kept = type(pick) == "table" and pick.instanceID == instanceID and pick.char == GuildOS.Compat.PlayerName()
         and now - (tonumber(pick.at) or 0) <= PICK_HOLD
     if kept then
         self:SetGroupTag(pick.tag)
@@ -276,10 +276,10 @@ function RaidTracker:StartSession(instanceID)
     }
     -- On Forever the size is what decides whether the night counts, so it is said (issue #90).
     local said = raidName
-    if BRutus.Client and not BRutus.Client.isAnniversary and self.currentRaid.size then
+    if GuildOS.Client and not GuildOS.Client.isAnniversary and self.currentRaid.size then
         said = raidName .. " (" .. self.currentRaid.size .. ")"
     end
-    BRutus:Print(L["Raid tracking started: |cffFFD700"] .. said .. "|r")
+    GuildOS:Print(L["Raid tracking started: |cffFFD700"] .. said .. "|r")
     if kept then self:SayPicked() end
     self:TakeSnapshot("session_start")
 
@@ -302,7 +302,7 @@ function RaidTracker:IsGuildRaid(session)
     for key in pairs(players) do
         total = total + 1
         local name = key:match("^([^-]+)") or key
-        local memberData = BRutus.db.members and BRutus.db.members[key]
+        local memberData = GuildOS.db.members and GuildOS.db.members[key]
         -- Check via member DB (fastest path — already synced)
         if memberData then
             guildCount = guildCount + 1
@@ -331,7 +331,7 @@ function RaidTracker:EndSession()
     if not self.currentRaid then return end
     -- An officer's pick is its session's: the next raid is asked afresh (issue #99).
     self.gracePick = nil
-    if BRutus.db.raidTracker then BRutus.db.raidTracker.corePick = nil end
+    if GuildOS.db.raidTracker then GuildOS.db.raidTracker.corePick = nil end
 
     self:TakeSnapshot("session_end")
     local endTime = GetServerTime()
@@ -347,7 +347,7 @@ function RaidTracker:EndSession()
     -- Discard sessions shorter than 10 minutes (likely disconnects / quick zone-ins)
     local MIN_SESSION_DURATION = 600
     if self.currentRaid.duration < MIN_SESSION_DURATION then
-        BRutus:Print(string.format(L["|cffFFAA00Raid session discarded (too short: %ds < %ds).|r"],
+        GuildOS:Print(string.format(L["|cffFFAA00Raid session discarded (too short: %ds < %ds).|r"],
             self.currentRaid.duration, MIN_SESSION_DURATION))
         self.currentRaid = nil
         return
@@ -355,7 +355,7 @@ function RaidTracker:EndSession()
 
     -- Save session
     local sessionID = self.currentRaid.startTime
-    BRutus.db.raidTracker.sessions[sessionID] = self.currentRaid
+    GuildOS.db.raidTracker.sessions[sessionID] = self.currentRaid
 
     -- Only count attendance if this was a guild raid (≥50% guild members)
     if self:IsGuildRaid(self.currentRaid) then
@@ -364,10 +364,10 @@ function RaidTracker:EndSession()
         self:RebuildAttendanceFromSessions()
     else
         self.currentRaid.isGuildRaid = false
-        BRutus:Print(L["|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r"])
+        GuildOS:Print(L["|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r"])
     end
 
-    BRutus:Print(L["Raid tracking ended: |cffFFD700"] .. self.currentRaid.name .. "|r")
+    GuildOS:Print(L["Raid tracking ended: |cffFFD700"] .. self.currentRaid.name .. "|r")
     self.currentRaid = nil
 
     -- Broadcast updated raid data to all officer clients
@@ -387,10 +387,10 @@ function RaidTracker:TakeSnapshot(reason)
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         -- I am added below under my whole name; my raid unit may carry only the first (issue #26).
-        if UnitExists(unit) and not BRutus.Compat.IsPlayer(unit) then
-            local name, realm, classFile = BRutus.Compat.UnitIdentity(unit)
+        if UnitExists(unit) and not GuildOS.Compat.IsPlayer(unit) then
+            local name, realm, classFile = GuildOS.Compat.UnitIdentity(unit)
             if name then
-                local key = BRutus:GetPlayerKey(name, realm)
+                local key = GuildOS:GetPlayerKey(name, realm)
                 members[key] = {
                     name = name,
                     class = classFile or "UNKNOWN",
@@ -403,8 +403,8 @@ function RaidTracker:TakeSnapshot(reason)
     end
 
     -- Include self
-    local myName = BRutus.Compat.PlayerName()
-    local myKey = BRutus:GetPlayerKey(myName)
+    local myName = GuildOS.Compat.PlayerName()
+    local myKey = GuildOS:GetPlayerKey(myName)
     members[myKey] = {
         name = myName,
         class = select(2, UnitClass("player")),
@@ -419,7 +419,7 @@ function RaidTracker:TakeSnapshot(reason)
         members = members,
         count = self:CountTable(members),
     })
-    BRutus:SafeCall(self.DetectCore, self, members, reason)   -- after the snapshot is kept (issue #99)
+    GuildOS:SafeCall(self.DetectCore, self, members, reason)   -- after the snapshot is kept (issue #99)
     -- A size the game had not given at the start is read again while in the same raid (#90).
     if not self.currentRaid.size then
         local _, _, _, _, maxPlayers, _, _, id = GetInstanceInfo()
@@ -427,7 +427,7 @@ function RaidTracker:TakeSnapshot(reason)
             self.currentRaid.size = tonumber(maxPlayers)
         end
     end
-    local pick = BRutus.db.raidTracker and BRutus.db.raidTracker.corePick
+    local pick = GuildOS.db.raidTracker and GuildOS.db.raidTracker.corePick
     if type(pick) == "table" and pick.instanceID == self.currentRaid.instanceID and pick.char == myName then
         pick.at = GetServerTime()   -- the pick lives as long as its raid does
     end
@@ -437,9 +437,9 @@ end
 -- Check if a unit has at least flask/elixir + food active
 ----------------------------------------------------------------------
 function RaidTracker:CheckPlayerConsumes(unit)
-    if not BRutus.ConsumableChecker then return true end
+    if not GuildOS.ConsumableChecker then return true end
 
-    local CC = BRutus.ConsumableChecker
+    local CC = GuildOS.ConsumableChecker
     local hasFlaskOrElixir = false
     local hasFood = false
 
@@ -506,11 +506,11 @@ function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
     end
 
     local status = (success == 1) and L["|cff00ff00KILL|r"] or L["|cffff3333WIPE|r"]
-    BRutus:Print(encounterName .. " - " .. status)
+    GuildOS:Print(encounterName .. " - " .. status)
 
     -- Optional DKP auto-award on a kill (raid-leader gated inside Points).
-    if success == 1 and BRutus.Points then
-        BRutus.Points:OnBossKill(encounterName)
+    if success == 1 and GuildOS.Points then
+        GuildOS.Points:OnBossKill(encounterName)
     end
 end
 
@@ -526,11 +526,11 @@ end
 function RaidTracker:SetGroupTag(name)
     name = name or ""
     self.currentGroupTag = name
-    if BRutus.db and BRutus.db.raidTracker then
-        BRutus.db.raidTracker.currentGroupTag = name
+    if GuildOS.db and GuildOS.db.raidTracker then
+        GuildOS.db.raidTracker.currentGroupTag = name
     end
     -- Loot rules cached from the old core's config follow the new one (issue #99).
-    if BRutus.LootMaster and BRutus.LootMaster.LoadCfg then BRutus.LootMaster:LoadCfg() end
+    if GuildOS.LootMaster and GuildOS.LootMaster.LoadCfg then GuildOS.LootMaster:LoadCfg() end
 end
 
 -- An officer picking the active core (Raid Core's "Set Active"), issue #99.
@@ -541,7 +541,7 @@ end
 --  * Outside any raid it is only the core the next raid falls back to.
 function RaidTracker:PickCore(name)
     self:SetGroupTag(name)
-    local rtDB = BRutus.db.raidTracker
+    local rtDB = GuildOS.db.raidTracker
     local raid = self.currentRaid
     if raid and self.endTimer then
         self.gracePick = self:GetCurrentGroup()
@@ -554,14 +554,14 @@ function RaidTracker:PickCore(name)
     raid.groupTag = self:GetCurrentGroup()
     self.coreSettled = true
     rtDB.corePick = {
-        instanceID = raid.instanceID, tag = raid.groupTag, char = BRutus.Compat.PlayerName(), at = GetServerTime(),
+        instanceID = raid.instanceID, tag = raid.groupTag, char = GuildOS.Compat.PlayerName(), at = GetServerTime(),
     }
 end
 
 -- A pick applied with no click right then (kept across a /reload, or made on the run-back) is
 -- named in chat, so a pick never takes a raid silently (issue #99).
 function RaidTracker:SayPicked()
-    BRutus:Print(string.format(L["Raid core: |cffFFD700%s|r, as you set it."], self:GetCurrentGroup()))
+    GuildOS:Print(string.format(L["Raid core: |cffFFD700%s|r, as you set it."], self:GetCurrentGroup()))
 end
 
 -- Which core this raid is, from who is in it now (issue #99): `group` is a snapshot's members,
@@ -572,13 +572,13 @@ end
 -- period and the session's last snapshot), and never after an officer picked one.
 function RaidTracker:DetectCore(group, reason)
     if not self.currentRaid or self.coreSettled or self.endTimer or reason == "session_end" then return end
-    if not BRutus.CoreManager then return end
-    local name, count, size = BRutus.CoreManager:CoreForGroup(group)
+    if not GuildOS.CoreManager then return end
+    local name, count, size = GuildOS.CoreManager:CoreForGroup(group)
     if name and name ~= self.coreAnnounced then
         self:SetGroupTag(name)
         self.currentRaid.groupTag = name
         self.coreAnnounced = name
-        BRutus:Print(string.format(L["Raid core: |cffFFD700%s|r, with %d of the %d in the group on its roster."], name, count, size))
+        GuildOS:Print(string.format(L["Raid core: |cffFFD700%s|r, with %d of the %d in the group on its roster."], name, count, size))
     end
     if reason == "encounter_start" then self.coreSettled = true end
 end
@@ -586,7 +586,7 @@ end
 -- Returns the group tag where the player has the most raids recorded.
 -- Used to auto-select the correct denominator when no group is specified.
 function RaidTracker:GetPlayerGroup(playerKey)
-    local att = BRutus.db.raidTracker and BRutus.db.raidTracker.attendance or {}
+    local att = GuildOS.db.raidTracker and GuildOS.db.raidTracker.attendance or {}
     local bestGroup = ""
     local bestRaids = 0
     for groupTag, groupAtt in pairs(att) do
@@ -606,7 +606,7 @@ end
 -- groupTag = nil → auto-detect from the player's primary group
 ----------------------------------------------------------------------
 function RaidTracker:GetAttendance(playerKey, groupTag)
-    local att = BRutus.db.raidTracker and BRutus.db.raidTracker.attendance or {}
+    local att = GuildOS.db.raidTracker and GuildOS.db.raidTracker.attendance or {}
     if not groupTag then groupTag = self:GetPlayerGroup(playerKey) end
     local groupAtt = att[groupTag]
     if groupAtt and groupAtt[playerKey] then
@@ -618,7 +618,7 @@ end
 -- Count unique guild-raid lockouts for a group (or all groups if nil).
 function RaidTracker:GetTotalSessions(groupTag)
     local seen = {}
-    for _, session in pairs(BRutus.db.raidTracker.sessions) do
+    for _, session in pairs(GuildOS.db.raidTracker.sessions) do
         -- isGuildRaid ~= false: include old sessions without the flag (legacy data)
         if session.isGuildRaid ~= false then
             local sg = session.groupTag or ""
@@ -636,7 +636,7 @@ end
 -- Count unique 25-man guild-raid lockouts for a group (or all groups if nil).
 function RaidTracker:GetTotal25ManSessions(groupTag)
     local seen = {}
-    for _, session in pairs(BRutus.db.raidTracker.sessions) do
+    for _, session in pairs(GuildOS.db.raidTracker.sessions) do
         -- isGuildRaid ~= false: include old sessions without the flag (legacy data)
         if session.isGuildRaid ~= false and self:Is25Man(session.instanceID, session.size) then
             local sg = session.groupTag or ""
@@ -699,7 +699,7 @@ end
 function RaidTracker:GetRecentSessions(limit, only25, guildOnly)
     limit = limit or 20
     local sessions = {}
-    for id, session in pairs(BRutus.db.raidTracker.sessions) do
+    for id, session in pairs(GuildOS.db.raidTracker.sessions) do
         -- guildOnly: exclude sessions explicitly marked as non-guild raids.
         -- Sessions without the flag (legacy data) are treated as guild raids.
         local skipNonGuild = guildOnly and session.isGuildRaid == false
@@ -725,7 +725,7 @@ end
 -- Karazhan run between two Magtheridon wipe sessions).
 ----------------------------------------------------------------------
 function RaidTracker:MergeDuplicateSessions()
-    local sessions = BRutus.db.raidTracker.sessions
+    local sessions = GuildOS.db.raidTracker.sessions
     if not sessions then return 0 end
 
     local MERGE_WINDOW = 1800  -- 30 min: covers wipe→run-back; separates distinct raid attempts
@@ -873,7 +873,7 @@ function RaidTracker:MergeDuplicateSessions()
     end
 
     if totalMerged > 0 then
-        BRutus:Print(string.format(L["|cff00FF00Guild OS: merged %d duplicate raid session(s).|r"], totalMerged))
+        GuildOS:Print(string.format(L["|cff00FF00Guild OS: merged %d duplicate raid session(s).|r"], totalMerged))
     end
     -- Always rebuild so attendance stays consistent with the session DB
     self:RebuildAttendanceFromSessions()
@@ -887,11 +887,11 @@ end
 -- and Core 1 / Core 2 lockouts are tracked independently.
 ----------------------------------------------------------------------
 function RaidTracker:RebuildAttendanceFromSessions()
-    BRutus.db.raidTracker.attendance = {}
+    GuildOS.db.raidTracker.attendance = {}
 
     local lockouts = {}
     local lockoutOrder = {}
-    for _, session in pairs(BRutus.db.raidTracker.sessions) do
+    for _, session in pairs(GuildOS.db.raidTracker.sessions) do
         -- isGuildRaid ~= false: include old sessions without the flag (legacy data)
         if session.isGuildRaid ~= false then
             local weekNum    = self:GetWeekNum(session.startTime or 0)
@@ -920,7 +920,7 @@ end
 -- Results are stored under attendance[groupTag][playerKey].
 ----------------------------------------------------------------------
 function RaidTracker:UpdateAttendanceForLockout(lockout)
-    local att        = BRutus.db.raidTracker.attendance
+    local att        = GuildOS.db.raidTracker.attendance
     local instanceID = lockout.instanceID
     local groupTag   = lockout.groupTag or ""
 
@@ -994,20 +994,20 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
 end
 
 function RaidTracker:DeleteSession(sessionID)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Only officers can delete raids.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Only officers can delete raids.|r"])
         return
     end
 
-    local session = BRutus.db.raidTracker.sessions[sessionID]
+    local session = GuildOS.db.raidTracker.sessions[sessionID]
     if not session then return end
 
-    BRutus.db.raidTracker.sessions[sessionID] = nil
+    GuildOS.db.raidTracker.sessions[sessionID] = nil
     -- Tombstone so peers can't re-insert this session via broadcast
-    if BRutus.db.raidTracker.deletedSessions == nil then
-        BRutus.db.raidTracker.deletedSessions = {}
+    if GuildOS.db.raidTracker.deletedSessions == nil then
+        GuildOS.db.raidTracker.deletedSessions = {}
     end
-    BRutus.db.raidTracker.deletedSessions[sessionID] = true
+    GuildOS.db.raidTracker.deletedSessions[sessionID] = true
     -- Rebuild from scratch so attendance stays consistent
     self:RebuildAttendanceFromSessions()
 
@@ -1019,13 +1019,13 @@ end
 -- Broadcast a session deletion to guild (officers apply it on receive)
 ----------------------------------------------------------------------
 function RaidTracker:BroadcastDeleteSession(sessionID)
-    if not BRutus:IsOfficer() then return end
-    if not BRutus.CommSystem then return end
+    if not GuildOS:IsOfficer() then return end
+    if not GuildOS.CommSystem then return end
     if not IsInGuild() then return end
 
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize({ sessionID = sessionID })
-    BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RAID_DELETE, serialized)
+    GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.RAID_DELETE, serialized)
 end
 
 ----------------------------------------------------------------------
@@ -1040,7 +1040,7 @@ function RaidTracker:HandleDeleteIncoming(data)
     local sessionID = payload.sessionID
     if not sessionID then return end
 
-    local raidDB = BRutus.db.raidTracker
+    local raidDB = GuildOS.db.raidTracker
     if not raidDB or not raidDB.sessions then return end
     if not raidDB.sessions[sessionID] then return end  -- already gone
 
@@ -1051,11 +1051,11 @@ function RaidTracker:HandleDeleteIncoming(data)
     self:RebuildAttendanceFromSessions()
 
     -- Refresh UI if the raids panel is open
-    if BRutus.RaidsPanelOpen then
-        BRutus:RefreshRaidsPanel(
-            BRutus.RaidsPanelOpen.sessionContent,
-            BRutus.RaidsPanelOpen.attContent,
-            BRutus.RaidsPanelOpen.statusText
+    if GuildOS.RaidsPanelOpen then
+        GuildOS:RefreshRaidsPanel(
+            GuildOS.RaidsPanelOpen.sessionContent,
+            GuildOS.RaidsPanelOpen.attContent,
+            GuildOS.RaidsPanelOpen.statusText
         )
     end
 end
@@ -1070,11 +1070,11 @@ end
 -- Sync raid data with other officer clients
 ----------------------------------------------------------------------
 function RaidTracker:BroadcastRaidData()
-    if not BRutus:IsOfficer() then return end
-    if not BRutus.CommSystem then return end
+    if not GuildOS:IsOfficer() then return end
+    if not GuildOS.CommSystem then return end
     if not IsInGuild() then return end
 
-    local raidDB = BRutus.db.raidTracker
+    local raidDB = GuildOS.db.raidTracker
     if not raidDB then return end
 
     -- Build a compact payload: full attendance + session metadata (no snapshots)
@@ -1104,19 +1104,19 @@ function RaidTracker:BroadcastRaidData()
 
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize(payload)
-    BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RAID_DATA, serialized)
+    GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.RAID_DATA, serialized)
 end
 
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
 -- and the channel GUILD (issue #78). Any other caller must check the same.
 function RaidTracker:HandleIncoming(data)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
 
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 
-    local raidDB = BRutus.db.raidTracker
+    local raidDB = GuildOS.db.raidTracker
     if not raidDB.attendance then raidDB.attendance = {} end
     if not raidDB.sessions   then raidDB.sessions   = {} end
 
@@ -1147,7 +1147,7 @@ function RaidTracker:HandleIncoming(data)
             if outerVal.raids ~= nil or outerVal.lastRaid ~= nil then
                 -- Old flat format: outerKey is playerKey, outerVal is attendance data
                 if not raidDB.attendance[""] then raidDB.attendance[""] = {} end
-                mergePlayerRecord(raidDB.attendance[""], BRutus:LocalMemberKey(outerKey), outerVal)
+                mergePlayerRecord(raidDB.attendance[""], GuildOS:LocalMemberKey(outerKey), outerVal)
             else
                 -- New nested format: outerKey is groupTag, outerVal is { playerKey → data }
                 if not raidDB.attendance[outerKey] then
@@ -1156,7 +1156,7 @@ function RaidTracker:HandleIncoming(data)
                 local localGroup = raidDB.attendance[outerKey]
                 for playerKey, incoming in pairs(outerVal) do
                     -- The sending officer's key, as this client keys the member (issue #97).
-                    mergePlayerRecord(localGroup, BRutus:LocalMemberKey(playerKey), incoming)
+                    mergePlayerRecord(localGroup, GuildOS:LocalMemberKey(playerKey), incoming)
                 end
             end
         end
@@ -1183,7 +1183,7 @@ function RaidTracker:HandleIncoming(data)
         end
         if not deleted[sessionID] and not raidDB.sessions[sessionID] then
             if type(session) == "table" and type(session.players) == "table" then
-                session.players = BRutus:LocalizeMemberTable(session.players)   -- issue #97
+                session.players = GuildOS:LocalizeMemberTable(session.players)   -- issue #97
             end
             raidDB.sessions[sessionID] = session
         end
@@ -1199,11 +1199,11 @@ function RaidTracker:HandleIncoming(data)
         _mergeDebounceTimer = nil
         RaidTracker:MergeDuplicateSessions()
         -- Refresh UI if the raids panel is open
-        if BRutus.RaidsPanelOpen then
-            BRutus:RefreshRaidsPanel(
-                BRutus.RaidsPanelOpen.sessionContent,
-                BRutus.RaidsPanelOpen.attContent,
-                BRutus.RaidsPanelOpen.statusText
+        if GuildOS.RaidsPanelOpen then
+            GuildOS:RefreshRaidsPanel(
+                GuildOS.RaidsPanelOpen.sessionContent,
+                GuildOS.RaidsPanelOpen.attContent,
+                GuildOS.RaidsPanelOpen.statusText
             )
         end
     end)
@@ -1221,7 +1221,7 @@ function RaidTracker:ExportForTMB(groupTag)
         return nil, self:ProgLabel(L["No 25-man raids recorded for group: "]) .. label
     end
 
-    local att = BRutus.db.raidTracker.attendance or {}
+    local att = GuildOS.db.raidTracker.attendance or {}
     local groupAtt = att[groupTag] or {}
     local lines = {}
     table.insert(lines, "{")
@@ -1257,11 +1257,11 @@ end
 -- New format: attendance[groupTag][playerKey] = { raids, lastRaid, ... }
 ----------------------------------------------------------------------
 function RaidTracker:MigrateAttendanceIfNeeded()
-    local att = BRutus.db.raidTracker and BRutus.db.raidTracker.attendance or {}
+    local att = GuildOS.db.raidTracker and GuildOS.db.raidTracker.attendance or {}
     -- Inspect the first entry only to detect the old flat format
     local _, v = next(att)
     if type(v) == "table" and (v.raids ~= nil or v.lastRaid ~= nil or v.raids25 ~= nil) then
-        BRutus:Print(L["|cffFFAA00Guild OS: Old attendance format detected. Rebuilding per group…|r"])
+        GuildOS:Print(L["|cffFFAA00Guild OS: Old attendance format detected. Rebuilding per group…|r"])
         self:RebuildAttendanceFromSessions()
     end
 end

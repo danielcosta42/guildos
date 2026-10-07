@@ -95,13 +95,13 @@ end
 local fades = {}
 UIFrameFadeIn = function(frame, duration) fades[#fades + 1] = { frame = frame, duration = duration } end
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
-BRutus = {
+GuildOS = {
   Compat = { After = function() end },
   L = setmetatable({}, { __index = function(_, k) return k end }),
 }
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
-local UI, C, F = BRutus.UI, BRutus.Colors, BRutus.Fonts
+local UI, C, F = GuildOS.UI, GuildOS.Colors, GuildOS.Fonts
 
 local EPS = 1e-6
 local function near(a, b) return math.abs(a - b) < EPS end

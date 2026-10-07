@@ -4,8 +4,8 @@
 -- Left-click opens the roster; drag to reposition around the minimap.
 -- Position (angle) and visibility persist account-wide in GuildOSDB.minimap.
 ----------------------------------------------------------------------
-local C = BRutus.Colors
-local L = BRutus.L
+local C = GuildOS.Colors
+local L = GuildOS.L
 
 local MEDIA = "Interface\\AddOns\\GuildOS\\Media\\"
 
@@ -25,7 +25,7 @@ local function GetMinimapCfg()
     if cachedCfg then return cachedCfg end
     if type(GuildOSDB) ~= "table" then return { hide = false } end  -- pre-login
     if type(GuildOSDB.minimap) ~= "table" then
-        local old = BRutus:GetSetting("minimap")   -- one-time lift out of the guild DB
+        local old = GuildOS:GetSetting("minimap")   -- one-time lift out of the guild DB
         GuildOSDB.minimap = (type(old) == "table") and old or { hide = false }
     end
     cachedCfg = GuildOSDB.minimap
@@ -64,17 +64,17 @@ local function MinimapMenu_Init(_, level)
     info.text = "|cffFFD700Guild|r |cffD4AC0DOS|r"
     UIDropDownMenu_AddButton(info, level)
 
-    for _, def in ipairs(BRutus.UI:VisibleFeatures("tab")) do
+    for _, def in ipairs(GuildOS.UI:VisibleFeatures("tab")) do
         info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
         info.text = def.label
-        info.func = function() BRutus.UI:OpenWindow(def.id); CloseDropDownMenus() end
+        info.func = function() GuildOS.UI:OpenWindow(def.id); CloseDropDownMenus() end
         UIDropDownMenu_AddButton(info, level)
     end
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Guild Map"]
     info.func = function()
-        if BRutus.ToggleGuildMap then BRutus:ToggleGuildMap() end
+        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
         CloseDropDownMenus()
     end
     UIDropDownMenu_AddButton(info, level)
@@ -82,14 +82,14 @@ local function MinimapMenu_Init(_, level)
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Do I know this pug?"]
     info.func = function()
-        if BRutus.TogglePugInspector then BRutus:TogglePugInspector() end
+        if GuildOS.TogglePugInspector then GuildOS:TogglePugInspector() end
         CloseDropDownMenus()
     end
     UIDropDownMenu_AddButton(info, level)
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Hide minimap button"]
-    info.func = function() BRutus:SetMinimapShown(false); CloseDropDownMenus() end
+    info.func = function() GuildOS:SetMinimapShown(false); CloseDropDownMenus() end
     UIDropDownMenu_AddButton(info, level)
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
@@ -105,7 +105,7 @@ local function ShowMinimapMenu()
     ToggleDropDownMenu(1, nil, menuFrame, "cursor", 3, -3)
 end
 
-function BRutus:CreateMinimapButton()
+function GuildOS:CreateMinimapButton()
     if self.minimapButton then return self.minimapButton end
     if not Minimap then return nil end
 
@@ -144,7 +144,7 @@ function BRutus:CreateMinimapButton()
             -- Right-click opens the menu (roster / guild map / settings).
             ShowMinimapMenu()
         else
-            BRutus:ToggleRoster()
+            GuildOS:ToggleRoster()
         end
     end)
 
@@ -168,19 +168,19 @@ function BRutus:CreateMinimapButton()
     -- ponytail: one late repass instead of watching the minimap for resizes.
     -- Covers addons that resize it while loading; if someone starts resizing
     -- the minimap live, hooksecurefunc(Minimap, "SetWidth", ...) is the upgrade.
-    BRutus.Compat.After(1, function() UpdatePosition(btn) end)
+    GuildOS.Compat.After(1, function() UpdatePosition(btn) end)
 
     self.minimapButton = btn
 
     -- Wire the live guild map presence layer (minimap zone dots + refresh hook)
     -- now that the minimap definitely exists. Safe to call once.
-    if BRutus.SetupGuildMapPresence then BRutus:SetupGuildMapPresence() end
+    if GuildOS.SetupGuildMapPresence then GuildOS:SetupGuildMapPresence() end
 
     return btn
 end
 
 -- Show/hide toggle (used by the slash command and settings).
-function BRutus:ToggleMinimapButton()
+function GuildOS:ToggleMinimapButton()
     local cfg = GetMinimapCfg()
     cfg.hide = not cfg.hide
     if self.minimapButton then
@@ -190,7 +190,7 @@ function BRutus:ToggleMinimapButton()
 end
 
 -- Explicit show/hide (used by the Settings checkbox).
-function BRutus:SetMinimapShown(shown)
+function GuildOS:SetMinimapShown(shown)
     local cfg = GetMinimapCfg()
     cfg.hide = not shown
     if self.minimapButton then
@@ -198,24 +198,24 @@ function BRutus:SetMinimapShown(shown)
     end
 end
 
-function BRutus:IsMinimapShown()
+function GuildOS:IsMinimapShown()
     return not GetMinimapCfg().hide
 end
 
 -- The button position used to be stored per guild, so a mid-session db swap
 -- (guildless cold login resolving into the real guild) silently threw the
 -- dragged angle away and snapped the button back to the default.
-if BRutus.SelfTest then
-    BRutus.SelfTest:Register("minimap.angle_survives_db_swap", function()
+if GuildOS.SelfTest then
+    GuildOS.SelfTest:Register("minimap.angle_survives_db_swap", function()
         local c = GetMinimapCfg()
         local prev = c.angle
         c.angle = 123
 
-        local savedDb, savedKey = BRutus.db, BRutus.guildKey
-        BRutus.db = { settings = { minimap = { hide = false } } }
-        BRutus.guildKey = "__selftest-guild"
+        local savedDb, savedKey = GuildOS.db, GuildOS.guildKey
+        GuildOS.db = { settings = { minimap = { hide = false } } }
+        GuildOS.guildKey = "__selftest-guild"
         local seen = GetMinimapCfg().angle
-        BRutus.db, BRutus.guildKey = savedDb, savedKey
+        GuildOS.db, GuildOS.guildKey = savedDb, savedKey
 
         c.angle = prev
         if seen ~= 123 then

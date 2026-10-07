@@ -243,14 +243,14 @@ function CloseDropDownMenus() menuAnchor = nil end
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
 dofile(ADDON .. "/Core/Core.lua")
 local selftests = {}
-BRutus.SelfTest = { Register = function(_, name, fn) selftests[name] = fn end }
+GuildOS.SelfTest = { Register = function(_, name, fn) selftests[name] = fn end }
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Commands.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
-local UI, C = BRutus.UI, BRutus.Colors
+local UI, C = GuildOS.UI, GuildOS.Colors
 -- A tab this client does not support, and one whose panel raises while building.
 UI:RegisterFeature({ id = "tbcOnly", label = "TBC only", order = 200, tbc = true, build = function() end })
 UI:RegisterFeature({ id = "boom", label = "Boom", order = 210, build = function() error("boom") end })
@@ -260,11 +260,11 @@ dofile(ADDON .. "/UI/CalendarPanel.lua")
 dofile(ADDON .. "/UI/Minimap.lua")
 dofile(ADDON .. "/UI/Features.lua")
 local A = UI.Agora
-check(not BRutus.Client.isAnniversary, "the stub client is not TBC Anniversary")
+check(not GuildOS.Client.isAnniversary, "the stub client is not TBC Anniversary")
 
-function BRutus:TimeAgo(ts) return "T" .. (NOW - ts) end
+function GuildOS:TimeAgo(ts) return "T" .. (NOW - ts) end
 local events = {}
-BRutus.Calendar = {
+GuildOS.Calendar = {
   GetUpcoming = function() return events end,
   GetComposition = function(_, e) return { yes = e.yes or 0 } end,
   MyRsvp = function(_, e) return e.mine end,
@@ -275,7 +275,7 @@ BRutus.Calendar = {
 -- SelectSub and record the sub-tab and filter it was given.
 local built, selected = {}, {}
 local function builder(name, withSub)
-  BRutus[name] = function(_, c)
+  GuildOS[name] = function(_, c)
     built[name] = (built[name] or 0) + 1
     if withSub then
       c.SelectSub = function(sub, filter)
@@ -337,19 +337,22 @@ end
 
 -- ── Entry points ────────────────────────────────────────────────────────
 check(UI:GetMainWindow() == nil, "no window before the saved data loads")
-BRutus.db = { settings = { modules = {} }, members = {}, calendar = { events = {} } }
+GuildOS.db = { settings = { modules = {} }, members = {}, calendar = { events = {} } }
 local slash = SlashCmdList.GUILDOS
-check(slash and SlashCmdList.BRUTUS == slash, "/guildos, /gos and the legacy /brutus share one handler")
+local aliases = {}
+for key, fn in pairs(SlashCmdList) do if fn == slash then aliases[#aliases + 1] = key end end
+check(slash and #aliases == 1 and aliases[1] == "GUILDOS" and SLASH_GUILDOS1 == "/guildos" and SLASH_GUILDOS2 == "/gos",
+  "/guildos and /gos open the window, and no other command does (#120)")
 
 local finder = false
-function BRutus:ShowRecruitInbox() finder = true end
+function GuildOS:ShowRecruitInbox() finder = true end
 inGuild = false
 slash("")
-check(finder and BRutus.RosterFrame == nil, "guildless: /gos opens the recruitment finder, not the window")
+check(finder and GuildOS.RosterFrame == nil, "guildless: /gos opens the recruitment finder, not the window")
 inGuild = true
 
 slash("")
-local f = BRutus.RosterFrame
+local f = GuildOS.RosterFrame
 flush()
 check(f and f:IsShown() and f.name == "GuildOSWindow", "/gos opens the one window")
 check(f.w == 1000 and f.h == 620 and f.points[1][1] == "CENTER", "no saved geometry: 1000×620, centred")
@@ -369,14 +372,14 @@ check(not f.sizing, "until it is let go")
 check(f.activeTab == "home" and tabOf(f, "home").label.text == "Now", "it opens on Now, the first tab")
 check(f.tabs[1].key == "home" and UI:GetFeature("home").core,
   "Now is the first tab, and core: it cannot be switched off, so the fall-back always exists")
-check(BRutus:IsFrontDoorShown(), "the guild-frame hook sees the window open")
+check(GuildOS:IsFrontDoorShown(), "the guild-frame hook sees the window open")
 local esc = false
 for _, n in ipairs(UISpecialFrames) do if n == "GuildOSWindow" then esc = true end end
 check(esc, "Escape closes the window")
 slash("")
-check(not f:IsShown() and not BRutus:IsFrontDoorShown(), "/gos again closes it")
+check(not f:IsShown() and not GuildOS:IsFrontDoorShown(), "/gos again closes it")
 
-BRutus:CreateMinimapButton()
+GuildOS:CreateMinimapButton()
 local mm = GuildOSMinimapButton
 fire(mm, "OnClick", "LeftButton")
 check(f:IsShown(), "a left click on the minimap button opens the window")
@@ -390,7 +393,7 @@ raidsItem.func()
 check(f:IsShown() and f.activeTab == "raids", "a tab picked there opens in the window")
 
 f:Hide()
-BRutus:HookGuildFrame()
+GuildOS:HookGuildFrame()
 check(type(hooks.ToggleGuildFrame) == "function", "the guild key is hooked after Blizzard's toggle, not replaced")
 -- The guild key as the game runs it: Blizzard's toggle shows its frame when hidden and hides it
 -- when shown, and the hook runs after. Guild OS hid that frame, so the next press shows it again.
@@ -416,18 +419,18 @@ check(BINDING_HEADER_GUILDOS == "Guild OS" and BINDING_NAME_GUILDOS_TOGGLE == "O
   "the key binding is labelled")
 local bindings = read("Bindings.xml")
 check(bindings:find('name="GUILDOS_TOGGLE"', 1, true) and bindings:find('category="ADDONS"', 1, true)
-  and bindings:find("BRutus:ToggleRoster()", 1, true), "the key binding, in the AddOns category, opens the window")
-check(read("Modules/Digest.lua"):find("BRutus:ToggleRoster()", 1, true)
+  and bindings:find("GuildOS:ToggleRoster()", 1, true), "the key binding, in the AddOns category, opens the window")
+check(read("Modules/Digest.lua"):find("GuildOS:ToggleRoster()", 1, true)
   and read("UI/Onboarding.lua"):find('OpenWindow("settings")', 1, true),
   "the digest and onboarding open the window through the same calls")
 
 do
   local refreshed = 0
   f.RefreshRoster = function() refreshed = refreshed + 1 end
-  BRutus:RefreshRosterUI()
+  GuildOS:RefreshRosterUI()
   check(refreshed == 1, "the roster refreshes while the window is up")
   f:Hide()
-  BRutus:RefreshRosterUI()
+  GuildOS:RefreshRosterUI()
   check(refreshed == 1, "and not while it is closed")
   f.RefreshRoster = nil
 end
@@ -435,7 +438,7 @@ end
 slash("open management inactive")
 check(f:IsShown() and f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:inactive",
   "/gos open reaches the tab and its sub-tab (the hub's link was ignored)")
-check(BRutus.db.settings.window.tab == "management", "an opened tab is remembered")
+check(GuildOS.db.settings.window.tab == "management", "an opened tab is remembered")
 slash("banlist")
 check(selected[#selected] == "CreateManagementPanel:ban", "/gos banlist lands on the ban list")
 slash("calendar")
@@ -454,19 +457,19 @@ resize(f, 1000, 620)
 check(listed(f, "recipes") and listed(f, "loot") and listed(f, "alliance"), "available features have tabs")
 check(not listed(f, "tbcOnly"), "a feature this client does not support gets no tab")
 
-BRutus:SetFeatureEnabled("recipes", false)
+GuildOS:SetFeatureEnabled("recipes", false)
 printed = {}
 check(not UI:OpenWindow("recipes") and said("Recipes is disabled in Settings."), "a disabled feature refuses, saying why")
 check(not listed(f, "recipes"), "a disabled feature has no tab")
-BRutus:SetFeatureEnabled("recipes", true)
+GuildOS:SetFeatureEnabled("recipes", true)
 check(listed(f, "recipes"), "switching it back on brings the tab back")
 
-BRutus.State.startup.failedFeatures.alliance = "Alliance"
+GuildOS.State.startup.failedFeatures.alliance = "Alliance"
 f:UpdateTabVisibility()
 printed = {}
 check(not UI:OpenWindow("alliance") and said("Alliance could not start on this client."), "a failed feature refuses, saying why")
 check(not listed(f, "alliance"), "a feature whose module failed to start has no tab")
-BRutus.State.startup.failedFeatures.alliance = nil
+GuildOS.State.startup.failedFeatures.alliance = nil
 
 officer = false
 f:UpdateTabVisibility()
@@ -481,14 +484,14 @@ do
   printed = {}
   check(not UI:OpenWindow("boom") and said("Boom could not start on this client."), "a tab that raises while building refuses")
   check(f.activeTab == before, "and leaves the open tab alone")
-  check(BRutus.State.startup.failed["Tab:boom"], "and /guildos errors lists it as Tab:boom")
+  check(GuildOS.State.startup.failed["Tab:boom"], "and /guildos errors lists it as Tab:boom")
 end
 
 UI:OpenWindow("trials")
-BRutus:SetFeatureEnabled("trials", false)
+GuildOS:SetFeatureEnabled("trials", false)
 check(f.activeTab == "home" and not f.tabPanels.trials.shown and f.tabPanels.home.shown,
   "switching off the open tab's feature falls back to Now")
-BRutus:SetFeatureEnabled("trials", true)
+GuildOS:SetFeatureEnabled("trials", true)
 
 -- ── Geometry and persistence ────────────────────────────────────────────
 do
@@ -503,40 +506,40 @@ end
 
 f.points = { { "TOPLEFT", UIParent, "BOTTOMLEFT", 300, 700 } }
 fire(f.titleBar, "OnDragStop")
-local g = BRutus.db.settings.window
+local g = GuildOS.db.settings.window
 check(g.left == 300 and g.top == 700 and g.w == 1000 and g.h == 620, "dragging the title bar saves where the window is")
 
 UI:OpenWindow("raids")
 f:Hide()
-BRutus.RosterFrame = nil   -- /reload
+GuildOS.RosterFrame = nil   -- /reload
 f = UI:GetMainWindow()
 check(point(f) == "TOPLEFT,300,700" and f.w == 1000 and f.h == 620, "after /reload the window is where it was, at its size")
 check(f.activeTab == "raids", "and on the tab it was left on")
 
-BRutus.db.settings.window = { left = 1200, top = 1000, w = 1000, h = 620 }
-BRutus.RosterFrame = nil
+GuildOS.db.settings.window = { left = 1200, top = 1000, w = 1000, h = 620 }
+GuildOS.RosterFrame = nil
 f = UI:GetMainWindow()
 check(point(f) == "TOPLEFT,600,900", "a saved spot hanging off the screen is pulled back on")
 
-BRutus.db.settings.window, BRutus.db.settings.uiScale = nil, 2
-BRutus.RosterFrame = nil
+GuildOS.db.settings.window, GuildOS.db.settings.uiScale = nil, 2
+GuildOS.RosterFrame = nil
 f = UI:GetMainWindow()
 check(f.scale == 2 and f.w == 800 and f.h == 450, "the UI scale applies, and the default size fits the scaled screen")
-BRutus.db.settings.uiScale = 1.1
+GuildOS.db.settings.uiScale = 1.1
 UI:ApplyScale()
 check(f.scale == 1.1, "changing the UI scale rescales the window")
-BRutus.db.settings.uiScale = nil
-BRutus.db.settings.window = nil
-BRutus.RosterFrame = nil
+GuildOS.db.settings.uiScale = nil
+GuildOS.db.settings.window = nil
+GuildOS.RosterFrame = nil
 f = UI:GetMainWindow()
 f:Show()
 resize(f, 1000, 620)
-g = BRutus.db.settings.window
+g = GuildOS.db.settings.window
 
 -- ── Title bar, footer, refresh ──────────────────────────────────────────
 check(f.band == "full" and f.titleBar.h == 30, "at 1000px the title bar is 30px")
 do
-  local F = BRutus.Fonts
+  local F = GuildOS.Fonts
   local wordmark, barBg
   for _, c in ipairs(f.titleBar.children) do
     if c.kind == "FontString" and c.text == "GuildOS" then wordmark = c end
@@ -563,10 +566,10 @@ check(not f:IsShown(), "× closes the window")
 f:Show()
 flush()
 check(f.metaText.shown and f.metaText.text == "Chama · 2 online", "left: the guild and who is online")
-BRutus.db.members = { a = { lastSync = NOW - 300 }, b = { lastSync = NOW - 60 }, c = "junk" }
+GuildOS.db.members = { a = { lastSync = NOW - 300 }, b = { lastSync = NOW - 60 }, c = "junk" }
 f:RefreshTitle()
 check(f.syncText.shown and f.syncText.text == "sync T60", "right: the newest sync time")
-BRutus.db.members = {}
+GuildOS.db.members = {}
 f:RefreshTitle()
 check(f.syncText.text == "not synced yet", "before any sync it says so")
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
@@ -613,14 +616,14 @@ do
   check(f.footItems.search.variant == "ghost" and f.footItems.sync.variant == "ghost"
     and f.footItems.cores.variant == "ghost" and f.footItems.blizzard.variant == "ghost", "as ghost buttons")
   local ran = {}
-  local real = { BRutus.Search, BRutus.CommSystem, BRutus.ShowCoreSignupFrame, BRutus.OpenBlizzardGuildUI }
-  BRutus.Search = { Show = function() ran.search = true end }
-  BRutus.CommSystem = { FullSync = function() ran.sync = true end }
-  BRutus.ShowCoreSignupFrame = function() ran.cores = true end
-  BRutus.OpenBlizzardGuildUI = function() ran.blizzard = true end
+  local real = { GuildOS.Search, GuildOS.CommSystem, GuildOS.ShowCoreSignupFrame, GuildOS.OpenBlizzardGuildUI }
+  GuildOS.Search = { Show = function() ran.search = true end }
+  GuildOS.CommSystem = { FullSync = function() ran.sync = true end }
+  GuildOS.ShowCoreSignupFrame = function() ran.cores = true end
+  GuildOS.OpenBlizzardGuildUI = function() ran.blizzard = true end
   for _, key in ipairs({ "search", "sync", "cores", "blizzard" }) do fire(f.footItems[key], "OnClick") end
   check(ran.search and ran.sync and ran.cores and ran.blizzard, "each footer action runs what it names")
-  BRutus.Search, BRutus.CommSystem, BRutus.ShowCoreSignupFrame, BRutus.OpenBlizzardGuildUI = real[1], real[2], real[3], real[4]
+  GuildOS.Search, GuildOS.CommSystem, GuildOS.ShowCoreSignupFrame, GuildOS.OpenBlizzardGuildUI = real[1], real[2], real[3], real[4]
   local invitedName
   local realInvite = GuildInvite
   GuildInvite = function(name) invitedName = name end
@@ -755,7 +758,7 @@ check(f.metaText.text == "Chama · 3 online", "unfolding refreshes the title at 
 roster[2][2] = false
 fire(f.minimise, "OnClick")
 f:Hide()
-BRutus.RosterFrame = nil   -- /reload
+GuildOS.RosterFrame = nil   -- /reload
 f = UI:GetMainWindow()
 check(f.w == 320 and f.h == 28 and f.band == nil, "folded, it comes back folded after /reload")
 check(UI:OpenWindow("roster") and f.w == 1000 and f.h == 620 and f.band == "full" and f.content.shown,
@@ -796,9 +799,9 @@ events = {
   { title = "Karazhan", when = KARAZHAN, yes = 9 },
 }
 check(A:NextRaid() == events[3], "the next raid skips past events and other kinds; kindless events are raids")
-BRutus.db.calendar = nil
+GuildOS.db.calendar = nil
 check(A:NextRaid() == nil, "before Calendar has started there is no raid, and no error")
-BRutus.db.calendar = { events = {} }
+GuildOS.db.calendar = { events = {} }
 check(A.Clock(4 * 3600 + 12 * 60 + 38) == "4:12:38" and A.Clock(2 * 86400 + 4 * 3600 + 5) == "2d 4h"
   and A.Clock(0) == "now", "the countdown reads h:mm:ss under a day, days and hours past it")
 check(A.Short(4 * 3600 + 12 * 60) == "4h12" and A.Short(2 * 86400 + 3600) == "2d1h" and A.Short(59) == "1m"
@@ -806,17 +809,17 @@ check(A.Short(4 * 3600 + 12 * 60) == "4h12" and A.Short(2 * 86400 + 3600) == "2d
 check(A:OnlineCount() == 2 and not A:RosterLoading(), "online counts the roster")
 check(A:LastSync() == nil, "no sync, no time")
 
-BRutus.TrialTracker = {
+GuildOS.TrialTracker = {
   GetActiveTrials = function() return { { key = "t1" }, { key = "t2" }, { key = "t3" } } end,
   -- Whole days, rounded down, like TrialTracker:GetDaysRemaining.
   GetDaysRemaining = function(_, k) return ({ t1 = 0, t2 = 1, t3 = 5 })[k] end,
 }
-BRutus.GuildManager = {
+GuildOS.GuildManager = {
   DEFAULT_INACTIVE_DAYS = 30,
   GetInactiveMembers = function() return { 1, 2, 3, 4 } end,
   GetSuggestions = function() return { trialsReady = { 1 }, promoteCandidates = { 1, 2 } } end,
 }
-BRutus.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
 do
   local needs = A:NeedsMe()
   check(#needs == 5, "an officer's five kinds of work")
@@ -838,18 +841,18 @@ check(#A:NeedsMe() == 5, "a raid just inside a week asks")
 events[3].when = NOW + 7 * 86400 + 1
 check(#A:NeedsMe() == 4, "just past a week it does not yet")
 events[3].when = KARAZHAN
-BRutus:SetFeatureEnabled("trials", false)
+GuildOS:SetFeatureEnabled("trials", false)
 check(A:NeedsMe()[1].id == "guild", "work for a screen that is switched off is left out")
-BRutus:SetFeatureEnabled("guild", false)
+GuildOS:SetFeatureEnabled("guild", false)
 check(A:NeedsMe()[1].id == "management", "and an unanswered raid needs the Guild tab")
-BRutus:SetFeatureEnabled("guild", true)
-BRutus:SetFeatureEnabled("trials", true)
+GuildOS:SetFeatureEnabled("guild", true)
+GuildOS:SetFeatureEnabled("trials", true)
 officer = false
 check(#A:NeedsMe() == 1 and A:NeedsMe()[1].id == "guild", "a member only sees their own answer")
 officer = true
 
-BRutus.db.members = { ["Ana-Firemaw"] = {}, ["Dora-Firemaw"] = {}, ["Bob-RealmA"] = {}, ["Bob-RealmB"] = {} }
-BRutus.db.rosterLog = { events = {
+GuildOS.db.members = { ["Ana-Firemaw"] = {}, ["Dora-Firemaw"] = {}, ["Bob-RealmA"] = {}, ["Bob-RealmB"] = {} }
+GuildOS.db.rosterLog = { events = {
   { action = "join", target = "Dora", timestamp = NOW - 100 },
   { action = "promote", target = "Ana", detail = "Officer", timestamp = NOW - 50 },
   { action = "leave", target = "Eva", timestamp = NOW - 110 },
@@ -859,15 +862,15 @@ BRutus.db.rosterLog = { events = {
   { action = "join", target = "Old", timestamp = NOW - 49 * 3600 },
   { action = "note", target = "X", timestamp = NOW - 10 },
 } }
-BRutus.db.lootHistory = {
+GuildOS.db.lootHistory = {
   { player = "Beto", playerKey = "Beto-Firemaw", itemLink = "[Staff]", timestamp = NOW - 200 },
   { player = "Ancient", playerKey = "Ancient-Firemaw", itemLink = "[Relic]", timestamp = NOW - 50 * 3600 },
 }
-BRutus.db.milestones = { events = {
+GuildOS.db.milestones = { events = {
   { type = "ding", key = "Caio-Firemaw", name = "Caio", detail = "70", ts = NOW - 300 },
   { type = "attune", key = "Ana-Firemaw", name = "Ana", ts = NOW - 310 },
 } }
-BRutus.db.raidTracker = { sessions = { s1 = { name = "Karazhan", startTime = NOW - 3 * 3600, endTime = NOW - 400 } } }
+GuildOS.db.raidTracker = { sessions = { s1 = { name = "Karazhan", startTime = NOW - 3 * 3600, endTime = NOW - 400 } } }
 do
   local feed = A:Activity()
   check(#feed == 10, "48 hours of roster changes, loot, milestones and tracked raids; older and unknown entries left out")
@@ -893,12 +896,12 @@ do
     "a member's rows open the roster where the owner is officer-only")
   officer = true
 
-  local saved = { BRutus.db.rosterLog, BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker }
+  local saved = { GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker }
   local many = {}
   for i = 1, 14 do many[i] = { action = "join", target = "N" .. i, timestamp = NOW - i } end
-  BRutus.db.rosterLog, BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker = { events = many }, nil, nil, nil
+  GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = { events = many }, nil, nil, nil
   check(#A:Activity() == 12, "at most 12 rows of activity")
-  BRutus.db.rosterLog, BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker = saved[1], saved[2], saved[3], saved[4]
+  GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = saved[1], saved[2], saved[3], saved[4]
 end
 
 local gold = string.format("%02x%02x%02x", math.floor(C.gold.r * 255 + 0.5), math.floor(C.gold.g * 255 + 0.5),
@@ -955,7 +958,7 @@ do
 end
 
 check(now.clock.text == "4:12:38", "the countdown to the next raid")
-check(same(now.clock.color, C.gold) and now.clock.font.file == BRutus.Fonts.countdown.file and now.clock.font.size == 19,
+check(same(now.clock.color, C.gold) and now.clock.font.file == GuildOS.Fonts.countdown.file and now.clock.font.size == 19,
   "in gold, in the countdown's mono face at 19px")
 check(now.raidMeta.text == "Karazhan · " .. os.date("%a %H:%M", KARAZHAN) .. " · 9 going", "its title, time and who is going")
 check(now.openCalendar.shown and now.openCalendar.variant == "primary", "and a primary button to the calendar")
@@ -980,21 +983,21 @@ flush()
 check(visible(now.feedList) == 10, "a taller column shows more of it")
 check(feedRows[10].time.text == os.date("%a", NOW - 47 * 3600), "a row older than a day shows its weekday, not a time")
 do
-  local savedLog, many = BRutus.db.rosterLog, {}
+  local savedLog, many = GuildOS.db.rosterLog, {}
   for i = 1, 14 do many[i] = { action = "join", target = "N" .. i, timestamp = NOW - i } end
-  BRutus.db.rosterLog = { events = many }
+  GuildOS.db.rosterLog = { events = many }
   now.Refresh()
   check(visible(now.feedList) == 12, "however tall the column, at most 12 rows")
-  BRutus.db.rosterLog = savedLog
+  GuildOS.db.rosterLog = savedLog
   now.Refresh()
 end
 do
-  local saved = { BRutus.db.rosterLog, BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker }
-  BRutus.db.rosterLog = { events = { { action = "join", target = "Late", timestamp = NOW - 23 * 3600 } } }
-  BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker = nil, nil, nil
+  local saved = { GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker }
+  GuildOS.db.rosterLog = { events = { { action = "join", target = "Late", timestamp = NOW - 23 * 3600 } } }
+  GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = nil, nil, nil
   now.Refresh()
   check(feedRows[1].time.text == os.date("%H:%M", NOW - 23 * 3600), "23 hours ago still shows the time")
-  BRutus.db.rosterLog, BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker = saved[1], saved[2], saved[3], saved[4]
+  GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = saved[1], saved[2], saved[3], saved[4]
   now.Refresh()
 end
 now:SetSize(976, 520)
@@ -1013,7 +1016,7 @@ do
 end
 
 do
-  BRutus.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3 } end }
+  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3 } end }
   for _ = 1, 9 do nowTicker.fn() end
   check(needRows[5].text.text == "2 applicants waiting", "between refreshes the lists stay as they were")
   nowTicker.fn()
@@ -1023,7 +1026,7 @@ do
   check(now.clock.text == "4:11:38", "every tick moves the clock")
   NOW = NOW - 60
   check(now.events.GUILD_ROSTER_UPDATE, "Now listens for roster updates")
-  BRutus.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
   fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
   check(needRows[5].text.text == "2 applicants waiting", "and refreshes on one")
 end
@@ -1032,10 +1035,10 @@ fire(needRows[3], "OnClick")
 check(f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:inactive",
   "a row opens its screen on its sub-tab")
 check(nowTicker.cancelled, "leaving Now stops its clock")
-BRutus.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3, d = 4 } end }
+GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3, d = 4 } end }
 fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
 check(needRows[5].text.text == "2 applicants waiting", "off screen, a roster update does not refresh Now")
-BRutus.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
 UI:OpenWindow("home")
 fire(needRows[2], "OnClick")
 check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar:" .. KARAZHAN,
@@ -1046,15 +1049,15 @@ check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar
   "so does the next raid's calendar button")
 do
   local member
-  function BRutus:ShowMemberDetail(d) member = d end
-  BRutus.db.members["Caio-Firemaw"] = { name = "Caio" }
+  function GuildOS:ShowMemberDetail(d) member = d end
+  GuildOS.db.members["Caio-Firemaw"] = { name = "Caio" }
   UI:OpenWindow("home")
   fire(feedRows[7], "OnClick")
   check(f.activeTab == "roster" and member and member.name == "Caio", "a milestone row opens the roster and the member")
   UI:OpenWindow("home")
   fire(feedRows[1], "OnClick")
   check(f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:log"
-    and member == BRutus.db.members["Ana-Firemaw"], "a roster change opens the audit log and the member")
+    and member == GuildOS.db.members["Ana-Firemaw"], "a roster change opens the audit log and the member")
 end
 
 UI:OpenWindow("home")
@@ -1065,7 +1068,7 @@ check(visible(now.needsList) == 1 and needRows[1].text.text == "All caught up" a
   and needRows[1].go == nil, "nothing to do: one empty line, not a button")
 fire(needRows[1], "OnEnter")
 check(not needRows[1].hover.shown, "and it does not light up under the cursor")
-BRutus.db.rosterLog, BRutus.db.lootHistory, BRutus.db.milestones, BRutus.db.raidTracker = nil, nil, nil, nil
+GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker = nil, nil, nil, nil
 now.Refresh()
 check(visible(now.feedList) == 1 and feedRows[1].text.text == "Nothing in the last 48 hours." and feedRows[1].go == nil,
   "no activity: one empty line")
@@ -1075,10 +1078,10 @@ check(visible(now.needsList) == 3 and needRows[1].bar.shown and not needRows[1].
   and needRows[1].bar.w == 180 and needRows[2].bar.w == 130 and needRows[3].bar.w == 160,
   "while the roster loads: static bars, not zeros")
 roster = fullRoster
-BRutus:SetFeatureEnabled("guild", false)
+GuildOS:SetFeatureEnabled("guild", false)
 now.Refresh()
 check(not now.openCalendar.shown, "no calendar button when the Guild tab is off")
-BRutus:SetFeatureEnabled("guild", true)
+GuildOS:SetFeatureEnabled("guild", true)
 events = {}
 now.Refresh()
 check(now.clock.text == "\226\128\148" and now.raidMeta.text == "No raid scheduled.", "no raid: a dash and one line")
@@ -1103,7 +1106,7 @@ end
 do
   local real = UI.features.home.build
   UI.features.home.build = function() error("no now") end
-  BRutus.RosterFrame, BRutus.db.settings.window = nil, nil
+  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
   local broken = UI:GetMainWindow()
   broken:Show()
   resize(broken, 1000, 620)
@@ -1119,9 +1122,9 @@ end
 -- The calendar filter, through the real Guild tab and the real calendar.
 do
   dofile(ADDON .. "/Modules/CallToArms.lua")   -- the TOC loads it before the panel
-  BRutus.CallToArms:Initialize()
+  GuildOS.CallToArms:Initialize()
   dofile(ADDON .. "/UI/CommunityPanel.lua")
-  BRutus.RosterFrame, BRutus.db.settings.window = nil, nil
+  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
   local win = UI:GetMainWindow()
   local when = os.time({ year = 2026, month = 1, day = 15, hour = 21 })
   check(UI:OpenWindow("guild", "calendar", when), "a deep link with a day opens the real Guild tab")
@@ -1160,7 +1163,7 @@ end
 
 -- The Call to Arms tab (issue #108), through the real Helpers.
 do
-  local CTA = BRutus.CallToArms
+  local CTA = GuildOS.CallToArms
   local function find(root, text)
     for _, c in ipairs(root.children) do
       if c.text == text or (c.label and c.label.text == text) then return c end
@@ -1170,7 +1173,7 @@ do
   end
   local function tick(cb, v) cb.checkbox:SetChecked(v); cb.checkbox.scripts.OnClick(cb.checkbox) end
   local function open()
-    BRutus.RosterFrame, BRutus.db.settings.window = nil, nil
+    GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
     local win = UI:GetMainWindow()
     UI:OpenWindow("guild", "cta")
     return win, win.tabPanels.guild.subPanels.cta.panel
@@ -1182,7 +1185,7 @@ do
     "a member gets the tab and their own settings, not the controls to send")
   tick(find(p, "Show popups"), false)
   tick(find(p, "World Boss"), false)
-  check(BRutus.db.settings.ctaPopups == false and CTA:SoundOn() and CTA:Muted("worldboss") and not CTA:Muted("pvp"),
+  check(GuildOS.db.settings.ctaPopups == false and CTA:SoundOn() and CTA:Muted("worldboss") and not CTA:Muted("pvp"),
     "unticking 'Show popups' turns popups off, and unticking a type mutes that type alone")
   tick(find(p, "Show popups"), true)
   tick(find(p, "World Boss"), true)
@@ -1212,11 +1215,11 @@ do
   chatCb = find(p, "Also post in guild chat")
   check(find(p, "Send") and chatCb and chatCb.checkbox:GetChecked(), "an officer sends, with the guild line on")
   tick(chatCb, false)
-  check(BRutus.db.settings.ctaChat == false and not CTA:ChatOn(), "and can switch the guild line off")
+  check(GuildOS.db.settings.ctaChat == false and not CTA:ChatOn(), "and can switch the guild line off")
   win:Hide()
 
   -- However many templates, of whatever length, none sits on another or on the message box.
-  local saved = BRutus.db.cta.templates
+  local saved = GuildOS.db.cta.templates
   saved[1] = { id = "c1", name = "A very long template nam", text = "x", kind = "pvp" }
   for i = 2, CTA.TEMPLATES_MAX do saved[i] = { id = "c" .. i, name = "t" .. i, text = "x", kind = "rally" } end
   win, p = open()
@@ -1268,11 +1271,11 @@ do
   check(msg ~= nil, "the message box hangs below the templates, so it moves down with them")
   check(msg.maxBytes == CTA.TEXT_MAX + 1, "and holds what a call carries in bytes, not letters: Cyrillic is two each")
   win:Hide()
-  BRutus.db.cta.templates = {}
+  GuildOS.db.cta.templates = {}
 end
 
 do
-  BRutus.RosterFrame, BRutus.db.settings.window = nil, nil
+  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
   local edge = UI:GetMainWindow()
   edge:Show()
   resize(edge, 620, 620)
@@ -1292,7 +1295,7 @@ do
     end
   end
   local all = table.concat(sources, "\n")
-  for _, stale in ipairs({ "UI.Hub", "ToggleExpanded", "BRutusRosterFrame", '"GuildOSHub"', "UI:CreateWindow(",
+  for _, stale in ipairs({ "UI.Hub", "ToggleExpanded", "GuildOSRosterFrame", '"GuildOSHub"', "UI:CreateWindow(",
     "UI:ToggleWindow(", "UI:CloseAllWindows(", "UI:IsWindowOpen(", "UI:RaiseWindow(", 'VisibleFeatures("hub")', "def.hub" }) do
     check(not all:find(stale, 1, true), "nothing refers to " .. stale)
   end

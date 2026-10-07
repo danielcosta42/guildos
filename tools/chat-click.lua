@@ -71,14 +71,14 @@ local function load(game)
   dofile(ADDON .. "/Modules/RecruitEngagement.lua")
   dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
   dofile(ADDON .. "/Modules/RecruitScanner.lua")
-  BRutus.db = { recruitment = { welcomeEnabled = true, welcomeMessage = "Bem vindo aos Filhos da Horda!", channels = {} },
+  GuildOS.db = { recruitment = { welcomeEnabled = true, welcomeMessage = "Bem vindo aos Filhos da Horda!", channels = {} },
                 recruitScanner = { template = "Hi [player]", batchMax = 10, cooldownSec = 1800 } }
-  BRutus.CommSystem = { MSG_TYPES = { WELCOME_INTENT = "WI", WELCOME_CLAIM = "WC" }, SendMessage = function() end }
-  function BRutus:IsOfficer() return true end
+  GuildOS.CommSystem = { MSG_TYPES = { WELCOME_INTENT = "WI", WELCOME_CLAIM = "WC" }, SendMessage = function() end }
+  function GuildOS:IsOfficer() return true end
   local env = { handlers = handlers, timers = timers, sent = sent, invited = invited, shown = 0, invitePopup = 0 }
-  BRutus.Recruitment.ShowInvitePopup = function() env.invitePopup = env.invitePopup + 1 end
+  GuildOS.Recruitment.ShowInvitePopup = function() env.invitePopup = env.invitePopup + 1 end
   -- The popup is the UI's; here it only has to be asked for.
-  BRutus.Recruitment.ShowWelcomePopup = function() env.shown = env.shown + 1 end
+  GuildOS.Recruitment.ShowWelcomePopup = function() env.shown = env.shown + 1 end
   function env.runTimers(upTo)
     table.sort(timers, function(a, b) return a.d < b.d end)
     local due = {}
@@ -97,7 +97,7 @@ local function load(game)
       if h.events.CHAT_MSG_SYSTEM then h.frame._fn(h.frame, "CHAT_MSG_SYSTEM", name .. " has joined the guild.") end
     end
   end
-  return BRutus, env
+  return GuildOS, env
 end
 
 -- ── Forever: the welcome waits for a click ──────────────────────────────
@@ -160,7 +160,7 @@ S:WhisperSelected({ "Ana", "Bob", "Cid" })
 check(S._contactCd.Ana and not S._contactCd.Bob, "only who was whispered is on cooldown")
 S._scanBusy = nil
 function B:IsOfficer() return true end
-BRutus.Compat.SendWho, BRutus.Compat.SetWhoToUI = function() end, function() end
+GuildOS.Compat.SendWho, GuildOS.Compat.SetWhoToUI = function() end, function() end
 S:Scan()
 check(S:PendingWhispers() == 0, "a new scan drops a batch left half sent")
 local targets = {}

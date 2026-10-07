@@ -5,7 +5,7 @@
 -- Business logic only — no UI (Rule 2 / Rule 10).
 ----------------------------------------------------------------------
 local GearAudit = {}
-BRutus.GearAudit = GearAudit
+GuildOS.GearAudit = GearAudit
 
 -- Inventory slots where a missing enchant is a real problem in TBC.
 -- Mirrors UI/MemberDetail.lua ENCHANT_WARNING_SLOTS:
@@ -28,8 +28,8 @@ function GearAudit:GetGuildEnchantAudit()
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
-            local data = BRutus.db.members[key]
+            local key = GuildOS:GetPlayerKey(short, realm)
+            local data = GuildOS.db.members[key]
             local gear = data and data.gear
             if gear then
                 local missing = {}
@@ -38,7 +38,7 @@ function GearAudit:GetGuildEnchantAudit()
                     -- Only flag slots that actually have an item equipped.
                     if item and item.name and item.name ~= "" then
                         if not (item.enchantId and item.enchantId > 0) then
-                            missing[#missing + 1] = BRutus.SlotNames[slotId] or ("Slot " .. slotId)
+                            missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
                         end
                     end
                 end

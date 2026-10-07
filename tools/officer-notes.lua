@@ -45,42 +45,42 @@ function GetGuildRosterInfo(i) return ROSTER[i] end
 
 -- ── Forever: a name is two words ────────────────────────────────────────
 ROSTER = { "Lethaniel Blightwood", "Bob Costa", "Quux" }
-local name, text = BRutus:SplitNameAndText("Lethaniel Blightwood Late to raid twice")
+local name, text = GuildOS:SplitNameAndText("Lethaniel Blightwood Late to raid twice")
 check(name == "Lethaniel Blightwood" and text == "Late to raid twice",
       "a two-word name on the roster is the name, and the rest is the note")
-name, text = BRutus:SplitNameAndText("Quux brings flasks")
+name, text = GuildOS:SplitNameAndText("Quux brings flasks")
 check(name == "Quux" and text == "brings flasks", "a one-word name still reads as before")
-name, text = BRutus:SplitNameAndText("Nobody There text")
+name, text = GuildOS:SplitNameAndText("Nobody There text")
 check(name == "Nobody" and text == "There text", "two words nobody on the roster has: the first word, as before")
-check(BRutus:SplitNameAndText("Lethaniel Blightwood") == nil, "a name with no note is no note")
+check(GuildOS:SplitNameAndText("Lethaniel Blightwood") == nil, "a name with no note is no note")
 
-local key, shown = BRutus:RosterKey("Lethaniel Blightwood")
-check(key == BRutus:GetPlayerKey("Lethaniel Blightwood", "Classic Beta PvE 2") and shown == "Lethaniel Blightwood",
+local key, shown = GuildOS:RosterKey("Lethaniel Blightwood")
+check(key == GuildOS:GetPlayerKey("Lethaniel Blightwood", "Classic Beta PvE 2") and shown == "Lethaniel Blightwood",
       "the key is the roster frame's own: the roster name, on the player's realm")
-check(BRutus:RosterKey("Lethaniel") == nil, "the first name alone is nobody")
-name, text = BRutus:SplitNameAndText("Lethaniel late twice")
+check(GuildOS:RosterKey("Lethaniel") == nil, "the first name alone is nobody")
+name, text = GuildOS:SplitNameAndText("Lethaniel late twice")
 check(name == "Lethaniel" and text == "late twice", "a first name alone reads as a one-word name, for the command to flag")
 
 -- ── Anniversary: Name-Realm on the roster ───────────────────────────────
 ROSTER = { "Ana-Firemaw", "Bob-Spineshatter" }
-name, text = BRutus:SplitNameAndText("Bob great tank")
+name, text = GuildOS:SplitNameAndText("Bob great tank")
 check(name == "Bob" and text == "great tank", "Anniversary: the first word is the name")
-key = BRutus:RosterKey("Bob")
-check(key == BRutus:GetPlayerKey("Bob", "Spineshatter"), "a cross-realm member keeps the realm the roster gives")
+key = GuildOS:RosterKey("Bob")
+check(key == GuildOS:GetPlayerKey("Bob", "Spineshatter"), "a cross-realm member keeps the realm the roster gives")
 -- The roster lookup cuts at the hyphen; a name is only a name when it is the roster's whole
 -- name, with or without the realm. "Name-Realm" text is a name and a note, not a name alone.
-name, text = BRutus:SplitNameAndText("Bob-Spineshatter great tank")
+name, text = GuildOS:SplitNameAndText("Bob-Spineshatter great tank")
 check(name == "Bob-Spineshatter" and text == "great tank", "Name-Realm then a note: the note survives")
-name, text = BRutus:SplitNameAndText("Ana-Firemaw needs work")
+name, text = GuildOS:SplitNameAndText("Ana-Firemaw needs work")
 check(name == "Ana-Firemaw" and text == "needs work", "the same for a same-realm Name-Realm")
-check(BRutus:SplitNameAndText("Bob-Spineshatter") == nil, "the whole Name-Realm and nothing else is no note")
-check(BRutus:RosterKey("Bob-Spineshatter") == BRutus:GetPlayerKey("Bob", "Spineshatter"), "and Name-Realm keys like the roster")
+check(GuildOS:SplitNameAndText("Bob-Spineshatter") == nil, "the whole Name-Realm and nothing else is no note")
+check(GuildOS:RosterKey("Bob-Spineshatter") == GuildOS:GetPlayerKey("Bob", "Spineshatter"), "and Name-Realm keys like the roster")
 
 -- ── The popup's edit box, on both clients ───────────────────────────────
 local classicBox, foreverBox = {}, {}
-check(BRutus.Compat.PopupEditBox({ editBox = classicBox }) == classicBox, "Anniversary's popup: editBox")
-check(BRutus.Compat.PopupEditBox({ EditBox = foreverBox, GetEditBox = function(self) return self.EditBox end }) == foreverBox,
+check(GuildOS.Compat.PopupEditBox({ editBox = classicBox }) == classicBox, "Anniversary's popup: editBox")
+check(GuildOS.Compat.PopupEditBox({ EditBox = foreverBox, GetEditBox = function(self) return self.EditBox end }) == foreverBox,
       "Forever's popup: GetEditBox()")
-check(BRutus.Compat.PopupEditBox(nil) == nil, "no dialog, no box, no raise")
+check(GuildOS.Compat.PopupEditBox(nil) == nil, "no dialog, no box, no raise")
 
 print(("officer-notes: %d checks passed"):format(checks))

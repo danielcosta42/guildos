@@ -80,37 +80,37 @@ local function load(game)
                        "RaiderRoster", "CoreManager", "Alliance" }) do
     dofile(ADDON .. "/Modules/" .. m .. ".lua")
   end
-  BRutus.db = { settings = {}, members = {}, altLinks = {}, officerNotes = {}, trials = {}, raiders = {}, cores = {},
+  GuildOS.db = { settings = {}, members = {}, altLinks = {}, officerNotes = {}, trials = {}, raiders = {}, cores = {},
                 raidTracker = { sessions = {}, attendance = {}, deletedSessions = {} } }
   handlers = {}
-  BRutus.SyncService = { On = function(_, dom, fn) handlers[dom] = fn end, Publish = function() end,
+  GuildOS.SyncService = { On = function(_, dom, fn) handlers[dom] = fn end, Publish = function() end,
                          ShouldApply = function() return true end, SetRevision = function() end }
-  BRutus.CommSystem.pendingMessages = {}
-  BRutus.CommSystem.SendMessage = function() end       -- what a change re-broadcasts is not the question here
-  BRutus.db.points = { mode = "dkp", config = {}, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+  GuildOS.CommSystem.pendingMessages = {}
+  GuildOS.CommSystem.SendMessage = function() end       -- what a change re-broadcasts is not the question here
+  GuildOS.db.points = { mode = "dkp", config = {}, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
 end
 local function ser(t) return LibStub("GuildOS-LibSerialize"):Serialize(t) end
 
 -- ── 0. The helper ───────────────────────────────────────────────────────
 load("forever")
-check(BRutus:LocalMemberKey(theirs("Cherry Arrow")) == mine("Cherry Arrow"), "forever: another client's key becomes this client's")
-check(BRutus:LocalMemberKey(mine("Cherry Arrow")) == mine("Cherry Arrow"), "forever: this client's own key stays")
-check(BRutus:LocalMemberKey("Cherry Arrow") == mine("Cherry Arrow"), "forever: a bare name gets this client's realm")
-check(BRutus:LocalMemberKey(nil) == nil and BRutus:LocalMemberKey("") == "" and BRutus:LocalMemberKey(5) == 5,
+check(GuildOS:LocalMemberKey(theirs("Cherry Arrow")) == mine("Cherry Arrow"), "forever: another client's key becomes this client's")
+check(GuildOS:LocalMemberKey(mine("Cherry Arrow")) == mine("Cherry Arrow"), "forever: this client's own key stays")
+check(GuildOS:LocalMemberKey("Cherry Arrow") == mine("Cherry Arrow"), "forever: a bare name gets this client's realm")
+check(GuildOS:LocalMemberKey(nil) == nil and GuildOS:LocalMemberKey("") == "" and GuildOS:LocalMemberKey(5) == 5,
   "forever: nothing that is not a key is touched")
-check(BRutus:LocalMemberKey("ally:Chehul Costa") == "ally:Chehul Costa", "forever: an allied guild's realm-free key is left alone")
+check(GuildOS:LocalMemberKey("ally:Chehul Costa") == "ally:Chehul Costa", "forever: an allied guild's realm-free key is left alone")
 
 -- ── 1. Raid attendance and sessions ─────────────────────────────────────
-BRutus.RaidTracker:HandleIncoming(ser({
+GuildOS.RaidTracker:HandleIncoming(ser({
   attendance = { [""] = { [theirs("Cherry Arrow")] = { raids = 3, lastRaid = 100 } } },
   sessions = { s1 = { players = { [theirs("Cherry Arrow")] = true }, startTime = 1, instanceID = 409 } },
 }))
-local rt = BRutus.db.raidTracker
+local rt = GuildOS.db.raidTracker
 check(rt.attendance[""][mine("Cherry Arrow")] and rt.attendance[""][theirs("Cherry Arrow")] == nil,
   "forever: an officer's attendance lands on the member's own key")
 check(rt.sessions.s1 and rt.sessions.s1.players[mine("Cherry Arrow")] and not rt.sessions.s1.players[theirs("Cherry Arrow")],
   "forever: a received session lists its players under this client's keys")
-BRutus.RaidTracker:HandleIncoming(ser({
+GuildOS.RaidTracker:HandleIncoming(ser({
   attendance = { [theirs("Old Flat")] = { raids = 1, lastRaid = 50 },
                  ["Team-A"] = { [theirs("Cherry Arrow")] = { raids = 1, lastRaid = 60 } } },
 }))
@@ -120,7 +120,7 @@ check(rt.attendance["Team-A"] and rt.attendance["Team-A"][mine("Cherry Arrow")] 
   "forever: a group tag is a group, never rewritten as a member key")
 
 -- ── 2. Points ───────────────────────────────────────────────────────────
-local P = BRutus.Points
+local P = GuildOS.Points
 P:OnSync({ act = "delta", data = { entries = { { op = "o1", key = theirs("Cherry Arrow"), delta = 10, name = "Cherry Arrow" } } } })
 local pool = P:GetDBForCore(nil)
 check(pool.standings[mine("Cherry Arrow")] and pool.standings[mine("Cherry Arrow")].current == 10
@@ -138,68 +138,68 @@ check(sm and sm.current == 105 and sm.earned == 10 and sm.spent == 5,
   "forever: one member under two of the sender's keys adds up, the starting points counted once")
 
 -- ── 3. Alt links (AL) ───────────────────────────────────────────────────
-BRutus.CommSystem:OnMessageReceived("S:AL:" .. ser({ [theirs("Cherry Alt")] = theirs("Cherry Arrow") }), "GUILD", "Off Icer")
-check(BRutus.db.altLinks[mine("Cherry Alt")] == mine("Cherry Arrow") and BRutus.db.altLinks[theirs("Cherry Alt")] == nil,
+GuildOS.CommSystem:OnMessageReceived("S:AL:" .. ser({ [theirs("Cherry Alt")] = theirs("Cherry Arrow") }), "GUILD", "Off Icer")
+check(GuildOS.db.altLinks[mine("Cherry Alt")] == mine("Cherry Arrow") and GuildOS.db.altLinks[theirs("Cherry Alt")] == nil,
   "forever: an officer's alt links key both sides this client's way")
-BRutus.CommSystem:OnMessageReceived("S:AL:" .. ser({ [theirs("Bob Bee")] = "Bob Bee-Third Realm" }), "GUILD", "Off Icer")
-check(BRutus.db.altLinks[mine("Bob Bee")] == nil, "forever: one split person is never linked as their own alt")
+GuildOS.CommSystem:OnMessageReceived("S:AL:" .. ser({ [theirs("Bob Bee")] = "Bob Bee-Third Realm" }), "GUILD", "Off Icer")
+check(GuildOS.db.altLinks[mine("Bob Bee")] == nil, "forever: one split person is never linked as their own alt")
 
 -- ── 4. A member's own alt claim (SELF_ALT) ──────────────────────────────
-BRutus.db.altLinks = {}
-BRutus.AltAutoDetect:HandleSelfClaim("Cherry Arrow", ser({ main = theirs("Cherry Arrow"), alts = { theirs("Cherry Two") } }))
-check(BRutus.db.altLinks[mine("Cherry Two")] == mine("Cherry Arrow"),
+GuildOS.db.altLinks = {}
+GuildOS.AltAutoDetect:HandleSelfClaim("Cherry Arrow", ser({ main = theirs("Cherry Arrow"), alts = { theirs("Cherry Two") } }))
+check(GuildOS.db.altLinks[mine("Cherry Two")] == mine("Cherry Arrow"),
   "forever: a member's own claim from another realm is recognised as theirs and applied")
-BRutus.AltAutoDetect:HandleSelfClaim("Cherry Arrow", ser({ unlink = { theirs("Cherry Two") } }))
-check(BRutus.db.altLinks[mine("Cherry Two")] == nil, "forever: and so is a member's own unlink, sent with no alts")
-local found = BRutus.AltAutoDetect:DetectOwnAlts({ [theirs("Chehul Costa")] = { level = 60 }, [theirs("Chehul Two")] = { level = 20 } },
+GuildOS.AltAutoDetect:HandleSelfClaim("Cherry Arrow", ser({ unlink = { theirs("Cherry Two") } }))
+check(GuildOS.db.altLinks[mine("Cherry Two")] == nil, "forever: and so is a member's own unlink, sent with no alts")
+local found = GuildOS.AltAutoDetect:DetectOwnAlts({ [theirs("Chehul Costa")] = { level = 60 }, [theirs("Chehul Two")] = { level = 20 } },
   { [mine("Chehul Costa")] = true, [mine("Chehul Two")] = true }, {})
 check(found and found.main == mine("Chehul Costa") and #found.group == 2,
   "forever: this account's characters recorded on another realm are still found in the guild")
 local tests = {}
-BRutus.SelfTest = { Register = function(_, name, fn) tests[name] = fn end }
-BRutus.AltAutoDetect:_RegisterTests()
+GuildOS.SelfTest = { Register = function(_, name, fn) tests[name] = fn end }
+GuildOS.AltAutoDetect:_RegisterTests()
 for name, fn in pairs(tests) do
   local ok, why = fn()
   check(ok, "forever: /gos selftest " .. name .. " passes (" .. tostring(why) .. ")")
 end
-BRutus.SelfTest = nil
+GuildOS.SelfTest = nil
 
 -- ── 5. Officer notes ────────────────────────────────────────────────────
-BRutus.OfficerNotes:HandleIncoming(ser({ target = theirs("Cherry Arrow"), note = { author = "Off Icer", timestamp = 5, text = "hi" } }))
-check(BRutus.db.officerNotes[mine("Cherry Arrow")] and BRutus.db.officerNotes[theirs("Cherry Arrow")] == nil,
+GuildOS.OfficerNotes:HandleIncoming(ser({ target = theirs("Cherry Arrow"), note = { author = "Off Icer", timestamp = 5, text = "hi" } }))
+check(GuildOS.db.officerNotes[mine("Cherry Arrow")] and GuildOS.db.officerNotes[theirs("Cherry Arrow")] == nil,
   "forever: an officer note lands on the sheet the member's line reads")
-BRutus.OfficerNotes:HandleAllIncoming(ser({ [theirs("Cherry Arrow")] = { notes = { { author = "B", timestamp = 6, text = "x" } }, tags = {} } }))
-check(#BRutus.db.officerNotes[mine("Cherry Arrow")].notes == 2 and BRutus.db.officerNotes[theirs("Cherry Arrow")] == nil,
+GuildOS.OfficerNotes:HandleAllIncoming(ser({ [theirs("Cherry Arrow")] = { notes = { { author = "B", timestamp = 6, text = "x" } }, tags = {} } }))
+check(#GuildOS.db.officerNotes[mine("Cherry Arrow")].notes == 2 and GuildOS.db.officerNotes[theirs("Cherry Arrow")] == nil,
   "forever: a bulk sync merges into the same sheet")
 
 -- ── 6. Trials ───────────────────────────────────────────────────────────
-BRutus.TrialTracker:HandleIncoming(ser({ [theirs("Cherry Arrow")] = { startDate = 1, status = "active" } }))
-check(BRutus.db.trials[mine("Cherry Arrow")] and BRutus.db.trials[theirs("Cherry Arrow")] == nil,
+GuildOS.TrialTracker:HandleIncoming(ser({ [theirs("Cherry Arrow")] = { startDate = 1, status = "active" } }))
+check(GuildOS.db.trials[mine("Cherry Arrow")] and GuildOS.db.trials[theirs("Cherry Arrow")] == nil,
   "forever: a trial is kept under the member's own key")
-BRutus.TrialTracker:HandleIncoming(ser({ [theirs("Cherry Arrow")] = { startDate = 0, status = "stale" } }))
-check(BRutus.db.trials[mine("Cherry Arrow")].status == "active", "forever: an older copy of a held trial does not replace it")
+GuildOS.TrialTracker:HandleIncoming(ser({ [theirs("Cherry Arrow")] = { startDate = 0, status = "stale" } }))
+check(GuildOS.db.trials[mine("Cherry Arrow")].status == "active", "forever: an older copy of a held trial does not replace it")
 
 -- ── 7. Raiders ──────────────────────────────────────────────────────────
-BRutus.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 1, roles = {} } }))
-check(BRutus.db.raiders[mine("Cherry Arrow")] and BRutus.db.raiders[theirs("Cherry Arrow")] == nil,
+GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 1, roles = {} } }))
+check(GuildOS.db.raiders[mine("Cherry Arrow")] and GuildOS.db.raiders[theirs("Cherry Arrow")] == nil,
   "forever: a raider record is kept under the member's own key")
 
 -- ── 8. Core sign-ups and rosters ────────────────────────────────────────
-BRutus.CoreManager:InitSync()
-local CM = BRutus.CoreManager
+GuildOS.CoreManager:InitSync()
+local CM = GuildOS.CoreManager
 CM:Create("Main")
 handlers["core.signup"]({ data = { coreName = "Main", playerKey = theirs("Somebody Else"), info = { role = "rdps" } } }, "Cherry Arrow")
-local signups = BRutus.db.cores.Main.signups or {}
+local signups = GuildOS.db.cores.Main.signups or {}
 check(signups[mine("Cherry Arrow")] and not signups[theirs("Somebody Else")] and not signups[mine("Somebody Else")],
   "forever: a sign-up is filed under who sent it, never under a key the payload claims")
 handlers["core.signup"]({ data = { coreName = "Main", info = { name = "Not Me", role = "rdps" } } }, "Cherry Arrow")
-check(BRutus.db.cores.Main.signups[mine("Cherry Arrow")].name == "Cherry Arrow", "forever: and named as who sent it")
+check(GuildOS.db.cores.Main.signups[mine("Cherry Arrow")].name == "Cherry Arrow", "forever: and named as who sent it")
 handlers["core.roster"]({ data = { coreName = "Main", members = { [theirs("Cherry Arrow")] = { role = "mdps" } } } }, "Off Icer")
-check(BRutus.db.cores.Main.members[mine("Cherry Arrow")] and BRutus.db.cores.Main.members[theirs("Cherry Arrow")] == nil,
+check(GuildOS.db.cores.Main.members[mine("Cherry Arrow")] and GuildOS.db.cores.Main.members[theirs("Cherry Arrow")] == nil,
   "forever: a core roster from another officer keys its members this client's way")
 
 -- ── 9. The alliance bridge: every client elects the same one ────────────
-local A = GuildOS.Alliance or BRutus.Alliance
+local A = GuildOS.Alliance or GuildOS.Alliance
 local here = A.ElectBridge({ mine("Ann Lee"), mine("Bob Ray"), mine("Cid Moe"), mine("Dee Fox") })
 GetRealmName = function() return THEIRS end
 local there = A.ElectBridge({ theirs("Ann Lee"), theirs("Bob Ray"), theirs("Cid Moe"), theirs("Dee Fox") })
@@ -208,29 +208,29 @@ check(here:match("^([^-]+)") == there:match("^([^-]+)"), "forever: clients on di
 
 -- ── 9b. What an earlier version stored with another client's keys ───────
 load("forever")
-BRutus.db.raidTracker = {
+GuildOS.db.raidTracker = {
   attendance = { [""] = { [theirs("Cherry Arrow")] = { raids = 4, lastRaid = 9 }, [mine("Cherry Arrow")] = { raids = 2, lastRaid = 20 },
                           [theirs("Tie Guy")] = { raids = 2, lastRaid = 30 }, [mine("Tie Guy")] = { raids = 2, lastRaid = 10 } },
                  ["Team-A"] = { [theirs("Cherry Arrow")] = { raids = 1 } } },
   sessions = { s9 = { players = { [theirs("Cherry Arrow")] = true, [mine("Chehul Costa")] = true },
                       snapshots = { { members = { [theirs("Cherry Arrow")] = { name = "Cherry Arrow" } } } } } },
 }
-BRutus.db.officerNotes = { [theirs("Cherry Arrow")] = { notes = { { author = "A", timestamp = 1 } }, tags = { t = "x" } },
+GuildOS.db.officerNotes = { [theirs("Cherry Arrow")] = { notes = { { author = "A", timestamp = 1 } }, tags = { t = "x" } },
                            [mine("Cherry Arrow")] = { notes = { { author = "B", timestamp = 2 }, { author = "A", timestamp = 1 } }, tags = {} } }
-BRutus.db.trials = { [theirs("Cherry Arrow")] = { startDate = 50 },
+GuildOS.db.trials = { [theirs("Cherry Arrow")] = { startDate = 50 },
                      [mine("Cherry Arrow")] = { startDate = 10, resolvedDate = 90, notes = { { author = "A", timestamp = 60 } } } }
-BRutus.db.raiders = { [theirs("Cherry Arrow")] = { updatedAt = 5 } }
-BRutus.db.altLinks = { [theirs("Cherry Alt")] = theirs("Cherry Arrow"), [theirs("Bob Bee")] = mine("Bob Bee") }
-BRutus.db.points = { config = { startingPoints = 100 }, standings = {
+GuildOS.db.raiders = { [theirs("Cherry Arrow")] = { updatedAt = 5 } }
+GuildOS.db.altLinks = { [theirs("Cherry Alt")] = theirs("Cherry Arrow"), [theirs("Bob Bee")] = mine("Bob Bee") }
+GuildOS.db.points = { config = { startingPoints = 100 }, standings = {
   [theirs("Cherry Arrow")] = { current = 110, earned = 10, spent = 0 }, [mine("Cherry Arrow")] = { current = 95, earned = 0, spent = 5 },
   [theirs("Junk Side")] = 5, [mine("Junk Side")] = { current = 100 },
   [theirs("Junk Two")] = { current = 100 }, [mine("Junk Two")] = 5 } }
-BRutus.db.cores = { Main = { members = { [theirs("Cherry Arrow")] = { role = "rdps" } }, signups = { [theirs("Cherry Arrow")] = {} },
+GuildOS.db.cores = { Main = { members = { [theirs("Cherry Arrow")] = { role = "rdps" } }, signups = { [theirs("Cherry Arrow")] = {} },
                              points = { standings = { [theirs("Cherry Arrow")] = { current = 3, earned = 3, spent = 0 } } } } }
-BRutus.DataCollector = nil
+GuildOS.DataCollector = nil
 dofile(ADDON .. "/Modules/DataCollector.lua")
-BRutus.DataCollector:Initialize()
-local db = BRutus.db
+GuildOS.DataCollector:Initialize()
+local db = GuildOS.db
 check(db.raidTracker.attendance[""][mine("Cherry Arrow")].raids == 4 and db.raidTracker.attendance[""][theirs("Cherry Arrow")] == nil,
   "forever: stored attendance moves to the member's key, the record with more raids kept")
 check(db.raidTracker.attendance[""][mine("Tie Guy")].lastRaid == 30, "forever: on equal raids the later attendance record is kept")
@@ -256,28 +256,28 @@ check(db.points.standings[mine("Junk Side")].current == 100 and db.points.standi
 check(db.cores.Main.points.standings[mine("Cherry Arrow")].current == 3, "forever: stored DKP moves in each core's pool too")
 check(db.cores.Main.members[mine("Cherry Arrow")] and db.cores.Main.signups[mine("Cherry Arrow")], "forever: stored core rosters and sign-ups move")
 local before = db.trials
-BRutus.DataCollector:Initialize()
+GuildOS.DataCollector:Initialize()
 check(db.trials[mine("Cherry Arrow")].resolvedDate == 90 and before ~= nil, "forever: running it again changes nothing")
-BRutus.db.officerNotes = { [theirs("Bad Data")] = { notes = "junk", tags = 3 }, [mine("Bad Data")] = { notes = { 5, { author = "A", timestamp = 1 } } } }
-BRutus.db.raidTracker.attendance = { [""] = { [theirs("Bad Data")] = { raids = "x" }, [mine("Bad Data")] = { raids = 1 } } }
-BRutus.db.trials = { [theirs("Bad Data")] = { startDate = 5, notes = { 7 } }, [mine("Bad Data")] = { startDate = 5 } }
-BRutus.db.raiders = { [theirs("Bad Data")] = { updatedAt = 1 } }
-BRutus.db.points = { config = { startingPoints = "lots" }, standings = { [theirs("Bad Data")] = { current = 1 }, [mine("Bad Data")] = { current = 2 } } }
+GuildOS.db.officerNotes = { [theirs("Bad Data")] = { notes = "junk", tags = 3 }, [mine("Bad Data")] = { notes = { 5, { author = "A", timestamp = 1 } } } }
+GuildOS.db.raidTracker.attendance = { [""] = { [theirs("Bad Data")] = { raids = "x" }, [mine("Bad Data")] = { raids = 1 } } }
+GuildOS.db.trials = { [theirs("Bad Data")] = { startDate = 5, notes = { 7 } }, [mine("Bad Data")] = { startDate = 5 } }
+GuildOS.db.raiders = { [theirs("Bad Data")] = { updatedAt = 1 } }
+GuildOS.db.points = { config = { startingPoints = "lots" }, standings = { [theirs("Bad Data")] = { current = 1 }, [mine("Bad Data")] = { current = 2 } } }
 check(db.storedKeysLocalized == MY, "forever: the migration marks the database as done")
-BRutus.db.storedKeysLocalized = nil
-check(pcall(BRutus.LocalizeStoredMemberTables, BRutus), "forever: stored junk does not break the migration")
-check(#BRutus.db.officerNotes[mine("Bad Data")].notes == 1, "forever: and the notes that are notes survive it")
-check(BRutus.db.raidTracker.attendance[""][mine("Bad Data")] and BRutus.db.raidTracker.attendance[""][theirs("Bad Data")] == nil,
+GuildOS.db.storedKeysLocalized = nil
+check(pcall(GuildOS.LocalizeStoredMemberTables, GuildOS), "forever: stored junk does not break the migration")
+check(#GuildOS.db.officerNotes[mine("Bad Data")].notes == 1, "forever: and the notes that are notes survive it")
+check(GuildOS.db.raidTracker.attendance[""][mine("Bad Data")] and GuildOS.db.raidTracker.attendance[""][theirs("Bad Data")] == nil,
   "forever: attendance with a junk raid count still moves")
-check(BRutus.db.trials[mine("Bad Data")] and BRutus.db.raiders[mine("Bad Data")] and BRutus.db.points.standings[mine("Bad Data")].current == 3,
+check(GuildOS.db.trials[mine("Bad Data")] and GuildOS.db.raiders[mine("Bad Data")] and GuildOS.db.points.standings[mine("Bad Data")].current == 3,
   "forever: a malformed trial note leaves the trial and every later table moved")
-BRutus.db.raiders = { [theirs("Later On")] = {} }
-BRutus:LocalizeStoredMemberTables()
-check(BRutus.db.raiders[theirs("Later On")], "forever: once done, it is not redone on every login")
+GuildOS.db.raiders = { [theirs("Later On")] = {} }
+GuildOS:LocalizeStoredMemberTables()
+check(GuildOS.db.raiders[theirs("Later On")], "forever: once done, it is not redone on every login")
 local registered = 0
 CreateFrame = function() return { RegisterEvent = function() registered = registered + 1 end, SetScript = function() end } end
-BRutus.LocalizeStoredMemberTables = function() error("boom") end
-check(pcall(BRutus.DataCollector.Initialize, BRutus.DataCollector) and registered > 0,
+GuildOS.LocalizeStoredMemberTables = function() error("boom") end
+check(pcall(GuildOS.DataCollector.Initialize, GuildOS.DataCollector) and registered > 0,
   "forever: a migration that throws still lets the data collector start")
 
 -- ── 9c. Each merge decides, whichever of the two keys comes first ───────
@@ -288,10 +288,10 @@ local function both(what, name, put, win, lose, ok)
   for _, flip in ipairs({ false, true }) do
     load("forever")
     local v = flip and { [mine(name)] = win(), [theirs(name)] = lose() } or { [theirs(name)] = win(), [mine(name)] = lose() }
-    put(BRutus.db, theirs(name), v[theirs(name)])
-    put(BRutus.db, mine(name), v[mine(name)])
-    BRutus:LocalizeStoredMemberTables()
-    check(ok(BRutus.db, mine(name)), what .. (flip and " (the winner under this client's key)" or " (the winner under the other's key)"))
+    put(GuildOS.db, theirs(name), v[theirs(name)])
+    put(GuildOS.db, mine(name), v[mine(name)])
+    GuildOS:LocalizeStoredMemberTables()
+    check(ok(GuildOS.db, mine(name)), what .. (flip and " (the winner under this client's key)" or " (the winner under the other's key)"))
   end
 end
 local function att(db, k, v) db.raidTracker.attendance[""] = db.raidTracker.attendance[""] or {}; db.raidTracker.attendance[""][k] = v end
@@ -312,32 +312,32 @@ both("forever: a value that is not a record never replaces one", "Ann Lee", func
   function() return { current = 100 } end, function() return 5 end,
   function(db, k) return type(db.points.standings[k]) == "table" and db.points.standings[k].current == 100 end)
 load("forever")
-BRutus.db.raidTracker.attendance = { [theirs("Flat Guy")] = { raids = 1, lastRaid = 5 } }
-BRutus:LocalizeStoredMemberTables()
-check(BRutus.db.raidTracker.attendance[theirs("Flat Guy")].raids == 1,
+GuildOS.db.raidTracker.attendance = { [theirs("Flat Guy")] = { raids = 1, lastRaid = 5 } }
+GuildOS:LocalizeStoredMemberTables()
+check(GuildOS.db.raidTracker.attendance[theirs("Flat Guy")].raids == 1,
   "forever: the old flat attendance format is left for the raid tracker to spot and rebuild")
 load("forever")
-BRutus.db.trials = { [theirs("Ann Lee")] = { startDate = 1 }, [mine("Ann Lee")] = { startDate = 2 } }
-BRutus.db.raiders = { [theirs("Ann Lee")] = { updatedAt = 1 } }
-BRutus.db.cores = { Main = { members = { [theirs("Ann Lee")] = {} } } }
-local realMerge = BRutus.TrialTracker.Merge
-BRutus.TrialTracker.Merge = function() error("boom") end
-check(pcall(BRutus.LocalizeStoredMemberTables, BRutus) and BRutus.db.raiders[mine("Ann Lee")] and BRutus.db.cores.Main.members[mine("Ann Lee")],
+GuildOS.db.trials = { [theirs("Ann Lee")] = { startDate = 1 }, [mine("Ann Lee")] = { startDate = 2 } }
+GuildOS.db.raiders = { [theirs("Ann Lee")] = { updatedAt = 1 } }
+GuildOS.db.cores = { Main = { members = { [theirs("Ann Lee")] = {} } } }
+local realMerge = GuildOS.TrialTracker.Merge
+GuildOS.TrialTracker.Merge = function() error("boom") end
+check(pcall(GuildOS.LocalizeStoredMemberTables, GuildOS) and GuildOS.db.raiders[mine("Ann Lee")] and GuildOS.db.cores.Main.members[mine("Ann Lee")],
   "forever: one table's step failing leaves every other table moved")
-check(BRutus.db.storedKeysLocalized == nil and BRutus.db.trials[theirs("Ann Lee")], "forever: and the database is not marked done")
-BRutus.TrialTracker.Merge = realMerge
-BRutus:LocalizeStoredMemberTables()
-check(BRutus.db.trials[mine("Ann Lee")] and BRutus.db.trials[theirs("Ann Lee")] == nil and BRutus.db.storedKeysLocalized == MY,
+check(GuildOS.db.storedKeysLocalized == nil and GuildOS.db.trials[theirs("Ann Lee")], "forever: and the database is not marked done")
+GuildOS.TrialTracker.Merge = realMerge
+GuildOS:LocalizeStoredMemberTables()
+check(GuildOS.db.trials[mine("Ann Lee")] and GuildOS.db.trials[theirs("Ann Lee")] == nil and GuildOS.db.storedKeysLocalized == MY,
   "forever: so the next login moves what failed, and only then marks it done")
 load("forever")
-BRutus.db.cores = { Main = { points = { standings = { [theirs("Ann Lee")] = { current = "x" }, [mine("Ann Lee")] = { current = 1 } } },
+GuildOS.db.cores = { Main = { points = { standings = { [theirs("Ann Lee")] = { current = "x" }, [mine("Ann Lee")] = { current = 1 } } },
                              members = { [theirs("Ann Lee")] = {} }, signups = { [theirs("Ann Lee")] = {} } } }
-BRutus:LocalizeStoredMemberTables()
-check(BRutus.db.cores.Main.members[mine("Ann Lee")] and BRutus.db.cores.Main.signups[mine("Ann Lee")] and BRutus.db.storedKeysLocalized == nil,
+GuildOS:LocalizeStoredMemberTables()
+check(GuildOS.db.cores.Main.members[mine("Ann Lee")] and GuildOS.db.cores.Main.signups[mine("Ann Lee")] and GuildOS.db.storedKeysLocalized == nil,
   "forever: a core whose points fail still has its roster and sign-ups moved, and is retried")
 load("forever")
 
-local TT = BRutus.TrialTracker
+local TT = GuildOS.TrialTracker
 local ta, tb = { startDate = 5, notes = { { author = "A", timestamp = 3 } } }, { startDate = 5, notes = { { author = "B", timestamp = 4 } } }
 check(TT:Merge(ta, tb) == ta and #ta.notes == 2, "trials: a tie keeps the held copy and merges the notes")
 check(TT:Merge({ startDate = 10 }, { startDate = 5, resolvedDate = 20 }).resolvedDate == 20, "trials: a later resolution is later activity")
@@ -348,35 +348,35 @@ check(pcall(TT.Merge, TT, { startDate = 5, notes = { 7 } }, { startDate = 5, not
 check(pcall(TT.Merge, TT, { startDate = 5, notes = 3 }, { startDate = 5, notes = { { author = "A", timestamp = 1 } } })
   and pcall(TT.Merge, TT, { startDate = 5, notes = {} }, { startDate = 5, notes = "x" }), "trials: nor do notes that are not a list")
 
-local sheet = BRutus.OfficerNotes:MergeSheet(
+local sheet = GuildOS.OfficerNotes:MergeSheet(
   { notes = { { author = "A", timestamp = 1, text = "x" }, { author = "A", timestamp = 1, text = "y" } }, tags = { t = "old" } },
   { notes = { { author = "A", timestamp = 1, text = "x" }, { author = "B", timestamp = 9 } }, tags = { t = "new" } })
 check(#sheet.notes == 3 and sheet.notes[1].timestamp == 9,
   "officer notes: every held note stays, an arriving duplicate is dropped, newest first")
 check(sheet.tags.t == "new", "officer notes: an arriving tag wins")
-local okHeld, held = pcall(BRutus.OfficerNotes.MergeSheet, BRutus.OfficerNotes, { notes = { 5, { author = "A", timestamp = 1 } } }, { notes = { 6 } })
+local okHeld, held = pcall(GuildOS.OfficerNotes.MergeSheet, GuildOS.OfficerNotes, { notes = { 5, { author = "A", timestamp = 1 } } }, { notes = { 6 } })
 check(okHeld and #held.notes == 1, "officer notes: a note that is not a note, held or arriving, is dropped and breaks nothing")
 
 -- ── 10. Anniversary: a realm is part of who somebody is ─────────────────
 load("anniversary")
-check(BRutus:LocalMemberKey("Bob-Spineshatter") == "Bob-Spineshatter", "anniversary: another realm's key passes through")
-BRutus.OfficerNotes:HandleIncoming(ser({ target = "Bob-Spineshatter", note = { author = "A", timestamp = 1 } }))
-check(BRutus.db.officerNotes["Bob-Spineshatter"], "anniversary: a note for another realm's player stays theirs")
-A = GuildOS.Alliance or BRutus.Alliance
+check(GuildOS:LocalMemberKey("Bob-Spineshatter") == "Bob-Spineshatter", "anniversary: another realm's key passes through")
+GuildOS.OfficerNotes:HandleIncoming(ser({ target = "Bob-Spineshatter", note = { author = "A", timestamp = 1 } }))
+check(GuildOS.db.officerNotes["Bob-Spineshatter"], "anniversary: a note for another realm's player stays theirs")
+A = GuildOS.Alliance or GuildOS.Alliance
 check(A.ElectBridge({ "Cid-R", "Ann-R", "Bob-R" }) == A.ElectBridge({ "Ann-R", "Bob-R", "Cid-R" }),
   "anniversary: the bridge election is as it was")
 local loser, winner = "Ann-R1", "Ann-R2"
 if A.Hash(loser) < A.Hash(winner) then loser, winner = winner, loser end
 check(A.Hash(loser) ~= A.Hash(winner) and A.ElectBridge({ loser, winner }) == winner,
   "anniversary: the election still hashes the whole key, realm included")
-BRutus.CoreManager:InitSync()
-BRutus.CoreManager:Create("Main")
+GuildOS.CoreManager:InitSync()
+GuildOS.CoreManager:Create("Main")
 handlers["core.signup"]({ data = { coreName = "Main", info = {} } }, "Bob-Spineshatter")
 handlers["core.signup"]({ data = { coreName = "Main", info = {} } }, "Ann")
-check(BRutus.db.cores.Main.signups["Bob-Spineshatter"] and BRutus.db.cores.Main.signups["Ann-" .. MY],
+check(GuildOS.db.cores.Main.signups["Bob-Spineshatter"] and GuildOS.db.cores.Main.signups["Ann-" .. MY],
   "anniversary: a sign-up is filed under the sender's own realm")
-BRutus.db.trials = { ["Bob-Spineshatter"] = { startDate = 1 } }
-BRutus:LocalizeStoredMemberTables()
-check(BRutus.db.trials["Bob-Spineshatter"], "anniversary: the stored-table migration leaves another realm's player alone")
+GuildOS.db.trials = { ["Bob-Spineshatter"] = { startDate = 1 } }
+GuildOS:LocalizeStoredMemberTables()
+check(GuildOS.db.trials["Bob-Spineshatter"], "anniversary: the stored-table migration leaves another realm's player alone")
 
 print(("forever-payload-keys: %d checks passed"):format(checks))

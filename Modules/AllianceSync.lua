@@ -55,7 +55,7 @@ local function normKey(name)
     end
     local short = name:match("^([^-]+)") or name
     local realm = name:match("-(.+)$") or GetRealmName()
-    return BRutus:GetPlayerKey(short, realm)
+    return GuildOS:GetPlayerKey(short, realm)
 end
 
 local function Ally()
@@ -140,7 +140,7 @@ function AllianceSync._BuildRoster(members, cap, altLinks)
 
             local main = altLinks and altLinks[key]
             out[#out + 1] = {
-                n = BRutus:SanitizeUserText(m.name, 24),
+                n = GuildOS:SanitizeUserText(m.name, 24),
                 c = m.class,
                 l = tonumber(m.level) or 0,
                 p = profs,
@@ -238,7 +238,7 @@ function AllianceSync._BuildCraft(recipes, cap)
         out.i[#out.i + 1] = { id = id, c = itemMap[id] }
     end
     if dropped > 0 then
-        BRutus.Logger.Debug(string.format("Alliance craft: dropped %d items over the cap", dropped))
+        GuildOS.Logger.Debug(string.format("Alliance craft: dropped %d items over the cap", dropped))
     end
     return out
 end
@@ -301,12 +301,12 @@ end
 -- Snapshot store: db.allianceData[guild][domain] = { rev, data, fp, ts }
 ----------------------------------------------------------------------
 function AllianceSync:_Store()
-    BRutus.db.allianceData = BRutus.db.allianceData or {}
-    return BRutus.db.allianceData
+    GuildOS.db.allianceData = GuildOS.db.allianceData or {}
+    return GuildOS.db.allianceData
 end
 
 function AllianceSync:Remote(guild, domain)
-    local store = BRutus.db and BRutus.db.allianceData
+    local store = GuildOS.db and GuildOS.db.allianceData
     local g = store and store[guild or ""]
     return g and g[domain or ""] or nil
 end
@@ -331,7 +331,7 @@ function AllianceSync:MemberIndex()
         return self._index
     end
     local idx = {}
-    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    local store = (GuildOS.db and GuildOS.db.allianceData) or {}
     for guild, domains in pairs(store) do
         local roster = domains.roster
         if roster and type(roster.data) == "table" then
@@ -408,10 +408,10 @@ end
 -- Intra-guild fanout (free, reliable, guild channel)
 ----------------------------------------------------------------------
 function AllianceSync:Fanout(guild, domain, rev, data)
-    if not BRutus.SyncService then
+    if not GuildOS.SyncService then
         return
     end
-    BRutus.SyncService:Publish("alliance", "snap", {
+    GuildOS.SyncService:Publish("alliance", "snap", {
         guild = guild, domain = domain, rev = rev, data = data,
     }, { priority = (self.domains[domain] and self.domains[domain].priority) or "NORMAL" })
 end
@@ -422,14 +422,14 @@ function AllianceSync:OnGuildSnapshot(env, sender)
         return
     end
     local senderKey = normKey(sender)
-    if not AllianceSync.TrustedFanout(senderKey, ally:CurrentBridge(), BRutus:IsOfficerByName(sender)) then
+    if not AllianceSync.TrustedFanout(senderKey, ally:CurrentBridge(), GuildOS:IsOfficerByName(sender)) then
         return
     end
     local d = env and env.data
     if type(d) ~= "table" then
         return
     end
-    local guild = BRutus:SanitizeUserText(d.guild, GuildOS.Alliance.GUILD_NAME_MAX)
+    local guild = GuildOS:SanitizeUserText(d.guild, GuildOS.Alliance.GUILD_NAME_MAX)
     if guild == "" or ally:IsBlocked(guild) then
         return
     end
@@ -448,7 +448,7 @@ function AllianceSync:_Apply(guild, domain)
     end
     local entry = self:Remote(guild, domain)
     if entry then
-        BRutus:SafeCall(spec.apply, guild, entry.data)
+        GuildOS:SafeCall(spec.apply, guild, entry.data)
     end
 end
 
@@ -579,7 +579,7 @@ function AllianceSync:ProbeStaleGuilds()
     for guildName, entry in pairs(pact.guilds) do
         if guildName ~= mine and not ally:IsBlocked(guildName) then
             local newest = 0
-            local domains = (BRutus.db.allianceData or {})[guildName] or {}
+            local domains = (GuildOS.db.allianceData or {})[guildName] or {}
             for _, snap in pairs(domains) do
                 newest = math.max(newest, tonumber(snap.ts) or 0)
             end
@@ -653,8 +653,8 @@ function AllianceSync:Initialize()
         ally:RegisterOp("PUSH", function(data, sender, guild) AllianceSync:OnPush(data, sender, guild) end)
     end
 
-    if BRutus.SyncService then
-        BRutus.SyncService:On("alliance", function(env, sender)
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("alliance", function(env, sender)
             AllianceSync:OnGuildSnapshot(env, sender)
         end)
     end
@@ -664,7 +664,7 @@ function AllianceSync:Initialize()
         cap = self.ROSTER_CAP,
         build = function()
             return AllianceSync._BuildRoster(
-                BRutus.db.members, AllianceSync.ROSTER_CAP, BRutus.db.altLinks)
+                GuildOS.db.members, AllianceSync.ROSTER_CAP, GuildOS.db.altLinks)
         end,
     })
 
@@ -683,17 +683,17 @@ function AllianceSync:Initialize()
         priority = "BULK",
         cap = self.CRAFT_CAP,
         build = function()
-            return AllianceSync._BuildCraft(BRutus.db.recipes, AllianceSync.CRAFT_CAP)
+            return AllianceSync._BuildCraft(GuildOS.db.recipes, AllianceSync.CRAFT_CAP)
         end,
     })
 
-    if BRutus.Compat and BRutus.Compat.NewTicker then
-        BRutus.Compat.NewTicker(self.TICK, function() AllianceSync:Tick() end)
+    if GuildOS.Compat and GuildOS.Compat.NewTicker then
+        GuildOS.Compat.NewTicker(self.TICK, function() AllianceSync:Tick() end)
     end
     -- Late enough that the guild roster and member data have settled, so the
     -- bridge election is stable before the one blind probe round goes out.
-    if BRutus.Compat and BRutus.Compat.After then
-        BRutus.Compat.After(60, function() AllianceSync:ProbeStaleGuilds() end)
+    if GuildOS.Compat and GuildOS.Compat.After then
+        GuildOS.Compat.After(60, function() AllianceSync:ProbeStaleGuilds() end)
     end
 end
 
@@ -701,11 +701,11 @@ end
 -- Self tests (run with /gos selftest)
 ----------------------------------------------------------------------
 function AllianceSync:_RegisterTests()
-    if not BRutus.SelfTest then
+    if not GuildOS.SelfTest then
         return
     end
 
-    BRutus.SelfTest:Register("alliancesync.should_pull", function()
+    GuildOS.SelfTest:Register("alliancesync.should_pull", function()
         if not AllianceSync.ShouldPull(1, 2) then return false, "behind must pull" end
         if AllianceSync.ShouldPull(2, 2) then return false, "equal must not pull" end
         if AllianceSync.ShouldPull(3, 2) then return false, "ahead must not pull" end
@@ -714,7 +714,7 @@ function AllianceSync:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancesync.rate_limit", function()
+    GuildOS.SelfTest:Register("alliancesync.rate_limit", function()
         if not AllianceSync.RateLimitOk(nil, 1000, 60) then return false, "first send must pass" end
         if AllianceSync.RateLimitOk(1000, 1030, 60) then return false, "inside the window must fail" end
         if not AllianceSync.RateLimitOk(1000, 1060, 60) then return false, "at the window must pass" end
@@ -722,7 +722,7 @@ function AllianceSync:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancesync.trusted_fanout", function()
+    GuildOS.SelfTest:Register("alliancesync.trusted_fanout", function()
         if not AllianceSync.TrustedFanout("Ann-R", "Ann-R", false) then return false, "the bridge must be trusted" end
         if not AllianceSync.TrustedFanout("Ann-R", "Bob-R", true) then return false, "an officer must be trusted" end
         if AllianceSync.TrustedFanout("Ann-R", "Bob-R", false) then return false, "a random member must be refused" end
@@ -731,9 +731,9 @@ function AllianceSync:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancesync.store_is_monotonic", function()
-        local saved = BRutus.db.allianceData
-        BRutus.db.allianceData = {}
+    GuildOS.SelfTest:Register("alliancesync.store_is_monotonic", function()
+        local saved = GuildOS.db.allianceData
+        GuildOS.db.allianceData = {}
         AllianceSync:StoreRemote("Guild B", "roster", 10, { a = 1 })
         AllianceSync:StoreRemote("Guild B", "roster", 5, { a = 2 })
         local got = AllianceSync:Remote("Guild B", "roster")
@@ -750,12 +750,12 @@ function AllianceSync:_RegisterTests()
                 fail = "newer revision rejected"
             end
         end
-        BRutus.db.allianceData = saved
+        GuildOS.db.allianceData = saved
         if fail then return false, fail end
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancesync.craft_roundtrip", function()
+    GuildOS.SelfTest:Register("alliancesync.craft_roundtrip", function()
         local recipes = {
             ["Fulano-R"] = { Alchemy = { { itemId = 100 }, { itemId = 300 } } },
             ["Zeca-R"]   = { Alchemy = { { itemId = 300 } },
@@ -789,7 +789,7 @@ function AllianceSync:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancesync.roster_build", function()
+    GuildOS.SelfTest:Register("alliancesync.roster_build", function()
         local src = {}
         for i = 1, 500 do
             src["P" .. i .. "-R"] = { name = "P" .. i, class = "MAGE", level = 70 }
@@ -809,7 +809,7 @@ function AllianceSync:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancesync.roster_attunements", function()
+    GuildOS.SelfTest:Register("alliancesync.roster_attunements", function()
         local src = {
             ["A-R"] = {
                 name = "A", class = "PRIEST", level = 70,

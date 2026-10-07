@@ -1,10 +1,10 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Recipes Panel
+-- Guild OS - Recipes Panel
 -- Searchable guild recipe browser, grouped by profession
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 
 local ROW_HEIGHT = 24
 
@@ -63,7 +63,7 @@ local PROF_COLORS = {
 ----------------------------------------------------------------------
 -- Create the Recipes panel
 ----------------------------------------------------------------------
-function BRutus:CreateRecipesPanel(parent, _mainFrame)
+function GuildOS:CreateRecipesPanel(parent, _mainFrame)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints()
 
@@ -92,7 +92,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     countText:SetPoint("LEFT", title, "RIGHT", 12, 0)
 
     -- Search box
-    local searchBox = CreateFrame("EditBox", "BRutusRecipeSearch", topBar, "BackdropTemplate")
+    local searchBox = CreateFrame("EditBox", "GuildOSRecipeSearch", topBar, "BackdropTemplate")
     searchBox:SetSize(220, 24)
     searchBox:SetPoint("TOPRIGHT", 0, 0)
     searchBox:SetBackdrop({
@@ -102,14 +102,14 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     })
     searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(searchBox, 11)
+    GuildOS:ApplyFont(searchBox, 11)
     searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     searchBox:SetTextInsets(8, 8, 0, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(searchPlaceholder, 11)
+    GuildOS:ApplyFont(searchPlaceholder, 11)
     searchPlaceholder:SetPoint("LEFT", 8, 0)
     searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
     searchPlaceholder:SetText(L["Search recipes..."])
@@ -117,7 +117,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     -- Realm-wide crafter finder (guild + mesh) — opens the CraftFinder popup.
     local realmBtn = UI:CreateButton(topBar, L["Find a Crafter"], 120, 24)
     realmBtn:SetPoint("RIGHT", searchBox, "LEFT", -8, 0)
-    realmBtn:SetScript("OnClick", function() BRutus:ShowCraftFinder() end)
+    realmBtn:SetScript("OnClick", function() GuildOS:ShowCraftFinder() end)
 
     -- Profession filter buttons row
     -- Anchored on the left only: UI:FlowBar reads GetWidth to decide where
@@ -130,10 +130,10 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     local filterButtons = {}
 
     local function RefreshResults()
-        if not BRutus.RecipeTracker then
+        if not GuildOS.RecipeTracker then
             state.results = {}
         else
-            state.results = BRutus.RecipeTracker:Search(state.query, state.profFilter)
+            state.results = GuildOS.RecipeTracker:Search(state.query, state.profFilter)
         end
         state.scrollOffset = 0
         countText:SetText(string.format(L["|cff888888%d results|r"], #state.results))
@@ -148,7 +148,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         local icon
         local label = btn:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(label, 10)
+        GuildOS:ApplyFont(label, 10)
 
         if profName == "All" then
             btn:SetWidth(40)
@@ -164,7 +164,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 icon:SetTexture(iconTex)
             else
                 label:SetPoint("CENTER")
-                label:SetText(BRutus:Utf8Head(L[profName], 3))
+                label:SetText(GuildOS:Utf8Head(L[profName], 3))
                 local pc = PROF_COLORS[profName] or C.silver
                 label:SetTextColor(pc.r, pc.g, pc.b)
             end
@@ -215,7 +215,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         filterButtons = {}
 
         -- Get known professions
-        local profs = BRutus.RecipeTracker and BRutus.RecipeTracker:GetAllProfessions() or {}
+        local profs = GuildOS.RecipeTracker and GuildOS.RecipeTracker:GetAllProfessions() or {}
         local allProfs = { "All" }
         for _, p in ipairs(profs) do
             table.insert(allProfs, p)
@@ -283,9 +283,9 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
     listFrame:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
     listFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -SIDE_MARGIN, LIST_BOTTOM)
 
-    local scrollFrame = CreateFrame("ScrollFrame", "BRutusRecipeScroll", listFrame, "FauxScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRecipeScroll", listFrame, "FauxScrollFrameTemplate")
     scrollFrame:SetAllPoints()
-    UI:SkinScrollBar(scrollFrame, "BRutusRecipeScroll")
+    UI:SkinScrollBar(scrollFrame, "GuildOSRecipeScroll")
 
     -- Create row frames
     local rows = {}
@@ -305,7 +305,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         -- Recipe name
         local recipeName = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(recipeName, 11)
+        GuildOS:ApplyFont(recipeName, 11)
         recipeName:SetJustifyH("LEFT")
         recipeName:SetWordWrap(false)
         row.recipeName = recipeName
@@ -316,7 +316,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         row.profIcon = profIcon
 
         local profName = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(profName, 10)
+        GuildOS:ApplyFont(profName, 10)
         profName:SetPoint("LEFT", profIcon, "RIGHT", 4, 0)
         profName:SetJustifyH("LEFT")
         profName:SetWordWrap(false)
@@ -324,7 +324,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
 
         -- Player name
         local playerName = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(playerName, 11)
+        GuildOS:ApplyFont(playerName, 11)
         playerName:SetJustifyH("LEFT")
         playerName:SetWordWrap(false)
         row.playerName = playerName
@@ -472,9 +472,9 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                 local crafterParts = {}
                 local firstOnlineCrafter = nil
                 for _, crafter in ipairs(entry.crafters or {}) do
-                    local memberData = BRutus.db.members[crafter.playerKey]
+                    local memberData = GuildOS.db.members[crafter.playerKey]
                     local pClass = memberData and memberData.class
-                    local cc = pClass and BRutus.ClassColors[pClass] or C.white
+                    local cc = pClass and GuildOS.ClassColors[pClass] or C.white
                     local hex = string.format("%02x%02x%02x", cc.r * 255, cc.g * 255, cc.b * 255)
                     local alpha = crafter.isOnline and "" or "|cff666666"
                     local resetAlpha = crafter.isOnline and "" or "|r"
@@ -492,7 +492,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
                     if firstOnlineCrafter then
                         local itemLink
                         if entry.itemId then
-                            itemLink = select(2, BRutus.Compat.GetItemInfo(entry.itemId))
+                            itemLink = select(2, GuildOS.Compat.GetItemInfo(entry.itemId))
                         end
                         if itemLink then
                             ChatFrame_OpenChat("/w " .. firstOnlineCrafter .. " " .. string.format(L["Can you craft %s?"], itemLink))
@@ -540,7 +540,7 @@ function BRutus:CreateRecipesPanel(parent, _mainFrame)
         -- Update info bar
         local totalPlayers = 0
         local totalRecipes = 0
-        for _, professions in pairs((BRutus.db and BRutus.db.recipes) or {}) do
+        for _, professions in pairs((GuildOS.db and GuildOS.db.recipes) or {}) do
             totalPlayers = totalPlayers + 1
             for _, recipes in pairs(professions) do
                 totalRecipes = totalRecipes + #recipes

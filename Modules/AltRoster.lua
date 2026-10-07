@@ -4,7 +4,7 @@
 -- unique-player counts). Linking itself lives in Core/Utils (LinkAlt).
 ----------------------------------------------------------------------
 local AltRoster = {}
-BRutus.AltRoster = AltRoster
+GuildOS.AltRoster = AltRoster
 
 function AltRoster:Initialize()
     self:_RegisterTests()
@@ -16,27 +16,27 @@ local function shortName(key)
 end
 
 function AltRoster:GetMain(key, links)
-    links = links or (BRutus.db and BRutus.db.altLinks) or {}
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
     return links[key] or key
 end
 
 function AltRoster:IsAlt(key, links)
-    links = links or (BRutus.db and BRutus.db.altLinks) or {}
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
     return links[key] ~= nil
 end
 
 function AltRoster:GetAltTag(key, links)
-    links = links or (BRutus.db and BRutus.db.altLinks) or {}
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
     local m = links[key]
     if not m then return nil end
-    return string.format(BRutus.L["alt of %s"], shortName(m))
+    return string.format(GuildOS.L["alt of %s"], shortName(m))
 end
 
 -- roster: array of member keys present in the guild. Returns groups keyed
 -- by canonical main, the count of unique mains (unique players) and total
 -- chars observed.
 function AltRoster:BuildTrueRoster(roster, links)
-    links = links or (BRutus.db and BRutus.db.altLinks) or {}
+    links = links or (GuildOS.db and GuildOS.db.altLinks) or {}
     local byMain = {}
     local order = {}
     for _, key in ipairs(roster) do
@@ -57,11 +57,11 @@ end
 ----------------------------------------------------------------------
 -- Live wrappers
 ----------------------------------------------------------------------
-function BRutus:GetAltTag(key)
+function GuildOS:GetAltTag(key)
     return AltRoster:GetAltTag(key)
 end
 
-function BRutus:GetTrueRoster()
+function GuildOS:GetTrueRoster()
     local roster = {}
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
@@ -69,7 +69,7 @@ function BRutus:GetTrueRoster()
         if full then
             local short = full:match("^([^-]+)") or full
             local realm = full:match("-(.+)$") or GetRealmName()
-            roster[#roster + 1] = BRutus:GetPlayerKey(short, realm)
+            roster[#roster + 1] = GuildOS:GetPlayerKey(short, realm)
         end
     end
     return AltRoster:BuildTrueRoster(roster)
@@ -79,8 +79,8 @@ end
 -- Self-tests
 ----------------------------------------------------------------------
 function AltRoster:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     local links = { ["Alt1-R"] = "Main-R", ["Alt2-R"] = "Main-R" }
     S:Register("altroster.getmain", function()
         if AltRoster:GetMain("Alt1-R", links) ~= "Main-R" then return false, "alt->main" end

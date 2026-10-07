@@ -16,7 +16,7 @@
 -- Business logic only — UI calls Build() and shows the result.
 ----------------------------------------------------------------------
 local Companion = {}
-BRutus.Companion = Companion
+GuildOS.Companion = Companion
 
 -- The marker on the wire carries a colon; the `fmt` field inside the payload
 -- does not. They are two different things and the web checks both.
@@ -115,7 +115,7 @@ Companion.EncodeJson = encode
 -- never disagree about who is missing what.
 local function enchantSummary(gear)
     if not gear then return nil end
-    local slots = BRutus.GearAudit and BRutus.GearAudit:GetEnchantableSlots()
+    local slots = GuildOS.GearAudit and GuildOS.GearAudit:GetEnchantableSlots()
     if not slots then return nil end
 
     local missing, checked = {}, 0
@@ -126,7 +126,7 @@ local function enchantSummary(gear)
         if item and item.name and item.name ~= "" then
             checked = checked + 1
             if not (item.enchantId and item.enchantId > 0) then
-                missing[#missing + 1] = BRutus.SlotNames[slotId] or ("Slot " .. slotId)
+                missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
             end
         end
     end
@@ -148,7 +148,7 @@ local function gearFor(data)
     if not data or not data.gear then return nil end
 
     local out = {}
-    for _, slotInfo in ipairs(BRutus.SlotIDs) do
+    for _, slotInfo in ipairs(GuildOS.SlotIDs) do
         local item = data.gear[slotInfo.id]
         if item and item.id then
             local entry = {
@@ -180,8 +180,8 @@ end
 
 local function attunementsFor(key)
     local out = {}
-    if not BRutus.AttunementTracker then return out end
-    for _, a in ipairs(BRutus.AttunementTracker:GetEffectiveAttunements(key)) do
+    if not GuildOS.AttunementTracker then return out end
+    for _, a in ipairs(GuildOS.AttunementTracker:GetEffectiveAttunements(key)) do
         out[#out + 1] = {
             short = a.short,
             complete = a.complete and true or false,
@@ -200,7 +200,7 @@ end
 -- and while a list is still on its way with no earlier one to stand in: the site keeps what
 -- it had instead of learning that they know nothing.
 local function craftingFor(key)
-    local P = BRutus.Professions
+    local P = GuildOS.Professions
     local rec = P and P:Get(key)
     if not rec then return nil end
     local out = {}
@@ -317,14 +317,14 @@ end
 -- night would make the two drift the moment somebody edited a core.
 ----------------------------------------------------------------------
 local function attendanceRules(sessions)
-    if not BRutus.CoreManager then return nil end
+    if not GuildOS.CoreManager then return nil end
     local rules, any = {}, false
     local seen = {}
     for _, s in ipairs(sessions or {}) do
         local tag = s.groupTag or ""
         if not seen[tag] then
             seen[tag] = true
-            local p = BRutus.CoreManager:GetPenalties(tag)
+            local p = GuildOS.CoreManager:GetPenalties(tag)
             rules[tag] = { late = p.LATE, early = p.LEFT_EARLY, dry = p.NO_CONSUMES }
             any = true
         end
@@ -338,7 +338,7 @@ local function guildRaidFlag(session)
 end
 
 local function raidSessions()
-    local db = BRutus.db and BRutus.db.raidTracker
+    local db = GuildOS.db and GuildOS.db.raidTracker
     if not db then return nil, nil end
 
     local sessions = {}
@@ -414,11 +414,11 @@ end
 -- mistyped command away.
 ----------------------------------------------------------------------
 function Companion:IsEnabled()
-    return BRutus:GetSetting("companion") == true
+    return GuildOS:GetSetting("companion") == true
 end
 
 function Companion:SetEnabled(on)
-    BRutus:SetSetting("companion", on and true or false)
+    GuildOS:SetSetting("companion", on and true or false)
 end
 
 ----------------------------------------------------------------------
@@ -427,7 +427,7 @@ end
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
-    local realm = BRutus:GetClientRealm()
+    local realm = GuildOS:GetClientRealm()
 
     local members, count = {}, 0
     local n = GetNumGuildMembers() or 0
@@ -437,8 +437,8 @@ function Companion:BuildPayload()
         if fullName then
             local short = fullName:match("^([^-]+)") or fullName
             local memberRealm = fullName:match("-(.+)$") or realm
-            local key = BRutus:GetPlayerKey(short, memberRealm)
-            local data = BRutus.db.members[key]
+            local key = GuildOS:GetPlayerKey(short, memberRealm)
+            local data = GuildOS.db.members[key]
 
             -- Everybody on the guild roster, including whoever has never published.
             --
@@ -462,8 +462,8 @@ function Companion:BuildPayload()
             -- through an empty table rather than guarding each field.
             data = data or {}
             count = count + 1
-            local att = BRutus.RaidTracker
-                and BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0
+            local att = GuildOS.RaidTracker
+                and GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
             -- Absent, not [], for a client that published without a skill-line API (issue #10).
             -- A row that never published, and every Anniversary record, keeps its list.
             local professions = professionsFor(data)
@@ -501,8 +501,8 @@ function Companion:BuildPayload()
     end
 
     local loot = {}
-    if BRutus.LootTracker then
-        for _, e in ipairs(BRutus.LootTracker:GetHistory(500) or {}) do
+    if GuildOS.LootTracker then
+        for _, e in ipairs(GuildOS.LootTracker:GetHistory(500) or {}) do
             -- The history stores an item link, not an id; the site wants the id
             -- so it can build its own tooltip link.
             local itemId = tonumber(e.itemId or (e.itemLink and e.itemLink:match("item:(%d+)"))) or 0
@@ -523,15 +523,15 @@ function Companion:BuildPayload()
     return {
         fmt = FMT,
         v = PAYLOAD_VERSION,
-        guildKey = BRutus:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
+        guildKey = GuildOS:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
         guildName = guildName,
         realm = realm,
         -- The client, not a guess about it: TBC Anniversary is recognised positively and
         -- everything else is Forever, which is the only other client this addon loads on.
-        game = BRutus.Client.isAnniversary and "ANNIVERSARY" or "FOREVER",
+        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or "FOREVER",
         exportedAt = math.floor(time()),
-        exportedBy = BRutus:GetPlayerKey(BRutus.Compat.PlayerName()),
-        addonVersion = BRutus.VERSION or "0",
+        exportedBy = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
+        addonVersion = GuildOS.VERSION or "0",
         count = count,
         members = members,
         loot = loot,

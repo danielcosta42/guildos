@@ -2,12 +2,12 @@
 -- Guild OS - Management Panel (Leadership Suite UI)
 -- The "Lideran\195\167a" tab: rank management, inactivity report, promotion /
 -- trial suggestions, MOTD / Guild Info editing, and the action log.
--- Visual layout only — all data and actions go through BRutus.GuildManager
+-- Visual layout only — all data and actions go through GuildOS.GuildManager
 -- (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 -- Sub-tabs shown across the top of the panel.
@@ -37,8 +37,8 @@ StaticPopupDialogs["GUILDOS_MODPRESET_APPLY"] = {
     button1 = L["Apply"],
     button2 = L["Cancel"],
     OnAccept = function(_, data)
-        if data and data.preset and BRutus.ModPresets then
-            BRutus.ModPresets:ApplyPreset(data.preset, data.matches)
+        if data and data.preset and GuildOS.ModPresets then
+            GuildOS.ModPresets:ApplyPreset(data.preset, data.matches)
         end
     end,
     timeout = 0,
@@ -114,7 +114,7 @@ local function BuildRanksSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local GM = BRutus.GuildManager
+        local GM = GuildOS.GuildManager
         local canPromote = GM:CanPromote()
         local canDemote = GM:CanDemote()
 
@@ -143,7 +143,7 @@ local function BuildRanksSub(panel)
         local yOff = 0
         for idx, m in ipairs(members) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(m.class)
+            local cr, cg, cb = GuildOS:GetClassColor(m.class)
 
             local nameFS = UI:CreateText(row, m.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
@@ -160,8 +160,8 @@ local function BuildRanksSub(panel)
                 local downBtn = UI:CreateButton(row, "|TInterface\\BUTTONS\\Arrow-Down-Up:14:14|t", 26, 18)
                 downBtn:SetPoint("RIGHT", -8, 0)
                 downBtn:SetScript("OnClick", function()
-                    BRutus.GuildManager:Demote(m.fullName)
-                    BRutus.GuildManager:RefreshUI()
+                    GuildOS.GuildManager:Demote(m.fullName)
+                    GuildOS.GuildManager:RefreshUI()
                 end)
             end
             -- Promote one step (lower rankIndex).
@@ -169,8 +169,8 @@ local function BuildRanksSub(panel)
                 local upBtn = UI:CreateButton(row, "|TInterface\\BUTTONS\\Arrow-Up-Up:14:14|t", 26, 18)
                 upBtn:SetPoint("RIGHT", -38, 0)
                 upBtn:SetScript("OnClick", function()
-                    BRutus.GuildManager:Promote(m.fullName)
-                    BRutus.GuildManager:RefreshUI()
+                    GuildOS.GuildManager:Promote(m.fullName)
+                    GuildOS.GuildManager:RefreshUI()
                 end)
             end
 
@@ -189,7 +189,7 @@ end
 -- INACTIVITY sub-panel — purge candidates
 ----------------------------------------------------------------------
 local function BuildInactiveSub(panel)
-    panel.threshold = BRutus.GuildManager.DEFAULT_INACTIVE_DAYS
+    panel.threshold = GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS
 
     local lbl = UI:CreateText(panel, L["Inactive for more than"], 11, C.text.r, C.text.g, C.text.b)
     lbl:SetPoint("TOPLEFT", 2, -4)
@@ -200,7 +200,7 @@ local function BuildInactiveSub(panel)
     daysBox:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     daysBox:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     daysBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(daysBox, 11)
+    GuildOS:ApplyFont(daysBox, 11)
     daysBox:SetTextColor(C.white.r, C.white.g, C.white.b)
     daysBox:SetJustifyH("CENTER")
     daysBox:SetAutoFocus(false)
@@ -224,7 +224,7 @@ local function BuildInactiveSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local GM = BRutus.GuildManager
+        local GM = GuildOS.GuildManager
         local canKick = GM:CanKick()
         local list = GM:GetInactiveMembers(panel.threshold)
         summary:SetText(format(L["%d member(s)"], #list))
@@ -232,7 +232,7 @@ local function BuildInactiveSub(panel)
         local yOff = 0
         for idx, m in ipairs(list) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(m.class)
+            local cr, cg, cb = GuildOS:GetClassColor(m.class)
 
             local nameFS = UI:CreateText(row, m.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
@@ -251,7 +251,7 @@ local function BuildInactiveSub(panel)
                 local kickBtn = UI:CreateButton(row, L["Remove"], 70, 18)
                 kickBtn:SetPoint("RIGHT", -8, 0)
                 kickBtn:SetScript("OnClick", function()
-                    BRutus.GuildManager:ConfirmKick(m.fullName)
+                    GuildOS.GuildManager:ConfirmKick(m.fullName)
                 end)
             end
 
@@ -266,7 +266,7 @@ local function BuildInactiveSub(panel)
     end
 
     local function apply()
-        local v = tonumber(daysBox:GetText()) or BRutus.GuildManager.DEFAULT_INACTIVE_DAYS
+        local v = tonumber(daysBox:GetText()) or GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS
         if v < 1 then v = 1 end
         panel.threshold = v
         daysBox:ClearFocus()
@@ -296,7 +296,7 @@ local function BuildSuggestSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local data = BRutus.GuildManager:GetSuggestions()
+        local data = GuildOS.GuildManager:GetSuggestions()
         local yOff = 0
 
         -- Trials ready for a decision
@@ -323,14 +323,14 @@ local function BuildSuggestSub(panel)
                 local denyBtn = UI:CreateButton(row, L["Deny"], 56, 18)
                 denyBtn:SetPoint("RIGHT", -8, 0)
                 denyBtn:SetScript("OnClick", function()
-                    BRutus.TrialTracker:UpdateStatus(key, BRutus.TrialTracker.STATUS.DENIED)
+                    GuildOS.TrialTracker:UpdateStatus(key, GuildOS.TrialTracker.STATUS.DENIED)
                     refresh()
                 end)
 
                 local okBtn = UI:CreateButton(row, L["Approve"], 64, 18)
                 okBtn:SetPoint("RIGHT", denyBtn, "LEFT", -4, 0)
                 okBtn:SetScript("OnClick", function()
-                    BRutus.TrialTracker:UpdateStatus(key, BRutus.TrialTracker.STATUS.APPROVED)
+                    GuildOS.TrialTracker:UpdateStatus(key, GuildOS.TrialTracker.STATUS.APPROVED)
                     refresh()
                 end)
 
@@ -349,10 +349,10 @@ local function BuildSuggestSub(panel)
             fs:SetPoint("LEFT", 8, 0)
             yOff = yOff + ROW_H + 2
         else
-            local canPromote = BRutus.GuildManager:CanPromote()
+            local canPromote = GuildOS.GuildManager:CanPromote()
             for idx, m in ipairs(data.promoteCandidates) do
                 local row = MakeRow(content, yOff, idx)
-                local cr, cg, cb = BRutus:GetClassColor(m.class)
+                local cr, cg, cb = GuildOS:GetClassColor(m.class)
                 local nameFS = UI:CreateText(row, m.name, 11, cr, cg, cb)
                 nameFS:SetPoint("LEFT", 8, 0)
 
@@ -367,8 +367,8 @@ local function BuildSuggestSub(panel)
                     local promoBtn = UI:CreateButton(row, L["Promote"], 76, 18)
                     promoBtn:SetPoint("RIGHT", -8, 0)
                     promoBtn:SetScript("OnClick", function()
-                        BRutus.GuildManager:Promote(fullName)
-                        BRutus.GuildManager:RefreshUI()
+                        GuildOS.GuildManager:Promote(fullName)
+                        GuildOS.GuildManager:RefreshUI()
                     end)
                 end
 
@@ -391,7 +391,7 @@ local function MakeTextArea(parent, height)
     box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     box:SetMultiLine(true)
-    BRutus:ApplyFont(box, 11)
+    GuildOS:ApplyFont(box, 11)
     box:SetTextColor(C.white.r, C.white.g, C.white.b)
     box:SetTextInsets(6, 6, 4, 4)
     box:SetAutoFocus(false)
@@ -413,7 +413,7 @@ local function BuildMotdSub(panel)
     local motdBtn = UI:CreateButton(panel, L["Save MOTD"], 110, 24)
     motdBtn:SetPoint("TOPLEFT", 2, -82)
     motdBtn:SetScript("OnClick", function()
-        BRutus.GuildManager:SetMOTD(motdBox:GetText())
+        GuildOS.GuildManager:SetMOTD(motdBox:GetText())
         motdBox:ClearFocus()
     end)
 
@@ -432,7 +432,7 @@ local function BuildMotdSub(panel)
     local infoBtn = UI:CreateButton(panel, L["Save Info"], 110, 24)
     infoBtn:SetPoint("TOPLEFT", 2, -270)
     infoBtn:SetScript("OnClick", function()
-        BRutus.GuildManager:SetGuildInfo(infoBox:GetText())
+        GuildOS.GuildManager:SetGuildInfo(infoBox:GetText())
         infoBox:ClearFocus()
     end)
 
@@ -440,7 +440,7 @@ local function BuildMotdSub(panel)
     infoNote:SetPoint("LEFT", infoBtn, "RIGHT", 10, 0)
 
     return function()
-        local GM = BRutus.GuildManager
+        local GM = GuildOS.GuildManager
         if not motdBox:HasFocus() then motdBox:SetText(GM:GetMOTD()) end
         if not infoBox:HasFocus() then infoBox:SetText(GM:GetGuildInfo()) end
 
@@ -483,7 +483,7 @@ local function BuildLogSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local entries = BRutus.GuildManager:GetLog()
+        local entries = GuildOS.GuildManager:GetLog()
         local yOff = 0
         for idx, e in ipairs(entries) do
             local row = MakeRow(content, yOff, idx)
@@ -518,11 +518,11 @@ local function BuildLogSub(panel)
     end
 
     clearBtn:SetScript("OnClick", function()
-        BRutus.GuildManager:ClearLog()
+        GuildOS.GuildManager:ClearLog()
         refresh()
     end)
 
-    if BRutus.RosterLog then BRutus.RosterLog.uiRefresh = refresh end
+    if GuildOS.RosterLog then GuildOS.RosterLog.uiRefresh = refresh end
     return refresh
 end
 
@@ -575,16 +575,16 @@ local function BuildBanSub(panel)
 
     local function doAdd()
         local n = strtrim(nameBox:GetText())
-        if n == "" or not BRutus.BanList then return end
+        if n == "" or not GuildOS.BanList then return end
         if tempChk.checkbox:GetChecked() then
             local d = tonumber(strtrim(daysBox:GetText() or ""))
             if not d or d <= 0 then
-                BRutus:Print(L["Enter a positive number of days for a temporary ban."])
+                GuildOS:Print(L["Enter a positive number of days for a temporary ban."])
                 return
             end
-            BRutus.BanList:Add(n, reasonBox:GetText(), d * 86400)
+            GuildOS.BanList:Add(n, reasonBox:GetText(), d * 86400)
         else
-            BRutus.BanList:Add(n, reasonBox:GetText())
+            GuildOS.BanList:Add(n, reasonBox:GetText())
         end
         nameBox:SetText(""); reasonBox:SetText(""); daysBox:SetText("")
         nameBox:ClearFocus(); reasonBox:ClearFocus(); daysBox:ClearFocus()
@@ -634,7 +634,7 @@ local function BuildBanSub(panel)
         content:SetWidth(listHolder:GetWidth() - 4)
         local filter = strtrim(searchBox:GetText() or ""):lower()
         local now = GetServerTime()
-        local list = BRutus.BanList and BRutus.BanList:List() or {}
+        local list = GuildOS.BanList and GuildOS.BanList:List() or {}
         local y = 0
         for _, e in ipairs(list) do
             if filter == "" or (e.name or ""):lower():find(filter, 1, true) then
@@ -656,7 +656,7 @@ local function BuildBanSub(panel)
                 local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
                 del:SetPoint("TOPRIGHT", -4, -y)
                 local nm = e.name
-                del:SetScript("OnClick", function() if BRutus.BanList then BRutus.BanList:Remove(nm) end end)
+                del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:Remove(nm) end end)
                 y = y + ROW_H
             end
         end
@@ -671,7 +671,7 @@ local function BuildBanSub(panel)
 
     searchBox:SetScript("OnTextChanged", refresh)
     -- let sync / mutations repaint this tab
-    if BRutus.BanList then BRutus.BanList.uiRefresh = refresh end
+    if GuildOS.BanList then GuildOS.BanList.uiRefresh = refresh end
     return refresh
 end
 
@@ -745,7 +745,7 @@ local function BuildEngageSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local agg = (BRutus.RecruitEngagement and BRutus.RecruitEngagement:GetAggregate())
+        local agg = (GuildOS.RecruitEngagement and GuildOS.RecruitEngagement:GetAggregate())
             or { rows = {}, totals = { posts7 = 0, invites7 = 0, joins7 = 0, conv = 0,
                                        postsPrev = 0, invitesPrev = 0, joinsPrev = 0 } }
         local t = agg.totals
@@ -791,7 +791,7 @@ local function BuildEngageSub(panel)
             numFS(r.invites7, COLS.invites, C.text)
             numFS(r.joins7, COLS.joined, r.joins7 > 0 and C.green or C.textDim)
 
-            local lastFS = UI:CreateText(row, BRutus:TimeAgo(r.last), 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            local lastFS = UI:CreateText(row, GuildOS:TimeAgo(r.last), 10, C.textDim.r, C.textDim.g, C.textDim.b)
             lastFS:SetPoint("LEFT", COLS.last, 0)
 
             yOff = yOff + ROW_H + 2
@@ -806,13 +806,13 @@ local function BuildEngageSub(panel)
     end
 
     -- Repaint when a fresh self-report arrives (RecruitEngagement:HandleStats).
-    BRutus.recruitEngagementRefresh = refresh
+    GuildOS.recruitEngagementRefresh = refresh
     return refresh
 end
 
 ----------------------------------------------------------------------
 -- PRESETS sub-panel — built-in bulk-moderation presets (officer-only).
--- Thin renderer over BRutus.ModPresets: each preset shows its criteria, a
+-- Thin renderer over GuildOS.ModPresets: each preset shows its criteria, a
 -- live match count, threshold editors, Preview (inline member list) and
 -- Apply. No matching / apply logic lives here (Rule 10). Apply confirms
 -- first, then routes each rank/kick through ModPresets:ApplyPreset, whose
@@ -830,7 +830,7 @@ local PRESET_FIELDS = {
 -- Apply confirmation text: heading + affected members (capped) + the
 -- Blizzard-protected note. Presentation only.
 local function presetApplyText(preset, matches)
-    local MP = BRutus.ModPresets
+    local MP = GuildOS.ModPresets
     local action = MP:GetAction(preset)
     local CAP = 10
     local names = {}
@@ -872,7 +872,7 @@ local function BuildPresetsSub(panel)
         box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
         box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
         box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        BRutus:ApplyFont(box, 11)
+        GuildOS:ApplyFont(box, 11)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetJustifyH("CENTER")
         box:SetAutoFocus(false)
@@ -893,7 +893,7 @@ local function BuildPresetsSub(panel)
         ClearContent(content)
         for _, r in pairs({ content:GetRegions() }) do r:Hide() end
 
-        local MP = BRutus.ModPresets
+        local MP = GuildOS.ModPresets
         local presets = (MP and MP:GetPresets()) or {}
         local yOff = 0
 
@@ -972,7 +972,7 @@ local function BuildPresetsSub(panel)
                 box:SetPoint("TOPLEFT", x, cy)
                 x = x + 46
                 if field.rank then
-                    local rn = (BRutus.GuildManager and BRutus.GuildManager:GetRankName(
+                    local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(
                         preset.thresholds and preset.thresholds[fieldKey] or 0)) or "?"
                     local rnFS = UI:CreateText(block, "(" .. rn .. ")", 9, C.silver.r, C.silver.g, C.silver.b)
                     rnFS:SetPoint("TOPLEFT", x, cy - 2)
@@ -986,9 +986,9 @@ local function BuildPresetsSub(panel)
             local applyBtn = UI:CreateButton(block, L["Apply"], 70, 20)
             applyBtn:SetPoint("TOPRIGHT", -8, cy)
             applyBtn:SetScript("OnClick", function()
-                if not BRutus:IsOfficer() then BRutus:Print(L["Officers only."]) return end
+                if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return end
                 local live = MP:GetMatches(preset)
-                if #live == 0 then BRutus:Print(L["No members match this preset."]) return end
+                if #live == 0 then GuildOS:Print(L["No members match this preset."]) return end
                 StaticPopup_Show("GUILDOS_MODPRESET_APPLY", presetApplyText(preset, live), nil,
                     { preset = preset, matches = live })
             end)
@@ -1029,14 +1029,14 @@ local function BuildPresetsSub(panel)
         refresh()
     end)
 
-    if BRutus.ModPresets then BRutus.ModPresets.uiRefresh = refresh end
+    if GuildOS.ModPresets then GuildOS.ModPresets.uiRefresh = refresh end
     return refresh
 end
 
 ----------------------------------------------------------------------
 -- Panel assembly
 ----------------------------------------------------------------------
-function BRutus:CreateManagementPanel(parent, _mainFrame)
+function GuildOS:CreateManagementPanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "ranks"
 
@@ -1060,14 +1060,14 @@ function BRutus:CreateManagementPanel(parent, _mainFrame)
             btn:SetActive(k == key)
         end
         local info = parent.subPanels[key]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     parent.SelectSub = selectSub   -- deep links: /gos banlist, the Now tab
 
     -- Refresh whatever sub-panel is currently visible (used by GuildManager).
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
 
     -- Tab width comes from the label, not a constant: eight tabs at a

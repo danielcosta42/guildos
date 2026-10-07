@@ -1,11 +1,11 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Recruitment System
+-- Guild OS - Recruitment System
 -- Automatic recruitment messages + right-click guild invite
 -- Only officers (rank index <= 1) or configurable rank can use this
 ----------------------------------------------------------------------
 local Recruitment = {}
-BRutus.Recruitment = Recruitment
-local L = BRutus.L
+GuildOS.Recruitment = Recruitment
+local L = GuildOS.L
 
 -- TBC class list (used by UI and broadcast)
 Recruitment.CLASSES = {
@@ -96,7 +96,7 @@ end
 function Recruitment:SetAutoInviteMinLevel(cfg, n)
     n = tonumber(n)
     if not n then return nil end
-    cfg.minLevel = math.max(0, math.min(BRutus.Client.maxLevel, math.floor(n)))
+    cfg.minLevel = math.max(0, math.min(GuildOS.Client.maxLevel, math.floor(n)))
     return cfg.minLevel
 end
 
@@ -150,14 +150,14 @@ Recruitment.CHANNELS = {
 
 local function channelFor(c)
     local loc = GetLocale and GetLocale() or "enUS"
-    return (not BRutus.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
+    return (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
 end
 
 -- This client's preset channels, in order.
 function Recruitment:PresetChannels()
     local out = {}
     for _, c in ipairs(self.CHANNELS) do
-        if BRutus.Client.isAnniversary or not c.anniversaryOnly then out[#out + 1] = channelFor(c) end
+        if GuildOS.Client.isAnniversary or not c.anniversaryOnly then out[#out + 1] = channelFor(c) end
     end
     return out
 end
@@ -168,7 +168,7 @@ end
 function Recruitment:ChannelName(name)
     local n = tostring(name or ""):lower()
     for _, c in ipairs(self.CHANNELS) do
-        if BRutus.Client.isAnniversary or not c.anniversaryOnly then
+        if GuildOS.Client.isAnniversary or not c.anniversaryOnly then
             for _, names in ipairs({ c, c.forever or {} }) do
                 for _, v in pairs(names) do
                     if type(v) == "string" and v:lower() == n then return channelFor(c) end
@@ -274,8 +274,8 @@ function Recruitment:_IsGuildmate(fullName)
 end
 
 function Recruitment:_RegisterAutoInviteTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("autoinvite.keyword_exact", function()
         if not Recruitment:_MatchKeyword("  GINV ", "ginv") then return false, "exact should match" end
         return true
@@ -352,10 +352,10 @@ end
 ----------------------------------------------------------------------
 function Recruitment:RegisterAutoInviteEvent()
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     f:SetScript("OnEvent", function(_, _, msg, author)
-        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
-        local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+        if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
+        local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
         if not CanGuildInvite() then return end
         if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
@@ -371,7 +371,7 @@ end
 -- `full` is the name exactly as the whisper carried it, which is what an Alt-click's link
 -- invites with; Forever invites with it.
 function Recruitment:_DoInvite(name, full)
-    if BRutus.Compat.NeedsClick() then
+    if GuildOS.Compat.NeedsClick() then
         self:QueueInvite(name, full)
         return
     end
@@ -379,23 +379,23 @@ function Recruitment:_DoInvite(name, full)
 end
 
 function Recruitment:_InviteNow(name, full)
-    local cfg = BRutus.db.recruitment.autoInvite
+    local cfg = GuildOS.db.recruitment.autoInvite
     GuildInvite(full or name)
-    if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordInvite(name) end
+    if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
-    BRutus:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
+    GuildOS:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
 end
 
 function Recruitment:_HandleKeywordWhisper(sender, author)
-    local cfg = BRutus.db.recruitment.autoInvite
+    local cfg = GuildOS.db.recruitment.autoInvite
     -- Ban gate (BanList already alerts on a banned whisper)
-    if BRutus.BanList and BRutus.BanList:IsBanned(sender) then return end
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
     -- Filters need a /who, which Forever runs only from a click: there the officer's click on
     -- the popup is the check, and the filters stay for Anniversary.
     local filtered = (cfg.minLevel or 0) > 0 or (cfg.classes and next(cfg.classes) ~= nil)
-    if filtered and not BRutus.Compat.NeedsClick() then
+    if filtered and not GuildOS.Compat.NeedsClick() then
         self:_QualifyAndInvite(sender)
     else
         self:_DoInvite(sender, author)
@@ -423,10 +423,10 @@ end
 -- The click: one welcome in guild chat for everyone waiting. False when nobody is.
 function Recruitment:SendPendingWelcome()
     local list = self._pendingWelcomes
-    local msg = BRutus.db.recruitment and BRutus.db.recruitment.welcomeMessage
+    local msg = GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage
     if not list or #list == 0 or not msg or msg == "" then return false end
     SendChatMessage(msg, "GUILD")
-    BRutus:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
+    GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
     self._pendingWelcomes = {}
     return true
 end
@@ -438,7 +438,7 @@ end
 function Recruitment:QueueInvite(name, full)
     self._pendingInvites = self._pendingInvites or {}
     if addOnce(self._pendingInvites, name, { name = name, full = full }) then
-        BRutus:Print(string.format(L["|cffFFFFFF%s|r whispered the keyword: invite them from the popup."], name))
+        GuildOS:Print(string.format(L["|cffFFFFFF%s|r whispered the keyword: invite them from the popup."], name))
     end
     self:ShowInvitePopup()
 end
@@ -449,11 +449,11 @@ end
 -- own click. Returns how many are left.
 function Recruitment:InviteNext()
     local list = self._pendingInvites or {}
-    local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
     local e = table.remove(list, 1)
     if not (e and cfg) then return #list end
-    if BRutus.BanList and BRutus.BanList:IsBanned(e.name) then
-        BRutus:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.name) then
+        GuildOS:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
     elseif not self:_OnInviteCooldown(e.name, GetServerTime()) then
         self:_InviteNow(e.name, e.full)
     end
@@ -464,7 +464,7 @@ end
 function Recruitment:SkipNext()
     local list = self._pendingInvites or {}
     local e = table.remove(list, 1)
-    local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
     if e and cfg then self:_MarkInvited(e.name, GetServerTime(), cfg.cooldownSec) end
     return #list
 end
@@ -481,11 +481,11 @@ function Recruitment:_QualifyAndInvite(sender)
         self._whoFrame = CreateFrame("Frame")
         self._whoFrame:SetScript("OnEvent", function() Recruitment:_OnWhoResult() end)
     end
-    BRutus.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
-    BRutus.Compat.SetWhoToUI(true)   -- results to the API, not the Social frame
-    BRutus.Compat.SendWho(BRutus.Compat.WhoExact(sender))
+    GuildOS.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
+    GuildOS.Compat.SetWhoToUI(true)   -- results to the API, not the Social frame
+    GuildOS.Compat.SendWho(GuildOS.Compat.WhoExact(sender))
     -- Timeout: /who is throttled; give it 6s then fail-safe.
-    BRutus.Compat.After(6, function()
+    GuildOS.Compat.After(6, function()
         if Recruitment._whoBusy == sender then Recruitment:_FinishWho(sender, nil) end
     end)
 end
@@ -509,11 +509,11 @@ end
 
 function Recruitment:_FinishWho(sender, info)
     if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
-    BRutus.Compat.SetWhoToUI(false)
+    GuildOS.Compat.SetWhoToUI(false)
     self._whoBusy = nil
-    local cfg = BRutus.db.recruitment.autoInvite
+    local cfg = GuildOS.db.recruitment.autoInvite
     -- Re-check cooldown/ban in case time passed.
-    if BRutus.BanList and BRutus.BanList:IsBanned(sender) then return end
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(sender) then return end
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
     if info then
         if self:_PassesFilters(info, cfg) then self:_DoInvite(sender) end
@@ -531,15 +531,15 @@ function Recruitment:Initialize()
     -- here, or the officer's own would run beside them, twice the rate all session (issue #79).
     if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
     -- Ensure DB settings exist
-    if not BRutus.db.recruitment then
-        BRutus.db.recruitment = BRutus:DeepCopy(self.DEFAULT_SETTINGS)
+    if not GuildOS.db.recruitment then
+        GuildOS.db.recruitment = GuildOS:DeepCopy(self.DEFAULT_SETTINGS)
     end
-    local r = BRutus.db.recruitment
+    local r = GuildOS.db.recruitment
     -- Fill missing keys
     for k, v in pairs(self.DEFAULT_SETTINGS) do
         if r[k] == nil then
             if type(v) == "table" then
-                r[k] = BRutus:DeepCopy(v)
+                r[k] = GuildOS:DeepCopy(v)
             else
                 r[k] = v
             end
@@ -550,7 +550,7 @@ function Recruitment:Initialize()
     r.autoInvite = r.autoInvite or {}
     for k, v in pairs(self.AUTOINVITE_DEFAULTS) do
         if r.autoInvite[k] == nil then
-            r.autoInvite[k] = (type(v) == "table") and BRutus:DeepCopy(v) or v
+            r.autoInvite[k] = (type(v) == "table") and GuildOS:DeepCopy(v) or v
         end
     end
     self:_DropUnknownClasses(r.autoInvite.classes)
@@ -600,7 +600,7 @@ function Recruitment:CanUseRecruitment()
     if not IsInGuild() then return false end
     local _, _, rankIndex = GetGuildInfo("player")
     if not rankIndex then return false end
-    return rankIndex <= (BRutus.db.recruitment.minRankIndex or 2) or CanGuildInvite()
+    return rankIndex <= (GuildOS.db.recruitment.minRankIndex or 2) or CanGuildInvite()
 end
 
 ----------------------------------------------------------------------
@@ -608,16 +608,16 @@ end
 ----------------------------------------------------------------------
 function Recruitment:StartAutoRecruit()
     if not self:CanUseRecruitment() then
-        BRutus:Print(L["|cffFF4444You don't have permission to use recruitment.|r"])
+        GuildOS:Print(L["|cffFF4444You don't have permission to use recruitment.|r"])
         return false
     end
     -- /gos recruit on reaches here with the module switched off and its tab hidden (issue #84).
-    if not BRutus:IsFeatureEnabled("recruitment") then
-        BRutus:Print(L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
+    if not GuildOS:IsFeatureEnabled("recruitment") then
+        GuildOS:Print(L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
         return false
     end
 
-    local settings = BRutus.db.recruitment
+    local settings = GuildOS.db.recruitment
     settings.enabled = true
 
     -- Stop existing ticker
@@ -635,7 +635,7 @@ function Recruitment:StartAutoRecruit()
     -- Show first popup after a short delay
     C_Timer.After(2, function() self:_OfficerTick() end)
 
-     BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
+     GuildOS:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
     -- Push the (now enabled) config to guild members so they can help spread it.
     self:BroadcastStatus(true)
     return true
@@ -646,7 +646,7 @@ end
 -- with no popup ever coming. Running silent, the next tick after the module is back shows
 -- one (issue #84).
 function Recruitment:_OfficerTick()
-    if not BRutus:IsFeatureEnabled("recruitment") then return end
+    if not GuildOS:IsFeatureEnabled("recruitment") then return end
     self:ShowSendPopup()
 end
 
@@ -654,7 +654,7 @@ end
 -- Stop automatic recruitment
 ----------------------------------------------------------------------
 function Recruitment:StopAutoRecruit()
-    BRutus.db.recruitment.enabled = false
+    GuildOS.db.recruitment.enabled = false
     if self.ticker then
         self.ticker:Cancel()
         self.ticker = nil
@@ -663,20 +663,20 @@ function Recruitment:StopAutoRecruit()
         self.popupFrame:Hide()
     end
     -- Push the disabled state so members stop spreading it (newest wins).
-    if BRutus:IsOfficer() then self:BroadcastStatus(true) end
-    BRutus:Print(L["Recruitment |cffFF4444stopped|r."])
+    if GuildOS:IsOfficer() then self:BroadcastStatus(true) end
+    GuildOS:Print(L["Recruitment |cffFF4444stopped|r."])
 end
 
 ----------------------------------------------------------------------
 -- Toggle recruitment
 ----------------------------------------------------------------------
 function Recruitment:Toggle()
-    if BRutus.db.recruitment.enabled then
+    if GuildOS.db.recruitment.enabled then
         self:StopAutoRecruit()
     else
         self:StartAutoRecruit()
     end
-    return BRutus.db.recruitment.enabled
+    return GuildOS.db.recruitment.enabled
 end
 
 ----------------------------------------------------------------------
@@ -689,9 +689,9 @@ end
 -- newest-wins never mistakes a re-broadcast for a newer edit, so a re-push can
 -- refresh a stale member without ever clobbering a genuinely newer change.
 function Recruitment:BroadcastStatus(quiet, reassert)
-    if not BRutus.CommSystem or not IsInGuild() then return end
-    if not (BRutus.IsOfficer and BRutus:IsOfficer()) then return end
-    local r = BRutus.db.recruitment
+    if not GuildOS.CommSystem or not IsInGuild() then return end
+    if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
+    local r = GuildOS.db.recruitment
     if not (reassert and r.updatedAt) then
         r.updatedAt = time()   -- genuine edit: stamp "last content edit"
     end
@@ -701,28 +701,28 @@ function Recruitment:BroadcastStatus(quiet, reassert)
         message    = r.message or "",
         channels   = r.channels or {},
         interval   = r.interval or 120,
-        updatedBy  = BRutus.Compat.PlayerName(),
+        updatedBy  = GuildOS.Compat.PlayerName(),
         updatedAt  = r.updatedAt,
     })
-    BRutus.CommSystem:SendMessage("RI", payload)
+    GuildOS.CommSystem:SendMessage("RI", payload)
     -- Mirror into the guild-synced slot so this account's own member-rank alts
     -- (they share the per-guild DB) get the ad immediately, with no round-trip.
-    BRutus.db.guildRecruitment = {
+    GuildOS.db.guildRecruitment = {
         enabled = r.enabled, discord = r.discord or "", message = r.message or "",
         channels = r.channels or {}, interval = r.interval or 120,
-        updatedAt = r.updatedAt, updatedBy = BRutus.Compat.PlayerName(),
+        updatedAt = r.updatedAt, updatedBy = GuildOS.Compat.PlayerName(),
     }
-    if not quiet then BRutus:Print(L["Recruitment status broadcast to guild members."]) end
+    if not quiet then GuildOS:Print(L["Recruitment status broadcast to guild members."]) end
 end
 
 ----------------------------------------------------------------------
 -- Member auto-send: opt-in ticker using guild-broadcast config
 ----------------------------------------------------------------------
 function Recruitment:StartMemberRecruit(quiet)
-    local info = BRutus.db.guildRecruitment
+    local info = GuildOS.db.guildRecruitment
     if not info or not info.message or info.message == "" then
         if not quiet then
-            BRutus:Print(L["|cffFF4444No recruitment data received yet. Ask an officer to broadcast.|r"])
+            GuildOS:Print(L["|cffFF4444No recruitment data received yet. Ask an officer to broadcast.|r"])
         end
         return false
     end
@@ -731,7 +731,7 @@ function Recruitment:StartMemberRecruit(quiet)
     self.memberTicker = C_Timer.NewTicker(interval, function() Recruitment:_AutoTick() end)
     C_Timer.After(2, function() Recruitment:_AutoTick() end)
     if not quiet then
-        BRutus:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
+        GuildOS:Print(string.format(L["Recruitment |cff4CFF4Cstarted|r - popup every %ds. Click to send!"], interval))
     end
     return true
 end
@@ -743,7 +743,7 @@ end
 function Recruitment:_AutoTick()
     -- The module switched off while the popups ran: nothing more, and the ticker goes quietly.
     -- The switch only refreshes the tabs, so this is where it is heard (issue #79).
-    if not BRutus:IsFeatureEnabled("recruitment") then
+    if not GuildOS:IsFeatureEnabled("recruitment") then
         if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
         return
     end
@@ -751,7 +751,7 @@ function Recruitment:_AutoTick()
         self._autoCapReached = true
         if self.memberTicker then self.memberTicker:Cancel(); self.memberTicker = nil end
         if self.popupFrame then self.popupFrame:Hide() end
-        BRutus:Print(L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."])
+        GuildOS:Print(L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."])
         return
     end
     self._autoPopups = (self._autoPopups or 0) + 1
@@ -764,7 +764,7 @@ function Recruitment:StopMemberRecruit()
         self.memberTicker = nil
     end
     if self.popupFrame then self.popupFrame:Hide() end
-    BRutus:Print(L["Recruitment |cffFF4444stopped|r."])
+    GuildOS:Print(L["Recruitment |cffFF4444stopped|r."])
 end
 
 function Recruitment:IsMemberRecruitActive()
@@ -787,16 +787,16 @@ end
 -- Officers send their own authoritative copy; members relay the cached one so
 -- the ad reaches newcomers even when no officer is online.
 function Recruitment:RespondToSync()
-    if not BRutus.CommSystem or not IsInGuild() then return end
-    if BRutus:IsOfficer() then
-        local r = BRutus.db.recruitment
+    if not GuildOS.CommSystem or not IsInGuild() then return end
+    if GuildOS:IsOfficer() then
+        local r = GuildOS.db.recruitment
         -- Re-assert the current ad REGARDLESS of enabled, so a stale-enabled
         -- member who pulls converges onto a later disable. reassert=true keeps
         -- the existing stamp: idempotent, and it can never roll a newer edit back.
         if r and r.updatedAt then self:BroadcastStatus(true, true) end
         return
     end
-    local info = BRutus.db.guildRecruitment
+    local info = GuildOS.db.guildRecruitment
     -- Members relay the cached ad REGARDLESS of enabled so a disabled state
     -- still spreads member-to-member with no officer online. Gate on it being a
     -- real received ad, and carry its EXISTING updatedBy/updatedAt unchanged.
@@ -806,7 +806,7 @@ function Recruitment:RespondToSync()
             channels = info.channels or {}, interval = info.interval or 120,
             updatedBy = info.updatedBy, updatedAt = info.updatedAt,
         })
-        BRutus.CommSystem:SendMessage("RI", payload)
+        GuildOS.CommSystem:SendMessage("RI", payload)
     end
 end
 
@@ -838,15 +838,15 @@ function Recruitment:ApplyIncoming(info, sender, channel)
     if type(info) ~= "table" then return end
     local claimedAuthor = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
     local claimedAuthorIsOfficer =
-        (BRutus.IsOfficerByName and BRutus:IsOfficerByName(claimedAuthor)) or false
+        (GuildOS.IsOfficerByName and GuildOS:IsOfficerByName(claimedAuthor)) or false
     local senderIsGuildmate = self:_IsGuildmate(sender)
     local incomingAt = math.min(tonumber(info.updatedAt) or 0, time() + FUTURE_SLACK)
-    local cur = BRutus.db.guildRecruitment
+    local cur = GuildOS.db.guildRecruitment
     local curAt = cur and cur.updatedAt or nil
     if not self:_AcceptConfig(channel, claimedAuthorIsOfficer, senderIsGuildmate, incomingAt, curAt) then
         return
     end
-    BRutus.db.guildRecruitment = {
+    GuildOS.db.guildRecruitment = {
         enabled   = info.enabled,
         discord   = info.discord or "",
         message   = info.message or "",
@@ -855,14 +855,14 @@ function Recruitment:ApplyIncoming(info, sender, channel)
         updatedAt = incomingAt > 0 and incomingAt or time(),
         updatedBy = claimedAuthor,
     }
-    if BRutus.recruitmentPanelRefresh then BRutus.recruitmentPanelRefresh() end
+    if GuildOS.recruitmentPanelRefresh then GuildOS.recruitmentPanelRefresh() end
     self:SyncMemberParticipation()
 end
 
 -- Member opt-out choice (persisted). nil = never touched, true = kept on,
 -- false = opted out.
 function Recruitment:SetParticipation(v)
-    BRutus.db.recruitParticipate = v
+    GuildOS.db.recruitParticipate = v
     if v ~= false then
         -- A manual re-enable clears any per-session auto-pause and popup count,
         -- so turning Auto-Send back on from the tab actually resumes popups.
@@ -881,18 +881,18 @@ end
 
 -- Opt-out: a member helps unless they explicitly turned it off.
 function Recruitment:IsParticipating()
-    return self:_ParticipatingFrom(BRutus.db.recruitParticipate)
+    return self:_ParticipatingFrom(GuildOS.db.recruitParticipate)
 end
 
 -- Reconcile the member popup ticker with the current guild config and the
 -- stored choice. Safe to call repeatedly.
 function Recruitment:SyncMemberParticipation()
-    if BRutus:IsOfficer() then return end   -- officers use their own flow
-    local info = BRutus.db.guildRecruitment
+    if GuildOS:IsOfficer() then return end   -- officers use their own flow
+    local info = GuildOS.db.guildRecruitment
     local active = info and info.enabled and info.message and info.message ~= ""
     -- The module switched off in Settings skips InitParticipation, but an officer's ad still
     -- arrives and lands here: the ad is kept and relayed, the popups stay off (issue #79).
-    if not active or not self:IsParticipating() or not BRutus:IsFeatureEnabled("recruitment") then
+    if not active or not self:IsParticipating() or not GuildOS:IsFeatureEnabled("recruitment") then
         if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
         return
     end
@@ -909,10 +909,10 @@ end
 -- The first time auto-participation kicks in for a member who never chose,
 -- tell them once (persisted) how to opt out, so the popups are never a mystery.
 function Recruitment:_HintOptOutOnce()
-    if BRutus.db.recruitParticipate ~= nil then return end
-    if BRutus.db.recruitOptOutHinted then return end
-    BRutus.db.recruitOptOutHinted = true
-    BRutus:Print(L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."])
+    if GuildOS.db.recruitParticipate ~= nil then return end
+    if GuildOS.db.recruitOptOutHinted then return end
+    GuildOS.db.recruitOptOutHinted = true
+    GuildOS:Print(L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."])
 end
 
 ----------------------------------------------------------------------
@@ -924,7 +924,7 @@ end
 ----------------------------------------------------------------------
 function Recruitment:InitParticipation()
     C_Timer.After(15, function()
-        if BRutus.Recruitment then BRutus.Recruitment:SyncMemberParticipation() end
+        if GuildOS.Recruitment then GuildOS.Recruitment:SyncMemberParticipation() end
     end)
 end
 
@@ -934,7 +934,7 @@ end
 -- or nil.
 ----------------------------------------------------------------------
 function Recruitment:_ActiveConfig()
-    return BRutus:IsOfficer() and BRutus.db.recruitment or BRutus.db.guildRecruitment
+    return GuildOS:IsOfficer() and GuildOS.db.recruitment or GuildOS.db.guildRecruitment
 end
 
 -- Configured channel names, and how many of them the player has actually joined
@@ -961,12 +961,12 @@ end
 function Recruitment:CreatePopupFrame()
     if self.popupFrame then return end
 
-    local C  = BRutus.Colors
-    local UI = BRutus.UI
+    local C  = GuildOS.Colors
+    local UI = GuildOS.UI
     local PAD, WIDTH = 14, 360
     local cw = WIDTH - PAD * 2
 
-    local f = CreateFrame("Frame", "BRutusRecruitPopup", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "GuildOSRecruitPopup", UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 150)
     f:SetPoint("TOP", UIParent, "TOP", 0, -80)
     f:SetBackdrop({
@@ -987,7 +987,7 @@ function Recruitment:CreatePopupFrame()
 
     -- Title: brand + localized subtitle ("Guild OS  ·  Recruitment").
     local title = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(title, 13)
+    GuildOS:ApplyFont(title, 13)
     title:SetPoint("TOPLEFT", PAD, -12)
     title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     title:SetText("Guild OS  |cff6c6c78" .. L["Recruitment"] .. "|r")
@@ -1001,7 +1001,7 @@ function Recruitment:CreatePopupFrame()
     dismiss:SetSize(20, 20)
     dismiss:SetPoint("TOPRIGHT", -4, -6)
     local dText = dismiss:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(dText, 14)
+    GuildOS:ApplyFont(dText, 14)
     dText:SetPoint("CENTER")
     dText:SetText("x")
     dText:SetTextColor(0.6, 0.6, 0.6)
@@ -1011,7 +1011,7 @@ function Recruitment:CreatePopupFrame()
 
     -- Target channel line.
     local channelLine = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(channelLine, 11)
+    GuildOS:ApplyFont(channelLine, 11)
     channelLine:SetPoint("TOPLEFT", PAD, -38)
     channelLine:SetWidth(cw)
     channelLine:SetJustifyH("LEFT")
@@ -1020,7 +1020,7 @@ function Recruitment:CreatePopupFrame()
 
     -- Message preview (wrapped; sized in ShowSendPopup).
     local msgText = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(msgText, 12)
+    GuildOS:ApplyFont(msgText, 12)
     msgText:SetPoint("TOPLEFT", PAD, -58)
     msgText:SetWidth(cw)
     msgText:SetJustifyH("LEFT")
@@ -1029,7 +1029,7 @@ function Recruitment:CreatePopupFrame()
 
     -- "Join a channel" hint, shown instead of a dead Postar when nothing is joined.
     local hint = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(hint, 11)
+    GuildOS:ApplyFont(hint, 11)
     hint:SetWidth(cw)
     hint:SetJustifyH("LEFT")
     hint:SetTextColor(C.red.r, C.red.g, C.red.b)
@@ -1060,7 +1060,7 @@ end
 -- a title, a line, a note, and two buttons whose OnClick is the hardware event the game wants.
 ----------------------------------------------------------------------
 local function ActionPopup(title, y, okText, laterText)
-    local C, UI = BRutus.Colors, BRutus.UI
+    local C, UI = GuildOS.Colors, GuildOS.UI
     local PAD, WIDTH = 14, 360
     local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 120)
@@ -1078,7 +1078,7 @@ local function ActionPopup(title, y, okText, laterText)
     f:Hide()
 
     local t = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(t, 13)
+    GuildOS:ApplyFont(t, 13)
     t:SetPoint("TOPLEFT", PAD, -12)
     t:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     t:SetText("Guild OS  |cff6c6c78" .. title .. "|r")
@@ -1087,14 +1087,14 @@ local function ActionPopup(title, y, okText, laterText)
     sep:SetPoint("TOPRIGHT", -PAD, -30)
 
     f.line = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f.line, 12)
+    GuildOS:ApplyFont(f.line, 12)
     f.line:SetPoint("TOPLEFT", PAD, -38)
     f.line:SetWidth(WIDTH - PAD * 2)
     f.line:SetJustifyH("LEFT")
     f.line:SetTextColor(C.text.r, C.text.g, C.text.b)
 
     f.note = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f.note, 10)
+    GuildOS:ApplyFont(f.note, 10)
     f.note:SetPoint("TOPLEFT", f.line, "BOTTOMLEFT", 0, -4)
     f.note:SetWidth(WIDTH - PAD * 2)
     f.note:SetJustifyH("LEFT")
@@ -1124,7 +1124,7 @@ function Recruitment:ShowWelcomePopup()
     local list = self._pendingWelcomes or {}
     if #list == 0 then f:Hide() return end
     f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
-    f.note:SetText((BRutus.db.recruitment and BRutus.db.recruitment.welcomeMessage) or "")
+    f.note:SetText((GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage) or "")
     f:Fit()
     f:Show()
     -- An invite popup already up moves under this one instead of being covered by it.
@@ -1166,7 +1166,7 @@ function Recruitment:ShowSendPopup()
 
     -- Officers use their own config; members use the guild-broadcast config.
     local settings = self:_ActiveConfig()
-    if BRutus:IsOfficer() then
+    if GuildOS:IsOfficer() then
         if not settings or not settings.enabled then return end
     else
         if not settings or not settings.enabled or not settings.message or settings.message == "" then return end
@@ -1187,7 +1187,7 @@ function Recruitment:ShowSendPopup()
     -- source, same sanitize, same MSG_MAX cap), so the member consents to the
     -- real content with no hidden tail (a channel that hides raid icons gets it without
     -- their codes, issue #64). The frame auto-sizes to the wrapped text.
-    local full = BRutus:SanitizeUserText(raw, self.MSG_MAX)
+    local full = GuildOS:SanitizeUserText(raw, self.MSG_MAX)
     f.msgText:SetText("\"" .. full .. "\"")
 
     -- Layout: size the frame to the wrapped message, then the button row (or the
@@ -1228,12 +1228,12 @@ function Recruitment:DoSendRecruitmentMessage()
     -- Officers use their own config; members use the guild-broadcast config.
     local settings = self:_ActiveConfig()
     if not settings then
-        BRutus:Print(L["|cffFF4444No recruitment data. Ask an officer to broadcast.|r"])
+        GuildOS:Print(L["|cffFF4444No recruitment data. Ask an officer to broadcast.|r"])
         return
     end
     local msg = settings.message
     if not msg or msg == "" then
-        BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
+        GuildOS:Print(L["|cffFF4444No recruitment message set.|r"])
         return
     end
     -- Sanitize before it ever reaches a public channel under the player's name:
@@ -1241,9 +1241,9 @@ function Recruitment:DoSendRecruitmentMessage()
     -- at the SendChatMessage limit. Officer and member paths alike. Same cap the
     -- consent popup previewed, so the member posts exactly what they saw (minus raid-icon
     -- codes where the channel would show them as text, issue #64).
-    msg = BRutus:SanitizeUserText(msg, self.MSG_MAX)
+    msg = GuildOS:SanitizeUserText(msg, self.MSG_MAX)
     if msg == "" then
-        BRutus:Print(L["|cffFF4444No recruitment message set.|r"])
+        GuildOS:Print(L["|cffFF4444No recruitment message set.|r"])
         return
     end
 
@@ -1255,7 +1255,7 @@ function Recruitment:DoSendRecruitmentMessage()
         if channelNum and channelNum > 0 and not posted[channelNum] then
             posted[channelNum] = true
             -- Where the server hides raid icons, the copy goes without their codes (issue #64).
-            local text = BRutus.Compat.ChannelHidesRaidIcons(channelName, channelNum) and self:_StripRaidIcons(msg) or msg
+            local text = GuildOS.Compat.ChannelHidesRaidIcons(channelName, channelNum) and self:_StripRaidIcons(msg) or msg
             if text ~= "" then
                 SendChatMessage(text, "CHANNEL", nil, channelNum)
                 sent = true
@@ -1268,22 +1268,22 @@ function Recruitment:DoSendRecruitmentMessage()
     if sent then
         self._lastSendAt = GetTime()
         self.lastSend = GetTime()
-        if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordPost() end
-        BRutus:Print(L["Recruitment message sent!"])
+        if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordPost() end
+        GuildOS:Print(L["Recruitment message sent!"])
     elseif iconsOnly then
-        BRutus:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
+        GuildOS:Print(L["|cffFF4444The message is only raid icons, which this channel does not show: nothing posted.|r"])
     else
-        BRutus:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
+        GuildOS:Print(L["|cffFF4444No valid channels found. Join a channel first.|r"])
     end
 end
 
 ----------------------------------------------------------------------
 -- Right-click guild invite (slash command based - no dropdown hook to avoid taint)
--- Usage: /brutus invite PlayerName
+-- Usage: /gos invite PlayerName
 ----------------------------------------------------------------------
 function Recruitment:HookChatInvite()
     -- No dropdown hooks - they cause taint errors.
-    -- Guild invite is available via /brutus invite <name>
+    -- Guild invite is available via /gos invite <name>
 end
 
 ----------------------------------------------------------------------
@@ -1293,8 +1293,8 @@ function Recruitment:HandleCommand(args)
     local cmd = args[1]
     -- The settings exist once an officer's client has started recruitment; a member's never
     -- has, and every branch below but `invite` reads them.
-    if not BRutus.db.recruitment and cmd and cmd ~= "invite" then
-        BRutus:Print(BRutus:IsFeatureEnabled("recruitment") and L["Recruitment settings are available to officers after login."]
+    if not GuildOS.db.recruitment and cmd and cmd ~= "invite" then
+        GuildOS:Print(GuildOS:IsFeatureEnabled("recruitment") and L["Recruitment settings are available to officers after login."]
             or L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
         return
     end
@@ -1307,119 +1307,119 @@ function Recruitment:HandleCommand(args)
         table.remove(args, 1)
         local newMsg = table.concat(args, " ")
         if newMsg and newMsg ~= "" then
-            BRutus.db.recruitment.message = newMsg
-            BRutus:Print(L["Recruitment message set to: |cffFFFFFF"] .. newMsg .. "|r")
+            GuildOS.db.recruitment.message = newMsg
+            GuildOS:Print(L["Recruitment message set to: |cffFFFFFF"] .. newMsg .. "|r")
         else
-            BRutus:Print(L["Current message: |cffFFFFFF"] .. (BRutus.db.recruitment.message or L["(empty)"]) .. "|r")
+            GuildOS:Print(L["Current message: |cffFFFFFF"] .. (GuildOS.db.recruitment.message or L["(empty)"]) .. "|r")
         end
     elseif cmd == "interval" then
         local secs = tonumber(args[2])
         if secs and secs >= 60 then
-            BRutus.db.recruitment.interval = secs
-            BRutus:Print(string.format(L["Recruitment interval set to |cffFFFFFF%ds|r."], secs))
+            GuildOS.db.recruitment.interval = secs
+            GuildOS:Print(string.format(L["Recruitment interval set to |cffFFFFFF%ds|r."], secs))
             -- Restart if active. StartAutoRecruit replaces the ticker itself: going through
             -- StopAutoRecruit would switch the guild's recruitment off (enabled = false, a
             -- disabled ad broadcast) whenever the start then refused, as with the module off.
-            if BRutus.db.recruitment.enabled then
+            if GuildOS.db.recruitment.enabled then
                 -- With the module off the start refuses, so the silent ticker takes the new
                 -- period here, or it would come back on at the old one.
-                if self.ticker and not BRutus:IsFeatureEnabled("recruitment") then
+                if self.ticker and not GuildOS:IsFeatureEnabled("recruitment") then
                     self.ticker:Cancel()
                     self.ticker = C_Timer.NewTicker(secs, function() self:_OfficerTick() end)
                 end
                 self:StartAutoRecruit()
             end
         else
-            BRutus:Print(L["Usage: /guildos recruit interval <seconds> (min 60)"])
+            GuildOS:Print(L["Usage: /guildos recruit interval <seconds> (min 60)"])
         end
     elseif cmd == "channel" then
         local action = args[2]
         local chName = args[3]
         if action == "add" and chName then
-            if self:AddChannel(BRutus.db.recruitment.channels, chName) then
-                BRutus:Print(L["Added channel: |cffFFFFFF"] .. chName .. "|r")
+            if self:AddChannel(GuildOS.db.recruitment.channels, chName) then
+                GuildOS:Print(L["Added channel: |cffFFFFFF"] .. chName .. "|r")
             else
-                BRutus:Print(L["Already posting to: |cffFFFFFF"] .. chName .. "|r")
+                GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. chName .. "|r")
             end
         elseif action == "remove" and chName then
-            if self:RemoveChannel(BRutus.db.recruitment.channels, chName) then
-                BRutus:Print(L["Removed channel: |cffFFFFFF"] .. chName .. "|r")
+            if self:RemoveChannel(GuildOS.db.recruitment.channels, chName) then
+                GuildOS:Print(L["Removed channel: |cffFFFFFF"] .. chName .. "|r")
             else
-                BRutus:Print(L["Channel not found: "] .. chName)
+                GuildOS:Print(L["Channel not found: "] .. chName)
             end
         elseif action == "list" then
-            local list = table.concat(BRutus.db.recruitment.channels, ", ")
-            BRutus:Print(L["Channels: |cffFFFFFF"] .. (list ~= "" and list or L["(none)"]) .. "|r")
+            local list = table.concat(GuildOS.db.recruitment.channels, ", ")
+            GuildOS:Print(L["Channels: |cffFFFFFF"] .. (list ~= "" and list or L["(none)"]) .. "|r")
         else
-            BRutus:Print(L["Usage: /guildos recruit channel <add|remove|list> [name]"])
+            GuildOS:Print(L["Usage: /guildos recruit channel <add|remove|list> [name]"])
         end
     elseif cmd == "status" then
-        local s = BRutus.db.recruitment
+        local s = GuildOS.db.recruitment
         local status = s.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
         local wStatus = s.welcomeEnabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
-        BRutus:Print(L["--- Recruitment Status ---"])
-        BRutus:Print(L["Active: "] .. status)
-        BRutus:Print(string.format(L["Interval: |cffFFFFFF%ds|r"], s.interval))
-        BRutus:Print(L["Channels: |cffFFFFFF"] .. table.concat(s.channels, ", ") .. "|r")
-        BRutus:Print(L["Message: |cffFFFFFF"] .. s.message .. "|r")
-        BRutus:Print(L["Welcome: "] .. wStatus)
-        BRutus:Print(L["Welcome msg: |cffFFFFFF"] .. s.welcomeMessage .. "|r")
-        BRutus:Print(L["Discord: |cffFFFFFF"] .. s.discord .. "|r")
+        GuildOS:Print(L["--- Recruitment Status ---"])
+        GuildOS:Print(L["Active: "] .. status)
+        GuildOS:Print(string.format(L["Interval: |cffFFFFFF%ds|r"], s.interval))
+        GuildOS:Print(L["Channels: |cffFFFFFF"] .. table.concat(s.channels, ", ") .. "|r")
+        GuildOS:Print(L["Message: |cffFFFFFF"] .. s.message .. "|r")
+        GuildOS:Print(L["Welcome: "] .. wStatus)
+        GuildOS:Print(L["Welcome msg: |cffFFFFFF"] .. s.welcomeMessage .. "|r")
+        GuildOS:Print(L["Discord: |cffFFFFFF"] .. s.discord .. "|r")
     elseif cmd == "welcome" then
         local sub = args[2]
         if sub == "on" then
-            BRutus.db.recruitment.welcomeEnabled = true
-            BRutus:Print(L["Welcome message |cff4CFF4Cenabled|r."])
+            GuildOS.db.recruitment.welcomeEnabled = true
+            GuildOS:Print(L["Welcome message |cff4CFF4Cenabled|r."])
         elseif sub == "off" then
-            BRutus.db.recruitment.welcomeEnabled = false
-            BRutus:Print(L["Welcome message |cffFF4444disabled|r."])
+            GuildOS.db.recruitment.welcomeEnabled = false
+            GuildOS:Print(L["Welcome message |cffFF4444disabled|r."])
         elseif sub == "msg" then
             table.remove(args, 1)
             table.remove(args, 1)
             local newMsg = table.concat(args, " ")
             if newMsg and newMsg ~= "" then
-                BRutus.db.recruitment.welcomeMessage = newMsg
-                BRutus:Print(L["Welcome message set to: |cffFFFFFF"] .. newMsg .. "|r")
+                GuildOS.db.recruitment.welcomeMessage = newMsg
+                GuildOS:Print(L["Welcome message set to: |cffFFFFFF"] .. newMsg .. "|r")
             else
-                BRutus:Print(L["Current: |cffFFFFFF"] .. BRutus.db.recruitment.welcomeMessage .. "|r")
+                GuildOS:Print(L["Current: |cffFFFFFF"] .. GuildOS.db.recruitment.welcomeMessage .. "|r")
             end
         else
-            BRutus:Print(L["Usage: /guildos recruit welcome <on|off|msg> [text]"])
+            GuildOS:Print(L["Usage: /guildos recruit welcome <on|off|msg> [text]"])
         end
     elseif cmd == "discord" then
         local link = args[2]
         if link and link ~= "" then
-            BRutus.db.recruitment.discord = link
-            BRutus:Print(L["Discord link set to: |cffFFFFFF"] .. link .. "|r")
+            GuildOS.db.recruitment.discord = link
+            GuildOS:Print(L["Discord link set to: |cffFFFFFF"] .. link .. "|r")
         else
-            BRutus:Print(L["Discord: |cffFFFFFF"] .. BRutus.db.recruitment.discord .. "|r")
+            GuildOS:Print(L["Discord: |cffFFFFFF"] .. GuildOS.db.recruitment.discord .. "|r")
         end
     elseif cmd == "invite" then
         local target = args[2]
         if target and target ~= "" then
             if not CanGuildInvite() then
-                BRutus:Print(L["|cffFF4444You don't have permission to invite.|r"])
+                GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])
                 return
             end
             GuildInvite(target)
-            if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordInvite(target) end
-            BRutus:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
+            GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
         else
-            BRutus:Print(L["Usage: /guildos recruit invite <PlayerName>"])
+            GuildOS:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end
     elseif cmd == "autoinvite" or cmd == "ai" then
         table.remove(args, 1)
         Recruitment:HandleAutoInviteCommand(args)
     else
-        BRutus:Print(L["|cffFFD700Recruitment commands:|r"])
-        BRutus:Print("  /guildos recruit on/off")
-        BRutus:Print("  /guildos recruit status")
-        BRutus:Print("  /guildos recruit msg <text>")
-        BRutus:Print("  /guildos recruit interval <seconds>")
-        BRutus:Print("  /guildos recruit channel add/remove/list <name>")
-        BRutus:Print("  /guildos recruit welcome on/off/msg <text>")
-        BRutus:Print("  /guildos recruit discord <link>")
-        BRutus:Print("  /guildos recruit invite <PlayerName>")
+        GuildOS:Print(L["|cffFFD700Recruitment commands:|r"])
+        GuildOS:Print("  /guildos recruit on/off")
+        GuildOS:Print("  /guildos recruit status")
+        GuildOS:Print("  /guildos recruit msg <text>")
+        GuildOS:Print("  /guildos recruit interval <seconds>")
+        GuildOS:Print("  /guildos recruit channel add/remove/list <name>")
+        GuildOS:Print("  /guildos recruit welcome on/off/msg <text>")
+        GuildOS:Print("  /guildos recruit discord <link>")
+        GuildOS:Print("  /guildos recruit invite <PlayerName>")
     end
 end
 
@@ -1427,53 +1427,53 @@ end
 -- Auto-invite command handler
 ----------------------------------------------------------------------
 function Recruitment:HandleAutoInviteCommand(args)
-    local cfg = BRutus.db.recruitment and BRutus.db.recruitment.autoInvite
+    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
     if not cfg then
-        BRutus:Print(L["Auto-invite is available to officers after login."])
+        GuildOS:Print(L["Auto-invite is available to officers after login."])
         return
     end
     local sub = args[1]
     if sub == "on" then
         cfg.enabled = true
-        BRutus:Print(L["Auto-invite |cff4CFF4Cenabled|r (keyword: |cffFFFFFF"] .. cfg.keyword .. "|r).")
+        GuildOS:Print(L["Auto-invite |cff4CFF4Cenabled|r (keyword: |cffFFFFFF"] .. cfg.keyword .. "|r).")
     elseif sub == "off" then
         cfg.enabled = false
-        BRutus:Print(L["Auto-invite |cffFF4444disabled|r."])
+        GuildOS:Print(L["Auto-invite |cffFF4444disabled|r."])
     elseif sub == "keyword" then
         local kw = args[2] and self:SetAutoInviteKeyword(cfg, args[2])
         if kw then
-            BRutus:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. kw .. "|r.")
+            GuildOS:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. kw .. "|r.")
         elseif args[2] then
-            BRutus:Print(string.format(L["A keyword is one word of up to %d characters."], self.KEYWORD_MAX))
+            GuildOS:Print(string.format(L["A keyword is one word of up to %d characters."], self.KEYWORD_MAX))
         else
-            BRutus:Print(L["Current keyword: |cffFFFFFF"] .. cfg.keyword .. "|r.")
+            GuildOS:Print(L["Current keyword: |cffFFFFFF"] .. cfg.keyword .. "|r.")
         end
     elseif sub == "minlevel" then
         local n = self:SetAutoInviteMinLevel(cfg, args[2])
         if n then
-            BRutus:Print(string.format(L["Auto-invite min level set to |cffFFFFFF%d|r."], n))
+            GuildOS:Print(string.format(L["Auto-invite min level set to |cffFFFFFF%d|r."], n))
         else
-            BRutus:Print(string.format(L["Usage: /gos autoinvite minlevel <0-%d>"], BRutus.Client.maxLevel))
+            GuildOS:Print(string.format(L["Usage: /gos autoinvite minlevel <0-%d>"], GuildOS.Client.maxLevel))
         end
     elseif sub == "class" then
         local op, cls = args[2], args[3]
         if op == "clear" then
             cfg.classes = {}
-            BRutus:Print(L["Auto-invite class filter cleared."])
+            GuildOS:Print(L["Auto-invite class filter cleared."])
         elseif (op == "add" or op == "remove") and cls then
             if self:SetAutoInviteClass(cfg, cls, op == "add") then
-                BRutus:Print(L["Auto-invite class filter updated."])
+                GuildOS:Print(L["Auto-invite class filter updated."])
             else
-                BRutus:Print(L["Unknown class: "] .. cls .. " (" .. table.concat(self.CLASSES, ", ") .. ")")
+                GuildOS:Print(L["Unknown class: "] .. cls .. " (" .. table.concat(self.CLASSES, ", ") .. ")")
             end
         else
-            BRutus:Print(L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"])
+            GuildOS:Print(L["Usage: /gos autoinvite class <add|remove|clear> <CLASS>"])
         end
     elseif sub == "fallback" then
         if self:SetAutoInviteFallback(cfg, args[2]) then
-            BRutus:Print(L["When /who cannot confirm a player: |cffFFFFFF"] .. cfg.whoFallback .. "|r")
+            GuildOS:Print(L["When /who cannot confirm a player: |cffFFFFFF"] .. cfg.whoFallback .. "|r")
         else
-            BRutus:Print(L["Usage: /gos autoinvite fallback <skip|invite>"])
+            GuildOS:Print(L["Usage: /gos autoinvite fallback <skip|invite>"])
         end
     else
         local st = cfg.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
@@ -1481,11 +1481,11 @@ function Recruitment:HandleAutoInviteCommand(args)
         for _, c in ipairs(self.CLASSES) do
             if cfg.classes[c] then classes[#classes + 1] = c end
         end
-        BRutus:Print(L["Auto-invite: "] .. st .. L[" · keyword: |cffFFFFFF"] .. cfg.keyword ..
+        GuildOS:Print(L["Auto-invite: "] .. st .. L[" · keyword: |cffFFFFFF"] .. cfg.keyword ..
             L["|r · min level: |cffFFFFFF"] .. tostring(cfg.minLevel) .. "|r · " .. L["classes: "] ..
             (#classes > 0 and table.concat(classes, ", ") or L["any"]) .. " · " .. L["unconfirmed: "] .. cfg.whoFallback)
-        BRutus:Print(L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|fallback|status>"])
-        BRutus:Print(string.format(L["Also in the %s tab, under %s."], L["Recruitment"], L["Recruiting"]))
+        GuildOS:Print(L["Usage: /gos autoinvite <on|off|keyword|minlevel|class|fallback|status>"])
+        GuildOS:Print(string.format(L["Also in the %s tab, under %s."], L["Recruitment"], L["Recruiting"]))
     end
 end
 
@@ -1520,9 +1520,9 @@ function Recruitment:RegisterWelcomeEvent()
     end)
 
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")
+    GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")
     frame:SetScript("OnEvent", function(_, event, msg)
-        if BRutus.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
+        if GuildOS.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if event ~= "CHAT_MSG_SYSTEM" then return end
         if not IsInGuild() then return end
         if not Recruitment._rosterReady then return end
@@ -1544,16 +1544,16 @@ function Recruitment:RegisterWelcomeEvent()
         if not newMember then return end
 
         -- Don't act on our own join.
-        local myName = BRutus.Compat.PlayerName()
+        local myName = GuildOS.Compat.PlayerName()
         if newMember == myName then return end
 
         -- Credit a recruitment join to whoever invited this player. This runs
         -- regardless of the welcome feature (engagement tracking is independent);
         -- RecordJoin only credits when THIS client has a matching pending invite.
-        if BRutus.RecruitEngagement then BRutus.RecruitEngagement:RecordJoin(newMember) end
+        if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordJoin(newMember) end
 
         -- The welcome message itself is opt-in and gated separately.
-        if not BRutus.db.recruitment.welcomeEnabled then return end
+        if not GuildOS.db.recruitment.welcomeEnabled then return end
 
         -- Dedup: if already handled on this client, skip
         if Recruitment._welcomedRecently[newMember] then return end
@@ -1572,9 +1572,9 @@ function Recruitment:RegisterWelcomeEvent()
         Recruitment._welcomeIntents[newMember] = Recruitment._welcomeIntents[newMember] or {}
         Recruitment._welcomeIntents[newMember][myName] = true
 
-        if BRutus.CommSystem then
-            BRutus.CommSystem:SendMessage(
-                BRutus.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "NORMAL")
+        if GuildOS.CommSystem then
+            GuildOS.CommSystem:SendMessage(
+                GuildOS.CommSystem.MSG_TYPES.WELCOME_INTENT, newMember, nil, "NORMAL")
         end
 
         C_Timer.After(2, function()
@@ -1591,22 +1591,22 @@ function Recruitment:RegisterWelcomeEvent()
 
             Recruitment._welcomedRecently[newMember .. "_sent"] = true
 
-            if BRutus.CommSystem then
-                BRutus.CommSystem:SendMessage(
-                    BRutus.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "NORMAL")
+            if GuildOS.CommSystem then
+                GuildOS.CommSystem:SendMessage(
+                    GuildOS.CommSystem.MSG_TYPES.WELCOME_CLAIM, newMember, nil, "NORMAL")
             end
 
-            local settings = BRutus.db.recruitment
+            local settings = GuildOS.db.recruitment
             local welcomeMsg = settings.welcomeMessage
             if welcomeMsg and welcomeMsg ~= "" then
-                if BRutus.Compat.NeedsClick() then
+                if GuildOS.Compat.NeedsClick() then
                     -- Forever drops a line sent from this timer: the officer's click sends it (#61).
                     -- The claim above already went out, so the other officers stand down: the
                     -- popup stays up until this officer sends or dismisses it.
                     Recruitment:QueueWelcome(newMember)
                 else
                     SendChatMessage(welcomeMsg, "GUILD")
-                    BRutus:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
+                    GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
                 end
             end
         end)

@@ -5,17 +5,17 @@
 -- old GuildManager action log. Cold-login backfill is a tracked follow-up.
 ----------------------------------------------------------------------
 local RosterLog = {}
-BRutus.RosterLog = RosterLog
+GuildOS.RosterLog = RosterLog
 
 local CAP = 1000
 local MAX_AGE = 90 * 86400
 local BACKFILL_N = 25   -- cold-sync re-broadcast is capped to the last N events
 
 function RosterLog:Initialize()
-    BRutus.db.rosterLog = BRutus.db.rosterLog or { events = {} }
-    BRutus.db.rosterLog.events = BRutus.db.rosterLog.events or {}
-    if BRutus.SyncService then
-        BRutus.SyncService:On("audit", function(env) RosterLog:OnSync(env) end)
+    GuildOS.db.rosterLog = GuildOS.db.rosterLog or { events = {} }
+    GuildOS.db.rosterLog.events = GuildOS.db.rosterLog.events or {}
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("audit", function(env) RosterLog:OnSync(env) end)
     end
     self:_MigrateManagementLog()
     self:_SetupDetection()
@@ -72,7 +72,7 @@ function RosterLog:_ParseSystem(msg)
 end
 
 function RosterLog:_Insert(evt, store)
-    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events)
+    store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events)
     if not store or not evt then return false end
     evt.timestamp = evt.timestamp or GetServerTime()
     evt.id = evt.id or self:_EventId(evt.action, evt.target, evt.author, evt.timestamp)
@@ -85,7 +85,7 @@ function RosterLog:_Insert(evt, store)
 end
 
 function RosterLog:Prune(now, store)
-    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events)
+    store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events)
     if not store then return 0 end
     now = now or GetServerTime()
     local removed = 0
@@ -98,7 +98,7 @@ function RosterLog:Prune(now, store)
 end
 
 function RosterLog:GetLog(store)
-    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events) or {}
+    store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events) or {}
     local out = {}
     for i = #store, 1, -1 do out[#out + 1] = store[i] end
     return out
@@ -107,7 +107,7 @@ end
 -- Tally join/leave/kick events strictly after `since` (a server timestamp).
 -- Used to feed the login digest with audit counts.
 function RosterLog:CountsSince(since, store)
-    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events) or {}
+    store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events) or {}
     local c = { join = 0, leave = 0, kick = 0 }
     for _, e in ipairs(store) do
         if (e.timestamp or 0) > (since or 0) and c[e.action] ~= nil then
@@ -121,7 +121,7 @@ end
 -- cold-sync backfill so a late officer converges on the tail of the log
 -- instead of us re-broadcasting the whole history every login.
 function RosterLog:_Recent(store, n)
-    store = store or (BRutus.db.rosterLog and BRutus.db.rosterLog.events) or {}
+    store = store or (GuildOS.db.rosterLog and GuildOS.db.rosterLog.events) or {}
     n = n or BACKFILL_N
     local out = {}
     local first = math.max(1, #store - n + 1)
@@ -132,9 +132,9 @@ function RosterLog:_Recent(store, n)
 end
 
 function RosterLog:_MigrateManagementLog()
-    if BRutus.db.rosterLog.migrated then return end
-    BRutus.db.rosterLog.migrated = true
-    local old = BRutus.db.managementLog
+    if GuildOS.db.rosterLog.migrated then return end
+    GuildOS.db.rosterLog.migrated = true
+    local old = GuildOS.db.managementLog
     if type(old) == "table" then
         for _, e in ipairs(old) do
             self:_Insert({
@@ -146,8 +146,8 @@ function RosterLog:_MigrateManagementLog()
 end
 
 function RosterLog:Clear()
-    if not BRutus:IsOfficer() then return end
-    BRutus.db.rosterLog.events = {}
+    if not GuildOS:IsOfficer() then return end
+    GuildOS.db.rosterLog.events = {}
     self:Refresh()
 end
 
@@ -178,16 +178,16 @@ function RosterLog:Record(action, target, author, detail)
 end
 
 function RosterLog:Refresh()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 function RosterLog:_SetupDetection()
     self._ready = false
-    BRutus.Compat.After(8, function() RosterLog._ready = true end)
+    GuildOS.Compat.After(8, function() RosterLog._ready = true end)
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_SYSTEM")
     f:SetScript("OnEvent", function(_, _, msg)
-        if BRutus.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
+        if GuildOS.Compat.IsSecret(msg) then return end  -- chat in lockdown: nothing readable
         if not RosterLog._ready then return end
         local evt = RosterLog:_ParseSystem(msg)
         if evt then RosterLog:Add(evt) end
@@ -195,9 +195,9 @@ function RosterLog:_SetupDetection()
 end
 
 function RosterLog:_Publish(evt)
-    if not BRutus.SyncService or not BRutus:IsOfficer() then return end
+    if not GuildOS.SyncService or not GuildOS:IsOfficer() then return end
     -- broadcast; convergence is by id-dedup on receipt (no rev, no ACK).
-    BRutus.SyncService:Publish("audit", "add", { evt = evt })
+    GuildOS.SyncService:Publish("audit", "add", { evt = evt })
 end
 
 -- Cold-sync backfill: re-broadcast the last BACKFILL_N audit events so an
@@ -207,7 +207,7 @@ end
 -- missed. No revision is involved and none is bumped. Bounded by _Recent to
 -- avoid dumping unbounded history. Officers only. Called from HandleRequest.
 function RosterLog:Backfill()
-    if not BRutus.SyncService or not BRutus:IsOfficer() then return end
+    if not GuildOS.SyncService or not GuildOS:IsOfficer() then return end
     local recent = self:_Recent()
     for i = 1, #recent do
         self:_Publish(recent[i])
@@ -218,8 +218,8 @@ end
 -- Self-tests
 ----------------------------------------------------------------------
 function RosterLog:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("rosterlog.parse_join", function()
         local e = RosterLog:_ParseSystem("Grefer has joined the guild.")
         if not e or e.action ~= "join" or e.target ~= "Grefer" then return false, "join" end

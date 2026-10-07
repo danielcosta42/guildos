@@ -2,11 +2,11 @@
 -- Guild OS - Raid Tools Panel
 -- "Raid Tools" tab with sub-tabs: Composition (class breakdown + buff
 -- coverage) and Cooldowns (key raid CD coverage). Data comes from
--- BRutus.RaidTools (Rule 3 / Rule 10).
+-- GuildOS.RaidTools (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local SUBTABS = {
@@ -66,8 +66,8 @@ end
 local function ProvidersText(providers)
     local parts = {}
     for _, cf in ipairs(providers) do
-        local cc = BRutus.ClassColors[cf] or C.silver
-        parts[#parts + 1] = BRutus:ColorText(ClassName(cf), cc.r, cc.g, cc.b)
+        local cc = GuildOS.ClassColors[cf] or C.silver
+        parts[#parts + 1] = GuildOS:ColorText(ClassName(cf), cc.r, cc.g, cc.b)
     end
     return table.concat(parts, ", ")
 end
@@ -88,7 +88,7 @@ local function BuildCompSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local RT = BRutus.RaidTools
+        local RT = GuildOS.RaidTools
         local list, label = RT:GetSource()
         local counts = RT:GetClassCounts(list)
         summary:SetText(string.format(L["%s  \226\128\148  %d players"], label, #list))
@@ -101,7 +101,7 @@ local function BuildCompSub(panel)
             local c = counts[classFile] or 0
             if c > 0 then
                 local row = MakeRow(content, yOff, yOff / (ROW_H + 2))
-                local cc = BRutus.ClassColors[classFile] or C.silver
+                local cc = GuildOS.ClassColors[classFile] or C.silver
                 local nameFS = UI:CreateText(row, ClassName(classFile), 11, cc.r, cc.g, cc.b)
                 nameFS:SetPoint("LEFT", 8, 0)
                 local cntFS = UI:CreateText(row, tostring(c), 11, C.white.r, C.white.g, C.white.b)
@@ -149,7 +149,7 @@ local function BuildCdSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local RT = BRutus.RaidTools
+        local RT = GuildOS.RaidTools
         local list, label = RT:GetSource()
         local counts = RT:GetClassCounts(list)
         summary:SetText(string.format(L["%s  \226\128\148  %d players"], label, #list))
@@ -180,7 +180,7 @@ end
 ----------------------------------------------------------------------
 -- Panel assembly
 ----------------------------------------------------------------------
-function BRutus:CreateRaidToolsPanel(parent, _mainFrame)
+function GuildOS:CreateRaidToolsPanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "comp"
 
@@ -196,12 +196,12 @@ function BRutus:CreateRaidToolsPanel(parent, _mainFrame)
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     parent.SelectSub = selectSub
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
 
     local x = 0

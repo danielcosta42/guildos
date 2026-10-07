@@ -71,10 +71,10 @@ local function load(game)
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")
   dofile(ADDON .. "/Modules/RaidTracker.lua")
-  BRutus.db = { settings = {}, members = {}, altLinks = {}, cores = {},
+  GuildOS.db = { settings = {}, members = {}, altLinks = {}, cores = {},
                 raidTracker = { sessions = {}, attendance = {}, deletedSessions = {}, currentGroupTag = "" } }
-  BRutus.CommSystem = { MSG_TYPES = { RAID_DATA = "RD" }, SendMessage = function(_, _, data) sentData = data end }
-  local RT = BRutus.RaidTracker
+  GuildOS.CommSystem = { MSG_TYPES = { RAID_DATA = "RD" }, SendMessage = function(_, _, data) sentData = data end }
+  local RT = GuildOS.RaidTracker
   RT.CheckPlayerConsumes = function() return false end
   RT.BroadcastRaidData = RT.BroadcastRaidData
   return RT
@@ -83,10 +83,10 @@ end
 -- A night of `size` players in `instanceID`, everybody there all night.
 local function night(RT, startTime, instanceID, size, players)
   local members = {}
-  for _, p in ipairs(players) do members[BRutus:GetPlayerKey(p)] = { name = p, hasConsumes = true } end
+  for _, p in ipairs(players) do members[GuildOS:GetPlayerKey(p)] = { name = p, hasConsumes = true } end
   local set = {}
   for k in pairs(members) do set[k] = true end
-  BRutus.db.raidTracker.sessions[startTime] = {
+  GuildOS.db.raidTracker.sessions[startTime] = {
     instanceID = instanceID, name = "Raid", size = size, groupTag = "", startTime = startTime,
     endTime = startTime + 3 * 3600, isGuildRaid = true, players = set, encounters = {},
     snapshots = { { time = startTime, members = members }, { time = startTime + 3 * 3600, members = members } },
@@ -142,11 +142,11 @@ night(RT, NOW + WEEK, 9001, 20, { "Ann" })
 night(RT, NOW + 2 * WEEK, 9010, 10, { "Bob" })
 night(RT, NOW + 3 * WEEK, 9040, 40, { "Ann", "Bob" })
 RT:RebuildAttendanceFromSessions()
-local att = BRutus.db.raidTracker.attendance[""]
-local ann, bob = att[BRutus:GetPlayerKey("Ann")], att[BRutus:GetPlayerKey("Bob")]
+local att = GuildOS.db.raidTracker.attendance[""]
+local ann, bob = att[GuildOS:GetPlayerKey("Ann")], att[GuildOS:GetPlayerKey("Bob")]
 check(RT:GetTotal25ManSessions() == 3, "forever: the 20s and the 40 are the progression nights, the 10 is not")
 check(ann.raids25 == 3 and bob.raids25 == 2 and bob.raids == 3, "forever: everybody's progression count leaves the 10 out")
-check(RT:GetAttendance25ManPercent(BRutus:GetPlayerKey("Ann")) == 100 and RT:GetAttendance25ManPercent(BRutus:GetPlayerKey("Bob")) == 67,
+check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Ann")) == 100 and RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Bob")) == 67,
   "forever: and so does the percentage")
 local recent = RT:GetRecentSessions(10, true)
 check(#recent == 3, "forever: the progression filter shows the 20s and the 40")
@@ -155,16 +155,16 @@ check(#recent == 3, "forever: the progression filter shows the 20s and the 40")
 RT:BroadcastRaidData()
 local payload = store[tonumber(sentData:match("#(%d+)"))]
 check(payload.sessions[NOW].size == 20 and payload.sessions[NOW + 2 * WEEK].size == 10, "forever: the broadcast carries each night's size")
-local mine = BRutus.db.raidTracker
+local mine = GuildOS.db.raidTracker
 RT = load("forever")
 RT:HandleIncoming(sentData)
-check(BRutus.db.raidTracker.sessions[NOW] and BRutus.db.raidTracker.sessions[NOW].size == 20, "forever: an officer who receives it keeps it")
-check(mine ~= BRutus.db.raidTracker, "the receiving officer is another database")
+check(GuildOS.db.raidTracker.sessions[NOW] and GuildOS.db.raidTracker.sessions[NOW].size == 20, "forever: an officer who receives it keeps it")
+check(mine ~= GuildOS.db.raidTracker, "the receiving officer is another database")
 -- An officer on an older addon relays the night without its size or its pug mark; the copy
 -- that has them, heard later, fills them in.
 RT = load("forever")
-BRutus.db.raidTracker.sessions[NOW] = { instanceID = 9001, startTime = NOW, endTime = NOW + 3600, players = {}, encounters = {} }
-BRutus.db.raidTracker.sessions[NOW + WEEK] = { instanceID = 9001, size = 20, startTime = NOW + WEEK, players = {}, encounters = {} }
+GuildOS.db.raidTracker.sessions[NOW] = { instanceID = 9001, startTime = NOW, endTime = NOW + 3600, players = {}, encounters = {} }
+GuildOS.db.raidTracker.sessions[NOW + WEEK] = { instanceID = 9001, size = 20, startTime = NOW + WEEK, players = {}, encounters = {} }
 RT:HandleIncoming((function()
   store[#store + 1] = { sessions = {
     [NOW] = { instanceID = 9001, size = 20, isGuildRaid = false, startTime = NOW, players = {}, encounters = {} },
@@ -172,44 +172,44 @@ RT:HandleIncoming((function()
   } }
   return "#" .. #store
 end)())
-local relayed = BRutus.db.raidTracker.sessions[NOW]
+local relayed = GuildOS.db.raidTracker.sessions[NOW]
 check(relayed.size == 20 and relayed.isGuildRaid == false, "forever: a copy that lost the size and the pug mark gets them back")
-check(BRutus.db.raidTracker.sessions[NOW + WEEK].size == 20, "forever: a size already known is not replaced")
+check(GuildOS.db.raidTracker.sessions[NOW + WEEK].size == 20, "forever: a size already known is not replaced")
 RT = load("forever")
 night(RT, NOW, 9001, 20, { "Ann" })
-BRutus.db.raidTracker.sessions[NOW].isGuildRaid = false
+GuildOS.db.raidTracker.sessions[NOW].isGuildRaid = false
 RT:BroadcastRaidData()
 check(store[tonumber(sentData:match("#(%d+)"))].sessions[NOW].isGuildRaid == false, "the broadcast carries the pug mark")
 
 RT = load("forever")
-BRutus.db.raidTracker.sessions[NOW] = { instanceID = 9001, size = 20, startTime = NOW, endTime = NOW + 600, players = {}, encounters = {} }
-BRutus.db.raidTracker.sessions[NOW + 900] = { instanceID = 9001, size = 0, startTime = NOW + 900, endTime = NOW + 3600,
+GuildOS.db.raidTracker.sessions[NOW] = { instanceID = 9001, size = 20, startTime = NOW, endTime = NOW + 600, players = {}, encounters = {} }
+GuildOS.db.raidTracker.sessions[NOW + 900] = { instanceID = 9001, size = 0, startTime = NOW + 900, endTime = NOW + 3600,
   players = {}, encounters = {} }
 RT:MergeDuplicateSessions()
 local only
-for _, s in pairs(BRutus.db.raidTracker.sessions) do only = s end
+for _, s in pairs(GuildOS.db.raidTracker.sessions) do only = s end
 check(only.size == 20, "forever: a merge keeps the size the first half had, over a 0")
 RT = load("forever")
-BRutus.db.raidTracker.sessions[NOW] = { instanceID = 9001, size = 0, startTime = NOW, endTime = NOW + 600, players = {}, encounters = {} }
-BRutus.db.raidTracker.sessions[NOW + 900] = { instanceID = 9001, size = 20, startTime = NOW + 900, endTime = NOW + 3600,
+GuildOS.db.raidTracker.sessions[NOW] = { instanceID = 9001, size = 0, startTime = NOW, endTime = NOW + 600, players = {}, encounters = {} }
+GuildOS.db.raidTracker.sessions[NOW + 900] = { instanceID = 9001, size = 20, startTime = NOW + 900, endTime = NOW + 3600,
   players = {}, encounters = {} }
 RT:MergeDuplicateSessions()
-for _, s in pairs(BRutus.db.raidTracker.sessions) do only = s end
+for _, s in pairs(GuildOS.db.raidTracker.sessions) do only = s end
 check(only.size == 20, "forever: and the second half's, when the first half's was a 0")
 RT = load("forever")
-BRutus.db.raidTracker.sessions[NOW] = { instanceID = 9001, startTime = NOW, endTime = NOW + 600, players = {}, encounters = {} }
-BRutus.db.raidTracker.sessions[NOW + 900] = { instanceID = 9001, size = 20, startTime = NOW + 900, endTime = NOW + 3600,
+GuildOS.db.raidTracker.sessions[NOW] = { instanceID = 9001, startTime = NOW, endTime = NOW + 600, players = {}, encounters = {} }
+GuildOS.db.raidTracker.sessions[NOW + 900] = { instanceID = 9001, size = 20, startTime = NOW + 900, endTime = NOW + 3600,
   players = {}, encounters = {} }
 RT:MergeDuplicateSessions()
 local merged, n = nil, 0
-for _, s in pairs(BRutus.db.raidTracker.sessions) do merged, n = s, n + 1 end
+for _, s in pairs(GuildOS.db.raidTracker.sessions) do merged, n = s, n + 1 end
 check(n == 1 and merged.size == 20, "forever: two halves of one night merged keep the size either half had")
 
 RT = load("forever")
 night(RT, NOW, 9001, 20, { "Ann" })
 night(RT, NOW + 3600, 9001, nil, { "Ann" })   -- the same lockout, a recording with no size
 RT:RebuildAttendanceFromSessions()
-check(BRutus.db.raidTracker.attendance[""][BRutus:GetPlayerKey("Ann")].raids25 == 1,
+check(GuildOS.db.raidTracker.attendance[""][GuildOS:GetPlayerKey("Ann")].raids25 == 1,
   "forever: a lockout counts when any of its recordings has the size, whichever came last")
 
 -- The screens say 20+.
@@ -239,7 +239,7 @@ RT = load("anniversary")
 night(RT, NOW, 565, nil, { "Ann" })
 night(RT, NOW + WEEK, 532, nil, { "Ann" })
 RT:RebuildAttendanceFromSessions()
-check(RT:GetTotal25ManSessions() == 1 and BRutus.db.raidTracker.attendance[""][BRutus:GetPlayerKey("Ann")].raids25 == 1,
+check(RT:GetTotal25ManSessions() == 1 and GuildOS.db.raidTracker.attendance[""][GuildOS:GetPlayerKey("Ann")].raids25 == 1,
   "anniversary: Gruul counts and Karazhan does not, as before")
 
 print(("forever-progression: %d checks passed"):format(checks))

@@ -6,12 +6,12 @@
 -- iLvl + spec read-only when that player DOES run the addon.
 -- Backed by GuildOS.RaiderRoster (officer-synced).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
-local function RR() return BRutus.RaiderRoster end
+local function RR() return GuildOS.RaiderRoster end
 
 local ROLE_COL = {
     TANK   = { r = 0.42, g = 0.62, b = 0.96 },
@@ -43,11 +43,11 @@ StaticPopupDialogs["GUILDOS_RAIDER_NOTE"] = {
     -- The box through Compat: WoW: Forever's popup has no `editBox` (issue #49).
     OnShow = function(self, data)
         local rec = data and RR():Get(data)
-        local box = BRutus.Compat.PopupEditBox(self)
+        local box = GuildOS.Compat.PopupEditBox(self)
         if box then box:SetText((rec and rec.note) or ""); box:HighlightText() end
     end,
     OnAccept = function(self, data)
-        local box = BRutus.Compat.PopupEditBox(self)
+        local box = GuildOS.Compat.PopupEditBox(self)
         if data and box then RR():SetNote(data, box:GetText()) end
     end,
     EditBoxOnEnterPressed = function(editBox)
@@ -70,12 +70,12 @@ local function roleName(r)
     if r == "HEALER" then return L["Healer"] end
     return L["DPS"]
 end
-function BRutus:CreateRolePicker(parent)
+function GuildOS:CreateRolePicker(parent)
     local pick = CreateFrame("Frame", nil, parent)
     pick:SetSize(200, 24)
     local btns = {}
     local function refresh()
-        local roles = BRutus:GetMyRoles()
+        local roles = GuildOS:GetMyRoles()
         for _, b in ipairs(btns) do
             local rc = ROLE_COL[b.role]
             if roles[b.role] then
@@ -94,9 +94,9 @@ function BRutus:CreateRolePicker(parent)
         x = x + b:GetWidth() + 4  -- a role its label grew pushes the next one (issue #28)
         b.role = role
         b:SetScript("OnClick", function()
-            local roles = BRutus:GetMyRoles()
+            local roles = GuildOS:GetMyRoles()
             roles[role] = (not roles[role]) and true or nil
-            BRutus:SetMyRoles(roles)
+            GuildOS:SetMyRoles(roles)
             refresh()
         end)
         btns[i] = b
@@ -109,7 +109,7 @@ end
 ----------------------------------------------------------------------
 -- Build the raiders panel; return its refresh fn.
 ----------------------------------------------------------------------
-function BRutus:CreateRaiderPanel(panel, _mainFrame)
+function GuildOS:CreateRaiderPanel(panel, _mainFrame)
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
@@ -203,7 +203,7 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
 
     ------------------------------------------------------------------
     function f.Refresh()
-        local isOfficer = BRutus:IsOfficer()
+        local isOfficer = GuildOS:IsOfficer()
         local child2 = f.child
         child2:SetWidth(f.holder:GetWidth())
 
@@ -212,10 +212,10 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
         local n = GetNumGuildMembers() or 0
         for i = 1, n do
             local name, _, _, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
-            if name and (level or 0) >= BRutus.Client.maxLevel then
+            if name and (level or 0) >= GuildOS.Client.maxLevel then
                 local short = name:match("^([^-]+)") or name
                 local realm = name:match("-(.+)$") or GetRealmName()
-                list[#list + 1] = { name = short, key = BRutus:GetPlayerKey(short, realm), class = classFile, online = online }
+                list[#list + 1] = { name = short, key = GuildOS:GetPlayerKey(short, realm), class = classFile, online = online }
             end
         end
         table.sort(list, function(a, b) return a.name:lower() < b.name:lower() end)
@@ -233,7 +233,7 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
             row:Show()
 
             local rec = RR():Get(m.key) or {}
-            local mem = BRutus.db.members and BRutus.db.members[m.key]
+            local mem = GuildOS.db.members and GuildOS.db.members[m.key]
 
             -- Tally for the KPI band. Roles are effective (officer override or
             -- the player's own self-declared roles).
@@ -245,7 +245,7 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
             if (rec.gear or "") == "ready" then gReady = gReady + 1 end
 
             -- Name (class-colored; dim when offline)
-            local cr, cg, cb = BRutus:GetClassColor(m.class)
+            local cr, cg, cb = GuildOS:GetClassColor(m.class)
             if not m.online then cr, cg, cb = cr * 0.55, cg * 0.55, cb * 0.55 end
             row.nameFS:SetText(m.name); row.nameFS:SetTextColor(cr, cg, cb)
 
@@ -332,7 +332,7 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
 
         if #list == 0 then
             if not f.emptyFS then
-                f.emptyFS = UI:CreateText(child2, string.format(L["No level-%d members found."], BRutus.Client.maxLevel), 11, C.silver.r, C.silver.g, C.silver.b)
+                f.emptyFS = UI:CreateText(child2, string.format(L["No level-%d members found."], GuildOS.Client.maxLevel), 11, C.silver.r, C.silver.g, C.silver.b)
                 f.emptyFS:SetPoint("TOPLEFT", 6, -6)
             end
             f.emptyFS:Show()
@@ -343,7 +343,7 @@ function BRutus:CreateRaiderPanel(panel, _mainFrame)
 
     -- Live refresh on synced edits + when the tab is shown.
     if RR() then RR().uiRefresh = function() if panel:IsShown() then f.Refresh() end end end
-    panel:HookScript("OnShow", function() BRutus:SafeCall(f.Refresh) end)
+    panel:HookScript("OnShow", function() GuildOS:SafeCall(f.Refresh) end)
 
     return f.Refresh
 end

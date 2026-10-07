@@ -4,7 +4,7 @@
 -- how a button bar wraps. The three resolvers are pure functions of
 -- their arguments so /gos selftest can exercise them with no frames.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
+local UI = GuildOS.UI
 
 ----------------------------------------------------------------------
 -- How many of these columns fit in `width`, and where does each go?
@@ -216,7 +216,7 @@ function UI:MakeResponsive(container, layoutFn)
         container.__layoutPending = false
         local w, h = container:GetWidth(), container:GetHeight()
         if not w or not h or w < 1 or h < 1 then return end
-        BRutus:SafeCall(function() layoutFn(container, w, h) end)
+        GuildOS:SafeCall(function() layoutFn(container, w, h) end)
     end
 
     container:SetScript("OnSizeChanged", function(self)
@@ -349,8 +349,8 @@ function UI:FitTabs(widths, available, gap, moreW, active)
 end
 
 function UI:_RegisterLayoutTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
 
     -- The roster spec from the design doc, section 5.3.
     local ROSTER = {

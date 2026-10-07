@@ -59,7 +59,7 @@ the same files out of the local CASC storage (`E:\World of Warcraft\Data`), with
 - **UI experience presets.** `C_GameRules` has `SelectClassicExperiencePreset` and `SelectModernExperiencePreset`:
   the player can choose a classic or a modern UI.
 - **No detection API.** There is no `C_GameRules.IsCamelot`, and `WOW_PROJECT_ID` has no Forever constant in the
-  UI code that could be read. `BRutus.Client` keeps reading the interface number.
+  UI code that could be read. `GuildOS.Client` keeps reading the interface number.
 - **Interface: 16001**, by the `GetBuildInfo` rule for 1.60.1 (`%d%02d%02d`). No Blizzard TOC carries an
   `## Interface` line, and the client only tells an addon already running. What it is published on (#20):
   - the client's own crash reports, `_classic_beta_/Errors/*.txt`, carry `<Exception.Branch> 1.60.1` and
@@ -113,7 +113,7 @@ indexing or doing arithmetic with it raises.
   copy the change there.
 - **Two small ones:** `RecipeTracker:ScanCraft` checks `GetCraftInfo` too, and `ChatTweaks` checks
   `ChatFrame_AddMessageEventFilter` before registering.
-- **Names with a surname, in commands (issue #49).** `/guildos note <name> <text>` read the name as the first word, so a Forever name ("Lethaniel Blightwood") lost its surname into the note. `BRutus:SplitNameAndText` takes the first two words when they are somebody on the roster, and `BRutus:RosterKey` keys the note the way the roster frame does. **The popup's edit box** is `EditBox` / `GetEditBox()` on Forever and `editBox` is nil: `Compat.PopupEditBox` reads either.
+- **Names with a surname, in commands (issue #49).** `/guildos note <name> <text>` read the name as the first word, so a Forever name ("Lethaniel Blightwood") lost its surname into the note. `GuildOS:SplitNameAndText` takes the first two words when they are somebody on the roster, and `GuildOS:RosterKey` keys the note the way the roster frame does. **The popup's edit box** is `EditBox` / `GetEditBox()` on Forever and `editBox` is nil: `Compat.PopupEditBox` reads either.
 - **The test.** `tools/secret-values.lua` (luajit, 51 checks) loads the real Core, Compat, Utils and eleven modules
   under a stubbed client, with a secret that raises on every use. Each handler also gets a readable line, so one that
   returns unconditionally fails too.
@@ -174,7 +174,7 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
     ChallengeMode, PvPMatch, Map or Chat) in `GuildOSDB.probeChat`.
   - **Every block is named:** `ADDON_ACTION_BLOCKED`/`FORBIDDEN` (addon and function) and `MACRO_ACTION_BLOCKED`/
     `FORBIDDEN` (function) go to `/guildos errors`, once per event, addon and function a session.
-- **The level cap is 60.** `BRutus.Client.maxLevel` (70 on Anniversary) says it, and every check that means "the top
+- **The level cap is 60.** `GuildOS.Client.maxLevel` (70 on Anniversary) says it, and every check that means "the top
   level" reads it: the dashboard's raid-ready count, the roster's level colour, the Raiders panel, the top level
   bracket, the ding milestone and the recruit scan (issue #53). Before that, all of them assumed 70.
 

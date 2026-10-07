@@ -4,26 +4,26 @@
 -- template, capture replies. Officer-gated, OFF by default, fail-safe.
 ----------------------------------------------------------------------
 local RecruitScanner = {}
-BRutus.RecruitScanner = RecruitScanner
-local L = BRutus.L
+GuildOS.RecruitScanner = RecruitScanner
+local L = GuildOS.L
 
 RecruitScanner.DEFAULTS = {
     template    = "Hi [player], we're recruiting — whisper me if interested!",
     minLevel    = 0,
-    maxLevel    = BRutus.Client.maxLevel,
+    maxLevel    = GuildOS.Client.maxLevel,
     classes     = {},     -- set { WARRIOR=true }; empty = any
     batchMax    = 10,
     cooldownSec = 1800,
 }
 
 function RecruitScanner:Initialize()
-    BRutus.db.recruitScanner = BRutus.db.recruitScanner or {}
+    GuildOS.db.recruitScanner = GuildOS.db.recruitScanner or {}
     for k, v in pairs(self.DEFAULTS) do
-        if BRutus.db.recruitScanner[k] == nil then
-            BRutus.db.recruitScanner[k] = (type(v) == "table") and BRutus:DeepCopy(v) or v
+        if GuildOS.db.recruitScanner[k] == nil then
+            GuildOS.db.recruitScanner[k] = (type(v) == "table") and GuildOS:DeepCopy(v) or v
         end
     end
-    BRutus.db.recruitScanner.inbox = BRutus.db.recruitScanner.inbox or {}
+    GuildOS.db.recruitScanner.inbox = GuildOS.db.recruitScanner.inbox or {}
     self._results = {}
     self._contactCd = {}
     self._RegisterEvents = self._RegisterEvents or function() end
@@ -59,32 +59,32 @@ end
 -- /who scan (fail-safe)
 ----------------------------------------------------------------------
 function RecruitScanner:Scan(onDone)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     if self._scanBusy then return end
     self._scanBusy = true
     self._results = {}
     self._whisperQueue = nil    -- a new scan drops a Forever batch left half sent (issue #61)
-    local cfg = BRutus.db.recruitScanner
+    local cfg = GuildOS.db.recruitScanner
     if not self._whoFrame then
         self._whoFrame = CreateFrame("Frame")
         self._whoFrame:SetScript("OnEvent", function() RecruitScanner:_OnWhoResult() end)
     end
-    BRutus.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
+    GuildOS.Compat.RegisterEvent(self._whoFrame, "WHO_LIST_UPDATE")
     self._onScanDone = onDone
-    BRutus.Compat.SetWhoToUI(true)
+    GuildOS.Compat.SetWhoToUI(true)
     -- level-range query; Blizzard caps results (~50). classes filtered post-hoc.
     -- Capped at the game's top: a Forever client saved 70 here before it knew its cap (issue #53).
-    local cap = BRutus.Client.maxLevel
+    local cap = GuildOS.Client.maxLevel
     local q = string.format("%d-%d", (cfg.minLevel or 1) > 0 and cfg.minLevel or 1, math.min(cfg.maxLevel or cap, cap))
-    BRutus.Compat.SendWho(q)
-    BRutus.Compat.After(6, function()
+    GuildOS.Compat.SendWho(q)
+    GuildOS.Compat.After(6, function()
         if RecruitScanner._scanBusy then RecruitScanner:_FinishScan() end
     end)
 end
 
 function RecruitScanner:_OnWhoResult()
-    local cfg = BRutus.db.recruitScanner
-    local isBanned = function(n) return BRutus.BanList and BRutus.BanList:IsBanned(n) end
+    local cfg = GuildOS.db.recruitScanner
+    local isBanned = function(n) return GuildOS.BanList and GuildOS.BanList:IsBanned(n) end
     local out = {}
     if C_FriendList and C_FriendList.GetNumWhoResults then
         local n = C_FriendList.GetNumWhoResults() or 0
@@ -106,9 +106,9 @@ end
 
 function RecruitScanner:_FinishScan()
     if self._whoFrame then self._whoFrame:UnregisterEvent("WHO_LIST_UPDATE") end
-    BRutus.Compat.SetWhoToUI(false)
+    GuildOS.Compat.SetWhoToUI(false)
     self._scanBusy = nil
-    if self._onScanDone then BRutus:SafeCall(self._onScanDone) end
+    if self._onScanDone then GuildOS:SafeCall(self._onScanDone) end
 end
 
 function RecruitScanner:GetResults() return self._results or {} end
@@ -117,8 +117,8 @@ function RecruitScanner:GetResults() return self._results or {} end
 -- Mass-whisper (throttled, cooldown, batch-capped)
 ----------------------------------------------------------------------
 function RecruitScanner:WhisperSelected(names)
-    if not BRutus:IsOfficer() then return end
-    local cfg = BRutus.db.recruitScanner
+    if not GuildOS:IsOfficer() then return end
+    local cfg = GuildOS.db.recruitScanner
     local now = GetServerTime()
     local plan = {}
     for _, name in ipairs(names or {}) do
@@ -131,23 +131,23 @@ function RecruitScanner:WhisperSelected(names)
         end
     end
     if #plan == 0 then return end
-    if BRutus.Compat.NeedsClick() then
+    if GuildOS.Compat.NeedsClick() then
         -- WoW: Forever drops a whisper sent from a timer (issue #61): the first goes out in
         -- this click, the rest one per click on "Whisper next".
         self._whisperQueue = plan
         self:WhisperNext()
         if #plan > 0 then
-            BRutus:Print(string.format(BRutus.L["%d more: click Whisper next to send each one."], #plan))
+            GuildOS:Print(string.format(GuildOS.L["%d more: click Whisper next to send each one."], #plan))
         end
         return
     end
     for i, w in ipairs(plan) do
         self._contactCd[w.name] = now + (cfg.cooldownSec or 1800)
-        BRutus.Compat.After(i * 1.5, function()    -- throttle: 1.5s between whispers
+        GuildOS.Compat.After(i * 1.5, function()    -- throttle: 1.5s between whispers
             SendChatMessage(w.msg, "WHISPER", nil, w.name)
         end)
     end
-    BRutus:Print(string.format(BRutus.L["Whispering %d candidate(s)…"], #plan))
+    GuildOS:Print(string.format(GuildOS.L["Whispering %d candidate(s)…"], #plan))
 end
 
 -- Whispers waiting for a click (WoW: Forever).
@@ -161,7 +161,7 @@ function RecruitScanner:WhisperNext()
     local w = q and table.remove(q, 1)
     if w then
         SendChatMessage(w.msg, "WHISPER", nil, w.name)
-        self._contactCd[w.name] = GetServerTime() + ((BRutus.db.recruitScanner or {}).cooldownSec or 1800)
+        self._contactCd[w.name] = GetServerTime() + ((GuildOS.db.recruitScanner or {}).cooldownSec or 1800)
     end
     return self:PendingWhispers()
 end
@@ -171,19 +171,19 @@ end
 ----------------------------------------------------------------------
 function RecruitScanner:_RegisterEvents()
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_WHISPER")
     f:SetScript("OnEvent", function(_, _, msg, author)
-        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
+        if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local short = author and (author:match("^([^-]+)") or author)
         if short and RecruitScanner._contactCd[short] then
-            local inbox = BRutus.db.recruitScanner.inbox
+            local inbox = GuildOS.db.recruitScanner.inbox
             table.insert(inbox, 1, { name = short, msg = msg, ts = GetServerTime() })
             while #inbox > 200 do table.remove(inbox) end
         end
     end)
 end
 
-function RecruitScanner:GetInbox() return (BRutus.db.recruitScanner and BRutus.db.recruitScanner.inbox) or {} end
+function RecruitScanner:GetInbox() return (GuildOS.db.recruitScanner and GuildOS.db.recruitScanner.inbox) or {} end
 
 ----------------------------------------------------------------------
 -- Whisper-selected confirmation (standard Blizzard popup; avoids an
@@ -199,7 +199,7 @@ if not StaticPopupDialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] then
             if names then RecruitScanner:WhisperSelected(names) end
             -- Repaint the panel that asked, so a Forever batch shows "Whisper next" (issue #61).
             local refresh = data2 or (dlg and dlg.data2)
-            if type(refresh) == "function" then BRutus:SafeCall(refresh) end
+            if type(refresh) == "function" then GuildOS:SafeCall(refresh) end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -234,8 +234,8 @@ function RecruitScanner:BuildInto(container)
     if container._scannerBuilt then return container._scannerRefresh end
     container._scannerBuilt = true
 
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
     local f = container
     -- Forward-declared: the button handlers below close over this LOCAL
     -- (not a shared self.uiRefresh) so each container's controls always
@@ -246,14 +246,14 @@ function RecruitScanner:BuildInto(container)
     -- Officer gate is checked once at build time (mirrors Bulletin.lua's
     -- officer-only post box): non-officers get a static notice and no
     -- controls are ever created for them.
-    f.isOfficer = BRutus:IsOfficer()
+    f.isOfficer = GuildOS:IsOfficer()
     if not f.isOfficer then
         local notice = UI:CreateText(f, L["Officers only."], 12, C.silver.r, C.silver.g, C.silver.b)
         notice:SetPoint("TOPLEFT", 16, -50)
     else
         self._selected = self._selected or {}
         self._view = self._view or "results"
-        local cfg = BRutus.db.recruitScanner
+        local cfg = GuildOS.db.recruitScanner
         cfg.classes = cfg.classes or {}
 
         ------------------------------------------------------------
@@ -271,7 +271,7 @@ function RecruitScanner:BuildInto(container)
         minBox:SetText(tostring(cfg.minLevel or 0))
         minBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitMin(s)
-            cfg.minLevel = math.max(0, math.min(BRutus.Client.maxLevel, tonumber(s:GetText()) or 0))
+            cfg.minLevel = math.max(0, math.min(GuildOS.Client.maxLevel, tonumber(s:GetText()) or 0))
             s:SetText(tostring(cfg.minLevel))
             s:ClearFocus()
         end
@@ -286,7 +286,7 @@ function RecruitScanner:BuildInto(container)
         maxBox:SetAutoFocus(false)
         maxBox:SetNumeric(true)
         maxBox:SetMaxLetters(2)
-        local cap = BRutus.Client.maxLevel
+        local cap = GuildOS.Client.maxLevel
         maxBox:SetText(tostring(math.min(cfg.maxLevel or cap, cap)))
         maxBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         local function commitMax(s)
@@ -312,7 +312,7 @@ function RecruitScanner:BuildInto(container)
             classBtn.label:SetText(string.format(L["Class: %s"], classNameFor(currentClass())))
         end
         classBtn:SetScript("OnClick", function()
-            local order = (BRutus.Recruitment and BRutus.Recruitment.CLASSES) or {}
+            local order = (GuildOS.Recruitment and GuildOS.Recruitment.CLASSES) or {}
             local cur = currentClass()
             local nextCls
             if cur then
@@ -333,9 +333,9 @@ function RecruitScanner:BuildInto(container)
         scanBtn:SetScript("OnClick", function()
             RecruitScanner:Scan(function()
                 self._selected = {}
-                BRutus:SafeCall(refresh)
+                GuildOS:SafeCall(refresh)
             end)
-            BRutus:SafeCall(refresh) -- immediate busy-state repaint
+            GuildOS:SafeCall(refresh) -- immediate busy-state repaint
         end)
         f.scanBtn = scanBtn
 
@@ -358,13 +358,13 @@ function RecruitScanner:BuildInto(container)
         resultsTab:SetPoint("TOPLEFT", 12, -54)
         resultsTab:SetScript("OnClick", function()
             self._view = "results"
-            BRutus:SafeCall(refresh)
+            GuildOS:SafeCall(refresh)
         end)
         local inboxTab = UI:CreateTab(f, L["Inbox"], 90)
         inboxTab:SetPoint("LEFT", resultsTab, "RIGHT", 4, 0)
         inboxTab:SetScript("OnClick", function()
             self._view = "inbox"
-            BRutus:SafeCall(refresh)
+            GuildOS:SafeCall(refresh)
         end)
         f.tabs = { results = resultsTab, inbox = inboxTab }
 
@@ -386,7 +386,7 @@ function RecruitScanner:BuildInto(container)
             for _, cand in ipairs(results) do
                 if checked then self._selected[cand.name] = true else self._selected[cand.name] = nil end
             end
-            BRutus:SafeCall(refresh)
+            GuildOS:SafeCall(refresh)
         end
         f.selectAllCb = selectAllCb
 
@@ -438,7 +438,7 @@ function RecruitScanner:BuildInto(container)
             -- WoW: Forever: the last batch's whispers go out one per click (issue #61).
             if RecruitScanner:PendingWhispers() > 0 then
                 RecruitScanner:WhisperNext()
-                BRutus:SafeCall(refresh)
+                GuildOS:SafeCall(refresh)
                 return
             end
             local names = {}
@@ -524,7 +524,7 @@ function RecruitScanner:BuildInto(container)
                 sel.checkbox.onChanged = function(_, checked)
                     if checked then self._selected[cand.name] = true
                     else self._selected[cand.name] = nil end
-                    BRutus:SafeCall(refresh) -- live-updates "N selected" + Whisper count
+                    GuildOS:SafeCall(refresh) -- live-updates "N selected" + Whisper count
                 end
 
                 -- Every column below anchors TOPLEFT with the SAME explicit
@@ -604,8 +604,8 @@ end
 -- (see UI/RosterFrame.lua's Recruitment > Scanner sub-tab).
 ----------------------------------------------------------------------
 function RecruitScanner:Show()
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
 
     local f = self.frame
     if not f then
@@ -649,15 +649,15 @@ function RecruitScanner:Show()
 
     local refresh = self:BuildInto(self.body)
     f:Show()
-    BRutus:SafeCall(refresh)
+    GuildOS:SafeCall(refresh)
 end
 
 ----------------------------------------------------------------------
 -- Self-tests
 ----------------------------------------------------------------------
 function RecruitScanner:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("scanner.template", function()
         local s = RecruitScanner:_ExpandTemplate("Hi [player] ([level] [class])",
             { name = "Bob", level = 68, class = "MAGE" })

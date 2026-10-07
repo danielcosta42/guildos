@@ -6,9 +6,9 @@
 -- the home cards (UI/Dashboard.lua) sit beside the column; #15 redesigns
 -- them. The data half is frame-free, so tools/window-shell.lua tests it.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
 local Agora = {}
 UI.Agora = Agora
@@ -54,7 +54,7 @@ end
 -- The newest time any member's data arrived over sync, or nil.
 function Agora:LastSync()
     local newest
-    for _, m in pairs((BRutus.db and BRutus.db.members) or {}) do
+    for _, m in pairs((GuildOS.db and GuildOS.db.members) or {}) do
         local t = type(m) == "table" and m.lastSync
         if t and (not newest or t > newest) then newest = t end
     end
@@ -63,9 +63,9 @@ end
 
 -- The next raid still to start. Events made before kinds existed are raids.
 function Agora:NextRaid()
-    local cal = BRutus.Calendar
+    local cal = GuildOS.Calendar
     -- Its saved table exists only once Calendar has started.
-    if not (cal and cal.GetUpcoming and BRutus.db and BRutus.db.calendar) then return nil end
+    if not (cal and cal.GetUpcoming and GuildOS.db and GuildOS.db.calendar) then return nil end
     local t = now()
     for _, e in ipairs(cal:GetUpcoming(false)) do
         if (e.kind == nil or e.kind == "RAID") and (e.when or 0) > t then return e end
@@ -102,13 +102,13 @@ function Agora:NeedsMe()
         end
     end
 
-    local cal, raid = BRutus.Calendar, self:NextRaid()
+    local cal, raid = GuildOS.Calendar, self:NextRaid()
     if raid and cal.MyRsvp and not cal:MyRsvp(raid) and raid.when - now() <= ANSWER_WITHIN then
         add(normal, string.format(L["You have not answered: %s"], raid.title or "?"), "guild", "calendar", raid.when)
     end
 
-    if BRutus:IsOfficer() then
-        local tt = BRutus.TrialTracker
+    if GuildOS:IsOfficer() then
+        local tt = GuildOS.TrialTracker
         if tt and tt.GetActiveTrials and tt.GetDaysRemaining then
             local n = 0
             for _, trial in ipairs(tt:GetActiveTrials()) do
@@ -119,7 +119,7 @@ function Agora:NeedsMe()
             if n > 0 then add(urgent, string.format(L["%d trials expiring"], n), "trials") end
         end
 
-        local gm = BRutus.GuildManager
+        local gm = GuildOS.GuildManager
         if gm and gm.GetInactiveMembers then
             local days = gm.DEFAULT_INACTIVE_DAYS or 30
             local n = #gm:GetInactiveMembers(days)
@@ -132,7 +132,7 @@ function Agora:NeedsMe()
             if n > 0 then add(normal, string.format(L["%d promotions to review"], n), "management", "suggest") end
         end
 
-        local rs = BRutus.RecruitScanner
+        local rs = GuildOS.RecruitScanner
         if rs and rs.GetInbox then
             local n = 0
             for _ in pairs(rs:GetInbox()) do n = n + 1 end
@@ -156,7 +156,7 @@ local ROSTER_ACTION = {
 local function memberKey(short)
     if not short then return nil end
     local found
-    for key in pairs((BRutus.db and BRutus.db.members) or {}) do
+    for key in pairs((GuildOS.db and GuildOS.db.members) or {}) do
         if (key:match("^([^-]+)") or key) == short then
             if found then return nil end
             found = key
@@ -169,7 +169,7 @@ end
 -- each. `id` is the screen that owns the entry when this player can open
 -- it, the roster otherwise; `key` names a member whose detail opens too.
 function Agora:Activity(limit)
-    local since, db, out = now() - RECENT, BRutus.db or {}, {}
+    local since, db, out = now() - RECENT, GuildOS.db or {}, {}
     local function add(ts, text, id, sub, key, target)
         if (ts or 0) <= since then return end
         if not allowed(id) then id, sub = "roster", nil end
@@ -231,7 +231,7 @@ end
 
 local function newText(parent, size, role, color)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(fs, size, role)
+    GuildOS:ApplyFont(fs, size, role)
     fs:SetShadowOffset(0, 0)
     fs:SetTextColor(color.r, color.g, color.b)
     fs:SetJustifyH("LEFT")
@@ -338,8 +338,8 @@ local function paintRow(r, kind, value)
         r.text:Show()
         r.go = function()
             UI:OpenWindow(value.id, value.sub, value.filter)
-            local data = value.key and BRutus.db and BRutus.db.members and BRutus.db.members[value.key]
-            if data and BRutus.ShowMemberDetail then BRutus:ShowMemberDetail(data) end
+            local data = value.key and GuildOS.db and GuildOS.db.members and GuildOS.db.members[value.key]
+            if data and GuildOS.ShowMemberDetail then GuildOS:ShowMemberDetail(data) end
         end
     end
     r:Show()
@@ -351,7 +351,7 @@ local function fill(list, rows)
     list:SetHeight(2 + #rows * ROW_H)
 end
 
-function BRutus:CreateNowPanel(panel, win)
+function GuildOS:CreateNowPanel(panel, win)
     local column = CreateFrame("Frame", nil, panel)
     column:SetPoint("TOPLEFT", 0, 0)
     column:SetPoint("BOTTOMLEFT", 0, 0)
@@ -407,7 +407,7 @@ function BRutus:CreateNowPanel(panel, win)
 
     local function paint()
         if raid then
-            local comp = BRutus.Calendar:GetComposition(raid)
+            local comp = GuildOS.Calendar:GetComposition(raid)
             raidMeta:SetText((raid.title or "?") .. DOT .. date("%a %H:%M", raid.when)
                 .. DOT .. string.format(L["%d going"], comp.yes))
         else
@@ -441,7 +441,7 @@ function BRutus:CreateNowPanel(panel, win)
     end
 
     local function refresh()
-        BRutus:SafeCall(function()
+        GuildOS:SafeCall(function()
             raid = Agora:NextRaid()
             loading = Agora:RosterLoading()
             needs = loading and {} or Agora:NeedsMe()
@@ -458,7 +458,7 @@ function BRutus:CreateNowPanel(panel, win)
         column:SetWidth(wide and COLUMN_W or w)
         if wide and not homeBuilt then
             homeBuilt = true
-            BRutus:SafeCall(function() BRutus:CreateDashboardPanel(home, win) end)
+            GuildOS:SafeCall(function() GuildOS:CreateDashboardPanel(home, win) end)
         end
         home:SetShown(wide)
         paint()
@@ -481,6 +481,6 @@ function BRutus:CreateNowPanel(panel, win)
             panel.ticker = nil
         end
     end)
-    BRutus.Compat.RegisterEvent(panel, "GUILD_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(panel, "GUILD_ROSTER_UPDATE")
     panel:SetScript("OnEvent", function() if panel:IsVisible() then refresh() end end)
 end
