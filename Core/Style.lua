@@ -285,14 +285,14 @@ function Style:_PaintNine(frame, art, role)
         if small == frame.__nineSmall then return end
         frame.__nineSmall = small
         for _, t in pairs(p) do t:SetShown(not small) end
-        local C, c = GuildOS.Colors, roleColor(role)
+        local C, fill = GuildOS.Colors, roleColor(role)
         if small then
             frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
             frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
         else
             frame:SetBackdrop({ bgFile = WHITE })
         end
-        frame:SetBackdropColor(c.r, c.g, c.b, 1)
+        frame:SetBackdropColor(fill.r, fill.g, fill.b, 1)
     end
     frame.__nineSmall = nil
     fit()
