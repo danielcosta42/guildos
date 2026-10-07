@@ -54,7 +54,7 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/GuildChat.lua")
-GuildOS.db = {}
+GuildOS.db, GuildOS.isGuilded = {}, true
 
 local GC = GuildOS.GuildChat
 GC:Initialize()
@@ -114,6 +114,23 @@ check(GC:Send("   ") == false and #sent == 1, "an empty box sends nothing")
 GC:Send(string.rep("a", 300))
 check(#sent[2].msg == 240, "a long line is cut to 240 bytes")
 check(#GC:Log() == 0, "the sent line is not logged twice: it shows when the game echoes it back")
+
+-- Forever drops a line sent while an encounter locks chat, without an error (as CallToArms knows).
+local locked = true
+C_ChatInfo = { InChatMessagingLockdown = function() return locked end }
+local ok, why = GC:Send("bora")
+check(ok == false and why == "locked" and #sent == 2, "in a chat lockdown nothing is sent, and Send says why")
+locked = false
+check(GC:Send("bora") == true and sent[3].msg == "bora", "and once it lifts, it is")
+C_ChatInfo = nil
+
+-- ── Outside a guild ─────────────────────────────────────────────────────
+-- The data the addon resolved at login is a guildless one, shared by every guildless character on the
+-- realm: a guild joined since then is not written into it.
+GuildOS.isGuilded = false
+say("bem-vindo", "Bruna-Realm", "Player-1-B")
+check(#GC:Log() == 0, "a character the addon does not know to be in a guild keeps nothing")
+GuildOS.isGuilded = true
 
 -- ── Wired in ────────────────────────────────────────────────────────────
 local function read(path) local f = assert(io.open(ADDON .. "/" .. path, "rb")); local t = f:read("*a"); f:close(); return t end

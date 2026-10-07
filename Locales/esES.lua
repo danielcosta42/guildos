@@ -1608,6 +1608,7 @@ L["Note added for %s, who matches no single guild member: check the full name."]
 L["Nothing here yet."] = "Aún no hay nada aquí."
 L["Nothing here yet. Say hello."] = "Aún no hay nada aquí. Saluda."
 L["No guild chat yet."] = "Todavía no hay chat de hermandad."
+L["Chat is locked during the encounter: your message is still in the box."] = "El chat está bloqueado durante el encuentro: tu mensaje sigue en la caja."
 L["Nothing here yet. Welcome the allied guilds."] = "Aún no hay nada aquí. Da la bienvenida a las hermandades aliadas."
 L["Nothing leaves the game while this is off."] = "Nada sale del juego mientras esto esté desactivado."
 L["Nothing loaded."] = "Nada cargado."

@@ -907,6 +907,7 @@ L["Note: Blizzard requires a click to send channel messages. A popup will appear
 L["Nothing here yet."] = "Здесь пока пусто."
 L["Nothing here yet. Say hello."] = "Здесь пока пусто. Поздоровайтесь."
 L["No guild chat yet."] = "В чате гильдии пока пусто."
+L["Chat is locked during the encounter: your message is still in the box."] = "Во время боя чат заблокирован: ваше сообщение осталось в поле ввода."
 L["Nothing here yet. Welcome the allied guilds."] = "Здесь пока пусто. Поприветствуйте союзные гильдии."
 L["Nothing in the last 48 hours."] = "За последние 48 часов ничего."
 L["Nothing leaves the game while this is off."] = "Пока это выключено, ничего не покидает игру."

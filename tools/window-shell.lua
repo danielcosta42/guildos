@@ -1298,7 +1298,7 @@ do
   function SendChatMessage(msg, chan) sentChat[#sentChat + 1] = { msg = msg, chan = chan } end
   function SetItemRef(link, text, button) refs[#refs + 1] = { link, text, button } end
   function GetPlayerInfoByGUID(g) if g == "g-b" then return "Mage", "MAGE" end end
-  GuildOS.db.guildChatLog = nil
+  GuildOS.db.guildChatLog, GuildOS.isGuilded = nil, true
 
   GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
   local win = UI:GetMainWindow()
@@ -1342,6 +1342,17 @@ do
   check(find(p, os.date("%a %H:%M", old)) and find(p, os.date("%H:%M", NOW)),
     "a line from another day says which day; today's only the time")
 
+  local holder = scroll.parent
+  holder:SetSize(500, 300)
+  check(card.w == 500 - 12 - 12, "a resized window lays the feed out again, at its new width")
+
+  -- At the cap the oldest line can be a block of its own while the newest joins the last one:
+  -- one block fewer, and the card left over must not stay on screen.
+  local caio = find(p, "Caio").parent
+  GuildOS.db.guildChatLog = { { t = NOW, n = "Bruna", c = "MAGE", m = "so eu" } }
+  sub.refresh()
+  check(not caio.shown and find(p, "so eu").parent.shown, "a card the log no longer needs is hidden")
+
   local box
   for _, c in ipairs(p.children) do if c.kind == "EditBox" then box = c end end
   check(box and box.maxBytes == 241, "the box holds what /g will carry: 240 bytes")
@@ -1356,6 +1367,13 @@ do
   box:SetText("de novo")
   send.scripts.OnClick(send)
   check(#sentChat == 2 and sentChat[2].msg == "de novo", "and the Send button sends too")
+  C_ChatInfo = { InChatMessagingLockdown = function() return true end }
+  printed = {}
+  box:SetText("agora")
+  box.scripts.OnEnterPressed(box)
+  check(#sentChat == 2 and box.text == "agora" and said("still in the box"),
+    "in a chat lockdown nothing goes, the text stays in the box, and the player is told")
+  C_ChatInfo = nil
   win:Hide()
   GuildOS.db.guildChatLog = nil
   SendChatMessage, SetItemRef, GetPlayerInfoByGUID = nil, nil, nil

@@ -43,6 +43,9 @@ end
 function GuildChat:_OnMessage(msg, author, guid)
     -- Chat in lockdown on Forever: neither the line nor its speaker is readable.
     if GuildOS.Compat.IsSecret(msg, author) or not msg or not author then return end
+    -- The data resolved at login for a guildless character is shared by every guildless
+    -- character on the realm: a guild joined since then is not written into it.
+    if not GuildOS.isGuilded then return end
     local log = self:Log()
     log[#log + 1] = {
         t = GetServerTime(),
@@ -64,6 +67,11 @@ function GuildChat:Send(text)
     local clean = GuildOS:SanitizeUserText(text, 240)
     if clean == "" then
         return false
+    end
+    -- Forever drops a line sent in an encounter's chat lockdown without an error, so it is
+    -- asked first and the text stays with the player (as Modules/CallToArms.lua does).
+    if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then
+        return false, "locked"
     end
     SendChatMessage(clean, "GUILD")
     return true

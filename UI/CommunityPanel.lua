@@ -521,12 +521,21 @@ local function BuildGuildChatSub(panel)
 
     -- Enter and the click are the player's own key press, which /g needs on Forever.
     local function doSend()
-        if GC:Send(input:GetText()) then input:SetText("") end
+        local ok, why = GC:Send(input:GetText())
+        if ok then
+            input:SetText("")
+        elseif why == "locked" then
+            GuildOS:Print(L["Chat is locked during the encounter: your message is still in the box."])
+        end
     end
     sendBtn:SetScript("OnClick", doSend)
     input:SetScript("OnEnterPressed", doSend)
 
     GC:OnRefresh(function()
+        if panel:IsVisible() then refresh() end
+    end)
+    -- The cards are as wide as the view: a resized window lays them out again.
+    holder:SetScript("OnSizeChanged", function()
         if panel:IsVisible() then refresh() end
     end)
     return refresh
