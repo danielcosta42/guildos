@@ -2,7 +2,7 @@
 -- Guild OS - Home Dashboard
 -- The home cards beside the Now column (UI/Agora.lua): a grid that surfaces the most useful
 -- at-a-glance info (next raid + your RSVP, your readiness, guild pulse,
--- recruitment, your loot, recent activity), each card clicking through to
+-- recruitment, your loot, the guild's chat), each card clicking through to
 -- its full tab. Everything is read from existing modules; nothing here
 -- owns state. Refreshes on show.
 ----------------------------------------------------------------------
@@ -88,7 +88,14 @@ function GuildOS:CreateDashboardPanel(panel)
     local cPulse    = makeCard(L["GUILD PULSE"],     "roster")
     local cRecruit  = makeCard(L["RECRUITMENT"],     "recruitment")
     local cLoot     = makeCard(L["YOUR LOOT"],       "loot")
-    local cActivity = makeCard(L["GUILD ACTIVITY"],  "guild", "activity")
+    -- The guild's chat (#126), where "Guild activity" repeated the Activity column beside it.
+    -- The feed takes clicks itself (a link, the box), so only the arrow opens Guild > Chat.
+    local cChat     = makeCard(L["GUILD CHAT"])
+    local toChat = CreateFrame("Button", nil, cChat)
+    toChat:SetPoint("TOPRIGHT", -4, -4)
+    toChat:SetSize(28, 22)
+    toChat:SetScript("OnClick", function() goTab("guild", "chat") end)
+    local chatRefresh = GuildOS:CreateGuildChatFeed(cChat.body)
 
     ------------------------------------------------------------------
     -- Card fills (each clears its body and rebuilds from live data)
@@ -265,33 +272,6 @@ function GuildOS:CreateDashboardPanel(panel)
         end
     end
 
-    local function fillActivity(body)
-        clearBody(body)
-        local lines = {}
-        if GuildOS.Digest then
-            local since = nowT() - 7 * 86400
-            lines = GuildOS.Digest:Build(since) or {}
-        end
-        if #lines == 0 then
-            local none = UI:CreateText(body, L["Nothing new in the last 7 days."], 10, C.silver.r, C.silver.g, C.silver.b)
-            none:SetPoint("TOPLEFT", 2, -2)
-            return
-        end
-        local colW = math.floor(body:GetWidth() / 2) - 6
-        local y0, y1 = 0, 0
-        for i = 1, math.min(#lines, 8) do
-            local col = (i - 1) % 2
-            local x = 2 + col * (colW + 12)
-            local yy = (col == 0) and y0 or y1
-            local dot = UI:CreateText(body, "|cffEDCC7B*|r", 11, C.gold.r, C.gold.g, C.gold.b)
-            dot:SetPoint("TOPLEFT", x, -yy)
-            local fs = UI:CreateText(body, lines[i], 10, C.text.r, C.text.g, C.text.b)
-            fs:SetPoint("TOPLEFT", x + 12, -yy); fs:SetWidth(colW - 14); fs:SetJustifyH("LEFT")
-            local adv = math.max(18, (fs:GetStringHeight() or 12) + 6)
-            if col == 0 then y0 = y0 + adv else y1 = y1 + adv end
-        end
-    end
-
     ------------------------------------------------------------------
     -- Layout (responsive) + fill
     ------------------------------------------------------------------
@@ -316,10 +296,10 @@ function GuildOS:CreateDashboardPanel(panel)
         cRecruit:ClearAllPoints(); cRecruit:SetPoint("TOPLEFT", M + w3 + G, -r2y);            cRecruit:SetSize(w3, r2h)
         cLoot:ClearAllPoints();    cLoot:SetPoint("TOPLEFT", M + 2 * (w3 + G), -r2y);         cLoot:SetSize(innerW - 2 * (w3 + G), r2h)
 
-        -- Row 3: Activity (full width, fills remaining height)
+        -- Row 3: the guild's chat (full width, fills remaining height)
         local r3y = r2y + r2h + G
         local r3h = math.max(90, H - r3y - M)
-        cActivity:ClearAllPoints(); cActivity:SetPoint("TOPLEFT", M, -r3y); cActivity:SetSize(innerW, r3h)
+        cChat:ClearAllPoints(); cChat:SetPoint("TOPLEFT", M, -r3y); cChat:SetSize(innerW, r3h)
 
         -- One readiness scan powers both the readiness + pulse cards.
         local rows = GuildOS.Readiness and GuildOS.Readiness:GetReport() or {}
@@ -332,7 +312,7 @@ function GuildOS:CreateDashboardPanel(panel)
         fillPulse(cPulse.body, rows)
         fillRecruit(cRecruit.body)
         fillLoot(cLoot.body)
-        fillActivity(cActivity.body)
+        chatRefresh()
     end
 
     -- Refresh whenever the tab becomes visible.
