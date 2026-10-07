@@ -75,6 +75,29 @@ GuildOS.Colors = {
     shadow     = rgb(0, 0, 0, SHADOW),
 }
 
+-- The legacy keys and the token each copies, so a style can re-point the palette in place
+-- (issue #122): every module that captured `local C = GuildOS.Colors`, or one of its colours, sees it.
+local ALIASES = {
+    silver = { "textSoft" }, textDim = { "label" }, border = { "line" }, separator = { "line" },
+    accent = { "gold" }, accentDim = { "gold", dim = ACCENT_DIM }, accentSoft = { "gold", a = ACCENT_WASH },
+    headerBg = { "panel" }, bg0 = { "well" }, bg1 = { "well" }, bg2 = { "panel" }, panelDark = { "well" },
+    row1 = { "well" }, row2 = { "bg" }, rowHover = { "panel" },
+    red = { "danger" }, green = { "ok" }, blue = { "info" }, online = { "ok" }, offline = { "disabled" },
+}
+
+-- Re-point the named tokens in place, then every legacy key from its token.
+function GuildOS:RepointColors(tokens)
+    local C = GuildOS.Colors
+    for key, v in pairs(tokens) do
+        local t = C[key]
+        if t then t.r, t.g, t.b, t.a = v.r, v.g, v.b, v.a or 1 end
+    end
+    for key, how in pairs(ALIASES) do
+        local src, t, k = C[how[1]], C[key], how.dim or 1
+        t.r, t.g, t.b, t.a = src.r * k, src.g * k, src.b * k, how.a or src.a
+    end
+end
+
 -- Fonts. Four OFL files ship in Media/Fonts with their licences. Serif only
 -- from 14px up; everything smaller is IBM Plex Mono, never under 10px; no
 -- outline anywhere (design handoff §2).
@@ -139,7 +162,8 @@ function GuildOS:ApplyFont(fontString, size, role)
     -- display preference, so it lives at the account root (GuildOSDB.font) and follows the
     -- player to every alt and guild, as the minimap button's does. Read on every call; a
     -- text drawn before a change keeps its font until the interface reloads.
-    if GuildOS.GameFontOnly or (type(GuildOSDB) == "table" and GuildOSDB.font == "game") then
+    if GuildOS.GameFontOnly or (GuildOS.Style and GuildOS.Style.gameFont)
+        or (type(GuildOSDB) == "table" and GuildOSDB.font == "game") then
         fontString:SetFont(STANDARD_TEXT_FONT, px, "")
         return STANDARD_TEXT_FONT, px
     end
