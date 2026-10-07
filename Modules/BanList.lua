@@ -220,8 +220,9 @@ function BanList:_SetupDetection()
         local _, unit = BRutus.Compat.TooltipUnit(tt)
         -- Not UnitName: on a client that keeps a unit's identity secret the name
         -- comes back as a value the match inside IsBanned raises on
-        -- (docs/forever/README.md). Reachable only since the hook started
-        -- landing on that client.
+        -- (docs/forever/README.md), and the unit token itself can be secret,
+        -- which UnitClass refuses outright (#116). UnitIdentity answers nothing
+        -- for either. Reachable only since the hook started landing on that client.
         local name = unit and BRutus.Compat.UnitIdentity(unit)
         if name and BanList:IsBanned(name) then
             local e = BanList:Get(name)

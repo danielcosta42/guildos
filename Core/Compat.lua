@@ -58,7 +58,10 @@ function Compat.IsSecret(...)
 end
 
 -- A group unit's name, realm and class file, or nothing when the client keeps who it is secret.
+-- The token itself can be secret (a restricted unit's tooltip), and UnitClass refuses one in
+-- addon code rather than answer secret, so it is asked first (issue #116).
 function Compat.UnitIdentity(unit)
+    if Compat.IsSecret(unit) then return end
     local name, realm = UnitName(unit)
     local _, classFile = UnitClass(unit)
     if Compat.IsSecret(name, realm, classFile) then return end

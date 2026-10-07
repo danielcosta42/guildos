@@ -95,7 +95,13 @@ local SECRET_UNIT = "raid2"
 function GetNumGroupMembers() return 2 end
 function UnitExists(unit) return unit == "raid1" or unit == "raid2" or unit == "player" end
 function UnitIsConnected() return true end
+-- A secret unit token is refused outright, as the client does in addon code: "Secret values are
+-- only allowed during untainted execution for this argument" (issue #116).
+local function refuseSecretUnit(fn, unit)
+  if isSecret(unit) then error("bad argument #1 to '" .. fn .. "' (secret value)", 3) end
+end
 function UnitName(unit)
+  refuseSecretUnit("UnitName", unit)
   if unit == "player" then return "Ana" end
   if unit == "raid1" then return "Bob", "Forever" end
   if unit == SECRET_UNIT then return secret(), secret() end
@@ -106,6 +112,7 @@ function UnitIsUnit(a, b)
   return a == b
 end
 function UnitClass(unit)
+  refuseSecretUnit("UnitClass", unit)
   if unit == SECRET_UNIT then return secret(), secret() end
   return "Priest", "PRIEST"
 end
@@ -137,6 +144,8 @@ check(Compat.IsSecret() == false, "no arguments is not secret")
 local name, realm, class = Compat.UnitIdentity("raid1")
 check(name == "Bob" and realm == "Forever" and class == "PRIEST", "a readable unit gives its name, realm and class file")
 check(select("#", Compat.UnitIdentity(SECRET_UNIT)) == 0, "a restricted unit gives nothing")
+check(pcall(Compat.UnitIdentity, secret()) and select("#", Compat.UnitIdentity(secret())) == 0,
+  "a secret unit token (a restricted unit's tooltip) gives nothing, and raises nothing (#116)")
 local oldClass = UnitClass
 UnitClass = function(unit) if unit == "raid1" then return "Priest", secret() end return oldClass(unit) end
 check(select("#", Compat.UnitIdentity("raid1")) == 0, "a secret class alone makes the unit unreadable")
@@ -230,6 +239,23 @@ BRutus.BanList._Alert = function() alerted = alerted + 1 end
 BRutus.BanList._ParseJoin = function() return "Bob" end
 check(fires(ban, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and alerted == 1, "BanList: a readable join still alerts")
 check(fires(ban, nil, "CHAT_MSG_WHISPER", "hello", "Bob-Forever") and alerted == 2, "BanList: a readable whisper still alerts")
+
+-- Its unit tooltip, on every mouseover: a restricted unit's tooltip hands over a secret token (#116).
+local hooks = {}
+GameTooltip = { HasScript = function() return true end, HookScript = function(_, s, fn) hooks[s] = fn end }
+BRutus.BanList:_SetupDetection()
+local function tooltip(name, unit)
+  local tt = { lines = 0 }
+  function tt:GetUnit() return name, unit end
+  function tt:AddLine() self.lines = self.lines + 1 end
+  function tt:Show() end
+  return tt
+end
+local tt = tooltip(secret(), secret())
+check(hooks.OnTooltipSetUnit and fires(hooks.OnTooltipSetUnit, tt) and tt.lines == 0,
+  "BanList: the tooltip of a unit whose token is secret does not raise, and adds nothing")
+tt = tooltip("Bob", "raid1")
+check(fires(hooks.OnTooltipSetUnit, tt) and tt.lines == 1, "BanList: a banned player's readable tooltip is still flagged")
 
 local welcome = handlerOf(function() BRutus.Recruitment:RegisterWelcomeEvent() end)
 BRutus.Recruitment._rosterReady = true
