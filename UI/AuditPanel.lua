@@ -2,11 +2,11 @@
 -- Guild OS - Audit Panel (guild readiness)
 -- "Auditoria" tab with sub-tabs: Attunement progression grid and the
 -- guild-wide enchant audit. Visual layout only — data comes from
--- BRutus.AttunementTracker and BRutus.GearAudit (Rule 3 / Rule 10).
+-- GuildOS.AttunementTracker and GuildOS.GearAudit (Rule 3 / Rule 10).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local SUBTABS = {
@@ -91,20 +91,20 @@ local function BuildReadySub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local targets = BRutus.Readiness:GetTargets()
+        local targets = GuildOS.Readiness:GetTargets()
         local target = (panel.targetIdx > 0) and targets[panel.targetIdx] or nil
         local targetShort = target and target.short or nil
         targetBtn.label:SetText(target and (L["Target: "] .. target.short) or L["Target: All raids"])
 
-        local rows = BRutus.Readiness:GetReport(targetShort)
-        local c = BRutus.Readiness:Summarize(rows)
+        local rows = GuildOS.Readiness:GetReport(targetShort)
+        local c = GuildOS.Readiness:Summarize(rows)
         summary:SetText(string.format(L["%d ready  |  %d need attention  |  %d not ready"],
             c.ready, c.warn, c.notready))
 
         local yOff = 0
         for idx, r in ipairs(rows) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local cr, cg, cb = GuildOS:GetClassColor(r.class)
             local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
             if r.status == "nodata" then nameFS:SetTextColor(0.45, 0.45, 0.5) end
@@ -156,7 +156,7 @@ local function BuildReadySub(panel)
     end
 
     targetBtn:SetScript("OnClick", function()
-        local targets = BRutus.Readiness:GetTargets()
+        local targets = GuildOS.Readiness:GetTargets()
         panel.targetIdx = panel.targetIdx + 1
         if panel.targetIdx > #targets then panel.targetIdx = 0 end
         refresh()
@@ -194,7 +194,7 @@ local function BuildAttuneSub(panel)
         ClearContent(content)
         for _, fs in ipairs(panel.headerCells) do fs:Hide() end
 
-        local cols, rows = BRutus.AttunementTracker:GetGuildMatrix()
+        local cols, rows = GuildOS.AttunementTracker:GetGuildMatrix()
 
         -- Header column labels + per-column attuned counts
         local totalsWithData = 0
@@ -217,7 +217,7 @@ local function BuildAttuneSub(panel)
         local yOff = 0
         for idx, r in ipairs(rows) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local cr, cg, cb = GuildOS:GetClassColor(r.class)
             local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
             if not r.hasData then nameFS:SetTextColor(0.45, 0.45, 0.5) end
@@ -254,7 +254,7 @@ end
 -- own, bags included), coloured against that school's headline fight.
 ----------------------------------------------------------------------
 local function BuildResistSub(panel)
-    local R = BRutus.Resistances
+    local R = GuildOS.Resistances
 
     local legend = UI:CreateText(panel,
         L["Max resistance each member can equip from owned gear (bags included). Green = a solid set for that fight."],
@@ -291,7 +291,7 @@ local function BuildResistSub(panel)
         local yOff = 0
         for idx, r in ipairs(rows) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local cr, cg, cb = GuildOS:GetClassColor(r.class)
             local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
 
@@ -335,7 +335,7 @@ local function BuildEnchantSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local all = BRutus.GearAudit:GetGuildEnchantAudit()
+        local all = GuildOS.GearAudit:GetGuildEnchantAudit()
         local problems = {}
         for _, r in ipairs(all) do
             if r.missingCount > 0 then problems[#problems + 1] = r end
@@ -345,7 +345,7 @@ local function BuildEnchantSub(panel)
         local yOff = 0
         for idx, r in ipairs(problems) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local cr, cg, cb = GuildOS:GetClassColor(r.class)
             local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
 
@@ -388,7 +388,7 @@ local function BuildSyncSub(panel)
     local exportBtn = UI:CreateButton(panel, L["Export Roster"], 110, 20)
     exportBtn:SetPoint("TOPRIGHT", -12, -2)
     exportBtn:SetScript("OnClick", function()
-        BRutus:ShowExportPopup(L["Roster Export"], BRutus:ExportRoster())
+        GuildOS:ShowExportPopup(L["Roster Export"], GuildOS:ExportRoster())
     end)
 
     -- Manual sync: broadcast our data + re-request everyone's, then refresh the
@@ -396,7 +396,7 @@ local function BuildSyncSub(panel)
     local syncBtn = UI:CreateButton(panel, L["Sync now"], 90, 20)
     syncBtn:SetPoint("TOPRIGHT", exportBtn, "TOPLEFT", -6, 0)
     syncBtn:SetScript("OnClick", function()
-        if BRutus.CommSystem then BRutus.CommSystem:FullSync() end
+        if GuildOS.CommSystem then GuildOS.CommSystem:FullSync() end
         C_Timer.After(2.5, function() if refresh then refresh() end end)
     end)
 
@@ -409,13 +409,13 @@ local function BuildSyncSub(panel)
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
-        local rows, withAddon, outdated = BRutus.CommSystem:GetSyncHealth()
+        local rows, withAddon, outdated = GuildOS.CommSystem:GetSyncHealth()
         summary:SetText(string.format(L["%d/%d have Guild OS  |  %d outdated"], withAddon, #rows, outdated))
 
-        if BRutus.Mesh then
+        if GuildOS.Mesh then
             meshLine:SetText(string.format(
                 L["Chehul mesh: %s  |  %d peers  |  %d on Guild OS"],
-                BRutus.Mesh:HealthLine(), BRutus.Mesh:PeerCount(), BRutus.Mesh:PeerCount("gos")))
+                GuildOS.Mesh:HealthLine(), GuildOS.Mesh:PeerCount(), GuildOS.Mesh:PeerCount("gos")))
         end
 
         local yOff = 0
@@ -425,7 +425,7 @@ local function BuildSyncSub(panel)
         -- cannot be debugged in the field, so the counters and the per-guild
         -- freshness live here, next to the mesh health line.
         ------------------------------------------------------------------
-        local ally, async = BRutus.Alliance, BRutus.AllianceSync
+        local ally, async = GuildOS.Alliance, GuildOS.AllianceSync
         if ally and async and ally:Get() then
             local diag = async:Diagnostics()
             local pact = ally:Get()
@@ -468,12 +468,12 @@ local function BuildSyncSub(panel)
                 nameFS:SetWordWrap(false)
 
                 local headFS = UI:CreateText(content,
-                    g.lastHeadIn and BRutus:TimeAgo(g.lastHeadIn) or L["never"],
+                    g.lastHeadIn and GuildOS:TimeAgo(g.lastHeadIn) or L["never"],
                     10, C.textDim.r, C.textDim.g, C.textDim.b)
                 headFS:SetPoint("TOPLEFT", 130, -yOff)
 
                 local pushFS = UI:CreateText(content,
-                    g.lastPushIn and BRutus:TimeAgo(g.lastPushIn) or L["never"],
+                    g.lastPushIn and GuildOS:TimeAgo(g.lastPushIn) or L["never"],
                     10, C.textDim.r, C.textDim.g, C.textDim.b)
                 pushFS:SetPoint("TOPLEFT", 200, -yOff)
 
@@ -494,7 +494,7 @@ local function BuildSyncSub(panel)
 
         for idx, r in ipairs(rows) do
             local row = MakeRow(content, yOff, idx)
-            local cr, cg, cb = BRutus:GetClassColor(r.class)
+            local cr, cg, cb = GuildOS:GetClassColor(r.class)
             local nameFS = UI:CreateText(row, r.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 8, 0)
 
@@ -510,7 +510,7 @@ local function BuildSyncSub(panel)
                 local ver = UI:CreateText(row, verStr, 10, verColor.r, verColor.g, verColor.b)
                 ver:SetPoint("LEFT", 220, 0)
 
-                local last = UI:CreateText(row, BRutus:TimeAgo(r.lastUpdate), 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                local last = UI:CreateText(row, GuildOS:TimeAgo(r.lastUpdate), 9, C.textDim.r, C.textDim.g, C.textDim.b)
                 last:SetPoint("LEFT", 420, 0)
             end
 
@@ -526,8 +526,8 @@ local function BuildSyncSub(panel)
 
     -- Live-update the mesh line as HELLOs arrive (throttled in GuildOS.Mesh),
     -- but only while this sub-panel is actually visible.
-    if BRutus.Mesh then
-        BRutus.Mesh:OnRefresh(function()
+    if GuildOS.Mesh then
+        GuildOS.Mesh:OnRefresh(function()
             if panel:IsShown() then refresh() end
         end)
     end
@@ -538,13 +538,13 @@ end
 ----------------------------------------------------------------------
 -- Panel assembly (sub-tab bar + sub-panels)
 ----------------------------------------------------------------------
-function BRutus:CreateAuditPanel(parent, _mainFrame)
+function GuildOS:CreateAuditPanel(parent, _mainFrame)
     parent.subPanels = {}
     parent.activeSub = "ready"
 
     local subtabs = {}
     for _, t in ipairs(SUBTABS) do
-        if not t.tbc or BRutus.Client.isAnniversary then subtabs[#subtabs + 1] = t end
+        if not t.tbc or GuildOS.Client.isAnniversary then subtabs[#subtabs + 1] = t end
     end
 
     local bar = CreateFrame("Frame", nil, parent)
@@ -559,13 +559,13 @@ function BRutus:CreateAuditPanel(parent, _mainFrame)
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
         local info = parent.subPanels[key]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
     parent.SelectSub = selectSub
 
     parent.RefreshActive = function()
         local info = parent.subPanels[parent.activeSub]
-        if info and info.refresh then BRutus:SafeCall(info.refresh) end
+        if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
 
     local x = 0

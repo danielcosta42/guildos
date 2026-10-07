@@ -1,11 +1,11 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Wishlist System
+-- Guild OS - Wishlist System
 -- Native per-character wishlist with guild-wide sync and item search.
 -- Replaces the That's My BiS (TMB) CSV integration.
 ----------------------------------------------------------------------
 local Wishlist = {}
-BRutus.Wishlist = Wishlist
-local L = BRutus.L
+GuildOS.Wishlist = Wishlist
+local L = GuildOS.L
 
 -- Color palette for wishlist entries
 Wishlist.TypeColors = {
@@ -13,19 +13,19 @@ Wishlist.TypeColors = {
 }
 
 function Wishlist:Initialize()
-    if not BRutus.db.wishlists then
-        BRutus.db.wishlists = {}
+    if not GuildOS.db.wishlists then
+        GuildOS.db.wishlists = {}
     end
     -- One-time migration: move flat myWishlist to per-char slot
-    if BRutus.db.myWishlist and #BRutus.db.myWishlist > 0 then
-        local charKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName() or "Unknown")
-        if not BRutus.db.wishlists[charKey] or #BRutus.db.wishlists[charKey] == 0 then
-            BRutus.db.wishlists[charKey] = BRutus.db.myWishlist
+    if GuildOS.db.myWishlist and #GuildOS.db.myWishlist > 0 then
+        local charKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName() or "Unknown")
+        if not GuildOS.db.wishlists[charKey] or #GuildOS.db.wishlists[charKey] == 0 then
+            GuildOS.db.wishlists[charKey] = GuildOS.db.myWishlist
         end
-        BRutus.db.myWishlist = nil
+        GuildOS.db.myWishlist = nil
     end
-    if not BRutus.db.guildWishlists then
-        BRutus.db.guildWishlists = {}
+    if not GuildOS.db.guildWishlists then
+        GuildOS.db.guildWishlists = {}
     end
     self:RebuildItemIndex()
     self:HookTooltips()
@@ -91,7 +91,7 @@ local RAID_CATALOG = {
 ----------------------------------------------------------------------
 function Wishlist:RebuildItemIndex()
     local index = {}
-    local guild = BRutus.db and BRutus.db.guildWishlists
+    local guild = GuildOS.db and GuildOS.db.guildWishlists
     if guild then
         for _, charData in pairs(guild) do
             local cc   = charData.class or ""
@@ -121,7 +121,7 @@ function Wishlist:RebuildItemIndex()
 
     -- Seed static catalog so all raid items appear in search. They are TBC raid
     -- drops, so only on TBC Anniversary (ADR-0014).
-    if BRutus.Client.isAnniversary then
+    if GuildOS.Client.isAnniversary then
         for _, itemId in ipairs(RAID_CATALOG) do
             if not index[itemId] then
                 index[itemId] = {}
@@ -145,13 +145,13 @@ end
 ----------------------------------------------------------------------
 function Wishlist:GetItemName(itemId)
     if not itemId then return L["Item #?"] end
-    local name = BRutus.Compat.GetItemInfo(itemId)
+    local name = GuildOS.Compat.GetItemInfo(itemId)
     return name or (L["Item #"] .. itemId)
 end
 
 function Wishlist:GetItemQuality(itemId)
     if not itemId then return 1 end
-    local _, _, quality = BRutus.Compat.GetItemInfo(itemId)
+    local _, _, quality = GuildOS.Compat.GetItemInfo(itemId)
     return quality or 1
 end
 
@@ -162,18 +162,18 @@ local WISHLIST_MAX = 50
 
 -- Returns (and lazily creates) the wishlist table for the current character.
 function Wishlist:GetMyList()
-    if not BRutus.db then return {} end
-    if not BRutus.db.wishlists then BRutus.db.wishlists = {} end
-    local charKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName() or "Unknown")
-    if not BRutus.db.wishlists[charKey] then
-        BRutus.db.wishlists[charKey] = {}
+    if not GuildOS.db then return {} end
+    if not GuildOS.db.wishlists then GuildOS.db.wishlists = {} end
+    local charKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName() or "Unknown")
+    if not GuildOS.db.wishlists[charKey] then
+        GuildOS.db.wishlists[charKey] = {}
     end
-    return BRutus.db.wishlists[charKey]
+    return GuildOS.db.wishlists[charKey]
 end
 
 -- Add or update an item in the player's own wishlist.
 function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
-    if not BRutus.db then return end
+    if not GuildOS.db then return end
     local list = self:GetMyList()
 
     -- If already present, update in place
@@ -182,19 +182,19 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
             entry.itemLink  = itemLink or entry.itemLink
             entry.isOffspec = isOffspec or false
             self:BroadcastMyWishlist()
-            BRutus:Print(format(L["[Wishlist] Updated: %s"], itemLink or (L["Item #"] .. itemId)))
+            GuildOS:Print(format(L["[Wishlist] Updated: %s"], itemLink or (L["Item #"] .. itemId)))
             return
         end
     end
 
     if #list >= WISHLIST_MAX then
-        BRutus:Print(format(L["|cffFF4444[Wishlist]|r Item limit of %d reached."], WISHLIST_MAX))
+        GuildOS:Print(format(L["|cffFF4444[Wishlist]|r Item limit of %d reached."], WISHLIST_MAX))
         return
     end
 
-    local name = BRutus.Compat.GetItemInfo(itemId)
+    local name = GuildOS.Compat.GetItemInfo(itemId)
     if not name then
-        BRutus:Print(L["|cffFF4444[Wishlist]|r Unknown item. Try again in a few seconds."])
+        GuildOS:Print(L["|cffFF4444[Wishlist]|r Unknown item. Try again in a few seconds."])
         return
     end
 
@@ -205,19 +205,19 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
         isOffspec = isOffspec or false,
     })
     self:BroadcastMyWishlist()
-    BRutus:Print(format(L["[Wishlist] Added #%d: %s"], #list, itemLink or name))
-    if BRutus.WishlistFrame and BRutus.WishlistFrame:IsShown() then
-        BRutus:RefreshWishlistFrame()
+    GuildOS:Print(format(L["[Wishlist] Added #%d: %s"], #list, itemLink or name))
+    if GuildOS.WishlistFrame and GuildOS.WishlistFrame:IsShown() then
+        GuildOS:RefreshWishlistFrame()
     end
 end
 
 -- Remove an item from the player's own wishlist by itemId.
 -- Returns true if the local player has received this item via master-loot.
 function Wishlist:IsItemDelivered(itemId)
-    local history = BRutus.db and BRutus.db.lootHistory
+    local history = GuildOS.db and GuildOS.db.lootHistory
     if not history then return false end
-    local myName = BRutus.Compat.PlayerName()
-    local myKey  = BRutus:GetPlayerKey(myName)
+    local myName = GuildOS.Compat.PlayerName()
+    local myKey  = GuildOS:GetPlayerKey(myName)
     for _, entry in ipairs(history) do
         if entry.fromML and entry.playerKey == myKey then
             -- Match by itemId stored in entry, or extract from itemLink
@@ -232,9 +232,9 @@ function Wishlist:IsItemDelivered(itemId)
 end
 
 function Wishlist:RemoveFromWishlist(itemId)
-    if not BRutus.db then return end
+    if not GuildOS.db then return end
     if self:IsItemDelivered(itemId) then
-        BRutus:Print(L["|cffFF4444[Wishlist]|r This item has already been delivered and cannot be removed."])
+        GuildOS:Print(L["|cffFF4444[Wishlist]|r This item has already been delivered and cannot be removed."])
         return
     end
     local list = self:GetMyList()
@@ -244,19 +244,19 @@ function Wishlist:RemoveFromWishlist(itemId)
             table.remove(list, i)
             for j, e in ipairs(list) do e.order = j end
             self:BroadcastMyWishlist()
-            BRutus:Print(format(L["[Wishlist] Removed: %s"], link ~= "" and link or (L["Item #"] .. itemId)))
-            if BRutus.WishlistFrame and BRutus.WishlistFrame:IsShown() then
-                BRutus:RefreshWishlistFrame()
+            GuildOS:Print(format(L["[Wishlist] Removed: %s"], link ~= "" and link or (L["Item #"] .. itemId)))
+            if GuildOS.WishlistFrame and GuildOS.WishlistFrame:IsShown() then
+                GuildOS:RefreshWishlistFrame()
             end
             return
         end
     end
-    BRutus:Print(L["[Wishlist] Item not found in your wishlist."])
+    GuildOS:Print(L["[Wishlist] Item not found in your wishlist."])
 end
 
 -- Move an item up (-1) or down (+1) in the wishlist order.
 function Wishlist:ReorderWishlist(itemId, direction)
-    if not BRutus.db then return end
+    if not GuildOS.db then return end
     if self:IsItemDelivered(itemId) then return end
     local list = self:GetMyList()
     local idx
@@ -269,8 +269,8 @@ function Wishlist:ReorderWishlist(itemId, direction)
     list[idx], list[newIdx] = list[newIdx], list[idx]
     for i, e in ipairs(list) do e.order = i end
     self:BroadcastMyWishlist()
-    if BRutus.WishlistFrame and BRutus.WishlistFrame:IsShown() then
-        BRutus:RefreshWishlistFrame()
+    if GuildOS.WishlistFrame and GuildOS.WishlistFrame:IsShown() then
+        GuildOS:RefreshWishlistFrame()
     end
 end
 
@@ -278,21 +278,21 @@ end
 -- Guild broadcast — serialize and send this character's wishlist
 ----------------------------------------------------------------------
 function Wishlist:BroadcastMyWishlist()
-    if not BRutus.db then return end
+    if not GuildOS.db then return end
     local list = self:GetMyList()
     -- Do not broadcast (or store) an empty list — would create a ghost entry in every
     -- guildie's panel showing the character with 0 items.
     if #list == 0 then return end
 
-    local myName  = BRutus.Compat.PlayerName()
+    local myName  = GuildOS.Compat.PlayerName()
     local myClass = select(2, UnitClass("player")) or ""
 
     -- Store own data locally immediately (WoW does not echo addon messages back to sender)
-    if not BRutus.db.guildWishlists then
-        BRutus.db.guildWishlists = {}
+    if not GuildOS.db.guildWishlists then
+        GuildOS.db.guildWishlists = {}
     end
     local myKey = strlower(myName or "")
-    BRutus.db.guildWishlists[myKey] = {
+    GuildOS.db.guildWishlists[myKey] = {
         name     = myName,
         class    = myClass,
         wishlist = list,
@@ -300,7 +300,7 @@ function Wishlist:BroadcastMyWishlist()
     self:RebuildItemIndex()
 
     -- Broadcast to guild
-    if BRutus.CommSystem then
+    if GuildOS.CommSystem then
         local payload = {
             name     = myName,
             class    = myClass,
@@ -308,7 +308,7 @@ function Wishlist:BroadcastMyWishlist()
         }
         local LibSerialize = LibStub("GuildOS-LibSerialize")
         local serialized  = LibSerialize:Serialize(payload)
-        BRutus.CommSystem:SendMessage("WL", serialized)
+        GuildOS.CommSystem:SendMessage("WL", serialized)
     end
 end
 
@@ -324,13 +324,13 @@ function Wishlist:HandleWishlistBroadcast(sender, data)
     if not wishlist or type(wishlist) ~= "table" then return end
 
     -- Don't overwrite our own data with a stale broadcast of ourselves
-    if strlower(name) == strlower(BRutus.Compat.PlayerName() or "") then return end
+    if strlower(name) == strlower(GuildOS.Compat.PlayerName() or "") then return end
 
-    if not BRutus.db.guildWishlists then
-        BRutus.db.guildWishlists = {}
+    if not GuildOS.db.guildWishlists then
+        GuildOS.db.guildWishlists = {}
     end
     local key = strlower(name)
-    BRutus.db.guildWishlists[key] = {
+    GuildOS.db.guildWishlists[key] = {
         name     = name,
         class    = class,
         wishlist = wishlist,
@@ -344,9 +344,9 @@ end
 function Wishlist:HookTooltips()
     local function OnTooltipSetItem(tooltip)
         if not self.itemIndex then return end
-        if not BRutus:ShowsItemTooltipInfo(tooltip) then return end
+        if not GuildOS:ShowsItemTooltipInfo(tooltip) then return end
 
-        local _, link = BRutus.Compat.TooltipItem(tooltip)
+        local _, link = GuildOS.Compat.TooltipItem(tooltip)
         if not link then return end
 
         local itemId = tonumber(link:match("item:(%d+)"))
@@ -361,7 +361,7 @@ function Wishlist:HookTooltips()
             self.TypeColors.wishlist.g,
             self.TypeColors.wishlist.b)
         for _, e in ipairs(entries) do
-            local cc    = BRutus.ClassColors[e.class:upper()] or BRutus.Colors.white
+            local cc    = GuildOS.ClassColors[e.class:upper()] or GuildOS.Colors.white
             local label = "#" .. e.order .. (e.isOffspec and L[" (OS)"] or "")
             tooltip:AddDoubleLine("  " .. e.name, label,
                 cc.r, cc.g, cc.b, 0.7, 0.7, 0.7)
@@ -371,10 +371,10 @@ function Wishlist:HookTooltips()
     end
 
     -- A tooltip that is not built yet, or lacks the script, is skipped.
-    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)
-    BRutus.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetItem", OnTooltipSetItem)
-    BRutus.Compat.HookTooltip(ShoppingTooltip1, "OnTooltipSetItem", OnTooltipSetItem)
-    BRutus.Compat.HookTooltip(ShoppingTooltip2, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(ShoppingTooltip1, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(ShoppingTooltip2, "OnTooltipSetItem", OnTooltipSetItem)
 end
 
 ----------------------------------------------------------------------
@@ -383,11 +383,11 @@ end
 -- Officers set and sync prios; all members receive and store them.
 ----------------------------------------------------------------------
 function Wishlist:BroadcastLootPrios()
-    if not BRutus.CommSystem then return end
-    if not BRutus.db or not BRutus.db.lootPrios then return end
+    if not GuildOS.CommSystem then return end
+    if not GuildOS.db or not GuildOS.db.lootPrios then return end
     local LibSerialize = LibStub("GuildOS-LibSerialize")
-    local serialized = LibSerialize:Serialize(BRutus.db.lootPrios)
-    BRutus.CommSystem:SendMessage("LP", serialized)
+    local serialized = LibSerialize:Serialize(GuildOS.db.lootPrios)
+    GuildOS.CommSystem:SendMessage("LP", serialized)
 end
 
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
@@ -397,8 +397,8 @@ function Wishlist:HandleLootPriosBroadcast(sender, data)
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
 
-    if not BRutus.db then return end
-    BRutus.db.lootPrios = payload
+    if not GuildOS.db then return end
+    GuildOS.db.lootPrios = payload
     self:RebuildItemIndex()
-    BRutus:Print(L["[Wishlist] Priorities updated by "] .. (sender or "?"))
+    GuildOS:Print(L["[Wishlist] Priorities updated by "] .. (sender or "?"))
 end

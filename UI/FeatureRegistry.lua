@@ -5,7 +5,7 @@
 -- menu, the slash commands and the Settings toggles. Frame-free on purpose: this file only holds data and
 -- predicates, so it is testable without a live UI.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
+local UI = GuildOS.UI
 
 UI.features     = {}   -- id -> def
 UI.featureOrder = {}   -- ids, kept sorted by def.order
@@ -17,11 +17,11 @@ UI.featureOrder = {}   -- ids, kept sorted by def.order
 ----------------------------------------------------------------------
 function UI:RegisterFeature(def)
     if type(def) ~= "table" or type(def.id) ~= "string" or def.id == "" then
-        BRutus:Print("|cffFF4444Feature registry: entry without an id ignored.|r")
+        GuildOS:Print("|cffFF4444Feature registry: entry without an id ignored.|r")
         return nil
     end
     if self.features[def.id] then
-        BRutus:Print("|cffFF4444Feature registry: duplicate id '" .. def.id .. "' ignored.|r")
+        GuildOS:Print("|cffFF4444Feature registry: duplicate id '" .. def.id .. "' ignored.|r")
         return nil
     end
     if def.tab == nil then def.tab = true end
@@ -55,8 +55,8 @@ function UI:AllFeatures(scope)
     for _, id in ipairs(self.featureOrder) do
         local def = self.features[id]
         local ok = true
-        if def.officerOnly and not BRutus:IsOfficer() then ok = false end
-        if ok and def.tbc and not BRutus.Client.isAnniversary then ok = false end  -- TBC content (ADR-0014)
+        if def.officerOnly and not GuildOS:IsOfficer() then ok = false end
+        if ok and def.tbc and not GuildOS.Client.isAnniversary then ok = false end  -- TBC content (ADR-0014)
         if ok and def.condition and not def.condition() then ok = false end
         if ok and scope and not def[scope] then ok = false end
         if ok then out[#out + 1] = def end
@@ -68,7 +68,7 @@ end
 function UI:VisibleFeatures(scope)
     local out = {}
     for _, def in ipairs(self:AllFeatures(scope)) do
-        if BRutus:IsFeatureEnabled(def.id) then out[#out + 1] = def end
+        if GuildOS:IsFeatureEnabled(def.id) then out[#out + 1] = def end
     end
     return out
 end
@@ -80,12 +80,12 @@ end
 ----------------------------------------------------------------------
 function UI:IsFeatureAllowed(def)
     if not def then return false end
-    if def.tbc and not BRutus.Client.isAnniversary then return false end  -- TBC content (ADR-0014)
-    if not BRutus:IsFeatureEnabled(def.id) then return false end
+    if def.tbc and not GuildOS.Client.isAnniversary then return false end  -- TBC content (ADR-0014)
+    if not GuildOS:IsFeatureEnabled(def.id) then return false end
     -- A tab whose module failed to start would error while it builds.
-    if BRutus:FeatureStartFailed(def.id) then return false end
+    if GuildOS:FeatureStartFailed(def.id) then return false end
     if def.condition then return def.condition() end
-    if def.officerOnly then return BRutus:IsOfficer() end
+    if def.officerOnly then return GuildOS:IsOfficer() end
     return true
 end
 
@@ -94,8 +94,8 @@ end
 function UI:OnFeatureToggled(_, _) end
 
 function UI:_RegisterFeatureTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
 
     S:Register("features.invariants", function()
         for _, id in ipairs(UI.featureOrder) do
@@ -130,13 +130,13 @@ function UI:_RegisterFeatureTests()
     end)
 
     S:Register("features.core_cannot_be_disabled", function()
-        local mods = BRutus.db and BRutus.db.settings and BRutus.db.settings.modules
+        local mods = GuildOS.db and GuildOS.db.settings and GuildOS.db.settings.modules
         if not mods then return false, "db.settings.modules missing" end
         for _, id in ipairs(UI.featureOrder) do
             if UI.features[id].core then
                 local prev = mods[id]
                 mods[id] = false
-                local ok = BRutus:IsFeatureEnabled(id)
+                local ok = GuildOS:IsFeatureEnabled(id)
                 mods[id] = prev
                 if not ok then return false, id .. " is core but reported disabled" end
             end
@@ -147,16 +147,16 @@ function UI:_RegisterFeatureTests()
     S:Register("features.toggle_roundtrip", function()
         local id = "__selftest_feature"
         UI:RegisterFeature({ id = id, label = "Self test", tab = false })
-        BRutus:SetFeatureEnabled(id, false)
-        if BRutus:IsFeatureEnabled(id) then return false, "disable did not stick" end
-        BRutus:SetFeatureEnabled(id, true)
-        if not BRutus:IsFeatureEnabled(id) then return false, "re-enable did not stick" end
+        GuildOS:SetFeatureEnabled(id, false)
+        if GuildOS:IsFeatureEnabled(id) then return false, "disable did not stick" end
+        GuildOS:SetFeatureEnabled(id, true)
+        if not GuildOS:IsFeatureEnabled(id) then return false, "re-enable did not stick" end
         -- clean up so repeated runs stay idempotent
         UI.features[id] = nil
         for i, v in ipairs(UI.featureOrder) do
             if v == id then table.remove(UI.featureOrder, i) break end
         end
-        if BRutus.db.settings.modules then BRutus.db.settings.modules[id] = nil end
+        if GuildOS.db.settings.modules then GuildOS.db.settings.modules[id] = nil end
         return true
     end)
 
@@ -164,7 +164,7 @@ function UI:_RegisterFeatureTests()
     -- slash command refuses with the same words. Both read these predicates,
     -- so a change to the rule reaches the button and the command together.
     S:Register("companion.predicates_exist", function()
-        local I = BRutus.CompanionImport
+        local I = GuildOS.CompanionImport
         if not I then return false, "CompanionImport missing" end
         if type(I.CanInvite) ~= "function" then return false, "CanInvite missing" end
         if type(I.CanOrganize) ~= "function" then return false, "CanOrganize missing" end
@@ -172,22 +172,22 @@ function UI:_RegisterFeatureTests()
     end)
 
     S:Register("companion.can_invite_needs_roster", function()
-        local I = BRutus.CompanionImport
-        local saved = BRutus.db.companionRoster
-        BRutus.db.companionRoster = nil
+        local I = GuildOS.CompanionImport
+        local saved = GuildOS.db.companionRoster
+        GuildOS.db.companionRoster = nil
         local ok, reason = I:CanInvite()
-        BRutus.db.companionRoster = saved
+        GuildOS.db.companionRoster = saved
         if ok then return false, "allowed inviting with no roster loaded" end
         if not reason or reason == "" then return false, "refused without saying why" end
         return true
     end)
 
     S:Register("companion.can_organize_needs_roster", function()
-        local I = BRutus.CompanionImport
-        local saved = BRutus.db.companionRoster
-        BRutus.db.companionRoster = nil
+        local I = GuildOS.CompanionImport
+        local saved = GuildOS.db.companionRoster
+        GuildOS.db.companionRoster = nil
         local ok, reason = I:CanOrganize()
-        BRutus.db.companionRoster = saved
+        GuildOS.db.companionRoster = saved
         if ok then return false, "allowed organising with no roster loaded" end
         if not reason or reason == "" then return false, "refused without saying why" end
         return true
@@ -196,7 +196,7 @@ function UI:_RegisterFeatureTests()
     -- A greyed button with no reason under it is the exact failure this
     -- feature exists to remove, so every refusal must carry text.
     S:Register("companion.refusals_always_explain", function()
-        local I = BRutus.CompanionImport
+        local I = GuildOS.CompanionImport
         for _, name in ipairs({ "CanInvite", "CanOrganize" }) do
             local ok, reason = I[name](I)
             if not ok and (type(reason) ~= "string" or reason == "") then
@@ -209,12 +209,12 @@ function UI:_RegisterFeatureTests()
     -- InviteAll must not re-implement its own gate: it has to answer with
     -- exactly what the predicate said, or the button and the command disagree.
     S:Register("companion.action_agrees_with_predicate", function()
-        local I = BRutus.CompanionImport
-        local saved = BRutus.db.companionRoster
-        BRutus.db.companionRoster = nil
+        local I = GuildOS.CompanionImport
+        local saved = GuildOS.db.companionRoster
+        GuildOS.db.companionRoster = nil
         local ok, want = I:CanInvite()
         local _, _, got = I:InviteAll()
-        BRutus.db.companionRoster = saved
+        GuildOS.db.companionRoster = saved
         if ok then return false, "expected the no-roster case to refuse" end
         if got ~= want then
             return false, string.format("InviteAll said [%s], predicate said [%s]",
@@ -228,11 +228,11 @@ function UI:_RegisterFeatureTests()
     -- from our own tool. A damaged one must be ignored, never allowed to wipe the
     -- roster the officer already has.
     S:Register("companion.inbox_ignores_junk", function()
-        local I = BRutus.CompanionImport
+        local I = GuildOS.CompanionImport
         if type(I.ConsumeInbox) ~= "function" then return false, "ConsumeInbox missing" end
 
-        local saved, savedGlobal = BRutus.db.companionRoster, GuildOSInbox
-        BRutus.db.companionRoster = { title = "kept", members = { {} } }
+        local saved, savedGlobal = GuildOS.db.companionRoster, GuildOSInbox
+        GuildOS.db.companionRoster = { title = "kept", members = { {} } }
 
         -- A table is the current shape, a bare string the older one, and junk
         -- in either must be ignored rather than wipe what the officer has.
@@ -241,31 +241,31 @@ function UI:_RegisterFeatureTests()
         for _, v in ipairs(junk) do
             GuildOSInbox = v
             I:ConsumeInbox()
-            local now = BRutus.db.companionRoster
+            local now = GuildOS.db.companionRoster
             if not now or now.title ~= "kept" then
-                BRutus.db.companionRoster, GuildOSInbox = saved, savedGlobal
+                GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
                 return false, "a junk inbox replaced the loaded roster: " .. tostring(v)
             end
         end
 
-        BRutus.db.companionRoster, GuildOSInbox = saved, savedGlobal
+        GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
         return true
     end)
 
     -- Consuming twice must not re-import: a /reload with the same inbox should
     -- leave the stored roster exactly where it was.
     S:Register("companion.inbox_is_idempotent", function()
-        local I = BRutus.CompanionImport
-        local saved, savedGlobal = BRutus.db.companionRoster, GuildOSInbox
-        BRutus.db.companionRoster = nil
+        local I = GuildOS.CompanionImport
+        local saved, savedGlobal = GuildOS.db.companionRoster, GuildOSInbox
+        GuildOS.db.companionRoster = nil
         GuildOSInbox = "GOSROST1:notarealpayload"
 
         I:ConsumeInbox()
-        local first = BRutus.db.companionRoster
+        local first = GuildOS.db.companionRoster
         I:ConsumeInbox()
-        local second = BRutus.db.companionRoster
+        local second = GuildOS.db.companionRoster
 
-        BRutus.db.companionRoster, GuildOSInbox = saved, savedGlobal
+        GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
         if first ~= second then return false, "the second consume changed the store" end
         return true
     end)
@@ -275,7 +275,7 @@ function UI:_RegisterFeatureTests()
     -- running the companion would have created the same night as a different
     -- event and broadcast it. The id has to come from the site's raidId.
     S:Register("calendar.web_raid_has_a_stable_id", function()
-        local Cal = BRutus.Calendar
+        local Cal = GuildOS.Calendar
         if not Cal or type(Cal.UpsertWebRaid) ~= "function" then
             return false, "Calendar:UpsertWebRaid missing"
         end
@@ -294,7 +294,7 @@ function UI:_RegisterFeatureTests()
     end)
 
     S:Register("calendar.web_raid_upsert_is_idempotent", function()
-        local Cal = BRutus.Calendar
+        local Cal = GuildOS.Calendar
         if not Cal or type(Cal.UpsertWebRaid) ~= "function" then
             return false, "Calendar:UpsertWebRaid missing"
         end
@@ -330,8 +330,8 @@ function UI:_RegisterFeatureTests()
     -- saved window as it found it.
     S:Register("window.geometry_roundtrip", function()
         if not UI.SaveWindowGeometry then return false, "SaveWindowGeometry missing" end
-        local mine = BRutus:GetSetting("window")
-        BRutus:SetSetting("window", {})
+        local mine = GuildOS:GetSetting("window")
+        GuildOS:SetSetting("window", {})
         local probe = CreateFrame("Frame", nil, UIParent)
         probe:SetSize(640, 400)
         probe:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 40, 500)
@@ -340,7 +340,7 @@ function UI:_RegisterFeatureTests()
         UI:RestoreWindowGeometry(restored)
         local point, _, relPoint, x, y = restored:GetPoint()
         local w, h = restored:GetWidth(), restored:GetHeight()
-        BRutus:SetSetting("window", mine)
+        GuildOS:SetSetting("window", mine)
         if point ~= "TOPLEFT" or relPoint ~= "BOTTOMLEFT" then
             return false, "point lost: " .. tostring(point) .. "/" .. tostring(relPoint)
         end

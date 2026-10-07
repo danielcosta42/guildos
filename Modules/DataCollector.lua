@@ -1,36 +1,36 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Data Collector
+-- Guild OS - Data Collector
 -- Collects gear, professions, and stats from the local player
 -- and stores data received from other guild members
 ----------------------------------------------------------------------
 local DataCollector = {}
-BRutus.DataCollector = DataCollector
+GuildOS.DataCollector = DataCollector
 
 function DataCollector:Initialize()
-    BRutus:RekeyMembersToThisRealm()   -- Forever: one key per member (issue #95)
+    GuildOS:RekeyMembersToThisRealm()   -- Forever: one key per member (issue #95)
     -- and in every table synced from another client (#97); bad stored data must not stop start-up
-    BRutus:SafeCall(BRutus.LocalizeStoredMemberTables, BRutus)
+    GuildOS:SafeCall(GuildOS.LocalizeStoredMemberTables, GuildOS)
     -- Register inventory change events
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
-    BRutus.Compat.RegisterEvent(frame, "SKILL_LINES_CHANGED")
-    BRutus.Compat.RegisterEvent(frame, "CHAT_MSG_SKILL")
+    GuildOS.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
+    GuildOS.Compat.RegisterEvent(frame, "SKILL_LINES_CHANGED")
+    GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_SKILL")
     -- Cache/talent readiness events: on a cold first login the item cache and
     -- talents may not be loaded when we first collect, producing a snapshot with
     -- avgIlvl=0 / no spec. These let us correct and re-broadcast the moment the
     -- data becomes available, instead of leaving peers with a partial snapshot
     -- until the next 5-minute tick. (Compat.RegisterEvent: not every client has them.)
-    BRutus.Compat.RegisterEvent(frame, "GET_ITEM_INFO_RECEIVED")
-    BRutus.Compat.RegisterEvent(frame, "PLAYER_TALENT_UPDATE")
-    BRutus.Compat.RegisterEvent(frame, "CHARACTER_POINTS_CHANGED")
+    GuildOS.Compat.RegisterEvent(frame, "GET_ITEM_INFO_RECEIVED")
+    GuildOS.Compat.RegisterEvent(frame, "PLAYER_TALENT_UPDATE")
+    GuildOS.Compat.RegisterEvent(frame, "CHARACTER_POINTS_CHANGED")
     frame:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
             C_Timer.After(0.5, function()
                 DataCollector:CollectMyData()
                 -- Broadcast updated gear to guild after a short delay
                 C_Timer.After(2, function()
-                    if BRutus.CommSystem then
-                        BRutus.CommSystem:BroadcastMyData()
+                    if GuildOS.CommSystem then
+                        GuildOS.CommSystem:BroadcastMyData()
                     end
                 end)
             end)
@@ -53,8 +53,8 @@ function DataCollector:Initialize()
                 DataCollector:CollectMyData()
                 -- If the snapshot is now complete, push the corrected data
                 -- (force past the throttle so it isn't swallowed).
-                if not DataCollector._snapshotIncomplete and BRutus.CommSystem then
-                    BRutus.CommSystem:BroadcastMyData(true)
+                if not DataCollector._snapshotIncomplete and GuildOS.CommSystem then
+                    GuildOS.CommSystem:BroadcastMyData(true)
                 end
             end)
         end
@@ -65,9 +65,9 @@ end
 -- Collect all local player data
 ----------------------------------------------------------------------
 function DataCollector:CollectMyData()
-    local name = BRutus.Compat.PlayerName()
+    local name = GuildOS.Compat.PlayerName()
     local realm = GetRealmName()
-    local key = BRutus:GetPlayerKey(name, realm)
+    local key = GuildOS:GetPlayerKey(name, realm)
 
     local _, class = UnitClass("player")
     local level = UnitLevel("player")
@@ -82,7 +82,7 @@ function DataCollector:CollectMyData()
     -- dressed without it.
     local sex = UnitSex("player") or 1
 
-    local data = BRutus.db.members[key] or {}
+    local data = GuildOS.db.members[key] or {}
     data.name = name
     data.realm = realm
     data.class = class
@@ -107,8 +107,8 @@ function DataCollector:CollectMyData()
 
     -- Collect own spec (requires talents to be loaded)
     local specMissing = false
-    if BRutus.SpecChecker then
-        local spec, why = BRutus.SpecChecker:CollectOwnSpec()
+    if GuildOS.SpecChecker then
+        local spec, why = GuildOS.SpecChecker:CollectOwnSpec()
         if spec then
             data.spec = spec
         elseif why == "no-api" then
@@ -131,8 +131,8 @@ function DataCollector:CollectMyData()
     -- own; it rides the normal member-data sync.
     data.resistances = self:CollectResistances()
 
-    BRutus.db.members[key] = data
-    BRutus.db.myData = data
+    GuildOS.db.members[key] = data
+    GuildOS.db.myData = data
 
     -- Flag a partial first-open snapshot (cold item cache / talents not loaded)
     -- so the cache/talent readiness events can re-collect + re-broadcast once
@@ -236,13 +236,13 @@ local RES_LOC_TO_BUCKET = {
 function DataCollector:CollectResistances()
     -- Gather every candidate item link: equipped slots + carried bags.
     local links = {}
-    for _, slotInfo in ipairs(BRutus.SlotIDs) do
+    for _, slotInfo in ipairs(GuildOS.SlotIDs) do
         local l = GetInventoryItemLink("player", slotInfo.id)
         if l then links[#links + 1] = l end
     end
     for bag = 0, 4 do
-        for slot = 1, BRutus.Compat.GetContainerNumSlots(bag) do
-            local l = BRutus.Compat.GetContainerItemLink(bag, slot)
+        for slot = 1, GuildOS.Compat.GetContainerNumSlots(bag) do
+            local l = GuildOS.Compat.GetContainerItemLink(bag, slot)
             if l then links[#links + 1] = l end
         end
     end
@@ -250,7 +250,7 @@ function DataCollector:CollectResistances()
     -- pool[bucket][school] = list of resistance values seen for that slot bucket.
     local pool = {}
     for _, link in ipairs(links) do
-        local _, _, _, _, _, _, _, _, equipLoc = BRutus.Compat.GetItemInfo(link)
+        local _, _, _, _, _, _, _, _, equipLoc = GuildOS.Compat.GetItemInfo(link)
         local bucket = equipLoc and RES_LOC_TO_BUCKET[equipLoc]
         if bucket then
             local itemRes = ItemResistances(link)
@@ -293,12 +293,12 @@ function DataCollector:CollectGear()
     local gear = {}
     local incomplete = false
 
-    for _, slotInfo in ipairs(BRutus.SlotIDs) do
+    for _, slotInfo in ipairs(GuildOS.SlotIDs) do
         local slotId = slotInfo.id
         local itemLink = GetInventoryItemLink("player", slotId)
 
         if itemLink then
-            local itemName, _, itemQuality, itemLevel, _, _, _, _, _, _ = BRutus.Compat.GetItemInfo(itemLink)
+            local itemName, _, itemQuality, itemLevel, _, _, _, _, _, _ = GuildOS.Compat.GetItemInfo(itemLink)
             if not itemName or not itemLevel or itemLevel == 0 then
                 incomplete = true  -- item not in cache yet; name/ilvl unresolved
             end
@@ -359,18 +359,18 @@ function DataCollector:GetEnchantName(enchantId)
     -- Build a fake item link with just the enchant to scan the tooltip
     -- Use a common white-quality item (Linen Cloth = 2589) as base
     local fakeLink = string.format("|cffffffff|Hitem:2589:%d:0:0:0:0:0:0:0|h[Scan]|h|r", enchantId)
-    local tip = BRutus.scanTooltip
+    local tip = GuildOS.scanTooltip
     if not tip then
-        tip = CreateFrame("GameTooltip", "BRutusScanTooltip", nil, "GameTooltipTemplate")
+        tip = CreateFrame("GameTooltip", "GuildOSScanTooltip", nil, "GameTooltipTemplate")
         tip:SetOwner(UIParent, "ANCHOR_NONE")
-        BRutus.scanTooltip = tip
+        GuildOS.scanTooltip = tip
     end
     tip:ClearLines()
     tip:SetHyperlink(fakeLink)
 
     -- The enchant name appears on lines after the item name, look for green text
     for i = 2, tip:NumLines() do
-        local line = _G["BRutusScanTooltipTextLeft" .. i]
+        local line = _G["GuildOSScanTooltipTextLeft" .. i]
         if line then
             local r, g, b = line:GetTextColor()
             -- Green text = enchant lines (r~0, g~1, b~0)
@@ -396,7 +396,7 @@ function DataCollector:CalculateAvgIlvl(gear)
     local total = 0
     local count = 0
 
-    for _, slotInfo in ipairs(BRutus.SlotIDs) do
+    for _, slotInfo in ipairs(GuildOS.SlotIDs) do
         local item = gear[slotInfo.id]
         if item and item.ilvl and item.ilvl > 0 then
             total = total + item.ilvl
@@ -415,13 +415,13 @@ end
 -- broadcast and the export, and the rest of the collection carries on (issue #10).
 function DataCollector:CollectProfessions()
     -- WoW: Forever reads them through Professions, by skill line and with no window (issue #31).
-    if BRutus.Professions then return BRutus.Professions:OwnLegacyList() end
-    local numSkills = BRutus.Compat.GetNumSkillLines()
+    if GuildOS.Professions then return GuildOS.Professions:OwnLegacyList() end
+    local numSkills = GuildOS.Compat.GetNumSkillLines()
     if not numSkills then return nil end
     local profs = {}
 
     for i = 1, numSkills do
-        local skillName, isHeader_, _, skillRank, _, _, skillMaxRank = BRutus.Compat.GetSkillLineInfo(i)
+        local skillName, isHeader_, _, skillRank, _, _, skillMaxRank = GuildOS.Compat.GetSkillLineInfo(i)
 
         -- Check if it's a profession (locale-independent)
         if not isHeader_ and self:IsProfession(skillName) then
@@ -517,9 +517,9 @@ do
         ["First Aid"] = 3273, Fishing = 7620, Poisons = 2842,
     }
     for canonical, spell in pairs(SPELLS) do
-        local ok, name = pcall(BRutus.Compat.GetSpellInfo, spell)
+        local ok, name = pcall(GuildOS.Compat.GetSpellInfo, spell)
         local known = PROF_LOOKUP[canonical]
-        if ok and name ~= nil and not BRutus.Compat.IsSecret(name) and type(name) == "string"
+        if ok and name ~= nil and not GuildOS.Compat.IsSecret(name) and type(name) == "string"
             and name ~= "" and known and not PROF_LOOKUP[name] then
             PROF_LOOKUP[name] = known
         end
@@ -555,12 +555,12 @@ end
 function DataCollector:CollectStats()
     -- While stats are restricted they are secret: left out, never serialised or compared.
     local function readable(v)
-        if BRutus.Compat.IsSecret(v) then return nil end
+        if GuildOS.Compat.IsSecret(v) then return nil end
         return v
     end
     local function base(i)
         local v = UnitStat("player", i)
-        if BRutus.Compat.IsSecret(v) then return nil end
+        if GuildOS.Compat.IsSecret(v) then return nil end
         return v or 0
     end
     local stats = {}
@@ -585,7 +585,7 @@ function DataCollector:StoreReceivedData(playerKey, data)
     if not data.name or not data.class then return end
 
     -- Timestamp check: skip if incoming data is older than what we have
-    local existing = BRutus.db.members[playerKey] or {}
+    local existing = GuildOS.db.members[playerKey] or {}
     if existing.lastUpdate and data.lastUpdate and data.lastUpdate < existing.lastUpdate then
         return
     end
@@ -617,52 +617,52 @@ function DataCollector:StoreReceivedData(playerKey, data)
     end
     existing.lastSync = time()
 
-    BRutus.db.members[playerKey] = existing
+    GuildOS.db.members[playerKey] = existing
 
-    if BRutus.Milestones then
-        BRutus.Milestones:Check(playerKey, existing, prevLevel, prevAttune, hadPrior)
+    if GuildOS.Milestones then
+        GuildOS.Milestones:Check(playerKey, existing, prevLevel, prevAttune, hadPrior)
     end
 
     -- Store recipes if included in broadcast
     if data.recipes then
-        if not BRutus.db.recipes then BRutus.db.recipes = {} end
-        if not BRutus.db.recipes[playerKey] then BRutus.db.recipes[playerKey] = {} end
-        local DC = BRutus.DataCollector
+        if not GuildOS.db.recipes then GuildOS.db.recipes = {} end
+        if not GuildOS.db.recipes[playerKey] then GuildOS.db.recipes[playerKey] = {} end
+        local DC = GuildOS.DataCollector
         for profName, recipes in pairs(data.recipes) do
             local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
             -- Remove old localized keys that map to the same canonical profession
-            for oldKey, _ in pairs(BRutus.db.recipes[playerKey]) do
+            for oldKey, _ in pairs(GuildOS.db.recipes[playerKey]) do
                 if oldKey ~= canonical and DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(oldKey) == canonical then
-                    BRutus.db.recipes[playerKey][oldKey] = nil
+                    GuildOS.db.recipes[playerKey][oldKey] = nil
                 end
             end
             -- Preserve spellIds: merge from existing data into incoming
             -- (same player = same locale, names match)
-            if BRutus.RecipeTracker then
-                BRutus.RecipeTracker:MergeSpellIds(BRutus.db.recipes[playerKey][canonical], recipes)
+            if GuildOS.RecipeTracker then
+                GuildOS.RecipeTracker:MergeSpellIds(GuildOS.db.recipes[playerKey][canonical], recipes)
             end
-            BRutus.db.recipes[playerKey][canonical] = recipes
+            GuildOS.db.recipes[playerKey][canonical] = recipes
         end
     end
 
     -- Update trial snapshots if this player is a trial
-    if BRutus.TrialTracker then
-        BRutus.TrialTracker:UpdateSnapshots()
+    if GuildOS.TrialTracker then
+        GuildOS.TrialTracker:UpdateSnapshots()
     end
 
     -- Refresh UI if open. Routed through RefreshRosterUI (not a direct
-    -- BRutus.RosterFrame:RefreshRoster() call) because the Roster tab builds
+    -- GuildOS.RosterFrame:RefreshRoster() call) because the Roster tab builds
     -- lazily now — RefreshRoster does not exist until that tab has been
     -- activated at least once, and RefreshRosterUI nil-guards for that and
     -- also covers the floating roster window.
-    BRutus:RefreshRosterUI()
+    GuildOS:RefreshRosterUI()
 end
 
 ----------------------------------------------------------------------
 -- Get serializable data for broadcasting
 ----------------------------------------------------------------------
 function DataCollector:GetBroadcastData()
-    local myData = BRutus.db.myData
+    local myData = GuildOS.db.myData
     if not myData then
         myData = self:CollectMyData()
     end
@@ -684,7 +684,7 @@ function DataCollector:GetBroadcastData()
         professions = myData.professions,
         absent = myData.absent,
         stats = myData.stats,
-        addonVersion = BRutus.VERSION,
+        addonVersion = GuildOS.VERSION,
     }
 
     -- Serialize gear with just essential info
@@ -721,8 +721,8 @@ function DataCollector:GetBroadcastData()
     -- Include self-declared roles (the player's own preference; the Raider
     -- Roster shows these unless an officer overrides). Merged generically by
     -- StoreReceivedData into db.members[key].prefRoles.
-    if BRutus.db.profile and BRutus.db.profile.prefRoles then
-        clean.prefRoles = BRutus.db.profile.prefRoles
+    if GuildOS.db.profile and GuildOS.db.profile.prefRoles then
+        clean.prefRoles = GuildOS.db.profile.prefRoles
     end
 
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).
@@ -733,9 +733,9 @@ function DataCollector:GetBroadcastData()
 
     -- Include recipes (keyed by profession). On WoW: Forever ProfSync carries them, by hash,
     -- instead of every broadcast (issue #31).
-    local myKey = BRutus:GetPlayerKey(myData.name, myData.realm or GetRealmName())
-    if not BRutus.Professions and BRutus.db.recipes and BRutus.db.recipes[myKey] then
-        clean.recipes = BRutus.db.recipes[myKey]
+    local myKey = GuildOS:GetPlayerKey(myData.name, myData.realm or GetRealmName())
+    if not GuildOS.Professions and GuildOS.db.recipes and GuildOS.db.recipes[myKey] then
+        clean.recipes = GuildOS.db.recipes[myKey]
     end
 
     return clean

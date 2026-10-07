@@ -41,8 +41,8 @@ local function load(game)
   dofile(ADDON .. "/Core/Core.lua")
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")
-  BRutus.db = { cores = {} }
-  local CM = BRutus.CoreManager
+  GuildOS.db = { cores = {} }
+  local CM = GuildOS.CoreManager
   CM:Create("Main")
   return CM
 end
@@ -67,9 +67,9 @@ check(CM:GetRaidSize("Main") == 40, "Forever: 40 is kept")
 CM:SetRaidSize("Main", 10)
 check(CM:GetRaidSize("Main") == 10, "Forever: 10 is kept")
 CM:SetRaidSize("Main", 25)
-check(CM:GetRaidSize("Main") == 20 and BRutus.db.cores.Main.raidSize == 20,
+check(CM:GetRaidSize("Main") == 20 and GuildOS.db.cores.Main.raidSize == 20,
   "Forever: a size the game does not have is stored as the default, not 25")
-BRutus.db.cores.Main.raidSize = 25                      -- saved by a version that only knew TBC
+GuildOS.db.cores.Main.raidSize = 25                      -- saved by a version that only knew TBC
 check(CM:GetRaidSize("Main") == 20 and CM:NextRaidSize(CM:GetRaidSize("Main")) == 40 and CM:NextRaidSize(25) == 40,
   "Forever: a 25 saved before reads as the default, and the button moves on from it")
 check(CM:RaidTargets(25) == CM:RaidTargets(20) and CM:RaidTargets(nil) == CM:RaidTargets(20),
@@ -85,7 +85,7 @@ check(CM:NextRaidSize(10) == 25 and CM:NextRaidSize(25) == 10, "Anniversary: the
 CM:SetRaidSize("Main", 10)
 check(CM:GetRaidSize("Main") == 10, "Anniversary: 10 is kept")
 CM:SetRaidSize("Main", 40)
-check(CM:GetRaidSize("Main") == 25 and BRutus.db.cores.Main.raidSize == 25,
+check(CM:GetRaidSize("Main") == 25 and GuildOS.db.cores.Main.raidSize == 25,
   "Anniversary: a size the game does not have becomes 25")
 ok, bad = targetsAddUp(CM)
 check(ok, "Anniversary: every format's composition adds up to its size (" .. tostring(bad) .. ")")

@@ -3,9 +3,9 @@
 -- Officer UI for managing multiple raid cores, each with independent
 -- loot rules, attendance penalties, and a DKP/points pool.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local PANEL_W = 1236  -- matches FRAME_WIDTH in RosterFrame
@@ -31,7 +31,7 @@ local function MakeInput(parent, w, numeric, placeholder)
     b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     b:SetBackdropColor(0.05, 0.05, 0.066, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(b, 11)
+    GuildOS:ApplyFont(b, 11)
     b:SetTextColor(C.white.r, C.white.g, C.white.b)
     b:SetTextInsets(6, 6, 0, 0)
     b:SetAutoFocus(false)
@@ -39,7 +39,7 @@ local function MakeInput(parent, w, numeric, placeholder)
     b:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     if placeholder then
         local ph = b:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(ph, 10)
+        GuildOS:ApplyFont(ph, 10)
         ph:SetPoint("LEFT", 6, 0)
         ph:SetTextColor(0.4, 0.4, 0.4)
         ph:SetText(placeholder)
@@ -55,7 +55,7 @@ local function MakeCheck(parent, label)
     cb:SetSize(20, 20)
     if label then
         local lbl = cb:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(lbl, 10)
+        GuildOS:ApplyFont(lbl, 10)
         lbl:SetPoint("LEFT", cb, "RIGHT", 2, 0)
         lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
         lbl:SetText(label)
@@ -66,7 +66,7 @@ end
 
 local function MakeLabel(parent, text, size, r, g, b)
     local f = parent:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(f, size or 10)
+    GuildOS:ApplyFont(f, size or 10)
     f:SetTextColor(r or C.silver.r, g or C.silver.g, b or C.silver.b)
     f:SetText(text)
     return f
@@ -80,7 +80,7 @@ local function MakeSectionHeader(parent, text, y)
     bg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.8)
 
     local lbl = parent:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(lbl, 11)
+    GuildOS:ApplyFont(lbl, 11)
     lbl:SetPoint("TOPLEFT", 8, y - 3)
     lbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     lbl:SetText(text)
@@ -98,7 +98,7 @@ end
 ----------------------------------------------------------------------
 -- Main builder
 ----------------------------------------------------------------------
-function BRutus:CreateCoresPanel(panel)
+function GuildOS:CreateCoresPanel(panel)
     ----------------------------------------------------------------
     -- Status label (shown at the top)
     ----------------------------------------------------------------
@@ -186,14 +186,14 @@ function BRutus:CreateCoresPanel(panel)
     local lastCoreBuilt = nil   -- detect core switch so we reset the selection
 
     local function InferRole(class)
-        return BRutus.CoreManager and BRutus.CoreManager:GetRoleForClass(class) or "rdps"
+        return GuildOS.CoreManager and GuildOS.CoreManager:GetRoleForClass(class) or "rdps"
     end
 
     ----------------------------------------------------------------
     -- Helpers
     ----------------------------------------------------------------
     local function GetActiveName()
-        return BRutus.CoreManager and BRutus.CoreManager:GetActiveName() or ""
+        return GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
     end
 
     local function RowLabel(name)
@@ -232,7 +232,7 @@ function BRutus:CreateCoresPanel(panel)
             noCoreLbl:Show()
             return
         end
-        local CM = BRutus.CoreManager
+        local CM = GuildOS.CoreManager
         if not CM then noCoreLbl:Show(); return end
 
         local function track(w) cfgWidgets[#cfgWidgets + 1] = w; return w end
@@ -246,8 +246,8 @@ function BRutus:CreateCoresPanel(panel)
         local setActiveBtn = track(UI:CreateButton(rightContent, L["Set Active"], 90, 20))
         setActiveBtn:SetPoint("LEFT", coreTitle, "RIGHT", 12, 0)
         setActiveBtn:SetScript("OnClick", function()
-            if BRutus.RaidTracker then
-                BRutus.RaidTracker:PickCore(coreName)
+            if GuildOS.RaidTracker then
+                GuildOS.RaidTracker:PickCore(coreName)
                 SetStatus(string.format(L["Active core set to: %s"], coreName), C.online)
                 -- Refresh row labels
                 for _, row in pairs(coreRows) do
@@ -287,7 +287,7 @@ function BRutus:CreateCoresPanel(panel)
         end)
 
         -- Right-column sub-tab bar: Roster | Sign-ups | Config (officers only)
-        local isOfficer = BRutus:IsOfficer()
+        local isOfficer = GuildOS:IsOfficer()
         -- Force off config tab for non-officers
         if activeRightTab == "config" and not isOfficer then activeRightTab = "roster" end
 
@@ -554,7 +554,7 @@ function BRutus:CreateCoresPanel(panel)
             importBox:SetSize(CFG_W - 54, 70)
             importBox:SetMultiLine(true)
             importBox:SetMaxLetters(50000)
-            BRutus:ApplyFont(importBox, 10)
+            GuildOS:ApplyFont(importBox, 10)
             importBox:SetTextColor(C.text.r, C.text.g, C.text.b)
             importBox:SetAutoFocus(false)
             importBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -644,8 +644,8 @@ function BRutus:CreateCoresPanel(panel)
         local function penSave(key, val)
             CM:SetPenalty(key, val, coreName)
             -- Rebuild from sessions so the new weights apply immediately
-            if BRutus.RaidTracker then
-                BRutus.RaidTracker:RebuildAttendanceFromSessions()
+            if GuildOS.RaidTracker then
+                GuildOS.RaidTracker:RebuildAttendanceFromSessions()
             end
         end
 
@@ -705,7 +705,7 @@ function BRutus:CreateCoresPanel(panel)
             end
             pDB.mode = curMode
             self.label:SetText(MODE_LABEL[curMode] or curMode)
-            if BRutus.Points then BRutus.Points:Refresh() end
+            if GuildOS.Points then GuildOS.Points:Refresh() end
         end)
 
         y = y - 28
@@ -814,7 +814,7 @@ function BRutus:CreateCoresPanel(panel)
         for _, cls in ipairs(CLASS_ORDER) do
             local cnt = comp.classCount[cls]
             if cnt and cnt > 0 then
-                local cr, cg, cb = BRutus:GetClassColor(cls)
+                local cr, cg, cb = GuildOS:GetClassColor(cls)
                 local clsLbl = track(MakeLabel(rightContent,
                     cls:sub(1,1) .. cls:sub(2):lower() .. " ×" .. cnt, 10, cr, cg, cb))
                 clsLbl:SetPoint("TOPLEFT", clsCol * 155 + 4, y)
@@ -868,7 +868,7 @@ function BRutus:CreateCoresPanel(panel)
         for _, entry in ipairs(sortedMbrs) do
             local m  = entry.m
             local mk = entry.key
-            local cr, cg, cb = BRutus:GetClassColor(m.class or "WARRIOR")
+            local cr, cg, cb = GuildOS:GetClassColor(m.class or "WARRIOR")
             local rc = ROLE_C[m.role or "rdps"] or C.silver
             local rowLbl = track(MakeLabel(rightContent,
                 string.format("|cff%02X%02X%02X[%s]|r %s",
@@ -954,13 +954,13 @@ function BRutus:CreateCoresPanel(panel)
                     sb:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
                     sb:SetBackdropColor(0.08, 0.08, 0.12, 1)
                     sb:SetBackdropBorderColor(C.accent.r * 0.5, C.accent.g * 0.5, C.accent.b * 0.5, 0.8)
-                    BRutus:ApplyFont(sb, 10)
+                    GuildOS:ApplyFont(sb, 10)
                     sb:SetTextColor(C.white.r, C.white.g, C.white.b)
                     sb:SetTextInsets(6, 6, 0, 0)
                     sb:SetAutoFocus(false)
                     sb:SetScript("OnEscapePressed", function() gmDropdown:Hide() end)
                     local sbph = sb:CreateFontString(nil, "OVERLAY")
-                    BRutus:ApplyFont(sbph, 10)
+                    GuildOS:ApplyFont(sbph, 10)
                     sbph:SetPoint("LEFT", 6, 0)
                     sbph:SetTextColor(0.35, 0.35, 0.35)
                     sbph:SetText(L["Search..."])
@@ -1030,9 +1030,9 @@ function BRutus:CreateCoresPanel(panel)
                     local gy = 0
                     for _, gm in ipairs(guildMembers) do
                         if not lf or gm.name:lower():find(lf, 1, true) then
-                            local key = BRutus:GetPlayerKey(gm.name, GetRealmName())
+                            local key = GuildOS:GetPlayerKey(gm.name, GetRealmName())
                             local alreadyIn = inCoreKeys[key]
-                            local cr, cg, cb = BRutus:GetClassColor(gm.class)
+                            local cr, cg, cb = GuildOS:GetClassColor(gm.class)
                             local dot = gm.online and "|TInterface\\COMMON\\Indicator-Green:10|t " or "|TInterface\\COMMON\\Indicator-Gray:10|t "
 
                             local row = CreateFrame("Button", nil, gmDropdown.child, "BackdropTemplate")
@@ -1050,7 +1050,7 @@ function BRutus:CreateCoresPanel(panel)
                             end
 
                             local txt = row:CreateFontString(nil, "OVERLAY")
-                            BRutus:ApplyFont(txt, 10)
+                            GuildOS:ApplyFont(txt, 10)
                             txt:SetPoint("LEFT", 4, 0)
                             txt:SetTextColor(alreadyIn and 0.35 or cr, alreadyIn and 0.35 or cg, alreadyIn and 0.35 or cb)
                             txt:SetText(dot .. gm.name)
@@ -1121,7 +1121,7 @@ function BRutus:CreateCoresPanel(panel)
             addBtn:SetPoint("LEFT", roleBtn, "RIGHT", 6, 0)
             addBtn:SetScript("OnClick", function()
                 if not addGMName then SetStatus(L["Select a player first."], C.red); return end
-                local k = BRutus:GetPlayerKey(addGMName, GetRealmName())
+                local k = GuildOS:GetPlayerKey(addGMName, GetRealmName())
                 CM:AddMember(k, {
                     name  = addGMName,
                     class = addGMClass,
@@ -1169,7 +1169,7 @@ function BRutus:CreateCoresPanel(panel)
         for _, entry in ipairs(suList) do
             local su = entry.su
             local sk = entry.key
-            local cr, cg, cb = BRutus:GetClassColor(su.class or "WARRIOR")
+            local cr, cg, cb = GuildOS:GetClassColor(su.class or "WARRIOR")
             local tsStr = su.ts and TimeAgo(su.ts) or ""
             local nameLbl = track(MakeLabel(rightContent,
                 string.format("%s |cff888888(%s)|r", su.name or sk, (RL and RL[su.role]) or su.role or "?"),
@@ -1221,9 +1221,9 @@ function BRutus:CreateCoresPanel(panel)
         for _, row in pairs(coreRows) do row:Hide() end
         coreRows = {}
 
-        if not BRutus.CoreManager then return end
+        if not GuildOS.CoreManager then return end
 
-        local names = BRutus.CoreManager:GetSortedNames()
+        local names = GuildOS.CoreManager:GetSortedNames()
         local ROW_H = 28
         for idx, name in ipairs(names) do
             local row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
@@ -1238,7 +1238,7 @@ function BRutus:CreateCoresPanel(panel)
                 isEven and C.row2.a or C.row1.a)
 
             local lbl = row:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(lbl, 11)
+            GuildOS:ApplyFont(lbl, 11)
             lbl:SetPoint("LEFT", 8, 0)
             lbl:SetTextColor(C.text.r, C.text.g, C.text.b)
             lbl:SetText(RowLabel(name))
@@ -1286,7 +1286,7 @@ function BRutus:CreateCoresPanel(panel)
             SetStatus(L["Enter a name for the new core."], C.red)
             return
         end
-        local ok, err = BRutus.CoreManager:Create(name)
+        local ok, err = GuildOS.CoreManager:Create(name)
         if not ok then
             SetStatus(err, C.red)
         else
@@ -1301,7 +1301,7 @@ function BRutus:CreateCoresPanel(panel)
     ----------------------------------------------------------------
     -- Refresh hook — called when the panel becomes visible or from sync
     ----------------------------------------------------------------
-    BRutus.coresPanelRefresh = function()
+    GuildOS.coresPanelRefresh = function()
         RebuildList()
         if selectedCore then BuildSettings(selectedCore) end
     end

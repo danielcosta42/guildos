@@ -68,7 +68,7 @@ local function load(game)
   dofile(ADDON .. "/Modules/CommSystem.lua")
   dofile(ADDON .. "/Modules/DataCollector.lua")
   dofile(ADDON .. "/Modules/PugInspector.lua")
-  BRutus.db = { members = {}, settings = {} }
+  GuildOS.db = { members = {}, settings = {} }
   return function(t) return LibStub("GuildOS-LibSerialize"):Serialize(t) end
 end
 
@@ -76,52 +76,52 @@ end
 local function rosterKey(name)
   local displayName = name:match("^([^-]+)") or name
   local realm = name:match("-(.+)$") or GetRealmName()
-  return BRutus:GetPlayerKey(displayName, realm)
+  return GuildOS:GetPlayerKey(displayName, realm)
 end
 
 -- ── 1. Forever: the sender's realm does not split a member ──────────────
 local ser = load("forever")
 local expected = "Cherry Arrow-" .. MY_REALM
 check(rosterKey("Cherry Arrow") == expected, "forever: the roster line's key carries this client's realm")
-check(BRutus:GetPlayerKey("Cherry Arrow", "Classic Beta PvE") == expected,
+check(GuildOS:GetPlayerKey("Cherry Arrow", "Classic Beta PvE") == expected,
   "forever: a realm from elsewhere does not change the key")
-check(BRutus:GetPlayerKey("Cherry Arrow", "ClassicBetaPvE") == expected, "forever: nor does a normalized one")
+check(GuildOS:GetPlayerKey("Cherry Arrow", "ClassicBetaPvE") == expected, "forever: nor does a normalized one")
 
 -- A broadcast from a guildmate whose client answers another realm, sent the way 0.59.3 sends it.
-BRutus.CommSystem:HandleBroadcast("Cherry Arrow-ClassicBetaPvE",
+GuildOS.CommSystem:HandleBroadcast("Cherry Arrow-ClassicBetaPvE",
   ser({ name = "Cherry Arrow", realm = "Classic Beta PvE", class = "HUNTER", level = 21, avgIlvl = 18,
         lastUpdate = 1790991824, addonVersion = "0.59.3" }))
-local got = BRutus.db.members[rosterKey("Cherry Arrow")]
+local got = GuildOS.db.members[rosterKey("Cherry Arrow")]
 check(got and got.avgIlvl == 18 and got.addonVersion == "0.59.3",
   "forever: her data lands on her roster line, so the roster sees Guild OS and her item level")
-check(BRutus.db.members["Cherry Arrow-Classic Beta PvE"] == nil, "forever: and not under a key the roster never asks")
-local rows = BRutus.CommSystem:GetSyncHealth()
+check(GuildOS.db.members["Cherry Arrow-Classic Beta PvE"] == nil, "forever: and not under a key the roster never asks")
+local rows = GuildOS.CommSystem:GetSyncHealth()
 local cherry
 for _, r in ipairs(rows) do if r.name == "Cherry Arrow" then cherry = r end end
 check(cherry and cherry.hasAddon and cherry.version == "0.59.3", "forever: the guild's sync health shows her with Guild OS 0.59.3")
 
 -- The same with no suffix on the sender and no realm in the payload.
-BRutus.CommSystem:HandleBroadcast("Chehul Druida",
+GuildOS.CommSystem:HandleBroadcast("Chehul Druida",
   ser({ name = "Chehul Druida", class = "DRUID", level = 10, lastUpdate = 1790000000 }))
-check(BRutus.db.members["Chehul Druida-" .. MY_REALM], "forever: a bare sender keys the same way")
+check(GuildOS.db.members["Chehul Druida-" .. MY_REALM], "forever: a bare sender keys the same way")
 
 -- A group member, as the group APIs name them: the same key as their roster line.
 local seen
-BRutus.PugInspector:Classify("Cherry Arrow-ClassicBetaPvE", { realm = BRutus:GetClientRealm() or "", guildShort = {},
+GuildOS.PugInspector:Classify("Cherry Arrow-ClassicBetaPvE", { realm = GuildOS:GetClientRealm() or "", guildShort = {},
   altLinks = {}, noteFor = function(_, _, key) seen = key end })
 check(seen == expected, "forever: the group inspector keys a guildmate like the roster does")
 
 -- The in-game self-tests that key members still pass on Forever.
 local selfTests = {}
-BRutus.SelfTest = { Register = function(_, name, fn) selfTests[name] = fn end }
-BRutus.PugInspector:_RegisterTests()
+GuildOS.SelfTest = { Register = function(_, name, fn) selfTests[name] = fn end }
+GuildOS.PugInspector:_RegisterTests()
 local okST, why = selfTests["pug.classify_keyform"]()
 check(okST, "forever: the pug inspector's key-form self-test passes (" .. tostring(why) .. ")")
-BRutus.SelfTest = nil
+GuildOS.SelfTest = nil
 
 -- ── 2. Forever: what an earlier version stored under the sender's realm ──
 load("forever")
-BRutus.db.members = {
+GuildOS.db.members = {
   ["Cherry Arrow-Classic Beta PvE"]  = { name = "Cherry Arrow", class = "HUNTER", lastUpdate = 300, avgIlvl = 18 },
   ["Cherry Arrow-" .. MY_REALM]      = { name = "Cherry Arrow", class = "HUNTER", lastUpdate = 100, avgIlvl = 9 },
   ["Allyah Fon-Classic Beta PvE"]    = { name = "Allyah Fon", class = "PRIEST", lastUpdate = 50 },
@@ -134,8 +134,8 @@ BRutus.db.members = {
   ["No Stamp-" .. MY_REALM]          = { name = "No Stamp" },
   ["Nameless-Classic Beta PvE"]      = {},
 }
-BRutus.DataCollector:Initialize()                        -- the wiring: the migration runs at start-up
-local m = BRutus.db.members
+GuildOS.DataCollector:Initialize()                        -- the wiring: the migration runs at start-up
+local m = GuildOS.db.members
 check(m["Cherry Arrow-" .. MY_REALM].lastUpdate == 300 and m["Cherry Arrow-Classic Beta PvE"] == nil,
   "forever: a newer record under another realm takes the right key, the older one goes")
 check(m["Allyah Fon-" .. MY_REALM] and m["Allyah Fon-Classic Beta PvE"] == nil, "forever: one alone simply moves")
@@ -146,7 +146,7 @@ check(m["Tie Here-" .. MY_REALM].avgIlvl == 2, "forever: a tie keeps the record 
 check(m["No Stamp-" .. MY_REALM] and m["No Stamp-" .. MY_REALM].spec == "Holy" and m["No Stamp-Classic Beta PvE"] == nil,
   "forever: records with no timestamp move without raising")
 check(m["Nameless-Classic Beta PvE"] ~= nil, "forever: a record with no name is left where it is")
-BRutus:RekeyMembersToThisRealm()
+GuildOS:RekeyMembersToThisRealm()
 check(m["Stale Too-" .. MY_REALM].lastUpdate == 20, "forever: running again changes nothing")
 check(m["Old One-" .. MY_REALM].lastUpdate == 999, "forever: a record already right is left alone")
 local n = 0
@@ -155,10 +155,10 @@ check(n == 7, "forever: nobody is counted twice afterwards")
 
 -- ── 3. Anniversary: realms are real, and keys keep their bytes ──────────
 load("anniversary")
-check(BRutus:GetPlayerKey("Bob", "Spineshatter") == "Bob-Spineshatter", "anniversary: another realm still keys apart")
-check(BRutus:GetPlayerKey("Bob") == "Bob-" .. MY_REALM, "anniversary: no realm is this client's, as before")
-BRutus.db.members = { ["Bob-Spineshatter"] = { name = "Bob", class = "MAGE", lastUpdate = 1 } }
-BRutus:RekeyMembersToThisRealm()
-check(BRutus.db.members["Bob-Spineshatter"] ~= nil, "anniversary: the rekey leaves another realm's member where it is")
+check(GuildOS:GetPlayerKey("Bob", "Spineshatter") == "Bob-Spineshatter", "anniversary: another realm still keys apart")
+check(GuildOS:GetPlayerKey("Bob") == "Bob-" .. MY_REALM, "anniversary: no realm is this client's, as before")
+GuildOS.db.members = { ["Bob-Spineshatter"] = { name = "Bob", class = "MAGE", lastUpdate = 1 } }
+GuildOS:RekeyMembersToThisRealm()
+check(GuildOS.db.members["Bob-Spineshatter"] ~= nil, "anniversary: the rekey leaves another realm's member where it is")
 
 print(("forever-keys: %d checks passed"):format(checks))

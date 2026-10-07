@@ -43,9 +43,9 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
 dofile(ADDON .. "/Modules/Mentions.lua")
-local R, M = BRutus.Recruitment, BRutus.Mentions
+local R, M = GuildOS.Recruitment, GuildOS.Mentions
 local printed = {}
-function BRutus:Print(msg) printed[#printed + 1] = tostring(msg) end
+function GuildOS:Print(msg) printed[#printed + 1] = tostring(msg) end
 
 -- ── Auto-invite rules ───────────────────────────────────────────────────
 local cfg = { keyword = "ginv", minLevel = 0, classes = {}, whoFallback = "skip" }
@@ -74,12 +74,12 @@ check(R:RemoveChannel(chans, "MYRECRUITCHAN") and #chans == 0, "a channel is rem
 check(not R:RemoveChannel(chans, "Nope"), "removing one that is not there says so")
 
 -- ── The commands go through the same rules ──────────────────────────────
-BRutus.db = {}
+GuildOS.db = {}
 printed = {}
 check(pcall(R.HandleCommand, R, { "status" }), "/gos recruit with no recruitment settings does not raise")
 check(printed[1] and printed[1]:find("officers"), "and says who has them")
-BRutus.db.recruitment = { channels = {}, autoInvite = { keyword = "ginv", minLevel = 0, classes = {}, whoFallback = "skip" } }
-local ai = BRutus.db.recruitment.autoInvite
+GuildOS.db.recruitment = { channels = {}, autoInvite = { keyword = "ginv", minLevel = 0, classes = {}, whoFallback = "skip" } }
+local ai = GuildOS.db.recruitment.autoInvite
 R:HandleAutoInviteCommand({ "class", "add", "maeg" })
 check(next(ai.classes) == nil, "/gos autoinvite class add with a typo stores nothing")
 R:HandleAutoInviteCommand({ "class", "add", "priest" })
@@ -92,7 +92,7 @@ R:HandleAutoInviteCommand({ "fallback", "invite" })
 check(ai.whoFallback == "invite", "/gos autoinvite fallback")
 R:HandleCommand({ "channel", "add", "Trade" })
 R:HandleCommand({ "channel", "add", "trade" })
-check(#BRutus.db.recruitment.channels == 1, "/gos recruit channel add lists a channel once")
+check(#GuildOS.db.recruitment.channels == 1, "/gos recruit channel add lists a channel once")
 
 -- ── A typo stored before is gone once recruitment starts ─────────────────
 function GetGuildInfo() return "Guild", "Officer", 1 end
@@ -100,16 +100,16 @@ function IsInGuild() return true end
 function GetNumGuildMembers() return 0 end
 function GetGuildRosterInfo() return nil end
 function CanGuildInvite() return true end
-BRutus.db = { recruitment = { autoInvite = { classes = { MAEG = true, MAGE = true } } } }
+GuildOS.db = { recruitment = { autoInvite = { classes = { MAEG = true, MAGE = true } } } }
 R:Initialize()
-check(BRutus.db.recruitment.autoInvite.classes.MAEG == nil and BRutus.db.recruitment.autoInvite.classes.MAGE,
+check(GuildOS.db.recruitment.autoInvite.classes.MAEG == nil and GuildOS.db.recruitment.autoInvite.classes.MAGE,
       "Initialize drops the typo and keeps the class")
 
 -- ── A chip stays inside its slot ────────────────────────────────────────
-check(BRutus:ChipLabel("Trade") == "Trade  x", "a short name is shown whole")
-check(BRutus:ChipLabel("need  heals") == "need heals  x", "text only tidied is not marked as cut")
-check(BRutus:ChipLabel("a very long watch phrase") == "a very long wa..  x", "a long one is cut, and says so")
-check(BRutus:ChipLabel("abcdefghijklmçao") == "abcdefghijklm..  x", "and never inside a character")
+check(GuildOS:ChipLabel("Trade") == "Trade  x", "a short name is shown whole")
+check(GuildOS:ChipLabel("need  heals") == "need heals  x", "text only tidied is not marked as cut")
+check(GuildOS:ChipLabel("a very long watch phrase") == "a very long wa..  x", "a long one is cut, and says so")
+check(GuildOS:ChipLabel("abcdefghijklmçao") == "abcdefghijklm..  x", "and never inside a character")
 
 -- ── Mentions: a watch-word comes off the list the way it went on ─────────
 local words = {}

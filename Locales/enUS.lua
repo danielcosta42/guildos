@@ -4,7 +4,7 @@
 -- This file is the authoritative list of every translatable string; loads
 -- unconditionally. Translators copy keys from here into their locale file.
 ----------------------------------------------------------------------
-local L = BRutus.L
+local L = GuildOS.L
 
 -- Populated during i18n conversion.
 local _ = L

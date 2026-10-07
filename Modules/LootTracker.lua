@@ -1,15 +1,15 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Loot Tracker
+-- Guild OS - Loot Tracker
 -- Records items awarded by the Master Looter (officer-only).
 -- History is populated exclusively via RecordMLAward;
 -- generic CHAT_MSG_LOOT is NOT tracked.
 ----------------------------------------------------------------------
 local LootTracker = {}
-BRutus.LootTracker = LootTracker
+GuildOS.LootTracker = LootTracker
 
 function LootTracker:Initialize()
-    if not BRutus.db.lootHistory then
-        BRutus.db.lootHistory = {}
+    if not GuildOS.db.lootHistory then
+        GuildOS.db.lootHistory = {}
     end
 end
 
@@ -17,20 +17,20 @@ end
 -- Called by LootMaster:AwardLoot (locally) and by the AWARD
 -- addon message handler (peers, officer-verified).
 function LootTracker:RecordMLAward(entry)
-    if not BRutus.db.lootHistory then
-        BRutus.db.lootHistory = {}
+    if not GuildOS.db.lootHistory then
+        GuildOS.db.lootHistory = {}
     end
-    table.insert(BRutus.db.lootHistory, 1, entry)
-    while #BRutus.db.lootHistory > 500 do
-        table.remove(BRutus.db.lootHistory)
+    table.insert(GuildOS.db.lootHistory, 1, entry)
+    while #GuildOS.db.lootHistory > 500 do
+        table.remove(GuildOS.db.lootHistory)
     end
 end
 
 function LootTracker:GetHistory(limit)
     limit = limit or 50
     local result = {}
-    for i = 1, math.min(limit, #BRutus.db.lootHistory) do
-        result[i] = BRutus.db.lootHistory[i]
+    for i = 1, math.min(limit, #GuildOS.db.lootHistory) do
+        result[i] = GuildOS.db.lootHistory[i]
     end
     return result
 end
@@ -38,7 +38,7 @@ end
 function LootTracker:GetPlayerLoot(playerKey, limit)
     limit = limit or 20
     local result = {}
-    for _, entry in ipairs(BRutus.db.lootHistory) do
+    for _, entry in ipairs(GuildOS.db.lootHistory) do
         if entry.playerKey == playerKey then
             table.insert(result, entry)
             if #result >= limit then break end
@@ -49,7 +49,7 @@ end
 
 function LootTracker:GetLootCount(playerKey)
     local count = 0
-    for _, entry in ipairs(BRutus.db.lootHistory) do
+    for _, entry in ipairs(GuildOS.db.lootHistory) do
         if entry.playerKey == playerKey then
             count = count + 1
         end
@@ -60,7 +60,7 @@ end
 function LootTracker:GetRaidLoot(raidName, limit)
     limit = limit or 50
     local result = {}
-    for _, entry in ipairs(BRutus.db.lootHistory) do
+    for _, entry in ipairs(GuildOS.db.lootHistory) do
         if entry.raid == raidName then
             table.insert(result, entry)
             if #result >= limit then break end
@@ -70,13 +70,13 @@ function LootTracker:GetRaidLoot(raidName, limit)
 end
 
 function LootTracker:DeleteEntry(index)
-    if BRutus.db.lootHistory[index] then
-        table.remove(BRutus.db.lootHistory, index)
+    if GuildOS.db.lootHistory[index] then
+        table.remove(GuildOS.db.lootHistory, index)
     end
 end
 
 function LootTracker:ClearHistory()
-    wipe(BRutus.db.lootHistory)
+    wipe(GuildOS.db.lootHistory)
 end
 
 ----------------------------------------------------------------------
@@ -87,14 +87,14 @@ end
 ----------------------------------------------------------------------
 function LootTracker:GetGuildLootEquity()
     local rows = {}
-    local RT = BRutus.RaidTracker
+    local RT = GuildOS.RaidTracker
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, _, _, _, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
+            local key = GuildOS:GetPlayerKey(short, realm)
             local items = self:GetLootCount(key)
             local att, raids = 0, 0
             if RT then

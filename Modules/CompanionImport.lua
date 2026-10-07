@@ -14,7 +14,7 @@
 -- the export module so a new entry point cannot forget to ask.
 ----------------------------------------------------------------------
 local Import = {}
-BRutus.CompanionImport = Import
+GuildOS.CompanionImport = Import
 
 --- The name to invite, and to match a raid slot or a guild roster row by.
 --- On TBC Anniversary a name that arrives with its realm ("Chehul-Mankrik") is cut back
@@ -25,8 +25,8 @@ BRutus.CompanionImport = Import
 --- way a roster row does — compared as plain text, never as a pattern. The site does the
 --- same with the keys it receives (the site's specs/036).
 function Import.PlainName(name)
-    if BRutus.Client.isAnniversary then return name:match("^([^-]+)") or name end
-    local realm = BRutus:GetClientRealm()
+    if GuildOS.Client.isAnniversary then return name:match("^([^-]+)") or name end
+    local realm = GuildOS:GetClientRealm()
     if realm and realm ~= "" then
         local compact = (realm:gsub("%s", ""))
         for _, suffix in ipairs({ "-" .. realm, "-" .. compact }) do
@@ -38,7 +38,7 @@ function Import.PlainName(name)
     return name
 end
 
-local L = BRutus.L
+local L = GuildOS.L
 local WIRE_PREFIX = "GOSROST1:"
 
 ----------------------------------------------------------------------
@@ -47,7 +47,7 @@ local WIRE_PREFIX = "GOSROST1:"
 
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
 function Import:Parse(raw)
-    if not (BRutus.Companion and BRutus.Companion:IsEnabled()) then
+    if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
         return nil, L["The web companion is off. Turn it on with /gos web on."]
     end
 
@@ -68,7 +68,7 @@ function Import:Parse(raw)
     local json = LibDeflate:DecompressDeflate(compressed)
     if not json then return nil, L["The roster string is damaged. Copy it again."] end
 
-    local ok, data = pcall(BRutus.JsonDecode, json)
+    local ok, data = pcall(GuildOS.JsonDecode, json)
     if not ok or type(data) ~= "table" or data.fmt ~= "GOSROST1" then
         return nil, L["The roster string is damaged. Copy it again."]
     end
@@ -138,12 +138,12 @@ function Import:Load(raw)
     local roster, err = self:Parse(raw)
     if not roster then return nil, err end
 
-    BRutus.db.companionRoster = roster
+    GuildOS.db.companionRoster = roster
     return #roster.members
 end
 
 function Import:Current()
-    return BRutus.db and BRutus.db.companionRoster
+    return GuildOS.db and GuildOS.db.companionRoster
 end
 
 --- What the site last confirmed. Returns (unixTime, members) or nil.
@@ -218,8 +218,8 @@ function Import:ConsumeInbox()
         local roster = self:Parse(raw)
         if roster then
             imported = imported + 1
-            if BRutus.Calendar and BRutus.Calendar.UpsertWebRaid then
-                BRutus:SafeCall(function() BRutus.Calendar:UpsertWebRaid(roster) end)
+            if GuildOS.Calendar and GuildOS.Calendar.UpsertWebRaid then
+                GuildOS:SafeCall(function() GuildOS.Calendar:UpsertWebRaid(roster) end)
             end
             if roster.raidId and roster.instanceKey then
                 planned[#planned + 1] = {
@@ -236,8 +236,8 @@ function Import:ConsumeInbox()
     if imported == 0 then return false end
 
     self._lastInbox = key
-    BRutus.db.companionRoster = soonest
-    BRutus.db.companionRaids = planned
+    GuildOS.db.companionRoster = soonest
+    GuildOS.db.companionRaids = planned
     return true, #soonest.members
 end
 
@@ -262,7 +262,7 @@ function Import:RaidFor(instanceKey, when)
     when = tonumber(when) or 0
 
     local best, bestGap
-    for _, r in ipairs((BRutus.db and BRutus.db.companionRaids) or {}) do
+    for _, r in ipairs((GuildOS.db and GuildOS.db.companionRaids) or {}) do
         if r.instanceKey == instanceKey then
             local gap = when - (r.startsAt or 0)
             if gap >= -MATCH_EARLY and gap <= MATCH_LATE then
@@ -288,7 +288,7 @@ end
 ----------------------------------------------------------------------
 function Import:CanInvite()
     if not self:Current() then return false, L["Import a roster first."] end
-    if not (BRutus.Companion and BRutus.Companion:IsEnabled()) then
+    if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
         return false, L["The web companion is off. Turn it on with /gos web on."]
     end
     return true
@@ -347,17 +347,17 @@ function Import:InviteAll()
     -- Who is already here. Inviting someone in the raid produces an error
     -- message in their chat for no reason.
     local present = {}
-    local me = BRutus.Compat.PlayerName()
+    local me = GuildOS.Compat.PlayerName()
     present[me] = true
     for i = 1, (GetNumGroupMembers() or 0) do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local n = BRutus.Compat.UnitIdentity(unit)
+        local n = GuildOS.Compat.UnitIdentity(unit)
         if n then present[n] = true end
     end
 
     -- Compat knows which invite the client has: WoW: Forever only has C_PartyInfo's (issue #43).
     local function ask(name)
-        BRutus.Compat.InviteUnit(name)
+        GuildOS.Compat.InviteUnit(name)
     end
 
     local invited, skipped = 0, 0
@@ -425,10 +425,10 @@ end
 local reader = CreateFrame("Frame")
 reader:RegisterEvent("PLAYER_LOGIN")
 reader:SetScript("OnEvent", function()
-    BRutus:SafeCall(function()
+    GuildOS:SafeCall(function()
         local ok, count = Import:ConsumeInbox()
         if ok then
-            BRutus:Print(string.format(L["Roster from the website: %d signed up."], count))
+            GuildOS:Print(string.format(L["Roster from the website: %d signed up."], count))
         end
     end)
 end)

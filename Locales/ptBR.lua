@@ -2,7 +2,7 @@
 -- Guild OS - Português (Brasil)
 ----------------------------------------------------------------------
 if (GetLocale and GetLocale()) ~= "ptBR" then return end
-local L = BRutus.L
+local L = GuildOS.L
 
 -- Core/Commands.lua
 L["Data collected."] = "Dados coletados."

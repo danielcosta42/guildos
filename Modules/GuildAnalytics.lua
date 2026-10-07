@@ -4,7 +4,7 @@
 -- aggregation over the guild roster, shown as bars in a /gos analytics window.
 ----------------------------------------------------------------------
 local GuildAnalytics = {}
-BRutus.GuildAnalytics = GuildAnalytics
+GuildOS.GuildAnalytics = GuildAnalytics
 
 GuildAnalytics.DIMENSIONS = { "class", "level", "rank", "zone" }
 
@@ -14,7 +14,7 @@ end
 
 function GuildAnalytics:_LevelBracket(level)
     level = level or 0
-    local cap = BRutus.Client.maxLevel
+    local cap = GuildOS.Client.maxLevel
     if level >= cap then return tostring(cap) end
     local lo = math.floor(level / 10) * 10
     if lo == 0 then return "1-9" end
@@ -73,9 +73,9 @@ local LABEL_WIDTH = 110  -- left column width for the dimension label
 local ROW_HEIGHT  = 22
 
 function GuildAnalytics:Show()
-    local UI = BRutus.UI
-    local C = BRutus.Colors
-    local L = BRutus.L
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
+    local L = GuildOS.L
 
     self._dim = self._dim or "class"
     if self._onlineOnly == nil then self._onlineOnly = false end
@@ -116,7 +116,7 @@ function GuildAnalytics:Show()
             tab:SetPoint("TOPLEFT", tabX, -42)
             tab:SetScript("OnClick", function()
                 self._dim = def.dim
-                if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+                if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
             end)
             tabs[def.dim] = tab
             tabX = tabX + tab:GetWidth() + 6  -- a tab its label grew pushes the next one (issue #28)
@@ -129,7 +129,7 @@ function GuildAnalytics:Show()
         onlineCB.checkbox:SetChecked(self._onlineOnly)
         onlineCB.checkbox.onChanged = function(_, checked)
             self._onlineOnly = checked and true or false
-            if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+            if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
         end
 
         -- Bar list (ScrollFrame gotcha: CreateScrollFrame does NOT anchor the
@@ -211,8 +211,8 @@ function GuildAnalytics:Show()
 end
 
 function GuildAnalytics:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("analytics.class", function()
         local roster = { { class = "MAGE", online = true }, { class = "MAGE", online = false }, { class = "WARRIOR", online = true } }
         local out, total = GuildAnalytics:Distribution("class", false, roster)
@@ -227,7 +227,7 @@ function GuildAnalytics:_RegisterTests()
         return true
     end)
     S:Register("analytics.level_bracket", function()
-        local cap = BRutus.Client.maxLevel
+        local cap = GuildOS.Client.maxLevel
         if GuildAnalytics:_LevelBracket(cap) ~= tostring(cap) then return false, "cap" end
         if GuildAnalytics:_LevelBracket(55) ~= "50-59" then return false, "50-59" end
         if GuildAnalytics:_LevelBracket(5) ~= "1-9" then return false, "1-9" end

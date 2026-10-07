@@ -46,8 +46,8 @@ local function load(game)
   dofile(ADDON .. "/Modules/GuildAnalytics.lua")
   dofile(ADDON .. "/Modules/Milestones.lua")
   dofile(ADDON .. "/Modules/RecruitScanner.lua")
-  BRutus.db = { milestones = { events = {} } }
-  return BRutus
+  GuildOS.db = { milestones = { events = {} } }
+  return GuildOS
 end
 
 for game, cap in pairs({ anniversary = 70, forever = 60 }) do

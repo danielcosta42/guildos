@@ -10,9 +10,9 @@
 -- its own half — but the companion now leaves what the site answered in
 -- the inbox, and that line is allowed to say "the site has it".
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
 local SITE    = "guildos.me"
 local PAD     = 14   -- panel edge to content
@@ -79,7 +79,7 @@ local function summarise(roster)
     -- Same answer the invite button acts on. Listing somebody under "the game has never
     -- seen this character" a second after inviting them off the guild roster is exactly
     -- the disagreement this panel exists to remove.
-    local I = BRutus.CompanionImport
+    local I = GuildOS.CompanionImport
     local rescued = (I and I.Rescued) and I:Rescued(roster) or {}
 
     local s = {
@@ -124,13 +124,13 @@ end
 -- the button and the action must not disagree about the rule.
 ----------------------------------------------------------------------
 local function canPublishNow()
-    local co = BRutus.Companion
+    local co = GuildOS.Companion
     if not (co and co:IsEnabled()) then return false, L["Turn publishing on first."] end
     if InCombatLockdown() then return false, L["Can't reload during combat."] end
     return true
 end
 
-function BRutus:CreateWebPanel(parent, _win)
+function GuildOS:CreateWebPanel(parent, _win)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints()
 
@@ -238,7 +238,7 @@ function BRutus:CreateWebPanel(parent, _win)
     local copyBtn = UI:CreateButton(panel, L["Copy"], 70, 18)
 
     -- WoW cannot open a browser, so the address goes into a pre-selected
-    -- read-only box for Ctrl+C. Same idiom as BRutus:ShowExportPopup.
+    -- read-only box for Ctrl+C. Same idiom as GuildOS:ShowExportPopup.
     local copyBox = CreateFrame("EditBox", nil, panel, "BackdropTemplate")
     copyBox:SetHeight(20)
     copyBox:SetBackdrop({
@@ -248,7 +248,7 @@ function BRutus:CreateWebPanel(parent, _win)
     })
     copyBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     copyBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(copyBox, 11)
+    GuildOS:ApplyFont(copyBox, 11)
     copyBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
     copyBox:SetTextInsets(6, 6, 0, 0)
     copyBox:SetAutoFocus(false)
@@ -269,7 +269,7 @@ function BRutus:CreateWebPanel(parent, _win)
         copyBox:SetText(SITE)
         copyBox:HighlightText()
         copyBox:SetFocus()
-        BRutus:Print(L["Address selected — press Ctrl+C"])
+        GuildOS:Print(L["Address selected — press Ctrl+C"])
         panel:Relayout()
     end)
 
@@ -277,7 +277,7 @@ function BRutus:CreateWebPanel(parent, _win)
     -- Wiring
     ----------------------------------------------------------------
     toggleBtn:SetScript("OnClick", function()
-        local co = BRutus.Companion
+        local co = GuildOS.Companion
         if not co then return end
         co:SetEnabled(not co:IsEnabled())
         panel:Refresh()
@@ -291,29 +291,29 @@ function BRutus:CreateWebPanel(parent, _win)
     end)
 
     bringBtn:SetScript("OnClick", function()
-        BRutus:ShowImportPopup()
+        GuildOS:ShowImportPopup()
     end)
 
     inviteBtn:SetScript("OnClick", function()
-        local I = BRutus.CompanionImport
+        local I = GuildOS.CompanionImport
         if not I then return end
         local n, skipped, err = I:InviteAll()
         if err then
-            BRutus:Print(err)
+            GuildOS:Print(err)
         else
-            BRutus:Print(string.format(L["Invited %d, already here %d."], n, skipped))
+            GuildOS:Print(string.format(L["Invited %d, already here %d."], n, skipped))
         end
         panel:Refresh()
     end)
 
     groupsBtn:SetScript("OnClick", function()
-        local I = BRutus.CompanionImport
+        local I = GuildOS.CompanionImport
         if not I then return end
         local moved, err = I:OrganizeGroups()
         if err then
-            BRutus:Print(err)
+            GuildOS:Print(err)
         else
-            BRutus:Print(string.format(L["Moved %d into their groups."], moved))
+            GuildOS:Print(string.format(L["Moved %d into their groups."], moved))
         end
         panel:Refresh()
     end)
@@ -357,7 +357,7 @@ function BRutus:CreateWebPanel(parent, _win)
     end
 
     function panel:Refresh()
-        local co = BRutus.Companion
+        local co = GuildOS.Companion
         local on = (co and co:IsEnabled()) and true or false
         self.publishing = on
 
@@ -366,7 +366,7 @@ function BRutus:CreateWebPanel(parent, _win)
         stateText:SetText(on and L["On"] or L["Off"])
         toggleBtn.label:SetText(on and L["Turn off"] or L["Turn on"])
 
-        local I = BRutus.CompanionImport
+        local I = GuildOS.CompanionImport
 
         if on then
             -- Build walks the whole guild, so it runs here and nowhere else.
@@ -643,9 +643,9 @@ function BRutus:CreateWebPanel(parent, _win)
     -- Live while shown: combat gates the publish button, group changes
     -- gate the raid buttons, and the countdown moves on its own.
     ----------------------------------------------------------------
-    BRutus.Compat.RegisterEvent(panel, "PLAYER_REGEN_DISABLED")
-    BRutus.Compat.RegisterEvent(panel, "PLAYER_REGEN_ENABLED")
-    BRutus.Compat.RegisterEvent(panel, "GROUP_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(panel, "PLAYER_REGEN_DISABLED")
+    GuildOS.Compat.RegisterEvent(panel, "PLAYER_REGEN_ENABLED")
+    GuildOS.Compat.RegisterEvent(panel, "GROUP_ROSTER_UPDATE")
     panel:SetScript("OnEvent", function(self)
         if self:IsShown() then self:Refresh() end
     end)

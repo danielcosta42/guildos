@@ -6,9 +6,9 @@
 -- auto-detectable (no API reveals another player's account).
 ----------------------------------------------------------------------
 local AltAutoDetect = {}
-BRutus.AltAutoDetect = AltAutoDetect
+GuildOS.AltAutoDetect = AltAutoDetect
 
-local L = BRutus.L
+local L = GuildOS.L
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 -- Stable signature for a detected group, used to dedupe the "declined"
@@ -32,9 +32,9 @@ end
 function AltAutoDetect:RecordSelf()
     if not GuildOSDB then return end
     GuildOSDB.accountChars = GuildOSDB.accountChars or {}
-    local name = BRutus.Compat.PlayerName()
+    local name = GuildOS.Compat.PlayerName()
     if not name then return end
-    local key = BRutus:GetPlayerKey(name, GetRealmName())
+    local key = GuildOS:GetPlayerKey(name, GetRealmName())
     local _, classFile = UnitClass("player")
     GuildOSDB.accountChars[key] = {
         name = name, realm = GetRealmName(), class = classFile,
@@ -51,7 +51,7 @@ function AltAutoDetect:_GuildSet()
         if full then
             local short = full:match("^([^-]+)") or full
             local realm = full:match("-(.+)$") or GetRealmName()
-            set[BRutus:GetPlayerKey(short, realm)] = true
+            set[GuildOS:GetPlayerKey(short, realm)] = true
         end
     end
     return set
@@ -64,7 +64,7 @@ function AltAutoDetect:DetectOwnAlts(accountChars, guildSet, altLinks)
     altLinks = altLinks or {}
     local group = {}
     for key, info in pairs(accountChars or {}) do
-        local lk = BRutus:LocalMemberKey(key)   -- recorded on another realm's client (#97)
+        local lk = GuildOS:LocalMemberKey(key)   -- recorded on another realm's client (#97)
         if guildSet[lk] then group[#group + 1] = { key = lk, level = info.level or 0 } end
     end
     if #group < 2 then return nil end
@@ -83,20 +83,20 @@ end
 
 function AltAutoDetect:LinkOwnAlts(mainKey, altKeys)
     if not mainKey or not altKeys then return end
-    if BRutus:IsOfficer() then
+    if GuildOS:IsOfficer() then
         -- authoritative path: LinkAlt writes db.altLinks + BroadcastAltLinks
         for _, k in ipairs(altKeys) do
-            if k ~= mainKey then BRutus:LinkAlt(k, mainKey) end
+            if k ~= mainKey then GuildOS:LinkAlt(k, mainKey) end
         end
     else
         -- member: apply locally (own view) + broadcast a self-claim officers replay
-        BRutus.db.altLinks = BRutus.db.altLinks or {}
+        GuildOS.db.altLinks = GuildOS.db.altLinks or {}
         for _, k in ipairs(altKeys) do
-            if k ~= mainKey then BRutus.db.altLinks[k] = mainKey end
+            if k ~= mainKey then GuildOS.db.altLinks[k] = mainKey end
         end
-        if BRutus.CommSystem then
+        if GuildOS.CommSystem then
             local payload = LibSerialize:Serialize({ main = mainKey, alts = altKeys })
-            BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.SELF_ALT, payload)
+            GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.SELF_ALT, payload)
         end
     end
 end
@@ -110,22 +110,22 @@ end
 -- group, so a member can only ever re-main a group they belong to.
 function AltAutoDetect:SetOwnMain(newMainKey)
     if not newMainKey then return end
-    if BRutus:IsOfficer() then
-        BRutus:SetMain(newMainKey)
+    if GuildOS:IsOfficer() then
+        GuildOS:SetMain(newMainKey)
         return
     end
-    local links = BRutus.db.altLinks or {}
-    local group = BRutus:GetLinkedChars(newMainKey)
+    local links = GuildOS.db.altLinks or {}
+    local group = GuildOS:GetLinkedChars(newMainKey)
     if #group < 2 then return end               -- nothing to re-main
     if links[newMainKey] == nil then return end -- already the main, no-op
-    BRutus.db.altLinks = BRutus:_RepointGroup(links, group, newMainKey)
-    if BRutus.CommSystem then
+    GuildOS.db.altLinks = GuildOS:_RepointGroup(links, group, newMainKey)
+    if GuildOS.CommSystem then
         local alts = {}
         for _, k in ipairs(group) do
             if k ~= newMainKey then alts[#alts + 1] = k end
         end
         local payload = LibSerialize:Serialize({ main = newMainKey, alts = alts })
-        BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.SELF_ALT, payload)
+        GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.SELF_ALT, payload)
     end
 end
 
@@ -133,14 +133,14 @@ end
 -- broadcast a self-claim that officers replay.
 function AltAutoDetect:UnlinkOwnAlt(altKey)
     if not altKey then return end
-    if BRutus:IsOfficer() then
-        BRutus:UnlinkAlt(altKey)
+    if GuildOS:IsOfficer() then
+        GuildOS:UnlinkAlt(altKey)
     else
-        BRutus.db.altLinks = BRutus.db.altLinks or {}
-        BRutus.db.altLinks[altKey] = nil
-        if BRutus.CommSystem then
+        GuildOS.db.altLinks = GuildOS.db.altLinks or {}
+        GuildOS.db.altLinks[altKey] = nil
+        if GuildOS.CommSystem then
             local payload = LibSerialize:Serialize({ unlink = { altKey } })
-            BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.SELF_ALT, payload)
+            GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.SELF_ALT, payload)
         end
     end
 end
@@ -153,21 +153,21 @@ end
 -- envelope (never taken from the claim body), so a member cannot forge a
 -- claim that links/unlinks someone else's characters.
 function AltAutoDetect:HandleSelfClaim(sender, data)
-    if not BRutus:IsOfficer() then return end       -- only officers apply/propagate
+    if not GuildOS:IsOfficer() then return end       -- only officers apply/propagate
     local ok, claim = LibSerialize:Deserialize(data)
     if not ok or type(claim) ~= "table" then return end
 
     local sShort = sender and (sender:match("^([^-]+)") or sender)
     if not sShort then return end
     local sRealm = (sender:match("-(.+)$")) or GetRealmName()
-    local senderKey = BRutus:GetPlayerKey(sShort, sRealm)
+    local senderKey = GuildOS:GetPlayerKey(sShort, sRealm)
     -- The claim's keys were built on the sender's client: as this client keys them (#97).
-    if claim.main then claim.main = BRutus:LocalMemberKey(claim.main) end
+    if claim.main then claim.main = GuildOS:LocalMemberKey(claim.main) end
     if type(claim.alts) == "table" then
-        for i, k in ipairs(claim.alts) do claim.alts[i] = BRutus:LocalMemberKey(k) end
+        for i, k in ipairs(claim.alts) do claim.alts[i] = GuildOS:LocalMemberKey(k) end
     end
     if type(claim.unlink) == "table" then
-        for i, k in ipairs(claim.unlink) do claim.unlink[i] = BRutus:LocalMemberKey(k) end
+        for i, k in ipairs(claim.unlink) do claim.unlink[i] = GuildOS:LocalMemberKey(k) end
     end
 
     if claim.main and type(claim.alts) == "table" then
@@ -190,13 +190,13 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
             -- would detach X from its real group. When not same-group we skip
             -- the clear, and LinkAlt's circular guard still blocks linking to an
             -- existing alt, so a member can only re-main a group they belong to.
-            BRutus.db.altLinks = BRutus.db.altLinks or {}
-            local senderGroup = BRutus:GetLinkedChars(senderKey)
+            GuildOS.db.altLinks = GuildOS.db.altLinks or {}
+            local senderGroup = GuildOS:GetLinkedChars(senderKey)
             for _, k in ipairs(senderGroup) do
-                if k == claim.main then BRutus.db.altLinks[claim.main] = nil; break end
+                if k == claim.main then GuildOS.db.altLinks[claim.main] = nil; break end
             end
             for _, k in ipairs(claim.alts) do
-                if k ~= claim.main then BRutus:LinkAlt(k, claim.main) end
+                if k ~= claim.main then GuildOS:LinkAlt(k, claim.main) end
             end
         end
     end
@@ -204,9 +204,9 @@ function AltAutoDetect:HandleSelfClaim(sender, data)
         -- Only unlink a key the sender owns: themselves, or an alt whose
         -- main is the sender.
         for _, k in ipairs(claim.unlink) do
-            local links = BRutus.db.altLinks or {}
+            local links = GuildOS.db.altLinks or {}
             if k == senderKey or links[k] == senderKey then
-                BRutus:UnlinkAlt(k)
+                GuildOS:UnlinkAlt(k)
             end
         end
     end
@@ -230,7 +230,7 @@ function AltAutoDetect:_RegisterPopup()
             if not r then return end
             AltAutoDetect:LinkOwnAlts(r.main, r.group)
             local short = r.main:match("^([^-]+)") or r.main
-            BRutus:Print(string.format(L["Linked %d alt(s) to %s."], #r.group - 1, short))
+            GuildOS:Print(string.format(L["Linked %d alt(s) to %s."], #r.group - 1, short))
         end,
         OnCancel = function(dlg, data)
             local r = data or (dlg and dlg.data)
@@ -257,9 +257,9 @@ end
 -- (cold-login timing — GetGuildRosterInfo is empty for the first few
 -- seconds after login).
 function AltAutoDetect:_SchedulePrompt()
-    BRutus.Compat.After(10, function()
+    GuildOS.Compat.After(10, function()
         if AltAutoDetect._prompted then return end
-        local r = AltAutoDetect:DetectOwnAlts(GuildOSDB.accountChars, AltAutoDetect:_GuildSet(), BRutus.db.altLinks)
+        local r = AltAutoDetect:DetectOwnAlts(GuildOSDB.accountChars, AltAutoDetect:_GuildSet(), GuildOS.db.altLinks)
         if not r then return end
         local declined = GuildOSDB.altDeclined
         if declined and declined[GroupSignature(r.group)] then return end
@@ -269,19 +269,19 @@ end
 
 -- Manual trigger for /gos myalts: ignores the session/declined guards.
 function AltAutoDetect:PromptNow()
-    local r = self:DetectOwnAlts(GuildOSDB.accountChars, self:_GuildSet(), BRutus.db.altLinks)
+    local r = self:DetectOwnAlts(GuildOSDB.accountChars, self:_GuildSet(), GuildOS.db.altLinks)
     if r then
         self:_ShowPrompt(r)
     else
-        BRutus:Print(L["No other characters of yours found in this guild."])
+        GuildOS:Print(L["No other characters of yours found in this guild."])
     end
 end
 
 function AltAutoDetect:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     -- Keyed the way this client keys: on WoW: Forever any other realm is rewritten to its own (#97).
-    local main, alt, other = BRutus:GetPlayerKey("Main"), BRutus:GetPlayerKey("Alt"), BRutus:GetPlayerKey("Other")
+    local main, alt, other = GuildOS:GetPlayerKey("Main"), GuildOS:GetPlayerKey("Alt"), GuildOS:GetPlayerKey("Other")
     local acc = { [main] = { level = 70 }, [alt] = { level = 61 }, [other] = { level = 70 } }
     local guild = { [main] = true, [alt] = true }   -- Other not in this guild
     S:Register("altauto.detect", function()

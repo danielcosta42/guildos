@@ -2,7 +2,7 @@
 -- Guild OS - Deutsch
 ----------------------------------------------------------------------
 if (GetLocale and GetLocale()) ~= "deDE" then return end
-local L = BRutus.L
+local L = GuildOS.L
 
 -- Core/Commands.lua
 L["Data collected."] = "Daten gesammelt."

@@ -3,11 +3,11 @@
 -- Officer composer (create the guild's ad) + recruit inbox (browse/filter
 -- ads heard over the Chehul mesh). Engine: GuildOS.RecruitBeacon.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
-local function RB() return BRutus.RecruitBeacon end
+local function RB() return GuildOS.RecruitBeacon end
 
 -- Friendly labels for guild-focus tokens.
 local FOCUS_LABEL = {
@@ -27,8 +27,8 @@ local function TokenLabel(t)
 end
 
 local function TokenColor(t)
-    if BRutus.ClassColors and BRutus.ClassColors[t] then
-        return BRutus:GetClassColor(t)   -- class token
+    if GuildOS.ClassColors and GuildOS.ClassColors[t] then
+        return GuildOS:GetClassColor(t)   -- class token
     end
     return C.silver.r, C.silver.g, C.silver.b
 end
@@ -77,7 +77,7 @@ local function MakeInput(parent, y, labelText, width)
     box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     box:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(box, 11)
+    GuildOS:ApplyFont(box, 11)
     box:SetTextColor(C.white.r, C.white.g, C.white.b)
     box:SetTextInsets(8, 8, 0, 0)
     box:SetAutoFocus(false)
@@ -130,7 +130,7 @@ local function BuildComposer()
             btn:SetPoint("TOPLEFT", x, y)
             btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             local fs = btn:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(fs, 9)
+            GuildOS:ApplyFont(fs, 9)
             fs:SetPoint("CENTER")
             fs:SetText(TokenLabel(tok))
             btn.token = tok; btn.fs = fs
@@ -200,7 +200,7 @@ local function BuildComposer()
         RB():SetAdField("enabled", true)
         enable.checkbox:SetChecked(true)
         RB():Broadcast()
-        BRutus:Print(L["Recruitment beacon sent."])
+        GuildOS:Print(L["Recruitment beacon sent."])
     end)
 
     function f.Refresh()
@@ -215,7 +215,7 @@ local function BuildComposer()
     return f
 end
 
-function BRutus:ShowRecruitBeacon()
+function GuildOS:ShowRecruitBeacon()
     if not (self.IsOfficer and self:IsOfficer()) then
         self:Print(L["Only officers can set the recruitment beacon."])
         return
@@ -264,20 +264,20 @@ local function BuildInbox()
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
 
         row.guildFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.guildFS, 12)
+        GuildOS:ApplyFont(row.guildFS, 12)
         row.guildFS:SetPoint("TOPLEFT", 8, -5)
 
         row.matchFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.matchFS, 9)
+        GuildOS:ApplyFont(row.matchFS, 9)
         row.matchFS:SetPoint("LEFT", row.guildFS, "RIGHT", 8, 0)
 
         row.needsFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.needsFS, 10)
+        GuildOS:ApplyFont(row.needsFS, 10)
         row.needsFS:SetPoint("TOPLEFT", 8, -22)
         row.needsFS:SetWidth(300); row.needsFS:SetJustifyH("LEFT"); row.needsFS:SetWordWrap(false)
 
         row.noteFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.noteFS, 9)
+        GuildOS:ApplyFont(row.noteFS, 9)
         row.noteFS:SetPoint("TOPLEFT", 8, -34)
         row.noteFS:SetWidth(300); row.noteFS:SetJustifyH("LEFT"); row.noteFS:SetWordWrap(false)
         row.noteFS:SetTextColor(0.6, 0.6, 0.65)
@@ -361,7 +361,7 @@ local function BuildInbox()
     return f
 end
 
-function BRutus:ShowRecruitInbox()
+function GuildOS:ShowRecruitInbox()
     local f = self.recruitInbox or BuildInbox()
     self.recruitInbox = f
     -- Live-refresh while open as new ads arrive.

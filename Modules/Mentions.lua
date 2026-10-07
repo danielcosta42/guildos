@@ -4,8 +4,8 @@
 -- chat. Personal, no sync. Keeps a small capped recent-mentions log.
 ----------------------------------------------------------------------
 local Mentions = {}
-BRutus.Mentions = Mentions
-local L = BRutus.L
+GuildOS.Mentions = Mentions
+local L = GuildOS.L
 
 local LOG_MAX = 100
 local MIN_WORD = 3      -- shorter watch-words fire on nearly every message
@@ -20,13 +20,13 @@ Mentions.DEFAULTS = {
 }
 
 function Mentions:Initialize()
-    BRutus.db.mentions = BRutus.db.mentions or {}
+    GuildOS.db.mentions = GuildOS.db.mentions or {}
     for k, v in pairs(self.DEFAULTS) do
-        if BRutus.db.mentions[k] == nil then
-            BRutus.db.mentions[k] = (type(v) == "table") and BRutus:DeepCopy(v) or v
+        if GuildOS.db.mentions[k] == nil then
+            GuildOS.db.mentions[k] = (type(v) == "table") and GuildOS:DeepCopy(v) or v
         end
     end
-    BRutus.db.mentions.log = BRutus.db.mentions.log or {}
+    GuildOS.db.mentions.log = GuildOS.db.mentions.log or {}
     self._cd = {}
     self._hinted = false
     self:_SetupHook()
@@ -91,22 +91,22 @@ function Mentions:_Match(msg, ownName, watchWords, watchOwn)
 end
 
 function Mentions:_Record(term, sender, msg)
-    local log = BRutus.db.mentions.log
+    local log = GuildOS.db.mentions.log
     table.insert(log, 1, { term = term, sender = sender, msg = msg, ts = GetServerTime() })
     while #log > LOG_MAX do table.remove(log) end
 end
 
 function Mentions:_SetupHook()
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_OFFICER")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_OFFICER")
     f:SetScript("OnEvent", function(_, event, msg, author)
-        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
-        local cfg = BRutus.db.mentions
+        if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
+        local cfg = GuildOS.db.mentions
         if not cfg or not cfg.enabled then return end
         if event == "CHAT_MSG_GUILD" and not cfg.guild then return end
         if event == "CHAT_MSG_OFFICER" and not cfg.officer then return end
-        local me = BRutus.Compat.PlayerName()
+        local me = GuildOS.Compat.PlayerName()
         local sender = author and (author:match("^([^-]+)") or author)
         if sender == me then return end     -- don't alert on your own messages
         -- Chat calls me by my first name; on WoW: Forever `me` also carries the surname (issue #26).
@@ -116,24 +116,24 @@ function Mentions:_SetupHook()
         local key = (sender or "?") .. "|" .. term
         if Mentions._cd[key] then return end
         Mentions._cd[key] = true
-        BRutus.Compat.After(5, function() Mentions._cd[key] = nil end)
+        GuildOS.Compat.After(5, function() Mentions._cd[key] = nil end)
         Mentions:_Record(term, sender, msg)
-        BRutus:Print(string.format(L["|cffFFD700Mention|r (%s): %s: %s"], term, sender or "?", msg))
+        GuildOS:Print(string.format(L["|cffFFD700Mention|r (%s): %s: %s"], term, sender or "?", msg))
         if cfg.sound and PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE or 3081) end
         -- Own-name matching is on by default, so a player called Tank/Ally/Lol would get
         -- alerted on normal guild chatter with no idea where it came from. Point at the
         -- off switch once per session (flag set first, so later alerts stay quiet).
         if not Mentions._hinted then
             Mentions._hinted = true
-            BRutus:Print(string.format(L["Tip: turn these off in %s > %s > %s, or with /gos mentions off."],
+            GuildOS:Print(string.format(L["Tip: turn these off in %s > %s > %s, or with /gos mentions off."],
                 L["Settings"], L["General"], L["MENTIONS & ALERTS"]))
         end
     end)
 end
 
 function Mentions:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("mentions.ownname", function()
         if Mentions:_Match("hey Bob can you inv?", "Bob", {}, true) ~= "Bob" then return false, "own name" end
         if Mentions:_Match("Bobby says hi", "Bob", {}, true) ~= nil then return false, "whole-word only" end
@@ -186,49 +186,49 @@ function Mentions:_RegisterTests()
 end
 
 function Mentions:HandleCommand(args)
-    local cfg = BRutus.db.mentions
+    local cfg = GuildOS.db.mentions
     if not cfg then return end
     local sub = args[1]
-    if sub == "on" then cfg.enabled = true; BRutus:Print(L["Mentions |cff4CFF4Con|r."])
-    elseif sub == "off" then cfg.enabled = false; BRutus:Print(L["Mentions |cffFF4444off|r."])
+    if sub == "on" then cfg.enabled = true; GuildOS:Print(L["Mentions |cff4CFF4Con|r."])
+    elseif sub == "off" then cfg.enabled = false; GuildOS:Print(L["Mentions |cffFF4444off|r."])
     elseif sub == "ownname" and (args[2] == "on" or args[2] == "off") then
         cfg.ownName = (args[2] == "on")
-        BRutus:Print(L["Own-name alerts: "] .. (cfg.ownName and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]))
+        GuildOS:Print(L["Own-name alerts: "] .. (cfg.ownName and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]))
     elseif sub == "sound" and (args[2] == "on" or args[2] == "off") then
         cfg.sound = (args[2] == "on")
-        BRutus:Print(L["Mention sound: "] .. (cfg.sound and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]))
+        GuildOS:Print(L["Mention sound: "] .. (cfg.sound and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]))
     elseif sub == "list" then
-        BRutus:Print(L["--- Watch-words ---"])
-        if #cfg.watchWords == 0 then BRutus:Print(L["(none)"]) end
+        GuildOS:Print(L["--- Watch-words ---"])
+        if #cfg.watchWords == 0 then GuildOS:Print(L["(none)"]) end
         for i = 1, #cfg.watchWords do
-            BRutus:Print("  |cffFFFFFF" .. tostring(cfg.watchWords[i]) .. "|r")
+            GuildOS:Print("  |cffFFFFFF" .. tostring(cfg.watchWords[i]) .. "|r")
         end
     elseif sub == "add" and args[2] then
         -- Keep the whole phrase: "add need heals" is two words, not "need".
         local phrase = table.concat(args, " ", 2, #args)
         local status, norm = Mentions:_AddWatchWord(cfg.watchWords, phrase)
         if status == "ok" then
-            BRutus:Print(L["Watch-word added: |cffFFFFFF"] .. norm .. "|r")
+            GuildOS:Print(L["Watch-word added: |cffFFFFFF"] .. norm .. "|r")
         elseif status == "short" then
-            BRutus:Print(L["Watch-words must be at least 3 characters."])
+            GuildOS:Print(L["Watch-words must be at least 3 characters."])
         else
-            BRutus:Print(L["Already watching: |cffFFFFFF"] .. norm .. "|r")
+            GuildOS:Print(L["Already watching: |cffFFFFFF"] .. norm .. "|r")
         end
     elseif sub == "remove" and args[2] then
         local t = strtrim(table.concat(args, " ", 2, #args)):lower()
         Mentions:_RemoveWatchWord(cfg.watchWords, t)
-        BRutus:Print(L["Watch-word removed: |cffFFFFFF"] .. t .. "|r")
+        GuildOS:Print(L["Watch-word removed: |cffFFFFFF"] .. t .. "|r")
     elseif sub == "clearwords" then
-        cfg.watchWords = {}; BRutus:Print(L["Watch-words cleared."])
+        cfg.watchWords = {}; GuildOS:Print(L["Watch-words cleared."])
     else
         -- default: print the recent log
         local log = cfg.log or {}
-        BRutus:Print(L["--- Recent mentions ---"])
-        if #log == 0 then BRutus:Print(L["(none)"]) end
+        GuildOS:Print(L["--- Recent mentions ---"])
+        if #log == 0 then GuildOS:Print(L["(none)"]) end
         for i = 1, math.min(#log, 15) do
             local e = log[i]
-            BRutus:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
+            GuildOS:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
         end
-        BRutus:Print(L["Usage: /gos mentions <on|off|add|remove|list|clearwords|ownname|sound> [word|on|off]"])
+        GuildOS:Print(L["Usage: /gos mentions <on|off|add|remove|list|clearwords|ownname|sound> [word|on|off]"])
     end
 end

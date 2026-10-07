@@ -3,7 +3,7 @@
 -- One of the game's ten languages (#104). Machine-translated; corrections from players welcome.
 ----------------------------------------------------------------------
 if (GetLocale and GetLocale()) ~= "koKR" then return end
-local L = BRutus.L
+local L = GuildOS.L
 
 L["  %d. %s — %d items (%d epics, %.0f%%)"] = "  %d. %s — 아이템 %d개 (영웅 %d개, %.0f%%)"
 L["  +%d more..."] = "  +%d개 더..."

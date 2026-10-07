@@ -5,8 +5,8 @@
 -- risky change or to move a config between accounts.
 ----------------------------------------------------------------------
 local Backup = {}
-BRutus.Backup = Backup
-local L = BRutus.L
+GuildOS.Backup = Backup
+local L = GuildOS.L
 
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 local LibDeflate = LibStub("LibDeflate")
@@ -17,8 +17,8 @@ local PREFIX = "GOSBKP1:"   -- format/version tag
 -- Serialize the current guild DB to a print-safe string.
 ----------------------------------------------------------------------
 function Backup:Export()
-    if not BRutus.db then return nil end
-    local ok, ser = pcall(function() return LibSerialize:Serialize(BRutus.db) end)
+    if not GuildOS.db then return nil end
+    local ok, ser = pcall(function() return LibSerialize:Serialize(GuildOS.db) end)
     if not ok or type(ser) ~= "string" then return nil end
     local compressed = LibDeflate:CompressDeflate(ser)
     local encoded = LibDeflate:EncodeForPrint(compressed)
@@ -48,9 +48,9 @@ end
 function Backup:Import(text)
     local data, err = self:Decode(text)
     if not data then return false, err end
-    if not BRutus.guildKey or not GuildOSDB then return false, "no_guild" end
-    GuildOSDB[BRutus.guildKey] = data
-    BRutus:Print(L["Backup restored. Reloading..."])
+    if not GuildOS.guildKey or not GuildOSDB then return false, "no_guild" end
+    GuildOSDB[GuildOS.guildKey] = data
+    GuildOS:Print(L["Backup restored. Reloading..."])
     ReloadUI()
     return true
 end
@@ -61,15 +61,15 @@ end
 function Backup:ShowExport()
     local str = self:Export()
     if not str then
-        BRutus:Print(L["|cffFF4444Backup failed.|r"])
+        GuildOS:Print(L["|cffFF4444Backup failed.|r"])
         return
     end
-    BRutus:ShowExportPopup(L["Guild OS Backup"], str)
+    GuildOS:ShowExportPopup(L["Guild OS Backup"], str)
 end
 
 function Backup:ShowRestore()
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
 
     local f = self.restoreFrame
     if not f then
@@ -108,7 +108,7 @@ function Backup:ShowRestore()
         box:SetBackdropColor(0.03, 0.03, 0.04, 1)
         box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
         box:SetMultiLine(true)
-        BRutus:ApplyFont(box, 10)
+        GuildOS:ApplyFont(box, 10)
         box:SetTextColor(C.text.r, C.text.g, C.text.b)
         box:SetTextInsets(6, 6, 6, 6)
         box:SetAutoFocus(false)
@@ -119,9 +119,9 @@ function Backup:ShowRestore()
         restoreBtn:SetPoint("BOTTOM", 0, 14)
         restoreBtn:SetBaseColor(C.red.r * 0.30, C.red.g * 0.30, C.red.b * 0.30, 0.9)
         restoreBtn:SetScript("OnClick", function()
-            local ok, err = BRutus.Backup:Import(box:GetText())
+            local ok, err = GuildOS.Backup:Import(box:GetText())
             if not ok then
-                BRutus:Print(L["|cffFF4444Restore failed:|r "] .. tostring(err))
+                GuildOS:Print(L["|cffFF4444Restore failed:|r "] .. tostring(err))
             end
         end)
 

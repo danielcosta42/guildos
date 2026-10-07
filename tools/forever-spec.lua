@@ -44,8 +44,8 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/SpecChecker.lua")
-local SpecChecker = BRutus.SpecChecker
-BRutus.db = { members = {} }
+local SpecChecker = GuildOS.SpecChecker
+GuildOS.db = { members = {} }
 
 -- ── The real trees ──────────────────────────────────────────────────────
 -- [nodeID] = PosX. Shaman: Elemental 1020–2820, Enhancement 5020–6820, Restoration 9080–10880.
@@ -83,8 +83,8 @@ bought[104734] = 3                         -- 11
 local spec, why = SpecChecker:CollectOwnSpec()
 check(spec and spec.tree == "Restoration", "a shaman with every point in the right-hand band is Restoration, not " .. tostring(spec and spec.tree or why))
 check(spec.points[1] == 0 and spec.points[2] == 0 and spec.points[3] == 11, "the points land in the third tree")
-local own = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
-check(BRutus.db.members[own] and BRutus.db.members[own].spec == spec, "the spec is kept on the player's own row")
+local own = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+check(GuildOS.db.members[own] and GuildOS.db.members[own].spec == spec, "the spec is kept on the player's own row")
 
 buy({ 104743, 104747, 104753 }, 3)
 check(SpecChecker:CollectOwnSpec().tree == "Enhancement", "the middle band is Enhancement")

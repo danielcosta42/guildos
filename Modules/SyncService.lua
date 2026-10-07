@@ -19,7 +19,7 @@
 -- versioning) for all *new* domains.
 ----------------------------------------------------------------------
 local SyncService = {}
-BRutus.SyncService = SyncService
+GuildOS.SyncService = SyncService
 
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 
@@ -69,12 +69,12 @@ SyncService.pendingAcks = {}   -- [id] = { tries, payload, target, priority, dom
 ----------------------------------------------------------------------
 function SyncService:Initialize()
     -- Persistent revision store: db.sync.rev[domain][entityKey] = number
-    BRutus.db.sync = BRutus.db.sync or {}
-    BRutus.db.sync.rev = BRutus.db.sync.rev or {}
+    GuildOS.db.sync = GuildOS.db.sync or {}
+    GuildOS.db.sync.rev = GuildOS.db.sync.rev or {}
     self.seenIds = {}
     self.seenCount = 0
     self.pendingAcks = {}
-    self:On("guildcfg", function(env) BRutus:OnOfficerMaxRankSync(env) end)
+    self:On("guildcfg", function(env) GuildOS:OnOfficerMaxRankSync(env) end)
 end
 
 local function newId()
@@ -107,7 +107,7 @@ function SyncService:Publish(domain, action, data, opts)
     local env = {
         v   = self.PROTOCOL_VERSION,
         id  = newId(),
-        av  = BRutus.VERSION,
+        av  = GuildOS.VERSION,
         dom = domain,
         act = action,
         ts  = (GetTime and GetTime()) or 0,
@@ -122,9 +122,9 @@ function SyncService:Publish(domain, action, data, opts)
 
     local ok, serialized = pcall(function() return LibSerialize:Serialize(env) end)
     if not ok or type(serialized) ~= "string" then return nil end
-    if not BRutus.CommSystem then return nil end
+    if not GuildOS.CommSystem then return nil end
 
-    BRutus.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, serialized, opts.target, opts.priority)
+    GuildOS.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, serialized, opts.target, opts.priority)
 
     if env.ack then
         self.pendingAcks[env.id] = {
@@ -132,7 +132,7 @@ function SyncService:Publish(domain, action, data, opts)
             priority = opts.priority, dom = domain, act = action,
         }
         local id = env.id
-        BRutus.Compat.After(10, function() self:RetryAck(id) end)
+        GuildOS.Compat.After(10, function() self:RetryAck(id) end)
     end
     return env.id
 end
@@ -147,12 +147,12 @@ function SyncService:RetryAck(id)
     if not p then return end   -- already acked
     if p.tries >= 2 then
         self.pendingAcks[id] = nil
-        BRutus.Logger.Warn(string.format("Sync: no ACK for %s/%s", tostring(p.dom), tostring(p.act)))
+        GuildOS.Logger.Warn(string.format("Sync: no ACK for %s/%s", tostring(p.dom), tostring(p.act)))
         return
     end
     p.tries = p.tries + 1
-    BRutus.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, p.payload, p.target, p.priority)
-    BRutus.Compat.After(10, function() self:RetryAck(id) end)
+    GuildOS.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, p.payload, p.target, p.priority)
+    GuildOS.Compat.After(10, function() self:RetryAck(id) end)
 end
 
 local function sendAck(refId, target)
@@ -184,7 +184,7 @@ function SyncService:OnEnvelope(sender, raw, channel)
 
     local handler = self.handlers[env.dom]
     if handler then
-        BRutus:SafeCall(handler, env, sender)
+        GuildOS:SafeCall(handler, env, sender)
     end
 
     if env.ack then sendAck(env.id, sender) end
@@ -203,7 +203,7 @@ function SyncService:Validate(env, sender, channel)
     if self.OFFICER_DOMAINS[env.dom] then
         if channel ~= "GUILD" then return false end
         local member = self.MEMBER_ACTIONS[env.dom]
-        if not (member and member[env.act]) and not BRutus:IsOfficerByName(sender) then return false end
+        if not (member and member[env.act]) and not GuildOS:IsOfficerByName(sender) then return false end
     end
     return true
 end
@@ -226,7 +226,7 @@ end
 -- Revision helpers (highest revision wins per entity, per domain).
 ----------------------------------------------------------------------
 function SyncService:GetRevision(domain, key)
-    local rev = BRutus.db.sync and BRutus.db.sync.rev and BRutus.db.sync.rev[domain]
+    local rev = GuildOS.db.sync and GuildOS.db.sync.rev and GuildOS.db.sync.rev[domain]
     return (rev and rev[key]) or 0
 end
 
@@ -239,19 +239,19 @@ end
 -- Record a revision we have applied (only ever increases).
 function SyncService:SetRevision(domain, key, rev)
     if not rev then return end
-    BRutus.db.sync = BRutus.db.sync or {}
-    BRutus.db.sync.rev = BRutus.db.sync.rev or {}
-    BRutus.db.sync.rev[domain] = BRutus.db.sync.rev[domain] or {}
-    local cur = BRutus.db.sync.rev[domain][key] or 0
-    if rev > cur then BRutus.db.sync.rev[domain][key] = rev end
+    GuildOS.db.sync = GuildOS.db.sync or {}
+    GuildOS.db.sync.rev = GuildOS.db.sync.rev or {}
+    GuildOS.db.sync.rev[domain] = GuildOS.db.sync.rev[domain] or {}
+    local cur = GuildOS.db.sync.rev[domain][key] or 0
+    if rev > cur then GuildOS.db.sync.rev[domain][key] = rev end
 end
 
 -- Allocate the next revision for an entity we are about to write+publish.
 function SyncService:NextRevision(domain, key)
-    BRutus.db.sync = BRutus.db.sync or {}
-    BRutus.db.sync.rev = BRutus.db.sync.rev or {}
-    BRutus.db.sync.rev[domain] = BRutus.db.sync.rev[domain] or {}
-    local nxt = (BRutus.db.sync.rev[domain][key] or 0) + 1
-    BRutus.db.sync.rev[domain][key] = nxt
+    GuildOS.db.sync = GuildOS.db.sync or {}
+    GuildOS.db.sync.rev = GuildOS.db.sync.rev or {}
+    GuildOS.db.sync.rev[domain] = GuildOS.db.sync.rev[domain] or {}
+    local nxt = (GuildOS.db.sync.rev[domain][key] or 0) + 1
+    GuildOS.db.sync.rev[domain][key] = nxt
     return nxt
 end

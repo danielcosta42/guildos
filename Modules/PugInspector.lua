@@ -12,8 +12,8 @@
 -- renders Scan() and flips the auto-open pref through our getters/setters.
 ----------------------------------------------------------------------
 local PugInspector = {}
-BRutus.PugInspector = PugInspector
-local L = BRutus.L
+GuildOS.PugInspector = PugInspector
+local L = GuildOS.L
 
 function PugInspector:Initialize()
     self:_SetupEvents()
@@ -105,7 +105,7 @@ end
 -- same shape to Classify to test it without live guild/ban/alt state.
 ----------------------------------------------------------------------
 function PugInspector:_LiveSources()
-    local db = BRutus.db or {}
+    local db = GuildOS.db or {}
 
     -- Guild roster short-name set (lowercased) for O(1) membership checks.
     local guildShort = {}
@@ -118,17 +118,17 @@ function PugInspector:_LiveSources()
         end
     end
 
-    local log = (BRutus.RosterLog and BRutus.RosterLog.GetLog and BRutus.RosterLog:GetLog()) or nil
+    local log = (GuildOS.RosterLog and GuildOS.RosterLog.GetLog and GuildOS.RosterLog:GetLog()) or nil
     local officerNotes = db.officerNotes or {}
 
     return {
         guildShort = guildShort,
         altLinks   = db.altLinks or {},
         log        = log,
-        realm      = BRutus:GetClientRealm() or "",
+        realm      = GuildOS:GetClientRealm() or "",
         banEntry   = function(short)
-            if BRutus.BanList and BRutus.BanList:IsBanned(short) then
-                return BRutus.BanList:Get(short)
+            if GuildOS.BanList and GuildOS.BanList:IsBanned(short) then
+                return GuildOS.BanList:Get(short)
             end
             return nil
         end,
@@ -141,12 +141,12 @@ function PugInspector:_LiveSources()
             local on = officerNotes[key]
             local text = on and on.notes and on.notes[1] and on.notes[1].text
             if text and text ~= "" then
-                return BRutus:SanitizeUserText(text, 80)
+                return GuildOS:SanitizeUserText(text, 80)
             end
-            if inGuild and BRutus.Compat and BRutus.Compat.GetGuildPublicNote then
-                local pub = BRutus.Compat.GetGuildPublicNote(short, realm)
+            if inGuild and GuildOS.Compat and GuildOS.Compat.GetGuildPublicNote then
+                local pub = GuildOS.Compat.GetGuildPublicNote(short, realm)
                 if pub and pub ~= "" then
-                    return BRutus:SanitizeUserText(pub, 80)
+                    return GuildOS:SanitizeUserText(pub, 80)
                 end
             end
             return nil
@@ -167,7 +167,7 @@ function PugInspector:Classify(name, srcs)
     local realm = (name and name:match("%-(.+)$")) or srcs.realm or ""
     -- The member key rule, so a guildmate in the group keys as their roster line does: on WoW:
     -- Forever the group names a realm the roster never gives (issue #95).
-    local key   = realm ~= "" and BRutus:GetPlayerKey(short, realm) or short
+    local key   = realm ~= "" and GuildOS:GetPlayerKey(short, realm) or short
     local shortLower = short:lower()
 
     local f = {}
@@ -219,7 +219,7 @@ function PugInspector:_GroupMembers()
             local name, _, _, _, _, classFile = GetRaidRosterInfo(i)
             if name then
                 local short = name:match("^([^-]+)") or name
-                if not BRutus.Compat.IsPlayer("raid" .. i) then
+                if not GuildOS.Compat.IsPlayer("raid" .. i) then
                     out[#out + 1] = { name = short, full = name, class = classFile or "" }
                 end
             end
@@ -228,7 +228,7 @@ function PugInspector:_GroupMembers()
         for i = 1, (GetNumGroupMembers() or 1) - 1 do
             local unit = "party" .. i
             if UnitExists(unit) then
-                local nm, _, cf = BRutus.Compat.UnitIdentity(unit)
+                local nm, _, cf = GuildOS.Compat.UnitIdentity(unit)
                 if nm then
                     out[#out + 1] = { name = nm:match("^([^-]+)") or nm, full = nm, class = cf or "" }
                 end
@@ -259,11 +259,11 @@ end
 -- through these; it never touches db directly (Rule 8).
 ----------------------------------------------------------------------
 function PugInspector:IsAutoOpen()
-    return BRutus:GetSetting("pugAutoOpen") == true
+    return GuildOS:GetSetting("pugAutoOpen") == true
 end
 
 function PugInspector:SetAutoOpen(on)
-    BRutus:SetSetting("pugAutoOpen", on and true or false)
+    GuildOS:SetSetting("pugAutoOpen", on and true or false)
 end
 
 ----------------------------------------------------------------------
@@ -283,7 +283,7 @@ end
 function PugInspector:_SetupEvents()
     if self._eventFrame then return end
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "GROUP_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "GROUP_ROSTER_UPDATE")
     f:SetScript("OnEvent", function() PugInspector:_OnGroupUpdate() end)
     self._eventFrame = f
 end
@@ -291,9 +291,9 @@ end
 function PugInspector:_OnGroupUpdate()
     if self._debounce then return end
     self._debounce = true
-    BRutus.Compat.After(0.5, function()
+    GuildOS.Compat.After(0.5, function()
         PugInspector._debounce = false
-        BRutus:SafeCall(function() PugInspector:_Evaluate() end)
+        GuildOS:SafeCall(function() PugInspector:_Evaluate() end)
     end)
 end
 
@@ -301,7 +301,7 @@ function PugInspector:_Evaluate()
     if not (IsInGroup and IsInGroup()) then
         self._groupSig = nil
         self._autoShown = false
-        if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+        if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
         return
     end
 
@@ -312,13 +312,13 @@ function PugInspector:_Evaluate()
         self._autoShown = false
     end
 
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 
     if self:IsAutoOpen() and not self._autoShown then
         for _, e in ipairs(scan) do
             if e.severity == "high" then
                 self._autoShown = true
-                if self.uiOpen then BRutus:SafeCall(self.uiOpen) end
+                if self.uiOpen then GuildOS:SafeCall(self.uiOpen) end
                 break
             end
         end
@@ -329,8 +329,8 @@ end
 -- Self-tests (pure logic only; injected facts/sources, never live state).
 ----------------------------------------------------------------------
 function PugInspector:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
 
     S:Register("pug.decide_banned", function()
         local r = PugInspector:_Decide({ banned = true, reason = "ninja" })
@@ -436,7 +436,7 @@ function PugInspector:_RegisterTests()
             realm = "TestRealm",
             guildShort = { ["thordak"] = true, ["kaelra"] = true },
             -- Through the key rule: on WoW: Forever a realm never splits a key (issue #95).
-            altLinks = { [BRutus:GetPlayerKey("Bornax", "TestRealm")] = BRutus:GetPlayerKey("Thordak", "TestRealm") },
+            altLinks = { [GuildOS:GetPlayerKey("Bornax", "TestRealm")] = GuildOS:GetPlayerKey("Thordak", "TestRealm") },
             banEntry = function(s) if s == "Zezinho" then return { reason = "ninja" } end end,
             noteFor = function() return nil end,
         }

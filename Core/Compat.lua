@@ -1,11 +1,11 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Compatibility Layer
+-- Guild OS - Compatibility Layer
 -- All WoW version-sensitive API calls go through here (Rule 4).
 -- Never scatter C_* guards across feature modules.
 ----------------------------------------------------------------------
 
-BRutus.Compat = {}
-local Compat = BRutus.Compat
+GuildOS.Compat = {}
+local Compat = GuildOS.Compat
 
 ----------------------------------------------------------------------
 -- Which client this is and what it can do (ADR-0014). Read once, before any
@@ -19,7 +19,7 @@ interface = tonumber(interface) or 0
 local TBC_PROJECT = WOW_PROJECT_BURNING_CRUSADE_CLASSIC  -- nil on a client without the constant
 local isAnniversary = TBC_PROJECT ~= nil and WOW_PROJECT_ID == TBC_PROJECT
     and interface >= 20500 and interface < 30000
-BRutus.Client = {
+GuildOS.Client = {
     version = version,
     build = build,
     date = buildDate,
@@ -73,7 +73,7 @@ end
 -- "Chehul Druida"; there UnitFullName("player") returns the first name and the surname apart,
 -- where every other client returns the realm in that slot (issue #26).
 function Compat.PlayerName()
-    if BRutus.Client.has.surnames then
+    if GuildOS.Client.has.surnames then
         local first, surname = UnitFullName("player")
         if not Compat.IsSecret(first, surname) and first and surname and surname ~= "" then
             return first .. " " .. surname
@@ -321,7 +321,7 @@ function Compat.SetGuildPublicNote(name, text, realm)
     if not idx then return false, why end
     -- Member-authored text: strip UI escapes and cap without splitting a
     -- codepoint (shared helper, Core/Utils.lua).
-    local note = BRutus:SanitizeUserText(text, 31)
+    local note = GuildOS:SanitizeUserText(text, 31)
     local guid = select(17, GetGuildRosterInfo(idx))
     if C_GuildInfo and C_GuildInfo.SetNote and guid then
         C_GuildInfo.SetNote(guid, note, true)
@@ -349,7 +349,7 @@ end
 -- probe reports it either way.
 function Compat.RegisterEvent(frame, event, expected)
     local ok = pcall(frame.RegisterEvent, frame, event)
-    if not ok then BRutus:RecordMissing("event " .. event, expected) end
+    if not ok then GuildOS:RecordMissing("event " .. event, expected) end
     return ok
 end
 
@@ -402,7 +402,7 @@ function Compat.HookTooltip(tooltip, script, fn)
         wanted[tooltip] = true
         return true
     end
-    BRutus:RecordMissing("tooltip script " .. script)
+    GuildOS:RecordMissing("tooltip script " .. script)
     return false
 end
 
@@ -701,7 +701,7 @@ local function record(msg, reason)
     reason = tostring(reason)
     if Compat._reported[reason] then return end
     Compat._reported[reason] = true
-    BRutus:RecordError(string.format("Addon message on %s was not sent (result %s)", tostring(msg.channel), reason))
+    GuildOS:RecordError(string.format("Addon message on %s was not sent (result %s)", tostring(msg.channel), reason))
 end
 
 local polling = false
@@ -769,7 +769,7 @@ end
 -- Alt-click worked. SendChatMessage and SendWho are HasRestrictions there. Anniversary does
 -- them on its own. Anything that has to happen by itself asks for the click on Forever (#61).
 function Compat.NeedsClick()
-    return not BRutus.Client.isAnniversary
+    return not GuildOS.Client.isAnniversary
 end
 
 -- Does the server show this channel without raid icons? It is the ChatChannels table's
@@ -779,7 +779,7 @@ end
 -- holds in every language; a custom channel has none (issue #64).
 local NO_RAID_ICONS = { [1] = true, [2] = true, [22] = true, [42] = true, [46] = true }
 function Compat.ChannelHidesRaidIcons(name, number)
-    if BRutus.Client.isAnniversary then return false end
+    if GuildOS.Client.isAnniversary then return false end
     local get = C_ChatInfo and C_ChatInfo.GetChannelInfoFromIdentifier
     if not get then return false end
     local info = get(tostring(name or "")) or (number and get(tostring(number)))

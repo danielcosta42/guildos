@@ -2,7 +2,7 @@
 -- Guild OS - Français
 ----------------------------------------------------------------------
 if (GetLocale and GetLocale()) ~= "frFR" then return end
-local L = BRutus.L
+local L = GuildOS.L
 
 -- Core/Commands.lua
 L["Data collected."] = "Données collectées."

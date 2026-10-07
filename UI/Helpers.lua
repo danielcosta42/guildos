@@ -7,9 +7,9 @@
 -- frame. Public names, signatures and fields are unchanged from Obsidian.
 ----------------------------------------------------------------------
 local Helpers = {}
-BRutus.UI = Helpers
+GuildOS.UI = Helpers
 
-local C = BRutus.Colors
+local C = GuildOS.Colors
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 local MEDIA = "Interface\\AddOns\\GuildOS\\Media\\"
 
@@ -30,11 +30,11 @@ local PROGRESS_OK    = 0.8   -- at or above: ok
 local PROGRESS_WARN  = 0.6   -- at or above: gold; below: danger
 local CHIP_RULE      = 34    -- px width of the gold rule under a metric value
 
--- A FontString with the skin's text settings: font by size (BRutus:ApplyFont),
+-- A FontString with the skin's text settings: font by size (GuildOS:ApplyFont),
 -- no outline, no shadow.
 local function newText(parent, size, role)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(fs, size, role)
+    GuildOS:ApplyFont(fs, size, role)
     fs:SetShadowOffset(0, 0)
     return fs
 end
@@ -311,7 +311,7 @@ function Helpers:SetButtonVariant(btn, variant)
         btn.baseColor = { C.gold.r, C.gold.g, C.gold.b, 1 }
         btn.baseLabelColor = { C.onGold.r, C.onGold.g, C.onGold.b }
         btn.baseBorder = C.gold
-        BRutus:ApplyFont(label, 11, "colHeader")  -- IBM Plex Mono Medium
+        GuildOS:ApplyFont(label, 11, "colHeader")  -- IBM Plex Mono Medium
         if not btn.glow then
             local glow = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
             glow:SetTexture(MEDIA .. "glow-gold.tga")
@@ -322,7 +322,7 @@ function Helpers:SetButtonVariant(btn, variant)
             btn.glow = glow
         end
     else
-        BRutus:ApplyFont(label, 11)
+        GuildOS:ApplyFont(label, 11)
         local ink = (variant == "ghost" and C.label) or (variant == "danger" and C.danger) or C.text
         btn.baseLabelColor = { ink.r, ink.g, ink.b }
         btn.baseColor = { C.well.r, C.well.g, C.well.b, 0 }
@@ -360,7 +360,7 @@ end
 function Helpers:AttachSaveButton(editBox, onSave, opts)
     opts = opts or {}
     local parent = opts.parent or editBox:GetParent()
-    local label  = opts.text or (BRutus.L and BRutus.L["Save"]) or "Save"
+    local label  = opts.text or (GuildOS.L and GuildOS.L["Save"]) or "Save"
     local h = opts.height or editBox:GetHeight()
     if not h or h < 22 then h = 22 end
 
@@ -383,7 +383,7 @@ function Helpers:AttachSaveButton(editBox, onSave, opts)
 end
 
 ----------------------------------------------------------------------
--- A removable chip's text (issue #59): BRutus:ChipLabel, shortened until it fits `width`
+-- A removable chip's text (issue #59): GuildOS:ChipLabel, shortened until it fits `width`
 -- in the font that draws it (GuildOS's mono or the game's, #57), so the chip never grows
 -- over its neighbour and a click lands on the entry it shows.
 ----------------------------------------------------------------------
@@ -391,10 +391,10 @@ function Helpers:SetChipText(btn, text, width)
     width = width or btn:GetWidth()
     btn:SetWidth(width)
     local maxBytes = 14
-    btn.label:SetText(BRutus:ChipLabel(text, maxBytes))
+    btn.label:SetText(GuildOS:ChipLabel(text, maxBytes))
     while btn.label:GetStringWidth() > width - 8 and maxBytes > 3 do
         maxBytes = maxBytes - 1
-        btn.label:SetText(BRutus:ChipLabel(text, maxBytes))
+        btn.label:SetText(GuildOS:ChipLabel(text, maxBytes))
     end
     btn:SetWidth(width)
 end
@@ -584,7 +584,7 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
     scrollBar:HookScript("OnMinMaxChanged", function() UpdateThumb() end)
     scrollBar:HookScript("OnEnter", function() thumb:SetVertexColor(C.label.r, C.label.g, C.label.b, 1) end)
     scrollBar:HookScript("OnLeave", function() thumb:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
-    BRutus.Compat.After(0.05, UpdateThumb)
+    GuildOS.Compat.After(0.05, UpdateThumb)
 
     return scrollBar
 end
@@ -631,7 +631,7 @@ end
 -- Frame an icon in its item-quality colour (never a palette colour).
 function Helpers:SetIconQuality(iconFrame, quality)
     quality = quality or 1
-    local color = BRutus.QualityColors[quality] or BRutus.QualityColors[1]
+    local color = GuildOS.QualityColors[quality] or GuildOS.QualityColors[1]
     iconFrame:SetBackdropBorderColor(color.r, color.g, color.b, 1)
 end
 

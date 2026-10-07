@@ -145,7 +145,7 @@ dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
-BRutus.ProfCatalog = {
+GuildOS.ProfCatalog = {
   build = "fixture",
   F = { line = 1, yellow = 2, grey = 3, out = 4, outCount = 5, enchant = 6, reqSkill = 7, spec = 8, focus = 9,
         src = 10, recipeItem = 11, category = 12, reagents = 13 },
@@ -166,9 +166,9 @@ BRutus.ProfCatalog = {
 dofile(ADDON .. "/Modules/Professions.lua")
 dofile(ADDON .. "/Modules/ProfDirectory.lua")
 dofile(ADDON .. "/UI/ProfessionsPanel.lua")
-local P = BRutus.Professions
-local ME, BOB, CID = P.OwnKey(), BRutus:GetPlayerKey("Bob"), BRutus:GetPlayerKey("Cid")
-BRutus.db = { members = {}, recipes = {}, professions = {
+local P = GuildOS.Professions
+local ME, BOB, CID = P.OwnKey(), GuildOS:GetPlayerKey("Bob"), GuildOS:GetPlayerKey("Cid")
+GuildOS.db = { members = {}, recipes = {}, professions = {
   [ME] = { src = "addon", ts = NOW, profs = {
     [186] = { rank = 21, max = 75, h = 1, n = 2, recipes = { 2657, 3304 }, extra = {} } } },
   [BOB] = { src = "addon", ts = NOW, profs = {
@@ -177,14 +177,14 @@ BRutus.db = { members = {}, recipes = {}, professions = {
 } }
 -- Nine more who smelt copper: the card lists eight crafters and says how many more.
 for i = 1, 9 do
-  BRutus.db.professions[BRutus:GetPlayerKey("Miner" .. i)] = { src = "addon", ts = NOW, profs = {
+  GuildOS.db.professions[GuildOS:GetPlayerKey("Miner" .. i)] = { src = "addon", ts = NOW, profs = {
     [186] = { rank = 30, max = 75, h = 1, n = 1, recipes = { 2657 }, extra = {} } } }
 end
 
 -- ── The panel ───────────────────────────────────────────────────────────
 local container = CreateFrame("Frame")
 container:SetSize(980, 600)
-local panel = BRutus:CreateProfessionsPanel(container)
+local panel = GuildOS:CreateProfessionsPanel(container)
 check(panel and panel.state and #panel.railButtons == 4, "the panel builds with All plus three professions")
 container.scripts.OnShow(container)
 runTimers()
@@ -220,7 +220,7 @@ row.scripts.OnEnter(row)
 row.scripts.OnLeave(row)
 UNCACHED[7978] = true
 row.scripts.OnClick(row)
-local card = _G.BRutusRecipeCard
+local card = _G.GuildOSRecipeCard
 check(card and card.shown, "a click opens the recipe card")
 check(not showing("Item 7978") and showing("Recipe item"), "an uncached recipe item shows as a plain source")
 UNCACHED[7978] = nil

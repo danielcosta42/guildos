@@ -1,15 +1,15 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Consumable Checker
+-- Guild OS - Consumable Checker
 -- Inspects raid members for expected buffs/consumables before pulls
 ----------------------------------------------------------------------
 -- TBC content (flask and elixir buff ids): outside TBC Anniversary this module
 -- does not exist, and every reader already treats a missing module as absent
 -- (ADR-0014).
-if not BRutus.Client.isAnniversary then return end
+if not GuildOS.Client.isAnniversary then return end
 
 local ConsumableChecker = {}
-BRutus.ConsumableChecker = ConsumableChecker
-local L = BRutus.L
+GuildOS.ConsumableChecker = ConsumableChecker
+local L = GuildOS.L
 
 -- TBC consumable buff IDs grouped by category
 ConsumableChecker.CONSUMABLES = {
@@ -110,14 +110,14 @@ ConsumableChecker.COLUMN_ORDER = {
 }
 
 function ConsumableChecker:Initialize()
-    if not BRutus.db.consumableChecks then
-        BRutus.db.consumableChecks = { lastResults = {} }
+    if not GuildOS.db.consumableChecks then
+        GuildOS.db.consumableChecks = { lastResults = {} }
     end
 end
 
 function ConsumableChecker:CheckRaid()
     if not IsInRaid() then
-        BRutus:Print(L["You are not in a raid."])
+        GuildOS:Print(L["You are not in a raid."])
         return nil
     end
 
@@ -128,9 +128,9 @@ function ConsumableChecker:CheckRaid()
         local unit = "raid" .. i
         -- A member whose identity is secret, or who reports no name, is skipped.
         local name, realm, class
-        if UnitExists(unit) and UnitIsConnected(unit) then name, realm, class = BRutus.Compat.UnitIdentity(unit) end
+        if UnitExists(unit) and UnitIsConnected(unit) then name, realm, class = GuildOS.Compat.UnitIdentity(unit) end
         if name then
-            local playerKey = BRutus:GetPlayerKey(name, realm)
+            local playerKey = GuildOS:GetPlayerKey(name, realm)
 
             local playerResult = {
                 name = name,
@@ -169,20 +169,20 @@ function ConsumableChecker:CheckRaid()
         time = GetServerTime(),
         results = results,
     }
-    BRutus.db.consumableChecks.lastResults = results
+    GuildOS.db.consumableChecks.lastResults = results
     return results
 end
 
 function ConsumableChecker:UnitHasBuff(unit, spellID, _nameHint)
     -- Pre-resolve the localized spell name from the client so the match
     -- works on any locale (PT-BR, EN-US, etc.) without hardcoded strings.
-    local localizedName = BRutus.Compat.GetSpellInfo(spellID)
+    local localizedName = GuildOS.Compat.GetSpellInfo(spellID)
 
     for i = 1, 40 do
         -- TBC Anniversary UnitBuff returns (pos 10 = spellId):
         --   name, icon, count, debuffType, duration, expirationTime,
         --   source, isStealable, nameplateShowPersonal, spellId, ...
-        local name, _, _, _, _, _, _, _, _, auraId = BRutus.Compat.UnitBuff(unit, i)
+        local name, _, _, _, _, _, _, _, _, auraId = GuildOS.Compat.UnitBuff(unit, i)
         if not name then break end
         -- Primary check: spell ID match (locale-independent)
         if auraId == spellID then
@@ -197,7 +197,7 @@ function ConsumableChecker:UnitHasBuff(unit, spellID, _nameHint)
 end
 
 function ConsumableChecker:GetLastResults()
-    return self.lastCheck and self.lastCheck.results or BRutus.db.consumableChecks.lastResults or {}
+    return self.lastCheck and self.lastCheck.results or GuildOS.db.consumableChecks.lastResults or {}
 end
 
 function ConsumableChecker:GetMissingCount(results)
@@ -214,7 +214,7 @@ end
 function ConsumableChecker:ReportToChat(channel)
     local results = self:GetLastResults()
     if not results or not next(results) then
-        BRutus:Print(L["No results. Use /guildos to check consumables first."])
+        GuildOS:Print(L["No results. Use /guildos to check consumables first."])
         return
     end
 

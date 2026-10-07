@@ -1,4 +1,4 @@
-# BRutus — Module Boundaries
+# GuildOS — Module Boundaries
 
 _Last updated: 2026-04-26_
 
@@ -20,9 +20,9 @@ Módulo A NÃO deve conhecer o formato de serialização de Módulo B
 
 | Módulo | Dono de | Pode chamar | NÃO deve |
 |---|---|---|---|
-| `Core.lua` | Namespace BRutus, Logger, Compat, State, Config, lifecycle | tudo (é o bootstrap) | conter business logic de features |
+| `Core.lua` | Namespace GuildOS, Logger, Compat, State, Config, lifecycle | tudo (é o bootstrap) | conter business logic de features |
 | `DataCollector` | Coleta e armazena dados do player local | `AttunementTracker` | UI, comm internals |
-| `AttunementTracker` | Quest attunements + propagação via altLinks | `BRutus.Compat` | UI, comm |
+| `AttunementTracker` | Quest attunements + propagação via altLinks | `GuildOS.Compat` | UI, comm |
 | `CommSystem` | Encode/send/receive/route mensagens | `DataCollector`, todos os handlers | business logic dos handlers |
 | `RecruitmentSystem` | Auto-recruit + welcome | `CommSystem:SendMessage` | UI direta, comm internals |
 | `WishlistSystem` | Wishlists + prios de loot | `CommSystem:SendMessage` | UI, comm internals |
@@ -35,24 +35,24 @@ Módulo A NÃO deve conhecer o formato de serialização de Módulo B
 | `ConsumableChecker` | Detectar buffs de consumíveis | nada | UI, comm |
 | `SpecChecker` | Detectar spec/talentos | nada | UI, comm |
 | `UI/Helpers.lua` | Widgets + tema | nada externo | data logic, comms |
-| `UI/RosterFrame.lua` | Roster window + tabs | todos módulos (leitura), `BRutus:GetSetting/SetSetting` | data writes, business logic |
+| `UI/RosterFrame.lua` | Roster window + tabs | todos módulos (leitura), `GuildOS:GetSetting/SetSetting` | data writes, business logic |
 | `UI/MemberDetail.lua` | Painel de detalhe | módulos (leitura) | data writes |
-| `UI/FeaturePanels.lua` | Feature panels | módulos (leitura), `BRutus:GetSetting` | data writes |
+| `UI/FeaturePanels.lua` | Feature panels | módulos (leitura), `GuildOS:GetSetting` | data writes |
 | `UI/RecipesPanel.lua` | Browser de receitas | `RecipeTracker` | data writes |
-| `UI/RaidHUD.lua` | CD overlay + consumable popup | `BRutus.State.raidCD`, `ConsumableChecker` | data writes |
+| `UI/RaidHUD.lua` | CD overlay + consumable popup | `GuildOS.State.raidCD`, `ConsumableChecker` | data writes |
 
 ---
 
 ## Violações Atuais Mapeadas
 
-### UI escrevendo BRutus.db diretamente
+### UI escrevendo GuildOS.db diretamente
 
 | Arquivo | Linha / Padrão | Status |
 |---|---|---|
-| `UI/RosterFrame.lua` | `BRutus.db.settings.*` | ✅ Corrigido — usa GetSetting/SetSetting |
-| `UI/FeaturePanels.lua` | `BRutus.db.raidTracker.*` | ⚠️ leitura direta OK, mas algumas escritas problemáticas |
-| `UI/FeaturePanels.lua` | `BRutus.db.recruitment.*` | ⚠️ Campos de settings escritos inline em callbacks |
-| `UI/MemberDetail.lua` | `BRutus.db.altLinks` | ⚠️ Escreve altLinks diretamente em vez de chamar BRutus:LinkAlt |
+| `UI/RosterFrame.lua` | `GuildOS.db.settings.*` | ✅ Corrigido — usa GetSetting/SetSetting |
+| `UI/FeaturePanels.lua` | `GuildOS.db.raidTracker.*` | ⚠️ leitura direta OK, mas algumas escritas problemáticas |
+| `UI/FeaturePanels.lua` | `GuildOS.db.recruitment.*` | ⚠️ Campos de settings escritos inline em callbacks |
+| `UI/MemberDetail.lua` | `GuildOS.db.altLinks` | ⚠️ Escreve altLinks diretamente em vez de chamar GuildOS:LinkAlt |
 
 ### Módulos enviando comm com magic strings
 
@@ -87,8 +87,8 @@ CommSystem ───────────────────────
                                               ► TrialTracker (HandleIncoming)
                                               ► RaidTracker (HandleIncoming)
 
-DataCollector ───────────────────────────────► (sem deps de outros módulos BRutus)
-AttunementTracker ───────────────────────────► BRutus.Compat
+DataCollector ───────────────────────────────► (sem deps de outros módulos GuildOS)
+AttunementTracker ───────────────────────────► GuildOS.Compat
 RaidTracker ─────────────────────────────────► ConsumableChecker
 LootMaster ──────────────────────────────────► LootTracker, WishlistSystem, CommSystem
 WishlistSystem ──────────────────────────────► CommSystem
@@ -98,25 +98,25 @@ TrialTracker ──────────────────────�
 RecruitmentSystem ───────────────────────────► CommSystem
 
 UI/RosterFrame ──────────────────────────────► DataCollector, AttunementTracker,
-                                               RaidTracker, BRutus (GetSetting)
+                                               RaidTracker, GuildOS (GetSetting)
 UI/FeaturePanels ────────────────────────────► RaidTracker, LootTracker, LootMaster,
                                                WishlistSystem, TrialTracker,
                                                RecruitmentSystem, ConsumableChecker
 UI/MemberDetail ─────────────────────────────► DataCollector, AttunementTracker,
                                                OfficerNotes, SpecChecker
 UI/RecipesPanel ─────────────────────────────► RecipeTracker
-UI/RaidHUD ──────────────────────────────────► ConsumableChecker, BRutus.State.raidCD
+UI/RaidHUD ──────────────────────────────────► ConsumableChecker, GuildOS.State.raidCD
 ```
 
 ---
 
 ## Regras de Boundaries a Seguir
 
-1. **UI → Módulo**: UI chama métodos públicos dos módulos. Nunca escreve em `BRutus.db.*` diretamente.
+1. **UI → Módulo**: UI chama métodos públicos dos módulos. Nunca escreve em `GuildOS.db.*` diretamente.
 2. **Módulo → CommSystem**: módulos chamam `CommSystem:SendMessage(type, data)`. Nunca `ChatThrottleLib` diretamente.
 3. **CommSystem → Módulos**: CommSystem chama handlers registrados. Não conhece business logic.
-4. **Módulo → State**: cada módulo lê/escreve apenas seu próprio sub-table em `BRutus.State.*`.
-5. **Módulo → DB**: cada módulo acessa apenas seu próprio sub-domínio em `BRutus.db.*`.
+4. **Módulo → State**: cada módulo lê/escreve apenas seu próprio sub-table em `GuildOS.State.*`.
+5. **Módulo → DB**: cada módulo acessa apenas seu próprio sub-domínio em `GuildOS.db.*`.
 6. **Cross-domain**: módulo A não deve escrever no domínio de módulo B. Se necessário, chama um método público de B.
 
 ---

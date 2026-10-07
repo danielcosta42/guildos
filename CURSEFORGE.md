@@ -235,7 +235,6 @@ Account-wide on Anniversary: link a player's alts and attunements are shared acr
 | `/guildos errors` | Dump recent captured errors |
 | `/guildos reset` | Wipe saved data and reload |
 
-> Legacy `/brutus` and `/br` still work as aliases.
 
 Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, interval, channel, welcome, discord, invite).
 
@@ -262,7 +261,6 @@ Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, inte
 - Channel messages (LookingForGroup, Trade) require a hardware click due to Blizzard restrictions — Guild OS uses a clickable popup instead of sending silently
 - Officer status is a configurable guild-rank threshold, adjustable in Settings by current officers
 - Data is stored per-guild in SavedVariables (isolated per guild name + realm)
-- Upgrading from the old **BRutus**? Your data migrates automatically on first load
 
 ---
 

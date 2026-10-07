@@ -7,26 +7,25 @@ local ADDON_NAME, ns = ...
 
 -- Safety net: Config.lua should have run first, but guard defensively.
 _G.GuildOS = _G.GuildOS or {}
-_G.BRutus  = _G.GuildOS  -- legacy alias; see Config.lua
 
 -- Attach the file-local namespace table (only accessible from this file)
 GuildOS.ns = ns
 
-local L = BRutus.L
+local L = GuildOS.L
 
 ----------------------------------------------------------------------
 -- Session state (runtime-only, never persisted)
 ----------------------------------------------------------------------
-BRutus.State = {
+GuildOS.State = {
     comm        = { lastBroadcast = 0, pendingMessages = {} },
     lootMaster  = {},
     recruitment = {},
     raid        = {},
     consumables = {},
     raidCD      = { state = {}, members = {} },
-    errors      = {},  -- session error ring (see BRutus:RecordError / /guildos errors)
-    -- What failed to start (BRutus:RunStartup) and what this client lacks
-    -- (BRutus:RecordMissing). Feeds /guildos errors and the login line.
+    errors      = {},  -- session error ring (see GuildOS:RecordError / /guildos errors)
+    -- What failed to start (GuildOS:RunStartup) and what this client lacks
+    -- (GuildOS:RecordMissing). Feeds /guildos errors and the login line.
     startup     = { failed = {}, failedFeatures = {}, stacks = {} },
     missing     = {},
 }
@@ -103,47 +102,28 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addon = ...
         if addon == ADDON_NAME then
-            BRutus:Initialize()
+            GuildOS:Initialize()
         end
     elseif event == "PLAYER_LOGIN" then
-        BRutus:OnLogin()
+        GuildOS:OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isInitialLogin, isReloadingUi = ...
-        BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)
+        GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)
     elseif event == "GUILD_ROSTER_UPDATE" then
-        BRutus:OnGuildRosterUpdate()
+        GuildOS:OnGuildRosterUpdate()
     elseif event == "PLAYER_GUILD_UPDATE" then
-        BRutus:OnGuildRosterUpdate()
+        GuildOS:OnGuildRosterUpdate()
     end
 end)
 
 ----------------------------------------------------------------------
 -- Initialization
 ----------------------------------------------------------------------
-function BRutus:Initialize()
-    -- Ensure both DB globals exist (WoW sets SavedVariables to nil if never written)
+function GuildOS:Initialize()
+    -- WoW leaves a SavedVariable nil until it is first written.
     if not GuildOSDB then GuildOSDB = {} end
-    if not BRutusDB  then BRutusDB  = {} end
 
-    -- One-time migration: copy legacy BRutusDB data into GuildOSDB when upgrading
-    if not GuildOSDB._migrated then
-        if next(BRutusDB) ~= nil then
-            -- Shallow-copy every top-level key that GuildOSDB does not already own
-            for k, v in pairs(BRutusDB) do
-                if GuildOSDB[k] == nil then
-                    GuildOSDB[k] = v
-                end
-            end
-            GuildOSDB._migratedFrom      = "BRutus"
-            GuildOSDB._legacyDbPreserved = true
-            -- BRutusDB is intentionally preserved; never wiped automatically
-        end
-        GuildOSDB._migrated = true
-    end
-
-    -- Register both prefixes so we can receive messages from older BRutus clients
     self.Compat.RegisterAddonPrefix(self.PREFIX)
-    self.Compat.RegisterAddonPrefix(self.LEGACY_PREFIX)
 
     self:Print("v" .. self.VERSION .. " |cffFFD700by Chehul|r" .. L[" loaded. Type |cffFFD700/guildos|r to open."])
 end
@@ -151,7 +131,7 @@ end
 ----------------------------------------------------------------------
 -- Per-guild DB resolution
 ----------------------------------------------------------------------
-function BRutus:ResolveGuildDB()
+function GuildOS:ResolveGuildDB()
     local realmName = GetRealmName() or "Unknown"
     local dbKey, guilded
     if IsInGuild() then
@@ -210,7 +190,7 @@ function BRutus:ResolveGuildDB()
     return true
 end
 
-function BRutus:OnLogin()
+function GuildOS:OnLogin()
     -- Boots whether or not we're in a guild: ResolveGuildDB falls back to a
     -- guildless DB so the mesh + recruitment finder + minimap still work.
     -- A false return only means "in a guild but the name isn't ready yet".
@@ -218,14 +198,14 @@ function BRutus:OnLogin()
         local attempts = 0
         local function tryResolve()
             attempts = attempts + 1
-            if BRutus:ResolveGuildDB() then
-                BRutus:InitModules()
+            if GuildOS:ResolveGuildDB() then
+                GuildOS:InitModules()
                 return
             end
             if attempts < 5 then
                 C_Timer.After(2, tryResolve)
             else
-                BRutus:Print(L["|cffFF4444Could not load guild info. Try /reload.|r"])
+                GuildOS:Print(L["|cffFF4444Could not load guild info. Try /reload.|r"])
             end
         end
         C_Timer.After(2, tryResolve)
@@ -238,7 +218,7 @@ end
 ----------------------------------------------------------------------
 -- Module start-up list. Order matters (DataCollector before the sync that
 -- reads it), so this is a list, not a set. Per entry:
---   [1]      module name under BRutus
+--   [1]      module name under GuildOS
 --   feature  Settings toggle that can switch the module off
 --   ui       window the module backs: if the module fails to start, the
 --            window refuses to open instead of erroring while it builds
@@ -323,50 +303,50 @@ end
 -- It asks again until the rank is known; the start-up report waits for the answer.
 local function startOfficerModules(try)
     if not rankKnown() and try < OFFICER_START_TRIES then
-        BRutus.Compat.After(OFFICER_START_DELAY, function() startOfficerModules(try + 1) end)
+        GuildOS.Compat.After(OFFICER_START_DELAY, function() startOfficerModules(try + 1) end)
         return
     end
     if not rankKnown() then
-        BRutus.State.startup.failed.OfficerModules = "not started, the guild rank was still unknown after "
+        GuildOS.State.startup.failed.OfficerModules = "not started, the guild rank was still unknown after "
             .. (OFFICER_START_DELAY * OFFICER_START_TRIES) .. "s"
-    elseif BRutus:IsOfficer() then
+    elseif GuildOS:IsOfficer() then
         for _, entry in ipairs(OFFICER_START) do
-            BRutus:StartModule(entry)
+            GuildOS:StartModule(entry)
         end
     end
-    BRutus:ReportStartup()
+    GuildOS:ReportStartup()
 end
 
-function BRutus:InitModules()
+function GuildOS:InitModules()
     -- Core helper tests (Utils loads before SelfTest, so it cannot self-register).
     self:RunStartup("UtilTests", nil, self.RegisterUtilTests, self)
 
     for _, entry in ipairs(MODULE_START) do
         self:StartModule(entry)
     end
-    if BRutus.CreateMinimapButton then
+    if GuildOS.CreateMinimapButton then
         self:RunStartup("MinimapButton", nil, self.CreateMinimapButton, self)
     end
     -- First-run welcome (once); delayed so guild info + frames are ready.
-    if BRutus.MaybeShowOnboarding then
-        BRutus.Compat.After(6, function() BRutus:MaybeShowOnboarding() end)
+    if GuildOS.MaybeShowOnboarding then
+        GuildOS.Compat.After(6, function() GuildOS:MaybeShowOnboarding() end)
     end
     -- Login digest: shown a bit later so guild/roster data is ready and it
     -- doesn't collide with the first-run onboarding wizard.
-    if BRutus.Digest then
-        BRutus.Compat.After(9, function() BRutus.Digest:ShowOnLogin() end)
+    if GuildOS.Digest then
+        GuildOS.Compat.After(9, function() GuildOS.Digest:ShowOnLogin() end)
     end
 
     -- Officer-only modules: defer init until guild info is available. The
     -- start-up report waits for them, so it counts every problem exactly once.
-    BRutus.Compat.After(OFFICER_START_DELAY, function() startOfficerModules(1) end)
+    GuildOS.Compat.After(OFFICER_START_DELAY, function() startOfficerModules(1) end)
 
     -- Hook chat player links for guild invite
     self:RunStartup("ChatInviteHook", nil, self.HookChatInvite, self)
 
     -- Request guild roster
     if IsInGuild() then
-        BRutus.Compat.GuildRoster()
+        GuildOS.Compat.GuildRoster()
     end
 
     -- Hook into default guild frame so Guild OS opens instead
@@ -388,7 +368,7 @@ end
 -- Run one start-up step. A failure is recorded against `name`, and against
 -- the features `entry` names (their windows then refuse to open); the
 -- caller carries on with the next step. Returns true when the step ran.
-function BRutus:RunStartup(name, entry, fn, ...)
+function GuildOS:RunStartup(name, entry, fn, ...)
     local ok, res
     if type(fn) == "function" then
         local args, n = { ... }, select("#", ...)
@@ -420,7 +400,7 @@ end
 
 -- Start one module from a start-list entry. A module that is not loaded or
 -- is switched off in Settings is skipped, which is not a failure.
-function BRutus:StartModule(entry)
+function GuildOS:StartModule(entry)
     local name = entry[1]
     local mod = self[name]
     if not mod then return false end
@@ -437,7 +417,7 @@ function BRutus:StartModule(entry)
 end
 
 -- Name of the module whose failed start-up took feature `id` down, or nil.
-function BRutus:FeatureStartFailed(id)
+function GuildOS:FeatureStartFailed(id)
     return self.State.startup.failedFeatures[id]
 end
 
@@ -449,7 +429,7 @@ end
 -- the second caller is not recorded either, and left out of the start-up list:
 -- a client being itself is not a problem with the addon. What exists on this
 -- client is the probe's inventory to answer (Core/Probe.lua), not this one's.
-function BRutus:RecordMissing(what, expected)
+function GuildOS:RecordMissing(what, expected)
     local seen = self.State.missing[what]
     if seen == true or (seen and expected) then return end  -- a real miss still wins over an expected one
     self.State.missing[what] = expected and "expected" or true
@@ -460,7 +440,7 @@ end
 -- Every start-up failure and every missing capability, one line each,
 -- sorted. /guildos errors prints these before the error ring, which is
 -- capped and shared with runtime errors and can already have lost them.
-function BRutus:ListStartupProblems()
+function GuildOS:ListStartupProblems()
     local lines = {}
     for name, err in pairs(self.State.startup.failed) do
         lines[#lines + 1] = name .. ": " .. err
@@ -473,14 +453,14 @@ function BRutus:ListStartupProblems()
 end
 
 -- One chat line when start-up hit problems; silent when everything started.
-function BRutus:ReportStartup()
+function GuildOS:ReportStartup()
     local n = #self:ListStartupProblems()
     if n > 0 then
         self:Print(string.format(L["%d start-up problem(s) on this client. Type /guildos errors for details."], n))
     end
 end
 
-function BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)
+function GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)
     if not self.db or not self.guildKey then return end
 
     -- Only run the full startup sequence on the initial login or UI reload.
@@ -494,33 +474,33 @@ function BRutus:OnEnterWorld(isInitialLogin, isReloadingUi)
     -- so it fires reliably even on a cold login) — do NOT broadcast here too, or
     -- a /reload would double-send.
     C_Timer.After(3, function()
-        if BRutus.DataCollector then
-            BRutus.DataCollector:CollectMyData()
+        if GuildOS.DataCollector then
+            GuildOS.DataCollector:CollectMyData()
         end
         -- Broadcast our wishlist so guildies can see our priorities (officer-only while in testing)
-        if BRutus:IsOfficer() then
+        if GuildOS:IsOfficer() then
             C_Timer.After(5, function()
-                if BRutus.Wishlist then
-                    BRutus.Wishlist:BroadcastMyWishlist()
+                if GuildOS.Wishlist then
+                    GuildOS.Wishlist:BroadcastMyWishlist()
                 end
             end)
         end
         -- Check profession freshness after data is collected
         C_Timer.After(4, function()
-            BRutus:CheckProfessionFreshness()
+            GuildOS:CheckProfessionFreshness()
         end)
     end)
 end
 
-function BRutus:OnGuildRosterUpdate()
-    if BRutus.RecordFirstSeen then BRutus:RecordFirstSeen() end
-    BRutus:RefreshRosterUI()
+function GuildOS:OnGuildRosterUpdate()
+    if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
+    GuildOS:RefreshRosterUI()
 end
 
 ----------------------------------------------------------------------
 -- Hook into the default Blizzard guild frame
 ----------------------------------------------------------------------
-function BRutus:HookGuildFrame()
+function GuildOS:HookGuildFrame()
     -- CRITICAL: never overwrite ToggleGuildFrame / ToggleFriendsFrame with our own
     -- closures. Replacing those Blizzard globals TAINTS the shared social-frame
     -- code, and the Raid window is a FriendsFrame tab, so a raid leader could not
@@ -572,7 +552,7 @@ function BRutus:HookGuildFrame()
     -- Add a "Guild OS" button to Blizzard's own guild frames so you can jump from
     -- the native UI to Guild OS (and back via the "Blizzard" button in our header),
     -- rather than the addon fully replacing the guild pane.
-    BRutus:SetupNativeGuildButtons()
+    GuildOS:SetupNativeGuildButtons()
 end
 
 ----------------------------------------------------------------------
@@ -582,14 +562,14 @@ end
 -- Does the guild micro button / "J" open Guild OS? Default yes; opt-out in Settings
 -- (General) or via /guildos guildbutton, so players can keep the modern Blizzard
 -- guild UI (chat history, news) as the guild button's target and use both.
-function BRutus:IsGuildButtonHijacked()
+function GuildOS:IsGuildButtonHijacked()
     return self:GetSetting("hijackGuildButton") ~= false
 end
 
 -- Open Blizzard's own guild UI (classic GuildFrame or the modern Communities frame,
 -- whichever the client is set to) — the "Blizzard" button in our header calls this so
 -- a Guild OS user can still reach guild chat history / the news feed.
-function BRutus:OpenBlizzardGuildUI()
+function GuildOS:OpenBlizzardGuildUI()
     -- Open the native guild UI without our hijack redirect swapping it back to
     -- Guild OS. We call the real (unreplaced) ToggleGuildFrame with a guard flag
     -- our hooksecurefunc handler checks.
@@ -621,7 +601,7 @@ local function AttachGuildOSButton(parent, point, xOff, yOff)
     -- so each caller picks its own corner + offset.
     point = point or "TOPRIGHT"
     btn:SetPoint(point, parent, point, xOff or -56, yOff or -32)
-    btn:SetScript("OnClick", function() BRutus:ToggleRoster() end)
+    btn:SetScript("OnClick", function() GuildOS:ToggleRoster() end)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:AddLine("|cffFFD700Guild|r |cffD4AC0DOS|r")
@@ -633,7 +613,7 @@ end
 -- Put the "Guild OS" button on BOTH the classic GuildFrame and the modern
 -- CommunitiesFrame. Both are load-on-demand, so attach now if already present and again
 -- when their addon loads. Runs once.
-function BRutus:SetupNativeGuildButtons()
+function GuildOS:SetupNativeGuildButtons()
     if self._nativeButtonsSetup then
         return
     end
@@ -659,7 +639,7 @@ end
 ----------------------------------------------------------------------
 -- Toggle the Guild OS window
 ----------------------------------------------------------------------
-function BRutus:ToggleRoster()
+function GuildOS:ToggleRoster()
     if not self.db then
         self:Print(L["|cff888888Not in a guild \226\128\148 addon inactive.|r"])
         return
@@ -671,8 +651,8 @@ function BRutus:ToggleRoster()
         return
     end
     self.Compat.GuildRoster()
-    if BRutus.UI and BRutus.UI.ToggleMain then
-        BRutus.UI:ToggleMain()
+    if GuildOS.UI and GuildOS.UI.ToggleMain then
+        GuildOS.UI:ToggleMain()
     end
 end
 
@@ -680,16 +660,16 @@ end
 -- Is the Guild OS window on screen? The guild-frame hook mirrors
 -- Blizzard's open and close onto it.
 ----------------------------------------------------------------------
-function BRutus:IsFrontDoorShown()
+function GuildOS:IsFrontDoorShown()
     return (self.RosterFrame and self.RosterFrame:IsShown()) and true or false
 end
 
-function BRutus:HideFrontDoor()
+function GuildOS:HideFrontDoor()
     if self.RosterFrame then self.RosterFrame:Hide() end
 end
 
 -- Refresh the roster when the window is up and the roster tab has been built.
-function BRutus:RefreshRosterUI()
+function GuildOS:RefreshRosterUI()
     local f = self.RosterFrame
     if f and f:IsShown() and f.RefreshRoster then f:RefreshRoster() end
 end
@@ -697,7 +677,7 @@ end
 ----------------------------------------------------------------------
 -- Utility — print
 ----------------------------------------------------------------------
-function BRutus:Print(msg)
+function GuildOS:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cffFFD700[Guild OS]|r " .. tostring(msg))
 end
 
@@ -708,47 +688,47 @@ end
 -- the rest of the UI or spams the default error frame; failures land in a
 -- session ring buffer viewable via /guildos errors.
 ----------------------------------------------------------------------
-BRutus.Logger = { debug = false }
+GuildOS.Logger = { debug = false }
 
-function BRutus.Logger.Debug(msg)
-    if BRutus.Logger.debug then
-        BRutus:Print("|cff888888[debug]|r " .. tostring(msg))
+function GuildOS.Logger.Debug(msg)
+    if GuildOS.Logger.debug then
+        GuildOS:Print("|cff888888[debug]|r " .. tostring(msg))
     end
 end
 
-function BRutus.Logger.Info(msg)
-    BRutus:Print(tostring(msg))
+function GuildOS.Logger.Info(msg)
+    GuildOS:Print(tostring(msg))
 end
 
-function BRutus.Logger.Warn(msg)
-    BRutus:Print("|cffFF8800[warn]|r " .. tostring(msg))
+function GuildOS.Logger.Warn(msg)
+    GuildOS:Print("|cffFF8800[warn]|r " .. tostring(msg))
 end
 
 local ERROR_RING_MAX = 50
 
 -- Push one message into the session error ring shown by /guildos errors.
-function BRutus:RecordError(msg)
-    local ring = BRutus.State.errors
+function GuildOS:RecordError(msg)
+    local ring = GuildOS.State.errors
     ring[#ring + 1] = { msg = tostring(msg), when = (GetServerTime and GetServerTime()) or 0 }
     while #ring > ERROR_RING_MAX do table.remove(ring, 1) end
-    if BRutus.Logger.debug then
-        BRutus:Print("|cffFF4444[error]|r " .. tostring(msg))
+    if GuildOS.Logger.debug then
+        GuildOS:Print("|cffFF4444[error]|r " .. tostring(msg))
     end
 end
 
--- pcall a function, capturing any error into BRutus.State.errors.
+-- pcall a function, capturing any error into GuildOS.State.errors.
 -- Returns (ok, errOrResult). Use for event handlers and panel refreshes.
-function BRutus:SafeCall(fn, ...)
+function GuildOS:SafeCall(fn, ...)
     if type(fn) ~= "function" then return false end
     local ok, err = pcall(fn, ...)
-    if not ok then BRutus:RecordError(err) end
+    if not ok then GuildOS:RecordError(err) end
     return ok, err
 end
 
 ----------------------------------------------------------------------
 -- Permission checks
 ----------------------------------------------------------------------
-function BRutus:IsOfficer()
+function GuildOS:IsOfficer()
     if not IsInGuild() then return false end
     local _, _, rankIndex = GetGuildInfo("player")
     if not rankIndex then return false end
@@ -769,7 +749,7 @@ local MAX_RANK_INDEX = 9        -- guild ranks are 0..9
 -- old, and the guild would stay split. Only an officer changes it, and the change goes out
 -- even when it demotes that officer: the receivers judge the sender by their own threshold,
 -- which still counts them.
-function BRutus:SetOfficerMaxRank(maxRank)
+function GuildOS:SetOfficerMaxRank(maxRank)
     if not self:IsOfficer() then return false end
     local s = self.db.settings
     s.officerMaxRank = maxRank
@@ -781,13 +761,13 @@ end
 -- Officers re-send it on the 5-minute sync and when asked, so a client that missed the change
 -- still gets it. `justChanged` skips the officer check for the change SetOfficerMaxRank has
 -- just made, which may have demoted the sender.
-function BRutus:PublishOfficerMaxRank(justChanged)
+function GuildOS:PublishOfficerMaxRank(justChanged)
     local s = self.db and self.db.settings
     if not (s and s.officerMaxRankAt and self.SyncService and (justChanged or self:IsOfficer())) then return end
     self.SyncService:Publish("guildcfg", "officers", { max = s.officerMaxRank }, { rev = s.officerMaxRankAt })
 end
 
-function BRutus:OnOfficerMaxRankSync(env)
+function GuildOS:OnOfficerMaxRankSync(env)
     local data = env and env.data
     local at = env and tonumber(env.rev)
     local max = type(data) == "table" and type(data.max) == "number" and data.max
@@ -806,7 +786,7 @@ end
 
 -- Check whether a named player (may include realm, e.g. "Name-Realm") is an officer
 -- by scanning the guild roster. Used to validate incoming officer-only messages.
-function BRutus:IsOfficerByName(fullName)
+function GuildOS:IsOfficerByName(fullName)
     if not IsInGuild() or not fullName then return false end
     local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 1
     -- Normalise: strip realm if present
@@ -827,11 +807,11 @@ end
 ----------------------------------------------------------------------
 -- Config accessors (Rule 8 — never read db.settings.* directly from UI)
 ----------------------------------------------------------------------
-function BRutus:GetSetting(key)
+function GuildOS:GetSetting(key)
     return self.db and self.db.settings and self.db.settings[key]
 end
 
-function BRutus:SetSetting(key, value)
+function GuildOS:SetSetting(key, value)
     if self.db and self.db.settings then
         self.db.settings[key] = value
     end
@@ -842,7 +822,7 @@ end
 -- shift-clicking it pastes it into the chat box instead.
 -- ponytail: pressing Shift mid-hover only shows up where the owner refreshes its
 -- tooltip (bags, character, action bars, every 0.2s); elsewhere hover again.
-function BRutus:ShowsItemTooltipInfo(tooltip)
+function GuildOS:ShowsItemTooltipInfo(tooltip)
     local mode = self:GetSetting("itemTooltip")
     if mode == "off" then return false end
     return mode ~= "shift" or tooltip == ItemRefTooltip or IsShiftKeyDown()
@@ -855,7 +835,7 @@ end
 -- never be turned off — that is how a user would lock themselves out of
 -- the Settings window that would turn them back on.
 ----------------------------------------------------------------------
-function BRutus:IsFeatureEnabled(id)
+function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end
     -- UI loads after Core, so the registry is resolved per call, not per load.
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
@@ -865,7 +845,7 @@ function BRutus:IsFeatureEnabled(id)
     return mods[id] ~= false
 end
 
-function BRutus:SetFeatureEnabled(id, enabled)
+function GuildOS:SetFeatureEnabled(id, enabled)
     if type(id) ~= "string" then return end
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
     if def and def.core then return end
@@ -884,7 +864,7 @@ end
 -- loot UI. "rolls" = /roll MS/OS (default), "tmb"/"wishlist" = interest
 -- lists, "dkp" = the Points economy.
 ----------------------------------------------------------------------
-BRutus.LOOT_SYSTEMS = {
+GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
     { key = "tmb",      label = "TMB" },
     { key = "wishlist", label = "Wishlist" },
@@ -892,17 +872,17 @@ BRutus.LOOT_SYSTEMS = {
     { key = "external", label = "External / Off" },
 }
 
-function BRutus:GetLootSystem()
+function GuildOS:GetLootSystem()
     return self:GetSetting("lootSystem") or "rolls"
 end
 
 -- True unless the guild has opted out of GuildOS loot handling entirely
 -- ("external": loot is run by Gargul/RCLootCouncil/etc.).
-function BRutus:LootSystemActive()
+function GuildOS:LootSystemActive()
     return self:GetLootSystem() ~= "external"
 end
 
-function BRutus:SetLootSystem(sys)
+function GuildOS:SetLootSystem(sys)
     self:SetSetting("lootSystem", sys)
     -- Loot Master follows the system: "external" silences it entirely (no
     -- roll popups, ML window, council, or /roll capture — and with no awards
@@ -918,12 +898,12 @@ end
 -- Each loot system exposes only its own UI so players never see screens
 -- that don't apply: wishlist/TMB -> wishlist access; DKP -> DKP access;
 -- plain /roll -> neither.
-function BRutus:LootSystemShowsWishlist()
+function GuildOS:LootSystemShowsWishlist()
     local s = self:GetLootSystem()
     return s == "wishlist" or s == "tmb"
 end
 
-function BRutus:LootSystemShowsDKP()
+function GuildOS:LootSystemShowsDKP()
     return self:GetLootSystem() == "dkp"
 end
 
@@ -932,14 +912,14 @@ end
 -- play. Stored locally, mirrored into our own member row, and broadcast
 -- so the Raider Roster + guildmates pick it up with no officer input.
 ----------------------------------------------------------------------
-function BRutus:GetMyRoles()
+function GuildOS:GetMyRoles()
     return (self.db and self.db.profile and self.db.profile.prefRoles) or {}
 end
 
-function BRutus:SetMyRoles(roles)
+function GuildOS:SetMyRoles(roles)
     self.db.profile = self.db.profile or {}
     self.db.profile.prefRoles = roles or {}
-    local key = self:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    local key = self:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
     self.db.members = self.db.members or {}
     self.db.members[key] = self.db.members[key] or {}
     self.db.members[key].prefRoles = self.db.profile.prefRoles

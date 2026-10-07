@@ -4,8 +4,8 @@
 -- craft a recipe, and items in the loot history. Read-only.
 ----------------------------------------------------------------------
 local Search = {}
-BRutus.Search = Search
-local L = BRutus.L
+GuildOS.Search = Search
+local L = GuildOS.L
 
 local CAP = 20   -- max results per category
 
@@ -31,7 +31,7 @@ function Search:Query(text)
 
     -- Recipes — who can craft something matching the query
     local hits = {}
-    for key, profs in pairs(BRutus.db.recipes or {}) do
+    for key, profs in pairs(GuildOS.db.recipes or {}) do
         local crafter = key:match("^([^-]+)") or key
         for _, recipes in pairs(profs) do
             if type(recipes) == "table" then
@@ -56,8 +56,8 @@ function Search:Query(text)
     table.sort(res.recipes, function(a, b) return a.name:lower() < b.name:lower() end)
 
     -- Loot history items
-    for _, e in ipairs(BRutus.db.lootHistory or {}) do
-        local iname = (e.itemLink and BRutus.Compat.GetItemInfo(e.itemLink)) or e.itemName or ""
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        local iname = (e.itemLink and GuildOS.Compat.GetItemInfo(e.itemLink)) or e.itemName or ""
         if iname ~= "" and strlower(iname):find(text, 1, true) and #res.loot < CAP then
             res.loot[#res.loot + 1] = { item = iname, player = e.player or "?", ts = e.timestamp or 0 }
         end
@@ -70,8 +70,8 @@ end
 -- UI
 ----------------------------------------------------------------------
 function Search:Show(initial)
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
 
     local f = self.frame
     if not f then
@@ -101,13 +101,13 @@ function Search:Show(initial)
         box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         box:SetBackdropColor(0.05, 0.05, 0.066, 1)
         box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
-        BRutus:ApplyFont(box, 12)
+        GuildOS:ApplyFont(box, 12)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetTextInsets(8, 8, 0, 0)
         box:SetAutoFocus(true)
         box:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
         local ph = box:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(ph, 11)
+        GuildOS:ApplyFont(ph, 11)
         ph:SetPoint("LEFT", 8, 0)
         ph:SetTextColor(0.4, 0.4, 0.4)
         ph:SetText(L["Search members, recipes, loot..."])
@@ -156,7 +156,7 @@ function Search:Show(initial)
         if #res.members > 0 then
             header(L["MEMBERS"])
             for _, m in ipairs(res.members) do
-                local cr, cg, cb = BRutus:GetClassColor(m.class)
+                local cr, cg, cb = GuildOS:GetClassColor(m.class)
                 line(string.format("%s  |cff888888L%d%s|r", m.name, m.level, m.online and "" or " ·offline"),
                     { r = cr, g = cg, b = cb })
             end

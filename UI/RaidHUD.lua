@@ -3,10 +3,10 @@
 -- Floating Raid CD Tracker + Consumable Check popup
 -- Auto-shows when in raid as leader or assist
 ----------------------------------------------------------------------
-local BRutus = BRutus
-local UI     = BRutus.UI
-local C      = BRutus.Colors
-local L      = BRutus.L
+local GuildOS = GuildOS
+local UI     = GuildOS.UI
+local C      = GuildOS.Colors
+local L      = GuildOS.L
 
 ----------------------------------------------------------------------
 -- TBC RAID CD DEFINITIONS
@@ -162,7 +162,7 @@ local function IsLeaderOrAssist()
     if not IsInRaid() then return false end
     for i = 1, GetNumGroupMembers() do
         local _, rank = GetRaidRosterInfo(i)
-        if BRutus.Compat.IsPlayer("raid" .. i) then
+        if GuildOS.Compat.IsPlayer("raid" .. i) then
             return rank >= 1
         end
     end
@@ -184,8 +184,8 @@ end
 ----------------------------------------------------------------------
 local _clFrame = CreateFrame("Frame")
 -- The cooldown HUD is TBC content: elsewhere it never reads the combat log (ADR-0014).
-if BRutus.Client.isAnniversary then
-    BRutus.Compat.RegisterEvent(_clFrame, "COMBAT_LOG_EVENT_UNFILTERED")
+if GuildOS.Client.isAnniversary then
+    GuildOS.Compat.RegisterEvent(_clFrame, "COMBAT_LOG_EVENT_UNFILTERED")
 end
 _clFrame:SetScript("OnEvent", function()
     local _, event, _, _, srcName, _, _, _, _, _, _, spellID =
@@ -231,8 +231,8 @@ local function BuildHUDRows(f)
         local players = {}
         for name, classFile in pairs(_raidMembers) do
             if classFile == cd.class then
-                local shortName = BRutus:Utf8Head(name, 12)
-                local hex = BRutus:GetClassColorHex(classFile)
+                local shortName = GuildOS:Utf8Head(name, 12)
+                local hex = GuildOS:GetClassColorHex(classFile)
                 table.insert(players, { name = name, shortName = shortName, colorHex = hex })
             end
         end
@@ -258,13 +258,13 @@ local function BuildHUDRows(f)
             local icon = row:CreateTexture(nil, "ARTWORK")
             icon:SetSize(ICON_W, ICON_W)
             icon:SetPoint("LEFT", 2, 0)
-            local spellTex = BRutus.Compat.GetSpellTexture(cd.iconID)
+            local spellTex = GuildOS.Compat.GetSpellTexture(cd.iconID)
             icon:SetTexture(spellTex or "Interface\\Icons\\INV_Misc_QuestionMark")
             icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
             -- CD label
             local lbl = row:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(lbl, 9)
+            GuildOS:ApplyFont(lbl, 9)
             lbl:SetPoint("LEFT", ICON_W + 4, 0)
             lbl:SetWidth(LABEL_W)
             lbl:SetJustifyH("LEFT")
@@ -273,7 +273,7 @@ local function BuildHUDRows(f)
 
             -- Player name list (colored, updated by ticker)
             local pText = row:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(pText, 9)
+            GuildOS:ApplyFont(pText, 9)
             pText:SetPoint("LEFT", ICON_W + LABEL_W + 6, 0)
             pText:SetPoint("RIGHT", -2, 0)
             pText:SetJustifyH("LEFT")
@@ -317,10 +317,10 @@ end
 ----------------------------------------------------------------------
 -- CREATE RAID HUD
 ----------------------------------------------------------------------
-function BRutus:CreateRaidHUD()
+function GuildOS:CreateRaidHUD()
     if _hudFrame then return end
 
-    local f = CreateFrame("Frame", "BRutusRaidHUD", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "GuildOSRaidHUD", UIParent, "BackdropTemplate")
     f:SetWidth(HUD_W)
     f:SetHeight(200)
     f:SetBackdrop({
@@ -335,7 +335,7 @@ function BRutus:CreateRaidHUD()
     f:SetClampedToScreen(true)
 
     -- Restore saved position
-    local pos = BRutus.db.raidHUDPos
+    local pos = GuildOS.db.raidHUDPos
     if pos then
         f:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
     else
@@ -349,7 +349,7 @@ function BRutus:CreateRaidHUD()
     f:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         local point, _, relPoint, x, y = self:GetPoint()
-        BRutus.db.raidHUDPos = {
+        GuildOS.db.raidHUDPos = {
             point = point, relPoint = relPoint,
             x = floor(x), y = floor(y),
         }
@@ -366,7 +366,7 @@ function BRutus:CreateRaidHUD()
     header:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 1)
 
     local titleText = header:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(titleText, 11)
+    GuildOS:ApplyFont(titleText, 11)
     titleText:SetPoint("LEFT", 8, 0)
     titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     titleText:SetText(L["Guild OS — Raid CDs"])
@@ -379,7 +379,7 @@ function BRutus:CreateRaidHUD()
     colBtn:SetPoint("RIGHT", -22, 0)
 
     local colBtnText = colBtn:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(colBtnText, 13)
+    GuildOS:ApplyFont(colBtnText, 13)
     colBtnText:SetAllPoints()
     colBtnText:SetJustifyH("CENTER")
     colBtnText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -405,7 +405,7 @@ function BRutus:CreateRaidHUD()
     closeBtn:SetPoint("RIGHT", -2, 0)
 
     local closeTxt = closeBtn:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(closeTxt, 13)
+    GuildOS:ApplyFont(closeTxt, 13)
     closeTxt:SetAllPoints()
     closeTxt:SetJustifyH("CENTER")
     closeTxt:SetTextColor(0.85, 0.20, 0.20)
@@ -415,8 +415,8 @@ function BRutus:CreateRaidHUD()
         -- Persist the dismissal so it survives zoning/reload within the raid
         -- session (it is cleared again when the player leaves the raid).
         _hudManuallyClosed = true
-        if BRutus.db and BRutus.db.settings then
-            BRutus.db.settings.raidHUDDismissed = true
+        if GuildOS.db and GuildOS.db.settings then
+            GuildOS.db.settings.raidHUDDismissed = true
         end
         f:Hide()
     end)
@@ -434,7 +434,7 @@ function BRutus:CreateRaidHUD()
     f.consBtn = UI:CreateButton(f, L["Check Consumables"], 200, 24)
     f.consBtn:SetPoint("BOTTOM", f, "BOTTOM", 0, 6)
     f.consBtn:SetScript("OnClick", function()
-        BRutus:ShowConsumablePopup()
+        GuildOS:ShowConsumablePopup()
     end)
 
     ----------------------------------------------------------------
@@ -459,13 +459,13 @@ end
 ----------------------------------------------------------------------
 -- VISIBILITY: show when in raid as leader/assist, hide otherwise
 ----------------------------------------------------------------------
-function BRutus:UpdateRaidHUDVisibility()
+function GuildOS:UpdateRaidHUDVisibility()
     if not _hudFrame then return end
-    local moduleEnabled = not BRutus.db or not BRutus.db.settings
-        or not BRutus.db.settings.modules
-        or BRutus.db.settings.modules.raidHUD ~= false
+    local moduleEnabled = not GuildOS.db or not GuildOS.db.settings
+        or not GuildOS.db.settings.modules
+        or GuildOS.db.settings.modules.raidHUD ~= false
     -- The raid cooldown HUD is TBC content (ADR-0014).
-    local shouldShow = moduleEnabled and BRutus.Client.isAnniversary and IsInRaid() and IsLeaderOrAssist()
+    local shouldShow = moduleEnabled and GuildOS.Client.isAnniversary and IsInRaid() and IsLeaderOrAssist()
     if shouldShow then
         if not _hudFrame:IsShown() and not _hudManuallyClosed then
             _hudFrame:Show()
@@ -476,8 +476,8 @@ function BRutus:UpdateRaidHUDVisibility()
     else
         -- Left the raid: clear the dismissal so the HUD reappears next raid.
         _hudManuallyClosed = false
-        if BRutus.db and BRutus.db.settings then
-            BRutus.db.settings.raidHUDDismissed = false
+        if GuildOS.db and GuildOS.db.settings then
+            GuildOS.db.settings.raidHUDDismissed = false
         end
         _hudFrame:Hide()
         if _consPopup then _consPopup:Hide() end
@@ -488,9 +488,9 @@ end
 -- EVENT HANDLING — auto show/hide on roster changes
 ----------------------------------------------------------------------
 local _evtFrame = CreateFrame("Frame")
-BRutus.Compat.RegisterEvent(_evtFrame, "PLAYER_ENTERING_WORLD")
-BRutus.Compat.RegisterEvent(_evtFrame, "GROUP_ROSTER_UPDATE")
-BRutus.Compat.RegisterEvent(_evtFrame, "RAID_ROSTER_UPDATE")
+GuildOS.Compat.RegisterEvent(_evtFrame, "PLAYER_ENTERING_WORLD")
+GuildOS.Compat.RegisterEvent(_evtFrame, "GROUP_ROSTER_UPDATE")
+GuildOS.Compat.RegisterEvent(_evtFrame, "RAID_ROSTER_UPDATE")
 
 _evtFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -498,16 +498,16 @@ _evtFrame:SetScript("OnEvent", function(_, event)
         -- instance transitions) fires PEW and was re-opening a window the
         -- user had closed. Restore the persisted state once db is ready.
         C_Timer.After(2, function()
-            if BRutus.db then
-                if BRutus.db.settings then
-                    _hudManuallyClosed = BRutus.db.settings.raidHUDDismissed and true or false
+            if GuildOS.db then
+                if GuildOS.db.settings then
+                    _hudManuallyClosed = GuildOS.db.settings.raidHUDDismissed and true or false
                 end
-                if BRutus.Client.isAnniversary then BRutus:CreateRaidHUD() end  -- TBC content (ADR-0014)
-                BRutus:UpdateRaidHUDVisibility()
+                if GuildOS.Client.isAnniversary then GuildOS:CreateRaidHUD() end  -- TBC content (ADR-0014)
+                GuildOS:UpdateRaidHUDVisibility()
             end
         end)
     else
-        BRutus:UpdateRaidHUDVisibility()
+        GuildOS:UpdateRaidHUDVisibility()
     end
 end)
 
@@ -515,7 +515,7 @@ end)
 -- CONSUMABLE PANEL — compact "problems only" floating frame
 ----------------------------------------------------------------------
 local function BuildConsPopup(f)
-    local CC = BRutus.ConsumableChecker
+    local CC = GuildOS.ConsumableChecker
     if not CC then return end
 
     local results = CC:GetLastResults()
@@ -582,7 +582,7 @@ local function BuildConsPopup(f)
             end
             row:SetWidth(content:GetWidth())
             row:SetPoint("TOPLEFT", 0, -yOff)
-            local cr, cg, cbv = BRutus:GetClassColor(p.class)
+            local cr, cg, cbv = GuildOS:GetClassColor(p.class)
             row._name:SetTextColor(cr, cg, cbv)
             row._name:SetText(p.name or "?")
             row._miss:SetText(table.concat(p.missing, ", "))
@@ -599,8 +599,8 @@ local function BuildConsPopup(f)
     f:SetHeight(HEADER_H + 28 + bodyH + 10)
 end
 
-function BRutus:ShowConsumablePopup()
-    local CC = BRutus.ConsumableChecker
+function GuildOS:ShowConsumablePopup()
+    local CC = GuildOS.ConsumableChecker
     if CC then CC:CheckRaid() end
 
     if _consPopup then
@@ -610,7 +610,7 @@ function BRutus:ShowConsumablePopup()
     end
 
     local WHITE = "Interface\\Buttons\\WHITE8x8"
-    local f = CreateFrame("Frame", "BRutusConsPopup", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "GuildOSConsPopup", UIParent, "BackdropTemplate")
     f:SetSize(CP_W, 160)
     f:SetPoint("CENTER")
     f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
@@ -652,14 +652,14 @@ function BRutus:ShowConsumablePopup()
     local scanBtn = UI:CreateButton(f, L["Scan"], 78, 20)
     scanBtn:SetPoint("TOPRIGHT", -10, -(HEADER_H + 4))
     scanBtn:SetScript("OnClick", function()
-        if BRutus.ConsumableChecker then BRutus.ConsumableChecker:CheckRaid() end
+        if GuildOS.ConsumableChecker then GuildOS.ConsumableChecker:CheckRaid() end
         BuildConsPopup(f)
     end)
 
     local repBtn = UI:CreateButton(f, L["Announce"], 78, 20)
     repBtn:SetPoint("RIGHT", scanBtn, "LEFT", -6, 0)
     repBtn:SetScript("OnClick", function()
-        if BRutus.ConsumableChecker then BRutus.ConsumableChecker:ReportToChat("RAID") end
+        if GuildOS.ConsumableChecker then GuildOS.ConsumableChecker:ReportToChat("RAID") end
     end)
 
     -- Centered message for "all prepared" / "no data"
@@ -667,10 +667,10 @@ function BRutus:ShowConsumablePopup()
     f.emptyText:SetPoint("TOP", 0, -(HEADER_H + 36))
 
     -- Scrollable problem list
-    local scroll = CreateFrame("ScrollFrame", "BRutusConsPopupScroll", f, "UIPanelScrollFrameTemplate")
+    local scroll = CreateFrame("ScrollFrame", "GuildOSConsPopupScroll", f, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 8, -(HEADER_H + 28))
     scroll:SetPoint("BOTTOMRIGHT", -22, 8)
-    UI:SkinScrollBar(scroll, "BRutusConsPopupScroll")
+    UI:SkinScrollBar(scroll, "GuildOSConsPopupScroll")
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(CP_W - 30, 1)
     scroll:SetScrollChild(content)

@@ -3,7 +3,7 @@
 -- One of the game's ten languages (#104). Machine-translated; corrections from players welcome.
 ----------------------------------------------------------------------
 if (GetLocale and GetLocale()) ~= "ruRU" then return end
-local L = BRutus.L
+local L = GuildOS.L
 
 L["  %d. %s — %d items (%d epics, %.0f%%)"] = "  %d. %s — %d предм. (%d эпич., %.0f%%)"
 L["  +%d more..."] = "  +%d ещё..."

@@ -69,14 +69,14 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CommSystem.lua")
 dofile(ADDON .. "/Modules/SyncService.lua")
-local CS, SS = BRutus.CommSystem, BRutus.SyncService
+local CS, SS = GuildOS.CommSystem, GuildOS.SyncService
 CS.pendingMessages = CS.pendingMessages or {}
 local sent = {}
 CS.SendMessage = function(_, msgType, data, target) sent[#sent + 1] = { t = msgType, data = data, target = target } end
 
 local function client(who)
   me = who
-  BRutus.db = { settings = { officerMaxRank = 1 } }
+  GuildOS.db = { settings = { officerMaxRank = 1 } }
   SS:Initialize()
   sent = {}
 end
@@ -86,30 +86,30 @@ end
 
 -- ── 1. An officer's change goes out, stamped ────────────────────────────
 client("Off")
-check(BRutus:IsOfficer() and not BRutus:IsOfficerByName("Alt"), "by default rank 1 is an officer and rank 2 is not")
-BRutus:SetOfficerMaxRank(2)
-check(BRutus.db.settings.officerMaxRank == 2 and BRutus.db.settings.officerMaxRankAt == now,
+check(GuildOS:IsOfficer() and not GuildOS:IsOfficerByName("Alt"), "by default rank 1 is an officer and rank 2 is not")
+GuildOS:SetOfficerMaxRank(2)
+check(GuildOS.db.settings.officerMaxRank == 2 and GuildOS.db.settings.officerMaxRankAt == now,
   "the officer's own client takes it at once, stamped")
 check(#sent == 1 and sent[1].t == "SV" and sent[1].target == nil, "and publishes it to the guild")
 local change = sent[1]
 
 -- ── 2. A member's client takes it, from an officer over GUILD ────────────
 client("Mem")
-check(not BRutus:IsOfficerByName("Alt"), "before the change arrives, the alt is not an officer here")
+check(not GuildOS:IsOfficerByName("Alt"), "before the change arrives, the alt is not an officer here")
 deliver(change, "Off")
-check(BRutus.db.settings.officerMaxRank == 2 and BRutus:IsOfficerByName("Alt"),
+check(GuildOS.db.settings.officerMaxRank == 2 and GuildOS:IsOfficerByName("Alt"),
   "after it, the alt is an officer here too: one threshold for the guild")
 
 -- ── 3. Only from an officer, only over GUILD, only newer ─────────────────
 client("Mem")
 deliver(change, "Off", "WHISPER")
-check(BRutus.db.settings.officerMaxRank == 1, "the change over a whisper is ignored")
+check(GuildOS.db.settings.officerMaxRank == 1, "the change over a whisper is ignored")
 client("Off2")                  -- not Mem receiving it: a client drops its own messages unread
 deliver(change, "Mem")
-check(BRutus.db.settings.officerMaxRank == 1, "the change from a member is ignored")
+check(GuildOS.db.settings.officerMaxRank == 1, "the change from a member is ignored")
 client("Mem")
 deliver(change, "Off-OtherRealm", "WHISPER")
-check(BRutus.db.settings.officerMaxRank == 1, "a namesake from another realm cannot whisper it in")
+check(GuildOS.db.settings.officerMaxRank == 1, "a namesake from another realm cannot whisper it in")
 -- A member's action word (an RSVP, a vote, an "On my way") opens only its own domain: dressed
 -- as one, the threshold from a member would make them an officer everywhere (issue #108).
 for _, act in ipairs({ "rsvp", "vote", "going" }) do
@@ -119,32 +119,32 @@ for _, act in ipairs({ "rsvp", "vote", "going" }) do
   client("Off2")
   deliver(forged, "Mem")
   deliver(forged, "Stranger-OtherRealm", "WHISPER")
-  check(BRutus.db.settings.officerMaxRank == 1, "a member cannot send it dressed as '" .. act .. "'")
+  check(GuildOS.db.settings.officerMaxRank == 1, "a member cannot send it dressed as '" .. act .. "'")
 end
 
 client("Off")
 now = now + 100
-BRutus:SetOfficerMaxRank(3)
+GuildOS:SetOfficerMaxRank(3)
 local newer = sent[1]
 client("Mem")
 deliver(newer, "Off")
 deliver(change, "Off")
-check(BRutus.db.settings.officerMaxRank == 3, "an older change arriving late does not undo a newer one")
+check(GuildOS.db.settings.officerMaxRank == 3, "an older change arriving late does not undo a newer one")
 
 client("Off")
 SS:Publish("guildcfg", "officers", { max = 1 }, { rev = now + 999999 })   -- a stamp far in the future
 local future = sent[1]
 client("Mem")
 deliver(future, "Off")
-check(BRutus.db.settings.officerMaxRankAt == now + 300, "a stamp from the future is held to five minutes ahead")
-local memberDb = BRutus.db
+check(GuildOS.db.settings.officerMaxRankAt == now + 300, "a stamp from the future is held to five minutes ahead")
+local memberDb = GuildOS.db
 now = now + 400
 client("Off")
-BRutus:SetOfficerMaxRank(2)
+GuildOS:SetOfficerMaxRank(2)
 local later = sent[1]
-me, BRutus.db = "Mem", memberDb                     -- the same member, six minutes on
+me, GuildOS.db = "Mem", memberDb                     -- the same member, six minutes on
 deliver(later, "Off")
-check(BRutus.db.settings.officerMaxRank == 2, "so a real change made after that still wins")
+check(GuildOS.db.settings.officerMaxRank == 2, "so a real change made after that still wins")
 
 -- ── 4. What a change may say ────────────────────────────────────────────
 for _, bad in ipairs({ -1, 1.5, 10, "2" }) do
@@ -153,19 +153,19 @@ for _, bad in ipairs({ -1, 1.5, 10, "2" }) do
   local msg = sent[1]
   client("Mem")
   deliver(msg, "Off")
-  check(BRutus.db.settings.officerMaxRank == 1, "a threshold of " .. tostring(bad) .. " is not taken")
+  check(GuildOS.db.settings.officerMaxRank == 1, "a threshold of " .. tostring(bad) .. " is not taken")
 end
 
 -- ── 5. Who re-sends it: officers only, and only a change somebody made ───
 client("Mem")
-BRutus.db.settings.officerMaxRankAt = now
-BRutus:PublishOfficerMaxRank()
+GuildOS.db.settings.officerMaxRankAt = now
+GuildOS:PublishOfficerMaxRank()
 check(#sent == 0, "a member's client does not re-send it")
 client("Off")
-BRutus:PublishOfficerMaxRank()
+GuildOS:PublishOfficerMaxRank()
 check(#sent == 0, "an officer with no change ever made sends nothing")
-BRutus.db.settings.officerMaxRankAt = now
-BRutus:PublishOfficerMaxRank()
+GuildOS.db.settings.officerMaxRankAt = now
+GuildOS:PublishOfficerMaxRank()
 check(#sent == 1, "an officer with one re-sends it")
 local function guildcfgSent()
   for _, m in ipairs(sent) do
@@ -194,8 +194,8 @@ check(guildcfgSent(), "and so does an officer's answer to a request")
 -- ── 6. RX, AL, RR and the officer SyncService domains ask for GUILD ─────
 client("Mem")
 local got = {}
-BRutus.RaidTracker = { HandleDeleteIncoming = function() got.RX = (got.RX or 0) + 1 end }
-BRutus.RaiderRoster = { HandleIncoming = function() got.RR = (got.RR or 0) + 1 end }
+GuildOS.RaidTracker = { HandleDeleteIncoming = function() got.RX = (got.RX or 0) + 1 end }
+GuildOS.RaiderRoster = { HandleIncoming = function() got.RR = (got.RR or 0) + 1 end }
 local links = "links"
 store[links] = { Alt = "Off" }
 for _, ch in ipairs({ "WHISPER", "INSTANCE_CHAT" }) do
@@ -203,11 +203,11 @@ for _, ch in ipairs({ "WHISPER", "INSTANCE_CHAT" }) do
   deliver({ t = "RR", data = "x" }, "Off", ch)
   deliver({ t = "AL", data = links }, "Off", ch)
 end
-check(got.RX == nil and got.RR == nil and BRutus.db.altLinks == nil, "RX, RR and AL from an officer outside GUILD are dropped")
+check(got.RX == nil and got.RR == nil and GuildOS.db.altLinks == nil, "RX, RR and AL from an officer outside GUILD are dropped")
 deliver({ t = "RX", data = "x" }, "Off")
 deliver({ t = "RR", data = "x" }, "Off")
 deliver({ t = "AL", data = links }, "Off")
-check(got.RX == 1 and got.RR == 1 and BRutus.db.altLinks and BRutus.db.altLinks.Alt == "Off",
+check(got.RX == 1 and got.RR == 1 and GuildOS.db.altLinks and GuildOS.db.altLinks.Alt == "Off",
   "and handled from an officer over GUILD")
 
 local applied = 0
@@ -241,45 +241,45 @@ end
 
 -- ── 7. Changes that land in the same second, or behind a clock ──────────
 -- Two officers in one second: every member settles on the lower threshold, whatever the order.
-client("Off"); BRutus:SetOfficerMaxRank(3); local a = sent[1]
-client("Off2"); BRutus:SetOfficerMaxRank(2); local b = sent[1]
+client("Off"); GuildOS:SetOfficerMaxRank(3); local a = sent[1]
+client("Off2"); GuildOS:SetOfficerMaxRank(2); local b = sent[1]
 client("Mem"); deliver(a, "Off"); deliver(b, "Off2")
-local first = BRutus.db.settings.officerMaxRank
+local first = GuildOS.db.settings.officerMaxRank
 client("Mem"); deliver(b, "Off2"); deliver(a, "Off")
-check(first == 2 and BRutus.db.settings.officerMaxRank == 2, "two changes in the same second settle the same everywhere")
+check(first == 2 and GuildOS.db.settings.officerMaxRank == 2, "two changes in the same second settle the same everywhere")
 
 -- The same officer clicking twice in one second: the second click is the newer one.
 client("Off")
-BRutus:SetOfficerMaxRank(2); local click1 = sent[1]
-BRutus:SetOfficerMaxRank(3); local click2 = sent[2]
+GuildOS:SetOfficerMaxRank(2); local click1 = sent[1]
+GuildOS:SetOfficerMaxRank(3); local click2 = sent[2]
 check(store[click2.data].rev > store[click1.data].rev, "the second click is stamped after the first")
 client("Mem"); deliver(click1, "Off"); deliver(click2, "Off")
-check(BRutus.db.settings.officerMaxRank == 3, "and the guild ends where the officer did")
+check(GuildOS.db.settings.officerMaxRank == 3, "and the guild ends where the officer did")
 
 -- An officer whose clock is behind the change it holds still moves the guild forward.
-client("Off2"); BRutus:SetOfficerMaxRank(2); local held = sent[1]
+client("Off2"); GuildOS:SetOfficerMaxRank(2); local held = sent[1]
 client("Off"); deliver(held, "Off2")
-local offDb = BRutus.db
+local offDb = GuildOS.db
 now = now - 1
 sent = {}
-BRutus:SetOfficerMaxRank(4)
+GuildOS:SetOfficerMaxRank(4)
 local behind = sent[1]
 check(offDb.settings.officerMaxRankAt > store[held.data].rev, "a change made on a clock a second behind is still stamped later")
 client("Mem"); deliver(held, "Off2"); deliver(behind, "Off")
-check(BRutus.db.settings.officerMaxRank == 4, "so the rest of the guild takes it")
+check(GuildOS.db.settings.officerMaxRank == 4, "so the rest of the guild takes it")
 now = now + 1
 
 -- ── 8. Who may change it, and a change that demotes its maker ───────────
 client("Mem")
-BRutus:SetOfficerMaxRank(4)
-check(#sent == 0 and BRutus.db.settings.officerMaxRank == 1 and BRutus.db.settings.officerMaxRankAt == nil,
+GuildOS:SetOfficerMaxRank(4)
+check(#sent == 0 and GuildOS.db.settings.officerMaxRank == 1 and GuildOS.db.settings.officerMaxRankAt == nil,
   "a member's client changes nothing and sends nothing")
 client("Off")
-BRutus:SetOfficerMaxRank(0)
-check(#sent == 1 and not BRutus:IsOfficer(), "an officer unticking their own rank still sends the change")
+GuildOS:SetOfficerMaxRank(0)
+check(#sent == 1 and not GuildOS:IsOfficer(), "an officer unticking their own rank still sends the change")
 local demotion = sent[1]
 client("Mem"); deliver(demotion, "Off")
-check(BRutus.db.settings.officerMaxRank == 0, "and the guild takes it, judging the sender by the old threshold")
+check(GuildOS.db.settings.officerMaxRank == 0, "and the guild takes it, judging the sender by the old threshold")
 
 -- ── 9. Stamps that are not a time ────────────────────────────────────────
 for _, bad in ipairs({ 0 / 0, -math.huge, math.huge, 0, -5 }) do
@@ -288,7 +288,7 @@ for _, bad in ipairs({ 0 / 0, -math.huge, math.huge, 0, -5 }) do
   local msg = sent[1]
   client("Mem")
   deliver(msg, "Off")
-  check(BRutus.db.settings.officerMaxRank == 1 and BRutus.db.settings.officerMaxRankAt == nil,
+  check(GuildOS.db.settings.officerMaxRank == 1 and GuildOS.db.settings.officerMaxRankAt == nil,
     "a stamp of " .. tostring(bad) .. " is not taken")
 end
 

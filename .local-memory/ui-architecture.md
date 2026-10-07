@@ -1,4 +1,4 @@
-# BRutus — UI Architecture
+# GuildOS — UI Architecture
 
 _Last updated: 2026-09-14_
 
@@ -26,7 +26,7 @@ UI/
 
 ```
 UIParent
-└── BRutus.RosterFrame (GuildOSWindow) — a janela única: 1000×620 por padrão, redimensionável até 320×28
+└── GuildOS.RosterFrame (GuildOSWindow) — a janela única: 1000×620 por padrão, redimensionável até 320×28
       ├── titleBar (arrasta): wordmark · guilda e online · sync · — · ×   (na barra: online · raide · pendências)
       ├── rule: as abas que cabem + »n (menu); abaixo de 520px, o seletor de uma linha
       ├── content (recorta) → tabPanels[id], cada um construído na primeira abertura
@@ -37,7 +37,7 @@ UIParent
       └── grip 16×16
 
 UIParent
-└── BRutusDetailFrame (slide-in)
+└── GuildOSDetailFrame (slide-in)
       └── ScrollFrame → content
             ├── Spec/talent section
             ├── Gear section (17 slots)
@@ -48,11 +48,11 @@ UIParent
             └── Linked Characters section (officer only)
 
 UIParent
-└── BRutus.RaidHUD (floating, movable)
+└── GuildOS.RaidHUD (floating, movable)
       └── Rows de cooldowns por player
 
 UIParent
-└── BRutus.ConsumablePopup
+└── GuildOS.ConsumablePopup
       └── Grid de results por player
 ```
 
@@ -62,9 +62,9 @@ UIParent
 
 ### C Table (cores)
 ```lua
--- Definido em UI/Helpers.lua (alias local C = BRutus.UI.Colors)
--- Mas as cores originais estão em BRutus.Colors em Core.lua
--- UI arquivos usam: local C = BRutus.UI.Colors
+-- Definido em UI/Helpers.lua (alias local C = GuildOS.UI.Colors)
+-- Mas as cores originais estão em GuildOS.Colors em Core.lua
+-- UI arquivos usam: local C = GuildOS.UI.Colors
 C.row1, C.row2, C.rowHover    -- cores de linha alternadas
 C.accent                      -- cópia de C.gold (o único destaque)
 C.gold                        -- dourado: wordmark, botão primário, regra da aba ativa
@@ -213,8 +213,8 @@ Usar `UI:CreatePanel()` ou `UI:CreateDarkPanel()` em vez de replicar isso inline
 - `UI/FeaturePanels.lua` → score calc movido para `RaidTracker:GetSnapshotScore` ✅
 - `UI/FeaturePanels.lua` → alguns callbacks ainda têm lógica inline
 
-### ⚠️ UI escrevendo BRutus.db diretamente
-- `UI/MemberDetail.lua` → `BRutus.db.altLinks[altKey] = mainKey` (deveria chamar `BRutus:LinkAlt`)
+### ⚠️ UI escrevendo GuildOS.db diretamente
+- `UI/MemberDetail.lua` → `GuildOS.db.altLinks[altKey] = mainKey` (deveria chamar `GuildOS:LinkAlt`)
 - `UI/FeaturePanels.lua` → alguns campos de `recruitment` escritos inline
 
 ### ⚠️ Helpers.lua tem 3 responsabilidades

@@ -11,8 +11,8 @@
 -- module NEVER calls a protected guild API directly.
 ----------------------------------------------------------------------
 local ModPresets = {}
-BRutus.ModPresets = ModPresets
-local L = BRutus.L
+GuildOS.ModPresets = ModPresets
+local L = GuildOS.L
 
 -- Built-in preset TYPES. `defaults` seeds a new instance's thresholds;
 -- `action` picks the GuildManager handoff Apply uses ("kick" / "promote").
@@ -41,8 +41,8 @@ ModPresets.TYPE_ORDER = { "purge_inactive", "promote_regulars", "trial_cleanup" 
 -- Init + model (db.modPresets = list of { type, name, thresholds = {...} })
 ----------------------------------------------------------------------
 function ModPresets:Initialize()
-    if BRutus.db.modPresets == nil then
-        BRutus.db.modPresets = {}
+    if GuildOS.db.modPresets == nil then
+        GuildOS.db.modPresets = {}
         for _, key in ipairs(self.TYPE_ORDER) do
             self:_AppendDefault(key)
         end
@@ -54,14 +54,14 @@ end
 function ModPresets:_AppendDefault(typeKey)
     local t = self.TYPES[typeKey]
     if not t then return end
-    BRutus.db.modPresets = BRutus.db.modPresets or {}
+    GuildOS.db.modPresets = GuildOS.db.modPresets or {}
     local th = {}
     for k, v in pairs(t.defaults) do th[k] = v end
-    table.insert(BRutus.db.modPresets, { type = typeKey, name = t.name, thresholds = th })
+    table.insert(GuildOS.db.modPresets, { type = typeKey, name = t.name, thresholds = th })
 end
 
 function ModPresets:GetPresets()
-    return BRutus.db.modPresets or {}
+    return GuildOS.db.modPresets or {}
 end
 
 -- A built-in preset reads in the language of now: the name it was saved with is the language
@@ -78,15 +78,15 @@ end
 
 -- Officer-gated mutations (Rule: officer-only actions).
 function ModPresets:AddPreset(typeKey)
-    if not BRutus:IsOfficer() then BRutus:Print(L["Officers only."]) return false end
+    if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return false end
     if not self.TYPES[typeKey] then return false end
     self:_AppendDefault(typeKey)
     return true
 end
 
 function ModPresets:RemovePreset(index)
-    if not BRutus:IsOfficer() then BRutus:Print(L["Officers only."]) return false end
-    local list = BRutus.db.modPresets
+    if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return false end
+    local list = GuildOS.db.modPresets
     if list and list[index] then
         table.remove(list, index)
         return true
@@ -95,8 +95,8 @@ function ModPresets:RemovePreset(index)
 end
 
 function ModPresets:SetThreshold(index, key, value)
-    if not BRutus:IsOfficer() then return false end
-    local p = BRutus.db.modPresets and BRutus.db.modPresets[index]
+    if not GuildOS:IsOfficer() then return false end
+    local p = GuildOS.db.modPresets and GuildOS.db.modPresets[index]
     if not p or not key then return false end
     value = tonumber(value)
     if not value then return false end
@@ -110,7 +110,7 @@ end
 function ModPresets:Summarize(preset)
     local th = (preset and preset.thresholds) or {}
     if preset.type == "purge_inactive" then
-        local rn = (BRutus.GuildManager and BRutus.GuildManager:GetRankName(th.minRankIndex or 0)) or "?"
+        local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(th.minRankIndex or 0)) or "?"
         return format(L["inactive >= %dd, rank <= %s"], th.days or 0, rn)
     elseif preset.type == "promote_regulars" then
         return format(L["attendance >= %d%%"], th.minAttendance or 0)
@@ -168,16 +168,16 @@ end
 -- attendance floor, so the preset threshold is authoritative.
 function ModPresets:_CollectPromotable()
     local out = {}
-    if not BRutus.RaidTracker then return out end
-    local officerMaxRank = BRutus:GetSetting("officerMaxRank") or 1
+    if not GuildOS.RaidTracker then return out end
+    local officerMaxRank = GuildOS:GetSetting("officerMaxRank") or 1
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, rankName, rankIndex, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
-            local isTrial = BRutus.TrialTracker and BRutus.TrialTracker:IsTrial(key)
+            local key = GuildOS:GetPlayerKey(short, realm)
+            local isTrial = GuildOS.TrialTracker and GuildOS.TrialTracker:IsTrial(key)
             local isOfficer = rankIndex and rankIndex <= officerMaxRank
             if not isTrial and not isOfficer then
                 out[#out + 1] = {
@@ -186,7 +186,7 @@ function ModPresets:_CollectPromotable()
                     rankName   = rankName,
                     rankIndex  = rankIndex,
                     class      = classFile or "",
-                    attendance = BRutus.RaidTracker:GetAttendance25ManPercent(key) or 0,
+                    attendance = GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0,
                 }
             end
         end
@@ -197,15 +197,15 @@ end
 -- Active trials with days-since-start and 25-man attendance.
 function ModPresets:_CollectTrials()
     local out = {}
-    if not BRutus.TrialTracker then return out end
-    for _, t in ipairs(BRutus.TrialTracker:GetActiveTrials()) do
+    if not GuildOS.TrialTracker then return out end
+    for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials()) do
         local key = t.key
         local short = key:match("^([^-]+)") or key
-        local att = (BRutus.RaidTracker and BRutus.RaidTracker:GetAttendance25ManPercent(key)) or 0
+        local att = (GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(key)) or 0
         out[#out + 1] = {
             name       = short,
             fullName   = key,
-            daysSince  = BRutus.TrialTracker:GetDaysSinceStart(key) or 0,
+            daysSince  = GuildOS.TrialTracker:GetDaysSinceStart(key) or 0,
             attendance = att,
         }
     end
@@ -222,11 +222,11 @@ function ModPresets:GetMatches(preset)
 
     if preset.type == "purge_inactive" then
         local days = th.days or 0
-        local members = (BRutus.GuildManager and BRutus.GuildManager:GetInactiveMembers(days)) or {}
+        local members = (GuildOS.GuildManager and GuildOS.GuildManager:GetInactiveMembers(days)) or {}
         local matched = self:_MatchInactive(members, days, th.minRankIndex or 0)
         local out = {}
         for _, m in ipairs(matched) do
-            local rn = (BRutus.GuildManager and BRutus.GuildManager:GetRankName(m.rankIndex)) or "?"
+            local rn = (GuildOS.GuildManager and GuildOS.GuildManager:GetRankName(m.rankIndex)) or "?"
             out[#out + 1] = {
                 name     = m.name,
                 fullName = m.fullName,
@@ -270,11 +270,11 @@ end
 -- function performs NO protected call itself (ADR-0010).
 ----------------------------------------------------------------------
 function ModPresets:ApplyPreset(preset, matches)
-    if not BRutus:IsOfficer() then BRutus:Print(L["Officers only."]) return false end
+    if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return false end
     if not preset then return false end
     matches = matches or self:GetMatches(preset)
     if #matches == 0 then return false end
-    local GM = BRutus.GuildManager
+    local GM = GuildOS.GuildManager
     if not GM then return false end
     local action = self:GetAction(preset)
     -- Kicks and rank changes are Blizzard-protected, so we cannot perform them.
@@ -286,7 +286,7 @@ function ModPresets:ApplyPreset(preset, matches)
         names[#names + 1] = m.name or (m.fullName and (m.fullName:match("^([^-]+)") or m.fullName)) or "?"
     end
     local verb = (action == "promote") and L["Promote"] or L["Remove from guild"]
-    BRutus:Print(string.format(L["%s in the guild panel: %s"], verb, table.concat(names, ", ")))
+    GuildOS:Print(string.format(L["%s in the guild panel: %s"], verb, table.concat(names, ", ")))
     if GM.OpenNativeGuild then GM:OpenNativeGuild() end
     GM:RefreshUI()
     return true
@@ -297,8 +297,8 @@ end
 -- outside each threshold). Injected member lists, never the live roster.
 ----------------------------------------------------------------------
 function ModPresets:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
 
     S:Register("modpresets.inactive_boundary", function()
         local members = {

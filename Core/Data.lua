@@ -1,5 +1,5 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Static Game Data
+-- Guild OS - Static Game Data
 -- Color palettes, class colors, item quality colors, gear slot tables.
 -- Loaded immediately after Core.lua so all modules can reference these.
 ----------------------------------------------------------------------
@@ -41,7 +41,7 @@ local ACCENT_DIM  = 0.54  -- dimmed gold for secondary marks
 local ACCENT_WASH = 0.14  -- alpha of the faint gold wash
 local SHADOW      = 0.55  -- drop-shadow alpha (elevation 4 only)
 
-BRutus.Colors = {
+GuildOS.Colors = {
     bg = T.bg, panel = T.panel, popup = T.popup, well = T.well,
     line = T.line, lineHi = T.lineHi,
     text = T.text, textSoft = T.textSoft, label = T.label, labelDim = T.labelDim,
@@ -84,7 +84,7 @@ local SERIF_STRONG = FONT_DIR .. "Spectral-SemiBold.ttf"
 local MONO         = FONT_DIR .. "IBMPlexMono-Regular.ttf"
 local MONO_STRONG  = FONT_DIR .. "IBMPlexMono-Medium.ttf"
 
-BRutus.Fonts = {
+GuildOS.Fonts = {
     serif = SERIF, serifStrong = SERIF_STRONG, mono = MONO, monoStrong = MONO_STRONG,
 
     -- Roles from the handoff type scale.
@@ -113,15 +113,15 @@ local MONO_MIN  = 10  -- nothing reads below this
 -- no Hangul and no Han, so every character, guild, item and zone name the client gave in those
 -- languages drew as boxes. There the client's own font, which has the language, is the only one
 -- used, whatever the setting says.
-BRutus.GameFontOnly = ({ koKR = true, zhCN = true, zhTW = true })[BRutus.Locale or ""] == true
+GuildOS.GameFontOnly = ({ koKR = true, zhCN = true, zhTW = true })[GuildOS.Locale or ""] == true
 
--- Set a FontString's font. A role from BRutus.Fonts picks the file (and the
+-- Set a FontString's font. A role from GuildOS.Fonts picks the file (and the
 -- size unless one is given); otherwise 14px and up is Spectral and anything
 -- smaller is IBM Plex Mono. Either way serif never lands under 14px (it reads
 -- as mono instead) and mono is clamped to 10px. Never outlined. Returns the
 -- file and size used.
-function BRutus:ApplyFont(fontString, size, role)
-    local spec = role and BRutus.Fonts[role]
+function GuildOS:ApplyFont(fontString, size, role)
+    local spec = role and GuildOS.Fonts[role]
     local file, px
     if type(spec) == "table" then
         file, px = spec.file, tonumber(size) or spec.size
@@ -139,7 +139,7 @@ function BRutus:ApplyFont(fontString, size, role)
     -- display preference, so it lives at the account root (GuildOSDB.font) and follows the
     -- player to every alt and guild, as the minimap button's does. Read on every call; a
     -- text drawn before a change keeps its font until the interface reloads.
-    if BRutus.GameFontOnly or (type(GuildOSDB) == "table" and GuildOSDB.font == "game") then
+    if GuildOS.GameFontOnly or (type(GuildOSDB) == "table" and GuildOSDB.font == "game") then
         fontString:SetFont(STANDARD_TEXT_FONT, px, "")
         return STANDARD_TEXT_FONT, px
     end
@@ -152,7 +152,7 @@ function BRutus:ApplyFont(fontString, size, role)
 end
 
 -- Class colors (TBC)
-BRutus.ClassColors = {
+GuildOS.ClassColors = {
     ["WARRIOR"]     = { r = 0.78, g = 0.61, b = 0.43 },
     ["PALADIN"]     = { r = 0.96, g = 0.55, b = 0.73 },
     ["HUNTER"]      = { r = 0.67, g = 0.83, b = 0.45 },
@@ -165,7 +165,7 @@ BRutus.ClassColors = {
 }
 
 -- Item quality colors
-BRutus.QualityColors = {
+GuildOS.QualityColors = {
     [0] = { r = 0.62, g = 0.62, b = 0.62 }, -- Poor
     [1] = { r = 1.00, g = 1.00, b = 1.00 }, -- Common
     [2] = { r = 0.12, g = 1.00, b = 0.00 }, -- Uncommon
@@ -175,7 +175,7 @@ BRutus.QualityColors = {
 }
 
 -- Inventory slot IDs for TBC
-BRutus.SlotIDs = {
+GuildOS.SlotIDs = {
     { id = 1,  name = "HeadSlot" },
     { id = 2,  name = "NeckSlot" },
     { id = 3,  name = "ShoulderSlot" },
@@ -196,7 +196,7 @@ BRutus.SlotIDs = {
 }
 
 -- Slot display names
-BRutus.SlotNames = {
+GuildOS.SlotNames = {
     [1]  = "Head",
     [2]  = "Neck",
     [3]  = "Shoulder",

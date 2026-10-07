@@ -127,10 +127,10 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
-local Compat = BRutus.Compat
+local Compat = GuildOS.Compat
 
 -- ── 1. Compat ───────────────────────────────────────────────────────────
-check(not BRutus.Client.isAnniversary, "the stub is a Forever client")
+check(not GuildOS.Client.isAnniversary, "the stub is a Forever client")
 SLOTS = { 1, nil, 2 }
 check(select("#", Compat.GetProfessions()) == 5 and select(3, Compat.GetProfessions()) == 2,
       "GetProfessions passes every slot through, nils included")
@@ -161,7 +161,7 @@ GetProfessions = saved
 CLUB, SLOTS, PROFS, KNOWN = {}, {}, {}, {}
 
 -- ── Fixture catalog and a fake SyncService bus ──────────────────────────
-BRutus.ProfCatalog = {
+GuildOS.ProfCatalog = {
   build = "fixture",
   F = { line = 1, yellow = 2, grey = 3, out = 4, outCount = 5, enchant = 6, reqSkill = 7, spec = 8, focus = 9,
         src = 10, recipeItem = 11, category = 12, reagents = 13 },
@@ -180,7 +180,7 @@ BRutus.ProfCatalog = {
   },
 }
 local sent = {}
-BRutus.SyncService = {
+GuildOS.SyncService = {
   handlers = {},
   On = function(self, dom, fn) self.handlers[dom] = fn end,
   Publish = function(_, dom, act, data, opts)
@@ -194,9 +194,9 @@ local function sentOf(act)
   return out
 end
 math.random = function(a) return a end
-BRutus.db = { members = {}, settings = {} }
+GuildOS.db = { members = {}, settings = {} }
 dofile(ADDON .. "/Modules/Professions.lua")
-local P = BRutus.Professions
+local P = GuildOS.Professions
 check(P ~= nil, "Professions exists on Forever")
 local ME = P.OwnKey()
 check(ME == "Ana Silva-Classic Beta PvE 2", "my key is my whole name and the client's realm: " .. tostring(ME))
@@ -214,7 +214,7 @@ PROFS[3] = { "Venenos", 10, 300, 40 }
 KNOWN[2657], KNOWN[2538] = true, true
 P:Initialize()
 runTimers()
-local rec = BRutus.db.professions[ME]
+local rec = GuildOS.db.professions[ME]
 check(rec and rec.src == "addon" and rec.profs[186].rank == 21 and rec.profs[186].max == 75,
       "rank and max come from GetProfessionInfo, keyed by skill line")
 check(#rec.profs[186].recipes == 1 and rec.profs[186].recipes[1] == 2657 and rec.profs[186].n == 1
@@ -224,56 +224,56 @@ local legacy = P:LegacyList(ME)
 check(#legacy == 2 and legacy[1].name == "Cooking" and legacy[2].name == "Mining" and legacy[2].rank == 21
       and legacy[2].maxRank == 75 and legacy[2].isPrimary == true and legacy[1].isPrimary == false,
       "the adapter writes DataCollector's shape, canonical English names")
-local mine = BRutus.db.recipes[ME].Mining
+local mine = GuildOS.db.recipes[ME].Mining
 check(mine and mine[1].spellId == 2657 and mine[1].itemId == 2840 and mine[1].name == "Spell 2657",
       "the adapter writes the recipe tracker's shape, localized name and output item")
 SLOTS[2], PROFS[4], KNOWN[9788], KNOWN[9950] = 4, { "Ferraria", 210, 300, 164 }, true, true
 fire("SKILL_LINES_CHANGED")
 runTimers()
-rec = BRutus.db.professions[ME]
+rec = GuildOS.db.professions[ME]
 check(rec.profs[164] and rec.profs[164].spec == 9788 and rec.profs[164].recipes[1] == 9950,
       "a specialization is read from the catalog's spells")
 SLOTS[2] = nil
 fire("LEARNED_SPELL_IN_SKILL_LINE")
 runTimers()
-check(BRutus.db.professions[ME].profs[164] == nil and #P:LegacyList(ME) == 2,
+check(GuildOS.db.professions[ME].profs[164] == nil and #P:LegacyList(ME) == 2,
       "a profession dropped disappears on the next scan")
 KNOWN[3304] = true
 fire("NEW_RECIPE_LEARNED", 3304)
 runTimers()
-rec = BRutus.db.professions[ME]
+rec = GuildOS.db.professions[ME]
 check(#rec.profs[186].recipes == 2 and rec.profs[186].h == P.Hash({ 2657, 3304 }), "a new recipe is picked up")
 check(P:Scan() == false, "a scan that finds nothing new changes nothing")
 WINDOW = { line = 186, all = { 2657, 3304, 999001 }, learned = { 2657, 3304, 999001 } }
 KNOWN[999001] = true
 fire("TRADE_SKILL_LIST_UPDATE")
 runTimers()
-rec = BRutus.db.professions[ME]
+rec = GuildOS.db.professions[ME]
 check(rec.profs[186].extra[1] == 999001 and rec.profs[186].n == 3
       and rec.profs[186].h == P.Hash({ 2657, 3304 }, { 999001 }),
       "the own window adds a learned recipe the catalog lacks as extra")
-check(BRutus.db.recipes[ME].Mining[3].spellId == 999001, "an extra recipe reaches the recipe tracker too")
+check(GuildOS.db.recipes[ME].Mining[3].spellId == 999001, "an extra recipe reaches the recipe tracker too")
 WINDOW = { line = 186, linked = true, all = { 888001 }, learned = { 888001 } }
 fire("TRADE_SKILL_LIST_UPDATE")
 runTimers()
-check(#BRutus.db.professions[ME].profs[186].extra == 1, "someone else's window adds nothing")
+check(#GuildOS.db.professions[ME].profs[186].extra == 1, "someone else's window adds nothing")
 WINDOW = nil
 check(P:Scan() == false, "an extra still known survives a scan")
-BRutus.ProfCatalog.recipes[999001] = { 186, 1, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, {} }
-table.insert(BRutus.ProfCatalog.byLine[186], 999001)
+GuildOS.ProfCatalog.recipes[999001] = { 186, 1, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, {} }
+table.insert(GuildOS.ProfCatalog.byLine[186], 999001)
 P:Scan()
-rec = BRutus.db.professions[ME]
-check(#rec.profs[186].extra == 0 and rec.profs[186].recipes[3] == 999001 and #BRutus.db.recipes[ME].Mining == 3,
+rec = GuildOS.db.professions[ME]
+check(#rec.profs[186].extra == 0 and rec.profs[186].recipes[3] == 999001 and #GuildOS.db.recipes[ME].Mining == 3,
       "an extra the regenerated catalog lists becomes a plain recipe, listed once")
-BRutus.ProfCatalog.recipes[999001] = nil
-table.remove(BRutus.ProfCatalog.byLine[186])
+GuildOS.ProfCatalog.recipes[999001] = nil
+table.remove(GuildOS.ProfCatalog.byLine[186])
 KNOWN[999001] = nil
-check(P:Scan() == true and #BRutus.db.professions[ME].profs[186].extra == 0, "an extra no longer known is dropped")
+check(P:Scan() == true and #GuildOS.db.professions[ME].profs[186].extra == 0, "an extra no longer known is dropped")
 KNOWN[777001] = true
 fire("NEW_RECIPE_LEARNED", 777001)
-check(#BRutus.db.professions[ME].profs[186].extra == 0, "a learned recipe waits for the scan, so the stored hash stays true")
+check(#GuildOS.db.professions[ME].profs[186].extra == 0, "a learned recipe waits for the scan, so the stored hash stays true")
 runTimers()
-rec = BRutus.db.professions[ME]
+rec = GuildOS.db.professions[ME]
 check(rec.profs[186].extra[1] == 777001 and rec.profs[186].h == P.Hash(rec.profs[186].recipes, rec.profs[186].extra),
       "a recipe the catalog lacks, learned with the window closed, is kept as extra on its line")
 KNOWN[777001] = nil
@@ -283,64 +283,64 @@ P:Scan()
 CLUB = { { name = "Bob", profession1ID = 186, profession2ID = 333 }, { name = "Ana Silva", profession1ID = 164 } }
 fire("GUILD_ROSTER_UPDATE")
 runTimers()
-local BOB = BRutus:GetPlayerKey("Bob")
-check(BRutus.db.professions[BOB] and BRutus.db.professions[BOB].src == "native"
-      and BRutus.db.professions[BOB].profs[186] and BRutus.db.professions[BOB].profs[333] == nil,
+local BOB = GuildOS:GetPlayerKey("Bob")
+check(GuildOS.db.professions[BOB] and GuildOS.db.professions[BOB].src == "native"
+      and GuildOS.db.professions[BOB].profs[186] and GuildOS.db.professions[BOB].profs[333] == nil,
       "a member without the addon gets the catalog's professions the roster names")
-check(BRutus.db.professions[ME].src == "addon" and BRutus.db.professions[ME].profs[186],
+check(GuildOS.db.professions[ME].src == "addon" and GuildOS.db.professions[ME].profs[186],
       "a native record never replaces an addon one")
 local bobLegacy = P:LegacyList(BOB)
 check(#bobLegacy == 1 and bobLegacy[1].name == "Mining" and bobLegacy[1].rank == nil, "a native profession has no rank")
-check(BRutus.db.members[BOB] == nil, "a member without the addon gets no members row")
-check(P.KeyFor("Bob") == BOB and P.KeyFor("Bob-Elsewhere") == BRutus:GetPlayerKey("Bob", "Elsewhere"),
+check(GuildOS.db.members[BOB] == nil, "a member without the addon gets no members row")
+check(P.KeyFor("Bob") == BOB and P.KeyFor("Bob-Elsewhere") == GuildOS:GetPlayerKey("Bob", "Elsewhere"),
       "a key from a name follows the roster's rule: its suffix, else the client's realm")
 CLUB[1].profession1ID = 164
-local GONE = BRutus:GetPlayerKey("Gone")
-BRutus.db.professions[GONE] = { src = "addon", ts = NOW, profs = { [186] = { rank = 300, max = 300, h = 1, n = 0,
+local GONE = GuildOS:GetPlayerKey("Gone")
+GuildOS.db.professions[GONE] = { src = "addon", ts = NOW, profs = { [186] = { rank = 300, max = 300, h = 1, n = 0,
   recipes = {}, extra = {} } } }
 fire("GUILD_ROSTER_UPDATE")
 runTimers()
-check(BRutus.db.professions[BOB].profs[186], "the roster is read at most once a minute")
+check(GuildOS.db.professions[BOB].profs[186], "the roster is read at most once a minute")
 NOW = NOW + 61
 fire("GUILD_ROSTER_UPDATE")
 runTimers()
-check(BRutus.db.professions[BOB].profs[164] and not BRutus.db.professions[BOB].profs[186],
+check(GuildOS.db.professions[BOB].profs[164] and not GuildOS.db.professions[BOB].profs[186],
       "a minute later the change is read")
-check(BRutus.db.professions[GONE] == nil, "a member no longer on the roster loses the record")
+check(GuildOS.db.professions[GONE] == nil, "a member no longer on the roster loses the record")
 local keepRoster = ROSTER
 ROSTER = { "Bob", "Cid", "Dee" }
 P:DropDeparted()
-check(BRutus.db.professions[ME] ~= nil, "the player's own record is never dropped, even missing from the roster")
+check(GuildOS.db.professions[ME] ~= nil, "the player's own record is never dropped, even missing from the roster")
 ROSTER = keepRoster
 check(P:KnowsRecipe(ME, 2657) and not P:KnowsRecipe(BOB, 2657), "KnowsRecipe")
 check(#P:CraftersOf(2657) == 1 and P:CraftersOf(2657)[1] == ME and #P:CraftersOf(1) == 0, "CraftersOf")
 check(#P:Members(186) == 1 and #P:Members(164) == 1, "Members by line")
 local summary = P:OwnSummary()
-check(summary[186].r == 21 and summary[186].h == BRutus.db.professions[ME].profs[186].h and summary[186].n == 2,
+check(summary[186].r == 21 and summary[186].h == GuildOS.db.professions[ME].profs[186].h and summary[186].n == 2,
       "the own summary carries rank, hash and count per line")
 check(P:OwnLine(186).recipes[1] == 2657 and P:OwnLine(999) == nil, "OwnLine")
 
 -- ── 4. Sync ─────────────────────────────────────────────────────────────
 dofile(ADDON .. "/Modules/ProfSync.lua")
-local S = BRutus.ProfSync
+local S = GuildOS.ProfSync
 sent = {}
 S:Initialize()
 runTimers()
 check(#sentOf("sum") == 1 and #sentOf("ask") == 1 and sentOf("sum")[1].target == nil,
       "login publishes my summary and asks the guild for theirs")
-check(sentOf("sum")[1].data.p[186].h == BRutus.db.professions[ME].profs[186].h, "the summary is my own")
+check(sentOf("sum")[1].data.p[186].h == GuildOS.db.professions[ME].profs[186].h, "the summary is my own")
 local function deliver(act, data, sender)
-  BRutus.SyncService.handlers.prof({ dom = "prof", act = act, data = data }, sender)
+  GuildOS.SyncService.handlers.prof({ dom = "prof", act = act, data = data }, sender)
 end
 local h1 = P.Hash({ 2657 })
 sent = {}
 deliver("sum", { p = { [186] = { r = 50, m = 75, h = h1, n = 1 } } }, "Zed")
 runTimers()
-check(BRutus.db.professions[BRutus:GetPlayerKey("Zed")] == nil and #sent == 0, "a sender outside the guild is ignored")
+check(GuildOS.db.professions[GuildOS:GetPlayerKey("Zed")] == nil and #sent == 0, "a sender outside the guild is ignored")
 deliver("sum", { p = { [186] = { r = 50, m = 75, h = h1, n = 1 } }, key = "Dee-Classic Beta PvE 2" }, "Bob")
-check(BRutus.db.professions[BOB].src == "addon" and BRutus.db.professions[BOB].profs[186].rank == 50
-      and BRutus.db.professions[BOB].profs[186].recipes == nil, "a summary replaces the native record, list pending")
-check(BRutus.db.professions[BRutus:GetPlayerKey("Dee")] == nil, "the key comes from the sender, not the payload")
+check(GuildOS.db.professions[BOB].src == "addon" and GuildOS.db.professions[BOB].profs[186].rank == 50
+      and GuildOS.db.professions[BOB].profs[186].recipes == nil, "a summary replaces the native record, list pending")
+check(GuildOS.db.professions[GuildOS:GetPlayerKey("Dee")] == nil, "the key comes from the sender, not the payload")
 runTimers()
 local req = sentOf("req")
 check(#req == 1 and req[1].target == "Bob" and req[1].data.l[1] == 186, "a new hash asks the sender for that list")
@@ -353,56 +353,56 @@ deliver("sum", { p = { [186] = { r = 51, m = 75, h = h1, n = 1 } } }, "Bob")
 runTimers()
 check(#sentOf("req") == 1, "a list that never came is asked for again after two minutes")
 deliver("list", { l = 186, h = h1 + 1, r = { 2657 }, x = {} }, "Bob")
-check(BRutus.db.professions[BOB].profs[186].recipes == nil, "a list whose hash is not the summary's is refused")
+check(GuildOS.db.professions[BOB].profs[186].recipes == nil, "a list whose hash is not the summary's is refused")
 deliver("list", { l = 186, h = h1, r = { 2660 }, x = {} }, "Bob")
-check(BRutus.db.professions[BOB].profs[186].recipes == nil, "a list that does not hash to its h is refused")
+check(GuildOS.db.professions[BOB].profs[186].recipes == nil, "a list that does not hash to its h is refused")
 deliver("list", { l = 186, h = h1, r = { "x" }, x = {} }, "Bob")
 deliver("list", { l = 186, h = h1, r = "x" }, "Bob")
 deliver("list", "junk", "Bob")
-check(BRutus.db.professions[BOB].profs[186].recipes == nil, "malformed lists are dropped without raising")
+check(GuildOS.db.professions[BOB].profs[186].recipes == nil, "malformed lists are dropped without raising")
 deliver("list", { l = 186, h = h1, r = { 2657 }, x = {} }, "Bob")
-check(BRutus.db.professions[BOB].profs[186].recipes[1] == 2657 and P:KnowsRecipe(BOB, 2657)
+check(GuildOS.db.professions[BOB].profs[186].recipes[1] == 2657 and P:KnowsRecipe(BOB, 2657)
       and #P:CraftersOf(2657) == 2, "a list matching the summary is stored and indexed")
-check(BRutus.db.recipes[BOB].Mining[1].itemId == 2840, "and reaches the recipe tracker's shape")
+check(GuildOS.db.recipes[BOB].Mining[1].itemId == 2840, "and reaches the recipe tracker's shape")
 check(P:ApplyList(BOB, 186, h1, { 2657 }, {}) == false, "a list already held is not applied twice")
 local h2 = P.Hash({ 2657, 3304 })
 sent = {}
 deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
-check(BRutus.db.professions[BOB].profs[186].recipes == nil and BRutus.db.recipes[BOB]
-      and #BRutus.db.recipes[BOB].Mining == 1
+check(GuildOS.db.professions[BOB].profs[186].recipes == nil and GuildOS.db.recipes[BOB]
+      and #GuildOS.db.recipes[BOB].Mining == 1
       and P:KnowsRecipe(BOB, 2657), "while a changed list is on its way the previous one still stands")
 deliver("list", { l = 186, h = h2, r = { 2657, 3304 }, x = {} }, "Bob")
-check(#BRutus.db.recipes[BOB].Mining == 2 and BRutus.db.professions[BOB].profs[186].stale == nil,
+check(#GuildOS.db.recipes[BOB].Mining == 2 and GuildOS.db.professions[BOB].profs[186].stale == nil,
       "the new list replaces it")
 runTimers()
 check(#sentOf("req") == 0, "a list that arrived meanwhile is not asked for")
-local CID = BRutus:GetPlayerKey("Cid")
-BRutus.db.professions[CID] = { src = "addon", ts = NOW, profs = { [185] = { rank = 5, max = 75, h = 1, n = 1,
+local CID = GuildOS:GetPlayerKey("Cid")
+GuildOS.db.professions[CID] = { src = "addon", ts = NOW, profs = { [185] = { rank = 5, max = 75, h = 1, n = 1,
   recipes = {}, extra = { 2538 } } } }
 P:Project(CID)
-check(BRutus.db.recipes[CID].Cooking[1].itemId == 2679, "an extra this client's catalog knows keeps its output item")
-BRutus.db.professions[CID] = nil
+check(GuildOS.db.recipes[CID].Cooking[1].itemId == 2679, "an extra this client's catalog knows keeps its output item")
+GuildOS.db.professions[CID] = nil
 P:Project(CID)
 local projected, realProject = 0, P.Project
 P.Project = function(self, key) projected = projected + 1; return realProject(self, key) end
 deliver("sum", { p = { [186] = { r = 52, m = 75, h = h2, n = 2 } } }, "Bob")
 check(projected == 0, "a summary with nothing new rebuilds nothing")
 P.Project = realProject
-local before = BRutus.db.professions[BOB].profs[186].rank
+local before = GuildOS.db.professions[BOB].profs[186].rank
 deliver("sum", { p = { [186] = { r = "x", m = 75, h = h1, n = 1 } } }, "Bob")
 deliver("sum", { p = { [999] = { r = 1, m = 75, h = h1, n = 1 } } }, "Bob")
 deliver("sum", { p = { ["186"] = { r = 1, m = 75, h = h1, n = 1 } } }, "Bob")
 local eight = {}
 for i = 1, 8 do eight[i] = { r = 1, m = 75, h = h1, n = 1 } end
 deliver("sum", { p = eight }, "Bob")
-check(BRutus.db.professions[BOB].profs[186].rank == before, "a malformed summary changes nothing")
+check(GuildOS.db.professions[BOB].profs[186].rank == before, "a malformed summary changes nothing")
 deliver("sum", { p = { [185] = { r = 5, m = 75, h = 1, n = 0 } } }, "Cid")
-check(#BRutus.db.professions[BRutus:GetPlayerKey("Cid")].profs[185].recipes == 0, "a line with no recipes needs no list")
+check(#GuildOS.db.professions[GuildOS:GetPlayerKey("Cid")].profs[185].recipes == 0, "a line with no recipes needs no list")
 sent = {}
 deliver("req", { l = { 186 } }, "Bob")
 runTimers()
 local lists = sentOf("list")
-check(#lists == 1 and lists[1].target == "Bob" and lists[1].data.h == BRutus.db.professions[ME].profs[186].h
+check(#lists == 1 and lists[1].target == "Bob" and lists[1].data.h == GuildOS.db.professions[ME].profs[186].h
       and #lists[1].data.r == 2, "one requester gets my list by whisper")
 sent = {}
 deliver("req", { l = { 186 } }, "Bob")
@@ -431,46 +431,46 @@ check(#sentOf("sum") == 1 and NOW >= t0 + 20, "changes in a row send one summary
 
 -- ── 5. Integration points ───────────────────────────────────────────────
 dofile(ADDON .. "/Modules/DataCollector.lua")
-local DC = BRutus.DataCollector
+local DC = GuildOS.DataCollector
 local own = DC:CollectProfessions()
 check(type(own) == "table" and #own == 2 and own[2].name == "Mining", "CollectProfessions reads Professions on Forever")
-BRutus.db.members[ME], BRutus.db.professions[ME], P.scanned = nil, nil, false
+GuildOS.db.members[ME], GuildOS.db.professions[ME], P.scanned = nil, nil, false
 check(#DC:CollectProfessions() == 2, "and scans first when the login scan has not run, never empty")
-BRutus.db.myData = { name = "Ana Silva", realm = "Classic Beta PvE 2", lastUpdate = NOW }
-check(BRutus.db.recipes[ME] ~= nil and DC:GetBroadcastData().recipes == nil,
+GuildOS.db.myData = { name = "Ana Silva", realm = "Classic Beta PvE 2", lastUpdate = NOW }
+check(GuildOS.db.recipes[ME] ~= nil and DC:GetBroadcastData().recipes == nil,
       "the member broadcast carries no recipes on Forever")
 local reminded = false
-BRutus.ShowProfessionReminder = function() reminded = true end
-BRutus.db.myData.professions = { { name = "Blacksmithing", rank = 210, maxRank = 300, isPrimary = true } }
-BRutus:CheckProfessionFreshness()
+GuildOS.ShowProfessionReminder = function() reminded = true end
+GuildOS.db.myData.professions = { { name = "Blacksmithing", rank = 210, maxRank = 300, isPrimary = true } }
+GuildOS:CheckProfessionFreshness()
 check(not reminded, "the open-your-window reminder never shows on Forever")
 CLUB = { { name = "Dee", profession1ID = 164 } }
 NOW = NOW + 61
 fire("GUILD_ROSTER_UPDATE")
-local DEE = BRutus:GetPlayerKey("Dee")
-check(BRutus.db.professions[DEE] and BRutus.db.members[DEE] == nil, "Dee is known from the guild roster only")
-BRutus.RefreshRosterUI = function() end
+local DEE = GuildOS:GetPlayerKey("Dee")
+check(GuildOS.db.professions[DEE] and GuildOS.db.members[DEE] == nil, "Dee is known from the guild roster only")
+GuildOS.RefreshRosterUI = function() end
 DC:StoreReceivedData(DEE, { name = "Dee", class = "MAGE", lastUpdate = NOW, absent = { professions = true } })
-local dee = BRutus:GetMemberRecord("Dee")
-check(BRutus.db.members[DEE].professions == nil and dee.professions and dee.professions[1].name == "Blacksmithing",
+local dee = GuildOS:GetMemberRecord("Dee")
+check(GuildOS.db.members[DEE].professions == nil and dee.professions and dee.professions[1].name == "Blacksmithing",
       "a broadcast from a version that sends no professions does not hide the roster's")
 ROSTER = { "Ana Silva", "Cid" }
-BRutus:PruneStaleData()
-check(BRutus.db.professions[BOB] == nil and BRutus.db.recipes[BOB] == nil and BRutus.db.professions[ME],
+GuildOS:PruneStaleData()
+check(GuildOS.db.professions[BOB] == nil and GuildOS.db.recipes[BOB] == nil and GuildOS.db.professions[ME],
       "a member who left loses the profession record and its projection")
 
-table.insert(BRutus.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
+table.insert(GuildOS.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
 check(P:Scan() == true and #P:CraftersOf(2657) == 1, "a recipe two of my professions share lists me once")
-table.remove(BRutus.ProfCatalog.byLine[185], 1)
+table.remove(GuildOS.ProfCatalog.byLine[185], 1)
 
 -- ── 8. Directory (issue #33) ────────────────────────────────────────────
 dofile(ADDON .. "/Modules/ProfDirectory.lua")
-local D = BRutus.ProfDirectory
+local D = GuildOS.ProfDirectory
 check(D ~= nil, "ProfDirectory exists on Forever")
 ROSTER = { "Ana Silva", "Bob", "Cid", "Dee" }
 OFFLINE, CLASS = { Cid = true }, { Bob = "WARRIOR" }
-local BOBK, CIDK, DEEK = BRutus:GetPlayerKey("Bob"), BRutus:GetPlayerKey("Cid"), BRutus:GetPlayerKey("Dee")
-BRutus.db.professions = {
+local BOBK, CIDK, DEEK = GuildOS:GetPlayerKey("Bob"), GuildOS:GetPlayerKey("Cid"), GuildOS:GetPlayerKey("Dee")
+GuildOS.db.professions = {
   [ME] = { src = "addon", ts = NOW, profs = {
     [186] = { rank = 21, max = 75, h = P.Hash({ 2657, 3304 }), n = 2, recipes = { 2657, 3304 }, extra = {} },
     [185] = { rank = 1, max = 75, h = P.Hash({ 2538 }), n = 1, recipes = { 2538 }, extra = {} } } },
@@ -496,11 +496,11 @@ check(rows[2].crafters[1] == BOBK and rows[2].spec == 9788 and rows[2].src == 2 
 check(#D.RecipeRows(164, "gaps") == 1 and D.RecipeRows(164, "gaps")[1].id == 2660, "gaps: recipes nobody knows")
 check(#D.RecipeRows(164, "guild") == 1 and D.RecipeRows(164, "guild")[1].id == 9950, "guild: recipes someone knows")
 check(#D.RecipeRows(nil, "all") == 5, "no line: every recipe once")
-table.insert(BRutus.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
+table.insert(GuildOS.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
 check(#D.RecipeRows(nil, "all") == 5, "a recipe on two lines is listed once")
 local allCov = D.CoverageAll()
 check(allCov.total == 5 and allCov.covered == 4, "All counts every recipe once: " .. allCov.covered .. "/" .. allCov.total)
-BRutus.db.professions[DEEK] = { src = "addon", ts = NOW, profs = { [185] = { rank = 50, max = 75, h = 1, n = 1,
+GuildOS.db.professions[DEEK] = { src = "addon", ts = NOW, profs = { [185] = { rank = 50, max = 75, h = 1, n = 1,
   recipes = { 2657 }, extra = {} } } }
 P.index = nil
 local shared = D.CraftersForSpell(2657)
@@ -508,8 +508,8 @@ local byName = {}
 for _, c in ipairs(shared) do byName[c.playerName] = c.profName end
 check(byName["Ana Silva"] == "Mining" and byName["Dee"] == "Cooking",
       "a shared recipe names the profession each crafter knows it by")
-table.remove(BRutus.ProfCatalog.byLine[185], 1)
-BRutus.db.professions[DEEK] = { src = "addon", ts = NOW, profs = { [164] = { rank = 0, max = 75, h = 1, n = 0,
+table.remove(GuildOS.ProfCatalog.byLine[185], 1)
+GuildOS.db.professions[DEEK] = { src = "addon", ts = NOW, profs = { [164] = { rank = 0, max = 75, h = 1, n = 0,
   recipes = {}, extra = {} } } }
 P.index = nil
 check(#D.RecipeRows(nil, "all", "SPELL 99") == 1 and D.RecipeRows(nil, "all", "spell 99")[1].id == 9950,
@@ -532,15 +532,15 @@ local reagents = D.Reagents(2657)
 check(#reagents == 1 and reagents[1].itemID == 2770 and reagents[1].count == 1 and #D.Reagents(9950) == 0,
       "reagents from the catalog")
 dofile(ADDON .. "/Modules/RecipeTracker.lua")
-check(BRutus.RecipeTracker:GetCraftersForItem(2840)[1].playerName == "Ana Silva"
-      and BRutus.RecipeTracker:GetCraftersForSpell(9950)[1].playerName == "Bob",
+check(GuildOS.RecipeTracker:GetCraftersForItem(2840)[1].playerName == "Ana Silva"
+      and GuildOS.RecipeTracker:GetCraftersForSpell(9950)[1].playerName == "Bob",
       "the recipe tracker reads the directory on Forever")
 
 -- ── 6. The real catalog ─────────────────────────────────────────────────
-local fixture = BRutus.ProfCatalog
+local fixture = GuildOS.ProfCatalog
 dofile(ADDON .. "/Data/ProfCatalogForever.lua")
-local real = BRutus.ProfCatalog
-BRutus.ProfCatalog = fixture
+local real = GuildOS.ProfCatalog
+GuildOS.ProfCatalog = fixture
 check(real ~= fixture and real.build:match("^1%.60%.") ~= nil, "the generated catalog loads: " .. tostring(real.build))
 check(real.recipes[2657] and real.recipes[2657][real.F.line] == 186 and real.recipes[2657][real.F.out] == 2840,
       "Smelt Copper is a Mining recipe making Copper Bar")
@@ -562,19 +562,19 @@ check(total > 2000 and real.professions[2933] == nil and real.professions[40] ==
       "about 2,500 recipes, no test profession, no Poisons")
 
 -- ── 7. Anniversary: none of it exists ───────────────────────────────────
-BRutus.Client.isAnniversary = true
-local keep = { BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog }
-BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog = nil, nil, nil
+GuildOS.Client.isAnniversary = true
+local keep = { GuildOS.Professions, GuildOS.ProfSync, GuildOS.ProfCatalog }
+GuildOS.Professions, GuildOS.ProfSync, GuildOS.ProfCatalog = nil, nil, nil
 dofile(ADDON .. "/Data/ProfCatalogForever.lua")
 dofile(ADDON .. "/Modules/Professions.lua")
 dofile(ADDON .. "/Modules/ProfSync.lua")
-local keepDir = BRutus.ProfDirectory
-BRutus.ProfDirectory = nil
+local keepDir = GuildOS.ProfDirectory
+GuildOS.ProfDirectory = nil
 dofile(ADDON .. "/Modules/ProfDirectory.lua")
-check(BRutus.Professions == nil and BRutus.ProfSync == nil and BRutus.ProfCatalog == nil
-      and BRutus.ProfDirectory == nil, "on Anniversary the catalog, Professions, ProfSync and ProfDirectory do not exist")
-BRutus.ProfDirectory = keepDir
-BRutus.Client.isAnniversary = false
-BRutus.Professions, BRutus.ProfSync, BRutus.ProfCatalog = keep[1], keep[2], keep[3]
+check(GuildOS.Professions == nil and GuildOS.ProfSync == nil and GuildOS.ProfCatalog == nil
+      and GuildOS.ProfDirectory == nil, "on Anniversary the catalog, Professions, ProfSync and ProfDirectory do not exist")
+GuildOS.ProfDirectory = keepDir
+GuildOS.Client.isAnniversary = false
+GuildOS.Professions, GuildOS.ProfSync, GuildOS.ProfCatalog = keep[1], keep[2], keep[3]
 
 print("professions: " .. checks .. " checks passed")

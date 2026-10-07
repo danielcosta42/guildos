@@ -1,4 +1,4 @@
-# BRutus — Memory Management
+# GuildOS — Memory Management
 
 _Last updated: 2026-04-26_
 
@@ -8,10 +8,10 @@ _Last updated: 2026-04-26_
 
 | Tipo | Sobrevive ao /reload | Localização | Responsável |
 |---|---|---|---|
-| Runtime state | NÃO | `BRutus.State.*` | Core.lua |
+| Runtime state | NÃO | `GuildOS.State.*` | Core.lua |
 | Frames e widgets | NÃO (recriados) | variáveis locais em UI/*.lua | UI files |
-| Timers/Tickers | NÃO | `BRutus.State.*` ou local | Módulo dono |
-| SavedVariables | SIM | `BRutusDB[guildKey]` | Storage |
+| Timers/Tickers | NÃO | `GuildOS.State.*` ou local | Módulo dono |
+| SavedVariables | SIM | `GuildOSDB[guildKey]` | Storage |
 | Cache computado | NÃO | variáveis locais | Módulo dono |
 
 ---
@@ -19,7 +19,7 @@ _Last updated: 2026-04-26_
 ## Mapa de Runtime State Atual
 
 ```lua
-BRutus.State = {
+GuildOS.State = {
     comm = {
         lastBroadcast   = 0,        -- throttle de broadcast
         pendingMessages = {},       -- chunks aguardando reassembla
@@ -116,10 +116,10 @@ State.raid.snapshotTimer = C_Timer.NewTicker(300, fn)
 ## Regras de Gerenciamento de Memória
 
 ### Timers/Tickers
-- Sempre guardar referência no `BRutus.State.*` correspondente
+- Sempre guardar referência no `GuildOS.State.*` correspondente
 - Sempre cancelar antes de recriar: `if ref then ref:Cancel() end`
 - Nunca criar NewTicker dentro de um OnUpdate frame
-- Usar `BRutus.Compat.NewTicker` — não `C_Timer.NewTicker` direto
+- Usar `GuildOS.Compat.NewTicker` — não `C_Timer.NewTicker` direto
 
 ### Tabelas
 - Usar `wipe(table)` para reaproveitar tabelas em vez de criar novas
@@ -160,7 +160,7 @@ State.raid.snapshotTimer = C_Timer.NewTicker(300, fn)
 | Pending chunk timeout | `CommSystem:OnMessageReceived()` | por mensagem, one-shot | após 30s |
 | Stagger de chunks (send) | `CommSystem:SendMessage()` | one-shot por chunk | após disparo |
 
-### ⚠️ Risco: CommSystem sync ticker não está em BRutus.State
+### ⚠️ Risco: CommSystem sync ticker não está em GuildOS.State
 O ticker do CommSystem é criado em `Initialize()` e não tem referência guardada.
 Se `Initialize()` for chamado novamente (não acontece hoje, mas é frágil), cria ticker duplicado.
 

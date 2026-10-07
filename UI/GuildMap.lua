@@ -10,7 +10,7 @@
 -- our own frames parented to the world map canvas; we react to the map
 -- opening / the displayed map changing ONLY through hooksecurefunc and
 -- HookScript, and we never call a protected function from an insecure
--- handler. Every world map / C_Map read goes through BRutus.Compat (Rule 4).
+-- handler. Every world map / C_Map read goes through GuildOS.Compat (Rule 4).
 -- The UI holds no domain logic (Rule 10): it renders GuildMap:GetPeers and
 -- flips the shareExact pref through GuildMap methods.
 --
@@ -20,9 +20,9 @@
 -- never as pins. Zone-only peers (no exact x/y) are placed at the map centre
 -- and dimmed.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
 local PIN_SIZE          = 12
@@ -32,11 +32,11 @@ local DOT_SIZE          = 8
 local DOT_GAP           = 4
 local MINIMAP_DOTS_MAX  = 5
 
-local function ModGM() return BRutus.GuildMap end
+local function ModGM() return GuildOS.GuildMap end
 
 -- Localized zone name for a mapID, with a safe fallback.
 local function zoneName(mapID)
-    return (mapID and BRutus.Compat.GetMapName(mapID)) or L["Unknown zone"]
+    return (mapID and GuildOS.Compat.GetMapName(mapID)) or L["Unknown zone"]
 end
 
 ----------------------------------------------------------------------
@@ -112,14 +112,14 @@ end
 -- changes (OnMapChanged hook).
 LayoutPins = function()
     if not pinContainer then return end
-    local shownMap = BRutus.Compat.GetShownMapID()
+    local shownMap = GuildOS.Compat.GetShownMapID()
     local used = 0
     if shownMap then
         for _, p in ipairs(cachedPeers) do
             if p.mapID == shownMap then
                 used = used + 1
                 local pin = AcquirePin(used)
-                local cr, cg, cb = BRutus:GetClassColor(p.class)
+                local cr, cg, cb = GuildOS:GetClassColor(p.class)
                 pin.dot:SetVertexColor(cr, cg, cb, 1)
                 pin.cr, pin.cg, pin.cb = cr, cg, cb
                 pin.pinName  = p.name
@@ -145,18 +145,18 @@ end
 -- React to the world map opening / changing maps with taint-safe hooks only.
 local function InstallMapHooks()
     if hooked then return end
-    local wmf = BRutus.Compat.GetWorldMapFrame()
+    local wmf = GuildOS.Compat.GetWorldMapFrame()
     if not wmf then return end
     hooked = true
     -- Displayed map changed -> re-pick which peers are pinned. hooksecurefunc
     -- POST-hooks the Blizzard method without replacing it (no taint).
     if wmf.OnMapChanged then
-        hooksecurefunc(wmf, "OnMapChanged", function() BRutus:SafeCall(LayoutPins) end)
+        hooksecurefunc(wmf, "OnMapChanged", function() GuildOS:SafeCall(LayoutPins) end)
     end
     -- Map opened -> if the guild overlay is on, show it and repaint.
     wmf:HookScript("OnShow", function()
         if overlayEnabled and listFrame then listFrame:Show() end
-        BRutus:SafeCall(RefreshData)
+        GuildOS:SafeCall(RefreshData)
     end)
     -- Map closed -> hide the overlay so it never floats over the game world.
     -- overlayEnabled stays on, so reopening the map brings it back.
@@ -169,7 +169,7 @@ end
 -- world map (and its canvas) exists.
 local function EnsurePinLayer()
     if pinContainer then return pinContainer end
-    local canvas = BRutus.Compat.GetWorldMapCanvas()
+    local canvas = GuildOS.Compat.GetWorldMapCanvas()
     if not canvas then return nil end
     pinContainer = CreateFrame("Frame", nil, canvas)
     pinContainer:SetAllPoints(canvas)   -- track the canvas rect through zoom/pan
@@ -282,10 +282,10 @@ RefreshList = function()
     listFrame.shareChk.checkbox:SetChecked(ModGM():IsShareExact())
     listContent:SetWidth(listFrame.scroll:GetWidth())
 
-    local shownMap = BRutus.Compat.GetShownMapID()
+    local shownMap = GuildOS.Compat.GetShownMapID()
     for i, p in ipairs(cachedPeers) do
         local row = GetListRow(i)
-        local cr, cg, cb = BRutus:GetClassColor(p.class)
+        local cr, cg, cb = GuildOS:GetClassColor(p.class)
         row.dot:SetVertexColor(cr, cg, cb, 1)
         row.nameFS:SetText(p.name)
         row.nameFS:SetTextColor(cr, cg, cb)
@@ -296,7 +296,7 @@ RefreshList = function()
             row.zoneFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
         end
         local mid = p.mapID
-        row:SetScript("OnClick", function() BRutus:GuildMapFocus(mid) end)
+        row:SetScript("OnClick", function() GuildOS:GuildMapFocus(mid) end)
         row:Show()
     end
     for i = #cachedPeers + 1, #listRows do listRows[i]:Hide() end
@@ -335,7 +335,7 @@ local function BuildDotsFrame()
         f.dots[i] = d
     end
     local more = f:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(more, 9)
+    GuildOS:ApplyFont(more, 9)
     more:SetPoint("LEFT", f.dots[MINIMAP_DOTS_MAX], "RIGHT", 3, 0)
     more:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
     f.more = more
@@ -355,7 +355,7 @@ local function BuildDotsFrame()
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine(L["Guildmates in your zone"], C.gold.r, C.gold.g, C.gold.b)
         for _, p in ipairs(self.here) do
-            local cr, cg, cb = BRutus:GetClassColor(p.class)
+            local cr, cg, cb = GuildOS:GetClassColor(p.class)
             GameTooltip:AddLine(p.name, cr, cg, cb)
         end
         GameTooltip:Show()
@@ -367,7 +367,7 @@ end
 
 RefreshMinimapDots = function()
     if not dotsFrame then return end
-    local myMap = tonumber(BRutus.Compat.GetBestMapForUnit("player"))
+    local myMap = tonumber(GuildOS.Compat.GetBestMapForUnit("player"))
     local here = {}
     if myMap and myMap > 0 then
         for _, p in ipairs(cachedPeers) do
@@ -377,7 +377,7 @@ RefreshMinimapDots = function()
     local n = #here
     local shown = math.min(n, MINIMAP_DOTS_MAX)
     for i = 1, shown do
-        local cr, cg, cb = BRutus:GetClassColor(here[i].class)
+        local cr, cg, cb = GuildOS:GetClassColor(here[i].class)
         dotsFrame.dots[i].tex:SetVertexColor(cr, cg, cb, 1)
         dotsFrame.dots[i]:Show()
     end
@@ -401,7 +401,7 @@ end
 -- Recompute the peer snapshot (the only place that scans the roster) and
 -- repaint every surface that is currently live.
 RefreshData = function()
-    cachedPeers = (BRutus.GuildMap and BRutus.GuildMap:GetPeers()) or {}
+    cachedPeers = (GuildOS.GuildMap and GuildOS.GuildMap:GetPeers()) or {}
     if listFrame and listFrame:IsShown() then RefreshList() end
     LayoutPins()
     RefreshMinimapDots()
@@ -414,16 +414,16 @@ end
 -- Open the world map on a peer's zone (used by list-row clicks). OnMapChanged
 -- will relayout the pins; LayoutPins() is a belt-and-suspenders for clients
 -- whose map lacks that method.
-function BRutus:GuildMapFocus(mapID)
-    BRutus.Compat.OpenWorldMap()
+function GuildOS:GuildMapFocus(mapID)
+    GuildOS.Compat.OpenWorldMap()
     EnsurePinLayer()
-    BRutus.Compat.SetShownMapID(mapID)
-    BRutus:SafeCall(LayoutPins)
+    GuildOS.Compat.SetShownMapID(mapID)
+    GuildOS:SafeCall(LayoutPins)
 end
 
 -- /gos map and the minimap menu entry. Toggles the list overlay; opening it
 -- also opens the world map and builds the pin layer.
-function BRutus:ToggleGuildMap()
+function GuildOS:ToggleGuildMap()
     local f = listFrame or BuildListFrame()
     listFrame = f
     if overlayEnabled then
@@ -433,13 +433,13 @@ function BRutus:ToggleGuildMap()
         return
     end
     overlayEnabled = true
-    BRutus.Compat.OpenWorldMap()
+    GuildOS.Compat.OpenWorldMap()
     EnsurePinLayer()
     f:Show(); f:Raise()
     RefreshData()
     -- The map addon may have loaded on demand this frame; retry the layer +
     -- repaint (and re-show the overlay) once the canvas certainly exists.
-    BRutus.Compat.After(0, function()
+    GuildOS.Compat.After(0, function()
         EnsurePinLayer()
         if overlayEnabled and listFrame then listFrame:Show() end
         RefreshData()
@@ -449,23 +449,23 @@ end
 -- One-time wiring: bind the data-layer refresh hook, build the minimap
 -- indicator, and watch our own zone changes. Called from CreateMinimapButton
 -- so no Core file needs editing and Minimap is guaranteed to exist.
-function BRutus:SetupGuildMapPresence()
-    if BRutus._guildMapPresence then return end
-    BRutus._guildMapPresence = true
+function GuildOS:SetupGuildMapPresence()
+    if GuildOS._guildMapPresence then return end
+    GuildOS._guildMapPresence = true
 
     if Minimap then dotsFrame = BuildDotsFrame() end
 
     -- Incoming positions (GuildMap:HandlePosition) repaint everything live.
-    if BRutus.GuildMap then
-        BRutus.GuildMap.uiRefresh = function() BRutus:SafeCall(RefreshData) end
+    if GuildOS.GuildMap then
+        GuildOS.GuildMap.uiRefresh = function() GuildOS:SafeCall(RefreshData) end
     end
 
     -- Our own zone change alters who counts as "in your zone".
     local ev = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(ev, "ZONE_CHANGED_NEW_AREA")
-    BRutus.Compat.RegisterEvent(ev, "PLAYER_ENTERING_WORLD")
-    ev:SetScript("OnEvent", function() BRutus:SafeCall(RefreshData) end)
-    BRutus._guildMapPresenceFrame = ev
+    GuildOS.Compat.RegisterEvent(ev, "ZONE_CHANGED_NEW_AREA")
+    GuildOS.Compat.RegisterEvent(ev, "PLAYER_ENTERING_WORLD")
+    ev:SetScript("OnEvent", function() GuildOS:SafeCall(RefreshData) end)
+    GuildOS._guildMapPresenceFrame = ev
 
     RefreshData()
 end

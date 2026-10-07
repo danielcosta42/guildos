@@ -1,11 +1,11 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Trial Member Tracker
+-- Guild OS - Trial Member Tracker
 -- Tracks trial/recruit members: start date, evaluation notes, status
 -- Progress snapshots for iLvl and attunement tracking
 ----------------------------------------------------------------------
 local TrialTracker = {}
-BRutus.TrialTracker = TrialTracker
-local L = BRutus.L
+GuildOS.TrialTracker = TrialTracker
+local L = GuildOS.L
 
 -- Trial status values
 TrialTracker.STATUS = {
@@ -19,69 +19,69 @@ TrialTracker.STATUS = {
 TrialTracker.DEFAULT_DURATION = 30 * 24 * 60 * 60
 
 function TrialTracker:Initialize()
-    if not BRutus.db.trials then
-        BRutus.db.trials = {}  -- [playerKey] = { startDate, endDate, status, notes, sponsor, snapshots }
+    if not GuildOS.db.trials then
+        GuildOS.db.trials = {}  -- [playerKey] = { startDate, endDate, status, notes, sponsor, snapshots }
     end
     -- Migrate old trials missing snapshots
-    for _, trial in pairs(BRutus.db.trials) do
+    for _, trial in pairs(GuildOS.db.trials) do
         if not trial.snapshots then trial.snapshots = {} end
     end
 end
 
 function TrialTracker:AddTrial(playerKey, sponsor)
-    if not BRutus:IsOfficer() then return false end
+    if not GuildOS:IsOfficer() then return false end
 
     local now = GetServerTime()
-    BRutus.db.trials[playerKey] = {
+    GuildOS.db.trials[playerKey] = {
         startDate = now,
         endDate = now + self.DEFAULT_DURATION,
         status = self.STATUS.TRIAL,
         notes = {},
-        sponsor = sponsor or BRutus.Compat.PlayerName(),
+        sponsor = sponsor or GuildOS.Compat.PlayerName(),
         snapshots = {},
     }
 
     -- Take initial snapshot
     self:TakeSnapshot(playerKey)
 
-    BRutus:Print(playerKey .. L[" marked as trial by "] .. (sponsor or BRutus.Compat.PlayerName()))
+    GuildOS:Print(playerKey .. L[" marked as trial by "] .. (sponsor or GuildOS.Compat.PlayerName()))
     self:BroadcastTrials()
     return true
 end
 
 function TrialTracker:UpdateStatus(playerKey, newStatus)
-    if not BRutus:IsOfficer() then return end
-    local trial = BRutus.db.trials[playerKey]
+    if not GuildOS:IsOfficer() then return end
+    local trial = GuildOS.db.trials[playerKey]
     if not trial then return end
 
     trial.status = newStatus
     if newStatus == self.STATUS.APPROVED or newStatus == self.STATUS.DENIED then
         trial.resolvedDate = GetServerTime()
-        trial.resolvedBy = BRutus.Compat.PlayerName()
+        trial.resolvedBy = GuildOS.Compat.PlayerName()
     end
     self:BroadcastTrials()
 end
 
 function TrialTracker:AddTrialNote(playerKey, text)
-    if not BRutus:IsOfficer() then return end
-    local trial = BRutus.db.trials[playerKey]
+    if not GuildOS:IsOfficer() then return end
+    local trial = GuildOS.db.trials[playerKey]
     if not trial then return end
 
     table.insert(trial.notes, {
         text = text,
-        author = BRutus.Compat.PlayerName(),
+        author = GuildOS.Compat.PlayerName(),
         timestamp = GetServerTime(),
     })
     self:BroadcastTrials()
 end
 
 function TrialTracker:GetTrial(playerKey)
-    return BRutus.db.trials[playerKey]
+    return GuildOS.db.trials[playerKey]
 end
 
 function TrialTracker:GetAllTrials()
     local result = {}
-    for key, trial in pairs(BRutus.db.trials) do
+    for key, trial in pairs(GuildOS.db.trials) do
         table.insert(result, { key = key, data = trial })
     end
     table.sort(result, function(a, b) return a.data.startDate > b.data.startDate end)
@@ -90,7 +90,7 @@ end
 
 function TrialTracker:GetActiveTrials()
     local result = {}
-    for key, trial in pairs(BRutus.db.trials) do
+    for key, trial in pairs(GuildOS.db.trials) do
         if trial.status == self.STATUS.TRIAL then
             table.insert(result, { key = key, data = trial })
         end
@@ -100,19 +100,19 @@ function TrialTracker:GetActiveTrials()
 end
 
 function TrialTracker:IsTrial(playerKey)
-    local trial = BRutus.db.trials[playerKey]
+    local trial = GuildOS.db.trials[playerKey]
     return trial and trial.status == self.STATUS.TRIAL
 end
 
 function TrialTracker:GetDaysRemaining(playerKey)
-    local trial = BRutus.db.trials[playerKey]
+    local trial = GuildOS.db.trials[playerKey]
     if not trial or trial.status ~= self.STATUS.TRIAL then return nil end
     local remaining = trial.endDate - GetServerTime()
     return math.max(0, math.floor(remaining / 86400))
 end
 
 function TrialTracker:GetDaysSinceStart(playerKey)
-    local trial = BRutus.db.trials[playerKey]
+    local trial = GuildOS.db.trials[playerKey]
     if not trial then return nil end
     return math.floor((GetServerTime() - trial.startDate) / 86400)
 end
@@ -120,19 +120,19 @@ end
 function TrialTracker:CheckExpired()
     local now = GetServerTime()
     local expired = {}
-    for key, trial in pairs(BRutus.db.trials) do
+    for key, trial in pairs(GuildOS.db.trials) do
         if trial.status == self.STATUS.TRIAL and now > trial.endDate then
             trial.status = self.STATUS.EXPIRED
             table.insert(expired, key)
         end
     end
-    if #expired > 0 and BRutus:IsOfficer() then
-        BRutus:Print(string.format(L["|cffFF6600%d trial(s) expired!|r Use /guildos to review."], #expired))
+    if #expired > 0 and GuildOS:IsOfficer() then
+        GuildOS:Print(string.format(L["|cffFF6600%d trial(s) expired!|r Use /guildos to review."], #expired))
     end
 end
 
 function TrialTracker:RemoveTrial(playerKey)
-    BRutus.db.trials[playerKey] = nil
+    GuildOS.db.trials[playerKey] = nil
     self:BroadcastTrials()
 end
 
@@ -141,11 +141,11 @@ end
 -- Records iLvl and attunement completion at a point in time
 ----------------------------------------------------------------------
 function TrialTracker:TakeSnapshot(playerKey)
-    local trial = BRutus.db.trials[playerKey]
+    local trial = GuildOS.db.trials[playerKey]
     if not trial then return end
     if not trial.snapshots then trial.snapshots = {} end
 
-    local memberData = BRutus.db.members[playerKey]
+    local memberData = GuildOS.db.members[playerKey]
     if not memberData then return end
 
     local attDone, attTotal = 0, 0
@@ -176,14 +176,14 @@ function TrialTracker:TakeSnapshot(playerKey)
 end
 
 function TrialTracker:GetProgress(playerKey)
-    local trial = BRutus.db.trials[playerKey]
+    local trial = GuildOS.db.trials[playerKey]
     if not trial or not trial.snapshots or #trial.snapshots == 0 then
         return nil
     end
 
     local first = trial.snapshots[1]
     local last = trial.snapshots[#trial.snapshots]
-    local memberData = BRutus.db.members[playerKey]
+    local memberData = GuildOS.db.members[playerKey]
 
     -- Current live values
     local curIlvl = memberData and memberData.avgIlvl or last.avgIlvl
@@ -214,9 +214,9 @@ end
 
 -- Auto-snapshot active trials (call periodically, e.g. on data sync)
 function TrialTracker:UpdateSnapshots()
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     local now = GetServerTime()
-    for key, trial in pairs(BRutus.db.trials) do
+    for key, trial in pairs(GuildOS.db.trials) do
         if trial.status == self.STATUS.TRIAL then
             if not trial.snapshots then trial.snapshots = {} end
             local lastSnap = trial.snapshots[#trial.snapshots]
@@ -232,37 +232,37 @@ end
 -- Trial Sync — broadcast and receive trial data between officers
 ----------------------------------------------------------------------
 function TrialTracker:BroadcastTrials()
-    if not BRutus:IsOfficer() then return end
-    if not BRutus.CommSystem then return end
+    if not GuildOS:IsOfficer() then return end
+    if not GuildOS.CommSystem then return end
     if not IsInGuild() then return end
 
-    local trials = BRutus.db.trials
+    local trials = GuildOS.db.trials
     if not trials or not next(trials) then return end
 
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local serialized = LibSerialize:Serialize(trials)
-    BRutus.CommSystem:SendMessage("TR", serialized)
+    GuildOS.CommSystem:SendMessage("TR", serialized)
 end
 
 -- Reached only through CommSystem:OnMessageReceived, which has checked the sender is an officer
 -- and the channel GUILD (issue #78). Any other caller must check the same.
 function TrialTracker:HandleIncoming(data)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
 
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, incomingTrials = LibSerialize:Deserialize(data)
     if not ok or type(incomingTrials) ~= "table" then return end
 
-    if not BRutus.db.trials then BRutus.db.trials = {} end
+    if not GuildOS.db.trials then GuildOS.db.trials = {} end
 
     for incomingKey, incoming in pairs(incomingTrials) do
-        local playerKey = BRutus:LocalMemberKey(incomingKey)   -- the sender's key, as this client's (#97)
-        local existing = BRutus.db.trials[playerKey]
-        BRutus.db.trials[playerKey] = existing and self:Merge(existing, incoming) or incoming
+        local playerKey = GuildOS:LocalMemberKey(incomingKey)   -- the sender's key, as this client's (#97)
+        local existing = GuildOS.db.trials[playerKey]
+        GuildOS.db.trials[playerKey] = existing and self:Merge(existing, incoming) or incoming
     end
 
     -- Refresh UI if open
-    BRutus:RefreshRosterUI()
+    GuildOS:RefreshRosterUI()
 end
 
 -- The trial to keep when two copies of one meet: the more recent activity (start, last note or

@@ -19,9 +19,9 @@ local function check(cond, what)
   end
 end
 
-BRutus = { UI = {} }
+GuildOS = { UI = {} }
 dofile(ADDON .. "/UI/Layout.lua")
-local UI = BRutus.UI
+local UI = GuildOS.UI
 
 local function same(list, expect)
   if #list ~= #expect then return false end

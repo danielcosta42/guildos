@@ -1,4 +1,4 @@
-# BRutus — Project Overview
+# GuildOS — Project Overview
 
 _Last updated: 2026-04-26_
 
@@ -6,7 +6,7 @@ _Last updated: 2026-04-26_
 
 ## Objetivo
 
-BRutus é um addon de gerenciamento de guild para World of Warcraft TBC Anniversary Edition.
+GuildOS é um addon de gerenciamento de guild para World of Warcraft TBC Anniversary Edition.
 Substitui o frame padrão de guild do Blizzard por um hub moderno que coleta, sincroniza e exibe dados de membros automaticamente, sem necessidade de inspeção manual.
 
 ---
@@ -49,7 +49,7 @@ Substitui o frame padrão de guild do Blizzard por um hub moderno que coleta, si
 | `SendChatMessage` requer hardware event para canais públicos | Recrutamento usa popup clicável |
 | Addon messages: limite de 255 bytes | `CommSystem` chunking obrigatório |
 | Lua 5.1: sem `goto`, sem bitwise, sem `//` | Código usa `math.floor`, `bit.band` não disponível |
-| `C_ChatInfo`, `C_QuestLog`, `C_Timer` — podem não existir | Todos passam por `BRutus.Compat.*` |
+| `C_ChatInfo`, `C_QuestLog`, `C_Timer` — podem não existir | Todos passam por `GuildOS.Compat.*` |
 | `BackdropTemplate` obrigatório no TBC | Todos os frames usam o mixin |
 | `GetGuildRosterInfo` 1-indexed, pode retornar nil | Sempre com nil-check e loop de 1 a N |
 | `PLAYER_ENTERING_WORLD` dispara em toda mudança de zona | Guarda com `isInitialLogin or isReloadingUi` |
@@ -77,11 +77,11 @@ Substitui o frame padrão de guild do Blizzard por um hub moderno que coleta, si
 ## Escopo Futuro (não implementado)
 
 - [ ] EventBus interno para desacoplar módulos
-- [ ] StorageService / Repository pattern (BRutus.db protegido)
+- [ ] StorageService / Repository pattern (GuildOS.db protegido)
 - [ ] SyncService com versionamento de protocolo, ACK/NACK, retry
 - [ ] Slash commands separados do Core.lua
 - [ ] Split de UI/Helpers.lua em Theme + Core + Panels
-- [ ] Comandos de debug: `/brutus sync status`, `/brutus storage stats`
+- [ ] Comandos de debug: `/gos sync status`, `/gos storage stats`
 - [ ] Soft delete / tombstone para entidades sincronizadas
 - [ ] Conflito resolution documentado e automatizado
 - [ ] Limites configuráveis de crescimento do SavedVariables
@@ -98,7 +98,7 @@ Substitui o frame padrão de guild do Blizzard por um hub moderno que coleta, si
 | Throttle de mensagens | ChatThrottleLib |
 | DI/Lib loader | LibStub |
 | UI Framework | WoW Native Frames + BackdropTemplate |
-| Persistência | SavedVariables (`BRutusDB`) |
+| Persistência | SavedVariables (`GuildOSDB`) |
 | Lint | luacheck (`C:\Users\danie\bin\luacheck.exe`) |
 | CI/CD | GitHub Actions + BigWigsMods packager |
 | Publish | CurseForge ID 1549177 (BCC client) |

@@ -6,7 +6,7 @@
 -- No new sync, no persistence. Business logic only (Rule 2 / Rule 10).
 ----------------------------------------------------------------------
 local Readiness = {}
-BRutus.Readiness = Readiness
+GuildOS.Readiness = Readiness
 
 -- Status ranking for sorting (most actionable first).
 local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
@@ -16,8 +16,8 @@ local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
 -- Returns { { short, name, tier }, ... } or {}.
 ----------------------------------------------------------------------
 function Readiness:GetTargets()
-    if not BRutus.AttunementTracker then return {} end
-    return BRutus.AttunementTracker:GetGuildColumns()
+    if not GuildOS.AttunementTracker then return {} end
+    return GuildOS.AttunementTracker:GetGuildColumns()
 end
 
 ----------------------------------------------------------------------
@@ -33,16 +33,16 @@ end
 function Readiness:GetReport(targetShort)
     -- Index missing-enchant data by player key (rows include 0-missing too).
     local enchantByKey = {}
-    if BRutus.GearAudit then
-        for _, r in ipairs(BRutus.GearAudit:GetGuildEnchantAudit()) do
+    if GuildOS.GearAudit then
+        for _, r in ipairs(GuildOS.GearAudit:GetGuildEnchantAudit()) do
             enchantByKey[r.key] = r
         end
     end
 
     -- Index the last consumable check by lowercase short name (live, in-raid).
     local consumeByName = {}
-    if BRutus.ConsumableChecker then
-        for _, res in pairs(BRutus.ConsumableChecker:GetLastResults() or {}) do
+    if GuildOS.ConsumableChecker then
+        for _, res in pairs(GuildOS.ConsumableChecker:GetLastResults() or {}) do
             local short = (res.name or ""):match("^([^-]+)") or res.name
             if short and short ~= "" then consumeByName[short:lower()] = res end
         end
@@ -55,13 +55,13 @@ function Readiness:GetReport(targetShort)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
-            local m = BRutus.db.members[key]
+            local key = GuildOS:GetPlayerKey(short, realm)
+            local m = GuildOS.db.members[key]
 
             -- Attunement progress (account-wide effective).
             local attDone, attTotal, targetOk = 0, 0, nil
-            if BRutus.AttunementTracker then
-                local atts = BRutus.AttunementTracker:GetEffectiveAttunements(key)
+            if GuildOS.AttunementTracker then
+                local atts = GuildOS.AttunementTracker:GetEffectiveAttunements(key)
                 attTotal = #atts
                 for _, a in ipairs(atts) do
                     if a.complete then attDone = attDone + 1 end

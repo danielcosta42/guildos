@@ -62,7 +62,7 @@ local function widget(fields)
   function w:Hide() self.hidden = true end
   return w
 end
-BRutus.UI = setmetatable({
+GuildOS.UI = setmetatable({
   GetFeature = function() return nil end,
   CreateButton = function(_, _, t) local b = widget({ text = tostring(t) }); buttons[#buttons + 1] = b; return b end,
   CreateCheckbox = function(_, _, label)
@@ -74,16 +74,16 @@ BRutus.UI = setmetatable({
 dofile(ADDON .. "/UI/FeaturePanels.lua")
 
 local published = {}
-BRutus.SyncService = { Publish = function(_, dom, act, data, opts)
+GuildOS.SyncService = { Publish = function(_, dom, act, data, opts)
   published[#published + 1] = { dom = dom, act = act, max = data.max, rev = opts.rev }
 end }
 
 local function open(settings, rank)
   myRank = rank or 1
-  BRutus.db = { settings = settings }
+  GuildOS.db = { settings = settings }
   settings.modules = settings.modules or {}
   buttons, boxes, printed, published = {}, {}, {}, {}
-  local ok, err = pcall(BRutus.RefreshSettingsPanel, BRutus, stub, "officer")
+  local ok, err = pcall(GuildOS.RefreshSettingsPanel, GuildOS, stub, "officer")
   check(ok, "the officer settings draw (" .. tostring(err) .. ")")
 end
 local function shareButton()
@@ -99,7 +99,7 @@ check(share ~= nil, "a choice made before #81 (rank 2 ticked, never stamped) is 
 share.onClick(share)
 check(#published == 1 and published[1].dom == "guildcfg" and published[1].max == 2 and published[1].rev == now,
   "one click sends that choice, as it is, stamped")
-check(BRutus.db.settings.officerMaxRankAt == now and share.hidden, "and the button goes away")
+check(GuildOS.db.settings.officerMaxRankAt == now and share.hidden, "and the button goes away")
 
 open({ officerMaxRank = 1 })
 check(shareButton() == nil, "the default is not offered: it would overwrite a choice this client has not heard yet")
@@ -113,7 +113,7 @@ open({ officerMaxRank = 1, officerMaxRankAt = 900 })
 local rank3 = boxes["Rank3"]
 check(rank3 and rank3.checkbox.onChanged, "each rank has a checkbox")
 rank3.checkbox.onChanged(nil, true)
-check(BRutus.db.settings.officerMaxRank == 3 and BRutus.db.settings.officerMaxRankAt == now
+check(GuildOS.db.settings.officerMaxRank == 3 and GuildOS.db.settings.officerMaxRankAt == now
   and #published == 1 and published[1].max == 3, "ticking rank 3 stamps and sends the guild's threshold")
 local said = false
 for _, m in ipairs(printed) do if m:find("Officer threshold: ranks 0-", 1, true) then said = true end end
@@ -125,7 +125,7 @@ local rank2 = boxes["Rank2"]
 myRank = 5
 printed, published = {}, {}
 rank2.checkbox.onChanged(nil, true)
-check(BRutus.db.settings.officerMaxRank == 1 and #published == 0 and #printed == 0,
+check(GuildOS.db.settings.officerMaxRank == 1 and #published == 0 and #printed == 0,
   "a client that is no longer an officer changes nothing and claims nothing")
 
 print(("officer-ranks-ui: %d checks passed"):format(checks))

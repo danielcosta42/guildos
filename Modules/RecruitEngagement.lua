@@ -18,7 +18,7 @@
 -- packet cannot break the officer UI. Same rules as LFGBoard/RECRUIT_INFO.
 ----------------------------------------------------------------------
 local RecruitEngagement = {}
-BRutus.RecruitEngagement = RecruitEngagement
+GuildOS.RecruitEngagement = RecruitEngagement
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 local DAY         = 86400
@@ -238,8 +238,8 @@ end
 -- Layer 1: local self-tracking (db.myRecruitStats, this client only)
 ----------------------------------------------------------------------
 function RecruitEngagement:_Stats()
-    BRutus.db.myRecruitStats = BRutus.db.myRecruitStats or {}
-    local s = BRutus.db.myRecruitStats
+    GuildOS.db.myRecruitStats = GuildOS.db.myRecruitStats or {}
+    local s = GuildOS.db.myRecruitStats
     s.posts   = s.posts   or {}
     s.invites = s.invites or {}
     s.joins   = s.joins   or {}
@@ -304,8 +304,8 @@ function RecruitEngagement:_OwnPacket(now)
     local function lastOf(list) return (#list > 0) and list[#list] or 0 end
     local last = math.max(lastOf(s.posts), lastOf(s.invites), lastOf(s.joins))
     local part = true
-    if BRutus.Recruitment and BRutus.Recruitment.IsParticipating then
-        part = BRutus.Recruitment:IsParticipating()
+    if GuildOS.Recruitment and GuildOS.Recruitment.IsParticipating then
+        part = GuildOS.Recruitment:IsParticipating()
     end
     local packet = {
         daily = {
@@ -328,8 +328,8 @@ end
 -- Answered from CommSystem:HandleRequest (login + periodic pull), so an
 -- officer logging in converges on a fresh picture. Small; no throttle need.
 function RecruitEngagement:BroadcastStats()
-    if not BRutus.CommSystem or not IsInGuild() then return end
-    BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.RECRUIT_STATS,
+    if not GuildOS.CommSystem or not IsInGuild() then return end
+    GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.RECRUIT_STATS,
         LibSerialize:Serialize(self:_OwnPacket(time())))
 end
 
@@ -340,18 +340,18 @@ end
 function RecruitEngagement:HandleStats(sender, data, channel)
     if channel ~= "GUILD" then return end
     if not sender then return end
-    if not (BRutus.IsOfficer and BRutus:IsOfficer()) then return end
+    if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
     local ok, p = LibSerialize:Deserialize(data)
     if not ok or type(p) ~= "table" then return end
     local now = time()
     local entry = self:_SanitizeStats(p, now)
     local short = sender:match("^([^-]+)") or sender
     local realm = sender:match("-(.+)$") or GetRealmName()
-    local key = BRutus:GetPlayerKey(short, realm)
-    BRutus.db.recruitStats = BRutus.db.recruitStats or {}
-    BRutus.db.recruitStats[key] = entry
-    self:_PruneStore(BRutus.db.recruitStats, now)
-    if BRutus.recruitEngagementRefresh then BRutus.recruitEngagementRefresh() end
+    local key = GuildOS:GetPlayerKey(short, realm)
+    GuildOS.db.recruitStats = GuildOS.db.recruitStats or {}
+    GuildOS.db.recruitStats[key] = entry
+    self:_PruneStore(GuildOS.db.recruitStats, now)
+    if GuildOS.recruitEngagementRefresh then GuildOS.recruitEngagementRefresh() end
 end
 
 ----------------------------------------------------------------------
@@ -360,12 +360,12 @@ end
 function RecruitEngagement:GetAggregate(now)
     now = now or time()
     local store = {}
-    for key, entry in pairs((BRutus.db and BRutus.db.recruitStats) or {}) do store[key] = entry end
+    for key, entry in pairs((GuildOS.db and GuildOS.db.recruitStats) or {}) do store[key] = entry end
     -- My own numbers from here, never from the wire: CommSystem drops my own messages, so a
     -- report that relied on the echo never arrived on Anniversary, and on WoW: Forever
     -- stopped arriving the day PlayerName learned the surname (issue #51). Shown, not stored.
-    if BRutus.db then
-        local me = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    if GuildOS.db then
+        local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
         if me then store[me] = self:_SanitizeStats(self:_OwnPacket(now), now) end
     end
     return self:_Aggregate(store, now)
@@ -375,11 +375,11 @@ end
 -- Init
 ----------------------------------------------------------------------
 function RecruitEngagement:Initialize()
-    BRutus.db.recruitStats = BRutus.db.recruitStats or {}
+    GuildOS.db.recruitStats = GuildOS.db.recruitStats or {}
     self:_Stats()
     local now = time()
     self:_PruneLocal(now)
-    self:_PruneStore(BRutus.db.recruitStats, now)
+    self:_PruneStore(GuildOS.db.recruitStats, now)
     self:_RegisterTests()
 end
 
@@ -387,8 +387,8 @@ end
 -- Self tests (pure helpers only; no db/time/comm touched)
 ----------------------------------------------------------------------
 function RecruitEngagement:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
 
     S:Register("recruiteng.count_since", function()
         local now = 2000000

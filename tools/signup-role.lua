@@ -93,19 +93,19 @@ local function load(game)
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Core/Data.lua")
-  BRutus.ApplyFont = function(_, fs, size) if type(fs) == "table" then rawset(fs, "size", size) end end
+  GuildOS.ApplyFont = function(_, fs, size) if type(fs) == "table" then rawset(fs, "size", size) end end
   dofile(ADDON .. "/Modules/CoreManager.lua")
-  BRutus.db = { settings = {}, members = {}, altLinks = {}, cores = {}, raidTracker = { sessions = {}, attendance = {} } }
+  GuildOS.db = { settings = {}, members = {}, altLinks = {}, cores = {}, raidTracker = { sessions = {}, attendance = {} } }
   published, handlers = {}, {}
-  BRutus.SyncService = { On = function(_, dom, fn) handlers[dom] = fn end,
+  GuildOS.SyncService = { On = function(_, dom, fn) handlers[dom] = fn end,
                          Publish = function(_, dom, act, data) published[#published + 1] = { dom = dom, data = data } end }
-  BRutus.CoreManager:InitSync()
-  BRutus.UI = setmetatable({ GetFeature = function() return nil end, SkinScrollBar = function() end },
+  GuildOS.CoreManager:InitSync()
+  GuildOS.UI = setmetatable({ GetFeature = function() return nil end, SkinScrollBar = function() end },
                            { __index = function() return function() return stub end end })
   dofile(ADDON .. "/UI/FeaturePanels.lua")
   SlashCmdList = {}
   dofile(ADDON .. "/Core/Commands.lua")
-  return BRutus.CoreManager
+  return GuildOS.CoreManager
 end
 
 -- What the site says each class can play (packages/wow: forever.ts, and anniversary.ts's specs
@@ -133,7 +133,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   CLASS = "PRIEST"
   CM = load(game)
   CM:Create("Main")
-  local me = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+  local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
   CM:BroadcastSignup("Main", "", "healer")
   check(CM:GetSignups("Main")[me].role == "healer", G("my own sign-up shows the role I picked"))
   check(published[1] and published[1].dom == "core.signup" and published[1].data.info.role == "healer",
@@ -147,28 +147,28 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   CM = load(game)
   CM:Create("Main")
   handlers["core.signup"]({ data = { coreName = "Main", info = { class = "DRUID", role = "tank" } } }, "Ann")
-  local ann = CM:GetSignups("Main")[BRutus:GetPlayerKey("Ann")]
+  local ann = CM:GetSignups("Main")[GuildOS:GetPlayerKey("Ann")]
   check(ann and ann.role == "tank", G("an officer stores the role a druid picked"))
   handlers["core.signup"]({ data = { coreName = "Main", info = { class = "MAGE", role = "healer" } } }, "Bob")
-  check(CM:GetSignups("Main")[BRutus:GetPlayerKey("Bob")].role == "rdps", G("and never a role the class cannot play"))
+  check(CM:GetSignups("Main")[GuildOS:GetPlayerKey("Bob")].role == "rdps", G("and never a role the class cannot play"))
   handlers["core.signup"]({ data = { coreName = "Main", info = { class = "WARRIOR" } } }, "Cid")
-  check(CM:GetSignups("Main")[BRutus:GetPlayerKey("Cid")].role == CM.CLASS_DEFAULT_ROLE.WARRIOR,
+  check(CM:GetSignups("Main")[GuildOS:GetPlayerKey("Cid")].role == CM.CLASS_DEFAULT_ROLE.WARRIOR,
     G("a sign-up from an addon before this one carries the class's own"))
   GUILD = { { game == "forever" and "Dee" or "Dee-Realm", "PRIEST" } }
-  BRutus.db.members[BRutus:GetPlayerKey("Dee")] = { class = "DRUID" }   -- what Dee's own broadcast claimed
+  GuildOS.db.members[GuildOS:GetPlayerKey("Dee")] = { class = "DRUID" }   -- what Dee's own broadcast claimed
   handlers["core.signup"]({ data = { coreName = "Main", info = { class = "DRUID", role = "tank" } } }, "Dee")
-  local dee = CM:GetSignups("Main")[BRutus:GetPlayerKey("Dee")]
+  local dee = CM:GetSignups("Main")[GuildOS:GetPlayerKey("Dee")]
   check(dee.class == "PRIEST" and dee.role == CM.CLASS_DEFAULT_ROLE.PRIEST,
     G("a sender on the guild roster is the class the server says, whatever the payload or their own data claim"))
   GUILD = {}
   handlers["core.signup"]({ data = { coreName = "Main", info = { role = "tank" } } }, "Eve")
-  local eve = CM:GetSignups("Main")[BRutus:GetPlayerKey("Eve")]
+  local eve = CM:GetSignups("Main")[GuildOS:GetPlayerKey("Eve")]
   check(eve.class == "WARRIOR" and eve.role == "tank", G("no class anywhere is a warrior, with a role a warrior can play"))
   handlers["core.signup"]({ data = { coreName = "Main", info = { class = {}, role = {} } } }, "Fay")
-  local fay = CM:GetSignups("Main")[BRutus:GetPlayerKey("Fay")]
+  local fay = CM:GetSignups("Main")[GuildOS:GetPlayerKey("Fay")]
   check(fay.class == "WARRIOR" and fay.role == CM.CLASS_DEFAULT_ROLE.WARRIOR, G("a class or role that is not a string is neither"))
-  CM:AcceptSignup(BRutus:GetPlayerKey("Ann"), "Main")
-  check(BRutus.db.cores.Main.members[BRutus:GetPlayerKey("Ann")].role == "tank", G("accepted, the picked role is the roster's"))
+  CM:AcceptSignup(GuildOS:GetPlayerKey("Ann"), "Main")
+  check(GuildOS.db.cores.Main.members[GuildOS:GetPlayerKey("Ann")].role == "tank", G("accepted, the picked role is the roster's"))
 
   -- ── The window ─────────────────────────────────────────────────────────
   CLASS = "PRIEST"
@@ -177,7 +177,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   CM:Create("Zed")
   local sent
   CM.BroadcastSignup = function(_, core, note, role) sent = { core = core, note = note, role = role } end
-  BRutus:ShowCoreSignupFrame()
+  GuildOS:ShowCoreSignupFrame()
   local frame
   for _, w in ipairs(made) do if rawget(w, "roleBtns") then frame = w end end
   check(frame and frame.roleBtns.healer and frame.roleBtns.rdps and not frame.roleBtns.tank and not frame.roleBtns.mdps,
@@ -234,7 +234,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   CLASS = "DRUID"
   CM = load(game)
   CM:Create("Main")
-  BRutus:ShowCoreSignupFrame()
+  GuildOS:ShowCoreSignupFrame()
   frame = nil
   for _, w in ipairs(made) do if rawget(w, "roleBtns") then frame = w end end
   local b = frame.roleBtns
@@ -261,7 +261,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   CLASS = "MAGE"
   CM = load(game)
   CM:Create("Main")
-  BRutus:ShowCoreSignupFrame()
+  GuildOS:ShowCoreSignupFrame()
   frame = nil
   for _, w in ipairs(made) do if rawget(w, "roleBtns") then frame = w end end
   check(frame and next(frame.roleBtns) == nil, G("a mage, who has one role, gets no buttons"))

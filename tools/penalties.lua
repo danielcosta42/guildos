@@ -40,8 +40,8 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Modules/CoreManager.lua")
 dofile(ADDON .. "/Modules/RaidTracker.lua")
-local CM, RT = BRutus.CoreManager, BRutus.RaidTracker
-BRutus.db = { cores = {}, raidTracker = { sessions = {}, attendance = {} } }
+local CM, RT = GuildOS.CoreManager, GuildOS.RaidTracker
+GuildOS.db = { cores = {}, raidTracker = { sessions = {}, attendance = {} } }
 
 local function same(p, late, early, dry)
   return p.LATE == late and p.LEFT_EARLY == early and p.NO_CONSUMES == dry
@@ -52,7 +52,7 @@ check(same(CM:GetPenalties(""), 10, 10, 10), "out of the box a raid outside a co
 check(same(RT:GetPenalties(""), 10, 10, 10), "and the tracker reads the same")
 CM:SetPenalty("LATE", 0, "")
 check(same(CM:GetPenalties(""), 0, 10, 10), "a raid outside a core can have its own weights")
-check(BRutus.db.attendancePenalties.LATE == 0, "kept by CoreManager, outside the raid tracker's data")
+check(GuildOS.db.attendancePenalties.LATE == 0, "kept by CoreManager, outside the raid tracker's data")
 CM:SetPenalty("NO_CONSUMES", 250, "")
 CM:SetPenalty("LEFT_EARLY", -5, "")
 check(same(CM:GetPenalties(""), 0, 0, 100), "a weight is held between 0 and 100")
@@ -73,7 +73,7 @@ local function night(start)
            snapshots = { { time = start, members = { ["On-Realm"] = { hasConsumes = true } } },
                          { time = start + 3600, members = members } } }
 end
-BRutus.db.raidTracker.sessions = { [1789000000] = night(1789000000) }
+GuildOS.db.raidTracker.sessions = { [1789000000] = night(1789000000) }
 for _, k in ipairs({ "LATE", "LEFT_EARLY", "NO_CONSUMES" }) do CM:SetPenalty(k, 0, "") end
 RT:RebuildAttendanceFromSessions()
 check(RT:GetAttendance25ManPercent("Late-Realm", "") == 100, "with every weight at 0, arriving late costs nothing")

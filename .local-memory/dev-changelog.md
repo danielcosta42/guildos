@@ -1,4 +1,4 @@
-# BRutus — Dev Changelog (Local)
+# GuildOS — Dev Changelog (Local)
 
 _Este arquivo registra o progresso de desenvolvimento local — não vai para o git._
 _Para o changelog público, ver `CHANGELOG.md`._
@@ -21,7 +21,7 @@ Sessão dedicada à análise completa da codebase antes de qualquer refatoraçã
 - `dataflows.md` — 9 fluxos de dados documentados com diagramas ASCII
 - `sync-architecture.md` — Estado atual do CommSystem, plano de migração para SyncService
 - `sync-protocol.md` — Wire format v1 e v2, validação de envelope, chunking, deduplicação
-- `storage-architecture.md` — Mapa de acessos a BRutus.db, schema atual e alvo, Repositories
+- `storage-architecture.md` — Mapa de acessos a GuildOS.db, schema atual e alvo, Repositories
 - `memory-management.md` — Distinção Lua memory vs SavedVars, riscos de timers e frames
 - `module-boundaries.md` — Responsabilidades por módulo, violações atuais, grafo de dependências
 - `ui-architecture.md` — Hierarquia de frames, Helpers.lua C table, padrões visuais
@@ -39,14 +39,14 @@ Sessão dedicada à análise completa da codebase antes de qualquer refatoraçã
 ### Problemas Arquiteturais Identificados
 
 **🔴 Críticos:**
-1. `BRutus.db` acessado diretamente por todos os módulos (sem Storage layer)
+1. `GuildOS.db` acessado diretamente por todos os módulos (sem Storage layer)
 2. Magic strings de sync ("WL", "LP", "ON", "RC", "TR") não em `MSG_TYPES` — protocolo não auditável
 3. Sem versionamento no envelope de sync — risco de corrupção de dados em atualizações
 4. `Core.lua` tem 6+ responsabilidades — namespace, DB defaults, lifecycle, utils, State, Compat
 
 **🟡 Importantes:**
 5. `CommSystem:Initialize()` usa `C_Timer.NewTicker` direto (viola ADR-0003/Compat)
-6. `UI/MemberDetail.lua` e `UI/FeaturePanels.lua` escrevem `BRutus.db` diretamente
+6. `UI/MemberDetail.lua` e `UI/FeaturePanels.lua` escrevem `GuildOS.db` diretamente
 7. `LootMaster.lua` mistura UI + lógica de negócio (~700 linhas)
 8. Sem Repository layer — lógica de persistência espalhada
 9. Sem EventBus interno — UI não pode reagir a eventos sem polling ou acoplamento direto
@@ -65,7 +65,7 @@ C:\Users\danie\bin\luacheck.exe . --config .luacheckrc
 
 ### Próximos Passos
 Ver `refactor-plan.md` para o plano de 8 fases.
-**Fase 2** é a próxima: StorageService + Repositories, migrar `BRutus.db` para acesso controlado.
+**Fase 2** é a próxima: StorageService + Repositories, migrar `GuildOS.db` para acesso controlado.
 
 ---
 
@@ -84,7 +84,7 @@ Descrição em 2-3 linhas do que foi feito.
 ## 2025-01-27 — Fase 1 Refatoração: Config.lua Central
 
 ### Resumo
-Criação de `Config.lua` com todos os constants centralizados em `BRutus.Config.*`.
+Criação de `Config.lua` com todos os constants centralizados em `GuildOS.Config.*`.
 Substituição de magic numbers em `CommSystem.lua` e `Core.lua`.
 Fix de dois bugs: `C_Timer` usado diretamente em CommSystem (deve usar Compat).
 
@@ -92,9 +92,9 @@ Fix de dois bugs: `C_Timer` usado diretamente em CommSystem (deve usar Compat).
 - `Config.lua` — fonte única de truth para todas as constants do addon
 
 ### Arquivos Modificados
-- `BRutus.toc` — inserção de `Config.lua` após `Core.lua`
-- `CommSystem.lua` — CHUNK_SIZE e THROTTLE_INTERVAL referenciam BRutus.Config; C_Timer → Compat
-- `Core.lua` — STALE_THRESHOLD local removido; referencia BRutus.Config.LIMITS.STALE_PROFESSION_THRESHOLD
+- `GuildOS.toc` — inserção de `Config.lua` após `Core.lua`
+- `CommSystem.lua` — CHUNK_SIZE e THROTTLE_INTERVAL referenciam GuildOS.Config; C_Timer → Compat
+- `Core.lua` — STALE_THRESHOLD local removido; referencia GuildOS.Config.LIMITS.STALE_PROFESSION_THRESHOLD
 
 ### Constants Centralizadas
 - Identidade: ADDON_NAME, VERSION, COMM_VERSION, PREFIX, SAVED_VARIABLES
@@ -106,11 +106,11 @@ Fix de dois bugs: `C_Timer` usado diretamente em CommSystem (deve usar Compat).
 - DB_SCHEMA_VERSION: 2
 
 ### Bug Fixes
-- CommSystem.Initialize(): `C_Timer.NewTicker(300, ...)` → `BRutus.Compat.NewTicker(Config.SYNC_TICKER_INTERVAL, ...)`
-- CommSystem.Initialize(): `C_Timer.After(5/10, ...)` → `BRutus.Compat.After(Config.OFFICER_SYNC_DELAY_1/2, ...)`
-- CommSystem.Initialize(): `C_Timer.After(8, ...)` → `BRutus.Compat.After(Config.INIT_REQUEST_DELAY, ...)`
-- CommSystem.SendMessage(): `C_Timer.After((i-1)*0.1, ...)` → `BRutus.Compat.After(...*Config.CHUNK_DELAY, ...)`
-- CommSystem.OnMessageReceived(): `C_Timer.After(30, ...)` → `BRutus.Compat.After(Config.CHUNK_TIMEOUT, ...)`
+- CommSystem.Initialize(): `C_Timer.NewTicker(300, ...)` → `GuildOS.Compat.NewTicker(Config.SYNC_TICKER_INTERVAL, ...)`
+- CommSystem.Initialize(): `C_Timer.After(5/10, ...)` → `GuildOS.Compat.After(Config.OFFICER_SYNC_DELAY_1/2, ...)`
+- CommSystem.Initialize(): `C_Timer.After(8, ...)` → `GuildOS.Compat.After(Config.INIT_REQUEST_DELAY, ...)`
+- CommSystem.SendMessage(): `C_Timer.After((i-1)*0.1, ...)` → `GuildOS.Compat.After(...*Config.CHUNK_DELAY, ...)`
+- CommSystem.OnMessageReceived(): `C_Timer.After(30, ...)` → `GuildOS.Compat.After(Config.CHUNK_TIMEOUT, ...)`
 
 ### Status do Luacheck
 ```
@@ -118,7 +118,7 @@ Fix de dois bugs: `C_Timer` usado diretamente em CommSystem (deve usar Compat).
 ```
 
 ### Próximos Passos
-**Fase 2**: Storage.lua — camada de acesso controlado ao BRutus.db
+**Fase 2**: Storage.lua — camada de acesso controlado ao GuildOS.db
 - outro.lua: descrição da mudança
 
 ### Testes

@@ -1,4 +1,4 @@
-# BRutus — Agent Memory
+# GuildOS — Agent Memory
 
 > **DIRETIVA PRINCIPAL**: Antes de qualquer tarefa que toque `.lua`, leia os arquivos nesta pasta.
 > Eles contêm o mapa completo do projeto, regras de código, decisões de arquitetura e o catálogo de funções.
@@ -53,12 +53,12 @@ PHASE 3 — WRITE (implementar e validar)
 
 | Tópico | Detalhe |
 |---|---|
-| Global único | `BRutus` — todos os módulos como sub-tabelas |
-| State (runtime) | `BRutus.State.*` — nunca persiste |
-| Storage (persistente) | `BRutus.db.*` — via `BRutusDB[guildKey]` |
-| Configurações | `BRutus:GetSetting(key)` / `BRutus:SetSetting(key, value)` |
-| Compatibilidade | `BRutus.Compat.*` — nunca chamar `C_ChatInfo`, `C_Timer` etc. diretamente |
-| Logger | `BRutus.Logger.Debug/Info/Warn` — sem `print()` direto |
+| Global único | `GuildOS` — todos os módulos como sub-tabelas |
+| State (runtime) | `GuildOS.State.*` — nunca persiste |
+| Storage (persistente) | `GuildOS.db.*` — via `GuildOSDB[guildKey]` |
+| Configurações | `GuildOS:GetSetting(key)` / `GuildOS:SetSetting(key, value)` |
+| Compatibilidade | `GuildOS.Compat.*` — nunca chamar `C_ChatInfo`, `C_Timer` etc. diretamente |
+| Logger | `GuildOS.Logger.Debug/Info/Warn` — sem `print()` direto |
 | luacheck | `C:\Users\danie\bin\luacheck.exe . --config .luacheckrc` |
 | Commit format | Conventional Commits: `feat:`, `fix:`, `refactor:`, `chore:`, etc. |
 | CurseForge | Projeto ID 1549177, BCC client |

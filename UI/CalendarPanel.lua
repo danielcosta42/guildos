@@ -8,16 +8,16 @@
 -- Time basis: the client's date()/time() used consistently (assumes the guild
 -- shares one timezone, which is the normal case).
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
-local function CAL() return BRutus.Calendar end
+local function CAL() return GuildOS.Calendar end
 
 local WEEKDAYS = { L["Sun"], L["Mon"], L["Tue"], L["Wed"], L["Thu"], L["Fri"], L["Sat"] }
 local ROLES    = { "TANK", "HEALER", "DPS" }
-local SIZES    = BRutus.Client.raidSizes   -- the game's: 10/25/40 on TBC, 10/20/40 on Forever (#92)
-local DEFAULT_SIZE = BRutus.Client.defaultRaidSize
+local SIZES    = GuildOS.Client.raidSizes   -- the game's: 10/25/40 on TBC, 10/20/40 on Forever (#92)
+local DEFAULT_SIZE = GuildOS.Client.defaultRaidSize
 
 local COLS, ROWS = 7, 6
 local CELL_H  = 44
@@ -102,7 +102,7 @@ local function buildEditor()
         box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         box:SetBackdropColor(0.05, 0.05, 0.066, 1)
         box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        BRutus:ApplyFont(box, 11)
+        GuildOS:ApplyFont(box, 11)
         box:SetTextColor(C.white.r, C.white.g, C.white.b)
         box:SetTextInsets(6, 6, multiline and 4 or 0, 0)
         box:SetAutoFocus(false)
@@ -152,7 +152,7 @@ local function buildEditor()
             p:SetPoint("TOPLEFT", 14 + (i - 1) * 55, -98)
             p:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             local fs = p:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(fs, 10)
+            GuildOS:ApplyFont(fs, 10)
             fs:SetPoint("CENTER"); fs:SetText(kindLabel(k))
             p.fs = fs; p.kind = k
             p:SetScript("OnClick", function() f.kind = k; refreshKinds() end)
@@ -185,13 +185,13 @@ local function buildEditor()
 
     local function commit()
         local y, m, d = parseDate(dateBox:GetText())
-        if not y then BRutus:Print(L["Enter a date as YYYY-MM-DD."]); return end
+        if not y then GuildOS:Print(L["Enter a date as YYYY-MM-DD."]); return end
         local hh, mm = parseTime(timeBox:GetText())
-        if not hh then BRutus:Print(L["Enter a time as HH:MM."]); return end
+        if not hh then GuildOS:Print(L["Enter a time as HH:MM."]); return end
         local title = strtrim(titleBox:GetText() or "")
-        if title == "" then BRutus:Print(L["An event needs a title and a date/time."]); return end
+        if title == "" then GuildOS:Print(L["An event needs a title and a date/time."]); return end
         local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
-        local inAlliance = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
+        local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         local share = inAlliance and shareCb.checkbox:GetChecked() or nil
         if f.editId then
             CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "",
@@ -222,7 +222,7 @@ local function buildEditor()
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
             hh, mm, size, title, note = 20, 0, DEFAULT_SIZE, "", ""
         end
-        local inAlliance = BRutus.Alliance and BRutus.Alliance:Get() ~= nil
+        local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         shareCb:SetShown(inAlliance)
         shareHint:SetShown(inAlliance)
         f:SetHeight(inAlliance and 392 or 336)
@@ -265,7 +265,7 @@ end
 ----------------------------------------------------------------------
 -- Build the calendar into a Guild-hub sub-panel; return its refresh fn.
 ----------------------------------------------------------------------
-function BRutus:CreateCalendarSub(panel)
+function GuildOS:CreateCalendarSub(panel)
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
@@ -292,10 +292,10 @@ function BRutus:CreateCalendarSub(panel)
         local cell = CreateFrame("Button", nil, f, "BackdropTemplate")
         cell:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         cell.dayFS = cell:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(cell.dayFS, 11)
+        GuildOS:ApplyFont(cell.dayFS, 11)
         cell.dayFS:SetPoint("TOPLEFT", 4, -3)
         cell.evtFS = cell:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(cell.evtFS, 9)
+        GuildOS:ApplyFont(cell.evtFS, 9)
         cell.evtFS:SetPoint("BOTTOMLEFT", 3, 3)
         cell.evtFS:SetPoint("BOTTOMRIGHT", -3, 3)
         cell.evtFS:SetJustifyH("LEFT"); cell.evtFS:SetWordWrap(false)
@@ -404,7 +404,7 @@ function BRutus:CreateCalendarSub(panel)
     -- Detail for the selected day
     ------------------------------------------------------------------
     function f.RenderDetail(byDay)
-        local isOfficer = BRutus:IsOfficer()
+        local isOfficer = GuildOS:IsOfficer()
         local sel = f.selectedKey
         if sel then
             local y = math.floor(sel / 10000); local m = math.floor((sel % 10000) / 100); local d = sel % 100
@@ -489,7 +489,7 @@ function BRutus:CreateCalendarSub(panel)
             local going = {}
             for _, r in pairs(e.rsvps or {}) do
                 if r.status == "yes" then
-                    local cr, cg, cb = BRutus:GetClassColor(r.class)
+                    local cr, cg, cb = GuildOS:GetClassColor(r.class)
                     going[#going + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, r.name or "?")
                 end
             end
@@ -508,7 +508,7 @@ function BRutus:CreateCalendarSub(panel)
                 hdr:SetPoint("TOPLEFT", 6, -yy)
                 yy = yy + 16
                 for _, p in ipairs(pending) do
-                    local cr, cg, cb = BRutus:GetClassColor(p.class)
+                    local cr, cg, cb = GuildOS:GetClassColor(p.class)
                     local line = string.format("|cff%02x%02x%02x%s|r  %s  %s  |cff888888%s|r",
                         cr * 255, cg * 255, cb * 255, p.name or "?",
                         p.level and tostring(p.level) or "", roleLabel(p.role), p.guild or "?")
@@ -579,8 +579,8 @@ function BRutus:CreateCalendarSub(panel)
     end
 
     -- Live-refresh while visible as synced events/RSVPs arrive.
-    if BRutus.Calendar then
-        BRutus.Calendar.uiRefresh = function() if panel:IsShown() then f.Render() end end
+    if GuildOS.Calendar then
+        GuildOS.Calendar.uiRefresh = function() if panel:IsShown() then f.Render() end end
     end
 
     return f.Render
@@ -589,6 +589,6 @@ end
 ----------------------------------------------------------------------
 -- Entry point (command): open the roster on the Guild hub's Calendar sub-tab.
 ----------------------------------------------------------------------
-function BRutus:ShowCalendar()
-    BRutus.UI:OpenWindow("guild", "calendar")
+function GuildOS:ShowCalendar()
+    GuildOS.UI:OpenWindow("guild", "calendar")
 end

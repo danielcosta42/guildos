@@ -1,4 +1,4 @@
-# WoW Addon Engineering Standards — BRutus
+# WoW Addon Engineering Standards — GuildOS
 
 _Last updated: 2026-04-26_
 
@@ -7,29 +7,29 @@ _Last updated: 2026-04-26_
 - Performance matters more than feature count.
 - Architecture must be modular, predictable, and easy to extend.
 - **UI must never own business logic.**
-- Game API differences must be isolated in `BRutus.Compat`.
-- `BRutus.db` (SavedVariables) is persistent storage — `BRutus.State` is session state.
+- Game API differences must be isolated in `GuildOS.Compat`.
+- `GuildOS.db` (SavedVariables) is persistent storage — `GuildOS.State` is session state.
 
 ---
 
 ## Rule 1 — Single Namespace
 
 ```lua
--- Good: attach to BRutus namespace
+-- Good: attach to GuildOS namespace
 local MyModule = {}
-BRutus.MyModule = MyModule
+GuildOS.MyModule = MyModule
 
 -- Bad: random globals
 MyFunction = function() end
 SomeTable = {}
 ```
 
-- The only global this addon creates is `BRutus`.
-- All sub-modules attach as `BRutus.ModuleName`.
+- The only global this addon creates is `GuildOS`.
+- All sub-modules attach as `GuildOS.ModuleName`.
 - Inside each file, alias to a local for readability:
   ```lua
   local MyModule = {}
-  BRutus.MyModule = MyModule
+  GuildOS.MyModule = MyModule
   -- ... use MyModule:Fn() throughout the file
   ```
 
@@ -39,7 +39,7 @@ SomeTable = {}
 
 | Module | Owns |
 |---|---|
-| `Core.lua` | BRutus namespace, DB bootstrap, Logger, Compat, State, Config, utilities |
+| `Core.lua` | GuildOS namespace, DB bootstrap, Logger, Compat, State, Config, utilities |
 | `CommSystem.lua` | Addon message encode/chunk/send/receive/route |
 | `UI/Helpers.lua` | ALL visual widgets + theme (until Theme/Core split) |
 | Data modules | One feature domain each — no UI, no comm internals |
@@ -52,26 +52,26 @@ No module may mix UI logic, storage, and game-event handling.
 ## Rule 3 — One-Way Data Flow
 
 ```
-Game Events/API → Event handlers → Data Modules → BRutus.db / BRutus.State → UI reads
+Game Events/API → Event handlers → Data Modules → GuildOS.db / GuildOS.State → UI reads
 ```
 
-- UI reads `BRutus.db.*` and `BRutus.State.*` — never writes directly.
-- UI callbacks call module methods (e.g. `BRutus.RaidTracker:SetGroupTag(name)`).
-- Module methods own all writes to `BRutus.db.*`.
+- UI reads `GuildOS.db.*` and `GuildOS.State.*` — never writes directly.
+- UI callbacks call module methods (e.g. `GuildOS.RaidTracker:SetGroupTag(name)`).
+- Module methods own all writes to `GuildOS.db.*`.
 
 ---
 
-## Rule 4 — Compatibility Layer (`BRutus.Compat`)
+## Rule 4 — Compatibility Layer (`GuildOS.Compat`)
 
-All version-sensitive calls go through `BRutus.Compat`:
+All version-sensitive calls go through `GuildOS.Compat`:
 
 ```lua
-BRutus.Compat.RegisterAddonPrefix(prefix)  -- guards C_ChatInfo.*
-BRutus.Compat.GuildRoster()                -- guards C_GuildInfo vs GuildRoster()
-BRutus.Compat.IsQuestComplete(questId)     -- guards C_QuestLog.*
-BRutus.Compat.After(delay, fn)             -- guards C_Timer.After
-BRutus.Compat.NewTicker(interval, fn, n)   -- guards C_Timer.NewTicker
-BRutus.Compat.NewTimer(delay, fn)          -- guards C_Timer.NewTimer
+GuildOS.Compat.RegisterAddonPrefix(prefix)  -- guards C_ChatInfo.*
+GuildOS.Compat.GuildRoster()                -- guards C_GuildInfo vs GuildRoster()
+GuildOS.Compat.IsQuestComplete(questId)     -- guards C_QuestLog.*
+GuildOS.Compat.After(delay, fn)             -- guards C_Timer.After
+GuildOS.Compat.NewTicker(interval, fn, n)   -- guards C_Timer.NewTicker
+GuildOS.Compat.NewTimer(delay, fn)          -- guards C_Timer.NewTimer
 ```
 
 Never scatter `if C_SomeAPI then` checks across feature modules.
@@ -87,7 +87,7 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:SetScript("OnEvent", function() ... end)
 
 -- Good: module registers via the framework's event frame or its own Initialize()
--- (BRutus does not yet have a centralized Events pub/sub — see decisions.md ADR-0006)
+-- (GuildOS does not yet have a centralized Events pub/sub — see decisions.md ADR-0006)
 -- Until that exists: one event frame per module, created inside Initialize()
 ```
 
@@ -96,14 +96,14 @@ f:SetScript("OnEvent", function() ... end)
 ## Rule 6 — State vs Storage Separation
 
 ```lua
--- Session-only (reset on /reload) → BRutus.State
-BRutus.State.lootMaster.activeLoot = item
+-- Session-only (reset on /reload) → GuildOS.State
+GuildOS.State.lootMaster.activeLoot = item
 
--- Persistent → BRutus.db (via the owning module's method)
-BRutus.LootTracker:RecordLoot(item)  -- internally writes BRutus.db.lootHistory
+-- Persistent → GuildOS.db (via the owning module's method)
+GuildOS.LootTracker:RecordLoot(item)  -- internally writes GuildOS.db.lootHistory
 ```
 
-Never persist `BRutus.State.*` fields. Never use `BRutus.db.*` for runtime-only flags.
+Never persist `GuildOS.State.*` fields. Never use `GuildOS.db.*` for runtime-only flags.
 
 ---
 
@@ -111,8 +111,8 @@ Never persist `BRutus.State.*` fields. Never use `BRutus.db.*` for runtime-only 
 
 ```lua
 -- Always initialize with defaults
-BRutusDB = BRutusDB or {}
-local db  = BRutusDB[guildKey] or {}
+GuildOSDB = GuildOSDB or {}
+local db  = GuildOSDB[guildKey] or {}
 db.version = db.version or 1
 ```
 
@@ -125,25 +125,25 @@ db.version = db.version or 1
 ## Rule 8 — Configuration Accessors
 
 ```lua
-BRutus:GetSetting("showOffline")       -- reads BRutus.db.settings[key]
-BRutus:SetSetting("showOffline", true) -- writes BRutus.db.settings[key]
+GuildOS:GetSetting("showOffline")       -- reads GuildOS.db.settings[key]
+GuildOS:SetSetting("showOffline", true) -- writes GuildOS.db.settings[key]
 ```
 
-Never read/write `BRutus.db.settings.*` directly from UI callbacks. Always go through `GetSetting`/`SetSetting`.
+Never read/write `GuildOS.db.settings.*` directly from UI callbacks. Always go through `GetSetting`/`SetSetting`.
 
 ---
 
 ## Rule 9 — Structured Logger
 
 ```lua
-BRutus.Logger.Debug("msg")   -- only when BRutus.Logger.debug == true
-BRutus.Logger.Info("msg")
-BRutus.Logger.Warn("msg")    -- always prints
+GuildOS.Logger.Debug("msg")   -- only when GuildOS.Logger.debug == true
+GuildOS.Logger.Info("msg")
+GuildOS.Logger.Warn("msg")    -- always prints
 ```
 
 - No `print()` directly.
 - No chat spam.
-- Debug output gated behind `BRutus.Logger.debug`.
+- Debug output gated behind `GuildOS.Logger.debug`.
 
 ---
 
@@ -157,7 +157,7 @@ end)
 
 -- Good: callback is a one-liner delegation to the owning module
 Button:SetScript("OnClick", function()
-    BRutus.LootMaster:StartRoll()
+    GuildOS.LootMaster:StartRoll()
 end)
 ```
 
@@ -216,7 +216,7 @@ local IDLE_THRESHOLD    = 2      -- seconds; gaps > this count as idle (RaidHUD)
 
 ## Rule 14 — Commenting
 
-- Every **public function** (`BRutus.*`) must have a one-line description comment above it.
+- Every **public function** (`GuildOS.*`) must have a one-line description comment above it.
 - Every **compatibility workaround** must explain WHY the fallback exists.
 - Every **magic number** must have an inline comment.
 
@@ -239,9 +239,9 @@ local IDLE_THRESHOLD    = 2      -- seconds; gaps > this count as idle (RaidHUD)
 ## Quick Quality Checklist (before calling task_complete)
 
 - [ ] `local` at file scope — no accidental globals
-- [ ] `BRutus.Compat.*` used for all version-sensitive API calls
-- [ ] No `BRutus.db.settings.*` written directly from UI
+- [ ] `GuildOS.Compat.*` used for all version-sensitive API calls
+- [ ] No `GuildOS.db.settings.*` written directly from UI
 - [ ] No business logic inline in `SetScript` / `OnClick` / `OnEvent`
-- [ ] Session state in `BRutus.State.*`, not as module member vars
+- [ ] Session state in `GuildOS.State.*`, not as module member vars
 - [ ] luacheck: `0 warnings / 0 errors`
 - [ ] `functions-catalog.md` updated if new public functions added

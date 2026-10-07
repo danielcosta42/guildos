@@ -63,7 +63,7 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Probe.lua")
-local Probe = BRutus.Probe
+local Probe = GuildOS.Probe
 
 local function said(text)
   for _, line in ipairs(printed) do
@@ -88,7 +88,7 @@ local function eventsIn(src)
   for e in src:gmatch(EVENT_CALL) do out[#out + 1] = e end
   return out
 end
-check(#eventsIn('f:RegisterEvent("A_B")') == 1 and #eventsIn("BRutus.Compat.RegisterEvent(frames[1], 'X_Y')") == 1
+check(#eventsIn('f:RegisterEvent("A_B")') == 1 and #eventsIn("GuildOS.Compat.RegisterEvent(frames[1], 'X_Y')") == 1
   and #eventsIn('self:RegisterEvent(\n  "Z9")') == 1 and #eventsIn("pcall(frame.RegisterEvent, frame, event)") == 0,
   "the drift scan reads both quote styles, indexed frames and calls split over lines")
 local registered, scanned = {}, 0
@@ -225,7 +225,7 @@ check(#r.missingApis == missing + missingTemplates + 2,  -- 2: OnTooltipSetSpell
 
 check(r.build[1] == "1.60.0" and r.build[2] == "64210" and r.build[3] == "Sep 1 2026" and r.build[4] == 16000,
   "every build field is recorded")
-check(r.projectId == 2 and r.client == BRutus.Client, "the project id and the client are recorded")
+check(r.projectId == 2 and r.client == GuildOS.Client, "the project id and the client are recorded")
 check(r.gameMode[1] == 4, "the game mode is recorded when C_GameRules exists")
 check(r.secrets.issecretvalue == true and r.secrets.C_Secrets == true and r.secrets.C_RestrictedActions == false,
   "each Secret Values API is recorded present or missing")
@@ -327,11 +327,11 @@ check(r.apis.BackdropTemplate == false, "a raising template lookup reads missing
 -- ── 6b. The way Anniversary really answers: the API is there, restrictions are off ──
 issecretvalue, C_Secrets, C_RestrictedActions = nil, { HasSecretRestrictions = function() return false end }, {}
 C_ChatInfo.InChatMessagingLockdown = function() return false end
-local realClient = BRutus.Client
-BRutus.Client = { isAnniversary = true }
+local realClient = GuildOS.Client
+GuildOS.Client = { isAnniversary = true }
 printed = {}
 r = Probe:Run()
-BRutus.Client = realClient
+GuildOS.Client = realClient
 check(r.secrets.issecretvalue == false and r.secrets.C_Secrets == true and r.secrets.C_RestrictedActions == true
   and r.secrets.restricted == false, "C_Secrets present with restrictions off records false, not the API's presence")
 check(said(("TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."):format(

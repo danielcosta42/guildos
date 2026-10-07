@@ -1,27 +1,27 @@
-# BRutus — Architectural Decision Records
+# GuildOS — Architectural Decision Records
 
 _Last updated: 2026-04-26_
 
-Architectural Decision Records (ADRs) for BRutus.
+Architectural Decision Records (ADRs) for GuildOS.
 This is the canonical record of WHY the codebase is structured as it is.
 Add a new ADR whenever you introduce a significant architectural pattern or change.
 
 ---
 
-## ADR-0001 — Single `BRutus` global namespace
+## ADR-0001 — Single `GuildOS` global namespace
 
 ### Context
 WoW addons share a global environment. Name collisions between addons are a real hazard.
 Classic TBC clients do not support modern Lua module systems or table-passing via `...`.
 
 ### Decision
-Create exactly one global: `BRutus`. All modules attach as sub-tables (`BRutus.CommSystem`, `BRutus.UI`, etc.).
+Create exactly one global: `GuildOS`. All modules attach as sub-tables (`GuildOS.CommSystem`, `GuildOS.UI`, etc.).
 `Core.lua` is the only file that creates the global; all other files assume it exists.
 
 ### Consequences
 - (+) One global to audit; no accidental global leakage.
 - (+) Compatible with all WoW Classic client versions.
-- (+) Sub-modules can alias locally: `local RT = BRutus.RaidTracker`.
+- (+) Sub-modules can alias locally: `local RT = GuildOS.RaidTracker`.
 - (−) Modules must be loaded in the correct order. Enforced by `.toc`.
 
 ---
@@ -29,22 +29,22 @@ Create exactly one global: `BRutus`. All modules attach as sub-tables (`BRutus.C
 ## ADR-0002 — Per-guild SavedVariables key
 
 ### Context
-A single BRutus installation may be used on multiple guilds (server transfers, alts in different guilds).
+A single GuildOS installation may be used on multiple guilds (server transfers, alts in different guilds).
 Mixing guild data in a single flat DB would contaminate one guild's data with another's.
 
 ### Decision
-`BRutusDB` uses a `"GuildName-Realm"` key as the top-level partition.
-`BRutus:ResolveGuildDB()` creates or retrieves the guild-specific sub-table and stores it as `BRutus.db`.
-All modules read/write `BRutus.db`, never `BRutusDB` directly.
+`GuildOSDB` uses a `"GuildName-Realm"` key as the top-level partition.
+`GuildOS:ResolveGuildDB()` creates or retrieves the guild-specific sub-table and stores it as `GuildOS.db`.
+All modules read/write `GuildOS.db`, never `GuildOSDB` directly.
 
 ### Consequences
 - (+) Complete data isolation per guild per realm.
 - (+) Migrations only need to handle one sub-table at a time.
-- (−) If a player changes guilds, old guild data remains in `BRutusDB` until cleared manually.
+- (−) If a player changes guilds, old guild data remains in `GuildOSDB` until cleared manually.
 
 ---
 
-## ADR-0003 — Cross-version compatibility layer (`BRutus.Compat`)
+## ADR-0003 — Cross-version compatibility layer (`GuildOS.Compat`)
 
 ### Context
 TBC Anniversary uses a different API surface than progressive Classic or Retail.
@@ -52,7 +52,7 @@ TBC Anniversary uses a different API surface than progressive Classic or Retail.
 Inline version checks scattered across modules would become unmanageable.
 
 ### Decision
-All version-sensitive API calls go through `BRutus.Compat` wrappers (defined in `Core.lua`).
+All version-sensitive API calls go through `GuildOS.Compat` wrappers (defined in `Core.lua`).
 No module other than `Core.lua` may check for `C_ChatInfo`, `C_QuestLog`, etc. directly.
 
 ### Consequences
@@ -78,7 +78,7 @@ All outgoing messages are:
 5. Throttled via ChatThrottleLib to avoid disconnects
 
 Receiving end reassembles chunks (keyed by msgId), then reverses the pipeline.
-`BRutus.State.comm.pendingMessages` holds in-flight chunk sets.
+`GuildOS.State.comm.pendingMessages` holds in-flight chunk sets.
 
 ### Consequences
 - (+) Can send any size payload safely.
@@ -88,7 +88,7 @@ Receiving end reassembles chunks (keyed by msgId), then reverses the pipeline.
 
 ---
 
-## ADR-0005 — Session state in `BRutus.State` (not as module member vars)
+## ADR-0005 — Session state in `GuildOS.State` (not as module member vars)
 
 ### Context
 Early versions stored session state as module-level member vars (e.g. `LootMaster.activeLoot`,
@@ -96,15 +96,15 @@ Early versions stored session state as module-level member vars (e.g. `LootMaste
 with non-persistent data, making it unclear what is saved and what is runtime-only.
 
 ### Decision
-All runtime-only, non-persistent data lives in `BRutus.State` (a table created in `Core.lua`).
-Sub-tables mirror module ownership: `BRutus.State.comm`, `BRutus.State.lootMaster`, etc.
+All runtime-only, non-persistent data lives in `GuildOS.State` (a table created in `Core.lua`).
+Sub-tables mirror module ownership: `GuildOS.State.comm`, `GuildOS.State.lootMaster`, etc.
 Module tables only contain methods and constants.
 
 ### Consequences
-- (+) Clear boundary: `BRutus.db.*` = persisted, `BRutus.State.*` = runtime-only.
+- (+) Clear boundary: `GuildOS.db.*` = persisted, `GuildOS.State.*` = runtime-only.
 - (+) Easier to inspect/reset session state in one place.
 - (+) Module tables are cleaner (methods only).
-- (−) Slightly more verbose access path: `BRutus.State.lootMaster.activeLoot`.
+- (−) Slightly more verbose access path: `GuildOS.State.lootMaster.activeLoot`.
 
 ---
 
@@ -113,12 +113,12 @@ Module tables only contain methods and constants.
 ### Context
 AutoRaidCoach uses a centralized `Events.lua` pub/sub system where all game events route
 through a single frame and modules subscribe with `On(eventName, fn)`.
-BRutus predates this pattern and has event frames scattered across modules.
+GuildOS predates this pattern and has event frames scattered across modules.
 
 ### Decision
-BRutus does NOT yet have a centralized event system.
+GuildOS does NOT yet have a centralized event system.
 Each module creates its own event frame inside `Initialize()` for the events it needs.
-The `BRutus` frame in `Core.lua` handles core events (PLAYER_LOGIN, GUILD_ROSTER_UPDATE, etc.).
+The `GuildOS` frame in `Core.lua` handles core events (PLAYER_LOGIN, GUILD_ROSTER_UPDATE, etc.).
 
 **Future direction**: Extract to a centralized `Events.lua` when the module count grows enough
 to justify the refactor. An ADR will be added at that point.
@@ -131,19 +131,19 @@ to justify the refactor. An ADR will be added at that point.
 
 ---
 
-## ADR-0007 — Config accessors (`BRutus:GetSetting` / `BRutus:SetSetting`)
+## ADR-0007 — Config accessors (`GuildOS:GetSetting` / `GuildOS:SetSetting`)
 
 ### Context
-UI callbacks were directly reading/writing `BRutus.db.settings.*`. This tightly couples UI files
+UI callbacks were directly reading/writing `GuildOS.db.settings.*`. This tightly couples UI files
 to the internal SavedVariables structure and makes future schema migrations harder.
 
 ### Decision
-All reads and writes of `BRutus.db.settings.*` go through:
+All reads and writes of `GuildOS.db.settings.*` go through:
 ```lua
-BRutus:GetSetting(key)        -- reads BRutus.db.settings[key]
-BRutus:SetSetting(key, value) -- writes BRutus.db.settings[key]
+GuildOS:GetSetting(key)        -- reads GuildOS.db.settings[key]
+GuildOS:SetSetting(key, value) -- writes GuildOS.db.settings[key]
 ```
-UI files must use these accessors. Only `Core.lua` accesses `BRutus.db.settings` directly
+UI files must use these accessors. Only `Core.lua` accesses `GuildOS.db.settings` directly
 (to define defaults and implement the accessors).
 
 ### Consequences
@@ -231,7 +231,7 @@ clicks). Confirmed in-client (v0.2.x) and by community sources.
 Therefore `Promote`/`Demote`/`SetRank`/`Kick` do **not** call the restricted
 API. They route to `GuildManager:_protectedNotice()`, which prints a clear
 message and hands the leader off to the native guild panel via
-`BRutus._origToggleGuildFrame` (captured in `Core:HookGuildFrame`). The
+`GuildOS._origToggleGuildFrame` (captured in `Core:HookGuildFrame`). The
 "intelligence" (inactivity report, promotion/trial suggestions) and the
 non-protected actions (`SetMOTD`, `SetGuildInfo`, trial approve/deny) run
 in-addon as normal.
@@ -246,7 +246,7 @@ in-addon as normal.
 
 ---
 
-## ADR-0011 — Localization (`BRutus.L`, English-key, metatable fallback)
+## ADR-0011 — Localization (`GuildOS.L`, English-key, metatable fallback)
 
 ### Context
 The addon was originally Brazilian Portuguese with strings hardcoded and mixed
@@ -255,11 +255,11 @@ with English as the default and additional languages.
 
 ### Decision
 Add a lightweight localization layer (no Ace/LibStub dependency):
-- `Locales/Locale.lua` creates `BRutus.L = setmetatable({}, { __index = function(_, k) return k end })`.
+- `Locales/Locale.lua` creates `GuildOS.L = setmetatable({}, { __index = function(_, k) return k end })`.
   Keys are the **canonical English strings used directly in source** (`L["Roster"]`),
   so a missing translation falls back to readable English (never nil, no symbolic
-  key leakage). `BRutus.Locale = GetLocale()`.
-- Loaded **right after `Config.lua`** (before any file that aliases `local L = BRutus.L`).
+  key leakage). `GuildOS.Locale = GetLocale()`.
+- Loaded **right after `Config.lua`** (before any file that aliases `local L = GuildOS.L`).
 - One data file per locale: `enUS.lua` is a stub (English implicit via metatable);
   `ptBR.lua`, `esES.lua` (esES+esMX), `deDE.lua`, `frFR.lua` early-return unless
   `GetLocale()` matches, then assign `L["English key"] = "translation"`.
@@ -285,16 +285,16 @@ Add a lightweight localization layer (no Ace/LibStub dependency):
 
 ### Context
 WoW: Forever (beta 2026-09-17) is a new client whose API surface is unknown until it opens.
-`BRutus:InitModules` called ~50 `Initialize()` functions in sequence with no isolation, so one
+`GuildOS:InitModules` called ~50 `Initialize()` functions in sequence with no isolation, so one
 missing API made one module raise and left every later module unstarted. `RegisterEvent` on an
 event the client does not know and `HookScript` on a tooltip script the frame lacks raise too.
 
 ### Decision
 - Start-up is a list (`MODULE_START`, `OFFICER_START` in `Core.lua`) run through
-  `BRutus:RunStartup`, which `xpcall`s each step (keeping the stack) and records the failure against the module and
+  `GuildOS:RunStartup`, which `xpcall`s each step (keeping the stack) and records the failure against the module and
   the feature/window it backs. Failed windows refuse to open with a message.
-- Events are registered through `BRutus.Compat.RegisterEvent`, tooltip scripts hooked through
-  `BRutus.Compat.HookTooltip`; a miss is recorded once in `State.missing`.
+- Events are registered through `GuildOS.Compat.RegisterEvent`, tooltip scripts hooked through
+  `GuildOS.Compat.HookTooltip`; a miss is recorded once in `State.missing`.
 - Failures and misses land in the `/guildos errors` ring; one login line appears only when
   there was at least one.
 - Exceptions: the `Core.lua` bootstrap frame, `ChehulNet.lua` (shared verbatim across addons)
@@ -313,15 +313,15 @@ event the client does not know and `HookScript` on a tooltip script the frame la
 
 ### Context
 The "Obsidian" theme (violet accent, champagne gold, FRIZQT everywhere) matched neither guildos.me
-nor WoW: Forever. About 2,000 call sites read `BRutus.Colors`, and 242 `SetFont` calls used
+nor WoW: Forever. About 2,000 call sites read `GuildOS.Colors`, and 242 `SetFont` calls used
 `Fonts\\FRIZQT__.TTF`.
 
 ### Decision
-- `BRutus.Colors` carries the 17 tokens from the design handoff. The legacy keys the screens read
+- `GuildOS.Colors` carries the 17 tokens from the design handoff. The legacy keys the screens read
   stay, each a copy of the token that plays its role, so the whole UI re-skins without touching its
   call sites. Gold is the only accent and the only colour allowed as a background; violet only means
   epic quality. The accent picker (`ACCENT_PRESETS`, `ApplyTheme`) is removed.
-- Four OFL fonts ship in `Media/Fonts`. Every font goes through `BRutus:ApplyFont`, which enforces
+- Four OFL fonts ship in `Media/Fonts`. Every font goes through `GuildOS:ApplyFont`, which enforces
   serif only from 14px, mono clamped to 10px and no outline. CI rejects `FRIZQT__` in Lua.
 
 ### Consequences
@@ -343,13 +343,13 @@ but carries none of the TBC content, and `WOW_PROJECT_ID` has no Forever value y
 would be a guess, and a guess that reads "retail" would be worse than none.
 
 ### Decision
-- `BRutus.Client` in `Core/Compat.lua`, computed once at load: the `GetBuildInfo` fields, `projectId` for
+- `GuildOS.Client` in `Core/Compat.lua`, computed once at load: the `GetBuildInfo` fields, `projectId` for
   diagnostics, `isAnniversary` and the `has` capability flags (`secrets`, `chatLockdown`, `tradeSkillUI`,
   `tooltipData`, `guildSetNote`).
 - `isAnniversary` needs both `WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC` and an interface in
   20500–29999. Everything else, an unknown client included, is "not Anniversary". There is no flavour field.
 - TBC content is absent outside Anniversary rather than disabled: `AttunementTracker.lua` and
-  `ConsumableChecker.lua` return before defining their global, so every existing `if BRutus.X then` guard
+  `ConsumableChecker.lua` return before defining their global, so every existing `if GuildOS.X then` guard
   reads it as missing. Registry features, audit sub-tabs and the TBC-only raid cooldowns in Raid Tools
   (Bloodlust/Heroism, Misdirection) carry `tbc = true`. The raid cooldown HUD (never created, combat log
   never registered), the member detail attunement section and the wishlist raid catalogue check
@@ -414,7 +414,7 @@ Entry points opened different ones, the Leadership deep links the hub sent were 
 Forever handoff (§6) specifies one window that reorganises by width.
 
 ### Decision
-- One window, `BRutus.RosterFrame` (frame `GuildOSWindow`), built in `UI/Window.lua`. Every registry feature
+- One window, `GuildOS.RosterFrame` (frame `GuildOSWindow`), built in `UI/Window.lua`. Every registry feature
   with `tab` is a tab, and its panel builds the first time the tab opens. The registry's `hub` flag, the
   per-feature window sizes and the window stacking code are gone.
 - One way in: `UI:OpenWindow(id, sub, filter)` and `UI:ToggleMain()`. The slash commands, the minimap, the guild-frame
@@ -482,8 +482,8 @@ key rule raised on a nil realm, several places built keys by hand and raised too
 back to "" in some places and "Unknown" in others, which split one member across keys that never meet.
 
 ### Decision
-- `BRutus:GetPlayerKey(name, realm)` is the only rule. An empty realm counts as absent and falls back to the
-  client's realm (`BRutus:GetClientRealm()`): `GetRealmName()`, else `GetNormalizedRealmName()`; an empty answer
+- `GuildOS:GetPlayerKey(name, realm)` is the only rule. An empty realm counts as absent and falls back to the
+  client's realm (`GuildOS:GetClientRealm()`): `GetRealmName()`, else `GetNormalizedRealmName()`; an empty answer
   counts as absent too.
 - With a realm the key stays `name .. "-" .. realm`. Without one it is the name alone, not "Name-".
 - Every hand-built member key goes through the rule. PugInspector's pure classifier applies it inline.
@@ -507,7 +507,7 @@ back to "" in some places and "Unknown" in others, which split one member across
 
 **Amendment (issue #95).** On WoW: Forever the realm a caller passes is ignored and the client's own is used: Forever has no realms that set players apart, yet a guild's clients answer different `GetRealmName()` values (the beta's "Classic Beta PvE" and "Classic Beta PvE 2"), and a broadcast keyed with its sender's realm never met the receiver's roster line. Keys still agree only within a client: a key built by another client and carried inside a payload must be localized on receipt.
 
-**Amendment (issue #97).** It is: `BRutus:LocalMemberKey` rebuilds a carried key from its name (Forever names hold no hyphen, so the name is what comes before the first one), and every receive path that takes a member key out of a payload goes through it, while the sign-up is filed under its envelope's sender rather than any key the payload names. Two of the sender's keys that turn out to be one member are settled by that table's own merge, which only ever sees two records; a value that is not a record never replaces one. What an earlier version stored that way is rekeyed by `LocalizeStoredMemberTables` once per database, each table under its own `SafeCall` so bad stored data in one neither stops start-up nor leaves the others behind. The alliance bridge hashes the name alone on Forever, so clients on different realms elect the same one. Anniversary keys pass through untouched: there a realm is part of who somebody is.
+**Amendment (issue #97).** It is: `GuildOS:LocalMemberKey` rebuilds a carried key from its name (Forever names hold no hyphen, so the name is what comes before the first one), and every receive path that takes a member key out of a payload goes through it, while the sign-up is filed under its envelope's sender rather than any key the payload names. Two of the sender's keys that turn out to be one member are settled by that table's own merge, which only ever sees two records; a value that is not a record never replaces one. What an earlier version stored that way is rekeyed by `LocalizeStoredMemberTables` once per database, each table under its own `SafeCall` so bad stored data in one neither stops start-up nor leaves the others behind. The alliance bridge hashes the name alone on Forever, so clients on different realms elect the same one. Anniversary keys pass through untouched: there a realm is part of who somebody is.
 
 ## ADR-0019 — Version-sensitive calls go through Compat, and sync and loot sends act on their result
 

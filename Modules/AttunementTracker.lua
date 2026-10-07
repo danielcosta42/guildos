@@ -1,5 +1,5 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Attunement Tracker
+-- Guild OS - Attunement Tracker
 -- Tracks TBC raid attunements via quest completion checks
 --
 -- NOTE on TBC Anniversary account-wide attunements:
@@ -19,11 +19,11 @@
 ----------------------------------------------------------------------
 -- TBC content: outside TBC Anniversary this module does not exist, and every
 -- reader already treats a missing module as absent (ADR-0014).
-if not BRutus.Client.isAnniversary then return end
+if not GuildOS.Client.isAnniversary then return end
 
 local AttunementTracker = {}
-BRutus.AttunementTracker = AttunementTracker
-local L = BRutus.L
+GuildOS.AttunementTracker = AttunementTracker
+local L = GuildOS.L
 
 ----------------------------------------------------------------------
 -- TBC Attunement Data
@@ -187,7 +187,7 @@ AttunementTracker.HEROIC_KEYS = {
 
 function AttunementTracker:Initialize()
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "QUEST_TURNED_IN")
+    GuildOS.Compat.RegisterEvent(frame, "QUEST_TURNED_IN")
     frame:SetScript("OnEvent", function(_, event)
         if event == "QUEST_TURNED_IN" then
             C_Timer.After(1, function() AttunementTracker:ScanAttunements() end)
@@ -242,7 +242,7 @@ function AttunementTracker:ScanAttunements()
             -- flag is not yet cached but the character already has the key
             -- (e.g. Karazhan Master's Key, item 24490).
             if not entry.complete and attunement.keyItemId then
-                entry.complete = (BRutus.Compat.GetItemCount(attunement.keyItemId) or 0) > 0
+                entry.complete = (GuildOS.Compat.GetItemCount(attunement.keyItemId) or 0) > 0
             end
             entry.progress = total > 0 and (done / total) or 0
             entry.questsDone = done
@@ -254,15 +254,15 @@ function AttunementTracker:ScanAttunements()
     end
 
     -- Store in player data
-    local name = BRutus.Compat.PlayerName()
+    local name = GuildOS.Compat.PlayerName()
     local realm = GetRealmName()
-    local key = BRutus:GetPlayerKey(name, realm)
+    local key = GuildOS:GetPlayerKey(name, realm)
 
-    if BRutus.db.members[key] then
-        BRutus.db.members[key].attunements = attunements
+    if GuildOS.db.members[key] then
+        GuildOS.db.members[key].attunements = attunements
     end
-    if BRutus.db.myData then
-        BRutus.db.myData.attunements = attunements
+    if GuildOS.db.myData then
+        GuildOS.db.myData.attunements = attunements
     end
 
     return attunements
@@ -292,7 +292,7 @@ end
 -- so relying on the alt system would produce false "Done" results.
 ----------------------------------------------------------------------
 function AttunementTracker:GetEffectiveAttunements(playerKey)
-    local data = BRutus.db.members[playerKey]
+    local data = GuildOS.db.members[playerKey]
     local baseAtts = (data and data.attunements) or {}
 
     -- Index own attunements by short name
@@ -339,7 +339,7 @@ function AttunementTracker:GetGuildMatrix()
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
+            local key = GuildOS:GetPlayerKey(short, realm)
             local atts = self:GetEffectiveAttunements(key)
             local cells, done = {}, 0
             for _, a in ipairs(atts) do
@@ -386,11 +386,11 @@ function AttunementTracker:GetAttunementSummary(playerKey)
 
     local color
     if done == total then
-        color = BRutus.Colors.green
+        color = GuildOS.Colors.green
     elseif done > 0 or inProgress > 0 then
-        color = BRutus.Colors.gold
+        color = GuildOS.Colors.gold
     else
-        color = BRutus.Colors.red
+        color = GuildOS.Colors.red
     end
 
     local label = done .. "/" .. total
@@ -398,5 +398,5 @@ function AttunementTracker:GetAttunementSummary(playerKey)
         label = label .. " OK"
     end
 
-    return BRutus:ColorText(label, color.r, color.g, color.b)
+    return GuildOS:ColorText(label, color.r, color.g, color.b)
 end

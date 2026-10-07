@@ -73,9 +73,9 @@ local function load(game)
   local sent = {}
   function SendChatMessage(msg, chan, _, num) sent[#sent + 1] = { msg = msg, chan = chan, num = num } end
   function GetChannelName(name) return CHANNELS[name] and CHANNELS[name][1] or 0 end
-  BRutus.db = { recruitment = { message = "{rt8} FILHOS DA HORDA {rt8} Guilda BR", channels = { "LookingForGroup", "Trade" } } }
-  function BRutus:IsOfficer() return true end
-  return BRutus, sent
+  GuildOS.db = { recruitment = { message = "{rt8} FILHOS DA HORDA {rt8} Guilda BR", channels = { "LookingForGroup", "Trade" } } }
+  function GuildOS:IsOfficer() return true end
+  return GuildOS, sent
 end
 
 -- ── Forever ─────────────────────────────────────────────────────────────

@@ -10,8 +10,8 @@
 --   Fire   -> Leotheras demon phase        Arcane -> Solarian
 ----------------------------------------------------------------------
 local Resistances = {}
-BRutus.Resistances = Resistances
-local L = BRutus.L
+GuildOS.Resistances = Resistances
+local L = GuildOS.L
 
 -- Display order (most impactful first). `target` = a solid raid-member set for that
 -- school (guidance, not a hard cap); `fight` = the encounter that drives it. Colours
@@ -40,10 +40,10 @@ end
 -- (all zeros) so an officer can see who is missing a set, not just who has one.
 function Resistances:GetRows()
     local rows = {}
-    if not BRutus.db or not BRutus.db.members then
+    if not GuildOS.db or not GuildOS.db.members then
         return rows
     end
-    for key, m in pairs(BRutus.db.members) do
+    for key, m in pairs(GuildOS.db.members) do
         if type(m) == "table" and m.name and type(m.resistances) == "table" then
             rows[#rows + 1] = { key = key, name = m.name, class = m.class, res = m.resistances }
         end

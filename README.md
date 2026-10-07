@@ -130,7 +130,6 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 | `/guildos sync` | Broadcast your data to the guild |
 | `/guildos reset` | Wipe saved data and reload |
 
-> **Legacy commands** `/brutus` and `/br` continue to work as aliases.
 
 ### Recruitment Commands (Officer+)
 
@@ -155,7 +154,6 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 3. Restart WoW or type `/reload`
 4. Press **J** to open Guild OS or type `/guildos`
 
-> **Upgrading from BRutus?** Your saved data migrates automatically on first load. The old `BRutusDB` is preserved alongside the new `GuildOSDB`.
 
 ---
 
@@ -193,7 +191,7 @@ Builds between releases are posted as a GitHub pre-release and announced on the
 
 - **SendChatMessage to channels** (LookingForGroup, Trade, etc.) requires a hardware click due to Blizzard restrictions. Guild OS handles this by showing a clickable popup notification instead of sending automatically.
 - Officer permission is determined by configurable guild rank threshold (default: rank ≤ 2). Adjustable in the Settings tab by current officers.
-- Data is stored per-guild in `GuildOSDB` SavedVariables (isolated per guild name+realm). Legacy `BRutusDB` is preserved and migrated automatically.
+- Data is stored per-guild in `GuildOSDB` SavedVariables (isolated per guild name+realm).
 - Account-wide attunements require officers to manually link a player's alt characters via the Member Detail panel.
 
 ---

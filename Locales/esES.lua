@@ -3,7 +3,7 @@
 ----------------------------------------------------------------------
 local _loc = GetLocale and GetLocale()
 if _loc ~= "esES" and _loc ~= "esMX" then return end
-local L = BRutus.L
+local L = GuildOS.L
 
 -- Core/Commands.lua
 L["Data collected."] = "Datos recopilados."

@@ -1,10 +1,10 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Member Detail Panel
+-- Guild OS - Member Detail Panel
 -- Shows full gear inspection, professions, and attunement details
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C = BRutus.Colors
-local L = BRutus.L
+local UI = GuildOS.UI
+local C = GuildOS.Colors
+local L = GuildOS.L
 
 local DETAIL_WIDTH = 460
 local DETAIL_HEIGHT = 620
@@ -83,7 +83,7 @@ end
 ----------------------------------------------------------------------
 -- Show member detail panel
 ----------------------------------------------------------------------
-function BRutus:ShowMemberDetail(memberData)
+function GuildOS:ShowMemberDetail(memberData)
     if not memberData then return end
 
     local frame = self.DetailFrame
@@ -100,7 +100,7 @@ end
 -- Create the detail frame
 ----------------------------------------------------------------------
 function CreateDetailFrame()
-    local frame = UI:CreatePanel(UIParent, "BRutusDetailFrame")
+    local frame = UI:CreatePanel(UIParent, "GuildOSDetailFrame")
     frame:SetSize(DETAIL_WIDTH, DETAIL_HEIGHT)
     frame:SetPoint("CENTER", 250, 0)
     frame:SetMovable(true)
@@ -196,18 +196,18 @@ function CreateDetailFrame()
     ----------------------------------------------------------------
     -- Content scroll
     ----------------------------------------------------------------
-    local content = CreateFrame("ScrollFrame", "BRutusDetailScroll", frame, "UIPanelScrollFrameTemplate")
+    local content = CreateFrame("ScrollFrame", "GuildOSDetailScroll", frame, "UIPanelScrollFrameTemplate")
     content:SetPoint("TOPLEFT", 5, -69)
     content:SetPoint("BOTTOMRIGHT", -10, 5)
-    UI:SkinScrollBar(content, "BRutusDetailScroll")
+    UI:SkinScrollBar(content, "GuildOSDetailScroll")
 
-    local child = CreateFrame("Frame", "BRutusDetailScrollChild", content)
+    local child = CreateFrame("Frame", "GuildOSDetailScrollChild", content)
     child:SetWidth(DETAIL_WIDTH - 35)
     child:SetHeight(1) -- will grow
     content:SetScrollChild(child)
     frame.content = child
 
-    table.insert(UISpecialFrames, "BRutusDetailFrame")
+    table.insert(UISpecialFrames, "GuildOSDetailFrame")
 
     return frame
 end
@@ -245,7 +245,7 @@ function PopulateDetail(frame, data)
     end
 
     -- Class color for border
-    local cr, cg, cb = BRutus:GetClassColor(data.class)
+    local cr, cg, cb = GuildOS:GetClassColor(data.class)
     frame.classIconFrame:SetBackdropBorderColor(cr, cg, cb, 0.9)
 
     -- Name
@@ -256,21 +256,21 @@ function PopulateDetail(frame, data)
     -- Defence in depth: string.format on a nil takes the WHOLE panel down, and
     -- these two fields come from the live roster rather than the synced member
     -- data, so any caller holding only a db.members entry would crash here.
-    -- BRutus:GetMemberRecord builds the correct merged record; this is the net
+    -- GuildOS:GetMemberRecord builds the correct merged record; this is the net
     -- under it, not a substitute for it.
     local raceStr = (data.race and data.race ~= "") and data.race or L["Unknown"]
     local infoLine = string.format(L["Level %d %s %s  |  %s"],
         data.level or 0, raceStr, data.classDisplay or data.class or "?", data.rank or "?")
     -- Cross-addon presence: append which sibling Chehul addons this player is
     -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
-    if BRutus.Mesh then
-        infoLine = infoLine .. BRutus.Mesh:PresenceSuffix(data.name)
+    if GuildOS.Mesh then
+        infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
     end
     frame.infoText:SetText(infoLine)
 
     -- Alt-of indicator: nil unless this member is linked to a main.
-    local memberKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-    frame.altTagText:SetText((BRutus.GetAltTag and BRutus:GetAltTag(memberKey)) or "")
+    local memberKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+    frame.altTagText:SetText((GuildOS.GetAltTag and GuildOS:GetAltTag(memberKey)) or "")
 
     local yOff = -5
     local contentWidth = DETAIL_WIDTH - 35
@@ -278,14 +278,14 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Spec
     ----------------------------------------------------------------
-    local playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-    local specLabel = BRutus.SpecChecker and BRutus.SpecChecker:GetSpecLabel(playerKey)
+    local playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+    local specLabel = GuildOS.SpecChecker and GuildOS.SpecChecker:GetSpecLabel(playerKey)
 
     yOff = CreateSectionHeader(child, L["TALENT SPEC"], yOff, contentWidth)
     yOff = yOff - 5
 
     if specLabel then
-        local spec = BRutus.db.members and BRutus.db.members[playerKey] and BRutus.db.members[playerKey].spec
+        local spec = GuildOS.db.members and GuildOS.db.members[playerKey] and GuildOS.db.members[playerKey].spec
 
         -- Talent distribution bar (one segment per tree; clickable to view tree)
         if spec and spec.points and spec.names then
@@ -295,9 +295,9 @@ function PopulateDetail(frame, data)
             barFrame:RegisterForClicks("LeftButtonUp")
             if spec.talents then
                 barFrame:SetScript("OnClick", function()
-                    local freshSpec = BRutus.db.members[playerKey]
-                        and BRutus.db.members[playerKey].spec
-                    BRutus:ShowTalentViewer(freshSpec or spec, data.name, data.class)
+                    local freshSpec = GuildOS.db.members[playerKey]
+                        and GuildOS.db.members[playerKey].spec
+                    GuildOS:ShowTalentViewer(freshSpec or spec, data.name, data.class)
                 end)
                 barFrame:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -347,7 +347,7 @@ function PopulateDetail(frame, data)
 
                     -- Label clipped to segment width; text adapts to available space
                     local segLabel = barFrame:CreateFontString(nil, "OVERLAY")
-                    BRutus:ApplyFont(segLabel, 9)
+                    GuildOS:ApplyFont(segLabel, 9)
                     segLabel:SetPoint("TOPLEFT", xPos + 4, -1)
                     segLabel:SetSize(segW - 8, 18)
                     segLabel:SetJustifyH("CENTER")
@@ -381,7 +381,7 @@ function PopulateDetail(frame, data)
 
         -- Text label: e.g.  "41 / 5 / 15  (Protection)"
         local specText = _pFS(child)
-        BRutus:ApplyFont(specText, 13)
+        GuildOS:ApplyFont(specText, 13)
         specText:SetPoint("TOPLEFT", 10, yOff)
         specText:SetTextColor(cr, cg, cb)
         specText:SetText(specLabel)
@@ -399,7 +399,7 @@ function PopulateDetail(frame, data)
                 ageStr = math.floor(age / 86400) .. L["d ago"]
             end
             local scanText = _pFS(child)
-            BRutus:ApplyFont(scanText, 9)
+            GuildOS:ApplyFont(scanText, 9)
             scanText:SetPoint("TOPLEFT", 10, yOff)
             scanText:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
             scanText:SetText(L["Last scanned: "] .. ageStr)
@@ -408,7 +408,7 @@ function PopulateDetail(frame, data)
         end
     else
         local noSpec = _pFS(child)
-        BRutus:ApplyFont(noSpec, 11)
+        GuildOS:ApplyFont(noSpec, 11)
         noSpec:SetPoint("TOPLEFT", 15, yOff)
         noSpec:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
         noSpec:SetText(L["No spec data. Use /guildos specs to scan the group."])
@@ -437,14 +437,14 @@ function PopulateDetail(frame, data)
             local sc = stat.color and C[stat.color] or C.white
 
             local label = _pFS(child)
-            BRutus:ApplyFont(label, 9)
+            GuildOS:ApplyFont(label, 9)
             label:SetPoint("TOPLEFT", statsGrid, "TOPLEFT", col * colWidth, -(row * 20))
             label:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
             label:SetText(stat.label)
             label:Show()
 
             local value = _pFS(child)
-            BRutus:ApplyFont(value, 11)
+            GuildOS:ApplyFont(value, 11)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
             value:SetTextColor(sc.r, sc.g, sc.b)
             value:SetText(tostring(data.stats[stat.key] or 0))
@@ -461,13 +461,13 @@ function PopulateDetail(frame, data)
     yOff = yOff - 5
 
     if data.gear then
-        for _, slotInfo in ipairs(BRutus.SlotIDs) do
+        for _, slotInfo in ipairs(GuildOS.SlotIDs) do
             local item = data.gear[slotInfo.id]
             yOff = CreateGearRow(child, slotInfo.id, item, yOff, contentWidth)
         end
     else
         local noData = _pFS(child)
-        BRutus:ApplyFont(noData, 11)
+        GuildOS:ApplyFont(noData, 11)
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
         noData:SetText(L["No gear data available. Player needs Guild OS addon."])
@@ -488,7 +488,7 @@ function PopulateDetail(frame, data)
         end
     else
         local noData = _pFS(child)
-        BRutus:ApplyFont(noData, 11)
+        GuildOS:ApplyFont(noData, 11)
         noData:SetPoint("TOPLEFT", 15, yOff)
         noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
         noData:SetText(L["No profession data available."])
@@ -500,14 +500,14 @@ function PopulateDetail(frame, data)
     -- Section: Attunements (account-wide propagation from linked chars).
     -- TBC content: only on TBC Anniversary (ADR-0014).
     ----------------------------------------------------------------
-    if BRutus.Client.isAnniversary then
+    if GuildOS.Client.isAnniversary then
         yOff = yOff - 10
         yOff = CreateSectionHeader(child, L["RAID ATTUNEMENTS"], yOff, contentWidth)
         yOff = yOff - 5
 
         local attsToShow
-        if BRutus.AttunementTracker then
-            attsToShow = BRutus.AttunementTracker:GetEffectiveAttunements(playerKey)
+        if GuildOS.AttunementTracker then
+            attsToShow = GuildOS.AttunementTracker:GetEffectiveAttunements(playerKey)
         else
             attsToShow = data.attunements
         end
@@ -518,7 +518,7 @@ function PopulateDetail(frame, data)
             end
         else
             local noData = _pFS(child)
-            BRutus:ApplyFont(noData, 11)
+            GuildOS:ApplyFont(noData, 11)
             noData:SetPoint("TOPLEFT", 15, yOff)
             noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
             noData:SetText(L["No attunement data available."])
@@ -531,7 +531,7 @@ function PopulateDetail(frame, data)
     -- Section: Wishlist (nativa)
     ----------------------------------------------------------------
     local guildKey = strlower(data.name or "")
-    local wishData = BRutus.db.guildWishlists and BRutus.db.guildWishlists[guildKey]
+    local wishData = GuildOS.db.guildWishlists and GuildOS.db.guildWishlists[guildKey]
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
         local wishHeader = L["WISHLIST  --  "] .. #wishData.wishlist .. L[" item(s)"]
@@ -540,14 +540,14 @@ function PopulateDetail(frame, data)
 
         for _, item in ipairs(wishData.wishlist) do
             local qColor = C.white
-            if BRutus.Wishlist and BRutus.QualityColors then
-                local q = BRutus.Wishlist:GetItemQuality(item.itemId)
-                qColor = BRutus.QualityColors[q] or C.white
+            if GuildOS.Wishlist and GuildOS.QualityColors then
+                local q = GuildOS.Wishlist:GetItemQuality(item.itemId)
+                qColor = GuildOS.QualityColors[q] or C.white
             end
-            local localName = BRutus.Wishlist and BRutus.Wishlist:GetItemName(item.itemId) or (L["Item #"] .. (item.itemId or "?"))
+            local localName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or (L["Item #"] .. (item.itemId or "?"))
             local osStr = item.isOffspec and " |cffAAAAAA(OS)|r" or ""
             local itemStr = _pFS(child)
-            BRutus:ApplyFont(itemStr, 10)
+            GuildOS:ApplyFont(itemStr, 10)
             itemStr:SetPoint("TOPLEFT", 20, yOff)
             itemStr:SetWidth(contentWidth - 30)
             itemStr:SetJustifyH("LEFT")
@@ -563,22 +563,22 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Raid Attendance
     ----------------------------------------------------------------
-    if BRutus.RaidTracker then
+    if GuildOS.RaidTracker then
         yOff = yOff - 10
-        playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local playerGroup  = BRutus.RaidTracker:GetPlayerGroup(playerKey)
-        local att          = BRutus.RaidTracker:GetAttendance(playerKey, playerGroup)
-        local pct          = BRutus.RaidTracker:GetAttendance25ManPercent(playerKey, playerGroup)
-        local total25      = BRutus.RaidTracker:GetTotal25ManSessions(playerGroup)
+        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local playerGroup  = GuildOS.RaidTracker:GetPlayerGroup(playerKey)
+        local att          = GuildOS.RaidTracker:GetAttendance(playerKey, playerGroup)
+        local pct          = GuildOS.RaidTracker:GetAttendance25ManPercent(playerKey, playerGroup)
+        local total25      = GuildOS.RaidTracker:GetTotal25ManSessions(playerGroup)
         local raids25      = att.raids25 or 0
         local groupSuffix  = playerGroup ~= "" and ("  [" .. playerGroup .. "]") or ""
-        local attStr = string.format(BRutus.RaidTracker:ProgLabel(L["RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"]),
+        local attStr = string.format(GuildOS.RaidTracker:ProgLabel(L["RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"]),
             groupSuffix, pct, raids25, total25)
         yOff = CreateSectionHeader(child, attStr, yOff, contentWidth)
 
         if att.lastRaid > 0 then
             local lastStr = _pFS(child)
-            BRutus:ApplyFont(lastStr, 10)
+            GuildOS:ApplyFont(lastStr, 10)
             lastStr:SetPoint("TOPLEFT", 15, yOff - 5)
             lastStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             lastStr:SetText(L["Last raid: "] .. date("%m/%d/%Y", att.lastRaid))
@@ -590,25 +590,25 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Loot History
     ----------------------------------------------------------------
-    if BRutus.LootTracker then
+    if GuildOS.LootTracker then
         yOff = yOff - 10
-        playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local lootCount = BRutus.LootTracker:GetLootCount(playerKey)
+        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local lootCount = GuildOS.LootTracker:GetLootCount(playerKey)
         local lootHeader = L["LOOT HISTORY  --  "] .. lootCount .. L[" items"]
         yOff = CreateSectionHeader(child, lootHeader, yOff, contentWidth)
 
-        local recentLoot = BRutus.LootTracker:GetPlayerLoot(playerKey, 5)
+        local recentLoot = GuildOS.LootTracker:GetPlayerLoot(playerKey, 5)
         for _, entry in ipairs(recentLoot) do
-            local qColor = BRutus.QualityColors[entry.quality] or BRutus.QualityColors[1]
+            local qColor = GuildOS.QualityColors[entry.quality] or GuildOS.QualityColors[1]
             local itemStr = _pFS(child)
-            BRutus:ApplyFont(itemStr, 10)
+            GuildOS:ApplyFont(itemStr, 10)
             itemStr:SetPoint("TOPLEFT", 15, yOff - 5)
             itemStr:SetWidth(contentWidth - 30)
             itemStr:SetJustifyH("LEFT")
             itemStr:SetWordWrap(false)
             -- Resolve item name via GetItemInfo for correct client locale.
             -- GetItemInfo accepts itemLink directly, so no need to parse the ID.
-            local localItemName = BRutus.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
+            local localItemName = GuildOS.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
             local displayName = localItemName or entry.itemName or "?"
             local dateStr = entry.timestamp and (" |cffAAAAAA" .. date("%m/%d", entry.timestamp) .. "|r") or ""
             local raidStr = entry.raid and entry.raid ~= "" and (" |cff888888(" .. entry.raid .. ")|r") or ""
@@ -629,19 +629,19 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Trial Status (officer only)
     ----------------------------------------------------------------
-    if BRutus.TrialTracker and BRutus:IsOfficer() then
-        playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local trial = BRutus.TrialTracker:GetTrial(playerKey)
+    if GuildOS.TrialTracker and GuildOS:IsOfficer() then
+        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local trial = GuildOS.TrialTracker:GetTrial(playerKey)
         if trial then
             yOff = yOff - 10
-            local daysRem = BRutus.TrialTracker:GetDaysRemaining(playerKey)
-            local daysSince = BRutus.TrialTracker:GetDaysSinceStart(playerKey)
+            local daysRem = GuildOS.TrialTracker:GetDaysRemaining(playerKey)
+            local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(playerKey)
             local trialStr = L["TRIAL STATUS  --  "] .. (trial.status or "?"):upper()
             if daysRem then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
             local infoStr = _pFS(child)
-            BRutus:ApplyFont(infoStr, 10)
+            GuildOS:ApplyFont(infoStr, 10)
             infoStr:SetPoint("TOPLEFT", 15, yOff - 5)
             infoStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             infoStr:SetText(L["Sponsor: "] .. (trial.sponsor or "?") .. L["  |  Day "] .. (daysSince or 0))
@@ -649,14 +649,14 @@ function PopulateDetail(frame, data)
             yOff = yOff - 20
 
             -- Progress tracking
-            local progress = BRutus.TrialTracker:GetProgress(playerKey)
+            local progress = GuildOS.TrialTracker:GetProgress(playerKey)
             if progress then
                 -- iLvl progress
                 local ilvlColor = progress.ilvlDelta > 0 and C.green or (progress.ilvlDelta < 0 and C.red or C.silver)
                 local ilvlSign = progress.ilvlDelta > 0 and "+" or ""
                 local ilvlStr = format(L["iLvl: %d >> %d  (%s%d)"], progress.startIlvl, progress.currentIlvl, ilvlSign, progress.ilvlDelta)
                 local ilvlText = _pFS(child)
-                BRutus:ApplyFont(ilvlText, 10)
+                GuildOS:ApplyFont(ilvlText, 10)
                 ilvlText:SetPoint("TOPLEFT", 15, yOff - 3)
                 ilvlText:SetTextColor(ilvlColor.r, ilvlColor.g, ilvlColor.b)
                 ilvlText:SetText(ilvlStr)
@@ -666,7 +666,7 @@ function PopulateDetail(frame, data)
                 local attColor = progress.attDelta > 0 and C.green or C.silver
                 local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
                 local attText = _pFS(child)
-                BRutus:ApplyFont(attText, 10)
+                GuildOS:ApplyFont(attText, 10)
                 attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
                 attText:SetTextColor(attColor.r, attColor.g, attColor.b)
                 attText:SetText(attStr)
@@ -677,7 +677,7 @@ function PopulateDetail(frame, data)
             -- Trial notes (all of them, not just 3)
             if trial.notes and #trial.notes > 0 then
                 local notesLabel = _pFS(child)
-                BRutus:ApplyFont(notesLabel, 9)
+                GuildOS:ApplyFont(notesLabel, 9)
                 notesLabel:SetPoint("TOPLEFT", 15, yOff - 6)
                 notesLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 notesLabel:SetText(L["Officer Comments ("] .. #trial.notes .. ")")
@@ -686,7 +686,7 @@ function PopulateDetail(frame, data)
 
                 for _, note in ipairs(trial.notes) do
                     local noteFS = _pFS(child)
-                    BRutus:ApplyFont(noteFS, 9)
+                    GuildOS:ApplyFont(noteFS, 9)
                     noteFS:SetPoint("TOPLEFT", 20, yOff - 2)
                     noteFS:SetWidth(contentWidth - 40)
                     noteFS:SetJustifyH("LEFT")
@@ -705,7 +705,7 @@ function PopulateDetail(frame, data)
             addNoteBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             addNoteBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
             addNoteBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            BRutus:ApplyFont(addNoteBox, 10)
+            GuildOS:ApplyFont(addNoteBox, 10)
             addNoteBox:SetTextColor(C.white.r, C.white.g, C.white.b)
             addNoteBox:SetTextInsets(6, 6, 2, 2)
             addNoteBox:SetAutoFocus(false)
@@ -713,7 +713,7 @@ function PopulateDetail(frame, data)
             addNoteBox:Show()
 
             local placeholder = addNoteBox:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(placeholder, 10)
+            GuildOS:ApplyFont(placeholder, 10)
             placeholder:SetPoint("LEFT", 6, 0)
             placeholder:SetTextColor(0.35, 0.35, 0.35)
             placeholder:SetText(L["Add officer comment..."])
@@ -728,7 +728,7 @@ function PopulateDetail(frame, data)
             addBtn:SetScript("OnClick", function()
                 local text = addNoteBox:GetText()
                 if text and strtrim(text) ~= "" then
-                    BRutus.TrialTracker:AddTrialNote(playerKey, strtrim(text))
+                    GuildOS.TrialTracker:AddTrialNote(playerKey, strtrim(text))
                     addNoteBox:SetText("")
                     addNoteBox:ClearFocus()
                     PopulateDetail(frame, data)
@@ -737,7 +737,7 @@ function PopulateDetail(frame, data)
             addNoteBox:SetScript("OnEnterPressed", function(self)
                 local text = self:GetText()
                 if text and strtrim(text) ~= "" then
-                    BRutus.TrialTracker:AddTrialNote(playerKey, strtrim(text))
+                    GuildOS.TrialTracker:AddTrialNote(playerKey, strtrim(text))
                     self:SetText("")
                     self:ClearFocus()
                     PopulateDetail(frame, data)
@@ -751,22 +751,22 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Officer Notes (officer only)
     ----------------------------------------------------------------
-    if BRutus.OfficerNotes and BRutus:IsOfficer() then
+    if GuildOS.OfficerNotes and GuildOS:IsOfficer() then
         yOff = yOff - 10
-        playerKey = BRutus:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local notes = BRutus.OfficerNotes:GetNotes(playerKey)
+        playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
+        local notes = GuildOS.OfficerNotes:GetNotes(playerKey)
         local notesHeader = L["OFFICER NOTES  --  "] .. #notes .. L[" notes"]
         yOff = CreateSectionHeader(child, notesHeader, yOff, contentWidth)
 
         -- Show tags
-        local tags = BRutus.OfficerNotes:GetAllTags(playerKey)
+        local tags = GuildOS.OfficerNotes:GetAllTags(playerKey)
         if next(tags) then
             local tagParts = {}
             for k, v in pairs(tags) do
                 table.insert(tagParts, k .. ": " .. tostring(v))
             end
             local tagStr = _pFS(child)
-            BRutus:ApplyFont(tagStr, 9)
+            GuildOS:ApplyFont(tagStr, 9)
             tagStr:SetPoint("TOPLEFT", 15, yOff - 5)
             tagStr:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
             tagStr:SetText(table.concat(tagParts, "  |  "))
@@ -778,7 +778,7 @@ function PopulateDetail(frame, data)
         for i = 1, math.min(3, #notes) do
             local note = notes[i]
             local noteStr = _pFS(child)
-            BRutus:ApplyFont(noteStr, 9)
+            GuildOS:ApplyFont(noteStr, 9)
             noteStr:SetPoint("TOPLEFT", 15, yOff - 3)
             noteStr:SetWidth(contentWidth - 30)
             noteStr:SetJustifyH("LEFT")
@@ -794,12 +794,12 @@ function PopulateDetail(frame, data)
     -- Section: Linked Characters (officers manage anyone; members manage
     -- their own alts on the current character via self-claim)
     ----------------------------------------------------------------
-    local myKey = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    local myKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
     local isSelfManage = (playerKey == myKey)
-    if BRutus:IsOfficer() or isSelfManage then
+    if GuildOS:IsOfficer() or isSelfManage then
         yOff = yOff - 10
-        local linkedKeys = BRutus:GetLinkedChars(playerKey)
-        local altLinks = (BRutus.db and BRutus.db.altLinks) or {}
+        local linkedKeys = GuildOS:GetLinkedChars(playerKey)
+        local altLinks = (GuildOS.db and GuildOS.db.altLinks) or {}
 
         -- Header shows how many chars are linked
         local linkCount = #linkedKeys - 1  -- exclude self
@@ -808,13 +808,13 @@ function PopulateDetail(frame, data)
         yOff = yOff - 5
 
         local noteLabel = _pFS(child)
-        BRutus:ApplyFont(noteLabel, 9)
+        GuildOS:ApplyFont(noteLabel, 9)
         noteLabel:SetPoint("TOPLEFT", 12, yOff)
         noteLabel:SetWidth(contentWidth - 24)
         noteLabel:SetJustifyH("LEFT")
         noteLabel:SetWordWrap(true)
         noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-        noteLabel:SetText(BRutus:IsOfficer() and L["Linked chars share attunements account-wide."]
+        noteLabel:SetText(GuildOS:IsOfficer() and L["Linked chars share attunements account-wide."]
             or L["Add your own alts (any account). An officer's client applies them guild-wide."])
         noteLabel:Show()
         yOff = yOff - noteLabel:GetStringHeight() - 6
@@ -832,7 +832,7 @@ function PopulateDetail(frame, data)
             local selfIsMain = (altLinks[playerKey] == nil)
             local selfName = playerKey:match("^([^-]+)") or playerKey
             local selfLabel = _pFS(child)
-            BRutus:ApplyFont(selfLabel, 10)
+            GuildOS:ApplyFont(selfLabel, 10)
             selfLabel:SetPoint("TOPLEFT", 12, yOff)
             selfLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             selfLabel:SetText(selfName
@@ -845,8 +845,8 @@ function PopulateDetail(frame, data)
                 selfLabel:SetWidth(rightX - 12 - 8 - setSelfMain:GetWidth())
                 selfLabel:SetJustifyH("LEFT")
                 setSelfMain:SetScript("OnClick", function()
-                    if BRutus:IsOfficer() then BRutus:SetMain(playerKey)
-                    else BRutus.AltAutoDetect:SetOwnMain(playerKey) end
+                    if GuildOS:IsOfficer() then GuildOS:SetMain(playerKey)
+                    else GuildOS.AltAutoDetect:SetOwnMain(playerKey) end
                     PopulateDetail(frame, data)
                 end)
             end
@@ -859,7 +859,7 @@ function PopulateDetail(frame, data)
                 local lkName = lk:match("^([^-]+)") or lk
                 local lkIsMain = (altLinks[lk] == nil)
                 local lkLabel = _pFS(child)
-                BRutus:ApplyFont(lkLabel, 10)
+                GuildOS:ApplyFont(lkLabel, 10)
                 lkLabel:SetPoint("TOPLEFT", 12, yOff)
                 lkLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
                 lkLabel:SetText(lkName .. (lkIsMain and ("  " .. L["(main)"]) or ""))
@@ -872,8 +872,8 @@ function PopulateDetail(frame, data)
                     -- If lk is the main, unlink playerKey from it; else unlink lk.
                     -- Officers apply directly; members route through the self-claim.
                     local function doUnlink(k)
-                        if BRutus:IsOfficer() then BRutus:UnlinkAlt(k)
-                        else BRutus.AltAutoDetect:UnlinkOwnAlt(k) end
+                        if GuildOS:IsOfficer() then GuildOS:UnlinkAlt(k)
+                        else GuildOS.AltAutoDetect:UnlinkOwnAlt(k) end
                     end
                     if lkIsMain then doUnlink(playerKey) else doUnlink(capturedKey) end
                     PopulateDetail(frame, data)
@@ -889,8 +889,8 @@ function PopulateDetail(frame, data)
                     unlinkBtn:SetPoint("RIGHT", setMainBtn, "LEFT", -6, 0)
                     buttonsWidth = buttonsWidth + 6 + setMainBtn:GetWidth()
                     setMainBtn:SetScript("OnClick", function()
-                        if BRutus:IsOfficer() then BRutus:SetMain(capturedKey)
-                        else BRutus.AltAutoDetect:SetOwnMain(capturedKey) end
+                        if GuildOS:IsOfficer() then GuildOS:SetMain(capturedKey)
+                        else GuildOS.AltAutoDetect:SetOwnMain(capturedKey) end
                         PopulateDetail(frame, data)
                     end)
                 else
@@ -910,7 +910,7 @@ function PopulateDetail(frame, data)
         addLinkBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         addLinkBox:SetBackdropColor(0.050, 0.050, 0.066, 1)
         addLinkBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        BRutus:ApplyFont(addLinkBox, 10)
+        GuildOS:ApplyFont(addLinkBox, 10)
         addLinkBox:SetTextColor(C.white.r, C.white.g, C.white.b)
         addLinkBox:SetTextInsets(6, 6, 2, 2)
         addLinkBox:SetAutoFocus(false)
@@ -918,7 +918,7 @@ function PopulateDetail(frame, data)
         addLinkBox:Show()
 
         local addLinkPlaceholder = addLinkBox:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(addLinkPlaceholder, 10)
+        GuildOS:ApplyFont(addLinkPlaceholder, 10)
         addLinkPlaceholder:SetPoint("LEFT", 6, 0)
         addLinkPlaceholder:SetTextColor(0.35, 0.35, 0.35)
         addLinkPlaceholder:SetText(L["AltName (this is the main)"])
@@ -935,15 +935,15 @@ function PopulateDetail(frame, data)
             local altName = strtrim(addLinkBox:GetText())
             if altName == "" then return end
             local realm = data.realm or GetRealmName()
-            local altKey = BRutus:GetPlayerKey(altName, realm)
+            local altKey = GuildOS:GetPlayerKey(altName, realm)
             -- playerKey is treated as the main; altKey as the alt.
             -- Officers apply directly; members route through the self-claim
             -- (applied locally + broadcast for an officer to replay).
             local applied
-            if BRutus:IsOfficer() then
-                applied = BRutus:LinkAlt(altKey, playerKey)
+            if GuildOS:IsOfficer() then
+                applied = GuildOS:LinkAlt(altKey, playerKey)
             else
-                BRutus.AltAutoDetect:LinkOwnAlts(playerKey, { altKey })
+                GuildOS.AltAutoDetect:LinkOwnAlts(playerKey, { altKey })
                 applied = true
             end
             if applied then
@@ -976,7 +976,7 @@ function CreateSectionHeader(parent, text, yOff, width)
     bg:Show()
 
     local label = _pFS(parent)
-    BRutus:ApplyFont(label, 10)
+    GuildOS:ApplyFont(label, 10)
     label:SetPoint("LEFT", bg, "LEFT", 10, 0)
     label:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
     label:SetText(text)
@@ -1005,12 +1005,12 @@ local ENCHANT_WARNING_SLOTS = {
 function CreateGearRow(parent, slotId, item, yOff, width)
     local ROW_H = 26
     local subRowH = 14
-    local slotName = BRutus.SlotNames[slotId] or L["Slot "] .. slotId
+    local slotName = GuildOS.SlotNames[slotId] or L["Slot "] .. slotId
     local hasExtra = false
 
     -- Slot label
     local slotLabel = _pFS(parent)
-    BRutus:ApplyFont(slotLabel, 9)
+    GuildOS:ApplyFont(slotLabel, 9)
     slotLabel:SetPoint("TOPLEFT", 10, yOff - 4)
     slotLabel:SetWidth(65)
     slotLabel:SetJustifyH("RIGHT")
@@ -1020,7 +1020,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
 
     if item and item.name and item.name ~= "" then
         -- Resolve localized item name and icon from client cache
-        local localName, _, _, _, _, _, _, _, _, itemIcon = BRutus.Compat.GetItemInfo(item.id or 0)
+        local localName, _, _, _, _, _, _, _, _, itemIcon = GuildOS.Compat.GetItemInfo(item.id or 0)
         local displayName = (localName and localName ~= "") and localName or item.name
         local icon = (itemIcon and itemIcon ~= "") and itemIcon or ""
 
@@ -1033,9 +1033,9 @@ function CreateGearRow(parent, slotId, item, yOff, width)
         end
 
         -- Item name (colored by quality)
-        local qColor = BRutus.QualityColors[item.quality] or BRutus.QualityColors[1]
+        local qColor = GuildOS.QualityColors[item.quality] or GuildOS.QualityColors[1]
         local nameText = _pFS(parent)
-        BRutus:ApplyFont(nameText, 10)
+        GuildOS:ApplyFont(nameText, 10)
         nameText:SetPoint("TOPLEFT", 106, yOff - 5)
         nameText:SetJustifyH("LEFT")
         nameText:SetWordWrap(false)
@@ -1050,7 +1050,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
         local gemAnchor = nameText
         if item.gems and #item.gems > 0 then
             for _, gem in ipairs(item.gems) do
-                local _, _, _, _, _, _, _, _, _, gemIcon = BRutus.Compat.GetItemInfo(gem.id or 0)
+                local _, _, _, _, _, _, _, _, _, gemIcon = GuildOS.Compat.GetItemInfo(gem.id or 0)
                 if gemIcon and gemIcon ~= "" then
                     local gemFrame = UI:CreateIcon(parent, 12, gemIcon)
                     gemFrame:SetPoint("LEFT", gemAnchor, "RIGHT", 4, 0)
@@ -1075,18 +1075,18 @@ function CreateGearRow(parent, slotId, item, yOff, width)
 
         -- Item level
         local ilvlText = _pFS(parent)
-        BRutus:ApplyFont(ilvlText, 10)
+        GuildOS:ApplyFont(ilvlText, 10)
         ilvlText:SetPoint("TOPRIGHT", -10, yOff - 5)
-        ilvlText:SetText(BRutus:FormatItemLevel(item.ilvl))
+        ilvlText:SetText(GuildOS:FormatItemLevel(item.ilvl))
         ilvlText:Show()
 
         -- Enchant line — resolve name from DataCollector cache, same as local player
         local enchantY = yOff - ROW_H
         local enchantName = item.enchantId and item.enchantId > 0
-            and BRutus.DataCollector and BRutus.DataCollector:GetEnchantName(item.enchantId)
+            and GuildOS.DataCollector and GuildOS.DataCollector:GetEnchantName(item.enchantId)
         if enchantName then
             local enchText = _pFS(parent)
-            BRutus:ApplyFont(enchText, 9)
+            GuildOS:ApplyFont(enchText, 9)
             enchText:SetPoint("TOPLEFT", 106, enchantY)
             enchText:SetTextColor(0.0, 0.8, 0.0)
             enchText:SetText(enchantName)
@@ -1094,7 +1094,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             hasExtra = true
         elseif item.enchantId and item.enchantId > 0 then
             local enchText = _pFS(parent)
-            BRutus:ApplyFont(enchText, 9)
+            GuildOS:ApplyFont(enchText, 9)
             enchText:SetPoint("TOPLEFT", 106, enchantY)
             enchText:SetTextColor(0.0, 0.8, 0.0)
             enchText:SetText(L["Enchanted"])
@@ -1102,7 +1102,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             hasExtra = true
         elseif ENCHANT_WARNING_SLOTS[slotId] then
             local warnText = _pFS(parent)
-            BRutus:ApplyFont(warnText, 9)
+            GuildOS:ApplyFont(warnText, 9)
             warnText:SetPoint("TOPLEFT", 106, enchantY)
             warnText:SetTextColor(C.red.r, C.red.g, C.red.b, 0.7)
             warnText:SetText(L["Not enchanted"])
@@ -1112,7 +1112,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
     else
         -- Empty slot
         local emptyText = _pFS(parent)
-        BRutus:ApplyFont(emptyText, 10)
+        GuildOS:ApplyFont(emptyText, 10)
         emptyText:SetPoint("TOPLEFT", 82, yOff - 5)
         emptyText:SetTextColor(0.3, 0.3, 0.3)
         emptyText:SetText(L["- Empty -"])
@@ -1141,7 +1141,7 @@ function CreateProfessionRow(parent, prof, yOff, width)
     -- Profession name
     local nameColor = prof.isPrimary and C.gold or C.silver
     local nameText = _pFS(parent)
-    BRutus:ApplyFont(nameText, 11)
+    GuildOS:ApplyFont(nameText, 11)
     nameText:SetPoint("TOPLEFT", 15, yOff - 3)
     nameText:SetTextColor(nameColor.r, nameColor.g, nameColor.b)
     nameText:SetText(L[prof.name])
@@ -1149,7 +1149,7 @@ function CreateProfessionRow(parent, prof, yOff, width)
 
     -- Skill level text
     local skillText = _pFS(parent)
-    BRutus:ApplyFont(skillText, 10)
+    GuildOS:ApplyFont(skillText, 10)
     skillText:SetPoint("TOPRIGHT", -10, yOff - 4)
     skillText:SetTextColor(C.white.r, C.white.g, C.white.b)
     -- A profession known from the guild roster only has no rank (issue #31).
@@ -1185,7 +1185,7 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Tier badge
     local tierBadge = _pFS(parent)
-    BRutus:ApplyFont(tierBadge, 8)
+    GuildOS:ApplyFont(tierBadge, 8)
     tierBadge:SetPoint("TOPLEFT", 10, yOff - 4)
     tierBadge:SetTextColor(C.accentDim.r, C.accentDim.g, C.accentDim.b)
     tierBadge:SetText("[" .. att.tier .. "]")
@@ -1193,13 +1193,13 @@ function CreateAttunementRow(parent, att, yOff, width)
 
     -- Raid name
     local nameText = _pFS(parent)
-    BRutus:ApplyFont(nameText, 11)
+    GuildOS:ApplyFont(nameText, 11)
     nameText:SetPoint("LEFT", tierBadge, "RIGHT", 5, 0)
     nameText:Show()
 
     -- Status
     local statusText = _pFS(parent)
-    BRutus:ApplyFont(statusText, 10)
+    GuildOS:ApplyFont(statusText, 10)
     statusText:SetPoint("TOPRIGHT", -10, yOff - 4)
     statusText:Show()
 
@@ -1248,7 +1248,7 @@ local TV_W         = TV_COLS * TV_SLOT_SIZE + 22          -- 174
 local TV_H         = 36 + 30 + 4 + TV_ROWS * TV_SLOT_SIZE + 10  -- 422
 
 local function CreateTalentViewerFrame()
-    local f = UI:CreatePanel(UIParent, "BRutusTalentViewer")
+    local f = UI:CreatePanel(UIParent, "GuildOSTalentViewer")
     f:SetSize(TV_W, TV_H)
     f:SetPoint("CENTER", 350, 0)
     f:SetMovable(true)
@@ -1277,7 +1277,7 @@ local function CreateTalentViewerFrame()
     titleBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, C.headerBg.a)
 
     local titleText = titleBar:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(titleText, 10)
+    GuildOS:ApplyFont(titleText, 10)
     titleText:SetPoint("LEFT", 8, 0)
     titleText:SetPoint("RIGHT", -26, 0)
     titleText:SetJustifyH("LEFT")
@@ -1314,7 +1314,7 @@ local function CreateTalentViewerFrame()
         tab:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
 
         local lbl = tab:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(lbl, 7)
+        GuildOS:ApplyFont(lbl, 7)
         lbl:SetAllPoints()
         lbl:SetJustifyH("CENTER")
         lbl:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
@@ -1358,7 +1358,7 @@ local function CreateTalentViewerFrame()
             slot.icon = icon
 
             local rankText = slot:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(rankText, 7)
+            GuildOS:ApplyFont(rankText, 7)
             rankText:SetPoint("BOTTOMRIGHT", -1, 2)
             slot.rankText = rankText
 
@@ -1411,11 +1411,11 @@ local function CreateTalentViewerFrame()
         if not spec then return end
 
         -- Tab button styles
-        local cr, cg, cb = BRutus:GetClassColor(self.classToken)
+        local cr, cg, cb = GuildOS:GetClassColor(self.classToken)
         for i, tabBtn in ipairs(self.tabs) do
             local pts  = (spec.points and spec.points[i]) or 0
             local name = (spec.names  and spec.names[i])  or (L["Tree "] .. i)
-            name = BRutus:Utf8Head(name, 8)
+            name = GuildOS:Utf8Head(name, 8)
             tabBtn.label:SetText(name .. "\n" .. pts)
             if i == tab then
                 tabBtn:SetBackdropColor(cr * 0.35, cg * 0.35, cb * 0.35, 1)
@@ -1478,17 +1478,17 @@ local function CreateTalentViewerFrame()
         end
     end
 
-    table.insert(UISpecialFrames, "BRutusTalentViewer")
+    table.insert(UISpecialFrames, "GuildOSTalentViewer")
     return f
 end
 
 ----------------------------------------------------------------------
--- BRutus:ShowTalentViewer(spec, playerName, classToken)
+-- GuildOS:ShowTalentViewer(spec, playerName, classToken)
 -- Opens the talent tree viewer for the given spec record.
 ----------------------------------------------------------------------
-function BRutus:ShowTalentViewer(spec, playerName, classToken)
+function GuildOS:ShowTalentViewer(spec, playerName, classToken)
     if not spec or not spec.talents then
-        BRutus:Print(L["|cffFF4444No talent data available for this player.|r"])
+        GuildOS:Print(L["|cffFF4444No talent data available for this player.|r"])
         return
     end
 

@@ -5,18 +5,18 @@
 -- "vote" is a member action recorded per voter on every client.
 ----------------------------------------------------------------------
 local Polls = {}
-BRutus.Polls = Polls
-local L = BRutus.L
+GuildOS.Polls = Polls
+local L = GuildOS.L
 
 function Polls:Initialize()
-    BRutus.db.polls = BRutus.db.polls or { list = {} }
-    BRutus.db.polls.list = BRutus.db.polls.list or {}
-    if BRutus.SyncService then
-        BRutus.SyncService:On("poll", function(env, sender) Polls:OnSync(env, sender) end)
+    GuildOS.db.polls = GuildOS.db.polls or { list = {} }
+    GuildOS.db.polls.list = GuildOS.db.polls.list or {}
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("poll", function(env, sender) Polls:OnSync(env, sender) end)
     end
 end
 
-function Polls:GetList() return BRutus.db.polls.list end
+function Polls:GetList() return GuildOS.db.polls.list end
 
 local function newId()
     return string.format("%X%04X", GetServerTime(), math.random(0, 0xFFFF))
@@ -24,7 +24,7 @@ end
 
 local function keyOf(name)
     local short = (name or ""):match("^([^-]+)") or name
-    return BRutus:GetPlayerKey(short, GetRealmName())
+    return GuildOS:GetPlayerKey(short, GetRealmName())
 end
 
 -- Sorted polls: open first, then newest.
@@ -42,23 +42,23 @@ end
 -- Mutations
 ----------------------------------------------------------------------
 function Polls:Create(question, options)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Officers only.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
     end
     question = strtrim(question or "")
     if question == "" or type(options) ~= "table" or #options < 2 then
-        BRutus:Print(L["A poll needs a question and at least 2 options."])
+        GuildOS:Print(L["A poll needs a question and at least 2 options."])
         return
     end
     local p = {
         id = newId(), question = question, options = options, votes = {},
-        author = BRutus.Compat.PlayerName(), ts = GetServerTime(), closed = false,
+        author = GuildOS.Compat.PlayerName(), ts = GetServerTime(), closed = false,
     }
     self:GetList()[p.id] = p
-    if BRutus.SyncService then
-        local rev = BRutus.SyncService:NextRevision("poll", p.id)
-        BRutus.SyncService:Publish("poll", "create", { poll = {
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("poll", p.id)
+        GuildOS.SyncService:Publish("poll", "create", { poll = {
             id = p.id, question = p.question, options = p.options, author = p.author, ts = p.ts,
         } }, { rev = rev })
     end
@@ -69,20 +69,20 @@ function Polls:Vote(id, opt)
     local p = self:GetList()[id]
     if not p or p.closed then return end
     p.votes = p.votes or {}
-    p.votes[keyOf(BRutus.Compat.PlayerName())] = opt
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("poll", "vote", { id = id, opt = opt })
+    p.votes[keyOf(GuildOS.Compat.PlayerName())] = opt
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("poll", "vote", { id = id, opt = opt })
     end
     self:Refresh()
 end
 
 function Polls:Close(id)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     local p = self:GetList()[id]
     if not p then return end
     p.closed = true
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("poll", "close", { id = id })
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("poll", "close", { id = id })
     end
     self:Refresh()
 end
@@ -94,11 +94,11 @@ function Polls:OnSync(env, sender)
     local d = env.data
     if env.act == "create" and d and d.poll then
         local p = d.poll
-        if BRutus.SyncService:ShouldApply("poll", p.id, env.rev) then
+        if GuildOS.SyncService:ShouldApply("poll", p.id, env.rev) then
             local existing = self:GetList()[p.id]
             p.votes = (existing and existing.votes) or {}
             self:GetList()[p.id] = p
-            BRutus.SyncService:SetRevision("poll", p.id, env.rev)
+            GuildOS.SyncService:SetRevision("poll", p.id, env.rev)
             self:Refresh()
         end
     elseif env.act == "close" and d and d.id then
@@ -115,15 +115,15 @@ function Polls:OnSync(env, sender)
 end
 
 function Polls:Refresh()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------
 -- UI
 ----------------------------------------------------------------------
 function Polls:Show()
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
 
     local f = self.frame
     if not f then
@@ -148,21 +148,21 @@ function Polls:Show()
         close:SetScript("OnClick", function() f:Hide() end)
 
         local listTop = -44
-        if BRutus:IsOfficer() then
+        if GuildOS:IsOfficer() then
             local qBox = CreateFrame("EditBox", nil, f, "BackdropTemplate")
             qBox:SetSize(330, 24)
             qBox:SetPoint("TOPLEFT", 16, -42)
             qBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
             qBox:SetBackdropColor(0.05, 0.05, 0.066, 1)
             qBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            BRutus:ApplyFont(qBox, 11)
+            GuildOS:ApplyFont(qBox, 11)
             qBox:SetTextColor(C.white.r, C.white.g, C.white.b)
             qBox:SetTextInsets(6, 6, 0, 0)
             qBox:SetAutoFocus(false)
             qBox:SetMaxLetters(150)
             qBox:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
             local qPh = qBox:CreateFontString(nil, "OVERLAY")
-            BRutus:ApplyFont(qPh, 10)
+            GuildOS:ApplyFont(qPh, 10)
             qPh:SetPoint("LEFT", 6, 0)
             qPh:SetTextColor(0.4, 0.4, 0.4)
             qPh:SetText(L["Question..."])
@@ -175,7 +175,7 @@ function Polls:Show()
             oBox:SetBackdropColor(0.05, 0.05, 0.066, 1)
             oBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
             oBox:SetMultiLine(true)
-            BRutus:ApplyFont(oBox, 10)
+            GuildOS:ApplyFont(oBox, 10)
             oBox:SetTextColor(C.white.r, C.white.g, C.white.b)
             oBox:SetTextInsets(6, 6, 4, 4)
             oBox:SetAutoFocus(false)
@@ -191,7 +191,7 @@ function Polls:Show()
                     local t = strtrim(line)
                     if t ~= "" and #opts < 6 then opts[#opts + 1] = t end
                 end
-                BRutus.Polls:Create(qBox:GetText(), opts)
+                GuildOS.Polls:Create(qBox:GetText(), opts)
                 qBox:SetText(""); oBox:SetText(""); qBox:ClearFocus(); oBox:ClearFocus()
             end)
             listTop = -146
@@ -214,9 +214,9 @@ function Polls:Show()
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
         child:SetWidth(f.holder:GetWidth() - 12)
 
-        local polls = BRutus.Polls:GetSorted()
-        local isOfficer = BRutus:IsOfficer()
-        local myKey = keyOf(BRutus.Compat.PlayerName())
+        local polls = GuildOS.Polls:GetSorted()
+        local isOfficer = GuildOS:IsOfficer()
+        local myKey = keyOf(GuildOS.Compat.PlayerName())
         local y = 0
         for _, p in ipairs(polls) do
             -- Question
@@ -229,7 +229,7 @@ function Polls:Show()
                 local closeBtn = UI:CreateButton(child, L["Close"], 56, 18)
                 closeBtn:SetPoint("TOPRIGHT", -2, -y)
                 local id = p.id
-                closeBtn:SetScript("OnClick", function() BRutus.Polls:Close(id) end)
+                closeBtn:SetScript("OnClick", function() GuildOS.Polls:Close(id) end)
             end
             y = y + math.max(18, (q:GetStringHeight() or 14) + 4)
 
@@ -258,7 +258,7 @@ function Polls:Show()
                 btn.label:SetPoint("LEFT", 8, 0)
                 if not p.closed then
                     local id, oi = p.id, idx
-                    btn:SetScript("OnClick", function() BRutus.Polls:Vote(id, oi) end)
+                    btn:SetScript("OnClick", function() GuildOS.Polls:Vote(id, oi) end)
                 end
                 y = y + 22
             end

@@ -20,9 +20,9 @@ local function check(cond, what)
   end
 end
 
-BRutus = { UI = {} }
+GuildOS = { UI = {} }
 dofile(ADDON .. "/UI/Layout.lua")
-local UI = BRutus.UI
+local UI = GuildOS.UI
 local L, H = UI.LADDER, UI.LADDER_HYSTERESIS
 
 -- ── The table matches the handoff ───────────────────────────────────────

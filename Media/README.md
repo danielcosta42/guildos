@@ -6,7 +6,7 @@ Texturas do botão do minimapa. TGA 32-bit sem compressão, origem topo-esquerda
 | Arquivo | O que é |
 |---|---|
 | `minimap-logo.tga` | Escudo central do logo (`GuildOSM.png`), recortado em círculo. Já vem colorido, não tingir. |
-| `minimap-ring.tga` | Anel fino branco. Tingido em Lua com `BRutus.Colors.gold`, para acompanhar o tema e acender no hover. |
+| `minimap-ring.tga` | Anel fino branco. Tingido em Lua com `GuildOS.Colors.gold`, para acompanhar o tema e acender no hover. |
 
 ## Como regerar
 

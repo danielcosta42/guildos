@@ -1,4 +1,4 @@
-# BRutus — Architecture
+# GuildOS — Architecture
 
 _Last updated: 2026-04-26_
 
@@ -6,10 +6,10 @@ _Last updated: 2026-04-26_
 
 ## Design Principles
 
-1. **Single global namespace** — `BRutus` only. All sub-modules are nested tables.
+1. **Single global namespace** — `GuildOS` only. All sub-modules are nested tables.
 2. **Separation of concerns** — each file owns exactly one responsibility.
-3. **Defensive coding** — every API call that may not exist is guarded via `BRutus.Compat`.
-4. **Classic-first compatibility** — no API is called outside `BRutus.Compat` if it may vary by version.
+3. **Defensive coding** — every API call that may not exist is guarded via `GuildOS.Compat`.
+4. **Classic-first compatibility** — no API is called outside `GuildOS.Compat` if it may vary by version.
 5. **No UI in the data pipeline** — data modules have zero UI dependencies.
 6. **One-way data flow** — `Game Events → Modules → State/DB → UI reads`.
 
@@ -18,9 +18,9 @@ _Last updated: 2026-04-26_
 ## Target Folder Structure
 
 ```
-BRutus/
-  BRutus.toc              — load order, SavedVariables declaration
-  Core.lua                — BRutus global, DB defaults, events, slash cmds, utilities,
+GuildOS/
+  GuildOS.toc              — load order, SavedVariables declaration
+  Core.lua                — GuildOS global, DB defaults, events, slash cmds, utilities,
                             Logger, Compat, State, Config (GetSetting/SetSetting)
   Libs/                   — LibStub, CallbackHandler, LibSerialize, LibDeflate, ChatThrottleLib
   DataCollector.lua       — player data collection (gear, professions, stats, spec)
@@ -38,7 +38,7 @@ BRutus/
   GearAudit.lua           — guild-wide enchant audit (from synced gear)
   RaidTools.lua           — composition / buff & cooldown coverage
   Locales/
-    Locale.lua            — BRutus.L bootstrap (metatable fallback to English key)
+    Locale.lua            — GuildOS.L bootstrap (metatable fallback to English key)
     enUS.lua              — master/stub (English is implicit)
     ptBR.lua esES.lua deDE.lua frFR.lua — translations (guarded by GetLocale)
   ConsumableChecker.lua   — flask/elixir/food buff detection
@@ -74,7 +74,7 @@ UI/
   RaidHUD.lua
 ```
 
-Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` local alias.
+Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` local alias.
 
 ---
 
@@ -109,34 +109,34 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 
 ---
 
-## Load Order (BRutus.toc)
+## Load Order (GuildOS.toc)
 
 | # | File | Depends on |
 |---|------|------------|
 | 1–5 | `Libs/*` | nothing |
-| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR.lua` | Config — creates `BRutus.L`; must load before any file that does `local L = BRutus.L` |
-| 6 | `Core.lua` | Libs — creates BRutus global, Logger, Compat, State, Config |
-| 7 | `DataCollector.lua` | BRutus |
-| 8 | `AttunementTracker.lua` | BRutus, BRutus.Compat |
-| 9 | `CommSystem.lua` | BRutus, BRutus.State.comm |
-| 10 | `RecruitmentSystem.lua` | BRutus, BRutus.CommSystem, BRutus.State.recruitment |
-| 11 | `WishlistSystem.lua` | BRutus, BRutus.CommSystem |
-| 12 | `RaidTracker.lua` | BRutus |
-| 13 | `LootTracker.lua` | BRutus |
-| 14 | `LootMaster.lua` | BRutus, BRutus.LootTracker |
-| 15 | `RecipeTracker.lua` | BRutus, BRutus.CommSystem |
-| 16 | `OfficerNotes.lua` | BRutus, BRutus.CommSystem |
-| 17 | `TrialTracker.lua` | BRutus, BRutus.CommSystem |
-| 17a | `GuildManager.lua` | BRutus, BRutus.TrialTracker, BRutus.RaidTracker |
-| 18 | `ConsumableChecker.lua` | BRutus |
-| 19 | `SpecChecker.lua` | BRutus |
-| 20 | `UI/Helpers.lua` | BRutus (creates BRutus.UI) |
-| 21 | `UI/RecipesPanel.lua` | BRutus.UI |
-| 22 | `UI/FeaturePanels.lua` | BRutus.UI, BRutus.RaidTracker, BRutus.WishlistSystem |
-| 23 | `UI/RosterFrame.lua` | BRutus.UI, all data modules |
-| 24 | `UI/MemberDetail.lua` | BRutus.UI |
-| 24a | `UI/ManagementPanel.lua` | BRutus.UI, BRutus.GuildManager |
-| 25 | `UI/RaidHUD.lua` | BRutus.UI, BRutus.State.raidCD |
+| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR.lua` | Config — creates `GuildOS.L`; must load before any file that does `local L = GuildOS.L` |
+| 6 | `Core.lua` | Libs — creates GuildOS global, Logger, Compat, State, Config |
+| 7 | `DataCollector.lua` | GuildOS |
+| 8 | `AttunementTracker.lua` | GuildOS, GuildOS.Compat |
+| 9 | `CommSystem.lua` | GuildOS, GuildOS.State.comm |
+| 10 | `RecruitmentSystem.lua` | GuildOS, GuildOS.CommSystem, GuildOS.State.recruitment |
+| 11 | `WishlistSystem.lua` | GuildOS, GuildOS.CommSystem |
+| 12 | `RaidTracker.lua` | GuildOS |
+| 13 | `LootTracker.lua` | GuildOS |
+| 14 | `LootMaster.lua` | GuildOS, GuildOS.LootTracker |
+| 15 | `RecipeTracker.lua` | GuildOS, GuildOS.CommSystem |
+| 16 | `OfficerNotes.lua` | GuildOS, GuildOS.CommSystem |
+| 17 | `TrialTracker.lua` | GuildOS, GuildOS.CommSystem |
+| 17a | `GuildManager.lua` | GuildOS, GuildOS.TrialTracker, GuildOS.RaidTracker |
+| 18 | `ConsumableChecker.lua` | GuildOS |
+| 19 | `SpecChecker.lua` | GuildOS |
+| 20 | `UI/Helpers.lua` | GuildOS (creates GuildOS.UI) |
+| 21 | `UI/RecipesPanel.lua` | GuildOS.UI |
+| 22 | `UI/FeaturePanels.lua` | GuildOS.UI, GuildOS.RaidTracker, GuildOS.WishlistSystem |
+| 23 | `UI/RosterFrame.lua` | GuildOS.UI, all data modules |
+| 24 | `UI/MemberDetail.lua` | GuildOS.UI |
+| 24a | `UI/ManagementPanel.lua` | GuildOS.UI, GuildOS.GuildManager |
+| 25 | `UI/RaidHUD.lua` | GuildOS.UI, GuildOS.State.raidCD |
 
 ---
 
@@ -147,8 +147,8 @@ Until that split is done, all UI code continues to use `BRutus.UI` / the `UI` lo
 ```
 PLAYER_LOGIN
   │
-  ├─► BRutus:ResolveGuildDB()       — creates per-guild BRutusDB[guildKey] → BRutus.db
-  └─► BRutus:InitModules()          — initializes all enabled modules
+  ├─► GuildOS:ResolveGuildDB()       — creates per-guild GuildOSDB[guildKey] → GuildOS.db
+  └─► GuildOS:InitModules()          — initializes all enabled modules
         ├─► DataCollector:CollectMyData()
         └─► CommSystem:BroadcastMyData()
               ├─► DataCollector:GetBroadcastData()   → clean payload
@@ -161,7 +161,7 @@ PLAYER_LOGIN
 CHAT_MSG_ADDON
   │
   └─► CommSystem:OnMessageReceived()
-        ├─ reassemble chunks (BRutus.State.comm.pendingMessages)
+        ├─ reassemble chunks (GuildOS.State.comm.pendingMessages)
         ├─ decompress + deserialize
         └─ route by MSG_TYPE:
               BROADCAST  → DataCollector:StoreReceivedData()
@@ -170,7 +170,7 @@ CHAT_MSG_ADDON
               WL         → Wishlist:HandleWishlistBroadcast()
               RC         → RecipeTracker:HandleIncoming()
               TR         → TrialTracker:HandleIncoming()
-              WC         → BRutus.State.recruitment.welcomedRecently
+              WC         → GuildOS.State.recruitment.welcomedRecently
               ...
 ```
 
@@ -184,12 +184,12 @@ Row click            ──► MemberDetail:Show(playerKey)
 
 ---
 
-## Session State (BRutus.State)
+## Session State (GuildOS.State)
 
 Runtime-only, never persisted. Defined in `Core.lua`:
 
 ```lua
-BRutus.State = {
+GuildOS.State = {
     comm        = { lastBroadcast = 0, pendingMessages = {} },
     lootMaster  = { activeLoot, rolls, rollTimer, isMLSession, lootWindowOpen,
                     listeningForRolls, restrictedRollers, pendingTrades,
@@ -206,15 +206,15 @@ BRutus.State = {
 ## Config Accessors (Rule 8)
 
 ```lua
-BRutus:GetSetting("showOffline")          -- reads BRutus.db.settings[key]
-BRutus:SetSetting("showOffline", true)    -- writes BRutus.db.settings[key]
+GuildOS:GetSetting("showOffline")          -- reads GuildOS.db.settings[key]
+GuildOS:SetSetting("showOffline", true)    -- writes GuildOS.db.settings[key]
 ```
 
-Never read/write `BRutus.db.settings.*` directly from UI files.
+Never read/write `GuildOS.db.settings.*` directly from UI files.
 
 ---
 
-## SavedVariables Schema (BRutusDB[guildKey])
+## SavedVariables Schema (GuildOSDB[guildKey])
 
 ```lua
 {
@@ -258,7 +258,7 @@ Never read/write `BRutus.db.settings.*` directly from UI files.
 
 ## Communication Protocol
 
-- Prefix: `"BRutus"`
+- Prefix: `"GuildOS"`
 - Format: `TYPE:PAYLOAD` → LibSerialize → LibDeflate compress → encode → chunk 230 bytes
 - LibSerialize is Guild OS's own copy, `LibStub("GuildOS-LibSerialize")`, never the shared name: LibStub hands the
   highest minor to everyone, DBM-Core's minor 6 divides `1 / num`, and WoW: Forever raises on every division by
@@ -302,9 +302,9 @@ the newest one an officer sent (#81).
 
 ## UI Architecture
 
-- All UI factory functions live in `BRutus.UI` (from `UI/Helpers.lua`)
+- All UI factory functions live in `GuildOS.UI` (from `UI/Helpers.lua`)
 - Theme colors in `C` table (local alias inside each UI file)
-- Main window: `BRutus.RosterFrame` (frame `GuildOSWindow`, `UI/Window.lua`) — the one window; every registry feature with `tab` is a tab (ADR-0016)
+- Main window: `GuildOS.RosterFrame` (frame `GuildOSWindow`, `UI/Window.lua`) — the one window; every registry feature with `tab` is a tab (ADR-0016)
 - Virtual scroll (lists): `FauxScrollFrameTemplate` + `FauxScrollFrame_Update/GetOffset`
 - Content scroll (panels): `UIPanelScrollFrameTemplate`
 - All scroll bars skinned with `UI:SkinScrollBar()` (6px accent track)
@@ -313,6 +313,6 @@ the newest one an officer sent (#81).
 
 ## Permission Model
 
-- `BRutus:IsOfficer()` → local rank ≤ `officerMaxRank` setting
-- `BRutus:IsOfficerByName(name)` → validates sender of officer-only comm messages
+- `GuildOS:IsOfficer()` → local rank ≤ `officerMaxRank` setting
+- `GuildOS:IsOfficerByName(name)` → validates sender of officer-only comm messages
 - Officer-only features: trials, recruitment, officer notes, alt links, loot prios

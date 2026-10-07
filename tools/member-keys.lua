@@ -6,7 +6,7 @@
 -- several places built it themselves: with GetRealmName() returning nil they raised
 -- (CommSystem on every incoming addon message), and LootMaster and the wishlist fell
 -- back to "" in some places and "Unknown" in others, which splits one member across
--- two keys. This proves the one rule in BRutus:GetPlayerKey, that Anniversary keys
+-- two keys. This proves the one rule in GuildOS:GetPlayerKey, that Anniversary keys
 -- (tools/roster-fixture.txt included) keep 0.53.0's exact bytes, and that each of those
 -- sites now gives the rule's key, with a realm and without one.
 --
@@ -93,11 +93,11 @@ for _, m in ipairs({ "CommSystem", "RaidTracker", "LootMaster", "WishlistSystem"
                      "PugInspector", "CompanionExport", "CompanionImport" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
-BRutus.db = { members = {}, lootHistory = {}, wishlists = {}, settings = { companion = true },
+GuildOS.db = { members = {}, lootHistory = {}, wishlists = {}, settings = { companion = true },
               raidTracker = { sessions = {} }, consumableChecks = { lastResults = {} }, lootMaster = {} }
-BRutus.GetSetting = BRutus.GetSetting or function(self, k) return self.db.settings[k] end
+GuildOS.GetSetting = GuildOS.GetSetting or function(self, k) return self.db.settings[k] end
 
-local function K(...) return BRutus:GetPlayerKey(...) end
+local function K(...) return GuildOS:GetPlayerKey(...) end
 -- Runs fn with the client answering nothing: both realm functions nil, then both "".
 local function realmless(fn)
   for _, r in ipairs({ false, "" }) do
@@ -129,9 +129,9 @@ check(K(nil) == nil and K("") == nil and K(nil, "Firemaw") == nil, "no name give
 -- ── 2. The Anniversary roster fixture ───────────────────────────────────
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 local softres = assert(io.open(ADDON .. "/Modules/SoftResSystem.lua", "rb")):read("*a"):gsub("\r\n", "\n")
-BRutus.JsonDecode = assert(loadstring(assert(softres:match("(local function JsonDecode.-\nend\n)")) .. "\nreturn JsonDecode"))()
+GuildOS.JsonDecode = assert(loadstring(assert(softres:match("(local function JsonDecode.-\nend\n)")) .. "\nreturn JsonDecode"))()
 local fixture = assert(io.open(ADDON .. "/tools/roster-fixture.txt", "rb")):read("*a")
-local roster, why = BRutus.CompanionImport:Parse(fixture)
+local roster, why = GuildOS.CompanionImport:Parse(fixture)
 check(roster and #roster.members > 0, "tools/roster-fixture.txt decodes through the real CompanionImport: " .. tostring(why))
 for _, m in ipairs(roster.members) do
   local short, suffix = m.key:match("^([^-]+)") or m.key, m.key:match("-(.+)$")
@@ -156,7 +156,7 @@ realmless(function(how)
   local back = assert(loadstring("return { [" .. string.format("%q", K("First Last")) .. "] = true }"))()
   check(back[K("First Last")] == true and next(back) == "First Last", how .. ": the key survives a SavedVariables write and read")
   ROSTER = { "Bob", "First Last" }
-  local rec = BRutus:GetMemberRecord("First Last")
+  local rec = GuildOS:GetMemberRecord("First Last")
   check(rec and rec.key == "First Last" and rec.name == "First Last",
         how .. ": the member record for a two-part name resolves, keyed by the name")
 end)
@@ -170,7 +170,7 @@ REALM, NORM = "Firemaw", nil
 -- ── 4. Addon messages: mine skipped, everybody else's read and stored ───
 local decoded = 0
 LibStub("LibDeflate").DecodeForWoWAddonChannel = function() decoded = decoded + 1; return nil end
-local CS = BRutus.CommSystem
+local CS = GuildOS.CommSystem
 CS.pendingMessages = CS.pendingMessages or {}
 local function reads(sender)
   local before = decoded
@@ -179,8 +179,8 @@ local function reads(sender)
 end
 local payloads, stored = {}, {}
 LibStub("GuildOS-LibSerialize").Deserialize = function(_, s) return true, payloads[s] end
-local dataCollector = BRutus.DataCollector
-BRutus.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
+local dataCollector = GuildOS.DataCollector
+GuildOS.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
 local function received(sender, data)
   payloads.x = data
   CS:HandleBroadcast(sender, "x")
@@ -208,10 +208,10 @@ check(received("Bob-LivingFlame", { name = "Bob" }) == "Bob-Living Flame"
       and received("Bob-LivingFlame", { name = "Bob", realm = "Living Flame" }) == "Bob-Living Flame",
       "Anniversary: a sender suffixed with the normalized realm keys by the client's realm, as 0.53.0 did")
 REALM, NORM = "Firemaw", nil
-BRutus.DataCollector = dataCollector
+GuildOS.DataCollector = dataCollector
 
 -- ── 5. Raid attendance ──────────────────────────────────────────────────
-local RT = BRutus.RaidTracker
+local RT = GuildOS.RaidTracker
 RT.CheckPlayerConsumes = function() return true end
 local function snapshot()
   RT.currentRaid = { players = {}, snapshots = {} }
@@ -229,7 +229,7 @@ check(players == "Ana-Firemaw,Bob-Firemaw,Cross-Spineshatter,First Last-Firemaw"
       "Anniversary: the session and snapshot keys are unchanged: " .. players)
 
 -- ── 6. Consumable check ─────────────────────────────────────────────────
-local CC = BRutus.ConsumableChecker
+local CC = GuildOS.ConsumableChecker
 check(CC ~= nil, "the consumable check loads on Anniversary")
 realmless(function(how)
   check(sortedKeys(CC:CheckRaid()) == "Bob,Cross-Spineshatter,First Last", how .. ": results are keyed by the rule")
@@ -238,17 +238,17 @@ check(sortedKeys(CC:CheckRaid()) == "Bob-Firemaw,Cross-Spineshatter,First Last-F
       "Anniversary: consumable results keep their keys")
 
 -- ── 7. Loot: context, a peer's award, my own award, a roll ──────────────
-local LM = BRutus.LootMaster
+local LM = GuildOS.LootMaster
 local attKeys, awards, charged = {}, {}, {}
 RT.GetAttendance25ManPercent = function(_, key) attKeys[#attKeys + 1] = key; return 80 end
-BRutus.LootTracker = {
+GuildOS.LootTracker = {
   RecordMLAward = function(_, e) awards[#awards + 1] = e.playerKey end,
   GetHistory = function() return {} end,
 }
-BRutus.IsOfficerByName = function() return true end
-BRutus.IsOfficer = function() return true end
-BRutus.GetLootSystem = function() return "dkp" end
-BRutus.Points = {
+GuildOS.IsOfficerByName = function() return true end
+GuildOS.IsOfficer = function() return true end
+GuildOS.GetLootSystem = function() return "dkp" end
+GuildOS.Points = {
   GetDB = function() return { config = { itemCost = 5 } } end,
   Charge = function(_, key) charged[#charged + 1] = key end,
   Get = function() return 0 end,
@@ -258,11 +258,11 @@ LM.testMode = true
 
 local function context(name, historyKey)
   RT.currentRaid = nil
-  BRutus.db.lootHistory = { { fromML = true, playerKey = historyKey, timestamp = NOW - 60 } }
+  GuildOS.db.lootHistory = { { fromML = true, playerKey = historyKey, timestamp = NOW - 60 } }
   return LM:GetPlayerContext(name).recvThisLockout, attKeys[#attKeys]
 end
 local function peerAward(awardedTo)
-  LM:OnAddonMessage("BRutusLM", "AWARD|" .. awardedTo .. "|30107|4|Serpentshrine Cavern|" .. LINK, "RAID", "Offi-Firemaw")
+  LM:OnAddonMessage("GuildOSLM", "AWARD|" .. awardedTo .. "|30107|4|Serpentshrine Cavern|" .. LINK, "RAID", "Offi-Firemaw")
   return awards[#awards]
 end
 local function myAward(playerName)
@@ -291,19 +291,19 @@ check(award == "First Last-Firemaw" and charge == "First Last-Firemaw", "Anniver
 check(rollKey("First Last") == "First Last-Firemaw", "Anniversary: a /roll keeps its key")
 
 -- ── 8. Wishlist ─────────────────────────────────────────────────────────
-local WL = BRutus.Wishlist
+local WL = GuildOS.Wishlist
 local function wishlistKey()
-  BRutus.db.wishlists = {}
+  GuildOS.db.wishlists = {}
   WL:GetMyList()
-  return sortedKeys(BRutus.db.wishlists)
+  return sortedKeys(GuildOS.db.wishlists)
 end
 local function migratedKey()
-  BRutus.db.wishlists, BRutus.db.myWishlist = {}, { { itemId = 30107 } }
+  GuildOS.db.wishlists, GuildOS.db.myWishlist = {}, { { itemId = 30107 } }
   WL:Initialize()
-  return sortedKeys(BRutus.db.wishlists)
+  return sortedKeys(GuildOS.db.wishlists)
 end
 local function delivered(historyKey)
-  BRutus.db.lootHistory = { { fromML = true, playerKey = historyKey, itemId = 30107 } }
+  GuildOS.db.lootHistory = { { fromML = true, playerKey = historyKey, itemId = 30107 } }
   return WL:IsItemDelivered(30107)
 end
 realmless(function(how)
@@ -317,8 +317,8 @@ check(wishlistKey() == "Ana-Firemaw" and migratedKey() == "Ana-Firemaw" and deli
 
 -- ── 9. Slash commands ───────────────────────────────────────────────────
 local trials, notes = {}, {}
-BRutus.TrialTracker = { AddTrial = function(_, key) trials[#trials + 1] = key end }
-BRutus.OfficerNotes = { AddNote = function(_, key) notes[#notes + 1] = key; return true end }
+GuildOS.TrialTracker = { AddTrial = function(_, key) trials[#trials + 1] = key end }
+GuildOS.OfficerNotes = { AddNote = function(_, key) notes[#notes + 1] = key; return true end }
 local slash = SlashCmdList.GUILDOS
 realmless(function(how)
   slash("trial Bob")
@@ -330,7 +330,7 @@ slash("note Bob steady tank")
 check(trials[#trials] == "Bob-Firemaw" and notes[#notes] == "Bob-Firemaw", "Anniversary: /gos trial and /gos note keep their keys")
 
 -- ── 10. Pug inspector ───────────────────────────────────────────────────
-local PI = BRutus.PugInspector
+local PI = GuildOS.PugInspector
 local noteKeys = {}
 local function classify(name, realm, altLinks)
   local c = PI:Classify(name, {
@@ -340,10 +340,10 @@ local function classify(name, realm, altLinks)
   return c.tag, noteKeys[#noteKeys]
 end
 local tag, noteKey = classify("First Last", "", { ["First Last"] = "Main" })
-check(tag == string.format(BRutus.L["Alt of %s (guild)"], "Main") and noteKey == "First Last",
+check(tag == string.format(GuildOS.L["Alt of %s (guild)"], "Main") and noteKey == "First Last",
       "realm-less: a pug's alt link and notes are found under the rule's key, not First Last-")
 tag, noteKey = classify("Bob", "Firemaw", { ["Bob-Firemaw"] = "Main-Firemaw" })
-check(tag == string.format(BRutus.L["Alt of %s (guild)"], "Main") and noteKey == "Bob-Firemaw",
+check(tag == string.format(GuildOS.L["Alt of %s (guild)"], "Main") and noteKey == "Bob-Firemaw",
       "Anniversary: a pug's alt link and notes keep their keys")
 realmless(function(how)
   check(PI:_LiveSources().realm == "", how .. ": the live classifier gets no realm, so its keys are the name alone")
@@ -354,10 +354,10 @@ REALM, NORM = "Firemaw", nil
 check(PI:_LiveSources().realm == "Firemaw", "Anniversary: the live classifier's realm is the client's")
 
 -- ── 11. Companion export ────────────────────────────────────────────────
-local Companion = BRutus.Companion
+local Companion = GuildOS.Companion
 realmless(function(how)
   ROSTER = { "First Last", "Bob" }
-  BRutus.db.members = { ["First Last"] = { race = "Human", lastUpdate = 1 } }
+  GuildOS.db.members = { ["First Last"] = { race = "Human", lastUpdate = 1 } }
   local p = Companion:BuildPayload()
   check(p and p.guildKey == "Raid Guild" and p.exportedBy == "Ana" and p.realm == nil,
         how .. ": the export's guild key and author follow the rule, and it carries no realm")
@@ -365,7 +365,7 @@ realmless(function(how)
         how .. ": every roster member is keyed by the rule, and a published record is found under it")
 end)
 ROSTER = { "First Last-Firemaw", "Bob-Spineshatter" }
-BRutus.db.members = { ["First Last-Firemaw"] = { race = "Human", lastUpdate = 1 } }
+GuildOS.db.members = { ["First Last-Firemaw"] = { race = "Human", lastUpdate = 1 } }
 local p = Companion:BuildPayload()
 check(p.guildKey == "Raid Guild-Firemaw" and p.exportedBy == "Ana-Firemaw" and p.realm == "Firemaw",
       "Anniversary: the export's guild key, author and realm are unchanged")
@@ -379,11 +379,11 @@ for _, name in ipairs({ false, "" }) do
   check(K("Ana") == "Ana-Suffix", how .. ": the normalized realm fills the key, as the roster suffixes it")
   ROSTER = { "Ana-Suffix", "Bob-Suffix", "First Last-Suffix" }
   check(not reads("Ana-Suffix") and reads("Bob-Suffix"), how .. ": my own suffixed message is skipped, others read")
-  check(BRutus:GetMemberRecord("First Last").key == "First Last-Suffix", how .. ": a two-part member resolves under the roster's key")
-  BRutus.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
+  check(GuildOS:GetMemberRecord("First Last").key == "First Last-Suffix", how .. ": a two-part member resolves under the roster's key")
+  GuildOS.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
   check(received("Bob-Suffix", { name = "Bob" }) == "Bob-Suffix", how .. ": a broadcast lands under the roster's key")
-  BRutus.DataCollector = dataCollector
-  BRutus.db.members = { ["Bob-Suffix"] = { race = "Orc", lastUpdate = 1 } }
+  GuildOS.DataCollector = dataCollector
+  GuildOS.db.members = { ["Bob-Suffix"] = { race = "Orc", lastUpdate = 1 } }
   local ps = Companion:BuildPayload()
   check(ps.exportedBy == "Ana-Suffix" and ps.guildKey == "Raid Guild-Suffix" and ps.realm == "Suffix"
         and ps.members[2].key == "Bob-Suffix" and ps.members[2].race == "Orc",
@@ -398,15 +398,15 @@ REALM, NORM = "Firemaw", nil
 realmless(function(how)
   ROSTER = { "Ana-Suffix", "Bob-Suffix" }
   check(K("Ana") == "Ana" and reads("Ana-Suffix"), how .. ": my own key is bare, and my suffixed message is not recognised as mine")
-  BRutus.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
+  GuildOS.DataCollector = { StoreReceivedData = function(_, key) stored[#stored + 1] = key end }
   check(received("Bob-Suffix", { name = "Bob" }) == "Bob-Suffix", how .. ": a suffixed sender's broadcast keeps the suffix")
-  BRutus.DataCollector = dataCollector
-  BRutus.db.members = {}
+  GuildOS.DataCollector = dataCollector
+  GuildOS.db.members = {}
   local ps = Companion:BuildPayload()
   check(ps.members[2].key == "Bob-Suffix" and ps.exportedBy == "Ana", how .. ": the export's rows carry the suffix, its author does not")
   check(peerAward("Bob") == "Bob" and rollKey("Bob") == "Bob", how .. ": loot keys stay bare")
   slash("trial Bob")
-  check(trials[#trials] == "Bob" and BRutus:GetMemberRecord("Bob-Suffix").key == "Bob",
+  check(trials[#trials] == "Bob" and GuildOS:GetMemberRecord("Bob-Suffix").key == "Bob",
         how .. ": /gos trial and the member record stay bare")
 end)
 
@@ -455,16 +455,16 @@ check(scanned > 50, "the scan read the addon's files (" .. scanned .. ")")
 -- apart, where every other client returns the realm in that slot.
 local FULL = { "Ana", "Firemaw" }
 function UnitFullName(unit) if unit == "player" then return FULL[1], FULL[2] end end
-local P = BRutus.Compat.PlayerName
+local P = GuildOS.Compat.PlayerName
 check(P() == "Ana", "Anniversary: my name is UnitName's, never UnitFullName's name and realm joined")
-BRutus.Client.has.surnames = true
+GuildOS.Client.has.surnames = true
 REALM, ME, FULL = "Classic Beta PvE 2", "Chehul", { "Chehul", "Druida" }
 check(P() == "Chehul Druida", "Forever: my name is the first name and the surname, as the roster writes it")
 check(K(P()) == "Chehul Druida-Classic Beta PvE 2", "Forever: my key is the one the roster row gives me")
 check(not reads("Chehul Druida"), "Forever: my own message is skipped")
 check(reads("Chehul Shammy"), "Forever: a namesake with another surname is read")
 local names = {}
-BRutus.DataCollector = { StoreReceivedData = function(_, key, data) stored[#stored + 1] = key; names[key] = data.name end }
+GuildOS.DataCollector = { StoreReceivedData = function(_, key, data) stored[#stored + 1] = key; names[key] = data.name end }
 check(received("Chehul Shammy", { name = "Chehul", realm = "Classic Beta PvE 2" }) == "Chehul Shammy-Classic Beta PvE 2"
       and names["Chehul Shammy-Classic Beta PvE 2"] == "Chehul Shammy",
       "Forever: a broadcast from 0.56.0, which sends the first name only, lands under the sender's whole name")
@@ -479,13 +479,13 @@ GROUP, SELF_UNIT = { { "Chehul" }, { "Bob" } }, "raid1"
 local players = snapshot()
 check(players == "Bob-Classic Beta PvE 2,Chehul Druida-Classic Beta PvE 2",
       "Forever: a raid snapshot records me once, under my whole name: " .. players)
-check(BRutus.Compat.IsPlayer("raid1") and not BRutus.Compat.IsPlayer("raid2"), "Forever: my raid unit is me by identity")
+check(GuildOS.Compat.IsPlayer("raid1") and not GuildOS.Compat.IsPlayer("raid2"), "Forever: my raid unit is me by identity")
 issecretvalue = function(v) return v == "secret" end
 local realUnitIsUnit = UnitIsUnit
 UnitIsUnit = function() return "secret" end
-check(BRutus.Compat.IsPlayer("raid1") == false, "a comparison the client keeps secret counts as not me")
+check(GuildOS.Compat.IsPlayer("raid1") == false, "a comparison the client keeps secret counts as not me")
 UnitIsUnit, issecretvalue, GROUP, SELF_UNIT = realUnitIsUnit, nil, {}, nil
-BRutus.Client.has.surnames, REALM, ME, UnitFullName = false, "Firemaw", "Ana", nil
-BRutus.DataCollector = dataCollector
+GuildOS.Client.has.surnames, REALM, ME, UnitFullName = false, "Firemaw", "Ana", nil
+GuildOS.DataCollector = dataCollector
 
 print("member-keys: " .. checks .. " checks passed")

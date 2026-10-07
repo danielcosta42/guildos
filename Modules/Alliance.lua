@@ -23,7 +23,7 @@
 ----------------------------------------------------------------------
 local Alliance = {}
 GuildOS.Alliance = Alliance
-local L = BRutus.L
+local L = GuildOS.L
 
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 local LibDeflate   = LibStub("LibDeflate")
@@ -94,7 +94,7 @@ function Alliance.ElectBridge(onlineKeys)
     -- On WoW: Forever every client keys a member with its own realm, and a guild's clients answer
     -- different ones, so the election hashes the name alone: every client elects the same member
     -- (issue #97). On Anniversary the key is who somebody is.
-    local forever = BRutus.Client and not BRutus.Client.isAnniversary
+    local forever = GuildOS.Client and not GuildOS.Client.isAnniversary
     local best, bestHash, bestId
     for _, key in ipairs(onlineKeys) do
         if type(key) == "string" and key ~= "" then
@@ -160,7 +160,7 @@ Alliance.HUE_SPAN = 320
 
 function Alliance.GuildColor(guildName)
     if type(guildName) ~= "string" or guildName == "" then
-        local c = BRutus.Colors.label   -- a neutral label colour for "guild unknown"
+        local c = GuildOS.Colors.label   -- a neutral label colour for "guild unknown"
         return c.r, c.g, c.b
     end
     local hue = Alliance.HUE_MIN + (Alliance.Hash(guildName) % Alliance.HUE_SPAN)
@@ -188,7 +188,7 @@ function Alliance.SerializePact(pact)
     if type(pact) ~= "table" then
         return nil
     end
-    local out = BRutus:DeepCopy(pact)
+    local out = GuildOS:DeepCopy(pact)
     out.blocked = nil
     return out
 end
@@ -207,7 +207,7 @@ function Alliance.SanitizePact(raw)
 
     -- Deterministic truncation: sort the keys, then keep the owner first so a
     -- pact never loses the one guild that is allowed to remove others.
-    local owner = BRutus:SanitizeUserText(raw.owner, Alliance.GUILD_NAME_MAX)
+    local owner = GuildOS:SanitizeUserText(raw.owner, Alliance.GUILD_NAME_MAX)
     local keys = {}
     for name in pairs(raw.guilds) do
         if type(name) == "string" then
@@ -227,7 +227,7 @@ function Alliance.SanitizePact(raw)
 
     local out = {
         tag      = tag,
-        name     = BRutus:SanitizeUserText(raw.name, Alliance.NAME_MAX),
+        name     = GuildOS:SanitizeUserText(raw.name, Alliance.NAME_MAX),
         owner    = owner,
         revision = tonumber(raw.revision) or 0,
         code     = Alliance.NormalizeCode(raw.code),
@@ -239,7 +239,7 @@ function Alliance.SanitizePact(raw)
         if kept >= Alliance.MAX_GUILDS then
             break
         end
-        local clean = BRutus:SanitizeUserText(name, Alliance.GUILD_NAME_MAX)
+        local clean = GuildOS:SanitizeUserText(name, Alliance.GUILD_NAME_MAX)
         local entry = raw.guilds[name]
         if clean ~= "" and type(entry) == "table" and not out.guilds[clean] then
             local ambassadors = {}
@@ -248,7 +248,7 @@ function Alliance.SanitizePact(raw)
                     if #ambassadors >= Alliance.MAX_AMBASSADORS then
                         break
                     end
-                    local a = BRutus:SanitizeUserText(shortName(amb), Alliance.GUILD_NAME_MAX)
+                    local a = GuildOS:SanitizeUserText(shortName(amb), Alliance.GUILD_NAME_MAX)
                     if a ~= "" then
                         ambassadors[#ambassadors + 1] = a
                     end
@@ -257,7 +257,7 @@ function Alliance.SanitizePact(raw)
             out.guilds[clean] = {
                 ambassadors = ambassadors,
                 joinedAt    = tonumber(entry.joinedAt) or 0,
-                addedBy     = BRutus:SanitizeUserText(entry.addedBy, Alliance.GUILD_NAME_MAX),
+                addedBy     = GuildOS:SanitizeUserText(entry.addedBy, Alliance.GUILD_NAME_MAX),
             }
             kept = kept + 1
         end
@@ -459,7 +459,7 @@ end
 -- Live state
 ----------------------------------------------------------------------
 function Alliance:Get()
-    return (BRutus.db and BRutus.db.alliance) or nil
+    return (GuildOS.db and GuildOS.db.alliance) or nil
 end
 
 function Alliance:MyGuildName()
@@ -471,7 +471,7 @@ function Alliance:MyGuildName()
 end
 
 function Alliance:MyKey()
-    return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
 end
 
 function Alliance:IsMemberGuild(guildName)
@@ -521,14 +521,14 @@ function Alliance:OnlineGuildKeys()
     if not IsInGuild or not IsInGuild() then
         return keys
     end
-    local members = (BRutus.db and BRutus.db.members) or {}
+    local members = (GuildOS.db and GuildOS.db.members) or {}
     local total = GetNumGuildMembers() or 0
     for i = 1, total do
         local name, _, _, _, _, _, _, _, isOnline = GetGuildRosterInfo(i)
         if name and isOnline then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
+            local key = GuildOS:GetPlayerKey(short, realm)
             if members[key] and members[key].addonVersion then
                 keys[#keys + 1] = key
             end
@@ -685,7 +685,7 @@ end
 -- Officer actions
 ----------------------------------------------------------------------
 function Alliance:Create(tag, name)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     if self:Get() then
@@ -700,9 +700,9 @@ function Alliance:Create(tag, name)
         return false, L["The alliance tag must contain letters or numbers."]
     end
     local now = (GetServerTime and GetServerTime()) or time()
-    local me = shortName(BRutus.Compat.PlayerName())
-    local display = BRutus:SanitizeUserText(name, Alliance.NAME_MAX)
-    BRutus.db.alliance = {
+    local me = shortName(GuildOS.Compat.PlayerName())
+    local display = GuildOS:SanitizeUserText(name, Alliance.NAME_MAX)
+    GuildOS.db.alliance = {
         tag      = t,
         name     = (display ~= "" and display) or t,
         owner    = myGuild,
@@ -717,19 +717,19 @@ function Alliance:Create(tag, name)
 end
 
 function Alliance:Invite(officerName)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
     end
-    local target = BRutus:SanitizeUserText(officerName, Alliance.GUILD_NAME_MAX)
+    local target = GuildOS:SanitizeUserText(officerName, Alliance.GUILD_NAME_MAX)
     if target == "" then
         return false, L["Name an officer of the guild you want to invite."]
     end
     local myGuild = self:MyGuildName()
-    if not Alliance.IsAmbassador(pact, myGuild, BRutus.Compat.PlayerName()) then
+    if not Alliance.IsAmbassador(pact, myGuild, GuildOS.Compat.PlayerName()) then
         return false, L["Only an alliance ambassador can invite."]
     end
     self._invitesSent = self._invitesSent or {}
@@ -743,10 +743,10 @@ function Alliance:Invite(officerName)
     -- know whether the target exists, is online, or runs this addon. The ACK
     -- is the only real delivery proof, so warn when none arrives rather than
     -- leaving the inviter believing it landed.
-    BRutus.Compat.After(Alliance.INVITE_TIMEOUT, function()
+    GuildOS.Compat.After(Alliance.INVITE_TIMEOUT, function()
         if GuildOS.Alliance._invitesSent and GuildOS.Alliance._invitesSent[slot] then
-            BRutus:Print(string.format(L["No answer from %s yet."], target))
-            BRutus:Print(L["They must be online, running Guild OS, and an officer of their guild."])
+            GuildOS:Print(string.format(L["No answer from %s yet."], target))
+            GuildOS:Print(L["They must be online, running Guild OS, and an officer of their guild."])
         end
     end)
     return true
@@ -757,11 +757,11 @@ function Alliance:Leave()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
     end
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     local myGuild = self:MyGuildName()
-    if not Alliance.IsAmbassador(pact, myGuild, BRutus.Compat.PlayerName()) then
+    if not Alliance.IsAmbassador(pact, myGuild, GuildOS.Compat.PlayerName()) then
         return false, L["Only an alliance ambassador can do that."]
     end
     local now = (GetServerTime and GetServerTime()) or time()
@@ -777,8 +777,8 @@ function Alliance:Leave()
             end
         end
     end
-    BRutus.db.alliance = nil
-    BRutus.db.allianceData = nil
+    GuildOS.db.alliance = nil
+    GuildOS.db.allianceData = nil
     return true
 end
 
@@ -787,14 +787,14 @@ function Alliance:RemoveGuild(guildName)
     if not pact then
         return false, L["This guild is not in an alliance yet."]
     end
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     local myGuild = self:MyGuildName()
     if pact.owner ~= myGuild then
         return false, L["Only the founding guild can remove another guild."]
     end
-    local clean = BRutus:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
+    local clean = GuildOS:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
     if clean == myGuild or not pact.guilds[clean] then
         return false, L["That guild is not in the alliance."]
     end
@@ -812,8 +812,8 @@ function Alliance:RemoveGuild(guildName)
 
     pact.guilds[clean] = nil
     pact.revision = (GetServerTime and GetServerTime()) or time()
-    if BRutus.db.allianceData then
-        BRutus.db.allianceData[clean] = nil
+    if GuildOS.db.allianceData then
+        GuildOS.db.allianceData[clean] = nil
     end
     self:BroadcastPact(true)
     return true
@@ -824,14 +824,14 @@ function Alliance:Block(guildName)
     if not pact then
         return false, L["This guild is not in an alliance yet."]
     end
-    local clean = BRutus:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
+    local clean = GuildOS:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)
     if clean == "" then
         return false, L["Name the guild to block."]
     end
     pact.blocked = pact.blocked or {}
     pact.blocked[clean] = true
-    if BRutus.db.allianceData then
-        BRutus.db.allianceData[clean] = nil
+    if GuildOS.db.allianceData then
+        GuildOS.db.allianceData[clean] = nil
     end
     return true
 end
@@ -841,7 +841,7 @@ function Alliance:Unblock(guildName)
     if not pact or not pact.blocked then
         return false, L["This guild is not in an alliance yet."]
     end
-    pact.blocked[BRutus:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)] = nil
+    pact.blocked[GuildOS:SanitizeUserText(guildName, Alliance.GUILD_NAME_MAX)] = nil
     return true
 end
 
@@ -868,7 +868,7 @@ function Alliance:OnMessage(payload, sender, dist)
     if proto ~= self.PROTO or not op then
         return   -- unknown protocol version: ignore silently, like the rest of the mesh
     end
-    if shortName(sender) == BRutus.Compat.PlayerName() then
+    if shortName(sender) == GuildOS.Compat.PlayerName() then
         return
     end
     local data = Alliance.Decode(blob)
@@ -912,7 +912,7 @@ function Alliance:OnMessage(payload, sender, dist)
     else
         local fn = Alliance.ops[op]
         if fn then
-            BRutus:SafeCall(fn, data, sender, senderGuild)
+            GuildOS:SafeCall(fn, data, sender, senderGuild)
         end
     end
 end
@@ -927,25 +927,25 @@ function Alliance:_OnInvite(raw, sender)
     local short = shortName(sender)
 
     if self:Get() then
-        BRutus.Logger.Debug("Alliance: invite from " .. short .. " ignored, already in a pact")
+        GuildOS.Logger.Debug("Alliance: invite from " .. short .. " ignored, already in a pact")
         return
     end
     local pact = Alliance.SanitizePact(raw)
     if not pact then
-        BRutus.Logger.Debug("Alliance: invite from " .. short .. " had an unreadable pact")
+        GuildOS.Logger.Debug("Alliance: invite from " .. short .. " had an unreadable pact")
         return
     end
     -- The inviter must be an ambassador inside the pact they are offering.
     local theirGuild = self:GuildOfSender(sender, pact)
     if not theirGuild then
-        BRutus.Logger.Debug("Alliance: " .. short .. " is not an ambassador of the pact they sent")
+        GuildOS.Logger.Debug("Alliance: " .. short .. " is not an ambassador of the pact they sent")
         return
     end
     local now = (GetServerTime and GetServerTime()) or time()
     self._invitePrompts = self._invitePrompts or {}
     local last = self._invitePrompts[short:lower()]
     if last and (now - last) < Alliance.INVITE_COOLDOWN then
-        BRutus.Logger.Debug("Alliance: invite from " .. short .. " throttled")
+        GuildOS.Logger.Debug("Alliance: invite from " .. short .. " throttled")
         return
     end
     self._invitePrompts[short:lower()] = now
@@ -954,8 +954,8 @@ function Alliance:_OnInvite(raw, sender)
     -- likely way an invite vanishes: IsOfficer defaults to rank <= 1, so most
     -- guild members do not qualify. Tell them instead, so they can walk it to
     -- an officer, rather than the invite disappearing into nothing.
-    if not BRutus:IsOfficer() then
-        BRutus:Print(string.format(
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(string.format(
             L["%s of %s invited this guild into the alliance %s. Only an officer can accept, so pass it on."],
             short, theirGuild, pact.name or pact.tag))
         return
@@ -973,19 +973,19 @@ function Alliance:AcceptInvite(pact, sender)
         return
     end
     local now = (GetServerTime and GetServerTime()) or time()
-    local me = shortName(BRutus.Compat.PlayerName())
+    local me = shortName(GuildOS.Compat.PlayerName())
     pact.blocked = {}
     pact.guilds[myGuild] = pact.guilds[myGuild]
         or { ambassadors = { me }, joinedAt = now, addedBy = shortName(sender) }
     pact.revision = now
-    BRutus.db.alliance = pact
+    GuildOS.db.alliance = pact
     if GuildOS.AllianceChat then GuildOS.AllianceChat:EnsureJoined() end
     self:Send("ACK", { guild = myGuild, ambassadors = { me } }, sender)
-    BRutus:Print(string.format(L["Joined the alliance %s."], pact.name or pact.tag))
+    GuildOS:Print(string.format(L["Joined the alliance %s."], pact.name or pact.tag))
 end
 
 function Alliance:_OnAck(data, sender)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return
     end
     self._invitesSent = self._invitesSent or {}
@@ -996,7 +996,7 @@ function Alliance:_OnAck(data, sender)
     if not pact then
         return
     end
-    local guild = BRutus:SanitizeUserText(data.guild, Alliance.GUILD_NAME_MAX)
+    local guild = GuildOS:SanitizeUserText(data.guild, Alliance.GUILD_NAME_MAX)
     if guild == "" or self:IsBlocked(guild) then
         return
     end
@@ -1005,7 +1005,7 @@ function Alliance:_OnAck(data, sender)
         count = count + 1
     end
     if not pact.guilds[guild] and count >= Alliance.MAX_GUILDS then
-        BRutus:Print(L["The alliance is full."])
+        GuildOS:Print(L["The alliance is full."])
         return
     end
     local ambassadors = {}
@@ -1014,7 +1014,7 @@ function Alliance:_OnAck(data, sender)
             if #ambassadors >= Alliance.MAX_AMBASSADORS then
                 break
             end
-            local a = BRutus:SanitizeUserText(shortName(amb), Alliance.GUILD_NAME_MAX)
+            local a = GuildOS:SanitizeUserText(shortName(amb), Alliance.GUILD_NAME_MAX)
             if a ~= "" then
                 ambassadors[#ambassadors + 1] = a
             end
@@ -1038,11 +1038,11 @@ function Alliance:_OnAck(data, sender)
     pact.guilds[guild] = {
         ambassadors = ambassadors,
         joinedAt    = now,
-        addedBy     = shortName(BRutus.Compat.PlayerName()),
+        addedBy     = shortName(GuildOS.Compat.PlayerName()),
     }
     pact.revision = now
     self._invitesSent[senderShort:lower()] = nil
-    BRutus:Print(string.format(L["%s joined the alliance."], guild))
+    GuildOS:Print(string.format(L["%s joined the alliance."], guild))
     if GuildOS.AllianceChat then
         GuildOS.AllianceChat:AddSystem(string.format(L["%s joined the alliance."], guild), "info")
     end
@@ -1073,7 +1073,7 @@ function Alliance:_OnPact(raw, _sender, senderGuild)
         winner.guilds[myGuild] = current.guilds[myGuild]
     end
     winner.blocked = (current and current.blocked) or {}
-    BRutus.db.alliance = winner
+    GuildOS.db.alliance = winner
     -- A pact can arrive long after login (a join code landing, a first sync),
     -- so joining the channel hangs off the pact, not off the login event.
     if GuildOS.AllianceChat then GuildOS.AllianceChat:EnsureJoined() end
@@ -1086,10 +1086,10 @@ function Alliance:_OnLeave(_sender, senderGuild)
     end
     pact.guilds[senderGuild] = nil
     pact.revision = (GetServerTime and GetServerTime()) or time()
-    if BRutus.db.allianceData then
-        BRutus.db.allianceData[senderGuild] = nil
+    if GuildOS.db.allianceData then
+        GuildOS.db.allianceData[senderGuild] = nil
     end
-    BRutus:Print(string.format(L["%s left the alliance."], senderGuild))
+    GuildOS:Print(string.format(L["%s left the alliance."], senderGuild))
     if GuildOS.AllianceChat then
         GuildOS.AllianceChat:AddSystem(string.format(L["%s left the alliance."], senderGuild), "info")
     end
@@ -1152,7 +1152,7 @@ function Alliance:AddAmbassador(name)
     if not self:CanAdminister() then
         return false, L["Only an alliance ambassador can do that."]
     end
-    local clean = BRutus:SanitizeUserText(shortName(name), Alliance.GUILD_NAME_MAX)
+    local clean = GuildOS:SanitizeUserText(shortName(name), Alliance.GUILD_NAME_MAX)
     if clean == "" then
         return false, L["Name the character to make an ambassador."]
     end
@@ -1181,7 +1181,7 @@ function Alliance:RemoveAmbassador(name)
     if not self:CanAdminister() then
         return false, L["Only an alliance ambassador can do that."]
     end
-    local clean = shortName(BRutus:SanitizeUserText(name, Alliance.GUILD_NAME_MAX))
+    local clean = shortName(GuildOS:SanitizeUserText(name, Alliance.GUILD_NAME_MAX))
     if #entry.ambassadors <= 1 then
         -- Removing the last one would lock the guild out of its own pact.
         return false, L["A guild must keep at least one ambassador."]
@@ -1202,13 +1202,13 @@ function Alliance:ClaimAmbassador()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
     end
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     if not Alliance._CanClaimAmbassador(entry.ambassadors, self:_GuildRosterShortSet()) then
         return false, L["This guild still has an ambassador in the roster."]
     end
-    entry.ambassadors[#entry.ambassadors + 1] = shortName(BRutus.Compat.PlayerName())
+    entry.ambassadors[#entry.ambassadors + 1] = shortName(GuildOS.Compat.PlayerName())
     self:Get().revision = (GetServerTime and GetServerTime()) or time()
     self:BroadcastPact(true)
     return true
@@ -1249,8 +1249,8 @@ function Alliance:SpeakerInfo(name)
     end
 
     local myGuild = self:MyGuildName()
-    local key = BRutus:GetPlayerKey(short, GetRealmName())
-    local m = BRutus.db and BRutus.db.members and BRutus.db.members[key]
+    local key = GuildOS:GetPlayerKey(short, GetRealmName())
+    local m = GuildOS.db and GuildOS.db.members and GuildOS.db.members[key]
     if m then
         -- Normalise to the SAME shape the allied snapshot uses, so the card
         -- that renders this never has to know which side the data came from.
@@ -1272,7 +1272,7 @@ function Alliance:SpeakerInfo(name)
                 end
             end
         end
-        local mainKey = BRutus.db.altLinks and BRutus.db.altLinks[key]
+        local mainKey = GuildOS.db.altLinks and GuildOS.db.altLinks[key]
         return {
             guild       = myGuild,
             class       = m.class,
@@ -1313,7 +1313,7 @@ function Alliance:FindCrafters(itemId)
         return out
     end
     local mine = self:MyGuildName()
-    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    local store = (GuildOS.db and GuildOS.db.allianceData) or {}
     for guildName in pairs(pact.guilds) do
         if guildName ~= mine and not self:IsBlocked(guildName) then
             local entry = store[guildName] and store[guildName].craft
@@ -1414,10 +1414,10 @@ end
 -- True when this character may run pact-level actions (invite, kick, leave).
 function Alliance:CanAdminister()
     local pact = self:Get()
-    if not pact or not BRutus:IsOfficer() then
+    if not pact or not GuildOS:IsOfficer() then
         return false
     end
-    return Alliance.IsAmbassador(pact, self:MyGuildName(), BRutus.Compat.PlayerName())
+    return Alliance.IsAmbassador(pact, self:MyGuildName(), GuildOS.Compat.PlayerName())
 end
 
 -- We were removed from the pact. Only the OWNER guild may do this, and the
@@ -1428,16 +1428,16 @@ function Alliance:_OnEject(data, senderGuild)
         return
     end
     local mine = self:MyGuildName()
-    local named = BRutus:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
+    local named = GuildOS:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
     if not mine or named ~= mine then
         return
     end
-    BRutus.db.alliance = nil
-    BRutus.db.allianceData = nil
+    GuildOS.db.alliance = nil
+    GuildOS.db.allianceData = nil
     if GuildOS.AllianceChat then
         GuildOS.AllianceChat:Leave()
     end
-    BRutus:Print(string.format(L["%s removed this guild from the alliance."], senderGuild))
+    GuildOS:Print(string.format(L["%s removed this guild from the alliance."], senderGuild))
 end
 
 ----------------------------------------------------------------------
@@ -1446,7 +1446,7 @@ end
 -- found. Still ends in the normal human-approved invite flow.
 ----------------------------------------------------------------------
 function Alliance:RequestJoin(tag, officerName)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     if self:Get() then
@@ -1460,7 +1460,7 @@ function Alliance:RequestJoin(tag, officerName)
     if wanted == "" then
         return false, L["Name the alliance tag you want to join."]
     end
-    local target = BRutus:SanitizeUserText(officerName, Alliance.GUILD_NAME_MAX)
+    local target = GuildOS:SanitizeUserText(officerName, Alliance.GUILD_NAME_MAX)
     if target == "" then
         return false, L["Name an officer of a guild already in that alliance."]
     end
@@ -1500,7 +1500,7 @@ end
 -- false, reason, "needContact" when nobody from that alliance is visible, so
 -- the UI can ask for a name only then instead of always.
 function Alliance:JoinWithToken(token, contactName)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     if self:Get() then
@@ -1515,7 +1515,7 @@ function Alliance:JoinWithToken(token, contactName)
     end
 
     local targets = {}
-    local typed = BRutus:SanitizeUserText(contactName, Alliance.GUILD_NAME_MAX)
+    local typed = GuildOS:SanitizeUserText(contactName, Alliance.GUILD_NAME_MAX)
     if typed ~= "" then
         targets[1] = typed
     else
@@ -1538,7 +1538,7 @@ function Alliance:JoinWithToken(token, contactName)
 end
 
 function Alliance:JoinWithCode(tag, code, contactName)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
     if self:Get() then
@@ -1555,7 +1555,7 @@ function Alliance:JoinWithCode(tag, code, contactName)
     if clean == "" then
         return false, L["Enter the alliance join code."]
     end
-    local target = BRutus:SanitizeUserText(contactName, Alliance.GUILD_NAME_MAX)
+    local target = GuildOS:SanitizeUserText(contactName, Alliance.GUILD_NAME_MAX)
     if target == "" then
         return false, L["Name anyone already in that alliance."]
     end
@@ -1575,16 +1575,16 @@ function Alliance:_OnJoinCode(data, sender)
     if Alliance.NormalizeTag(data and data.tag) ~= pact.tag then
         return
     end
-    local guild = BRutus:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
+    local guild = GuildOS:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
     if guild == "" or self:IsMemberGuild(guild) or self:IsBlocked(guild) then
         return
     end
     if not pact.code or pact.code == "" then
-        BRutus.Logger.Debug("Alliance: join code attempt but this pact has no code")
+        GuildOS.Logger.Debug("Alliance: join code attempt but this pact has no code")
         return
     end
     if Alliance.NormalizeCode(data.code) ~= pact.code then
-        BRutus.Logger.Debug("Alliance: wrong join code from " .. shortName(sender))
+        GuildOS.Logger.Debug("Alliance: wrong join code from " .. shortName(sender))
         return
     end
     local count = 0
@@ -1603,7 +1603,7 @@ function Alliance:_OnJoinCode(data, sender)
         addedBy     = "code",
     }
     pact.revision = now
-    BRutus:Print(string.format(L["%s joined the alliance with the join code."], guild))
+    GuildOS:Print(string.format(L["%s joined the alliance with the join code."], guild))
     if GuildOS.AllianceChat then
         GuildOS.AllianceChat:AddSystem(
             string.format(L["%s joined the alliance with the join code."], guild), "info")
@@ -1629,7 +1629,7 @@ function Alliance:RegenerateCode()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
     end
-    if pact.owner ~= self:MyGuildName() or not BRutus:IsOfficer() then
+    if pact.owner ~= self:MyGuildName() or not GuildOS:IsOfficer() then
         return false, L["Only the founding guild can do that."]
     end
     pact.code = Alliance.NewCode()
@@ -1646,7 +1646,7 @@ function Alliance:_OnJoinRequest(data, sender)
     if Alliance.NormalizeTag(data and data.tag) ~= pact.tag then
         return   -- they asked for a different alliance
     end
-    local guild = BRutus:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
+    local guild = GuildOS:SanitizeUserText(data and data.guild, Alliance.GUILD_NAME_MAX)
     if guild == "" or self:IsMemberGuild(guild) or self:IsBlocked(guild) then
         return
     end
@@ -1676,8 +1676,8 @@ Alliance.BOARD_MAX      = 20
 Alliance.BOARD_TEXT_MAX = 200
 
 function Alliance:BoardStore()
-    BRutus.db.allianceBoard = BRutus.db.allianceBoard or {}
-    return BRutus.db.allianceBoard
+    GuildOS.db.allianceBoard = GuildOS.db.allianceBoard or {}
+    return GuildOS.db.allianceBoard
 end
 
 -- Pure. Newest `cap` posts, oldest first. Ids are time-prefixed hex, so sorting
@@ -1721,7 +1721,7 @@ function Alliance:PostBoard(text)
     if not self:CanAdminister() then
         return false, L["Only an alliance ambassador can do that."]
     end
-    local clean = BRutus:SanitizeUserText(text, Alliance.BOARD_TEXT_MAX)
+    local clean = GuildOS:SanitizeUserText(text, Alliance.BOARD_TEXT_MAX)
     if clean == "" then
         return false, L["Write something first."]
     end
@@ -1729,14 +1729,14 @@ function Alliance:PostBoard(text)
     local post = {
         id   = string.format("%X%04X", now, math.random(0, 0xFFFF)),
         text = clean,
-        by   = shortName(BRutus.Compat.PlayerName()),
+        by   = shortName(GuildOS.Compat.PlayerName()),
         ts   = now,
     }
     local store = self:BoardStore()
     store[#store + 1] = post
     trimBoard(store)
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("allyboard", "post", { post = post })
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("allyboard", "post", { post = post })
     end
     if GuildOS.AllianceSync then
         GuildOS.AllianceSync:RefreshLocal("board")
@@ -1757,8 +1757,8 @@ function Alliance:RemoveBoardPost(id)
     for i, p in ipairs(store) do
         if p.id == id then
             table.remove(store, i)
-            if BRutus.SyncService then
-                BRutus.SyncService:Publish("allyboard", "remove", { id = id })
+            if GuildOS.SyncService then
+                GuildOS.SyncService:Publish("allyboard", "remove", { id = id })
             end
             if GuildOS.AllianceSync then
                 GuildOS.AllianceSync:RefreshLocal("board")
@@ -1799,8 +1799,8 @@ function Alliance:OnBoardSync(env)
     end
     store[#store + 1] = {
         id   = post.id,
-        text = BRutus:SanitizeUserText(post.text, Alliance.BOARD_TEXT_MAX),
-        by   = BRutus:SanitizeUserText(post.by, Alliance.GUILD_NAME_MAX),
+        text = GuildOS:SanitizeUserText(post.text, Alliance.BOARD_TEXT_MAX),
+        by   = GuildOS:SanitizeUserText(post.by, Alliance.GUILD_NAME_MAX),
         ts   = tonumber(post.ts) or 0,
     }
     table.sort(store, function(a, b) return tostring(a.id) < tostring(b.id) end)
@@ -1823,7 +1823,7 @@ function Alliance:BoardPosts()
         out[#out + 1] = { id = p.id, text = p.text, by = p.by, ts = p.ts, guild = mine }
     end
     local sync = GuildOS.AllianceSync
-    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    local store = (GuildOS.db and GuildOS.db.allianceData) or {}
     for guildName in pairs(pact.guilds) do
         if guildName ~= mine and not self:IsBlocked(guildName) and sync then
             local entry = store[guildName] and store[guildName].board
@@ -1847,9 +1847,9 @@ end
 function Alliance:PrintStatus()
     local pact = self:Get()
     if not pact then
-        BRutus:Print(L["This guild is not in an alliance yet."])
-        if BRutus:IsOfficer() then
-            BRutus:Print(L["Start one with: /gos ally create <tag> <name>"])
+        GuildOS:Print(L["This guild is not in an alliance yet."])
+        if GuildOS:IsOfficer() then
+            GuildOS:Print(L["Start one with: /gos ally create <tag> <name>"])
         end
         return
     end
@@ -1859,16 +1859,16 @@ function Alliance:PrintStatus()
         names[#names + 1] = guildName
     end
     table.sort(names)
-    BRutus:Print(string.format(L["Alliance %s [%s] - %d guilds"],
+    GuildOS:Print(string.format(L["Alliance %s [%s] - %d guilds"],
         pact.name or pact.tag, pact.tag, #names))
-    BRutus:Print(string.format(L["Bridge: %s"], self:CurrentBridge() or L["nobody online"]))
+    GuildOS:Print(string.format(L["Bridge: %s"], self:CurrentBridge() or L["nobody online"]))
 
     local sync = GuildOS.AllianceSync
     local mine = self:MyGuildName()
     for _, guildName in ipairs(names) do
         local entry = sync and sync:Remote(guildName, "roster")
         local count = (entry and type(entry.data) == "table" and #entry.data) or 0
-        local age = (entry and entry.ts and BRutus:TimeAgo(entry.ts)) or L["never"]
+        local age = (entry and entry.ts and GuildOS:TimeAgo(entry.ts)) or L["never"]
         local suffix = ""
         if guildName == pact.owner then
             suffix = " " .. L["(owner)"]
@@ -1876,7 +1876,7 @@ function Alliance:PrintStatus()
         if guildName == mine then
             suffix = suffix .. " " .. L["(you)"]
         end
-        BRutus:Print(string.format("  %s%s - %d, %s", guildName, suffix, count, age))
+        GuildOS:Print(string.format("  %s%s - %d, %s", guildName, suffix, count, age))
     end
 
     if pact.blocked and next(pact.blocked) then
@@ -1885,7 +1885,7 @@ function Alliance:PrintStatus()
             blocked[#blocked + 1] = guildName
         end
         table.sort(blocked)
-        BRutus:Print(string.format(L["Blocked: %s"], table.concat(blocked, ", ")))
+        GuildOS:Print(string.format(L["Blocked: %s"], table.concat(blocked, ", ")))
     end
 end
 
@@ -1906,27 +1906,27 @@ function Alliance:HandleCommand(args)
     if verb == "create" then
         local tag, name = rest:match("^(%S+)%s*(.*)$")
         if not tag then
-            return BRutus:Print(L["Usage: /gos ally create <tag> <name>"])
+            return GuildOS:Print(L["Usage: /gos ally create <tag> <name>"])
         end
         ok, err = self:Create(tag, name)
         if ok then
-            BRutus:Print(string.format(L["Alliance %s created. Invite a guild with /gos ally invite <officer>"],
+            GuildOS:Print(string.format(L["Alliance %s created. Invite a guild with /gos ally invite <officer>"],
                 self:Get().name))
         end
     elseif verb == "invite" then
         ok, err = self:Invite(rest)
         if ok then
-            BRutus:Print(string.format(L["Invite sent to %s."], rest))
+            GuildOS:Print(string.format(L["Invite sent to %s."], rest))
         end
     elseif verb == "leave" then
         ok, err = self:Leave()
         if ok then
-            BRutus:Print(L["Left the alliance."])
+            GuildOS:Print(L["Left the alliance."])
         end
     elseif verb == "kick" or verb == "remove" then
         ok, err = self:RemoveGuild(rest)
         if ok then
-            BRutus:Print(string.format(L["%s removed from the alliance."], rest))
+            GuildOS:Print(string.format(L["%s removed from the alliance."], rest))
         end
     elseif verb == "amb" or verb == "ambassador" then
         local sub, who = rest:match("^(%S*)%s*(.*)$")
@@ -1934,20 +1934,20 @@ function Alliance:HandleCommand(args)
         who = strtrim(who or "")
         if sub == "add" then
             ok, err = self:AddAmbassador(who)
-            if ok then BRutus:Print(string.format(L["%s is now an ambassador."], who)) end
+            if ok then GuildOS:Print(string.format(L["%s is now an ambassador."], who)) end
         elseif sub == "remove" or sub == "rem" then
             ok, err = self:RemoveAmbassador(who)
-            if ok then BRutus:Print(string.format(L["%s is no longer an ambassador."], who)) end
+            if ok then GuildOS:Print(string.format(L["%s is no longer an ambassador."], who)) end
         elseif sub == "claim" then
             ok, err = self:ClaimAmbassador()
-            if ok then BRutus:Print(L["You are now an ambassador of this guild."]) end
+            if ok then GuildOS:Print(L["You are now an ambassador of this guild."]) end
         else
             local entry = self:_MyEntry()
             if not entry then
-                return BRutus:Print(L["This guild is not in an alliance yet."])
+                return GuildOS:Print(L["This guild is not in an alliance yet."])
             end
-            BRutus:Print(string.format(L["Ambassadors: %s"], table.concat(entry.ambassadors, ", ")))
-            return BRutus:Print(L["Usage: /gos ally amb [add|remove|claim] <name>"])
+            GuildOS:Print(string.format(L["Ambassadors: %s"], table.concat(entry.ambassadors, ", ")))
+            return GuildOS:Print(L["Usage: /gos ally amb [add|remove|claim] <name>"])
         end
     elseif verb == "code" then
         -- Only ambassadors ever SEE the code. It lives in every member's saved
@@ -1958,47 +1958,47 @@ function Alliance:HandleCommand(args)
             ok, err = self:RegenerateCode()
             newCode = ok and err or nil
             if ok then
-                BRutus:Print(string.format(L["New join code: %s"], newCode or "?"))
+                GuildOS:Print(string.format(L["New join code: %s"], newCode or "?"))
                 err = nil
             end
         elseif not self:CanAdminister() then
-            return BRutus:Print(L["Only an alliance ambassador can do that."])
+            return GuildOS:Print(L["Only an alliance ambassador can do that."])
         else
             local pact = self:Get()
             if not pact then
-                return BRutus:Print(L["This guild is not in an alliance yet."])
+                return GuildOS:Print(L["This guild is not in an alliance yet."])
             end
-            BRutus:Print(string.format(L["Join code: %s"], self:JoinToken() or "?"))
-            return BRutus:Print(L["Anyone with this code joins without an officer having to be online."])
+            GuildOS:Print(string.format(L["Join code: %s"], self:JoinToken() or "?"))
+            return GuildOS:Print(L["Anyone with this code joins without an officer having to be online."])
         end
     elseif verb == "join" then
         local token, who = rest:match("^(%S*)%s*(.*)$")
         ok, err = self:JoinWithToken(token, strtrim(who or ""))
         if ok then
-            BRutus:Print(L["Join sent. If somebody from that alliance is online you are in."])
+            GuildOS:Print(L["Join sent. If somebody from that alliance is online you are in."])
         end
     elseif verb == "request" then
         local tag, who = rest:match("^(%S*)%s*(.*)$")
         ok, err = self:RequestJoin(tag, strtrim(who or ""))
         if ok then
-            BRutus:Print(string.format(L["Join request sent to %s."], strtrim(who or "")))
+            GuildOS:Print(string.format(L["Join request sent to %s."], strtrim(who or "")))
         end
     elseif verb == "block" then
         ok, err = self:Block(rest)
         if ok then
-            BRutus:Print(string.format(L["Ignoring %s locally. The pact is unchanged."], rest))
+            GuildOS:Print(string.format(L["Ignoring %s locally. The pact is unchanged."], rest))
         end
     elseif verb == "unblock" then
         ok, err = self:Unblock(rest)
         if ok then
-            BRutus:Print(string.format(L["No longer ignoring %s."], rest))
+            GuildOS:Print(string.format(L["No longer ignoring %s."], rest))
         end
     else
-        return BRutus:Print(L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"])
+        return GuildOS:Print(L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"])
     end
 
     if not ok and err then
-        BRutus:Print(err)
+        GuildOS:Print(err)
     end
 end
 
@@ -2032,7 +2032,7 @@ local function registerPopups()
             local d = self and self.data
             if not d then return end
             local ok, err = GuildOS.Alliance:Invite(d.sender)
-            if not ok and err then BRutus:Print(err) end
+            if not ok and err then GuildOS:Print(err) end
         end,
         timeout = 60,
         whileDead = true,
@@ -2046,10 +2046,10 @@ function Alliance:Initialize()
     registerPopups()
     -- The roster class/level cache is only valid until the roster changes.
     local rf = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(rf, "GUILD_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(rf, "GUILD_ROSTER_UPDATE")
     rf:SetScript("OnEvent", function() GuildOS.Alliance._rosterInfo = nil end)
-    if BRutus.SyncService then
-        BRutus.SyncService:On("allyboard", function(env) GuildOS.Alliance:OnBoardSync(env) end)
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("allyboard", function(env) GuildOS.Alliance:OnBoardSync(env) end)
     end
     local mesh = _G.ChehulMesh
     if mesh and not self._registered then
@@ -2075,11 +2075,11 @@ local function samplePact()
 end
 
 function Alliance:_RegisterTests()
-    if not BRutus.SelfTest then
+    if not GuildOS.SelfTest then
         return
     end
 
-    BRutus.SelfTest:Register("alliance.normalize_tag", function()
+    GuildOS.SelfTest:Register("alliance.normalize_tag", function()
         if Alliance.NormalizeTag("brcore") ~= "BRCORE" then return false, "not uppercased" end
         if Alliance.NormalizeTag(" br-core! ") ~= "BRCORE" then return false, "punctuation kept" end
         if Alliance.NormalizeTag("abcdefghijklmno") ~= "ABCDEFGHIJKL" then return false, "not capped at 12" end
@@ -2088,13 +2088,13 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.channel_name", function()
+    GuildOS.SelfTest:Register("alliance.channel_name", function()
         if Alliance.ChannelName("brcore") ~= "GOSBRCORE" then return false, "bad channel name" end
         if Alliance.ChannelName("...") ~= nil then return false, "empty tag must yield nil" end
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.hash_is_stable", function()
+    GuildOS.SelfTest:Register("alliance.hash_is_stable", function()
         local a = Alliance.Hash("Chehul-Nefarian")
         if a ~= Alliance.Hash("Chehul-Nefarian") then return false, "not deterministic" end
         if a < 0 then return false, "must be non-negative" end
@@ -2105,7 +2105,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.elect_bridge", function()
+    GuildOS.SelfTest:Register("alliance.elect_bridge", function()
         local keys = { "Ann-R", "Bob-R", "Cid-R" }
         local first = Alliance.ElectBridge(keys)
         if not first then return false, "no bridge elected" end
@@ -2113,7 +2113,7 @@ function Alliance:_RegisterTests()
             return false, "election depends on input order"
         end
         -- What the election hashes: the name alone on WoW: Forever, the whole key elsewhere (#97).
-        local forever = BRutus.Client and not BRutus.Client.isAnniversary
+        local forever = GuildOS.Client and not GuildOS.Client.isAnniversary
         local function id(k) return forever and (k:match("^([^-]+)") or k) or k end
         for _, k in ipairs(keys) do
             if Alliance.Hash(id(k)) < Alliance.Hash(id(first)) then return false, "not the lowest hash" end
@@ -2124,7 +2124,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.bridge_debounce", function()
+    GuildOS.SelfTest:Register("alliance.bridge_debounce", function()
         local r = Alliance._DebouncedBridge(nil, "Ann-R", 0, 100, 30)
         if r ~= "Ann-R" then return false, "first election must apply immediately" end
         r = Alliance._DebouncedBridge("Ann-R", "Bob-R", 100, 110, 30)
@@ -2136,7 +2136,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.serialize_strips_blocked", function()
+    GuildOS.SelfTest:Register("alliance.serialize_strips_blocked", function()
         local out = Alliance.SerializePact(samplePact())
         if out.blocked ~= nil then return false, "blocked leaked onto the wire" end
         if out.guilds["Guild A"] == nil then return false, "guilds lost" end
@@ -2147,7 +2147,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.sanitize_drops_blocked", function()
+    GuildOS.SelfTest:Register("alliance.sanitize_drops_blocked", function()
         local out = Alliance.SanitizePact(samplePact())
         if not out then return false, "valid pact rejected" end
         if out.blocked ~= nil then return false, "incoming blocked was kept" end
@@ -2158,7 +2158,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.sanitize_clamps", function()
+    GuildOS.SelfTest:Register("alliance.sanitize_clamps", function()
         local p = samplePact()
         for i = 1, 40 do p.guilds["Filler " .. i] = { ambassadors = { "Amb" .. i } } end
         for i = 1, 30 do p.guilds["Guild A"].ambassadors[i] = "Amb" .. i end
@@ -2174,7 +2174,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.resolve_pact", function()
+    GuildOS.SelfTest:Register("alliance.resolve_pact", function()
         local cur = samplePact()
         local newer = samplePact(); newer.revision = 200
         if Alliance.ResolvePact(cur, newer).revision ~= 200 then return false, "newer must win" end
@@ -2193,7 +2193,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.encode_roundtrip", function()
+    GuildOS.SelfTest:Register("alliance.encode_roundtrip", function()
         local src = { tag = "BRCORE", revision = 42, guilds = { ["G A"] = { ambassadors = { "Ann" } } } }
         local wire = Alliance.Encode(src)
         if type(wire) ~= "string" or wire == "" then return false, "encode produced nothing" end
@@ -2208,7 +2208,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.claim_ambassador", function()
+    GuildOS.SelfTest:Register("alliance.claim_ambassador", function()
         local C = Alliance._CanClaimAmbassador
         -- Somebody listed is still in the guild: no vacancy.
         if C({ "Chehul" }, { chehul = true }) then return false, "claim allowed while the ambassador is present" end
@@ -2223,7 +2223,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.code_authorized_change", function()
+    GuildOS.SelfTest:Register("alliance.code_authorized_change", function()
         local A = Alliance.IsCodeAuthorizedChange
         local function pact(code, guilds)
             return { tag = "BRCORE", owner = "Guild A", code = code, guilds = guilds }
@@ -2272,7 +2272,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.join_token", function()
+    GuildOS.SelfTest:Register("alliance.join_token", function()
         local F, P = Alliance.FormatJoinToken, Alliance.ParseJoinToken
         if F("brcore", "abcd1234") ~= "BRCORE-ABCD1234" then return false, "format" end
         if F("", "ABCD") ~= nil then return false, "empty tag must not format" end
@@ -2295,7 +2295,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.new_code", function()
+    GuildOS.SelfTest:Register("alliance.new_code", function()
         local c = Alliance.NewCode()
         if #c ~= Alliance.CODE_LEN then return false, "wrong length: " .. #c end
         if c:find("[^A-Z0-9]") then return false, "unexpected character in " .. c end
@@ -2306,7 +2306,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.guild_color", function()
+    GuildOS.SelfTest:Register("alliance.guild_color", function()
         local r, g, b = Alliance.GuildColor("Guild A")
         local r2, g2, b2 = Alliance.GuildColor("Guild A")
         if r ~= r2 or g ~= g2 or b ~= b2 then return false, "not deterministic" end
@@ -2324,7 +2324,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.board_build", function()
+    GuildOS.SelfTest:Register("alliance.board_build", function()
         local posts = {}
         for i = 1, 30 do
             posts[#posts + 1] = { id = string.format("%08X", i), text = "p" .. i, by = "Ann", ts = i }
@@ -2345,7 +2345,7 @@ function Alliance:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliance.is_ambassador", function()
+    GuildOS.SelfTest:Register("alliance.is_ambassador", function()
         local p = samplePact()
         if not Alliance.IsAmbassador(p, "Guild A", "Chehul") then return false, "known ambassador rejected" end
         if not Alliance.IsAmbassador(p, "Guild A", "Chehul-Nefarian") then return false, "realm suffix broke it" end

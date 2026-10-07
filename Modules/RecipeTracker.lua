@@ -1,10 +1,10 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Recipe Tracker
+-- Guild OS - Recipe Tracker
 -- Scans and shares tradeskill recipes across the guild
 ----------------------------------------------------------------------
 local RecipeTracker = {}
-BRutus.RecipeTracker = RecipeTracker
-local L = BRutus.L
+GuildOS.RecipeTracker = RecipeTracker
+local L = GuildOS.L
 
 ----------------------------------------------------------------------
 -- Initialize
@@ -14,10 +14,10 @@ function RecipeTracker:Initialize()
     self.lastScanTime = {}
 
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "TRADE_SKILL_SHOW")
+    GuildOS.Compat.RegisterEvent(frame, "TRADE_SKILL_SHOW")
     -- The old craft window (Enchanting in some clients). A client built without
     -- it — Forever runs the retail tradeskill UI — never fires this.
-    BRutus.Compat.RegisterEvent(frame, "CRAFT_SHOW", true)
+    GuildOS.Compat.RegisterEvent(frame, "CRAFT_SHOW", true)
     frame:SetScript("OnEvent", function(_, event)
         if event == "TRADE_SKILL_SHOW" then
             RecipeTracker:DebounceScan("trade")
@@ -27,8 +27,8 @@ function RecipeTracker:Initialize()
     end)
 
     -- Ensure DB table exists
-    if not BRutus.db.recipes then
-        BRutus.db.recipes = {}
+    if not GuildOS.db.recipes then
+        GuildOS.db.recipes = {}
     end
 
     -- Enrich stored recipes: propagate spellIds from players who have them
@@ -50,7 +50,7 @@ function RecipeTracker:EnrichStoredRecipes()
     -- Phase 1: Build name→spellId per profession from ALL recipes that have spellId
     local profLookup = {} -- profName → { lowerName → spellId }
 
-    for _, professions in pairs(BRutus.db.recipes or {}) do
+    for _, professions in pairs(GuildOS.db.recipes or {}) do
         for profName, recipes in pairs(professions) do
             if not profLookup[profName] then profLookup[profName] = {} end
             for _, r in ipairs(recipes) do
@@ -58,7 +58,7 @@ function RecipeTracker:EnrichStoredRecipes()
                     if r.name then
                         profLookup[profName][strlower(r.name)] = r.spellId
                     end
-                    local localName = BRutus.Compat.GetSpellInfo(r.spellId)
+                    local localName = GuildOS.Compat.GetSpellInfo(r.spellId)
                     if localName and localName ~= "" then
                         profLookup[profName][strlower(localName)] = r.spellId
                     end
@@ -70,7 +70,7 @@ function RecipeTracker:EnrichStoredRecipes()
     -- Phase 2: Enrich where possible, then purge remaining ID-less entries
     local enriched = 0
     local purged = 0
-    for _, professions in pairs(BRutus.db.recipes or {}) do
+    for _, professions in pairs(GuildOS.db.recipes or {}) do
         for profName, recipes in pairs(professions) do
             local lookup = profLookup[profName]
             -- Reverse iterate so we can remove in-place
@@ -94,10 +94,10 @@ function RecipeTracker:EnrichStoredRecipes()
     end
 
     if enriched > 0 then
-        BRutus:Print(format(L["|cff00ff00Recipes:|r enriched %d entries with IDs."], enriched))
+        GuildOS:Print(format(L["|cff00ff00Recipes:|r enriched %d entries with IDs."], enriched))
     end
     if purged > 0 then
-        BRutus:Print(format(L["|cffFFD700Recipes:|r purged %d old entries without IDs. They will be restored on next scan/sync."], purged))
+        GuildOS:Print(format(L["|cffFFD700Recipes:|r purged %d old entries without IDs. They will be restored on next scan/sync."], purged))
     end
 end
 
@@ -157,7 +157,7 @@ function RecipeTracker:ScanTradeSkill()
     local rawSkillName = GetTradeSkillLine()
     if not rawSkillName or rawSkillName == "" or rawSkillName == "UNKNOWN" then return end
 
-    local skillName = BRutus.DataCollector:GetCanonicalProfName(rawSkillName)
+    local skillName = GuildOS.DataCollector:GetCanonicalProfName(rawSkillName)
 
     local numSkills = GetNumTradeSkills and GetNumTradeSkills() or 0
     if numSkills == 0 then return end
@@ -202,7 +202,7 @@ function RecipeTracker:ScanCraft()
     local rawSkillName = GetCraftDisplaySkillLine()
     if not rawSkillName or rawSkillName == "" or rawSkillName == "UNKNOWN" then return end
 
-    local skillName = BRutus.DataCollector:GetCanonicalProfName(rawSkillName)
+    local skillName = GuildOS.DataCollector:GetCanonicalProfName(rawSkillName)
 
     local numCrafts = GetNumCrafts and GetNumCrafts() or 0
     if numCrafts == 0 then return end
@@ -241,37 +241,37 @@ end
 -- Store scanned recipes for local player
 ----------------------------------------------------------------------
 function RecipeTracker:StoreMyRecipes(profName, recipes)
-    local name = BRutus.Compat.PlayerName()
+    local name = GuildOS.Compat.PlayerName()
     local realm = GetRealmName()
-    local key = BRutus:GetPlayerKey(name, realm)
+    local key = GuildOS:GetPlayerKey(name, realm)
 
-    if not BRutus.db.recipes[key] then
-        BRutus.db.recipes[key] = {}
+    if not GuildOS.db.recipes[key] then
+        GuildOS.db.recipes[key] = {}
     end
 
     -- Remove old localized keys that map to the same canonical profession
-    local DC = BRutus.DataCollector
+    local DC = GuildOS.DataCollector
     if DC and DC.GetCanonicalProfName then
-        for oldKey, _ in pairs(BRutus.db.recipes[key]) do
+        for oldKey, _ in pairs(GuildOS.db.recipes[key]) do
             if oldKey ~= profName and DC:GetCanonicalProfName(oldKey) == profName then
-                BRutus.db.recipes[key][oldKey] = nil
+                GuildOS.db.recipes[key][oldKey] = nil
             end
         end
     end
 
-    BRutus.db.recipes[key][profName] = recipes
+    GuildOS.db.recipes[key][profName] = recipes
 
     -- Track scan timestamps per profession
-    if not BRutus.db.recipeScanTimes then
-        BRutus.db.recipeScanTimes = {}
+    if not GuildOS.db.recipeScanTimes then
+        GuildOS.db.recipeScanTimes = {}
     end
-    BRutus.db.recipeScanTimes[profName] = time()
+    GuildOS.db.recipeScanTimes[profName] = time()
 
-    BRutus:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, L[profName]))
+    GuildOS:Print(string.format(L["|cff00ff00Recipes scanned:|r %d %s recipes indexed."], #recipes, L[profName]))
 
     -- Dismiss the profession reminder if all professions are now scanned
-    if BRutus.profReminderFrame then
-        BRutus:CheckAndDismissProfessionReminder()
+    if GuildOS.profReminderFrame then
+        GuildOS:CheckAndDismissProfessionReminder()
     end
 
     -- Broadcast to guild
@@ -282,7 +282,7 @@ end
 -- Broadcast recipes via CommSystem
 ----------------------------------------------------------------------
 function RecipeTracker:BroadcastRecipes(profName, recipes)
-    if not BRutus.CommSystem then return end
+    if not GuildOS.CommSystem then return end
     if not IsInGuild() then return end
 
     local LibSerialize = LibStub("GuildOS-LibSerialize")
@@ -291,7 +291,7 @@ function RecipeTracker:BroadcastRecipes(profName, recipes)
         recipes = recipes,
     }
     local serialized = LibSerialize:Serialize(data)
-    BRutus.CommSystem:SendMessage("RC", serialized)
+    GuildOS.CommSystem:SendMessage("RC", serialized)
 end
 
 ----------------------------------------------------------------------
@@ -307,7 +307,7 @@ function RecipeTracker:HandleIncoming(sender, data)
     if not profName or not recipes then return end
 
     -- Normalize profession name to canonical English
-    local DC = BRutus.DataCollector
+    local DC = GuildOS.DataCollector
     if DC and DC.GetCanonicalProfName then
         profName = DC:GetCanonicalProfName(profName)
     end
@@ -315,23 +315,23 @@ function RecipeTracker:HandleIncoming(sender, data)
     -- Build player key from sender
     local senderName = sender:match("^([^-]+)") or sender
     local realm = sender:match("-(.+)$") or GetRealmName()
-    local key = BRutus:GetPlayerKey(senderName, realm)
+    local key = GuildOS:GetPlayerKey(senderName, realm)
 
-    if not BRutus.db.recipes[key] then
-        BRutus.db.recipes[key] = {}
+    if not GuildOS.db.recipes[key] then
+        GuildOS.db.recipes[key] = {}
     end
 
     -- Remove old localized keys that map to the same canonical profession
-    for oldKey, _ in pairs(BRutus.db.recipes[key]) do
+    for oldKey, _ in pairs(GuildOS.db.recipes[key]) do
         if oldKey ~= profName and DC and DC:GetCanonicalProfName(oldKey) == profName then
-            BRutus.db.recipes[key][oldKey] = nil
+            GuildOS.db.recipes[key][oldKey] = nil
         end
     end
 
     -- Preserve spellIds: merge from existing data into incoming
-    self:MergeSpellIds(BRutus.db.recipes[key][profName], recipes)
+    self:MergeSpellIds(GuildOS.db.recipes[key][profName], recipes)
 
-    BRutus.db.recipes[key][profName] = recipes
+    GuildOS.db.recipes[key][profName] = recipes
 end
 
 ----------------------------------------------------------------------
@@ -340,8 +340,8 @@ end
 function RecipeTracker:GetAllProfessions()
     local profs = {}
     local seen = {}
-    local DC = BRutus.DataCollector
-    for _, playerRecipes in pairs(BRutus.db.recipes or {}) do
+    local DC = GuildOS.DataCollector
+    for _, playerRecipes in pairs(GuildOS.db.recipes or {}) do
         for profName, _ in pairs(playerRecipes) do
             local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
             local isGathering = DC and DC.IsGatheringProfession and DC:IsGatheringProfession(canonical)
@@ -363,7 +363,7 @@ end
 ----------------------------------------------------------------------
 function RecipeTracker:BuildRecipeIndex()
     local grouped = {}
-    local DC = BRutus.DataCollector
+    local DC = GuildOS.DataCollector
 
     -- nameToKey: maps "name|prof" → recipeKey for recipes that have IDs
     -- Stores both the original sender name and the locally resolved name
@@ -382,7 +382,7 @@ function RecipeTracker:BuildRecipeIndex()
 
     -- First pass: group all recipes; build name→key lookup from ID-based entries
     local nameOnlyQueue = {}
-    for playerKey, professions in pairs(BRutus.db.recipes or {}) do
+    for playerKey, professions in pairs(GuildOS.db.recipes or {}) do
         local playerName = playerKey:match("^([^-]+)") or playerKey
         for profName, recipes in pairs(professions) do
             local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
@@ -403,13 +403,13 @@ function RecipeTracker:BuildRecipeIndex()
                     if not grouped[recipeKey] then
                         local displayName = recipe.name
                         if recipe.spellId then
-                            local spellName = BRutus.Compat.GetSpellInfo(recipe.spellId)
+                            local spellName = GuildOS.Compat.GetSpellInfo(recipe.spellId)
                             if spellName and spellName ~= "" then
                                 displayName = spellName
                             end
                         end
                         if recipe.itemId and (not displayName or displayName == recipe.name) then
-                            local itemName = BRutus.Compat.GetItemInfo(recipe.itemId)
+                            local itemName = GuildOS.Compat.GetItemInfo(recipe.itemId)
                             if itemName and itemName ~= "" then
                                 displayName = itemName
                             end
@@ -570,12 +570,12 @@ end
 function RecipeTracker:BuildItemCrafterIndex()
     local itemIndex = {}
     local spellIndex = {}
-    local DC = BRutus.DataCollector
-    for playerKey, professions in pairs(BRutus.db.recipes or {}) do
+    local DC = GuildOS.DataCollector
+    for playerKey, professions in pairs(GuildOS.db.recipes or {}) do
         local playerName = playerKey:match("^([^-]+)") or playerKey
         for profName, recipes in pairs(professions) do
             local canonical = DC and DC.GetCanonicalProfName and DC:GetCanonicalProfName(profName) or profName
-            local memberData = BRutus.db and BRutus.db.members and BRutus.db.members[playerKey]
+            local memberData = GuildOS.db and GuildOS.db.members and GuildOS.db.members[playerKey]
             local crafterInfo = {
                 playerKey = playerKey,
                 playerName = playerName,
@@ -619,7 +619,7 @@ end
 function RecipeTracker:GetCraftersForItem(itemId)
     if not itemId then return nil end
     -- WoW: Forever reads the professions model: no index to rebuild (issue #33).
-    if BRutus.ProfDirectory then return BRutus.ProfDirectory.CraftersForItem(itemId) end
+    if GuildOS.ProfDirectory then return GuildOS.ProfDirectory.CraftersForItem(itemId) end
     -- Rebuild cache every 30 seconds
     if not self._itemCrafterIndex or not self._itemCrafterIndexTime
        or (GetTime() - self._itemCrafterIndexTime) > 30 then
@@ -632,7 +632,7 @@ end
 
 function RecipeTracker:GetCraftersForSpell(spellId)
     if not spellId then return nil end
-    if BRutus.ProfDirectory then return BRutus.ProfDirectory.CraftersForSpell(spellId) end
+    if GuildOS.ProfDirectory then return GuildOS.ProfDirectory.CraftersForSpell(spellId) end
     -- Rebuild cache every 30 seconds
     if not self._spellCrafterIndex or not self._itemCrafterIndexTime
        or (GetTime() - self._itemCrafterIndexTime) > 30 then
@@ -651,8 +651,8 @@ end
 function RecipeTracker:LocalCrafts(itemId)
     itemId = tonumber(itemId)
     if not itemId then return nil end
-    local key = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
-    local professions = BRutus.db and BRutus.db.recipes and BRutus.db.recipes[key]
+    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+    local professions = GuildOS.db and GuildOS.db.recipes and GuildOS.db.recipes[key]
     if not professions then return nil end
     for profName, recipes in pairs(professions) do
         for _, r in ipairs(recipes) do
@@ -668,7 +668,7 @@ end
 -- Hook GameTooltip to show crafters for items
 ----------------------------------------------------------------------
 function RecipeTracker:HookTooltips()
-    local C = BRutus.Colors
+    local C = GuildOS.Colors
     local onlineSet
 
     -- Shared: append crafter lines to a tooltip
@@ -695,7 +695,7 @@ function RecipeTracker:HookTooltips()
         tooltip:AddLine(" ")
         tooltip:AddLine(label or L["Crafted by:"], C.accent.r, C.accent.g, C.accent.b)
         for _, c in ipairs(sorted) do
-            local cc = c.class and BRutus.ClassColors[c.class] or C.white
+            local cc = c.class and GuildOS.ClassColors[c.class] or C.white
             local status = onlineSet[c.playerName] and L[" |cff00ff00(online)|r"] or L[" |cff666666(offline)|r"]
             tooltip:AddDoubleLine("  " .. c.playerName .. status, c.profName and L[c.profName] or "", cc.r, cc.g, cc.b, 0.6, 0.6, 0.6)
         end
@@ -705,10 +705,10 @@ function RecipeTracker:HookTooltips()
 
     -- Item tooltip handler
     local function OnTooltipSetItem(tooltip)
-        if not BRutus.db or not BRutus.db.recipes then return end
-        if not BRutus:ShowsItemTooltipInfo(tooltip) then return end
+        if not GuildOS.db or not GuildOS.db.recipes then return end
+        if not GuildOS:ShowsItemTooltipInfo(tooltip) then return end
 
-        local _, link = BRutus.Compat.TooltipItem(tooltip)
+        local _, link = GuildOS.Compat.TooltipItem(tooltip)
         if not link then return end
 
         local itemId = tonumber(link:match("item:(%d+)"))
@@ -717,7 +717,7 @@ function RecipeTracker:HookTooltips()
         local crafters = RecipeTracker:GetCraftersForItem(itemId)
         AppendCrafters(tooltip, crafters, L["Crafted by:"])
         -- WoW: Forever knows every recipe, so it can say when nobody in the guild makes this (issue #33).
-        if not crafters and BRutus.ProfDirectory and #BRutus.ProfDirectory.ItemRecipes(itemId) > 0 then
+        if not crafters and GuildOS.ProfDirectory and #GuildOS.ProfDirectory.ItemRecipes(itemId) > 0 then
             tooltip:AddLine(" ")
             tooltip:AddLine(L["Nobody in the guild crafts this"], C.textDim.r, C.textDim.g, C.textDim.b)
             tooltip:Show()
@@ -726,9 +726,9 @@ function RecipeTracker:HookTooltips()
 
     -- Spell tooltip handler (tradeskill window, spellbook, action bars)
     local function OnTooltipSetSpell(tooltip)
-        if not BRutus.db or not BRutus.db.recipes then return end
+        if not GuildOS.db or not GuildOS.db.recipes then return end
 
-        local _, spellId = BRutus.Compat.TooltipSpell(tooltip)
+        local _, spellId = GuildOS.Compat.TooltipSpell(tooltip)
         if not spellId then return end
 
         local crafters = RecipeTracker:GetCraftersForSpell(spellId)
@@ -736,18 +736,18 @@ function RecipeTracker:HookTooltips()
     end
 
     -- Clear online cache when tooltip hides
-    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipCleared", function()
+    GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipCleared", function()
         onlineSet = nil
     end)
 
     -- Item hooks (a tooltip that is not built yet is skipped)
-    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)
-    BRutus.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetItem", OnTooltipSetItem)
-    BRutus.Compat.HookTooltip(ShoppingTooltip1, "OnTooltipSetItem", OnTooltipSetItem)
-    BRutus.Compat.HookTooltip(ShoppingTooltip2, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(ShoppingTooltip1, "OnTooltipSetItem", OnTooltipSetItem)
+    GuildOS.Compat.HookTooltip(ShoppingTooltip2, "OnTooltipSetItem", OnTooltipSetItem)
 
     -- Spell/enchant hooks: OnTooltipSetSpell fires for both tradeskill hover AND
     -- enchant: hyperlinks, so no need for a separate SetHyperlink hook.
-    BRutus.Compat.HookTooltip(GameTooltip, "OnTooltipSetSpell", OnTooltipSetSpell)
-    BRutus.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetSpell", OnTooltipSetSpell)
+    GuildOS.Compat.HookTooltip(GameTooltip, "OnTooltipSetSpell", OnTooltipSetSpell)
+    GuildOS.Compat.HookTooltip(ItemRefTooltip, "OnTooltipSetSpell", OnTooltipSetSpell)
 end

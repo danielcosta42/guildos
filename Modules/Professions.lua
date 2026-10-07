@@ -8,12 +8,12 @@
 -- between guildmates; Project() keeps the legacy shapes (members[].professions, db.recipes)
 -- that the roster, member detail, recipes panel, tooltips, CraftNet and the export read.
 ----------------------------------------------------------------------
-if BRutus.Client.isAnniversary then return end
+if GuildOS.Client.isAnniversary then return end
 
 local Professions = {}
-BRutus.Professions = Professions
+GuildOS.Professions = Professions
 
-local Compat = BRutus.Compat
+local Compat = GuildOS.Compat
 local LibDeflate = LibStub("LibDeflate")
 
 Professions.MAX_LINES = 7
@@ -23,10 +23,10 @@ local SCAN_DELAY = 2      -- seconds of quiet before a rescan
 local WINDOW_DELAY = 1    -- the window fires TRADE_SKILL_LIST_UPDATE in bursts
 local NATIVE_EVERY = 60   -- the Communities roster is read at most this often
 
-local function catalog() return BRutus.ProfCatalog end
+local function catalog() return GuildOS.ProfCatalog end
 
 function Professions.OwnKey()
-    return BRutus:GetPlayerKey(Compat.PlayerName())
+    return GuildOS:GetPlayerKey(Compat.PlayerName())
 end
 
 -- The member key for a name as the guild roster, the Communities roster or a sender writes it,
@@ -34,7 +34,7 @@ end
 -- under the key the roster, the fallback and the prune look up.
 function Professions.KeyFor(name)
     if type(name) ~= "string" or name == "" then return nil end
-    return BRutus:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
+    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
 end
 
 -- Sorted copy of a list of positive integer IDs, duplicates dropped; nil when it is not a
@@ -64,7 +64,7 @@ function Professions.Hash(recipes, extra)
 end
 
 function Professions:Initialize()
-    BRutus.db.professions = BRutus.db.professions or {}
+    GuildOS.db.professions = GuildOS.db.professions or {}
     self.index, self.scanned, self.nativeAt = nil, false, 0
     local f = CreateFrame("Frame")
     for _, event in ipairs({ "SKILL_LINES_CHANGED", "NEW_RECIPE_LEARNED", "LEARNED_SPELL_IN_SKILL_LINE",
@@ -147,7 +147,7 @@ function Professions:Scan()
     local key = self.OwnKey()
     if not (cat and key) then return false end
     self.scanned = true
-    local old = BRutus.db.professions[key]
+    local old = GuildOS.db.professions[key]
     local oldProfs = (old and old.src == "addon" and old.profs) or {}
     local profs = {}
     local slots = { Compat.GetProfessions() }
@@ -169,9 +169,9 @@ function Professions:Scan()
         if not profs[line] then changed = true end
     end
     if not changed then return false end
-    BRutus.db.professions[key] = { src = "addon", ts = GetServerTime(), profs = profs }
+    GuildOS.db.professions[key] = { src = "addon", ts = GetServerTime(), profs = profs }
     self:Changed(key)
-    if BRutus.ProfSync then BRutus.ProfSync:ScheduleSummary() end
+    if GuildOS.ProfSync then GuildOS.ProfSync:ScheduleSummary() end
     return true
 end
 
@@ -181,7 +181,7 @@ function Professions:ReadWindow()
     local cat = catalog()
     local line, learned = Compat.TradeSkillLearned()
     local key = self.OwnKey()
-    local rec = key and BRutus.db.professions[key]
+    local rec = key and GuildOS.db.professions[key]
     local p = line and rec and rec.src == "addon" and rec.profs[line]
     if not (cat and p) then return end
     local extra = {}
@@ -194,7 +194,7 @@ function Professions:ReadWindow()
     p.extra, p.h, p.n = extra, h, #p.recipes + #extra
     rec.ts = GetServerTime()
     self:Changed(key)
-    if BRutus.ProfSync then BRutus.ProfSync:ScheduleSummary() end
+    if GuildOS.ProfSync then GuildOS.ProfSync:ScheduleSummary() end
 end
 
 -- NEW_RECIPE_LEARNED: a recipe the catalog lacks, learned with the window closed, becomes extra
@@ -225,7 +225,7 @@ function Professions:ReadNative()
     -- Protected: the roster's fields can be secret in a chat lockdown.
     local ok, members = pcall(Compat.GuildMemberProfessions)
     if not (cat and ok and members) then return end
-    local db = BRutus.db.professions
+    local db = GuildOS.db.professions
     for _, m in ipairs(members) do
         local key = self.KeyFor(m.name)
         local rec = key and db[key]
@@ -267,9 +267,9 @@ function Professions:DropDeparted()
         local key = full and self.KeyFor(full)
         if key then present[key] = true end
     end
-    for key in pairs(BRutus.db.professions) do
+    for key in pairs(GuildOS.db.professions) do
         if not present[key] then
-            BRutus.db.professions[key] = nil
+            GuildOS.db.professions[key] = nil
             self:Changed(key)
         end
     end
@@ -278,7 +278,7 @@ end
 ----------------------------------------------------------------------
 -- Queries
 ----------------------------------------------------------------------
-function Professions:Get(key) return BRutus.db.professions[key] end
+function Professions:Get(key) return GuildOS.db.professions[key] end
 
 -- A line's recipe and extra lists: the current ones, or while a changed list is on its way the
 -- previous ones, so a crafter who learned one recipe does not vanish meanwhile.
@@ -291,7 +291,7 @@ Professions.Lists = lists
 function Professions:CraftersOf(recipeID)
     if not self.index then
         local index = {}
-        for key, rec in pairs(BRutus.db.professions) do
+        for key, rec in pairs(GuildOS.db.professions) do
             for _, e in pairs(rec.profs) do
                 for _, list in ipairs({ lists(e) }) do
                     for _, id in ipairs(list) do
@@ -318,7 +318,7 @@ end
 
 function Professions:Members(line)
     local out = {}
-    for key, rec in pairs(BRutus.db.professions) do
+    for key, rec in pairs(GuildOS.db.professions) do
         if rec.profs[line] then out[#out + 1] = key end
     end
     table.sort(out)
@@ -330,7 +330,7 @@ end
 ----------------------------------------------------------------------
 function Professions:OwnSummary()
     if not self.scanned then self:Scan() end
-    local rec = BRutus.db.professions[self.OwnKey()]
+    local rec = GuildOS.db.professions[self.OwnKey()]
     local out = {}
     for line, e in pairs((rec and rec.src == "addon" and rec.profs) or {}) do
         out[line] = { r = e.rank, m = e.max, s = e.spec, h = e.h, n = e.n }
@@ -339,7 +339,7 @@ function Professions:OwnSummary()
 end
 
 function Professions:OwnLine(line)
-    local rec = BRutus.db.professions[self.OwnKey()]
+    local rec = GuildOS.db.professions[self.OwnKey()]
     return (rec and rec.src == "addon" and rec.profs[line]) or nil
 end
 
@@ -363,7 +363,7 @@ function Professions:ApplySummary(key, p)
         end
         lines[line] = s
     end
-    local db = BRutus.db.professions
+    local db = GuildOS.db.professions
     local old = db[key]
     local oldProfs = (old and old.src == "addon" and old.profs) or {}
     local same = old ~= nil and old.src == "addon"
@@ -406,7 +406,7 @@ end
 -- A guildmate's recipe list for one line. Stored only when the IDs hash to what the list
 -- says and to what that member's latest summary announced, and not already held.
 function Professions:ApplyList(key, line, h, recipes, extra)
-    local rec = BRutus.db.professions[key]
+    local rec = GuildOS.db.professions[key]
     local e = rec and rec.src == "addon" and rec.profs[line]
     if not e or e.h ~= h or e.recipes then return false end
     recipes = self.IdList(recipes or {}, self.MAX_RECIPES)
@@ -431,7 +431,7 @@ end
 -- addon, and those on a version that sends no professions on Forever.
 function Professions:LegacyList(key)
     local cat = catalog()
-    local rec = key and BRutus.db.professions[key]
+    local rec = key and GuildOS.db.professions[key]
     if not (cat and rec) then return nil end
     local list = {}
     for line, e in pairs(rec.profs) do
@@ -449,8 +449,8 @@ end
 -- creates a db.members row: a row there means the member's own client has spoken.
 function Professions:Project(key)
     local cat = catalog()
-    local rec = BRutus.db.professions[key]
-    BRutus.db.recipes = BRutus.db.recipes or {}
+    local rec = GuildOS.db.professions[key]
+    GuildOS.db.recipes = GuildOS.db.recipes or {}
     local byProf = {}
     for line, e in pairs((rec and rec.profs) or {}) do
         local meta = cat.professions[line]
@@ -470,7 +470,7 @@ function Professions:Project(key)
             byProf[meta.en] = out
         end
     end
-    BRutus.db.recipes[key] = next(byProf) and byProf or nil
+    GuildOS.db.recipes[key] = next(byProf) and byProf or nil
 end
 
 -- The player's own professions in DataCollector's shape, for the member broadcast. Scans first

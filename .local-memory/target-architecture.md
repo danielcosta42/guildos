@@ -1,4 +1,4 @@
-# BRutus — Target Architecture
+# GuildOS — Target Architecture
 
 _Last updated: 2026-04-26_
 
@@ -19,7 +19,7 @@ A refatoração é **incremental** — cada fase mantém o addon funcionando.
 │  UI/RosterFrame | UI/FeaturePanels | UI/MemberDetail                │
 │  UI/RecipesPanel | UI/RaidHUD                                       │
 │  ✓ Apenas renderização e interação visual                          │
-│  ✓ Chama Services, nunca acessa Storage/BRutus.db diretamente      │
+│  ✓ Chama Services, nunca acessa Storage/GuildOS.db diretamente      │
 │  ✓ Reage a DomainEvents do EventBus interno                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Commands Layer                                                     │
@@ -51,21 +51,21 @@ A refatoração é **incremental** — cada fase mantém o addon funcionando.
 ├─────────────────────────────────────────────────────────────────────┤
 │  Storage Layer                                                      │
 │  Storage.lua                                                        │
-│  ✓ ÚNICO acesso direto a BRutusDB/BRutus.db                       │
+│  ✓ ÚNICO acesso direto a GuildOSDB/GuildOS.db                       │
 │  ✓ Schema, defaults, migrations, limites                           │
 │  ✓ Distinção clara: persisted / runtime / cache / computed         │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Events Layer                                                       │
 │  Events.lua (EventBus interno)                                      │
-│  ✓ BRutus.Events:Emit(event, payload)                              │
-│  ✓ BRutus.Events:On(event, handler)                                │
+│  ✓ GuildOS.Events:Emit(event, payload)                              │
+│  ✓ GuildOS.Events:On(event, handler)                                │
 │  ✓ Registro e roteamento de eventos do WoW                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                         │
 │  Core.lua (reduzido a boot + lifecycle)                             │
 │  Config.lua (constantes, prefixos, limites, defaults)              │
 │  Utils.lua (helpers puros sem estado global)                       │
-│  Compat.lua (BRutus.Compat — API guards, hoje em Core.lua)         │
+│  Compat.lua (GuildOS.Compat — API guards, hoje em Core.lua)         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -74,17 +74,17 @@ A refatoração é **incremental** — cada fase mantém o addon funcionando.
 ## Estrutura de Pastas Alvo
 
 ```
-BRutus/
-├── BRutus.toc
+GuildOS/
+├── GuildOS.toc
 ├── Core.lua            ← boot/lifecycle apenas
 ├── Config.lua          ← constantes, versões, prefixos, defaults
-├── Compat.lua          ← BRutus.Compat (API guards) — extraído do Core
-├── Events.lua          ← BRutus.Events (EventBus interno)
+├── Compat.lua          ← GuildOS.Compat (API guards) — extraído do Core
+├── Events.lua          ← GuildOS.Events (EventBus interno)
 ├── Commands.lua        ← todos os slash commands
 ├── Utils.lua           ← helpers puros (hoje em Core.lua)
 │
 ├── Storage/
-│   └── Storage.lua     ← único acesso a BRutusDB
+│   └── Storage.lua     ← único acesso a GuildOSDB
 │
 ├── Repository/
 │   ├── MemberRepository.lua
@@ -124,16 +124,16 @@ BRutus/
 
 ```lua
 -- Publicar um evento de sync
-BRutus.Sync:Publish(domain, action, payload, options)
+GuildOS.Sync:Publish(domain, action, payload, options)
 -- domain: "member" | "raid" | "loot" | "wishlist" | "recipe" | ...
 -- action: "snapshot" | "delta" | "delete" | "ack" | "nack" | "request" | ...
 -- options: { priority, target, requireOfficer, version }
 
 -- Requisitar dados de outros membros
-BRutus.Sync:Request(domain, action, payload, options)
+GuildOS.Sync:Request(domain, action, payload, options)
 
 -- Registrar handler para mensagens recebidas
-BRutus.Sync:RegisterHandler(domain, action, function(envelope, sender)
+GuildOS.Sync:RegisterHandler(domain, action, function(envelope, sender)
     -- validado, deduplicado, descomprimido
 end)
 ```
@@ -182,7 +182,7 @@ end)
 ## Storage Schema Alvo
 
 ```lua
-BRutusDB = {
+GuildOSDB = {
     dbVersion = 2,
     guilds = {
         ["GuildName-Realm"] = {
@@ -204,7 +204,7 @@ BRutusDB = {
         }
     }
 }
--- Dados de runtime ficam em BRutus.State (nunca em SavedVariables)
+-- Dados de runtime ficam em GuildOS.State (nunca em SavedVariables)
 ```
 
 ---
@@ -213,27 +213,27 @@ BRutusDB = {
 
 ```lua
 -- Emitir
-BRutus.Events:Emit("MEMBER_UPDATED", memberKey)
-BRutus.Events:Emit("RAID_SESSION_UPDATED", sessionId)
-BRutus.Events:Emit("SYNC_STATUS_CHANGED", status)
+GuildOS.Events:Emit("MEMBER_UPDATED", memberKey)
+GuildOS.Events:Emit("RAID_SESSION_UPDATED", sessionId)
+GuildOS.Events:Emit("SYNC_STATUS_CHANGED", status)
 
 -- Escutar
-BRutus.Events:On("MEMBER_UPDATED", function(key)
+GuildOS.Events:On("MEMBER_UPDATED", function(key)
     RosterFrame:RefreshRow(key)
 end)
 
 -- Cancelar
-BRutus.Events:Off("MEMBER_UPDATED", handlerRef)
+GuildOS.Events:Off("MEMBER_UPDATED", handlerRef)
 ```
 
 ---
 
 ## Regras Obrigatórias
 
-1. `BRutus.db` só pode ser acessado por `Storage.lua` e `Repository/*.lua`
+1. `GuildOS.db` só pode ser acessado por `Storage.lua` e `Repository/*.lua`
 2. UI nunca acessa SavedVariables diretamente
 3. UI callbacks são one-liners que delegam para Services
-4. Toda sync passa pela API `BRutus.Sync:Publish/Request`
+4. Toda sync passa pela API `GuildOS.Sync:Publish/Request`
 5. Nenhuma alteração recebida via sync gera outra sync automaticamente
 6. `source` nas entidades distingue: `local` | `sync` | `migration` | `import`
 7. Dados com `revision` menor nunca sobrescrevem dados com `revision` maior

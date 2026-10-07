@@ -64,17 +64,17 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
-local R = BRutus.Recruitment
+local R = GuildOS.Recruitment
 local popups = 0
 R.ShowSendPopup = function() popups = popups + 1 end
 local relayed = {}
-BRutus.CommSystem = { SendMessage = function(_, t) relayed[#relayed + 1] = t end, MSG_TYPES = {} }
+GuildOS.CommSystem = { SendMessage = function(_, t) relayed[#relayed + 1] = t end, MSG_TYPES = {} }
 
 local AD = { enabled = true, message = "We are recruiting", channels = {}, interval = 120,
              updatedAt = 900, updatedBy = "Officer" }
 local function member(modules)
   myRank = 5
-  BRutus.db = { settings = { modules = modules } }
+  GuildOS.db = { settings = { modules = modules } }
   if R.memberTicker then R.memberTicker:Cancel() end
   R.memberTicker, R._autoCapReached, R._autoPopups = nil, nil, nil
   printed, relayed, popups = {}, {}, 0
@@ -82,7 +82,7 @@ end
 
 -- ── 1. Module on: the officer's ad starts the popups, as it always did ───
 member({})
-check(not BRutus:IsOfficer() and BRutus:IsFeatureEnabled("recruitment"), "the stub is a member with the module on")
+check(not GuildOS:IsOfficer() and GuildOS:IsFeatureEnabled("recruitment"), "the stub is a member with the module on")
 R:ApplyIncoming(AD, "Officer", "GUILD")
 check(R:IsMemberRecruitActive() and tickers == 1, "with the module on, the officer's ad starts the popup ticker")
 R:_AutoTick()
@@ -93,7 +93,7 @@ member({ recruitment = false })
 R:ApplyIncoming(AD, "Officer", "GUILD")
 check(not R:IsMemberRecruitActive() and tickers == 0, "with the module off, the officer's ad starts no popups")
 check(#printed == 0, "and no hint points at the tab the switch hid")
-check(BRutus.db.guildRecruitment and BRutus.db.guildRecruitment.message == "We are recruiting",
+check(GuildOS.db.guildRecruitment and GuildOS.db.guildRecruitment.message == "We are recruiting",
   "the ad itself is kept, for when the module comes back on")
 R:RespondToSync()
 check(relayed[1] == "RI", "and it is still relayed to the guild")
@@ -102,7 +102,7 @@ check(relayed[1] == "RI", "and it is still relayed to the guild")
 member({})
 R:ApplyIncoming(AD, "Officer", "GUILD")
 check(R:IsMemberRecruitActive(), "the popups run while the module is on")
-BRutus.db.settings.modules.recruitment = false
+GuildOS.db.settings.modules.recruitment = false
 printed = {}
 R:_AutoTick()
 check(popups == 0 and not R:IsMemberRecruitActive() and tickers == 0,
@@ -115,7 +115,7 @@ myRank = nil                                     -- the rank not loaded yet: tre
 R:ApplyIncoming(AD, "Officer", "GUILD")
 check(R:IsMemberRecruitActive() and tickers == 1, "before the rank, the member's popups run")
 myRank = 0
-BRutus.db.recruitment = { enabled = true, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
+GuildOS.db.recruitment = { enabled = true, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
                           welcomeEnabled = false, welcomeMessage = "Hi" }
 printed = {}
 R:Initialize()
@@ -134,7 +134,7 @@ myRank = nil
 R:ApplyIncoming(AD, "Officer", "GUILD")
 check(R:IsMemberRecruitActive() and tickers == 1, "again the member's popups run before the rank")
 myRank = 0
-BRutus.db.recruitment = { enabled = false, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
+GuildOS.db.recruitment = { enabled = false, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
                           welcomeEnabled = false, welcomeMessage = "Hi" }
 R:Initialize()
 check(not R:IsMemberRecruitActive() and tickers == 0,
@@ -144,35 +144,35 @@ check(not R:IsMemberRecruitActive() and tickers == 0,
 if R.ticker then R.ticker:Cancel(); R.ticker = nil end
 member({ recruitment = false })
 myRank = 0
-BRutus.db.recruitment = { enabled = false, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
+GuildOS.db.recruitment = { enabled = false, message = "Officer ad", channels = { "LookingForGroup" }, interval = 120,
                           welcomeEnabled = false, welcomeMessage = "Hi" }
 printed = {}
 check(R:StartAutoRecruit() == false and R.ticker == nil and tickers == 0,
   "module off: /gos recruit on starts no officer popups")
-check(BRutus.db.recruitment.enabled == false and printed[#printed]
+check(GuildOS.db.recruitment.enabled == false and printed[#printed]
   and printed[#printed]:find("The Recruitment module is off. Turn it on in Settings > General > Modules.", 1, true),
   "and says why, leaving the officer's setting as it was")
 
-BRutus.db.settings.modules.recruitment = nil
+GuildOS.db.settings.modules.recruitment = nil
 delayed = {}
 check(R:StartAutoRecruit() and R.ticker and tickers == 1, "module on: the officer's popups start")
-BRutus.db.settings.modules.recruitment = false
+GuildOS.db.settings.modules.recruitment = false
 printed, popups = {}, 0
 for _, fn in ipairs(delayed) do fn() end                -- the first popup, two seconds in
 check(popups == 0, "switched off before the first popup: it does not show")
 check(R.ticker ~= nil, "and the officer's ticker keeps running, silent")
 R.ticker.fn()                                           -- a regular tick
-check(popups == 0 and #printed == 0 and BRutus.db.recruitment.enabled == true,
+check(popups == 0 and #printed == 0 and GuildOS.db.recruitment.enabled == true,
   "nor does any tick while it is off, without a word, and the officer's setting stays on")
-BRutus.db.settings.modules.recruitment = nil
+GuildOS.db.settings.modules.recruitment = nil
 R.ticker.fn()
 check(popups == 1, "switched back on in the same session: the next tick shows a popup again")
 
 -- /gos recruit interval with the module off: the guild's recruitment is not switched off.
-BRutus.db.settings.modules.recruitment = false
+GuildOS.db.settings.modules.recruitment = false
 printed, relayed = {}, {}
 R:HandleCommand({ "interval", "300" })
-check(BRutus.db.recruitment.enabled == true and BRutus.db.recruitment.interval == 300 and #relayed == 0,
+check(GuildOS.db.recruitment.enabled == true and GuildOS.db.recruitment.interval == 300 and #relayed == 0,
   "module off: changing the interval keeps recruitment on and broadcasts nothing")
 local saidStoppedNow = false
 for _, line in ipairs(printed) do
@@ -184,25 +184,25 @@ check(R.ticker and R.ticker.period == 300 and tickers == 1,
   "the silent ticker takes the new period, so the module comes back at 300s")
 
 -- Module on: changing the interval leaves one ticker, at the new period.
-BRutus.db.settings.modules.recruitment = nil
+GuildOS.db.settings.modules.recruitment = nil
 R:HandleCommand({ "interval", "240" })
 check(R.ticker and R.ticker.period == 240 and tickers == 1, "module on: the interval change leaves one ticker, at 240s")
 
 -- Recruitment off: changing the interval does not start it.
 R:StopAutoRecruit()
 R:HandleCommand({ "interval", "180" })
-check(R.ticker == nil and tickers == 0 and BRutus.db.recruitment.enabled == false,
+check(R.ticker == nil and tickers == 0 and GuildOS.db.recruitment.enabled == false,
   "recruitment off: changing the interval only changes the interval")
-BRutus.db.recruitment.enabled = true
+GuildOS.db.recruitment.enabled = true
 
 -- No settings at all, the module off since login: the refusal names the module.
-BRutus.db.settings.modules.recruitment = false
-local saved = BRutus.db.recruitment
-BRutus.db.recruitment = nil
+GuildOS.db.settings.modules.recruitment = false
+local saved = GuildOS.db.recruitment
+GuildOS.db.recruitment = nil
 printed = {}
 R:HandleCommand({ "on" })
 check(printed[#printed] and printed[#printed]:find("The Recruitment module is off", 1, true),
   "module off since login: /gos recruit on says the module is off")
-BRutus.db.recruitment = saved
+GuildOS.db.recruitment = saved
 
 print(("recruit-module-off: %d checks passed"):format(checks))

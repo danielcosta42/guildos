@@ -7,15 +7,15 @@
 -- note already matches (see _SetupHook) instead of N clients writing at once.
 ----------------------------------------------------------------------
 local NoteCommand = {}
-BRutus.NoteCommand = NoteCommand
-local L = BRutus.L
+GuildOS.NoteCommand = NoteCommand
+local L = GuildOS.L
 
 local NOTE_MAX   = 31   -- server cap on a guild public note
 local SENDER_CD  = 15   -- per-sender cooldown
 
 function NoteCommand:Initialize()
-    BRutus.db.noteCommand = BRutus.db.noteCommand or {}
-    if BRutus.db.noteCommand.enabled == nil then BRutus.db.noteCommand.enabled = true end
+    GuildOS.db.noteCommand = GuildOS.db.noteCommand or {}
+    if GuildOS.db.noteCommand.enabled == nil then GuildOS.db.noteCommand.enabled = true end
     self._cd = {}
     self:_SetupHook()
     self:_RegisterTests()
@@ -31,7 +31,7 @@ function NoteCommand:_Parse(msg)
     if msg:match("^!note%s*$") then return "" end
     local rest = msg:match("^!note%s+(.+)$")
     if not rest then return nil end
-    rest = BRutus:SanitizeUserText(rest, NOTE_MAX)
+    rest = GuildOS:SanitizeUserText(rest, NOTE_MAX)
     if rest:lower() == "clear" then return "" end
     return rest
 end
@@ -47,16 +47,16 @@ local REFUSED = {
 }
 
 function NoteCommand:_Refused(sender, why)
-    if REFUSED[why] then BRutus:Print(string.format(REFUSED[why], sender)) end
+    if REFUSED[why] then GuildOS:Print(string.format(REFUSED[why], sender)) end
 end
 
 -- Applies the note after the jitter window. Everything is re-checked here
 -- because several seconds have passed since the chat line arrived.
 function NoteCommand:_Apply(sender, realm, text)
-    local Compat = BRutus.Compat
+    local Compat = GuildOS.Compat
     -- It had the permission when the line arrived; a rank change in the jitter window takes it away.
     if not Compat.CanEditPublicNote() then return self:_Refused(sender, "no-permission") end
-    local want = BRutus:SanitizeUserText(text, NOTE_MAX)
+    local want = GuildOS:SanitizeUserText(text, NOTE_MAX)
     local current, why = Compat.GetGuildPublicNote(sender, realm)
     if current == nil then
         -- An empty roster has not loaded yet: "not found" would be wrong, and another officer can apply it.
@@ -67,18 +67,18 @@ function NoteCommand:_Apply(sender, realm, text)
     local ok, failure = Compat.SetGuildPublicNote(sender, want, realm)
     if not ok then return self:_Refused(sender, failure) end
     local who = realm and (sender .. "-" .. realm) or sender
-    if BRutus.GuildManager and BRutus.GuildManager.LogAction then
-        BRutus.GuildManager:LogAction("note", who, want ~= "" and want or L["(cleared)"])
+    if GuildOS.GuildManager and GuildOS.GuildManager.LogAction then
+        GuildOS.GuildManager:LogAction("note", who, want ~= "" and want or L["(cleared)"])
     end
-    BRutus:Print(string.format(L["Set %s's note: |cffFFFFFF%s|r"], sender, want ~= "" and want or L["(cleared)"]))
+    GuildOS:Print(string.format(L["Set %s's note: |cffFFFFFF%s|r"], sender, want ~= "" and want or L["(cleared)"]))
 end
 
 function NoteCommand:_SetupHook()
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
     f:SetScript("OnEvent", function(_, _, msg, author)
-        if BRutus.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
-        local cfg = BRutus.db.noteCommand
+        if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
+        local cfg = GuildOS.db.noteCommand
         if not cfg or not cfg.enabled then return end
         local text = NoteCommand:_Parse(msg)
         if text == nil then return end
@@ -86,13 +86,13 @@ function NoteCommand:_SetupHook()
         local sender = author:match("^([^-]+)") or author
         local realm  = author:match("^[^-]+%-(.+)$")
         if not sender or sender == "" then return end
-        if not BRutus.Compat.CanEditPublicNote() then
+        if not GuildOS.Compat.CanEditPublicNote() then
             -- Every member's client sees the line; only the sender's own client says why
             -- nothing happens here, so the member who typed it is told and nobody else is.
             -- ponytail: short-name match; a same-named member on another realm would see the
             -- hint too, which is local and harmless. Compare the realm if that ever matters.
-            if sender == BRutus.Compat.PlayerName() then
-                BRutus:Print(L["You cannot edit public notes. Only an officer who is online now and running Guild OS can apply !note; if none is, type it again later."])
+            if sender == GuildOS.Compat.PlayerName() then
+                GuildOS:Print(L["You cannot edit public notes. Only an officer who is online now and running Guild OS can apply !note; if none is, type it again later."])
             end
             return
         end
@@ -102,35 +102,35 @@ function NoteCommand:_SetupHook()
         -- on one write (below), and one member can only issue four a minute.
         if NoteCommand._cd[sender] then return end
         NoteCommand._cd[sender] = true
-        BRutus.Compat.After(SENDER_CD, function() NoteCommand._cd[sender] = nil end)
+        GuildOS.Compat.After(SENDER_CD, function() NoteCommand._cd[sender] = nil end)
         -- Guilds commonly grant "Edit Public Note" to every rank, so one !note
         -- would otherwise fire N simultaneous server writes (one per online
         -- holder of the permission), each broadcasting GUILD_ROSTER_UPDATE.
         -- There is no leader election here: wait a random beat, refresh the
         -- roster meanwhile, and skip the write if the note already reads the
         -- way we would have set it. That converges on roughly one write.
-        BRutus.Compat.GuildRoster()
-        BRutus.Compat.After(1 + math.random() * 4, function()
+        GuildOS.Compat.GuildRoster()
+        GuildOS.Compat.After(1 + math.random() * 4, function()
             NoteCommand:_Apply(sender, realm, text)
         end)
     end)
 end
 
 function NoteCommand:HandleCommand(args)
-    local cfg = BRutus.db.noteCommand
+    local cfg = GuildOS.db.noteCommand
     if not cfg then return end
     local sub = args[1]
-    if sub == "on" then cfg.enabled = true; BRutus:Print(L["!note command |cff4CFF4Con|r."])
-    elseif sub == "off" then cfg.enabled = false; BRutus:Print(L["!note command |cffFF4444off|r."])
+    if sub == "on" then cfg.enabled = true; GuildOS:Print(L["!note command |cff4CFF4Con|r."])
+    elseif sub == "off" then cfg.enabled = false; GuildOS:Print(L["!note command |cffFF4444off|r."])
     else
         local st = cfg.enabled and L["|cff4CFF4CON|r"] or L["|cffFF4444OFF|r"]
-        BRutus:Print(L["!note command: "] .. st .. L[" — members type !note <text> in guild chat; officers apply it."])
+        GuildOS:Print(L["!note command: "] .. st .. L[" — members type !note <text> in guild chat; officers apply it."])
     end
 end
 
 function NoteCommand:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("notecmd.parse_text", function()
         if NoteCommand:_Parse("!note LFG Kara") ~= "LFG Kara" then return false, "text" end
         return true

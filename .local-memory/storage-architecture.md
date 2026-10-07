@@ -1,4 +1,4 @@
-# BRutus — Storage Architecture
+# GuildOS — Storage Architecture
 
 _Last updated: 2026-04-26_
 
@@ -6,38 +6,38 @@ _Last updated: 2026-04-26_
 
 ## Situação Atual
 
-`BRutus.db` é acessado diretamente por praticamente todos os módulos.
+`GuildOS.db` é acessado diretamente por praticamente todos os módulos.
 Não existe uma camada de proteção, schema enforcement ou migration system.
 
 ### Acessos Diretos Mapeados
 
 | Módulo/Arquivo | Campos acessados diretamente |
 |---|---|
-| `Core.lua` | BRutusDB, BRutus.db (todos os campos — define defaults) |
-| `CommSystem.lua` | BRutus.db.altLinks, BRutus.db.members |
-| `DataCollector.lua` | BRutus.db.members, BRutus.db.myData |
-| `AttunementTracker.lua` | BRutus.db.members (via DataCollector normalmente) |
-| `RaidTracker.lua` | BRutus.db.raidTracker.sessions, .attendance, .currentGroupTag, .deletedSessions |
-| `LootTracker.lua` | BRutus.db.lootHistory |
-| `LootMaster.lua` | BRutus.db.lootMaster, BRutus.db.lootPrios, BRutus.db.guildWishlists |
-| `WishlistSystem.lua` | BRutus.db.guildWishlists, BRutus.db.lootPrios, BRutus.db.wishlists |
-| `RecipeTracker.lua` | BRutus.db.recipes, BRutus.db.recipeScanTimes |
-| `OfficerNotes.lua` | BRutus.db.officerNotes |
-| `TrialTracker.lua` | BRutus.db.trials |
-| `RecruitmentSystem.lua` | BRutus.db.recruitment |
-| `ConsumableChecker.lua` | BRutus.db.consumableChecks |
-| `SpecChecker.lua` | BRutus.db.members (spec field) |
-| `UI/FeaturePanels.lua` | BRutus.db.raidTracker, BRutus.db.lootHistory, BRutus.db.trials, BRutus.db.recruitment, BRutus.db.settings |
-| `UI/MemberDetail.lua` | BRutus.db.members, BRutus.db.altLinks, BRutus.db.officerNotes |
-| `UI/RaidHUD.lua` | Migrado para BRutus.State ✅ |
+| `Core.lua` | GuildOSDB, GuildOS.db (todos os campos — define defaults) |
+| `CommSystem.lua` | GuildOS.db.altLinks, GuildOS.db.members |
+| `DataCollector.lua` | GuildOS.db.members, GuildOS.db.myData |
+| `AttunementTracker.lua` | GuildOS.db.members (via DataCollector normalmente) |
+| `RaidTracker.lua` | GuildOS.db.raidTracker.sessions, .attendance, .currentGroupTag, .deletedSessions |
+| `LootTracker.lua` | GuildOS.db.lootHistory |
+| `LootMaster.lua` | GuildOS.db.lootMaster, GuildOS.db.lootPrios, GuildOS.db.guildWishlists |
+| `WishlistSystem.lua` | GuildOS.db.guildWishlists, GuildOS.db.lootPrios, GuildOS.db.wishlists |
+| `RecipeTracker.lua` | GuildOS.db.recipes, GuildOS.db.recipeScanTimes |
+| `OfficerNotes.lua` | GuildOS.db.officerNotes |
+| `TrialTracker.lua` | GuildOS.db.trials |
+| `RecruitmentSystem.lua` | GuildOS.db.recruitment |
+| `ConsumableChecker.lua` | GuildOS.db.consumableChecks |
+| `SpecChecker.lua` | GuildOS.db.members (spec field) |
+| `UI/FeaturePanels.lua` | GuildOS.db.raidTracker, GuildOS.db.lootHistory, GuildOS.db.trials, GuildOS.db.recruitment, GuildOS.db.settings |
+| `UI/MemberDetail.lua` | GuildOS.db.members, GuildOS.db.altLinks, GuildOS.db.officerNotes |
+| `UI/RaidHUD.lua` | Migrado para GuildOS.State ✅ |
 | `UI/RosterFrame.lua` | Usa GetSetting/SetSetting ✅ |
 
 ---
 
-## Schema Atual (BRutusDB)
+## Schema Atual (GuildOSDB)
 
 ```lua
-BRutusDB = {
+GuildOSDB = {
     -- (flat, sem nested por guild — exceto guildKey como key)
     ["GuildName-Realm"] = {
         version  = 1,
@@ -90,35 +90,35 @@ BRutusDB = {
 ## Arquitetura Alvo: Storage Layer
 
 ```lua
--- Storage.lua — único ponto de acesso a BRutusDB
-BRutus.Storage = {}
+-- Storage.lua — único ponto de acesso a GuildOSDB
+GuildOS.Storage = {}
 
--- Internamente: BRutus.Storage._db = BRutusDB[guildKey]
+-- Internamente: GuildOS.Storage._db = GuildOSDB[guildKey]
 
-function BRutus.Storage:Get(domain, key)
+function GuildOS.Storage:Get(domain, key)
     return self._db[domain] and self._db[domain][key]
 end
 
-function BRutus.Storage:Set(domain, key, value)
+function GuildOS.Storage:Set(domain, key, value)
     if not self._db[domain] then self._db[domain] = {} end
     self._db[domain][key] = value
 end
 
-function BRutus.Storage:GetAll(domain)
+function GuildOS.Storage:GetAll(domain)
     return self._db[domain] or {}
 end
 
-function BRutus.Storage:Delete(domain, key)
+function GuildOS.Storage:Delete(domain, key)
     if self._db[domain] then
         self._db[domain][key] = nil
     end
 end
 
-function BRutus.Storage:GetSetting(key)
+function GuildOS.Storage:GetSetting(key)
     return self._db.settings and self._db.settings[key]
 end
 
-function BRutus.Storage:SetSetting(key, value)
+function GuildOS.Storage:SetSetting(key, value)
     if not self._db.settings then self._db.settings = {} end
     self._db.settings[key] = value
 end
@@ -131,19 +131,19 @@ end
 ```lua
 -- Repository/MemberRepository.lua
 local MemberRepository = {}
-BRutus.MemberRepository = MemberRepository
+GuildOS.MemberRepository = MemberRepository
 
 function MemberRepository:Get(playerKey)
-    return BRutus.Storage:Get("members", playerKey)
+    return GuildOS.Storage:Get("members", playerKey)
 end
 
 function MemberRepository:Save(playerKey, data)
     data.updatedAt = GetTime()
-    BRutus.Storage:Set("members", playerKey, data)
+    GuildOS.Storage:Set("members", playerKey, data)
 end
 
 function MemberRepository:GetAll()
-    return BRutus.Storage:GetAll("members")
+    return GuildOS.Storage:GetAll("members")
 end
 ```
 
@@ -166,7 +166,7 @@ end
 - `settings`
 - `myData`
 
-### Runtime (BRutus.State — reseta no reload)
+### Runtime (GuildOS.State — reseta no reload)
 - `State.comm` — lastBroadcast, pendingMessages
 - `State.lootMaster` — activeLoot, rolls, rollTimer, ...
 - `State.recruitment` — ticker, knownMembers, welcomedRecently
@@ -208,7 +208,7 @@ end
 
 ```lua
 -- Em Core.lua (por enquanto) ou Storage.lua (alvo)
-function BRutus:MigrateDB(db)
+function GuildOS:MigrateDB(db)
     db.version = db.version or 1
 
     if db.version < 2 then

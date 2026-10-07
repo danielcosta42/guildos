@@ -55,14 +55,14 @@ local cases = {
 }
 for _, c in ipairs(cases) do
   local s, n, want, len = c[1], c[2], c[3], c[4]
-  local got = BRutus:Utf8Head(s, n)
+  local got = GuildOS:Utf8Head(s, n)
   check(got == want, ("%q cut to %d characters is %q, not %q"):format(s, n, want, got))
   check(whole(got), ("%q cut to %d characters splits no letter"):format(s, n))
-  check(BRutus:Utf8Len(s) == len, ("%q has %d characters"):format(s, len))
+  check(GuildOS:Utf8Len(s) == len, ("%q has %d characters"):format(s, len))
 end
-check(BRutus:Utf8Head(nil, 3) == "" and BRutus:Utf8Head("abc", 0) == "", "nothing, or no characters, is empty")
+check(GuildOS:Utf8Head(nil, 3) == "" and GuildOS:Utf8Head("abc", 0) == "", "nothing, or no characters, is empty")
 -- A 12-character cut of a long Korean name: the raid HUD's.
 local name = "가나다라마바사아자차카타파하"
-check(whole(BRutus:Utf8Head(name, 12)) and BRutus:Utf8Len(BRutus:Utf8Head(name, 12)) == 12, "a Korean name keeps 12 whole letters")
+check(whole(GuildOS:Utf8Head(name, 12)) and GuildOS:Utf8Len(GuildOS:Utf8Head(name, 12)) == 12, "a Korean name keeps 12 whole letters")
 
 print(("utf8-cut: %d checks passed"):format(checks))

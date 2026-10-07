@@ -1,4 +1,4 @@
-# BRutus — Sync Architecture
+# GuildOS — Sync Architecture
 
 _Last updated: 2026-04-26_
 
@@ -35,9 +35,9 @@ O `CommSystem.lua` é a camada de sync atual. Funciona, mas tem problemas de des
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Services / Modules                                                 │
-│  Chamam: BRutus.Sync:Publish(domain, action, payload)              │
-│          BRutus.Sync:Request(domain, action, payload)               │
-│          BRutus.Sync:RegisterHandler(domain, action, fn)           │
+│  Chamam: GuildOS.Sync:Publish(domain, action, payload)              │
+│          GuildOS.Sync:Request(domain, action, payload)               │
+│          GuildOS.Sync:RegisterHandler(domain, action, fn)           │
 └─────────────────────────────┬───────────────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────────────┐
@@ -161,7 +161,7 @@ revision_incoming > revision_stored  → aceita
 Para deletes sincronizáveis (ex: sessão de raid deletada):
 ```lua
 -- Armazena tombstone permanente
-BRutus.db.raidTracker.deletedSessions[sessionID] = {
+GuildOS.db.raidTracker.deletedSessions[sessionID] = {
     deletedAt = GetTime(),
     deletedBy = playerKey,
 }

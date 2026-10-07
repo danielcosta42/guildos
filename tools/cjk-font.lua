@@ -37,7 +37,7 @@ local function load(locale, setting)
 end
 local function drawn(size, role)
   local fs = { SetFont = function(s, file, px) s.file, s.px = file, px end }
-  BRutus:ApplyFont(fs, size, role)
+  GuildOS:ApplyFont(fs, size, role)
   return fs.file, fs.px
 end
 
@@ -47,14 +47,14 @@ for _, locale in ipairs({ "koKR", "zhCN", "zhTW" }) do
   check(file == STANDARD_TEXT_FONT and px == 12, locale .. ": text is drawn in the client's font, at its size")
   check(drawn(18) == STANDARD_TEXT_FONT and drawn(nil, "badge") == STANDARD_TEXT_FONT,
     locale .. ": serif sizes and font roles too")
-  check(BRutus.GameFontOnly == true, locale .. ": the setting is forced on")
+  check(GuildOS.GameFontOnly == true, locale .. ": the setting is forced on")
 end
 
 for _, locale in ipairs({ "enUS", "ptBR", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
   load(locale, nil)
   check(drawn(12):find("IBMPlexMono", 1, true), locale .. ": small text keeps GuildOS's mono")
   check(drawn(18):find("Spectral", 1, true), locale .. ": large text keeps GuildOS's serif")
-  check(BRutus.GameFontOnly == false, locale .. ": nothing is forced")
+  check(GuildOS.GameFontOnly == false, locale .. ": nothing is forced")
   load(locale, "game")
   check(drawn(12) == STANDARD_TEXT_FONT, locale .. ": and the player's choice of the game's font still holds")
 end

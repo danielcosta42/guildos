@@ -50,14 +50,14 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/RecruitEngagement.lua")
-local RE = BRutus.RecruitEngagement
+local RE = GuildOS.RecruitEngagement
 
 -- What the beta's SavedVariables held: posts recorded here, and a stale zero report of
 -- myself from before the surname, plus another member's report that did arrive.
-local me = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
 check(me == "Chehul Costa-Classic Beta PvE 2", "my key carries the surname, like the envelope sender does")
 local zeros = { 0, 0, 0, 0, 0, 0, 0 }
-BRutus.db = {
+GuildOS.db = {
   myRecruitStats = { posts = { NOW - 3600, NOW - 7200, NOW - 90000 }, invites = { NOW - 600 }, joins = {}, pending = {} },
   recruitStats = {
     [me] = { daily = { posts = zeros, invites = zeros, joins = zeros }, prev = {}, part = true, last = 0, receivedAt = NOW - 6 * 86400 },
@@ -78,6 +78,6 @@ check(mine and mine.posts7 == 3 and mine.invites7 == 1, "my own posts and invite
 check(mine and not mine.stale, "and they are fresh, not the stale report from before the surname")
 check(theirs and theirs.posts7 == 2, "another member's report still shows as it arrived")
 check(agg.totals.posts7 == 5 and agg.totals.invites7 == 1, "and the totals add both")
-check(BRutus.db.recruitStats[me].receivedAt == NOW - 6 * 86400, "nothing new is written to the received store")
+check(GuildOS.db.recruitStats[me].receivedAt == NOW - 6 * 86400, "nothing new is written to the received store")
 
 print(("recruit-engagement: %d checks passed"):format(checks))

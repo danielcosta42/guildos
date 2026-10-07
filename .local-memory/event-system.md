@@ -1,4 +1,4 @@
-# BRutus — Event System
+# GuildOS — Event System
 
 _Last updated: 2026-04-26_
 
@@ -22,11 +22,11 @@ eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
 
 | Evento WoW | Handler | Responsabilidade |
 |---|---|---|
-| `ADDON_LOADED` | `BRutus:Initialize()` | Bootstrap — registra prefix, etc |
-| `PLAYER_LOGIN` | `BRutus:OnLogin()` | Resolve DB, inicializa módulos |
-| `PLAYER_ENTERING_WORLD` | `BRutus:OnEnterWorld()` | Coleta + broadcast dados |
-| `GUILD_ROSTER_UPDATE` | `BRutus:OnGuildRosterUpdate()` | Refresh do RosterFrame |
-| `PLAYER_GUILD_UPDATE` | `BRutus:OnGuildRosterUpdate()` | Refresh do RosterFrame |
+| `ADDON_LOADED` | `GuildOS:Initialize()` | Bootstrap — registra prefix, etc |
+| `PLAYER_LOGIN` | `GuildOS:OnLogin()` | Resolve DB, inicializa módulos |
+| `PLAYER_ENTERING_WORLD` | `GuildOS:OnEnterWorld()` | Coleta + broadcast dados |
+| `GUILD_ROSTER_UPDATE` | `GuildOS:OnGuildRosterUpdate()` | Refresh do RosterFrame |
+| `PLAYER_GUILD_UPDATE` | `GuildOS:OnGuildRosterUpdate()` | Refresh do RosterFrame |
 
 ---
 
@@ -69,17 +69,17 @@ eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
 
 ```lua
 -- Events.lua
-BRutus.Events = {}
+GuildOS.Events = {}
 local handlers = {}
 
 -- Registrar handler para um evento interno
-function BRutus.Events:On(event, fn)
+function GuildOS.Events:On(event, fn)
     handlers[event] = handlers[event] or {}
     table.insert(handlers[event], fn)
 end
 
 -- Cancelar handler
-function BRutus.Events:Off(event, fn)
+function GuildOS.Events:Off(event, fn)
     if not handlers[event] then return end
     for i, h in ipairs(handlers[event]) do
         if h == fn then
@@ -90,12 +90,12 @@ function BRutus.Events:Off(event, fn)
 end
 
 -- Emitir evento interno
-function BRutus.Events:Emit(event, ...)
+function GuildOS.Events:Emit(event, ...)
     if not handlers[event] then return end
     for _, fn in ipairs(handlers[event]) do
         local ok, err = pcall(fn, ...)
         if not ok then
-            BRutus.Logger.Warn("EventBus error on " .. event .. ": " .. tostring(err))
+            GuildOS.Logger.Warn("EventBus error on " .. event .. ": " .. tostring(err))
         end
     end
 end
@@ -117,7 +117,7 @@ end
 | `OFFICER_NOTE_ADDED` | `OfficerNotes:AddNote()` | `MemberDetail` |
 | `TRIAL_UPDATED` | `TrialTracker:*` | `FeaturePanels` |
 | `RECRUITMENT_STATUS_CHANGED` | `RecruitmentSystem:*` | `FeaturePanels` |
-| `SETTINGS_CHANGED` | `BRutus:SetSetting()` | `RosterFrame`, outros |
+| `SETTINGS_CHANGED` | `GuildOS:SetSetting()` | `RosterFrame`, outros |
 
 ---
 
@@ -170,5 +170,5 @@ Este evento dispara para todo tipo de mensagem de sistema, incluindo roll result
 O handler em LootMaster deve ter early return:
 
 ```lua
-if not BRutus.State.lootMaster.listeningForRolls then return end
+if not GuildOS.State.lootMaster.listeningForRolls then return end
 ```

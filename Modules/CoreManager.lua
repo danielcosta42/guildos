@@ -7,12 +7,12 @@
 -- CoreManager enriches that existing concept with per-core configs.
 ----------------------------------------------------------------------
 local CoreManager = {}
-BRutus.CoreManager = CoreManager
-local L = BRutus.L
+GuildOS.CoreManager = CoreManager
+local L = GuildOS.L
 
 -- The role a class starts in. TBC's put the tanks and healers first; WoW: Forever's put damage
 -- first, as the site's Forever roles do, because tank-first was wrong there (issue #92).
-CoreManager.CLASS_DEFAULT_ROLE = BRutus.Client.isAnniversary and {
+CoreManager.CLASS_DEFAULT_ROLE = GuildOS.Client.isAnniversary and {
     WARRIOR="tank",  PALADIN="healer", HUNTER="rdps",  ROGUE="mdps",
     PRIEST="healer", SHAMAN="healer",  MAGE="rdps",    WARLOCK="rdps", DRUID="healer",
 } or {
@@ -77,8 +77,8 @@ CoreManager.RAID_TARGETS = {
 -- The formats this guild's game has, and the one a new core starts with: each Forever tier's
 -- main raid is the 20-player one.
 local function sizesOfThisGame()
-    if BRutus.Client.isAnniversary then return { 10, 25 }, BRutus.Client.defaultRaidSize end
-    return { 10, 20, 40 }, BRutus.Client.defaultRaidSize
+    if GuildOS.Client.isAnniversary then return { 10, 25 }, GuildOS.Client.defaultRaidSize end
+    return { 10, 20, 40 }, GuildOS.Client.defaultRaidSize
 end
 
 function CoreManager:RaidSizes()
@@ -149,8 +149,8 @@ local DEFAULT_LOOT = {
 -- Lifecycle
 ----------------------------------------------------------------------
 function CoreManager:Initialize()
-    if not BRutus.db.cores          then BRutus.db.cores          = {} end
-    if not BRutus.db.raidLeaderRanks then BRutus.db.raidLeaderRanks = {} end
+    if not GuildOS.db.cores          then GuildOS.db.cores          = {} end
+    if not GuildOS.db.raidLeaderRanks then GuildOS.db.raidLeaderRanks = {} end
     self:InitSync()
 end
 
@@ -158,11 +158,11 @@ end
 -- Core CRUD
 ----------------------------------------------------------------------
 function CoreManager:GetAll()
-    return BRutus.db.cores or {}
+    return GuildOS.db.cores or {}
 end
 
 function CoreManager:Exists(name)
-    return name and name ~= "" and BRutus.db.cores[name] ~= nil
+    return name and name ~= "" and GuildOS.db.cores[name] ~= nil
 end
 
 -- Creates a new core with all sub-tables initialized.
@@ -171,10 +171,10 @@ function CoreManager:Create(name)
     if not name or name == "" then
         return false, L["Name cannot be empty."]
     end
-    if BRutus.db.cores[name] then
+    if GuildOS.db.cores[name] then
         return false, L["A core with that name already exists."]
     end
-    BRutus.db.cores[name] = {
+    GuildOS.db.cores[name] = {
         name       = name,
         lootMaster = {},
         attendance = { penalties = {} },
@@ -193,22 +193,22 @@ end
 
 -- Renames a core and migrates all session/attendance data.
 function CoreManager:Rename(oldName, newName)
-    if not oldName or not BRutus.db.cores[oldName] then
+    if not oldName or not GuildOS.db.cores[oldName] then
         return false, L["Core not found."]
     end
     if not newName or newName == "" then
         return false, L["Name cannot be empty."]
     end
-    if BRutus.db.cores[newName] then
+    if GuildOS.db.cores[newName] then
         return false, L["A core with that name already exists."]
     end
 
-    BRutus.db.cores[newName] = BRutus.db.cores[oldName]
-    BRutus.db.cores[newName].name = newName
-    BRutus.db.cores[oldName] = nil
+    GuildOS.db.cores[newName] = GuildOS.db.cores[oldName]
+    GuildOS.db.cores[newName].name = newName
+    GuildOS.db.cores[oldName] = nil
 
     -- Update any existing raid sessions tagged with the old name
-    local rtDB = BRutus.db.raidTracker
+    local rtDB = GuildOS.db.raidTracker
     if rtDB then
         for _, session in pairs(rtDB.sessions or {}) do
             if session.groupTag == oldName then
@@ -224,11 +224,11 @@ function CoreManager:Rename(oldName, newName)
     end
 
     -- Update active tag if it was the renamed one
-    if BRutus.RaidTracker and BRutus.RaidTracker.currentGroupTag == oldName then
-        BRutus.RaidTracker:SetGroupTag(newName)
+    if GuildOS.RaidTracker and GuildOS.RaidTracker.currentGroupTag == oldName then
+        GuildOS.RaidTracker:SetGroupTag(newName)
     end
     -- And the raid in progress, and an officer's pick kept for it (issue #99).
-    local RT = BRutus.RaidTracker
+    local RT = GuildOS.RaidTracker
     local raid = RT and RT.currentRaid
     if raid and raid.groupTag == oldName then raid.groupTag = newName end
     if RT and RT.coreAnnounced == oldName then RT.coreAnnounced = newName end
@@ -242,7 +242,7 @@ end
 -- Removes the core config entry (does NOT delete sessions or attendance data).
 function CoreManager:Delete(name)
     if not name or name == "" then return false end
-    BRutus.db.cores[name] = nil
+    GuildOS.db.cores[name] = nil
     return true
 end
 
@@ -250,10 +250,10 @@ end
 -- Active core
 ----------------------------------------------------------------------
 function CoreManager:GetActiveName()
-    if BRutus.RaidTracker then
-        return BRutus.RaidTracker:GetCurrentGroup()
+    if GuildOS.RaidTracker then
+        return GuildOS.RaidTracker:GetCurrentGroup()
     end
-    return (BRutus.db.raidTracker and BRutus.db.raidTracker.currentGroupTag) or ""
+    return (GuildOS.db.raidTracker and GuildOS.db.raidTracker.currentGroupTag) or ""
 end
 
 -- The core a raid group is, by roster (issue #99): the one with the most of the group on it, an
@@ -261,11 +261,11 @@ end
 -- and no other core has as many. Nil otherwise, and the active core stands.
 -- Returns name, how many of the group are on its roster, and the group's size.
 function CoreManager:CoreForGroup(players)
-    local altLinks = (BRutus.db and BRutus.db.altLinks) or {}
+    local altLinks = (GuildOS.db and GuildOS.db.altLinks) or {}
     local size = 0
     for _ in pairs(players or {}) do size = size + 1 end
     local counts, best, bestCount = {}, nil, 0
-    for name, core in pairs((BRutus.db and BRutus.db.cores) or {}) do
+    for name, core in pairs((GuildOS.db and GuildOS.db.cores) or {}) do
         local members = type(core) == "table" and core.members
         if type(members) == "table" then
             local count = 0
@@ -289,16 +289,16 @@ end
 function CoreManager:GetCore(name)
     if name == nil then name = self:GetActiveName() end
     if not name or name == "" then return nil end
-    if not BRutus.db.cores[name] then
+    if not GuildOS.db.cores[name] then
         self:Create(name)
     end
-    return BRutus.db.cores[name]
+    return GuildOS.db.cores[name]
 end
 
 -- Alphabetically sorted list of named core names.
 function CoreManager:GetSortedNames()
     local names = {}
-    for name in pairs(BRutus.db.cores or {}) do
+    for name in pairs(GuildOS.db.cores or {}) do
         table.insert(names, name)
     end
     table.sort(names)
@@ -315,7 +315,7 @@ local function lmField(core, key)
     end
     -- 2. Legacy global DB (keeps backward compat for guilds that already
     --    configured the global lootMaster settings before cores existed)
-    local gdb = BRutus.db and BRutus.db.lootMaster
+    local gdb = GuildOS.db and GuildOS.db.lootMaster
     if gdb and gdb[key] ~= nil then return gdb[key] end
     -- 3. Hard-coded default
     return DEFAULT_LOOT[key]
@@ -345,7 +345,7 @@ function CoreManager:SetLootConfigKey(key, value, coreName)
         core.lootMaster[key] = value
     else
         -- Ungrouped: persist to the legacy global lootMaster
-        if BRutus.db.lootMaster then BRutus.db.lootMaster[key] = value end
+        if GuildOS.db.lootMaster then GuildOS.db.lootMaster[key] = value end
     end
 end
 
@@ -397,11 +397,11 @@ function CoreManager:GetAwardHistory(coreName)
         return core.lootMaster.awardHistory
     end
     -- Ungrouped fallback
-    if BRutus.db.lootMaster then
-        if not BRutus.db.lootMaster.awardHistory then
-            BRutus.db.lootMaster.awardHistory = {}
+    if GuildOS.db.lootMaster then
+        if not GuildOS.db.lootMaster.awardHistory then
+            GuildOS.db.lootMaster.awardHistory = {}
         end
-        return BRutus.db.lootMaster.awardHistory
+        return GuildOS.db.lootMaster.awardHistory
     end
     return {}
 end
@@ -415,7 +415,7 @@ end
 function CoreManager:GetPenalties(coreName)
     local core = self:GetCore(coreName)
     local own = core and core.attendance and core.attendance.penalties or {}
-    local guild = BRutus.db.attendancePenalties or {}
+    local guild = GuildOS.db.attendancePenalties or {}
     local out = {}
     for key, default in pairs(DEFAULT_PENALTIES) do
         if own[key] ~= nil then out[key] = own[key]
@@ -430,8 +430,8 @@ function CoreManager:SetPenalty(key, value, coreName)
     if DEFAULT_PENALTIES[key] == nil then return end
     value = math.max(0, math.min(100, math.floor(tonumber(value) or 0)))
     if coreName == "" then
-        BRutus.db.attendancePenalties = BRutus.db.attendancePenalties or {}
-        BRutus.db.attendancePenalties[key] = value
+        GuildOS.db.attendancePenalties = GuildOS.db.attendancePenalties or {}
+        GuildOS.db.attendancePenalties[key] = value
         return
     end
     local core = self:GetCore(coreName)
@@ -448,11 +448,11 @@ end
 function CoreManager:GetPointsDB(coreName)
     if coreName == nil then coreName = self:GetActiveName() end
     if not coreName or coreName == "" then
-        return BRutus.db.points
+        return GuildOS.db.points
     end
 
     local core = self:GetCore(coreName)
-    if not core then return BRutus.db.points end
+    if not core then return GuildOS.db.points end
 
     if not core.points then
         core.points = {
@@ -476,8 +476,8 @@ end
 -- Officers always have access; this lets non-officer ranks manage cores.
 ----------------------------------------------------------------------
 function CoreManager:GetRaidLeaderRanks()
-    if not BRutus.db.raidLeaderRanks then BRutus.db.raidLeaderRanks = {} end
-    return BRutus.db.raidLeaderRanks
+    if not GuildOS.db.raidLeaderRanks then GuildOS.db.raidLeaderRanks = {} end
+    return GuildOS.db.raidLeaderRanks
 end
 
 function CoreManager:SetRaidLeaderRank(rankName, enabled)
@@ -486,9 +486,9 @@ function CoreManager:SetRaidLeaderRank(rankName, enabled)
 end
 
 function CoreManager:IsRaidLeader()
-    if BRutus:IsOfficer() then return true end
+    if GuildOS:IsOfficer() then return true end
     local ranks = self:GetRaidLeaderRanks()
-    local myName = BRutus.Compat.PlayerName()
+    local myName = GuildOS.Compat.PlayerName()
     local n = GetNumGuildMembers and GetNumGuildMembers() or 0
     for i = 1, n do
         local name, rank = GetGuildRosterInfo(i)
@@ -513,7 +513,7 @@ end
 -- so each player belongs to at most one core at a time.
 function CoreManager:AddMember(playerKey, info, coreName)
     -- Remove from any other core
-    for _, c in pairs(BRutus.db.cores or {}) do
+    for _, c in pairs(GuildOS.db.cores or {}) do
         if c.members then c.members[playerKey] = nil end
     end
     local core = self:GetCore(coreName)
@@ -534,7 +534,7 @@ function CoreManager:RemoveMember(playerKey, coreName)
 end
 
 function CoreManager:GetMemberCore(playerKey)
-    for name, core in pairs(BRutus.db.cores or {}) do
+    for name, core in pairs(GuildOS.db.cores or {}) do
         if core.members and core.members[playerKey] then
             return name
         end
@@ -599,7 +599,7 @@ local CLASS_BUFFS_MAP = {
 
 -- TBC's raid buffs. WoW: Forever lists none, as the site's Forever catalogue does on purpose,
 -- and the core screen leaves the section out (issue #92).
-local IMPORTANT_BUFFS_LIST = not BRutus.Client.isAnniversary and {} or {
+local IMPORTANT_BUFFS_LIST = not GuildOS.Client.isAnniversary and {} or {
     { name = "Battle Shout",          src = "WARRIOR" },
     { name = "Blessing of Kings",     src = "PALADIN" },
     { name = "Blessing of Might",     src = "PALADIN" },
@@ -659,9 +659,9 @@ end
 -- `role` is the one picked in the sign-up window; nil, or one the class cannot play, is the
 -- class's own (issue #94).
 function CoreManager:BroadcastSignup(coreName, note, role)
-    local playerName = BRutus.Compat.PlayerName()
+    local playerName = GuildOS.Compat.PlayerName()
     local _, cls     = UnitClass("player")
-    local playerKey  = BRutus:GetPlayerKey(playerName, GetRealmName())
+    local playerKey  = GuildOS:GetPlayerKey(playerName, GetRealmName())
     local info = {
         name  = playerName,
         class = cls or "WARRIOR",
@@ -672,8 +672,8 @@ function CoreManager:BroadcastSignup(coreName, note, role)
     -- Store locally first so the player sees "Pending" immediately
     self:AddSignup(playerKey, info, coreName)
     -- Broadcast to officers so they can persist it on their end
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("core.signup", "apply", {
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("core.signup", "apply", {
             coreName  = coreName,
             playerKey = playerKey,
             info      = info,
@@ -682,45 +682,45 @@ function CoreManager:BroadcastSignup(coreName, note, role)
 end
 
 function CoreManager:BroadcastRoster(coreName)
-    if not BRutus.SyncService then return end
-    BRutus.SyncService:Publish("core.roster", "update", {
+    if not GuildOS.SyncService then return end
+    GuildOS.SyncService:Publish("core.roster", "update", {
         coreName = coreName,
         members  = self:GetMembers(coreName),
     })
 end
 
 function CoreManager:InitSync()
-    if not BRutus.SyncService then return end
+    if not GuildOS.SyncService then return end
 
     -- Any player may broadcast a signup; officers store it.
     -- A sign-up is filed under who sent it, never under a key the payload names: that one carries
     -- the sender's realm on Forever (#97), and trusting it let anybody sign somebody else up.
-    BRutus.SyncService:On("core.signup", function(env, sender)
+    GuildOS.SyncService:On("core.signup", function(env, sender)
         local d = env.data
         if not d or not d.coreName or type(sender) ~= "string" or sender == "" then return end
-        if not BRutus:IsOfficer() then return end
+        if not GuildOS:IsOfficer() then return end
         local short = sender:match("^([^-]+)") or sender
-        local playerKey = BRutus:GetPlayerKey(short, sender:match("-(.+)$"))
+        local playerKey = GuildOS:GetPlayerKey(short, sender:match("-(.+)$"))
         local info = type(d.info) == "table" and d.info or {}
         info.name = short
         -- The class the guild roster (the server's) gives the sender, else one the payload names
         -- that exists, else warrior; the role is then one that class can play (#94).
-        local rec = BRutus:GetMemberRecord(short, sender:match("-(.+)$"))
+        local rec = GuildOS:GetMemberRecord(short, sender:match("-(.+)$"))
         local cls = rec and rec.class
         if not self.CLASS_ROLES[cls] then cls = self.CLASS_ROLES[info.class] and info.class or "WARRIOR" end
         info.class = cls
         info.role = self:RoleFor(cls, info.role)
         self:AddSignup(playerKey, info, d.coreName)
-        if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
+        if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
     end)
 
     -- Officers broadcast roster updates to each other.
-    BRutus.SyncService:On("core.roster", function(env, sender)
+    GuildOS.SyncService:On("core.roster", function(env, sender)
         local d = env.data
         if not d or not d.coreName or not d.members then return end
-        if not BRutus:IsOfficerByName(sender) then return end
+        if not GuildOS:IsOfficerByName(sender) then return end
         local core = self:GetCore(d.coreName)
-        if core then core.members = BRutus:LocalizeMemberTable(d.members) end   -- this client's keys (#97)
-        if BRutus.coresPanelRefresh then BRutus.coresPanelRefresh() end
+        if core then core.members = GuildOS:LocalizeMemberTable(d.members) end   -- this client's keys (#97)
+        if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
     end)
 end

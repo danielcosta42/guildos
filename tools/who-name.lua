@@ -49,7 +49,7 @@ local function load(game)
   GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
   dofile(ADDON .. "/Core/Core.lua")
   dofile(ADDON .. "/Core/Compat.lua")
-  return BRutus.Compat, calls
+  return GuildOS.Compat, calls
 end
 
 local C, calls = load("forever")
@@ -75,11 +75,11 @@ LFGWhoListFrame = nil
 local f = assert(io.open(ADDON .. "/UI/RosterFrame.lua", "rb"))
 local src = f:read("*a")
 f:close()
-check(src:find("Compat.SendWho%(BRutus.Compat.WhoExact%(") ~= nil and not src:find('SendWho%("n%-" %.%.'),
+check(src:find("Compat.SendWho%(GuildOS.Compat.WhoExact%(") ~= nil and not src:find('SendWho%("n%-" %.%.'),
       "the roster's Who builds its filter with WhoExact")
 f = assert(io.open(ADDON .. "/Modules/RecruitmentSystem.lua", "rb"))
 src = f:read("*a")
 f:close()
-check(src:find("SendWho%(BRutus.Compat.WhoExact%(sender%)%)") ~= nil, "and so does the auto-invite's /who")
+check(src:find("SendWho%(GuildOS.Compat.WhoExact%(sender%)%)") ~= nil, "and so does the auto-invite's /who")
 
 print(("who-name: %d checks passed"):format(checks))

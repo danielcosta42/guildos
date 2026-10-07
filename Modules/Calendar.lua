@@ -7,8 +7,8 @@
 -- unreliable on the Anniversary client).
 ----------------------------------------------------------------------
 local Calendar = {}
-BRutus.Calendar = Calendar
-local L = BRutus.L
+GuildOS.Calendar = Calendar
+local L = GuildOS.L
 
 Calendar.STATUS = { YES = "yes", TENTATIVE = "tentative", NO = "no" }
 Calendar.ROLES  = { "TANK", "HEALER", "DPS" }
@@ -33,12 +33,12 @@ function Calendar:KindLabel(k)
 end
 
 function Calendar:Initialize()
-    BRutus.db.calendar = BRutus.db.calendar or { events = {} }
-    BRutus.db.calendar.events = BRutus.db.calendar.events or {}
-    BRutus.db.calendar.deleted = BRutus.db.calendar.deleted or {}
+    GuildOS.db.calendar = GuildOS.db.calendar or { events = {} }
+    GuildOS.db.calendar.events = GuildOS.db.calendar.events or {}
+    GuildOS.db.calendar.deleted = GuildOS.db.calendar.deleted or {}
     self:PruneTombstones()
-    if BRutus.SyncService then
-        BRutus.SyncService:On("event", function(env, sender) Calendar:OnSync(env, sender) end)
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("event", function(env, sender) Calendar:OnSync(env, sender) end)
     end
 
     -- Alliance wiring. Both are no-ops until this guild joins a pact.
@@ -65,11 +65,11 @@ function Calendar:Initialize()
 end
 
 function Calendar:_RegisterTests()
-    if not BRutus.SelfTest then
+    if not GuildOS.SelfTest then
         return
     end
 
-    BRutus.SelfTest:Register("calendar.alliance_slot_decision", function()
+    GuildOS.SelfTest:Register("calendar.alliance_slot_decision", function()
         local D = Calendar._AllianceSlotDecision
         local future = { when = 2000, size = 10 }
         if D(future, 3, 1000) ~= "ok" then return false, "open event must be ok" end
@@ -80,13 +80,13 @@ function Calendar:_RegisterTests()
             return false, "canceled event"
         end
         if D(nil, 0, 1000) ~= "gone" then return false, "missing event" end
-        local def = BRutus.Client.defaultRaidSize
+        local def = GuildOS.Client.defaultRaidSize
         if D({ when = 2000 }, def, 1000) ~= "full" then return false, "an event with no size is full at the game's default" end
         if D({ when = 2000 }, def - 1, 1000) ~= "ok" then return false, "and open one below it" end
         return true
     end)
 
-    BRutus.SelfTest:Register("calendar.alliance_conflicts", function()
+    GuildOS.SelfTest:Register("calendar.alliance_conflicts", function()
         local F = Calendar._FindConflicts
         local mine = {
             { id = "m1", title = "MC",   when = 100000, names = { "Ann", "Bob", "Cid" } },
@@ -121,7 +121,7 @@ function Calendar:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("calendar.alliance_events_build", function()
+    GuildOS.SelfTest:Register("calendar.alliance_events_build", function()
         local events = {
             a1 = { id = "a1", title = "MC",   when = 2000, size = 40, shareAlliance = true,
                    rsvps = { x = { status = "yes", name = "Ann" }, y = { status = "no" } } },
@@ -139,7 +139,7 @@ function Calendar:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("calendar.alliance_sharing_is_opt_in", function()
+    GuildOS.SelfTest:Register("calendar.alliance_sharing_is_opt_in", function()
         local B = Calendar._BuildAllianceEvents
         -- An event with the flag missing entirely is PRIVATE. This is the
         -- migration case: everything created before the flag existed.
@@ -163,14 +163,14 @@ function Calendar:_RegisterTests()
     end)
 end
 
-function Calendar:GetEvents() return BRutus.db.calendar.events end
+function Calendar:GetEvents() return GuildOS.db.calendar.events end
 
 -- Deletion tombstones: a small id->timestamp set so a hard delete cannot be
 -- undone by a straggling create/update for the same event still in flight on
 -- the guild channel, and so old events truly disappear instead of lingering
 -- forever as canceled records. Pruned after TOMBSTONE_TTL.
 local TOMBSTONE_TTL = 30 * 86400
-function Calendar:Tombstones() return BRutus.db.calendar.deleted end
+function Calendar:Tombstones() return GuildOS.db.calendar.deleted end
 function Calendar:IsDeleted(id) return self:Tombstones()[id] ~= nil end
 function Calendar:PruneTombstones()
     local cutoff = GetServerTime() - TOMBSTONE_TTL
@@ -185,7 +185,7 @@ end
 
 local function keyOf(name)
     local short = (name or ""):match("^([^-]+)") or name
-    return BRutus:GetPlayerKey(short, GetRealmName())
+    return GuildOS:GetPlayerKey(short, GetRealmName())
 end
 
 ----------------------------------------------------------------------
@@ -237,20 +237,20 @@ end
 -- Mutations (officer: create/cancel · member: rsvp)
 ----------------------------------------------------------------------
 function Calendar:Create(title, when, size, note, kind, shareAlliance)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Officers only.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
     end
     title = strtrim(title or "")
     when = tonumber(when)
     if title == "" or not when then
-        BRutus:Print(L["An event needs a title and a date/time."])
+        GuildOS:Print(L["An event needs a title and a date/time."])
         return
     end
     local e = {
-        id = newId(), title = title, when = when, size = tonumber(size) or BRutus.Client.defaultRaidSize,
+        id = newId(), title = title, when = when, size = tonumber(size) or GuildOS.Client.defaultRaidSize,
         note = note or "", kind = normalizeKind(kind),
-        author = BRutus.Compat.PlayerName(), createdAt = GetServerTime(),
+        author = GuildOS.Compat.PlayerName(), createdAt = GetServerTime(),
         canceled = false, rsvps = {},
         -- OPT IN. An event is private to the guild unless an officer says so,
         -- and a MISSING field means private, so every event that existed
@@ -258,9 +258,9 @@ function Calendar:Create(title, when, size, note, kind, shareAlliance)
         shareAlliance = shareAlliance and true or false,
     }
     self:GetEvents()[e.id] = e
-    if BRutus.SyncService then
-        local rev = BRutus.SyncService:NextRevision("event", e.id)
-        BRutus.SyncService:Publish("event", "create", { event = {
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", e.id)
+        GuildOS.SyncService:Publish("event", "create", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
             shareAlliance = e.shareAlliance,
@@ -295,7 +295,7 @@ end
 function Calendar:UpsertWebRaid(roster)
     local id = self:WebEventId(roster)
     if not id then return nil end
-    if not BRutus:IsOfficer() then return nil end
+    if not GuildOS:IsOfficer() then return nil end
 
     local when = tonumber(roster.startsAt) or 0
     if when <= 0 then return nil end
@@ -304,7 +304,7 @@ function Calendar:UpsertWebRaid(roster)
     if title == "" then title = roster.instance or L["Raid"] end
     local size = tonumber(roster.size) or 0               -- the site's capacity for the raid
     if size < 1 then size = #(roster.members or {}) end
-    if size < 1 then size = BRutus.Client.defaultRaidSize end
+    if size < 1 then size = GuildOS.Client.defaultRaidSize end
 
     local events = self:GetEvents()
     local e = events[id]
@@ -318,7 +318,7 @@ function Calendar:UpsertWebRaid(roster)
     local isNew = (e == nil)
     if isNew then
         e = {
-            id = id, author = BRutus.Compat.PlayerName(), createdAt = GetServerTime(),
+            id = id, author = GuildOS.Compat.PlayerName(), createdAt = GetServerTime(),
             canceled = false, rsvps = {},
             -- Private to the guild, like anything else born here. The site
             -- hands over a roster; it does not get to widen the audience.
@@ -337,9 +337,9 @@ function Calendar:UpsertWebRaid(roster)
     -- would be a second answer to the same question.
     e.web   = true
 
-    if BRutus.SyncService then
-        local rev = BRutus.SyncService:NextRevision("event", id)
-        BRutus.SyncService:Publish("event", isNew and "create" or "update", { event = {
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
             shareAlliance = e.shareAlliance,
@@ -350,13 +350,13 @@ function Calendar:UpsertWebRaid(roster)
 end
 
 function Calendar:Cancel(id)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     local e = self:GetEvents()[id]
     if not e then return end
     e.canceled = true
-    if BRutus.SyncService then
-        local rev = BRutus.SyncService:NextRevision("event", id)
-        BRutus.SyncService:Publish("event", "cancel", { id = id }, { rev = rev })
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", "cancel", { id = id }, { rev = rev })
     end
     self:Refresh()
 end
@@ -364,8 +364,8 @@ end
 -- Officer edit of an existing event (title / date+time / size / description).
 -- RSVPs are preserved; a fresh revision makes the change win on every client.
 function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
-    if not BRutus:IsOfficer() then
-        BRutus:Print(L["|cffFF4444Officers only.|r"])
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
     end
     local e = self:GetEvents()[id]
@@ -373,12 +373,12 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     title = strtrim(title or "")
     when = tonumber(when)
     if title == "" or not when then
-        BRutus:Print(L["An event needs a title and a date/time."])
+        GuildOS:Print(L["An event needs a title and a date/time."])
         return
     end
     e.title = title
     e.when  = when
-    e.size  = tonumber(size) or e.size or BRutus.Client.defaultRaidSize
+    e.size  = tonumber(size) or e.size or GuildOS.Client.defaultRaidSize
     e.note  = note or ""
     e.kind  = normalizeKind(kind)
     -- nil leaves the current setting alone, so a caller that does not know
@@ -386,9 +386,9 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     if shareAlliance ~= nil then
         e.shareAlliance = shareAlliance and true or false
     end
-    if BRutus.SyncService then
-        local rev = BRutus.SyncService:NextRevision("event", id)
-        BRutus.SyncService:Publish("event", "update", { event = {
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", "update", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
             shareAlliance = e.shareAlliance,
@@ -402,14 +402,14 @@ end
 -- the record and records a tombstone so it cannot be resurrected by a create/
 -- update that is still propagating on the guild channel.
 function Calendar:Delete(id)
-    if not BRutus:IsOfficer() then return end
+    if not GuildOS:IsOfficer() then return end
     local e = self:GetEvents()[id]
     if not e then return end
     self:GetEvents()[id] = nil
     self:Tombstones()[id] = GetServerTime()
-    if BRutus.SyncService then
-        local rev = BRutus.SyncService:NextRevision("event", id)
-        BRutus.SyncService:Publish("event", "delete", { id = id }, { rev = rev })
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", "delete", { id = id }, { rev = rev })
     end
     self:Refresh()
 end
@@ -420,18 +420,18 @@ function Calendar:Rsvp(id, status, role)
     if not e or e.canceled then return end
     e.rsvps = e.rsvps or {}
     local _, class = UnitClass("player")
-    e.rsvps[keyOf(BRutus.Compat.PlayerName())] = {
+    e.rsvps[keyOf(GuildOS.Compat.PlayerName())] = {
         status = status, role = role, class = class,
-        name = BRutus.Compat.PlayerName(), ts = GetServerTime(),
+        name = GuildOS.Compat.PlayerName(), ts = GetServerTime(),
     }
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("event", "rsvp", { id = id, status = status, role = role, class = class })
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("event", "rsvp", { id = id, status = status, role = role, class = class })
     end
     self:Refresh()
 end
 
 function Calendar:MyRsvp(e)
-    return e and e.rsvps and e.rsvps[keyOf(BRutus.Compat.PlayerName())] or nil
+    return e and e.rsvps and e.rsvps[keyOf(GuildOS.Compat.PlayerName())] or nil
 end
 
 ----------------------------------------------------------------------
@@ -441,27 +441,27 @@ function Calendar:OnSync(env, sender)
     local d = env.data
     if (env.act == "create" or env.act == "update") and d and d.event then
         local e = d.event
-        if not self:IsDeleted(e.id) and BRutus.SyncService:ShouldApply("event", e.id, env.rev) then
+        if not self:IsDeleted(e.id) and GuildOS.SyncService:ShouldApply("event", e.id, env.rev) then
             local existing = self:GetEvents()[e.id]
             e.rsvps    = (existing and existing.rsvps) or {}
             e.canceled = (existing and existing.canceled) or false
             e.shareAlliance = e.shareAlliance and true or false
             self:GetEvents()[e.id] = e
-            BRutus.SyncService:SetRevision("event", e.id, env.rev)
+            GuildOS.SyncService:SetRevision("event", e.id, env.rev)
             self:Refresh()
         end
     elseif env.act == "delete" and d and d.id then
-        if BRutus.SyncService:ShouldApply("event", d.id, env.rev) then
+        if GuildOS.SyncService:ShouldApply("event", d.id, env.rev) then
             self:GetEvents()[d.id] = nil
             self:Tombstones()[d.id] = GetServerTime()
-            BRutus.SyncService:SetRevision("event", d.id, env.rev)
+            GuildOS.SyncService:SetRevision("event", d.id, env.rev)
             self:Refresh()
         end
     elseif env.act == "cancel" and d and d.id then
-        if BRutus.SyncService:ShouldApply("event", d.id, env.rev) then
+        if GuildOS.SyncService:ShouldApply("event", d.id, env.rev) then
             local e = self:GetEvents()[d.id]
             if e then e.canceled = true end
-            BRutus.SyncService:SetRevision("event", d.id, env.rev)
+            GuildOS.SyncService:SetRevision("event", d.id, env.rev)
             self:Refresh()
         end
     elseif env.act == "allyRsvp" and d and d.id and d.key then
@@ -498,7 +498,7 @@ function Calendar:OnSync(env, sender)
 end
 
 function Calendar:Refresh()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------
@@ -536,7 +536,7 @@ function Calendar._AllianceSlotDecision(event, yesCount, now)
     if (tonumber(event.when) or 0) <= (tonumber(now) or 0) then
         return "past"
     end
-    if (tonumber(yesCount) or 0) >= (tonumber(event.size) or BRutus.Client.defaultRaidSize) then
+    if (tonumber(yesCount) or 0) >= (tonumber(event.size) or GuildOS.Client.defaultRaidSize) then
         return "full"
     end
     return "ok"
@@ -764,7 +764,7 @@ function Calendar:RequestAllianceSlot(eventId, guildName, role, note)
         kind    = "signup",
         eventId = eventId,
         role    = (role == "TANK" or role == "HEALER" or role == "DPS") and role or "DPS",
-        note    = BRutus:SanitizeUserText(note, Calendar.ALLY_NOTE_MAX),
+        note    = GuildOS:SanitizeUserText(note, Calendar.ALLY_NOTE_MAX),
     })
     if sent == 0 then
         return false, L["No officer of that guild is online right now. Try the alliance channel."]
@@ -834,12 +834,12 @@ function Calendar:_ReceiveSignup(data, sender, senderGuild)
         name  = short,
         guild = senderGuild,
         role  = (data.role == "TANK" or data.role == "HEALER" or data.role == "DPS") and data.role or "DPS",
-        note  = BRutus:SanitizeUserText(data.note, Calendar.ALLY_NOTE_MAX),
+        note  = GuildOS:SanitizeUserText(data.note, Calendar.ALLY_NOTE_MAX),
         class = class,
         level = level,
         ts    = GetServerTime(),
     }
-    BRutus:Print(string.format(L["%s of %s wants a slot in %s."], short, senderGuild, e.title or "?"))
+    GuildOS:Print(string.format(L["%s of %s wants a slot in %s."], short, senderGuild, e.title or "?"))
     if GuildOS.AllianceChat then
         GuildOS.AllianceChat:AddSystem(
             string.format(L["%s of %s wants a slot in %s."], short, senderGuild, e.title or "?"), "warn")
@@ -850,13 +850,13 @@ end
 function Calendar:_ReceiveSignupResult(data, senderGuild)
     local why = data.why
     if data.ok then
-        BRutus:Print(string.format(L["%s approved your slot request."], senderGuild or "?"))
+        GuildOS:Print(string.format(L["%s approved your slot request."], senderGuild or "?"))
     elseif why == "full" then
-        BRutus:Print(L["That event filled up before your request arrived."])
+        GuildOS:Print(L["That event filled up before your request arrived."])
     elseif why == "past" or why == "gone" or why == "canceled" then
-        BRutus:Print(L["That event is no longer open."])
+        GuildOS:Print(L["That event is no longer open."])
     else
-        BRutus:Print(string.format(L["%s declined your slot request."], senderGuild or "?"))
+        GuildOS:Print(string.format(L["%s declined your slot request."], senderGuild or "?"))
     end
     self:Refresh()
 end
@@ -865,7 +865,7 @@ end
 -- Officer decisions
 ----------------------------------------------------------------------
 function Calendar:ApproveAlliance(eventId, key)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["|cffFF4444Officers only.|r"]
     end
     local e = self:GetEvents()[eventId or ""]
@@ -885,8 +885,8 @@ function Calendar:ApproveAlliance(eventId, key)
     }
     e.allyPending[key] = nil
 
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("event", "allyRsvp", {
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("event", "allyRsvp", {
             id = eventId, key = key, name = p.name, guild = p.guild,
             role = p.role, class = p.class,
         })
@@ -901,7 +901,7 @@ function Calendar:ApproveAlliance(eventId, key)
 end
 
 function Calendar:DeclineAlliance(eventId, key, why)
-    if not BRutus:IsOfficer() then
+    if not GuildOS:IsOfficer() then
         return false, L["|cffFF4444Officers only.|r"]
     end
     local e = self:GetEvents()[eventId or ""]
@@ -910,8 +910,8 @@ function Calendar:DeclineAlliance(eventId, key, why)
         return false
     end
     e.allyPending[key] = nil
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("event", "allyDecline", { id = eventId, key = key })
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("event", "allyDecline", { id = eventId, key = key })
     end
     local ally = GuildOS.Alliance
     if ally then

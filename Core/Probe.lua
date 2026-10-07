@@ -7,8 +7,8 @@
 -- raising API is recorded and the probe carries on (Rule 4).
 ----------------------------------------------------------------------
 local Probe = {}
-BRutus.Probe = Probe
-local L = BRutus.L
+GuildOS.Probe = Probe
+local L = GuildOS.L
 
 local PREFIX = "GuildOSProbe"  -- its own prefix, so no other GuildOS client parses the test message
 local LIST_MAX = 10            -- missing names printed before the list is cut
@@ -149,17 +149,17 @@ end
 
 function Probe:Run()
     if InCombatLockdown and InCombatLockdown() then
-        BRutus:Print(L["The probe does not run in combat. Try again after the fight."])
+        GuildOS:Print(L["The probe does not run in combat. Try again after the fight."])
         return nil
     end
 
     local clockOk, now = pcall(GetServerTime)
     local r = {
         at = (clockOk and now) or (time and time()) or 0,
-        addonVersion = BRutus.VERSION,
+        addonVersion = GuildOS.VERSION,
         build = capture(GetBuildInfo),
         projectId = WOW_PROJECT_ID,
-        client = BRutus.Client,
+        client = GuildOS.Client,
         gameMode = capture(member(C_GameRules, "GetActiveGameMode")),
         secrets = {
             issecretvalue = issecretvalue ~= nil,
@@ -182,7 +182,7 @@ function Probe:Run()
             -- Member keys ask this one first (ADR-0018): both answers show which one a realm-less client gives.
             realmName = first(capture(GetRealmName)),
         }
-        pcall(BRutus.Compat.RegisterAddonPrefix, PREFIX)
+        pcall(GuildOS.Compat.RegisterAddonPrefix, PREFIX)
         r.guildMessage = capture(member(C_ChatInfo, "SendAddonMessage"), PREFIX, "probe", "GUILD")
     else
         r.roster, r.guildMessage = "not in guild", "not in guild"
@@ -190,14 +190,14 @@ function Probe:Run()
 
     -- WoW: Forever professions (issue #31): which catalog build the client carries, and how many
     -- learned recipes it found that the catalog does not have (a sign to regenerate it).
-    if BRutus.Professions and BRutus.ProfCatalog then
-        local own = BRutus.db and BRutus.db.professions and BRutus.db.professions[BRutus.Professions.OwnKey()]
+    if GuildOS.Professions and GuildOS.ProfCatalog then
+        local own = GuildOS.db and GuildOS.db.professions and GuildOS.db.professions[GuildOS.Professions.OwnKey()]
         local lines, extra = 0, 0
         for _, e in pairs((own and own.profs) or {}) do
             lines = lines + 1
             extra = extra + #(e.extra or {})
         end
-        r.professions = { catalog = BRutus.ProfCatalog.build, lines = lines, extra = extra }
+        r.professions = { catalog = GuildOS.ProfCatalog.build, lines = lines, extra = extra }
     end
 
     r.apis, r.missingApis = {}, {}
@@ -257,16 +257,16 @@ end
 
 function Probe:PrintSummary(r)
     local b = r.build
-    BRutus:Print(string.format(L["Probe: build %s (%s), interface %s, project %s."],
+    GuildOS:Print(string.format(L["Probe: build %s (%s), interface %s, project %s."],
         tostring(first(b)), tostring(b[2]), tostring(b[4]), tostring(r.projectId)))
-    BRutus:Print(string.format(L["TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
+    GuildOS:Print(string.format(L["TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
         answer(r.client and r.client.isAnniversary or false), answer(r.secrets.restricted),
         answer(first(r.chat.lockdown)), tostring(r.chat.instance[2] or first(r.chat.instance))))
-    BRutus:Print(string.format(L["Missing: %d of %d APIs, %d of %d events."],
+    GuildOS:Print(string.format(L["Missing: %d of %d APIs, %d of %d events."],
         #r.missingApis, #self.APIS + #self.TEMPLATES + #self.SCRIPTS, #r.missingEvents, #self.EVENTS))
-    if #r.missingApis > 0 then BRutus:Print(names(r.missingApis)) end
-    if #r.missingEvents > 0 then BRutus:Print(names(r.missingEvents)) end
-    BRutus:Print(L["Saved in GuildOSDB.probe. Type /reload to write it to disk."])
+    if #r.missingApis > 0 then GuildOS:Print(names(r.missingApis)) end
+    if #r.missingEvents > 0 then GuildOS:Print(names(r.missingEvents)) end
+    GuildOS:Print(L["Saved in GuildOSDB.probe. Type /reload to write it to disk."])
 end
 
 ----------------------------------------------------------------------
@@ -281,18 +281,18 @@ local BLOCKS_SHOWN = 5  -- blocks the chat probe's verdict prints; GuildOSDB.pro
 local seenBlocks = {}
 
 local blockedFrame = CreateFrame("Frame")
-BRutus.Compat.RegisterEvent(blockedFrame, "ADDON_ACTION_BLOCKED")
-BRutus.Compat.RegisterEvent(blockedFrame, "ADDON_ACTION_FORBIDDEN")
-BRutus.Compat.RegisterEvent(blockedFrame, "MACRO_ACTION_BLOCKED")
-BRutus.Compat.RegisterEvent(blockedFrame, "MACRO_ACTION_FORBIDDEN")
+GuildOS.Compat.RegisterEvent(blockedFrame, "ADDON_ACTION_BLOCKED")
+GuildOS.Compat.RegisterEvent(blockedFrame, "ADDON_ACTION_FORBIDDEN")
+GuildOS.Compat.RegisterEvent(blockedFrame, "MACRO_ACTION_BLOCKED")
+GuildOS.Compat.RegisterEvent(blockedFrame, "MACRO_ACTION_FORBIDDEN")
 blockedFrame:SetScript("OnEvent", function(_, event, addon, func)
     if event:find("^MACRO_") then addon, func = "macro", addon end
-    if BRutus.Compat.IsSecret(addon, func) then addon, func = "?", "?" end
+    if GuildOS.Compat.IsSecret(addon, func) then addon, func = "?", "?" end
     addon, func = tostring(addon), tostring(func)
     local key = event .. "\0" .. addon .. "\0" .. func
     if not seenBlocks[key] then
         seenBlocks[key] = true
-        BRutus:RecordError(string.format("%s: %s tried %s", event, addon, func))
+        GuildOS:RecordError(string.format("%s: %s tried %s", event, addon, func))
     end
     local run = Probe._chat
     if run then
@@ -329,15 +329,15 @@ end
 
 function Probe:RunChat()
     if InCombatLockdown and InCombatLockdown() then
-        BRutus:Print(L["The probe does not run in combat. Try again after the fight."])
+        GuildOS:Print(L["The probe does not run in combat. Try again after the fight."])
         return nil
     end
     if not (IsInGuild and IsInGuild()) then
-        BRutus:Print(L["The chat probe posts in guild chat. Join a guild first."])
+        GuildOS:Print(L["The chat probe posts in guild chat. Join a guild first."])
         return nil
     end
     if self._chat then
-        BRutus:Print(L["The chat probe is already running."])
+        GuildOS:Print(L["The chat probe is already running."])
         return nil
     end
 
@@ -352,7 +352,7 @@ function Probe:RunChat()
         build = b[2] and (tostring(first(b)) .. "." .. tostring(b[2])) or tostring(first(b)),
         lockdown = first(capture(member(C_ChatInfo, "InChatMessagingLockdown"))),
         restrictions = activeRestrictions(),
-        assumesClick = BRutus.Compat.NeedsClick(),
+        assumesClick = GuildOS.Compat.NeedsClick(),
         steps = {
             { how = "command", text = tag .. " 1/2 sent from a command" },
             { how = "timer", text = tag .. " 2/2 sent from a timer" },
@@ -363,7 +363,7 @@ function Probe:RunChat()
 
     self._chatFrame = self._chatFrame or CreateFrame("Frame")
     self._chatFrame:SetScript("OnEvent", function(_, _, msg)
-        if BRutus.Compat.IsSecret(msg) then
+        if GuildOS.Compat.IsSecret(msg) then
             run.unreadable = true
             return
         end
@@ -371,7 +371,7 @@ function Probe:RunChat()
             if msg == step.text then step.echoed = true end
         end
     end)
-    BRutus.Compat.RegisterEvent(self._chatFrame, "CHAT_MSG_GUILD")
+    GuildOS.Compat.RegisterEvent(self._chatFrame, "CHAT_MSG_GUILD")
 
     -- The same global the welcome calls, so this tests what the welcome does.
     local function send(step)
@@ -381,12 +381,12 @@ function Probe:RunChat()
         local ok, err = pcall(SendChatMessage, step.text, "GUILD")
         if not ok then step.error = tostring(err) end
     end
-    BRutus:Print(L["Chat probe: one test line goes to guild chat now and one in a second. The verdict follows in a few seconds."])
+    GuildOS:Print(L["Chat probe: one test line goes to guild chat now and one in a second. The verdict follows in a few seconds."])
     send(run.steps[1])
-    BRutus.Compat.After(1, function()
+    GuildOS.Compat.After(1, function()
         if Probe._chat == run then send(run.steps[2]) end  -- never after the verdict
     end)
-    BRutus.Compat.After(CHAT_WAIT, function() Probe:FinishChat() end)
+    GuildOS.Compat.After(CHAT_WAIT, function() Probe:FinishChat() end)
     return run
 end
 
@@ -408,34 +408,34 @@ function Probe:FinishChat()
     if not GuildOSDB then GuildOSDB = {} end
     GuildOSDB.probeChat = run
 
-    BRutus:Print(string.format(L["Chat probe, build %s, chat lockdown %s:"], run.build, answer(run.lockdown)))
+    GuildOS:Print(string.format(L["Chat probe, build %s, chat lockdown %s:"], run.build, answer(run.lockdown)))
     local r = run.restrictions
-    BRutus:Print("  " .. string.format(L["Addon restrictions: %s."],
+    GuildOS:Print("  " .. string.format(L["Addon restrictions: %s."],
         r == "missing" and L["not on this client"] or (#r == 0 and L["none active"] or table.concat(r, ", "))))
     local labels = { command = L["the line sent from the command"], timer = L["the line sent from a timer"] }
     for _, step in ipairs(run.steps) do
         local outcome = step.sentAfter == nil and L["not sent"]
             or step.echoed and L["came back in guild chat"] or L["did not come back"]
         if step.error then outcome = outcome .. " (" .. step.error .. ")" end
-        BRutus:Print(string.format("  %s (%.1fs): %s", labels[step.how], step.sentAfter or 0, outcome))
+        GuildOS:Print(string.format("  %s (%.1fs): %s", labels[step.how], step.sentAfter or 0, outcome))
     end
     if #run.blocked == 0 then
-        BRutus:Print("  " .. L["The game reported no blocked action."])
+        GuildOS:Print("  " .. L["The game reported no blocked action."])
     end
     for i = 1, math.min(#run.blocked, BLOCKS_SHOWN) do
         local blk = run.blocked[i]
-        BRutus:Print(string.format("  " .. L["Blocked by the game (%.1fs): %s tried %s."], blk.after, blk.addon, blk.func))
+        GuildOS:Print(string.format("  " .. L["Blocked by the game (%.1fs): %s tried %s."], blk.after, blk.addon, blk.func))
     end
     if #run.blocked > BLOCKS_SHOWN then
-        BRutus:Print("  " .. string.format(L["... and %d more."], #run.blocked - BLOCKS_SHOWN))
+        GuildOS:Print("  " .. string.format(L["... and %d more."], #run.blocked - BLOCKS_SHOWN))
     end
     if run.needsClick == "unknown" then
-        BRutus:Print(run.unreadable and L["Could not tell: this client keeps guild chat unreadable here."]
+        GuildOS:Print(run.unreadable and L["Could not tell: this client keeps guild chat unreadable here."]
             or not fromCommand.echoed and L["Could not tell: not even the line from the command came back."]
             or L["Could not tell: the verdict came before the line from the timer went out."])
     else
-        BRutus:Print(string.format(L["Chat needs a click: %s. Guild OS assumes: %s."],
+        GuildOS:Print(string.format(L["Chat needs a click: %s. Guild OS assumes: %s."],
             answer(run.needsClick), answer(run.assumesClick)))
     end
-    BRutus:Print(L["Saved in GuildOSDB.probeChat. Type /reload to write it to disk."])
+    GuildOS:Print(L["Saved in GuildOSDB.probeChat. Type /reload to write it to disk."])
 end

@@ -61,7 +61,7 @@ function CraftNet:Query(itemId, onUpdate)
     if not itemId or not mesh then return nil end
 
     queryCounter = queryCounter + 1
-    local qid = (BRutus.Compat.PlayerName() or "?") .. "#" .. queryCounter
+    local qid = (GuildOS.Compat.PlayerName() or "?") .. "#" .. queryCounter
     self.active[qid] = { itemId = itemId, results = {}, onUpdate = onUpdate, ts = time() }
 
     local payload = table.concat({ self.PROTO, "Q", itemId, qid }, "|")
@@ -84,12 +84,12 @@ function CraftNet:OnMessage(payload, sender, dist)
     if proto ~= self.PROTO then return end
 
     local itemId = tonumber(itemIdStr)
-    local isSelf = ShortName(sender) == BRutus.Compat.PlayerName()
+    local isSelf = ShortName(sender) == GuildOS.Compat.PlayerName()
 
     if op == "Q" then
         -- Answer only for ourselves, and never answer our own broadcast.
         if isSelf or not itemId or not qid then return end
-        local rt = BRutus.RecipeTracker
+        local rt = GuildOS.RecipeTracker
         local prof = rt and rt.LocalCrafts and rt:LocalCrafts(itemId)
         if prof then
             local reply = table.concat({ self.PROTO, "A", itemId, qid, prof }, "|")

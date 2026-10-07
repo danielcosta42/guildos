@@ -5,8 +5,8 @@
 -- spread loot fairly. Pure read-only aggregation (Rule 2 / Rule 10).
 ----------------------------------------------------------------------
 local LootEquity = {}
-BRutus.LootEquity = LootEquity
-local L = BRutus.L
+GuildOS.LootEquity = LootEquity
+local L = GuildOS.L
 
 -- Build the equity report.
 -- Returns (list, grandTotal). Each row:
@@ -14,7 +14,7 @@ local L = BRutus.L
 function LootEquity:GetReport()
     local byPlayer = {}
     local grand = 0
-    for _, e in ipairs(BRutus.db.lootHistory or {}) do
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
         local p = e.player or "?"
         local rec = byPlayer[p]
         if not rec then
@@ -26,7 +26,7 @@ function LootEquity:GetReport()
         grand = grand + qty
 
         local q = e.quality
-        if not q and e.itemLink then q = select(3, BRutus.Compat.GetItemInfo(e.itemLink)) end
+        if not q and e.itemLink then q = select(3, GuildOS.Compat.GetItemInfo(e.itemLink)) end
         if q and q >= 4 then rec.epics = rec.epics + 1 end
 
         if (e.timestamp or 0) > rec.last then rec.last = e.timestamp or 0 end
@@ -48,13 +48,13 @@ end
 function LootEquity:PrintSummary(limit)
     local list, grand = self:GetReport()
     if grand == 0 then
-        BRutus:Print(L["No loot recorded yet."])
+        GuildOS:Print(L["No loot recorded yet."])
         return
     end
-    BRutus:Print(string.format(L["Loot equity — %d items across %d players:"], grand, #list))
+    GuildOS:Print(string.format(L["Loot equity — %d items across %d players:"], grand, #list))
     for i = 1, math.min(limit or 10, #list) do
         local r = list[i]
-        BRutus:Print(string.format(L["  %d. %s — %d items (%d epics, %.0f%%)"],
+        GuildOS:Print(string.format(L["  %d. %s — %d items (%d epics, %.0f%%)"],
             i, r.name, r.total, r.epics, r.share))
     end
 end

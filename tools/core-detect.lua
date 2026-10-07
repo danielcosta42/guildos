@@ -71,28 +71,28 @@ local function load(game)
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")
   dofile(ADDON .. "/Modules/RaidTracker.lua")
-  BRutus.db = { settings = {}, members = {}, altLinks = {}, cores = {},
+  GuildOS.db = { settings = {}, members = {}, altLinks = {}, cores = {},
                 raidTracker = { sessions = {}, attendance = {}, deletedSessions = {}, currentGroupTag = "" } }
-  local RT = BRutus.RaidTracker
+  local RT = GuildOS.RaidTracker
   RT.currentGroupTag = ""
   RT.CheckPlayerConsumes = function() return false end
   RT.BroadcastRaidData = function() end
   -- The raid's units: GROUP holds "Name" or { "Name", "Realm" }, and "player" is me.
-  BRutus.Compat.IsPlayer = function(u) return u == "player" end
-  BRutus.Compat.UnitIdentity = function(u)
+  GuildOS.Compat.IsPlayer = function(u) return u == "player" end
+  GuildOS.Compat.UnitIdentity = function(u)
     local e = GROUP[tonumber(u:match("%d+") or "")]
     if type(e) == "table" then return e[1], e[2], "MAGE" end
     return e, nil, "MAGE"
   end
-  BRutus.Compat.PlayerName = function() return game == "forever" and "Lead Er" or "Leader" end
+  GuildOS.Compat.PlayerName = function() return game == "forever" and "Lead Er" or "Leader" end
   local loaded = {}
-  BRutus.LootMaster = { LoadCfg = function() loaded[#loaded + 1] = BRutus.CoreManager:GetActiveName() end }
-  return RT, BRutus.CoreManager, loaded
+  GuildOS.LootMaster = { LoadCfg = function() loaded[#loaded + 1] = GuildOS.CoreManager:GetActiveName() end }
+  return RT, GuildOS.CoreManager, loaded
 end
-local function key(name, realm) return BRutus:GetPlayerKey(name, realm) end
+local function key(name, realm) return GuildOS:GetPlayerKey(name, realm) end
 local function roster(CM, core, names)
   CM:Create(core)
-  for _, n in ipairs(names) do BRutus.db.cores[core].members[key(n)] = { role = "rdps" } end
+  for _, n in ipairs(names) do GuildOS.db.cores[core].members[key(n)] = { role = "rdps" } end
 end
 local function group(names) GROUP = {}; for i, n in ipairs(names) do GROUP[i] = n end end
 local function said(pattern)
@@ -179,7 +179,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   RT, CM = load(game)
   roster(CM, "Alpha", { "Ann", "Bob" })
   roster(CM, "Bravo", { "Cid", "Dee" })
-  BRutus.db.altLinks[key("Annalt")] = key("Ann")
+  GuildOS.db.altLinks[key("Annalt")] = key("Ann")
   group({ "Annalt", "Bob", "Cid" })
   RT:StartSession(409)
   check(RT.currentRaid.groupTag == "Alpha", G("an alt in the raid counts as their main, for their main's core alone"))
@@ -231,14 +231,14 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   RT:StartSession(409)
   check(RT.currentRaid.groupTag == "Alpha", G("and the pick it set aside does not come back with the first instance"))
   picked(); reload()
-  BRutus.Compat.PlayerName = function() return "Other Char" end
+  GuildOS.Compat.PlayerName = function() return "Other Char" end
   RT:StartSession(409)
   check(RT.currentRaid.groupTag == "Alpha", G("another character on the account is asked again"))
   picked()
   RT.currentRaid.startTime = NOW - 7200
   RT:EndSession()
   RT:StartSession(409)
-  check(RT.currentRaid.groupTag == "Alpha" and BRutus.db.raidTracker.corePick == nil,
+  check(RT.currentRaid.groupTag == "Alpha" and GuildOS.db.raidTracker.corePick == nil,
     G("a raid that ended takes its pick with it: the next one in that instance is asked again"))
   picked(); reload()
   RT:PickCore("Charlie")
@@ -255,7 +255,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   function GetInstanceInfo() return "Molten Core", "raid", 9, "", 40, 0, false, 409 end
   RT:CheckZone()
   check(RT.endTimer == nil and RT.currentRaid.groupTag == "Delta" and CM:GetActiveName() == "Delta"
-    and BRutus.db.raidTracker.corePick.tag == "Delta", G("and takes the raid when it resumes"))
+    and GuildOS.db.raidTracker.corePick.tag == "Delta", G("and takes the raid when it resumes"))
   check(said("Raid core: |cffFFD700Delta|r, as you set it."), G("saying so, so it never takes a raid silently"))
 
   -- ── A raid's answer is never the last raid's ──────────────────────────
@@ -289,7 +289,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   RT:PickCore("Bravo")
   check(RT.currentRaid.groupTag == "Alpha" and CM:GetActiveName() == "Bravo",
     G("a pick in the grace period is for the next raid, not the one just left"))
-  check(BRutus.db.raidTracker.corePick == nil, G("and is not kept as that raid's"))
+  check(GuildOS.db.raidTracker.corePick == nil, G("and is not kept as that raid's"))
   RT:SetGroupTag("Alpha")
   group({ "Eve", "Fay", "Gus" })
   RT:TakeSnapshot("roster_change")
@@ -298,7 +298,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   RT.currentRaid.startTime = NOW - 7200
   RT:EndSession()
   local saved
-  for _, s in pairs(BRutus.db.raidTracker.sessions) do saved = s end
+  for _, s in pairs(GuildOS.db.raidTracker.sessions) do saved = s end
   check(saved and saved.groupTag == "Alpha" and CM:GetActiveName() == "Alpha" and lines("Raid core:") == 1,
     G("the session's last snapshot never re-tags it"))
 
@@ -314,7 +314,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   check(lines("Raid core:") == 1, G("nor say the renamed core again"))
   RT:PickCore("Alpha2")
   CM:Rename("Alpha2", "Alpha3")
-  check(BRutus.db.raidTracker.corePick.tag == "Alpha3", G("nor leave a kept pick on the old name"))
+  check(GuildOS.db.raidTracker.corePick.tag == "Alpha3", G("nor leave a kept pick on the old name"))
   RT.endTimer = { Cancel = function() end }
   RT:PickCore("Alpha3")
   CM:Rename("Alpha3", "Alpha4")
@@ -324,7 +324,7 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   RT, CM = load(game)
   roster(CM, "Alpha", { "Ann", "Bob", "Cid" })
   group({ "Ann", "Bob", "Cid" })
-  BRutus.db.raidTracker.corePick = { instanceID = 409, tag = "Bravo", char = me, at = NOW - 600 }
+  GuildOS.db.raidTracker.corePick = { instanceID = 409, tag = "Bravo", char = me, at = NOW - 600 }
   local onEvent
   CreateFrame = function()
     return { RegisterEvent = function() end, UnregisterEvent = function() end, SetScript = function(_, _, fn) onEvent = fn end }
@@ -354,7 +354,7 @@ end
 -- ── The loot rules really are re-read ───────────────────────────────────
 local RT, CM = load("forever")
 dofile(ADDON .. "/Modules/LootMaster.lua")
-local LM = BRutus.LootMaster
+local LM = GuildOS.LootMaster
 CM:Create("Alpha"); CM:Create("Bravo")
 local function cfg(core, v)
   RT:SetGroupTag(core)

@@ -19,9 +19,9 @@ local function check(cond, what)
 end
 
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
-BRutus = {}
+GuildOS = {}
 dofile(ADDON .. "/Core/Data.lua")
-local F = BRutus.Fonts
+local F = GuildOS.Fonts
 
 local function fontString()
   local fs = {}
@@ -30,7 +30,7 @@ local function fontString()
 end
 local function apply(size, role)
   local fs = fontString()
-  local file, px = BRutus:ApplyFont(fs, size, role)
+  local file, px = GuildOS:ApplyFont(fs, size, role)
   check(fs.file == file and fs.size == px, "ApplyFont returns what it set")
   return fs
 end
@@ -42,9 +42,9 @@ check(apply(11).file == F.mono, "off: 11px is IBM Plex Mono")
 check(apply(nil, "colHeader").file == F.monoStrong, "off: a role keeps its file")
 GuildOSDB = nil
 check(apply(18).file == F.serif, "before the SavedVariables load, GuildOS's fonts")
-BRutus.db = { settings = { font = "game" } }
+GuildOS.db = { settings = { font = "game" } }
 check(apply(18).file == F.serif, "a guild's settings do not decide it: it is the account's")
-BRutus.db = nil
+GuildOS.db = nil
 
 -- ── On: the client's font, same sizes ───────────────────────────────────
 GuildOSDB = { font = "game" }

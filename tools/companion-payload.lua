@@ -62,7 +62,7 @@ LibStub = setmetatable({
 })
 
 -- ── The addon's own globals ───────────────────────────────────────────
-BRutus = {
+GuildOS = {
   VERSION = "0.46.0",
   -- Core/Compat.lua reads this off the client; the export only asks which game it is.
   Client = { isAnniversary = true },
@@ -79,7 +79,7 @@ BRutus = {
 -- person who dropped out for the second half. The third guild member never
 -- appears, because she was not there — and that is the whole point.
 local NIGHT = 1754380000
-BRutus.db.raidTracker = {
+GuildOS.db.raidTracker = {
   sessions = {
     [NIGHT] = {
       instanceID = 565,
@@ -128,7 +128,7 @@ BRutus.db.raidTracker = {
 
 -- Two cores with different weights, because the whole reason the rules travel is
 -- that an officer can change them and the site cannot assume 10/10/10.
-BRutus.CoreManager = {
+GuildOS.CoreManager = {
   GetPenalties = function(_, coreName)
     if coreName == "Core 2" then
       return { LATE = 25, LEFT_EARLY = 5, NO_CONSUMES = 0 }
@@ -141,18 +141,18 @@ WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
 function GetBuildInfo() return "2.5.6", "1", "", 20506 end
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
-function BRutus:GetSetting(key) return self.db.settings[key] end
-function BRutus:SetSetting(key, v) self.db.settings[key] = v end
+function GuildOS:GetSetting(key) return self.db.settings[key] end
+function GuildOS:SetSetting(key, v) self.db.settings[key] = v end
 
-BRutus.GearAudit = { GetEnchantableSlots = function() return { 1, 3, 5, 7, 8, 9, 10, 15, 16 } end }
+GuildOS.GearAudit = { GetEnchantableSlots = function() return { 1, 3, 5, 7, 8, 9, 10, 15, 16 } end }
 
-BRutus.RaidTracker = {
+GuildOS.RaidTracker = {
   GetAttendance25ManPercent = function(_, key)
     return ({ ["Chehul-Firemaw"] = 92, ["Fulano-Firemaw"] = 78 })[key] or 0
   end,
 }
 
-BRutus.AttunementTracker = {
+GuildOS.AttunementTracker = {
   GetEffectiveAttunements = function(_, key)
     if key == "Chehul-Firemaw" then
       return {
@@ -169,7 +169,7 @@ BRutus.AttunementTracker = {
 }
 
 -- Two members who published, one who never did — the third must not appear.
-BRutus.db.members["Chehul-Firemaw"] = {
+GuildOS.db.members["Chehul-Firemaw"] = {
   race = "Orc", avgIlvl = 132, lastUpdate = 1754399000,
   spec = { tree = "Beast Mastery", treeIndex = 1, points = { 41, 20, 0 } },
   prefRoles = { "DPS" },
@@ -185,14 +185,14 @@ BRutus.db.members["Chehul-Firemaw"] = {
     [17] = { name = "Off hand nobody enchants" },                   -- not audited
   },
 }
-BRutus.db.members["Fulano-Firemaw"] = {
+GuildOS.db.members["Fulano-Firemaw"] = {
   race = "Human", avgIlvl = 128, lastUpdate = 1754398000,
   spec = { tree = "Holy", treeIndex = 2, points = { 23, 38, 0 } },
   professions = {},
   gear = nil,                                                       -- never synced gear
 }
 
-BRutus.LootTracker = {
+GuildOS.LootTracker = {
   GetHistory = function()
     return {
       { itemLink = "|cffa335ee|Hitem:30107::::::::70:::::|h[Vestments of the Sea-Witch]|h|r",
@@ -212,12 +212,12 @@ dofile(ADDON .. "/Modules/CompanionExport.lua")
 
 -- The payload says which game the client is, so the site can build a Forever guild's
 -- keys itself and refuse a roster from the other game (the site's specs/036).
-local anniversary = BRutus.Companion:BuildPayload()
+local anniversary = GuildOS.Companion:BuildPayload()
 assert(anniversary.game == "ANNIVERSARY", "an Anniversary client did not say so")
 assert(anniversary.v >= 6, "the payload that says its game is v6")
-BRutus.Client.isAnniversary = false
-assert(BRutus.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
-BRutus.Client.isAnniversary = true
+GuildOS.Client.isAnniversary = false
+assert(GuildOS.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
+GuildOS.Client.isAnniversary = true
 
 -- v7 (issue #35): on Forever each member carries the profession model's lines by skill-line
 -- ID -- rank, max, specialization and the recipes they know, or only the line for a member
@@ -228,15 +228,15 @@ for _, m in ipairs(anniversary.members) do
 end
 -- The real module (it loads only on Forever), over its saved records -- a stub here once hid
 -- that the export called a function this branch did not have.
-BRutus.Client.isAnniversary = false
-BRutus.db.professions = {
+GuildOS.Client.isAnniversary = false
+GuildOS.db.professions = {
   ["Chehul-Firemaw"] = { src = "addon", ts = 1, profs = {
     [393] = { rank = 300, max = 300, n = 0, h = 0, recipes = {}, extra = {} },
     [165] = { rank = 285, max = 300, spec = 10656, n = 3, h = 1, recipes = { 3304, 2657 }, extra = { 999001 } } } },
   ["Fulano-Firemaw"] = { src = "native", ts = 1, profs = { [171] = {} } },
 }
 dofile(ADDON .. "/Modules/Professions.lua")
-local forever = BRutus.Companion:BuildPayload()
+local forever = GuildOS.Companion:BuildPayload()
 local byKey = {}
 for _, m in ipairs(forever.members) do byKey[m.key] = m end
 local c = byKey["Chehul-Firemaw"].crafting
@@ -256,38 +256,38 @@ end
 
 -- A changed list on its way: the previous one stands in. A list on its way with no previous
 -- one: no crafting key at all, so the site keeps what another officer published.
-BRutus.db.professions["Semdados-Firemaw"] = { src = "addon", ts = 1, profs = {
+GuildOS.db.professions["Semdados-Firemaw"] = { src = "addon", ts = 1, profs = {
   [164] = { rank = 120, max = 150, n = 4, h = 2, stale = { 2660, 2663 }, staleExtra = {} } } }
 local stale = {}
-for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
+for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do stale[m.key] = m end
 local s = stale["Semdados-Firemaw"].crafting
 assert(s and #s == 1 and s[1].rank == 120 and #s[1].recipes == 2, "a stale list stands in while the new one travels")
-BRutus.db.professions["Semdados-Firemaw"].profs[164].stale = nil
-for _, m in ipairs(BRutus.Companion:BuildPayload().members) do stale[m.key] = m end
+GuildOS.db.professions["Semdados-Firemaw"].profs[164].stale = nil
+for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do stale[m.key] = m end
 assert(stale["Semdados-Firemaw"].crafting == nil, "a list still on its way: no crafting key, the site keeps its own")
-BRutus.Professions, BRutus.db.professions = nil, nil
+GuildOS.Professions, GuildOS.db.professions = nil, nil
 
 -- v8 (issue #37): the look the member's addon read in the barber's chair, as {option, choice}
 -- pairs; absent for everyone who has not sat in one.
 assert(anniversary.v >= 8, "the payload that carries the look is v8")
-BRutus.db.members["Chehul-Firemaw"].look = { { 19, 359 }, { 9493, 78927 } }
+GuildOS.db.members["Chehul-Firemaw"].look = { { 19, 359 }, { 9493, 78927 } }
 local looks = {}
-for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
+for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do looks[m.key] = m.look end
 assert(looks["Chehul-Firemaw"] and #looks["Chehul-Firemaw"] == 2 and looks["Chehul-Firemaw"][2][2] == 78927,
   "a member with a look carries it")
 assert(looks["Fulano-Firemaw"] == nil, "a member with none carries no look key")
-BRutus.db.members["Chehul-Firemaw"].look = "junk"
-for _, m in ipairs(BRutus.Companion:BuildPayload().members) do looks[m.key] = m.look end
+GuildOS.db.members["Chehul-Firemaw"].look = "junk"
+for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do looks[m.key] = m.look end
 assert(looks["Chehul-Firemaw"] == nil, "a look that is not a list is not exported")
-BRutus.db.members["Chehul-Firemaw"].look = nil
+GuildOS.db.members["Chehul-Firemaw"].look = nil
 
 -- v9 (issue #90): a session's raid size as the game gave it; absent for a night recorded before.
 assert(anniversary.v >= 9, "the payload that carries a session's size is v9")
 assert(anniversary.sessions[1].size == nil, "a night recorded before sizes were kept carries no size key")
-BRutus.db.raidTracker.sessions[NIGHT].size = 20
-assert(BRutus.Companion:BuildPayload().sessions[1].size == 20, "a night's size travels")
-BRutus.db.raidTracker.sessions[NIGHT].size = nil
-BRutus.Client.isAnniversary = true
+GuildOS.db.raidTracker.sessions[NIGHT].size = 20
+assert(GuildOS.Companion:BuildPayload().sessions[1].size == 20, "a night's size travels")
+GuildOS.db.raidTracker.sessions[NIGHT].size = nil
+GuildOS.Client.isAnniversary = true
 
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then
@@ -296,7 +296,7 @@ for _, m in ipairs(anniversary.members) do
   end
 end
 
-local text, countOrErr = BRutus.Companion:Build()
+local text, countOrErr = GuildOS.Companion:Build()
 if not text then
   io.stderr:write("BUILD FAILED: " .. tostring(countOrErr) .. "\n")
   os.exit(1)

@@ -11,9 +11,9 @@
 -- only the 28px title bar stays, with three numbers. Nothing animates.
 -- Position, size and the active tab persist in settings.window.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
 local WHITE        = "Interface\\Buttons\\WHITE8x8"
 local NAME         = "GuildOSWindow"
@@ -46,10 +46,10 @@ BINDING_NAME_GUILDOS_TOGGLE = L["Open or close Guild OS"]
 local function round(n) return math.floor(n + 0.5) end
 
 local function store()
-    local g = BRutus:GetSetting("window")
+    local g = GuildOS:GetSetting("window")
     if type(g) ~= "table" then
         g = {}
-        BRutus:SetSetting("window", g)
+        GuildOS:SetSetting("window", g)
     end
     return g
 end
@@ -157,14 +157,14 @@ end
 ----------------------------------------------------------------------
 local FOOTER = {
     { key = "search", label = L["Search"], priority = 100,
-      run = function() if BRutus.Search then BRutus.Search:Show() end end },
+      run = function() if GuildOS.Search then GuildOS.Search:Show() end end },
     { key = "sync", label = L["Sync"], priority = 90,
-      run = function() if BRutus.CommSystem then BRutus.CommSystem:FullSync() end end },
+      run = function() if GuildOS.CommSystem then GuildOS.CommSystem:FullSync() end end },
     { key = "invite", priority = 80 },
     { key = "cores", label = L["Core Sign-up"], priority = 60,
-      run = function() if BRutus.ShowCoreSignupFrame then BRutus:ShowCoreSignupFrame() end end },
+      run = function() if GuildOS.ShowCoreSignupFrame then GuildOS:ShowCoreSignupFrame() end end },
     { key = "blizzard", label = L["Blizzard"], priority = 50,
-      run = function() if BRutus.OpenBlizzardGuildUI then BRutus:OpenBlizzardGuildUI() end end },
+      run = function() if GuildOS.OpenBlizzardGuildUI then GuildOS:OpenBlizzardGuildUI() end end },
 }
 
 local function inviteField(parent)
@@ -175,14 +175,14 @@ local function inviteField(parent)
     box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     box:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
-    BRutus:ApplyFont(box, 10)
+    GuildOS:ApplyFont(box, 10)
     box:SetTextColor(C.text.r, C.text.g, C.text.b)
     box:SetTextInsets(6, 6, 0, 0)
     box:SetAutoFocus(false)
     box:SetMaxLetters(50)
 
     local hint = box:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(hint, 10)
+    GuildOS:ApplyFont(hint, 10)
     hint:SetPoint("LEFT", 6, 0)
     hint:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
     hint:SetText(L["Player name..."])
@@ -194,11 +194,11 @@ local function inviteField(parent)
     local function invite()
         local target = strtrim(box:GetText() or "")
         if target == "" then
-            BRutus:Print(L["Enter a player name to invite."])
+            GuildOS:Print(L["Enter a player name to invite."])
             return
         end
         GuildInvite(target)
-        BRutus:Print(string.format(L["Guild invite sent to %s."], target))
+        GuildOS:Print(string.format(L["Guild invite sent to %s."], target))
         box:SetText("")
     end
     btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
@@ -228,7 +228,7 @@ local function createWindow()
         f:SetMinResize(MIN_W, BAR_H)
     end
     f:Hide()
-    f:SetScale(BRutus:GetSetting("uiScale") or 1)
+    f:SetScale(GuildOS:GetSetting("uiScale") or 1)
     UI:RestoreWindowGeometry(f)
     f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
 
@@ -258,7 +258,7 @@ local function createWindow()
 
     local function text(size, role, color)
         local fs = bar:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(fs, size, role)
+        GuildOS:ApplyFont(fs, size, role)
         fs:SetShadowOffset(0, 0)
         fs:SetTextColor(color.r, color.g, color.b)
         fs:SetWordWrap(false)
@@ -407,10 +407,10 @@ local function createWindow()
         -- refused until /reload instead of opening empty.
         if not panel.built then
             panel.built = true
-            panel.buildFailed = not BRutus:RunStartup("Tab:" .. key, nil, def.build, panel, self)
+            panel.buildFailed = not GuildOS:RunStartup("Tab:" .. key, nil, def.build, panel, self)
         end
         if panel.buildFailed then
-            BRutus:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
+            GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
             return false
         end
         self.activeTab = key
@@ -507,12 +507,12 @@ local function createWindow()
     -- Guarded: it runs on every show and roster update, and reads modules
     -- that may not have started.
     function f:RefreshTitle()
-        BRutus:SafeCall(function()
+        GuildOS:SafeCall(function()
             local A = UI.Agora
             local online = A:RosterLoading() and DASH or string.format(L["%d online"], A:OnlineCount())
             meta:SetText((GetGuildInfo("player") or "Guild OS") .. DOT .. online)
             local last = A:LastSync()
-            sync:SetText(last and string.format(L["sync %s"], BRutus:TimeAgo(last)) or L["not synced yet"])
+            sync:SetText(last and string.format(L["sync %s"], GuildOS:TimeAgo(last)) or L["not synced yet"])
             -- The three numbers walk the officer work, so only while they show.
             if self.band == "bar" then summary:SetText(A:BarText()) end
         end)
@@ -631,10 +631,10 @@ local function createWindow()
 
     -- One literal call per event: tools/probe.lua reads them to keep the
     -- probe's event list honest.
-    BRutus.Compat.RegisterEvent(f, "GROUP_ROSTER_UPDATE")
-    BRutus.Compat.RegisterEvent(f, "RAID_ROSTER_UPDATE")
-    BRutus.Compat.RegisterEvent(f, "PARTY_LOOT_METHOD_CHANGED")
-    BRutus.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "GROUP_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "RAID_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "PARTY_LOOT_METHOD_CHANGED")
+    GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then
             if self:IsShown() then self:RefreshTitle() end
@@ -656,9 +656,9 @@ end
 
 -- The window, created on first use. Nil until the saved data is loaded.
 function UI:GetMainWindow()
-    if not BRutus.db then return nil end
-    if not BRutus.RosterFrame then BRutus.RosterFrame = createWindow() end
-    return BRutus.RosterFrame
+    if not GuildOS.db then return nil end
+    if not GuildOS.RosterFrame then GuildOS.RosterFrame = createWindow() end
+    return GuildOS.RosterFrame
 end
 
 -- Show the window on tab `id`, then on sub-tab `sub`, with `filter` applied
@@ -670,16 +670,16 @@ function UI:OpenWindow(id, sub, filter)
     -- Checked here with their own messages, before the tab gate that covers
     -- all three: a disabled feature, a failed one and a rank refusal read
     -- differently to the player.
-    if not BRutus:IsFeatureEnabled(id) then
-        BRutus:Print(string.format(L["%s is disabled in Settings."], def.label))
+    if not GuildOS:IsFeatureEnabled(id) then
+        GuildOS:Print(string.format(L["%s is disabled in Settings."], def.label))
         return false
     end
-    if BRutus:FeatureStartFailed(id) then
-        BRutus:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
+    if GuildOS:FeatureStartFailed(id) then
+        GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
         return false
     end
     if not self:IsFeatureAllowed(def) then
-        BRutus:Print(string.format(L["%s is officer-only."], def.label))
+        GuildOS:Print(string.format(L["%s is officer-only."], def.label))
         return false
     end
     local f = self:GetMainWindow()
@@ -699,12 +699,12 @@ function UI:ToggleMain()
 end
 
 function UI:ApplyScale()
-    local f = BRutus.RosterFrame
-    if f then f:SetScale(BRutus:GetSetting("uiScale") or 1) end
+    local f = GuildOS.RosterFrame
+    if f then f:SetScale(GuildOS:GetSetting("uiScale") or 1) end
 end
 
 -- A feature turned off in Settings loses its tab at once.
 function UI:OnFeatureToggled()
-    local f = BRutus.RosterFrame
+    local f = GuildOS.RosterFrame
     if f then f:UpdateTabVisibility() end
 end

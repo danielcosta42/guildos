@@ -6,7 +6,7 @@
 -- and comma-lists "19, 60-70, >=68" (OR).
 ----------------------------------------------------------------------
 local LevelQuery = {}
-BRutus.LevelQuery = LevelQuery
+GuildOS.LevelQuery = LevelQuery
 
 function LevelQuery:Initialize()
     self:_RegisterTests()
@@ -54,8 +54,8 @@ function LevelQuery:Parse(query)
 end
 
 function LevelQuery:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("levelq.range", function()
         local m = LevelQuery:Parse("60-70")
         if not m or not m(65) or m(59) or not m(70) or not m(60) then return false, "range" end

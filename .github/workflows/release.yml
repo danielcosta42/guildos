@@ -26,13 +26,13 @@ jobs:
         run: luacheck . --config .luacheckrc
 
       - name: No hard-coded client font
-        # The Forever skin sets every font through BRutus:ApplyFont (Core/Data.lua),
+        # The Forever skin sets every font through GuildOS:ApplyFont (Core/Data.lua),
         # which is what keeps serif at 14px and up and mono at 10px and up.
         # ChehulNet.lua is shared verbatim with other Chehul addons and cannot call
-        # into BRutus, so it keeps the client font.
+        # into GuildOS, so it keeps the client font.
         run: |
           if grep -rn 'FRIZQT__' --include='*.lua' --exclude='ChehulNet.lua' Core Modules UI; then
-            echo "Hard-coded client font found; use BRutus:ApplyFont." >&2
+            echo "Hard-coded client font found; use GuildOS:ApplyFont." >&2
             exit 1
           fi
 

@@ -1,11 +1,11 @@
 ----------------------------------------------------------------------
--- BRutus Guild Manager - Spec Checker
+-- Guild OS - Spec Checker
 -- Collects talent spec data for the local player and, for group
 -- members, via the Inspect API (NotifyInspect + INSPECT_READY).
 ----------------------------------------------------------------------
 local SpecChecker = {}  -- luacheck: ignore 111
-BRutus.SpecChecker = SpecChecker
-local L = BRutus.L
+GuildOS.SpecChecker = SpecChecker
+local L = GuildOS.L
 
 -- Time between inspect requests to avoid server throttle
 local INSPECT_DELAY = 1.5
@@ -37,10 +37,10 @@ local CLASS_SPEC_NAMES = {
 ----------------------------------------------------------------------
 local function CountTabPoints(tabIndex, isInspect)
     local total = 0
-    local numTalents = BRutus.Compat.GetNumTalents(tabIndex, isInspect)
+    local numTalents = GuildOS.Compat.GetNumTalents(tabIndex, isInspect)
     if not numTalents then return 0 end
     for t = 1, numTalents do
-        local _, _, _, _, currentRank = BRutus.Compat.GetTalentInfo(tabIndex, t, isInspect)
+        local _, _, _, _, currentRank = GuildOS.Compat.GetTalentInfo(tabIndex, t, isInspect)
         total = total + (tonumber(currentRank) or 0)
     end
     return total
@@ -52,11 +52,11 @@ end
 ----------------------------------------------------------------------
 local function CollectTabTalents(tabIndex, isInspect)
     local talents    = {}
-    local numTalents = BRutus.Compat.GetNumTalents(tabIndex, isInspect)
+    local numTalents = GuildOS.Compat.GetNumTalents(tabIndex, isInspect)
     if not numTalents then return talents end
     for t = 1, numTalents do
         local tName, tIcon, tier, col, curRank, maxRank =
-            BRutus.Compat.GetTalentInfo(tabIndex, t, isInspect)
+            GuildOS.Compat.GetTalentInfo(tabIndex, t, isInspect)
         talents[t] = {
             name        = tName   or "",
             icon        = tIcon   or "",
@@ -71,12 +71,12 @@ end
 
 -- Keep the local player's spec on their own member row.
 local function KeepOwnSpec(spec)
-    local key = BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
-    if BRutus.db and BRutus.db.members then
-        if not BRutus.db.members[key] then
-            BRutus.db.members[key] = {}
+    local key = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+    if GuildOS.db and GuildOS.db.members then
+        if not GuildOS.db.members[key] then
+            GuildOS.db.members[key] = {}
         end
-        BRutus.db.members[key].spec = spec
+        GuildOS.db.members[key].spec = spec
     end
     return spec
 end
@@ -134,7 +134,7 @@ end
 -- is nothing to read yet — the talents not loaded, or no point spent — rather than a tree
 -- nobody picked; the periodic collect reads it once there is one.
 function SpecChecker:CollectOwnTraitSpec()
-    local nodes, why = BRutus.Compat.TraitTreeNodes()
+    local nodes, why = GuildOS.Compat.TraitTreeNodes()
     if not nodes then return nil, why end
     local points = SpecChecker.ColumnPoints(nodes)
     if not points then return nil, "no-trees" end
@@ -152,7 +152,7 @@ end
 -- Stores result in Guild OS.db.members[key].spec and returns it.
 ----------------------------------------------------------------------
 function SpecChecker:CollectOwnSpec()
-    local numTabs, why = BRutus.Compat.GetNumTalentTabs()
+    local numTabs, why = GuildOS.Compat.GetNumTalentTabs()
     if why == "no-api" then return self:CollectOwnTraitSpec() end
     if why then return nil, why end
     if not numTabs or numTabs == 0 then return nil end
@@ -205,8 +205,8 @@ end
 -- Returns nil if no spec data is available for that key.
 ----------------------------------------------------------------------
 function SpecChecker:GetSpecLabel(memberKey)
-    if not BRutus.db or not BRutus.db.members then return nil end
-    local data = BRutus.db.members[memberKey]
+    if not GuildOS.db or not GuildOS.db.members then return nil end
+    local data = GuildOS.db.members[memberKey]
     if not data or not data.spec then return nil end
 
     local s   = data.spec
@@ -221,7 +221,7 @@ end
 ----------------------------------------------------------------------
 function SpecChecker:ScanGroup()
     if not IsInGroup() and not IsInRaid() then
-        BRutus:Print(L["|cffFF4444You must be in a group or raid to scan specs.|r"])
+        GuildOS:Print(L["|cffFF4444You must be in a group or raid to scan specs.|r"])
         return
     end
 
@@ -233,20 +233,20 @@ function SpecChecker:ScanGroup()
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         if UnitExists(unit) and UnitIsConnected(unit) then
-            local name, realm = BRutus.Compat.UnitIdentity(unit)
+            local name, realm = GuildOS.Compat.UnitIdentity(unit)
             if name then
                 realm = (realm and realm ~= "") and realm or GetRealmName()
-                local key = BRutus:GetPlayerKey(name, realm)
+                local key = GuildOS:GetPlayerKey(name, realm)
                 table.insert(inspectQueue, { unit = unit, key = key, name = name })
             end
         end
     end
 
     if #inspectQueue == 0 then
-        BRutus:Print(L["No group members available to inspect."])
+        GuildOS:Print(L["No group members available to inspect."])
         return
     end
-    BRutus:Print(string.format(L["Scanning specs for %d player(s)…"], #inspectQueue))
+    GuildOS:Print(string.format(L["Scanning specs for %d player(s)…"], #inspectQueue))
     self:ProcessNextInspect()
 end
 
@@ -256,7 +256,7 @@ end
 function SpecChecker:ProcessNextInspect()
     if #inspectQueue == 0 then
         inspectPending = nil
-        BRutus:Print(L["|cff00FF00Spec scan complete.|r"])
+        GuildOS:Print(L["|cff00FF00Spec scan complete.|r"])
         return
     end
 
@@ -277,7 +277,7 @@ end
 function SpecChecker:OnInspectReady()
     if not inspectPending then return end
 
-    local numTabs = BRutus.Compat.GetNumTalentTabs(true)   -- true = isInspect
+    local numTabs = GuildOS.Compat.GetNumTalentTabs(true)   -- true = isInspect
     if not numTabs or numTabs == 0 then
         C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
         return
@@ -300,10 +300,10 @@ function SpecChecker:OnInspectReady()
     end
     spec.talents = talentsPerTab
 
-    if not BRutus.db.members[inspectPending.key] then
-        BRutus.db.members[inspectPending.key] = { name = inspectPending.name }
+    if not GuildOS.db.members[inspectPending.key] then
+        GuildOS.db.members[inspectPending.key] = { name = inspectPending.name }
     end
-    BRutus.db.members[inspectPending.key].spec = spec
+    GuildOS.db.members[inspectPending.key].spec = spec
 
     inspectPending = nil
 
@@ -317,7 +317,7 @@ end
 ----------------------------------------------------------------------
 function SpecChecker:Initialize()
     local frame = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(frame, "INSPECT_READY")
+    GuildOS.Compat.RegisterEvent(frame, "INSPECT_READY")
     frame:SetScript("OnEvent", function(_, event)
         if event == "INSPECT_READY" then
             SpecChecker:OnInspectReady()

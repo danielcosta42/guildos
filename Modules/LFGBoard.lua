@@ -5,8 +5,8 @@
 -- envelope sender, so nobody can publish availability for someone else.
 ----------------------------------------------------------------------
 local LFGBoard = {}
-BRutus.LFGBoard = LFGBoard
-local L = BRutus.L
+GuildOS.LFGBoard = LFGBoard
+local L = GuildOS.L
 local LibSerialize = LibStub("GuildOS-LibSerialize")
 
 local DEFAULT_TTL = 5400   -- 90 minutes
@@ -20,10 +20,10 @@ LFGBoard.DEFAULTS = { notify = false, lastRole = "ANY", lastNote = "", lastTtl =
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 
 function LFGBoard:Initialize()
-    BRutus.db.lfgBoard = BRutus.db.lfgBoard or {}
-    BRutus.db.lfgPrefs = BRutus.db.lfgPrefs or {}
+    GuildOS.db.lfgBoard = GuildOS.db.lfgBoard or {}
+    GuildOS.db.lfgPrefs = GuildOS.db.lfgPrefs or {}
     for k, v in pairs(self.DEFAULTS) do
-        if BRutus.db.lfgPrefs[k] == nil then BRutus.db.lfgPrefs[k] = v end
+        if GuildOS.db.lfgPrefs[k] == nil then GuildOS.db.lfgPrefs[k] = v end
     end
     self._cd = self._cd or {}
     self:Prune()
@@ -32,7 +32,7 @@ function LFGBoard:Initialize()
             priority = "NORMAL",
             cap = 100,
             build = function()
-                return LFGBoard._BuildAllianceLfg(BRutus.db.lfgBoard, GetServerTime(), 100)
+                return LFGBoard._BuildAllianceLfg(GuildOS.db.lfgBoard, GetServerTime(), 100)
             end,
         })
     end
@@ -41,8 +41,8 @@ function LFGBoard:Initialize()
 end
 
 function LFGBoard:_RegisterAllianceTests()
-    if not BRutus.SelfTest then return end
-    BRutus.SelfTest:Register("lfgboard.alliance_build_prunes", function()
+    if not GuildOS.SelfTest then return end
+    GuildOS.SelfTest:Register("lfgboard.alliance_build_prunes", function()
         local store = {
             ["Ann-R"] = { role = "TANK", note = "MC", ts = 1000, ttl = 600 },   -- alive at 1200
             ["Bob-R"] = { role = "DPS",  note = "any", ts = 100,  ttl = 300 },  -- expired at 1200
@@ -176,7 +176,7 @@ function LFGBoard:AllianceList(now)
 end
 
 function LFGBoard:Prune(now, store)
-    store = store or BRutus.db.lfgBoard
+    store = store or GuildOS.db.lfgBoard
     if not store then return 0 end
     now = now or GetServerTime()
     local removed = 0
@@ -226,7 +226,7 @@ function LFGBoard:_BuildEntry(p, now)
     if age > ttl then age = ttl end
     return {
         role = self:_SanitizeRole(p and p.role),
-        note = BRutus:SanitizeUserText(p and p.note, NOTE_MAX),
+        note = GuildOS:SanitizeUserText(p and p.note, NOTE_MAX),
         ts = now - age,
         ttl = ttl,
     }, age
@@ -248,7 +248,7 @@ function LFGBoard:_RateLimited(sender, store, schedule)
     end
     if store[sender] then return true end
     store[sender] = true
-    local after = schedule or BRutus.Compat.After
+    local after = schedule or GuildOS.Compat.After
     after(ENTRY_COOLDOWN, function() store[sender] = nil end)
     return false
 end
@@ -256,7 +256,7 @@ end
 -- Default role for a fresh Role cycle button. The player's own last pick
 -- wins whenever it is anything other than the untouched default "ANY". If
 -- it is still "ANY", fall back to their self-service raid role profile
--- (BRutus:GetMyRoles(), a { [ROLE] = true } set, see Core/Core.lua) but
+-- (GuildOS:GetMyRoles(), a { [ROLE] = true } set, see Core/Core.lua) but
 -- ONLY when exactly one role is configured there -- with two or more (or
 -- zero) we cannot guess which one they mean for this LFG post, so it stays
 -- "ANY". Always sanitized on the way out, so this can never return a value
@@ -265,11 +265,11 @@ end
 -- every branch without touching live db/profile state; production calls
 -- this with no arguments.
 function LFGBoard:_DefaultRole(rolesOverride, lastRoleOverride)
-    local lastRole = lastRoleOverride or (BRutus.db.lfgPrefs and BRutus.db.lfgPrefs.lastRole) or "ANY"
+    local lastRole = lastRoleOverride or (GuildOS.db.lfgPrefs and GuildOS.db.lfgPrefs.lastRole) or "ANY"
     if lastRole ~= "ANY" then return self:_SanitizeRole(lastRole) end
 
     local roles = rolesOverride
-    if roles == nil and BRutus.GetMyRoles then roles = BRutus:GetMyRoles() end
+    if roles == nil and GuildOS.GetMyRoles then roles = GuildOS:GetMyRoles() end
     roles = roles or {}
 
     local only
@@ -286,20 +286,20 @@ end
 -- Self declare (publishes only your OWN entry)
 ----------------------------------------------------------------------
 local function myKey()
-    return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName())
+    return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
 end
 
 -- Returns the stored entry so callers print exactly what was published
 -- (sanitized note, clamped ttl) instead of what they passed in.
 function LFGBoard:SetAvailable(role, note, ttl)
-    note = BRutus:SanitizeUserText(note, NOTE_MAX)
-    ttl = self:_ClampTtl(ttl or BRutus.db.lfgPrefs.lastTtl or DEFAULT_TTL)
-    role = self:_SanitizeRole(role or BRutus.db.lfgPrefs.lastRole or "ANY")
+    note = GuildOS:SanitizeUserText(note, NOTE_MAX)
+    ttl = self:_ClampTtl(ttl or GuildOS.db.lfgPrefs.lastTtl or DEFAULT_TTL)
+    role = self:_SanitizeRole(role or GuildOS.db.lfgPrefs.lastRole or "ANY")
     local entry = { role = role, note = note, ts = GetServerTime(), ttl = ttl }
-    BRutus.db.lfgBoard[myKey()] = entry
-    BRutus.db.lfgPrefs.lastRole, BRutus.db.lfgPrefs.lastNote, BRutus.db.lfgPrefs.lastTtl = role, note, ttl
-    if BRutus.CommSystem then
-        BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.LFG,
+    GuildOS.db.lfgBoard[myKey()] = entry
+    GuildOS.db.lfgPrefs.lastRole, GuildOS.db.lfgPrefs.lastNote, GuildOS.db.lfgPrefs.lastTtl = role, note, ttl
+    if GuildOS.CommSystem then
+        GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
             LibSerialize:Serialize({ role = role, note = note, ttl = ttl }))
     end
     self:Refresh()
@@ -307,16 +307,16 @@ function LFGBoard:SetAvailable(role, note, ttl)
 end
 
 function LFGBoard:ClearAvailable()
-    BRutus.db.lfgBoard[myKey()] = nil
-    if BRutus.CommSystem then
-        BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.LFG,
+    GuildOS.db.lfgBoard[myKey()] = nil
+    if GuildOS.CommSystem then
+        GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
             LibSerialize:Serialize({ clear = true }))
     end
     self:Refresh()
 end
 
 function LFGBoard:AmAvailable()
-    local store = BRutus.db and BRutus.db.lfgBoard
+    local store = GuildOS.db and GuildOS.db.lfgBoard
     return self:_IsActive(store and store[myKey()], GetServerTime())
 end
 
@@ -327,14 +327,14 @@ end
 -- as `age` (seconds since the post) rather than as a timestamp, so answering
 -- requests or relogging can never extend the listing.
 function LFGBoard:Rebroadcast()
-    if not BRutus.CommSystem then return false end
-    local store = BRutus.db and BRutus.db.lfgBoard
+    if not GuildOS.CommSystem then return false end
+    local store = GuildOS.db and GuildOS.db.lfgBoard
     local entry = store and store[myKey()]
     local now = GetServerTime()
     if not self:_IsActive(entry, now) then return false end
     local age = now - entry.ts
     if age < 0 then age = 0 end
-    BRutus.CommSystem:SendMessage(BRutus.CommSystem.MSG_TYPES.LFG,
+    GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
         LibSerialize:Serialize({ role = entry.role, note = entry.note, ttl = entry.ttl, age = age }))
     return true
 end
@@ -350,23 +350,23 @@ function LFGBoard:HandleEntry(sender, data)
     if not ok or type(p) ~= "table" then return end
     local short = sender:match("^([^-]+)") or sender
     local realm = sender:match("-(.+)$") or GetRealmName()
-    local key = BRutus:GetPlayerKey(short, realm)
-    BRutus.db.lfgBoard = BRutus.db.lfgBoard or {}
+    local key = GuildOS:GetPlayerKey(short, realm)
+    GuildOS.db.lfgBoard = GuildOS.db.lfgBoard or {}
     if p.clear then
-        BRutus.db.lfgBoard[key] = nil
+        GuildOS.db.lfgBoard[key] = nil
     else
         local now = GetServerTime()
-        local wasActive = self:_IsActive(BRutus.db.lfgBoard[key], now)
+        local wasActive = self:_IsActive(GuildOS.db.lfgBoard[key], now)
         local entry, age = self:_BuildEntry(p, now)
-        BRutus.db.lfgBoard[key] = entry
+        GuildOS.db.lfgBoard[key] = entry
         -- Print the SANITIZED note, never the raw payload: string.format("%s")
         -- does not call tostring in Lua 5.1, so a peer sending a boolean or a
         -- table would raise inside this (unprotected) CHAT_MSG_ADDON handler,
         -- and an oversized note would bypass the cap and flood the chat frame.
         -- age > 0 means this is a rebroadcast of an older post, not news.
-        local prefs = BRutus.db.lfgPrefs
+        local prefs = GuildOS.db.lfgPrefs
         if age == 0 and not wasActive and prefs and prefs.notify and key ~= myKey() then
-            BRutus:Print(string.format(L["%s is available: %s"], short,
+            GuildOS:Print(string.format(L["%s is available: %s"], short,
                 (entry.note ~= "" and entry.note) or L["(no note)"]))
         end
     end
@@ -374,7 +374,7 @@ function LFGBoard:HandleEntry(sender, data)
 end
 
 function LFGBoard:Refresh()
-    if self.uiRefresh then BRutus:SafeCall(self.uiRefresh) end
+    if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
 end
 
 ----------------------------------------------------------------------
@@ -399,7 +399,7 @@ end
 -- Online guild roster snapshot for the board's online-only filter: an
 -- { [key] = true } set plus a { [key] = classFile } lookup for row colors.
 -- Keys are normalized exactly like HandleEntry (short name + realm through
--- BRutus:GetPlayerKey) -- the recurring key-form gotcha in this codebase.
+-- GuildOS:GetPlayerKey) -- the recurring key-form gotcha in this codebase.
 function LFGBoard:_BuildOnlineRoster()
     local onlineSet, classByKey = {}, {}
     local n = GetNumGuildMembers() or 0
@@ -408,7 +408,7 @@ function LFGBoard:_BuildOnlineRoster()
         if name and isOnline then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
-            local key = BRutus:GetPlayerKey(short, realm)
+            local key = GuildOS:GetPlayerKey(short, realm)
             onlineSet[key] = true
             classByKey[key] = classFile
         end
@@ -420,7 +420,7 @@ end
 -- via labelFn(value). Starts on initValue (falls back to the first entry
 -- when initValue isn't found, e.g. a stale pref).
 local function makeCycleButton(parent, width, values, labelFn, initValue)
-    local btn = BRutus.UI:CreateButton(parent, "", width, 22)
+    local btn = GuildOS.UI:CreateButton(parent, "", width, 22)
     local idx = 1
     for i, v in ipairs(values) do if v == initValue then idx = i end end
     local function paint() btn.label:SetText(labelFn(values[idx])) end
@@ -434,8 +434,8 @@ local function makeCycleButton(parent, width, values, labelFn, initValue)
 end
 
 function LFGBoard:Show()
-    local UI = BRutus.UI
-    local C = BRutus.Colors
+    local UI = GuildOS.UI
+    local C = GuildOS.Colors
 
     local f = self.frame
     if not f then
@@ -465,7 +465,7 @@ function LFGBoard:Show()
         scopeBtn:SetPoint("TOPRIGHT", -36, -12)
         scopeBtn:Hide()
         scopeBtn:SetScript("OnClick", function()
-            BRutus.db.lfgPrefs.allianceScope = not BRutus.db.lfgPrefs.allianceScope
+            GuildOS.db.lfgPrefs.allianceScope = not GuildOS.db.lfgPrefs.allianceScope
             LFGBoard:Refresh()
         end)
         f.scopeBtn = scopeBtn
@@ -495,7 +495,7 @@ function LFGBoard:Show()
         noteBox:SetPoint("TOPRIGHT", -16, -46)
         noteBox:SetAutoFocus(false)
         noteBox:SetMaxLetters(NOTE_MAX)
-        noteBox:SetText(BRutus.db.lfgPrefs.lastNote or "")
+        noteBox:SetText(GuildOS.db.lfgPrefs.lastNote or "")
         noteBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         f.noteBox = noteBox
 
@@ -505,7 +505,7 @@ function LFGBoard:Show()
         local durLbl = UI:CreateText(f, L["Duration"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
         durLbl:SetPoint("TOPLEFT", 60, -79)
 
-        local durationBtn = makeCycleButton(f, 90, DURATIONS, durationDisplay, BRutus.db.lfgPrefs.lastTtl)
+        local durationBtn = makeCycleButton(f, 90, DURATIONS, durationDisplay, GuildOS.db.lfgPrefs.lastTtl)
         durationBtn:SetPoint("TOPLEFT", 94, -77)
         f.durationBtn = durationBtn
 
@@ -572,7 +572,7 @@ function LFGBoard:Show()
 
         local onlineSet, classByKey = self:_BuildOnlineRoster()
         local now = GetServerTime()
-        local list = self:ActiveList(BRutus.db.lfgBoard, now, onlineSet)
+        local list = self:ActiveList(GuildOS.db.lfgBoard, now, onlineSet)
 
         -- Alliance scope: append the allied pool. Allied entries carry a guild
         -- and no local key, so the row renderer treats them as read-only.
@@ -580,10 +580,10 @@ function LFGBoard:Show()
         local inAlliance = ally and ally:Get() ~= nil
         if f.scopeBtn then
             if inAlliance then f.scopeBtn:Show() else f.scopeBtn:Hide() end
-            f.scopeBtn.label:SetText(BRutus.db.lfgPrefs.allianceScope
+            f.scopeBtn.label:SetText(GuildOS.db.lfgPrefs.allianceScope
                 and L["Scope: Alliance"] or L["Scope: Guild"])
         end
-        if inAlliance and BRutus.db.lfgPrefs.allianceScope then
+        if inAlliance and GuildOS.db.lfgPrefs.allianceScope then
             for _, row in ipairs(self:AllianceList(now)) do
                 list[#list + 1] = row
             end
@@ -642,7 +642,7 @@ function LFGBoard:Show()
                 local inviteBtn = UI:CreateButton(child, L["Invite"], 56, 18)
                 inviteBtn:SetPoint("TOPRIGHT", -4, -(y + 2))
                 noteReserve = math.max(noteReserve, inviteBtn:GetWidth() + 10)
-                inviteBtn:SetScript("OnClick", function() BRutus.Compat.InviteUnit(entry.name) end)
+                inviteBtn:SetScript("OnClick", function() GuildOS.Compat.InviteUnit(entry.name) end)
             end
 
             local noteFS = UI:CreateText(child, entry.note or "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
@@ -708,24 +708,24 @@ function LFGBoard:_ParseAvailArgs(args, rest, defaultRole)
     -- Only a leading token counts as a role, so "need 2 dps" stays all note.
     local role, note = ROLE_TOKENS[first], rest
     if role then note = strtrim(rest:match("^%S+%s*(.*)$") or "") end
-    return "set", self:_SanitizeRole(role or defaultRole), BRutus:SanitizeUserText(note, NOTE_MAX)
+    return "set", self:_SanitizeRole(role or defaultRole), GuildOS:SanitizeUserText(note, NOTE_MAX)
 end
 
 function LFGBoard:HandleCommand(args, rest)
-    local prefs = BRutus.db and BRutus.db.lfgPrefs
+    local prefs = GuildOS.db and GuildOS.db.lfgPrefs
     if not prefs then return end
     local action, role, note, value = self:_ParseAvailArgs(args, rest, self:_DefaultRole())
     if action == "clear" then
         self:ClearAvailable()
-        BRutus:Print(L["You are no longer listed as available."])
+        GuildOS:Print(L["You are no longer listed as available."])
     elseif action == "notify" then
         if value ~= nil then prefs.notify = value end
-        BRutus:Print(prefs.notify and L["LFG notify |cff4CFF4Con|r."] or L["LFG notify |cffFF4444off|r."])
+        GuildOS:Print(prefs.notify and L["LFG notify |cff4CFF4Con|r."] or L["LFG notify |cffFF4444off|r."])
     elseif action == "set" then
         -- Print the stored entry, so the confirmation shows the sanitized note
         -- and the clamped duration that guildmates will actually see.
         local entry = self:SetAvailable(role, note, prefs.lastTtl or DEFAULT_TTL)
-        BRutus:Print(string.format(L["You are available as %s for %s: %s"],
+        GuildOS:Print(string.format(L["You are available as %s for %s: %s"],
             roleDisplay(entry.role), durationDisplay(entry.ttl),
             (entry.note ~= "" and entry.note) or L["(no note)"]))
     else
@@ -737,8 +737,8 @@ end
 -- Self tests
 ----------------------------------------------------------------------
 function LFGBoard:_RegisterTests()
-    if not BRutus.SelfTest then return end
-    local S = BRutus.SelfTest
+    if not GuildOS.SelfTest then return end
+    local S = GuildOS.SelfTest
     S:Register("lfg.active", function()
         if not LFGBoard:_IsActive({ ts = 100, ttl = 60 }, 130) then return false, "should be active" end
         if LFGBoard:_IsActive({ ts = 100, ttl = 60 }, 200) then return false, "should be expired" end

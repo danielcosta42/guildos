@@ -86,19 +86,19 @@ local function load(db)
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Core/Data.lua")
   dofile(ADDON .. "/Modules/SyncService.lua")
-  BRutus.db = db or { settings = {}, members = {} }
+  GuildOS.db = db or { settings = {}, members = {} }
   -- Who is an officer by name; the transport is not the question here.
-  BRutus.IsOfficerByName = function(_, name) return officers[(name or ""):match("^([^-]+)")] == true end
-  BRutus.SyncService.Publish = function(_, dom, act, data) published[#published + 1] = { dom = dom, act = act, data = data } end
+  GuildOS.IsOfficerByName = function(_, name) return officers[(name or ""):match("^([^-]+)")] == true end
+  GuildOS.SyncService.Publish = function(_, dom, act, data) published[#published + 1] = { dom = dom, act = act, data = data } end
   local handlers = {}
-  BRutus.SyncService.On = function(_, dom, fn) handlers[dom] = fn end
-  BRutus.UI = setmetatable({ CreateButton = function() return widget() end, OpenWindow = function(_, id, sub)
+  GuildOS.SyncService.On = function(_, dom, fn) handlers[dom] = fn end
+  GuildOS.UI = setmetatable({ CreateButton = function() return widget() end, OpenWindow = function(_, id, sub)
     published[#published + 1] = { opened = id .. "/" .. tostring(sub) } end }, { __index = function() return function() return widget() end end })
   dofile(ADDON .. "/Modules/CallToArms.lua")
-  BRutus.CallToArms:Initialize()
+  GuildOS.CallToArms:Initialize()
   SlashCmdList = {}
   dofile(ADDON .. "/Core/Commands.lua")
-  return BRutus.CallToArms, handlers
+  return GuildOS.CallToArms, handlers
 end
 local function last(list) return list[#list] end
 local function said(pattern)
@@ -107,7 +107,7 @@ end
 
 -- ── Who may call ───────────────────────────────────────────────────────
 local CTA, handlers = load()
-local S = BRutus.SyncService
+local S = GuildOS.SyncService
 officers = { Ann = true }
 local function valid(dom, act, who, channel) return S:Validate({ v = 1, id = "e", dom = dom, act = act }, who, channel) end
 check(valid("cta", "call", "Ann-Realm", "GUILD"), "an officer's call over GUILD is taken")
@@ -171,7 +171,7 @@ check(CTA.popup.callId == "R9", "and a call landing within ten seconds of a popu
 local before = #published
 check(not CTA:Send("pvp") and #published == before, "a second call inside the cooldown is refused")
 now = now + CTA.COOLDOWN
-BRutus:SetSetting("ctaChat", false)
+GuildOS:SetSetting("ctaChat", false)
 local chats = #chat
 check(CTA:Send("pvp", "Crossroads under attack") and #chat == chats, "with the guild line switched off, only the call goes")
 check(last(published).data.text == "Crossroads under attack", "a typed message replaces the template's")
@@ -181,7 +181,7 @@ check(sent.data.chat == true and not last(published).data.chat, "the call says w
 now = now + CTA.COOLDOWN
 zone, subzone = "|cffff0000Feralas|r", ""
 -- A saved template is cleaned when saved; this one was edited in the saved variables by hand.
-table.insert(BRutus.db.cta.templates, { id = "raw", name = "|Hx|hOny", text = "x", kind = "worldboss" })
+table.insert(GuildOS.db.cta.templates, { id = "raw", name = "|Hx|hOny", text = "x", kind = "worldboss" })
 check(CTA:Send("raw", "Come to {zone} |cffff0000now|r |Tskull:0|t"), "a call from an officer's own template")
 local out = last(published).data
 check(not out.text:find("|", 1, true) and not out.zone:find("|", 1, true) and not out.title:find("|", 1, true)
@@ -190,7 +190,7 @@ zone, subzone = "Feralas", "Dire Maul"
 
 -- The chat refusing (an encounter's lockdown) does not stop the call.
 now = now + CTA.COOLDOWN
-BRutus:SetSetting("ctaChat", true)
+GuildOS:SetSetting("ctaChat", true)
 chatFails = true
 local nPub = #published
 check(CTA:Send("rally") and #published == nPub + 1 and not last(published).data.chat,
@@ -205,7 +205,7 @@ check(CTA:Send("rally") and #chat == nChat and not last(published).data.chat,
 lockdown = false
 
 -- The cooldown survives a /reload.
-local saved = BRutus.db
+local saved = GuildOS.db
 now = now + 5
 CTA, handlers = load(saved)
 officers = { Off = true, me = true }
@@ -218,13 +218,13 @@ check(#CTA.recent == 1, "the officer's own call, heard back, is not a second one
 -- The caller's popup keeps the caller's own settings.
 CTA, handlers = load()
 officers = { Off = true, me = true }
-BRutus:SetSetting("ctaPopups", false)
+GuildOS:SetSetting("ctaPopups", false)
 check(CTA:Send("worldboss") and not (CTA.popup and CTA.popup.shown), "with popups off, the caller gets no popup either")
 CTA, handlers = load()
 officers = { Off = true, me = true }
 combat = true
 check(CTA:Send("pvp") and not (CTA.popup and CTA.popup.shown) and #sounds == 0, "nor mid-fight with quiet on")
-BRutus:SetSetting("ctaQuiet", false)
+GuildOS:SetSetting("ctaQuiet", false)
 now = now + CTA.COOLDOWN
 check(CTA:Send("pvp") and CTA.popup and CTA.popup.shown, "unless they want popups there too")
 combat = false
@@ -309,7 +309,7 @@ check(#CTA.recent == 1, "the same call heard again later, say relayed, is still 
 local function mode(over)
   CTA, handlers = load()
   officers = { Ann = true }
-  for k, v in pairs(over or {}) do BRutus:SetSetting(k, v) end
+  for k, v in pairs(over or {}) do GuildOS:SetSetting(k, v) end
   call("M" .. math.random(1, 1e9))
   return (CTA.popup and CTA.popup.shown) and "popup" or (said("[Call to Arms]") and "line") or "none"
 end
@@ -318,7 +318,7 @@ check(sounds[1] == 8959, "a fight's call sounds the raid warning")
 check(mode({ ctaPopups = false }) == "line", "popups off: a chat line")
 CTA, handlers = load()
 officers = { Ann = true }
-BRutus:SetSetting("ctaPopups", false)
+GuildOS:SetSetting("ctaPopups", false)
 call("C1", { chat = true })
 check(not said("[Call to Arms]"), "a chat line the caller already put in guild chat is not printed again")
 CTA, handlers = load()

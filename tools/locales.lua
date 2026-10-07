@@ -71,9 +71,9 @@ check(nUsed > 1000, "the code's strings were found (" .. nUsed .. ")")
 -- And the names WoW: Forever's profession catalog shows through L[name]: its professions and
 -- crafting stations, data rather than literals in the code.
 do
-  BRutus = { Client = { isAnniversary = false } }
+  GuildOS = { Client = { isAnniversary = false } }
   dofile(ADDON .. "/Data/ProfCatalogForever.lua")
-  local cat = BRutus.ProfCatalog or {}
+  local cat = GuildOS.ProfCatalog or {}
   for _, p in pairs(cat.professions or {}) do
     if p.en and not used[p.en] then used[p.en] = true; nUsed = nUsed + 1 end
   end
@@ -92,13 +92,13 @@ end
 -- What a language's own file says, loaded alone as the client loads it (its guard reads
 -- GetLocale). enUS.lua is left out: it holds English values, which are not a translation.
 local function strings(locale)
-  BRutus = { L = {} }
+  GuildOS = { L = {} }
   function GetLocale() return locale end
   for _, f in ipairs({ "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }) do
     local path = ADDON .. "/Locales/" .. f .. ".lua"
     if read(path) then dofile(path) end
   end
-  return BRutus.L
+  return GuildOS.L
 end
 
 local function count(s, pat)
@@ -156,10 +156,10 @@ for _, locale in ipairs(GAME) do
 end
 
 -- English is the key, and every other client falls back to it.
-BRutus = {}
+GuildOS = {}
 function GetLocale() return "enUS" end
 dofile(ADDON .. "/Locales/Locale.lua")
-check(BRutus.L["Something nobody translated"] == "Something nobody translated", "enUS: a string is its own English")
+check(GuildOS.L["Something nobody translated"] == "Something nobody translated", "enUS: a string is its own English")
 local es, mx = strings("esES"), strings("esMX")
 check(next(mx) ~= nil and es["Data collected."] ~= nil and mx["Data collected."] == es["Data collected."],
   "esMX reads the Spanish file")

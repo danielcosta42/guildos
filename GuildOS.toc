@@ -3,7 +3,7 @@
 ## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary and WoW: Forever
 ## Author: Chehul (danielcosta42)
 ## Version: 0.68.3
-## SavedVariables: GuildOSDB, BRutusDB
+## SavedVariables: GuildOSDB
 ## DefaultState: enabled
 ## X-License: MIT
 ## X-Category: Guild

@@ -21,7 +21,7 @@
 ----------------------------------------------------------------------
 local AllianceChat = {}
 GuildOS.AllianceChat = AllianceChat
-local L = BRutus.L
+local L = GuildOS.L
 
 AllianceChat.DEFAULTS = {
     chat        = true,   -- auto-join the channel
@@ -36,7 +36,7 @@ AllianceChat.DEFAULTS = {
 AllianceChat.MAX_LOG = 200
 
 local function accentHex()
-    local c = BRutus.Colors and BRutus.Colors.accent
+    local c = GuildOS.Colors and GuildOS.Colors.accent
     if not c or not c.r then
         return "ffd700"
     end
@@ -75,13 +75,13 @@ function AllianceChat:IsConnected()
 end
 
 function AllianceChat:Prefs()
-    BRutus.db.alliancePrefs = BRutus.db.alliancePrefs or {}
+    GuildOS.db.alliancePrefs = GuildOS.db.alliancePrefs or {}
     for k, v in pairs(self.DEFAULTS) do
-        if BRutus.db.alliancePrefs[k] == nil then
-            BRutus.db.alliancePrefs[k] = v
+        if GuildOS.db.alliancePrefs[k] == nil then
+            GuildOS.db.alliancePrefs[k] = v
         end
     end
-    return BRutus.db.alliancePrefs
+    return GuildOS.db.alliancePrefs
 end
 
 -- Seconds between watchdog checks. GetChannelName is a trivial call, so this
@@ -98,7 +98,7 @@ AllianceChat.JOIN_RETRY = 20
 -- WILL be undone by this, deliberately, since a kick is a warning and a ban is
 -- what actually removes somebody (the server refuses the rejoin).
 function AllianceChat:EnsureJoined()
-    if not BRutus.db or not BRutus.db.alliancePrefs then
+    if not GuildOS.db or not GuildOS.db.alliancePrefs then
         return false
     end
     if not self:Prefs().chat then
@@ -161,7 +161,7 @@ function AllianceChat:ModeratorState()
     if not id or id == 0 or not GetChannelRosterInfo then
         return "unknown"
     end
-    local me = BRutus.Compat.PlayerName()
+    local me = GuildOS.Compat.PlayerName()
     for i = 1, 400 do
         local ok, who, owner, moderator = pcall(GetChannelRosterInfo, id, i)
         if not ok or not who then
@@ -238,7 +238,7 @@ function AllianceChat:EnsureAmbassadorOwnership()
     if self:ModeratorState() ~= "owner" then
         return false   -- only the owner can pass it on
     end
-    local me = BRutus.Compat.PlayerName()
+    local me = GuildOS.Compat.PlayerName()
     if GuildOS.Alliance.IsAmbassadorAnywhere(pact, me) then
         return false   -- already in the right hands
     end
@@ -251,7 +251,7 @@ function AllianceChat:EnsureAmbassadorOwnership()
         for _, amb in ipairs(entry.ambassadors or {}) do
             if present[tostring(amb):lower()] then
                 SetChannelOwner(ch, amb)
-                BRutus.Logger.Debug("Alliance: handed channel ownership to " .. amb)
+                GuildOS.Logger.Debug("Alliance: handed channel ownership to " .. amb)
                 self:PromoteAmbassadors()
                 return true
             end
@@ -295,8 +295,8 @@ AllianceChat.unread = 0
 AllianceChat.listeners = {}
 
 function AllianceChat:Log()
-    BRutus.db.allianceChatLog = BRutus.db.allianceChatLog or {}
-    return BRutus.db.allianceChatLog
+    GuildOS.db.allianceChatLog = GuildOS.db.allianceChatLog or {}
+    return GuildOS.db.allianceChatLog
 end
 
 function AllianceChat:OnRefresh(fn)
@@ -330,7 +330,7 @@ function AllianceChat:AddSystem(text, kind)
     if not self:Prefs().system then
         return
     end
-    local clean = BRutus:SanitizeUserText(text, 180)
+    local clean = GuildOS:SanitizeUserText(text, 180)
     if clean == "" then
         return
     end
@@ -353,8 +353,8 @@ end
 AllianceChat.MAX_HIDDEN = 50
 
 function AllianceChat:HiddenStore()
-    BRutus.db.allianceHidden = BRutus.db.allianceHidden or {}
-    return BRutus.db.allianceHidden
+    GuildOS.db.allianceHidden = GuildOS.db.allianceHidden or {}
+    return GuildOS.db.allianceHidden
 end
 
 -- Pure. The lookup the renderer uses, built from every guild's hide list.
@@ -383,7 +383,7 @@ end
 function AllianceChat:HiddenSet()
     local lists = { self:HiddenStore() }
     local sync = GuildOS.AllianceSync
-    local store = (BRutus.db and BRutus.db.allianceData) or {}
+    local store = (GuildOS.db and GuildOS.db.allianceData) or {}
     if sync then
         for _, domains in pairs(store) do
             local entry = domains.hidden
@@ -398,9 +398,9 @@ end
 function AllianceChat:HideMessage(name, text)
     local ally = GuildOS.Alliance
     if not ally or not ally:CanAdminister() then
-        return false, BRutus.L["Only an alliance ambassador can do that."]
+        return false, GuildOS.L["Only an alliance ambassador can do that."]
     end
-    local clean = BRutus:SanitizeUserText(text, 240)
+    local clean = GuildOS:SanitizeUserText(text, 240)
     if clean == "" or not name then
         return false
     end
@@ -414,8 +414,8 @@ function AllianceChat:HideMessage(name, text)
     while #store > self.MAX_HIDDEN do
         table.remove(store, 1)
     end
-    if BRutus.SyncService then
-        BRutus.SyncService:Publish("allyhide", "add", { n = name, m = clean })
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("allyhide", "add", { n = name, m = clean })
     end
     if GuildOS.AllianceSync then
         GuildOS.AllianceSync:RefreshLocal("hidden")
@@ -435,7 +435,7 @@ function AllianceChat:OnHideSync(env)
             return
         end
     end
-    store[#store + 1] = { n = d.n, m = BRutus:SanitizeUserText(d.m, 240), ts = GetServerTime() }
+    store[#store + 1] = { n = d.n, m = GuildOS:SanitizeUserText(d.m, 240), ts = GetServerTime() }
     while #store > self.MAX_HIDDEN do
         table.remove(store, 1)
     end
@@ -446,7 +446,7 @@ function AllianceChat:OnHideSync(env)
 end
 
 function AllianceChat:Clear()
-    BRutus.db.allianceChatLog = {}
+    GuildOS.db.allianceChatLog = {}
     self.unread = 0
     self:_Notify()
 end
@@ -498,7 +498,7 @@ end
 -- EditBox Enter, which ARE hardware events, so the CHANNEL restriction noted
 -- in Modules/RecruitmentSystem.lua does not apply here.
 function AllianceChat:Send(text)
-    local clean = BRutus:SanitizeUserText(text, 240)
+    local clean = GuildOS:SanitizeUserText(text, 240)
     if clean == "" then
         return false
     end
@@ -517,14 +517,14 @@ function AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
         return
     end
     -- The channel's name is never secret; its line and sender are, in lockdown.
-    if BRutus.Compat.IsSecret(msg, author) then return end
+    if GuildOS.Compat.IsSecret(msg, author) then return end
     local ally = GuildOS.Alliance
     local short = (Ambiguate and Ambiguate(author or "", "short")) or author
     self:Push({
         t = GetServerTime(),
         n = short,
         g = (ally and ally:GuildOfMember(author)) or (ally and ally:MyGuildName()) or nil,
-        m = BRutus:SanitizeUserText(msg, 240),
+        m = GuildOS:SanitizeUserText(msg, 240),
     })
 end
 
@@ -535,10 +535,10 @@ end
 function AllianceChat:_MakeFilter()
     return function(_, _, msg, author, lang, channelString, target, flags,
                     zoneID, chanIndex, chanBaseName, ...)
-        if not BRutus.db or not BRutus.db.alliancePrefs then
+        if not GuildOS.db or not GuildOS.db.alliancePrefs then
             return false
         end
-        if not BRutus.db.alliancePrefs.tags then
+        if not GuildOS.db.alliancePrefs.tags then
             return false
         end
         local mine = AllianceChat:ChannelName()
@@ -548,7 +548,7 @@ function AllianceChat:_MakeFilter()
         -- Reading it in our own feed AND in the default frame means reading it
         -- twice. Off by default: hiding a channel the player joined is the kind
         -- of thing that must be asked for, never assumed.
-        if BRutus.db.alliancePrefs.hideDefault then
+        if GuildOS.db.alliancePrefs.hideDefault then
             return true
         end
         local ally = GuildOS.Alliance
@@ -563,7 +563,7 @@ end
 
 function AllianceChat:_MakeWhisperFilter()
     return function(_, _, msg, author, ...)
-        if not BRutus.db or not BRutus.db.alliancePrefs or not BRutus.db.alliancePrefs.tags then
+        if not GuildOS.db or not GuildOS.db.alliancePrefs or not GuildOS.db.alliancePrefs.tags then
             return false
         end
         local ally = GuildOS.Alliance
@@ -582,8 +582,8 @@ function AllianceChat:Initialize()
     self:Prefs()
     self:_RegisterTests()
 
-    if BRutus.SyncService then
-        BRutus.SyncService:On("allyhide", function(env) AllianceChat:OnHideSync(env) end)
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("allyhide", function(env) AllianceChat:OnHideSync(env) end)
     end
     if GuildOS.AllianceSync then
         GuildOS.AllianceSync:Register("hidden", {
@@ -615,14 +615,14 @@ function AllianceChat:Initialize()
     -- the feed logs each line exactly once no matter how many chat tabs show
     -- the channel.
     local f = CreateFrame("Frame")
-    BRutus.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
-    BRutus.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
+    GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
     -- Fires whenever the channel list changes, which after a reload is exactly
     -- the moment joining starts working.
-    BRutus.Compat.RegisterEvent(f, "CHANNEL_UI_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "CHANNEL_UI_UPDATE")
     f:SetScript("OnEvent", function(_, event, msg, author, _, _, _, _, _, _, chanBaseName)
         if event == "CHAT_MSG_CHANNEL" then
-            BRutus:SafeCall(function()
+            GuildOS:SafeCall(function()
                 AllianceChat:_OnChannelMessage(msg, author, chanBaseName)
             end)
             return
@@ -635,22 +635,22 @@ function AllianceChat:Initialize()
         -- after a reload. The watchdog below is what actually guarantees it;
         -- these just make the common case fast.
         for _, delay in ipairs({ 3, 8, 15, 30 }) do
-            BRutus.Compat.After(delay, function() AllianceChat:EnsureJoined() end)
+            GuildOS.Compat.After(delay, function() AllianceChat:EnsureJoined() end)
         end
         -- Late, so the channel roster has had time to populate: the transfer
         -- needs a target that is actually in the channel.
-        BRutus.Compat.After(75, function() AllianceChat:EnsureAmbassadorOwnership() end)
+        GuildOS.Compat.After(75, function() AllianceChat:EnsureAmbassadorOwnership() end)
     end)
 
-    if BRutus.Compat and BRutus.Compat.NewTicker then
+    if GuildOS.Compat and GuildOS.Compat.NewTicker then
         -- The watchdog. Never stops, because being outside the channel is not
         -- a state the player should ever be left sitting in.
-        BRutus.Compat.NewTicker(self.JOIN_RETRY, function()
+        GuildOS.Compat.NewTicker(self.JOIN_RETRY, function()
             AllianceChat:EnsureJoined()
         end)
         -- Ownership can land on us at any time: WoW passes it on when the
         -- previous owner leaves.
-        BRutus.Compat.NewTicker(300, function()
+        GuildOS.Compat.NewTicker(300, function()
             AllianceChat:EnsureAmbassadorOwnership()
         end)
     end
@@ -660,11 +660,11 @@ end
 -- Self tests (run with /gos selftest)
 ----------------------------------------------------------------------
 function AllianceChat:_RegisterTests()
-    if not BRutus.SelfTest then
+    if not GuildOS.SelfTest then
         return
     end
 
-    BRutus.SelfTest:Register("alliancechat.group_log", function()
+    GuildOS.SelfTest:Register("alliancechat.group_log", function()
         local G = AllianceChat.GroupLog
         local log = {
             { t = 100, n = "Ann", g = "GA", m = "oi" },
@@ -704,7 +704,7 @@ function AllianceChat:_RegisterTests()
         return true
     end)
 
-    BRutus.SelfTest:Register("alliancechat.decorate", function()
+    GuildOS.SelfTest:Register("alliancechat.decorate", function()
         local out = AllianceChat.Decorate("hello", "Ann", "Guild B")
         if not out:find("Guild B", 1, true) then return false, "guild tag missing" end
         if not out:find("hello", 1, true) then return false, "message lost" end

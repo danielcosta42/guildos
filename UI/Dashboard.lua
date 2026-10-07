@@ -6,18 +6,18 @@
 -- its full tab. Everything is read from existing modules; nothing here
 -- owns state. Refreshes on show.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
 -- Font-safe status marks (the skin fonts lack many symbol glyphs, so use the native
 -- Indicator textures instead of unicode ticks/dots — see the circle-glyph bug).
 local TICK  = "|TInterface\\COMMON\\Indicator-Green:12|t "
 local CROSS = "|TInterface\\COMMON\\Indicator-Red:12|t "
 
-local function CAL() return BRutus.Calendar end
+local function CAL() return GuildOS.Calendar end
 local function nowT() return (GetServerTime and GetServerTime()) or time() end
-local function myKey() return BRutus:GetPlayerKey(BRutus.Compat.PlayerName(), GetRealmName()) end
+local function myKey() return GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName()) end
 
 -- Hide everything a previous fill created inside a card body.
 local function clearBody(body)
@@ -38,14 +38,14 @@ end
 
 local function truncate(s, n)
     s = tostring(s or "")
-    if BRutus:Utf8Len(s) <= n then return s end
-    return BRutus:Utf8Head(s, n - 1) .. "..."   -- by characters, never half of one (#104)
+    if GuildOS:Utf8Len(s) <= n then return s end
+    return GuildOS:Utf8Head(s, n - 1) .. "..."   -- by characters, never half of one (#104)
 end
 
 ----------------------------------------------------------------------
 -- Build the dashboard into a tab panel; return its refresh fn.
 ----------------------------------------------------------------------
-function BRutus:CreateDashboardPanel(panel)
+function GuildOS:CreateDashboardPanel(panel)
     local f = CreateFrame("Frame", nil, panel)
     f:SetAllPoints(panel)
 
@@ -190,7 +190,7 @@ function BRutus:CreateDashboardPanel(panel)
         local n = GetNumGuildMembers() or 0
         for i = 1, n do
             local _, _, _, level = GetGuildRosterInfo(i)
-            if (level or 0) >= BRutus.Client.maxLevel then ready = ready + 1 end
+            if (level or 0) >= GuildOS.Client.maxLevel then ready = ready + 1 end
         end
         local stats = {
             { string.format("%d", online),  L["online"],     C.online },
@@ -212,13 +212,13 @@ function BRutus:CreateDashboardPanel(panel)
     local function fillRecruit(body)
         clearBody(body)
         -- Switched off in Settings, no popup will come: say so instead of offering one (issue #84).
-        if not BRutus:IsFeatureEnabled("recruitment") then
+        if not GuildOS:IsFeatureEnabled("recruitment") then
             local off = UI:CreateText(body, L["The Recruitment module is off. Turn it on in Settings > General > Modules."], 10, C.silver.r, C.silver.g, C.silver.b)
             off:SetPoint("TOPLEFT", 2, -2); off:SetWidth(body:GetWidth() - 4); off:SetJustifyH("LEFT")
             return
         end
-        local info = BRutus.db and BRutus.db.guildRecruitment
-        local isOfficer = BRutus:IsOfficer()
+        local info = GuildOS.db and GuildOS.db.guildRecruitment
+        local isOfficer = GuildOS:IsOfficer()
         if not info or not info.enabled or not info.message or info.message == "" then
             local txt = isOfficer and L["Recruitment is off. Set it up in the Recruitment tab."]
                                    or L["Your guild isn't recruiting right now."]
@@ -234,15 +234,15 @@ function BRutus:CreateDashboardPanel(panel)
         if isOfficer then
             local b = UI:CreateButton(body, L["Broadcast now"], 110, 20)
             b:SetPoint("BOTTOMLEFT", 2, 2)
-            b:SetScript("OnClick", function() if BRutus.Recruitment then BRutus.Recruitment:BroadcastStatus() end end)
+            b:SetScript("OnClick", function() if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus() end end)
         else
             -- Opt-out: nil (untouched default) counts as helping. ~= false.
-            local participating = BRutus.db.recruitParticipate ~= false
+            local participating = GuildOS.db.recruitParticipate ~= false
             local b = UI:CreateButton(body, participating and L["Helping"] or L["Help spread it"], 120, 20)
             if participating then b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.9) end
             b:SetPoint("BOTTOMLEFT", 2, 2)
             b:SetScript("OnClick", function()
-                if BRutus.Recruitment then BRutus.Recruitment:SetParticipation(not participating) end
+                if GuildOS.Recruitment then GuildOS.Recruitment:SetParticipation(not participating) end
                 f.Refresh()
             end)
         end
@@ -250,7 +250,7 @@ function BRutus:CreateDashboardPanel(panel)
 
     local function fillLoot(body)
         clearBody(body)
-        local items = BRutus.LootTracker and BRutus.LootTracker:GetPlayerLoot(myKey(), 4) or {}
+        local items = GuildOS.LootTracker and GuildOS.LootTracker:GetPlayerLoot(myKey(), 4) or {}
         if #items == 0 then
             local none = UI:CreateText(body, L["No loot recorded for you yet."], 10, C.silver.r, C.silver.g, C.silver.b)
             none:SetPoint("TOPLEFT", 2, -2)
@@ -268,9 +268,9 @@ function BRutus:CreateDashboardPanel(panel)
     local function fillActivity(body)
         clearBody(body)
         local lines = {}
-        if BRutus.Digest then
+        if GuildOS.Digest then
             local since = nowT() - 7 * 86400
-            lines = BRutus.Digest:Build(since) or {}
+            lines = GuildOS.Digest:Build(since) or {}
         end
         if #lines == 0 then
             local none = UI:CreateText(body, L["Nothing new in the last 7 days."], 10, C.silver.r, C.silver.g, C.silver.b)
@@ -322,8 +322,8 @@ function BRutus:CreateDashboardPanel(panel)
         cActivity:ClearAllPoints(); cActivity:SetPoint("TOPLEFT", M, -r3y); cActivity:SetSize(innerW, r3h)
 
         -- One readiness scan powers both the readiness + pulse cards.
-        local rows = BRutus.Readiness and BRutus.Readiness:GetReport() or {}
-        local myShort = BRutus.Compat.PlayerName()
+        local rows = GuildOS.Readiness and GuildOS.Readiness:GetReport() or {}
+        local myShort = GuildOS.Compat.PlayerName()
         local myRow
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 
@@ -336,7 +336,7 @@ function BRutus:CreateDashboardPanel(panel)
     end
 
     -- Refresh whenever the tab becomes visible.
-    panel:HookScript("OnShow", function() BRutus:SafeCall(f.Refresh) end)
+    panel:HookScript("OnShow", function() GuildOS:SafeCall(f.Refresh) end)
 
     -- ...and when the container is resized, because f.Refresh is what lays
     -- the cards out. It also runs a readiness scan, which is far too heavy
@@ -350,7 +350,7 @@ function BRutus:CreateDashboardPanel(panel)
         pending = true
         C_Timer.After(0.2, function()
             pending = false
-            BRutus:SafeCall(f.Refresh)
+            GuildOS:SafeCall(f.Refresh)
         end)
     end)
 

@@ -98,13 +98,13 @@ dofile(ADDON .. "/Core/Utils.lua")
 for _, m in ipairs({ "DataCollector", "SpecChecker", "CommSystem", "LootMaster", "ConsumableChecker", "CompanionExport" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
-local Compat = BRutus.Compat
+local Compat = GuildOS.Compat
 local errors = {}
-BRutus.RecordError = function(_, msg) errors[#errors + 1] = msg end
-BRutus.PREFIX = BRutus.PREFIX or "GuildOS"
-BRutus.db = { members = {}, settings = { companion = true }, raidTracker = { sessions = {} },
+GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
+GuildOS.PREFIX = GuildOS.PREFIX or "GuildOS"
+GuildOS.db = { members = {}, settings = { companion = true }, raidTracker = { sessions = {} },
               consumableChecks = { lastResults = {} } }
-BRutus.SlotIDs = { { id = 1, name = "HeadSlot" }, { id = 5, name = "ChestSlot" } }
+GuildOS.SlotIDs = { { id = 1, name = "HeadSlot" }, { id = 5, name = "ChestSlot" } }
 
 -- ── 1. Wrappers: namespaced API, old global, neither ────────────────────
 C_Item = { GetItemInfo = function(i) return "ns:" .. i, "nslink", 4, 110 end }
@@ -201,10 +201,10 @@ C_ChatInfo = { RegisterAddonMessagePrefix = function(p) registered[#registered +
 RegisterAddonMessagePrefix = function(p) registered[#registered + 1] = "g:" .. p; return true end
 Compat.RegisterAddonPrefix("GuildOS")
 C_ChatInfo = {}
-Compat.RegisterAddonPrefix("BRutusLM")
+Compat.RegisterAddonPrefix("GuildOSLM")
 RegisterAddonMessagePrefix = nil
 Compat.RegisterAddonPrefix("x")
-check(registered[1] == "ns:GuildOS" and registered[2] == "g:BRutusLM" and #registered == 2,
+check(registered[1] == "ns:GuildOS" and registered[2] == "g:GuildOSLM" and #registered == 2,
       "the addon prefix registers through C_ChatInfo, else the old global, else not at all")
 local roster = {}
 C_GuildInfo = { GuildRoster = function() roster[#roster + 1] = "ns" end }
@@ -353,11 +353,11 @@ check(#timers == timersBefore and #errors == errorsBefore + 1 and errors[#errors
       "an AddonMessageThrottle reaching ChatThrottleLib's callback is recorded, not retried: ChatThrottleLib re-queues its own")
 
 -- Without the names in Enum, the retail codes: 11 is the lockdown, 8 the channel throttle.
-local savedCompat, savedEnum = BRutus.Compat, Enum
+local savedCompat, savedEnum = GuildOS.Compat, Enum
 Enum = nil
 dofile(ADDON .. "/Core/Compat.lua")
-local Bare = BRutus.Compat
-BRutus.Compat, Enum = savedCompat, savedEnum
+local Bare = GuildOS.Compat
+GuildOS.Compat, Enum = savedCompat, savedEnum
 Bare.SendAddonMessage("GuildOS", "k", "GUILD")
 last().cb(nil, false, 11)
 check(#Bare._held == 1, "without Enum's names, result 11 holds the message as a lockdown")
@@ -373,12 +373,12 @@ C_ChatInfo.SendAddonMessage = nil
 check(#timers == 1 and timers[1][1] == 1, "and result 3 on a message sent now is retried, as ChatThrottleLib would")
 
 -- ── 3. Every sender goes through it ─────────────────────────────────────
-BRutus.CommSystem:SendRaw("S:hello")
-check(last().prefix == BRutus.PREFIX and last().text == "S:hello" and last().chattype == "GUILD" and last().prio == "BULK",
+GuildOS.CommSystem:SendRaw("S:hello")
+check(last().prefix == GuildOS.PREFIX and last().text == "S:hello" and last().chattype == "GUILD" and last().prio == "BULK",
       "guild sync sends through Compat, BULK by default")
-BRutus.CommSystem:SendRaw("S:urgent", nil, "ALERT")
+GuildOS.CommSystem:SendRaw("S:urgent", nil, "ALERT")
 check(last().prio == "ALERT", "a sync priority is kept")
-BRutus.CommSystem:SendRaw("S:psst", "Bob")
+GuildOS.CommSystem:SendRaw("S:psst", "Bob")
 check(last().chattype == "WHISPER" and last().target == "Bob" and last().prio == "NORMAL", "a whisper to one officer keeps its target")
 last().cb(nil, false, 21)
 check(#Compat._held == 1 and Compat._held[1].text == "S:psst", "a sync message caught by a lockdown is held, not lost")
@@ -387,12 +387,12 @@ Compat._held = {}
 local loot = {}
 C_ChatInfo.SendAddonMessage = function(prefix, text, channel) loot[#loot + 1] = prefix .. "|" .. channel .. "|" .. text; return true end
 local ctlSends = #sent
-BRutus.LootMaster.testMode = false
-BRutus.LootMaster:SafeSendAddon("BRutusLM", "AWARD|Ana|1|4||link", "RAID")
-check(#loot == 1 and loot[1] == "BRutusLM|RAID|AWARD|Ana|1|4||link" and #sent == ctlSends,
+GuildOS.LootMaster.testMode = false
+GuildOS.LootMaster:SafeSendAddon("GuildOSLM", "AWARD|Ana|1|4||link", "RAID")
+check(#loot == 1 and loot[1] == "GuildOSLM|RAID|AWARD|Ana|1|4||link" and #sent == ctlSends,
       "loot messages go out at once, past ChatThrottleLib's queue, as before #10")
 C_ChatInfo.SendAddonMessage = function() return 21 end
-BRutus.LootMaster:SafeSendAddon("BRutusLM", "AWARD|Bob|1|4||link", "RAID")
+GuildOS.LootMaster:SafeSendAddon("GuildOSLM", "AWARD|Bob|1|4||link", "RAID")
 check(#Compat._held == 1 and Compat._held[1].now and #sent == ctlSends, "a lockdown still holds a loot message, and it stays on the direct path")
 Compat._held = {}
 timers = {}
@@ -403,7 +403,7 @@ C_ChatInfo.SendAddonMessage = function(_, text)
   loot[#loot + 1] = text
   return true
 end
-BRutus.LootMaster:SafeSendAddon("BRutusLM", "AWARD|Cy|1|4||link", "RAID")
+GuildOS.LootMaster:SafeSendAddon("GuildOSLM", "AWARD|Cy|1|4||link", "RAID")
 check(tries == 1 and #timers == 1 and timers[1][1] == 1 and #Compat._held == 0,
       "a loot message the client throttles is retried after a second, as ChatThrottleLib would have done")
 timers[1][2]()
@@ -411,7 +411,7 @@ check(tries == 2 and loot[#loot] == "AWARD|Cy|1|4||link", "and delivered on the 
 C_ChatInfo.SendAddonMessage = nil
 
 -- ── 4. Own character: absent fields instead of a stopped collection ─────
-local DC = BRutus.DataCollector
+local DC = GuildOS.DataCollector
 DC.CollectStats = function() return { stamina = 1 } end   -- not touched by #10
 function GetInventoryItemLink(_, slot) if slot == 1 then return HOOD end end
 GetItemInfo = function(link) return "Hood", link, 4, 120, 70, "Armor", "Cloth", 1, "INVTYPE_BAG" end
@@ -458,7 +458,7 @@ check(d.spec == nil and not DC._snapshotIncomplete and d.gear[1].name == "Hood" 
       "no talent API: the saved spec is removed, no re-collect is waited for, gear still collected, both named absent")
 
 GetNumTalentTabs = function() return 0 end   -- the API is there; the talents have not loaded yet
-BRutus.db.members[BRutus:GetPlayerKey("Ana")].spec = { tree = "Holy" }
+GuildOS.db.members[GuildOS:GetPlayerKey("Ana")].spec = { tree = "Holy" }
 skills(true)
 d = DC:CollectMyData()
 check(d.spec and d.spec.tree == "Holy" and DC._snapshotIncomplete and d.absent == nil,
@@ -484,17 +484,17 @@ check(d.spec and d.spec.tree == "Shadow" and not DC._snapshotIncomplete and d.ab
       "Forever with points in the right-hand tree: the priest's third tree, read through the collector")
 C_ClassTalents, C_Traits = nil, nil
 
-local bobKey = BRutus:GetPlayerKey("Bob")
-BRutus.db.members[bobKey] = { name = "Bob", class = "PRIEST", lastUpdate = 1, spec = { tree = "Holy" },
+local bobKey = GuildOS:GetPlayerKey("Bob")
+GuildOS.db.members[bobKey] = { name = "Bob", class = "PRIEST", lastUpdate = 1, spec = { tree = "Holy" },
                               professions = { { name = "Tailoring", rank = 375 } } }
 DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 2, absent = { spec = true, professions = true } })
-check(BRutus.db.members[bobKey].spec == nil and BRutus.db.members[bobKey].professions == nil,
+check(GuildOS.db.members[bobKey].spec == nil and GuildOS.db.members[bobKey].professions == nil,
       "another officer drops the spec and professions it still held for a member whose client cannot collect them")
 DC:StoreReceivedData(bobKey, { name = "Bob", class = "PRIEST", lastUpdate = 3, spec = { tree = "Shadow" }, professions = {} })
-check(BRutus.db.members[bobKey].spec.tree == "Shadow" and type(BRutus.db.members[bobKey].professions) == "table"
-      and BRutus.db.members[bobKey].absent == nil, "a later broadcast with both fields restores them and clears the marker")
+check(GuildOS.db.members[bobKey].spec.tree == "Shadow" and type(GuildOS.db.members[bobKey].professions) == "table"
+      and GuildOS.db.members[bobKey].absent == nil, "a later broadcast with both fields restores them and clears the marker")
 
-local SC = BRutus.SpecChecker
+local SC = GuildOS.SpecChecker
 local tabInspect
 GetNumTalentTabs = function(inspect) tabInspect = inspect; return 3 end
 GetNumTalents = function() return 2 end
@@ -503,7 +503,7 @@ GetTalentInfo = function(tab, i, inspect)
 end
 SC:ScanGroup()
 SC:OnInspectReady()
-check(tabInspect == true and BRutus.db.members[bobKey].spec.treeIndex == 3,
+check(tabInspect == true and GuildOS.db.members[bobKey].spec.treeIndex == 3,
       "an inspected raider's talents are read with the inspect flag: their tree 3, not the inspector's tree 1")
 check(DC:CollectMyData().spec.treeIndex == 1, "and my own spec still reads my own talents")
 talents(true)
@@ -513,28 +513,28 @@ local ROSTER = { "Ana-Firemaw", "Bob-Firemaw", "Cy-Firemaw", "Dee-Firemaw" }
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i) if ROSTER[i] then return ROSTER[i], "Raider", 4, 70, "", "", "", "", true, 0, "PRIEST" end end
 function GetGuildInfo() return "Raid Guild" end
-local members = BRutus.db.members
-BRutus.RaidTracker, BRutus.AttunementTracker, BRutus.LootTracker, BRutus.GearAudit = nil, nil, nil, nil
-BRutus.db.members = {
+local members = GuildOS.db.members
+GuildOS.RaidTracker, GuildOS.AttunementTracker, GuildOS.LootTracker, GuildOS.GearAudit = nil, nil, nil, nil
+GuildOS.db.members = {
   ["Ana-Firemaw"] = { lastUpdate = 1, professions = { { name = "Tailoring", rank = 375 } } },
   ["Bob-Firemaw"] = { lastUpdate = 1 },                     -- published from a client with no skill-line API
   ["Dee-Firemaw"] = { lastUpdate = 1, professions = {} },   -- published, and has no profession
 }
-local p = BRutus.Companion:BuildPayload()
+local p = GuildOS.Companion:BuildPayload()
 local byKey = {}
 for _, m in ipairs(p.members) do byKey[m.key] = m end
 check(#byKey["Ana-Firemaw"].professions == 1, "a published professions list travels")
-check(byKey["Bob-Firemaw"].professions == nil and not BRutus.Companion.EncodeJson(byKey["Bob-Firemaw"]):find('"professions"', 1, true),
+check(byKey["Bob-Firemaw"].professions == nil and not GuildOS.Companion.EncodeJson(byKey["Bob-Firemaw"]):find('"professions"', 1, true),
       "a record published without a skill-line API has no professions field in the export")
 check(type(byKey["Dee-Firemaw"].professions) == "table" and #byKey["Dee-Firemaw"].professions == 0,
       "a published empty list stays an empty list")
 check(type(byKey["Cy-Firemaw"].professions) == "table" and #byKey["Cy-Firemaw"].professions == 0
-      and BRutus.Companion.EncodeJson(byKey["Cy-Firemaw"]):find('"professions":[]', 1, true),
+      and GuildOS.Companion.EncodeJson(byKey["Cy-Firemaw"]):find('"professions":[]', 1, true),
       "a member who never published keeps the empty list, as in 0.53.0")
-BRutus.db.members = members
+GuildOS.db.members = members
 
 -- ── 6. The loot master's bags and trades ────────────────────────────────
-local LM = BRutus.LootMaster
+local LM = GuildOS.LootMaster
 local placed = {}
 C_Container = {
   GetContainerNumSlots = function(bag) return bag == 2 and 3 or 1 end,
@@ -571,8 +571,8 @@ do
   IsInRaid = function() return inRaid end
   local testMode = LM.testMode
   LM.testMode = false   -- test mode makes everybody the master looter
-  local isMe = BRutus.Compat.IsPlayer
-  BRutus.Compat.IsPlayer = function(unit) return unit == "raid7" end
+  local isMe = GuildOS.Compat.IsPlayer
+  GuildOS.Compat.IsPlayer = function(unit) return unit == "raid7" end
   loot = { 2, nil, 7 }
   check(LM:IsMasterLooter(), "Forever: master looter in a raid, by the raid index C_PartyInfo returns third")
   loot = { 2, nil, 3 }
@@ -583,7 +583,7 @@ do
   check(not LM:IsMasterLooter(), "party index 1 is somebody else")
   loot = { 3, 0, nil }
   check(not LM:IsMasterLooter(), "group loot is not master loot")
-  BRutus.Compat.IsPlayer = isMe
+  GuildOS.Compat.IsPlayer = isMe
   LM.testMode = testMode
 
   -- Forever's bags call HandleModifiedItemClick(link, itemLocation); Anniversary's call
@@ -625,10 +625,10 @@ end
 -- ── 7. The roster request and the consumable check ──────────────────────
 local asked, opened = {}, false
 C_GuildInfo = { GuildRoster = function() asked[#asked + 1] = "ns" end }
-BRutus.UI = { ToggleMain = function() opened = true end }
-BRutus:ToggleRoster()
+GuildOS.UI = { ToggleMain = function() opened = true end }
+GuildOS:ToggleRoster()
 check(asked[1] == "ns" and opened, "opening the window requests the guild roster through Compat")
-local CC = BRutus.ConsumableChecker
+local CC = GuildOS.ConsumableChecker
 check(CC ~= nil, "the consumable check loads on Anniversary")
 C_UnitAuras = { GetBuffDataByIndex = function(unit, i)
   if unit == "raid1" and i == 1 then return { name = "Flask of Blinding Light", spellId = 28521 } end
@@ -693,11 +693,11 @@ for _, src in ipairs({
   "-- GetItemInfo(1)", "--[[ UnitBuff('player', 1)\nGetSpellInfo(2) ]]", "--[==[ C_Item.GetItemInfo(1) ]==]",
   "local s = 'GetItemInfo(1)'", [[local s = "C_Container.UseContainerItem(0, 1)"]], [[local s = "a\"GetItemInfo(1)"]],
   "local s = [[GuildRoster()]]", "local s = [=[ C_Spell.GetSpellInfo(1) ]=]", [[local s = '_G["GetItemInfo"]']],
-  [[-- _G["GetItemInfo"](1)]], "BRutus.Compat.GetItemInfo(1)", "Compat.UnitBuff('player', 1)", "tip:GetSpellInfo(1)",
+  [[-- _G["GetItemInfo"](1)]], "GuildOS.Compat.GetItemInfo(1)", "Compat.UnitBuff('player', 1)", "tip:GetSpellInfo(1)",
   "local MyGetItemInfo = 1", "GetItemInfoInstant(1)", "C_ChatInfo.InChatMessagingLockdown()",
-  "BRutus.Compat.SendAddonMessage('p', 'x', 'GUILD')", "self.Compat.GuildRoster()",
-  "BRutus.Compat.SendAddonMessageNow('p', 'x', 'RAID')", "local f = _G[name]",
-  "BRutus.Compat\n  .SendAddonMessage('p', 'x', 'GUILD')", "local Compat = BRutus.Compat", "_G.SLASH_GUILDOS1 = '/guildos'",
+  "GuildOS.Compat.SendAddonMessage('p', 'x', 'GUILD')", "self.Compat.GuildRoster()",
+  "GuildOS.Compat.SendAddonMessageNow('p', 'x', 'RAID')", "local f = _G[name]",
+  "GuildOS.Compat\n  .SendAddonMessage('p', 'x', 'GUILD')", "local Compat = GuildOS.Compat", "_G.SLASH_GUILDOS1 = '/guildos'",
   "local f = _G[frameName .. i]",
 }) do
   check(flags(src) == 0, "the guard ignores " .. src:gsub("\n", " "))
@@ -740,9 +740,9 @@ check(plantedExit ~= 0 and cleanExit == 0,
 -- ── 9. The shims nobody called are wired in ─────────────────────────────
 local function source(rel) return assert(io.open(ADDON .. "/" .. rel, "rb")):read("*a") end
 check(source("Core/Core.lua"):find("Compat.RegisterAddonPrefix(self.PREFIX)", 1, true)
-      and source("Core/Core.lua"):find("Compat.RegisterAddonPrefix(self.LEGACY_PREFIX)", 1, true)
-      and source("Modules/LootMaster.lua"):find('Compat.RegisterAddonPrefix("BRutusLM")', 1, true),
-      "RegisterAddonPrefix registers the sync prefix, the legacy BRutus prefix and the loot prefix")
+      and not source("Core/Core.lua"):find("LEGACY_PREFIX", 1, true)
+      and source("Modules/LootMaster.lua"):find("Compat.RegisterAddonPrefix(LootMaster.PREFIX)", 1, true),
+      "RegisterAddonPrefix registers the sync prefix and the loot prefix, and no old one (#120)")
 check(select(2, source("Modules/CommSystem.lua"):gsub("Compat%.SendAddonMessage%(", "")) == 2
       and source("Modules/LootMaster.lua"):find("Compat.SendAddonMessageNow(", 1, true),
       "SendAddonMessage carries sync, and SendAddonMessageNow carries loot")
@@ -770,7 +770,7 @@ check(Compat.HookTooltip(nil, "OnTooltipSetItem", onItem) == false, "a tooltip t
 check(select(2, Compat.TooltipItem(classic)) == HOOD, "and what is under the mouse comes from the frame")
 check(select(2, Compat.TooltipSpell(classic)) == 27967, "the spell too")
 check(select(2, Compat.TooltipUnit(classic)) == "raid1", "and the unit")
-check(BRutus.State.missing["tooltip script OnTooltipSetItem"] == nil, "nothing is missing on a client that has it")
+check(GuildOS.State.missing["tooltip script OnTooltipSetItem"] == nil, "nothing is missing on a client that has it")
 
 -- The retail client: no such script, one call per data type, and Item is 0, so the branch has to
 -- read it as a value and not as a truth.
@@ -783,7 +783,7 @@ TooltipUtil = {
 }
 Enum.TooltipDataType = { Item = 0, Spell = 1, Unit = 2 }
 dofile(ADDON .. "/Core/Compat.lua")  -- what was handed to the processor is remembered per load
-Compat = BRutus.Compat
+Compat = GuildOS.Compat
 
 local retail, shopping = { link = HOOD }, { link = HOOD }
 function retail:HasScript() return false end
@@ -836,15 +836,15 @@ function craft:RegisterEvent(e)
 end
 local errorsBefore = #errors
 check(Compat.RegisterEvent(craft, "CRAFT_SHOW", true) == false, "an event this client lacks does not register")
-check(BRutus.State.missing["event CRAFT_SHOW"] == "expected" and #errors == errorsBefore,
+check(GuildOS.State.missing["event CRAFT_SHOW"] == "expected" and #errors == errorsBefore,
       "it is remembered, and it is not an error")
-check(not table.concat(BRutus:ListStartupProblems(), "\n"):find("CRAFT_SHOW", 1, true),
+check(not table.concat(GuildOS:ListStartupProblems(), "\n"):find("CRAFT_SHOW", 1, true),
       "a client being itself is not a start-up problem")
 check(Compat.RegisterEvent(craft, "TRADE_SKILL_SHOW", true) == true and craft.events.TRADE_SKILL_SHOW,
       "where the event exists, expected changes nothing")
 local always = { RegisterEvent = function() error("unknown event") end }
 check(Compat.RegisterEvent(always, "GUILD_ROSTER_UPDATE") == false, "an event the addon expects everywhere is missing")
-check(#errors == errorsBefore + 1 and table.concat(BRutus:ListStartupProblems(), "\n"):find("GUILD_ROSTER_UPDATE", 1, true),
+check(#errors == errorsBefore + 1 and table.concat(GuildOS:ListStartupProblems(), "\n"):find("GUILD_ROSTER_UPDATE", 1, true),
       "and that one is an error and a start-up problem, which is the difference expected makes")
 
 -- And the guard CI runs keeps all of it out of the modules, as it does the item and spell APIs.
@@ -853,7 +853,7 @@ check(flags("TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, 
       "so are the registration and the data type it needs")
 check(flags("local _, link = tip:GetItem()") == 1 and flags("local _, u = tip:GetUnit()") == 1,
       "and the Classic readers, as a method of anything but Compat")
-check(flags("local _, link = BRutus.Compat.TooltipItem(tip)") == 0, "while the wrapper itself is not")
+check(flags("local _, link = GuildOS.Compat.TooltipItem(tip)") == 0, "while the wrapper itself is not")
 
 -- ── 11. What WoW: Forever dropped for a namespace (issue #43) ─────────────
 -- The retail client moved these to C_PartyInfo and C_Item and dropped the globals; Forever
@@ -866,27 +866,27 @@ do
   local invited = {}
   C_PartyInfo = { InviteUnit = function(n) invited[#invited + 1] = "C:" .. n end }
   InviteUnit = function(n) invited[#invited + 1] = "G:" .. n end
-  BRutus.Compat.InviteUnit("Ana Costa")
+  GuildOS.Compat.InviteUnit("Ana Costa")
   C_PartyInfo = nil
-  BRutus.Compat.InviteUnit("Bob")
+  GuildOS.Compat.InviteUnit("Bob")
   InviteUnit, InviteByName = nil, function(n) invited[#invited + 1] = "B:" .. n end
-  BRutus.Compat.InviteUnit("Cy")
+  GuildOS.Compat.InviteUnit("Cy")
   InviteByName = nil
   check(invited[1] == "C:Ana Costa" and invited[2] == "G:Bob" and invited[3] == "B:Cy" and #invited == 3,
         "an invite goes through C_PartyInfo, and an old global only where it is all there is")
-  check(pcall(BRutus.Compat.InviteUnit, "Dee"), "with no invite API at all, nothing raises")
+  check(pcall(GuildOS.Compat.InviteUnit, "Dee"), "with no invite API at all, nothing raises")
 
   C_Item = { GetItemQualityColor = function(q) return q / 10, 0.5, 0.25, "ff" end, GetItemCount = function() return 3 end }
   GetItemQualityColor, GetItemCount = function() return 9, 9, 9 end, function() return 9 end
-  local r, g, b = BRutus.Compat.GetItemQualityColor(4)
-  check(r == 0.4 and g == 0.5 and b == 0.25 and BRutus.Compat.GetItemCount(24490) == 3,
+  local r, g, b = GuildOS.Compat.GetItemQualityColor(4)
+  check(r == 0.4 and g == 0.5 and b == 0.25 and GuildOS.Compat.GetItemCount(24490) == 3,
         "item quality colour and count come from C_Item when it has them")
   C_Item = nil
-  check(BRutus.Compat.GetItemQualityColor(4) == 9 and BRutus.Compat.GetItemCount(24490) == 9,
+  check(GuildOS.Compat.GetItemQualityColor(4) == 9 and GuildOS.Compat.GetItemCount(24490) == 9,
         "and from the old globals where they are all there is")
   GetItemQualityColor, GetItemCount = nil, nil
-  r, g, b = BRutus.Compat.GetItemQualityColor(4)
-  check(r == 1 and g == 1 and b == 1 and BRutus.Compat.GetItemCount(24490) == 0,
+  r, g, b = GuildOS.Compat.GetItemQualityColor(4)
+  check(r == 1 and g == 1 and b == 1 and GuildOS.Compat.GetItemCount(24490) == 0,
         "with neither: white and none, rather than a raise")
   for _, k in ipairs(NAMES) do _G[k] = saved[k] end
 end

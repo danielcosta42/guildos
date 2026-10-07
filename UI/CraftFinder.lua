@@ -4,9 +4,9 @@
 -- (RecipeTracker); realm/out-of-guild crafters trickle in over the Chehul mesh
 -- via GuildOS.CraftNet as each peer answers for itself.
 ----------------------------------------------------------------------
-local UI = BRutus.UI
-local C  = BRutus.Colors
-local L  = BRutus.L
+local UI = GuildOS.UI
+local C  = GuildOS.Colors
+local L  = GuildOS.L
 
 local FRAME_W  = 400
 local ROW_H    = 22
@@ -63,13 +63,13 @@ local function BuildFinder()
     })
     input:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     input:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    BRutus:ApplyFont(input, 11)
+    GuildOS:ApplyFont(input, 11)
     input:SetTextColor(C.white.r, C.white.g, C.white.b)
     input:SetTextInsets(8, 8, 0, 0)
     input:SetAutoFocus(false)
 
     local placeholder = input:CreateFontString(nil, "OVERLAY")
-    BRutus:ApplyFont(placeholder, 11)
+    GuildOS:ApplyFont(placeholder, 11)
     placeholder:SetPoint("LEFT", 8, 0)
     placeholder:SetTextColor(0.4, 0.4, 0.4)
     placeholder:SetText(L["Shift-click an item or type its id"])
@@ -117,18 +117,18 @@ local function BuildFinder()
         row:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
 
         row.nameFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.nameFS, 11)
+        GuildOS:ApplyFont(row.nameFS, 11)
         row.nameFS:SetPoint("LEFT", 4, 0)
         row.nameFS:SetWidth(132); row.nameFS:SetJustifyH("LEFT"); row.nameFS:SetWordWrap(false)
 
         row.profFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.profFS, 10)
+        GuildOS:ApplyFont(row.profFS, 10)
         row.profFS:SetPoint("LEFT", 140, 0)
         row.profFS:SetWidth(115); row.profFS:SetJustifyH("LEFT"); row.profFS:SetWordWrap(false)
         row.profFS:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
 
         row.scopeFS = row:CreateFontString(nil, "OVERLAY")
-        BRutus:ApplyFont(row.scopeFS, 9)
+        GuildOS:ApplyFont(row.scopeFS, 9)
         row.scopeFS:SetPoint("LEFT", 260, 0)
         row.scopeFS:SetWidth(56); row.scopeFS:SetJustifyH("LEFT")
 
@@ -157,7 +157,7 @@ local function BuildFinder()
         end
         local row = GetRow(q.count)
         local cr, cg, cb = C.white.r, C.white.g, C.white.b
-        if class then cr, cg, cb = BRutus:GetClassColor(class) end
+        if class then cr, cg, cb = GuildOS:GetClassColor(class) end
         row.nameFS:SetTextColor(cr, cg, cb)
         row.nameFS:SetText(name)
         row.profFS:SetText(prof or "")
@@ -170,7 +170,7 @@ local function BuildFinder()
 
         local itemId = q.itemId
         row.whisperBtn:SetScript("OnClick", function()
-            local link = itemId and select(2, BRutus.Compat.GetItemInfo(itemId))
+            local link = itemId and select(2, GuildOS.Compat.GetItemInfo(itemId))
             local subject = link or (f.itemName:GetText() ~= "" and f.itemName:GetText()) or L["this item"]
             ChatFrame_OpenChat("/w " .. name .. " " .. string.format(L["Can you craft %s?"], subject))
         end)
@@ -199,12 +199,12 @@ local function BuildFinder()
         HideRows(1)
 
         -- Item line
-        local name, _, _, _, _, _, _, _, _, tex = BRutus.Compat.GetItemInfo(itemId)
+        local name, _, _, _, _, _, _, _, _, tex = GuildOS.Compat.GetItemInfo(itemId)
         f.itemName:SetText(name or ("item:" .. itemId))
         if tex then f.itemIcon:SetTexture(tex); f.itemIcon:Show() else f.itemIcon:Hide() end
 
         -- Guild crafters (already synced locally).
-        local guild = BRutus.RecipeTracker and BRutus.RecipeTracker:GetCraftersForItem(itemId)
+        local guild = GuildOS.RecipeTracker and GuildOS.RecipeTracker:GetCraftersForItem(itemId)
         if guild then
             for _, c in ipairs(guild) do
                 if not f.query.seen[c.playerName] then
@@ -216,8 +216,8 @@ local function BuildFinder()
 
         -- Alliance: read straight from the synced directory, so an allied
         -- crafter is found even while they are offline. No query, no waiting.
-        if BRutus.Alliance and BRutus.Alliance:Get() then
-            for _, c in ipairs(BRutus.Alliance:FindCrafters(itemId)) do
+        if GuildOS.Alliance and GuildOS.Alliance:Get() then
+            for _, c in ipairs(GuildOS.Alliance:FindCrafters(itemId)) do
                 if not f.query.seen[c.name] then
                     f.query.seen[c.name] = true
                     local label = L[c.prof or "?"]
@@ -230,8 +230,8 @@ local function BuildFinder()
         end
 
         -- Realm-wide: answers arrive over time.
-        if BRutus.CraftNet then
-            BRutus.CraftNet:Query(itemId, function(short, label)
+        if GuildOS.CraftNet then
+            GuildOS.CraftNet:Query(itemId, function(short, label)
                 if not f.query or f.query.itemId ~= itemId then return end  -- stale
                 if f.query.seen[short] then return end
                 f.query.seen[short] = true
@@ -240,7 +240,7 @@ local function BuildFinder()
             end)
             -- Close the "querying" state after the realm TTL so the status settles.
             if C_Timer and C_Timer.After then
-                C_Timer.After((BRutus.CraftNet.TTL or 45) + 1, function()
+                C_Timer.After((GuildOS.CraftNet.TTL or 45) + 1, function()
                     if f.query and f.query.itemId == itemId then
                         f.query.done = true
                         SetStatus()
@@ -283,7 +283,7 @@ end
 ----------------------------------------------------------------------
 -- Public entry: open the finder, optionally pre-running a query.
 ----------------------------------------------------------------------
-function BRutus:ShowCraftFinder(prefillItemId)
+function GuildOS:ShowCraftFinder(prefillItemId)
     local f = self.craftFinder or BuildFinder()
     self.craftFinder = f
     f:Show()

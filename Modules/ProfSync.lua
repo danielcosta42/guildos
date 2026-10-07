@@ -11,12 +11,12 @@
 --   req   WHISPER        { l = { line, ... } }
 --   list  WHISPER|GUILD  { l = line, h = hash, r = { ids }, x = { extra ids } }
 ----------------------------------------------------------------------
-if BRutus.Client.isAnniversary then return end
+if GuildOS.Client.isAnniversary then return end
 
 local ProfSync = {}
-BRutus.ProfSync = ProfSync
+GuildOS.ProfSync = ProfSync
 
-local Compat = BRutus.Compat
+local Compat = GuildOS.Compat
 local DOMAIN = "prof"
 ProfSync.SUMMARY_EVERY = 600   -- heartbeat summary
 ProfSync.CHANGE_DELAY = 10     -- one summary for a burst of changes
@@ -26,16 +26,16 @@ ProfSync.REASK_AFTER = 120     -- a list that never came is asked for again
 function ProfSync:Initialize()
     self.asked = {}      -- [sender .. ":" .. line] = { h = hash, at = time }
     self.outgoing = {}   -- [line] = { [requester] = true }
-    BRutus.SyncService:On(DOMAIN, function(env, sender) ProfSync:OnEnvelope(env, sender) end)
+    GuildOS.SyncService:On(DOMAIN, function(env, sender) ProfSync:OnEnvelope(env, sender) end)
     Compat.After(math.random(5, 15), function()
         ProfSync:PublishSummary()
-        BRutus.SyncService:Publish(DOMAIN, "ask", {})
+        GuildOS.SyncService:Publish(DOMAIN, "ask", {})
     end)
     Compat.NewTicker(self.SUMMARY_EVERY, function() ProfSync:PublishSummary() end)
 end
 
 function ProfSync:PublishSummary()
-    BRutus.SyncService:Publish(DOMAIN, "sum", { p = BRutus.Professions:OwnSummary() })
+    GuildOS.SyncService:Publish(DOMAIN, "sum", { p = GuildOS.Professions:OwnSummary() })
 end
 
 -- Publish once things have been quiet for `delay` seconds (CHANGE_DELAY by default): a later
@@ -63,8 +63,8 @@ end
 function ProfSync:SenderKey(sender)
     if type(sender) ~= "string" then return nil end
     local short = sender:match("^([^-]+)") or sender
-    if not BRutus:GetMemberRecord(short, sender:match("-(.+)$")) then return nil end
-    return BRutus.Professions.KeyFor(sender)
+    if not GuildOS:GetMemberRecord(short, sender:match("-(.+)$")) then return nil end
+    return GuildOS.Professions.KeyFor(sender)
 end
 
 function ProfSync:OnEnvelope(env, sender)
@@ -86,14 +86,14 @@ function ProfSync:OnEnvelope(env, sender)
     elseif env.act == "req" then
         self:OnRequest(sender, data.l)
     elseif env.act == "list" then
-        BRutus.Professions:ApplyList(key, data.l, data.h, data.r, data.x)
+        GuildOS.Professions:ApplyList(key, data.l, data.h, data.r, data.x)
     end
 end
 
 function ProfSync:OnSummary(key, sender, p)
-    local need = BRutus.Professions:ApplySummary(key, p)
+    local need = GuildOS.Professions:ApplySummary(key, p)
     if not need or #need == 0 then return end
-    local rec = BRutus.Professions:Get(key)
+    local rec = GuildOS.Professions:Get(key)
     local now = GetServerTime()
     local ask = {}
     for _, line in ipairs(need) do
@@ -108,19 +108,19 @@ function ProfSync:OnSummary(key, sender, p)
     if #ask == 0 then return end
     Compat.After(math.random(2, 6), function()
         -- A guild-wide answer to someone else may have brought the list meanwhile.
-        local still, current = {}, BRutus.Professions:Get(key)
+        local still, current = {}, GuildOS.Professions:Get(key)
         for _, line in ipairs(ask) do
             local e = current and current.profs[line]
             if e and not e.recipes and e.h == self.asked[sender .. ":" .. line].h then still[#still + 1] = line end
         end
-        if #still > 0 then BRutus.SyncService:Publish(DOMAIN, "req", { l = still }, { target = sender }) end
+        if #still > 0 then GuildOS.SyncService:Publish(DOMAIN, "req", { l = still }, { target = sender }) end
     end)
 end
 
 function ProfSync:OnRequest(sender, lines)
-    if type(lines) ~= "table" or #lines > BRutus.Professions.MAX_LINES then return end
+    if type(lines) ~= "table" or #lines > GuildOS.Professions.MAX_LINES then return end
     for _, line in ipairs(lines) do
-        if type(line) == "number" and BRutus.Professions:OwnLine(line) then
+        if type(line) == "number" and GuildOS.Professions:OwnLine(line) then
             local waiting = self.outgoing[line]
             if not waiting then
                 waiting = {}
@@ -136,12 +136,12 @@ end
 function ProfSync:FlushLine(line)
     local waiting = self.outgoing[line]
     self.outgoing[line] = nil
-    local e = BRutus.Professions:OwnLine(line)
+    local e = GuildOS.Professions:OwnLine(line)
     if not (waiting and e and e.recipes) then return end
     local only, count = nil, 0
     for name in pairs(waiting) do
         only, count = name, count + 1
     end
-    BRutus.SyncService:Publish(DOMAIN, "list", { l = line, h = e.h, r = e.recipes, x = e.extra or {} },
+    GuildOS.SyncService:Publish(DOMAIN, "list", { l = line, h = e.h, r = e.recipes, x = e.extra or {} },
         { target = count == 1 and only or nil })
 end

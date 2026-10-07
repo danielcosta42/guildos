@@ -70,13 +70,13 @@ LibStub = setmetatable({
   end,
 })
 
-BRutus = {
+GuildOS = {
   VERSION = "0.46.0",
   L = setmetatable({}, { __index = function(_, k) return k end }),
   db = { settings = { companion = true } },
 }
-function BRutus:GetSetting(k) return self.db.settings[k] end
-function BRutus:SetSetting(k, v) self.db.settings[k] = v end
+function GuildOS:GetSetting(k) return self.db.settings[k] end
+function GuildOS:SetSetting(k, v) self.db.settings[k] = v end
 dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not a copy of it
 -- The real identity rule too. This harness has been red since ae991c2, which
 -- made CompanionImport read who is already in the raid through Compat while
@@ -90,7 +90,7 @@ WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 5
 WOW_PROJECT_ID = 5
 function UnitClass(unit) return UnitName(unit), "WARRIOR" end
 dofile(ADDON .. "/Core/Compat.lua")
-function BRutus:Print(...) print(...) end
+function GuildOS:Print(...) print(...) end
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 
@@ -99,7 +99,7 @@ dofile(ADDON .. "/Libs/LibDeflate.lua")
 local softres = io.open(ADDON .. "/Modules/SoftResSystem.lua"):read("*a")
 local decoderSrc = softres:match("(local function JsonDecode.-\nend\n)")
 assert(decoderSrc, "could not find JsonDecode in SoftResSystem.lua")
-BRutus.JsonDecode = assert(loadstring(decoderSrc .. "\nreturn JsonDecode"))()
+GuildOS.JsonDecode = assert(loadstring(decoderSrc .. "\nreturn JsonDecode"))()
 
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")
@@ -107,19 +107,19 @@ dofile(ADDON .. "/Modules/CompanionImport.lua")
 -- ── run ───────────────────────────────────────────────────────────────
 local raw = io.open(rosterFile):read("*a")
 
-local n, err = BRutus.CompanionImport:Load(raw)
+local n, err = GuildOS.CompanionImport:Load(raw)
 if not n then
   io.stderr:write("LOAD FAILED: " .. tostring(err) .. "\n")
   os.exit(1)
 end
 
-local roster = BRutus.CompanionImport:Current()
+local roster = GuildOS.CompanionImport:Current()
 print("loaded: " .. roster.title .. " (" .. n .. " members)")
 for _, m in ipairs(roster.members) do
   print(string.format("  %s %s %s group=%d", m.name, m.class, m.slot, m.group))
 end
 
-local invited, skipped, ierr = BRutus.CompanionImport:InviteAll()
+local invited, skipped, ierr = GuildOS.CompanionImport:InviteAll()
 assert(not ierr, ierr)
 print(string.format("invited=%d skipped=%d -> %s", invited, skipped, table.concat(INVITED, ",")))
 
@@ -136,7 +136,7 @@ assert(not asked["Estranho"], "invited somebody who never signed up")
 assert(invited == 2 and skipped == 2,
   "invited/skipped drifted: " .. invited .. "/" .. skipped)
 
-local moved, gerr = BRutus.CompanionImport:OrganizeGroups()
+local moved, gerr = GuildOS.CompanionImport:OrganizeGroups()
 assert(not gerr, gerr)
 print(string.format("moved=%d -> %s", moved, table.concat(MOVED, ",")))
 
@@ -178,11 +178,11 @@ print(string.format("v2: %d answers, %d invitable, %d on standby",
 --
 -- The other direction. RaidTracker asks this when a session opens, and the answer
 -- is what stops the website having to guess from an instance name and a clock.
-BRutus.db.companionRaids = {
+GuildOS.db.companionRaids = {
   { raidId = "raid-abc", instanceKey = "kara", startsAt = 1754604000 },
   { raidId = "raid-xyz", instanceKey = "gruul", startsAt = 1754604000 },
 }
-local RF = function(k, t) return BRutus.CompanionImport:RaidFor(k, t) end
+local RF = function(k, t) return GuildOS.CompanionImport:RaidFor(k, t) end
 
 assert(RF("kara", 1754604000) == "raid-abc", "the raid did not match at its own start")
 assert(RF("kara", 1754604000 - 3600) == "raid-abc", "an hour early is still the same night")
@@ -200,19 +200,19 @@ print("stamp: the window agrees with the website's, and refuses everything outsi
 
 -- ── what the site said back ───────────────────────────────────────────
 _G.GuildOSInboxAck = { at = 1755291600, members = 137 }
-local ackAt, ackN = BRutus.CompanionImport:Ack()
+local ackAt, ackN = GuildOS.CompanionImport:Ack()
 assert(ackAt == 1755291600 and ackN == 137, "the acknowledgement did not come through")
 _G.GuildOSInboxAck = { at = 0 }
-assert(BRutus.CompanionImport:Ack() == nil, "an empty acknowledgement was reported as one")
+assert(GuildOS.CompanionImport:Ack() == nil, "an empty acknowledgement was reported as one")
 _G.GuildOSInboxAck = nil
-assert(BRutus.CompanionImport:Ack() == nil, "no acknowledgement produced one anyway")
+assert(GuildOS.CompanionImport:Ack() == nil, "no acknowledgement produced one anyway")
 print("ack: present when it is, absent when it is not")
 
 -- The gate has to hold on both entry points.
-BRutus.Companion:SetEnabled(false)
-local _, offErr = BRutus.CompanionImport:Parse(raw)
+GuildOS.Companion:SetEnabled(false)
+local _, offErr = GuildOS.CompanionImport:Parse(raw)
 assert(offErr and offErr:find("off"), "import ran with the companion switched off")
-local _, _, offErr2 = BRutus.CompanionImport:InviteAll()
+local _, _, offErr2 = GuildOS.CompanionImport:InviteAll()
 assert(offErr2 and offErr2:find("off"), "invite ran with the companion switched off")
 print("gate: holds when the companion is off")
 
@@ -221,11 +221,11 @@ print("gate: holds when the companion is off")
 -- No realms, and the surname is written with a hyphen. On Anniversary the part after the
 -- hyphen is a realm and comes off before an invite; on Forever it is half the person's
 -- name, and cutting it would invite somebody else (the site's specs/036).
-local PN = BRutus.CompanionImport.PlainName
-assert(BRutus.Client.isAnniversary, "this harness runs as the Anniversary client")
+local PN = GuildOS.CompanionImport.PlainName
+assert(GuildOS.Client.isAnniversary, "this harness runs as the Anniversary client")
 assert(PN("Chehul-Mankrik") == "Chehul", "Anniversary lost its realm cut")
 assert(PN("Chehul") == "Chehul")
-BRutus.Client.isAnniversary = false
+GuildOS.Client.isAnniversary = false
 local realRealm = GetRealmName
 -- A client that reports no realm: the whole name is the name.
 GetRealmName = function() return "" end
@@ -244,5 +244,5 @@ GetRealmName = function() return "a.b" end
 assert(PN("Chehul-Costa-axb") == "Chehul-Costa-axb", "the realm was read as a pattern")
 GetRealmName = realRealm
 GetNormalizedRealmName = nil
-BRutus.Client.isAnniversary = true
+GuildOS.Client.isAnniversary = true
 print("forever: the whole name is the name")

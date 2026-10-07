@@ -6,20 +6,20 @@
 -- stores received member data.
 ----------------------------------------------------------------------
 local Milestones = {}
-BRutus.Milestones = Milestones
-local L = BRutus.L
+GuildOS.Milestones = Milestones
+local L = GuildOS.L
 
 local MAX = 50
 local YEAR = 365 * 86400
 
 function Milestones:Initialize()
-    BRutus.db.milestones = BRutus.db.milestones or { events = {} }
-    BRutus.db.milestones.events = BRutus.db.milestones.events or {}
+    GuildOS.db.milestones = GuildOS.db.milestones or { events = {} }
+    GuildOS.db.milestones.events = GuildOS.db.milestones.events or {}
 end
 
 function Milestones:Record(mtype, key, name, detail)
-    if not BRutus.db.milestones then return end
-    local ev = BRutus.db.milestones.events
+    if not GuildOS.db.milestones then return end
+    local ev = GuildOS.db.milestones.events
     table.insert(ev, 1, { type = mtype, key = key, name = name, detail = detail, ts = GetServerTime() })
     while #ev > MAX do table.remove(ev) end
 end
@@ -33,7 +33,7 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
     if not hadPrior or not data then return end
     local name = data.name or (key:match("^([^-]+)") or key)
 
-    local cap = BRutus.Client.maxLevel
+    local cap = GuildOS.Client.maxLevel
     if prevLevel and prevLevel < cap and (data.level or 0) >= cap then
         self:Record("ding", key, name, tostring(cap))
     end
@@ -56,7 +56,7 @@ function Milestones:GetDigestLines(since)
     since = since or 0
     local out = {}
 
-    for _, ev in ipairs((BRutus.db.milestones and BRutus.db.milestones.events) or {}) do
+    for _, ev in ipairs((GuildOS.db.milestones and GuildOS.db.milestones.events) or {}) do
         if (ev.ts or 0) > since then
             if ev.type == "ding" then
                 out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or "70")
@@ -69,7 +69,7 @@ function Milestones:GetDigestLines(since)
     -- Guild anniversaries: first-seen date crossed a whole-year boundary
     -- since the last login.
     local now = GetServerTime()
-    for key, ts in pairs(BRutus.db.firstSeen or {}) do
+    for key, ts in pairs(GuildOS.db.firstSeen or {}) do
         if ts and ts > 0 then
             local yNow = math.floor((now - ts) / YEAR)
             local ySince = math.floor((math.max(since, ts) - ts) / YEAR)
