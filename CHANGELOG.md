@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.68.4] - 2026-10-07
+
+### Changed
+- /brutus e /br saem (use /gos), e o Loot Master só conversa com quem estiver nesta versão (#120)
+
+
 ## [0.68.3] - 2026-10-07
 
 ### Fixed
