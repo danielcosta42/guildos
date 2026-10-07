@@ -6,6 +6,9 @@
 -- and before the last reload. Sending is the player pressing Enter in that
 -- tab, which is a hardware event, so it is allowed on WoW: Forever too.
 --
+-- Where the server keeps the guild's chat (WoW: Forever, issue #126), the tab
+-- shows that instead: it also holds what was said while the player was away.
+--
 -- Unlike the alliance channel, the line is kept as the game sent it: item
 -- and player links stay clickable. It is what the default chat frame shows
 -- for the same line, and only the guild can say it. Line breaks go: one
@@ -28,6 +31,34 @@ end
 function GuildChat:OnRefresh(fn)
     if type(fn) == "function" then
         self.listeners[#self.listeners + 1] = fn
+    end
+end
+
+function GuildChat:_Notify()
+    for _, fn in ipairs(self.listeners) do
+        pcall(fn)
+    end
+end
+
+-- What the tab shows, and whether it came from the server. The server's history
+-- where it has one; the addon's log elsewhere, or while the server has nothing
+-- loaded yet. Never both: one source, so no line shows twice.
+function GuildChat:Entries()
+    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG)
+    if server and #server > 0 then
+        return server, true
+    end
+    return self:Log(), false
+end
+
+-- The tab opened (true) or closed. Opened, the server is asked for older lines
+-- while it holds fewer than the cap; they redraw the tab when they arrive.
+function GuildChat:Watch(on)
+    GuildOS.Compat.WatchGuildChat(on)
+    if not on then return end
+    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG)
+    if server and #server < self.MAX_LOG then
+        GuildOS.Compat.RequestOlderGuildChat(self.MAX_LOG - #server)
     end
 end
 
@@ -56,9 +87,7 @@ function GuildChat:_OnMessage(msg, author, guid)
     while #log > self.MAX_LOG do
         table.remove(log, 1)
     end
-    for _, fn in ipairs(self.listeners) do
-        pcall(fn)
-    end
+    self:_Notify()
 end
 
 -- Only ever called from the tab's Enter or Send click. The line is not logged
@@ -80,7 +109,19 @@ end
 function GuildChat:Initialize()
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
-    f:SetScript("OnEvent", function(_, _, msg, author, _, _, _, _, _, _, _, _, _, guid)
-        GuildOS:SafeCall(function() GuildChat:_OnMessage(msg, author, guid) end)
+    -- The server's stream: a new line, or older ones arriving. Absent where there is none.
+    GuildOS.Compat.RegisterEvent(f, "CLUB_MESSAGE_ADDED", true)
+    GuildOS.Compat.RegisterEvent(f, "CLUB_MESSAGE_HISTORY_RECEIVED", true)
+    f:SetScript("OnEvent", function(_, event, ...)
+        if event == "CHAT_MSG_GUILD" then
+            local msg, author = ...
+            local guid = select(12, ...)
+            GuildOS:SafeCall(function() GuildChat:_OnMessage(msg, author, guid) end)
+            return
+        end
+        local clubId, streamId = ...
+        GuildOS:SafeCall(function()
+            if GuildOS.Compat.IsGuildChatStream(clubId, streamId) then GuildChat:_Notify() end
+        end)
     end)
 end

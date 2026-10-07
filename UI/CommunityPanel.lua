@@ -476,7 +476,7 @@ local function BuildGuildChatSub(panel)
     local function refresh()
         -- Born 0 wide (CreateScrollFrame sizes it before layout), so re-set on every draw.
         content:SetWidth(math.max(holder:GetWidth() - 12, 1))
-        local log = GC:Log()
+        local log = GC:Entries()
         local classOf = {}
         for _, e in ipairs(log) do classOf[e.n] = e.c or classOf[e.n] end
         local groups = GuildOS.AllianceChat.GroupLog(log, GuildOS.AllianceChat.GROUP_WINDOW)
@@ -534,6 +534,9 @@ local function BuildGuildChatSub(panel)
     GC:OnRefresh(function()
         if panel:IsVisible() then refresh() end
     end)
+    -- The server is told the guild stream is being read only while the tab is.
+    panel:HookScript("OnShow", function() GC:Watch(true) end)
+    panel:HookScript("OnHide", function() GC:Watch(false) end)
     -- The cards are as wide as the view: a resized window lays them out again, once a frame.
     UI:MakeResponsive(holder, function()
         if panel:IsVisible() then refresh() end

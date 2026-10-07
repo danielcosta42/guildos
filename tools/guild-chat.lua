@@ -132,6 +132,112 @@ say("bem-vindo", "Bruna-Realm", "Player-1-B")
 check(#GC:Log() == 0, "a character the addon does not know to be in a guild keeps nothing")
 GuildOS.isGuilded = true
 
+-- ── The server's own history (WoW: Forever, issue #126) ─────────────────
+-- Measured on Forever: the guild's club stream holds what was said while the player was offline,
+-- each message as { messageId = { epoch (microseconds), position }, author = { name, classID }, content }.
+local function fire(event, ...)
+  for _, f in ipairs(frames) do
+    if f.events[event] then f.fn(f, event, ...) end
+  end
+end
+check(select(2, GC:Entries()) == false, "a client without C_Club shows the addon's own log")
+-- On the client a secret keeps its type: a secret name or text is still a string, so type() lets it through.
+local secretName, secretText = "Nome Secreto", "texto secreto"
+issecretvalue = function(v) return v == secret or v == secretName or v == secretText end
+
+local club = { id = "C1", streams = { { streamId = "2", streamType = 2, name = "Officer" },
+                                      { streamId = "7", streamType = 1, name = "Guild" } }, msgs = {}, asked = {} }
+local function message(epoch, name, classID, content, destroyed)
+  return { messageId = { epoch = epoch, position = 0 }, author = { name = name, classID = classID },
+           content = content, destroyed = destroyed }
+end
+local function split(list, at) -- two ranges, handed over newest first, as nothing promises their order
+  local a, b = {}, {}
+  for i, m in ipairs(list) do if i <= at then a[#a + 1] = m else b[#b + 1] = m end end
+  return a, b
+end
+C_Club = {
+  GetGuildClubId = function() return club.id end,
+  GetStreams = function() return club.streams end,
+  GetMessageRanges = function(c, s)
+    if c ~= club.id or s ~= "7" or #club.msgs == 0 then return {} end
+    local a, b = split(club.msgs, math.floor(#club.msgs / 2))
+    local out = {}
+    if #b > 0 then out[#out + 1] = { oldestMessageId = b[1].messageId, newestMessageId = b[#b].messageId } end
+    if #a > 0 then out[#out + 1] = { oldestMessageId = a[1].messageId, newestMessageId = a[#a].messageId } end
+    return out
+  end,
+  GetMessagesInRange = function(_, _, oldest, newest)
+    local out, on = {}, false
+    for _, m in ipairs(club.msgs) do
+      if m.messageId == oldest then on = true end
+      if on then out[#out + 1] = m end
+      if m.messageId == newest then break end
+    end
+    return out
+  end,
+  FocusStream = function(c, s) club.focused = c .. "/" .. s end,
+  UnfocusStream = function() club.focused = nil end,
+  RequestMoreMessagesBefore = function(c, s, id, count) club.asked[#club.asked + 1] = { c = c, s = s, id = id, count = count } end,
+}
+local CLASSES = { [8] = "MAGE", [5] = "PRIEST" }
+function GetClassInfo(id) if CLASSES[id] then return "x", CLASSES[id], id end end
+
+say("antes do servidor", "Bruna-Realm", "Player-1-B")
+local entries, server = GC:Entries()
+check(server == false and entries[1].m == "antes do servidor",
+  "while the server has nothing loaded, the tab shows the addon's own log")
+GC:Watch(true)
+check(club.focused == "C1/7" and #club.asked == 0, "and opening it focuses the stream, with nothing to ask before")
+GC:Watch(false)
+
+local E = 1790000000 * 1e6
+club.msgs = {
+  message(E - 86400e6, "Elyndora Saurfang", 8, "proc a skill"),
+  message(E - 3600e6, "Apagada Silva", 5, "isso some", true),
+  message(E - 1800e6, "Oculta Costa", 5, secretText),
+  message(E - 60e6, "Chehul Costa", 5, "tamo |cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r\njunto"),
+}
+entries, server = GC:Entries()
+check(server == true and #entries == 2, "once it has, the tab shows the server's lines, and only those")
+check(entries[1].n == "Elyndora Saurfang" and entries[1].c == "MAGE" and entries[1].t == 1790000000 - 86400
+  and entries[1].m == "proc a skill", "each with its speaker, class and time, from yesterday too")
+check(entries[2].n == "Chehul Costa" and entries[2].m == "tamo |cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r junto",
+  "oldest first across ranges, the link kept, the line break not")
+
+club.msgs[1].author.name = secretName
+check(#GC:Entries() == 1, "a message whose speaker is secret is skipped")
+club.msgs[1].author.name = "Elyndora Saurfang"
+
+-- Opening the tab: the stream is focused, and older lines are asked for while there are fewer than 200.
+GC:Watch(true)
+check(club.focused == "C1/7", "opening the tab tells the server the guild stream is being read")
+check(#club.asked == 1 and club.asked[1].s == "7" and club.asked[1].id == club.msgs[1].messageId
+  and club.asked[1].count == 198, "and asks for the 198 lines before the oldest it has")
+GC:Watch(false)
+check(club.focused == nil, "closing it stops")
+
+local many = {}
+for i = 1, 250 do many[i] = message(E + i * 1e6, "Bruna Lima", 5, "linha " .. i) end
+club.msgs = many
+entries = GC:Entries()
+check(#entries == 200 and entries[1].m == "linha 51" and entries[200].m == "linha 250", "the last 200 of the server's lines")
+GC:Watch(true)
+check(#club.asked == 1, "with 200 in hand nothing more is asked for")
+GC:Watch(false)
+
+-- Live: a new line in the guild stream redraws the tab; one in any other club does not.
+notified = 0
+fire("CLUB_MESSAGE_ADDED", "C1", "7")
+fire("CLUB_MESSAGE_HISTORY_RECEIVED", "C1", "7")
+check(notified == 2, "a new line, or older ones arriving, in the guild stream redraws the tab")
+fire("CLUB_MESSAGE_ADDED", "C2", "1")
+fire("CLUB_MESSAGE_ADDED", "C1", "2")
+fire("CLUB_MESSAGE_ADDED", secret, secret)
+check(notified == 2, "a line in another club, the officers' stream, or a secret one does not")
+
+C_Club, GetClassInfo, issecretvalue = nil, nil, nil
+
 -- ── Wired in ────────────────────────────────────────────────────────────
 local function read(path) local f = assert(io.open(ADDON .. "/" .. path, "rb")); local t = f:read("*a"); f:close(); return t end
 local toc = read("GuildOS.toc")

@@ -1376,6 +1376,31 @@ do
   check(#sentChat == 2 and box.text == "agora" and said("still in the box"),
     "in a chat lockdown nothing goes, the text stays in the box, and the player is told")
   C_ChatInfo = nil
+
+  -- Where the server keeps the guild's chat (WoW: Forever, #126), the tab reads it.
+  local focused
+  local held = { { messageId = { epoch = (NOW - 3600) * 1e6, position = 0 },
+                  author = { name = "Elyndora Saurfang", classID = 8 }, content = "proc a skill" } }
+  C_Club = {
+    GetGuildClubId = function() return "C1" end,
+    GetStreams = function() return { { streamId = "1", streamType = 1 } } end,
+    GetMessageRanges = function() return { { oldestMessageId = held[1].messageId, newestMessageId = held[1].messageId } } end,
+    GetMessagesInRange = function() return held end,
+    FocusStream = function(c, s) focused = c .. "/" .. s end,
+    UnfocusStream = function() focused = nil end,
+    RequestMoreMessagesBefore = function() end,
+  }
+  function GetClassInfo(id) if id == 8 then return "Mage", "MAGE", 8 end end
+  UI:OpenWindow("guild", "calendar")
+  UI:OpenWindow("guild", "chat")
+  local ely = find(p, "Elyndora Saurfang")
+  local mr, mg, mb = GuildOS:GetClassColor("MAGE")
+  check(ely and ely.shown and same(ely.color, { r = mr, g = mg, b = mb }) and find(p, "proc a skill")
+    and not find(p, "so eu"), "the tab shows the server's lines, and only those")
+  check(focused == "C1/1", "opening it tells the server the guild stream is being read")
+  UI:OpenWindow("guild", "calendar")
+  check(focused == nil, "and leaving it says so")
+  C_Club, GetClassInfo = nil, nil
   win:Hide()
   GuildOS.db.guildChatLog = nil
   SendChatMessage, SetItemRef, GetPlayerInfoByGUID = nil, nil, nil

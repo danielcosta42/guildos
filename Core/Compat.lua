@@ -668,6 +668,85 @@ function Compat.GuildMemberProfessions()
 end
 
 ----------------------------------------------------------------------
+-- The guild's chat as the server keeps it (WoW: Forever, issue #126): the club stream the
+-- Communities window reads. It holds what was said while the player was offline, which no
+-- chat event delivers. Measured on Forever: a message is { messageId = { epoch, position },
+-- author = { name, classID }, content }, the epoch in microseconds, and no timestamp field.
+----------------------------------------------------------------------
+local function guildStream()
+    if not (C_Club and C_Club.GetGuildClubId and C_Club.GetStreams and C_Club.GetMessageRanges) then return nil end
+    local clubId = C_Club.GetGuildClubId()
+    if not clubId or Compat.IsSecret(clubId) then return nil end
+    local guild = Enum and Enum.ClubStreamType and Enum.ClubStreamType.Guild or 1
+    for _, s in ipairs(C_Club.GetStreams(clubId) or {}) do
+        if s.streamType == guild then return clubId, s.streamId end
+    end
+    return nil
+end
+
+-- The ranges of messages the client holds, oldest first: nothing promises their order.
+local function chatRanges(clubId, streamId)
+    local list = C_Club.GetMessageRanges(clubId, streamId) or {}
+    table.sort(list, function(a, b) return a.oldestMessageId.epoch < b.oldestMessageId.epoch end)
+    return list
+end
+
+-- True when a club event is about the guild's chat, and not the officers' or another club's.
+function Compat.IsGuildChatStream(clubId, streamId)
+    if Compat.IsSecret(clubId, streamId) then return false end
+    local c, s = guildStream()
+    return c ~= nil and c == clubId and s == streamId
+end
+
+-- The last `max` lines, oldest first, as { t, n, c, m } like the addon's own log; nil where the
+-- client has no guild stream. A deleted message, or one whose text or speaker is secret, is left out.
+function Compat.GuildChatHistory(max)
+    local clubId, streamId = guildStream()
+    if not clubId then return nil end
+    local all = {}
+    for _, r in ipairs(chatRanges(clubId, streamId)) do
+        for _, msg in ipairs(C_Club.GetMessagesInRange(clubId, streamId, r.oldestMessageId, r.newestMessageId) or {}) do
+            local a = msg.author
+            if not msg.destroyed and a and not Compat.IsSecret(msg.content, a.name, a.classID)
+                and type(msg.content) == "string" and type(a.name) == "string" then
+                local class = a.classID and GetClassInfo and select(2, GetClassInfo(a.classID))
+                all[#all + 1] = {
+                    t = math.floor(msg.messageId.epoch / 1e6),
+                    n = a.name,
+                    c = class,
+                    m = (msg.content:gsub("%c", " ")),
+                }
+            end
+        end
+    end
+    local out = {}
+    for i = math.max(1, #all - max + 1), #all do out[#out + 1] = all[i] end
+    return out
+end
+
+-- The tab is open (true) or closed: the server is told the stream is being read, as the
+-- Communities window does when it shows one.
+function Compat.WatchGuildChat(on)
+    local clubId, streamId = guildStream()
+    if not clubId then return end
+    if on and C_Club.FocusStream then
+        C_Club.FocusStream(clubId, streamId)
+    elseif not on and C_Club.UnfocusStream then
+        C_Club.UnfocusStream(clubId, streamId)
+    end
+end
+
+-- `count` lines older than the oldest held; they arrive with CLUB_MESSAGE_HISTORY_RECEIVED.
+-- With nothing held yet there is nothing to ask before: focusing the stream brings the recent ones.
+function Compat.RequestOlderGuildChat(count)
+    local clubId, streamId = guildStream()
+    if not clubId or not C_Club.RequestMoreMessagesBefore then return end
+    local first = chatRanges(clubId, streamId)[1]
+    if not first then return end
+    C_Club.RequestMoreMessagesBefore(clubId, streamId, first.oldestMessageId, count)
+end
+
+----------------------------------------------------------------------
 -- Addon messages, with their result (issue #10)
 --
 -- Sync goes through ChatThrottleLib, which re-queues AddonMessageThrottle itself

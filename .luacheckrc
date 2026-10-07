@@ -223,6 +223,7 @@ read_globals = {
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",
+    "GetClassInfo",
     "Minimap",
     "GetCursorPosition",
     "GetTime",
