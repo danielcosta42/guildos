@@ -127,7 +127,7 @@ The controls, through the Helpers that already build them:
 | close | `redbutton-exit-c60` (+ `-pressed-c60`, `-disabled-c60`) |
 | scroll bar | `minimal-scrollbar-*-c60` |
 | checkbox | `checkbox-minimal-c60` with `talents-checkmark-c60` |
-| button (primary, secondary, danger, ghost) | not yet identified: `128-redbutton-*-c60` are square icon buttons; the rectangular panel button is found with the preview (4.6) |
+| button (primary, secondary, danger; ghost has no art) | the retail panel button, three-slice: `128-redbutton-left-c60`, `_128-redbutton-center-c60`, `128-redbutton-right-c60`, with `-pressed` and `-disabled` (found in the client's data; the square `128-redbutton-exit/minus-c60` are the close and minimise buttons) |
 
 - **Candidates, not final.** These atlases exist in the client's data, but how they look on screen has
   not been seen. The final pick of each piece is made from beta screenshots of the preview tool (4.6).

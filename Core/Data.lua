@@ -5,7 +5,7 @@
 ----------------------------------------------------------------------
 
 -- UI color constants
--- ── "Forever" skin ────────────────────────────────────────────────
+-- ── The GuildOS style's palette ──────────────────────────────────────
 -- Derived from the guildos.me production tokens (design handoff; see
 -- docs/superpowers/specs/2026-09-14-forever-skin-design.md). Near-monochrome
 -- with ONE accent: gold is the only colour allowed as a background, and violet

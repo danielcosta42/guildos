@@ -778,6 +778,19 @@ Forever only (`Modules/Look.lua` returns at once on Anniversary).
 | `RecruitEngagement:GetAggregate(now)` | Rows and totals for the engagement screen: the reports received over GUILD, with the viewer's own built locally by `_OwnPacket` (CommSystem drops one's own messages, so the echo never carried it; issue #51). Shown, never stored |
 | `RecruitEngagement:BroadcastStats()` | Sends `_OwnPacket` over GUILD (`RECRUIT_STATS`), answering a REQUEST |
 
+## Style.lua — GuildOS.Style (issue #122)
+
+| Function | Description |
+|---|---|
+| `Style:Has(id)` / `Available()` / `Current()` / `Name(id)` / `Description(id)` | Two styles: `guildos` (default, today's flat look) and `forever` (the WoW: Forever client's `-c60` atlases), offered only when `C_Texture.GetAtlasInfo` answers for its key atlases |
+| `Style:Choose(id)` / `Apply(id)` | Save the account's choice in `GuildOSDB.style`; `Apply` also offers the reload (`GUILDOS_STYLE_RELOAD`). Unknown or unavailable ids are refused and said |
+| `Style:Resolve()` | At `Initialize`: the saved style if the client draws it, else `guildos`, said once. `forever` re-points `GuildOS.Colors` in place (`GuildOS:RepointColors`, Data.lua) and sets `Style.gameFont`, which `ApplyFont` honours |
+| `Style:Paint(frame, role)` | Roles `window`, `titlebar`, `panel`, `well`, `popup`, `input`. `guildos` paints today's backdrops; `forever` builds nine-slices (`frame.__nine`) and three-slices (`frame.__three`) of the client's art; a missing atlas paints flat and is recorded once |
+| `Style:SkinButton/ButtonState/SkinTab/TabState/SkinCheckbox/SkinClose/SkinScrollBar` | The controls, called by the Helpers (whose API did not change); no-ops in `guildos` |
+| `Style:PreviewRows()` / `ShowPreview()` | `/gos style preview` (UI/StylePreview.lua): every Forever piece labelled with its atlas, the missing ones marked |
+
+`tools/style.lua` checks every atlas the style names against `tools/data/forever-c60-atlases.txt` (build 1.60.1.70235). `tools/window-shell-forever.lua` runs the one-window harness under the Forever style.
+
 ## CallToArms.lua — GuildOS.CallToArms (issue #108)
 
 | Function | Description |
