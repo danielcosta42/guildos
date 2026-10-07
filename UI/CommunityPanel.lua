@@ -424,8 +424,8 @@ end
 ----------------------------------------------------------------------
 -- Guild chat feed (issues #124, #126), kept by Modules/GuildChat.lua. Laid out
 -- like the alliance feed: one card per run of lines from one speaker, newest at
--- the bottom, a box underneath. Guild > Chat builds it with a tab per channel of
--- the guild (opts.streams); the Now cards build it with /g alone.
+-- the bottom, a box underneath, and a tab per channel of the guild. Guild > Chat
+-- and the Now cards both build it.
 ----------------------------------------------------------------------
 local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
 local feeds = 0   -- each feed's scroll frame needs its own global name
@@ -441,9 +441,8 @@ local function streamLabel(stream)
     return stream.name or "?"
 end
 
-function GuildOS:CreateGuildChatFeed(panel, opts)
+function GuildOS:CreateGuildChatFeed(panel)
     local GC = GuildOS.GuildChat
-    local withStreams = opts and opts.streams
     local current   -- the channel open; nil is /g
     feeds = feeds + 1
 
@@ -499,7 +498,7 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
     end
 
     local function layoutTabs()
-        local streams = withStreams and GC:Streams()
+        local streams = GC:Streams()
         local list = (streams and #streams > 1) and streams or nil
         -- The channel open is gone (removed, or no longer listed to this player): back to /g.
         if current then
@@ -711,7 +710,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     local builders = {
         calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
         activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
-        chat = function(p) return GuildOS:CreateGuildChatFeed(p, { streams = true }) end,
+        chat = function(p) return GuildOS:CreateGuildChatFeed(p) end,
     }
     for _, t in ipairs(HUB_SUBTABS) do
         local p = makeSubPanel()

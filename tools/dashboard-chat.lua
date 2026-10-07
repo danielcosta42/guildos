@@ -2,8 +2,8 @@
 -- Core/Data.lua and UI/Dashboard.lua on a stubbed UI.
 --
 -- The big card under the others was "Guild activity", which repeated the Activity column beside
--- it and stood mostly empty. It is the guild's chat now: the feed Guild > Chat shows, /g alone,
--- with its box, and the arrow opens Guild > Chat.
+-- it and stood mostly empty. It is the guild's chat now: the feed Guild > Chat shows, with its
+-- channel tabs and its box, and the arrow opens Guild > Chat.
 --
 --   luajit -e 'ADDON="."' tools/dashboard-chat.lua
 --
@@ -69,10 +69,11 @@ GuildOS.UI = setmetatable({
 }, { __index = function() return function() return sink end end })
 dofile(ADDON .. "/UI/Dashboard.lua")
 
--- The feed itself is Guild > Chat's, tested in tools/window-shell.lua: here only how the card uses it.
+-- The feed itself, channel tabs included, is Guild > Chat's, tested in tools/window-shell.lua: here
+-- only how the card uses it.
 local built, refreshed = {}, 0
-function GuildOS:CreateGuildChatFeed(parent, opts)
-  built[#built + 1] = { parent = parent, opts = opts }
+function GuildOS:CreateGuildChatFeed(parent)
+  built[#built + 1] = { parent = parent }
   return function() refreshed = refreshed + 1 end
 end
 
@@ -87,7 +88,6 @@ local has = {}
 for _, t in ipairs(titles) do has[t] = true end
 check(card ~= nil and not has["GUILD ACTIVITY"], "the big card is the guild's chat; the activity it repeated is gone")
 check(#built == 1 and built[1].parent == card.body, "its body holds the chat feed, built once")
-check(not (built[1].opts and built[1].opts.streams), "with /g alone: the channel tabs are Guild > Chat's")
 check(refreshed == 2, "and drawn again with the rest of the cards")
 check(card.scripts.OnMouseUp == nil, "a click in the chat (a link, the box) stays in it")
 local arrow
