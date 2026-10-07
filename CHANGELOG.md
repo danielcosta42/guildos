@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.70.0] - 2026-10-07
+
+### Added
+- os textos dos estilos de interface nos dez idiomas (#122)
+- /gos style preview mostra as peças do estilo Forever lado a lado (#122)
+- o seletor de estilo em Settings e o /gos style (#122)
+- janela, botões, abas, checkboxes, fechar e barras de rolagem no estilo Forever, pela mesma API dos Helpers (#122)
+- o estilo pinta cada papel, com a arte do Forever em nine-slice e three-slice e o flat de sempre como reserva (#122)
+- o estilo Forever re-aponta a paleta no lugar e usa a fonte do jogo (#122)
+- a camada de estilos de interface, com o estilo WoW: Forever disponível onde o cliente tem a arte (#122)
+
+### Fixed
+- no estilo Forever, botões de alternar tingem a arte em vez de pintar o fundo por cima, e o hover não muda mais o estado (#122)
+- abas do estilo Forever com a arte de aba de cima do jogo, em três peças, sem esticar os cantos (#122)
+- o estilo Forever pede a arte pelo nome do elemento, que o cliente resolve para a -c60 (#122)
+- nome de variável que sombreava outra no ajuste das bordas (#122)
+- no estilo Forever, checkbox sem escurecer, cartões como painel, bordas que repetem e o seletor só onde há escolha (#122)
+
+
 ## [0.69.0] - 2026-10-07
 
 ### Added
