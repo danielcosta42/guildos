@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.71.0] - 2026-10-07
+
+### Added
+- o chat da tela Now também ganha uma aba por canal da guilda (#126)
+- na tela Now, o card grande vira o chat da guilda no lugar da atividade repetida (#126)
+- a aba Chat ganha uma aba por canal da guilda, e o feed vira um construtor compartilhado (#126)
+- o chat da guilda conhece todos os canais da guilda no servidor: Guild, Officer e os criados (#126)
+- aba Chat lê o histórico do /g guardado pelo servidor no Forever (#126)
+
+### Fixed
+- no lockdown, clicar numa aba do chat não troca o canal; o feed se atualiza sozinho quando o lockdown passa (#126)
+- chat da guilda não lê o servidor no lockdown, conta o foco entre os dois feeds e não puxa quem rolou para cima (#126)
+
+
 ## [0.70.0] - 2026-10-07
 
 ### Added
