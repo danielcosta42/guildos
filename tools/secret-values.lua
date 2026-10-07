@@ -121,7 +121,7 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 for _, m in ipairs({ "DataCollector", "SpecChecker", "LootMaster", "Mentions", "NoteCommand", "RosterLog",
-                     "RecruitScanner", "BanList", "RecruitmentSystem", "RaidTracker", "SoftResSystem" }) do
+                     "RecruitScanner", "BanList", "RecruitmentSystem", "RaidTracker", "SoftResSystem", "GuildChat" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
 local Compat = GuildOS.Compat
@@ -193,6 +193,19 @@ GuildOS.db = {
   members = {},
   settings = {},
 }
+
+GuildOS.isGuilded = true
+function GetPlayerInfoByGUID(guid) if isSecret(guid) then error("secret value used") end end
+local guildChat = handlerOf(function() GuildOS.GuildChat:Initialize() end)
+recorded = {}
+guildChat(nil, "CHAT_MSG_GUILD", secret(), secret())
+guildChat(nil, "CHAT_MSG_GUILD", "boa noite", secret())
+check(#GuildOS.GuildChat:Log() == 0 and #recorded == 0, "GuildChat: a secret line or sender is skipped, not raised on")
+guildChat(nil, "CHAT_MSG_GUILD", "boa noite", "Bob-Forever", "", "", "", "", 0, 0, "", 0, 1, secret())
+local kept = GuildOS.GuildChat:Log()[1]
+check(kept and kept.m == "boa noite" and kept.c == nil and #recorded == 0,
+      "GuildChat: a readable line is kept, and a secret GUID only costs the class")
+GetPlayerInfoByGUID = nil
 
 local mentions = handlerOf(function() GuildOS.Mentions:_SetupHook() end)
 check(fires(mentions, nil, "CHAT_MSG_GUILD", secret(), secret()), "Mentions: a secret line and sender do not raise")
