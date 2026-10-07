@@ -70,7 +70,8 @@ local function newRegion(kind, parent)
         local prev = self.scripts[a[1]]
         self.scripts[a[1]] = prev and function(...) prev(...); a[2](...) end or a[2]
       elseif k == "GetScript" then return self.scripts[a[1]]
-      elseif k == "CreateTexture" or k == "CreateFontString" then return newRegion(k, self)
+      elseif k == "CreateTexture" or k == "CreateFontString" then
+        local t = newRegion(k, self); t.layer = a[2]; return t
       elseif k == "IsEnabled" then return self.enabled ~= false
       elseif k == "Enable" then self.enabled = true
       elseif k == "Disable" then self.enabled = false
@@ -275,8 +276,22 @@ UI:_ButtonState(b, "hover")
 check(b.__three.Left.atlas == "128-RedButton-Left" and b.label.color[1] == GuildOS.Colors.text.r, "hover lights the label")
 UI:SetButtonVariant(b, "ghost")
 check(not b.__three.Left.shown, "a ghost button has no art")
-b:SetBaseColor(0.2, 0.6, 0.2, 1)
-check(true, "a toggle's SetBaseColor does not raise in forever")
+-- A toggle (the recruitment channels, a chip) shows its state with SetBaseColor. On the game's art
+-- that is a tint of the art itself: the old backdrop drew over the button, and hover cleared it.
+local tg = UI:CreateButton(UIParent, "Trade", 120, 26)
+check(tg.__three.Left.layer == "BORDER", "the button's art sits above the backdrop")
+tg:SetBaseColor(0.12, 0.12, 0.16, 0.85)
+check(tg.__three.Left.color and math.abs(tg.__three.Left.color[1] - 0.55) < 1e-9
+  and math.abs(tg.__three.Center.color[3] - 0.55) < 1e-9, "a grey (off) toggle dims the art")
+check(not tg.bg or tg.bg[4] == 0, "and paints no backdrop over it")
+tg:SetBaseColor(0.157, 0.271, 0.180, 0.85)
+local on = tg.__three.Right.color
+check(on[2] == 1 and on[1] < 1 and on[1] >= 0.6, "a coloured (on) toggle tints the art toward its colour")
+tg.scripts.OnEnter(tg); tg.scripts.OnLeave(tg)
+check(tg.__three.Right.color[2] == 1 and tg.__three.Right.color[1] == on[1] and (not tg.bg or tg.bg[4] == 0),
+  "hovering it changes nothing about its state")
+tg:SetBaseColor(0, 0, 0, 0)
+check(tg.__three.Left.color[1] == 1, "no colour, the art as it is")
 local narrow = UI:CreateButton(UIParent, "", 40, 26)
 narrow.scripts.OnSizeChanged()
 check(math.abs(narrow.__three.Left.w + narrow.__three.Right.w - 40) < 0.01, "a button narrower than both caps squeezes them to fit")

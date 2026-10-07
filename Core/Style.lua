@@ -367,8 +367,24 @@ local function forever(self, art) return self.current == "forever" and self:_Has
 function Style:SkinButton(btn)
     if not forever(self, self.FOREVER.button) then return false end
     btn.__forever = true
-    self:_PaintThree(btn, self.FOREVER.button.rest, "BACKGROUND")
+    -- Above the backdrop (a toggle used to paint it over the art), below the label.
+    self:_PaintThree(btn, self.FOREVER.button.rest, "BORDER")
     return true
+end
+
+-- A toggle's colour (SetBaseColor) on the game's art: a tint of the art itself. A grey, the "off"
+-- the screens use, dims it; any other colour tints it toward that colour; none leaves it as it is.
+function Style:ButtonTint(btn, r, g, b, a)
+    local hi, lo = math.max(r, g, b), math.min(r, g, b)
+    local tr, tg, tb = 1, 1, 1
+    if (a or 1) > 0 and hi > 0 then
+        if hi - lo < 0.06 then
+            tr, tg, tb = 0.55, 0.55, 0.55
+        else
+            tr, tg, tb = 0.6 + 0.4 * r / hi, 0.6 + 0.4 * g / hi, 0.6 + 0.4 * b / hi
+        end
+    end
+    for _, t in pairs(btn.__three) do t:SetVertexColor(tr, tg, tb, 1) end
 end
 
 function Style:ButtonState(btn, state)

@@ -281,6 +281,7 @@ function Helpers:CreateButton(parent, text, width, height)
 
     function btn:SetBaseColor(r, g, b, a)
         self.baseColor = { r, g, b, a or 1 }
+        if self.__forever then return Style:ButtonTint(self, r, g, b, a) end   -- the game's art (#122)
         if not self.__hovered then
             self:SetBackdropColor(r, g, b, a or 1)
         end
