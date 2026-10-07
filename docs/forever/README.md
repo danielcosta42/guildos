@@ -56,6 +56,7 @@ the same files out of the local CASC storage (`E:\World of Warcraft\Data`), with
   - **The rest of the compat addons carry no filter and should load:** chat, guild script, combat log,
     Battle.net, raid warning. That keeps `SendChatMessage`, `ChatFrame_AddMessageEventFilter`, `GuildSetMOTD`,
     `GetGuildRosterMOTD` and `CombatLogGetCurrentEventInfo`.
+- **The server keeps the guild's chat (measured in game, 2026-10-07, #126).** The guild is a club: `C_Club.GetGuildClubId()` answers, and `C_Club.GetStreams` lists Guild (`streamType` 1), Officer (2, to who may read it) and any channel the guild made (4, `Other`); 3 is `Discord` and 0 `General`, neither shown. After a login the Guild stream held 102 messages from before it; `RequestMoreMessagesBefore` brought more. A message is `{ messageId = { epoch, position }, author = { name, classID }, content }`, the epoch in microseconds, with no `timestamp` field. The lists, ranges and messages are `SecretInChatMessagingLockdown`: nothing of the club is read during one, and the feed keeps what it shows. The Guild > Chat tab and the Now card read it through `Compat.GuildChatHistory` and `Compat.GuildChatStreams`; only /g is also kept on disk.
 - **UI experience presets.** `C_GameRules` has `SelectClassicExperiencePreset` and `SelectModernExperiencePreset`:
   the player can choose a classic or a modern UI.
 - **No detection API.** There is no `C_GameRules.IsCamelot`, and `WOW_PROJECT_ID` has no Forever constant in the

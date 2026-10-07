@@ -73,6 +73,9 @@ Probe.APIS = {
     -- WoW: Forever professions (issue #31).
     "GetProfessions", "GetProfessionInfo", "IsPlayerSpell", "C_TradeSkillUI.GetAllRecipeIDs",
     "C_TradeSkillUI.GetRecipeInfo", "C_TradeSkillUI.IsDataSourceChanging", "C_Club.GetGuildClubId", "C_Club.GetMemberInfo",
+    -- The guild's chat as the server keeps it (issue #126).
+    "C_Club.GetStreams", "C_Club.GetMessageRanges", "C_Club.GetMessagesBefore", "C_Club.FocusStream",
+    "C_Club.UnfocusStream", "C_Club.RequestMoreMessagesBefore", "C_Club.SendMessage", "GetClassInfo",
     "ChatFrameUtil.AddMessageEventFilter",
     -- The retail tooltip (issue #19): where the OnTooltipSet* scripts below are absent, the hook
     -- and the reading happen through these instead. A client with the processor and no TooltipUtil
@@ -97,7 +100,8 @@ Probe.SCRIPTS = { "OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit", "
 -- source registers one that is not listed here.
 Probe.EVENTS = {
     "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED", "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
-    "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER",
+    "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER", "CLUB_MESSAGE_ADDED",
+    "CLUB_MESSAGE_HISTORY_RECEIVED", "CLUB_STREAM_ADDED", "CLUB_STREAM_REMOVED", "CLUB_STREAMS_LOADED",
     "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
     "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",

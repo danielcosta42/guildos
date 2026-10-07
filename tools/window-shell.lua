@@ -138,6 +138,11 @@ function Frame:StopMovingOrSizing() self.moving, self.sizing = nil, nil end
 function Frame:SetScrollChild(child) self.scrollChild = child end
 function Frame:GetStringHeight() return 12 end
 function Frame:SetVerticalScroll(v) self.vscroll = v end
+function Frame:GetVerticalScroll() return self.vscroll or 0 end
+function Frame:GetVerticalScrollRange()
+  local c = self.scrollChild
+  return c and math.max(0, (c.h or 0) - (self.h or 0)) or 0
+end
 function Frame:SetHyperlinksEnabled(v) self.hyperlinks = v end
 function Frame:EnableMouse(v) self.mouse = v end
 local function isRegion(c) return c.kind == "Texture" or c.kind == "FontString" end
@@ -1394,6 +1399,130 @@ do
   check(#sentChat == 2 and box.text == "agora" and said("still in the box"),
     "in a chat lockdown nothing goes, the text stays in the box, and the player is told")
   C_ChatInfo = nil
+
+  -- Where the server keeps the guild's chat (WoW: Forever, #126), the tab reads it.
+  local focused
+  local held = { { messageId = { epoch = (NOW - 3600) * 1e6, position = 0 },
+                  author = { name = "Elyndora Saurfang", classID = 8 }, content = "proc a skill" } }
+  local focusedSet = {}
+  local function focusCount() local n = 0; for _ in pairs(focusedSet) do n = n + 1 end; return n end
+  local byStream, streams, clubSaid = { ["1"] = held }, { { streamId = "1", streamType = 1, name = "Guild" } }, {}
+  -- In a chat lockdown the club's lists and messages arrive secret: every read then is counted.
+  local locked, lockedReads = false, 0
+  local function read(v) if locked then lockedReads = lockedReads + 1 end; return v end
+  C_ChatInfo = { InChatMessagingLockdown = function() return locked end }
+  C_Club = {
+    GetGuildClubId = function() return "C1" end,
+    GetStreams = function() return read(streams) end,
+    GetMessageRanges = function(_, s)
+      local h = byStream[s]
+      if not h then return read({}) end
+      return read({ { oldestMessageId = h[1].messageId, newestMessageId = h[#h].messageId } })
+    end,
+    GetMessagesBefore = function(_, s) return read(byStream[s] or {}) end,
+    FocusStream = function(c, s) focusedSet[s] = true; focused = c .. "/" .. s end,
+    UnfocusStream = function(c, s) focusedSet[s] = nil; if focused == c .. "/" .. s then focused = nil end end,
+    RequestMoreMessagesBefore = function() end,
+    SendMessage = function(_, s, text) clubSaid[#clubSaid + 1] = { s = s, text = text } end,
+  }
+  function GetClassInfo(id) if id == 8 then return "Mage", "MAGE", 8 end end
+  UI:OpenWindow("guild", "calendar")
+  UI:OpenWindow("guild", "chat")
+  local ely = find(p, "Elyndora Saurfang")
+  local mr, mg, mb = GuildOS:GetClassColor("MAGE")
+  check(ely and ely.shown and same(ely.color, { r = mr, g = mg, b = mb }) and find(p, "proc a skill")
+    and not find(p, "so eu"), "the tab shows the server's lines, and only those")
+  check(focused == "C1/1", "opening it tells the server the guild stream is being read")
+  local only = find(p, "Guild")
+  check(not (only and only:IsVisible()) and holder.points[1][1] == "TOPLEFT" and holder.points[1][2] == 0,
+    "with /g the only channel, there is no row of channel tabs, and the feed starts at the top")
+  UI:OpenWindow("guild", "calendar")
+  check(focused == nil, "and leaving it says so")
+
+  -- Every channel of the guild gets a tab: Officer to who may read it, and the ones the guild made.
+  streams[2] = { streamId = "2", streamType = 2, name = "Officer" }
+  streams[3] = { streamId = "3", streamType = 4, name = "Raid Team" }
+  byStream["2"] = { { messageId = { epoch = (NOW - 60) * 1e6, position = 0 },
+                     author = { name = "Chefe Lima", classID = 8 }, content = "pauta da reuniao" } }
+  UI:OpenWindow("guild", "chat")
+  local tabG, tabO, tabR = find(p, "Guild"), find(p, "Officers"), find(p, "Raid Team")
+  check(tabG and tabO and tabR and tabG:IsVisible() and tabO:IsVisible() and tabR:IsVisible() and tabG.isActive,
+    "with more channels, a tab for each above the feed: Guild open, then Officers and the guild's own")
+  check(holder.points[1][2] == tabG.parent, "and the feed hangs below the tabs")
+  tabO.scripts.OnClick(tabO)
+  check(tabO.isActive and not tabG.isActive and find(p, "pauta da reuniao") and not find(p, "proc a skill"),
+    "Officers shows the officers' lines alone")
+  check(focused == "C1/2" and focusCount() == 1, "and the server is told that is the channel being read, and only that")
+  box:SetText("oi chefes")
+  box.scripts.OnEnterPressed(box)
+  check(sentChat[#sentChat].chan == "OFFICER" and sentChat[#sentChat].msg == "oi chefes", "Enter there goes to /o")
+  locked = true
+  GuildOS.GuildChat:_Notify()
+  check(lockedReads == 0 and tabO.isActive and find(p, "pauta da reuniao") and focused == "C1/2",
+    "in a chat lockdown nothing is read, and the open channel stays as it was drawn")
+  tabG.scripts.OnClick(tabG)
+  check(tabO.isActive and focused == "C1/2",
+    "a tab clicked in a lockdown does nothing: what is drawn stays where Enter sends")
+  byStream["2"][2] = { messageId = { epoch = (NOW - 30) * 1e6, position = 0 },
+                       author = { name = "Chefe Lima", classID = 8 }, content = "depois do boss" }
+  GuildOS.GuildChat:_Notify()
+  check(not find(p, "pauta da reuniao\ndepois do boss"), "a line that arrives then waits")
+  locked = false
+  flush()
+  check(lockedReads == 0 and find(p, "pauta da reuniao\ndepois do boss"), "and the feed catches up by itself once it lifts")
+  box:SetText("segredo dos oficiais")
+  box.scripts.OnEnterPressed(box)
+  check(sentChat[#sentChat].chan == "OFFICER" and sentChat[#sentChat].msg == "segredo dos oficiais",
+    "and Enter still goes to /o")
+  tabR.scripts.OnClick(tabR)
+  box:SetText("bora")
+  box.scripts.OnEnterPressed(box)
+  check(focused == "C1/3" and clubSaid[1] and clubSaid[1].s == "3" and clubSaid[1].text == "bora" and box.text == "",
+    "and in a channel the guild made, to that channel")
+  streams[3] = nil
+  GuildOS.GuildChat:_Notify()
+  check(tabG.isActive and not tabR:IsVisible() and find(p, "proc a skill") and focused == "C1/1" and focusCount() == 1,
+    "a channel removed while open falls back to Guild, which is then the only one being read")
+
+  -- A reader scrolled up stays where they are when a line arrives; one at the bottom follows it.
+  scroll:SetSize(500, 300)
+  local lots = {}
+  local function line(i)
+    return { messageId = { epoch = (NOW - 3000 + i) * 1e6, position = 0 },
+             author = { name = (i % 2 == 0) and "Ana Silva" or "Bia Costa", classID = 8 }, content = "linha " .. i }
+  end
+  for i = 1, 30 do lots[i] = line(i) end
+  byStream["1"] = lots
+  GuildOS.GuildChat:_Notify()
+  flush()
+  check(scroll:GetVerticalScrollRange() > 0 and scroll.vscroll == scroll:GetVerticalScrollRange(),
+    "a long feed sits at its newest line")
+  scroll.vscroll = 0
+  lots[31] = line(31)
+  GuildOS.GuildChat:_Notify()
+  flush()
+  check(scroll.vscroll == 0 and find(p, "linha 31"), "a reader scrolled up stays there when a line arrives")
+  scroll.vscroll = scroll:GetVerticalScrollRange()
+  lots[32] = line(32)
+  GuildOS.GuildChat:_Notify()
+  flush()
+  check(scroll.vscroll == scroll:GetVerticalScrollRange(), "and one at the bottom follows the new one")
+  scroll.vscroll = 0
+  UI:OpenWindow("guild", "calendar")
+  UI:OpenWindow("guild", "chat")
+  flush()
+  check(scroll.vscroll == scroll:GetVerticalScrollRange(), "reopening the tab shows the newest line again")
+  local officerLots = {}
+  for i = 1, 30 do officerLots[i] = line(i) end
+  byStream["2"] = officerLots
+  scroll.vscroll = 0
+  tabO.scripts.OnClick(tabO)
+  flush()
+  check(scroll:GetVerticalScrollRange() > 0 and scroll.vscroll == scroll:GetVerticalScrollRange(),
+    "and so does changing channel")
+  UI:OpenWindow("guild", "calendar")
+  check(focused == nil, "and leaving the tab stops reading it")
+  C_Club, GetClassInfo, C_ChatInfo = nil, nil, nil
   win:Hide()
   GuildOS.db.guildChatLog = nil
   SendChatMessage, SetItemRef, GetPlayerInfoByGUID = nil, nil, nil

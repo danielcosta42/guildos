@@ -668,6 +668,146 @@ function Compat.GuildMemberProfessions()
 end
 
 ----------------------------------------------------------------------
+-- The guild's chat as the server keeps it (WoW: Forever, issue #126): the streams of the guild's
+-- club, which the Communities window reads. They hold what was said while the player was offline,
+-- which no chat event delivers. Measured on Forever: a message is { messageId = { epoch, position },
+-- author = { name, classID }, content }, the epoch in microseconds, and no timestamp field.
+--
+-- In a chat lockdown the lists, ranges and messages arrive secret (SecretInChatMessagingLockdown in
+-- ClubDocumentation.lua), so none of them is read then. Focusing a stream is not restricted, and
+-- the guild's /g stream is remembered from the last read for it.
+----------------------------------------------------------------------
+local guildStreamOf = {}   -- clubId -> the /g stream's id, from the last list read
+
+local function guildClub()
+    if not (C_Club and C_Club.GetGuildClubId and C_Club.GetStreams and C_Club.GetMessageRanges) then return nil end
+    local clubId = C_Club.GetGuildClubId()
+    if not clubId or Compat.IsSecret(clubId) then return nil end
+    return clubId
+end
+
+-- The guild's channels as the game lists them to this player, as { id, name, kind }: "guild",
+-- then "officer" (listed only to who may read it), then the ones the guild made ("other"), in the
+-- server's order. General and Discord streams are not the guild's to chat in here. Nil where the
+-- client has no guild club; nil, "locked" in a chat lockdown.
+function Compat.GuildChatStreams()
+    local clubId = guildClub()
+    if not clubId then return nil end
+    if Compat.InChatLockdown() then return nil, "locked" end
+    local T = Enum and Enum.ClubStreamType or {}
+    local kinds = { [T.Guild or 1] = "guild", [T.Officer or 2] = "officer", [T.Other or 4] = "other" }
+    local rank = { guild = 1, officer = 2, other = 3 }
+    local out = {}
+    for _, s in ipairs(C_Club.GetStreams(clubId) or {}) do
+        local kind = not Compat.IsSecret(s.streamId, s.name, s.streamType) and kinds[s.streamType]
+        if kind then
+            out[#out + 1] = { id = s.streamId, name = s.name, kind = kind, order = #out }
+            if kind == "guild" then guildStreamOf[clubId] = s.streamId end
+        end
+    end
+    table.sort(out, function(a, b)
+        if rank[a.kind] ~= rank[b.kind] then return rank[a.kind] < rank[b.kind] end
+        return a.order < b.order
+    end)
+    return out
+end
+
+-- The stream to read: the one asked for, or the guild's own.
+local function streamOf(streamId)
+    local clubId = guildClub()
+    if not clubId then return nil end
+    if streamId then return clubId, streamId end
+    if not guildStreamOf[clubId] and not Compat.InChatLockdown() then Compat.GuildChatStreams() end
+    if guildStreamOf[clubId] then return clubId, guildStreamOf[clubId] end
+    return nil
+end
+
+-- The newest range of messages the client holds, as Blizzard_Communities picks it; nil when there
+-- is none, or it is empty (its newest before its oldest).
+local function newestRange(clubId, streamId)
+    local ranges = C_Club.GetMessageRanges(clubId, streamId) or {}
+    local r = ranges[#ranges]
+    if not r then return nil end
+    local o, n = r.oldestMessageId, r.newestMessageId
+    if n.epoch < o.epoch or (n.epoch == o.epoch and n.position < o.position) then return nil end
+    return r
+end
+
+-- True when a club event is about the guild's club, any of its channels, and not another club.
+function Compat.IsGuildClub(clubId)
+    if Compat.IsSecret(clubId) then return false end
+    local c = guildClub()
+    return c ~= nil and c == clubId
+end
+
+-- The last `max` lines of a channel (the guild's own when none is named), oldest first, as
+-- { t, n, c, m } like the addon's own log. Nil where the client has no guild club; nil, "locked"
+-- in a chat lockdown. A deleted message, or one whose text, speaker or time is secret, is left out.
+function Compat.GuildChatHistory(max, streamId)
+    if not guildClub() then return nil end
+    if Compat.InChatLockdown() then return nil, "locked" end
+    local clubId, sid = streamOf(streamId)
+    if not clubId or not C_Club.GetMessagesBefore then return {} end
+    local r = newestRange(clubId, sid)
+    if not r then return {} end
+    local out = {}
+    for _, msg in ipairs(C_Club.GetMessagesBefore(clubId, sid, r.newestMessageId, max) or {}) do
+        local a, id = msg.author, msg.messageId
+        if a and id and not Compat.IsSecret(msg.destroyed, id.epoch, msg.content, a.name, a.classID)
+            and not msg.destroyed and type(msg.content) == "string" and type(a.name) == "string" then
+            local class = a.classID and GetClassInfo and select(2, GetClassInfo(a.classID))
+            out[#out + 1] = {
+                t = math.floor(id.epoch / 1e6),
+                n = a.name,
+                c = class,
+                m = (msg.content:gsub("%c", " ")),
+            }
+        end
+    end
+    return out
+end
+
+-- A channel is open (true) or closed: the server is told it is being read, as the Communities
+-- window does when it shows one.
+function Compat.WatchGuildChat(on, streamId)
+    local clubId, sid = streamOf(streamId)
+    if not clubId then return end
+    if on and C_Club.FocusStream then
+        C_Club.FocusStream(clubId, sid)
+    elseif not on and C_Club.UnfocusStream then
+        C_Club.UnfocusStream(clubId, sid)
+    end
+end
+
+-- `count` lines older than the oldest held; they arrive with CLUB_MESSAGE_HISTORY_RECEIVED. With
+-- nothing held, the recent ones, as Blizzard_Communities asks for them (no message, no count).
+function Compat.RequestOlderGuildChat(count, streamId)
+    if Compat.InChatLockdown() then return end
+    local clubId, sid = streamOf(streamId)
+    if not clubId or not C_Club.RequestMoreMessagesBefore then return end
+    local r = newestRange(clubId, sid)
+    if r then
+        C_Club.RequestMoreMessagesBefore(clubId, sid, r.oldestMessageId, count)
+    else
+        C_Club.RequestMoreMessagesBefore(clubId, sid, nil)
+    end
+end
+
+-- A line to a channel the guild made: /g and /o have their own chat types, these only the club's
+-- own send. False when the channel is no longer listed.
+function Compat.SendGuildStream(streamId, text)
+    local clubId = guildClub()
+    if not clubId or not C_Club.SendMessage then return false end
+    for _, s in ipairs(Compat.GuildChatStreams() or {}) do
+        if s.id == streamId then
+            C_Club.SendMessage(clubId, streamId, text)
+            return true
+        end
+    end
+    return false
+end
+
+----------------------------------------------------------------------
 -- Addon messages, with their result (issue #10)
 --
 -- Sync goes through ChatThrottleLib, which re-queues AddonMessageThrottle itself

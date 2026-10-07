@@ -52,6 +52,8 @@ GuildOS.UI = setmetatable({
   CreateButton = function(_, _, t) buttons[#buttons + 1] = tostring(t); return stub end,
 }, { __index = function() return function() return stub end end })
 dofile(ADDON .. "/UI/Dashboard.lua")
+-- The chat card's feed is UI/CommunityPanel.lua's (tools/dashboard-chat.lua covers the card).
+function GuildOS:CreateGuildChatFeed() return function() end end
 
 local function show(modules, rank, ad)
   myRank = rank
