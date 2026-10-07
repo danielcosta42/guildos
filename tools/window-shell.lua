@@ -1381,14 +1381,22 @@ do
   local focused
   local held = { { messageId = { epoch = (NOW - 3600) * 1e6, position = 0 },
                   author = { name = "Elyndora Saurfang", classID = 8 }, content = "proc a skill" } }
+  local focusedSet = {}
+  local function focusCount() local n = 0; for _ in pairs(focusedSet) do n = n + 1 end; return n end
+  local byStream, streams, clubSaid = { ["1"] = held }, { { streamId = "1", streamType = 1, name = "Guild" } }, {}
   C_Club = {
     GetGuildClubId = function() return "C1" end,
-    GetStreams = function() return { { streamId = "1", streamType = 1 } } end,
-    GetMessageRanges = function() return { { oldestMessageId = held[1].messageId, newestMessageId = held[1].messageId } } end,
-    GetMessagesInRange = function() return held end,
-    FocusStream = function(c, s) focused = c .. "/" .. s end,
-    UnfocusStream = function() focused = nil end,
+    GetStreams = function() return streams end,
+    GetMessageRanges = function(_, s)
+      local h = byStream[s]
+      if not h then return {} end
+      return { { oldestMessageId = h[1].messageId, newestMessageId = h[#h].messageId } }
+    end,
+    GetMessagesInRange = function(_, s) return byStream[s] or {} end,
+    FocusStream = function(c, s) focusedSet[s] = true; focused = c .. "/" .. s end,
+    UnfocusStream = function(c, s) focusedSet[s] = nil; if focused == c .. "/" .. s then focused = nil end end,
     RequestMoreMessagesBefore = function() end,
+    SendMessage = function(_, s, text) clubSaid[#clubSaid + 1] = { s = s, text = text } end,
   }
   function GetClassInfo(id) if id == 8 then return "Mage", "MAGE", 8 end end
   UI:OpenWindow("guild", "calendar")
@@ -1398,8 +1406,38 @@ do
   check(ely and ely.shown and same(ely.color, { r = mr, g = mg, b = mb }) and find(p, "proc a skill")
     and not find(p, "so eu"), "the tab shows the server's lines, and only those")
   check(focused == "C1/1", "opening it tells the server the guild stream is being read")
+  local only = find(p, "Guild")
+  check(not (only and only:IsVisible()), "with /g the only channel, there is no row of channel tabs")
   UI:OpenWindow("guild", "calendar")
   check(focused == nil, "and leaving it says so")
+
+  -- Every channel of the guild gets a tab: Officer to who may read it, and the ones the guild made.
+  streams[2] = { streamId = "2", streamType = 2, name = "Officer" }
+  streams[3] = { streamId = "3", streamType = 3, name = "Raid Team" }
+  byStream["2"] = { { messageId = { epoch = (NOW - 60) * 1e6, position = 0 },
+                     author = { name = "Chefe Lima", classID = 8 }, content = "pauta da reuniao" } }
+  UI:OpenWindow("guild", "chat")
+  local tabG, tabO, tabR = find(p, "Guild"), find(p, "Officers"), find(p, "Raid Team")
+  check(tabG and tabO and tabR and tabG:IsVisible() and tabO:IsVisible() and tabR:IsVisible() and tabG.isActive,
+    "with more channels, a tab for each above the feed: Guild open, then Officers and the guild's own")
+  tabO.scripts.OnClick(tabO)
+  check(tabO.isActive and not tabG.isActive and find(p, "pauta da reuniao") and not find(p, "proc a skill"),
+    "Officers shows the officers' lines alone")
+  check(focused == "C1/2" and focusCount() == 1, "and the server is told that is the channel being read, and only that")
+  box:SetText("oi chefes")
+  box.scripts.OnEnterPressed(box)
+  check(sentChat[#sentChat].chan == "OFFICER" and sentChat[#sentChat].msg == "oi chefes", "Enter there goes to /o")
+  tabR.scripts.OnClick(tabR)
+  box:SetText("bora")
+  box.scripts.OnEnterPressed(box)
+  check(focused == "C1/3" and clubSaid[1] and clubSaid[1].s == "3" and clubSaid[1].text == "bora" and box.text == "",
+    "and in a channel the guild made, to that channel")
+  streams[3] = nil
+  GuildOS.GuildChat:_Notify()
+  check(tabG.isActive and not tabR:IsVisible() and find(p, "proc a skill") and focused == "C1/1",
+    "a channel removed while open falls back to Guild")
+  UI:OpenWindow("guild", "calendar")
+  check(focused == nil, "and leaving the tab stops reading it")
   C_Club, GetClassInfo = nil, nil
   win:Hide()
   GuildOS.db.guildChatLog = nil

@@ -422,19 +422,51 @@ local function BuildPollsSub(panel)
 end
 
 ----------------------------------------------------------------------
--- CHAT sub-panel — guild chat, kept by Modules/GuildChat.lua (issue #124).
--- Laid out like the alliance feed: one card per run of lines from one speaker,
--- newest at the bottom, a box underneath that sends to /g.
+-- Guild chat feed (issues #124, #126), kept by Modules/GuildChat.lua. Laid out
+-- like the alliance feed: one card per run of lines from one speaker, newest at
+-- the bottom, a box underneath. Guild > Chat builds it with a tab per channel of
+-- the guild (opts.streams); the Now cards build it with /g alone.
 ----------------------------------------------------------------------
 local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
+local feeds = 0   -- each feed's scroll frame needs its own global name
 
-local function BuildGuildChatSub(panel)
+-- A channel is { id, name, kind }; nil, and the Guild tab, mean /g.
+local function idOf(stream)
+    return (stream and stream.kind ~= "guild") and stream.id or nil
+end
+
+local function streamLabel(stream)
+    if stream.kind == "guild" then return L["Guild"] end
+    if stream.kind == "officer" then return L["Officers"] end
+    return stream.name or "?"
+end
+
+function GuildOS:CreateGuildChatFeed(panel, opts)
     local GC = GuildOS.GuildChat
+    local withStreams = opts and opts.streams
+    local current   -- the channel open; nil is /g
+    feeds = feeds + 1
+
+    -- The channel tabs, shown only when there is more than /g to choose from.
+    local bar = CreateFrame("Frame", nil, panel)
+    bar:SetPoint("TOPLEFT", 0, 0)
+    bar:SetSize(400, TAB_H)
+    UI:StyleSubTabBar(bar)
+    bar:Hide()
+    local tabs = {}
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, 0)
-    holder:SetPoint("BOTTOMRIGHT", 0, 32)
-    local scroll, content = UI:CreateScrollFrame(holder, "GuildOSGuildChatScroll")
+    local function anchorHolder(belowTabs)
+        holder:ClearAllPoints()
+        if belowTabs then
+            holder:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -4)
+        else
+            holder:SetPoint("TOPLEFT", 0, 0)
+        end
+        holder:SetPoint("BOTTOMRIGHT", 0, 32)
+    end
+    anchorHolder(false)
+    local scroll, content = UI:CreateScrollFrame(holder, "GuildOSGuildChatScroll" .. feeds)
     scroll:SetAllPoints()
 
     local input = makeInput(panel, 100, false)
@@ -447,7 +479,56 @@ local function BuildGuildChatSub(panel)
     local empty = UI:CreateText(content, L["No guild chat yet."], 11, C.textDim.r, C.textDim.g, C.textDim.b)
     empty:SetPoint("TOPLEFT", 6, -4)
 
-    -- Pooled: refresh runs on every line of /g, and WoW never frees a frame.
+    local refresh   -- declared for the tab clicks
+
+    -- Another channel: the server stops being told about the old one, and is told about this one.
+    local function open(stream)
+        if idOf(stream) == idOf(current) then return end
+        GC:Watch(false, current)
+        current = idOf(stream) and stream or nil
+        GC:Watch(true, current)
+        refresh()
+    end
+
+    local function layoutTabs()
+        local streams = withStreams and GC:Streams()
+        local list = (streams and #streams > 1) and streams or nil
+        -- The channel open is gone (removed, or no longer listed to this player): back to /g.
+        if current then
+            local still
+            for _, s in ipairs(list or {}) do
+                if s.id == current.id then still = s end
+            end
+            if not still then
+                GC:Watch(false, current)
+                current = nil
+                if panel:IsVisible() then GC:Watch(true, nil) end
+            end
+        end
+        bar:SetShown(list ~= nil)
+        anchorHolder(list ~= nil)
+        if not list then return end
+        local shown = {}
+        for i, s in ipairs(list) do
+            local t = tabs[i]
+            if not t then
+                t = UI:CreateTab(bar, "", TAB_MIN_W, true)
+                t:SetScript("OnClick", function(self) open(self.stream) end)
+                tabs[i] = t
+            end
+            t.stream = s
+            t.label:SetText(streamLabel(s))
+            t:SetWidth(math.max(TAB_MIN_W, math.ceil(t.label:GetStringWidth()) + TAB_PAD))
+            t:SetActive(idOf(s) == idOf(current))
+            t:Show()
+            shown[#shown + 1] = t
+        end
+        for i = #list + 1, #tabs do tabs[i]:Hide() end
+        bar:SetWidth(math.max(TAB_MIN_W, panel:GetWidth() or 0))
+        UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = TAB_H })
+    end
+
+    -- Pooled: refresh runs on every line of chat, and WoW never frees a frame.
     local blocks = {}
     local function getBlock(i)
         if blocks[i] then return blocks[i] end
@@ -473,10 +554,11 @@ local function BuildGuildChatSub(panel)
         return blocks[i]
     end
 
-    local function refresh()
+    refresh = function()
+        layoutTabs()
         -- Born 0 wide (CreateScrollFrame sizes it before layout), so re-set on every draw.
         content:SetWidth(math.max(holder:GetWidth() - 12, 1))
-        local log = GC:Entries()
+        local log = GC:Entries(current)
         local classOf = {}
         for _, e in ipairs(log) do classOf[e.n] = e.c or classOf[e.n] end
         local groups = GuildOS.AllianceChat.GroupLog(log, GuildOS.AllianceChat.GROUP_WINDOW)
@@ -519,9 +601,9 @@ local function BuildGuildChatSub(panel)
         end)
     end
 
-    -- Enter and the click are the player's own key press, which /g needs on Forever.
+    -- Enter and the click are the player's own key press, which chat needs on Forever.
     local function doSend()
-        local ok, why = GC:Send(input:GetText())
+        local ok, why = GC:Send(input:GetText(), current)
         if ok then
             input:SetText("")
         elseif why == "locked" then
@@ -534,9 +616,9 @@ local function BuildGuildChatSub(panel)
     GC:OnRefresh(function()
         if panel:IsVisible() then refresh() end
     end)
-    -- The server is told the guild stream is being read only while the tab is.
-    panel:HookScript("OnShow", function() GC:Watch(true) end)
-    panel:HookScript("OnHide", function() GC:Watch(false) end)
+    -- The server is told a channel is being read only while the feed is on screen.
+    panel:HookScript("OnShow", function() GC:Watch(true, current) end)
+    panel:HookScript("OnHide", function() GC:Watch(false, current) end)
     -- The cards are as wide as the view: a resized window lays them out again, once a frame.
     UI:MakeResponsive(holder, function()
         if panel:IsVisible() then refresh() end
@@ -602,7 +684,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     local builders = {
         calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
         activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
-        chat = BuildGuildChatSub,
+        chat = function(p) return GuildOS:CreateGuildChatFeed(p, { streams = true }) end,
     }
     for _, t in ipairs(HUB_SUBTABS) do
         local p = makeSubPanel()
