@@ -38,6 +38,8 @@ local function newRegion(kind, parent)
     return function(self, ...)
       local a = { ... }
       if k == "SetAtlas" then self.atlas = a[1]
+      elseif k == "SetHorizTile" then self.horizTile = a[1]
+      elseif k == "SetVertTile" then self.vertTile = a[1]
       elseif k == "SetTexture" then self.texture = a[1]
       elseif k == "SetVertexColor" or k == "SetTextColor" or k == "SetColorTexture" then self.color = a
       elseif k == "SetBackdrop" then self.backdrop = a[1]
@@ -115,7 +117,9 @@ local function load(opts)
     name = tostring(name):lower()
     if not ATLAS[name] or without[name] then return nil end
     local s = SIZES[name] or { 32, 32 }
-    return { width = s[1], height = s[2] }
+    -- "_" pieces tile across and "!" pieces tile down, as the client's atlas flags say.
+    return { width = s[1], height = s[2], tilesHorizontally = name:sub(1, 1) == "_",
+             tilesVertically = name:sub(1, 1) == "!" }
   end }
   GuildOSDB = opts.db or {}
   GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
@@ -203,6 +207,7 @@ S = load({ db = {} }); S:Resolve()
 C = GuildOS.Colors
 local f = newRegion("Frame")
 check(S:Paint(f, "window") == "flat" and f.backdrop.bgFile == "Interface\\Buttons\\WHITE8x8"
+  and f.backdrop.edgeFile == "Interface\\Buttons\\WHITE8x8"
   and f.backdrop.edgeSize == 1 and f.bg[1] == C.bg.r and f.border[1] == C.line.r,
   "guildos: a window is today's backdrop, bg with a 1px line")
 f = newRegion("Frame")
@@ -221,11 +226,14 @@ check(S:Paint(f, "window") == "art" and f.__nine.TopLeftCorner.atlas == "ui-fram
 check(f.__nine.TopLeftCorner.w == 190 * 0.25 and f.__nine.RightEdge.atlas == "!ui-frame-metal-edgeright-c60-2x",
   "its corners are the atlas size times the scale, and its edges tile")
 check(f.backdrop.bgFile and not f.backdrop.edgeFile and f.bg[1] == GuildOS.Colors.bg.r, "the middle stays the role's colour")
+check(f.__nine.TopEdge.horizTile == true and f.__nine.LeftEdge.vertTile == true and not f.__nine.TopLeftCorner.horizTile,
+  "edges repeat along their length, as the client's NineSlice does; corners do not")
 f = newRegion("Frame")
 S:Paint(f, "popup")
 check(f.__nine.Center and f.__nine.Center.atlas == "tooltip-nineslice-center-c60", "a popup gets the tooltip art and its centre")
 f = newRegion("Frame"); f.w, f.h = 200, 30
 S:Paint(f, "titlebar")
+check(f.__three.Center.horizTile == true, "a title bar's middle repeats across")
 check(f.__three.Left.atlas == "ui-frame-diamondmetal-header-cornerleft-c60-2x" and f.__styleBg,
   "a title bar gets the diamond-metal band over its colour")
 
@@ -276,6 +284,10 @@ for _, t in ipairs(cbf.checkbox.children) do
   if t.atlas == "talents-checkmark-c60" then hasMark = true end
 end
 check(hasBox and hasMark, "a checkbox is the game's box and mark")
+local box
+for _, t in ipairs(cbf.checkbox.children) do if t.atlas == "checkbox-minimal-c60" then box = t end end
+cbf.checkbox.scripts.OnMouseDown(cbf.checkbox); cbf.checkbox.scripts.OnMouseUp(cbf.checkbox)
+check(box.color[1] == 1 and box.color[2] == 1 and box.color[3] == 1, "a click leaves the box's art its own colour")
 
 local close = UI:CreateCloseButton(UIParent)
 check(close.__art and close.__art.atlas == "128-redbutton-exit-c60" and not close.x.shown, "the close button is the game's exit button")
@@ -298,11 +310,42 @@ check(track and thumb, "a scroll bar is the game's minimal track and thumb")
 
 local panel = UI:CreatePanel(UIParent)
 check(panel.__nine and panel.__nine.TopLeftCorner.atlas == "ui-frame-metal-cornertopleft-c60-2x", "CreatePanel is the metal window")
+local inner = UI:CreatePanel(UI:CreatePanel(UIParent))
+check(inner.__nine.TopLeftCorner.atlas == "optionsframe-nineslice-cornertopleft-c60",
+  "a panel inside another frame is a panel, not a window")
+local small = UI:CreatePanel(UIParent)
+small.w, small.h = 320, 28
+small.scripts.OnSizeChanged(small)
+check(not small.__nine.TopLeftCorner.shown and small.backdrop.edgeSize == 1, "a frame too small for the corners paints flat")
+small.w, small.h = 600, 400
+small.scripts.OnSizeChanged(small)
+check(small.__nine.TopLeftCorner.shown and not small.backdrop.edgeFile, "and gets the art back when it grows")
 local dark = UI:CreateDarkPanel(UIParent)
 check(dark.__nine and dark.__nine.TopLeftCorner.atlas == "optionsframe-nineslice-cornertopleft-c60", "CreateDarkPanel is the inset frame")
 local pop = UI:CreatePanel(UIParent)
 UI:StylePopup(pop, { noShadow = true, noFade = true })
 check(pop.__nine.TopLeftCorner.atlas == "tooltip-nineslice-cornertopleft-c60", "a popup takes the tooltip art")
+
+-- ── 7b. Initialize settles the style; the Settings picker ─────────────
+S = load({ db = { style = "forever" } })
+GuildOS:Initialize()
+check(S:Current() == "forever" and GuildOS.Colors.gold.r == 1, "Initialize settles the saved style before anything is drawn")
+local host = newRegion("Frame")
+local y = S:BuildPicker(host, 100)
+local applies, longDesc = {}, nil
+for _, c in ipairs(host.children) do
+  if c.label and (c.label.text == "Apply" or c.label.text == "In use") then applies[#applies + 1] = c end
+  if c.text == S:Description("forever") then longDesc = c end
+end
+check(#applies == 2 and y > 100, "the picker lists each style the client draws, with its button")
+check(applies[1].label.text == "Apply" and applies[2].label.text == "In use" and applies[2].enabled == false,
+  "the one in use says so and cannot be pressed")
+check(longDesc and longDesc.w > 0 and longDesc.w < 380 - 16, "a description wraps short of the button")
+applies[1].scripts.OnClick(applies[1])
+check(GuildOSDB.style == "guildos" and popups[1], "Apply saves the choice and offers the reload")
+S = load({ db = {}, noArt = true }); S:Resolve()
+host = newRegion("Frame")
+check(S:BuildPicker(host, 100) == 100 and #host.children == 0, "with one style there is nothing to choose: no section at all")
 
 -- ── 8. /gos style ──────────────────────────────────────────────────────
 S = load({ db = {} }); S:Resolve()

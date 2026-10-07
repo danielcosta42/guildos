@@ -68,7 +68,8 @@ end
 function Helpers:CreatePanel(parent, name, level)
     local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
     f:SetFrameLevel(level or 1)
-    Style:Paint(f, "window")
+    -- A window at the top level; a block inside a screen is a panel (#122).
+    Style:Paint(f, (parent == nil or parent == UIParent) and "window" or "panel")
     return f
 end
 
@@ -436,7 +437,7 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     mark:Hide()
     cb.checkMark = mark
-    Style:SkinCheckbox(cb, border, fill, mark)
+    local skinned = Style:SkinCheckbox(cb, border, fill, mark)
 
     local function paint()
         local enabled = cb:IsEnabled()
@@ -458,8 +459,13 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     end
     cb:SetScript("OnEnter", function(self) self.__hovered = true; paint() end)
     cb:SetScript("OnLeave", function(self) self.__hovered = false; paint() end)
-    cb:SetScript("OnMouseDown", function() fill:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1) end)
-    cb:SetScript("OnMouseUp", function() fill:SetVertexColor(C.well.r, C.well.g, C.well.b, 1) end)
+    -- The flat box darkens while pressed; the Forever art keeps its own colour (#122).
+    cb:SetScript("OnMouseDown", function()
+        if not skinned then fill:SetVertexColor(C.popup.r, C.popup.g, C.popup.b, 1) end
+    end)
+    cb:SetScript("OnMouseUp", function()
+        if not skinned then fill:SetVertexColor(C.well.r, C.well.g, C.well.b, 1) end
+    end)
     cb:HookScript("OnDisable", paint)
     cb:HookScript("OnEnable", paint)
     paint()

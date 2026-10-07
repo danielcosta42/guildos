@@ -2143,23 +2143,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
     ttShift.checkbox.onChanged = SaveTooltipMode
     yOff = yOff + 52
 
-    -- The interface style (issue #122): one row per style this client can draw. A switch saves the
-    -- account's choice and asks to reload, since every frame is built once.
-    local styleHead = UI:CreateText(content, L["Interface style"], 11, C.gold.r, C.gold.g, C.gold.b)
-    styleHead:SetPoint("TOPLEFT", 8, -yOff)
-    yOff = yOff + 20
-    for _, id in ipairs(GuildOS.Style:Available()) do
-        local inUse = GuildOS.Style:Current() == id
-        local name = UI:CreateText(content, GuildOS.Style:Name(id), 12, C.text.r, C.text.g, C.text.b)
-        name:SetPoint("TOPLEFT", 16, -yOff)
-        local desc = UI:CreateText(content, GuildOS.Style:Description(id), 10, C.label.r, C.label.g, C.label.b)
-        desc:SetPoint("TOPLEFT", 16, -(yOff + 16))
-        local apply = UI:CreateButton(content, inUse and L["In use"] or L["Apply"], 90, 22)
-        apply:SetPoint("TOPLEFT", 380, -(yOff + 4))
-        if inUse then apply:Disable() else apply:SetScript("OnClick", function() GuildOS.Style:Apply(id) end) end
-        yOff = yOff + 40
-    end
-    yOff = yOff + 8
+    -- The interface style (issue #122): the picker, where the client draws more than one.
+    yOff = GuildOS.Style:BuildPicker(content, yOff)
 
     -- The game's own font instead of GuildOS's (issue #57), for the whole account (see
     -- ApplyFont). Text is set when it is drawn, so the change shows after a reload.

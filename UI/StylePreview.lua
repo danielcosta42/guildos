@@ -68,3 +68,32 @@ function Style:ShowPreview()
     end
     f:Show()
 end
+
+-- The Settings rows (issue #122): one per style this client draws, each with its description and an
+-- Apply button, or no section at all where there is only one to have. Returns the next y offset.
+function Style:BuildPicker(parent, yOff)
+    local UI, C = GuildOS.UI, GuildOS.Colors
+    local styles = self:Available()
+    if #styles < 2 then return yOff end
+    local head = UI:CreateText(parent, L["Interface style"], 11, C.gold.r, C.gold.g, C.gold.b)
+    head:SetPoint("TOPLEFT", 8, -yOff)
+    yOff = yOff + 20
+    for _, id in ipairs(styles) do
+        local inUse = self:Current() == id
+        local name = UI:CreateText(parent, self:Name(id), 12, C.text.r, C.text.g, C.text.b)
+        name:SetPoint("TOPLEFT", 16, -yOff)
+        local desc = UI:CreateText(parent, self:Description(id), 10, C.label.r, C.label.g, C.label.b)
+        desc:SetPoint("TOPLEFT", 16, -(yOff + 16))
+        desc:SetWidth(350)   -- wraps short of the button at x = 380
+        desc:SetJustifyH("LEFT")
+        local apply = UI:CreateButton(parent, inUse and L["In use"] or L["Apply"], 90, 22)
+        apply:SetPoint("TOPLEFT", 380, -(yOff + 4))
+        if inUse then
+            apply:Disable()
+        else
+            apply:SetScript("OnClick", function() self:Apply(id) end)
+        end
+        yOff = yOff + 16 + math.max(24, (desc:GetStringHeight() or 12) + 8)
+    end
+    return yOff + 8
+end

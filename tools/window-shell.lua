@@ -153,7 +153,7 @@ function Frame:IsMouseOver() return false end
 for _, name in ipairs({ "EnableMouse", "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
-  "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine" }) do
+  "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
   Frame[name] = function() end
 end
 
@@ -587,6 +587,8 @@ check(f.syncText.shown and f.syncText.text == "sync T60", "right: the newest syn
 GuildOS.db.members = {}
 f:RefreshTitle()
 check(f.syncText.text == "not synced yet", "before any sync it says so")
+check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128-redbutton-minus-c60"
+  and f.closeButton.__art.atlas == "128-redbutton-exit-c60"), "in the Forever style, the game's minus and exit buttons")
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
   "then minimise and close at the right edge")
 check(point(f.content, 1) == "TOPLEFT,12,-70" and point(f.content, 2) == "BOTTOMRIGHT,-12,34",

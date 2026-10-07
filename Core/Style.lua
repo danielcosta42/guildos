@@ -225,9 +225,17 @@ function Style:_PaintFlat(frame, role)
     return "flat"
 end
 
-local function setAtlasSized(tex, name, scale)
-    tex:SetAtlas(name)
+-- As the client's NineSliceUtil does: the atlas says whether it repeats, and that is set before it.
+local function setAtlas(tex, name)
     local info = atlasInfo(name)
+    tex:SetHorizTile(info and info.tilesHorizontally or false)
+    tex:SetVertTile(info and info.tilesVertically or false)
+    tex:SetAtlas(name)
+    return info
+end
+
+local function setAtlasSized(tex, name, scale)
+    local info = setAtlas(tex, name)
     tex:SetSize((info and info.width or 0) * scale, (info and info.height or 0) * scale)
 end
 
@@ -260,10 +268,37 @@ function Style:_PaintNine(frame, art, role)
     p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT")
     if art.center then
         p.Center = p.Center or frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-        p.Center:SetAtlas(art.center)
+        setAtlas(p.Center, art.center)
         p.Center:ClearAllPoints()
         p.Center:SetPoint("TOPLEFT", p.TopLeftCorner, "BOTTOMRIGHT")
         p.Center:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPLEFT")
+    end
+    -- Corners that would overlap (a small card, a collapsed window) make no border: such a frame
+    -- paints flat until it is big enough, and is looked at again whenever its size changes.
+    local function fit()
+        local w, h = frame:GetWidth() or 0, frame:GetHeight() or 0
+        local minW = math.max(p.TopLeftCorner:GetWidth() + p.TopRightCorner:GetWidth(),
+                              p.BottomLeftCorner:GetWidth() + p.BottomRightCorner:GetWidth())
+        local minH = math.max(p.TopLeftCorner:GetHeight() + p.BottomLeftCorner:GetHeight(),
+                              p.TopRightCorner:GetHeight() + p.BottomRightCorner:GetHeight())
+        local small = w > 0 and h > 0 and (w < minW or h < minH)
+        if small == frame.__nineSmall then return end
+        frame.__nineSmall = small
+        for _, t in pairs(p) do t:SetShown(not small) end
+        local C, c = GuildOS.Colors, roleColor(role)
+        if small then
+            frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+            frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+        else
+            frame:SetBackdrop({ bgFile = WHITE })
+        end
+        frame:SetBackdropColor(c.r, c.g, c.b, 1)
+    end
+    frame.__nineSmall = nil
+    fit()
+    if not frame.__nineHooked then
+        frame.__nineHooked = true
+        frame:HookScript("OnSizeChanged", fit)
     end
     return "art"
 end
@@ -275,7 +310,7 @@ function Style:_PaintThree(frame, art, layer)
     frame.__three = p
     for _, k in ipairs({ "Left", "Center", "Right" }) do
         p[k] = p[k] or frame:CreateTexture(nil, layer or "BACKGROUND")
-        p[k]:SetAtlas(art[k])
+        setAtlas(p[k], art[k])
     end
     local function layout()
         local h, w = frame:GetHeight() or 0, frame:GetWidth() or 0
@@ -335,7 +370,7 @@ function Style:ButtonState(btn, state)
     local C = GuildOS.Colors
     local key = (state == "pressed" or state == "disabled") and state or "rest"
     local art, p = self.FOREVER.button[key], btn.__three
-    p.Left:SetAtlas(art.Left); p.Center:SetAtlas(art.Center); p.Right:SetAtlas(art.Right)
+    setAtlas(p.Left, art.Left); setAtlas(p.Center, art.Center); setAtlas(p.Right, art.Right)
     local ghost = btn.variant == "ghost"
     for _, t in pairs(p) do t:SetShown(not ghost) end
     btn:SetBackdropColor(0, 0, 0, 0)
