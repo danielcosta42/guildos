@@ -43,6 +43,7 @@ Locales\zhTW.lua
 Core\Core.lua
 Core\Compat.lua
 Core\Data.lua
+Core\Style.lua
 Core\Utils.lua
 Core\Commands.lua
 Core\Probe.lua

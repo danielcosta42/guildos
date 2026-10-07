@@ -123,6 +123,9 @@ function GuildOS:Initialize()
     -- WoW leaves a SavedVariable nil until it is first written.
     if not GuildOSDB then GuildOSDB = {} end
 
+    -- The interface style is the account's, and is settled before anything is drawn (#122).
+    if self.Style then self.Style:Resolve() end
+
     self.Compat.RegisterAddonPrefix(self.PREFIX)
 
     self:Print("v" .. self.VERSION .. " |cffFFD700by Chehul|r" .. L[" loaded. Type |cffFFD700/guildos|r to open."])
