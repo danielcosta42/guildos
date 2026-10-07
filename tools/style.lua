@@ -20,14 +20,19 @@ local function check(cond, what)
   end
 end
 
--- The Forever client's -c60 atlases, as wago.tools lists them for build 1.60.1.70235.
-local ATLAS = {}
-for line in io.lines(ADDON .. "/tools/data/forever-c60-atlases.txt") do
-  if line ~= "" and not line:find("^#") then ATLAS[line:lower()] = true end
+-- The atlas elements the Forever client draws with its -c60 art (build 1.60.1.70245); " *" marks the
+-- ones TBC Anniversary does not have.
+local ATLAS, ONLY = {}, {}
+for line in io.lines(ADDON .. "/tools/data/forever-atlas-elements.txt") do
+  if line ~= "" and not line:find("^#") then
+    local name, mark = line:match("^(.-)( %*)$")
+    name = (name or line):lower()
+    ATLAS[name], ONLY[name] = true, mark ~= nil
+  end
 end
 local SIZES = {}   -- the sizes the tests rely on, from the same table
-SIZES["ui-frame-metal-cornertopleft-c60-2x"] = { 190, 190 }
-SIZES["128-redbutton-left-c60"], SIZES["128-redbutton-right-c60"] = { 114, 128 }, { 292, 128 }
+SIZES["ui-frame-metal-cornertopleft"] = { 190, 190 }
+SIZES["128-redbutton-left"], SIZES["128-redbutton-right"] = { 114, 128 }, { 292, 128 }
 
 -- ── A client: frames and textures that remember what was done to them ────
 local function newRegion(kind, parent)
@@ -149,7 +154,10 @@ for _, rn in ipairs(named) do
   local n = rn:match(": (.+)$")
   if not ATLAS[n:lower()] then unknown[#unknown + 1] = rn end
 end
-check(#named > 40 and #unknown == 0, "every atlas the Forever style names is in the client's table (" ..
+local shared = {}
+for _, n in ipairs(S.KEY_ATLASES) do if not ONLY[n:lower()] then shared[#shared + 1] = n end end
+check(#S.KEY_ATLASES >= 2 and #shared == 0, "the key atlases are ones Anniversary does not have (" .. table.concat(shared, ", ") .. ")")
+check(#named > 40 and #unknown == 0, "every atlas the Forever style names is an element the Forever client draws (" ..
   #named .. " named; unknown: " .. table.concat(unknown, ", ") .. ")")
 
 -- ── 2. Which styles a client can draw ──────────────────────────────────
@@ -158,7 +166,7 @@ check(S:Has("guildos") and not S:Has("forever"), "a client without the art (Anni
 check(#S:Available() == 1 and S:Available()[1] == "guildos", "and offers only it")
 S = load()
 check(S:Has("forever") and #S:Available() == 2 and S:Available()[2] == "forever", "the Forever client offers both")
-S = load({ without = { ["common-internaltab-c60"] = true } })
+S = load({ without = { ["common-internaltab"] = true } })
 check(not S:Has("forever"), "a client missing one of the key atlases does not offer forever")
 check(S:Name("guildos") == "GuildOS" and S:Name("forever") == "WoW: Forever" and S:Name("x") == "x",
   "the styles' names are their brands")
@@ -221,28 +229,31 @@ check(f.__styleBg and f.__styleBg.color[1] == C.panel.r, "a title bar is today's
 
 S = load({ db = { style = "forever" } }); S:Resolve()
 f = newRegion("Frame")
-check(S:Paint(f, "window") == "art" and f.__nine.TopLeftCorner.atlas == "ui-frame-metal-cornertopleft-c60-2x",
+check(S:Paint(f, "window") == "art" and f.__nine.TopLeftCorner.atlas == "UI-Frame-Metal-CornerTopLeft",
   "forever: a window gets the metal frame")
-check(f.__nine.TopLeftCorner.w == 190 * 0.25 and f.__nine.RightEdge.atlas == "!ui-frame-metal-edgeright-c60-2x",
+check(f.__nine.TopLeftCorner.w == 190 * 0.25 and f.__nine.RightEdge.atlas == "!UI-Frame-Metal-EdgeRight",
   "its corners are the atlas size times the scale, and its edges tile")
 check(f.backdrop.bgFile and not f.backdrop.edgeFile and f.bg[1] == GuildOS.Colors.bg.r, "the middle stays the role's colour")
 check(f.__nine.TopEdge.horizTile == true and f.__nine.LeftEdge.vertTile == true and not f.__nine.TopLeftCorner.horizTile,
   "edges repeat along their length, as the client's NineSlice does; corners do not")
 f = newRegion("Frame")
 S:Paint(f, "popup")
-check(f.__nine.Center and f.__nine.Center.atlas == "tooltip-nineslice-center-c60", "a popup gets the tooltip art and its centre")
+-- Forever's -c60 tooltip centre is not in its atlas set, so the client would not swap it in: the
+-- popup's middle is its own colour, under the tooltip's -c60 border.
+check(f.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft" and not f.__nine.Center
+  and f.bg[1] == GuildOS.Colors.bg.r, "a popup gets the tooltip's border over its own colour")
 f = newRegion("Frame"); f.w, f.h = 200, 30
 S:Paint(f, "titlebar")
 check(f.__three.Center.horizTile == true, "a title bar's middle repeats across")
-check(f.__three.Left.atlas == "ui-frame-diamondmetal-header-cornerleft-c60-2x" and f.__styleBg,
+check(f.__three.Left.atlas == "UI-Frame-DiamondMetal-Header-CornerLeft" and f.__styleBg,
   "a title bar gets the diamond-metal band over its colour")
 
-S = load({ db = { style = "forever" }, without = { ["_ui-frame-metal-edgetop-c60-2x"] = true } }); S:Resolve()
+S = load({ db = { style = "forever" }, without = { ["_ui-frame-metal-edgetop"] = true } }); S:Resolve()
 f = newRegion("Frame")
 local first = S:Paint(f, "window")
 S:Paint(newRegion("Frame"), "window")
 check(first == "flat" and f.backdrop.edgeSize == 1, "a missing atlas paints that piece flat, never a hole")
-check(#errors == 1 and errors[1]:find("_ui-frame-metal-edgetop-c60-2x", 1, true),
+check(#errors == 1 and errors[1]:find("_UI-Frame-Metal-EdgeTop", 1, true),
   "and is recorded once, however often it is asked for")
 
 -- ── 7. The controls, through the real Helpers ──────────────────────────
@@ -254,14 +265,14 @@ check(not b.__forever and b.backdrop.edgeSize == 1, "guildos: a button is today'
 S = load({ db = { style = "forever" } }); S:Resolve()
 UI = GuildOS.UI
 b = UI:CreateButton(UIParent, "Go", 120, 26)
-check(b.__forever and b.__three.Left.atlas == "128-redbutton-left-c60", "forever: a button is the game's red button")
+check(b.__forever and b.__three.Left.atlas == "128-RedButton-Left", "forever: a button is the game's red button")
 UI:_ButtonState(b, "pressed")
-check(b.__three.Center.atlas == "_128-redbutton-center-pressed-c60", "pressed swaps to the pressed art")
+check(b.__three.Center.atlas == "_128-RedButton-Center-Pressed", "pressed swaps to the pressed art")
 UI:_ButtonState(b, "disabled")
-check(b.__three.Right.atlas == "128-redbutton-right-disabled-c60" and b.label.color[1] == GuildOS.Colors.disabled.r,
+check(b.__three.Right.atlas == "128-RedButton-Right-Disabled" and b.label.color[1] == GuildOS.Colors.disabled.r,
   "disabled swaps to the disabled art and dims the label")
 UI:_ButtonState(b, "hover")
-check(b.__three.Left.atlas == "128-redbutton-left-c60" and b.label.color[1] == GuildOS.Colors.text.r, "hover lights the label")
+check(b.__three.Left.atlas == "128-RedButton-Left" and b.label.color[1] == GuildOS.Colors.text.r, "hover lights the label")
 UI:SetButtonVariant(b, "ghost")
 check(not b.__three.Left.shown, "a ghost button has no art")
 b:SetBaseColor(0.2, 0.6, 0.2, 1)
@@ -271,28 +282,28 @@ narrow.scripts.OnSizeChanged()
 check(math.abs(narrow.__three.Left.w + narrow.__three.Right.w - 40) < 0.01, "a button narrower than both caps squeezes them to fit")
 
 local tab = UI:CreateTab(UIParent, "Roster", 100)
-check(tab.__art and tab.__art.atlas == "common-internaltab-c60", "a tab sits on the game's tab art")
+check(tab.__art and tab.__art.atlas == "common-internaltab", "a tab sits on the game's tab art")
 tab:SetActive(true)
-check(tab.__art.atlas == "common-internaltab-selected-c60" and tab.underline.shown, "the open one is the selected art, with its gold rule")
+check(tab.__art.atlas == "common-internaltab-selected" and tab.underline.shown, "the open one is the selected art, with its gold rule")
 tab:SetActive(false); tab.scripts.OnEnter(tab)
-check(tab.__art.atlas == "common-internaltab-hover-c60", "hovered, the hover art")
+check(tab.__art.atlas == "common-internaltab-hover", "hovered, the hover art")
 
 local cbf = UI:CreateCheckbox(UIParent, "Sound", 16)
 local hasBox, hasMark = false, false
 for _, t in ipairs(cbf.checkbox.children) do
-  if t.atlas == "checkbox-minimal-c60" then hasBox = true end
-  if t.atlas == "talents-checkmark-c60" then hasMark = true end
+  if t.atlas == "checkbox-minimal" then hasBox = true end
+  if t.atlas == "Talents-Checkmark-c60" then hasMark = true end
 end
 check(hasBox and hasMark, "a checkbox is the game's box and mark")
 local box
-for _, t in ipairs(cbf.checkbox.children) do if t.atlas == "checkbox-minimal-c60" then box = t end end
+for _, t in ipairs(cbf.checkbox.children) do if t.atlas == "checkbox-minimal" then box = t end end
 cbf.checkbox.scripts.OnMouseDown(cbf.checkbox); cbf.checkbox.scripts.OnMouseUp(cbf.checkbox)
 check(box.color[1] == 1 and box.color[2] == 1 and box.color[3] == 1, "a click leaves the box's art its own colour")
 
 local close = UI:CreateCloseButton(UIParent)
-check(close.__art and close.__art.atlas == "128-redbutton-exit-c60" and not close.x.shown, "the close button is the game's exit button")
+check(close.__art and close.__art.atlas == "128-RedButton-Exit" and not close.x.shown, "the close button is the game's exit button")
 S:SkinClose(close, "minimise")
-check(close.__art.atlas == "128-redbutton-minus-c60", "and the minimise button its minus")
+check(close.__art.atlas == "128-RedButton-Minus", "and the minimise button its minus")
 
 local sp = newRegion("Frame"); sp.ScrollBar = newRegion("Slider", sp)
 sp.ScrollBar.GetMinMaxValues = function() return 0, 0 end
@@ -303,15 +314,15 @@ sp.ScrollBar.ThumbTexture = newRegion("Texture")
 UI:SkinScrollBar(sp)
 local track, thumb
 for _, t in ipairs(sp.ScrollBar.children) do
-  if t.atlas == "!minimal-scrollbar-track-middle-c60" then track = t end
-  if t.atlas == "minimal-scrollbar-thumb-middle-c60" then thumb = t end
+  if t.atlas == "!minimal-scrollbar-track-middle" then track = t end
+  if t.atlas == "minimal-scrollbar-thumb-middle" then thumb = t end
 end
 check(track and thumb, "a scroll bar is the game's minimal track and thumb")
 
 local panel = UI:CreatePanel(UIParent)
-check(panel.__nine and panel.__nine.TopLeftCorner.atlas == "ui-frame-metal-cornertopleft-c60-2x", "CreatePanel is the metal window")
+check(panel.__nine and panel.__nine.TopLeftCorner.atlas == "UI-Frame-Metal-CornerTopLeft", "CreatePanel is the metal window")
 local inner = UI:CreatePanel(UI:CreatePanel(UIParent))
-check(inner.__nine.TopLeftCorner.atlas == "optionsframe-nineslice-cornertopleft-c60",
+check(inner.__nine.TopLeftCorner.atlas == "OptionsFrame-NineSlice-CornerTopLeft",
   "a panel inside another frame is a panel, not a window")
 local small = UI:CreatePanel(UIParent)
 small.w, small.h = 320, 28
@@ -321,10 +332,10 @@ small.w, small.h = 600, 400
 small.scripts.OnSizeChanged(small)
 check(small.__nine.TopLeftCorner.shown and not small.backdrop.edgeFile, "and gets the art back when it grows")
 local dark = UI:CreateDarkPanel(UIParent)
-check(dark.__nine and dark.__nine.TopLeftCorner.atlas == "optionsframe-nineslice-cornertopleft-c60", "CreateDarkPanel is the inset frame")
+check(dark.__nine and dark.__nine.TopLeftCorner.atlas == "OptionsFrame-NineSlice-CornerTopLeft", "CreateDarkPanel is the inset frame")
 local pop = UI:CreatePanel(UIParent)
 UI:StylePopup(pop, { noShadow = true, noFade = true })
-check(pop.__nine.TopLeftCorner.atlas == "tooltip-nineslice-cornertopleft-c60", "a popup takes the tooltip art")
+check(pop.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft", "a popup takes the tooltip art")
 
 -- ── 7b. Initialize settles the style; the Settings picker ─────────────
 S = load({ db = { style = "forever" } })
@@ -365,12 +376,12 @@ SlashCmdList.GUILDOS("style")
 check(said("not available here"), "and the list says so")
 
 -- ── 9. /gos style preview ──────────────────────────────────────────────
-S = load({ db = {}, without = { ["128-redbutton-exit-c60"] = true } }); S:Resolve()
+S = load({ db = {}, without = { ["128-redbutton-exit"] = true } }); S:Resolve()
 local rows = S:PreviewRows()
 local seen, missingSeen = {}, false
 for _, r in ipairs(rows) do
   seen[r.role] = true
-  if r.atlas == "128-redbutton-exit-c60" and r.has == false then missingSeen = true end
+  if r.atlas == "128-RedButton-Exit" and r.has == false then missingSeen = true end
 end
 check(seen.window and seen.button and seen.tab and seen.scroll and seen.minimise, "the preview lists every role's pieces")
 check(missingSeen, "and marks the ones this client lacks")

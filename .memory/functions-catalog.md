@@ -789,7 +789,7 @@ Forever only (`Modules/Look.lua` returns at once on Anniversary).
 | `Style:SkinButton/ButtonState/SkinTab/TabState/SkinCheckbox/SkinClose/SkinScrollBar` | The controls, called by the Helpers (whose API did not change); no-ops in `guildos` |
 | `Style:PreviewRows()` / `ShowPreview()` | `/gos style preview` (UI/StylePreview.lua): every Forever piece labelled with its atlas, the missing ones marked |
 
-`tools/style.lua` checks every atlas the style names against `tools/data/forever-c60-atlases.txt` (build 1.60.1.70235). `tools/window-shell-forever.lua` runs the one-window harness under the Forever style.
+Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves an element to its `-c60` member, whose own name `GetAtlasInfo` does not answer. `tools/style.lua` checks every name against `tools/data/forever-atlas-elements.txt` (build 1.60.1.70245; " *" marks the ones Anniversary lacks, which `Style.KEY_ATLASES` must be). `tools/window-shell-forever.lua` runs the one-window harness under the Forever style.
 
 ## CallToArms.lua — GuildOS.CallToArms (issue #108)
 

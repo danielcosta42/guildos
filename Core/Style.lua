@@ -21,51 +21,53 @@ local INFO = {
                 desc = L["The game's own bronze frames, tabs and buttons. A beta: tell us what looks off."] },
 }
 
--- A frame's border in nine pieces, named as the client names them: four corners, and edges whose
--- names start with "_" (tiled across) or "!" (tiled down).
-local function nine(prefix, suffix, scale, center)
+-- Names are the client's atlas ELEMENTS. On WoW: Forever an element resolves to its -c60 member (the
+-- active atlas set); the member names themselves ("…-c60") are not addressable: GetAtlasInfo answers
+-- nil for them in game (checked on 1.60.1.70245).
+-- A frame's border in nine pieces: four corners, and edges whose names start with "_" (tiled across)
+-- or "!" (tiled down).
+local function nine(prefix, scale, center)
     return { kind = "nine", scale = scale, center = center,
-        TopLeftCorner = prefix .. "cornertopleft" .. suffix, TopRightCorner = prefix .. "cornertopright" .. suffix,
-        BottomLeftCorner = prefix .. "cornerbottomleft" .. suffix,
-        BottomRightCorner = prefix .. "cornerbottomright" .. suffix,
-        TopEdge = "_" .. prefix .. "edgetop" .. suffix, BottomEdge = "_" .. prefix .. "edgebottom" .. suffix,
-        LeftEdge = "!" .. prefix .. "edgeleft" .. suffix, RightEdge = "!" .. prefix .. "edgeright" .. suffix }
+        TopLeftCorner = prefix .. "CornerTopLeft", TopRightCorner = prefix .. "CornerTopRight",
+        BottomLeftCorner = prefix .. "CornerBottomLeft", BottomRightCorner = prefix .. "CornerBottomRight",
+        TopEdge = "_" .. prefix .. "EdgeTop", BottomEdge = "_" .. prefix .. "EdgeBottom",
+        LeftEdge = "!" .. prefix .. "EdgeLeft", RightEdge = "!" .. prefix .. "EdgeRight" }
 end
 local function three(left, center, right)
     return { kind = "three", Left = left, Center = center, Right = right }
 end
 local function redButton(state)
     local s = (state == "rest") and "" or ("-" .. state)
-    return three("128-redbutton-left" .. s .. "-c60", "_128-redbutton-center" .. s .. "-c60",
-                 "128-redbutton-right" .. s .. "-c60")
+    return three("128-RedButton-Left" .. s, "_128-RedButton-Center" .. s, "128-RedButton-Right" .. s)
 end
 local function iconButton(name)
-    return { rest = "128-redbutton-" .. name .. "-c60", pressed = "128-redbutton-" .. name .. "-pressed-c60",
-             disabled = "128-redbutton-" .. name .. "-disabled-c60" }
+    return { rest = "128-RedButton-" .. name, pressed = "128-RedButton-" .. name .. "-Pressed",
+             disabled = "128-RedButton-" .. name .. "-Disabled" }
 end
 
--- The Forever client's art (build 1.60.1.70235), by role. A nine-slice's pieces are the atlas size
+-- The Forever client's art (build 1.60.1.70245), by role. A nine-slice's pieces are the atlas size
 -- times `scale`; a three-slice is as tall as its frame. Candidates until beta screenshots of
 -- /gos style preview confirm them (spec §4.6).
 Style.FOREVER = {
-    window   = nine("ui-frame-metal-", "-c60-2x", 0.25),
-    panel    = nine("optionsframe-nineslice-", "-c60", 0.5),
-    well     = nine("optionsframe-nineslice-", "-c60", 0.5),
-    popup    = nine("tooltip-nineslice-", "-c60", 1, "tooltip-nineslice-center-c60"),
-    titlebar = three("ui-frame-diamondmetal-header-cornerleft-c60-2x", "_ui-frame-diamondmetal-header-tile-c60-2x",
-                     "ui-frame-diamondmetal-header-cornerright-c60-2x"),
-    input    = three("common-search-border-left-c60", "common-search-border-middle-c60",
-                     "common-search-border-right-c60"),
-    button   = { rest = redButton("rest"), pressed = redButton("pressed"), disabled = redButton("disabled") },
-    tab      = { rest = "common-internaltab-c60", hover = "common-internaltab-hover-c60",
-                 active = "common-internaltab-selected-c60" },
-    checkbox = { box = "checkbox-minimal-c60", mark = "talents-checkmark-c60" },
-    close    = iconButton("exit"),
-    minimise = iconButton("minus"),
-    scroll   = { track = "!minimal-scrollbar-track-middle-c60", thumb = "minimal-scrollbar-thumb-middle-c60" },
+    window   = nine("UI-Frame-Metal-", 0.25),
+    panel    = nine("OptionsFrame-NineSlice-", 0.5),
+    well     = nine("OptionsFrame-NineSlice-", 0.5),
+    -- Its -c60 centre is not in Forever's atlas set (the client would draw the plain one): no centre.
+    popup    = nine("Tooltip-NineSlice-", 1),
+    titlebar = three("UI-Frame-DiamondMetal-Header-CornerLeft", "_UI-Frame-DiamondMetal-Header-Tile",
+                     "UI-Frame-DiamondMetal-Header-CornerRight"),
+    input    = three("common-search-border-left", "common-search-border-middle", "common-search-border-right"),
+    button   = { rest = redButton("rest"), pressed = redButton("Pressed"), disabled = redButton("Disabled") },
+    tab      = { rest = "common-internaltab", hover = "common-internaltab-hover", active = "common-internaltab-selected" },
+    checkbox = { box = "checkbox-minimal", mark = "Talents-Checkmark-c60" },
+    close    = iconButton("Exit"),
+    minimise = iconButton("Minus"),
+    scroll   = { track = "!minimal-scrollbar-track-middle", thumb = "minimal-scrollbar-thumb-middle" },
 }
--- The pieces that say the client has the art at all.
-local KEY_ATLASES = { "ui-frame-metal-cornertopleft-c60-2x", "_128-redbutton-center-c60", "common-internaltab-c60" }
+-- The pieces that say the client has the art at all: elements only Forever has (Anniversary draws the
+-- red button and the tooltip too, with its own art), on the in-game canvas.
+Style.KEY_ATLASES = { "common-internaltab", "OptionsFrame-NineSlice-CornerTopLeft" }
+local KEY_ATLASES = Style.KEY_ATLASES
 
 -- Stone, bronze and parchment, with the game's yellow as the accent. Status colours keep theirs.
 local function rgb(r, g, b, a) return { r = r, g = g, b = b, a = a or 1 } end

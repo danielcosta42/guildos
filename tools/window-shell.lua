@@ -254,8 +254,8 @@ dofile(ADDON .. "/Core/Style.lua")
 -- tools/window-shell-forever.lua runs this whole harness again under the Forever style (#122).
 if STYLE == "forever" then
   local atlases = {}
-  for line in io.lines(ADDON .. "/tools/data/forever-c60-atlases.txt") do
-    if not line:find("^#") then atlases[line:lower()] = true end
+  for line in io.lines(ADDON .. "/tools/data/forever-atlas-elements.txt") do
+    if not line:find("^#") then atlases[(line:gsub(" %*$", "")):lower()] = true end
   end
   C_Texture = { GetAtlasInfo = function(n) return atlases[tostring(n):lower()] and { width = 32, height = 32 } or nil end }
   GuildOSDB.style = "forever"
@@ -587,8 +587,8 @@ check(f.syncText.shown and f.syncText.text == "sync T60", "right: the newest syn
 GuildOS.db.members = {}
 f:RefreshTitle()
 check(f.syncText.text == "not synced yet", "before any sync it says so")
-check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128-redbutton-minus-c60"
-  and f.closeButton.__art.atlas == "128-redbutton-exit-c60"), "in the Forever style, the game's minus and exit buttons")
+check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128-RedButton-Minus"
+  and f.closeButton.__art.atlas == "128-RedButton-Exit"), "in the Forever style, the game's minus and exit buttons")
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
   "then minimise and close at the right edge")
 check(point(f.content, 1) == "TOPLEFT,12,-70" and point(f.content, 2) == "BOTTOMRIGHT,-12,34",

@@ -119,6 +119,8 @@ built the first time it opens):
 | `input` | an edit box | `well` with a 1px `line` | `common-search-border-left/middle/right-c60` |
 | `popup` / `tooltip` | a popup, a dialog, the addon's tooltips | `popup` + drop shadow | `tooltip-nineslice-*-c60` |
 
+**Naming, measured in game (2026-10-07, build 1.60.1.70245):** an addon asks for the atlas *element* (`UI-Frame-Metal-CornerTopLeft`, `128-RedButton-Left`, `common-internaltab`). Forever resolves an element to its `-c60` member through the active atlas set. The member names in the tables above are what the art is called in the data, but `GetAtlasInfo` answers nil for them. `Core/Style.lua` uses element names, and `tools/data/forever-atlas-elements.txt` lists the ones Forever draws with `-c60` art. The tooltip's `-c60` centre is not in that set, so the popup has no centre texture.
+
 The controls, through the Helpers that already build them:
 
 | control | `forever` (candidates) |

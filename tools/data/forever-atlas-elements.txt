@@ -1,0 +1,1140 @@
+# The atlas elements the WoW: Forever client draws with its own -c60 art (UiTextureAtlasSet 1),
+# build 1.60.1.70245, from wago.tools (UiTextureAtlasMember, UiTextureAtlasElement, UiTextureAtlas), 2026-10-07.
+# An addon asks for the ELEMENT name; the client resolves it to the active set's -c60 member. The member names
+# themselves are not addressable (GetAtlasInfo answers nil, checked in game). A trailing " *" marks an element
+# TBC Anniversary does not have, so it can tell the two clients apart. tools/style.lua checks Core/Style.lua
+# against this list. Regenerate when Forever patches its art.
+!macropopup-left
+!macropopup-right
+!macropopup-scrollbar-middle
+!minimal-scrollbar-small-track-middle
+!minimal-scrollbar-track-middle
+!OptionsFrame-NineSlice-EdgeLeft *
+!OptionsFrame-NineSlice-EdgeRight *
+!Tooltip-Glues-NineSlice-EdgeLeft
+!Tooltip-Glues-NineSlice-EdgeRight
+!Tooltip-NineSlice-EdgeLeft
+!Tooltip-NineSlice-EdgeRight
+!UI-Frame-DiamondMetal-EdgeLeft
+!UI-Frame-DiamondMetal-EdgeRight
+!UI-Frame-Metal-EdgeLeft *
+!UI-Frame-Metal-EdgeRight *
+!UI-HUD-ActionBar-Frame-Divider-ThreeSlice-Center
+!UI-HUD-ActionBar-Frame-NineSlice-EdgeLeft
+!UI-HUD-ActionBar-Frame-NineSlice-EdgeRight
+!UI-HUD-ActionBar-IconFrame-FlyoutMid
+128-RedButton-ArrowDown
+128-RedButton-ArrowDown-Disabled
+128-RedButton-ArrowDown-Pressed
+128-RedButton-ArrowUpGlow
+128-RedButton-ArrowUpGlow-Disabled
+128-RedButton-ArrowUpGlow-Pressed
+128-RedButton-Delete
+128-RedButton-Delete-Disabled
+128-RedButton-Delete-Highlight
+128-RedButton-Exit
+128-RedButton-Exit-Disabled
+128-RedButton-Exit-Pressed
+128-RedButton-Left
+128-RedButton-Left-Disabled
+128-RedButton-Left-Pressed
+128-RedButton-Minus
+128-RedButton-Minus-Disabled
+128-RedButton-Minus-Pressed
+128-RedButton-Plus
+128-RedButton-Plus-Disabled
+128-RedButton-Plus-Pressed
+128-RedButton-Refresh
+128-RedButton-Refresh-Disabled
+128-RedButton-Refresh-Pressed
+128-RedButton-Right
+128-RedButton-Right-Disabled
+128-RedButton-Right-Pressed
+128-RedButton-VisibilityOff
+128-RedButton-VisibilityOff-Disabled
+128-RedButton-VisibilityOff-Pressed
+128-RedButton-VisibilityOn
+128-RedButton-VisibilityOn-Disabled
+128-RedButton-VisibilityOn-Pressed
+_128-RedButton-Center
+_128-RedButton-Center-Disabled
+_128-RedButton-Center-Pressed
+_macropopup-bottom
+_macropopup-top
+_macropopup-top2
+_Minimal_SliderBar_Middle
+_OptionsFrame-NineSlice-EdgeBottom *
+_OptionsFrame-NineSlice-EdgeTop *
+_Tooltip-Glues-NineSlice-EdgeBottom
+_Tooltip-Glues-NineSlice-EdgeTop
+_Tooltip-NineSlice-EdgeBottom
+_Tooltip-NineSlice-EdgeTop
+_UI-Frame-DiamondMetal-EdgeBottom
+_UI-Frame-DiamondMetal-EdgeTop
+_UI-Frame-DiamondMetal-Header-Tile
+_UI-Frame-Metal-EdgeBottom *
+_UI-Frame-Metal-EdgeTop *
+_uiframe-tab-center
+auctionhouse-itemicon-border-white
+bags-item-bankslot64 *
+bags-item-slot64 *
+bank-divider *
+bank-divider-c60 *
+bank-frame-background *
+bank-frame-bag-slot-bg *
+bank-frame-bag-slot-bg-c60 *
+bank-frame-bag-slotframe *
+bank-frame-bag-slotframe-c60 *
+bank-frame-item-slotframe *
+bank-frame-item-slotframe-c60 *
+bankslot-icon-lock *
+bankslot-icon-lock-c60 *
+CastBar_Shadow_Embedded
+character-create-icon-body-frame *
+character-create-icon-body-mask *
+character-create-icon-body-selectedglow *
+character-create-icon-circle-frame *
+character-create-icon-circle-mask *
+character-create-icon-frame *
+character-create-icon-frame-blue *
+character-create-icon-frame-blue-FX *
+character-create-icon-frame-red *
+character-create-icon-frame-red-FX *
+character-create-icon-mask *
+character-create-icon-selectedglow *
+charactercreate-gendericon-female
+charactercreate-gendericon-female-selected
+charactercreate-gendericon-male
+charactercreate-gendericon-male-selected
+charactercreate-icon-alliancebg *
+charactercreate-icon-customize-accessories
+charactercreate-icon-customize-accessories-selected
+charactercreate-icon-customize-body
+charactercreate-icon-customize-body-selected
+charactercreate-icon-customize-hair
+charactercreate-icon-customize-hair-selected
+charactercreate-icon-customize-head
+charactercreate-icon-customize-head-selected
+charactercreate-icon-customize-mirror
+charactercreate-icon-customize-mirror-selected
+charactercreate-icon-customize-speechbubble
+charactercreate-icon-customize-speechbubble-selected
+charactercreate-icon-customize-torso
+charactercreate-icon-customize-torso-selected
+charactercreate-icon-hordebg *
+checkbox-minimal
+Collections-3D-character-background *
+Collections-3D-mounts-background *
+Collections-background *
+Collections-icon-Card *
+Collections-icon-Card-selected *
+Collections-icon-frame *
+Collections-mounts-pets-Bar *
+Collections-Set-Aura *
+Collections-Titles-Card *
+Collections-Titles-Card-selected *
+common-button-collapseExpand-down *
+common-button-collapseExpand-down-disabled *
+common-button-collapseExpand-down-pressed *
+common-button-collapseExpand-hover *
+common-button-collapseExpand-up *
+common-button-collapseExpand-up-disabled *
+common-button-collapseExpand-up-pressed *
+common-button-list-collapseExpand *
+common-button-list-collapseExpand-sml *
+common-button-list-large *
+common-button-list-large-hover *
+common-button-list-large-selected *
+common-button-list-mid *
+common-button-list-mid-hover *
+common-button-list-mid-selected *
+common-button-list-mid2 *
+common-button-list-mid2-hover *
+common-button-list-mid2-selected *
+common-button-list-minus *
+common-button-list-plus *
+common-button-list-small *
+common-button-list-small-hover *
+common-button-list-small-selected *
+common-button-square-gray-down
+common-button-square-gray-up
+common-button-tertiary-depressed-hover *
+common-button-tertiary-depressed-normal *
+common-button-tertiary-depressed-normal-glow *
+common-button-tertiary-depressed-normal-glow-purple *
+common-button-tertiary-depressed-normal-purple *
+common-button-tertiary-disabled
+common-button-tertiary-disabled-small
+common-button-tertiary-hover
+common-button-tertiary-hover-small
+common-button-tertiary-normal
+common-button-tertiary-normal-electrified *
+common-button-tertiary-normal-pending-FX *
+common-button-tertiary-normal-small
+common-button-tertiary-pressed
+common-button-tertiary-pressed-small
+common-button-tertiary-selected
+common-button-tertiary-selected-small
+common-button-tertiary-square-depressed-hover *
+common-button-tertiary-square-depressed-normal *
+common-button-tertiary-square-disabled *
+common-button-tertiary-square-hover *
+common-button-tertiary-square-normal *
+common-button-tertiary-square-pressed *
+common-button-tertiary-square-selected *
+common-dropdown-a-button
+common-dropdown-a-button-disabled
+common-dropdown-a-button-disabled-shadowless *
+common-dropdown-a-button-hover
+common-dropdown-a-button-hover-shadowless *
+common-dropdown-a-button-open
+common-dropdown-a-button-open-shadowless *
+common-dropdown-a-button-pressed
+common-dropdown-a-button-pressed-shadowless *
+common-dropdown-a-button-pressedhover
+common-dropdown-a-button-pressedhover-shadowless *
+common-dropdown-a-button-shadowless *
+common-dropdown-b-button
+common-dropdown-b-button-disabled
+common-dropdown-b-button-hover
+common-dropdown-b-button-open
+common-dropdown-b-button-pressed
+common-dropdown-b-button-pressedhover
+common-dropdown-bg
+common-dropdown-c-bg
+common-dropdown-c-button
+common-dropdown-c-button-disabled
+common-dropdown-c-button-hover-1
+common-dropdown-c-button-hover-2
+common-dropdown-c-button-hover-arrow
+common-dropdown-c-button-open
+common-dropdown-c-button-pressed-1
+common-dropdown-c-button-pressed-2
+common-dropdown-c-button-pressedhover-1
+common-dropdown-c-button-pressedhover-2
+common-dropdown-textholder
+common-framedivider *
+common-glues-overlay *
+common-gray-button-entrybox-center
+common-gray-button-entrybox-left
+common-gray-button-entrybox-right
+common-insideframe *
+common-internaltab *
+common-internaltab-hover *
+common-internaltab-selected *
+common-list-hoverBG-mid *
+common-search-border-left
+common-search-border-middle
+common-search-border-right
+common-sidetab *
+common-sidetab-hover *
+common-sidetab-mask *
+common-sidetab-selected *
+common-stat-bar-BG *
+common-stat-bar-blue *
+common-stat-bar-green *
+common-stat-bar-heavy-BG *
+common-stat-bar-heavy-dark-BG *
+common-stat-bar-heavy-dark-Green *
+common-stat-bar-heavy-Green *
+common-stat-bar-heavy-mask *
+common-stat-bar-Mask *
+common-stat-bar-red *
+common-stat-bar-white *
+dressingroom-sideframe *
+friends-icon-friendsInGroup *
+friends-icon-friendsInGroup-dis *
+Gamepad-Actionbar-Autorun-Up *
+Gamepad-Actionbar-Jump-Up *
+Gamepad-Actionbar-Ping-Up *
+gamepad-bag-active-assignment-indicator *
+gamepad-bag-allocate-frame-available *
+gamepad-bag-allocate-frame-available-focus *
+gamepad-bag-allocate-frame-restricted *
+gamepad-bag-allocate-frame-restricted-focus *
+gamepad-bag-divider-end *
+gamepad-bag-frame-closed-disabled *
+gamepad-bag-frame-closed-normal *
+gamepad-bag-frame-closed-over *
+gamepad-bag-frame-closed-pressed *
+gamepad-bag-frame-focus *
+gamepad-bag-frame-open-disabled *
+gamepad-bag-frame-open-normal *
+gamepad-bag-frame-open-over *
+gamepad-bag-frame-open-pressed *
+gamepad-bag-icon-02-disabled *
+gamepad-bag-icon-02-normal *
+gamepad-bag-icon-03-disabled *
+gamepad-bag-icon-03-normal *
+gamepad-bag-icon-04-disabled *
+gamepad-bag-icon-04-normal *
+gamepad-bag-icon-05-disabled *
+gamepad-bag-icon-05-normal *
+gamepad-bag-icon-06-disabled *
+gamepad-bag-icon-06-normal *
+gamepad-bag-icon-disabled *
+gamepad-bag-icon-normal *
+gamepad-bag-icon-slot-02-disabled *
+gamepad-bag-icon-slot-02-normal *
+gamepad-bag-icon-slot-03-disabled *
+gamepad-bag-icon-slot-03-normal *
+gamepad-bag-icon-slot-04-disabled *
+gamepad-bag-icon-slot-04-normal *
+gamepad-bag-icon-slot-05-disabled *
+gamepad-bag-icon-slot-05-normal *
+gamepad-bag-icon-slot-06-disabled *
+gamepad-bag-icon-slot-06-normal *
+gamepad-bag-indicator-equipped *
+gamepad-bag-slot-focus *
+gamepad-bag-slot-frame-disabled *
+gamepad-bag-slot-frame-normal *
+gamepad-bag-slot-frame-over *
+gamepad-bag-slot-frame-pressed *
+gamepad-bag-slot-outer-focus *
+gamepad-bag-type-indicator-01 *
+gamepad-bag-type-indicator-02 *
+gamepad-bag-type-indicator-03 *
+gamepad-bag-type-indicator-04 *
+gamepad-bag-type-indicator-05 *
+gamepad-bag-type-indicator-06 *
+gamepad-bag-type-indicator-07 *
+gamepad-base-context-menu-list *
+gamepad-base-context-menu-list-selected *
+gamepad-base-menu *
+gamepad-base-search-list *
+gamepad-base-search-list-selected *
+GamePad-Close-Button-Up *
+gamepad-menu-checkbox-disabled *
+gamepad-menu-checkbox-normal *
+gamepad-menu-checkbox-over *
+gamepad-menu-checkbox-pressed *
+gamepad-press&hold-indicator *
+gamepad-press&hold-indicator-BG *
+gamepad-press&hold-loadBar *
+gamepad-press&hold-loadBar-BG *
+gamepad-press&hold-loadBar-glw-BG *
+gamepad-press&hold-spinnerTip *
+gamepad-radial-icon-adventureguide-disabled *
+gamepad-radial-icon-adventureguide-down *
+gamepad-radial-icon-adventureguide-up *
+gamepad-radial-icon-bags *
+gamepad-radial-icon-bags-disabled *
+gamepad-radial-icon-bags-down *
+gamepad-radial-icon-calendar *
+gamepad-radial-icon-calendar-disabled *
+gamepad-radial-icon-calendar-down *
+gamepad-radial-icon-cancel *
+gamepad-radial-icon-cancel-disabled *
+gamepad-radial-icon-cancel-down *
+gamepad-radial-icon-character *
+gamepad-radial-icon-character-disabled *
+gamepad-radial-icon-character-down *
+gamepad-radial-icon-chat *
+gamepad-radial-icon-chat-disabled *
+gamepad-radial-icon-chat-down *
+gamepad-radial-icon-clock *
+gamepad-radial-icon-clock-disabled *
+gamepad-radial-icon-clock-down *
+gamepad-radial-icon-collections *
+gamepad-radial-icon-collections-disabled *
+gamepad-radial-icon-collections-down *
+gamepad-radial-icon-communities-disabled *
+gamepad-radial-icon-communities-down *
+gamepad-radial-icon-communitites *
+gamepad-radial-icon-editcrossbars-disabled *
+gamepad-radial-icon-editcrossbars-down *
+gamepad-radial-icon-editcrossbars-up *
+gamepad-radial-icon-editradials-disabled *
+gamepad-radial-icon-editradials-down *
+gamepad-radial-icon-editradials-up *
+gamepad-radial-icon-emotes-disabled *
+gamepad-radial-icon-emotes-down *
+gamepad-radial-icon-emotes-up *
+gamepad-radial-icon-fullmap-disabled *
+gamepad-radial-icon-fullmap-down *
+gamepad-radial-icon-fullmap-up *
+gamepad-radial-icon-gamemenu *
+gamepad-radial-icon-gamemenu-disabled *
+gamepad-radial-icon-gamemenu-down *
+gamepad-radial-icon-gamemenu2 *
+gamepad-radial-icon-gamemenu2-disabled *
+gamepad-radial-icon-gamemenu2-down *
+gamepad-radial-icon-group-disabled *
+gamepad-radial-icon-group-down *
+gamepad-radial-icon-group-up *
+gamepad-radial-icon-groupfinder *
+gamepad-radial-icon-groupfinder-disabled *
+gamepad-radial-icon-groupfinder-down *
+gamepad-radial-icon-guild *
+gamepad-radial-icon-guild-disabled *
+gamepad-radial-icon-guild-down *
+gamepad-radial-icon-guildcommunities-guildcolor-disabled *
+gamepad-radial-icon-guildcommunities-guildcolor-down *
+gamepad-radial-icon-guildcommunities-guildcolor-up *
+gamepad-radial-icon-inspecthud-disabled *
+gamepad-radial-icon-inspecthud-down *
+gamepad-radial-icon-inspecthud-up *
+gamepad-radial-icon-legacy *
+gamepad-radial-icon-legacy-disabled *
+gamepad-radial-icon-legacy-down *
+gamepad-radial-icon-macros-disabled *
+gamepad-radial-icon-macros-down *
+gamepad-radial-icon-macros-up *
+gamepad-radial-icon-minimapsettings *
+gamepad-radial-icon-minimapsettings-disabled *
+gamepad-radial-icon-minimapsettings-down *
+gamepad-radial-icon-professions *
+gamepad-radial-icon-professions-disabled *
+gamepad-radial-icon-professions-down *
+gamepad-radial-icon-questlog-disabled *
+gamepad-radial-icon-questlog-down *
+gamepad-radial-icon-questlog-up *
+gamepad-radial-icon-quests *
+gamepad-radial-icon-quests-disabled *
+gamepad-radial-icon-quests-down *
+gamepad-radial-icon-shop *
+gamepad-radial-icon-shop-disabled *
+gamepad-radial-icon-shop-down *
+gamepad-radial-icon-social *
+gamepad-radial-icon-social-disabled *
+gamepad-radial-icon-social-down *
+gamepad-radial-icon-spellbook *
+gamepad-radial-icon-spellbook-disabled *
+gamepad-radial-icon-spellbook-down *
+gamepad-radial-icon-stopwatch *
+gamepad-radial-icon-stopwatch-disabled *
+gamepad-radial-icon-stopwatch-down *
+gamepad-radial-icon-talents *
+gamepad-radial-icon-talents-disabled *
+gamepad-radial-icon-talents-down *
+gamepad-radial-icon-targeting-disabled *
+gamepad-radial-icon-targeting-down *
+gamepad-radial-icon-targeting-up *
+gamepad-radial-icon-trackingoptions-disabled *
+gamepad-radial-icon-trackingoptions-down *
+gamepad-radial-icon-trackingoptions-up *
+gamepad-radial-icon-viewbuffs *
+gamepad-radial-icon-viewbuffs-disabled *
+gamepad-radial-icon-viewbuffs-down *
+gamepad-search-icon *
+gamepad-search-menu-close *
+glues-characterSelect-button-card
+glues-characterSelect-button-card-down-disabled
+glues-characterSelect-button-card-down-disabled-hover
+glues-characterSelect-button-card-hover
+glues-characterSelect-button-card-pressed
+glues-characterSelect-button-card-up-disabled
+glues-characterSelect-button-card-up-disabled-hover
+glues-characterSelect-card-all-BG
+glues-characterSelect-card-drag
+glues-characterSelect-card-glow
+glues-characterSelect-card-selected
+glues-characterSelect-card-selected-hover
+glues-characterSelect-card-singles
+glues-characterSelect-card-singles-hover
+glues-characterSelect-divider
+glues-characterSelect-icon-arrowDown
+glues-characterSelect-icon-arrowDown-hover
+glues-characterSelect-icon-arrowDown-pressed
+glues-characterSelect-icon-arrowDown-pressed-hover
+glues-characterSelect-icon-arrowUp
+glues-characterSelect-icon-arrowUp-hover
+glues-characterSelect-icon-arrowUp-pressed
+glues-characterSelect-icon-arrowUp-pressed-hover
+glues-characterSelect-icon-faction-alliance
+glues-characterSelect-icon-faction-alliance-hover
+glues-characterSelect-icon-faction-alliance-selected
+glues-characterSelect-icon-faction-horde
+glues-characterSelect-icon-faction-horde-hover
+glues-characterSelect-icon-faction-horde-selected
+glues-characterSelect-icon-search
+glues-characterSelect-iconShop
+glues-characterSelect-iconShop-dis
+glues-characterSelect-iconShop-hover
+glues-characterSelect-listLauncher-BG
+glues-characterSelect-scroll-arrow-down
+glues-characterSelect-scroll-arrow-up
+glues-characterSelect-scrollbar
+glues-characterSelect-scrollbar-BG
+glues-characterSelect-searchbar
+glues-characterSelect-TopHUD-BG-divider
+glues-characterSelect-TopHUD-BG-divider-dis
+glues-characterSelect-TopHUD-BG-selected-divider *
+glues-characterSelect-TopHUD-left-BG
+glues-characterSelect-TopHUD-left-dis-BG
+glues-characterSelect-TopHUD-left-hover *
+glues-characterSelect-TopHUD-middle-BG
+glues-characterSelect-TopHUD-middle-dis-BG
+glues-characterSelect-TopHUD-middle-hover *
+glues-characterSelect-TopHUD-right-BG
+glues-characterSelect-TopHUD-right-dis-BG
+glues-characterSelect-TopHUD-right-hover *
+glues-characterSelect-TopHUD-selected-left
+glues-characterSelect-TopHUD-selected-middle
+glues-characterSelect-TopHUD-selected-right
+GM-bgOpen-assists
+GM-bgOpen-leads
+GM-bgOpen-party-leads
+GM-bgOpen-party-regulars
+GM-bgOpen-regulars
+GM-btnBack-hover
+GM-btnBack-normal
+GM-btnBack-pressed
+GM-btnForward-hover
+GM-btnForward-normal
+GM-btnForward-pressed
+GM-button-marker-applied
+GM-button-marker-appliedSelected
+GM-button-marker-available
+GM-button-marker-disabled
+GM-button-marker-hover
+GM-button-marker-pressed
+GM-button-marker-selected
+groupfinder-background
+groupfinder-button-cover
+groupfinder-button-cover-down
+groupfinder-button-cover-hover *
+groupfinder-eye-big-flipbook-initial *
+groupfinder-eye-big-flipbook-mouseover *
+groupfinder-eye-big-flipbook-poke-end *
+groupfinder-eye-big-flipbook-poke-initial *
+groupfinder-eye-big-flipbook-poke-loop *
+groupfinder-eye-big-flipbook-searching *
+groupfinder-eye-frame *
+groupfinder-highlightbar *
+groupfinder-highlightbar-blue
+groupfinder-highlightbar-yellow
+groupfinder-icon-class-deathknight
+groupfinder-icon-class-demonhunter
+groupfinder-icon-class-druid
+groupfinder-icon-class-evoker *
+groupfinder-icon-class-hunter
+groupfinder-icon-class-mage
+groupfinder-icon-class-monk
+groupfinder-icon-class-paladin
+groupfinder-icon-class-priest
+groupfinder-icon-class-rogue
+groupfinder-icon-class-shaman
+groupfinder-icon-class-warlock
+groupfinder-icon-class-warrior
+groupfinder-icon-leader
+groupfinder-icon-role-large-dps
+groupfinder-icon-role-large-heal
+groupfinder-icon-role-large-tank
+groupfinder-icon-role-micro-dps
+groupfinder-icon-role-micro-heal
+groupfinder-icon-role-micro-tank
+groupfinder-noteBox-background *
+groupfinder-roles-background *
+groupfinder-ScrollLine *
+groupfinder-Stat-StoneBG *
+heavybronze-frame-background *
+heavybronze-frame-basic *
+heavybronze-frame-bottom-fade *
+heavybronze-frame-top-fade *
+heavybronze-horz-cornerbracket-BL *
+heavybronze-horz-cornerbracket-BR *
+heavybronze-horz-cornerbracket-TL *
+heavybronze-horz-cornerbracket-TR *
+heavybronze-vert-cornerbracket-BL *
+heavybronze-vert-cornerbracket-BR *
+heavybronze-vert-cornerbracket-TL *
+heavybronze-vert-cornerbracket-TR *
+Kiosk-Mode-button-c60 *
+Kiosk-Mode-button-glow-c60 *
+Kiosk-Mode-button-pressed-c60 *
+Kiosk-Mode-Divider-c60 *
+Legacy-Challenge-BG *
+Legacy-Challenge-Cards *
+Legacy-Challenge-Cards-Bar *
+Legacy-Challenge-Cards-Bar-hover *
+Legacy-Challenge-Cards-Date-BG *
+Legacy-Challenge-Cards-Diasble *
+Legacy-Challenge-Cards-Disable *
+Legacy-Challenge-Cards-Ribbon-Blue *
+Legacy-Challenge-Cards-Ribbon-Blue-Disable *
+Legacy-Challenge-Cards-Ribbon-Brown *
+Legacy-Challenge-Cards-Ribbon-Brown-disable *
+Legacy-Challenge-Cards-selected *
+Legacy-Challenge-Cards-tiled-bottom *
+Legacy-Challenge-Cards-tiled-bottom-disable *
+Legacy-Challenge-Cards-tiled-top *
+Legacy-Challenge-Cards-tiled-top-Disable *
+Legacy-Challenge-Cards-tiled-vertica *
+Legacy-Challenge-Cards-tiled-vertical *
+Legacy-Challenge-Cards-tiled-vertical-Disable *
+Legacy-Challenge-Left-Sub-Tab *
+Legacy-Challenge-Left-Sub-Tab-selected *
+Legacy-Progressbar-BG *
+Legacy-Progressbar-Fill *
+Legacy-Progressbar-Fill-dark *
+Legacy-Progressbar-Frame *
+Legacy-Progressbar-Frame-dark *
+Legacy-Rewards-Tracker-background *
+Legacy-Rewards-Tracker-background-c60 *
+Legacy-Rewards-Tracker-Cards *
+Legacy-Rewards-Tracker-Cards-Disable *
+Legacy-Rewards-Tracker-Cards-Green *
+Legacy-Rewards-Tracker-Diamond *
+Legacy-Rewards-Tracker-Diamond-Disable *
+Legacy-Rewards-Tracker-Icon *
+Legacy-Rewards-Tracker-Icons-Frame *
+Legacy-Rewards-Tracker-Icons-Frame-Disable *
+Legacy-Tree-Frame-background *
+Legacy-Tree-Frame-Card *
+Legacy-Tree-Frame-Card-Glow *
+Legacy-Tree-Frame-Card-Ring *
+Legacy-Tree-Frame-divider-Vertical *
+Legacy-Tree-Frame-icon-frame *
+Legacy-Tree-Frame-icon-frame-dark *
+Legacy-Tree-Frame-icon-frame-disable *
+Legacy-Tree-Frame-icon-frame-Green *
+Legacy-Tree-Frame-level-circle *
+Legacy-Tree-Frame-lock-red *
+Legacy-Tree-Frame-Points-Bar *
+Legacy-Tree-Frame-Points-icon *
+Legacy-Tree-Frame-reset-button *
+Legacy-Tree-Frame-Ring-big *
+macropopup-bottomleft
+macropopup-bottomright
+macropopup-bottomright-nobuttons
+macropopup-intersect-left
+macropopup-intersect-right
+macropopup-scrollbar-bottom
+macropopup-scrollbar-top
+macropopup-topleft
+macropopup-topleft2
+macropopup-topright
+macropopup-topright2
+minimal-scrollbar-arrow-bottom
+minimal-scrollbar-arrow-bottom-down
+minimal-scrollbar-arrow-bottom-over
+minimal-scrollbar-arrow-returntobottom
+minimal-scrollbar-arrow-returntobottom-down
+minimal-scrollbar-arrow-returntobottom-over
+minimal-scrollbar-arrow-top
+minimal-scrollbar-arrow-top-over
+minimal-scrollbar-small-arrow-bottom
+minimal-scrollbar-small-arrow-bottom-down
+minimal-scrollbar-small-arrow-bottom-over
+minimal-scrollbar-small-arrow-returntobottom
+minimal-scrollbar-small-arrow-returntobottom-down
+minimal-scrollbar-small-arrow-returntobottom-over
+minimal-scrollbar-small-arrow-top
+minimal-scrollbar-small-arrow-top-down
+minimal-scrollbar-small-arrow-top-over
+minimal-scrollbar-small-thumb-bottom
+minimal-scrollbar-small-thumb-bottom-down
+minimal-scrollbar-small-thumb-bottom-over
+minimal-scrollbar-small-thumb-middle
+minimal-scrollbar-small-thumb-middle-down
+minimal-scrollbar-small-thumb-middle-over
+minimal-scrollbar-small-thumb-top
+minimal-scrollbar-small-thumb-top-down
+minimal-scrollbar-small-thumb-top-over
+minimal-scrollbar-small-track-bottom
+minimal-scrollbar-small-track-top
+minimal-scrollbar-thumb-bottom
+minimal-scrollbar-thumb-bottom-down
+minimal-scrollbar-thumb-bottom-over
+minimal-scrollbar-thumb-middle
+minimal-scrollbar-thumb-middle-down
+minimal-scrollbar-thumb-middle-over
+minimal-scrollbar-thumb-top
+minimal-scrollbar-thumb-top-down
+minimal-scrollbar-thumb-top-over
+minimal-scrollbar-track-bottom
+minimal-scrollbar-track-top
+minimal-scrollbarl-arrow-top-down *
+Minimal_SliderBar_Button
+Minimal_SliderBar_Button_Left
+Minimal_SliderBar_Button_Right
+Minimal_SliderBar_Left
+Minimal_SliderBar_Right
+Mode-Selection-Arrow-Left *
+Mode-Selection-Arrow-Left-disable *
+Mode-Selection-Arrow-Left-pressed *
+Mode-Selection-Card-Hardcore *
+Mode-Selection-Card-Hardcore-yellow-glow *
+Mode-Selection-Card-Regular *
+Mode-Selection-Card-Regular-disable *
+Mode-Selection-Card-Regular-yellow-glow *
+Mode-Selection-New *
+Mode-Selection-Ring *
+Mode-Selection-Ring-c60 *
+Mode-Selection-Ring-Disable *
+Mode-Selection-Ring-Disable-c60 *
+Options_CategoryHeader_1
+Options_CategoryHeader_2
+Options_CategoryHeader_3
+options_frame_child
+Options_HorizontalDivider
+Options_InnerFrame
+Options_List_Hover
+Options_Tab_Active_Left
+Options_Tab_Active_Middle
+Options_Tab_Active_Right
+Options_Tab_Left
+Options_Tab_Middle
+Options_Tab_Right
+OptionsFrame-NineSlice-CornerBottomLeft *
+OptionsFrame-NineSlice-CornerBottomRight *
+OptionsFrame-NineSlice-CornerTopLeft *
+OptionsFrame-NineSlice-CornerTopRight *
+Preset-Selection-Card-Regular *
+Preset-Selection-Card-Regular-disable *
+Preset-Selection-Card-Regular-yellow-glow *
+Profession-background-card-Alchemy *
+Profession-background-card-Blacksmithing *
+Profession-background-card-Cooking *
+Profession-background-card-Enchanting *
+Profession-background-card-Engineering *
+Profession-background-card-FirstAid *
+Profession-background-card-Fishing *
+Profession-background-card-Herbalism *
+Profession-background-card-Herbalism-c60 *
+Profession-background-card-leatherworking *
+Profession-background-card-lockpicking *
+Profession-background-card-Mining *
+Profession-background-card-Poisons *
+Profession-background-card-Research *
+Profession-background-card-skinning *
+Profession-background-card-Tailoring *
+Profession-background-Lockpicking-card *
+Profession-Background-Overview *
+Profession-Background-Template2 *
+Profession-button-arrow-left *
+Profession-button-arrow-left-pressed *
+Profession-button-arrow-right *
+Profession-button-arrow-right-pressed *
+Profession-button-chat *
+Profession-button-chat-pressed *
+Profession-button-red-crossmark *
+Profession-button-red-crossmark-pressed *
+Profession-checkbox *
+Profession-icon-Expand *
+Profession-icon-shrink *
+Profession-overview-Card *
+Profession-overview-Card-Alchemy *
+Profession-overview-Card-Blacksmithing *
+Profession-overview-Card-Enchanting *
+Profession-overview-Card-Engineering *
+Profession-overview-card-generic-Cooking *
+Profession-overview-card-generic-FirstAid *
+Profession-overview-card-generic-Fishing *
+Profession-overview-Card-Herbalism *
+Profession-overview-Card-Leatherworking *
+Profession-overview-Card-Lockpicking *
+Profession-overview-Card-Mining *
+Profession-overview-Card-Poisons *
+Profession-overview-Card-posions *
+Profession-overview-Card-Research *
+Profession-overview-Card-Skinning *
+Profession-overview-Card-Tailoring *
+Profession-page-box *
+Profession-ProgressBar-BG *
+Profession-ProgressBar-frame *
+Profession-Ring-Frame *
+Profession-square-frame *
+Profession-square-frame-glow *
+Profession-square-frame-slot *
+Profession-Tab *
+Profession-Tab-glow *
+Professions-Slot-Frame *
+QuestBG-Poisons *
+raceicon-skyborne-female *
+raceicon-skyborne-male *
+raceicon128-skyborne-female *
+raceicon128-skyborne-male *
+RedButton-Condense
+RedButton-Condense-disabled
+RedButton-Condense-Pressed
+RedButton-Exit
+RedButton-Exit-Disabled
+RedButton-exit-pressed
+RedButton-Expand
+RedButton-Expand-Disabled
+RedButton-Expand-Pressed
+RedButton-Highlight
+RedButton-MiniCondense
+RedButton-MiniCondense-disabled
+RedButton-MiniCondense-pressed
+Skillbar_Fill_Flipbook_Alchemy *
+Skillbar_Fill_Flipbook_Enchanting *
+Skillbar_Fill_Flipbook_FirstAid *
+Skillbar_Fill_Flipbook_Lockpicking *
+Skillbar_Fill_Flipbook_Poisons *
+Skillbar_Fill_Flipbook_Research *
+Skillbar_Fill_Flipbook_Skinning *
+Skillbar_Flare_Alchemy *
+Skillbar_Flare_Enchanting *
+Skillbar_Flare_FirstAid *
+Skillbar_Flare_Lockpicking *
+Skillbar_Flare_Poisons *
+Skillbar_Flare_Research *
+Skillbar_Flare_Skinning *
+skyborne-high-order *
+skyborne-windshapers *
+skyborne-zephras-isles *
+spellbook-item-iconframe *
+spellbook-Page-Condensed-C60 *
+spellbook-Page-Left-C60 *
+spellbook-Page-Left-C60-2x *
+spellbook-Page-Right-C60 *
+spellbook-passive-iconframe *
+spellbook-passive-iconframe-inactive *
+spellbook-Tab-Frame-C60 *
+spellbook-Tab-Frame-Glow-C60 *
+spellbook-Tab-Frame-glow-gradient-C60 *
+subsupgrade-banner-generic-bg *
+subsupgrade-banner-generic-short-bg *
+Talents-Background-c60 *
+Talents-Checkmark-c60 *
+Talents-divider-left-c60 *
+Talents-divider-right-c60 *
+Talents-divider-vertical-c60 *
+Talents-inner-frame-c60 *
+Talents-lock-c60 *
+Talents-Main-Ring-Box-c60 *
+Talents-Main-Ring-c60 *
+Talents-small-divider-c60 *
+Talents-Square-Box-c60 *
+Talents-Tabs-c60 *
+Talents-Tabs-glow-c60 *
+tokens-counterBG
+tokens-counterBG-large
+tokens-frame-large
+tokens-frame-regular
+tokens-frame-small
+Tooltip-Glues-NineSlice-Center
+Tooltip-Glues-NineSlice-CornerBottomLeft
+Tooltip-Glues-NineSlice-CornerBottomRight
+Tooltip-Glues-NineSlice-CornerTopLeft
+Tooltip-Glues-NineSlice-CornerTopRight
+Tooltip-NineSlice-CornerBottomLeft
+Tooltip-NineSlice-CornerBottomRight
+Tooltip-NineSlice-CornerTopLeft
+Tooltip-NineSlice-CornerTopRight
+UF-RogueCP-BG *
+UF-RogueCP-BG-Dis *
+UF-RogueCP-BG-Glow *
+UF-RogueCP-BG-Shadow *
+UF-RogueCP-Frame-Glow *
+UF-RogueCP-FX-Red *
+UF-RogueCP-Icon-Red *
+UF-RogueCP-Slash-Red *
+UI-CastingBar-Background
+ui-castingbar-disabled-tier1-empower
+ui-castingbar-disabled-tier2-empower
+ui-castingbar-disabled-tier3-empower
+ui-castingbar-disabled-tier4-empower
+ui-castingbar-empower-cursor
+ui-castingbar-empower-pip
+UI-CastingBar-Filling-ApplyingCrafting
+UI-CastingBar-Filling-Channel
+UI-CastingBar-Filling-Standard
+UI-CastingBar-Frame
+UI-CastingBar-Full-ApplyingCrafting
+UI-CastingBar-Full-Channel
+UI-CastingBar-Full-Glow-ApplyingCrafting
+UI-CastingBar-Full-Glow-Channel
+UI-CastingBar-Full-Glow-Standard
+UI-CastingBar-Full-Standard
+ui-castingbar-glow-tier1-empower
+ui-castingbar-glow-tier2-empower
+ui-castingbar-glow-tier3-empower
+ui-castingbar-glow-tier4-empower
+UI-CastingBar-Interrupted
+UI-CastingBar-Pip
+UI-CastingBar-PressAndHold-Background
+UI-CastingBar-PressAndHold-Frame
+UI-CastingBar-PressAndHold-Frame-Pip1
+UI-CastingBar-PressAndHold-Frame-Pip2
+UI-CastingBar-PressAndHold-Full-Glow
+UI-CastingBar-PressAndHold-Full-Glow-Frame-Pip
+UI-CastingBar-Shield
+UI-CastingBar-TextBox
+ui-castingbar-tier1-empower
+ui-castingbar-tier2-empower
+ui-castingbar-tier3-empower
+ui-castingbar-tier4-empower
+UI-CastingBar-Uninterruptable
+UI-Character-Info-Button-PullSide *
+UI-Character-Info-Button-PullSide-Open *
+UI-Character-Info-Button-PullSide-Pressed *
+UI-Character-Info-Button-PullUp *
+UI-Character-Info-Button-PullUp-Open *
+UI-Character-Info-Button-PullUp-Pressed *
+UI-Character-Info-DeathKnight-BG
+UI-Character-Info-DemonHunter-BG
+UI-Character-Info-Druid-BG
+UI-Character-Info-GearSlot *
+UI-Character-Info-GearSlot-Arrow *
+UI-Character-Info-GearSlotSmall *
+UI-Character-Info-General-BG *
+UI-Character-Info-Honor-Bar-BG *
+UI-Character-Info-Honor-Bar-BG-Alliance *
+UI-Character-Info-Honor-Bar-BG-Glow *
+UI-Character-Info-Honor-Bar-BG-Horde *
+UI-Character-Info-Honor-Icon-1 *
+UI-Character-Info-Honor-Icon-10 *
+UI-Character-Info-Honor-Icon-11 *
+UI-Character-Info-Honor-Icon-12 *
+UI-Character-Info-Honor-Icon-13 *
+UI-Character-Info-Honor-Icon-14 *
+UI-Character-Info-Honor-Icon-2 *
+UI-Character-Info-Honor-Icon-3 *
+UI-Character-Info-Honor-Icon-4 *
+UI-Character-Info-Honor-Icon-5 *
+UI-Character-Info-Honor-Icon-6 *
+UI-Character-Info-Honor-Icon-7 *
+UI-Character-Info-Honor-Icon-8 *
+UI-Character-Info-Honor-Icon-9 *
+UI-Character-Info-Honor-Icon-Alliance *
+UI-Character-Info-Honor-Icon-Horde *
+UI-Character-Info-Honor-LevelBG *
+UI-Character-Info-Honor-RewardRing *
+UI-Character-Info-Hunter-BG
+UI-Character-Info-Icon-Add *
+UI-Character-Info-Icon-Delete *
+UI-Character-Info-Icon-Settings *
+UI-Character-Info-Icon-Tick *
+UI-Character-Info-ItemLevel-Bounce
+UI-Character-Info-Line-Bounce
+UI-Character-Info-Line-Bounce2 *
+UI-Character-Info-Mage-BG
+UI-Character-Info-Monk-BG
+UI-Character-Info-OutfitCard *
+UI-Character-Info-OutfitCard-Hover *
+UI-Character-Info-OutfitCard-Selected *
+UI-Character-Info-OutfitIcon-Frame *
+UI-Character-Info-Paladin-BG
+UI-Character-Info-Priest-BG
+UI-Character-Info-RaceBG-Overlay *
+UI-Character-Info-Resistance-Arcane *
+UI-Character-Info-Resistance-Fire *
+UI-Character-Info-Resistance-Frost *
+UI-Character-Info-Resistance-Nature *
+UI-Character-Info-Resistance-Shadow *
+UI-Character-Info-Rogue-BG
+UI-Character-Info-ScrollFader *
+UI-Character-Info-ScrollLine *
+UI-Character-Info-ScrollLine-Long *
+UI-Character-Info-Shaman-BG
+UI-Character-Info-Stat-BG *
+UI-Character-Info-Stat-StoneBG *
+UI-Character-Info-Stat-StoneBG2 *
+UI-Character-Info-StatTab *
+UI-Character-Info-StatTab-Selected *
+UI-Character-Info-Title
+UI-Character-Info-Warlock-BG
+UI-Character-Info-Warrior-BG
+UI-DiamondDialogBox-Border
+UI-Frame-DiamondMetal-CornerBottomLeft
+UI-Frame-DiamondMetal-CornerBottomRight
+UI-Frame-DiamondMetal-CornerTopLeft
+UI-Frame-DiamondMetal-CornerTopRight
+UI-Frame-DiamondMetal-Header-CornerLeft
+UI-Frame-DiamondMetal-Header-CornerRight
+UI-Frame-Metal-CornerBottomLeft *
+UI-Frame-Metal-CornerBottomRight *
+UI-Frame-Metal-CornerTopLeft *
+UI-Frame-Metal-CornerTopRight *
+UI-Frame-Metal-CornerTopRightDouble *
+ui-frame-metal-focus *
+ui-frame-metal-Tabs-BG-c60 *
+ui-frame-metal-Tabs-c60 *
+ui-frame-metal-Tabs-Glow-c60 *
+UI-Frame-PortraitMetal-CornerTopLeft *
+ui-frame-portraitmetal-cornertopleftsmall *
+ui-frame-portraitmetal-focus *
+ui-frame-portraitmetal-small-focus *
+UI-HUD-ActionBar-Frame *
+UI-HUD-ActionBar-Frame-Divider-ThreeSlice-EdgeBottom
+UI-HUD-ActionBar-Frame-Divider-ThreeSlice-EdgeTop
+UI-HUD-ActionBar-Gryphon-Left
+UI-HUD-ActionBar-Gryphon-Right
+UI-HUD-ActionBar-IconFrame
+UI-HUD-ActionBar-IconFrame-AddRow
+ui-hud-actionbar-iconframe-bags *
+UI-HUD-ActionBar-IconFrame-Slot
+UI-HUD-ActionBar-IconFrame-Slot-Small *
+UI-HUD-ActionBar-IconFrame-Small *
+ui-hud-actionbar-keyring-small *
+UI-HUD-ActionBar-Wyvern-Left
+UI-HUD-ActionBar-Wyvern-Right
+UI-HUD-CoolDownManager-Bar
+UI-HUD-CoolDownManager-Bar-BG
+UI-HUD-CoolDownManager-Bar-Pip
+UI-HUD-CoolDownManager-IconOverlay
+UI-HUD-CoolDownManager-Selected-yellow *
+UI-HUD-ExperienceBar-Background *
+UI-HUD-ExperienceBar-Divider *
+UI-HUD-ExperienceBar-Fill-ArtifactPower *
+UI-HUD-ExperienceBar-Fill-Experience *
+UI-HUD-ExperienceBar-Fill-Honor *
+UI-HUD-ExperienceBar-Fill-Prediction *
+UI-HUD-ExperienceBar-Fill-Reputation *
+UI-HUD-ExperienceBar-Fill-Reputation-Faction-Blue *
+UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green *
+UI-HUD-ExperienceBar-Fill-Reputation-Faction-Orange *
+UI-HUD-ExperienceBar-Fill-Reputation-Faction-Red *
+UI-HUD-ExperienceBar-Fill-Reputation-Faction-Yellow *
+UI-HUD-ExperienceBar-Fill-Rested *
+UI-HUD-ExperienceBar-Frame *
+UI-HUD-ExperienceBar-Frame-Pip *
+UI-HUD-ExperienceBar-Frame-Pip-Mouseover *
+UI-HUD-MicroMenu-AdventureGuide-Disabled
+UI-HUD-MicroMenu-AdventureGuide-Down
+UI-HUD-MicroMenu-AdventureGuide-Mouseover
+UI-HUD-MicroMenu-AdventureGuide-Up
+UI-HUD-MicroMenu-ButtonBG-Down
+UI-HUD-MicroMenu-ButtonBG-Up
+UI-HUD-MicroMenu-Collections-Disabled
+UI-HUD-MicroMenu-Collections-Down
+UI-HUD-MicroMenu-Collections-Mouseover
+UI-HUD-MicroMenu-Collections-Up
+UI-HUD-MicroMenu-GameMenu-Disabled
+UI-HUD-MicroMenu-GameMenu-Down
+UI-HUD-MicroMenu-GameMenu-Mouseover
+UI-HUD-MicroMenu-GameMenu-Up
+UI-HUD-MicroMenu-Groupfinder-Disabled
+UI-HUD-MicroMenu-Groupfinder-Down
+UI-HUD-MicroMenu-Groupfinder-Mouseover
+UI-HUD-MicroMenu-Groupfinder-Up
+UI-HUD-MicroMenu-GuildCommunities-Disabled
+UI-HUD-MicroMenu-GuildCommunities-Down
+UI-HUD-MicroMenu-GuildCommunities-GuildColor-Disabled
+UI-HUD-MicroMenu-GuildCommunities-GuildColor-Down
+UI-HUD-MicroMenu-GuildCommunities-GuildColor-Mouseover
+UI-HUD-MicroMenu-GuildCommunities-GuildColor-Up
+UI-HUD-MicroMenu-GuildCommunities-Mouseover
+UI-HUD-MicroMenu-GuildCommunities-Up
+UI-HUD-MicroMenu-Highlightalert
+UI-HUD-MicroMenu-Legacy-Disabled *
+UI-HUD-MicroMenu-Legacy-Down *
+UI-HUD-MicroMenu-Legacy-mouseover *
+UI-HUD-MicroMenu-Legacy-UP *
+UI-HUD-MicroMenu-Professions-Disabled
+UI-HUD-MicroMenu-Professions-Down
+UI-HUD-MicroMenu-Professions-Mouseover
+UI-HUD-MicroMenu-Professions-Up
+UI-HUD-MicroMenu-Questlog-Disabled
+UI-HUD-MicroMenu-Questlog-Down
+UI-HUD-MicroMenu-Questlog-Mouseover
+UI-HUD-MicroMenu-Questlog-Up
+UI-HUD-MicroMenu-Shop-Disabled
+UI-HUD-MicroMenu-Shop-Down
+UI-HUD-MicroMenu-Shop-Mouseover
+UI-HUD-MicroMenu-Shop-Up
+UI-HUD-MicroMenu-SpecTalents-Disabled
+UI-HUD-MicroMenu-SpecTalents-Down
+UI-HUD-MicroMenu-SpecTalents-Mouseover
+UI-HUD-MicroMenu-SpecTalents-Up
+UI-HUD-MicroMenu-SpellbookAbilities-Disabled
+UI-HUD-MicroMenu-SpellbookAbilities-Down
+UI-HUD-MicroMenu-SpellbookAbilities-Mouseover
+UI-HUD-MicroMenu-SpellbookAbilities-Up
+UI-HUD-Minimap-DayCycle *
+UI-HUD-Minimap-Frame *
+UI-HUD-Minimap-Frame-Circle *
+UI-HUD-Minimap-Frame-Cycle *
+ui-hud-minimap-frame-generic-mask *
+UI-HUD-Minimap-Frame-Pointer *
+UI-HUD-Minimap-NightCycle *
+UI-HUD-Nameplates-LevelIndicator *
+UI-HUD-Nameplates-LevelIndicator-rectangle *
+UI-HUD-Nameplates-LevelIndicator-rectangle-selected *
+UI-HUD-Nameplates-LevelIndicator-Selected *
+UI-HUD-Nameplates-LevelIndicator-Skull *
+UI-HUD-Nameplates-Selected
+ui-hud-unitframe-characterframeonparty-portraiton *
+UI-HUD-UnitFrame-Party-PortraitOn *
+UI-HUD-UnitFrame-Party-PortraitOn-Vehicle *
+UI-HUD-UnitFrame-Player-PortraitOn
+UI-HUD-UnitFrame-Player-PortraitOn-ClassResource
+UI-HUD-UnitFrame-Player-PortraitOn-CornerEmbellishment
+UI-HUD-UnitFrame-Player-PortraitOn-Vehicle
+UI-HUD-UnitFrame-Player-PVP-FFAIcon
+UI-HUD-UnitFrame-SmallCircle *
+UI-HUD-UnitFrame-SmallCircle-Alliance *
+UI-HUD-UnitFrame-SmallCircle-Horde *
+UI-HUD-UnitFrame-Target-Boss-Small-PortraitOff *
+UI-HUD-UnitFrame-Target-HighLevelTarget_Icon
+UI-HUD-UnitFrame-Target-MinusMob-PortraitOn
+UI-HUD-UnitFrame-Target-PortraitOn
+UI-HUD-UnitFrame-Target-PortraitOn-Boss-Gold *
+UI-HUD-UnitFrame-Target-PortraitOn-Boss-Gold-Winged *
+ui-hud-unitframe-target-portraiton-boss-rare-silver *
+UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Silver-Winged *
+UI-HUD-UnitFrame-Target-PortraitOn-Vehicle
+UI-HUD-UnitFrame-TargetofTarget-PortraitOn
+UI-HUD-UnitFrame-TotemFrame
+UI-Legacy-Points-icon-c60 *
+UI-Legacy-Tree-Adventure *
+UI-Legacy-Tree-Professions *
+UI-Legacy-Tree-Progression *
+UI-LFG-RoleIcon-DPS
+UI-LFG-RoleIcon-DPS-Background
+UI-LFG-RoleIcon-Healer
+UI-LFG-RoleIcon-Healer-Background
+UI-LFG-RoleIcon-Leader
+UI-LFG-RoleIcon-Tank
+UI-LFG-RoleIcon-Tank-Background
+UI-Notification-condense *
+UI-Notification-expand *
+UI-QuestTracker-LFG-eye *
+UI-QuestTracker-LFG-eye-selected *
+UI-QuestTracker-Objective-Fail *
+UI-QuestTracker-Objective-Nub *
+UI-QuestTracker-OBJFX-BarGlow *
+UI-QuestTracker-OBJFX-Shine *
+ui-questtracker-objfx-shine-c60 *
+UI-QuestTracker-OBJFX_LineGlow *
+ui-questtracker-objfx_lineglow-c60 *
+UI-QuestTracker-Primary-Objective-Header *
+UI-QuestTracker-Progressbar-Frame *
+UI-QuestTracker-Progressbar-Full-Channel *
+UI-QuestTracker-Secondary-Objective-Header *
+UI-QuestTracker-Tracker-Check *
+UI-QuestTracker-Tracker-Check-Glow *
+UI-QuestTrackerButton-Collapse-All *
+UI-QuestTrackerButton-Collapse-All-Pressed *
+UI-QuestTrackerButton-Expand-All *
+UI-QuestTrackerButton-Expand-All-Pressed *
+UI-QuestTrackerButton-Filter *
+UI-QuestTrackerButton-Filter-Pressed *
+UI-QuestTrackerButton-QuestItem-Frame *
+UI-QuestTrackerButton-QuestItem-Frame-Glow *
+UI-QuestTrackerButton-Red-Highlight *
+UI-QuestTrackerButton-Secondary-Collapse *
+UI-QuestTrackerButton-Secondary-Collapse-Pressed *
+UI-QuestTrackerButton-Secondary-Expand *
+UI-QuestTrackerButton-Secondary-Expand-Pressed *
+UI-QuestTrackerButton-Yellow-Highlight *
+ui-stables-footer-bg *
+ui-stables-horz-divider *
+ui-stables-pet-frame-current *
+ui-stables-pet-frame-current-glow *
+ui-stables-pet-frame-locked *
+ui-stables-pet-frame-stabled *
+ui-stables-pet-frame-unlocked *
+ui-stables-pet-icon-unlocked *
+ui-stables-pet-model-bg *
+ui-stables-petxp-bg *
+ui-stables-petxp-fill *
+ui-stables-petxp-frame *
+ui-stables-subheader-bg *
+ui-swingtimer-shine *
+ui-swingtimerbar-background *
+ui-swingtimerbar-filling-mainhand *
+ui-swingtimerbar-filling-offhand *
+ui-swingtimerbar-filling-ranged *
+ui-swingtimerbar-frame *
+ui-swingtimerbar-melee-pipglow *
+ui-swingtimerbar-offhand-pipglow *
+ui-swingtimerbar-pip *
+ui-swingtimerbar-ranged-pipglow *
+ui-swingtimerbar-textshadow-left *
+uiframe-tab-left
+uiframe-tab-right
