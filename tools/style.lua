@@ -81,7 +81,18 @@ local function load(opts)
   opts = opts or {}
   printed, errors, popups = {}, {}, {}
   DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = tostring(m) end }
-  function CreateFrame(kind, _, parent) return newRegion(kind, parent) end
+  function CreateFrame(kind, _, parent)
+    local f = newRegion(kind, parent)
+    if kind == "ScrollFrame" then   -- UIPanelScrollFrameTemplate's scroll bar and its children
+      local bar = newRegion("Slider", f)
+      bar.ScrollUpButton, bar.ScrollDownButton = newRegion("Button", bar), newRegion("Button", bar)
+      bar.ThumbTexture = newRegion("Texture", bar)
+      bar.GetMinMaxValues = function() return 0, 0 end
+      bar.GetValue = function() return 0 end
+      f.ScrollBar = bar
+    end
+    return f
+  end
   UIParent = newRegion("Frame")
   function hooksecurefunc() end
   function GetBuildInfo() return "1.60.1", "70235", "", 16001 end
@@ -116,6 +127,7 @@ local function load(opts)
   GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
   GuildOS.db = { settings = {} }
   dofile(ADDON .. "/UI/Helpers.lua")
+  dofile(ADDON .. "/UI/StylePreview.lua")
   return GuildOS.Style
 end
 local function said(fragment)
@@ -308,5 +320,18 @@ SlashCmdList.GUILDOS("style forever")
 check(GuildOSDB.style == nil and said("not available on this client"), "forever is refused where the client has no art")
 SlashCmdList.GUILDOS("style")
 check(said("not available here"), "and the list says so")
+
+-- ── 9. /gos style preview ──────────────────────────────────────────────
+S = load({ db = {}, without = { ["128-redbutton-exit-c60"] = true } }); S:Resolve()
+local rows = S:PreviewRows()
+local seen, missingSeen = {}, false
+for _, r in ipairs(rows) do
+  seen[r.role] = true
+  if r.atlas == "128-redbutton-exit-c60" and r.has == false then missingSeen = true end
+end
+check(seen.window and seen.button and seen.tab and seen.scroll and seen.minimise, "the preview lists every role's pieces")
+check(missingSeen, "and marks the ones this client lacks")
+S:ShowPreview()
+check(S.previewFrame and S.previewFrame.shown, "/gos style preview opens it, even in the GuildOS style")
 
 print(("style: %d checks passed"):format(checks))

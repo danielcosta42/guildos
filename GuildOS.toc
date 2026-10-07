@@ -120,6 +120,7 @@ Modules\PugInspector.lua
 
 # UI
 UI\Helpers.lua
+UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua
 UI\FeatureRegistry.lua
