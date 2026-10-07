@@ -1442,7 +1442,20 @@ do
   GuildOS.GuildChat:_Notify()
   check(lockedReads == 0 and tabO.isActive and find(p, "pauta da reuniao") and focused == "C1/2",
     "in a chat lockdown nothing is read, and the open channel stays as it was drawn")
+  tabG.scripts.OnClick(tabG)
+  check(tabO.isActive and focused == "C1/2",
+    "a tab clicked in a lockdown does nothing: what is drawn stays where Enter sends")
+  byStream["2"][2] = { messageId = { epoch = (NOW - 30) * 1e6, position = 0 },
+                       author = { name = "Chefe Lima", classID = 8 }, content = "depois do boss" }
+  GuildOS.GuildChat:_Notify()
+  check(not find(p, "pauta da reuniao\ndepois do boss"), "a line that arrives then waits")
   locked = false
+  flush()
+  check(lockedReads == 0 and find(p, "pauta da reuniao\ndepois do boss"), "and the feed catches up by itself once it lifts")
+  box:SetText("segredo dos oficiais")
+  box.scripts.OnEnterPressed(box)
+  check(sentChat[#sentChat].chan == "OFFICER" and sentChat[#sentChat].msg == "segredo dos oficiais",
+    "and Enter still goes to /o")
   tabR.scripts.OnClick(tabR)
   box:SetText("bora")
   box.scripts.OnEnterPressed(box)
@@ -1476,6 +1489,19 @@ do
   GuildOS.GuildChat:_Notify()
   flush()
   check(scroll.vscroll == scroll:GetVerticalScrollRange(), "and one at the bottom follows the new one")
+  scroll.vscroll = 0
+  UI:OpenWindow("guild", "calendar")
+  UI:OpenWindow("guild", "chat")
+  flush()
+  check(scroll.vscroll == scroll:GetVerticalScrollRange(), "reopening the tab shows the newest line again")
+  local officerLots = {}
+  for i = 1, 30 do officerLots[i] = line(i) end
+  byStream["2"] = officerLots
+  scroll.vscroll = 0
+  tabO.scripts.OnClick(tabO)
+  flush()
+  check(scroll:GetVerticalScrollRange() > 0 and scroll.vscroll == scroll:GetVerticalScrollRange(),
+    "and so does changing channel")
   UI:OpenWindow("guild", "calendar")
   check(focused == nil, "and leaving the tab stops reading it")
   C_Club, GetClassInfo, C_ChatInfo = nil, nil, nil

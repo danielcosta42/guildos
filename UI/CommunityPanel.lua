@@ -484,10 +484,13 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
     -- new lines only for a reader already at the bottom, never pulling one who scrolled up.
     local pinBottom = true
     local scrolling = false   -- a move to the bottom is queued for the next frame
+    local waiting = false     -- a look after a chat lockdown is queued
 
     -- Another channel: the server stops being told about the old one, and is told about this one.
     local function open(stream)
-        if idOf(stream) == idOf(current) then return end
+        -- In a chat lockdown the feed cannot be redrawn: a channel changed then would send Enter
+        -- somewhere other than what is on screen, an officer's line to the whole guild.
+        if GC:Locked() or idOf(stream) == idOf(current) then return end
         GC:Watch(false, current)
         current = idOf(stream) and stream or nil
         GC:Watch(true, current)
@@ -562,8 +565,18 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
     end
 
     refresh = function()
-        -- In a chat lockdown the server's lines and channels arrive secret: keep what is drawn.
-        if GC:Locked() then return end
+        -- In a chat lockdown the server's lines and channels arrive secret: keep what is drawn,
+        -- and look again every 2 seconds while on screen, since no event says the lockdown lifted.
+        if GC:Locked() then
+            if not waiting then
+                waiting = true
+                GuildOS.Compat.After(2, function()
+                    waiting = false
+                    if panel:IsVisible() then refresh() end
+                end)
+            end
+            return
+        end
         local follow = pinBottom or scrolling or scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 4
         pinBottom = false
         layoutTabs()
