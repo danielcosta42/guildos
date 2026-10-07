@@ -1160,7 +1160,8 @@ do
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 5 and open and open.label.text == "Calendar" and open.underline.shown,
+  check(subTabs == 5 and open and open.label.text == "Calendar"
+    and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
     "its five sub-tabs (Call to Arms is the fifth, #108) carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")

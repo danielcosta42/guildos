@@ -806,8 +806,9 @@ function Helpers:CreateTab(parent, text, width, sub)
         local ink = (self.isActive or hovered) and C.text or C.label
         self:SetBackdropColor(0, 0, 0, 0)
         self.label:SetTextColor(ink.r, ink.g, ink.b)
-        self.underline:SetShown(self.isActive and true or false)
-        if self.__art then Style:TabState(self, hovered) end
+        -- The Forever tab art marks the open tab itself; the gold rule is the flat style's mark.
+        self.underline:SetShown((self.isActive and not self.__styleTab) and true or false)
+        if self.__styleTab then Style:TabState(self) end
     end
 
     function tab:SetActive(active)

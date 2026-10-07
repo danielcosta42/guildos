@@ -281,12 +281,17 @@ local narrow = UI:CreateButton(UIParent, "", 40, 26)
 narrow.scripts.OnSizeChanged()
 check(math.abs(narrow.__three.Left.w + narrow.__three.Right.w - 40) < 0.01, "a button narrower than both caps squeezes them to fit")
 
+-- The Settings panel's top tabs: a three-slice made to stretch to any label (a single 96px tab
+-- atlas stretched across a wide label smeared its corners).
 local tab = UI:CreateTab(UIParent, "Roster", 100)
-check(tab.__art and tab.__art.atlas == "common-internaltab", "a tab sits on the game's tab art")
+check(tab.__three and tab.__three.Left.atlas == "Options_Tab_Left" and tab.__three.Center.atlas == "Options_Tab_Middle",
+  "a tab is the game's top tab, in three pieces")
 tab:SetActive(true)
-check(tab.__art.atlas == "common-internaltab-selected" and tab.underline.shown, "the open one is the selected art, with its gold rule")
+check(tab.__three.Left.atlas == "Options_Tab_Active_Left" and tab.__three.Right.atlas == "Options_Tab_Active_Right"
+  and not tab.underline.shown, "the open one is the active tab, which marks itself: no gold rule")
 tab:SetActive(false); tab.scripts.OnEnter(tab)
-check(tab.__art.atlas == "common-internaltab-hover", "hovered, the hover art")
+check(tab.__three.Left.atlas == "Options_Tab_Left" and tab.label.color[1] == GuildOS.Colors.text.r,
+  "hovered, the same tab with its label lit")
 
 local cbf = UI:CreateCheckbox(UIParent, "Sound", 16)
 local hasBox, hasMark = false, false

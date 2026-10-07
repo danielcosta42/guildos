@@ -58,7 +58,10 @@ Style.FOREVER = {
                      "UI-Frame-DiamondMetal-Header-CornerRight"),
     input    = three("common-search-border-left", "common-search-border-middle", "common-search-border-right"),
     button   = { rest = redButton("rest"), pressed = redButton("Pressed"), disabled = redButton("Disabled") },
-    tab      = { rest = "common-internaltab", hover = "common-internaltab-hover", active = "common-internaltab-selected" },
+    -- The Settings panel's top tabs, in three pieces that stretch to any label; the open one is
+    -- the taller active art. (One 96px tab atlas stretched across a label smeared its corners.)
+    tab      = { rest = three("Options_Tab_Left", "Options_Tab_Middle", "Options_Tab_Right"),
+                 active = three("Options_Tab_Active_Left", "Options_Tab_Active_Middle", "Options_Tab_Active_Right") },
     checkbox = { box = "checkbox-minimal", mark = "Talents-Checkmark-c60" },
     close    = iconButton("Exit"),
     minimise = iconButton("Minus"),
@@ -387,16 +390,15 @@ end
 
 function Style:SkinTab(tab)
     if not forever(self, self.FOREVER.tab) then return false end
-    local art = tab:CreateTexture(nil, "BACKGROUND")
-    art:SetAllPoints()
-    art:SetAtlas(self.FOREVER.tab.rest)
-    tab.__art = art
+    self:_PaintThree(tab, self.FOREVER.tab.rest, "BACKGROUND")
+    tab.__styleTab = true
     return true
 end
 
-function Style:TabState(tab, hovered)
-    local t = self.FOREVER.tab
-    tab.__art:SetAtlas((tab.isActive and t.active) or (hovered and t.hover) or t.rest)
+-- The open tab takes the active art; hover only lights the label (the Helpers paint it).
+function Style:TabState(tab)
+    local art, p = tab.isActive and self.FOREVER.tab.active or self.FOREVER.tab.rest, tab.__three
+    setAtlas(p.Left, art.Left); setAtlas(p.Center, art.Center); setAtlas(p.Right, art.Right)
 end
 
 function Style:SkinCheckbox(_, border, fill, mark)
