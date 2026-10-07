@@ -52,8 +52,9 @@ function GuildOS:CreateDashboardPanel(panel)
     -- A card opens its tab, and the sub-tab when it names one.
     local function goTab(tabKey, subKey) UI:OpenWindow(tabKey, subKey) end
 
-    -- Card = dark panel with a gold header + a body frame + click-through.
-    local function makeCard(title, tabKey, subKey)
+    -- Card = dark panel with a gold header + a body frame + click-through. A card whose body
+    -- takes clicks itself (the chat: a link, the box) opens its tab from the arrow alone.
+    local function makeCard(title, tabKey, subKey, arrowOnly)
         local card = UI:CreateDarkPanel(f)
         card:SetFrameLevel((f:GetFrameLevel() or 1) + 2)
         local hdr = UI:CreateHeaderText(card, title, 11)
@@ -69,14 +70,22 @@ function GuildOS:CreateDashboardPanel(panel)
         card.body = body
 
         if tabKey then
-            card:EnableMouse(true)
-            card:SetScript("OnMouseUp", function() goTab(tabKey, subKey) end)
-            card:SetScript("OnEnter", function(self)
-                self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
+            local hit = card
+            if arrowOnly then
+                hit = CreateFrame("Button", nil, card)
+                hit:SetPoint("TOPRIGHT", -4, -4)
+                hit:SetSize(28, 22)
+                hit:SetScript("OnClick", function() goTab(tabKey, subKey) end)
+            else
+                card:EnableMouse(true)
+                card:SetScript("OnMouseUp", function() goTab(tabKey, subKey) end)
+            end
+            hit:SetScript("OnEnter", function()
+                card:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
                 arrow:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             end)
-            card:SetScript("OnLeave", function(self)
-                self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+            hit:SetScript("OnLeave", function()
+                card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
                 arrow:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             end)
         end
@@ -89,12 +98,7 @@ function GuildOS:CreateDashboardPanel(panel)
     local cRecruit  = makeCard(L["RECRUITMENT"],     "recruitment")
     local cLoot     = makeCard(L["YOUR LOOT"],       "loot")
     -- The guild's chat (#126), where "Guild activity" repeated the Activity column beside it.
-    -- The feed takes clicks itself (a link, the box), so only the arrow opens Guild > Chat.
-    local cChat     = makeCard(L["GUILD CHAT"])
-    local toChat = CreateFrame("Button", nil, cChat)
-    toChat:SetPoint("TOPRIGHT", -4, -4)
-    toChat:SetSize(28, 22)
-    toChat:SetScript("OnClick", function() goTab("guild", "chat") end)
+    local cChat     = makeCard(L["GUILD CHAT"],      "guild",       "chat", true)
     local chatRefresh = GuildOS:CreateGuildChatFeed(cChat.body)
 
     ------------------------------------------------------------------

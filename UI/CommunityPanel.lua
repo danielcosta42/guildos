@@ -480,6 +480,10 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
     empty:SetPoint("TOPLEFT", 6, -4)
 
     local refresh   -- declared for the tab clicks
+    -- The newest line is shown on opening and on changing channel; after that the feed follows
+    -- new lines only for a reader already at the bottom, never pulling one who scrolled up.
+    local pinBottom = true
+    local scrolling = false   -- a move to the bottom is queued for the next frame
 
     -- Another channel: the server stops being told about the old one, and is told about this one.
     local function open(stream)
@@ -487,6 +491,7 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
         GC:Watch(false, current)
         current = idOf(stream) and stream or nil
         GC:Watch(true, current)
+        pinBottom = true
         refresh()
     end
 
@@ -500,9 +505,11 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
                 if s.id == current.id then still = s end
             end
             if not still then
-                GC:Watch(false, current)
+                -- Hidden, the feed already stopped watching it.
+                local watched = panel:IsVisible()
+                if watched then GC:Watch(false, current) end
                 current = nil
-                if panel:IsVisible() then GC:Watch(true, nil) end
+                if watched then GC:Watch(true, nil) end
             end
         end
         bar:SetShown(list ~= nil)
@@ -555,6 +562,10 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
     end
 
     refresh = function()
+        -- In a chat lockdown the server's lines and channels arrive secret: keep what is drawn.
+        if GC:Locked() then return end
+        local follow = pinBottom or scrolling or scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 4
+        pinBottom = false
         layoutTabs()
         -- Born 0 wide (CreateScrollFrame sizes it before layout), so re-set on every draw.
         content:SetWidth(math.max(holder:GetWidth() - 12, 1))
@@ -595,8 +606,11 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
         if #groups == 0 then y = 20 end
         content:SetHeight(math.max(y, 1))
         -- A frame later: the scroll range follows the new height only after it lands.
+        if not follow then return end
         local target = math.max(0, y - holder:GetHeight())
+        scrolling = true
         GuildOS.Compat.After(0, function()
+            scrolling = false
             if panel:IsVisible() then scroll:SetVerticalScroll(target) end
         end)
     end
@@ -617,7 +631,7 @@ function GuildOS:CreateGuildChatFeed(panel, opts)
         if panel:IsVisible() then refresh() end
     end)
     -- The server is told a channel is being read only while the feed is on screen.
-    panel:HookScript("OnShow", function() GC:Watch(true, current) end)
+    panel:HookScript("OnShow", function() pinBottom = true; GC:Watch(true, current) end)
     panel:HookScript("OnHide", function() GC:Watch(false, current) end)
     -- The cards are as wide as the view: a resized window lays them out again, once a frame.
     UI:MakeResponsive(holder, function()

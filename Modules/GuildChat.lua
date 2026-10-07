@@ -44,9 +44,15 @@ function GuildChat:_Notify()
     end
 end
 
--- The guild's channels this player can read, or nil where the server keeps none.
+-- The guild's channels this player can read; nil where the server keeps none, or
+-- in a chat lockdown, when the list arrives secret.
 function GuildChat:Streams()
-    return GuildOS.Compat.GuildChatStreams()
+    return (GuildOS.Compat.GuildChatStreams())
+end
+
+-- In a chat lockdown nothing of the server's can be read: a feed keeps what it shows.
+function GuildChat:Locked()
+    return GuildOS.Compat.InChatLockdown()
 end
 
 local function isGuild(stream)
@@ -58,7 +64,8 @@ end
 -- server has nothing loaded yet: never both, so no line shows twice. Any other
 -- channel only ever has the server's.
 function GuildChat:Entries(stream)
-    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG, stream and stream.id)
+    local server, locked = GuildOS.Compat.GuildChatHistory(self.MAX_LOG, stream and stream.id)
+    if locked then return nil end
     if not isGuild(stream) then
         return server or {}, true
     end
@@ -68,12 +75,24 @@ function GuildChat:Entries(stream)
     return self:Log(), false
 end
 
--- A channel's tab opened (true) or closed. Opened, the server is asked for older
--- lines while it holds fewer than the cap; they redraw the tab when they arrive.
+-- A channel's tab opened (true) or closed. Two feeds can show one channel (the
+-- Now card and Guild > Chat), so the server hears the first open and the last
+-- close. Opened, it is asked for older lines while it holds fewer than the cap;
+-- they redraw the tab when they arrive.
+GuildChat.watching = {}
+
 function GuildChat:Watch(on, stream)
-    local id = stream and stream.id
-    GuildOS.Compat.WatchGuildChat(on, id)
-    if not on then return end
+    local id = (not isGuild(stream)) and stream.id or nil
+    local key = id or "guild"
+    local was = self.watching[key] or 0
+    if not on and was == 0 then return end
+    self.watching[key] = was + (on and 1 or -1)
+    if not on then
+        if was == 1 then GuildOS.Compat.WatchGuildChat(false, id) end
+        return
+    end
+    if was > 0 then return end
+    GuildOS.Compat.WatchGuildChat(true, id)
     local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG, id)
     if server and #server < self.MAX_LOG then
         GuildOS.Compat.RequestOlderGuildChat(self.MAX_LOG - #server, id)

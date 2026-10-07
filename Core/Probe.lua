@@ -73,6 +73,9 @@ Probe.APIS = {
     -- WoW: Forever professions (issue #31).
     "GetProfessions", "GetProfessionInfo", "IsPlayerSpell", "C_TradeSkillUI.GetAllRecipeIDs",
     "C_TradeSkillUI.GetRecipeInfo", "C_TradeSkillUI.IsDataSourceChanging", "C_Club.GetGuildClubId", "C_Club.GetMemberInfo",
+    -- The guild's chat as the server keeps it (issue #126).
+    "C_Club.GetStreams", "C_Club.GetMessageRanges", "C_Club.GetMessagesBefore", "C_Club.FocusStream",
+    "C_Club.UnfocusStream", "C_Club.RequestMoreMessagesBefore", "C_Club.SendMessage", "GetClassInfo",
     "ChatFrameUtil.AddMessageEventFilter",
     -- The retail tooltip (issue #19): where the OnTooltipSet* scripts below are absent, the hook
     -- and the reading happen through these instead. A client with the processor and no TooltipUtil

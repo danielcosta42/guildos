@@ -133,8 +133,9 @@ check(#GC:Log() == 0, "a character the addon does not know to be in a guild keep
 GuildOS.isGuilded = true
 
 -- ── The server's own history (WoW: Forever, issue #126) ─────────────────
--- Measured on Forever: the guild's club stream holds what was said while the player was offline,
+-- Measured on Forever: the guild's club streams hold what was said while the player was offline,
 -- each message as { messageId = { epoch (microseconds), position }, author = { name, classID }, content }.
+-- Read the way Blizzard_Communities reads them: GetMessagesBefore from the newest of the last range.
 local function fire(event, ...)
   for _, f in ipairs(frames) do
     if f.events[event] then f.fn(f, event, ...) end
@@ -143,47 +144,53 @@ end
 check(select(2, GC:Entries()) == false and GC:Streams() == nil,
   "a client without C_Club shows the addon's own log, and no list of channels")
 -- On the client a secret keeps its type: a secret name or text is still a string, so type() lets it through.
-local secretName, secretText = "Nome Secreto", "texto secreto"
-issecretvalue = function(v) return v == secret or v == secretName or v == secretText end
+local secretName, secretText, secretEpoch = "Nome Secreto", "texto secreto", 4242e6
+issecretvalue = function(v) return v == secret or v == secretName or v == secretText or v == secretEpoch end
 
+-- Enum.ClubStreamType on Forever: General 0, Guild 1, Officer 2, Discord 3, Other 4 (ClubDocumentation.lua).
 local club = { id = "C1", streams = { { streamId = "2", streamType = 2, name = "Officer" },
-                                      { streamId = "9", streamType = 3, name = "Raid Team" },
+                                      { streamId = "9", streamType = 4, name = "Raid Team" },
+                                      { streamId = "5", streamType = 3, name = "Ponte Discord" },
+                                      { streamId = "0", streamType = 0, name = "General" },
+                                      { streamId = "8", streamType = 4, name = secretName },
                                       { streamId = "7", streamType = 1, name = "Guild" } },
-              msgs = {}, other = {}, asked = {}, said = {} }
+              msgs = {}, other = {}, asked = {}, said = {}, focus = {}, emptyRange = {} }
 local function msgsOf(s) if s == "7" then return club.msgs end return club.other[s] or {} end
+local locked = false
+-- In a chat lockdown these answer secrets (SecretInChatMessagingLockdown): reading one there is a bug.
+local function readable(what) if locked then error(what .. " read in a chat lockdown") end end
+C_ChatInfo = { InChatMessagingLockdown = function() return locked end }
 local function message(epoch, name, classID, content, destroyed)
   return { messageId = { epoch = epoch, position = 0 }, author = { name = name, classID = classID },
            content = content, destroyed = destroyed }
 end
-local function split(list, at) -- two ranges, handed over newest first, as nothing promises their order
-  local a, b = {}, {}
-  for i, m in ipairs(list) do if i <= at then a[#a + 1] = m else b[#b + 1] = m end end
-  return a, b
-end
 C_Club = {
   GetGuildClubId = function() return club.id end,
-  GetStreams = function() return club.streams end,
+  GetStreams = function() readable("GetStreams"); return club.streams end,
   GetMessageRanges = function(c, s)
+    readable("GetMessageRanges")
     local list = msgsOf(s)
-    if c ~= club.id or #list == 0 then return {} end
-    local a, b = split(list, math.floor(#list / 2))
-    local out = {}
-    if #b > 0 then out[#out + 1] = { oldestMessageId = b[1].messageId, newestMessageId = b[#b].messageId } end
-    if #a > 0 then out[#out + 1] = { oldestMessageId = a[1].messageId, newestMessageId = a[#a].messageId } end
-    return out
-  end,
-  GetMessagesInRange = function(_, s, oldest, newest)
-    local out, on = {}, false
-    for _, m in ipairs(msgsOf(s)) do
-      if m.messageId == oldest then on = true end
-      if on then out[#out + 1] = m end
-      if m.messageId == newest then break end
+    -- An empty range: its newest before its oldest, as Blizzard_Communities' RangeIsEmpty reads one.
+    if club.emptyRange[s] then
+      return { { oldestMessageId = { epoch = 2, position = 0 }, newestMessageId = { epoch = 1, position = 0 } } }
     end
+    if c ~= club.id or #list == 0 then return {} end
+    return { { oldestMessageId = list[1].messageId, newestMessageId = list[#list].messageId } }
+  end,
+  GetMessagesBefore = function(_, s, newest, count)
+    readable("GetMessagesBefore")
+    local list, upTo = msgsOf(s), 0
+    for i, m in ipairs(list) do if m.messageId == newest then upTo = i end end
+    local out = {}
+    for i = math.max(1, upTo - count + 1), upTo do out[#out + 1] = list[i] end
     return out
   end,
-  FocusStream = function(c, s) club.focused = c .. "/" .. s end,
-  UnfocusStream = function() club.focused = nil end,
-  RequestMoreMessagesBefore = function(c, s, id, count) club.asked[#club.asked + 1] = { c = c, s = s, id = id, count = count } end,
+  FocusStream = function(c, s) club.focus[s] = (club.focus[s] or 0) + 1; club.focused = c .. "/" .. s end,
+  UnfocusStream = function(c, s) club.focus[s] = (club.focus[s] or 0) - 1; if club.focused == c .. "/" .. s then club.focused = nil end end,
+  RequestMoreMessagesBefore = function(c, s, id, count)
+    readable("RequestMoreMessagesBefore")
+    club.asked[#club.asked + 1] = { c = c, s = s, id = id, count = count }
+  end,
   SendMessage = function(c, s, text) club.said[#club.said + 1] = { c = c, s = s, text = text } end,
 }
 local CLASSES = { [8] = "MAGE", [5] = "PRIEST" }
@@ -194,14 +201,17 @@ local entries, server = GC:Entries()
 check(server == false and entries[1].m == "antes do servidor",
   "while the server has nothing loaded, the tab shows the addon's own log")
 GC:Watch(true)
-check(club.focused == "C1/7" and #club.asked == 0, "and opening it focuses the stream, with nothing to ask before")
+check(club.focused == "C1/7" and #club.asked == 1 and club.asked[1].s == "7" and club.asked[1].id == nil,
+  "and opening it focuses the stream and asks for its recent lines, as the Communities window does")
 GC:Watch(false)
+check(club.focused == nil, "closing it stops")
 
 local E = 1790000000 * 1e6
 club.msgs = {
   message(E - 86400e6, "Elyndora Saurfang", 8, "proc a skill"),
   message(E - 3600e6, "Apagada Silva", 5, "isso some", true),
   message(E - 1800e6, "Oculta Costa", 5, secretText),
+  message(secretEpoch, "Hora Secreta", 5, "quando?"),
   message(E - 60e6, "Chehul Costa", 5, "tamo |cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r\njunto"),
 }
 entries, server = GC:Entries()
@@ -209,7 +219,7 @@ check(server == true and #entries == 2, "once it has, the tab shows the server's
 check(entries[1].n == "Elyndora Saurfang" and entries[1].c == "MAGE" and entries[1].t == 1790000000 - 86400
   and entries[1].m == "proc a skill", "each with its speaker, class and time, from yesterday too")
 check(entries[2].n == "Chehul Costa" and entries[2].m == "tamo |cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r junto",
-  "oldest first across ranges, the link kept, the line break not")
+  "oldest first, the link kept, the line break not; deleted lines and secret times or texts left out")
 
 club.msgs[1].author.name = secretName
 check(#GC:Entries() == 1, "a message whose speaker is secret is skipped")
@@ -217,19 +227,29 @@ club.msgs[1].author.name = "Elyndora Saurfang"
 
 -- Opening the tab: the stream is focused, and older lines are asked for while there are fewer than 200.
 GC:Watch(true)
-check(club.focused == "C1/7", "opening the tab tells the server the guild stream is being read")
-check(#club.asked == 1 and club.asked[1].s == "7" and club.asked[1].id == club.msgs[1].messageId
-  and club.asked[1].count == 198, "and asks for the 198 lines before the oldest it has")
+local ask = club.asked[#club.asked]
+check(club.focused == "C1/7" and #club.asked == 2 and ask.s == "7" and ask.id == club.msgs[1].messageId
+  and ask.count == 198, "opening the tab asks for the 198 lines before the oldest it has")
+-- The Now card and Guild > Chat can both show /g: the server hears the first open and the last close.
+GC:Watch(true)
+check(club.focus["7"] == 1 and #club.asked == 2, "a second feed on the same channel focuses nothing more")
 GC:Watch(false)
-check(club.focused == nil, "closing it stops")
+check(club.focused == "C1/7", "and closing one of the two leaves it focused")
+GC:Watch(false)
+check(club.focused == nil and club.focus["7"] == 0, "closing the last stops")
+GC:Watch(false)
+GC:Watch(true)
+GC:Watch(false)
+check(club.focus["7"] == 0 and club.focused == nil, "and a close with nothing open does nothing: the next open and close still pair")
 
 local many = {}
 for i = 1, 250 do many[i] = message(E + i * 1e6, "Bruna Lima", 5, "linha " .. i) end
 club.msgs = many
 entries = GC:Entries()
 check(#entries == 200 and entries[1].m == "linha 51" and entries[200].m == "linha 250", "the last 200 of the server's lines")
+local asks = #club.asked
 GC:Watch(true)
-check(#club.asked == 1, "with 200 in hand nothing more is asked for")
+check(#club.asked == asks, "with 200 in hand nothing more is asked for")
 GC:Watch(false)
 
 -- Live: anything in the guild's club redraws the tab; another club, or a secret one, does not.
@@ -252,14 +272,21 @@ local streams = GC:Streams()
 check(streams and #streams == 3 and streams[1].kind == "guild" and streams[1].id == "7"
   and streams[2].kind == "officer" and streams[2].id == "2"
   and streams[3].kind == "other" and streams[3].id == "9" and streams[3].name == "Raid Team",
-  "the guild's channels as the game lists them to this player: Guild, Officer, then the ones the guild made")
+  "Guild, Officer, then the channels the guild made; not General, Discord, or one whose name is secret")
 local officer, raidTeam = streams[2], streams[3]
 club.other["2"] = { message(E - 120e6, "Chefe Lima", 8, "pauta da reuniao") }
 entries, server = GC:Entries(officer)
 check(server == true and #entries == 1 and entries[1].m == "pauta da reuniao", "each channel shows its own lines")
 check(#GC:Entries(raidTeam) == 0, "and one with nothing loaded shows nothing, never the guild's log")
+club.emptyRange["9"] = true
+GC:Watch(true, raidTeam)
+ask = club.asked[#club.asked]
+check(#GC:Entries(raidTeam) == 0 and ask.s == "9" and ask.id == nil,
+  "an empty range counts as nothing held: the recent lines are asked for")
+GC:Watch(false, raidTeam)
+club.emptyRange["9"] = nil
 GC:Watch(true, officer)
-local ask = club.asked[#club.asked]
+ask = club.asked[#club.asked]
 check(club.focused == "C1/2" and ask.s == "2" and ask.count == 199, "opening one focuses it and asks for its older lines")
 GC:Watch(false, officer)
 
@@ -269,14 +296,28 @@ check(GC:Send("bora |cffff0000x|r", raidTeam) == true and #club.said == 1 and cl
   and club.said[1].s == "9" and club.said[1].text == "bora cffff0000xr",
   "one in a channel the guild made goes to that channel, cleaned like any other")
 check(GC:Send("todos", streams[1]) == true and sent[#sent].chan == "GUILD", "and the Guild tab's to /g")
-C_ChatInfo = { InChatMessagingLockdown = function() return true end }
-ok, why = GC:Send("agora", raidTeam)
-check(ok == false and why == "locked" and #club.said == 1, "a chat lockdown holds every channel's line")
-C_ChatInfo = nil
 check(GC:Send("sumiu", { id = "99", kind = "other" }) == false and #club.said == 1,
   "a channel gone by the time Enter is pressed sends nothing")
 
-C_Club, GetClassInfo, issecretvalue = nil, nil, nil
+-- ── A chat lockdown ─────────────────────────────────────────────────────
+-- The club's lists and messages arrive secret: nothing is read, the feed keeps what it shows.
+locked = true
+local asked = #club.asked
+check(GC:Entries() == nil and GC:Entries(officer) == nil and GC:Streams() == nil,
+  "in a chat lockdown nothing is read: no lines, no channels, and not the local log either")
+GC:Watch(true)
+check(club.focused == "C1/7" and #club.asked == asked, "opening /g still focuses it, by the id already known, and asks nothing")
+GC:Watch(false)
+GC:Watch(true, officer)
+check(club.focused == "C1/2", "and so does a named channel")
+check(pcall(GuildOS.Compat.RequestOlderGuildChat, 10) and #club.asked == asked,
+  "and asking the server for older lines, called directly, reads and asks nothing")
+GC:Watch(false, officer)
+ok, why = GC:Send("agora", raidTeam)
+check(ok == false and why == "locked" and #club.said == 1, "a chat lockdown holds every channel's line")
+locked = false
+
+C_Club, GetClassInfo, issecretvalue, C_ChatInfo = nil, nil, nil, nil
 
 -- ── Wired in ────────────────────────────────────────────────────────────
 local function read(path) local f = assert(io.open(ADDON .. "/" .. path, "rb")); local t = f:read("*a"); f:close(); return t end

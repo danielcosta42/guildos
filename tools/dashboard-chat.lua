@@ -35,6 +35,7 @@ local function newFrame(parent)
   return setmetatable(f, { __index = function(_, k)
     if NUM[k] then return function() return NUM[k] end end
     if k == "SetScript" or k == "HookScript" then return function(self, n, fn) self.scripts[n] = fn end end
+    if k == "SetTextColor" then return function(self, r, g, b) self.color = { r, g, b } end end
     if k == "GetChildren" or k == "GetRegions" then return function() end end
     return function() return sink end
   end })
@@ -96,5 +97,12 @@ end
 check(arrow ~= nil, "the arrow is a button")
 arrow.scripts.OnClick(arrow)
 check(opened and opened[1] == "guild" and opened[2] == "chat", "that opens Guild > Chat")
+local glyph
+for _, f in ipairs(frames) do if f.parent == card and f.text == ">" then glyph = f end end
+local C = GuildOS.Colors
+arrow.scripts.OnEnter(arrow)
+check(glyph and glyph.color[1] == C.gold.r and glyph.color[3] == C.gold.b, "and lights up under the mouse, as a card does")
+arrow.scripts.OnLeave(arrow)
+check(glyph.color[1] == C.silver.r, "and dims when it leaves")
 
 print(string.format("dashboard-chat: %d checks passed", checks))
