@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.68.3] - 2026-10-07
+
+### Fixed
+- tooltip de unidade com identidade secreta nao quebra mais no Forever (#116)
+
+
 ## [0.68.2] - 2026-10-06
 
 ### Fixed
