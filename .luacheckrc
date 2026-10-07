@@ -63,6 +63,7 @@ read_globals = {
 
     -- WoW API: C_ namespaces
     "C_Timer",
+    "C_Texture",        -- atlas lookups for the interface styles (#122)
     "C_ChatInfo",
     "C_GuildInfo",
     "C_Map",

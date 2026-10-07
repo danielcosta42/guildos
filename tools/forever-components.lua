@@ -100,6 +100,7 @@ GuildOS = {
   L = setmetatable({}, { __index = function(_, k) return k end }),
 }
 dofile(ADDON .. "/Core/Data.lua")
+dofile(ADDON .. "/Core/Style.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 local UI, C, F = GuildOS.UI, GuildOS.Colors, GuildOS.Fonts
 

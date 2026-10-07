@@ -115,6 +115,8 @@ function Frame:GetFrameLevel() return self.level end
 function Frame:SetScale(s) self.scale = s end
 function Frame:GetScale() return self.scale end
 function Frame:RegisterEvent(e) self.events[e] = true end
+function Frame:SetAtlas(name) self.atlas = name end
+function Frame:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
 function Frame:CreateTexture(_, layer) local t = newFrame("Texture", self); t.layer = layer; return t end
 function Frame:CreateFontString() return newFrame("FontString", self) end
 function Frame:SetFont(file, size) self.font = { file = file, size = size }; return true end
@@ -154,7 +156,7 @@ function Frame:IsMouseOver() return false end
 for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
-  "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine" }) do
+  "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
   Frame[name] = function() end
 end
 
@@ -214,6 +216,8 @@ local hooks = {}
 function hooksecurefunc(name, fn) hooks[name] = fn end
 function debugstack() return "" end
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
+-- The face a text should have: the Forever style draws every text in the game's font (#122).
+local function face(file) return STYLE == "forever" and STANDARD_TEXT_FONT or file end
 strtrim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 C_GuildInfo = { GuildRoster = function() end }
 function UnitName() return "Ana" end
@@ -249,6 +253,17 @@ local selftests = {}
 GuildOS.SelfTest = { Register = function(_, name, fn) selftests[name] = fn end }
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
+dofile(ADDON .. "/Core/Style.lua")
+-- tools/window-shell-forever.lua runs this whole harness again under the Forever style (#122).
+if STYLE == "forever" then
+  local atlases = {}
+  for line in io.lines(ADDON .. "/tools/data/forever-atlas-elements.txt") do
+    if not line:find("^#") then atlases[(line:gsub(" %*$", "")):lower()] = true end
+  end
+  C_Texture = { GetAtlasInfo = function(n) return atlases[tostring(n):lower()] and { width = 32, height = 32 } or nil end }
+  GuildOSDB.style = "forever"
+end
+GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
@@ -548,13 +563,13 @@ do
     if c.kind == "FontString" and c.text == "GuildOS" then wordmark = c end
     if c.kind == "Texture" and c.layer == "BACKGROUND" then barBg = c end
   end
-  check(wordmark and wordmark.font.file == F.wordmark.file and wordmark.font.size == 18 and same(wordmark.color, C.gold),
+  check(wordmark and wordmark.font.file == face(F.wordmark.file) and wordmark.font.size == 18 and same(wordmark.color, C.gold),
     "left: the gold wordmark, GuildOS, in its Spectral face")
   check(barBg and same(barBg.color, C.panel), "the title bar sits on panel")
-  check(same(f.metaText.color, C.labelDim) and same(f.syncText.color, C.label) and f.metaText.font.file == F.mono
+  check(same(f.metaText.color, C.labelDim) and same(f.syncText.color, C.label) and f.metaText.font.file == face(F.mono)
     and f.syncText.font.size == 10, "the meta line in labelDim and the sync time in label, both mono 10")
   local label = tabOf(f, "roster").label
-  check(label.font.file == F.mono and label.font.size == 11, "tab labels are mono 11")
+  check(label.font.file == face(F.mono) and label.font.size == 11, "tab labels are mono 11")
   local ruleLine
   for _, c in ipairs(f.rule.children) do if c.kind == "Texture" and c.h == 1 then ruleLine = c end end
   check(ruleLine and same(ruleLine.color, C.line), "with a 1px line under the tab rule")
@@ -575,6 +590,8 @@ check(f.syncText.shown and f.syncText.text == "sync T60", "right: the newest syn
 GuildOS.db.members = {}
 f:RefreshTitle()
 check(f.syncText.text == "not synced yet", "before any sync it says so")
+check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128-RedButton-Minus"
+  and f.closeButton.__art.atlas == "128-RedButton-Exit"), "in the Forever style, the game's minus and exit buttons")
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
   "then minimise and close at the right edge")
 check(point(f.content, 1) == "TOPLEFT,12,-70" and point(f.content, 2) == "BOTTOMRIGHT,-12,34",
@@ -961,7 +978,7 @@ do
 end
 
 check(now.clock.text == "4:12:38", "the countdown to the next raid")
-check(same(now.clock.color, C.gold) and now.clock.font.file == GuildOS.Fonts.countdown.file and now.clock.font.size == 19,
+check(same(now.clock.color, C.gold) and now.clock.font.file == face(GuildOS.Fonts.countdown.file) and now.clock.font.size == 19,
   "in gold, in the countdown's mono face at 19px")
 check(now.raidMeta.text == "Karazhan · " .. os.date("%a %H:%M", KARAZHAN) .. " · 9 going", "its title, time and who is going")
 check(now.openCalendar.shown and now.openCalendar.variant == "primary", "and a primary button to the calendar")
@@ -1150,7 +1167,8 @@ do
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 6 and open and open.label.text == "Calendar" and open.underline.shown,
+  check(subTabs == 6 and open and open.label.text == "Calendar"
+    and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
     "its six sub-tabs (Chat is the sixth, #124) carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
