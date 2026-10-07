@@ -137,6 +137,9 @@ function Frame:StartSizing(corner) if self.resizable then self.sizing = corner e
 function Frame:StopMovingOrSizing() self.moving, self.sizing = nil, nil end
 function Frame:SetScrollChild(child) self.scrollChild = child end
 function Frame:GetStringHeight() return 12 end
+function Frame:SetVerticalScroll(v) self.vscroll = v end
+function Frame:SetHyperlinksEnabled(v) self.hyperlinks = v end
+function Frame:EnableMouse(v) self.mouse = v end
 local function isRegion(c) return c.kind == "Texture" or c.kind == "FontString" end
 function Frame:GetChildren()
   local out = {}
@@ -150,7 +153,7 @@ function Frame:GetRegions()
 end
 function Frame:IsEnabled() return true end
 function Frame:IsMouseOver() return false end
-for _, name in ipairs({ "EnableMouse", "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
+for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
   "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
@@ -1139,6 +1142,8 @@ end
 -- The calendar filter, through the real Guild tab and the real calendar.
 do
   dofile(ADDON .. "/Modules/CallToArms.lua")   -- the TOC loads it before the panel
+  dofile(ADDON .. "/Modules/AllianceChat.lua")
+  dofile(ADDON .. "/Modules/GuildChat.lua")
   GuildOS.CallToArms:Initialize()
   dofile(ADDON .. "/UI/CommunityPanel.lua")
   GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
@@ -1152,6 +1157,8 @@ do
   check(guild.activeSub == "calendar" and calPanel.shown and cal ~= nil, "on its calendar")
   local bar
   for _, c in ipairs(guild.children) do if c.bg then bar = c end end
+  guild:SetSize(800, 500)   -- a window of ordinary width: six tabs wrap only below it (#124)
+  flush()
   local subTabs, open = 0, nil
   for _, c in ipairs(bar and bar.children or {}) do
     if c.underline then
@@ -1160,9 +1167,9 @@ do
     end
   end
   check(bar and bar.h == 28 and same(bar.bg.color, C.panel), "the Guild tab's sub-tab bar is 28px on panel")
-  check(subTabs == 5 and open and open.label.text == "Calendar"
+  check(subTabs == 6 and open and open.label.text == "Calendar"
     and (open.underline.shown or (STYLE == "forever" and open.__styleTab)),
-    "its five sub-tabs (Call to Arms is the fifth, #108) carry a 1px gold rule, shown under the open one")
+    "its six sub-tabs (Chat is the sixth, #124) carry a 1px gold rule, shown under the open one")
   check(cal.viewYear == 2026 and cal.viewMonth == 1 and cal.selectedKey == 20260115,
     "showing the raid's month, with its day selected")
   local function drawn(text)
@@ -1281,7 +1288,7 @@ do
       if x + c.w > bar.w then fits = false end
     end
   end
-  check(bar.w == 280 and fits and bar.h > 28, "and the Guild tab's five sub-tabs wrap rather than run off a narrow window")
+  check(bar.w == 280 and fits and bar.h > 28, "and the Guild tab's six sub-tabs wrap rather than run off a narrow window")
   local msg
   for _, c in ipairs(p.children) do
     if c.kind == "EditBox" and c.points[1] and c.points[1][2] == row then msg = c end
@@ -1290,6 +1297,106 @@ do
   check(msg.maxBytes == CTA.TEXT_MAX + 1, "and holds what a call carries in bytes, not letters: Cyrillic is two each")
   win:Hide()
   GuildOS.db.cta.templates = {}
+end
+
+-- The Chat sub-tab (issue #124): guild chat in the window, through the real GuildChat and Helpers.
+do
+  local timeAgo = GuildOS.TimeAgo
+  dofile(ADDON .. "/Core/Utils.lua")   -- class colours, and the clean-up a sent line gets
+  GuildOS.TimeAgo = timeAgo
+  local GC = GuildOS.GuildChat
+  local function find(root, text)
+    for _, c in ipairs(root.children) do
+      if c.text == text or (c.label and c.label.text == text) then return c end
+      local hit = find(c, text)
+      if hit then return hit end
+    end
+  end
+  local sentChat, refs = {}, {}
+  function SendChatMessage(msg, chan) sentChat[#sentChat + 1] = { msg = msg, chan = chan } end
+  function SetItemRef(link, text, button) refs[#refs + 1] = { link, text, button } end
+  function GetPlayerInfoByGUID(g) if g == "g-b" then return "Mage", "MAGE" end end
+  GuildOS.db.guildChatLog, GuildOS.isGuilded = nil, true
+
+  GuildOS.RosterFrame, GuildOS.db.settings.window = nil, nil
+  local win = UI:GetMainWindow()
+  UI:OpenWindow("guild", "chat")
+  local sub = win.tabPanels.guild.subPanels.chat
+  local p = sub and sub.panel
+  local empty = p and find(p, "No guild chat yet.")
+  check(p and p.shown and empty and empty.shown, "the Chat sub-tab opens, and says so while nobody has spoken")
+
+  GC:_OnMessage("boa noite", "Bruna", "g-b")
+  GC:_OnMessage("bora raid", "Bruna", "g-b")
+  local link = "|cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r"
+  GC:_OnMessage("olha " .. link, "Ana", nil)
+  local bruna, ana = find(p, "Bruna"), find(p, "Ana")
+  check(bruna and bruna.shown and ana and ana.shown and not empty.shown,
+    "a line of /g is drawn the moment it arrives, while the tab is open")
+  local pr, pg, pb = GuildOS:GetClassColor("MAGE")
+  check(same(bruna.color, { r = pr, g = pg, b = pb }), "the speaker in their class colour")
+  check(find(p, "boa noite\nbora raid") ~= nil, "two lines in a row from one speaker read as one block")
+  local line = find(p, "olha " .. link)
+  check(line ~= nil, "a link is drawn as the game sent it")
+  local card = line.parent
+  check(card.hyperlinks == true and card.mouse == true and card.scripts.OnHyperlinkClick ~= nil, "and can be clicked")
+  card.scripts.OnHyperlinkClick(card, "item:19019", "[Thunderfury]", "LeftButton")
+  check(refs[1] and refs[1][1] == "item:19019" and refs[1][2] == "[Thunderfury]" and refs[1][3] == "LeftButton",
+    "a click on a link opens it as the chat frame would")
+  flush()
+  local content = card.parent
+  local scroll = content.parent
+  check(content.h > 0 and scroll.vscroll == math.max(0, content.h - scroll.parent.h), "scrolled to the newest line")
+
+  UI:OpenWindow("guild", "calendar")
+  GC:_OnMessage("alguem?", "Caio", nil)
+  check(not find(p, "Caio"), "a line that arrives while the tab is closed is not drawn then")
+  UI:OpenWindow("guild", "chat")
+  check(find(p, "Caio") and find(p, "Caio").shown, "and is there when the tab opens again")
+
+  local old = NOW - 2 * 86400
+  table.insert(GC:Log(), 1, { t = old, n = "Duda", m = "ontem" })
+  sub.refresh()
+  check(find(p, os.date("%a %H:%M", old)) and find(p, os.date("%H:%M", NOW)),
+    "a line from another day says which day; today's only the time")
+
+  local holder = scroll.parent
+  holder:SetSize(400, 300)
+  holder:SetSize(500, 300)
+  flush()
+  check(card.w == 500 - 12 - 12, "a resized window lays the feed out again, at its new width")
+
+  -- At the cap the oldest line can be a block of its own while the newest joins the last one:
+  -- one block fewer, and the card left over must not stay on screen.
+  local caio = find(p, "Caio").parent
+  GuildOS.db.guildChatLog = { { t = NOW, n = "Bruna", c = "MAGE", m = "so eu" } }
+  sub.refresh()
+  check(not caio.shown and find(p, "so eu").parent.shown, "a card the log no longer needs is hidden")
+
+  local box
+  for _, c in ipairs(p.children) do if c.kind == "EditBox" then box = c end end
+  check(box and box.maxBytes == 241, "the box holds what /g will carry: 240 bytes")
+  box:SetText("vamos")
+  box.scripts.OnEnterPressed(box)
+  check(#sentChat == 1 and sentChat[1].msg == "vamos" and sentChat[1].chan == "GUILD" and box.text == "",
+    "Enter sends it to /g and empties the box")
+  box:SetText("   ")
+  box.scripts.OnEnterPressed(box)
+  check(#sentChat == 1, "an empty box sends nothing")
+  local send = find(p, "Send")
+  box:SetText("de novo")
+  send.scripts.OnClick(send)
+  check(#sentChat == 2 and sentChat[2].msg == "de novo", "and the Send button sends too")
+  C_ChatInfo = { InChatMessagingLockdown = function() return true end }
+  printed = {}
+  box:SetText("agora")
+  box.scripts.OnEnterPressed(box)
+  check(#sentChat == 2 and box.text == "agora" and said("still in the box"),
+    "in a chat lockdown nothing goes, the text stays in the box, and the player is told")
+  C_ChatInfo = nil
+  win:Hide()
+  GuildOS.db.guildChatLog = nil
+  SendChatMessage, SetItemRef, GetPlayerInfoByGUID = nil, nil, nil
 end
 
 do

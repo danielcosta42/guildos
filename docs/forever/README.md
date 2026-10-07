@@ -103,7 +103,7 @@ indexing or doing arithmetic with it raises.
   - `Mentions`, `NoteCommand`, `RosterLog`, `RecruitScanner`, `BanList`;
   - `Recruitment`'s welcome and auto-invite;
   - `LootMaster`'s roll capture (a roll made while chat is locked down is missed, not misread);
-  - `AllianceChat` on its channel.
+  - `AllianceChat` on its channel, and `GuildChat` on /g (#124), which also leaves out a secret GUID's class.
 - **Group-unit loops skip a member they cannot read:** `RaidTracker`, `Points`, `LootMaster` (seven places plus
   the trade window), `PugInspector`, `SoftRes`, `RaidTools`, `CompanionImport`, `SpecChecker` and
   `ConsumableChecker` (Anniversary only today).
@@ -114,7 +114,7 @@ indexing or doing arithmetic with it raises.
 - **Two small ones:** `RecipeTracker:ScanCraft` checks `GetCraftInfo` too, and `ChatTweaks` checks
   `ChatFrame_AddMessageEventFilter` before registering.
 - **Names with a surname, in commands (issue #49).** `/guildos note <name> <text>` read the name as the first word, so a Forever name ("Lethaniel Blightwood") lost its surname into the note. `GuildOS:SplitNameAndText` takes the first two words when they are somebody on the roster, and `GuildOS:RosterKey` keys the note the way the roster frame does. **The popup's edit box** is `EditBox` / `GetEditBox()` on Forever and `editBox` is nil: `Compat.PopupEditBox` reads either.
-- **The test.** `tools/secret-values.lua` (luajit, 51 checks) loads the real Core, Compat, Utils and eleven modules
+- **The test.** `tools/secret-values.lua` (luajit, 53 checks) loads the real Core, Compat, Utils and twelve modules
   under a stubbed client, with a secret that raises on every use. Each handler also gets a readable line, so one that
   returns unconditionally fails too.
   - **Mutation check:** 23 of 24 hand mutants are killed.

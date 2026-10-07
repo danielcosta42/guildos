@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.69.0] - 2026-10-07
+
+### Added
+- chat da guilda dentro da janela, na aba Chat do Guild (#124)
+
+### Fixed
+- chat da guilda lê o lockdown pelo Compat, agrupa o redimensionamento e avisa sem supor o motivo (#124)
+- chat da guilda segura o texto no lockdown, não grava sem guilda e se reajusta ao redimensionar (#124)
+
+
 ## [0.68.4] - 2026-10-07
 
 ### Changed

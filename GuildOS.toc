@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary and WoW: Forever
 ## Author: Chehul (danielcosta42)
-## Version: 0.68.4
+## Version: 0.69.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
 ## X-License: MIT
@@ -64,6 +64,7 @@ Modules\SyncService.lua
 Modules\Alliance.lua
 Modules\AllianceSync.lua
 Modules\AllianceChat.lua
+Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\BanList.lua
 Modules\RecruitmentSystem.lua

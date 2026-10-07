@@ -696,6 +696,8 @@ Compat._held, Compat._reported = {}, {}
 local function inLockdown()
     return (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()) and true or false
 end
+-- WoW: Forever's chat lockdown, false on a client without one (#124).
+Compat.InChatLockdown = inLockdown
 
 local function record(msg, reason)
     reason = tostring(reason)

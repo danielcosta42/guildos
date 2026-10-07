@@ -422,6 +422,126 @@ local function BuildPollsSub(panel)
 end
 
 ----------------------------------------------------------------------
+-- CHAT sub-panel — guild chat, kept by Modules/GuildChat.lua (issue #124).
+-- Laid out like the alliance feed: one card per run of lines from one speaker,
+-- newest at the bottom, a box underneath that sends to /g.
+----------------------------------------------------------------------
+local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
+
+local function BuildGuildChatSub(panel)
+    local GC = GuildOS.GuildChat
+
+    local holder = CreateFrame("Frame", nil, panel)
+    holder:SetPoint("TOPLEFT", 0, 0)
+    holder:SetPoint("BOTTOMRIGHT", 0, 32)
+    local scroll, content = UI:CreateScrollFrame(holder, "GuildOSGuildChatScroll")
+    scroll:SetAllPoints()
+
+    local input = makeInput(panel, 100, false)
+    input:SetPoint("BOTTOMLEFT", 2, 4)
+    input:SetPoint("BOTTOMRIGHT", -70, 4)
+    input:SetMaxBytes(241)   -- what Send keeps (240 bytes), plus the terminator
+    local sendBtn = UI:CreateButton(panel, L["Send"], 62, 24)
+    sendBtn:SetPoint("BOTTOMRIGHT", -2, 4)
+
+    local empty = UI:CreateText(content, L["No guild chat yet."], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+    empty:SetPoint("TOPLEFT", 6, -4)
+
+    -- Pooled: refresh runs on every line of /g, and WoW never frees a frame.
+    local blocks = {}
+    local function getBlock(i)
+        if blocks[i] then return blocks[i] end
+        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        card:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+        -- A link in the line opens as it does in the chat frame.
+        card:EnableMouse(true)
+        card:SetHyperlinksEnabled(true)
+        card:SetScript("OnHyperlinkClick", function(_, link, text, button) SetItemRef(link, text, button) end)
+        local icon = card:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(20, 20)
+        icon:SetPoint("TOPLEFT", 8, -6)
+        icon:SetTexture(CLASS_TEX)
+        local nameFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
+        nameFS:SetPoint("TOPLEFT", 36, -7)
+        local timeFS = UI:CreateText(card, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
+        timeFS:SetPoint("TOPRIGHT", -8, -8)
+        local bodyFS = UI:CreateText(card, "", 11, C.text.r, C.text.g, C.text.b)
+        bodyFS:SetPoint("TOPLEFT", 36, -22)
+        bodyFS:SetJustifyH("LEFT")
+        bodyFS:SetWordWrap(true)
+        blocks[i] = { card = card, icon = icon, nameFS = nameFS, timeFS = timeFS, bodyFS = bodyFS }
+        return blocks[i]
+    end
+
+    local function refresh()
+        -- Born 0 wide (CreateScrollFrame sizes it before layout), so re-set on every draw.
+        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
+        local log = GC:Log()
+        local classOf = {}
+        for _, e in ipairs(log) do classOf[e.n] = e.c or classOf[e.n] end
+        local groups = GuildOS.AllianceChat.GroupLog(log, GuildOS.AllianceChat.GROUP_WINDOW)
+        local today = date("%Y%m%d", GetServerTime())
+        local width = math.max(content:GetWidth() - 12, 200)
+        local y = 0
+        for i, g in ipairs(groups) do
+            local b = getBlock(i)
+            local class = classOf[g.name]
+            local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[class]
+            if coords then
+                b.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                b.icon:Show()
+            else
+                b.icon:Hide()
+            end
+            b.nameFS:SetText(g.name or "?")
+            b.nameFS:SetTextColor(GuildOS:GetClassColor(class))
+            -- The log outlives the session: a line from another day says which day.
+            local t = tonumber(g.t)
+            b.timeFS:SetText(t and date(date("%Y%m%d", t) == today and "%H:%M" or "%a %H:%M", t) or "")
+            b.bodyFS:SetWidth(width - 44)
+            b.bodyFS:SetText(table.concat(g.lines, "\n"))
+            local h = math.max(34, (b.bodyFS:GetStringHeight() or 12) + 28)
+            b.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.55)
+            b.card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.35)
+            b.card:SetPoint("TOPLEFT", 4, -y)
+            b.card:SetSize(width, h)
+            b.card:Show()
+            y = y + h + 3
+        end
+        for i = #groups + 1, #blocks do blocks[i].card:Hide() end
+        empty:SetShown(#groups == 0)
+        if #groups == 0 then y = 20 end
+        content:SetHeight(math.max(y, 1))
+        -- A frame later: the scroll range follows the new height only after it lands.
+        local target = math.max(0, y - holder:GetHeight())
+        GuildOS.Compat.After(0, function()
+            if panel:IsVisible() then scroll:SetVerticalScroll(target) end
+        end)
+    end
+
+    -- Enter and the click are the player's own key press, which /g needs on Forever.
+    local function doSend()
+        local ok, why = GC:Send(input:GetText())
+        if ok then
+            input:SetText("")
+        elseif why == "locked" then
+            GuildOS:Print(L["Chat is locked right now: your message is still in the box."])
+        end
+    end
+    sendBtn:SetScript("OnClick", doSend)
+    input:SetScript("OnEnterPressed", doSend)
+
+    GC:OnRefresh(function()
+        if panel:IsVisible() then refresh() end
+    end)
+    -- The cards are as wide as the view: a resized window lays them out again, once a frame.
+    UI:MakeResponsive(holder, function()
+        if panel:IsVisible() then refresh() end
+    end)
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Guild Hub assembly (sub-tab bar mirrors the Audit panel)
 ----------------------------------------------------------------------
 local HUB_SUBTABS = {
@@ -430,6 +550,7 @@ local HUB_SUBTABS = {
     { key = "bulletin", label = L["Bulletin"] },
     { key = "cta",      label = L["Call to Arms"] },
     { key = "polls",    label = L["Polls"] },
+    { key = "chat",     label = L["Chat"] },
 }
 
 function GuildOS:CreateGuildHub(parent, _mainFrame)
@@ -478,6 +599,7 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     local builders = {
         calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
         activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
+        chat = BuildGuildChatSub,
     }
     for _, t in ipairs(HUB_SUBTABS) do
         local p = makeSubPanel()

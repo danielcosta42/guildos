@@ -235,6 +235,7 @@ local MODULE_START = {
     { "Alliance", ui = "alliance" },
     { "AllianceSync" },
     { "AllianceChat" },
+    { "GuildChat" },
     { "RosterLog" },
     { "BanList" },
     { "CommSystem", feature = "commSystem" },
