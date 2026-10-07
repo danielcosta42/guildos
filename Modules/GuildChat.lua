@@ -7,7 +7,11 @@
 -- tab, which is a hardware event, so it is allowed on WoW: Forever too.
 --
 -- Where the server keeps the guild's chat (WoW: Forever, issue #126), the tab
--- shows that instead: it also holds what was said while the player was away.
+-- shows that instead: it also holds what was said while the player was away,
+-- and every channel of the guild, Officer and the ones it made, gets a tab.
+-- Only /g is ever written to disk.
+--
+-- A channel is { id, name, kind } from Compat.GuildChatStreams; nil means /g.
 --
 -- Unlike the alliance channel, the line is kept as the game sent it: item
 -- and player links stay clickable. It is what the default chat frame shows
@@ -40,25 +44,39 @@ function GuildChat:_Notify()
     end
 end
 
--- What the tab shows, and whether it came from the server. The server's history
--- where it has one; the addon's log elsewhere, or while the server has nothing
--- loaded yet. Never both: one source, so no line shows twice.
-function GuildChat:Entries()
-    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG)
+-- The guild's channels this player can read, or nil where the server keeps none.
+function GuildChat:Streams()
+    return GuildOS.Compat.GuildChatStreams()
+end
+
+local function isGuild(stream)
+    return not stream or stream.kind == "guild"
+end
+
+-- What a channel's tab shows, and whether it came from the server. For /g, the
+-- server's history where it has one, and the addon's log elsewhere or while the
+-- server has nothing loaded yet: never both, so no line shows twice. Any other
+-- channel only ever has the server's.
+function GuildChat:Entries(stream)
+    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG, stream and stream.id)
+    if not isGuild(stream) then
+        return server or {}, true
+    end
     if server and #server > 0 then
         return server, true
     end
     return self:Log(), false
 end
 
--- The tab opened (true) or closed. Opened, the server is asked for older lines
--- while it holds fewer than the cap; they redraw the tab when they arrive.
-function GuildChat:Watch(on)
-    GuildOS.Compat.WatchGuildChat(on)
+-- A channel's tab opened (true) or closed. Opened, the server is asked for older
+-- lines while it holds fewer than the cap; they redraw the tab when they arrive.
+function GuildChat:Watch(on, stream)
+    local id = stream and stream.id
+    GuildOS.Compat.WatchGuildChat(on, id)
     if not on then return end
-    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG)
+    local server = GuildOS.Compat.GuildChatHistory(self.MAX_LOG, id)
     if server and #server < self.MAX_LOG then
-        GuildOS.Compat.RequestOlderGuildChat(self.MAX_LOG - #server)
+        GuildOS.Compat.RequestOlderGuildChat(self.MAX_LOG - #server, id)
     end
 end
 
@@ -90,9 +108,9 @@ function GuildChat:_OnMessage(msg, author, guid)
     self:_Notify()
 end
 
--- Only ever called from the tab's Enter or Send click. The line is not logged
--- here: it shows when the game echoes it back as CHAT_MSG_GUILD.
-function GuildChat:Send(text)
+-- Only ever called from a tab's Enter or Send click. The line is not logged
+-- here: it shows when the game echoes it back.
+function GuildChat:Send(text, stream)
     local clean = GuildOS:SanitizeUserText(text, 240)
     if clean == "" then
         return false
@@ -102,16 +120,26 @@ function GuildChat:Send(text)
     if GuildOS.Compat.InChatLockdown() then
         return false, "locked"
     end
-    SendChatMessage(clean, "GUILD")
+    if isGuild(stream) then
+        SendChatMessage(clean, "GUILD")
+    elseif stream.kind == "officer" then
+        SendChatMessage(clean, "OFFICER")
+    else
+        return GuildOS.Compat.SendGuildStream(stream.id, clean)
+    end
     return true
 end
 
 function GuildChat:Initialize()
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_GUILD")
-    -- The server's stream: a new line, or older ones arriving. Absent where there is none.
+    -- The server's channels: a new line, older ones arriving, a channel made or
+    -- removed, the list arriving. Absent where there are none.
     GuildOS.Compat.RegisterEvent(f, "CLUB_MESSAGE_ADDED", true)
     GuildOS.Compat.RegisterEvent(f, "CLUB_MESSAGE_HISTORY_RECEIVED", true)
+    GuildOS.Compat.RegisterEvent(f, "CLUB_STREAM_ADDED", true)
+    GuildOS.Compat.RegisterEvent(f, "CLUB_STREAM_REMOVED", true)
+    GuildOS.Compat.RegisterEvent(f, "CLUB_STREAMS_LOADED", true)
     f:SetScript("OnEvent", function(_, event, ...)
         if event == "CHAT_MSG_GUILD" then
             local msg, author = ...
@@ -119,9 +147,9 @@ function GuildChat:Initialize()
             GuildOS:SafeCall(function() GuildChat:_OnMessage(msg, author, guid) end)
             return
         end
-        local clubId, streamId = ...
+        local clubId = ...
         GuildOS:SafeCall(function()
-            if GuildOS.Compat.IsGuildChatStream(clubId, streamId) then GuildChat:_Notify() end
+            if GuildOS.Compat.IsGuildClub(clubId) then GuildChat:_Notify() end
         end)
     end)
 end

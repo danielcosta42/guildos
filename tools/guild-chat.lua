@@ -140,13 +140,17 @@ local function fire(event, ...)
     if f.events[event] then f.fn(f, event, ...) end
   end
 end
-check(select(2, GC:Entries()) == false, "a client without C_Club shows the addon's own log")
+check(select(2, GC:Entries()) == false and GC:Streams() == nil,
+  "a client without C_Club shows the addon's own log, and no list of channels")
 -- On the client a secret keeps its type: a secret name or text is still a string, so type() lets it through.
 local secretName, secretText = "Nome Secreto", "texto secreto"
 issecretvalue = function(v) return v == secret or v == secretName or v == secretText end
 
 local club = { id = "C1", streams = { { streamId = "2", streamType = 2, name = "Officer" },
-                                      { streamId = "7", streamType = 1, name = "Guild" } }, msgs = {}, asked = {} }
+                                      { streamId = "9", streamType = 3, name = "Raid Team" },
+                                      { streamId = "7", streamType = 1, name = "Guild" } },
+              msgs = {}, other = {}, asked = {}, said = {} }
+local function msgsOf(s) if s == "7" then return club.msgs end return club.other[s] or {} end
 local function message(epoch, name, classID, content, destroyed)
   return { messageId = { epoch = epoch, position = 0 }, author = { name = name, classID = classID },
            content = content, destroyed = destroyed }
@@ -160,16 +164,17 @@ C_Club = {
   GetGuildClubId = function() return club.id end,
   GetStreams = function() return club.streams end,
   GetMessageRanges = function(c, s)
-    if c ~= club.id or s ~= "7" or #club.msgs == 0 then return {} end
-    local a, b = split(club.msgs, math.floor(#club.msgs / 2))
+    local list = msgsOf(s)
+    if c ~= club.id or #list == 0 then return {} end
+    local a, b = split(list, math.floor(#list / 2))
     local out = {}
     if #b > 0 then out[#out + 1] = { oldestMessageId = b[1].messageId, newestMessageId = b[#b].messageId } end
     if #a > 0 then out[#out + 1] = { oldestMessageId = a[1].messageId, newestMessageId = a[#a].messageId } end
     return out
   end,
-  GetMessagesInRange = function(_, _, oldest, newest)
+  GetMessagesInRange = function(_, s, oldest, newest)
     local out, on = {}, false
-    for _, m in ipairs(club.msgs) do
+    for _, m in ipairs(msgsOf(s)) do
       if m.messageId == oldest then on = true end
       if on then out[#out + 1] = m end
       if m.messageId == newest then break end
@@ -179,6 +184,7 @@ C_Club = {
   FocusStream = function(c, s) club.focused = c .. "/" .. s end,
   UnfocusStream = function() club.focused = nil end,
   RequestMoreMessagesBefore = function(c, s, id, count) club.asked[#club.asked + 1] = { c = c, s = s, id = id, count = count } end,
+  SendMessage = function(c, s, text) club.said[#club.said + 1] = { c = c, s = s, text = text } end,
 }
 local CLASSES = { [8] = "MAGE", [5] = "PRIEST" }
 function GetClassInfo(id) if CLASSES[id] then return "x", CLASSES[id], id end end
@@ -226,15 +232,49 @@ GC:Watch(true)
 check(#club.asked == 1, "with 200 in hand nothing more is asked for")
 GC:Watch(false)
 
--- Live: a new line in the guild stream redraws the tab; one in any other club does not.
+-- Live: anything in the guild's club redraws the tab; another club, or a secret one, does not.
 notified = 0
 fire("CLUB_MESSAGE_ADDED", "C1", "7")
 fire("CLUB_MESSAGE_HISTORY_RECEIVED", "C1", "7")
-check(notified == 2, "a new line, or older ones arriving, in the guild stream redraws the tab")
-fire("CLUB_MESSAGE_ADDED", "C2", "1")
 fire("CLUB_MESSAGE_ADDED", "C1", "2")
+check(notified == 3, "a new line, or older ones arriving, in any of the guild's channels redraws the tab")
+fire("CLUB_STREAM_ADDED", "C1", "11")
+fire("CLUB_STREAM_REMOVED", "C1", "9")
+fire("CLUB_STREAMS_LOADED", "C1")
+check(notified == 6, "and so does a channel made, removed, or the list arriving")
+fire("CLUB_MESSAGE_ADDED", "C2", "1")
+fire("CLUB_STREAM_ADDED", "C2", "1")
 fire("CLUB_MESSAGE_ADDED", secret, secret)
-check(notified == 2, "a line in another club, the officers' stream, or a secret one does not")
+check(notified == 6, "a line or a channel in another club, or a secret one, does not")
+
+-- ── Every channel of the guild ──────────────────────────────────────────
+local streams = GC:Streams()
+check(streams and #streams == 3 and streams[1].kind == "guild" and streams[1].id == "7"
+  and streams[2].kind == "officer" and streams[2].id == "2"
+  and streams[3].kind == "other" and streams[3].id == "9" and streams[3].name == "Raid Team",
+  "the guild's channels as the game lists them to this player: Guild, Officer, then the ones the guild made")
+local officer, raidTeam = streams[2], streams[3]
+club.other["2"] = { message(E - 120e6, "Chefe Lima", 8, "pauta da reuniao") }
+entries, server = GC:Entries(officer)
+check(server == true and #entries == 1 and entries[1].m == "pauta da reuniao", "each channel shows its own lines")
+check(#GC:Entries(raidTeam) == 0, "and one with nothing loaded shows nothing, never the guild's log")
+GC:Watch(true, officer)
+local ask = club.asked[#club.asked]
+check(club.focused == "C1/2" and ask.s == "2" and ask.count == 199, "opening one focuses it and asks for its older lines")
+GC:Watch(false, officer)
+
+check(GC:Send("oi chefes", officer) == true and sent[#sent].chan == "OFFICER" and sent[#sent].msg == "oi chefes",
+  "a line in the Officer tab goes to /o")
+check(GC:Send("bora |cffff0000x|r", raidTeam) == true and #club.said == 1 and club.said[1].c == "C1"
+  and club.said[1].s == "9" and club.said[1].text == "bora cffff0000xr",
+  "one in a channel the guild made goes to that channel, cleaned like any other")
+check(GC:Send("todos", streams[1]) == true and sent[#sent].chan == "GUILD", "and the Guild tab's to /g")
+C_ChatInfo = { InChatMessagingLockdown = function() return true end }
+ok, why = GC:Send("agora", raidTeam)
+check(ok == false and why == "locked" and #club.said == 1, "a chat lockdown holds every channel's line")
+C_ChatInfo = nil
+check(GC:Send("sumiu", { id = "99", kind = "other" }) == false and #club.said == 1,
+  "a channel gone by the time Enter is pressed sends nothing")
 
 C_Club, GetClassInfo, issecretvalue = nil, nil, nil
 

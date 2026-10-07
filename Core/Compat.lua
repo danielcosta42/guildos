@@ -668,18 +668,47 @@ function Compat.GuildMemberProfessions()
 end
 
 ----------------------------------------------------------------------
--- The guild's chat as the server keeps it (WoW: Forever, issue #126): the club stream the
--- Communities window reads. It holds what was said while the player was offline, which no
--- chat event delivers. Measured on Forever: a message is { messageId = { epoch, position },
+-- The guild's chat as the server keeps it (WoW: Forever, issue #126): the streams of the guild's
+-- club, which the Communities window reads. They hold what was said while the player was offline,
+-- which no chat event delivers. Measured on Forever: a message is { messageId = { epoch, position },
 -- author = { name, classID }, content }, the epoch in microseconds, and no timestamp field.
 ----------------------------------------------------------------------
-local function guildStream()
+local function guildClub()
     if not (C_Club and C_Club.GetGuildClubId and C_Club.GetStreams and C_Club.GetMessageRanges) then return nil end
     local clubId = C_Club.GetGuildClubId()
     if not clubId or Compat.IsSecret(clubId) then return nil end
-    local guild = Enum and Enum.ClubStreamType and Enum.ClubStreamType.Guild or 1
+    return clubId
+end
+
+-- The guild's channels as the game lists them to this player, as { id, name, kind }: "guild",
+-- then "officer" (listed only to who may read it), then the ones the guild made ("other"), in the
+-- server's order. Nil where the client has no guild club.
+function Compat.GuildChatStreams()
+    local clubId = guildClub()
+    if not clubId then return nil end
+    local T = Enum and Enum.ClubStreamType or {}
+    local kinds = { [T.Guild or 1] = "guild", [T.Officer or 2] = "officer" }
+    local rank = { guild = 1, officer = 2, other = 3 }
+    local out = {}
     for _, s in ipairs(C_Club.GetStreams(clubId) or {}) do
-        if s.streamType == guild then return clubId, s.streamId end
+        if not Compat.IsSecret(s.streamId, s.name, s.streamType) then
+            out[#out + 1] = { id = s.streamId, name = s.name, kind = kinds[s.streamType] or "other", order = #out }
+        end
+    end
+    table.sort(out, function(a, b)
+        if rank[a.kind] ~= rank[b.kind] then return rank[a.kind] < rank[b.kind] end
+        return a.order < b.order
+    end)
+    return out
+end
+
+-- The stream to read: the one asked for, or the guild's own.
+local function streamOf(streamId)
+    local clubId = guildClub()
+    if not clubId then return nil end
+    if streamId then return clubId, streamId end
+    for _, s in ipairs(Compat.GuildChatStreams()) do
+        if s.kind == "guild" then return clubId, s.id end
     end
     return nil
 end
@@ -691,21 +720,22 @@ local function chatRanges(clubId, streamId)
     return list
 end
 
--- True when a club event is about the guild's chat, and not the officers' or another club's.
-function Compat.IsGuildChatStream(clubId, streamId)
-    if Compat.IsSecret(clubId, streamId) then return false end
-    local c, s = guildStream()
-    return c ~= nil and c == clubId and s == streamId
+-- True when a club event is about the guild's club, any of its channels, and not another club.
+function Compat.IsGuildClub(clubId)
+    if Compat.IsSecret(clubId) then return false end
+    local c = guildClub()
+    return c ~= nil and c == clubId
 end
 
--- The last `max` lines, oldest first, as { t, n, c, m } like the addon's own log; nil where the
--- client has no guild stream. A deleted message, or one whose text or speaker is secret, is left out.
-function Compat.GuildChatHistory(max)
-    local clubId, streamId = guildStream()
+-- The last `max` lines of a channel (the guild's own when none is named), oldest first, as
+-- { t, n, c, m } like the addon's own log; nil where the client has no guild club. A deleted
+-- message, or one whose text or speaker is secret, is left out.
+function Compat.GuildChatHistory(max, streamId)
+    local clubId, sid = streamOf(streamId)
     if not clubId then return nil end
     local all = {}
-    for _, r in ipairs(chatRanges(clubId, streamId)) do
-        for _, msg in ipairs(C_Club.GetMessagesInRange(clubId, streamId, r.oldestMessageId, r.newestMessageId) or {}) do
+    for _, r in ipairs(chatRanges(clubId, sid)) do
+        for _, msg in ipairs(C_Club.GetMessagesInRange(clubId, sid, r.oldestMessageId, r.newestMessageId) or {}) do
             local a = msg.author
             if not msg.destroyed and a and not Compat.IsSecret(msg.content, a.name, a.classID)
                 and type(msg.content) == "string" and type(a.name) == "string" then
@@ -724,26 +754,40 @@ function Compat.GuildChatHistory(max)
     return out
 end
 
--- The tab is open (true) or closed: the server is told the stream is being read, as the
--- Communities window does when it shows one.
-function Compat.WatchGuildChat(on)
-    local clubId, streamId = guildStream()
+-- A channel is open (true) or closed: the server is told it is being read, as the Communities
+-- window does when it shows one.
+function Compat.WatchGuildChat(on, streamId)
+    local clubId, sid = streamOf(streamId)
     if not clubId then return end
     if on and C_Club.FocusStream then
-        C_Club.FocusStream(clubId, streamId)
+        C_Club.FocusStream(clubId, sid)
     elseif not on and C_Club.UnfocusStream then
-        C_Club.UnfocusStream(clubId, streamId)
+        C_Club.UnfocusStream(clubId, sid)
     end
 end
 
 -- `count` lines older than the oldest held; they arrive with CLUB_MESSAGE_HISTORY_RECEIVED.
 -- With nothing held yet there is nothing to ask before: focusing the stream brings the recent ones.
-function Compat.RequestOlderGuildChat(count)
-    local clubId, streamId = guildStream()
+function Compat.RequestOlderGuildChat(count, streamId)
+    local clubId, sid = streamOf(streamId)
     if not clubId or not C_Club.RequestMoreMessagesBefore then return end
-    local first = chatRanges(clubId, streamId)[1]
+    local first = chatRanges(clubId, sid)[1]
     if not first then return end
-    C_Club.RequestMoreMessagesBefore(clubId, streamId, first.oldestMessageId, count)
+    C_Club.RequestMoreMessagesBefore(clubId, sid, first.oldestMessageId, count)
+end
+
+-- A line to a channel the guild made: /g and /o have their own chat types, these only the club's
+-- own send. False when the channel is no longer listed.
+function Compat.SendGuildStream(streamId, text)
+    local clubId = guildClub()
+    if not clubId or not C_Club.SendMessage then return false end
+    for _, s in ipairs(Compat.GuildChatStreams()) do
+        if s.id == streamId then
+            C_Club.SendMessage(clubId, streamId, text)
+            return true
+        end
+    end
+    return false
 end
 
 ----------------------------------------------------------------------
