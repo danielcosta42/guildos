@@ -57,8 +57,11 @@ use it.
 - **Commands.** `SLASH_BRUTUS1/2` (`/brutus`, `/br`) and `GuildOS.SLASH_LEGACY` go. Only `/guildos` and
   `/gos` remain.
 - **GuildOS_Demo.** The dev addon outside the repo stubs `BRutus` and is updated alongside.
-- **The guard.** A harness, `tools/no-brutus.lua`, fails if `BRutus` or `brutus` appears in any file of
-  the repo outside `.git`, `Libs` and `CHANGELOG.md`. The changelog keeps its history.
+- **The guard.** A harness, `tools/no-brutus.lua`, fails if `brutus`, in any case, appears in a file git tracks,
+  except `CHANGELOG.md` (the release history), `Libs/` (third party), the dated specs and plans under
+  `docs/superpowers/` (records of what was, this spec included) and the guard itself. It also checks
+  that `Bindings.xml` calls a `GuildOS:` method that exists, and that the Loot Master's prefix is one
+  constant, `"GuildOSLM"`.
 
 Phase 0 is a mechanical rename with no behaviour change beyond the three removals above. It is its own
 issue and PR, before phase 1, so the style code is written with the new name.
@@ -195,8 +198,8 @@ lines that stay solid fills.
 
 ## 7. Tests
 
-- **`tools/no-brutus.lua` (phase 0).** No `BRutus` or `brutus` anywhere outside `.git`, `Libs` and the
-  changelog. The TOC has no `BRutusDB`. `/brutus` and `/br` are not registered.
+- **`tools/no-brutus.lua` (phase 0).** No `brutus`, in any case, in a tracked file outside the exceptions
+  of §3. The TOC has no `BRutusDB`. `/brutus` and `/br` are not registered.
 - **`tools/style.lua` (phase 1):**
   - `Available()` offers `forever` with the key atlases, and only `guildos` without them;
   - `Choose` saves to `GuildOSDB.style`;
