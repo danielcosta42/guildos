@@ -292,4 +292,21 @@ local pop = UI:CreatePanel(UIParent)
 UI:StylePopup(pop, { noShadow = true, noFade = true })
 check(pop.__nine.TopLeftCorner.atlas == "tooltip-nineslice-cornertopleft-c60", "a popup takes the tooltip art")
 
+-- ── 8. /gos style ──────────────────────────────────────────────────────
+S = load({ db = {} }); S:Resolve()
+dofile(ADDON .. "/Core/Commands.lua")
+SlashCmdList.GUILDOS("style")
+check(said("guildos - GuildOS (in use)") and said("forever - WoW: Forever"), "/gos style lists the styles and marks the one in use")
+SlashCmdList.GUILDOS("style forever")
+check(GuildOSDB.style == "forever" and popups[1] and popups[1].which == "GUILDOS_STYLE_RELOAD",
+  "/gos style forever saves it and offers the reload")
+SlashCmdList.GUILDOS("style neon")
+check(said("Unknown style: neon"), "an unknown style says which exist")
+S = load({ db = {}, noArt = true }); S:Resolve()
+dofile(ADDON .. "/Core/Commands.lua")
+SlashCmdList.GUILDOS("style forever")
+check(GuildOSDB.style == nil and said("not available on this client"), "forever is refused where the client has no art")
+SlashCmdList.GUILDOS("style")
+check(said("not available here"), "and the list says so")
+
 print(("style: %d checks passed"):format(checks))

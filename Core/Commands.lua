@@ -37,6 +37,7 @@ local function printHelp()
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
     helpLine("/gos map",         L["Open the live guild map"])
+    helpLine("/gos style [name]", L["List the interface styles, or switch to one"])
     helpLine("/gos pug",         L["Check who you're grouped with"])
     helpLine("/gos calendar",    L["Guild calendar and events"])
     helpLine("/gos polls",       L["Guild polls"])
@@ -71,6 +72,7 @@ local function printHelp()
     helpLine("/gos errors",   L["Show recent errors"])
     helpLine("/gos probe",    L["Record this client's facts for the Forever beta"])
     helpLine("/gos probe chat", L["Post two test lines in guild chat to see whether an addon may post on its own"])
+    helpLine("/gos style preview", L["Show the Forever style's pieces side by side"])
     helpLine("/gos debug",    L["Toggle debug output"])
 
     -- These verbs are refused inside their own modules for non-officers, so
@@ -274,6 +276,16 @@ local function handleCommand(msg)
             for i = math.max(1, #rest - 9), #rest do
                 GuildOS:Print("|cffFF4444" .. (rest[i].msg or "?") .. "|r")
             end
+        end
+    elseif msg == "style" or msg:match("^style%s") then
+        -- The interface style (#122): list, switch, or show the Forever pieces side by side.
+        local arg = strtrim((msg:gsub("^style%s*", ""))):lower()
+        if arg == "" then
+            GuildOS.Style:PrintList()
+        elseif arg == "preview" then
+            GuildOS.Style:ShowPreview()
+        else
+            GuildOS.Style:Apply(arg)
         end
     elseif msg == "probe" then
         -- Client facts for the WoW: Forever beta, into GuildOSDB.probe (ADR-0015).
