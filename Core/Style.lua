@@ -317,3 +317,81 @@ function Style:Paint(frame, role)
     end
     return self:_PaintFlat(frame, role)
 end
+
+----------------------------------------------------------------------
+-- Controls. Each is a no-op returning false in the guildos style (or without the art), so the
+-- Helpers keep painting as they always did.
+----------------------------------------------------------------------
+local function forever(self, art) return self.current == "forever" and self:_HasArt(art) end
+
+function Style:SkinButton(btn)
+    if not forever(self, self.FOREVER.button) then return false end
+    btn.__forever = true
+    self:_PaintThree(btn, self.FOREVER.button.rest, "BACKGROUND")
+    return true
+end
+
+function Style:ButtonState(btn, state)
+    local C = GuildOS.Colors
+    local key = (state == "pressed" or state == "disabled") and state or "rest"
+    local art, p = self.FOREVER.button[key], btn.__three
+    p.Left:SetAtlas(art.Left); p.Center:SetAtlas(art.Center); p.Right:SetAtlas(art.Right)
+    local ghost = btn.variant == "ghost"
+    for _, t in pairs(p) do t:SetShown(not ghost) end
+    btn:SetBackdropColor(0, 0, 0, 0)
+    btn:SetBackdropBorderColor(0, 0, 0, 0)
+    local rest = (btn.variant == "danger" and C.danger) or (ghost and C.label) or C.gold
+    local ink = (state == "disabled" and C.disabled) or (state == "hover" and C.text) or rest
+    btn.label:SetTextColor(ink.r, ink.g, ink.b)
+    btn.__hovered = (state == "hover")
+    if btn.glow then btn.glow:Hide() end
+    if btn.underline then btn.underline:SetShown(ghost) end
+end
+
+function Style:SkinTab(tab)
+    if not forever(self, self.FOREVER.tab) then return false end
+    local art = tab:CreateTexture(nil, "BACKGROUND")
+    art:SetAllPoints()
+    art:SetAtlas(self.FOREVER.tab.rest)
+    tab.__art = art
+    return true
+end
+
+function Style:TabState(tab, hovered)
+    local t = self.FOREVER.tab
+    tab.__art:SetAtlas((tab.isActive and t.active) or (hovered and t.hover) or t.rest)
+end
+
+function Style:SkinCheckbox(_, border, fill, mark)
+    if not forever(self, self.FOREVER.checkbox) then return false end
+    border:Hide()
+    fill:SetAtlas(self.FOREVER.checkbox.box)
+    fill:SetVertexColor(1, 1, 1, 1)
+    mark:SetAtlas(self.FOREVER.checkbox.mark)
+    mark:SetVertexColor(1, 1, 1, 1)
+    return true
+end
+
+-- The close button, or (kind "minimise") the minimise button the window makes from it.
+function Style:SkinClose(btn, kind)
+    local art = self.FOREVER[kind == "minimise" and "minimise" or "close"]
+    if not forever(self, art) then return false end
+    btn.__art = btn.__art or btn:CreateTexture(nil, "ARTWORK")
+    btn.__art:SetAllPoints()
+    btn.__art:SetAtlas(art.rest)
+    if btn.x then btn.x:Hide() end
+    btn:SetScript("OnEnter", nil)
+    btn:SetScript("OnLeave", nil)
+    btn:SetScript("OnMouseDown", function(b) b.__art:SetAtlas(art.pressed) end)
+    btn:SetScript("OnMouseUp", function(b) b.__art:SetAtlas(art.rest) end)
+    return true
+end
+
+function Style:SkinScrollBar(track, thumb)
+    if not forever(self, self.FOREVER.scroll) then return false end
+    track:SetAtlas(self.FOREVER.scroll.track)
+    track:SetVertexColor(1, 1, 1, 1)
+    thumb:SetAtlas(self.FOREVER.scroll.thumb)
+    thumb:SetVertexColor(1, 1, 1, 1)
+    return true
+end

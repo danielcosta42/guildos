@@ -1,15 +1,17 @@
 ----------------------------------------------------------------------
 -- Guild OS - UI Helpers
--- Reusable factories for the "Forever" skin (design handoff §3-5 and §8;
+-- Reusable factories for the GuildOS style (design handoff §3-5 and §8;
 -- docs/superpowers/specs/2026-09-14-forever-skin-design.md): opaque
 -- surfaces told apart by a 1px line, gold as the only accent, IBM Plex
 -- Mono for labels and numbers, and state changes that land in the same
 -- frame. Public names, signatures and fields are unchanged from Obsidian.
+-- The interface style (Core/Style.lua, #122) paints each surface and control through them.
 ----------------------------------------------------------------------
 local Helpers = {}
 GuildOS.UI = Helpers
 
 local C = GuildOS.Colors
+local Style = GuildOS.Style
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 local MEDIA = "Interface\\AddOns\\GuildOS\\Media\\"
 
@@ -66,16 +68,15 @@ end
 function Helpers:CreatePanel(parent, name, level)
     local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
     f:SetFrameLevel(level or 1)
-    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-    f:SetBackdropColor(C.bg.r, C.bg.g, C.bg.b, 1)
-    f:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    Style:Paint(f, "window")
     return f
 end
 
 -- Create an inset surface (elevation 1: table body, field, scroll area).
 function Helpers:CreateDarkPanel(parent, name, level)
-    local f = self:CreatePanel(parent, name, level)
-    f:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
+    f:SetFrameLevel(level or 1)
+    Style:Paint(f, "well")
     return f
 end
 
@@ -152,6 +153,7 @@ function Helpers:StylePopup(frame, opts)
     opts = opts or {}
     if not opts.noShadow then self:CreateDropShadow(frame, opts.shadowSize, opts.shadowAlpha) end
     if not opts.noFade then self:EnableFadeIn(frame, opts.fadeDuration) end
+    Style:Paint(frame, "popup")
     return frame
 end
 
@@ -210,6 +212,7 @@ end
 -- Paint one button state: "rest", "hover", "pressed" or "disabled". Internal.
 -- Every colour lands in the same frame; there is no transition.
 function Helpers:_ButtonState(btn, state)
+    if btn.__forever then return Style:ButtonState(btn, state) end
     btn.__hovered = (state == "hover")
     local variant = btn.variant
     local base, text, border = btn.baseColor, btn.baseLabelColor, btn.baseBorder
@@ -296,6 +299,7 @@ function Helpers:CreateButton(parent, text, width, height)
     btn:HookScript("OnDisable", function(self) Helpers:_ButtonState(self, "disabled") end)
     btn:HookScript("OnEnable", function(self) Helpers:_ButtonState(self, "rest") end)
 
+    Style:SkinButton(btn)
     self:_ButtonState(btn, "rest")
     return btn
 end
@@ -312,7 +316,7 @@ function Helpers:SetButtonVariant(btn, variant)
         btn.baseLabelColor = { C.onGold.r, C.onGold.g, C.onGold.b }
         btn.baseBorder = C.gold
         GuildOS:ApplyFont(label, 11, "colHeader")  -- IBM Plex Mono Medium
-        if not btn.glow then
+        if not btn.__forever and not btn.glow then
             local glow = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
             glow:SetTexture(MEDIA .. "glow-gold.tga")
             glow:SetBlendMode("ADD")
@@ -432,6 +436,7 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     mark:Hide()
     cb.checkMark = mark
+    Style:SkinCheckbox(cb, border, fill, mark)
 
     local function paint()
         local enabled = cb:IsEnabled()
@@ -494,6 +499,7 @@ function Helpers:CreateCloseButton(parent)
         self.x:SetTextColor(C.label.r, C.label.g, C.label.b)
     end)
 
+    Style:SkinClose(btn, "close")
     return btn
 end
 
@@ -561,6 +567,7 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
     thumb:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
     thumb:SetSize(SCROLL_WIDTH - 2, 40)
     scrollBar.customThumb = thumb
+    Style:SkinScrollBar(track, thumb)
 
     local function UpdateThumb()
         local min, max = scrollBar:GetMinMaxValues()
@@ -787,12 +794,14 @@ function Helpers:CreateTab(parent, text, width, sub)
     underline:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     underline:Hide()
     tab.underline = underline
+    Style:SkinTab(tab)
 
     local function paint(self, hovered)
         local ink = (self.isActive or hovered) and C.text or C.label
         self:SetBackdropColor(0, 0, 0, 0)
         self.label:SetTextColor(ink.r, ink.g, ink.b)
         self.underline:SetShown(self.isActive and true or false)
+        if self.__art then Style:TabState(self, hovered) end
     end
 
     function tab:SetActive(active)

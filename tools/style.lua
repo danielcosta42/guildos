@@ -225,4 +225,71 @@ check(first == "flat" and f.backdrop.edgeSize == 1, "a missing atlas paints that
 check(#errors == 1 and errors[1]:find("_ui-frame-metal-edgetop-c60-2x", 1, true),
   "and is recorded once, however often it is asked for")
 
+-- ── 7. The controls, through the real Helpers ──────────────────────────
+S = load({ db = {} }); S:Resolve()
+local UI = GuildOS.UI
+local b = UI:CreateButton(UIParent, "Go", 120, 26)
+check(not b.__forever and b.backdrop.edgeSize == 1, "guildos: a button is today's bordered backdrop")
+
+S = load({ db = { style = "forever" } }); S:Resolve()
+UI = GuildOS.UI
+b = UI:CreateButton(UIParent, "Go", 120, 26)
+check(b.__forever and b.__three.Left.atlas == "128-redbutton-left-c60", "forever: a button is the game's red button")
+UI:_ButtonState(b, "pressed")
+check(b.__three.Center.atlas == "_128-redbutton-center-pressed-c60", "pressed swaps to the pressed art")
+UI:_ButtonState(b, "disabled")
+check(b.__three.Right.atlas == "128-redbutton-right-disabled-c60" and b.label.color[1] == GuildOS.Colors.disabled.r,
+  "disabled swaps to the disabled art and dims the label")
+UI:_ButtonState(b, "hover")
+check(b.__three.Left.atlas == "128-redbutton-left-c60" and b.label.color[1] == GuildOS.Colors.text.r, "hover lights the label")
+UI:SetButtonVariant(b, "ghost")
+check(not b.__three.Left.shown, "a ghost button has no art")
+b:SetBaseColor(0.2, 0.6, 0.2, 1)
+check(true, "a toggle's SetBaseColor does not raise in forever")
+local narrow = UI:CreateButton(UIParent, "", 40, 26)
+narrow.scripts.OnSizeChanged()
+check(math.abs(narrow.__three.Left.w + narrow.__three.Right.w - 40) < 0.01, "a button narrower than both caps squeezes them to fit")
+
+local tab = UI:CreateTab(UIParent, "Roster", 100)
+check(tab.__art and tab.__art.atlas == "common-internaltab-c60", "a tab sits on the game's tab art")
+tab:SetActive(true)
+check(tab.__art.atlas == "common-internaltab-selected-c60" and tab.underline.shown, "the open one is the selected art, with its gold rule")
+tab:SetActive(false); tab.scripts.OnEnter(tab)
+check(tab.__art.atlas == "common-internaltab-hover-c60", "hovered, the hover art")
+
+local cbf = UI:CreateCheckbox(UIParent, "Sound", 16)
+local hasBox, hasMark = false, false
+for _, t in ipairs(cbf.checkbox.children) do
+  if t.atlas == "checkbox-minimal-c60" then hasBox = true end
+  if t.atlas == "talents-checkmark-c60" then hasMark = true end
+end
+check(hasBox and hasMark, "a checkbox is the game's box and mark")
+
+local close = UI:CreateCloseButton(UIParent)
+check(close.__art and close.__art.atlas == "128-redbutton-exit-c60" and not close.x.shown, "the close button is the game's exit button")
+S:SkinClose(close, "minimise")
+check(close.__art.atlas == "128-redbutton-minus-c60", "and the minimise button its minus")
+
+local sp = newRegion("Frame"); sp.ScrollBar = newRegion("Slider", sp)
+sp.ScrollBar.GetMinMaxValues = function() return 0, 0 end
+sp.ScrollBar.GetValue = function() return 0 end
+-- The template's own children, which the skin hides.
+sp.ScrollBar.ScrollUpButton, sp.ScrollBar.ScrollDownButton = newRegion("Button"), newRegion("Button")
+sp.ScrollBar.ThumbTexture = newRegion("Texture")
+UI:SkinScrollBar(sp)
+local track, thumb
+for _, t in ipairs(sp.ScrollBar.children) do
+  if t.atlas == "!minimal-scrollbar-track-middle-c60" then track = t end
+  if t.atlas == "minimal-scrollbar-thumb-middle-c60" then thumb = t end
+end
+check(track and thumb, "a scroll bar is the game's minimal track and thumb")
+
+local panel = UI:CreatePanel(UIParent)
+check(panel.__nine and panel.__nine.TopLeftCorner.atlas == "ui-frame-metal-cornertopleft-c60-2x", "CreatePanel is the metal window")
+local dark = UI:CreateDarkPanel(UIParent)
+check(dark.__nine and dark.__nine.TopLeftCorner.atlas == "optionsframe-nineslice-cornertopleft-c60", "CreateDarkPanel is the inset frame")
+local pop = UI:CreatePanel(UIParent)
+UI:StylePopup(pop, { noShadow = true, noFade = true })
+check(pop.__nine.TopLeftCorner.atlas == "tooltip-nineslice-cornertopleft-c60", "a popup takes the tooltip art")
+
 print(("style: %d checks passed"):format(checks))
