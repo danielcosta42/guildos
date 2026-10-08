@@ -23,8 +23,12 @@
 -- solo-testable. Still deduped by id, still allowlist-gated.
 -- v7: the alert is now a QUIET, persistent top BANNER (no sound, no big centered popup) —
 -- subtle but always visible until the operator clicks × (dismiss forever).
+-- v8: WoW: Forever. A client knows itself by its full name ("First Surname", the way every
+-- addon-message sender arrives), not by UnitName's first name: v7 took its own HELLO for a peer's
+-- and answered itself. ALERT_SENDERS names the operator's characters in full, and a v8 loading
+-- after a v7 adds them to the list it finds.
 
-local VERSION = 7
+local VERSION = 8
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -44,7 +48,16 @@ CN.layer     = CN.layer or { mapID = 0, zoneUID = 0 } -- built-in detection (non
 
 local Mesh = _G.ChehulMesh -- shared transport (loaded before this file)
 
+-- My own name as every addon-message sender writes it. On WoW: Forever UnitName gives the first
+-- name only, and UnitFullName returns the first name and the surname apart (the realm, elsewhere).
 local function MyShortName()
+    if C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname and C_PlayerInfo.ShouldDisplaySurname() then
+        local first, surname = UnitFullName("player")
+        local secret = issecretvalue and (issecretvalue(first) or issecretvalue(surname))
+        if not secret and first and surname and surname ~= "" then
+            return first .. " " .. surname
+        end
+    end
     return UnitName("player") or ""
 end
 
@@ -273,7 +286,12 @@ CN.alertSeen = CN.alertSeen or {} -- [key]=true, dedupe re-broadcasts within a s
 -- ONLY these characters (lowercased short names) may fire an alert popup — everyone else is
 -- ignored. Character names are unique per realm and the alert buses are realm-local, so in
 -- practice this is "only alerts from the operator's own backoffice". Edit to add operator alts.
-CN.ALERT_SENDERS = CN.ALERT_SENDERS or { ["chehul"] = true }
+-- On WoW: Forever a name is "First Surname", unique per region: the first name alone is anybody's.
+-- Added to whatever an older copy left, which is what a v8 loading after a v7 finds.
+CN.ALERT_SENDERS = CN.ALERT_SENDERS or {}
+for _, name in ipairs({ "chehul", "chehul costa", "chehul druida", "chehul shammy" }) do
+    CN.ALERT_SENDERS[name] = true
+end
 
 function CN:EnableAlerts(opts)
     if type(opts) ~= "table" or type(opts.store) ~= "function" then
