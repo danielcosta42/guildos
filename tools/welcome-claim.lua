@@ -41,7 +41,10 @@ StaticPopupDialogs = {}
 function IsInGuild() return true end
 -- Two more officers for the race between officers (issue #128), one sorting before this client's
 -- "Bishop Who" and one after.
-local ROSTER = { { "Preaseance Rezplease", 0 }, { "Ana Lima-Realm", 1 }, { "Zeca Rocha-Realm", 1 }, { "Bishop-Realm", 1 } }
+-- This client, "Bishop Who", is on it too: its own claim can come back with the realm spelled
+-- another way than GetRealmName ("ClassicBetaPvE2"), and the own-message filter lets it through.
+local ROSTER = { { "Preaseance Rezplease", 0 }, { "Ana Lima-Realm", 1 }, { "Zeca Rocha-Realm", 1 }, { "Bishop-Realm", 1 },
+                 { "Bishop Who-ClassicBetaPvE2", 1 } }
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i) if ROSTER[i] then return ROSTER[i][1], "Officer", ROSTER[i][2] end end
 function GetGuildInfo() return "Guild", "Officer", 1 end
@@ -69,6 +72,8 @@ local ok, err = pcall(CS.OnMessageReceived, CS, "S:WC:Ragged Angel", "GUILD", "P
 check(ok, "a member receiving an officer's welcome claim does not raise (" .. tostring(err) .. ")")
 check(R._welcomedRecently and R._welcomedRecently["Ragged Angel"] and R._welcomedRecently["Ragged Angel_sent"],
   "and the claim is recorded, so this client would stand down too")
+ok, err = pcall(CS.OnMessageReceived, CS, "S:WC:Ragged Angel", "GUILD", "Ana Lima-Realm")
+check(ok, "nor does one from an officer who sorts before this client, which has no popup to take from (" .. tostring(err) .. ")")
 
 -- The intent next to it already coped; it still does.
 ok, err = pcall(CS.OnMessageReceived, CS, "S:WI:Ragged Angel", "GUILD", "Preaseance Rezplease")
@@ -110,5 +115,8 @@ check(#R._pendingWelcomes == 1, "a claim whispered, or from somebody who is not 
 -- "Bishop Who", though "Bishop-Realm" would not.
 CS:OnMessageReceived("S:WC:Bota Sagres", "GUILD", "Bishop-Realm")
 check(#R._pendingWelcomes == 0, "the realm plays no part in who sorts first")
+R:QueueWelcome("Eco Teste")
+CS:OnMessageReceived("S:WC:Eco Teste", "GUILD", "Bishop Who-ClassicBetaPvE2")
+check(#R._pendingWelcomes == 1, "this officer's own claim, come back, leaves its popup: somebody still has to send it")
 
 print(("welcome-claim: %d checks passed"):format(checks))
