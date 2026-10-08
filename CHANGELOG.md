@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.71.2] - 2026-10-08
+
+### Fixed
+- ChehulNet v8 — no Forever o cliente se reconhece pelo nome completo e os avisos aceitam os personagens do operador (#130)
+
+
 ## [0.71.1] - 2026-10-08
 
 ### Fixed
