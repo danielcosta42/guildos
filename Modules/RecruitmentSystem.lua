@@ -431,6 +431,21 @@ function Recruitment:SendPendingWelcome()
     return true
 end
 
+-- Another officer claimed a welcome this one also has waiting for a click (issue #128). The
+-- tie-break gives the officers 2 seconds to hear each other's intents, and an addon message can
+-- take longer behind the guild's sync traffic, so two of them can each believe they won. The
+-- claims they then exchange settle it the same way on both sides: the lower name keeps it.
+function Recruitment:OnWelcomeClaim(member, sender)
+    local list = self._pendingWelcomes
+    if not list then return end
+    local theirs = sender:match("^([^-]+)") or sender
+    if theirs >= GuildOS.Compat.PlayerName() then return end
+    for i = #list, 1, -1 do
+        if list[i] == member then table.remove(list, i) end
+    end
+    self:ShowWelcomePopup()   -- redrawn without them, or hidden when nobody is left
+end
+
 function Recruitment:DismissPendingWelcome()
     self._pendingWelcomes = {}
 end

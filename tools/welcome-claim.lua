@@ -39,8 +39,12 @@ Enum = { SendAddonMessageResult = {} }
 StaticPopupDialogs = {}
 -- The sender is an officer of this guild: since issue #78 nobody else's claim counts.
 function IsInGuild() return true end
-function GetNumGuildMembers() return 1 end
-function GetGuildRosterInfo(i) if i == 1 then return "Preaseance Rezplease", "Officer", 0 end end
+-- Two more officers for the race between officers (issue #128), one sorting before this client's
+-- "Bishop Who" and one after.
+local ROSTER = { { "Preaseance Rezplease", 0 }, { "Ana Lima-Realm", 1 }, { "Zeca Rocha-Realm", 1 }, { "Bishop-Realm", 1 } }
+function GetNumGuildMembers() return #ROSTER end
+function GetGuildRosterInfo(i) if ROSTER[i] then return ROSTER[i][1], "Officer", ROSTER[i][2] end end
+function GetGuildInfo() return "Guild", "Officer", 1 end
 
 -- The wire: what the officer's client compressed and encoded, the stubs hand back as is.
 local registry = {}
@@ -75,5 +79,36 @@ check(R._welcomeIntents["Ragged Angel"]["Preaseance Rezplease"], "and the intent
 R._welcomedRecently = { ["Old Name"] = true }
 CS:OnMessageReceived("S:WC:New Name", "GUILD", "Preaseance Rezplease")
 check(R._welcomedRecently["Old Name"] and R._welcomedRecently["New Name"], "a claim adds to the table, it does not replace it")
+
+-- ── Two officers who each thought they won (issue #128) ─────────────────
+-- The tie-break gives the officers 2 seconds to hear each other's intents, and an addon message
+-- can take longer behind the guild's sync traffic: both queue the popup. On Forever it waits for a
+-- click, so the claims they exchange settle it before anyone presses Send, the same on both sides.
+R._welcomedRecently, R._welcomeIntents = {}, {}
+local shown, hidden = 0, 0
+R.ShowWelcomePopup = function(self)
+  if #(self._pendingWelcomes or {}) == 0 then hidden = hidden + 1 else shown = shown + 1 end
+end
+local sent = {}
+function SendChatMessage(msg, chan) sent[#sent + 1] = { msg = msg, chan = chan } end
+GuildOS.db = { recruitment = { welcomeMessage = "Bem-vindo!" } }
+R:QueueWelcome("Xayide Kholin")
+R:QueueWelcome("Ves Pin")
+CS:OnMessageReceived("S:WC:Xayide Kholin", "GUILD", "Zeca Rocha-Realm")
+check(#R._pendingWelcomes == 2, "a claim from an officer who sorts after this one leaves the popup: that one stands down")
+CS:OnMessageReceived("S:WC:Xayide Kholin", "GUILD", "Ana Lima-Realm")
+check(#R._pendingWelcomes == 1 and R._pendingWelcomes[1] == "Ves Pin" and shown == 3,
+  "one from an officer who sorts before takes that member off the popup, and leaves the other")
+CS:OnMessageReceived("S:WC:Ves Pin", "GUILD", "Ana Lima")
+check(#R._pendingWelcomes == 0 and hidden == 1, "and with nobody left to welcome, the popup goes")
+check(R:SendPendingWelcome() == false and #sent == 0, "so a click then sends nothing")
+R:QueueWelcome("Bota Sagres")
+CS:OnMessageReceived("S:WC:Bota Sagres", "WHISPER", "Ana Lima-Realm")
+CS:OnMessageReceived("S:WC:Bota Sagres", "GUILD", "Intruso Qualquer-Realm")
+check(#R._pendingWelcomes == 1, "a claim whispered, or from somebody who is not an officer, takes nothing away")
+-- Names are compared without the realm, as the roster check reads them: "Bishop" sorts before
+-- "Bishop Who", though "Bishop-Realm" would not.
+CS:OnMessageReceived("S:WC:Bota Sagres", "GUILD", "Bishop-Realm")
+check(#R._pendingWelcomes == 0, "the realm plays no part in who sorts first")
 
 print(("welcome-claim: %d checks passed"):format(checks))
