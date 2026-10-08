@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.71.1] - 2026-10-08
+
+### Fixed
+- as boas-vindas não ficam mais com vários oficiais: o claim de quem vem antes no nome tira o popup dos outros (#128)
+
+
 ## [0.71.0] - 2026-10-07
 
 ### Added
