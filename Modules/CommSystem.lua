@@ -319,6 +319,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
             GuildOS.Recruitment._welcomedRecently = GuildOS.Recruitment._welcomedRecently or {}
             GuildOS.Recruitment._welcomedRecently[data] = true
             GuildOS.Recruitment._welcomedRecently[data .. "_sent"] = true
+            GuildOS.Recruitment:OnWelcomeClaim(data, sender)
         end
     elseif msgType == CommSystem.MSG_TYPES.RECRUIT_INFO then
         -- Direct officer broadcast OR a member relay. Trust is bound to the
