@@ -175,6 +175,78 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   check(tagFor({ Alpha = { "Ann" }, Bravo = { "Bob" }, Charlie = { "C1", "C2", "C3" } }, { "Ann", "Bob", "C1", "C2", "C3" }) == "Charlie",
     G("a tie below the best does not stop the best"))
 
+  -- ── A raider on several cores, one per format (issue #132) ────────────
+  RT, CM = load(game)
+  CM:AddMember(key("Ann"), { name = "Ann" }, "Ten")
+  CM:AddMember(key("Ann"), { name = "Ann" }, "Forty")
+  CM:AddSignup(key("Ann"), { name = "Ann" }, "Twenty")
+  CM:AcceptSignup(key("Ann"), "Twenty")
+  check(CM:GetMembers("Ten")[key("Ann")] and CM:GetMembers("Forty")[key("Ann")] and CM:GetMembers("Twenty")[key("Ann")],
+    G("joining a core, or being accepted into one, keeps a raider on the others"))
+
+  -- Each format's roster holds the smaller formats' people, as a guild's 40 holds its 10.
+  local function players(n)
+    local t = {}
+    for i = 1, n do t[key("P" .. i)] = true end
+    return t
+  end
+  RT, CM = load(game)
+  local sizes = CM:RaidSizes()
+  for _, s in ipairs(sizes) do
+    local names = {}
+    for i = 1, s do names[i] = "P" .. i end
+    roster(CM, "Core" .. s, names)
+    CM:SetRaidSize("Core" .. s, s)
+  end
+  for _, s in ipairs(sizes) do
+    check(CM:CoreForGroup(players(s)) == "Core" .. s,
+      G(("a full %d on rosters that overlap is the %d's, not a bigger format's"):format(s, s)))
+  end
+  check(CM:CoreForGroup(players(sizes[1] + 2)) == "Core" .. sizes[2],
+    G("a group past the smallest format is the next format's, though the smallest has most of it"))
+  check(CM:CoreForGroup(players(sizes[1]), sizes[2]) == "Core" .. sizes[2],
+    G("in a bigger format's instance a group the smallest's size is the bigger format's"))
+  check(CM:CoreForGroup(players(sizes[1]), 30) == "Core" .. sizes[1],
+    G("an instance size no core plans for leaves the group's own size to decide"))
+
+  -- The order itself: holding the raid beats having more of it, and the smaller format beats more.
+  local function some(from, to)
+    local t = {}
+    for i = from, to do t[#t + 1] = "P" .. i end
+    return t
+  end
+  RT, CM = load(game)
+  roster(CM, "Small", some(1, 10)); CM:SetRaidSize("Small", sizes[1])
+  roster(CM, "Next", some(6, 12)); CM:SetRaidSize("Next", sizes[2])
+  check(CM:CoreForGroup(players(12)) == "Next", G("a format that holds the group beats one with more of it that cannot"))
+  RT, CM = load(game)
+  roster(CM, "Ten", some(1, 6)); CM:SetRaidSize("Ten", sizes[1])
+  roster(CM, "Big", some(1, 10)); CM:SetRaidSize("Big", sizes[#sizes])
+  check(CM:CoreForGroup(players(10)) == "Ten", G("of two formats that hold the group, the smaller, though the bigger has more of it"))
+
+  -- The raid's own size reaches the detection: nine and me are ten, which the smallest holds.
+  RT, CM = load(game)
+  roster(CM, "Small", some(1, 9)); CM:SetRaidSize("Small", sizes[1])
+  roster(CM, "Next", some(1, 9)); CM:SetRaidSize("Next", sizes[2])
+  function GetInstanceInfo() return "Raid", "raid", 9, "", sizes[2], 0, false, 409 end
+  group(some(1, 9))
+  RT:StartSession(409)
+  check(RT.currentRaid.groupTag == "Next", G("a raid in the next format's instance is that format's core's"))
+  -- A size the game gives only later is read before that snapshot's detection.
+  RT, CM = load(game)
+  roster(CM, "Small", some(1, 9)); CM:SetRaidSize("Small", sizes[1])
+  roster(CM, "Next", some(1, 9)); CM:SetRaidSize("Next", sizes[2])
+  function GetInstanceInfo() return "Raid", "raid", 9, "", 0, 0, false, 409 end
+  group(some(1, 9))
+  RT:StartSession(409)
+  check(RT.currentRaid.groupTag == "Small", G("with no size from the game the group's own size decides"))
+  function GetInstanceInfo() return "Raid", "raid", 9, "", sizes[2], 0, false, 409 end
+  RT:OnEncounterStart(1, "Boss")
+  check(RT.currentRaid.groupTag == "Next" and RT.coreSettled,
+    G("and the pull that first learns the size settles on that format's core"))
+  check(tagFor({ Alpha = { "Ann", "Bob", "Cid", "Dee" }, Bravo = { "Ann", "Bob", "Cid" } }, { "Ann", "Bob", "Cid", "Dee" }) == "Alpha",
+    G("of two cores in one format, the one with more of the group"))
+
   -- ── An alt counts as their main, on their main's roster only ──────────
   RT, CM = load(game)
   roster(CM, "Alpha", { "Ann", "Bob" })
