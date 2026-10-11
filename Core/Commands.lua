@@ -93,6 +93,81 @@ local function printHelp()
     end
 end
 
+----------------------------------------------------------------------
+-- What a command and a button share (#142): every /gos command has a way in
+-- from the interface too, and both call the one function here, so the button
+-- does exactly what the command does.
+----------------------------------------------------------------------
+function GuildOS:CollectMyDataNow()
+    if not GuildOS.DataCollector then return end
+    GuildOS.DataCollector:CollectMyData()
+    GuildOS:Print(L["Data collected."])
+end
+
+function GuildOS:MergeRaidSessions()
+    if not GuildOS.RaidTracker then return end
+    GuildOS:Print(L["Merging duplicate raid sessions\226\128\166"])
+    if GuildOS.RaidTracker:MergeDuplicateSessions() == 0 then
+        GuildOS:Print(L["|cffAAAAAA[Guild OS] No duplicates found.|r"])
+    end
+end
+
+-- Start-up problems first: the ring below is capped and shared with runtime
+-- errors, so it can already have lost them.
+function GuildOS:ShowErrors()
+    local startup = GuildOS:ListStartupProblems()
+    local shown = {}
+    if #startup > 0 then
+        GuildOS:Print(string.format(L["%d start-up problem(s):"], #startup))
+        for _, line in ipairs(startup) do
+            shown[line] = true
+            GuildOS:Print("|cffFF8800" .. line .. "|r")
+        end
+    end
+    -- The ring also holds the start-up problems just listed; skip those.
+    local ring, rest = (GuildOS.State and GuildOS.State.errors) or {}, {}
+    for _, e in ipairs(ring) do
+        if not shown[e.msg] then rest[#rest + 1] = e end
+    end
+    if #rest == 0 then
+        if #startup == 0 then GuildOS:Print(L["No errors recorded this session."]) end
+    else
+        GuildOS:Print(string.format(L["%d recent error(s):"], #rest))
+        for i = math.max(1, #rest - 9), #rest do
+            GuildOS:Print("|cffFF4444" .. (rest[i].msg or "?") .. "|r")
+        end
+    end
+end
+
+-- Whether this client is the Master Looter, as one line.
+function GuildOS:LootMasterStatus()
+    if not GuildOS.LootMaster then return nil end
+    return GuildOS.LootMaster:IsMasterLooter() and L["Loot Master mode active. Open loot to start."]
+        or L["You are not the Master Looter."]
+end
+
+-- The string to paste into the web companion, in a popup; or why there is none.
+function GuildOS:ShowWebString()
+    local C = GuildOS.Companion
+    if not C then return end
+    if not C:IsEnabled() then
+        GuildOS:Print(L["The web companion is off. Turn it on with /gos web on."])
+        return
+    end
+    local text, countOrErr = C:Build()
+    if text then
+        GuildOS:ShowExportPopup(string.format(L["Web Companion (%d members)"], countOrErr), text)
+    else
+        GuildOS:Print(L["|cffFF4444Export failed:|r "] .. tostring(countOrErr))
+    end
+end
+
+-- Every Guild OS record of this guild, gone, and the interface reloaded.
+function GuildOS:EraseGuildData()
+    if GuildOS.guildKey and GuildOSDB then GuildOSDB[GuildOS.guildKey] = nil end
+    ReloadUI()
+end
+
 local function handleCommand(msg)
     msg = strtrim(msg or "")
     -- Deliberately the first branch: "help", "?" and "commands" are exact
@@ -101,10 +176,7 @@ local function handleCommand(msg)
     if msg == "help" or msg == "?" or msg == "commands" then
         printHelp()
     elseif msg == "scan" then
-        if GuildOS.DataCollector then
-            GuildOS.DataCollector:CollectMyData()
-            GuildOS:Print(L["Data collected."])
-        end
+        GuildOS:CollectMyDataNow()
     elseif msg == "selftest" then
         if GuildOS.SelfTest then GuildOS.SelfTest:Run() end
     elseif msg == "myalts" then
@@ -253,30 +325,7 @@ local function handleCommand(msg)
             GuildOS:Print("Resistance scan unavailable.")
         end
     elseif msg == "errors" then
-        -- Start-up problems first: the ring below is capped and shared with
-        -- runtime errors, so it can already have lost them.
-        local startup = GuildOS:ListStartupProblems()
-        local shown = {}
-        if #startup > 0 then
-            GuildOS:Print(string.format(L["%d start-up problem(s):"], #startup))
-            for _, line in ipairs(startup) do
-                shown[line] = true
-                GuildOS:Print("|cffFF8800" .. line .. "|r")
-            end
-        end
-        -- The ring also holds the start-up problems just listed; skip those.
-        local ring, rest = (GuildOS.State and GuildOS.State.errors) or {}, {}
-        for _, e in ipairs(ring) do
-            if not shown[e.msg] then rest[#rest + 1] = e end
-        end
-        if #rest == 0 then
-            if #startup == 0 then GuildOS:Print(L["No errors recorded this session."]) end
-        else
-            GuildOS:Print(string.format(L["%d recent error(s):"], #rest))
-            for i = math.max(1, #rest - 9), #rest do
-                GuildOS:Print("|cffFF4444" .. (rest[i].msg or "?") .. "|r")
-            end
-        end
+        GuildOS:ShowErrors()
     elseif msg == "style" or msg:match("^style%s") then
         -- The interface style (#122): list, switch, or show the Forever pieces side by side.
         local arg = strtrim((msg:gsub("^style%s*", ""))):lower()
@@ -294,10 +343,7 @@ local function handleCommand(msg)
         -- Whether chat from a timer gets through, measured (issue #75).
         if GuildOS.Probe then GuildOS.Probe:RunChat() end
     elseif msg == "reset" then
-        if GuildOS.guildKey then
-            if GuildOSDB then GuildOSDB[GuildOS.guildKey] = nil end
-        end
-        ReloadUI()
+        GuildOS:EraseGuildData()
     elseif msg:match("^recruit") then
         local rest = msg:gsub("^recruit%s*", "")
         local args = {}
@@ -348,13 +394,8 @@ local function handleCommand(msg)
             GuildOS:Print(L["Usage: /guildos note <PlayerName> <text>"])
         end
     elseif msg == "lm" or msg == "lootmaster" then
-        if GuildOS.LootMaster then
-            if GuildOS.LootMaster:IsMasterLooter() then
-                GuildOS:Print(L["Loot Master mode active. Open loot to start."])
-            else
-                GuildOS:Print(L["You are not the Master Looter."])
-            end
-        end
+        local status = GuildOS:LootMasterStatus()
+        if status then GuildOS:Print(status) end
     elseif msg:match("^lm announce") then
         -- /guildos lm announce - manually announce item from target tooltip
         GuildOS:Print(L["Open loot window as Master Looter to announce items."])
@@ -365,16 +406,8 @@ local function handleCommand(msg)
         if C and (arg == "on" or arg == "off") then
             C:SetEnabled(arg == "on")
             GuildOS:Print(arg == "on" and L["Web companion enabled."] or L["Web companion disabled."])
-        elseif C and not C:IsEnabled() then
-            GuildOS:Print(L["The web companion is off. Turn it on with /gos web on."])
-        elseif C then
-            local text, countOrErr = C:Build()
-            if text then
-                GuildOS:ShowExportPopup(
-                    string.format(L["Web Companion (%d members)"], countOrErr), text)
-            else
-                GuildOS:Print(L["|cffFF4444Export failed:|r "] .. tostring(countOrErr))
-            end
+        else
+            GuildOS:ShowWebString()
         end
     elseif msg:match("^roster") then
         -- /guildos roster [invite|groups] — the roster the website planned.
@@ -444,13 +477,7 @@ local function handleCommand(msg)
             end
         end
     elseif msg == "mergeraids" then
-        if GuildOS.RaidTracker then
-            GuildOS:Print(L["Merging duplicate raid sessions\226\128\166"])
-            local count = GuildOS.RaidTracker:MergeDuplicateSessions()
-            if count == 0 then
-                GuildOS:Print(L["|cffAAAAAA[Guild OS] No duplicates found.|r"])
-            end
-        end
+        GuildOS:MergeRaidSessions()
     elseif msg == "specs" then
         if GuildOS.SpecChecker then
             GuildOS.SpecChecker:ScanGroup()

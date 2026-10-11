@@ -145,6 +145,18 @@ Removed: `Compat.NewTimer`.
 
 ---
 
+## Commands.lua — what a command and a button share (#142)
+
+| Function | Description |
+|---|---|
+| `GuildOS:CollectMyDataNow()` | `/gos scan` and Settings → About "Collect my data" |
+| `GuildOS:MergeRaidSessions()` | `/gos mergeraids` and Raids → Audit → Sync "Merge duplicate sessions" |
+| `GuildOS:ShowErrors()` | `/gos errors` and "View Errors" (About, Officer): start-up problems, then the recent ones |
+| `GuildOS:LootMasterStatus()` | `/gos lm` and the Loot tab's status line: one line, nil without LootMaster |
+| `GuildOS:ShowWebString()` | `/gos web` and the Web tab's "Show the paste text": the popup, or how to turn the companion on |
+| `GuildOS:EraseGuildData()` | `/gos reset` and About → "Erase guild data" (behind a confirmation): this guild's GuildOSDB entry, then a reload |
+| `Mentions:PrintLog()` | `/gos mentions` and Settings → Mentions "Recent mentions": the last 15 mentions to chat |
+
 ## Core.lua — GuildOS global
 
 | Function | Description |

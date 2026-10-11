@@ -824,6 +824,14 @@ function PopulateDetail(frame, data)
         noteLabel:Show()
         yOff = yOff - noteLabel:GetStringHeight() - 6
 
+        -- /gos myalts: on your own sheet, find your characters in the guild and offer to link them (#142).
+        if isSelfManage and GuildOS.AltAutoDetect then
+            local detectBtn = UI:CreateButton(child, L["Detect my alts"], 140, 20)
+            detectBtn:SetPoint("TOPLEFT", 12, yOff)
+            detectBtn:SetScript("OnClick", function() GuildOS.AltAutoDetect:PromptNow() end)
+            yOff = yOff - 26
+        end
+
         -- Each row's buttons end here, right-aligned; a button's RIGHT is anchored to its
         -- row label's LEFT (x = 12) so it also sits on the label's vertical centre.
         local rightX = contentWidth - 12

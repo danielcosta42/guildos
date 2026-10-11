@@ -944,6 +944,9 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
         GuildOS:ShowExportPopup(L["Loot Export"], GuildOS:ExportLoot())
     end)
 
+    local lmText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    lmText:SetPoint("LEFT", exportBtn, "RIGHT", 12, 0)
+
     local VIEW_TOP = 50  -- space reserved for title + toggle row
 
     ----------------------------------------------------------------
@@ -1165,6 +1168,7 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     srBtn:SetScript("OnClick",   function() showView("softres") end)
 
     parent:SetScript("OnShow", function()
+        lmText:SetText(GuildOS:LootMasterStatus() or "")
         showView("history")
     end)
 end
@@ -2313,6 +2317,17 @@ function GuildOS:RefreshSettingsPanel(content, category)
         wHint:SetPoint("LEFT", wBox.saveButton, "RIGHT", 8, 0)
         refreshWords()
         yOff = yOff + 18
+
+        local logBtn = UI:CreateButton(content, L["Recent mentions"], 150, 22)
+        logBtn:SetPoint("TOPLEFT", 28, -yOff)
+        logBtn:SetScript("OnClick", function() GuildOS.Mentions:PrintLog() end)
+        local clearBtn = UI:CreateButton(content, L["Clear watch-words"], 150, 22)
+        clearBtn:SetPoint("LEFT", logBtn, "RIGHT", 8, 0)
+        clearBtn:SetScript("OnClick", function()
+            GuildOS.Mentions:HandleCommand({ "clearwords" })
+            refreshWords()
+        end)
+        yOff = yOff + 28
     end
 
     if GuildOS.db.lfgPrefs then
@@ -2771,17 +2786,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
 
     local errBtn = UI:CreateButton(content, L["View Errors"], 120, 24)
     errBtn:SetPoint("LEFT", pruneBtn, "RIGHT", 8, 0)
-    errBtn:SetScript("OnClick", function()
-        local ring = (GuildOS.State and GuildOS.State.errors) or {}
-        if #ring == 0 then
-            GuildOS:Print(L["No errors recorded this session."])
-        else
-            GuildOS:Print(string.format(L["%d recent error(s):"], #ring))
-            for i = math.max(1, #ring - 9), #ring do
-                GuildOS:Print("|cffFF4444" .. (ring[i].msg or "?") .. "|r")
-            end
-        end
-    end)
+    errBtn:SetScript("OnClick", function() GuildOS:ShowErrors() end)
 
     local dbgCb = UI:CreateCheckbox(content, L["Debug logging"], 18)
     dbgCb:SetPoint("LEFT", errBtn, "RIGHT", 14, 0)
@@ -3146,6 +3151,46 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local backupNote = UI:CreateText(content, L["Export/import all Guild OS data for this guild"], 9, C.silver.r, C.silver.g, C.silver.b)
     backupNote:SetPoint("LEFT", restoreBtn2, "RIGHT", 10, 0)
     yOff = yOff + 34
+
+    -- Diagnostics: what /gos scan, errors, selftest, probe, probe chat and style preview do,
+    -- three to a row; the results go to chat (#142).
+    local diagHead = UI:CreateHeaderText(content, L["Diagnostics"], 11)
+    diagHead:SetPoint("TOPLEFT", 8, -yOff)
+    yOff = yOff + 20
+    local diag = {
+        { L["Collect my data"], function() GuildOS:CollectMyDataNow() end },
+        { L["View Errors"], function() GuildOS:ShowErrors() end },
+        { L["Self-test"], function() if GuildOS.SelfTest then GuildOS.SelfTest:Run() end end },
+        { L["Probe the client"], function() if GuildOS.Probe then GuildOS.Probe:Run() end end },
+        { L["Probe chat"], function() if GuildOS.Probe then GuildOS.Probe:RunChat() end end },
+        { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
+    }
+    local prevDiag
+    for i, d in ipairs(diag) do
+        if i > 1 and (i - 1) % 3 == 0 then yOff = yOff + 26; prevDiag = nil end
+        local b = UI:CreateButton(content, d[1], 140, 22)
+        if prevDiag then b:SetPoint("LEFT", prevDiag, "RIGHT", 8, 0) else b:SetPoint("TOPLEFT", 8, -yOff) end
+        b:SetScript("OnClick", d[2])
+        prevDiag = b
+    end
+    yOff = yOff + 32
+
+    -- /gos reset, behind a confirmation: it cannot be undone.
+    local eraseBtn = UI:CreateButton(content, L["Erase guild data"], 170, 22)
+    eraseBtn:SetPoint("TOPLEFT", 8, -yOff)
+    eraseBtn:SetScript("OnClick", function()
+        StaticPopupDialogs["GUILDOS_ERASE_GUILD"] = StaticPopupDialogs["GUILDOS_ERASE_GUILD"] or {
+            text = L["Erase all Guild OS data for this guild and reload the interface? This cannot be undone."],
+            button1 = L["Erase guild data"], button2 = L["Cancel"],
+            OnAccept = function() GuildOS:EraseGuildData() end,
+            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+        }
+        StaticPopup_Show("GUILDOS_ERASE_GUILD")
+    end)
+    local eraseNote = UI:CreateText(content, L["Removes every Guild OS record of this guild on this PC, then reloads."], 9,
+        C.silver.r, C.silver.g, C.silver.b)
+    eraseNote:SetPoint("LEFT", eraseBtn, "RIGHT", 10, 0)
+    yOff = yOff + 30
 
     --------------------------------------------------------------------
     -- ABOUT & SUPPORT

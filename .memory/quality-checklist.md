@@ -84,5 +84,7 @@ Run through this checklist before calling `task_complete` on any implementation.
 
 - [ ] Addon loads without Lua errors on `/reload`
 - [ ] `/gos` slash command opens the roster frame without errors
+- [ ] A new or changed `/gos` command has a way in from the interface, calling the same function, and a line in
+      `tools/commands-in-ui.lua` (or is named there as chat-only, with the reason) (#142)
 - [ ] Affected feature (roster, raids, loot, etc.) displays correctly after `/reload`
 - [ ] No taint warnings in combat (avoid modifying Blizzard frames during combat lockdown)

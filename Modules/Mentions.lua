@@ -185,6 +185,19 @@ function Mentions:_RegisterTests()
     end)
 end
 
+-- The last mentions, to chat: `/gos mentions` and the Mentions settings' button (#142).
+function Mentions:PrintLog()
+    local cfg = GuildOS.db.mentions
+    if not cfg then return end
+    local log = cfg.log or {}
+    GuildOS:Print(L["--- Recent mentions ---"])
+    if #log == 0 then GuildOS:Print(L["(none)"]) end
+    for i = 1, math.min(#log, 15) do
+        local e = log[i]
+        GuildOS:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
+    end
+end
+
 function Mentions:HandleCommand(args)
     local cfg = GuildOS.db.mentions
     if not cfg then return end
@@ -222,13 +235,7 @@ function Mentions:HandleCommand(args)
         cfg.watchWords = {}; GuildOS:Print(L["Watch-words cleared."])
     else
         -- default: print the recent log
-        local log = cfg.log or {}
-        GuildOS:Print(L["--- Recent mentions ---"])
-        if #log == 0 then GuildOS:Print(L["(none)"]) end
-        for i = 1, math.min(#log, 15) do
-            local e = log[i]
-            GuildOS:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
-        end
+        self:PrintLog()
         GuildOS:Print(L["Usage: /gos mentions <on|off|add|remove|list|clearwords|ownname|sound> [word|on|off]"])
     end
 end

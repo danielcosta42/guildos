@@ -1013,6 +1013,16 @@ local function BuildManage(panel)
     local contactBtn = UI:CreateButton(body, L["Try with this name"], 140, 24)
     contactBtn:SetPoint("LEFT", contactBox, "RIGHT", 8, 0)
 
+    -- /gos ally request: no invite in hand, ask an officer of a guild already in the alliance (#142).
+    local reqHdr = UI:CreateHeaderText(body, L["Ask to join an alliance"], 11)
+    local reqTagBox = makeInput(body, 110)
+    local reqWhoBox = makeInput(body, 200)
+    reqWhoBox:SetPoint("LEFT", reqTagBox, "RIGHT", 8, 0)
+    local reqBtn = UI:CreateButton(body, L["Send request"], 120, 24)
+    reqBtn:SetPoint("LEFT", reqWhoBox, "RIGHT", 8, 0)
+    local reqHint = UI:CreateText(body, L["Alliance tag and an officer of a guild already in it. They approve the request."],
+        10, C.textDim.r, C.textDim.g, C.textDim.b)
+
     local foundSep = UI:CreateSeparator(body)
 
     local foundHdr = UI:CreateHeaderText(body, L["Found an alliance"], 11)
@@ -1124,7 +1134,8 @@ local function BuildManage(panel)
     local leaveBtn = UI:CreateButton(body, L["Leave the alliance"], 170, 24)
 
     local foundGroup  = { joinHdr, joinBox, joinBtn, joinHint, foundSep,
-                          foundHdr, tagBox, nameBox, foundBtn, foundHint }
+                          foundHdr, tagBox, nameBox, foundBtn, foundHint,
+                          reqHdr, reqTagBox, reqWhoBox, reqBtn, reqHint }
     -- Set by a join that could not find anybody on the mesh.
     local needContact = false
     local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr,
@@ -1152,6 +1163,9 @@ local function BuildManage(panel)
             joinWarn:SetPoint("TOPLEFT", 6, -y);   y = y + 30
             contactBox:SetPoint("TOPLEFT", 6, -y); y = y + 32
         end
+        reqHdr:SetPoint("TOPLEFT", 6, -y);     y = y + 20
+        reqTagBox:SetPoint("TOPLEFT", 6, -y);  y = y + 30
+        reqHint:SetPoint("TOPLEFT", 6, -y);    y = y + 24
         foundSep:SetPoint("TOPLEFT", 4, -y)
         foundSep:SetPoint("TOPRIGHT", -4, -y); y = y + 16
         foundHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
@@ -1247,6 +1261,12 @@ local function BuildManage(panel)
     joinBtn:SetScript("OnClick", function() tryJoin(nil) end)
     joinBox:SetScript("OnEnterPressed", function() joinBtn:Click() end)
     contactBtn:SetScript("OnClick", function() tryJoin(contactBox:GetText()) end)
+    reqBtn:SetScript("OnClick", function()
+        local who = strtrim(reqWhoBox:GetText() or "")
+        local ok, err = ALLY():RequestJoin(reqTagBox:GetText(), who)
+        say(ok, err)
+        if ok then GuildOS:Print(string.format(L["Join request sent to %s."], who)) end
+    end)
     contactBox:SetScript("OnEnterPressed", function() contactBtn:Click() end)
 
     foundBtn:SetScript("OnClick", function()

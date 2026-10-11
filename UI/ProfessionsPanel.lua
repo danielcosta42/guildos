@@ -398,6 +398,10 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     local tabRecipes = UI:CreateTab(main, L["Recipes"], 90, true)
     tabRecipes:SetPoint("RIGHT", tabCrafters, "LEFT", -4, 0)
     tabRecipes:SetScript("OnClick", function() state.mode = "recipes"; panel:Refresh(true) end)
+    -- /gos craft: who can craft an item, guild, alliance and realm, as the Recipes tab offers it (#142).
+    local finderBtn = UI:CreateButton(main, L["Find a Crafter"], 120, 22)
+    finderBtn:SetPoint("RIGHT", tabRecipes, "LEFT", -12, 0)
+    finderBtn:SetScript("OnClick", function() if GuildOS.ShowCraftFinder then GuildOS:ShowCraftFinder() end end)
     tabCrafters:SetScript("OnClick", function() state.mode = "crafters"; panel:Refresh(true) end)
 
     local tools = CreateFrame("Frame", nil, main)
