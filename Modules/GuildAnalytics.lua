@@ -33,11 +33,13 @@ function GuildAnalytics:BuildRoster()
     return roster
 end
 
-function GuildAnalytics:Distribution(dim, onlineOnly, roster)
+-- `maxOnly` counts only who is at the game's level cap (issue #137).
+function GuildAnalytics:Distribution(dim, onlineOnly, roster, maxOnly)
     roster = roster or self:BuildRoster()
+    local cap = maxOnly and GuildOS.Client.maxLevel
     local counts, order, total = {}, {}, 0
     for _, m in ipairs(roster) do
-        if (not onlineOnly) or m.online then
+        if ((not onlineOnly) or m.online) and ((not maxOnly) or (m.level or 0) >= cap) then
             local key, colorKey
             if dim == "class" then key = m.class or "?"; colorKey = m.class
             elseif dim == "level" then key = self:_LevelBracket(m.level)
@@ -79,6 +81,7 @@ function GuildAnalytics:Show()
 
     self._dim = self._dim or "class"
     if self._onlineOnly == nil then self._onlineOnly = false end
+    if self._maxOnly == nil then self._maxOnly = false end
 
     local f = self.frame
     if not f then
@@ -110,18 +113,16 @@ function GuildAnalytics:Show()
             { dim = "zone",  label = L["Zones"] },
         }
         local tabs = {}
-        local tabX = 16
         for _, def in ipairs(tabDefs) do
             local tab = UI:CreateTab(f, def.label, 100)
-            tab:SetPoint("TOPLEFT", tabX, -42)
             tab:SetScript("OnClick", function()
                 self._dim = def.dim
                 if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
             end)
             tabs[def.dim] = tab
-            tabX = tabX + tab:GetWidth() + 6  -- a tab its label grew pushes the next one (issue #28)
         end
         f.tabs = tabs
+        f.tabOrder = tabDefs
 
         -- Online-only toggle
         local onlineCB = UI:CreateCheckbox(f, L["Online only"], 18)
@@ -129,6 +130,15 @@ function GuildAnalytics:Show()
         onlineCB.checkbox:SetChecked(self._onlineOnly)
         onlineCB.checkbox.onChanged = function(_, checked)
             self._onlineOnly = checked and true or false
+            if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
+        end
+
+        -- Max-level-only toggle (issue #137)
+        local maxCB = UI:CreateCheckbox(f, L["Max level only"], 18)
+        maxCB:SetPoint("TOPLEFT", 236, -78)
+        maxCB.checkbox:SetChecked(self._maxOnly)
+        maxCB.checkbox.onChanged = function(_, checked)
+            self._maxOnly = checked and true or false
             if self.uiRefresh then GuildOS:SafeCall(self.uiRefresh) end
         end
 
@@ -147,8 +157,19 @@ function GuildAnalytics:Show()
     local function refresh()
         if not f:IsShown() then return end
 
-        for dim, tab in pairs(f.tabs) do
-            tab:SetActive(dim == self._dim)
+        -- At the cap only, the Levels tab would hold one bar: it steps aside and the others close up.
+        if self._maxOnly and self._dim == "level" then self._dim = "class" end
+        local tabX = 16
+        for _, def in ipairs(f.tabOrder) do
+            local tab = f.tabs[def.dim]
+            local shown = not (self._maxOnly and def.dim == "level")
+            tab:SetShown(shown)
+            tab:SetActive(def.dim == self._dim)
+            if shown then
+                tab:ClearAllPoints()
+                tab:SetPoint("TOPLEFT", tabX, -42)
+                tabX = tabX + tab:GetWidth() + 6  -- a tab its label grew pushes the next one (issue #28)
+            end
         end
 
         -- Reset ALL row state before repaint (regions and any child frames).
@@ -157,7 +178,7 @@ function GuildAnalytics:Show()
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
         child:SetWidth(f.holder:GetWidth() - 12)
 
-        local entries = self:Distribution(self._dim, self._onlineOnly)
+        local entries = self:Distribution(self._dim, self._onlineOnly, nil, self._maxOnly)
         local y = 0
         for _, e in ipairs(entries) do
             local label = e.label

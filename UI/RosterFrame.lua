@@ -398,6 +398,14 @@ function GuildOS:CreateRosterPanel(parent, host)
     end)
     host.searchBox = searchBox
 
+    -- The guild's make-up by class, level, rank and zone (`/gos analytics`): every command has a
+    -- way in here too (#137).
+    local analyticsBtn = UI:CreateButton(statsBar, L["Analytics"], 90, 22)
+    analyticsBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
+    analyticsBtn:SetScript("OnClick", function()
+        if GuildOS.GuildAnalytics then GuildOS.GuildAnalytics:Show() end
+    end)
+
     -- Column Headers
     local headerFrame = CreateFrame("Frame", nil, tableArea)
     headerFrame:SetPoint("TOPLEFT", 0, -28)
