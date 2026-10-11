@@ -754,15 +754,18 @@ hand in the game too (issue #135, guildos-web specs/041).
   sender's name; both ignore `discordList`. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild
   rank is known (it is not at login, #79). Releases keep action `discord` (`tag = false`), which 0.73.0 applies.
   The change alone that 0.73.0 sends (`add`, `remove`) is still applied, by `ApplyDiscordChanges`, to the core
-  holding the tag here whatever the sender calls it.
-- A list from another officer goes to the core of the sender's name, so an officer's hand link reaches the
-  others; unless that core is linked to another Discord core here, then to the one the import would take.
+  holding the tag here whatever the sender calls it, while this client has no list it can date.
+- A list from another officer lands on the core holding its tag here, picked as the import picks it: a list
+  never moves a tag. Only a link does: every list of a core linked by hand carries when it was linked
+  (`linkAt`, the realm's clock), and a client whose core for that tag was linked earlier, or never, moves the
+  tag to the sender's core, unless that core is another Discord core's there. A link is an officer's choice,
+  not the Discord's data: it is never judged by how new the lists it came with are.
 - `at` is when the inbox was written (`GuildOSInboxAck.at`). The site sends every core of the guild together, so
   the guild keeps one mark, the newest `at` it applied from its inbox or from another officer
   (`GuildOS.db.discordAt`), releases included. An inbox, a list or a release older than it is skipped, and an
   inbox skipped is not sent on: an officer whose companion stopped rolls nobody back, and an older inbox never
   gives back a core the Discord still has, nor links again one the Discord closed. An `at` past the realm's
-  clock counts as none.
+  clock counts as now; another officer's message with none, once the guild has a mark, as older.
 - One tag, one core. A core taking a tag another core holds takes the Discord's people with it (`release` with
   `moved`); left behind, they would be the same people on two cores, a tie no raid detection can settle.
 - An import that ignored the inbox says why, once per guild until the reason changes (#138): cores of another
@@ -770,8 +773,9 @@ hand in the game too (issue #135, guildos-web specs/041).
   (`discordWaiting`, the site's `waiting`) and shown in its Roster tab.
 - A game core named apart from its Discord core is linked by hand (#138): Config, "Discord core", from the
   cores the last import saw (`DiscordCatalog`). `LinkDiscord` moves the tag and the Discord's people, as they
-  are, from the core that held it, and sends its list, so the other officers hear the link now; it needs no
-  inbox (only when no core holds the tag does it import again). A core linked by hand is never
+  are, from the core that held it, stamps `linkAt` and sends its list, so the other officers hear the link
+  now; it needs no inbox (only when no core holds the tag does it import again, and links nothing when it
+  cannot). A core already another Discord core's is not linked. A core linked by hand is never
   taken by another Discord core of its name; one made for a Discord core never takes a name already used.
   Deleting the active core clears it, in the raid too (the raid's core, the announced one, an officer's pick),
   so the next read does not make it again, empty.
@@ -794,7 +798,8 @@ hand in the game too (issue #135, guildos-web specs/041).
 - (−) An officer on a version before #135 who edits a Discord member rebuilds the record without `src`: from then
   on it is that officer's, and leaving the Discord no longer takes it off.
 - (−) `at` is the companion PC's clock: two officers' clocks minutes apart can skip the fresher of their lists
-  for those minutes. The site stamping GOSCORE1 with its own time would end it.
+  until the next inbox. The site stamping GOSCORE1 with its own time would end it.
+- (−) Once a client has a list it can date, a 0.73.0 officer's change (it carries no time) is skipped there.
 - (−) Who waits for a character goes to every client of the guild with the lists, by Discord display name: the
   names the guild's own Discord server already shows them.
 
