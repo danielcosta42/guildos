@@ -653,9 +653,13 @@ officer leading several had to switch before every raid, and forgetting sent the
 ### Decision
 - Each snapshot inside the raid matches the group (that snapshot's members, never everyone the session has seen)
   against each core's roster, an alt counting as their main (`CoreManager:CoreForGroup`).
-- A core takes the raid with the most of the group on its roster, if that is at least two people, at least half
-  the group, and no other core has as many. It becomes the active core and the session's, and a chat line names
-  it the first time and whenever it changes.
+- A core can take the raid when at least two people and at least half the group are on its roster. A raider may
+  be on several cores, one per format (issue #132), so a guild's 40 holds its 10's people: of those cores, one
+  whose raid size holds the raid comes first, then the smaller format, then the one with more of the group, and
+  two that rank the same take nothing. The raid's size is the instance's (the session's `size`, ADR-0024) when
+  that is one of the game's formats, else the group's own size, so a raid in a 20's instance is the 20 core's
+  while it fills, and a flexible size no core plans for falls back to counting heads. It becomes the active core and the session's, and a chat line names it
+  the first time and whenever it changes.
 - Until the first boss is pulled the raid follows the group, so one still being invited ends on the roster that
   showed up; `encounter_start` settles it. Detection never runs once the raid is left: not in the 20-minute
   grace period and not on the session's last snapshot.

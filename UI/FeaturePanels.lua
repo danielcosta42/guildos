@@ -62,7 +62,6 @@ local function RefreshCoreSignupFrame()
         pClass:sub(1,1) .. pClass:sub(2):lower()
     ))
 
-    local myCore  = CM:GetMemberCore(playerKey)
     local content = f.content
     local W       = content:GetWidth()
 
@@ -91,7 +90,7 @@ local function RefreshCoreSignupFrame()
         local comp     = CM:GetComposition(coreName)
         local signups  = CM:GetSignups(coreName) or {}
         local roles    = comp.roleCounts or {}
-        local isMember = (myCore == coreName)
+        local isMember = CM:GetMembers(coreName)[playerKey] ~= nil   -- on as many cores as they joined (#132)
         local isPending= (signups[playerKey] ~= nil)
 
         -- ── Header ───────────────────────────────────────────

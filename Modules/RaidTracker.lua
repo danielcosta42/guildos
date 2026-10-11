@@ -419,14 +419,15 @@ function RaidTracker:TakeSnapshot(reason)
         members = members,
         count = self:CountTable(members),
     })
-    GuildOS:SafeCall(self.DetectCore, self, members, reason)   -- after the snapshot is kept (issue #99)
-    -- A size the game had not given at the start is read again while in the same raid (#90).
+    -- A size the game had not given at the start is read again while in the same raid (#90),
+    -- before the detection, which tells a raid's format by it (#132).
     if not self.currentRaid.size then
         local _, _, _, _, maxPlayers, _, _, id = GetInstanceInfo()
         if id == self.currentRaid.instanceID and (tonumber(maxPlayers) or 0) > 0 then
             self.currentRaid.size = tonumber(maxPlayers)
         end
     end
+    GuildOS:SafeCall(self.DetectCore, self, members, reason)   -- after the snapshot is kept (issue #99)
     local pick = GuildOS.db.raidTracker and GuildOS.db.raidTracker.corePick
     if type(pick) == "table" and pick.instanceID == self.currentRaid.instanceID and pick.char == myName then
         pick.at = GetServerTime()   -- the pick lives as long as its raid does
@@ -573,7 +574,7 @@ end
 function RaidTracker:DetectCore(group, reason)
     if not self.currentRaid or self.coreSettled or self.endTimer or reason == "session_end" then return end
     if not GuildOS.CoreManager then return end
-    local name, count, size = GuildOS.CoreManager:CoreForGroup(group)
+    local name, count, size = GuildOS.CoreManager:CoreForGroup(group, self.currentRaid.size)
     if name and name ~= self.coreAnnounced then
         self:SetGroupTag(name)
         self.currentRaid.groupTag = name

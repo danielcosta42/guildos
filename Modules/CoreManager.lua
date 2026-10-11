@@ -256,15 +256,28 @@ function CoreManager:GetActiveName()
     return (GuildOS.db.raidTracker and GuildOS.db.raidTracker.currentGroupTag) or ""
 end
 
--- The core a raid group is, by roster (issue #99): the one with the most of the group on it, an
--- alt counting as their main, provided that is at least two people and at least half the group
--- and no other core has as many. Nil otherwise, and the active core stands.
+-- Whether core `a` is the group's before core `b` (issue #132). A raider can be on several cores,
+-- so the 40's roster holds the 10's people: one whose format holds the raid comes first, the
+-- smaller format of two that do, then the one with more of the group on it.
+local function ranksBefore(a, b, raidSize)
+    local aFits, bFits = a.raidSize >= raidSize, b.raidSize >= raidSize
+    if aFits ~= bFits then return aFits end
+    if aFits and a.raidSize ~= b.raidSize then return a.raidSize < b.raidSize end
+    return a.count > b.count
+end
+
+-- The core a raid group is, by roster (issue #99): of the cores with at least two people and at
+-- least half the group on them (an alt counting as their main), the one that ranks first, unless
+-- another ranks as high. Nil otherwise, and the active core stands.
+-- `instanceSize` is the raid's maxPlayers (a session's `size`, #90): when it is one of this game's
+-- formats it is the raid's format, so a 20's instance is the 20 core's however few have come in.
+-- Otherwise (none, or a size no core plans for) the group's own size stands in for it.
 -- Returns name, how many of the group are on its roster, and the group's size.
-function CoreManager:CoreForGroup(players)
+function CoreManager:CoreForGroup(players, instanceSize)
     local altLinks = (GuildOS.db and GuildOS.db.altLinks) or {}
     local size = 0
     for _ in pairs(players or {}) do size = size + 1 end
-    local counts, best, bestCount = {}, nil, 0
+    local candidates = {}
     for name, core in pairs((GuildOS.db and GuildOS.db.cores) or {}) do
         local members = type(core) == "table" and core.members
         if type(members) == "table" then
@@ -272,15 +285,21 @@ function CoreManager:CoreForGroup(players)
             for key in pairs(players or {}) do
                 if members[key] or members[altLinks[key]] then count = count + 1 end
             end
-            counts[name] = count
-            if count > bestCount then best, bestCount = name, count end
+            if count >= 2 and count * 2 >= size then
+                candidates[#candidates + 1] = { name = name, count = count, raidSize = self:GetRaidSize(name) }
+            end
         end
     end
-    if not best or bestCount < 2 or bestCount * 2 < size then return nil end
-    for name, count in pairs(counts) do
-        if count == bestCount and name ~= best then return nil end   -- a tie: no roster is the raid
+    local raidSize = isSizeOfThisGame(instanceSize) and instanceSize or size
+    local best
+    for _, c in ipairs(candidates) do
+        if not best or ranksBefore(c, best, raidSize) then best = c end
     end
-    return best, bestCount, size
+    if not best then return nil end
+    for _, c in ipairs(candidates) do
+        if c ~= best and not ranksBefore(best, c, raidSize) then return nil end   -- a tie: no roster is the raid
+    end
+    return best.name, best.count, size
 end
 
 -- Returns the core table for `name` (or the active core when name is nil).
@@ -509,13 +528,9 @@ function CoreManager:GetMembers(coreName)
     return core.members
 end
 
--- Adds or updates a member in one core; removes them from all other cores
--- so each player belongs to at most one core at a time.
+-- Adds or updates a member in one core. A raider may be on several cores at once, one per
+-- format (issue #132), so the others are left as they are.
 function CoreManager:AddMember(playerKey, info, coreName)
-    -- Remove from any other core
-    for _, c in pairs(GuildOS.db.cores or {}) do
-        if c.members then c.members[playerKey] = nil end
-    end
     local core = self:GetCore(coreName)
     if not core then return false, L["Core not found."] end
     if not core.members then core.members = {} end
@@ -531,15 +546,6 @@ end
 function CoreManager:RemoveMember(playerKey, coreName)
     local core = self:GetCore(coreName)
     if core and core.members then core.members[playerKey] = nil end
-end
-
-function CoreManager:GetMemberCore(playerKey)
-    for name, core in pairs(GuildOS.db.cores or {}) do
-        if core.members and core.members[playerKey] then
-            return name
-        end
-    end
-    return nil
 end
 
 ----------------------------------------------------------------------
