@@ -721,10 +721,14 @@ end
 
 local SITE_ROLES = { tank = true, healer = true, mdps = true, rdps = true }
 
--- This game's core for a Discord core: the one whose name reduces to its tag, the one named as on
--- the Discord when two do. Else one made now, named as on the Discord, or by the tag when the name
--- does not reduce to it (a name the Discord reused is "alfa-2"), so its nights count on the site.
+-- This game's core for a Discord core: the one already linked to its tag; else the one whose name
+-- reduces to the tag, the one named as on the Discord when two do. Else one made now, named as on
+-- the Discord, or by the tag when the name does not reduce to it (a name the Discord reused is
+-- "alfa-2"), so its nights count on the site.
 local function coreFor(self, c)
+    for _, name in ipairs(self:GetSortedNames()) do
+        if GuildOS.db.cores[name].discordTag == c.tag then return name, false end
+    end
     local found
     for _, name in ipairs(self:GetSortedNames()) do
         if CoreManager.Slug(name) == c.tag then
@@ -771,7 +775,8 @@ end
 -- `tag` links the core to the Discord's; false gives it back to the officers.
 -- Returns how many joined and how many left.
 function CoreManager:ApplyDiscordChanges(coreName, add, remove, size, tag)
-    local core = self:GetCore(coreName)
+    -- A release is for a core that is here: one this client deleted is not made again for it.
+    local core = tag == false and GuildOS.db.cores[coreName] or (tag ~= false and self:GetCore(coreName))
     if not core then return 0, 0 end
     if tag == false then
         core.discordTag = nil
@@ -811,8 +816,8 @@ function CoreManager:ImportFromSite(data)
     for _, c in ipairs(data.cores) do
         if type(c) == "table" and type(c.tag) == "string" and c.tag ~= "" and type(c.name) == "string"
             and type(c.members) == "table" then
-            sent[c.tag] = true
             local name, created = coreFor(self, c)
+            sent[c.tag] = name
             local linked = GuildOS.db.cores[name].discordTag == c.tag
             local members, incoming, add, remove = self:GetMembers(name), {}, {}, {}
             for _, m in ipairs(c.members) do
@@ -833,10 +838,10 @@ function CoreManager:ImportFromSite(data)
         end
     end
     -- A core the Discord no longer sends (closed there, or the federation switched off) is the
-    -- officers' again, as it stands.
+    -- officers' again, as it stands; so is a second core with a tag another core has.
     for _, name in ipairs(self:GetSortedNames()) do
         local tag = GuildOS.db.cores[name].discordTag
-        if tag and not sent[tag] then
+        if tag and sent[tag] ~= name then
             self:ApplyDiscordChanges(name, nil, nil, nil, false)
             changed[#changed + 1] = { name = name, released = true, tag = false }
         end

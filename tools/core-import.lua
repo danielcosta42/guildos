@@ -220,6 +220,27 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   GuildOS.db.cores["alfa-2"].discordTag = "alfa-2"
   for _, s in ipairs(sent) do handlers["core.roster"]({ act = s.act, data = s.data }, "Officer-Firemaw") end
   check(not CM:IsFromDiscord("alfa-2"), G("and gives the core back on their clients"))
+  -- The core already the Discord's stays the one, though another reduces to the tag by a closer name.
+  CM = load(game)
+  local pkg = { guild = "Nucleo BR", unlinked = 0, cores = { { tag = "nucleo-alfa", name = "Núcleo Alfa", size = 20,
+    members = { { key = "Ana-Firemaw", name = "Ana", class = "PRIEST" } } } } }
+  CM:Create("nucleo alfa")
+  CM:ImportFromSite(pkg)
+  CM:Create("Núcleo Alfa")
+  pkg.cores[1].members[2] = { key = "Bia-Firemaw", name = "Bia", class = "MAGE" }
+  CM:ImportFromSite(pkg)
+  check(CM:IsFromDiscord("nucleo alfa") and GuildOS.db.cores["nucleo alfa"].members[K("Bia")]
+    and not CM:IsFromDiscord("Núcleo Alfa") and next(GuildOS.db.cores["Núcleo Alfa"].members) == nil,
+    G("the linked core keeps the Discord's people; a namesake made later is the officers'"))
+  GuildOS.db.cores["Núcleo Alfa"].discordTag = "nucleo-alfa"
+  CM:ImportFromSite(pkg)
+  check(CM:IsFromDiscord("nucleo alfa") ~= CM:IsFromDiscord("Núcleo Alfa"), G("one core per tag: a second is given back"))
+
+  -- A release never makes a core this client deleted.
+  CM:InitSync()
+  handlers["core.roster"]({ act = "discord", data = { coreName = "Apagado", tag = false } }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Apagado"] == nil, G("a release for a core that is not here makes nothing"))
+
   -- Through the inbox: given back, sent on, and nothing said in chat.
   CM = load(game)
   GuildOSInbox = { FIXTURE }

@@ -737,8 +737,8 @@ hand in the game too (issue #135, guildos-web specs/041).
 - `CoreManager:ImportInbox` runs from `CoreManager:Initialize`, once the guild's db is known (PLAYER_LOGIN does
   not wait for it), and only with the companion on, the payload's `guild` this guild and, on Anniversary, its
   `realm` this realm (one Inbox.lua serves every realm of an install).
-- The game's core is the one whose name `CoreManager.Slug` (the site's `slugOf`) reduces to the Discord core's
-  tag; the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag
+- The game's core is the one already linked to the Discord core's tag; else the one whose name `CoreManager.Slug`
+  (the site's `slugOf`) reduces to the tag, the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag
   when the name does not reduce to it. Its `raidSize` is the Discord's.
 - A member the Discord sends and the core lacks joins, marked `src = "discord"`. One already there stays as it
   is. A `src = "discord"` member the Discord no longer sends goes. `AddMember` keeps the `src` it had, so an
@@ -753,7 +753,8 @@ hand in the game too (issue #135, guildos-web specs/041).
   raid format (the Discord's comes back), nor the "x" on a member the Discord put there; the role stays the
   officers'. Delete stays: the way out, undone by the import while the Discord still has the core. A core the
   Discord no longer sends (closed there, or the federation off: the site then sends an empty package) is given
-  back to the officers, as it stands, and the release goes to the other officers too (`tag = false`).
+  back to the officers, as it stands, and the release goes to the other officers too (`tag = false`), never
+  making again a core one of them deleted. A second core carrying a tag another core has is given back as well.
 
 ### Consequences
 - (+) Joining or leaving a core on the Discord reaches the game without an officer retyping it.
