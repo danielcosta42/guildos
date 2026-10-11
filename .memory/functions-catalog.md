@@ -346,10 +346,12 @@ Removed: `Compat.NewTimer`.
 | `CoreManager.Slug(name)` | A core's name as the site's `slugOf` reduces it ("Núcleo Alfa!" → "nucleo-alfa"): how a game core is matched to a Discord core's tag (ADR-0025, issue #135) |
 | `CoreManager:ImportFromSite(data)` | Imports a decoded GOSCORE1 into this guild: the core per tag (found, or made), its raidSize, Discord members in, Discord members who left out, an officer's own untouched; returns the changed cores `{ name, added, removed }` and the unlinked count, or nil for another guild's (ADR-0025) |
 | `CoreManager:ApplyDiscordChanges(core, add, remove, size, tag)` | The Discord's change to one core, from the import or another officer's `core.roster`/`discord`: links it (`tag`) or gives it back (`false`), adds the site's members not on it, removes only `src = "discord"` keys, sets the size; returns added, removed (ADR-0025) |
+| `CoreManager:SyncDiscordCore(core, list, size, tag, waiting)` | One Discord core's whole list into this game's core, for the import and for another officer's list: links it, takes its size and `waiting`, adds who is missing, takes over an officer's entry for somebody the Discord has, removes the Discord's people it no longer has; returns added, removed, adopted (ADR-0025, #138) |
+| `CoreManager:DiscordCatalog()` / `LinkDiscord(core, tag)` | The Discord cores the last import saw, by name; linking a game core of another name to one takes the tag from any other core and imports again (ADR-0025, #138) |
 | `CoreManager:IsFromDiscord(core)` | Whether the Discord owns the core now (`discordTag`): the core panel then hides Rename, the raid format and the "x" on the Discord's members (ADR-0025) |
 | `CoreManager:ImportInbox()` | From `Initialize`, once the guild's db is known: imports the inbox's GOSCORE1, prints one line when something changed, and keeps the change in `GuildOS.State.discordCores` (ADR-0025) |
 | `CoreManager:SendDiscordChanges()` | From OFFICER_START, once the rank says officer: sends each changed core's change alone (`core.roster`, action `discord`), once (ADR-0025) |
-| `CompanionImport:CoresFromInbox()` | The inbox's GOSCORE1, decoded; nil when absent, damaged or the companion is off (ADR-0025) |
+| `CompanionImport:CoresFromInbox()` | The inbox's GOSCORE1, decoded; nil when absent or damaged; nil and "companion-off" when it is there but the companion is off, which the import says once (ADR-0025, #138) |
 | `RaidTracker:GetPlayerGroup(playerKey)` | Returns group with most raids for player |
 | `RaidTracker:GetAttendance(playerKey, groupTag)` | Returns attendance record for player/group |
 | `RaidTracker:GetTotalSessions(groupTag)` | Counts unique guild-raid lockouts |

@@ -350,6 +350,38 @@ function GuildOS:CreateCoresPanel(panel)
         szHint:SetPoint("LEFT", szBtn, "RIGHT", 10, 0)
         y = y - 30
 
+        -- The Discord core this one is (#138). A game core named apart from it ("Core 10 Alpha" for
+        -- "10 Alpha") is linked by hand, and the import fills it from then on.
+        local catalog = CM:DiscordCatalog()
+        if #catalog > 0 then
+            local dLbl = track(MakeLabel(rightContent, L["Discord core:"], 10))
+            dLbl:SetPoint("TOPLEFT", 4, y)
+            local linked = GuildOS.db.cores[coreName].discordTag
+            if linked then
+                local shown = linked
+                for _, c in ipairs(catalog) do
+                    if c.tag == linked then shown = c.name end
+                end
+                local cur = track(MakeLabel(rightContent, shown, 10))
+                cur:SetPoint("LEFT", dLbl, "RIGHT", 6, 0)
+            else
+                local pick = 1
+                local pickBtn = track(UI:CreateButton(rightContent, catalog[1].name, 140, 20))
+                pickBtn:SetPoint("LEFT", dLbl, "RIGHT", 6, 1)
+                pickBtn:SetScript("OnClick", function(self)
+                    pick = pick % #catalog + 1
+                    self.label:SetText(catalog[pick].name)
+                end)
+                local linkBtn = track(UI:CreateButton(rightContent, L["Link"], 60, 20))
+                linkBtn:SetPoint("LEFT", pickBtn, "RIGHT", 6, 0)
+                linkBtn:SetScript("OnClick", function()
+                    CM:LinkDiscord(coreName, catalog[pick].tag)
+                    BuildSettings(coreName)
+                end)
+            end
+            y = y - 30
+        end
+
         ------------------------------------------------------------
         -- Section: Loot Rules
         ------------------------------------------------------------
@@ -855,6 +887,18 @@ function GuildOS:CreateCoresPanel(panel)
             end
             if bfCol > 0 then y = y - 15 end
             y = y - 6
+        end
+
+        -- Who is on the Discord core with no character the site can name: the people to chase (#138).
+        local waiting = fromDiscord and GuildOS.db.cores[coreName].discordWaiting
+        if waiting and #waiting > 0 then
+            local wl = track(MakeLabel(rightContent,
+                string.format(L["Waiting for a confirmed character on the site: %s"], table.concat(waiting, ", ")),
+                10, C.textDim.r, C.textDim.g, C.textDim.b))
+            wl:SetPoint("TOPLEFT", 4, y)
+            wl:SetWidth(CFG_W - 20)
+            wl:SetJustifyH("LEFT")
+            y = y - math.max(14, wl:GetStringHeight()) - 8
         end
 
         -- Member list (with inline role editing for RLs)

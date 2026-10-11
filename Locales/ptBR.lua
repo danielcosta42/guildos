@@ -1689,6 +1689,10 @@ L["Roster from the website: %d signed up."] = "Roster do site: %d inscritos."
 L["Cores from Discord: %s."] = "Cores do Discord: %s."
 L["%d on Discord with no confirmed character on the site."] = "%d no Discord sem personagem confirmado no site."
 L["Managed on Discord."] = "Gerenciado no Discord."
+L["Cores from Discord are waiting in the inbox: turn the web companion on with /gos web on."] = "Há cores do Discord esperando no inbox: ligue o companion web com /gos web on."
+L["The Discord cores in the inbox are for %s, not this guild."] = "Os cores do Discord no inbox são de %s, não desta guilda."
+L["Waiting for a confirmed character on the site: %s"] = "Esperando personagem confirmado no site: %s"
+L["Discord core:"] = "Core do Discord:"
 L["Planned on the website."] = "Planejada no site."
 
 -- Core/Core.lua, UI/Window.lua (isolamento na inicialização)

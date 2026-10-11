@@ -245,15 +245,16 @@ function Import:ConsumeInbox()
     return true, #soonest.members
 end
 
--- The guild's Discord cores in the inbox (a GOSCORE1, specs/041 in guildos-web), decoded: nil
--- when there are none, the companion is off or the string is damaged. CoreManager imports them
--- once the guild's db is known (#135); the roster reader above passes over them.
+-- The guild's Discord cores in the inbox (a GOSCORE1, specs/041 in guildos-web), decoded: nil when
+-- there are none or the string is damaged; nil and "companion-off" when they are there but the
+-- companion is off in game, which the import says (#138). CoreManager imports them once the guild's
+-- db is known (#135); the roster reader above passes over them.
 function Import:CoresFromInbox()
-    if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
     local inbox = _G.GuildOSInbox
     if type(inbox) ~= "table" then return nil end
     for _, v in ipairs(inbox) do
         if type(v) == "string" and v:sub(1, #CORES_PREFIX) == CORES_PREFIX then
+            if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil, "companion-off" end
             return unwrap(v:sub(#CORES_PREFIX + 1), "GOSCORE1")
         end
     end

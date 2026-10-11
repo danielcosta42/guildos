@@ -740,13 +740,24 @@ hand in the game too (issue #135, guildos-web specs/041).
 - The game's core is the one already linked to the Discord core's tag; else the one whose name `CoreManager.Slug`
   (the site's `slugOf`) reduces to the tag, the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag
   when the name does not reduce to it. Its `raidSize` is the Discord's.
-- A member the Discord sends and the core lacks joins, marked `src = "discord"`. One already there stays as it
-  is. A `src = "discord"` member the Discord no longer sends goes. `AddMember` keeps the `src` it had, so an
-  officer's edit does not change who owns the record. Nothing else the import touches.
-- The other officers get the change alone: `core.roster` with action `discord` (`add`, `remove`, `size`), applied
-  by the same `ApplyDiscordChanges`, never the whole roster, which would write over a pug another officer added
-  while this client was away. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild rank is known
-  (it is not at login, #79). A client from before #135 ignores it: it has no `members`.
+- A member the Discord sends and the core lacks joins, marked `src = "discord"`. One already there, put by an
+  officer, becomes the Discord's (#138): class, role and note as the officer left them, the tag shown, and it
+  leaves with the Discord. A `src = "discord"` member the Discord no longer sends goes. `AddMember` keeps the
+  `src` it had, so an officer's edit does not change who owns the record. Whoever the Discord does not have
+  is never touched. One function does it, `SyncDiscordCore`, for the import and for another officer's list.
+- The other officers get, at every import, the Discord's whole list for each of its cores (#138): `core.roster`
+  with action `discord` (`members` as the site sent them, `size`, `tag`, `waiting`), reconciled there by the
+  same `SyncDiscordCore`, so a client that missed a login, or deleted the core, converges. Never the officers'
+  own roster, which would write over a pug another officer added while this client was away. It is sent from
+  OFFICER_START (`SendDiscordChanges`), once the guild rank is known (it is not at login, #79). The change alone
+  that 0.73.0 sent (`add`, `remove`) is still applied, by `ApplyDiscordChanges`; a client from before #135
+  ignores both: they have no roster `members` map.
+- An import that ignored the inbox says why, once per guild until the reason changes (#138): the companion off
+  in game, or cores of another guild. Who is on a Discord core with no confirmed character is kept on the core
+  (`discordWaiting`, the site's `waiting`) and shown in its Roster tab.
+- A game core named apart from its Discord core is linked by hand (#138): Config, "Discord core", from the
+  cores the last import saw (`DiscordCatalog`). `LinkDiscord` takes the tag from any other core and imports
+  again at once. Deleting the active core clears it, so the next read does not make it again, empty.
 - One chat line says what changed and how many people the site had no character for (each once).
 - A core the import links keeps the Discord's tag (`discordTag`, sent with the change as `tag`). While it does, the
   core panel offers neither Rename (a renamed core stops being the Discord's and the import makes it again) nor the

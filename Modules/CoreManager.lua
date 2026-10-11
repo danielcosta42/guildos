@@ -244,6 +244,15 @@ end
 function CoreManager:Delete(name)
     if not name or name == "" then return false end
     GuildOS.db.cores[name] = nil
+    -- The active core deleted is no longer active: left set, the next read of it would make it again,
+    -- empty (#138).
+    if self:GetActiveName() == name then
+        if GuildOS.RaidTracker then
+            GuildOS.RaidTracker:SetGroupTag("")
+        elseif GuildOS.db.raidTracker then
+            GuildOS.db.raidTracker.currentGroupTag = ""
+        end
+    end
     return true
 end
 
@@ -769,17 +778,70 @@ function CoreManager:IsFromDiscord(coreName)
     return type(core) == "table" and core.discordTag ~= nil
 end
 
--- The Discord's change to one core, as the import makes it and as another officer's client sends
--- it: `add` the site's members ({ key, name, class, slot }) not on the core yet; `remove` the keys
--- whose record is the Discord's. What an officer put on the core is never touched, whoever asks.
--- `tag` links the core to the Discord's; false gives it back to the officers.
--- Returns how many joined and how many left.
+-- The Discord's cores as the last import saw them ({ tag, name }, by name), for an officer to link a
+-- game core of another name to one (#138).
+function CoreManager:DiscordCatalog()
+    local out = {}
+    for _, c in ipairs(GuildOS.db.discordCatalog or {}) do out[#out + 1] = c end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    return out
+end
+
+-- Names from the site or from another officer, kept only as names.
+local function namesOnly(list)
+    local out = {}
+    for _, v in ipairs(type(list) == "table" and list or {}) do
+        if type(v) == "string" and v ~= "" then out[#out + 1] = v end
+    end
+    return #out > 0 and out or nil
+end
+
+-- One Discord core's people, reconciled into this game's core: as the import does it, and as another
+-- officer's client sends its whole list (#138). The core is linked to `tag` and takes the Discord's
+-- size; whoever is missing joins; an officer's entry for somebody the Discord has becomes the
+-- Discord's, class, role and note as the officer left them; and the Discord's own people it no longer
+-- has leave. Whoever the Discord does not have, an officer put there, and stays.
+-- Returns how many joined, left and were taken over.
+function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting)
+    local core = self:GetCore(coreName)
+    if not core then return 0, 0, 0 end
+    core.discordTag = tag
+    core.discordWaiting = namesOnly(waiting)
+    if tonumber(size) then self:SetRaidSize(coreName, tonumber(size)) end
+    local members, incoming, added, removed, adopted = self:GetMembers(coreName), {}, 0, 0, 0
+    for _, m in ipairs(list) do
+        local key = type(m) == "table" and localKey(m.key)
+        if key then
+            incoming[key] = true
+            local rec = members[key]
+            if type(rec) ~= "table" then
+                members[key] = discordRecord(self, key, m)
+                added = added + 1
+            elseif rec.src ~= "discord" then
+                rec.src = "discord"
+                adopted = adopted + 1
+            end
+        end
+    end
+    for key, rec in pairs(members) do
+        if type(rec) == "table" and rec.src == "discord" and not incoming[key] then
+            members[key] = nil
+            removed = removed + 1
+        end
+    end
+    return added, removed, adopted
+end
+
+-- The change alone, as an officer's client on 0.73.0 sends it, and the release of a core (tag false):
+-- `add` the site's members not on the core yet, `remove` the keys whose record is the Discord's.
+-- What an officer put on the core is never touched, whoever asks. Returns how many joined and left.
 function CoreManager:ApplyDiscordChanges(coreName, add, remove, size, tag)
     -- A release is for a core that is here: one this client deleted is not made again for it.
     local core = tag == false and GuildOS.db.cores[coreName] or (tag ~= false and self:GetCore(coreName))
     if not core then return 0, 0 end
     if tag == false then
         core.discordTag = nil
+        core.discordWaiting = nil
     elseif type(tag) == "string" and tag ~= "" then
         core.discordTag = tag
     end
@@ -803,63 +865,75 @@ function CoreManager:ApplyDiscordChanges(coreName, add, remove, size, tag)
     return added, removed
 end
 
--- Imports a decoded GOSCORE1 into this guild. Returns the cores that changed, as
--- { name, added, removed, add, remove, size, tag } (`released` and tag false for one the Discord
--- no longer sends), and how many people the site had no character for; nil when the payload is
--- not this guild's.
+-- Imports a decoded GOSCORE1 into this guild. Returns every Discord core as { name, added, removed,
+-- adopted, members, size, tag, waiting, quiet } (quiet when nothing on it changed; `released` and tag
+-- false for a core the Discord no longer sends), and how many people the site had no character for.
+-- When the payload is not this guild's: nil, and whose it is.
 function CoreManager:ImportFromSite(data)
     if type(data) ~= "table" or type(data.cores) ~= "table" then return nil end
-    if data.guild ~= GetGuildInfo("player") then return nil end
+    if data.guild ~= GetGuildInfo("player") then return nil, tostring(data.guild) end
     -- One Inbox.lua serves every realm of an install, and on Anniversary a guild is its realm's.
-    if GuildOS.Client.isAnniversary and data.realm and data.realm ~= GetRealmName() then return nil end
-    local changed, sent = {}, {}
+    if GuildOS.Client.isAnniversary and data.realm and data.realm ~= GetRealmName() then
+        return nil, tostring(data.guild) .. " (" .. tostring(data.realm) .. ")"
+    end
+    local cores, sent, catalog = {}, {}, {}
     for _, c in ipairs(data.cores) do
         if type(c) == "table" and type(c.tag) == "string" and c.tag ~= "" and type(c.name) == "string"
             and type(c.members) == "table" then
+            catalog[#catalog + 1] = { tag = c.tag, name = c.name }
             local name, created = coreFor(self, c)
             sent[c.tag] = name
             local linked = GuildOS.db.cores[name].discordTag == c.tag
-            local members, incoming, add, remove = self:GetMembers(name), {}, {}, {}
-            for _, m in ipairs(c.members) do
-                local key = type(m) == "table" and localKey(m.key)
-                if key then
-                    incoming[key] = true
-                    if not members[key] then add[#add + 1] = m end
-                end
-            end
-            for key, rec in pairs(members) do
-                if type(rec) == "table" and rec.src == "discord" and not incoming[key] then remove[#remove + 1] = key end
-            end
-            local added, removed = self:ApplyDiscordChanges(name, add, remove, c.size, c.tag)
-            if created or not linked or added > 0 or removed > 0 then
-                changed[#changed + 1] = { name = name, added = added, removed = removed,
-                                          add = add, remove = remove, size = self:GetRaidSize(name), tag = c.tag }
-            end
+            local added, removed, adopted = self:SyncDiscordCore(name, c.members, c.size, c.tag, c.waiting)
+            cores[#cores + 1] = {
+                name = name, added = added, removed = removed, adopted = adopted,
+                members = c.members, size = self:GetRaidSize(name), tag = c.tag, waiting = namesOnly(c.waiting),
+                quiet = not (created or not linked or added > 0 or removed > 0 or adopted > 0),
+            }
         end
     end
+    GuildOS.db.discordCatalog = catalog
     -- A core the Discord no longer sends (closed there, or the federation switched off) is the
     -- officers' again, as it stands; so is a second core with a tag another core has.
     for _, name in ipairs(self:GetSortedNames()) do
         local tag = GuildOS.db.cores[name].discordTag
         if tag and sent[tag] ~= name then
             self:ApplyDiscordChanges(name, nil, nil, nil, false)
-            changed[#changed + 1] = { name = name, released = true, tag = false }
+            cores[#cores + 1] = { name = name, released = true, tag = false }
         end
     end
-    return changed, tonumber(data.unlinked) or 0
+    return cores, tonumber(data.unlinked) or 0
+end
+
+-- Why the inbox's cores were not imported, said once per guild until the reason changes (#138): an
+-- import that says nothing looks exactly like one that is not working.
+local function tellOnce(key, text)
+    if GuildOS.db.discordTold == key then return end
+    GuildOS.db.discordTold = key
+    GuildOS:Print(text)
 end
 
 -- The Discord's cores the companion left in Inbox.lua, imported once this guild's db is known
--- (PLAYER_LOGIN does not wait for it), with one line saying what changed. What changed waits for
--- SendDiscordChanges, which needs the guild rank this early login does not have yet.
+-- (PLAYER_LOGIN does not wait for it), with one line saying what changed, or why nothing was. Every
+-- core then waits for SendDiscordChanges, which needs the guild rank this early login lacks.
 function CoreManager:ImportInbox()
-    local data = GuildOS.CompanionImport and GuildOS.CompanionImport:CoresFromInbox()
-    if not data then return end
-    local changed, unlinked = self:ImportFromSite(data)
-    if not changed or #changed == 0 then return end
+    if not GuildOS.CompanionImport then return end
+    local data, off = GuildOS.CompanionImport:CoresFromInbox()
+    if not data then
+        if off then tellOnce(off, L["Cores from Discord are waiting in the inbox: turn the web companion on with /gos web on."]) end
+        return
+    end
+    local cores, unlinked = self:ImportFromSite(data)
+    if not cores then
+        if unlinked then
+            tellOnce("guild:" .. unlinked, string.format(L["The Discord cores in the inbox are for %s, not this guild."], unlinked))
+        end
+        return
+    end
+    GuildOS.db.discordTold = nil
     local parts = {}
-    for _, c in ipairs(changed) do
-        if not c.released then parts[#parts + 1] = string.format("%s +%d -%d", c.name, c.added, c.removed) end
+    for _, c in ipairs(cores) do
+        if not c.released and not c.quiet then parts[#parts + 1] = string.format("%s +%d -%d", c.name, c.added, c.removed) end
     end
     if #parts > 0 then
         local line = string.format(L["Cores from Discord: %s."], table.concat(parts, ", "))
@@ -868,24 +942,40 @@ function CoreManager:ImportInbox()
         end
         GuildOS:Print(line)
     end
-    -- ponytail: the change waits in the session; a rank still unknown after OFFICER_START's minute
-    -- drops it, and the other officers then hear of it only at the next edit by hand. Keep it in
-    -- the guild's db until sent if that ever bites.
-    GuildOS.State.discordCores = changed
+    -- ponytail: the lists wait in the session; a rank still unknown after OFFICER_START's minute
+    -- drops them until the next login. Keep them in the guild's db until sent if that ever bites.
+    GuildOS.State.discordCores = #cores > 0 and cores or nil
     if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
 end
 
--- From OFFICER_START, once the rank is known and is an officer's: each core the import changed goes
--- to the other officers as the change alone. The whole roster would write over a pug another
--- officer added while this client was away; the change touches only the Discord's own people.
+-- From OFFICER_START, once the rank is known and is an officer's: every Discord core goes to the other
+-- officers as the Discord's whole list for it (#138), reconciled there by the same rule, so a client
+-- that missed a login, or deleted the core, ends up as this one. Never an officer's own entries: the
+-- whole roster would write over a pug another officer added while this client was away.
 function CoreManager:SendDiscordChanges()
     local pending = GuildOS.State.discordCores
     GuildOS.State.discordCores = nil
     if not (pending and GuildOS.SyncService) then return end
     for _, c in ipairs(pending) do
-        GuildOS.SyncService:Publish("core.roster", "discord",
-            { coreName = c.name, add = c.add, remove = c.remove, size = c.size, tag = c.tag })
+        local d = c.released and { coreName = c.name, tag = false }
+            or { coreName = c.name, members = c.members, size = c.size, tag = c.tag, waiting = c.waiting }
+        GuildOS.SyncService:Publish("core.roster", "discord", d)
     end
+end
+
+-- An officer linking a game core of another name to a Discord core (#138): any other core holding
+-- that tag lets go of it, and the inbox's cores are imported again at once, into this one.
+function CoreManager:LinkDiscord(coreName, tag)
+    if not GuildOS.db.cores[coreName] or type(tag) ~= "string" or tag == "" then return false end
+    for name, core in pairs(GuildOS.db.cores) do
+        if name ~= coreName and type(core) == "table" and core.discordTag == tag then
+            core.discordTag = nil
+            core.discordWaiting = nil
+        end
+    end
+    GuildOS.db.cores[coreName].discordTag = tag
+    self:ImportInbox()
+    return true
 end
 
 function CoreManager:BroadcastRoster(coreName)
@@ -930,7 +1020,12 @@ function CoreManager:InitSync()
         if env.act ~= "discord" and not d.members then return end
         if not GuildOS:IsOfficerByName(sender) then return end
         if env.act == "discord" then
-            self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
+            -- The Discord's whole list (#138), else the change alone from a 0.73.0 client or a release.
+            if type(d.members) == "table" and type(d.tag) == "string" and d.tag ~= "" then
+                self:SyncDiscordCore(d.coreName, d.members, d.size, d.tag, d.waiting)
+            else
+                self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
+            end
         else
             local core = self:GetCore(d.coreName)
             if core then core.members = GuildOS:LocalizeMemberTable(d.members) end   -- this client's keys (#97)
