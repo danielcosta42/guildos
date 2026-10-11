@@ -272,7 +272,7 @@ local function BuildCallToArmsSub(panel)
     recentHead:SetPoint("TOPLEFT", hear, "BOTTOMLEFT", 0, -10)
     -- /gos avail: who in the guild is free for a group, and listing yourself (#142).
     if GuildOS.LFGBoard then
-        local boardBtn = UI:CreateButton(panel, L["Availability board"], 180, 18)
+        local boardBtn = UI:CreateButton(panel, L["LFG Board"], 180, 18)
         boardBtn:SetPoint("LEFT", recentHead, "RIGHT", 12, 0)
         boardBtn:SetScript("OnClick", function() GuildOS.LFGBoard:Show() end)
     end

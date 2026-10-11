@@ -23,8 +23,9 @@ local function read(rel)
   return s
 end
 
--- Where each command is in the interface: { file, a line of code that is that way in }, every pair
--- required. Aliases are listed with their verb.
+-- Where each command is in the interface: { file, the code that is that way in (a call, a button's
+-- label, a builder) }, every pair required; never a word a comment could hold. Aliases are listed
+-- with their verb. A subcommand (`ally request`, `mentions add`) is reached from its verb's place.
 local IN_UI = {
   open        = { { "UI/Window.lua", "SetActiveTab" } },
   scan        = { { "UI/FeaturePanels.lua", "GuildOS:CollectMyDataNow()" } },
@@ -32,8 +33,8 @@ local IN_UI = {
   myalts      = { { "UI/MemberDetail.lua", "GuildOS.AltAutoDetect:PromptNow()" } },
   sync        = { { "UI/Window.lua", "GuildOS.CommSystem:FullSync()" } },
   points      = { { "UI/Features.lua", 'id = "dkp"' } },
-  equity      = { { "UI/FeaturePanels.lua", 'L["Equity"]' } },
-  digest      = { { "UI/FeaturePanels.lua", "Digest" } },
+  equity      = { { "UI/FeaturePanels.lua", 'showView("equity")' } },
+  digest      = { { "UI/FeaturePanels.lua", "GuildOS.Digest:Show()" } },
   backup      = { { "UI/FeaturePanels.lua", "GuildOS.Backup:ShowExport()" } },
   restore     = { { "UI/FeaturePanels.lua", "GuildOS.Backup:ShowRestore()" } },
   bulletin    = { { "UI/CommunityPanel.lua", "BuildBulletinSub" } },
@@ -44,14 +45,14 @@ local IN_UI = {
   find        = { { "UI/Window.lua", "GuildOS.Search:Show()" } },
   craft       = { { "UI/RecipesPanel.lua", "GuildOS:ShowCraftFinder()" },
                   { "UI/ProfessionsPanel.lua", "GuildOS:ShowCraftFinder()" } },
-  scout       = { { "UI/RosterFrame.lua", "Scanner" } },
-  beacon      = { { "UI/RosterFrame.lua", "Beacon" } },
-  map         = { { "UI/Minimap.lua", "GuildMap" } },
-  pug         = { { "UI/Minimap.lua", "Pug" } },
-  minimap     = { { "UI/FeaturePanels.lua", "minimap" } },
+  scout       = { { "UI/RosterFrame.lua", "GuildOS.RecruitScanner:BuildInto(" } },
+  beacon      = { { "UI/RosterFrame.lua", 'L["Edit Beacon"]' } },
+  map         = { { "UI/Minimap.lua", "GuildOS:ToggleGuildMap()" } },
+  pug         = { { "UI/Minimap.lua", "GuildOS:TogglePugInspector()" } },
+  minimap     = { { "UI/FeaturePanels.lua", 'L["Show minimap button"]' } },
   guildbutton = { { "UI/FeaturePanels.lua", "hijackGuildButton" } },
   prune       = { { "UI/FeaturePanels.lua", "GuildOS:PruneStaleData()" } },
-  debug       = { { "UI/FeaturePanels.lua", 'L["Debug logging"]' } },
+  debug       = { { "UI/FeaturePanels.lua", "GuildOS.Logger.debug = checked" } },
   errors      = { { "UI/FeaturePanels.lua", "GuildOS:ShowErrors()" } },
   style       = { { "UI/StylePreview.lua", "self:Apply(id)" }, { "UI/FeaturePanels.lua", "GuildOS.Style:ShowPreview()" } },
   probe       = { { "UI/FeaturePanels.lua", "GuildOS.Probe:Run()" } },
@@ -59,24 +60,24 @@ local IN_UI = {
   reset       = { { "UI/FeaturePanels.lua", "GuildOS:EraseGuildData()" } },
   recruit     = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
   autoinvite  = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
-  cons        = { { "UI/RaidHUD.lua", "ScanRaid" } },
-  consreport  = { { "UI/RaidHUD.lua", "Announce" } },
+  cons        = { { "UI/RaidHUD.lua", "GuildOS.ConsumableChecker:CheckRaid()" } },
+  consreport  = { { "UI/RaidHUD.lua", 'GuildOS.ConsumableChecker:ReportToChat("RAID")' } },
   trial       = { { "UI/RosterFrame.lua", "GuildOS.TrialTracker:AddTrial(key)" } },
   note        = { { "UI/RosterFrame.lua", "GuildOS.OfficerNotes:AddNote(" } },
   lm          = { { "UI/FeaturePanels.lua", "GuildOS:LootMasterStatus()" } },
   web         = { { "UI/WebPanel.lua", "GuildOS:ShowWebString()" }, { "UI/WebPanel.lua", "co:SetEnabled(" } },
   roster      = { { "UI/WebPanel.lua", 'L["Bring roster"]' } },
-  exportatt   = { { "UI/FeaturePanels.lua", "Test Attendance Export" } },
+  exportatt   = { { "UI/FeaturePanels.lua", 'L["Test Attendance Export"]' } },
   export      = { { "UI/FeaturePanels.lua", 'L["Export Data"]' } },
   wish        = { { "UI/RosterFrame.lua", 'L["My Wishlist"]' } },
   mergeraids  = { { "UI/AuditPanel.lua", "GuildOS:MergeRaidSessions()" } },
   specs       = { { "UI/AuditPanel.lua", "GuildOS.SpecChecker:ScanGroup()" } },
   attune      = { { "UI/AuditPanel.lua", "BuildAttuneSub" } },
   signup      = { { "UI/Window.lua", "GuildOS:ShowCoreSignupFrame()" } },
-  ban         = { { "UI/ManagementPanel.lua", "Ban" } },
+  ban         = { { "UI/ManagementPanel.lua", "GuildOS.BanList:Add(" } },
   mentions    = { { "UI/FeaturePanels.lua", "GuildOS.Mentions:PrintLog()" },
                   { "UI/FeaturePanels.lua", 'GuildOS.Mentions:HandleCommand({ "clearwords" })' } },
-  notecmd     = { { "UI/FeaturePanels.lua", "NOTE COMMAND" } },
+  notecmd     = { { "UI/FeaturePanels.lua", "GuildOS.db.noteCommand.enabled = checked" } },
   avail       = { { "UI/CommunityPanel.lua", "GuildOS.LFGBoard:Show()" } },
   ally        = { { "UI/AlliancePanel.lua", "ALLY():Create(" }, { "UI/AlliancePanel.lua", "ALLY():RequestJoin(" } },
 }
@@ -96,8 +97,11 @@ local CHAT_ONLY = {
   ["attune debug"] = "debug", ["attunements debug"] = "debug", ["attune dumpquests"] = "debug: a quest-id dump",
 }
 
--- The verbs the router matches: `msg == "x"` and `msg:match("^x")`.
+-- The verbs the router matches: `msg == "x"` and `msg:match("^x")`. Any other way of telling one
+-- command from another would hide it from this list, so there is none.
 local src = read("Core/Commands.lua")
+check(not src:find("msg:find(", 1, true) and not src:find("msg:sub(", 1, true),
+  "the router tells commands apart only by msg == and msg:match")
 local verbs = {}
 for v in src:gmatch('msg == "([%a ]+)"') do verbs[v] = true end
 for v in src:gmatch('msg:match%("%^(%a+)') do verbs[v] = true end
@@ -119,7 +123,7 @@ for verb in pairs(verbs) do
 end
 -- And nothing listed here that the router no longer has: a stale line would hide a removed command.
 for verb in pairs(known) do
-  check(verbs[verb] or verb == "lm announce", "/gos " .. verb .. " is still a command")
+  check(verbs[verb], "/gos " .. verb .. " is still a command")
 end
 
 print(("commands-in-ui: %d checks passed"):format(checks))

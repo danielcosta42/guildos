@@ -946,6 +946,15 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
 
     local lmText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
     lmText:SetPoint("LEFT", exportBtn, "RIGHT", 12, 0)
+    lmText:SetPoint("RIGHT", scrollParent, "TOPRIGHT", 0, -34)   -- the buttons' row
+    lmText:SetWordWrap(false)
+    lmText:SetJustifyH("LEFT")
+    local lmEvents = CreateFrame("Frame")
+    GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
+    GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
+    lmEvents:SetScript("OnEvent", function()
+        if parent:IsShown() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
+    end)
 
     local VIEW_TOP = 50  -- space reserved for title + toggle row
 
@@ -2324,8 +2333,15 @@ function GuildOS:RefreshSettingsPanel(content, category)
         local clearBtn = UI:CreateButton(content, L["Clear watch-words"], 150, 22)
         clearBtn:SetPoint("LEFT", logBtn, "RIGHT", 8, 0)
         clearBtn:SetScript("OnClick", function()
-            GuildOS.Mentions:HandleCommand({ "clearwords" })
-            refreshWords()
+            StaticPopupDialogs["GUILDOS_CLEAR_WORDS"] = StaticPopupDialogs["GUILDOS_CLEAR_WORDS"] or {
+                text = L["Clear every watch-word?"], button1 = L["Clear watch-words"], button2 = L["Cancel"],
+                OnAccept = function(self)
+                    GuildOS.Mentions:HandleCommand({ "clearwords" })
+                    if self and self.data and self.data.after then self.data.after() end
+                end,
+                timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+            }
+            StaticPopup_Show("GUILDOS_CLEAR_WORDS", nil, nil, { after = refreshWords })
         end)
         yOff = yOff + 28
     end
@@ -3162,7 +3178,16 @@ function GuildOS:RefreshSettingsPanel(content, category)
         { L["View Errors"], function() GuildOS:ShowErrors() end },
         { L["Self-test"], function() if GuildOS.SelfTest then GuildOS.SelfTest:Run() end end },
         { L["Probe the client"], function() if GuildOS.Probe then GuildOS.Probe:Run() end end },
-        { L["Probe chat"], function() if GuildOS.Probe then GuildOS.Probe:RunChat() end end },
+        { L["Probe chat"], function()
+            -- It posts two lines in guild chat: asked first.
+            StaticPopupDialogs["GUILDOS_PROBE_CHAT"] = StaticPopupDialogs["GUILDOS_PROBE_CHAT"] or {
+                text = L["Post two test lines in guild chat to see whether an addon may post on its own"] .. "?",
+                button1 = L["Probe chat"], button2 = L["Cancel"],
+                OnAccept = function() if GuildOS.Probe then GuildOS.Probe:RunChat() end end,
+                timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+            }
+            StaticPopup_Show("GUILDOS_PROBE_CHAT")
+        end },
         { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
     }
     local prevDiag
@@ -3190,6 +3215,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local eraseNote = UI:CreateText(content, L["Removes every Guild OS record of this guild on this PC, then reloads."], 9,
         C.silver.r, C.silver.g, C.silver.b)
     eraseNote:SetPoint("LEFT", eraseBtn, "RIGHT", 10, 0)
+    eraseNote:SetPoint("RIGHT", content, "TOPRIGHT", -10, -(yOff + 11))   -- the button's row
+    eraseNote:SetWordWrap(false)
+    eraseNote:SetJustifyH("LEFT")
     yOff = yOff + 30
 
     --------------------------------------------------------------------

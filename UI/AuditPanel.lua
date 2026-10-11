@@ -73,6 +73,10 @@ local function BuildReadySub(panel)
     specsBtn:SetScript("OnClick", function()
         if GuildOS.SpecChecker then GuildOS.SpecChecker:ScanGroup() end
     end)
+    -- A narrow window cuts the summary short rather than lay the buttons over it.
+    summary:SetPoint("TOPRIGHT", specsBtn, "TOPLEFT", -8, -2)
+    summary:SetWordWrap(false)
+    summary:SetJustifyH("LEFT")
 
     local header = CreateFrame("Frame", nil, panel)
     header:SetPoint("TOPLEFT", 0, -26)
@@ -411,6 +415,9 @@ local function BuildSyncSub(panel)
     local mergeBtn = UI:CreateButton(panel, L["Merge duplicate sessions"], 170, 20)
     mergeBtn:SetPoint("TOPRIGHT", syncBtn, "TOPLEFT", -6, 0)
     mergeBtn:SetScript("OnClick", function() GuildOS:MergeRaidSessions() end)
+    summary:SetPoint("TOPRIGHT", mergeBtn, "TOPLEFT", -8, -4)
+    summary:SetWordWrap(false)
+    summary:SetJustifyH("LEFT")
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -34)
