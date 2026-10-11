@@ -242,11 +242,14 @@ function LootMaster:GetPlayerContext(playerName)
 
     -- 25-man attendance %, the raid's own core's (issue #134): its loot rules are that core's, and a
     -- raider on several cores (#132) is judged by the one raiding, not by where they raid most. With
-    -- no core active, as before: the core where the raider has the most raids.
-    if GuildOS.RaidTracker then
+    -- no core active, or one none of whose nights count (a 10 on Forever, a core on its first raid,
+    -- where everyone would read 0% and roll OS), as before: the core where the raider has the most raids.
+    local RT = GuildOS.RaidTracker
+    if RT then
         local pKey = GuildOS:GetPlayerKey(playerName, GetRealmName())
-        local core = GuildOS.RaidTracker.GetCurrentGroup and GuildOS.RaidTracker:GetCurrentGroup()
-        ctx.att25 = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey, core ~= "" and core or nil) or 0
+        local core = RT.GetCurrentGroup and RT:GetCurrentGroup()
+        if core == "" or (core and RT:GetTotal25ManSessions(core) == 0) then core = nil end
+        ctx.att25 = RT:GetAttendance25ManPercent(pKey, core) or 0
     end
 
     -- Items received this lockout: count ML-awarded loot history entries

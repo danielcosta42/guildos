@@ -399,7 +399,7 @@ Removed: `Compat.NewTimer`.
 | `LootMaster:SafeSendAddon(prefix, payload, channel)` | Sends addon message if in raid + not testMode |
 | `LootMaster:Initialize()` | DB setup, builds roll pattern, registers events |
 | `LootMaster:LoadCfg()` | Caches the active core's roll timer, auto-announce, wishlist-only mode, disenchanter and threshold; run at start-up and whenever the active core changes (issue #99) |
-| `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player; att25 is the active core's attendance (the raid's loot rules are its), else the core where the player raids most (issue #134) |
+| `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player; att25 is the active core's attendance (the raid's loot rules are its); with no core active, or one none of whose nights count (a 10 on Forever, a first raid), the core where the player raids most (issue #134) |
 | `LootMaster:IsMasterLooter()` | 4-tier check: IsMasterLooter → GetLootMethod → C_PartyInfo → leader rank |
 | `LootMaster:HookBagClicks()` | Alt+click on a bag item → roll: hooks `ContainerFrameItemButton_OnModifiedClick` (Anniversary) or `HandleModifiedItemClick` with the item location (Forever), never both (issue #44) |
 | `LootMaster:RollFromBagClick(bagId, slotId)` | The click's checks (module on, Alt, master looter), then `RollFromBag` |
