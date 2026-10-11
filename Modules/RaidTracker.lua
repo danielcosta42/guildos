@@ -586,15 +586,17 @@ end
 
 -- Returns the group tag where the player has the most raids recorded.
 -- Used to auto-select the correct denominator when no group is specified.
-function RaidTracker:GetPlayerGroup(playerKey)
+-- `field` counts which raids: all of them by default, `raids25` for the ones that count (#134).
+function RaidTracker:GetPlayerGroup(playerKey, field)
+    field = field or "raids"
     local att = GuildOS.db.raidTracker and GuildOS.db.raidTracker.attendance or {}
     local bestGroup = ""
     local bestRaids = 0
     for groupTag, groupAtt in pairs(att) do
         if type(groupAtt) == "table" then
             local data = groupAtt[playerKey]
-            if data and (data.raids or 0) > bestRaids then
-                bestRaids = data.raids or 0
+            if data and (data[field] or 0) > bestRaids then
+                bestRaids = data[field] or 0
                 bestGroup = groupTag
             end
         end
@@ -664,8 +666,10 @@ function RaidTracker:GetAttendancePercent(playerKey, groupTag)
     return math.floor((att.raids / total) * 100 + 0.5)
 end
 
+-- With no core given, the core where the player has the most nights that count: one where they raid
+-- most can be a 10, whose nights never count on Forever, and would read 0% (#134).
 function RaidTracker:GetAttendance25ManPercent(playerKey, groupTag)
-    if not groupTag then groupTag = self:GetPlayerGroup(playerKey) end
+    if not groupTag then groupTag = self:GetPlayerGroup(playerKey, "raids25") end
     local total = self:GetTotal25ManSessions(groupTag)
     if total == 0 then return 0 end
     local att = self:GetAttendance(playerKey, groupTag)

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.74.0] - 2026-10-11
+
+### Added
+- o roll é julgado pela presença do core da raid, não do core onde o raider tem mais raids (#134)
+
+### Fixed
+- as noites sem core contam como um core próprio na ficha, na equidade e no export (#134)
+- ficha do membro, equidade de loot e export leem a presença do mesmo core que o roster (#134)
+- a presença de antes é a do core com mais noites que contam, não a de um 10 que lê 0% (#134)
+- um core sem noite que conta (um 10 no Forever, a primeira raide) não zera a presença de todos no roll (#134)
+
+
 ## [0.73.0] - 2026-10-11
 
 ### Added

@@ -566,7 +566,12 @@ function PopulateDetail(frame, data)
     if GuildOS.RaidTracker then
         yOff = yOff - 10
         playerKey = GuildOS:GetPlayerKey(data.name, data.realm or GetRealmName())
-        local playerGroup  = GuildOS.RaidTracker:GetPlayerGroup(playerKey)
+        -- The core with the most nights that count, as the roster's figure (#134); with none anywhere
+        -- (not even nights with no core), the one with the most raids.
+        local playerGroup  = GuildOS.RaidTracker:GetPlayerGroup(playerKey, "raids25")
+        if playerGroup == "" and (GuildOS.RaidTracker:GetAttendance(playerKey, "").raids25 or 0) == 0 then
+            playerGroup = GuildOS.RaidTracker:GetPlayerGroup(playerKey)
+        end
         local att          = GuildOS.RaidTracker:GetAttendance(playerKey, playerGroup)
         local pct          = GuildOS.RaidTracker:GetAttendance25ManPercent(playerKey, playerGroup)
         local total25      = GuildOS.RaidTracker:GetTotal25ManSessions(playerGroup)
