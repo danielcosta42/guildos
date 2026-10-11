@@ -98,8 +98,11 @@ function LootTracker:GetGuildLootEquity()
             local items = self:GetLootCount(key)
             local att, raids = 0, 0
             if RT then
-                att = RT:GetAttendance25ManPercent(key) or 0
-                local a = RT:GetAttendance(key)
+                -- One core for both figures: the one with the most nights that count (#134).
+                local core = RT:GetPlayerGroup(key, "raids25")
+                if core == "" then core = nil end
+                att = RT:GetAttendance25ManPercent(key, core) or 0
+                local a = RT:GetAttendance(key, core)
                 raids = (a and a.raids25) or 0
             end
             if items > 0 or raids > 0 then

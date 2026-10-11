@@ -96,8 +96,10 @@ function Exporter:AttendanceData()
             local key = GuildOS:GetPlayerKey(short, realm)
             local att, streak = 0, 0
             if GuildOS.RaidTracker then
-                att = GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
-                streak = GuildOS.RaidTracker:GetMissedStreak(key, nil, 99) or 0
+                local core = GuildOS.RaidTracker:GetPlayerGroup(key, "raids25")   -- one core for both (#134)
+                if core == "" then core = nil end
+                att = GuildOS.RaidTracker:GetAttendance25ManPercent(key, core) or 0
+                streak = GuildOS.RaidTracker:GetMissedStreak(key, core, 99) or 0
             end
             rows[#rows + 1] = { short, classFile or "", att, streak }
         end

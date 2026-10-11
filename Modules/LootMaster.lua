@@ -243,7 +243,8 @@ function LootMaster:GetPlayerContext(playerName)
     -- 25-man attendance %, the raid's own core's (issue #134): its loot rules are that core's, and a
     -- raider on several cores (#132) is judged by the one raiding, not by where they raid most. With
     -- no core active, or one none of whose nights count (a 10 on Forever, a core on its first raid,
-    -- where everyone would read 0% and roll OS), as before: the core where the raider has the most raids.
+    -- where everyone would read 0% and roll OS), the roster's figure: the core where the raider has the
+    -- most nights that count.
     local RT = GuildOS.RaidTracker
     if RT then
         local pKey = GuildOS:GetPlayerKey(playerName, GetRealmName())

@@ -114,5 +114,10 @@ check(att == 50, "and a core on its first raid the same")
 att = roll("Ten", "Dee")
 check(att == 50, "the old figure is the core with the most nights that count: Dee's Twenty, 50%, not her Ten's 0%")
 check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Dee")) == 50, "and the roster's figure is the same one")
+dofile(ADDON .. "/Modules/LootTracker.lua")
+function GetNumGuildMembers() return 1 end
+function GetGuildRosterInfo() return "Dee-Realm", "", 0, 60, "", "", "", "", true, 1, "PRIEST" end
+local row = GuildOS.LootTracker:GetGuildLootEquity()[1]
+check(row and row.attendance == 50 and row.raids == 1, "and loot equity's row reads both figures from that core: 50%, 1 raid")
 
 print(("loot-attendance: %d checks passed"):format(checks))
