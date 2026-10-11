@@ -834,6 +834,9 @@ function CoreManager:ImportInbox()
         line = line .. " " .. string.format(L["%d on Discord with no confirmed character on the site."], unlinked)
     end
     GuildOS:Print(line)
+    -- ponytail: the change waits in the session; a rank still unknown after OFFICER_START's minute
+    -- drops it, and the other officers then hear of it only at the next edit by hand. Keep it in
+    -- the guild's db until sent if that ever bites.
     GuildOS.State.discordCores = changed
     if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
 end
