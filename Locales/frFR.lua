@@ -1702,6 +1702,8 @@ L["Roles you're willing to play. Your guild's Raiders list picks this up automat
 L["Roll duration (sec):"] = "Durée du jet (sec) :"
 L["Roster (%d)"] = "Effectif (%d)"
 L["Roster from the website: %d signed up."] = "Effectif depuis le site : %d inscrits."
+L["Cores from Discord: %s."] = "Cores depuis Discord : %s."
+L["%d on Discord with no confirmed character on the site."] = "%d sur Discord sans personnage confirmé sur le site."
 L["SCHEDULE CONFLICTS (%d)"] = "CONFLITS D'HORAIRE (%d)"
 L["SEEN"] = "VUS"
 L["SKILL"] = "COMPÉT."

@@ -721,3 +721,35 @@ a Q&A (issue #90).
   Anniversary numbers where a pug night had spread without its mark.
 - (−) A Forever session's name is the client's language and Forever has no `RAID_KEYS`, so no `raidId` is
   stamped and the site matches it to a planned raid by name: a translated name can miss (site issue).
+
+---
+
+## ADR-0025 — The Discord owns who is on a core; the addon imports and never touches an officer's own
+
+### Context
+A core lives on the Discord (the bot's federation, guildos-web spec 035) and in the game. Since #132 both let a
+person be on several cores, but nothing joined them: an officer accepting somebody on the Discord added them by
+hand in the game too (issue #135, guildos-web specs/041).
+
+### Decision
+- One way only, site to game. The site sends a guild's cores as a `GOSCORE1` (the GOSROST1 codec) in a field of
+  its own on `/api/roster`; the companion writes it into `Inbox.lua` after the raid rosters.
+- `CoreManager:ImportInbox` runs from `CoreManager:Initialize`, once the guild's db is known (PLAYER_LOGIN does
+  not wait for it), and only with the companion on and the payload's `guild` this guild.
+- The game's core is the one whose name `CoreManager.Slug` (the site's `slugOf`) reduces to the Discord core's
+  tag; the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag
+  when the name does not reduce to it. Its `raidSize` is the Discord's.
+- A member the Discord sends and the core lacks joins, marked `src = "discord"`. One already there stays as it
+  is. A `src = "discord"` member the Discord no longer sends goes. `AddMember` keeps the `src` it had, so an
+  officer's edit does not change who owns the record. Nothing else the import touches.
+- An officer's client sends `core.roster` for each core that changed, five seconds on; one chat line says what
+  changed and how many the site had no character for.
+
+### Consequences
+- (+) Joining or leaving a core on the Discord reaches the game without an officer retyping it.
+- (+) Pugs and people with no character on the site stay on the cores an officer put them on.
+- (−) Taken off only in the game, a Discord member is back at the next import: the Discord is where they leave.
+- (−) It arrives at the login or /reload of whoever runs the companion; an officer offline when that client
+  sends keeps the old roster until the next send, and the Discord's `raidSize` reaches only importing clients.
+- (−) Only people with a confirmed character on the site come through; the rest are a count.
+
