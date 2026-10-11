@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.72.0] - 2026-10-11
+
+### Added
+- um raider pode estar em vários cores, e a raid vai para o core do formato dela (#132)
+
+
 ## [0.71.2] - 2026-10-08
 
 ### Fixed
