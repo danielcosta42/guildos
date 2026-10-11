@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.0] - 2026-10-11
+
+### Added
+- todo comando /gos tem acesso pela interface, e um harness falha se algum novo não tiver (#142)
+
+### Fixed
+- pergunta própria para sondar o chat, guarda recusa mais formas de despachar, título das profissões alinhado (#142)
+- sondar o chat e limpar as palavras pedem confirmação, o guarda dos comandos lê chamadas, e os textos encurtam em janela estreita (#142)
+
+
 ## [0.76.0] - 2026-10-11
 
 ### Added
