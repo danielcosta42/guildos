@@ -350,12 +350,12 @@ Removed: `Compat.NewTimer`.
 | `CoreManager:ImportInbox()` | From `Initialize`, once the guild's db is known: imports the inbox's GOSCORE1, prints one line when something changed, and keeps the change in `GuildOS.State.discordCores` (ADR-0025) |
 | `CoreManager:SendDiscordChanges()` | From OFFICER_START, once the rank says officer: sends each changed core's change alone (`core.roster`, action `discord`), once (ADR-0025) |
 | `CompanionImport:CoresFromInbox()` | The inbox's GOSCORE1, decoded; nil when absent, damaged or the companion is off (ADR-0025) |
-| `RaidTracker:GetPlayerGroup(playerKey)` | Returns group with most raids for player |
+| `RaidTracker:GetPlayerGroup(playerKey, field)` | Returns group with most raids for player (`field` "raids25": most raids that count, #134) |
 | `RaidTracker:GetAttendance(playerKey, groupTag)` | Returns attendance record for player/group |
 | `RaidTracker:GetTotalSessions(groupTag)` | Counts unique guild-raid lockouts |
 | `RaidTracker:GetTotal25ManSessions(groupTag)` | Counts unique 25-man lockouts |
 | `RaidTracker:GetAttendancePercent(playerKey, groupTag)` | Returns overall att% using totalScore |
-| `RaidTracker:GetAttendance25ManPercent(playerKey, groupTag)` | Returns 25-man att% using totalScore25 |
+| `RaidTracker:GetAttendance25ManPercent(playerKey, groupTag)` | Returns 25-man att% using totalScore25; with no group, the one with the most raids that count (#134) |
 | `RaidTracker:GetRecentSessions(limit, only25, guildOnly)` | Returns sorted session list |
 | `RaidTracker:MergeDuplicateSessions()` | Merges duplicate/nearby sessions within 30-min window |
 | `RaidTracker:RebuildAttendanceFromSessions()` | Rebuilds entire attendance table from scratch |
@@ -399,7 +399,7 @@ Removed: `Compat.NewTimer`.
 | `LootMaster:SafeSendAddon(prefix, payload, channel)` | Sends addon message if in raid + not testMode |
 | `LootMaster:Initialize()` | DB setup, builds roll pattern, registers events |
 | `LootMaster:LoadCfg()` | Caches the active core's roll timer, auto-announce, wishlist-only mode, disenchanter and threshold; run at start-up and whenever the active core changes (issue #99) |
-| `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player |
+| `LootMaster:GetPlayerContext(playerName)` | Returns {att25, recvThisLockout} for a player; att25 is the active core's attendance (the raid's loot rules are its); with no core active, or one none of whose nights count (a 10 on Forever, a first raid), the core where the player raids most (issue #134) |
 | `LootMaster:IsMasterLooter()` | 4-tier check: IsMasterLooter → GetLootMethod → C_PartyInfo → leader rank |
 | `LootMaster:HookBagClicks()` | Alt+click on a bag item → roll: hooks `ContainerFrameItemButton_OnModifiedClick` (Anniversary) or `HandleModifiedItemClick` with the item location (Forever), never both (issue #44) |
 | `LootMaster:RollFromBagClick(bagId, slotId)` | The click's checks (module on, Alt, master looter), then `RollFromBag` |
