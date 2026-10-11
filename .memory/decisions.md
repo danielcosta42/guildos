@@ -763,7 +763,9 @@ hand in the game too (issue #135, guildos-web specs/041).
   core holds on the receiver (closed on the Discord since, maybe). A link is undone by linking another core;
   a core linked by hand and deleted comes back with the next list that carries its link.
 - `at` is the package's own: when the guild's cores last changed, on the site's clock (guildos-web #126); from a
-  site before it, when the companion wrote the inbox (`GuildOSInboxAck.at`). The site sends every core of the guild together, so
+  site before it, when the companion wrote the inbox (`GuildOSInboxAck.at`). From the first package the site
+  dates (`db.discordSiteAt`), a PC's clock no longer counts: the mark it left is dropped, and an inbox the site
+  did not date is from before and is skipped. The site sends every core of the guild together, so
   the guild keeps one mark, the newest `at` it applied from its inbox or from another officer
   (`GuildOS.db.discordAt`), releases included. An inbox, a list or a release older than it is skipped, and an
   inbox skipped is not sent on: an officer whose companion stopped rolls nobody back, and an older inbox never

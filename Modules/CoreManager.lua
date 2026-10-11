@@ -1049,7 +1049,12 @@ function CoreManager:ImportInbox()
         return
     end
     -- The site's time for the package when it sends one (guildos-web #126): one clock for every officer.
-    local cores, unlinked, stale = self:ImportFromSite(data, sane(tonumber(data.at) or at))
+    -- From the first, a PC's clock no longer counts: not the mark it left (one running ahead would hold
+    -- back every site package), nor an inbox from before (a companion stopped since the site dated them).
+    local siteAt = tonumber(data.at)
+    if siteAt and not GuildOS.db.discordSiteAt then GuildOS.db.discordAt, GuildOS.db.discordSiteAt = nil, true end
+    if not siteAt and GuildOS.db.discordSiteAt then return end
+    local cores, unlinked, stale = self:ImportFromSite(data, sane(siteAt or at))
     if not cores then return end
     GuildOS.db.discordTold = nil
     if stale then return end

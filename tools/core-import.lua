@@ -347,6 +347,20 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     '{"fmt":"GOSCORE1","v":1,"guild":"Nucleo BR","realm":null,"cores":[],"unlinked":0,"at":7000}')) }
   CM:Initialize()
   check(GuildOS.db.discordAt == 7000, G("the package's own time is the one the guild keeps"))
+  -- From the first package the site dates, a PC's clock no longer counts: not the mark it left (a
+  -- clock running ahead would hold back every site package), nor an inbox from before the site dated
+  -- them (a companion stopped since).
+  CM = load(game)
+  GuildOS.db.discordAt = 9000
+  CM:Initialize()
+  GuildOSInbox = { "GOSCORE1:" .. LD:EncodeForPrint(LD:CompressDeflate(
+    '{"fmt":"GOSCORE1","v":1,"guild":"Nucleo BR","realm":null,"cores":[{"tag":"x","name":"x","size":10,"members":[]}],"unlinked":0,"at":7000}')) }
+  CM:ImportInbox()
+  check(CM:IsFromDiscord("x") and GuildOS.db.discordAt == 7000, G("a mark from a PC's clock gives way to the site's first"))
+  GuildOSInbox, GuildOSInboxAck = { FIXTURE }, { at = 9500 }
+  CM:ImportInbox()
+  check(GuildOS.db.cores["nucleo-alfa"] == nil and GuildOS.db.cores["Núcleo Alfa"] == nil and GuildOS.db.discordAt == 7000,
+    G("and an inbox the site did not date is from before: nothing of it is taken"))
   GuildOSInboxAck = nil
 
   -- ── An inbox older than the lists this client has: not imported over them, not sent (#138) ──
