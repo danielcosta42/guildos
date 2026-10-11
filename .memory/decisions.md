@@ -762,7 +762,8 @@ hand in the game too (issue #135, guildos-web specs/041).
   not the Discord's data: it is never judged by how new the lists it came with are, except to link a tag no
   core holds on the receiver (closed on the Discord since, maybe). A link is undone by linking another core;
   a core linked by hand and deleted comes back with the next list that carries its link.
-- `at` is when the inbox was written (`GuildOSInboxAck.at`). The site sends every core of the guild together, so
+- `at` is the package's own: when the guild's cores last changed, on the site's clock (guildos-web #126); from a
+  site before it, when the companion wrote the inbox (`GuildOSInboxAck.at`). The site sends every core of the guild together, so
   the guild keeps one mark, the newest `at` it applied from its inbox or from another officer
   (`GuildOS.db.discordAt`), releases included. An inbox, a list or a release older than it is skipped, and an
   inbox skipped is not sent on: an officer whose companion stopped rolls nobody back, and an older inbox never
@@ -799,8 +800,6 @@ hand in the game too (issue #135, guildos-web specs/041).
 - (−) Only people with a confirmed character on the site come through; the rest are a count.
 - (−) An officer on a version before #135 who edits a Discord member rebuilds the record without `src`: from then
   on it is that officer's, and leaving the Discord no longer takes it off.
-- (−) `at` is the companion PC's clock: two officers' clocks minutes apart can skip the fresher of their lists
-  until the next inbox. The site stamping GOSCORE1 with its own time would end it.
 - (−) Once a client has a list it can date, a 0.73.0 officer's change (it carries no time) is skipped there.
 - (−) Who waits for a character goes to every client of the guild with the lists, by Discord display name: the
   names the guild's own Discord server already shows them.

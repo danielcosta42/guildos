@@ -827,8 +827,8 @@ end
 -- site sends every core of the guild together, so one mark for the guild settles them all, releases
 -- included. A time past the realm's clock counts as now; another officer's message with none, once
 -- there is a mark, as older.
--- ponytail: `at` is the companion PC's clock, so two officers' clocks minutes apart can skip the fresher
--- list of the two until the next inbox; the site stamping GOSCORE1 with its own time ends that.
+-- `at` is the package's own, when the site's cores last changed on the site's clock (guildos-web #126);
+-- from a site before it, when the companion wrote the inbox, on its PC's clock.
 local function sane(at)
     at = tonumber(at)
     return at and at == at and math.min(at, GetServerTime()) or nil
@@ -1048,7 +1048,8 @@ function CoreManager:ImportInbox()
         tellOnce("companion-off", L["Cores from Discord are waiting in the inbox: turn the web companion on with /gos web on."])
         return
     end
-    local cores, unlinked, stale = self:ImportFromSite(data, sane(at))
+    -- The site's time for the package when it sends one (guildos-web #126): one clock for every officer.
+    local cores, unlinked, stale = self:ImportFromSite(data, sane(tonumber(data.at) or at))
     if not cores then return end
     GuildOS.db.discordTold = nil
     if stale then return end

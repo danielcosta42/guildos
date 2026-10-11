@@ -340,6 +340,14 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM:ImportInbox()
   check(not CM:IsFromDiscord("alfa-2") and #GuildOS.State.discordCores == 2 and not said("Cores from Discord:"),
     G("an empty package gives every core back, quietly, and keeps the change to send"))
+  -- The site's time for the package, when it sends one, over the companion PC's clock (guildos-web #126).
+  CM = load(game)
+  GuildOSInboxAck = { at = 5000 }
+  GuildOSInbox = { "GOSCORE1:" .. LD:EncodeForPrint(LD:CompressDeflate(
+    '{"fmt":"GOSCORE1","v":1,"guild":"Nucleo BR","realm":null,"cores":[],"unlinked":0,"at":7000}')) }
+  CM:Initialize()
+  check(GuildOS.db.discordAt == 7000, G("the package's own time is the one the guild keeps"))
+  GuildOSInboxAck = nil
 
   -- ── An inbox older than the lists this client has: not imported over them, not sent (#138) ──
   CM = load(game)
