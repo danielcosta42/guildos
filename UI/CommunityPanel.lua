@@ -270,6 +270,12 @@ local function BuildCallToArmsSub(panel)
 
     local recentHead = UI:CreateText(panel, L["Recent calls"], 11, C.gold.r, C.gold.g, C.gold.b)
     recentHead:SetPoint("TOPLEFT", hear, "BOTTOMLEFT", 0, -10)
+    -- /gos avail: who in the guild is free for a group, and listing yourself (#142).
+    if GuildOS.LFGBoard then
+        local boardBtn = UI:CreateButton(panel, L["LFG Board"], 180, 18)
+        boardBtn:SetPoint("LEFT", recentHead, "RIGHT", 12, 0)
+        boardBtn:SetScript("OnClick", function() GuildOS.LFGBoard:Show() end)
+    end
     local holder, child = makeScroll(panel, "GuildOSHubCTAScroll", 0)
     holder:ClearAllPoints()
     holder:SetPoint("TOPLEFT", recentHead, "BOTTOMLEFT", -4, -6)

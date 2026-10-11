@@ -67,6 +67,17 @@ local function BuildReadySub(panel)
     local targetBtn = UI:CreateButton(panel, L["Target: All raids"], 220, 20)
     targetBtn:SetPoint("TOPRIGHT", -12, -2)
 
+    -- /gos specs: the group's talent specs, read now (#142).
+    local specsBtn = UI:CreateButton(panel, L["Scan group talents"], 150, 20)
+    specsBtn:SetPoint("TOPRIGHT", targetBtn, "TOPLEFT", -6, 0)
+    specsBtn:SetScript("OnClick", function()
+        if GuildOS.SpecChecker then GuildOS.SpecChecker:ScanGroup() end
+    end)
+    -- A narrow window cuts the summary short rather than lay the buttons over it.
+    summary:SetPoint("TOPRIGHT", specsBtn, "TOPLEFT", -8, -2)
+    summary:SetWordWrap(false)
+    summary:SetJustifyH("LEFT")
+
     local header = CreateFrame("Frame", nil, panel)
     header:SetPoint("TOPLEFT", 0, -26)
     header:SetPoint("TOPRIGHT", -10, -26)
@@ -399,6 +410,14 @@ local function BuildSyncSub(panel)
         if GuildOS.CommSystem then GuildOS.CommSystem:FullSync() end
         C_Timer.After(2.5, function() if refresh then refresh() end end)
     end)
+
+    -- /gos mergeraids: the same night recorded twice becomes one (#142).
+    local mergeBtn = UI:CreateButton(panel, L["Merge duplicate sessions"], 170, 20)
+    mergeBtn:SetPoint("TOPRIGHT", syncBtn, "TOPLEFT", -6, 0)
+    mergeBtn:SetScript("OnClick", function() GuildOS:MergeRaidSessions() end)
+    summary:SetPoint("TOPRIGHT", mergeBtn, "TOPLEFT", -8, -4)
+    summary:SetWordWrap(false)
+    summary:SetJustifyH("LEFT")
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -34)
