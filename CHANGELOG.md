@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.76.0] - 2026-10-11
+
+### Added
+- botão Análises na barra do Roster, para o painel não depender do /gos analytics (#137)
+- filtro "Só nível máximo" no Guild Analytics, ao lado de Só online (#137)
+
+
 ## [0.75.0] - 2026-10-11
 
 ### Added
