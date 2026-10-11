@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.73.0] - 2026-10-11
+
+### Added
+- o painel não oferece o que o Discord desfaria: renomear, formato e tirar quem veio de lá (#135)
+- o addon importa os cores do Discord pelo inbox do companion (#135)
+
+### Fixed
+- o core já ligado ao Discord continua sendo o dele, um segundo com o mesmo tag é devolvido, e a devolução não recria core apagado (#135)
+- a mudança do Discord vai aos outros oficiais só como diferença, quando o rank já é conhecido (#135)
+
+
 ## [0.72.0] - 2026-10-11
 
 ### Added
