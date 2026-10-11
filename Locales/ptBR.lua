@@ -1226,6 +1226,7 @@ L["Guild Analytics"] = "Análises da Guilda"
 L["Levels"] = "Níveis"
 L["Zones"] = "Zonas"
 L["Online only"] = "Somente online"
+L["Max level only"] = "Somente nível máximo"
 L["No data."] = "Sem dados."
 
 -- UI/RosterFrame.lua (Recruitment sub-tabs)

@@ -99,6 +99,7 @@ L["Guild Analytics"] = "Guild Analytics"
 L["Levels"] = "Levels"
 L["Zones"] = "Zones"
 L["Online only"] = "Online only"
+L["Max level only"] = "Max level only"
 L["No data."] = "No data."
 
 -- UI/RosterFrame.lua (Recruitment sub-tabs)
