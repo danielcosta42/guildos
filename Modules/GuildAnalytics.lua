@@ -36,7 +36,7 @@ end
 -- `maxOnly` counts only who is at the game's level cap (issue #137).
 function GuildAnalytics:Distribution(dim, onlineOnly, roster, maxOnly)
     roster = roster or self:BuildRoster()
-    local cap = GuildOS.Client.maxLevel
+    local cap = maxOnly and GuildOS.Client.maxLevel
     local counts, order, total = {}, {}, 0
     for _, m in ipairs(roster) do
         if ((not onlineOnly) or m.online) and ((not maxOnly) or (m.level or 0) >= cap) then
