@@ -290,6 +290,8 @@ local OFFICER_START = {
     { "Recruitment", feature = "recruitment" },
     { "OfficerNotes", feature = "officerNotes" },
     { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckExpired" },
+    -- What the Discord's cores changed at login, to the other officers (#135).
+    { "CoreManager", method = "SendDiscordChanges" },
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN

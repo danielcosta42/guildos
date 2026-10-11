@@ -40,10 +40,24 @@ end
 
 local L = GuildOS.L
 local WIRE_PREFIX = "GOSROST1:"
+local CORES_PREFIX = "GOSCORE1:"
 
 ----------------------------------------------------------------------
 -- Reading the string
 ----------------------------------------------------------------------
+
+-- The table inside a wire string's body (what follows its prefix), when it is the `fmt` asked
+-- for; nil when it is damaged or another kind.
+local function unwrap(body, fmt)
+    local LibDeflate = LibStub and LibStub("LibDeflate", true)
+    if not LibDeflate then return nil end
+    local compressed = LibDeflate:DecodeForPrint(body)
+    local json = compressed and LibDeflate:DecompressDeflate(compressed)
+    if not json then return nil end
+    local ok, data = pcall(GuildOS.JsonDecode, json)
+    if ok and type(data) == "table" and data.fmt == fmt then return data end
+    return nil
+end
 
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
 function Import:Parse(raw)
@@ -59,19 +73,9 @@ function Import:Parse(raw)
     -- rather than insisting the string starts with it.
     raw = raw:sub(raw:find(WIRE_PREFIX, 1, true) + #WIRE_PREFIX)
 
-    local LibDeflate = LibStub and LibStub("LibDeflate", true)
-    if not LibDeflate then return nil, L["LibDeflate not available."] end
-
-    local compressed = LibDeflate:DecodeForPrint(raw)
-    if not compressed then return nil, L["The roster string is damaged. Copy it again."] end
-
-    local json = LibDeflate:DecompressDeflate(compressed)
-    if not json then return nil, L["The roster string is damaged. Copy it again."] end
-
-    local ok, data = pcall(GuildOS.JsonDecode, json)
-    if not ok or type(data) ~= "table" or data.fmt ~= "GOSROST1" then
-        return nil, L["The roster string is damaged. Copy it again."]
-    end
+    if not (LibStub and LibStub("LibDeflate", true)) then return nil, L["LibDeflate not available."] end
+    local data = unwrap(raw, "GOSROST1")
+    if not data then return nil, L["The roster string is damaged. Copy it again."] end
 
     local members = {}
     for _, m in ipairs(data.members or {}) do
@@ -239,6 +243,21 @@ function Import:ConsumeInbox()
     GuildOS.db.companionRoster = soonest
     GuildOS.db.companionRaids = planned
     return true, #soonest.members
+end
+
+-- The guild's Discord cores in the inbox (a GOSCORE1, specs/041 in guildos-web), decoded: nil
+-- when there are none, the companion is off or the string is damaged. CoreManager imports them
+-- once the guild's db is known (#135); the roster reader above passes over them.
+function Import:CoresFromInbox()
+    if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" then return nil end
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #CORES_PREFIX) == CORES_PREFIX then
+            return unwrap(v:sub(#CORES_PREFIX + 1), "GOSCORE1")
+        end
+    end
+    return nil
 end
 
 ----------------------------------------------------------------------

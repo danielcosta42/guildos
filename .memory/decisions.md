@@ -721,3 +721,48 @@ a Q&A (issue #90).
   Anniversary numbers where a pug night had spread without its mark.
 - (−) A Forever session's name is the client's language and Forever has no `RAID_KEYS`, so no `raidId` is
   stamped and the site matches it to a planned raid by name: a translated name can miss (site issue).
+
+---
+
+## ADR-0025 — The Discord owns who is on a core; the addon imports and never touches an officer's own
+
+### Context
+A core lives on the Discord (the bot's federation, guildos-web spec 035) and in the game. Since #132 both let a
+person be on several cores, but nothing joined them: an officer accepting somebody on the Discord added them by
+hand in the game too (issue #135, guildos-web specs/041).
+
+### Decision
+- One way only, site to game. The site sends a guild's cores as a `GOSCORE1` (the GOSROST1 codec) in a field of
+  its own on `/api/roster`; the companion writes it into `Inbox.lua` after the raid rosters.
+- `CoreManager:ImportInbox` runs from `CoreManager:Initialize`, once the guild's db is known (PLAYER_LOGIN does
+  not wait for it), and only with the companion on, the payload's `guild` this guild and, on Anniversary, its
+  `realm` this realm (one Inbox.lua serves every realm of an install).
+- The game's core is the one already linked to the Discord core's tag; else the one whose name `CoreManager.Slug`
+  (the site's `slugOf`) reduces to the tag, the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag
+  when the name does not reduce to it. Its `raidSize` is the Discord's.
+- A member the Discord sends and the core lacks joins, marked `src = "discord"`. One already there stays as it
+  is. A `src = "discord"` member the Discord no longer sends goes. `AddMember` keeps the `src` it had, so an
+  officer's edit does not change who owns the record. Nothing else the import touches.
+- The other officers get the change alone: `core.roster` with action `discord` (`add`, `remove`, `size`), applied
+  by the same `ApplyDiscordChanges`, never the whole roster, which would write over a pug another officer added
+  while this client was away. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild rank is known
+  (it is not at login, #79). A client from before #135 ignores it: it has no `members`.
+- One chat line says what changed and how many people the site had no character for (each once).
+- A core the import links keeps the Discord's tag (`discordTag`, sent with the change as `tag`). While it does, the
+  core panel offers neither Rename (a renamed core stops being the Discord's and the import makes it again) nor the
+  raid format (the Discord's comes back), nor the "x" on a member the Discord put there; the role stays the
+  officers'. Delete stays: the way out, undone by the import while the Discord still has the core. A core the
+  Discord no longer sends (closed there, or the federation off: the site then sends an empty package) is given
+  back to the officers, as it stands, and the release goes to the other officers too (`tag = false`), never
+  making again a core one of them deleted. A second core carrying a tag another core has is given back as well.
+
+### Consequences
+- (+) Joining or leaving a core on the Discord reaches the game without an officer retyping it.
+- (+) Pugs and people with no character on the site stay on the cores an officer put them on.
+- (−) Taken off only in the game, a Discord member is back at the next import: the Discord is where they leave.
+- (−) It arrives at the login or /reload of whoever runs the companion; an officer offline when that client
+  sends keeps the old roster until the next send, and the Discord's `raidSize` reaches only importing clients.
+- (−) Only people with a confirmed character on the site come through; the rest are a count.
+- (−) An officer on a version before #135 who edits a Discord member rebuilds the record without `src`: from then
+  on it is that officer's, and leaving the Discord no longer takes it off.
+
