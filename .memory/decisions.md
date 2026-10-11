@@ -759,7 +759,9 @@ hand in the game too (issue #135, guildos-web specs/041).
   never moves a tag. Only a link does: every list of a core linked by hand carries when it was linked
   (`linkAt`, the realm's clock), and a client whose core for that tag was linked earlier, or never, moves the
   tag to the sender's core, unless that core is another Discord core's there. A link is an officer's choice,
-  not the Discord's data: it is never judged by how new the lists it came with are.
+  not the Discord's data: it is never judged by how new the lists it came with are, except to link a tag no
+  core holds on the receiver (closed on the Discord since, maybe). A link is undone by linking another core;
+  a core linked by hand and deleted comes back with the next list that carries its link.
 - `at` is when the inbox was written (`GuildOSInboxAck.at`). The site sends every core of the guild together, so
   the guild keeps one mark, the newest `at` it applied from its inbox or from another officer
   (`GuildOS.db.discordAt`), releases included. An inbox, a list or a release older than it is skipped, and an

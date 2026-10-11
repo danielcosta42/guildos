@@ -1162,7 +1162,9 @@ function CoreManager:InitSync()
             -- A list lands on the core holding its tag here, as the import's does; only a link moves a tag.
             local at, list = sane(d.at), env.act == "discordList"
             if list and (type(d.list) ~= "table" or type(d.tag) ~= "string" or d.tag == "") then return end
-            if list then heardLink(self, d.coreName, d.tag, sane(d.linkAt)) end
+            -- A link to a tag no core here holds needs fresh lists: an older one would link a core the
+            -- Discord has closed since.
+            if list and (holderOf(d.tag) or not isStale(at)) then heardLink(self, d.coreName, d.tag, sane(d.linkAt)) end
             if not isStale(at) then
                 if list then
                     self:SyncDiscordCore((coreFor(self, { tag = d.tag, name = d.coreName })), d.list, d.size, d.tag, d.waiting)

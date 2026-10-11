@@ -249,6 +249,14 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   handlers["core.roster"]({ act = "discordList", data = { coreName = "Velho", list = d.list, tag = "nucleo-alfa", at = 1e300 } },
     "Officer-Firemaw")
   check(GuildOS.db.discordAt == 1790000000, G("a time past the realm's clock counts as now"))
+  -- Closed on the Discord since: an older list that still carries the link does not link the core again.
+  handlers["core.roster"]({ act = "discord", data = { coreName = "Velho", tag = false, at = 1790000000 } }, "Officer-Firemaw")
+  local stale = { coreName = "Velho", list = d.list, tag = "nucleo-alfa", at = 1000, linkAt = 1789500000 }
+  handlers["core.roster"]({ act = "discordList", data = stale }, "Officer-Firemaw")
+  check(not CM:IsFromDiscord("Velho"), G("an older list's link to a tag no core here holds links nothing"))
+  stale.at = 1790000000
+  handlers["core.roster"]({ act = "discordList", data = stale }, "Officer-Firemaw")
+  check(CM:IsFromDiscord("Velho"), G("a fresh one does"))
   local hand = GuildOS.db.cores["Nucleo Alfa"].members
   handlers["core.roster"]({ act = "update", data = { coreName = "Nucleo Alfa", members = { [K("Solo")] = { name = "Solo" } } } },
     "Officer-Firemaw")
