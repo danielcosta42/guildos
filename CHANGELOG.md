@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.75.0] - 2026-10-11
+
+### Added
+- o import usa a hora do site no pacote dos cores quando ela vem, um relógio só para todos os oficiais (#138, guildos-web #126)
+- o sync dos cores do Discord fica mais claro: assume a entrada que já existe, manda a lista inteira, diz por que ignorou, mostra quem espera e liga core de outro nome (#138)
+
+### Fixed
+- com a primeira hora do site, a marca do relógio do PC cai e um inbox sem a hora do site é de antes (#138)
+- uma lista velha não liga de novo um core que o Discord fechou (#138)
+- só uma ligação move o tag de um core, com a hora dela, e a lista de outro oficial cai no core que tem o tag (#138)
+- a lista de outro oficial vai pelo tag e por uma ação que versões antigas ignoram, a guilda guarda quão nova é a lista, e ligar à mão move as pessoas sem precisar do inbox (#138)
+- o sync dos cores entre oficiais usa list, ignora lista mais velha, um tag é de um core só, e apagar o core ativo limpa a raide (#138)
+
+
 ## [0.74.0] - 2026-10-11
 
 ### Added
