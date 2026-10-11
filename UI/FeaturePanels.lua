@@ -953,7 +953,7 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
     GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
     lmEvents:SetScript("OnEvent", function()
-        if parent:IsShown() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
+        if parent:IsVisible() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
     end)
 
     local VIEW_TOP = 50  -- space reserved for title + toggle row
@@ -3181,7 +3181,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
         { L["Probe chat"], function()
             -- It posts two lines in guild chat: asked first.
             StaticPopupDialogs["GUILDOS_PROBE_CHAT"] = StaticPopupDialogs["GUILDOS_PROBE_CHAT"] or {
-                text = L["Post two test lines in guild chat to see whether an addon may post on its own"] .. "?",
+                text = L["Post two test lines in guild chat?"],
                 button1 = L["Probe chat"], button2 = L["Cancel"],
                 OnAccept = function() if GuildOS.Probe then GuildOS.Probe:RunChat() end end,
                 timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,

@@ -403,7 +403,7 @@ function GuildOS:CreateProfessionsPanel(parent, _win)
     finderBtn:SetPoint("RIGHT", tabRecipes, "LEFT", -12, 0)
     finderBtn:SetScript("OnClick", function() if GuildOS.ShowCraftFinder then GuildOS:ShowCraftFinder() end end)
     -- A narrow window cuts the title short rather than lay the button over it.
-    title:SetPoint("TOPRIGHT", finderBtn, "TOPLEFT", -8, -2)
+    title:SetPoint("TOPRIGHT", finderBtn, "TOPLEFT", -8, 1)   -- the tabs are 28 tall, the button 22
     title:SetWordWrap(false)
     title:SetJustifyH("LEFT")
     tabCrafters:SetScript("OnClick", function() state.mode = "crafters"; panel:Refresh(true) end)

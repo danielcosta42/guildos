@@ -100,8 +100,8 @@ local CHAT_ONLY = {
 -- The verbs the router matches: `msg == "x"` and `msg:match("^x")`. Any other way of telling one
 -- command from another would hide it from this list, so there is none.
 local src = read("Core/Commands.lua")
-check(not src:find("msg:find(", 1, true) and not src:find("msg:sub(", 1, true),
-  "the router tells commands apart only by msg == and msg:match")
+check(not src:find("msg:find(", 1, true) and not src:find("msg:sub(", 1, true) and not src:find("string.find(msg", 1, true)
+  and not src:find('msg:match("^(', 1, true), "the router tells commands apart only by msg == and msg:match")
 local verbs = {}
 for v in src:gmatch('msg == "([%a ]+)"') do verbs[v] = true end
 for v in src:gmatch('msg:match%("%^(%a+)') do verbs[v] = true end
