@@ -22,10 +22,10 @@ end
 
 local FIXTURE = io.open(ADDON .. "/tools/cores-fixture.txt", "rb"):read("*a")
 
-local printed, sent, timers = {}, {}, {}
-local GUILD, RANK = "Nucleo BR", 1
+local printed, sent, handlers = {}, {}, {}
+local GUILD = "Nucleo BR"
 local function load(game)
-  printed, sent, timers, GUILD, RANK = {}, {}, {}, "Nucleo BR", 1
+  printed, sent, handlers, GUILD = {}, {}, {}, "Nucleo BR"
   DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = m end }
   function CreateFrame()
     local f = {}
@@ -51,11 +51,11 @@ local function load(game)
   function GetTime() return 1 end
   time = os.time
   function IsInGuild() return true end
-  function GetGuildInfo() return GUILD, "Rank", RANK end
+  function GetGuildInfo() return GUILD, "Rank", 1 end
   function GetNumGuildMembers() return 0 end
   function GetGuildRosterInfo() end
   function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
-  C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end,
+  C_Timer = { After = function() end,
               NewTicker = function() return { Cancel = function() end } end,
               NewTimer = function() return { Cancel = function() end } end }
   Enum = { SendAddonMessageResult = {} }
@@ -82,18 +82,14 @@ local function load(game)
   dofile(ADDON .. "/Modules/CompanionImport.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")
   GuildOS.SyncService = {
-    On = function() end,
-    Publish = function(_, domain, _, data) sent[#sent + 1] = { domain = domain, core = data.coreName } end,
+    On = function(_, domain, fn) handlers[domain] = fn end,
+    Publish = function(_, domain, act, data) sent[#sent + 1] = { domain = domain, act = act, data = data } end,
   }
+  GuildOS.IsOfficerByName = function() return true end
   return GuildOS.CoreManager
 end
 local function said(text)
   for _, m in ipairs(printed) do if m:find(text, 1, true) then return m end end
-end
-local function flush()
-  local due = timers
-  timers = {}
-  for _, fn in ipairs(due) do fn() end
 end
 
 -- ── A core's name reduces as the site's slugOf does ─────────────────────
@@ -109,6 +105,10 @@ for name, slug in pairs({
   [string.rep("a", 45)] = string.rep("a", 40),
   [string.rep("a", 39) .. " b"] = string.rep("a", 39) .. "-",
   ["Alfa"] = "alfa",
+  ["Šampioni"] = "sampioni",
+  ["Łódź"] = "odz",
+  ["İstanbul"] = "istanbul",
+  ["Ærøskøbing"] = "r-sk-bing",
 }) do
   check(CM.Slug(name) == slug, ("slug of %q is %q, got %q"):format(name, slug, CM.Slug(name)))
 end
@@ -145,30 +145,50 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   local line = said("Cores from Discord:")
   check(line and line:find("Nucleo Alfa +1 -1", 1, true) and line:find("alfa-2 +1 -0", 1, true)
     and line:find("2 on Discord with no confirmed character on the site.", 1, true), G("one line says what changed: " .. tostring(line)))
-  check(#sent == 0 and #timers == 1, G("the officers are told a moment later, not mid-login"))
-  flush()
-  table.sort(sent, function(a, b) return a.core < b.core end)
-  check(#sent == 2 and sent[1].domain == "core.roster" and sent[1].core == "Nucleo Alfa" and sent[2].core == "alfa-2",
+  check(#sent == 0, G("nothing goes out at login, before the guild rank is known"))
+  CM:SendDiscordChanges()   -- what OFFICER_START runs once the rank says officer
+  table.sort(sent, function(a, b) return a.data.coreName < b.data.coreName end)
+  check(#sent == 2 and sent[1].domain == "core.roster" and sent[1].act == "discord"
+    and sent[1].data.coreName == "Nucleo Alfa" and sent[2].data.coreName == "alfa-2",
     G("each core that changed goes to the other officers"))
+  local d = sent[1].data
+  check(#d.add == 1 and d.add[1].key == "Bruno-Firemaw" and #d.remove == 1 and d.remove[1] == K("Velho") and d.members == nil,
+    G("as the change alone, never the whole roster"))
+  sent = {}
+  CM:SendDiscordChanges()
+  check(#sent == 0, G("and once"))
+
+  -- ── Another officer's client takes the change, and only the change ────
+  local mine = GuildOS.db.cores["Nucleo Alfa"].members
+  mine[K("Pug")] = { name = "Pug", class = "MAGE", role = "rdps", note = "" }   -- added here while away
+  mine[K("Velho")] = { name = "Velho", class = "MAGE", role = "rdps", note = "", src = "discord" }
+  mine[K("Carla")].src = nil
+  mine[K("Bruno")] = nil
+  handlers["core.roster"]({ act = "discord", data = { coreName = "Nucleo Alfa", add = d.add,
+    remove = { K("Velho"), K("Pug") }, size = 20 } }, "Officer-Firemaw")
+  check(mine[K("Pug")] and mine[K("Bruno")] and mine[K("Bruno")].src == "discord" and mine[K("Velho")] == nil,
+    G("the receiver adds and removes the Discord's people, and keeps its own pug"))
+  handlers["core.roster"]({ act = "update", data = { coreName = "Nucleo Alfa", members = { [K("Solo")] = { name = "Solo" } } } },
+    "Officer-Firemaw")
+  check(mine ~= GuildOS.db.cores["Nucleo Alfa"].members and GuildOS.db.cores["Nucleo Alfa"].members[K("Solo")],
+    G("an edit by hand still sends the whole roster, as before"))
 
   -- ── Again: nothing new, nothing said ──────────────────────────────────
-  printed, sent = {}, {}
+  CM = load(game)
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  printed = {}
+  GuildOS.State.discordCores = nil
   CM:ImportInbox()
-  check(not said("Cores from Discord:") and #timers == 0, G("an unchanged Discord says nothing and sends nothing"))
+  check(not said("Cores from Discord:") and GuildOS.State.discordCores == nil, G("an unchanged Discord says nothing and sends nothing"))
+  alfa = GuildOS.db.cores["Núcleo Alfa"].members
 
   -- ── The Discord owns its people; an officer's edit keeps where they came from ──
   alfa[K("Bruno")] = nil
   CM:ImportInbox()
   check(alfa[K("Bruno")] and alfa[K("Bruno")].src == "discord", G("taken off only in the game, back at the next import"))
-  CM:AddMember(K("Bruno"), { name = "Bruno", class = "ROGUE", role = "rdps" }, "Nucleo Alfa")
+  CM:AddMember(K("Bruno"), { name = "Bruno", class = "ROGUE", role = "rdps" }, "Núcleo Alfa")
   check(alfa[K("Bruno")].role == "rdps" and alfa[K("Bruno")].src == "discord", G("a role changed here keeps the record the Discord's"))
-
-  -- ── Not an officer: imported here, sent nowhere ───────────────────────
-  CM = load(game)
-  RANK = 5
-  GuildOSInbox = { FIXTURE }
-  CM:Initialize()
-  check(GuildOS.db.cores["alfa-2"] and #timers == 0, G("a member's client imports for itself and sends nothing"))
 
   -- ── Not this guild, or the companion off: nothing ─────────────────────
   CM = load(game)
@@ -181,6 +201,14 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   GuildOSInbox = { FIXTURE }
   CM:Initialize()
   check(next(GuildOS.db.cores) == nil, G("with the companion off, nothing is imported"))
+  CM = load(game)
+  CM:ImportFromSite({ guild = "Nucleo BR", realm = "Outro Reino", unlinked = 0, cores = { { tag = "x", name = "x", size = 10,
+    members = { { key = "Ana-Firemaw", name = "Ana" } } } } })
+  if game == "anniversary" then
+    check(next(GuildOS.db.cores) == nil, G("a namesake guild on another realm is not this one"))
+  else
+    check(GuildOS.db.cores["x"], G("Forever has no realms that set guilds apart"))
+  end
 
   -- ── Damaged, absent, or beside the raids ──────────────────────────────
   CM = load(game)
@@ -204,6 +232,15 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     members = { { key = "Bia-Firemaw", name = "Bia", class = "NOT_A_CLASS", slot = "nope" } } } } })
   local bia = GuildOS.db.cores["alfa"].members[K("Bia")]
   check(bia and bia.class == "WARRIOR" and bia.role == CM:RoleFor("WARRIOR"), G("a class or role the game does not know is not taken"))
+
+  -- ── Forever's key is the whole name; the site sends nothing else there ──
+  if game == "forever" then
+    CM:ImportFromSite({ guild = "Nucleo BR", cores = { { tag = "alfa", name = "alfa", size = 20,
+      members = { { key = "Chehul Costa", name = "Chehul Costa", class = "DRUID", slot = "healer" } } } } })
+    local key = GuildOS:GetPlayerKey("Chehul Costa")
+    check(key and GuildOS.db.cores["alfa"].members[key] and GuildOS.db.cores["alfa"].members[key].role == "healer",
+      G("a first name and surname is the member this client keys by that name"))
+  end
 end
 
 print(("core-import: %d checks passed"):format(checks))

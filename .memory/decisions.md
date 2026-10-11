@@ -735,15 +735,19 @@ hand in the game too (issue #135, guildos-web specs/041).
 - One way only, site to game. The site sends a guild's cores as a `GOSCORE1` (the GOSROST1 codec) in a field of
   its own on `/api/roster`; the companion writes it into `Inbox.lua` after the raid rosters.
 - `CoreManager:ImportInbox` runs from `CoreManager:Initialize`, once the guild's db is known (PLAYER_LOGIN does
-  not wait for it), and only with the companion on and the payload's `guild` this guild.
+  not wait for it), and only with the companion on, the payload's `guild` this guild and, on Anniversary, its
+  `realm` this realm (one Inbox.lua serves every realm of an install).
 - The game's core is the one whose name `CoreManager.Slug` (the site's `slugOf`) reduces to the Discord core's
   tag; the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag
   when the name does not reduce to it. Its `raidSize` is the Discord's.
 - A member the Discord sends and the core lacks joins, marked `src = "discord"`. One already there stays as it
   is. A `src = "discord"` member the Discord no longer sends goes. `AddMember` keeps the `src` it had, so an
   officer's edit does not change who owns the record. Nothing else the import touches.
-- An officer's client sends `core.roster` for each core that changed, five seconds on; one chat line says what
-  changed and how many the site had no character for.
+- The other officers get the change alone: `core.roster` with action `discord` (`add`, `remove`, `size`), applied
+  by the same `ApplyDiscordChanges`, never the whole roster, which would write over a pug another officer added
+  while this client was away. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild rank is known
+  (it is not at login, #79). A client from before #135 ignores it: it has no `members`.
+- One chat line says what changed and how many people the site had no character for (each once).
 
 ### Consequences
 - (+) Joining or leaving a core on the Discord reaches the game without an officer retyping it.
@@ -752,4 +756,6 @@ hand in the game too (issue #135, guildos-web specs/041).
 - (−) It arrives at the login or /reload of whoever runs the companion; an officer offline when that client
   sends keeps the old roster until the next send, and the Discord's `raidSize` reaches only importing clients.
 - (−) Only people with a confirmed character on the site come through; the rest are a count.
+- (−) An officer on a version before #135 who edits a Discord member rebuilds the record without `src`: from then
+  on it is that officer's, and leaving the Discord no longer takes it off.
 

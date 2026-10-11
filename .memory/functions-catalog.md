@@ -345,7 +345,9 @@ Removed: `Compat.NewTimer`.
 | `CoreManager:AddMember(key, info, core)` | Adds or updates a member on one core; a raider may be on several cores at once (issue #132); `info.src` is where the record came from ("discord"), and an edit keeps the one it had (#135) |
 | `CoreManager.Slug(name)` | A core's name as the site's `slugOf` reduces it ("Núcleo Alfa!" → "nucleo-alfa"): how a game core is matched to a Discord core's tag (ADR-0025, issue #135) |
 | `CoreManager:ImportFromSite(data)` | Imports a decoded GOSCORE1 into this guild: the core per tag (found, or made), its raidSize, Discord members in, Discord members who left out, an officer's own untouched; returns the changed cores `{ name, added, removed }` and the unlinked count, or nil for another guild's (ADR-0025) |
-| `CoreManager:ImportInbox()` | From `Initialize`, once the guild's db is known: imports the inbox's GOSCORE1, prints one line when something changed, and on an officer's client sends `core.roster` for each changed core 5s later (ADR-0025) |
+| `CoreManager:ApplyDiscordChanges(core, add, remove, size)` | The Discord's change to one core, from the import or another officer's `core.roster`/`discord`: adds the site's members not on it, removes only `src = "discord"` keys, sets the size; returns added, removed (ADR-0025) |
+| `CoreManager:ImportInbox()` | From `Initialize`, once the guild's db is known: imports the inbox's GOSCORE1, prints one line when something changed, and keeps the change in `GuildOS.State.discordCores` (ADR-0025) |
+| `CoreManager:SendDiscordChanges()` | From OFFICER_START, once the rank says officer: sends each changed core's change alone (`core.roster`, action `discord`), once (ADR-0025) |
 | `CompanionImport:CoresFromInbox()` | The inbox's GOSCORE1, decoded; nil when absent, damaged or the companion is off (ADR-0025) |
 | `RaidTracker:GetPlayerGroup(playerKey)` | Returns group with most raids for player |
 | `RaidTracker:GetAttendance(playerKey, groupTag)` | Returns attendance record for player/group |
