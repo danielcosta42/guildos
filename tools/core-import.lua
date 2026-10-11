@@ -49,6 +49,7 @@ local function load(game)
   end
   function GetRealmName() return "Firemaw" end
   function GetTime() return 1 end
+  function GetServerTime() return 1790000000 end
   time = os.time
   function IsInGuild() return true end
   function GetGuildInfo() return GUILD, "Rank", 1 end
@@ -151,9 +152,9 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(#sent == 0, G("nothing goes out at login, before the guild rank is known"))
   CM:SendDiscordChanges()   -- what OFFICER_START runs once the rank says officer
   table.sort(sent, function(a, b) return a.data.coreName < b.data.coreName end)
-  check(#sent == 2 and sent[1].domain == "core.roster" and sent[1].act == "discord"
+  check(#sent == 2 and sent[1].domain == "core.roster" and sent[1].act == "discordList"
     and sent[1].data.coreName == "Nucleo Alfa" and sent[2].data.coreName == "alfa-2",
-    G("each Discord core goes to the other officers"))
+    G("each Discord core goes to the other officers, under an action a client from before #138 ignores"))
   local d = sent[1].data
   check(type(d.list) == "table" and #d.list == 2 and d.list[1].key == "Ana-Firemaw" and d.add == nil
     and d.tag == "nucleo-alfa" and table.concat(d.waiting or {}, ",") == "Rias,Rozzi (Connor)",
@@ -170,12 +171,12 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   mine[K("Ana")].src = nil                                                       -- still the officer's here
   mine[K("Bruno")] = nil                                                         -- a change it missed
   GuildOS.db.cores["Nucleo Alfa"].discordTag = nil
-  handlers["core.roster"]({ act = "discord", data = d }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = d }, "Officer-Firemaw")
   check(CM:IsFromDiscord("Nucleo Alfa"), G("the receiver learns the core is the Discord's"))
   check(mine[K("Pug")] and mine[K("Bruno")] and mine[K("Bruno")].src == "discord" and mine[K("Velho")] == nil
     and mine[K("Ana")].src == "discord", G("the receiver converges: the missed one in, the stale one out, the pug kept, Ana taken over"))
   GuildOS.db.cores["Nucleo Alfa"] = nil                                          -- deleted here
-  handlers["core.roster"]({ act = "discord", data = d }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = d }, "Officer-Firemaw")
   local back = GuildOS.db.cores["Nucleo Alfa"]
   check(back and back.members[K("Ana")] and back.members[K("Bruno")], G("a core deleted here comes back with its Discord people, not empty"))
   -- The same tag on another core here hands it over, with the Discord's people (#138).
@@ -183,22 +184,50 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   GuildOS.db.cores["Duplicado"].discordTag = "nucleo-alfa"
   GuildOS.db.cores["Duplicado"].members[K("Ana")] = { name = "Ana", class = "PRIEST", role = "healer", note = "", src = "discord" }
   GuildOS.db.cores["Duplicado"].members[K("Pug2")] = { name = "Pug2", class = "MAGE", role = "rdps", note = "" }
-  handlers["core.roster"]({ act = "discord", data = d }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = d }, "Officer-Firemaw")
   local dup = GuildOS.db.cores["Duplicado"]
   check(not CM:IsFromDiscord("Duplicado") and dup.members[K("Ana")] == nil and dup.members[K("Pug2")],
     G("a second core holding the tag lets it go, and the Discord's people with it; its pug stays"))
-  -- An older list than the one a core took is skipped: a stopped companion rolls nobody back.
+  -- An older list than the newest this client applied is skipped: a stopped companion rolls nobody back.
   local newer = { coreName = "Nucleo Alfa", list = d.list, size = 20, tag = "nucleo-alfa", at = 2000 }
-  handlers["core.roster"]({ act = "discord", data = newer }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = newer }, "Officer-Firemaw")
+  check(GuildOS.db.discordAt == 2000, G("the guild keeps how new the lists it applied are"))
   local older = { coreName = "Nucleo Alfa", list = { { key = "Ana-Firemaw", name = "Ana" } }, size = 20, tag = "nucleo-alfa", at = 1000 }
-  handlers["core.roster"]({ act = "discord", data = older }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = older }, "Officer-Firemaw")
   check(GuildOS.db.cores["Nucleo Alfa"].members[K("Bruno")], G("an older list does not take Bruno off"))
-  handlers["core.roster"]({ act = "discord", data = { coreName = 5, list = d.list, tag = "x" } }, "Officer-Firemaw")
+  older.coreName = "Core Alfa"
+  handlers["core.roster"]({ act = "discordList", data = older }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Core Alfa"] == nil and CM:IsFromDiscord("Nucleo Alfa") and GuildOS.db.cores["Nucleo Alfa"].members[K("Bruno")],
+    G("nor under another name: the older list takes neither the tag nor anybody"))
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Nucleo Alfa", list = {}, tag = "nucleo-alfa", at = 1e300 } },
+    "Officer-Firemaw")
+  check(GuildOS.db.discordAt == 2000, G("a time past the realm's clock is nobody's: it marks nothing"))
+  handlers["core.roster"]({ act = "discordList", data = d }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = { coreName = 5, list = d.list, tag = "x" } }, "Officer-Firemaw")
   check(GuildOS.db.cores[5] == nil, G("a core name that is not text makes nothing"))
-  -- An officer still on 0.73.0 sends the change alone; it still lands.
+  -- A sender's core name that is another Discord core's here: the list goes to the core holding its tag.
+  CM:Create("Alpha")
+  GuildOS.db.cores["Alpha"].discordTag = "alpha"
+  GuildOS.db.cores["Alpha"].members[K("Bia")] = { name = "Bia", class = "MAGE", role = "rdps", note = "", src = "discord" }
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Alpha", list = d.list, size = 20, tag = "nucleo-alfa", at = 3000 } },
+    "Officer-Firemaw")
+  check(GuildOS.db.cores["Alpha"].discordTag == "alpha" and GuildOS.db.cores["Alpha"].members[K("Bia")]
+    and CM:IsFromDiscord("Nucleo Alfa") and GuildOS.db.cores["Nucleo Alfa"].members[K("Bruno")],
+    G("Alpha stays Alpha's, Bia on it; Núcleo Alfa's list goes to the core holding it"))
+  -- An officer's hand link, newer, reaches this client: the core of that name takes the tag and the people.
+  GuildOS.db.cores["Nucleo Alfa"].members[K("Pug3")] = { name = "Pug3", class = "MAGE", role = "rdps", note = "" }
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Velho", list = d.list, size = 20, tag = "nucleo-alfa", at = 4000 } },
+    "Officer-Firemaw")
+  check(CM:IsFromDiscord("Velho") and GuildOS.db.cores["Velho"].members[K("Bruno")] and not CM:IsFromDiscord("Nucleo Alfa")
+    and GuildOS.db.cores["Nucleo Alfa"].members[K("Bruno")] == nil and GuildOS.db.cores["Nucleo Alfa"].members[K("Pug3")],
+    G("a newer hand link moves the tag and the Discord's people; the pug stays"))
+  back = GuildOS.db.cores["Velho"]
+  -- An officer still on 0.73.0 sends the change alone; it lands on the core holding the tag here,
+  -- whatever the sender calls it, so no second core takes the same people.
   handlers["core.roster"]({ act = "discord", data = { coreName = "Nucleo Alfa", add = { { key = "Zed-Firemaw", name = "Zed", class = "MAGE" } },
     remove = {}, size = 20, tag = "nucleo-alfa" } }, "Officer-Firemaw")
-  check(back.members[K("Zed")] and back.members[K("Zed")].src == "discord", G("the 0.73.0 change still applies"))
+  check(back.members[K("Zed")] and back.members[K("Zed")].src == "discord" and not CM:IsFromDiscord("Nucleo Alfa"),
+    G("the 0.73.0 change still applies, to the core holding the tag"))
   local hand = GuildOS.db.cores["Nucleo Alfa"].members
   handlers["core.roster"]({ act = "update", data = { coreName = "Nucleo Alfa", members = { [K("Solo")] = { name = "Solo" } } } },
     "Officer-Firemaw")
@@ -283,23 +312,29 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(not CM:IsFromDiscord("alfa-2") and #GuildOS.State.discordCores == 2 and not said("Cores from Discord:"),
     G("an empty package gives every core back, quietly, and keeps the change to send"))
 
-  -- ── An inbox older than what the cores took: not imported over them, not sent (#138) ──
+  -- ── An inbox older than the lists this client has: not imported over them, not sent (#138) ──
   CM = load(game)
   GuildOSInbox = { FIXTURE }
   GuildOSInboxAck = { at = 5000 }
   CM:Initialize()
   local nucleo = GuildOS.db.cores["Núcleo Alfa"]
-  check(nucleo and nucleo.discordAt == 5000, G("a core keeps when its list was written"))
+  check(nucleo and GuildOS.db.discordAt == 5000, G("the guild keeps when the inbox it imported was written"))
   nucleo.members[K("Bruno")] = nil
-  nucleo.discordAt = 9000                                                       -- a newer list came from an officer
-  printed = {}
+  GuildOS.db.discordAt = 9000                                                   -- a newer list came from an officer
+  printed, GuildOS.State.discordCores = {}, nil
   CM:ImportInbox()
   check(nucleo.members[K("Bruno")] == nil and nucleo.discordTag == "nucleo-alfa", G("the stale inbox puts nothing back"))
-  local stillSent = false
-  for _, c in ipairs(GuildOS.State.discordCores or {}) do
-    if c.name == "Núcleo Alfa" then stillSent = true end
-  end
-  check(not stillSent, G("and its list is not sent to anybody"))
+  check(GuildOS.State.discordCores == nil and not said("Cores from Discord:"), G("and nothing of it is sent or said"))
+  CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {} }, 1000)
+  check(CM:IsFromDiscord("Núcleo Alfa") and CM:IsFromDiscord("alfa-2"), G("an older empty package gives no core back"))
+  -- A release another officer sends, newer, is kept: the older inbox does not link the core again.
+  CM:InitSync()
+  handlers["core.roster"]({ act = "discord", data = { coreName = "Núcleo Alfa", tag = false, at = 9500 } }, "Officer-Firemaw")
+  check(not CM:IsFromDiscord("Núcleo Alfa") and GuildOS.db.discordAt == 9500, G("the release lands and marks how new it is"))
+  CM:ImportInbox()
+  check(not CM:IsFromDiscord("Núcleo Alfa"), G("and an older inbox does not take the core back"))
+  handlers["core.roster"]({ act = "discord", data = { coreName = "alfa-2", tag = false, at = 9000 } }, "Officer-Firemaw")
+  check(CM:IsFromDiscord("alfa-2"), G("an older release is skipped"))
   GuildOSInboxAck = nil
 
   -- ── Not this guild, or the companion off: nothing, and once it says why (#138) ──
@@ -358,15 +393,19 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(GuildOS.db.cores["Núcleo Alfa"] and CM:IsFromDiscord("Núcleo Alfa"), G("a name that does not reduce to the tag gets a core of its own"))
   local catalog = CM:DiscordCatalog()
   check(#catalog == 2 and catalog[1].name == "Alfa" and catalog[2].tag == "nucleo-alfa", G("the Discord's cores, as the last import saw them"))
+  GuildOS.db.settings.companion = false                                         -- the link needs no inbox
+  GuildOS.db.cores["Núcleo Alfa"].members[K("Bruno")].note = "kept"
   CM:LinkDiscord("Core Alfa Velho", "nucleo-alfa")
+  GuildOS.db.settings.companion = true
   local velho = GuildOS.db.cores["Core Alfa Velho"]
   check(CM:IsFromDiscord("Core Alfa Velho") and not CM:IsFromDiscord("Núcleo Alfa"), G("linked: the old core is the Discord's, the one made for it no longer"))
-  check(velho.members[K("Ana")].src == "discord" and velho.members[K("Bruno")] and velho.members[K("Bruno")].src == "discord",
-    G("and its people come in at once, the officer's entry taken over"))
+  check(velho.members[K("Ana")].src == "discord" and velho.members[K("Bruno")] and velho.members[K("Bruno")].src == "discord"
+    and velho.members[K("Bruno")].note == "kept" and CM:GetRaidSize("Core Alfa Velho") == CM:GetRaidSize("Núcleo Alfa"),
+    G("and its people come in at once, as they were, the officer's entry taken over, with the core's size"))
   check(next(GuildOS.db.cores["Núcleo Alfa"].members) == nil, G("the core made for it gives the Discord's people back: no two cores with the same people"))
   local told = false
   for _, s in ipairs(sent) do
-    if s.data.coreName == "Core Alfa Velho" and s.data.list then told = true end
+    if s.act == "discordList" and s.data.coreName == "Core Alfa Velho" and #s.data.list == 2 then told = true end
   end
   check(told, G("and the other officers hear the link at once"))
   GuildOSInbox = { FIXTURE }

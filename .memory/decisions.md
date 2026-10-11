@@ -746,24 +746,32 @@ hand in the game too (issue #135, guildos-web specs/041).
   `src` it had, so an officer's edit does not change who owns the record. Whoever the Discord does not have
   is never touched. One function does it, `SyncDiscordCore`, for the import and for another officer's list.
 - The other officers get, at every import, the Discord's whole list for each of its cores (#138): `core.roster`
-  with action `discord` (`list` as the site sent it, `size`, `tag`, `waiting`, `at`), reconciled there by the
+  with action `discordList` (`list` as the site sent it, `size`, `tag`, `waiting`, `at`), reconciled there by the
   same `SyncDiscordCore`, so a client that missed a login, or deleted the core, converges. Never the officers'
-  own roster, which would write over a pug another officer added while this client was away. The field is
-  `list`, never `members`: a client from before #135 takes any `members` for the whole roster and would replace
-  the core with it. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild rank is known (it is
-  not at login, #79). The change alone that 0.73.0 sent (`add`, `remove`) is still applied, by
-  `ApplyDiscordChanges`.
-- `at` is when the inbox was written (`GuildOSInboxAck.at`), kept on the core as `discordAt`. A list older than
-  the one a core already took is skipped, and is not sent on: an officer whose companion stopped rolls nobody
-  back, and an older inbox never gives back a core the Discord still has.
+  own roster, which would write over a pug another officer added while this client was away. The action is new
+  and the field is `list`, never `members`: a client from before #135 takes any `members` for the whole roster,
+  and 0.73.0 would take a `discord` message for a change with nothing in it, linking an empty core under the
+  sender's name; both ignore `discordList`. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild
+  rank is known (it is not at login, #79). Releases keep action `discord` (`tag = false`), which 0.73.0 applies.
+  The change alone that 0.73.0 sends (`add`, `remove`) is still applied, by `ApplyDiscordChanges`, to the core
+  holding the tag here whatever the sender calls it.
+- A list from another officer goes to the core of the sender's name, so an officer's hand link reaches the
+  others; unless that core is linked to another Discord core here, then to the one the import would take.
+- `at` is when the inbox was written (`GuildOSInboxAck.at`). The site sends every core of the guild together, so
+  the guild keeps one mark, the newest `at` it applied from its inbox or from another officer
+  (`GuildOS.db.discordAt`), releases included. An inbox, a list or a release older than it is skipped, and an
+  inbox skipped is not sent on: an officer whose companion stopped rolls nobody back, and an older inbox never
+  gives back a core the Discord still has, nor links again one the Discord closed. An `at` past the realm's
+  clock counts as none.
 - One tag, one core. A core taking a tag another core holds takes the Discord's people with it (`release` with
   `moved`); left behind, they would be the same people on two cores, a tie no raid detection can settle.
 - An import that ignored the inbox says why, once per guild until the reason changes (#138): cores of another
   guild (checked first: an alt elsewhere is not told to switch anything on), or the companion off in game. Who is on a Discord core with no confirmed character is kept on the core
   (`discordWaiting`, the site's `waiting`) and shown in its Roster tab.
 - A game core named apart from its Discord core is linked by hand (#138): Config, "Discord core", from the
-  cores the last import saw (`DiscordCatalog`). `LinkDiscord` takes the tag from any other core and imports
-  again at once, then sends the lists, so the other officers hear the link now. A core linked by hand is never
+  cores the last import saw (`DiscordCatalog`). `LinkDiscord` moves the tag and the Discord's people, as they
+  are, from the core that held it, and sends its list, so the other officers hear the link now; it needs no
+  inbox (only when no core holds the tag does it import again). A core linked by hand is never
   taken by another Discord core of its name; one made for a Discord core never takes a name already used.
   Deleting the active core clears it, in the raid too (the raid's core, the announced one, an officer's pick),
   so the next read does not make it again, empty.
@@ -785,4 +793,8 @@ hand in the game too (issue #135, guildos-web specs/041).
 - (−) Only people with a confirmed character on the site come through; the rest are a count.
 - (−) An officer on a version before #135 who edits a Discord member rebuilds the record without `src`: from then
   on it is that officer's, and leaving the Discord no longer takes it off.
+- (−) `at` is the companion PC's clock: two officers' clocks minutes apart can skip the fresher of their lists
+  for those minutes. The site stamping GOSCORE1 with its own time would end it.
+- (−) Who waits for a character goes to every client of the guild with the lists, by Discord display name: the
+  names the guild's own Discord server already shows them.
 
