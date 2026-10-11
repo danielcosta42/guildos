@@ -141,6 +141,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(reused.members[K("Ana")].role == "healer" and reused.members[K("Ana")].src == "discord",
     G("on a core of her own, Ana comes as the healer the site says"))
   check(CM:GetRaidSize("alfa-2") == 10, G("and the 10's size"))
+  check(CM:IsFromDiscord("Nucleo Alfa") and CM:IsFromDiscord("alfa-2"), G("both are the Discord's now"))
 
   local line = said("Cores from Discord:")
   check(line and line:find("Nucleo Alfa +1 -1", 1, true) and line:find("alfa-2 +1 -0", 1, true)
@@ -152,8 +153,8 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     and sent[1].data.coreName == "Nucleo Alfa" and sent[2].data.coreName == "alfa-2",
     G("each core that changed goes to the other officers"))
   local d = sent[1].data
-  check(#d.add == 1 and d.add[1].key == "Bruno-Firemaw" and #d.remove == 1 and d.remove[1] == K("Velho") and d.members == nil,
-    G("as the change alone, never the whole roster"))
+  check(#d.add == 1 and d.add[1].key == "Bruno-Firemaw" and #d.remove == 1 and d.remove[1] == K("Velho") and d.members == nil
+    and d.tag == "nucleo-alfa", G("as the change alone, never the whole roster, and whose it is"))
   sent = {}
   CM:SendDiscordChanges()
   check(#sent == 0, G("and once"))
@@ -164,8 +165,10 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   mine[K("Velho")] = { name = "Velho", class = "MAGE", role = "rdps", note = "", src = "discord" }
   mine[K("Carla")].src = nil
   mine[K("Bruno")] = nil
+  GuildOS.db.cores["Nucleo Alfa"].discordTag = nil
   handlers["core.roster"]({ act = "discord", data = { coreName = "Nucleo Alfa", add = d.add,
-    remove = { K("Velho"), K("Pug") }, size = 20 } }, "Officer-Firemaw")
+    remove = { K("Velho"), K("Pug") }, size = 20, tag = "nucleo-alfa" } }, "Officer-Firemaw")
+  check(CM:IsFromDiscord("Nucleo Alfa"), G("the receiver learns the core is the Discord's"))
   check(mine[K("Pug")] and mine[K("Bruno")] and mine[K("Bruno")].src == "discord" and mine[K("Velho")] == nil,
     G("the receiver adds and removes the Discord's people, and keeps its own pug"))
   handlers["core.roster"]({ act = "update", data = { coreName = "Nucleo Alfa", members = { [K("Solo")] = { name = "Solo" } } } },
@@ -189,6 +192,45 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(alfa[K("Bruno")] and alfa[K("Bruno")].src == "discord", G("taken off only in the game, back at the next import"))
   CM:AddMember(K("Bruno"), { name = "Bruno", class = "ROGUE", role = "rdps" }, "Núcleo Alfa")
   check(alfa[K("Bruno")].role == "rdps" and alfa[K("Bruno")].src == "discord", G("a role changed here keeps the record the Discord's"))
+
+  -- ── A core the Discord no longer sends goes back to the officers ──────
+  CM = load(game)
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  GuildOS.State.discordCores = nil
+  local bruno = K("Bruno")
+  CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = { { tag = "alfa-2", name = "Alfa", size = 10,
+    members = { { key = "Ana-Firemaw", name = "Ana", class = "PRIEST", slot = "healer" } } } } })
+  check(not CM:IsFromDiscord("Núcleo Alfa") and CM:IsFromDiscord("alfa-2"), G("closed on the Discord: the officers' again"))
+  check(GuildOS.db.cores["Núcleo Alfa"].members[bruno], G("as it stands, people and all"))
+  CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {} })
+  check(not CM:IsFromDiscord("alfa-2"), G("a federation switched off gives every core back"))
+  printed, sent = {}, {}
+  GuildOS.State.discordCores = nil
+  CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {} })
+  check(next(GuildOS.db.cores["alfa-2"].members) ~= nil, G("and nothing more happens to them"))
+  -- The officers who were not importing hear of it too.
+  CM = load(game)
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  GuildOS.State.discordCores = CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {} })
+  sent = {}
+  CM:SendDiscordChanges()
+  check(#sent == 2 and sent[1].data.tag == false and sent[2].data.tag == false, G("the release goes out, core by core"))
+  GuildOS.db.cores["alfa-2"].discordTag = "alfa-2"
+  for _, s in ipairs(sent) do handlers["core.roster"]({ act = s.act, data = s.data }, "Officer-Firemaw") end
+  check(not CM:IsFromDiscord("alfa-2"), G("and gives the core back on their clients"))
+  -- Through the inbox: given back, sent on, and nothing said in chat.
+  CM = load(game)
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  printed = {}
+  local LD = LibStub("LibDeflate")
+  GuildOSInbox = { "GOSCORE1:" .. LD:EncodeForPrint(LD:CompressDeflate(
+    '{"fmt":"GOSCORE1","v":1,"guild":"Nucleo BR","realm":null,"cores":[],"unlinked":0}')) }
+  CM:ImportInbox()
+  check(not CM:IsFromDiscord("alfa-2") and #GuildOS.State.discordCores == 2 and not said("Cores from Discord:"),
+    G("an empty package gives every core back, quietly, and keeps the change to send"))
 
   -- ── Not this guild, or the companion off: nothing ─────────────────────
   CM = load(game)

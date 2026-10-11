@@ -748,6 +748,12 @@ hand in the game too (issue #135, guildos-web specs/041).
   while this client was away. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild rank is known
   (it is not at login, #79). A client from before #135 ignores it: it has no `members`.
 - One chat line says what changed and how many people the site had no character for (each once).
+- A core the import links keeps the Discord's tag (`discordTag`, sent with the change as `tag`). While it does, the
+  core panel offers neither Rename (a renamed core stops being the Discord's and the import makes it again) nor the
+  raid format (the Discord's comes back), nor the "x" on a member the Discord put there; the role stays the
+  officers'. Delete stays: the way out, undone by the import while the Discord still has the core. A core the
+  Discord no longer sends (closed there, or the federation off: the site then sends an empty package) is given
+  back to the officers, as it stands, and the release goes to the other officers too (`tag = false`).
 
 ### Consequences
 - (+) Joining or leaving a core on the Discord reaches the game without an officer retyping it.

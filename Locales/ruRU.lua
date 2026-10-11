@@ -1174,6 +1174,7 @@ L["Roster empty or unavailable."] = "Состав пуст или недосту
 L["Roster from the website: %d signed up."] = "Список с сайта: записалось %d."
 L["Cores from Discord: %s."] = "Статики из Discord: %s."
 L["%d on Discord with no confirmed character on the site."] = "%d в Discord без подтверждённого персонажа на сайте."
+L["Managed on Discord."] = "Управляется в Discord."
 L["Run the built-in self test"] = "Запустить встроенный самотест"
 L["SCHEDULE CONFLICTS (%d)"] = "КОНФЛИКТЫ РАСПИСАНИЯ (%d)"
 L["SCORE"] = "БАЛЛ"

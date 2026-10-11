@@ -256,30 +256,38 @@ function GuildOS:CreateCoresPanel(panel)
             end
         end)
 
-        -- Rename + Delete buttons
-        local renameBtn = track(UI:CreateButton(rightContent, L["Rename"], 70, 20))
-        renameBtn:SetPoint("LEFT", setActiveBtn, "RIGHT", 8, 0)
+        -- Rename + Delete buttons. A core from the Discord keeps the Discord's name: renamed here it
+        -- would stop being the Discord's and the next import would make it again, so only Delete is
+        -- offered, which that import also undoes while the Discord still has the core (#135).
+        local fromDiscord = CM:IsFromDiscord(coreName)
+        local renameBtn = not fromDiscord and track(UI:CreateButton(rightContent, L["Rename"], 70, 20))
+        if renameBtn then renameBtn:SetPoint("LEFT", setActiveBtn, "RIGHT", 8, 0) end
 
         local deleteBtn = track(UI:CreateButton(rightContent, L["Delete"], 70, 20))
-        deleteBtn:SetPoint("LEFT", renameBtn, "RIGHT", 6, 0)
+        deleteBtn:SetPoint("LEFT", renameBtn or setActiveBtn, "RIGHT", renameBtn and 6 or 8, 0)
         deleteBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
 
-        local renameInput = track(MakeInput(rightContent, 130, false, L["New name"]))
-        renameInput:SetPoint("LEFT", deleteBtn, "RIGHT", 10, 0)
-        renameBtn:SetScript("OnClick", function()
-            local newName = strtrim(renameInput:GetText() or "")
-            if newName == "" then
-                SetStatus(L["Enter a new name first."], C.red)
-                return
-            end
-            local ok, err = CM:Rename(coreName, newName)
-            if not ok then
-                SetStatus(err, C.red)
-            else
-                SetStatus(string.format(L["Renamed to: %s"], newName), C.online)
-                renameInput:SetText("")
-            end
-        end)
+        if fromDiscord then
+            local managed = track(MakeLabel(rightContent, L["Managed on Discord."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
+            managed:SetPoint("LEFT", deleteBtn, "RIGHT", 10, 0)
+        else
+            local renameInput = track(MakeInput(rightContent, 130, false, L["New name"]))
+            renameInput:SetPoint("LEFT", deleteBtn, "RIGHT", 10, 0)
+            renameBtn:SetScript("OnClick", function()
+                local newName = strtrim(renameInput:GetText() or "")
+                if newName == "" then
+                    SetStatus(L["Enter a new name first."], C.red)
+                    return
+                end
+                local ok, err = CM:Rename(coreName, newName)
+                if not ok then
+                    SetStatus(err, C.red)
+                else
+                    SetStatus(string.format(L["Renamed to: %s"], newName), C.online)
+                    renameInput:SetText("")
+                end
+            end)
+        end
         deleteBtn:SetScript("OnClick", function()
             CM:Delete(coreName)
             selectedCore = nil
@@ -321,16 +329,23 @@ function GuildOS:CreateCoresPanel(panel)
         local curSize = CM:GetRaidSize(coreName)
         local szLbl = track(MakeLabel(rightContent, L["Raid format:"], 10))
         szLbl:SetPoint("TOPLEFT", 4, y)
-        local szBtn = track(UI:CreateButton(rightContent, string.format(L["%d-man"], curSize), 80, 20))
-        szBtn:SetPoint("LEFT", szLbl, "RIGHT", 6, 1)
-        szBtn:SetScript("OnClick", function(self)
-            -- This game's formats, round the list: 10 and 25 on TBC, 10, 20 and 40 on Forever (issue #89).
-            curSize = CM:NextRaidSize(curSize)
-            self.label:SetText(string.format(L["%d-man"], curSize))
-            CM:SetRaidSize(coreName, curSize)
-        end)
+        -- The Discord's size comes back at every import, so a core from the Discord only shows it (#135).
+        local szBtn
+        if fromDiscord then
+            szBtn = track(MakeLabel(rightContent, string.format(L["%d-man"], curSize), 10))
+            szBtn:SetPoint("LEFT", szLbl, "RIGHT", 6, 0)
+        else
+            szBtn = track(UI:CreateButton(rightContent, string.format(L["%d-man"], curSize), 80, 20))
+            szBtn:SetPoint("LEFT", szLbl, "RIGHT", 6, 1)
+            szBtn:SetScript("OnClick", function(self)
+                -- This game's formats, round the list: 10 and 25 on TBC, 10, 20 and 40 on Forever (issue #89).
+                curSize = CM:NextRaidSize(curSize)
+                self.label:SetText(string.format(L["%d-man"], curSize))
+                CM:SetRaidSize(coreName, curSize)
+            end)
+        end
         local szHint = track(MakeLabel(rightContent,
-            L["Sets composition targets for roster analysis."],
+            fromDiscord and L["Managed on Discord."] or L["Sets composition targets for roster analysis."],
             9, C.textDim.r, C.textDim.g, C.textDim.b))
         szHint:SetPoint("LEFT", szBtn, "RIGHT", 10, 0)
         y = y - 30
@@ -870,10 +885,13 @@ function GuildOS:CreateCoresPanel(panel)
             local mk = entry.key
             local cr, cg, cb = GuildOS:GetClassColor(m.class or "WARRIOR")
             local rc = ROLE_C[m.role or "rdps"] or C.silver
+            -- Somebody the Discord put here leaves it there: taken off here, the next import puts
+            -- them back. Their role is still the officers' (#135).
+            local discordOwned = fromDiscord and m.src == "discord"
             local rowLbl = track(MakeLabel(rightContent,
-                string.format("|cff%02X%02X%02X[%s]|r %s",
+                string.format("|cff%02X%02X%02X[%s]|r %s%s",
                     math.floor(rc.r * 255), math.floor(rc.g * 255), math.floor(rc.b * 255),
-                    ROLE_LBL[m.role] or "?", m.name or mk),
+                    ROLE_LBL[m.role] or "?", m.name or mk, discordOwned and " |cff7289da(Discord)|r" or ""),
                 10, cr, cg, cb))
             rowLbl:SetPoint("TOPLEFT", 4, y)
             if isRL then
@@ -892,15 +910,17 @@ function GuildOS:CreateCoresPanel(panel)
                     BuildSettings(coreName)
                 end)
 
-                local remBtn = track(UI:CreateButton(rightContent, "x", 18, 16))
-                remBtn:SetPoint("LEFT", roleBtn, "RIGHT", 3, 0)
-                remBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
-                local capKey2 = mk
-                remBtn:SetScript("OnClick", function()
-                    CM:RemoveMember(capKey2, coreName)
-                    CM:BroadcastRoster(coreName)
-                    BuildSettings(coreName)
-                end)
+                if not discordOwned then
+                    local remBtn = track(UI:CreateButton(rightContent, "x", 18, 16))
+                    remBtn:SetPoint("LEFT", roleBtn, "RIGHT", 3, 0)
+                    remBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
+                    local capKey2 = mk
+                    remBtn:SetScript("OnClick", function()
+                        CM:RemoveMember(capKey2, coreName)
+                        CM:BroadcastRoster(coreName)
+                        BuildSettings(coreName)
+                    end)
+                end
             end
             y = y - 18
         end

@@ -1174,6 +1174,7 @@ L["Roster empty or unavailable."] = "명단이 비어 있거나 사용할 수 �
 L["Roster from the website: %d signed up."] = "웹사이트 명단: %d명 신청."
 L["Cores from Discord: %s."] = "디스코드 코어: %s."
 L["%d on Discord with no confirmed character on the site."] = "디스코드에 있지만 사이트에서 확인된 캐릭터가 없는 인원: %d명."
+L["Managed on Discord."] = "디스코드에서 관리됩니다."
 L["Run the built-in self test"] = "내장 자체 테스트 실행"
 L["SCHEDULE CONFLICTS (%d)"] = "일정 충돌 (%d)"
 L["SCORE"] = "점수"

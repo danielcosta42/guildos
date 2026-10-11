@@ -1688,6 +1688,7 @@ L["Address selected — press Ctrl+C"] = "Endereço selecionado — aperte Ctrl+
 L["Roster from the website: %d signed up."] = "Roster do site: %d inscritos."
 L["Cores from Discord: %s."] = "Cores do Discord: %s."
 L["%d on Discord with no confirmed character on the site."] = "%d no Discord sem personagem confirmado no site."
+L["Managed on Discord."] = "Gerenciado no Discord."
 L["Planned on the website."] = "Planejada no site."
 
 -- Core/Core.lua, UI/Window.lua (isolamento na inicialização)
