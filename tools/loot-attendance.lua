@@ -86,8 +86,12 @@ night(1, 9020, 20, "Twenty", { "Ana", "Bo", "Dee" })
 for w = 0, 5 do
   night(w, 9021, 20, "Other", w % 2 == 0 and { "Ana", "Bo" } or { "Bo" })
 end
-night(0, 9010, 10, "Ten", { "Ana", "Bo", "Dee" })
-night(1, 9010, 10, "Ten", { "Ana", "Bo", "Dee" })
+night(0, 9010, 10, "Ten", { "Ana", "Bo", "Dee", "Fay" })
+night(1, 9010, 10, "Ten", { "Ana", "Bo", "Dee", "Fay" })
+-- Fay: a third Ten night, and two 20s from before the guild had cores (no core at all).
+night(2, 9010, 10, "Ten", { "Fay" })
+night(2, 9020, 20, "", { "Fay" })
+night(3, 9020, 20, "", { "Fay" })
 RT:RebuildAttendanceFromSessions()
 
 -- The figure the roll is judged by, and what an MS roll becomes, with `tag` the raid's core.
@@ -115,9 +119,13 @@ att = roll("Ten", "Dee")
 check(att == 50, "the old figure is the core with the most nights that count: Dee's Twenty, 50%, not her Ten's 0%")
 check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Dee")) == 50, "and the roster's figure is the same one")
 dofile(ADDON .. "/Modules/LootTracker.lua")
-function GetNumGuildMembers() return 1 end
-function GetGuildRosterInfo() return "Dee-Realm", "", 0, 60, "", "", "", "", true, 1, "PRIEST" end
-local row = GuildOS.LootTracker:GetGuildLootEquity()[1]
-check(row and row.attendance == 50 and row.raids == 1, "and loot equity's row reads both figures from that core: 50%, 1 raid")
+local ROSTER = { "Dee-Realm", "Fay-Realm" }
+function GetNumGuildMembers() return #ROSTER end
+function GetGuildRosterInfo(i) return ROSTER[i], "", 0, 60, "", "", "", "", true, 1, "PRIEST" end
+local rows = {}
+for _, r in ipairs(GuildOS.LootTracker:GetGuildLootEquity()) do rows[r.name] = r end
+check(rows.Dee and rows.Dee.attendance == 50 and rows.Dee.raids == 1, "and loot equity's row reads both figures from that core: 50%, 1 raid")
+check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Fay")) == 100 and rows.Fay and rows.Fay.attendance == 100
+  and rows.Fay.raids == 2, "nights with no core are a core of their own: Fay's two 20s, 100%, over her three 10s")
 
 print(("loot-attendance: %d checks passed"):format(checks))
