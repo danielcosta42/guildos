@@ -79,23 +79,25 @@ local function night(week, id, size, tag, players)
     snapshots = { { time = t, members = members }, { time = t + 3 * 3600, members = members } } }
 end
 -- Ana: both nights of the Twenty; half of the Other's six, so the Other is where she raids most;
--- the Ten's two nights, which never count for progression on Forever.
+-- the Ten's two nights, which never count for progression on Forever. Dee: both nights of the Ten, one
+-- of the Twenty's: the Ten is where she raids most, and has no night that counts.
 night(0, 9020, 20, "Twenty", { "Ana", "Bo" })
-night(1, 9020, 20, "Twenty", { "Ana", "Bo" })
+night(1, 9020, 20, "Twenty", { "Ana", "Bo", "Dee" })
 for w = 0, 5 do
   night(w, 9021, 20, "Other", w % 2 == 0 and { "Ana", "Bo" } or { "Bo" })
 end
-night(0, 9010, 10, "Ten", { "Ana", "Bo" })
-night(1, 9010, 10, "Ten", { "Ana", "Bo" })
+night(0, 9010, 10, "Ten", { "Ana", "Bo", "Dee" })
+night(1, 9010, 10, "Ten", { "Ana", "Bo", "Dee" })
 RT:RebuildAttendanceFromSessions()
 
 -- The figure the roll is judged by, and what an MS roll becomes, with `tag` the raid's core.
-local function roll(tag)
+local function roll(tag, who)
+  who = who or "Ana"
   RT:SetGroupTag(tag)
-  local att = LM:GetPlayerContext("Ana").att25
+  local att = LM:GetPlayerContext(who).att25
   LM.activeLoot, LM.rolls = {}, {}
-  LM:RegisterRoll("Ana", "MS", 50)
-  local r = LM.rolls[GuildOS:GetPlayerKey("Ana")]
+  LM:RegisterRoll(who, "MS", 50)
+  local r = LM.rolls[GuildOS:GetPlayerKey(who)]
   return att, r and r.rollType
 end
 
@@ -109,5 +111,8 @@ att, kind = roll("Ten")
 check(att == 50, "a core none of whose nights count has no figure: Ana keeps the old one, not 0%")
 att, kind = roll("Fresh")
 check(att == 50, "and a core on its first raid the same")
+att = roll("Ten", "Dee")
+check(att == 50, "the old figure is the core with the most nights that count: Dee's Twenty, 50%, not her Ten's 0%")
+check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Dee")) == 50, "and the roster's figure is the same one")
 
 print(("loot-attendance: %d checks passed"):format(checks))
