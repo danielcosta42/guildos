@@ -746,18 +746,27 @@ hand in the game too (issue #135, guildos-web specs/041).
   `src` it had, so an officer's edit does not change who owns the record. Whoever the Discord does not have
   is never touched. One function does it, `SyncDiscordCore`, for the import and for another officer's list.
 - The other officers get, at every import, the Discord's whole list for each of its cores (#138): `core.roster`
-  with action `discord` (`members` as the site sent them, `size`, `tag`, `waiting`), reconciled there by the
+  with action `discord` (`list` as the site sent it, `size`, `tag`, `waiting`, `at`), reconciled there by the
   same `SyncDiscordCore`, so a client that missed a login, or deleted the core, converges. Never the officers'
-  own roster, which would write over a pug another officer added while this client was away. It is sent from
-  OFFICER_START (`SendDiscordChanges`), once the guild rank is known (it is not at login, #79). The change alone
-  that 0.73.0 sent (`add`, `remove`) is still applied, by `ApplyDiscordChanges`; a client from before #135
-  ignores both: they have no roster `members` map.
-- An import that ignored the inbox says why, once per guild until the reason changes (#138): the companion off
-  in game, or cores of another guild. Who is on a Discord core with no confirmed character is kept on the core
+  own roster, which would write over a pug another officer added while this client was away. The field is
+  `list`, never `members`: a client from before #135 takes any `members` for the whole roster and would replace
+  the core with it. It is sent from OFFICER_START (`SendDiscordChanges`), once the guild rank is known (it is
+  not at login, #79). The change alone that 0.73.0 sent (`add`, `remove`) is still applied, by
+  `ApplyDiscordChanges`.
+- `at` is when the inbox was written (`GuildOSInboxAck.at`), kept on the core as `discordAt`. A list older than
+  the one a core already took is skipped, and is not sent on: an officer whose companion stopped rolls nobody
+  back, and an older inbox never gives back a core the Discord still has.
+- One tag, one core. A core taking a tag another core holds takes the Discord's people with it (`release` with
+  `moved`); left behind, they would be the same people on two cores, a tie no raid detection can settle.
+- An import that ignored the inbox says why, once per guild until the reason changes (#138): cores of another
+  guild (checked first: an alt elsewhere is not told to switch anything on), or the companion off in game. Who is on a Discord core with no confirmed character is kept on the core
   (`discordWaiting`, the site's `waiting`) and shown in its Roster tab.
 - A game core named apart from its Discord core is linked by hand (#138): Config, "Discord core", from the
   cores the last import saw (`DiscordCatalog`). `LinkDiscord` takes the tag from any other core and imports
-  again at once. Deleting the active core clears it, so the next read does not make it again, empty.
+  again at once, then sends the lists, so the other officers hear the link now. A core linked by hand is never
+  taken by another Discord core of its name; one made for a Discord core never takes a name already used.
+  Deleting the active core clears it, in the raid too (the raid's core, the announced one, an officer's pick),
+  so the next read does not make it again, empty.
 - One chat line says what changed and how many people the site had no character for (each once).
 - A core the import links keeps the Discord's tag (`discordTag`, sent with the change as `tag`). While it does, the
   core panel offers neither Rename (a renamed core stops being the Discord's and the import makes it again) nor the

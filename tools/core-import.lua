@@ -155,9 +155,10 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     and sent[1].data.coreName == "Nucleo Alfa" and sent[2].data.coreName == "alfa-2",
     G("each Discord core goes to the other officers"))
   local d = sent[1].data
-  check(type(d.members) == "table" and #d.members == 2 and d.members[1].key == "Ana-Firemaw" and d.add == nil
+  check(type(d.list) == "table" and #d.list == 2 and d.list[1].key == "Ana-Firemaw" and d.add == nil
     and d.tag == "nucleo-alfa" and table.concat(d.waiting or {}, ",") == "Rias,Rozzi (Connor)",
     G("as the Discord's whole list for it, whose it is, and who waits (#138)"))
+  check(d.members == nil, G("never under `members`, which a client from before #135 takes for the whole roster"))
   sent = {}
   CM:SendDiscordChanges()
   check(#sent == 0, G("and once"))
@@ -177,6 +178,23 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   handlers["core.roster"]({ act = "discord", data = d }, "Officer-Firemaw")
   local back = GuildOS.db.cores["Nucleo Alfa"]
   check(back and back.members[K("Ana")] and back.members[K("Bruno")], G("a core deleted here comes back with its Discord people, not empty"))
+  -- The same tag on another core here hands it over, with the Discord's people (#138).
+  CM:Create("Duplicado")
+  GuildOS.db.cores["Duplicado"].discordTag = "nucleo-alfa"
+  GuildOS.db.cores["Duplicado"].members[K("Ana")] = { name = "Ana", class = "PRIEST", role = "healer", note = "", src = "discord" }
+  GuildOS.db.cores["Duplicado"].members[K("Pug2")] = { name = "Pug2", class = "MAGE", role = "rdps", note = "" }
+  handlers["core.roster"]({ act = "discord", data = d }, "Officer-Firemaw")
+  local dup = GuildOS.db.cores["Duplicado"]
+  check(not CM:IsFromDiscord("Duplicado") and dup.members[K("Ana")] == nil and dup.members[K("Pug2")],
+    G("a second core holding the tag lets it go, and the Discord's people with it; its pug stays"))
+  -- An older list than the one a core took is skipped: a stopped companion rolls nobody back.
+  local newer = { coreName = "Nucleo Alfa", list = d.list, size = 20, tag = "nucleo-alfa", at = 2000 }
+  handlers["core.roster"]({ act = "discord", data = newer }, "Officer-Firemaw")
+  local older = { coreName = "Nucleo Alfa", list = { { key = "Ana-Firemaw", name = "Ana" } }, size = 20, tag = "nucleo-alfa", at = 1000 }
+  handlers["core.roster"]({ act = "discord", data = older }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Nucleo Alfa"].members[K("Bruno")], G("an older list does not take Bruno off"))
+  handlers["core.roster"]({ act = "discord", data = { coreName = 5, list = d.list, tag = "x" } }, "Officer-Firemaw")
+  check(GuildOS.db.cores[5] == nil, G("a core name that is not text makes nothing"))
   -- An officer still on 0.73.0 sends the change alone; it still lands.
   handlers["core.roster"]({ act = "discord", data = { coreName = "Nucleo Alfa", add = { { key = "Zed-Firemaw", name = "Zed", class = "MAGE" } },
     remove = {}, size = 20, tag = "nucleo-alfa" } }, "Officer-Firemaw")
@@ -265,6 +283,25 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(not CM:IsFromDiscord("alfa-2") and #GuildOS.State.discordCores == 2 and not said("Cores from Discord:"),
     G("an empty package gives every core back, quietly, and keeps the change to send"))
 
+  -- ── An inbox older than what the cores took: not imported over them, not sent (#138) ──
+  CM = load(game)
+  GuildOSInbox = { FIXTURE }
+  GuildOSInboxAck = { at = 5000 }
+  CM:Initialize()
+  local nucleo = GuildOS.db.cores["Núcleo Alfa"]
+  check(nucleo and nucleo.discordAt == 5000, G("a core keeps when its list was written"))
+  nucleo.members[K("Bruno")] = nil
+  nucleo.discordAt = 9000                                                       -- a newer list came from an officer
+  printed = {}
+  CM:ImportInbox()
+  check(nucleo.members[K("Bruno")] == nil and nucleo.discordTag == "nucleo-alfa", G("the stale inbox puts nothing back"))
+  local stillSent = false
+  for _, c in ipairs(GuildOS.State.discordCores or {}) do
+    if c.name == "Núcleo Alfa" then stillSent = true end
+  end
+  check(not stillSent, G("and its list is not sent to anybody"))
+  GuildOSInboxAck = nil
+
   -- ── Not this guild, or the companion off: nothing, and once it says why (#138) ──
   CM = load(game)
   GUILD = "Outra Guilda"
@@ -284,6 +321,12 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   printed = {}
   CM:ImportInbox()
   check(not said("/gos web on"), G("once"))
+  CM = load(game)
+  GUILD = "Outra Guilda"
+  GuildOS.db.settings.companion = false
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  check(said("are for Nucleo BR") and not said("/gos web on"), G("an alt in another guild hears whose they are, not to switch anything on"))
 
   -- ── Deleting the active core leaves no active core to make again, empty (#138) ──
   CM = load(game)
@@ -294,6 +337,17 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM:Create("Outro"); GuildOS.db.raidTracker.currentGroupTag = "Outro"
   CM:Create("Fora"); CM:Delete("Fora")
   check(CM:GetActiveName() == "Outro", G("deleting another core leaves the active one alone"))
+  -- Inside a raid: the raid, the announced core and an officer's pick let go of it too.
+  local tag = "Raide"
+  GuildOS.RaidTracker = { currentGroupTag = tag, currentRaid = { groupTag = tag }, coreAnnounced = tag, gracePick = tag,
+    GetCurrentGroup = function(self) return self.currentGroupTag end,
+    SetGroupTag = function(self, t) self.currentGroupTag = t end }
+  GuildOS.db.raidTracker.corePick = { tag = tag }
+  CM:Create(tag); CM:Delete(tag)
+  local RT = GuildOS.RaidTracker
+  check(RT.currentGroupTag == "" and RT.currentRaid.groupTag == "" and RT.coreAnnounced == nil and RT.gracePick == nil
+    and GuildOS.db.raidTracker.corePick == nil, G("a /reload inside the raid does not bring the deleted core back"))
+  GuildOS.RaidTracker = nil
 
   -- ── Linking a game core of another name to a Discord core (#138) ──────
   CM = load(game)
@@ -309,6 +363,12 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:IsFromDiscord("Core Alfa Velho") and not CM:IsFromDiscord("Núcleo Alfa"), G("linked: the old core is the Discord's, the one made for it no longer"))
   check(velho.members[K("Ana")].src == "discord" and velho.members[K("Bruno")] and velho.members[K("Bruno")].src == "discord",
     G("and its people come in at once, the officer's entry taken over"))
+  check(next(GuildOS.db.cores["Núcleo Alfa"].members) == nil, G("the core made for it gives the Discord's people back: no two cores with the same people"))
+  local told = false
+  for _, s in ipairs(sent) do
+    if s.data.coreName == "Core Alfa Velho" and s.data.list then told = true end
+  end
+  check(told, G("and the other officers hear the link at once"))
   GuildOSInbox = { FIXTURE }
   CM:ImportInbox()
   check(CM:IsFromDiscord("Core Alfa Velho") and not CM:IsFromDiscord("Núcleo Alfa"), G("the next import keeps to the link"))
@@ -331,6 +391,19 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(next(GuildOS.db.cores) == nil, G("no inbox, nothing"))
   GuildOSInbox = { FIXTURE }
   check(GuildOS.CompanionImport:ConsumeInbox() == false, G("the raid roster reader passes over the cores"))
+
+  -- ── A core linked by hand is never taken by another Discord core of its name (#138) ──
+  CM = load(game)
+  CM:Create("Alpha")
+  GuildOS.db.cores["Alpha"].discordTag = "nucleo-alfa"
+  GuildOS.db.cores["Alpha"].members[K("Pug")] = { name = "Pug", class = "MAGE", role = "rdps", note = "pug" }
+  CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {
+    { tag = "nucleo-alfa", name = "Núcleo Alfa", size = 20, members = { { key = "Ana-Firemaw", name = "Ana" } } },
+    { tag = "alpha", name = "Alpha", size = 10, members = { { key = "Bia-Firemaw", name = "Bia" } } } } })
+  check(GuildOS.db.cores["Alpha"].discordTag == "nucleo-alfa" and GuildOS.db.cores["Alpha"].members[K("Pug")].note == "pug",
+    G("Alpha stays Núcleo Alfa's, its pug and note untouched"))
+  check(GuildOS.db.cores["alpha"] and GuildOS.db.cores["alpha"].discordTag == "alpha" and GuildOS.db.cores["alpha"].members[K("Bia")],
+    G("and the Discord's Alpha gets a core of its own, under its tag"))
 
   -- ── Two of the game's cores reduce to the tag: the one named as on the Discord ──
   CM = load(game)
