@@ -995,6 +995,7 @@ L["Levels"] = "Stufen"
 L["Zones"] = "Zonen"
 L["Online only"] = "Nur online"
 L["Max level only"] = "Nur Höchststufe"
+L["Analytics"] = "Analyse"
 L["No data."] = "Keine Daten."
 
 -- UI/RosterFrame.lua (Recruitment sub-tabs)
