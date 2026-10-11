@@ -981,7 +981,7 @@ local function notOurs(data)
     return nil
 end
 
--- Imports a decoded GOSCORE1 into this guild; `at` is when the inbox was written. Returns every
+-- Imports a decoded GOSCORE1 into this guild; `at` is how new it is (the site's time, else the inbox's). Returns every
 -- Discord core as { name, added, removed, adopted, list, size, tag, waiting, at, linkAt, quiet } (quiet when
 -- nothing on it changed; `released` and tag false for a core the Discord no longer sends), and how many
 -- people the site had no character for. When the payload is not this guild's: nil, and whose it is.
