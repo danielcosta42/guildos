@@ -35,10 +35,10 @@ local FOOT_H       = 22
 local FOOT_PAD     = 10
 local FOOT_GAP     = 8
 local GRIP         = 16
--- How thick the game's metal frame looks (the Forever style), above and below. Its atlas pieces are
--- far taller than what they show: lifted by the bottom piece's height, the footer floated with an
--- empty band under it, as a beta screenshot showed (#148).
-local METAL_EDGE   = 4
+-- The room the game's metal frame (the Forever style) takes above the title and below the footer, set
+-- by eye in the beta: its atlas pieces are far taller than what they show, and lifted by the bottom
+-- piece's height the footer floated with an empty band under it; 4 was too tight (#148).
+local METAL_EDGE   = 7
 local HOME         = "home"  -- the Now tab
 local DASH         = "\226\128\148"
 local DOT          = " \194\183 "

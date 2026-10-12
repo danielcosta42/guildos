@@ -605,8 +605,8 @@ check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
   "then minimise and close at the right edge")
 -- On the game's metal frame the footer stands on the frame's bottom edge and the title bar starts
--- under its top one: 4px, how thick the metal looks, not its atlas pieces' height (#148).
-local footLift = STYLE == "forever" and 4 or 0
+-- under its top one: 7px, set by eye in the beta, not its atlas pieces' height (#148).
+local footLift = STYLE == "forever" and 7 or 0
 local topInset = footLift
 check(point(f.content, 1) == "TOPLEFT,12," .. -(70 + topInset) and point(f.content, 2) == "BOTTOMRIGHT,-12," .. (34 + footLift),
   "content padding 12px under the 30px title bar and the tab rule, and above the 22px footer")
