@@ -247,10 +247,13 @@ local function createWindow()
         pinTopLeft(f)
         UI:SaveWindowGeometry(f)
     end)
-    GuildOS.Style:Paint(bar, "titlebar")
+    local barLook = GuildOS.Style:Paint(bar, "titlebar")
     local barLine = UI:CreateSeparator(bar)
     barLine:SetPoint("BOTTOMLEFT", 0, 0)
     barLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    -- On the game's metal frame the bar is the frame's own top edge; a line across it crossed the metal
+    -- sides (#148).
+    barLine:SetShown(barLook ~= "none")
     f.titleBar = bar
 
     local function text(size, role, color)
@@ -351,9 +354,13 @@ local function createWindow()
     ------------------------------------------------------------------
     -- Footer and grip
     ------------------------------------------------------------------
+    -- On the game's metal frame the bottom edge is drawn inside the window, and the links' underline
+    -- sat on it: the footer stands on the edge instead (#148).
+    local edge = f.__nine and f.__nine.BottomEdge
+    local footLift = edge and math.floor((edge:GetHeight() or 0) + 0.5) or 0
     local foot = CreateFrame("Frame", nil, f)
-    foot:SetPoint("BOTTOMLEFT", 0, 0)
-    foot:SetPoint("BOTTOMRIGHT", 0, 0)
+    foot:SetPoint("BOTTOMLEFT", 0, footLift)
+    foot:SetPoint("BOTTOMRIGHT", 0, footLift)
     foot:SetHeight(FOOT_H)
     local footLine = UI:CreateSeparator(foot)
     footLine:SetPoint("TOPLEFT", 0, 0)
@@ -590,7 +597,7 @@ local function createWindow()
         rule:SetPoint("TOPRIGHT", 0, -titleH)
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", pad, -(titleH + RULE_H + pad))
-        content:SetPoint("BOTTOMRIGHT", -pad, FOOT_H + pad)
+        content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
 
         local home = self.tabPanels[HOME]
         if changed and isWatch and self.activeTab ~= HOME and not (home and home.buildFailed) then

@@ -224,6 +224,10 @@ function GuildOS:CreateDashboardPanel(panel)
             val:SetPoint("TOPLEFT", col * colW + 2, -(row * 42))
             local lbl = UI:CreateText(body, s[2], 9, C.textDim.r, C.textDim.g, C.textDim.b)
             lbl:SetPoint("TOPLEFT", col * colW + 2, -(row * 42 + 22))
+            -- Its own column and one line: "prêts pour le raid" ran out of the card (#148).
+            lbl:SetWidth(colW - 4)
+            lbl:SetWordWrap(false)
+            lbl:SetJustifyH("LEFT")
         end
     end
 

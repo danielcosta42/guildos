@@ -48,15 +48,17 @@ end
 -- The Forever client's art (build 1.60.1.70245), by role. A nine-slice's pieces are the atlas size
 -- times `scale`; a three-slice is as tall as its frame. Candidates until beta screenshots of
 -- /gos style preview confirm them (spec §4.6).
+-- A panel and a well paint flat, a thin bronze line on the palette's colour: the Settings frame's art
+-- around every card was heavier than the window it sat in, and a player asked for the line the small
+-- cards already had. The title bar has no band of its own: the metal frame's top edge is the bar, and a
+-- band over it met the frame's corner a few pixels off (#148).
 Style.FOREVER = {
     window   = nine("UI-Frame-Metal-", 0.25),
-    panel    = nine("OptionsFrame-NineSlice-", 0.5),
-    well     = nine("OptionsFrame-NineSlice-", 0.5),
     -- Its -c60 centre is not in Forever's atlas set (the client would draw the plain one): no centre.
     popup    = nine("Tooltip-NineSlice-", 1),
-    titlebar = three("UI-Frame-DiamondMetal-Header-CornerLeft", "_UI-Frame-DiamondMetal-Header-Tile",
-                     "UI-Frame-DiamondMetal-Header-CornerRight"),
     input    = three("common-search-border-left", "common-search-border-middle", "common-search-border-right"),
+    -- Only a screen's one primary button: the rest are the flat dark button with its bronze line, so a
+    -- screen does not mix red buttons with the dark tabs beside them (#148).
     button   = { rest = redButton("rest"), pressed = redButton("Pressed"), disabled = redButton("Disabled") },
     -- The Settings panel's top tabs, in three pieces that stretch to any label; the open one is
     -- the taller active art. (One 96px tab atlas stretched across a label smeared its corners.)
@@ -343,6 +345,8 @@ end
 -- Paint `frame` as `role`. In the Forever style with the client's art, the role's art; otherwise,
 -- and for any piece the client lacks, today's flat paint.
 function Style:Paint(frame, role)
+    -- On the game's metal frame the window's own top edge is the title bar: nothing to paint (#148).
+    if role == "titlebar" and self.current == "forever" and self:_HasArt(self.FOREVER.window) then return "none" end
     local art = (self.current == "forever") and self.FOREVER[role] or nil
     if art and self:_HasArt(art) then
         if art.kind == "nine" then return self:_PaintNine(frame, art, role) end
@@ -364,12 +368,20 @@ end
 ----------------------------------------------------------------------
 local function forever(self, art) return self.current == "forever" and self:_HasArt(art) end
 
+-- A primary button's art (Helpers:SetButtonVariant asks; #148). Above the backdrop, below the label.
 function Style:SkinButton(btn)
     if not forever(self, self.FOREVER.button) then return false end
     btn.__forever = true
-    -- Above the backdrop (a toggle used to paint it over the art), below the label.
     self:_PaintThree(btn, self.FOREVER.button.rest, "BORDER")
+    for _, t in pairs(btn.__three) do t:Show() end
     return true
+end
+
+-- A primary button switched to another variant goes back to the flat button.
+function Style:UnskinButton(btn)
+    if not btn.__forever then return end
+    btn.__forever = nil
+    for _, t in pairs(btn.__three or {}) do t:Hide() end
 end
 
 -- A toggle's colour (SetBaseColor) on the game's art: a tint of the art itself. A grey, the "off"
@@ -401,7 +413,10 @@ function Style:ButtonState(btn, state)
     btn.label:SetTextColor(ink.r, ink.g, ink.b)
     btn.__hovered = (state == "hover")
     if btn.glow then btn.glow:Hide() end
-    if btn.underline then btn.underline:SetShown(ghost) end
+    if btn.underline then
+        btn.underline:SetShown(ghost)
+        btn.underline:SetVertexColor(ink.r, ink.g, ink.b, 1)
+    end
 end
 
 function Style:SkinTab(tab)

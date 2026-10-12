@@ -263,7 +263,8 @@ function GuildOS:CreateRosterPanel(parent, host)
         host.kpiCards[key] = card
 
         local value = UI:CreateText(card, "—", 20, valueColor.r, valueColor.g, valueColor.b)
-        value:SetPoint("TOPLEFT", 12, -7)
+        -- 10, not 7: the number sat on the card's top edge (#148).
+        value:SetPoint("TOPLEFT", 12, -10)
 
         local lbl = UI:CreateText(card, labelText, 9, C.textDim.r, C.textDim.g, C.textDim.b)
 

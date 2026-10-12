@@ -244,10 +244,13 @@ S:Paint(f, "popup")
 check(f.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft" and not f.__nine.Center
   and f.bg[1] == GuildOS.Colors.bg.r, "a popup gets the tooltip's border over its own colour")
 f = newRegion("Frame"); f.w, f.h = 200, 30
-S:Paint(f, "titlebar")
-check(f.__three.Center.horizTile == true, "a title bar's middle repeats across")
-check(f.__three.Left.atlas == "UI-Frame-DiamondMetal-Header-CornerLeft" and f.__styleBg,
-  "a title bar gets the diamond-metal band over its colour")
+check(S:Paint(f, "titlebar") == "none" and not f.__three and not f.__styleBg,
+  "a title bar paints nothing: the metal frame's top edge is the bar (#148)")
+f = newRegion("Frame"); f.w, f.h = 300, 200
+check(S:Paint(f, "panel") == "flat" and not f.__nine and f.backdrop.edgeSize == 1
+  and f.border[1] == GuildOS.Colors.line.r, "a panel is flat, with the palette's thin bronze line (#148)")
+f = newRegion("Frame"); f.w, f.h = 300, 200
+check(S:Paint(f, "well") == "flat" and not f.__nine and f.bg[1] == GuildOS.Colors.well.r, "and so is a well")
 
 S = load({ db = { style = "forever" }, without = { ["_ui-frame-metal-edgetop"] = true } }); S:Resolve()
 f = newRegion("Frame")
@@ -265,8 +268,15 @@ check(not b.__forever and b.backdrop.edgeSize == 1, "guildos: a button is today'
 
 S = load({ db = { style = "forever" } }); S:Resolve()
 UI = GuildOS.UI
-b = UI:CreateButton(UIParent, "Go", 120, 26)
-check(b.__forever and b.__three.Left.atlas == "128-RedButton-Left", "forever: a button is the game's red button")
+local plain = UI:CreateButton(UIParent, "Go", 120, 26)
+check(not plain.__forever and not plain.__three and plain.backdrop.edgeSize == 1,
+  "forever: a button is the flat dark button with its bronze line (#148)")
+local ghost = UI:SetButtonVariant(UI:CreateButton(UIParent, "Search", 60, 18), "ghost")
+check(ghost.underline.shown and ghost.underline.color[1] == GuildOS.Colors.label.r,
+  "a ghost link's underline is the label's colour, not white")
+b = UI:SetButtonVariant(UI:CreateButton(UIParent, "Go", 120, 26), "primary")
+check(b.__forever and b.__three.Left.atlas == "128-RedButton-Left" and b.__three.Left.shown,
+  "the screen's primary button is the game's red button")
 UI:_ButtonState(b, "pressed")
 check(b.__three.Center.atlas == "_128-RedButton-Center-Pressed", "pressed swaps to the pressed art")
 UI:_ButtonState(b, "disabled")
@@ -275,10 +285,12 @@ check(b.__three.Right.atlas == "128-RedButton-Right-Disabled" and b.label.color[
 UI:_ButtonState(b, "hover")
 check(b.__three.Left.atlas == "128-RedButton-Left" and b.label.color[1] == GuildOS.Colors.text.r, "hover lights the label")
 UI:SetButtonVariant(b, "ghost")
-check(not b.__three.Left.shown, "a ghost button has no art")
+check(not b.__three.Left.shown and not b.__forever, "a primary switched to ghost leaves the art")
+UI:SetButtonVariant(b, "primary")
+check(b.__forever and b.__three.Left.shown, "and takes it back as primary")
 -- A toggle (the recruitment channels, a chip) shows its state with SetBaseColor. On the game's art
 -- that is a tint of the art itself: the old backdrop drew over the button, and hover cleared it.
-local tg = UI:CreateButton(UIParent, "Trade", 120, 26)
+local tg = UI:SetButtonVariant(UI:CreateButton(UIParent, "Trade", 120, 26), "primary")
 check(tg.__three.Left.layer == "BORDER", "the button's art sits above the backdrop")
 tg:SetBaseColor(0.12, 0.12, 0.16, 0.85)
 check(tg.__three.Left.color and math.abs(tg.__three.Left.color[1] - 0.55) < 1e-9
@@ -292,7 +304,7 @@ check(tg.__three.Right.color[2] == 1 and tg.__three.Right.color[1] == on[1] and 
   "hovering it changes nothing about its state")
 tg:SetBaseColor(0, 0, 0, 0)
 check(tg.__three.Left.color[1] == 1, "no colour, the art as it is")
-local narrow = UI:CreateButton(UIParent, "", 40, 26)
+local narrow = UI:SetButtonVariant(UI:CreateButton(UIParent, "", 40, 26), "primary")
 narrow.scripts.OnSizeChanged()
 check(math.abs(narrow.__three.Left.w + narrow.__three.Right.w - 40) < 0.01, "a button narrower than both caps squeezes them to fit")
 
@@ -342,8 +354,7 @@ check(track and thumb, "a scroll bar is the game's minimal track and thumb")
 local panel = UI:CreatePanel(UIParent)
 check(panel.__nine and panel.__nine.TopLeftCorner.atlas == "UI-Frame-Metal-CornerTopLeft", "CreatePanel is the metal window")
 local inner = UI:CreatePanel(UI:CreatePanel(UIParent))
-check(inner.__nine.TopLeftCorner.atlas == "OptionsFrame-NineSlice-CornerTopLeft",
-  "a panel inside another frame is a panel, not a window")
+check(not inner.__nine and inner.backdrop.edgeSize == 1, "a panel inside another frame is a flat panel, not a window")
 local small = UI:CreatePanel(UIParent)
 small.w, small.h = 320, 28
 small.scripts.OnSizeChanged(small)
@@ -352,7 +363,7 @@ small.w, small.h = 600, 400
 small.scripts.OnSizeChanged(small)
 check(small.__nine.TopLeftCorner.shown and not small.backdrop.edgeFile, "and gets the art back when it grows")
 local dark = UI:CreateDarkPanel(UIParent)
-check(dark.__nine and dark.__nine.TopLeftCorner.atlas == "OptionsFrame-NineSlice-CornerTopLeft", "CreateDarkPanel is the inset frame")
+check(not dark.__nine and dark.backdrop.edgeSize == 1, "CreateDarkPanel is a flat well")
 local pop = UI:CreatePanel(UIParent)
 UI:StylePopup(pop, { noShadow = true, noFade = true })
 check(pop.__nine.TopLeftCorner.atlas == "Tooltip-NineSlice-CornerTopLeft", "a popup takes the tooltip art")
