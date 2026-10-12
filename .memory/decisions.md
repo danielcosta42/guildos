@@ -735,7 +735,7 @@ hand in the game too (issue #135, guildos-web specs/041).
 - One way only, site to game. The site sends a guild's cores as a `GOSCORE1` (the GOSROST1 codec) in a field of
   its own on `/api/roster`; the companion writes it into `Inbox.lua` after the raid rosters.
 - `CoreManager:ImportInbox` runs from `CoreManager:Initialize`, once the guild's db is known (PLAYER_LOGIN does
-  not wait for it), and only with the companion on, the payload's `guild` this guild and, on Anniversary, its
+  not wait for it), and only with the companion on, the payload's `guild` this guild (capitals aside, #144: it is the site's spelling) and, on Anniversary, its
   `realm` this realm (one Inbox.lua serves every realm of an install).
 - The game's core is the one already linked to the Discord core's tag; else the one whose name `CoreManager.Slug`
   (the site's `slugOf`) reduces to the tag, the one named as on the Discord when two do; else one made then, under the Discord's name, or the tag

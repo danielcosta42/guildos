@@ -413,6 +413,12 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   GuildOSInbox = { FIXTURE }
   CM:Initialize()
   check(said("are for Nucleo BR") and not said("/gos web on"), G("an alt in another guild hears whose they are, not to switch anything on"))
+  -- The site's spelling of the name, capitals aside, is this guild (#144): the game's "NUCLEO br".
+  CM = load(game)
+  GUILD = "NUCLEO br"
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  check(GuildOS.db.cores["Núcleo Alfa"] and not said("are for"), G("a name that differs only in capitals is this guild's"))
 
   -- ── Deleting the active core leaves no active core to make again, empty (#138) ──
   CM = load(game)
