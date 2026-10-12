@@ -298,12 +298,11 @@ function Recruitment:_RegisterAutoInviteTests()
         if Recruitment:_PassesFilters({ level = 70, class = "MAGE" }, cfg) then return false, "class fail" end
         return true
     end)
-    S:Register("recruit.participation_opt_out", function()
-        -- Opt-out: the untouched default (nil) and an explicit true both help;
-        -- only a stored false stays out.
-        if not Recruitment:_ParticipatingFrom(nil) then return false, "nil default must participate" end
+    S:Register("recruit.participation_opt_in", function()
+        -- Opt-in (#150): only an explicit true helps; the untouched default (nil) and false stay out.
+        if Recruitment:_ParticipatingFrom(nil) then return false, "nil default must not participate" end
         if not Recruitment:_ParticipatingFrom(true) then return false, "true participates" end
-        if Recruitment:_ParticipatingFrom(false) then return false, "false opts out" end
+        if Recruitment:_ParticipatingFrom(false) then return false, "false stays out" end
         return true
     end)
     S:Register("recruit.accept_config", function()
@@ -716,15 +715,18 @@ function Recruitment:BroadcastStatus(quiet, reassert)
         message    = r.message or "",
         channels   = r.channels or {},
         interval   = r.interval or 120,
+        -- The highest rank (0 = GM) whose members post it; nil, every rank (#150).
+        maxRank    = r.postMaxRank,
         updatedBy  = GuildOS.Compat.PlayerName(),
         updatedAt  = r.updatedAt,
     })
     GuildOS.CommSystem:SendMessage("RI", payload)
     -- Mirror into the guild-synced slot so this account's own member-rank alts
     -- (they share the per-guild DB) get the ad immediately, with no round-trip.
+    if not GuildOS.isGuilded then return end
     GuildOS.db.guildRecruitment = {
         enabled = r.enabled, discord = r.discord or "", message = r.message or "",
-        channels = r.channels or {}, interval = r.interval or 120,
+        channels = r.channels or {}, interval = r.interval or 120, maxRank = r.postMaxRank,
         updatedAt = r.updatedAt, updatedBy = GuildOS.Compat.PlayerName(),
     }
     if not quiet then GuildOS:Print(L["Recruitment status broadcast to guild members."]) end
@@ -787,15 +789,15 @@ function Recruitment:IsMemberRecruitActive()
 end
 
 ----------------------------------------------------------------------
--- Guild-wide sharing + opt-OUT participation
+-- Guild-wide sharing + opt-in participation
 --
 -- The officer's config is relayed member-to-member (not just pushed once by
 -- the officer), so alts and late-loggers reliably end up with it. Helping is
--- opt-out: db.recruitParticipate is nil when the member has never touched it
--- (they participate by default so a recruiting guild actually gets help),
--- true when explicitly kept on, and false when the member opted out. The
--- choice is remembered across sessions. There is no join prompt: the member
--- leaves any time with the Auto-Send toggle in the Recruitment tab.
+-- opt-in (#150): db.recruitParticipate is nil when the member has never touched
+-- it, true once they said they help, and false when they turned it off; only
+-- true posts. It was opt-out, and a player was asked to post an ad they never
+-- chose to. The choice is remembered across sessions; the member turns it on and
+-- off with the Auto-Send toggle in the Recruitment tab or the Dashboard's card.
 ----------------------------------------------------------------------
 
 -- Re-share the guild's recruitment config in response to a sync REQUEST.
@@ -818,7 +820,7 @@ function Recruitment:RespondToSync()
     if info and info.updatedAt and info.updatedBy and info.message and info.message ~= "" then
         local payload = LibStub("GuildOS-LibSerialize"):Serialize({
             enabled = info.enabled, discord = info.discord or "", message = info.message or "",
-            channels = info.channels or {}, interval = info.interval or 120,
+            channels = info.channels or {}, interval = info.interval or 120, maxRank = info.maxRank,
             updatedBy = info.updatedBy, updatedAt = info.updatedAt,
         })
         GuildOS.CommSystem:SendMessage("RI", payload)
@@ -849,8 +851,17 @@ end
 -- incomingAt to now + a small slack so a far-future value cannot outlast a
 -- genuine update.
 local FUTURE_SLACK = 300   -- accept at most 5 min of clock skew ahead of us
+-- A rank limit off the wire: a whole rank index, 0 (GM) to 9, or none.
+local function rankLimit(v)
+    v = tonumber(v)
+    if not v or v ~= math.floor(v) or v < 0 or v > 9 then return nil end
+    return v
+end
+
 function Recruitment:ApplyIncoming(info, sender, channel)
     if type(info) ~= "table" then return end
+    -- A character on the guildless db (one who joined mid-session) keeps no guild's ad there (#150).
+    if not GuildOS.isGuilded then return end
     local claimedAuthor = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
     local claimedAuthorIsOfficer =
         (GuildOS.IsOfficerByName and GuildOS:IsOfficerByName(claimedAuthor)) or false
@@ -867,6 +878,7 @@ function Recruitment:ApplyIncoming(info, sender, channel)
         message   = info.message or "",
         channels  = info.channels or {},
         interval  = info.interval or 120,
+        maxRank   = rankLimit(info.maxRank),
         updatedAt = incomingAt > 0 and incomingAt or time(),
         updatedBy = claimedAuthor,
     }
@@ -874,8 +886,8 @@ function Recruitment:ApplyIncoming(info, sender, channel)
     self:SyncMemberParticipation()
 end
 
--- Member opt-out choice (persisted). nil = never touched, true = kept on,
--- false = opted out.
+-- Member opt-in choice (persisted). nil = never touched, true = helping,
+-- false = turned off.
 function Recruitment:SetParticipation(v)
     GuildOS.db.recruitParticipate = v
     if v ~= false then
@@ -887,16 +899,28 @@ function Recruitment:SetParticipation(v)
     self:SyncMemberParticipation()
 end
 
--- Pure opt-out semantics for a stored choice: nil (untouched) and true both
--- participate; only an explicit false opts out. Kept separate so a self test
--- pins the nil-counts-as-participating rule the whole change hinges on.
+-- Pure opt-in semantics for a stored choice: only an explicit true helps. It was
+-- opt-out, and a player was asked to post an ad they never chose to (#150). Kept
+-- separate so a self test pins the rule.
 function Recruitment:_ParticipatingFrom(choice)
-    return choice ~= false
+    return choice == true
 end
 
--- Opt-out: a member helps unless they explicitly turned it off.
+-- Opt-in: a member helps once they said so.
 function Recruitment:IsParticipating()
     return self:_ParticipatingFrom(GuildOS.db.recruitParticipate)
+end
+
+-- May this member post the guild's ad? In a guild, on its own db (a character with no guild
+-- shares an account-wide fallback, where a guild's ad must never reach it), and within the rank
+-- the officers chose (#150).
+function Recruitment:MemberMayPost()
+    if not (IsInGuild() and GuildOS.isGuilded) then return false end
+    local info = GuildOS.db.guildRecruitment
+    local limit = info and rankLimit(info.maxRank)
+    if not limit then return true end
+    local _, _, rankIndex = GetGuildInfo("player")
+    return rankIndex ~= nil and rankIndex <= limit
 end
 
 -- Reconcile the member popup ticker with the current guild config and the
@@ -907,7 +931,8 @@ function Recruitment:SyncMemberParticipation()
     local active = info and info.enabled and info.message and info.message ~= ""
     -- The module switched off in Settings skips InitParticipation, but an officer's ad still
     -- arrives and lands here: the ad is kept and relayed, the popups stay off (issue #79).
-    if not active or not self:IsParticipating() or not GuildOS:IsFeatureEnabled("recruitment") then
+    if not active or not self:IsParticipating() or not GuildOS:IsFeatureEnabled("recruitment")
+        or not self:MemberMayPost() then
         if self:IsMemberRecruitActive() then self:StopMemberRecruit() end
         return
     end
@@ -917,25 +942,14 @@ function Recruitment:SyncMemberParticipation()
     if self._autoCapReached then return end
     if not self:IsMemberRecruitActive() then
         self:StartMemberRecruit(true)   -- quiet: no per-login "started" spam
-        self:_HintOptOutOnce()
     end
-end
-
--- The first time auto-participation kicks in for a member who never chose,
--- tell them once (persisted) how to opt out, so the popups are never a mystery.
-function Recruitment:_HintOptOutOnce()
-    if GuildOS.db.recruitParticipate ~= nil then return end
-    if GuildOS.db.recruitOptOutHinted then return end
-    GuildOS.db.recruitOptOutHinted = true
-    GuildOS:Print(L["Your guild is recruiting and you're set to help post it. Turn this off with the Auto-Send toggle in the Recruitment tab."])
 end
 
 ----------------------------------------------------------------------
 -- Member-side setup — runs for EVERY player (unlike the officer-only
 -- Initialize). Reconciles participation against the persisted/synced config on
--- login. Opt-out: unless the member turned it off, they auto-fire the recruit
--- popup once the guild is recruiting, without any officer action on their
--- client and without a join prompt.
+-- login. Opt-in (#150): a member who said they help gets the recruit popup once
+-- the guild is recruiting, within the rank the officers chose.
 ----------------------------------------------------------------------
 function Recruitment:InitParticipation()
     C_Timer.After(15, function()
@@ -1178,6 +1192,9 @@ end
 ----------------------------------------------------------------------
 function Recruitment:ShowSendPopup()
     if InCombatLockdown() then return end
+    -- Nobody is asked to post a guild's ad outside it, nor a member past the rank the officers chose (#150).
+    if not (IsInGuild() and GuildOS.isGuilded) then return end
+    if not GuildOS:IsOfficer() and not self:MemberMayPost() then return end
 
     -- Officers use their own config; members use the guild-broadcast config.
     local settings = self:_ActiveConfig()

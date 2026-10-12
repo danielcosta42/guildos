@@ -55,9 +55,13 @@ dofile(ADDON .. "/UI/Dashboard.lua")
 -- The chat card's feed is UI/CommunityPanel.lua's (tools/dashboard-chat.lua covers the card).
 function GuildOS:CreateGuildChatFeed() return function() end end
 
-local function show(modules, rank, ad)
+-- Whether this member may post (Recruitment:MemberMayPost: in a guild, within the officers' rank).
+local mayPost = true
+GuildOS.Recruitment = { MemberMayPost = function() return mayPost end, SetParticipation = function() end }
+
+local function show(modules, rank, ad, participate)
   myRank = rank
-  GuildOS.db = { settings = { modules = modules } }
+  GuildOS.db = { settings = { modules = modules }, recruitParticipate = participate }
   if ad ~= false then GuildOS.db.guildRecruitment = { enabled = true, message = "We recruit" } end
   texts, buttons = {}, {}
   local refresh = GuildOS:CreateDashboardPanel(stub)
@@ -73,7 +77,15 @@ end
 
 -- ── 1. Module on: the card as it was ────────────────────────────────────
 show({}, 5)
-check(shown(texts, "Guild is recruiting") and shown(buttons, "Helping"), "module on: a member sees the ad and the Helping button")
+check(shown(texts, "Guild is recruiting") and shown(buttons, "Help spread it") and not shown(buttons, "Helping"),
+  "module on: a member who never chose sees the ad and is offered to help; helping is opt-in (#150)")
+show({}, 5, nil, true)
+check(shown(buttons, "Helping"), "one who said they help sees Helping")
+mayPost = false
+show({}, 5, nil, true)
+check(not shown(buttons, "Helping") and not shown(buttons, "Help spread it"),
+  "one past the officers' rank, or with no guild, is offered nothing")
+mayPost = true
 show({}, 0)
 check(shown(texts, "Guild is recruiting") and shown(buttons, "Broadcast now"), "module on: an officer sees the ad and Broadcast now")
 

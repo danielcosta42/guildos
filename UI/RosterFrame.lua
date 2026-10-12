@@ -2209,14 +2209,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         autoStatusText:SetPoint("LEFT", autoBtn, "RIGHT", 10, 0)
 
         local function updateAutoBtn()
-            -- Opt-out: the member helps unless they turned it off, so the
-            -- untouched default (nil) reads as ON. ~= false, not == true.
-            local participating = GuildOS.db.recruitParticipate ~= false
+            -- Opt-in (#150): only an explicit choice helps.
+            local participating = GuildOS.db.recruitParticipate == true
             if participating then
                 autoBtn.label:SetText(L["Auto-Send: ON"])
                 autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
                 local interval = GuildOS.db.guildRecruitment and GuildOS.db.guildRecruitment.interval or 120
-                autoStatusText:SetText(string.format(L["(popup every %ds)"], interval))
+                local R = GuildOS.Recruitment
+                autoStatusText:SetText((R and not R:MemberMayPost()) and L["Your rank does not post the guild's message."]
+                    or string.format(L["(popup every %ds)"], interval))
             else
                 autoBtn.label:SetText(L["Auto-Send: OFF"])
                 autoBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
@@ -2226,7 +2227,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
         autoBtn:SetScript("OnClick", function()
             if not GuildOS.Recruitment then return end
-            local participating = GuildOS.db.recruitParticipate ~= false
+            local participating = GuildOS.db.recruitParticipate == true
             GuildOS.Recruitment:SetParticipation(not participating)
             updateAutoBtn()
         end)
@@ -2454,6 +2455,29 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     intervalBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(intervalBox, commitInterval)
+    yOff = yOff - 28
+
+    -- Which members post the guild's message: every rank, or up to one. It travels with the ad, and a
+    -- member past it is never asked (#150). Each click moves one rank down the list and back to every rank.
+    RowLabel(L["Members who help:"], yOff)
+    local rankBtn = UI:CreateButton(parent, "", 160, 22)
+    rankBtn:SetPoint("TOPLEFT", 140, yOff + 3)
+    local function rankText()
+        local limit = GuildOS.db.recruitment.postMaxRank
+        if limit == nil then return L["Any rank"] end
+        local name = GuildControlGetRankName and GuildControlGetRankName(limit + 1)
+        return string.format(L["Up to %s"], (name and name ~= "") and name or tostring(limit))
+    end
+    rankBtn.label:SetText(rankText())
+    rankBtn:SetScript("OnClick", function()
+        local r = GuildOS.db.recruitment
+        local n = (GuildControlGetNumRanks and GuildControlGetNumRanks()) or 10
+        if r.postMaxRank == nil then r.postMaxRank = 0
+        elseif r.postMaxRank + 1 >= n then r.postMaxRank = nil
+        else r.postMaxRank = r.postMaxRank + 1 end
+        rankBtn.label:SetText(rankText())
+        if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus(true) end
+    end)
     yOff = yOff - 28
 
     -- Channels (multi-select toggles)

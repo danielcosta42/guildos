@@ -257,9 +257,9 @@ function GuildOS:CreateDashboardPanel(panel)
             local b = UI:CreateButton(body, L["Broadcast now"], 110, 20)
             b:SetPoint("BOTTOMLEFT", 2, 2)
             b:SetScript("OnClick", function() if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus() end end)
-        else
-            -- Opt-out: nil (untouched default) counts as helping. ~= false.
-            local participating = GuildOS.db.recruitParticipate ~= false
+        elseif GuildOS.Recruitment and GuildOS.Recruitment:MemberMayPost() then
+            -- Opt-in (#150): only an explicit choice helps; a member past the officers' rank is not offered it.
+            local participating = GuildOS.db.recruitParticipate == true
             local b = UI:CreateButton(body, participating and L["Helping"] or L["Help spread it"], 120, 20)
             if participating then b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.9) end
             b:SetPoint("BOTTOMLEFT", 2, 2)

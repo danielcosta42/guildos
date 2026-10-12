@@ -291,6 +291,7 @@ Removed: `Compat.NewTimer`.
 | `Recruitment:StartAutoRecruit()` | Creates ticker, shows first popup after 2s; refuses with the Recruitment module off (issue #84) |
 | `Recruitment:_OfficerTick()` | One officer popup; with the module switched off it shows nothing and keeps the ticker, so the next tick after the module is back shows one (issue #84) |
 | `Recruitment:StopAutoRecruit()` | Cancels ticker, hides popup |
+| `Recruitment:MemberMayPost()` / `IsParticipating()` | A member is asked to post the guild's ad only when in a guild on its own db (never the account's `_noguild-<realm>` db, which `ResolveGuildDB` clears of any guild's ad), within the rank the officers chose (`recruitment.postMaxRank`, sent in RI as `maxRank`, a whole rank 0-9 or none), and after saying they help: participation is opt-in (`recruitParticipate == true`). `ShowSendPopup` checks the same (#150) |
 | `Recruitment:Toggle()` | Toggles enabled state |
 | `Recruitment:CreatePopupFrame()` | Creates click-to-send popup with glow, icon, dismiss button |
 | `Recruitment:ShowSendPopup()` | Shows popup; auto-hides after 30s |

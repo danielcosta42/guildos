@@ -187,6 +187,11 @@ function GuildOS:ResolveGuildDB()
         end
     end
 
+    -- Every guildless character on the account and realm shares this db. A guild's recruitment ad
+    -- that reached it (a character who joined mid-session stays on it until the next login) made the
+    -- next character with no guild at all be asked to post it (#150): it never stays here.
+    if not guilded then guildDB.guildRecruitment = nil end
+
     self.db = guildDB
     self.guildKey = dbKey
     self.isGuilded = guilded

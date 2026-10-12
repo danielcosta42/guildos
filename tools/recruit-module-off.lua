@@ -65,6 +65,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
 local R = GuildOS.Recruitment
+local RealShowSendPopup = R.ShowSendPopup
 local popups = 0
 R.ShowSendPopup = function() popups = popups + 1 end
 local relayed = {}
@@ -74,7 +75,9 @@ local AD = { enabled = true, message = "We are recruiting", channels = {}, inter
              updatedAt = 900, updatedBy = "Officer" }
 local function member(modules)
   myRank = 5
-  GuildOS.db = { settings = { modules = modules } }
+  -- In a guild, on its own db, and helping: helping is opt-in since #150.
+  GuildOS.isGuilded = true
+  GuildOS.db = { settings = { modules = modules }, recruitParticipate = true }
   if R.memberTicker then R.memberTicker:Cancel() end
   R.memberTicker, R._autoCapReached, R._autoPopups = nil, nil, nil
   printed, relayed, popups = {}, {}, 0
@@ -204,5 +207,59 @@ R:HandleCommand({ "on" })
 check(printed[#printed] and printed[#printed]:find("The Recruitment module is off", 1, true),
   "module off since login: /gos recruit on says the module is off")
 GuildOS.db.recruitment = saved
+
+-- ── 6. Opt-in, a guild of one's own, and the officers' rank (#150) ───────
+-- A player on WoW: Forever made a new character, in no guild, and was asked to post the ad of the
+-- guild another character of theirs was in: every guildless character shares one db, and a guild's
+-- ad had reached it.
+member({})
+GuildOS.db.recruitParticipate = nil
+R:ApplyIncoming(AD, "Officer", "GUILD")
+check(GuildOS.db.guildRecruitment and not R:IsMemberRecruitActive() and tickers == 0,
+  "a member who never said they help keeps the ad and gets no popups")
+R:SetParticipation(true)
+check(R:IsMemberRecruitActive(), "and gets them once they say they help")
+
+member({})
+GuildOS.isGuilded = false                         -- the account's guildless db
+R:ApplyIncoming(AD, "Officer", "GUILD")
+check(GuildOS.db.guildRecruitment == nil and not R:IsMemberRecruitActive(),
+  "on the guildless db a guild's ad is never kept, and nobody is asked to post it")
+GuildOS.db.guildRecruitment = { enabled = true, message = "Leaked by 0.77", channels = {}, interval = 120 }
+R:SyncMemberParticipation()
+check(not R:IsMemberRecruitActive(), "one already there from 0.77 starts nothing either")
+function InCombatLockdown() return false end
+R.popupFrame = nil
+RealShowSendPopup(R)
+check(R.popupFrame == nil, "and the popup itself refuses, whatever opens it")
+
+local LIMITED = { enabled = true, message = "We are recruiting", channels = {}, interval = 120,
+                  updatedAt = 950, updatedBy = "Officer", maxRank = 3 }
+member({})
+R:ApplyIncoming(LIMITED, "Officer", "GUILD")
+check(GuildOS.db.guildRecruitment.maxRank == 3 and not R:IsMemberRecruitActive(),
+  "a member past the rank the officers chose is not asked")
+myRank = 3
+R:SyncMemberParticipation()
+check(R:IsMemberRecruitActive(), "one within it is")
+member({})
+R:ApplyIncoming(LIMITED, "Officer", "GUILD")
+R.popupFrame = nil
+RealShowSendPopup(R)
+check(R.popupFrame == nil, "and past it, the popup refuses too")
+for _, junk in ipairs({ "3", 12, -1, 2.5, "x" }) do
+  member({})
+  R:ApplyIncoming({ enabled = true, message = "Ad", channels = {}, interval = 120, updatedAt = 960,
+                    updatedBy = "Officer", maxRank = junk }, "Officer", "GUILD")
+  local kept = GuildOS.db.guildRecruitment.maxRank
+  check(kept == nil or kept == 3, "a rank off the wire is a whole rank 0-9 or none: " .. tostring(junk))
+end
+member({})
+R:ApplyIncoming(LIMITED, "Officer", "GUILD")
+relayed = {}
+local sent
+LibStub("GuildOS-LibSerialize").Serialize = function(_, t) sent = t; return "serialized" end
+R:RespondToSync()
+check(sent and sent.maxRank == 3, "a member's relay carries the officers' rank on")
 
 print(("recruit-module-off: %d checks passed"):format(checks))
