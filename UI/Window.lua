@@ -35,6 +35,10 @@ local FOOT_H       = 22
 local FOOT_PAD     = 10
 local FOOT_GAP     = 8
 local GRIP         = 16
+-- How thick the game's metal frame looks (the Forever style), above and below. Its atlas pieces are
+-- far taller than what they show: lifted by the bottom piece's height, the footer floated with an
+-- empty band under it, as a beta screenshot showed (#148).
+local METAL_EDGE   = 4
 local HOME         = "home"  -- the Now tab
 local DASH         = "\226\128\148"
 local DOT          = " \194\183 "
@@ -233,12 +237,14 @@ local function createWindow()
     f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
 
     -- The game's metal frame (the Forever style) draws its edges inside the window: the lines across
-    -- it stop at its sides, and the footer stands on its bottom edge, so the links' underline is not
-    -- drawn over it (#148). All zero on a flat frame.
+    -- it stop at its sides, the footer stands on its bottom edge so the links' underline is not drawn
+    -- over it, and the title bar starts under its top edge, the title centred between the metal and
+    -- the tabs (#148). All zero on a flat frame.
     local nine = f.__nine
     local sideL = nine and math.floor((nine.LeftEdge:GetWidth() or 0) + 0.5) or 0
     local sideR = nine and math.floor((nine.RightEdge:GetWidth() or 0) + 0.5) or 0
-    local footLift = nine and math.floor((nine.BottomEdge:GetHeight() or 0) + 0.5) or 0
+    local footLift = nine and METAL_EDGE or 0
+    local topInset = nine and METAL_EDGE or 0
 
     ------------------------------------------------------------------
     -- Title bar: the drag handle
@@ -586,6 +592,11 @@ local function createWindow()
         local pad = narrow and PAD_NARROW or PAD
 
         bar:SetHeight(titleH)
+        -- Collapsed to the bar, the window is too short for the metal: it paints flat, edge to edge.
+        local top = isBar and 0 or topInset
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", 0, -top)
+        bar:SetPoint("TOPRIGHT", 0, -top)
         meta:SetShown(not isBar)
         sync:SetShown(not isBar)
         summary:SetShown(isBar)
@@ -597,10 +608,10 @@ local function createWindow()
         content:SetShown(not isBar)
         foot:SetShown(not isBar)
         rule:ClearAllPoints()
-        rule:SetPoint("TOPLEFT", 0, -titleH)
-        rule:SetPoint("TOPRIGHT", 0, -titleH)
+        rule:SetPoint("TOPLEFT", 0, -(top + titleH))
+        rule:SetPoint("TOPRIGHT", 0, -(top + titleH))
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", pad, -(titleH + RULE_H + pad))
+        content:SetPoint("TOPLEFT", pad, -(top + titleH + RULE_H + pad))
         content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
 
         local home = self.tabPanels[HOME]

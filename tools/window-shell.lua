@@ -604,12 +604,14 @@ check(STYLE ~= "forever" or (f.minimise.__art and f.minimise.__art.atlas == "128
   and f.closeButton.__art.atlas == "128-RedButton-Exit"), "in the Forever style, the game's minus and exit buttons")
 check(f.minimise.x.text == "\226\128\148" and f.closeButton.shown and point(f.closeButton) == "RIGHT,-6,0",
   "then minimise and close at the right edge")
--- On the game's metal frame the footer stands on the frame's bottom edge (the stub's atlases are 32px,
--- an 8px edge at the window's scale), so the links' underline is not drawn over it (#148).
-local footLift = STYLE == "forever" and 8 or 0
-check(point(f.content, 1) == "TOPLEFT,12,-70" and point(f.content, 2) == "BOTTOMRIGHT,-12," .. (34 + footLift),
+-- On the game's metal frame the footer stands on the frame's bottom edge and the title bar starts
+-- under its top one: 4px, how thick the metal looks, not its atlas pieces' height (#148).
+local footLift = STYLE == "forever" and 4 or 0
+local topInset = footLift
+check(point(f.content, 1) == "TOPLEFT,12," .. -(70 + topInset) and point(f.content, 2) == "BOTTOMRIGHT,-12," .. (34 + footLift),
   "content padding 12px under the 30px title bar and the tab rule, and above the 22px footer")
-check(point(f.footer, 1) == "BOTTOMLEFT,0," .. footLift, "the footer stands on the frame's bottom edge")
+check(point(f.footer, 1) == "BOTTOMLEFT,0," .. footLift and point(f.titleBar, 1) == "TOPLEFT,0," .. -topInset,
+  "the footer stands on the frame's bottom edge, the title bar under its top one")
 
 check(f.events.GROUP_ROSTER_UPDATE and f.events.RAID_ROSTER_UPDATE and f.events.PARTY_LOOT_METHOD_CHANGED
   and f.events.GUILD_ROSTER_UPDATE, "the window listens for group, raid, loot-method and roster changes")
@@ -710,7 +712,7 @@ check(f.band == "wide", "887px (content 863) is wide: the band is measured on th
 
 resize(f, 600)
 check(f.band == "compact" and f.titleBar.h == 28, "under 620px the title bar is 28px")
-check(point(f.content, 1) == "TOPLEFT,8,-64" and point(f.content, 2) == "BOTTOMRIGHT,-8," .. (30 + footLift), "and the padding 8px")
+check(point(f.content, 1) == "TOPLEFT,8," .. -(64 + topInset) and point(f.content, 2) == "BOTTOMRIGHT,-8," .. (30 + footLift), "and the padding 8px")
 check(f.more.shown and #f.overflow > 0 and f.more.label.text == "\194\187" .. #f.overflow,
   "tabs that do not fit fold into »n, which counts them")
 check(shownTabs(f) + #f.overflow == allowedCount(f), "every allowed tab is on the rule or behind »n")
@@ -1542,7 +1544,7 @@ do
   local edge = UI:GetMainWindow()
   edge:Show()
   resize(edge, 620, 620)
-  check(edge.titleBar.h == 30 and point(edge.content, 1) == "TOPLEFT,12,-70" and edge.band == "narrow",
+  check(edge.titleBar.h == 30 and point(edge.content, 1) == "TOPLEFT,12," .. -(70 + topInset) and edge.band == "narrow",
     "at exactly 620px: the 30px title bar, 12px padding, and 596px of content, so narrow")
   edge:Hide()
 end
