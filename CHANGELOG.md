@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.2] - 2026-10-12
+
+### Fixed
+- as mesmas respostas ditas de novo não reenviam a raide do site, só a hora anda (#146)
+- a lista do site só anda para frente, quem aguarda aprovação tem linha própria, e Dashboard e Agora não pedem resposta no jogo para raide do site (#146)
+- raide do site sem inscrição chega ao calendário, o Inbox espera o rank, e o calendário mostra as inscrições do site (#146)
+
+
 ## [0.77.1] - 2026-10-12
 
 ### Fixed
