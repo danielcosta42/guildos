@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.1] - 2026-10-12
+
+### Fixed
+- o import dos cores aceita o nome da guilda que só difere em maiúsculas (#144)
+
+
 ## [0.77.0] - 2026-10-11
 
 ### Added
