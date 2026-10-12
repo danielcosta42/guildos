@@ -244,14 +244,20 @@ function GetGuildInfo()
   if asks < 3 then return "Guild" end      -- no rank yet
   return "Guild", "Officer", 0
 end
+-- The site's raids wait for the same answer (#146): read before it, an officer was not one and the
+-- raids stayed off the calendar for the session.
+local inboxReads = {}
+GuildOS.CompanionImport = { ReadInbox = function() inboxReads[#inboxReads + 1] = asks end }
 GuildOS:InitModules()
 runTimers()
 check(not started["TrialTracker:Initialize"], "rank unknown at five seconds: the officer modules wait instead of giving up")
+check(#inboxReads == 0, "the companion's inbox waits for the rank too")
 check(countPrinted("start-up problem(s)") == 0, "and the login line waits with them")
 runTimers()
 check(not started["TrialTracker:Initialize"], "and keep waiting while it is unknown")
 runTimers()
 check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckExpired"], "they start once the rank is known")
+check(#inboxReads == 1 and inboxReads[1] >= 3, "and the inbox is read once, with the rank known")
 check(#timers == 0, "and nothing is left asking")
 check(countPrinted("1 start-up problem(s)") == 1, "the login line comes once, after the decision")
 
@@ -260,6 +266,7 @@ reset()
 module("Wishlist", RAISE)
 module("TrialTracker")
 function GetGuildInfo() return "Guild" end
+inboxReads = {}
 GuildOS:InitModules()
 local ticks = 0
 repeat
@@ -272,6 +279,8 @@ for _, line in ipairs(GuildOS:ListStartupProblems()) do
   if line:find("OfficerModules: not started, the guild rank was still unknown", 1, true) then saidSo = true end
 end
 check(saidSo, "and the start-up problems say why")
+check(#inboxReads == 1, "a rank that never comes still reads the inbox, once: a member's Web panel needs it")
+GuildOS.CompanionImport = nil
 check(countPrinted("2 start-up problem(s)") == 1, "the login line counts it, once")
 check(GuildOS:FeatureStartFailed("recruitment") == nil and GuildOS:FeatureStartFailed("trials") == nil,
   "giving up blocks no window: a member whose rank never loads keeps them all")

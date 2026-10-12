@@ -320,6 +320,11 @@ local function startOfficerModules(try)
             GuildOS:StartModule(entry)
         end
     end
+    -- The site's raids wait for the same answer: an officer's client puts them on the calendar,
+    -- and read before the rank was known they were skipped for the session (#146).
+    if GuildOS.CompanionImport and GuildOS.CompanionImport.ReadInbox then
+        GuildOS.CompanionImport:ReadInbox()
+    end
     GuildOS:ReportStartup()
 end
 

@@ -119,12 +119,6 @@ function Import:Parse(raw)
         end
     end
 
-    -- Nobody to invite is not the same as an empty envelope once v2 exists: a night where
-    -- everyone declined is a real answer, and one the panel should be allowed to show.
-    if #members == 0 and not (signups and #signups > 0) then
-        return nil, L["That roster has nobody in it."]
-    end
-
     return {
         raidId = data.raidId,
         title = data.title or "",
@@ -141,6 +135,13 @@ end
 function Import:Load(raw)
     local roster, err = self:Parse(raw)
     if not roster then return nil, err end
+    -- Pasted by hand, a roster with nobody in it is a copy of the wrong thing. Nobody to invite is
+    -- not an empty envelope once v2 exists, though: a night where everyone declined is a real
+    -- answer. From the inbox an empty one is a raid nobody has answered yet, and it still belongs
+    -- on the calendar (#146), so the refusal lives here and not in Parse.
+    if #roster.members == 0 and not (roster.signups and #roster.signups > 0) then
+        return nil, L["That roster has nobody in it."]
+    end
 
     GuildOS.db.companionRoster = roster
     return #roster.members
@@ -437,20 +438,20 @@ end
 ----------------------------------------------------------------------
 -- Read the companion's drop box once the database exists.
 --
--- PLAYER_LOGIN rather than ADDON_LOADED: Parse asks whether the web
--- companion is switched on, and that setting lives in the saved
--- variables, which are not there yet at ADDON_LOADED.
+-- Read once the guild's db and the player's rank are known: Core calls this
+-- from the officer start-up, for everybody. At PLAYER_LOGIN, where it used to
+-- be read, a db not resolved yet read the companion as off and a rank not
+-- loaded yet read an officer as not one, and the site's raids stayed off the
+-- calendar for the whole session (#146).
 --
 -- Errors are swallowed by SafeCall. A roster that fails to arrive must
 -- never be the reason someone cannot log in.
 ----------------------------------------------------------------------
-local reader = CreateFrame("Frame")
-reader:RegisterEvent("PLAYER_LOGIN")
-reader:SetScript("OnEvent", function()
+function Import:ReadInbox()
     GuildOS:SafeCall(function()
         local ok, count = Import:ConsumeInbox()
         if ok then
             GuildOS:Print(string.format(L["Roster from the website: %d signed up."], count))
         end
     end)
-end)
+end
