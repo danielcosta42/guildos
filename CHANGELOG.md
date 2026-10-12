@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.3] - 2026-10-12
+
+### Fixed
+- um pouco mais de espaço acima do título e abaixo do rodapé no Forever (#148)
+- o rodapé sobe só a espessura visível do metal e o título desce o mesmo tanto, sem a faixa vazia embaixo nem o nome colado no topo (#148)
+- as linhas da régua e do rodapé param nas laterais de metal, o número do Membros só desce no Forever, e a prévia de estilo deixa de listar os papéis sem arte (#148)
+- visual do Forever: título sem faixa, cards e botões com a linha de bronze, rodapé acima da borda, número do Membros desgrudado do topo e texto do pulso dentro do card (#148)
+
+
 ## [0.77.2] - 2026-10-12
 
 ### Fixed
