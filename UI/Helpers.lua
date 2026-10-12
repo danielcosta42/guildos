@@ -301,7 +301,7 @@ function Helpers:CreateButton(parent, text, width, height)
     btn:HookScript("OnDisable", function(self) Helpers:_ButtonState(self, "disabled") end)
     btn:HookScript("OnEnable", function(self) Helpers:_ButtonState(self, "rest") end)
 
-    Style:SkinButton(btn)
+    -- Flat in every style; only a primary button takes the game's art (SetButtonVariant, #148).
     self:_ButtonState(btn, "rest")
     return btn
 end
@@ -314,6 +314,7 @@ function Helpers:SetButtonVariant(btn, variant)
     btn.variant = variant
     local label = btn.label
     if variant == "primary" then
+        Style:SkinButton(btn)
         btn.baseColor = { C.gold.r, C.gold.g, C.gold.b, 1 }
         btn.baseLabelColor = { C.onGold.r, C.onGold.g, C.onGold.b }
         btn.baseBorder = C.gold
@@ -328,6 +329,7 @@ function Helpers:SetButtonVariant(btn, variant)
             btn.glow = glow
         end
     else
+        Style:UnskinButton(btn)
         GuildOS:ApplyFont(label, 11)
         local ink = (variant == "ghost" and C.label) or (variant == "danger" and C.danger) or C.text
         btn.baseLabelColor = { ink.r, ink.g, ink.b }

@@ -6,7 +6,8 @@
 local Style = GuildOS.Style
 local L = GuildOS.L
 
-local ROLES = { "window", "titlebar", "panel", "well", "popup", "input",
+-- The title bar, panels and wells paint without art since #148; they have no row here.
+local ROLES = { "window", "popup", "input",
                 "button", "tab", "checkbox", "close", "minimise", "scroll" }
 
 local function has(atlas)

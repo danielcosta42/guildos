@@ -35,6 +35,10 @@ local FOOT_H       = 22
 local FOOT_PAD     = 10
 local FOOT_GAP     = 8
 local GRIP         = 16
+-- The room the game's metal frame (the Forever style) takes above the title and below the footer, set
+-- by eye in the beta: its atlas pieces are far taller than what they show, and lifted by the bottom
+-- piece's height the footer floated with an empty band under it; 4 was too tight (#148).
+local METAL_EDGE   = 7
 local HOME         = "home"  -- the Now tab
 local DASH         = "\226\128\148"
 local DOT          = " \194\183 "
@@ -232,6 +236,16 @@ local function createWindow()
     UI:RestoreWindowGeometry(f)
     f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
 
+    -- The game's metal frame (the Forever style) draws its edges inside the window: the lines across
+    -- it stop at its sides, the footer stands on its bottom edge so the links' underline is not drawn
+    -- over it, and the title bar starts under its top edge, the title centred between the metal and
+    -- the tabs (#148). All zero on a flat frame.
+    local nine = f.__nine
+    local sideL = nine and math.floor((nine.LeftEdge:GetWidth() or 0) + 0.5) or 0
+    local sideR = nine and math.floor((nine.RightEdge:GetWidth() or 0) + 0.5) or 0
+    local footLift = nine and METAL_EDGE or 0
+    local topInset = nine and METAL_EDGE or 0
+
     ------------------------------------------------------------------
     -- Title bar: the drag handle
     ------------------------------------------------------------------
@@ -247,10 +261,13 @@ local function createWindow()
         pinTopLeft(f)
         UI:SaveWindowGeometry(f)
     end)
-    GuildOS.Style:Paint(bar, "titlebar")
+    local barLook = GuildOS.Style:Paint(bar, "titlebar")
     local barLine = UI:CreateSeparator(bar)
     barLine:SetPoint("BOTTOMLEFT", 0, 0)
     barLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    -- On the game's metal frame the bar is the frame's own top edge; a line across it crossed the metal
+    -- sides (#148).
+    barLine:SetShown(barLook ~= "none")
     f.titleBar = bar
 
     local function text(size, role, color)
@@ -302,8 +319,8 @@ local function createWindow()
     local rule = CreateFrame("Frame", nil, f)
     rule:SetHeight(RULE_H)
     local ruleLine = UI:CreateSeparator(rule)
-    ruleLine:SetPoint("BOTTOMLEFT", 0, 0)
-    ruleLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    ruleLine:SetPoint("BOTTOMLEFT", sideL, 0)
+    ruleLine:SetPoint("BOTTOMRIGHT", -sideR, 0)
     f.rule = rule
 
     for _, def in ipairs(tabFeatures()) do
@@ -352,12 +369,12 @@ local function createWindow()
     -- Footer and grip
     ------------------------------------------------------------------
     local foot = CreateFrame("Frame", nil, f)
-    foot:SetPoint("BOTTOMLEFT", 0, 0)
-    foot:SetPoint("BOTTOMRIGHT", 0, 0)
+    foot:SetPoint("BOTTOMLEFT", 0, footLift)
+    foot:SetPoint("BOTTOMRIGHT", 0, footLift)
     foot:SetHeight(FOOT_H)
     local footLine = UI:CreateSeparator(foot)
-    footLine:SetPoint("TOPLEFT", 0, 0)
-    footLine:SetPoint("TOPRIGHT", 0, 0)
+    footLine:SetPoint("TOPLEFT", sideL, 0)
+    footLine:SetPoint("TOPRIGHT", -sideR, 0)
     f.footer = foot
 
     for _, item in ipairs(FOOTER) do
@@ -575,6 +592,11 @@ local function createWindow()
         local pad = narrow and PAD_NARROW or PAD
 
         bar:SetHeight(titleH)
+        -- Collapsed to the bar, the window is too short for the metal: it paints flat, edge to edge.
+        local top = isBar and 0 or topInset
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", 0, -top)
+        bar:SetPoint("TOPRIGHT", 0, -top)
         meta:SetShown(not isBar)
         sync:SetShown(not isBar)
         summary:SetShown(isBar)
@@ -586,11 +608,11 @@ local function createWindow()
         content:SetShown(not isBar)
         foot:SetShown(not isBar)
         rule:ClearAllPoints()
-        rule:SetPoint("TOPLEFT", 0, -titleH)
-        rule:SetPoint("TOPRIGHT", 0, -titleH)
+        rule:SetPoint("TOPLEFT", 0, -(top + titleH))
+        rule:SetPoint("TOPRIGHT", 0, -(top + titleH))
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", pad, -(titleH + RULE_H + pad))
-        content:SetPoint("BOTTOMRIGHT", -pad, FOOT_H + pad)
+        content:SetPoint("TOPLEFT", pad, -(top + titleH + RULE_H + pad))
+        content:SetPoint("BOTTOMRIGHT", -pad, footLift + FOOT_H + pad)
 
         local home = self.tabPanels[HOME]
         if changed and isWatch and self.activeTab ~= HOME and not (home and home.buildFailed) then

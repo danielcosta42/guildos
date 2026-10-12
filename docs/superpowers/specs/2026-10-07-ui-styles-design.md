@@ -119,6 +119,8 @@ built the first time it opens):
 | `input` | an edit box | `well` with a 1px `line` | `common-search-border-left/middle/right-c60` |
 | `popup` / `tooltip` | a popup, a dialog, the addon's tooltips | `popup` + drop shadow | `tooltip-nineslice-*-c60` |
 
+**After the beta (#148, 2026-10-12):** a player's screenshots settled three of these. `titlebar` paints nothing on Forever: the metal frame's top edge is the bar, and the diamond-metal band over it met the frame's corner a few pixels off on the right. `panel` and `well` paint flat with the palette's thin bronze `line`, the look the small cards already had, instead of the Settings frame's nine-slice. And only a screen's `primary` button wears `128-RedButton`; the rest are the flat dark button with its bronze line, so red buttons no longer sit beside dark tabs. The footer stands on the metal frame's bottom edge, so the links' underline is not drawn over it.
+
 **Naming, measured in game (2026-10-07, build 1.60.1.70245):** an addon asks for the atlas *element* (`UI-Frame-Metal-CornerTopLeft`, `128-RedButton-Left`, `common-internaltab`). Forever resolves an element to its `-c60` member through the active atlas set. The member names in the tables above are what the art is called in the data, but `GetAtlasInfo` answers nil for them. `Core/Style.lua` uses element names, and `tools/data/forever-atlas-elements.txt` lists the ones Forever draws with `-c60` art. The tooltip's `-c60` centre is not in that set, so the popup has no centre texture.
 
 The controls, through the Helpers that already build them:
@@ -129,7 +131,7 @@ The controls, through the Helpers that already build them:
 | close | `redbutton-exit-c60` (+ `-pressed-c60`, `-disabled-c60`) |
 | scroll bar | `minimal-scrollbar-*-c60` |
 | checkbox | `checkbox-minimal-c60` with `talents-checkmark-c60` |
-| button (primary, secondary, danger; ghost has no art) | the retail panel button, three-slice: `128-redbutton-left-c60`, `_128-redbutton-center-c60`, `128-redbutton-right-c60`, with `-pressed` and `-disabled` (found in the client's data; the square `128-redbutton-exit/minus-c60` are the close and minimise buttons) |
+| button (primary only since #148; the others are the flat button, and ghost has no art) | the retail panel button, three-slice: `128-redbutton-left-c60`, `_128-redbutton-center-c60`, `128-redbutton-right-c60`, with `-pressed` and `-disabled` (found in the client's data; the square `128-redbutton-exit/minus-c60` are the close and minimise buttons) |
 
 - **Candidates, not final.** These atlases exist in the client's data, but how they look on screen has
   not been seen. The final pick of each piece is made from beta screenshots of the preview tool (4.6).
