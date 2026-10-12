@@ -467,16 +467,28 @@ function GuildOS:CreateCalendarSub(panel)
                 -- Planned on the site, so signing up happens there: the game shows the site's
                 -- answers and no buttons of its own. A second list here was a second answer to
                 -- the same question, empty, and it never reached the site (#146).
-                local whereFS = UI:CreateText(child, L["Sign up in Discord or on the website."],
-                    10, C.silver.r, C.silver.g, C.silver.b)
+                -- With when the list is from: a member who was offline when it was sent keeps the
+                -- last one they got.
+                local where = L["Sign up in Discord or on the website."]
+                if (tonumber(e.signupsAt) or 0) > 0 then
+                    where = where .. " " .. string.format(L["(as of %s)"], date("%a %H:%M", e.signupsAt))
+                end
+                local whereFS = UI:CreateText(child, where, 10, C.silver.r, C.silver.g, C.silver.b)
                 whereFS:SetPoint("TOPLEFT", 6, -yy)
                 yy = yy + 16
+                -- An allied seat is approved in the game, and goes with the ones coming.
+                local answers = CAL():WebSignups(e)
+                for _, r in pairs(e.rsvps or {}) do
+                    if r.ally and r.status == "yes" then
+                        answers[#answers + 1] = { name = GuildOS:SanitizeUserText(r.name or "?", 48), class = r.class, status = "yes" }
+                    end
+                end
                 for _, line in ipairs({
-                    { "yes", L["Going: "] }, { "tentative", L["Tentative: "] },
-                    { "wait", L["Standby: "] }, { "no", L["Absent: "] },
+                    { "yes", L["Going: "] }, { "pending", L["Awaiting approval: "] },
+                    { "tentative", L["Tentative: "] }, { "wait", L["Standby: "] }, { "no", L["Absent: "] },
                 }) do
                     local names = {}
-                    for _, s in ipairs(e.signups or {}) do
+                    for _, s in ipairs(answers) do
                         if s.status == line[1] then
                             local cr, cg, cb = GuildOS:GetClassColor(s.class)
                             names[#names + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, s.name)

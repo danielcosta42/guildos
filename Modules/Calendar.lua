@@ -212,8 +212,16 @@ end
 function Calendar:GetComposition(e)
     local comp = { yes = 0, tentative = 0, no = 0, roles = { TANK = 0, HEALER = 0, DPS = 0 }, classes = {} }
     -- A raid planned on the site counts the site's answers: nobody signs up for it in the game (#146).
+    -- An allied seat is still approved in the game, and counts with them.
     local answers
-    if self:IsWebEvent(e) then answers = e.signups or {} else answers = e and e.rsvps or {} end
+    if self:IsWebEvent(e) then
+        answers = self:WebSignups(e)
+        for _, r in pairs(e.rsvps or {}) do
+            if r.ally then answers[#answers + 1] = r end
+        end
+    else
+        answers = e and e.rsvps or {}
+    end
     for _, r in pairs(answers) do
         comp[r.status] = (comp[r.status] or 0) + 1
         if r.status == "yes" then
@@ -295,9 +303,10 @@ function Calendar:IsWebEvent(e)
 end
 
 -- Who answered on the site, as the guild's calendar shows it (#146): a copy for reading, since
--- signing up happens there. Built from the companion's roster on an officer's client, and checked
--- again on every client it reaches, like anything off the guild channel: the names end up in text.
-local WEB_STATUS = { yes = true, tentative = true, wait = true, no = true }
+-- signing up happens there. Built from the companion's roster on an officer's client, and cleaned
+-- wherever it is read, like anything off the guild channel: the names end up in text, and a client
+-- from before this kept what it was sent as it came.
+local WEB_STATUS = { yes = true, pending = true, tentative = true, wait = true, no = true }
 local WEB_ROLE = { TANK = "TANK", HEALER = "HEALER", DPS = "DPS", MELEE = "DPS", RANGED = "DPS" }
 local WEB_SIGNUPS_MAX = 80
 
@@ -320,20 +329,25 @@ local function cleanWebSignups(list)
     end
     return out
 end
-Calendar._CleanWebSignups = cleanWebSignups
 
--- The site's answers folded into the four the calendar shows: late is coming, the waitlist is its
--- own line, and somebody the officers refused is not on the night. A roster from a site before v2
--- has only the invitable, all of them coming.
+--- The site's answers on a web raid, cleaned; an empty list for any other event.
+function Calendar:WebSignups(e)
+    return self:IsWebEvent(e) and cleanWebSignups(e.signups) or {}
+end
+
+-- The site's answers grouped the way the raid's Discord post groups them: late is coming, somebody
+-- waiting for the officers' approval is not counted until approved, the waitlist is its own line,
+-- and somebody the officers refused is out. A roster from a site before v2 has only the invitable,
+-- all of them coming.
 local function webSignupsOf(roster)
     local list = {}
     for _, s in ipairs(roster.signups or roster.members or {}) do
-        local status
-        if s.status == "no" then status = "no"
+        local status = "yes"
+        if s.status == "no" or s.why == "refused" then status = "no"
         elseif s.status == "tentative" then status = "tentative"
         elseif s.why == "wait" then status = "wait"
-        elseif s.why ~= "refused" then status = "yes" end
-        if status then list[#list + 1] = { name = s.name, class = s.class, role = s.slot, status = status } end
+        elseif s.why == "pending" then status = "pending" end
+        list[#list + 1] = { name = s.name, class = s.class, role = s.slot, status = status }
     end
     return cleanWebSignups(list)
 end
@@ -351,7 +365,13 @@ end
 
 --- Create or refresh the guild event for a roster that came from the site.
 --- Returns the event, or nil when there is nothing to publish.
-function Calendar:UpsertWebRaid(roster)
+---
+--- `answeredAt` is when the site gave this roster (the companion's ack). The list of answers only
+--- moves forward: an officer whose companion stopped, with an old Inbox.lua left behind, would
+--- otherwise send the guild old answers at every login, and a fresher officer send them back at
+--- theirs (#146; ADR-0025 does the same for cores). Clamped to now, so a PC clock running ahead
+--- cannot freeze the list.
+function Calendar:UpsertWebRaid(roster, answeredAt)
     local id = self:WebEventId(roster)
     if not id then return nil end
     if not GuildOS:IsOfficer() then return nil end
@@ -367,12 +387,16 @@ function Calendar:UpsertWebRaid(roster)
 
     local events = self:GetEvents()
     local e = events[id]
-    local signups = webSignupsOf(roster)
+    answeredAt = math.min(tonumber(answeredAt) or 0, GetServerTime())
+    local signups, signupsAt = webSignupsOf(roster), answeredAt
+    if e and e.signups and (e.signupsAt or 0) >= answeredAt then
+        signups, signupsAt = self:WebSignups(e), e.signupsAt or 0
+    end
 
     -- Nothing moved: republishing would only churn the guild channel and bump
     -- a revision for a change nobody made.
     if e and not e.canceled and e.title == title and e.when == when and e.size == size
-        and signupsKey(e.signups) == signupsKey(signups) then
+        and signupsKey(self:WebSignups(e)) == signupsKey(signups) and (e.signupsAt or 0) == signupsAt then
         return e
     end
 
@@ -394,18 +418,15 @@ function Calendar:UpsertWebRaid(roster)
     e.size  = size
     e.kind  = "RAID"
     e.note  = L["Planned on the website."]
-    -- Signups live on the site for a web raid; a second RSVP list in the game
-    -- would be a second answer to the same question.
-    e.web   = true
-    -- And the list the site has, for the whole guild to read where it looks (#146).
-    e.signups = signups
+    -- Signing up happens on the site; the guild reads the list where it looks (#146).
+    e.signups, e.signupsAt = signups, signupsAt
 
     if GuildOS.SyncService then
         local rev = GuildOS.SyncService:NextRevision("event", id)
         GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
-            shareAlliance = e.shareAlliance, signups = e.signups,
+            shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
         } }, { rev = rev })
     end
     self:Refresh()
@@ -455,7 +476,7 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
             -- An edit replaces the event on every client: left out, the site's list would go.
-            shareAlliance = e.shareAlliance, signups = e.signups,
+            shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
         } }, { rev = rev })
     end
     self:Refresh()
@@ -510,7 +531,18 @@ function Calendar:OnSync(env, sender)
             e.rsvps    = (existing and existing.rsvps) or {}
             e.canceled = (existing and existing.canceled) or false
             e.shareAlliance = e.shareAlliance and true or false
-            e.signups = self:IsWebEvent(e) and cleanWebSignups(e.signups) or nil
+            if self:IsWebEvent(e) then
+                -- Forward only here too: an officer's old inbox, or an edit from a client before
+                -- this one that sends no list, does not take back what the guild already has.
+                local at = math.min(tonumber(e.signupsAt) or 0, GetServerTime())
+                if existing and existing.signups and (existing.signupsAt or 0) > at then
+                    e.signups, e.signupsAt = existing.signups, existing.signupsAt
+                else
+                    e.signups, e.signupsAt = cleanWebSignups(e.signups), at
+                end
+            else
+                e.signups, e.signupsAt = nil, nil
+            end
             self:GetEvents()[e.id] = e
             GuildOS.SyncService:SetRevision("event", e.id, env.rev)
             self:Refresh()

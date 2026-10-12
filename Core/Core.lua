@@ -322,8 +322,8 @@ local function startOfficerModules(try)
     end
     -- The site's raids wait for the same answer: an officer's client puts them on the calendar,
     -- and read before the rank was known they were skipped for the session (#146).
-    if GuildOS.CompanionImport and GuildOS.CompanionImport.ReadInbox then
-        GuildOS.CompanionImport:ReadInbox()
+    if GuildOS.CompanionImport and GuildOS.CompanionImport.CalendarFromInbox then
+        GuildOS.CompanionImport:CalendarFromInbox()
     end
     GuildOS:ReportStartup()
 end
@@ -331,6 +331,12 @@ end
 function GuildOS:InitModules()
     -- Core helper tests (Utils loads before SelfTest, so it cannot self-register).
     self:RunStartup("UtilTests", nil, self.RegisterUtilTests, self)
+
+    -- What the companion left, as soon as the guild's db is known: the raid tracker stamps tonight's
+    -- raid from it when the session starts. Its calendar half waits for the rank, below (#146).
+    if GuildOS.CompanionImport and GuildOS.CompanionImport.ReadInbox then
+        GuildOS.CompanionImport:ReadInbox()
+    end
 
     for _, entry in ipairs(MODULE_START) do
         self:StartModule(entry)

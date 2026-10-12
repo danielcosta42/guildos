@@ -103,7 +103,9 @@ function Agora:NeedsMe()
     end
 
     local cal, raid = GuildOS.Calendar, self:NextRaid()
-    if raid and cal.MyRsvp and not cal:MyRsvp(raid) and raid.when - now() <= ANSWER_WITHIN then
+    -- A raid planned on the site is answered there: asked here, nobody could ever clear it (#146).
+    local inGame = raid and not (cal.IsWebEvent and cal:IsWebEvent(raid))
+    if inGame and cal.MyRsvp and not cal:MyRsvp(raid) and raid.when - now() <= ANSWER_WITHIN then
         add(normal, string.format(L["You have not answered: %s"], raid.title or "?"), "guild", "calendar", raid.when)
     end
 

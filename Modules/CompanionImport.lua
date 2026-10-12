@@ -211,9 +211,11 @@ function Import:ConsumeInbox()
     local key = table.concat(raws, "|")
     if key == self._lastInbox then return false end
 
-    -- Every raid goes on the calendar; the soonest is the one the Web panel's
-    -- invite and group buttons act on.
-    local soonest, imported = nil, 0
+    -- Every raid goes on the calendar, once the rank is known (CalendarFromInbox). The soonest
+    -- somebody answered is the one the Web panel's invite and group buttons act on: an unanswered
+    -- leftover on an earlier night would otherwise take it over (#146); with none answered, the
+    -- soonest of all.
+    local soonest, soonestAny, imported, raids = nil, nil, 0, {}
     -- And all of them, stripped to the three fields that answer "which planned raid is
     -- this night". The full rosters are not kept: the soonest is the one anybody acts on,
     -- and holding ten of them in SavedVariables to answer one question later is ten
@@ -223,9 +225,7 @@ function Import:ConsumeInbox()
         local roster = self:Parse(raw)
         if roster then
             imported = imported + 1
-            if GuildOS.Calendar and GuildOS.Calendar.UpsertWebRaid then
-                GuildOS:SafeCall(function() GuildOS.Calendar:UpsertWebRaid(roster) end)
-            end
+            raids[#raids + 1] = roster
             if roster.raidId and roster.instanceKey then
                 planned[#planned + 1] = {
                     raidId = roster.raidId,
@@ -233,14 +233,20 @@ function Import:ConsumeInbox()
                     startsAt = roster.startsAt or 0,
                 }
             end
-            if not soonest or (roster.startsAt or 0) < (soonest.startsAt or 0) then
+            local answered = #roster.members > 0 or (roster.signups and #roster.signups > 0)
+            if answered and (not soonest or (roster.startsAt or 0) < (soonest.startsAt or 0)) then
                 soonest = roster
+            end
+            if not soonestAny or (roster.startsAt or 0) < (soonestAny.startsAt or 0) then
+                soonestAny = roster
             end
         end
     end
     if imported == 0 then return false end
+    soonest = soonest or soonestAny
 
     self._lastInbox = key
+    self._webRaids = raids
     GuildOS.db.companionRoster = soonest
     GuildOS.db.companionRaids = planned
     return true, #soonest.members
@@ -438,11 +444,13 @@ end
 ----------------------------------------------------------------------
 -- Read the companion's drop box once the database exists.
 --
--- Read once the guild's db and the player's rank are known: Core calls this
--- from the officer start-up, for everybody. At PLAYER_LOGIN, where it used to
--- be read, a db not resolved yet read the companion as off and a rank not
--- loaded yet read an officer as not one, and the site's raids stayed off the
--- calendar for the whole session (#146).
+-- Read in two halves (#146). The roster as soon as the guild's db is known
+-- (Core's InitModules): at PLAYER_LOGIN, where it used to be read, a db not
+-- resolved yet read the companion as off, and the raid tracker stamps
+-- tonight's raid from it when the session starts. The calendar once the rank
+-- is known (Core's officer start-up): only an officer's client publishes the
+-- site's raids, and a rank not loaded yet read an officer as not one, so the
+-- raids stayed off the calendar for the whole session.
 --
 -- Errors are swallowed by SafeCall. A roster that fails to arrive must
 -- never be the reason someone cannot log in.
@@ -454,4 +462,14 @@ function Import:ReadInbox()
             GuildOS:Print(string.format(L["Roster from the website: %d signed up."], count))
         end
     end)
+end
+
+function Import:CalendarFromInbox()
+    local raids = self._webRaids
+    if not (raids and GuildOS.Calendar and GuildOS.Calendar.UpsertWebRaid) then return end
+    -- When the site gave these, so an old inbox takes back nobody's answer.
+    local answeredAt = self:Ack()
+    for _, roster in ipairs(raids) do
+        GuildOS:SafeCall(function() GuildOS.Calendar:UpsertWebRaid(roster, answeredAt) end)
+    end
 end

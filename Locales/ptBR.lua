@@ -1700,6 +1700,8 @@ L["Sign up in Discord or on the website."] = "A inscrição é pelo Discord ou p
 L["Tentative: "] = "Talvez: "
 L["Standby: "] = "Na espera: "
 L["Absent: "] = "Não vão: "
+L["Awaiting approval: "] = "Aguardando aprovação: "
+L["(as of %s)"] = "(atualizado %s)"
 
 -- Core/Core.lua, UI/Window.lua (isolamento na inicialização)
 L["%d start-up problem(s) on this client. Type /guildos errors for details."] = "%d problema(s) ao iniciar neste cliente. Digite /guildos errors para ver os detalhes."
