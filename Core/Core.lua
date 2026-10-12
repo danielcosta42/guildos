@@ -134,13 +134,17 @@ end
 ----------------------------------------------------------------------
 -- Per-guild DB resolution
 ----------------------------------------------------------------------
+-- The realm a db key is made with, and a guild's db key, "<guild>-<realm>": the one place each is built.
+local function dbRealm() return GetRealmName() or "Unknown" end
+local function guildDBKey(guildName) return guildName .. "-" .. dbRealm() end
+
 function GuildOS:ResolveGuildDB()
-    local realmName = GetRealmName() or "Unknown"
+    local realmName = dbRealm()
     local dbKey, guilded
     if IsInGuild() then
         local guildName = GetGuildInfo("player")
         if not guildName then return false end  -- in a guild but name not ready; caller retries
-        dbKey = guildName .. "-" .. realmName
+        dbKey = guildDBKey(guildName)
         guilded = true
     else
         -- Guildless: boot against a per-realm fallback DB so the mesh, recruitment
@@ -196,6 +200,15 @@ function GuildOS:ResolveGuildDB()
     self.guildKey = dbKey
     self.isGuilded = guilded
     return true
+end
+
+-- True while this character is in the guild whose db is loaded. The db is resolved at login only:
+-- a character who joins, leaves or changes guild mid-session keeps the old one until the next, and
+-- one guild's data must not be written into another's, nor into the guildless db (#150).
+function GuildOS:IsOnGuildDB()
+    if not (IsInGuild() and self.isGuilded) then return false end
+    local name = GetGuildInfo("player")
+    return name ~= nil and guildDBKey(name) == self.guildKey
 end
 
 function GuildOS:OnLogin()

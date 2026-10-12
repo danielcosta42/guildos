@@ -76,7 +76,7 @@ local AD = { enabled = true, message = "We are recruiting", channels = {}, inter
 local function member(modules)
   myRank = 5
   -- In a guild, on its own db, and helping: helping is opt-in since #150.
-  GuildOS.isGuilded = true
+  GuildOS.isGuilded, GuildOS.guildKey = true, "Guild-Realm"
   GuildOS.db = { settings = { modules = modules }, recruitParticipate = true }
   if R.memberTicker then R.memberTicker:Cancel() end
   R.memberTicker, R._autoCapReached, R._autoPopups = nil, nil, nil
@@ -261,5 +261,49 @@ local sent
 LibStub("GuildOS-LibSerialize").Serialize = function(_, t) sent = t; return "serialized" end
 R:RespondToSync()
 check(sent and sent.maxRank == 3, "a member's relay carries the officers' rank on")
+
+-- A client from before #150 relays the same ad with no maxRank: the limit stays. The officer's
+-- "every rank" is sent as false, and that does clear it.
+local OLD = { enabled = true, message = "We are recruiting", channels = {}, interval = 120,
+              updatedAt = 950, updatedBy = "Officer" }
+R:ApplyIncoming(OLD, "Me", "GUILD")
+check(GuildOS.db.guildRecruitment.maxRank == 3, "an old client's relay of the same ad keeps the limit")
+R:ApplyIncoming({ enabled = true, message = "We are recruiting", channels = {}, interval = 120,
+                  updatedAt = 951, updatedBy = "Officer", maxRank = false }, "Officer", "GUILD")
+check(GuildOS.db.guildRecruitment.maxRank == nil, "the officers' every rank clears it")
+
+-- Changed guild mid-session: the db is still the old guild's, and another guild's ad never lands in it.
+member({})
+GuildOS.guildKey = "Other Guild-Realm"
+R:ApplyIncoming(AD, "Officer", "GUILD")
+check(GuildOS.db.guildRecruitment == nil and not R:MemberMayPost(), "another guild's ad never lands in this guild's db")
+member({})
+R:ApplyIncoming(AD, "Officer", "GUILD")
+check(R:IsMemberRecruitActive(), "the popups run in the guild whose db is loaded")
+GuildOS.guildKey = "Other Guild-Realm"
+popups = 0
+R:_AutoTick()
+check(popups == 0 and not R:IsMemberRecruitActive(), "changed guild since: the next tick shows nothing and stops")
+
+-- The officer's rank picker: every rank, then each member rank, then back; never an officer rank.
+member({})
+myRank = 0
+GuildOS.db.settings.officerMaxRank = 1
+GuildOS.db.recruitment = { enabled = false }
+function GuildControlGetNumRanks() return 5 end
+local seen = {}
+for _ = 1, 5 do seen[#seen + 1] = tostring(R:CyclePostMaxRank()) end
+check(table.concat(seen, ",") == "2,3,nil,2,3", "member ranks 2 and 3 (4 is the last: every rank), then every rank: " .. table.concat(seen, ","))
+check(GuildOS.db.recruitment.updatedAt == nil, "with this officer's recruiting off, picking a rank sends nothing")
+
+-- The account's guildless db is cleared of any guild's ad at login (0.77 left some there).
+GuildOSDB = { _dbVersion = 2, ["_noguild-Realm"] = { guildRecruitment = { enabled = true, message = "Leaked" } } }
+local inGuild = IsInGuild
+function IsInGuild() return false end
+GuildOS.guildKey, GuildOS.db = nil, nil
+GuildOS:ResolveGuildDB()
+check(GuildOS.db and GuildOS.db.guildRecruitment == nil and GuildOS.isGuilded == false,
+  "the guildless db keeps no guild's ad")
+IsInGuild = inGuild
 
 print(("recruit-module-off: %d checks passed"):format(checks))

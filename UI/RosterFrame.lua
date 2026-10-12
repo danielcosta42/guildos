@@ -2216,7 +2216,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
                 autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
                 local interval = GuildOS.db.guildRecruitment and GuildOS.db.guildRecruitment.interval or 120
                 local R = GuildOS.Recruitment
-                autoStatusText:SetText((R and not R:MemberMayPost()) and L["Your rank does not post the guild's message."]
+                local blocked = R and GuildOS:IsOnGuildDB() and not R:MemberMayPost()
+                autoStatusText:SetText(blocked and L["Your rank does not post the guild's message."]
                     or string.format(L["(popup every %ds)"], interval))
             else
                 autoBtn.label:SetText(L["Auto-Send: OFF"])
@@ -2458,7 +2459,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = yOff - 28
 
     -- Which members post the guild's message: every rank, or up to one. It travels with the ad, and a
-    -- member past it is never asked (#150). Each click moves one rank down the list and back to every rank.
+    -- member past it is never asked (#150). Each click moves one member rank down, then back to every rank.
     RowLabel(L["Members who help:"], yOff)
     local rankBtn = UI:CreateButton(parent, "", 160, 22)
     rankBtn:SetPoint("TOPLEFT", 140, yOff + 3)
@@ -2470,13 +2471,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     rankBtn.label:SetText(rankText())
     rankBtn:SetScript("OnClick", function()
-        local r = GuildOS.db.recruitment
-        local n = (GuildControlGetNumRanks and GuildControlGetNumRanks()) or 10
-        if r.postMaxRank == nil then r.postMaxRank = 0
-        elseif r.postMaxRank + 1 >= n then r.postMaxRank = nil
-        else r.postMaxRank = r.postMaxRank + 1 end
+        if GuildOS.Recruitment then GuildOS.Recruitment:CyclePostMaxRank() end
         rankBtn.label:SetText(rankText())
-        if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus(true) end
     end)
     yOff = yOff - 28
 

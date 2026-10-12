@@ -236,7 +236,9 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   lootPrios        = { [itemId] = [{ name, class, order }] },
   wishlists        = { [charKey] = [{ itemId, itemLink, order, isOffspec }] },
   recruitment      = { enabled, interval, message, channels, welcomeEnabled,
-                       welcomeMessage, discord, minRankIndex },
+                       welcomeMessage, discord, minRankIndex, postMaxRank },
+                       -- minRankIndex gates the officer's own sending; postMaxRank (nil = every rank) is
+                       -- the members' limit, sent in RI as maxRank and kept in guildRecruitment (#150)
   consumableChecks = { lastResults },
   recipes          = { [charKey] = { [canonProfName] = [{ name, spellId, itemId }] } },
   recipeScanTimes  = { [profName] = timestamp },

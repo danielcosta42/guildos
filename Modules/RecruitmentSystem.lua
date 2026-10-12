@@ -707,7 +707,9 @@ function Recruitment:BroadcastStatus(quiet, reassert)
     if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
     local r = GuildOS.db.recruitment
     if not (reassert and r.updatedAt) then
-        r.updatedAt = time()   -- genuine edit: stamp "last content edit"
+        -- Genuine edit: stamp "last content edit", always past the last one, so two edits in one
+        -- second (a rank picked twice) are still told apart by newest-wins.
+        r.updatedAt = math.max(time(), (r.updatedAt or 0) + 1)
     end
     local payload = LibStub("GuildOS-LibSerialize"):Serialize({
         enabled    = r.enabled,
@@ -715,15 +717,16 @@ function Recruitment:BroadcastStatus(quiet, reassert)
         message    = r.message or "",
         channels   = r.channels or {},
         interval   = r.interval or 120,
-        -- The highest rank (0 = GM) whose members post it; nil, every rank (#150).
-        maxRank    = r.postMaxRank,
+        -- The highest rank (0 = GM) whose members post it; false, every rank (#150). Sent as false
+        -- rather than left out: a client from before #150 leaves it out, and that means "unknown".
+        maxRank    = r.postMaxRank or false,
         updatedBy  = GuildOS.Compat.PlayerName(),
         updatedAt  = r.updatedAt,
     })
     GuildOS.CommSystem:SendMessage("RI", payload)
     -- Mirror into the guild-synced slot so this account's own member-rank alts
     -- (they share the per-guild DB) get the ad immediately, with no round-trip.
-    if not GuildOS.isGuilded then return end
+    if not GuildOS:IsOnGuildDB() then return end
     GuildOS.db.guildRecruitment = {
         enabled = r.enabled, discord = r.discord or "", message = r.message or "",
         channels = r.channels or {}, interval = r.interval or 120, maxRank = r.postMaxRank,
@@ -771,6 +774,9 @@ function Recruitment:_AutoTick()
         GuildOS:Print(L["Auto recruit paused for this session (limit reached). Re-enable it from the Recruitment tab."])
         return
     end
+    -- Out of the guild, or past the officers' rank, since the ticker started: nothing to show, and no
+    -- popup counted toward the session's cap (#150).
+    if not self:MemberMayPost() then return self:SyncMemberParticipation() end
     self._autoPopups = (self._autoPopups or 0) + 1
     self:ShowSendPopup()
 end
@@ -820,7 +826,7 @@ function Recruitment:RespondToSync()
     if info and info.updatedAt and info.updatedBy and info.message and info.message ~= "" then
         local payload = LibStub("GuildOS-LibSerialize"):Serialize({
             enabled = info.enabled, discord = info.discord or "", message = info.message or "",
-            channels = info.channels or {}, interval = info.interval or 120, maxRank = info.maxRank,
+            channels = info.channels or {}, interval = info.interval or 120, maxRank = info.maxRank or false,
             updatedBy = info.updatedBy, updatedAt = info.updatedAt,
         })
         GuildOS.CommSystem:SendMessage("RI", payload)
@@ -860,8 +866,9 @@ end
 
 function Recruitment:ApplyIncoming(info, sender, channel)
     if type(info) ~= "table" then return end
-    -- A character on the guildless db (one who joined mid-session) keeps no guild's ad there (#150).
-    if not GuildOS.isGuilded then return end
+    -- Only into this guild's own db: never the guildless one (a character who joined mid-session),
+    -- nor another guild's (one who changed guild mid-session) (#150).
+    if not GuildOS:IsOnGuildDB() then return end
     local claimedAuthor = (info.updatedBy and info.updatedBy ~= "" and info.updatedBy) or sender
     local claimedAuthorIsOfficer =
         (GuildOS.IsOfficerByName and GuildOS:IsOfficerByName(claimedAuthor)) or false
@@ -878,12 +885,33 @@ function Recruitment:ApplyIncoming(info, sender, channel)
         message   = info.message or "",
         channels  = info.channels or {},
         interval  = info.interval or 120,
-        maxRank   = rankLimit(info.maxRank),
+        -- Left out, the relay came from a client before #150, which never kept it: the same ad (same
+        -- stamp) keeps the limit it has; false is an officer's "every rank".
+        maxRank   = (info.maxRank == nil and cur and incomingAt == curAt) and cur.maxRank or rankLimit(info.maxRank),
         updatedAt = incomingAt > 0 and incomingAt or time(),
         updatedBy = claimedAuthor,
     }
     if GuildOS.recruitmentPanelRefresh then GuildOS.recruitmentPanelRefresh() end
     self:SyncMemberParticipation()
+end
+
+-- The rank limit for members, as the officer's Recruitment panel moves it: every rank, then each
+-- member rank in turn (an officer rank would leave no member, and the last rank is every rank), and
+-- back. Sent to the guild only while this officer's recruiting is on, so picking a rank never turns a
+-- running campaign off; otherwise it goes out with the next broadcast (#150). Returns the new limit.
+function Recruitment:CyclePostMaxRank()
+    local r = GuildOS.db.recruitment
+    local n = (GuildControlGetNumRanks and GuildControlGetNumRanks()) or 0
+    if n < 1 then n = 10 end
+    local first = ((GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1) + 1
+    local last = n - 2
+    local nextLimit
+    if r.postMaxRank == nil then nextLimit = first
+    elseif r.postMaxRank + 1 <= last then nextLimit = r.postMaxRank + 1 end
+    if nextLimit and nextLimit > last then nextLimit = nil end
+    r.postMaxRank = nextLimit
+    if r.enabled then self:BroadcastStatus(true) end
+    return nextLimit
 end
 
 -- Member opt-in choice (persisted). nil = never touched, true = helping,
@@ -915,7 +943,7 @@ end
 -- shares an account-wide fallback, where a guild's ad must never reach it), and within the rank
 -- the officers chose (#150).
 function Recruitment:MemberMayPost()
-    if not (IsInGuild() and GuildOS.isGuilded) then return false end
+    if not GuildOS:IsOnGuildDB() then return false end
     local info = GuildOS.db.guildRecruitment
     local limit = info and rankLimit(info.maxRank)
     if not limit then return true end
@@ -1193,7 +1221,7 @@ end
 function Recruitment:ShowSendPopup()
     if InCombatLockdown() then return end
     -- Nobody is asked to post a guild's ad outside it, nor a member past the rank the officers chose (#150).
-    if not (IsInGuild() and GuildOS.isGuilded) then return end
+    if not GuildOS:IsOnGuildDB() then return end
     if not GuildOS:IsOfficer() and not self:MemberMayPost() then return end
 
     -- Officers use their own config; members use the guild-broadcast config.
