@@ -463,40 +463,79 @@ function GuildOS:CreateCalendarSub(panel)
                 yy = yy + math.max(14, (noteFS:GetStringHeight() or 12) + 6)
             end
 
-            local id = e.id
-            local roleBtn = UI:CreateButton(child, roleLabel((mine and mine.role) or "DPS"), 66, 18)
-            roleBtn:SetPoint("TOPLEFT", 6, -yy)
-            roleBtn.role = (mine and mine.role) or "DPS"
-            roleBtn:SetScript("OnClick", function()
-                local i = 1
-                for j, v in ipairs(ROLES) do if v == roleBtn.role then i = j break end end
-                roleBtn.role = ROLES[(i % #ROLES) + 1]
-                roleBtn.label:SetText(roleLabel(roleBtn.role))
-            end)
-            -- Chained, so a label that grew its button pushes the next one (issue #28).
-            local function rsvpBtn(text, status, anchor, xoff, col)
-                local b = UI:CreateButton(child, text, 64, 18)
-                b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0)
-                if mine and mine.status == status then b:SetBaseColor(col.r * 0.34, col.g * 0.34, col.b * 0.34, 0.95) end
-                b:SetScript("OnClick", function() CAL():Rsvp(id, status, roleBtn.role) end)
-                return b
-            end
-            local goingBtn = rsvpBtn(L["Going"],     "yes",       roleBtn,  8, C.online)
-            local tentBtn  = rsvpBtn(L["Tentative"], "tentative", goingBtn, 4, C.gold)
-            rsvpBtn(L["Absent"],    "no",        tentBtn,  4, C.red)
-            yy = yy + 24
-
-            local going = {}
-            for _, r in pairs(e.rsvps or {}) do
-                if r.status == "yes" then
-                    local cr, cg, cb = GuildOS:GetClassColor(r.class)
-                    going[#going + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, r.name or "?")
+            if CAL():IsWebEvent(e) then
+                -- Planned on the site, so signing up happens there: the game shows the site's
+                -- answers and no buttons of its own. A second list here was a second answer to
+                -- the same question, empty, and it never reached the site (#146).
+                -- With when the list is from: a member who was offline when it was sent keeps the
+                -- last one they got.
+                local where = L["Sign up in Discord or on the website."]
+                if (tonumber(e.signupsAt) or 0) > 0 then
+                    where = where .. " " .. string.format(L["(as of %s)"], date("%a %H:%M", e.signupsAt))
                 end
-            end
-            if #going > 0 then
-                local goFS = UI:CreateText(child, L["Going: "] .. table.concat(going, ", "), 9, C.textDim.r, C.textDim.g, C.textDim.b)
-                goFS:SetPoint("TOPLEFT", 6, -yy); goFS:SetWidth(child:GetWidth() - 12); goFS:SetJustifyH("LEFT")
-                yy = yy + math.max(14, (goFS:GetStringHeight() or 12) + 4)
+                local whereFS = UI:CreateText(child, where, 10, C.silver.r, C.silver.g, C.silver.b)
+                whereFS:SetPoint("TOPLEFT", 6, -yy)
+                yy = yy + 16
+                -- An allied seat is approved in the game, and goes with the ones coming.
+                local answers = CAL():WebSignups(e)
+                for _, r in pairs(e.rsvps or {}) do
+                    if r.ally and r.status == "yes" then
+                        answers[#answers + 1] = { name = GuildOS:SanitizeUserText(r.name or "?", 48), class = r.class, status = "yes" }
+                    end
+                end
+                for _, line in ipairs({
+                    { "yes", L["Going: "] }, { "pending", L["Awaiting approval: "] },
+                    { "tentative", L["Tentative: "] }, { "wait", L["Standby: "] }, { "no", L["Absent: "] },
+                }) do
+                    local names = {}
+                    for _, s in ipairs(answers) do
+                        if s.status == line[1] then
+                            local cr, cg, cb = GuildOS:GetClassColor(s.class)
+                            names[#names + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, s.name)
+                        end
+                    end
+                    if #names > 0 then
+                        local fs = UI:CreateText(child, line[2] .. table.concat(names, ", "), 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                        fs:SetPoint("TOPLEFT", 6, -yy); fs:SetWidth(child:GetWidth() - 12); fs:SetJustifyH("LEFT")
+                        yy = yy + math.max(14, (fs:GetStringHeight() or 12) + 4)
+                    end
+                end
+            else
+                local id = e.id
+                local roleBtn = UI:CreateButton(child, roleLabel((mine and mine.role) or "DPS"), 66, 18)
+                roleBtn:SetPoint("TOPLEFT", 6, -yy)
+                roleBtn.role = (mine and mine.role) or "DPS"
+                roleBtn:SetScript("OnClick", function()
+                    local i = 1
+                    for j, v in ipairs(ROLES) do if v == roleBtn.role then i = j break end end
+                    roleBtn.role = ROLES[(i % #ROLES) + 1]
+                    roleBtn.label:SetText(roleLabel(roleBtn.role))
+                end)
+                -- Chained, so a label that grew its button pushes the next one (issue #28).
+                local function rsvpBtn(text, status, anchor, xoff, col)
+                    local b = UI:CreateButton(child, text, 64, 18)
+                    b:SetPoint("LEFT", anchor, "RIGHT", xoff, 0)
+                    if mine and mine.status == status then b:SetBaseColor(col.r * 0.34, col.g * 0.34, col.b * 0.34, 0.95) end
+                    b:SetScript("OnClick", function() CAL():Rsvp(id, status, roleBtn.role) end)
+                    return b
+                end
+                local goingBtn = rsvpBtn(L["Going"],     "yes",       roleBtn,  8, C.online)
+                local tentBtn  = rsvpBtn(L["Tentative"], "tentative", goingBtn, 4, C.gold)
+                rsvpBtn(L["Absent"],    "no",        tentBtn,  4, C.red)
+                yy = yy + 24
+
+                local going = {}
+                for _, r in pairs(e.rsvps or {}) do
+                    if r.status == "yes" then
+                        local cr, cg, cb = GuildOS:GetClassColor(r.class)
+                        going[#going + 1] = string.format("|cff%02x%02x%02x%s|r", cr * 255, cg * 255, cb * 255, r.name or "?")
+                    end
+                end
+                if #going > 0 then
+                    local goFS = UI:CreateText(child, L["Going: "] .. table.concat(going, ", "), 9, C.textDim.r, C.textDim.g, C.textDim.b)
+                    goFS:SetPoint("TOPLEFT", 6, -yy); goFS:SetWidth(child:GetWidth() - 12); goFS:SetJustifyH("LEFT")
+                    yy = yy + math.max(14, (goFS:GetStringHeight() or 12) + 4)
+                end
             end
 
             -- Cross-guild signup queue. Officers only: the request already

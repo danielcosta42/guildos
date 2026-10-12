@@ -126,6 +126,13 @@ function GuildOS:CreateDashboardPanel(panel)
             10, C.textDim.r, C.textDim.g, C.textDim.b)
         compFS:SetPoint("TOPLEFT", 2, -42)
 
+        -- A raid planned on the site is answered there: no buttons of the game's own (#146).
+        if CAL():IsWebEvent(e) then
+            local where = UI:CreateText(body, L["Sign up in Discord or on the website."], 10, C.silver.r, C.silver.g, C.silver.b)
+            where:SetPoint("TOPLEFT", 2, -66)
+            return
+        end
+
         -- Quick RSVP row (keeps the player's current role).
         local mine = CAL():MyRsvp(e)
         local role = (mine and mine.role) or "DPS"

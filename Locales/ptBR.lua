@@ -1696,6 +1696,12 @@ L["The Discord cores in the inbox are for %s, not this guild."] = "Os cores do D
 L["Waiting for a confirmed character on the site: %s"] = "Esperando personagem confirmado no site: %s"
 L["Discord core:"] = "Core do Discord:"
 L["Planned on the website."] = "Planejada no site."
+L["Sign up in Discord or on the website."] = "A inscrição é pelo Discord ou pelo site."
+L["Tentative: "] = "Talvez: "
+L["Standby: "] = "Na espera: "
+L["Absent: "] = "Não vão: "
+L["Awaiting approval: "] = "Aguardando aprovação: "
+L["(as of %s)"] = "(atualizado %s)"
 
 -- Core/Core.lua, UI/Window.lua (isolamento na inicialização)
 L["%d start-up problem(s) on this client. Type /guildos errors for details."] = "%d problema(s) ao iniciar neste cliente. Digite /guildos errors para ver os detalhes."
