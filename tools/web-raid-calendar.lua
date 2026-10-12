@@ -176,6 +176,11 @@ Import._lastInbox = nil
 GuildOSInbox = { answered }
 Import:ConsumeInbox(); Import:CalendarFromInbox()
 check(#published == before, "the same answers publish nothing")
+Import._lastInbox = nil
+GuildOSInboxAck = { at = NOW - 300, members = 2 }   -- the companion's hourly rewrite, nothing changed
+Import:ConsumeInbox(); Import:CalendarFromInbox()
+check(#published == before, "the same answers said again later publish nothing either")
+check(events["web:r-full"].signupsAt == NOW - 300, "only the time moves, here")
 
 local changed = wire(raid("r-full", { { name = "Tanky", class = "WARRIOR", slot = "TANK", status = "no", invite = false, why = "no" } }))
 Import._lastInbox = nil

@@ -396,7 +396,10 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
     -- Nothing moved: republishing would only churn the guild channel and bump
     -- a revision for a change nobody made.
     if e and not e.canceled and e.title == title and e.when == when and e.size == size
-        and signupsKey(self:WebSignups(e)) == signupsKey(signups) and (e.signupsAt or 0) == signupsAt then
+        and signupsKey(self:WebSignups(e)) == signupsKey(signups) then
+        -- The same answers, said again later: the time moves here and nothing goes out. The
+        -- companion rewrites its inbox every hour whether or not anybody answered.
+        e.signupsAt = math.max(e.signupsAt or 0, signupsAt)
         return e
     end
 
