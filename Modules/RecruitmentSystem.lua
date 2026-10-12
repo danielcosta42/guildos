@@ -705,6 +705,9 @@ end
 function Recruitment:BroadcastStatus(quiet, reassert)
     if not GuildOS.CommSystem or not IsInGuild() then return end
     if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
+    -- An officer who changed guild mid-session still has the old guild's db, ad and rank threshold
+    -- loaded: none of it goes to the new guild (#150).
+    if not GuildOS:IsOnGuildDB() then return end
     local r = GuildOS.db.recruitment
     if not (reassert and r.updatedAt) then
         -- Genuine edit: stamp "last content edit", always past the last one, so two edits in one
@@ -726,7 +729,6 @@ function Recruitment:BroadcastStatus(quiet, reassert)
     GuildOS.CommSystem:SendMessage("RI", payload)
     -- Mirror into the guild-synced slot so this account's own member-rank alts
     -- (they share the per-guild DB) get the ad immediately, with no round-trip.
-    if not GuildOS:IsOnGuildDB() then return end
     GuildOS.db.guildRecruitment = {
         enabled = r.enabled, discord = r.discord or "", message = r.message or "",
         channels = r.channels or {}, interval = r.interval or 120, maxRank = r.postMaxRank,
@@ -776,7 +778,12 @@ function Recruitment:_AutoTick()
     end
     -- Out of the guild, or past the officers' rank, since the ticker started: nothing to show, and no
     -- popup counted toward the session's cap (#150).
-    if not self:MemberMayPost() then return self:SyncMemberParticipation() end
+    if not self:MemberMayPost() then
+        -- The guild's name missing for a moment (around a loading screen) is not a guild change:
+        -- skip this tick, uncounted, and keep the ticker.
+        if IsInGuild() and not GetGuildInfo("player") then return end
+        return self:SyncMemberParticipation()
+    end
     self._autoPopups = (self._autoPopups or 0) + 1
     self:ShowSendPopup()
 end
@@ -811,6 +818,7 @@ end
 -- the ad reaches newcomers even when no officer is online.
 function Recruitment:RespondToSync()
     if not GuildOS.CommSystem or not IsInGuild() then return end
+    if not GuildOS:IsOnGuildDB() then return end   -- another guild's db: nothing of it is shared (#150)
     if GuildOS:IsOfficer() then
         local r = GuildOS.db.recruitment
         -- Re-assert the current ad REGARDLESS of enabled, so a stale-enabled

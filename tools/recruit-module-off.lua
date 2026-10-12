@@ -285,6 +285,26 @@ popups = 0
 R:_AutoTick()
 check(popups == 0 and not R:IsMemberRecruitActive(), "changed guild since: the next tick shows nothing and stops")
 
+-- A moment with no guild name (a loading screen) skips the tick and keeps the ticker.
+member({})
+R:ApplyIncoming(AD, "Officer", "GUILD")
+local named = GetGuildInfo
+function GetGuildInfo() return nil end
+popups = 0
+R:_AutoTick()
+check(popups == 0 and R:IsMemberRecruitActive(), "a moment with no guild name skips the tick, the popups go on")
+GetGuildInfo = named
+
+-- An officer who changed guild mid-session sends nothing of the old guild's to the new one.
+member({})
+myRank = 0
+GuildOS.db.recruitment = { enabled = true, message = "Old guild's ad", channels = {}, interval = 120 }
+GuildOS.guildKey = "Other Guild-Realm"
+relayed = {}
+R:BroadcastStatus(true)
+R:RespondToSync()
+check(#relayed == 0 and GuildOS.db.recruitment.updatedAt == nil, "an officer on another guild's db broadcasts and relays nothing")
+
 -- The officer's rank picker: every rank, then each member rank, then back; never an officer rank.
 member({})
 myRank = 0
