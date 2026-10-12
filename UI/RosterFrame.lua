@@ -263,8 +263,9 @@ function GuildOS:CreateRosterPanel(parent, host)
         host.kpiCards[key] = card
 
         local value = UI:CreateText(card, "—", 20, valueColor.r, valueColor.g, valueColor.b)
-        -- 10, not 7: the number sat on the card's top edge (#148).
-        value:SetPoint("TOPLEFT", 12, -10)
+        -- The game's font sits higher in its box: on Forever the number touched the card's top
+        -- edge at 7 (#148). The guildos look keeps its 7.
+        value:SetPoint("TOPLEFT", 12, GuildOS.Style.current == "forever" and -10 or -7)
 
         local lbl = UI:CreateText(card, labelText, 9, C.textDim.r, C.textDim.g, C.textDim.b)
 

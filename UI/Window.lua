@@ -232,6 +232,14 @@ local function createWindow()
     UI:RestoreWindowGeometry(f)
     f.tabs, f.tabPanels, f.overflow, f.footItems = {}, {}, {}, {}
 
+    -- The game's metal frame (the Forever style) draws its edges inside the window: the lines across
+    -- it stop at its sides, and the footer stands on its bottom edge, so the links' underline is not
+    -- drawn over it (#148). All zero on a flat frame.
+    local nine = f.__nine
+    local sideL = nine and math.floor((nine.LeftEdge:GetWidth() or 0) + 0.5) or 0
+    local sideR = nine and math.floor((nine.RightEdge:GetWidth() or 0) + 0.5) or 0
+    local footLift = nine and math.floor((nine.BottomEdge:GetHeight() or 0) + 0.5) or 0
+
     ------------------------------------------------------------------
     -- Title bar: the drag handle
     ------------------------------------------------------------------
@@ -305,8 +313,8 @@ local function createWindow()
     local rule = CreateFrame("Frame", nil, f)
     rule:SetHeight(RULE_H)
     local ruleLine = UI:CreateSeparator(rule)
-    ruleLine:SetPoint("BOTTOMLEFT", 0, 0)
-    ruleLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    ruleLine:SetPoint("BOTTOMLEFT", sideL, 0)
+    ruleLine:SetPoint("BOTTOMRIGHT", -sideR, 0)
     f.rule = rule
 
     for _, def in ipairs(tabFeatures()) do
@@ -354,17 +362,13 @@ local function createWindow()
     ------------------------------------------------------------------
     -- Footer and grip
     ------------------------------------------------------------------
-    -- On the game's metal frame the bottom edge is drawn inside the window, and the links' underline
-    -- sat on it: the footer stands on the edge instead (#148).
-    local edge = f.__nine and f.__nine.BottomEdge
-    local footLift = edge and math.floor((edge:GetHeight() or 0) + 0.5) or 0
     local foot = CreateFrame("Frame", nil, f)
     foot:SetPoint("BOTTOMLEFT", 0, footLift)
     foot:SetPoint("BOTTOMRIGHT", 0, footLift)
     foot:SetHeight(FOOT_H)
     local footLine = UI:CreateSeparator(foot)
-    footLine:SetPoint("TOPLEFT", 0, 0)
-    footLine:SetPoint("TOPRIGHT", 0, 0)
+    footLine:SetPoint("TOPLEFT", sideL, 0)
+    footLine:SetPoint("TOPRIGHT", -sideR, 0)
     f.footer = foot
 
     for _, item in ipairs(FOOTER) do

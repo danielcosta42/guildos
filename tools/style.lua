@@ -259,6 +259,9 @@ S:Paint(newRegion("Frame"), "window")
 check(first == "flat" and f.backdrop.edgeSize == 1, "a missing atlas paints that piece flat, never a hole")
 check(#errors == 1 and errors[1]:find("_UI-Frame-Metal-EdgeTop", 1, true),
   "and is recorded once, however often it is asked for")
+f = newRegion("Frame")
+check(S:Paint(f, "titlebar") == "flat" and f.__styleBg,
+  "without the metal frame there is no edge to be the bar: the title bar keeps its band (#148)")
 
 -- ── 7. The controls, through the real Helpers ──────────────────────────
 S = load({ db = {} }); S:Resolve()

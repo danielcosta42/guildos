@@ -399,6 +399,8 @@ function Style:ButtonTint(btn, r, g, b, a)
     for _, t in pairs(btn.__three) do t:SetVertexColor(tr, tg, tb, 1) end
 end
 
+-- Only a primary button wears the art since #148; a ghost link, the one with an underline, is flat
+-- and coloured by the Helpers. The other variants stay handled for a button switched back and forth.
 function Style:ButtonState(btn, state)
     local C = GuildOS.Colors
     local key = (state == "pressed" or state == "disabled") and state or "rest"
@@ -413,10 +415,7 @@ function Style:ButtonState(btn, state)
     btn.label:SetTextColor(ink.r, ink.g, ink.b)
     btn.__hovered = (state == "hover")
     if btn.glow then btn.glow:Hide() end
-    if btn.underline then
-        btn.underline:SetShown(ghost)
-        btn.underline:SetVertexColor(ink.r, ink.g, ink.b, 1)
-    end
+    if btn.underline then btn.underline:SetShown(ghost) end
 end
 
 function Style:SkinTab(tab)
