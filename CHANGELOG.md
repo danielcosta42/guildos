@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.4] - 2026-10-13
+
+### Fixed
+- oficial que trocou de guilda na sessão não envia o recrutamento da antiga, e um instante sem nome de guilda não para os popups (#150)
+- recrutamento só grava e pede no banco da guilda em que o personagem está, relay antigo não apaga o limite de rank, e o seletor só passa por ranks de membro sem desligar a campanha (#150)
+- recrutamento só pede para divulgar dentro de uma guilda, membro ajuda só depois de aceitar, e o oficial escolhe até que rank divulga (#150)
+
+
 ## [0.77.3] - 2026-10-12
 
 ### Fixed
