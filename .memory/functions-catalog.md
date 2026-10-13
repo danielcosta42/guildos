@@ -164,6 +164,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:Initialize()` | Bootstrap: registers addon message prefix, prints version |
 | `GuildOS:ResolveGuildDB()` | Resolves/creates per-guild SavedVariables DB; migrates flat structure |
 | `GuildOS:OnLogin()` | Handles PLAYER_LOGIN, retries guild DB resolution up to 5 times |
+| `GuildOS:IsOnGuildDB()` | True while the character is in the guild whose db is loaded (the db is resolved at login only); recruitment writes, sends and popups check it, so nothing reaches the guildless db or another guild's (#150) |
 | `GuildOS:InitModules()` | Reads the companion's inbox first (`CompanionImport:ReadInbox`, #146), then starts every module from the `MODULE_START` list (then `OFFICER_START` once the guild rank is known, asked every 5s up to a minute, after which it gives up as the `OfficerModules` start-up problem, counted in the login line and listed in `/guildos errors`; issue #79), each isolated; respects enable flags |
 | `GuildOS:StartModule(entry)` | Starts one start-list entry (`{ name, feature, ui, method, after }`); skipped (not failed) when not loaded or switched off |
 | `GuildOS:RunStartup(name, entry, fn, ...)` | xpcall one start-up step; on failure records `State.startup.failed[name]` (stack in `State.startup.stacks[name]`), marks `entry.feature` / `entry.ui` as failed, and hands the error to `geterrorhandler()` in debug mode |
@@ -291,6 +292,7 @@ Removed: `Compat.NewTimer`.
 | `Recruitment:StartAutoRecruit()` | Creates ticker, shows first popup after 2s; refuses with the Recruitment module off (issue #84) |
 | `Recruitment:_OfficerTick()` | One officer popup; with the module switched off it shows nothing and keeps the ticker, so the next tick after the module is back shows one (issue #84) |
 | `Recruitment:StopAutoRecruit()` | Cancels ticker, hides popup |
+| `Recruitment:MemberMayPost()` / `IsParticipating()` / `CyclePostMaxRank()` | A member is asked to post the guild's ad only on the db of the guild they are in (`GuildOS:IsOnGuildDB()`: never the account's `_noguild-<realm>` db, which `ResolveGuildDB` clears of any guild's ad, nor another guild's after a change mid-session), within the rank the officers chose (`recruitment.postMaxRank`, moved by `CyclePostMaxRank` through member ranks only, sent in RI as `maxRank` with `false` for every rank, so a pre-#150 relay that leaves it out keeps the limit of the same ad), and after saying they help: participation is opt-in (`recruitParticipate == true`). `ShowSendPopup`, `ApplyIncoming` and the `BroadcastStatus` mirror check the db the same way (#150) |
 | `Recruitment:Toggle()` | Toggles enabled state |
 | `Recruitment:CreatePopupFrame()` | Creates click-to-send popup with glow, icon, dismiss button |
 | `Recruitment:ShowSendPopup()` | Shows popup; auto-hides after 30s |
