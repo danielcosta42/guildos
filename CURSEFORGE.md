@@ -1,21 +1,43 @@
 # Guild OS — CurseForge Listing
 
-Ready-to-paste copy for the CurseForge project page. Branding, commands and
+Ready-to-paste copy for the CurseForge project page (and Wago), written to be found. Branding, commands and
 feature list are kept in sync with the current release.
 
 ---
 
-## Project Title (pick one)
+## Project Title
 
-**Recommended:** `Guild OS — Guild Manager for WoW: Forever`
+**Recommended:** `Guild OS — Guild Manager, DKP & Attendance for WoW: Forever`
 
-Alternatives:
-- `Guild OS — Roster, Raid Cores, DKP & Loot for WoW: Forever`
-- `Guild OS — The Guild Operating System`
+If CurseForge refuses the length: `Guild OS — Guild Manager for WoW: Forever`.
+
+The title is the strongest signal both the CurseForge search and Google read, so it carries the three things guild
+officers search for (guild manager, DKP, attendance) and the game. Keep "Guild OS" first: it is the name people who
+already know it type. Do not change the project slug (`guild-os`): every link out there points at it.
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> The guild window WoW: Forever never had: roster, professions, raid teams, attendance, DKP/EPGP, a loot master and guild chat in one place, every option a button.
+> Guild manager addon for WoW: Forever: guild roster, raid attendance tracker, DKP & EPGP, loot master, soft reserves, profession directory and guild chat in one window, plus Discord raid signups on guildos.me.
+
+## Categories
+
+- **Main:** Guild
+- **Also:** Chat & Communication, Professions, Tooltip, Data Export
+
+## Tags / keywords (Wago tags, and the words the page already uses)
+
+guild manager, guild roster, raid attendance, attendance tracker, DKP, EPGP, loot master, loot council, soft reserve,
+softres, wishlist, raid signups, Discord, professions, recruitment, WoW Forever
+
+## Gallery
+
+CurseForge indexes each screenshot's title and description. Name them by what they show and what someone would
+search: "Guild roster with item level and attendance", "Raid attendance by core", "DKP standings", "Loot master
+rolls", "Profession directory: who can craft it", "Guild chat inside the window".
+
+## Game versions
+
+Mark the files for WoW: Forever only.
 
 ---
 
@@ -25,20 +47,20 @@ Alternatives:
 
 # Guild OS — Guild Manager for WoW: Forever
 
-**Guild OS turns the guild panel into the place your guild is run from.** Who is online and what they can craft,
-your raid teams and who shows up for them, points and loot, guild chat, and the call when a world boss is up: one
-window, opened with `J`, where the old guild frame used to be.
+**Guild OS is a guild management addon for WoW: Forever.** It replaces the guild panel with one window for your
+whole guild: a guild roster with gear and item level, raid attendance tracking, DKP and EPGP, a loot master with soft
+reserves, a profession directory, guild chat and recruiting. Press `J`, where the old guild frame used to be.
 
 **Everything is a button.** Every feature and every setting has its place in the window. Slash commands still work
 for those who like them; nothing needs one.
 
-**The more of your guild runs it, the more it knows.** Each copy collects its own character and shares it,
-compressed and throttled, with everyone else running Guild OS. No spreadsheets, no inspecting by hand.
+**No spreadsheets, no inspecting by hand.** Each copy collects its own character and shares it, compressed and
+throttled, with everyone else in the guild running Guild OS. The more of your guild runs it, the more it knows.
 
 *Made with care by **Chehul**.*
 
-![Interface: 16001](https://img.shields.io/badge/Client-WoW%3A%20Forever-blueviolet)
-[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
+![Guild OS for WoW: Forever](https://img.shields.io/badge/Client-WoW%3A%20Forever-blueviolet)
+[![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
 ---
 
@@ -52,82 +74,115 @@ compressed and throttled, with everyone else running Guild OS. No spreadsheets, 
   professions. Recipes are shared once a member opens their profession window.
 - **Guild chat with its history.** Forever keeps your `/g` history on the server; the Chat tab reads it, with a tab
   for every guild channel.
-- **Raids are ready before Forever's are.** Raid teams, attendance, points and the loot master are built and waiting
+- **Raids are ready before Forever's are.** Raid teams, attendance, DKP and the loot master are built and waiting
   for Forever's raids, which open on December 9.
 
 ---
 
-## What's inside
+## 📋 Guild roster and member inspector
 
-### 🏠 Now
-The front door: guild chat in the big card, with what is happening in the guild around it.
-
-### 📋 Roster
 - Sortable columns (name, level, class, item level, professions, attendance, last seen), search and an online filter
 - Click anyone, online or offline, for their gear (missing enchants flagged), professions and stats
 - Alts grouped under their main
-- **Analytics**: the guild at a glance, with *Only online* and *Only max level* filters
+- **Guild analytics**: the guild at a glance, with *Only online* and *Only max level* filters
+- **Now**, the front door: guild chat in the big card, with what is happening in the guild around it
 
-### ⚔️ Raids and Cores
-- **Cores are your raid teams.** Run as many as you need. A raider can be in more than one and signs up with a role
-  their class can play, and each raid is counted for the right core. Cores set up in Discord with the GuildOS bot
-  come into the addon through the companion.
+## ⚔️ Raid attendance tracker and raid teams
+
 - **Attendance that is measured, not declared.** Raids are detected on their own and checked every 5 minutes. Each
-  raid scores 100 per person, minus a penalty for arriving late or leaving early, and each core
-  sets its own penalties.
+  raid scores 100 per person, minus a penalty for arriving late or leaving early, and each raid team sets its own
+  penalties.
+- **Cores are your raid teams.** Run as many as you need. A raider can be in more than one and signs up with a role
+  their class can play, and each raid is counted for the right team. Teams set up in Discord with the GuildOS bot
+  come into the addon through the companion.
 - **Raid Tools**: class composition, raid buff coverage and key cooldowns before you pull
 - **Enchant audit**: every unenchanted slot in the guild, most-missing first
 
-### 💰 Loot, your way
-Pick your guild's system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul or
-RCLootCouncil already handles it, and then Guild OS stays completely out of the way.
+## 💰 Loot master, DKP and EPGP
 
-- **Loot Master**: announce, players roll MS / OS / Pass, award in one click. Ties go to officer priority, then soft
+Pick your guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
+or RCLootCouncil already handles it, and then Guild OS stays completely out of the way.
+
+- **Loot master**: announce, players roll MS / OS / Pass, award in one click. Ties go to officer priority, then soft
   reserve, then wishlist, then whoever has received fewer items this lockout, then (if you want) attendance, then the
   roll. Designated disenchanter, undo and trade tracking.
-- **DKP, EPGP or council**: points kept per core. Points per boss kill (automatic if you want), a starting value,
-  weekly decay, a fixed cost charged when an item is awarded in DKP mode, and manual adjustments with a reason. Every
-  change is logged and synced between officers.
+- **DKP, EPGP or loot council**: points kept per raid team. Points per boss kill (automatic if you want), a starting
+  value, weekly decay, a fixed cost charged when an item is awarded in DKP mode, and manual adjustments with a
+  reason. Every change is logged and synced between officers.
 - **Soft reserves**: paste softres.it's Gargul export. Reserves and +1 counts show on the item tooltip, and a reserve
   beats an unreserved roll.
 - **Wishlists**: every character keeps their own, synced to the guild, and the item tooltip says who wants it (always,
   only with Shift, or never).
 - **Loot history**: every rare-or-better drop, with who got it, where and when.
 
-### 🛠️ Professions
-Who in the guild can make what, what nobody covers yet, and the crafters right on the item tooltip.
+## 🛠️ Guild profession directory
 
-### 🏰 Guild
-- **Chat**: your guild channels inside the window, one tab each: Guild, Officer and any the guild created
-- **Calendar**: raids planned on guildos.me land on the in-game calendar, with who signed up on the site
+Who in the guild can craft what, what nobody covers yet, and the crafters right on the item tooltip.
+
+## 🏰 Guild chat, calendar and Call to Arms
+
+- **Guild chat in the window**: your guild channels, one tab each: Guild, Officer and any the guild created
+- **Guild calendar**: raids planned on guildos.me land on the in-game calendar, with who signed up on the site
 - **Call to Arms**: an officer rallies the guild for a world boss or an open-world fight. Everyone running Guild OS
   gets a popup with a sound and can answer *On my way*, and a guild chat line goes out for the rest
 - **Alliances**: link allied guilds for a shared chat, bulletin and crafter directory
 
-### 📣 Recruitment and Trials
+## 📣 Guild recruitment and trials
+
 - A recruiting message that comes back on your interval and goes out with one click (Blizzard requires the click).
   Members can help spread it, and officers choose up to which rank
 - Auto-welcome for new members, with your Discord link
 - Trials with a sponsor, a period and notes, flagged when they run over
 
-### 🔐 Leadership *(officers)*
+## 🔐 Officer tools
+
 - Your guild decides which ranks are officers
 - Officer notes with quick tags, synced between officers
 - A ban list that flags banned players on the tooltip
 
 ---
 
-## 🌐 guildos.me and the Discord bot
+## 🌐 Discord raid signups and a web roster: guildos.me
 
 Optional, and off until you turn it on in the **Web** tab. The addon works the same without it.
 
-- **Discord signups that know who is signing**: item level, spec and attendance come with each one
+- **Discord raid signups that know who is signing**: item level, spec and attendance come with each one
 - **Plan on the site, run it in game**: the planned roster arrives by itself, and the Web tab has *Invite all* and a
   button that moves everyone into their groups
 - **Your guild on the web**: roster, loot and attendance for your members, a recruiting page for everyone else, and
   each character with their gear, drawn as they look in game (visit a barber once so the addon can see it)
 - **Nothing to copy on raid night**: a small Windows companion carries the data between the game and the site. The
   site and the Discord bot work anywhere.
+
+---
+
+## FAQ
+
+**Does Guild OS work on WoW: Forever?**
+Yes. It is built for it: surnames, no realms, the new professions and the client's privacy rules included.
+
+**Is it free?**
+Yes, and open source under the MIT license.
+
+**Does the whole guild need to install it?**
+No. The roster shows every member either way. Gear, professions and attendance fill in for each member running
+Guild OS, so the more of the guild has it, the more complete it gets.
+
+**Can we keep Gargul or RCLootCouncil for loot?**
+Yes. Set the loot system to *off* in Settings and Guild OS leaves loot alone while the roster, attendance and
+everything else keep working.
+
+**Does it do DKP and EPGP?**
+Yes, both, plus a council mode where points are only shown. Points are kept per raid team and synced between
+officers.
+
+**Do I need the website or the companion?**
+No. Both are optional. They add Discord raid signups and a web roster; the addon does everything in game without
+them.
+
+**Do I need a spreadsheet for attendance or loot?**
+For attendance, loot history and DKP/EPGP, no: they live in the addon. If your guild's loot rules do something the
+addon does not, tell us in the Discord.
 
 ---
 
@@ -144,12 +199,12 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 ## Support
 
 **[Join the Guild OS Discord](https://discord.gg/8XA6gmNjja)**: questions get answered there, bugs get looked at,
-and new builds are announced there first. If something misbehaves on Forever, `/guildos errors` says what the addon
-could not find on that client.
+and new builds are announced there first. If something misbehaves, `/guildos errors` says what the addon could not
+find on your client.
 
 Rather write it down? Open an issue on the project page — feedback is welcome either way.
 
 If Guild OS has been useful to your guild and you'd like to help keep it maintained, you can [buy me a coffee ☕](https://buymeacoffee.com/chehul).
 
-[![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
-[![GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)
+[![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
+[![Guild OS source on GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)
