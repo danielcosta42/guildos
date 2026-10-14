@@ -7,16 +7,15 @@ feature list are kept in sync with the current release.
 
 ## Project Title (pick one)
 
-**Recommended:** `Guild OS — All-in-One Guild Manager (TBC Anniversary & Forever)`
+**Recommended:** `Guild OS — Guild Manager for WoW: Forever & TBC Anniversary`
 
 Alternatives:
-- `Guild OS — Roster, Raid & Loot Suite`
-- `Guild OS — Guild Manager, Attunements, Raids & Loot`
+- `Guild OS — Roster, Raid Cores, DKP & Loot for WoW: Forever`
 - `Guild OS — The Guild Operating System`
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> One file for TBC Anniversary and WoW: Forever. Turns the bare guild panel into a management hub: synced gear, professions & attunements, TMB wishlists, raid attendance, loot history, enchant audits, buff & cooldown coverage, and a loot master.
+> The guild window WoW: Forever never had: roster, professions, raid teams, attendance, DKP/EPGP, a loot master and guild chat in one place, every option a button. Also runs on TBC Anniversary.
 
 ---
 
@@ -24,251 +23,145 @@ Alternatives:
 
 ---
 
-# Guild OS — All-in-One Guild Manager
+# Guild OS — Guild Manager for WoW: Forever
 
-**Guild OS replaces the bare-bones Blizzard guild panel with a full management hub.** It quietly collects and shares each member's gear, professions, account-wide attunements, raid attendance and loot — then layers on the officer tools a serious raiding guild actually needs: enchant audits, raid composition & cooldown coverage, attendance scoring, and a built-in loot master.
+**Guild OS turns the guild panel into the place your guild is run from.** Who is online and what they can craft,
+your raid teams and who shows up for them, points and loot, guild chat, and the call when a world boss is up: one
+window, opened with `J`, where the old guild frame used to be.
 
-No spreadsheets. No external sites. No manual inspecting. **Install it, press `J`, and the data fills itself in.**
+**Everything is a button.** Every feature and every setting has its place in the window. Slash commands still work
+for those who like them; nothing needs one.
+
+**The more of your guild runs it, the more it knows.** Each copy collects its own character and shares it,
+compressed and throttled, with everyone else running Guild OS. No spreadsheets, no inspecting by hand.
 
 *Made with care by **Chehul**.*
 
-![Interface: 20506, 16001](https://img.shields.io/badge/Client-TBC%20Anniversary%20%2B%20Forever-blueviolet)
+![Interface: 16001, 20506](https://img.shields.io/badge/Client-Forever%20%2B%20TBC%20Anniversary-blueviolet)
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
 ---
 
-## 🐉 On WoW: Forever
+## 🐉 Made for WoW: Forever
 
-**One download serves both clients.** The same file is marked for TBC Anniversary (2.5.6) and for WoW: Forever
-(1.60.1), so an addon manager pointed at the beta installs it like any other addon — there is no separate build.
+- **One download, both clients.** The same file is marked for WoW: Forever (1.60) and TBC Anniversary (2.5.6), so an
+  addon manager installs it like any other addon.
+- **It speaks Forever.** Names with surnames and no realms, the new professions, the retail tooltip, and the Secret
+  Values the client keeps private: Guild OS skips what it is not allowed to read instead of throwing errors at you.
+- **It can look like Forever.** Settings → Style switches every window, button and tab to Forever's own art and the
+  game's font. Guild OS's dark theme stays the default.
+- **Professions are back.** Who makes what, and what nobody in the guild covers yet, read from Forever's
+  professions. Recipes are shared once a member opens their profession window.
+- **Guild chat with its history.** Forever keeps your `/g` history on the server; the Chat tab reads it, with a tab
+  for every guild channel.
+- **Raids are ready before Forever's are.** Raid teams, attendance, points and the loot master already run on
+  Anniversary and are waiting for Forever's raids, which open on December 9.
 
-Guild OS was read against the Forever client before the beta opened, and it runs there today:
-
-- **The guild half works:** roster and alts, raid attendance, loot history and wishlists, recruiting, the officer
-  tools, and everything that reaches the website and the Discord bot.
-- **It was hardened for Forever's Secret Values.** When the client keeps a player's identity or a chat line
-  private, Guild OS skips that one instead of throwing errors at you.
-- **It uses Forever's own tooltip.** The retail tooltip replaced the old hooks; Guild OS follows it, so reserves,
-  wishlist marks and the ban flag still show up where you point the mouse.
-
-**Being straight about what does not apply there.** Several trackers below are about *TBC content* — raid
-attunements, TBC consumables — and a Classic-era client simply has nothing for them to find. Profession recipes
-and specs read APIs that Forever replaced; they come back empty for now rather than wrong, and they are the next
-thing on the list. Nothing about that stops the rest from working.
-
-Found something off on Forever? `/guildos errors` says what the addon could not find on that client, and
-`/guildos probe` records what it does have — both are welcome in the
-[support Discord](https://discord.gg/8XA6gmNjja).
+Not everything applies there: raid attunements and the consumable checks are about TBC content, so on Forever they
+stay out of the way, and nobody loses attendance over consumables the addon cannot check.
 
 ---
 
-## 🌐 New — Guild OS is on the web
+## What's inside
 
-### **[guildos.me](https://guildos.me)**
+### 🏠 Now
+The front door: guild chat in the big card, with what is happening in the guild around it.
 
-Your roster, loot and attendance, lifted out of the game and onto a page you can send
-to anyone. It is optional, it is off until you turn it on, and the addon behaves
-exactly the same if you never touch it.
+### 📋 Roster
+- Sortable columns (name, level, class, item level, professions, attendance, last seen), search and an online filter
+- Click anyone, online or offline, for their gear (missing enchants flagged), professions and stats
+- Alts grouped under their main
+- **Analytics**: the guild at a glance, with *Only online* and *Only max level* filters
 
-**Discord signups that already know who is signing.** A raid signup comes back carrying
-that character's item level, spec and attendance, so you are not opening the armory or
-asking "what's your gear?" for the twentieth time. Someone who has never linked a
-character can still sign up; they show as unlinked and get sent the claim link.
+### ⚔️ Raids and Cores
+- **Cores are your raid teams.** Run as many as you need. A raider can be in more than one and signs up with a role
+  their class can play, and each raid is counted for the right core. Cores set up in Discord with the GuildOS bot
+  come into the addon through the companion.
+- **Attendance that is measured, not declared.** Raids are detected on their own and checked every 5 minutes. Each
+  raid scores 100 per person, minus a penalty for arriving late, leaving early or (on Anniversary) skipping
+  consumables, and each core sets its own penalties.
+- **Raid Tools**: class composition, raid buff coverage and key cooldowns (Bloodlust, battle rez, Innervate,
+  Soulstone…) before you pull
+- **Enchant audit**: every unenchanted slot in the guild, most-missing first
 
-**Plan on the web, run it in game.** The site plans the raid, and the addon pulls it
-back in:
+### 💰 Loot, your way
+Pick your guild's system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul or
+RCLootCouncil already handles it, and then Guild OS stays completely out of the way.
 
-| Command | What it does |
-| --- | --- |
-| `/gos roster` | Brings in the roster the website planned |
-| `/gos roster invite` | Invites everyone on it |
-| `/gos roster groups` | Moves them into their assigned groups |
+- **Loot Master**: announce, players roll MS / OS / Pass, award in one click. Ties go to officer priority, then soft
+  reserve, then wishlist, then whoever has received fewer items this lockout, then (if you want) attendance, then the
+  roll. Designated disenchanter, undo and trade tracking.
+- **DKP, EPGP or council**: points kept per core. Points per boss kill (automatic if you want), a starting value,
+  weekly decay, a fixed cost charged when an item is awarded in DKP mode, and manual adjustments with a reason. Every
+  change is logged and synced between officers.
+- **Soft reserves**: paste softres.it's Gargul export. Reserves and +1 counts show on the item tooltip, and a reserve
+  beats an unreserved roll.
+- **Wishlists**: every character keeps their own, synced to the guild, and the item tooltip says who wants it (always,
+  only with Shift, or never).
+- **Loot history**: every rare-or-better drop, with who got it, where and when.
 
-**Nothing to copy on raid night.** WoW cannot talk to the internet, so Guild OS writes
-an encoded blob into its saved variables and a small Windows companion forwards it when
-you log out. You set it up once and then forget it exists. The site walks you through it
-and hands you the download and the guild token.
+### 🛠️ Professions
+Who in the guild can make what, what nobody covers yet, and the crafters right on the item tooltip. On Anniversary,
+the guild recipe browser.
 
-**Portuguese and English**, roster pages included.
+### 🏰 Guild
+- **Chat**: your guild channels inside the window, one tab each: Guild, Officer and any the guild created
+- **Calendar**: raids planned on guildos.me land on the in-game calendar, with who signed up on the site
+- **Call to Arms**: an officer rallies the guild for a world boss or an open-world fight. Everyone running Guild OS
+  gets a popup with a sound and can answer *On my way*, and a guild chat line goes out for the rest
+- **Alliances**: link allied guilds for a shared chat, bulletin and crafter directory
 
-Turn it on with `/gos web on`, off with `/gos web off`.
+### 📣 Recruitment and Trials
+- A recruiting message that comes back on your interval and goes out with one click (Blizzard requires the click).
+  Members can help spread it, and officers choose up to which rank
+- Auto-welcome for new members, with your Discord link
+- Trials with a sponsor, a period and notes, flagged when they run over
 
-> The companion is Windows-only. Everything else, the site and the Discord bot, works
-> anywhere.
-
----
-
-## Why Guild OS?
-
-The default guild frame shows a name and a level. That's it. Guild OS gives officers and members **instant visibility** into what people are wearing, what they're attuned to, who showed up on time with their consumables, and who walked away with the loot — all in one clean, dark-themed window that opens where your old guild frame used to.
-
-The more guildmates who run it, the more complete the picture becomes. Everything syncs automatically in the background, compressed and throttled so it never spams the channel.
-
----
-
-## ✨ Highlights
-
-- 🧩 **Zero-config guild-wide sync** — gear, professions, attunements and stats flow automatically between everyone running Guild OS
-- 🔍 **Deep member inspection** — 17 gear slots, enchant warnings, professions, stats and attunements for any member, online or offline
-- 🌐 **Account-wide attunements** — link a player's alts so an attunement done on any character counts for the whole account, just like TBC Anniversary
-- 🛡️ **Officer toolkit** — enchant audits, raid tools, attendance scoring, loot history, trial management, recruitment and a loot master
-- 🎲 **Built-in Loot Master** — Gargul-style MS/OS rolls with wishlist awareness and fair, attendance-weighted tiebreakers
-- 🌎 **5 languages** — English, Português (BR), Español, Deutsch, Français
-
----
-
-## Features
-
-### 📋 Guild Roster
-- Modern dark-themed roster with **sortable columns**: Name, Level, Class, Race, Item Level, Professions, Attunements, Attendance %, Last Seen
-- **Search** by name, class, zone or rank
-- **Online / Offline filter** — offline members shown in grayscale
-- **Hover tooltips** with full character details
-- Stats bar showing total members, online count, and how many run Guild OS
-
-### 🔍 Member Inspection
-Click any member to open their full detail panel:
-- **Equipment** — all 17 gear slots with quality-colored names and item levels
-- **Enchant warnings** — key slots missing an enchant are flagged at a glance
-- **Professions** with rank progress bars
-- **Character stats** — HP, Mana, STR, AGI, STA, INT, SPI
-- **Raid attunements** with per-quest progress bars
-- **Account-wide attunements** — anything completed on a linked alt shows as complete, with the source character noted
-- **Linked Characters** (officer) — link/unlink a player's alts to share attunement progress across their whole account
-
-### ⚔️ TBC Attunement Tracker
-Automatically tracks quest-based attunement progress for every TBC raid:
-- **T4:** Karazhan, Gruul's Lair, Magtheridon's Lair
-- **T5:** Serpentshrine Cavern, Tempest Keep
-- **T6:** Hyjal Summit, Black Temple, Sunwell Plateau
-- Plus **Heroic dungeon key** reputation requirements
-
-Account-wide on Anniversary: link a player's alts and attunements are shared across the whole group.
-
-### 🪄 Guild Enchant Audit *(Officer)*
-- One-click, **guild-wide report of every equipped-but-unenchanted slot**, built from synced gear data
-- Sorted by most-missing first so you know exactly who to nudge before raid
-- Covers the slots that actually matter in TBC (head, shoulders, chest, legs, boots, wrists, hands, cloak, weapon)
-
-### 🧭 Raid Tools
-- **Composition breakdown** by class for your current group (or online guildmates when ungrouped)
-- **Raid buff coverage** — Stamina, Intellect, Spirit, Stats, Attack Power, Blessings, Totems
-- **Cooldown coverage** — Bloodlust/Heroism, Battle Rez, Innervate, Power Infusion, Misdirection, Soulstone, Salvation
-- Instantly see what your raid is missing before you pull
-
-### 🎲 Loot Master *(Gargul-style)*
-- Master Looter **announces items**, players roll **MS / OS / Pass**, ML **awards** with one click
-- **Wishlist-aware** — see at a glance who wants the item
-- **Fair tiebreakers** — optional attendance weighting, penalties for players who already looted this lockout, configurable minimum-attendance for MS rolls
-- Configurable roll duration, auto-announce on loot window, rarity threshold and a designated **disenchanter**
-- Award history with undo and pending-trade tracking
-
-### 🍖 Consumable Checker
-- Scans all raid members for expected TBC consumable buffs
-- Checks **5 categories**: Flask, Food, Weapon Buff, Battle Elixir, Guardian Elixir
-- Feeds directly into attendance scoring — missing consumables cost attendance %
-
-### 📊 Raid Tracker & Attendance
-- Automatically detects raids and **tracks full sessions** (start/end, boss encounters, player snapshots)
-- **Attendance scoring** with a transparent penalty system: 100% base, −10% late, −10% left early, −10% missing consumables
-- Review recent sessions and per-member attendance in the **Raids** tab
-
-### 📦 Loot Tracker
-- Automatically records every **Rare+ item** looted in raids and dungeons
-- Stores item link, recipient, timestamp, raid name and quantity
-- Browse the full, sortable loot history (up to 500 entries)
-
-### 🎯 TMB Integration *(That's My BiS)*
-- Import TMB CSV exports with **wishlist**, **prio** and **received loot** data
-- **Tooltip integration** — hover any item to see who has it on their wishlist (Settings → General: always, only while holding Shift, or off)
-- Syncs imported data between officers via addon comms
-- Dedicated **Wishlist / Loot** tab for browsing everything
-
-### 📖 Guild Recipe Browser
-- Searchable browser for every recipe known across the guild
-- **Icon-only profession filter tabs** — one icon per crafting profession, full name on hover
-- Gathering skills are filtered out automatically — only craftable recipes shown
-
-### 📝 Officer Notes *(Officer)*
-- Private notes with quick-tags (Role, Priority, Status) per member
-- **Synced between officers** in real time via addon comms
-
-### 👤 Trial Tracker *(Officer)*
-- Track trials/recruits with configurable trial periods (default 30 days)
-- Records start date, sponsor, status and evaluation notes
-- **Auto-expires** overdue trials and alerts officers
-
-### 📣 Recruitment System *(Officer)*
-- **Auto-recruit popup** on a configurable interval — one click posts your message (Blizzard requires a click for channel messages; Guild OS handles it cleanly)
-- **Send Now** button for instant posting
-- **Auto-welcome** — greets new members in guild chat with a customizable message and Discord link
-- Channel management and full configuration UI in the Recruitment tab
-
-### 🔐 Officer Rank Configuration *(Officer)*
-- Choose exactly which guild ranks count as "officers" from the **Settings** tab
-- A checkbox per rank, with names pulled live from the guild API (GM always locked as officer)
-- Changes apply immediately and sync to every officer in the guild
-
-### 📡 Automatic Data Sync
-- Members running Guild OS **automatically share** gear, professions, attunements and stats
-- Compressed, chunked protocol (LibSerialize + LibDeflate) that respects chat throttling
-- Periodic background sync every 5 minutes, plus a manual sync button
-- Truly zero-config — just install and data flows
-
-### 🛠️ Quality of Life
-- **Minimap button** (and a draggable position) for one-click access
-- **First-run onboarding** wizard so new users aren't lost
-- **Error resilience** — protected calls keep one bug from taking down the whole UI; `/guildos errors` dumps recent issues
-- **Stale-data prune** for members who left the guild
+### 🔐 Leadership *(officers)*
+- Your guild decides which ranks are officers
+- Officer notes with quick tags, synced between officers
+- A ban list that flags banned players on the tooltip
 
 ---
 
-## Slash Commands
+## 🌐 guildos.me and the Discord bot
 
-| Command | Description |
-|---|---|
-| `/guildos` or `/gos` | Toggle the Guild OS window |
-| `/guildos scan` | Re-collect your local character data |
-| `/guildos sync` | Broadcast your data to the guild |
-| `/guildos minimap` | Toggle the minimap button |
-| `/guildos prune` | Remove cached data for members who left |
-| `/guildos errors` | Dump recent captured errors |
-| `/guildos reset` | Wipe saved data and reload |
+Optional, and off until you turn it on in the **Web** tab. The addon works the same without it.
 
-
-Officers also get `/guildos recruit ...` sub-commands (on/off, status, msg, interval, channel, welcome, discord, invite).
+- **Discord signups that know who is signing**: item level, spec and attendance come with each one
+- **Plan on the site, run it in game**: the planned roster arrives by itself, and the Web tab has *Invite all* and a
+  button that moves everyone into their groups
+- **Your guild on the web**: roster, loot and attendance for your members, a recruiting page for everyone else, and
+  each character with their gear, drawn as they look in game on Forever (visit a barber once so the addon can see it)
+- **Nothing to copy on raid night**: a small Windows companion carries the data between the game and the site. The
+  site and the Discord bot work anywhere.
 
 ---
 
-## How It Works
+## On TBC Anniversary
 
-1. Install Guild OS on any guild member's client
-2. Press **J** to open it (it takes over the default guild frame)
-3. Your gear, professions, attunements and stats are collected automatically
-4. Data is compressed and shared with other Guild OS users in your guild
-5. Click any member to see their full character at a glance
-6. Officers unlock the full toolkit: enchant audits, raid tools, attendance, loot master, loot history, trials, recruitment, alt linking and rank config
-
-**The more guildmates who install it, the more you'll see.**
+Everything above, plus the trackers that only make sense for TBC content:
+- **Attunements** for every TBC raid, Karazhan to Sunwell, and the heroic keys, shared across a player's linked alts
+  the way Anniversary does
+- **Consumable checks**: flask or elixirs, food and weapon buffs, feeding attendance
 
 ---
 
-## Notes
+## Good to know
 
-- One file for **WoW TBC Anniversary** (Interface `20506`) and **WoW: Forever** (`16001`)
-- The TBC-content trackers — raid attunements, TBC consumables — are for the Anniversary client; on Forever they
-  have nothing to track
-- Channel messages (LookingForGroup, Trade) require a hardware click due to Blizzard restrictions — Guild OS uses a clickable popup instead of sending silently
-- Officer status is a configurable guild-rank threshold, adjustable in Settings by current officers
-- Data is stored per-guild in SavedVariables (isolated per guild name + realm)
+- Languages: English, Português, Español, Deutsch, Français, Русский, 한국어, 简体中文, 繁體中文
+- Channel messages (LookingForGroup, Trade) need a hardware click, so Guild OS asks for it with a popup instead of
+  sending silently
+- Data is stored per guild in SavedVariables
+- `/gos` opens the window and `/gos help` lists the commands; each one also has its button in the window
 
 ---
 
 ## Support
 
-**[Join the Guild OS Discord](https://discord.gg/8XA6gmNjja)** — questions get answered there, bugs get looked
-at, and new builds are announced there first. For the Forever beta it has a channel for whatever the addon could
-not find on that client and one for `/guildos probe` results, which is how the rest of it gets fixed.
+**[Join the Guild OS Discord](https://discord.gg/8XA6gmNjja)**: questions get answered there, bugs get looked at,
+and new builds are announced there first. If something misbehaves on Forever, `/guildos errors` says what the addon
+could not find on that client.
 
 Rather write it down? Open an issue on the project page — feedback is welcome either way.
 
