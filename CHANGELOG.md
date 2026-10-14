@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.5] - 2026-10-14
+
+### Fixed
+- o recrutamento mostra o texto de todas as caixas ao abrir a aba (#159)
+
+
 ## [0.77.4] - 2026-10-13
 
 ### Fixed
