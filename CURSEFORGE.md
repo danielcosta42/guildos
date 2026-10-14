@@ -7,7 +7,7 @@ feature list are kept in sync with the current release.
 
 ## Project Title (pick one)
 
-**Recommended:** `Guild OS — Guild Manager for WoW: Forever & TBC Anniversary`
+**Recommended:** `Guild OS — Guild Manager for WoW: Forever`
 
 Alternatives:
 - `Guild OS — Roster, Raid Cores, DKP & Loot for WoW: Forever`
@@ -15,7 +15,7 @@ Alternatives:
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> The guild window WoW: Forever never had: roster, professions, raid teams, attendance, DKP/EPGP, a loot master and guild chat in one place, every option a button. Also runs on TBC Anniversary.
+> The guild window WoW: Forever never had: roster, professions, raid teams, attendance, DKP/EPGP, a loot master and guild chat in one place, every option a button.
 
 ---
 
@@ -37,15 +37,13 @@ compressed and throttled, with everyone else running Guild OS. No spreadsheets, 
 
 *Made with care by **Chehul**.*
 
-![Interface: 16001, 20506](https://img.shields.io/badge/Client-Forever%20%2B%20TBC%20Anniversary-blueviolet)
+![Interface: 16001](https://img.shields.io/badge/Client-WoW%3A%20Forever-blueviolet)
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
 ---
 
 ## 🐉 Made for WoW: Forever
 
-- **One download, both clients.** The same file is marked for WoW: Forever (1.60) and TBC Anniversary (2.5.6), so an
-  addon manager installs it like any other addon.
 - **It speaks Forever.** Names with surnames and no realms, the new professions, the retail tooltip, and the Secret
   Values the client keeps private: Guild OS skips what it is not allowed to read instead of throwing errors at you.
 - **It can look like Forever.** Settings → Style switches every window, button and tab to Forever's own art and the
@@ -54,11 +52,8 @@ compressed and throttled, with everyone else running Guild OS. No spreadsheets, 
   professions. Recipes are shared once a member opens their profession window.
 - **Guild chat with its history.** Forever keeps your `/g` history on the server; the Chat tab reads it, with a tab
   for every guild channel.
-- **Raids are ready before Forever's are.** Raid teams, attendance, points and the loot master already run on
-  Anniversary and are waiting for Forever's raids, which open on December 9.
-
-Not everything applies there: raid attunements and the consumable checks are about TBC content, so on Forever they
-stay out of the way, and nobody loses attendance over consumables the addon cannot check.
+- **Raids are ready before Forever's are.** Raid teams, attendance, points and the loot master are built and waiting
+  for Forever's raids, which open on December 9.
 
 ---
 
@@ -78,10 +73,9 @@ The front door: guild chat in the big card, with what is happening in the guild 
   their class can play, and each raid is counted for the right core. Cores set up in Discord with the GuildOS bot
   come into the addon through the companion.
 - **Attendance that is measured, not declared.** Raids are detected on their own and checked every 5 minutes. Each
-  raid scores 100 per person, minus a penalty for arriving late, leaving early or (on Anniversary) skipping
-  consumables, and each core sets its own penalties.
-- **Raid Tools**: class composition, raid buff coverage and key cooldowns (Bloodlust, battle rez, Innervate,
-  Soulstone…) before you pull
+  raid scores 100 per person, minus a penalty for arriving late or leaving early, and each core
+  sets its own penalties.
+- **Raid Tools**: class composition, raid buff coverage and key cooldowns before you pull
 - **Enchant audit**: every unenchanted slot in the guild, most-missing first
 
 ### 💰 Loot, your way
@@ -101,8 +95,7 @@ RCLootCouncil already handles it, and then Guild OS stays completely out of the 
 - **Loot history**: every rare-or-better drop, with who got it, where and when.
 
 ### 🛠️ Professions
-Who in the guild can make what, what nobody covers yet, and the crafters right on the item tooltip. On Anniversary,
-the guild recipe browser.
+Who in the guild can make what, what nobody covers yet, and the crafters right on the item tooltip.
 
 ### 🏰 Guild
 - **Chat**: your guild channels inside the window, one tab each: Guild, Officer and any the guild created
@@ -132,18 +125,9 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 - **Plan on the site, run it in game**: the planned roster arrives by itself, and the Web tab has *Invite all* and a
   button that moves everyone into their groups
 - **Your guild on the web**: roster, loot and attendance for your members, a recruiting page for everyone else, and
-  each character with their gear, drawn as they look in game on Forever (visit a barber once so the addon can see it)
+  each character with their gear, drawn as they look in game (visit a barber once so the addon can see it)
 - **Nothing to copy on raid night**: a small Windows companion carries the data between the game and the site. The
   site and the Discord bot work anywhere.
-
----
-
-## On TBC Anniversary
-
-Everything above, plus the trackers that only make sense for TBC content:
-- **Attunements** for every TBC raid, Karazhan to Sunwell, and the heroic keys, shared across a player's linked alts
-  the way Anniversary does
-- **Consumable checks**: flask or elixirs, food and weapon buffs, feeding attendance
 
 ---
 
