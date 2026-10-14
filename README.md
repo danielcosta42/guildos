@@ -214,4 +214,4 @@ Bug reports and feature requests are welcome! Please use the [GitHub Issues](htt
 
 If Guild OS has been useful to your guild and you'd like to help keep it maintained, consider buying me a coffee ☕
 
-[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-0070BA?style=for-the-badge&logo=paypal&logoColor=white)](https://www.paypal.com/donate/?business=daniel.cfdutra13%40gmail.com&no_recurring=0&currency_code=USD)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/chehul)

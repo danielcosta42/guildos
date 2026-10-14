@@ -272,7 +272,7 @@ not find on that client and one for `/guildos probe` results, which is how the r
 
 Rather write it down? Open an issue on the project page — feedback is welcome either way.
 
-If Guild OS has been useful to your guild and you'd like to help keep it maintained, you can [buy me a coffee ☕](https://www.paypal.com/donate/?business=daniel.cfdutra13%40gmail.com&no_recurring=0&currency_code=USD).
+If Guild OS has been useful to your guild and you'd like to help keep it maintained, you can [buy me a coffee ☕](https://buymeacoffee.com/chehul).
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 [![GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)
