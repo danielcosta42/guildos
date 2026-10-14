@@ -2875,5 +2875,13 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         for _, f in ipairs(flex) do
             f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
         end
+        -- The tab's OnShow fills every box while recruitContent is still 1x1 and the flexible
+        -- ones have no width, and an edit box filled before it is laid out shows nothing until
+        -- its cursor moves (#158).
+        for _, child in ipairs({ recruitContent:GetChildren() }) do
+            if child:GetObjectType() == "EditBox" and not child:HasFocus() then
+                child:SetCursorPosition(0)
+            end
+        end
     end)
 end
