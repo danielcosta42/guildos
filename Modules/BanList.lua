@@ -177,9 +177,8 @@ end
 function BanList:_ParseJoin(sysMsg)
     if not sysMsg then return nil end
     local name
-    if ERR_GUILD_JOIN_S then
-        name = sysMsg:match((ERR_GUILD_JOIN_S:gsub("%%s", "(.+)")))
-    end
+    local args = GuildOS:MatchFormat(sysMsg, ERR_GUILD_JOIN_S)   -- "%s" or a numbered "%1$s" (#160)
+    if args then name = args[1] end
     if not name then
         name = sysMsg:match("(.+) entrou na guilda%.")
             or sysMsg:match("(.+) has joined the guild%.")

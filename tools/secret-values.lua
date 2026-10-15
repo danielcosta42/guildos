@@ -288,7 +288,7 @@ check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", "inv pls", "Bob-Forever") and i
 
 local LootMaster = GuildOS.LootMaster
 LootMaster.listeningForRolls, LootMaster.activeLoot = true, { itemId = 1 }
-LootMaster.rollPattern = "(.+) rolls (%d+) %((%d+)%-(%d+)%)"
+LootMaster.rollFormat = "%s rolls %d (%d-%d)"
 check(fires(function() LootMaster:OnSystemMessage(secret()) end), "LootMaster: a secret roll line does not raise")
 local rolled
 local realProcess = LootMaster.ProcessSystemRoll
