@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.77.6] - 2026-10-15
+
+### Fixed
+- mensagens do sistema com argumentos numerados — o log do roster não quebra no cliente alemão, e rolagens e entradas na guilda são lidas em qualquer idioma (#161)
+
+
 ## [0.77.5] - 2026-10-14
 
 ### Fixed
