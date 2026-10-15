@@ -37,37 +37,33 @@ function RosterLog:_EventId(action, target, author, ts)
         tostring(author or ""), bucket)
 end
 
--- Build a Lua pattern from a localized "%s ... %s" format string. Returns
--- the pattern and the number of captures, in order of appearance.
-local function fmtToPattern(fmt)
-    if not fmt then return nil end
-    -- escape magic chars, then turn each %s into a capture
-    local esc = fmt:gsub("([%(%)%.%+%-%*%?%[%]%^%$])", "%%%1")
-    local pat = esc:gsub("%%s", "(.+)")
-    return "^" .. pat .. "$"
-end
-
+-- Each message read through GuildOS:MatchFormat, which takes "%s" and German's numbered
+-- "%1$s" alike and hands the arguments back by number, whatever order the language says
+-- them in (#160).
 function RosterLog:_ParseSystem(msg)
     if not msg then return nil end
     msg = strtrim(msg)
     -- join: ERR_GUILD_JOIN_S = "%s has joined the guild."
-    local p = fmtToPattern(ERR_GUILD_JOIN_S)
-    if p then local t = msg:match(p); if t then return { action = "join", target = self:_NormShort(t) } end end
+    local a = GuildOS:MatchFormat(msg, ERR_GUILD_JOIN_S)
+    if a and a[1] then return { action = "join", target = self:_NormShort(a[1]) } end
     -- leave: ERR_GUILD_LEAVE_S = "%s has left the guild."
-    p = fmtToPattern(ERR_GUILD_LEAVE_S)
-    if p then local t = msg:match(p); if t then return { action = "leave", target = self:_NormShort(t) } end end
+    a = GuildOS:MatchFormat(msg, ERR_GUILD_LEAVE_S)
+    if a and a[1] then return { action = "leave", target = self:_NormShort(a[1]) } end
     -- kick: ERR_GUILD_REMOVE_SS = "%s has been kicked out of the guild by %s."  (target, actor)
-    p = fmtToPattern(ERR_GUILD_REMOVE_SS)
-    if p then local t, a = msg:match(p); if t and a then
-        return { action = "kick", target = self:_NormShort(t), author = self:_NormShort(a) } end end
+    a = GuildOS:MatchFormat(msg, ERR_GUILD_REMOVE_SS)
+    if a and a[1] and a[2] then
+        return { action = "kick", target = self:_NormShort(a[1]), author = self:_NormShort(a[2]) }
+    end
     -- promote: ERR_GUILD_PROMOTE_SSS = "%s has promoted %s to %s."  (actor, target, rank)
-    p = fmtToPattern(ERR_GUILD_PROMOTE_SSS)
-    if p then local a, t, rk = msg:match(p); if a and t then
-        return { action = "promote", target = self:_NormShort(t), author = self:_NormShort(a), detail = rk } end end
+    a = GuildOS:MatchFormat(msg, ERR_GUILD_PROMOTE_SSS)
+    if a and a[1] and a[2] then
+        return { action = "promote", target = self:_NormShort(a[2]), author = self:_NormShort(a[1]), detail = a[3] }
+    end
     -- demote: ERR_GUILD_DEMOTE_SSS = "%s has demoted %s to %s."  (actor, target, rank)
-    p = fmtToPattern(ERR_GUILD_DEMOTE_SSS)
-    if p then local a, t, rk = msg:match(p); if a and t then
-        return { action = "demote", target = self:_NormShort(t), author = self:_NormShort(a), detail = rk } end end
+    a = GuildOS:MatchFormat(msg, ERR_GUILD_DEMOTE_SSS)
+    if a and a[1] and a[2] then
+        return { action = "demote", target = self:_NormShort(a[2]), author = self:_NormShort(a[1]), detail = a[3] }
+    end
     return nil
 end
 

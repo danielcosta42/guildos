@@ -26,7 +26,7 @@ LootMaster.restrictedRollers = nil    -- set of lowercased names allowed to roll
 LootMaster.awardHistory      = {}     -- recent awards for undo
 LootMaster.pendingTrades     = {}     -- items awaiting trade: [itemId] = { player, link, itemId, timestamp }
 LootMaster.testMode          = false  -- when true, bypasses raid/ML checks for local testing
-LootMaster.rollPattern       = nil    -- built in Initialize() from RANDOM_ROLL_RESULT
+LootMaster.rollFormat        = nil    -- the localized RANDOM_ROLL_RESULT, set in Initialize()
 LootMaster.disenchanter      = ""     -- runtime cache; persisted to GuildOS.db.lootMaster.disenchanter
 
 -- Config defaults
@@ -134,14 +134,10 @@ function LootMaster:Initialize()
     self:LoadCfg()
     self.pendingTrades      = {}
 
-    -- Build /roll detection pattern from localized RANDOM_ROLL_RESULT global
-    -- e.g. EN: "%s rolls %d (%d-%d)."  → ^(.+) rolls (%d+) %((%d+)%-(%d+)%)%.$
-    do
-        local tmpl = RANDOM_ROLL_RESULT or "%s rolls %d (%d-%d)."
-        local p = tmpl:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")
-        p = p:gsub("%%%%s", "(.+)"):gsub("%%%%d", "(%%d+)")
-        self.rollPattern = "^" .. p .. "$"
-    end
+    -- /roll lines are read through the localized RANDOM_ROLL_RESULT ("%s rolls %d (%d-%d)." in
+    -- English), by GuildOS:MatchFormat: a language that numbers its arguments ("%1$s ... %2$d")
+    -- read nothing before, without a word (#160).
+    self.rollFormat = RANDOM_ROLL_RESULT or "%s rolls %d (%d-%d)."
 
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "LOOT_OPENED")
@@ -357,10 +353,9 @@ end
 -- All other roll ranges are ignored.
 ----------------------------------------------------------------------
 function LootMaster:ProcessSystemRoll(message)
-    if not self.rollPattern then return end
-
-    local roller, roll, low, high = string.match(message, self.rollPattern)
-    if not roller then return end
+    local args = GuildOS:MatchFormat(message, self.rollFormat)
+    if not args or not args[1] then return end
+    local roller, roll, low, high = args[1], args[2], args[3], args[4]
 
     roll = tonumber(roll)
     low  = tonumber(low)

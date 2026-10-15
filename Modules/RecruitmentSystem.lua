@@ -1595,13 +1595,9 @@ function Recruitment:RegisterWelcomeEvent()
         if not IsInGuild() then return end
         if not Recruitment._rosterReady then return end
 
-        -- Detect "%s has joined the guild."
-        local joinPattern = ERR_GUILD_JOIN_S and ERR_GUILD_JOIN_S:gsub("%%s", "(.+)") or nil
-        local newMember
-
-        if joinPattern then
-            newMember = msg:match(joinPattern)
-        end
+        -- Detect "%s has joined the guild." ("%s" or a numbered "%1$s", #160)
+        local args = GuildOS:MatchFormat(msg, ERR_GUILD_JOIN_S)
+        local newMember = args and args[1]
 
         -- Fallback patterns for PT/EN clients
         if not newMember then

@@ -5,6 +5,44 @@
 local L = GuildOS.L
 
 ----------------------------------------------------------------------
+-- A localized message read back into its arguments (issue #160).
+-- The client's global strings are format strings, and a language may number its arguments and
+-- say them in another order: "%s has been kicked out of the guild by %s." in English,
+-- "%1$s wurde von %2$s aus der Gilde geworfen." in German. Reading "%1$s" as text made "%1" a
+-- back-reference in the Lua pattern: "invalid capture index" on every system message.
+----------------------------------------------------------------------
+local MARK = "\001"          -- stands in for a placeholder while the rest is escaped
+local formatCache = {}
+
+local function formatPattern(fmt)
+    local hit = formatCache[fmt]
+    if hit then return hit[1], hit[2] end
+    local order, n = {}, 0
+    local marked = fmt:gsub("%%(%d*)%$?([sd])", function(index, kind)
+        n = n + 1
+        order[n] = tonumber(index) or n
+        return MARK .. kind
+    end)
+    local pat = marked:gsub("([%%%(%)%.%+%-%*%?%[%]%^%$])", "%%%1")
+    pat = pat:gsub(MARK .. "s", "(.+)"):gsub(MARK .. "d", "(%%d+)")
+    pat = "^" .. pat .. "$"
+    formatCache[fmt] = { pat, order }
+    return pat, order
+end
+
+-- Pure. The arguments of `msg` as `fmt` numbers them (args[1] is the format's first argument,
+-- wherever the language says it), as strings; nil when `msg` is not that message.
+function GuildOS:MatchFormat(msg, fmt)
+    if type(msg) ~= "string" or type(fmt) ~= "string" or fmt == "" then return nil end
+    local pat, order = formatPattern(fmt)
+    local caps = { msg:match(pat) }
+    if caps[1] == nil then return nil end
+    local args = {}
+    for i, index in ipairs(order) do args[index] = caps[i] end
+    return args
+end
+
+----------------------------------------------------------------------
 -- Alt / Main linking (account-wide attunement propagation)
 ----------------------------------------------------------------------
 function GuildOS:LinkAlt(altKey, mainKey)
