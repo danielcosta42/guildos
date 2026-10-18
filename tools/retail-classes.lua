@@ -78,6 +78,10 @@ for _, c in ipairs(GuildOS.Client.classes) do
 end
 check(CM.CLASS_ROLES.EVOKER.healer and CM.CLASS_ROLES.EVOKER.rdps and not CM.CLASS_ROLES.EVOKER.tank, "an Evoker heals or casts")
 check(CM.CLASS_ROLES.HUNTER.mdps and CM.CLASS_ROLES.HUNTER.rdps, "a retail Hunter can be melee (Survival)")
+-- A core's size is one retail raids have: flex up to 30, mythic at 20; no 40.
+check(table.concat(CM:RaidSizes(), ",") == "10,20,30", "a retail core is 10, 20 or 30")
+local t30 = CM:RaidTargets(30)
+check(t30 and t30.tank + t30.healer + t30.mdps + t30.rdps == 30, "a 30-player core has a composition that adds up")
 
 local RT = GuildOS.RaidTools
 local function covered(defs, counts)
@@ -99,6 +103,7 @@ check(#GuildOS.RaidTools.CLASS_ORDER == 9 and #GuildOS.RecruitBeacon.CLASS_TOKEN
   "Forever lists nine classes")
 check(not has(GuildOS.Recruitment.CLASSES, "MONK"), "no Monk on Forever")
 check(not GuildOS.CoreManager.CLASS_ROLES.HUNTER.mdps, "a Forever Hunter is ranged")
+check(table.concat(GuildOS.CoreManager:RaidSizes(), ",") == "10,20,40", "a Forever core is 10, 20 or 40")
 check(covered(GuildOS.RaidTools.BUFFS, { PRIEST = 1 })["Spirit"] == true, "Forever keeps its own buff list")
 
 print(("retail-classes: %d checks passed"):format(checks))
