@@ -180,6 +180,7 @@ function GuildOS:CreateCoresPanel(panel)
 
     -- Add-member form state (persists across BuildSettings rebuilds)
     local addGMName     = nil   -- selected guild member name
+    local addGMKey      = nil   -- and their key, with their own realm (connected realms on retail)
     local addGMClass    = nil   -- classFile e.g. "HUNTER"
     local addGMRole     = nil   -- nil = auto-inferred from class
     local gmDropdown    = nil   -- floating dropdown frame, created once on first open
@@ -225,7 +226,7 @@ function GuildOS:CreateCoresPanel(panel)
         ClearSettings()
         -- Reset add-member selection when switching to a different core
         if coreName ~= lastCoreBuilt then
-            addGMName = nil; addGMClass = nil; addGMRole = nil
+            addGMName = nil; addGMClass = nil; addGMRole = nil; addGMKey = nil
         end
         lastCoreBuilt = coreName
         if not coreName or coreName == "" then
@@ -1073,6 +1074,7 @@ function GuildOS:CreateCoresPanel(panel)
                     if gname then
                         guildMembers[#guildMembers + 1] = {
                             name   = gname:match("^([^%-]+)") or gname,
+                            full   = gname,
                             class  = gclass or "WARRIOR",
                             online = gonline,
                         }
@@ -1097,7 +1099,7 @@ function GuildOS:CreateCoresPanel(panel)
                     local gy = 0
                     for _, gm in ipairs(guildMembers) do
                         if not lf or gm.name:lower():find(lf, 1, true) then
-                            local key = GuildOS:GetPlayerKey(gm.name, GetRealmName())
+                            local key = GuildOS:KeyOfRosterName(gm.full)
                             local alreadyIn = inCoreKeys[key]
                             local cr, cg, cb = GuildOS:GetClassColor(gm.class)
                             local dot = gm.online and "|TInterface\\COMMON\\Indicator-Green:10|t " or "|TInterface\\COMMON\\Indicator-Gray:10|t "
@@ -1126,6 +1128,7 @@ function GuildOS:CreateCoresPanel(panel)
                                 local captureGM = gm
                                 row:SetScript("OnClick", function()
                                     addGMName  = captureGM.name
+                                    addGMKey   = GuildOS:KeyOfRosterName(captureGM.full)
                                     addGMClass = captureGM.class
                                     addGMRole  = InferRole(captureGM.class)
                                     gmDropdown:Hide()
@@ -1188,14 +1191,14 @@ function GuildOS:CreateCoresPanel(panel)
             addBtn:SetPoint("LEFT", roleBtn, "RIGHT", 6, 0)
             addBtn:SetScript("OnClick", function()
                 if not addGMName then SetStatus(L["Select a player first."], C.red); return end
-                local k = GuildOS:GetPlayerKey(addGMName, GetRealmName())
+                local k = addGMKey or GuildOS:GetPlayerKey(addGMName, GetRealmName())
                 CM:AddMember(k, {
                     name  = addGMName,
                     class = addGMClass,
                     role  = addGMRole or InferRole(addGMClass or "WARRIOR"),
                 }, coreName)
                 CM:BroadcastRoster(coreName)
-                addGMName = nil; addGMClass = nil; addGMRole = nil
+                addGMName = nil; addGMClass = nil; addGMRole = nil; addGMKey = nil
                 BuildSettings(coreName)
             end)
             y = y - 30

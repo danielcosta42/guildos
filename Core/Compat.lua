@@ -298,6 +298,8 @@ function Compat.FindGuildRosterIndex(name, realm)
     if not name or name == "" then return nil, "absent" end
     local short = name:match("^([^-]+)") or name
     realm = realm or name:match("^[^-]+%-(.+)$")
+    -- Retail's roster spells realms normalized; "Tol Barad" from GetRealmName() is its "TolBarad" (ADR-0026).
+    if realm and GuildOS.Client.isRetail then realm = realm:gsub("[%s%-]", "") end
     local n = GetNumGuildMembers() or 0
     local onlyIdx, hits = nil, 0
     for i = 1, n do
