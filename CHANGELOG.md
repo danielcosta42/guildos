@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.83.0] - 2026-10-18
+
+### Added
+- a lista de membros com as colunas que cada um liga, desliga e reordena (#178)
+
+### Fixed
+- da revisão — a spec desenha o que foi lido mesmo se o sync a tirar antes do próximo refresh, e o painel aberto acompanha o que é oferecido (#178)
+- da revisão — a tabela segue o que o leitor pode ver sem redimensionar, spec pela árvore e célula vazia por último em toda coluna (#178)
+
+
 ## [0.82.0] - 2026-10-18
 
 ### Added
