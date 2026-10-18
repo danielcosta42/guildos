@@ -96,4 +96,68 @@ REALM, NORM = "Tol Barad", "TolBarad"
 check(GuildOS:GetPlayerKey("Ana", "Tol Barad") == "Ana-Tol Barad", "Anniversary keeps a realm's bytes")
 check(GuildOS:GetPlayerKey("Ana") == "Ana-Tol Barad", "Anniversary's own realm is GetRealmName()")
 
+-- ── 4b. A roster line's key, as the core picker files a guildmate (review of #165) ──
+GuildOS.Client = { isAnniversary = false, isRetail = true }
+REALM, NORM = "Azralon", "Azralon"
+check(GuildOS:KeyOfRosterName("Bob-Gallywix") == "Bob-Gallywix", "a connected-realm guildmate keeps their realm")
+check(GuildOS:KeyOfRosterName("Bob") == "Bob-Azralon", "a roster name with no realm is on mine")
+check(GuildOS:KeyOfRosterName("Cid-Tol Barad") == "Cid-TolBarad", "normalized")
+local corePanel = io.open(ADDON .. "/UI/CorePanel.lua", "rb"):read("*a")
+check(corePanel:find("GuildOS:KeyOfRosterName(gm.full)", 1, true) ~= nil, "the core's member picker files a guildmate by that key")
+
+-- ── 5. Officer trust is the whole key on retail (review of #165) ─────────
+-- An officer's name on one connected realm is not an officer on another: an addon message from
+-- Bob-Gallywix must not carry Bob-Azralon's rank. Forever keeps matching by name.
+DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+function hooksecurefunc() end
+function debugstack() return "" end
+function wipe(t) for k in pairs(t) do t[k] = nil end return t end
+local ROSTER = { { "Bob-Azralon", 0 }, { "Bob-Gallywix", 5 }, { "Cid-TolBarad", 1 } }
+function IsInGuild() return true end
+function GetNumGuildMembers() return #ROSTER end
+function GetGuildRosterInfo(i) local r = ROSTER[i]; if r then return r[1], "Rank", r[2] end end
+local GUILD_REALM
+function GetGuildInfo() return "Guild", "Rank", 1, GUILD_REALM end
+dofile(ADDON .. "/Core/Core.lua")
+GuildOS.Client = { isAnniversary = false, isRetail = true }
+REALM, NORM = "Azralon", "Azralon"
+GuildOS.db = { settings = { officerMaxRank = 1 } }
+check(GuildOS:IsOfficerByName("Bob-Azralon"), "the officer is an officer")
+check(not GuildOS:IsOfficerByName("Bob-Gallywix"), "a connected-realm namesake of an officer is not one")
+check(GuildOS:IsOfficerByName("Bob"), "a sender with no realm is on mine")
+check(not GuildOS:IsOfficerByName("Bob-Elsewhere"), "a namesake from a realm the guild is not on is not one")
+check(GuildOS:IsOfficerByName("Cid-Tol Barad"), "a realm spelt with its space is the roster's")
+GuildOS.Client = { isAnniversary = false }
+check(GuildOS:IsOfficerByName("Bob-Whatever"), "Forever matches by name, as it always has")
+
+-- ── 6. One guild, one database, whichever connected realm a character is on ──
+local function dbKey(retail, playerRealm, guildRealm)
+  GuildOS.Client = retail and { isAnniversary = false, isRetail = true } or { isAnniversary = true }
+  REALM, NORM, GUILD_REALM = playerRealm, (playerRealm:gsub(" ", "")), guildRealm
+  GuildOSDB, GuildOS.guildKey, GuildOS.db = {}, nil, nil
+  GuildOS:ResolveGuildDB()
+  return GuildOS.guildKey
+end
+check(dbKey(true, "Tol Barad", nil) == "Guild-TolBarad", "on its home realm the guild's database is the home realm's")
+check(dbKey(true, "Gallywix", "TolBarad") == "Guild-TolBarad", "and a character on a connected realm opens the same one")
+check(dbKey(false, "Tol Barad", nil) == "Guild-Tol Barad", "Anniversary keeps its keys' bytes")
+
+-- ── 7. Two namesakes vote twice ─────────────────────────────────────────
+GuildOS.Client = { isAnniversary = false, isRetail = true }
+REALM, NORM = "Azralon", "Azralon"
+GuildOS.db = { polls = { list = { p1 = { id = "p1", votes = {} } } } }
+dofile(ADDON .. "/Modules/Polls.lua")
+GuildOS.Polls.Refresh = function() end
+GuildOS.Polls:OnSync({ act = "vote", data = { id = "p1", opt = 1 } }, "Ana-Azralon")
+GuildOS.Polls:OnSync({ act = "vote", data = { id = "p1", opt = 2 } }, "Ana-Gallywix")
+local votes = GuildOS.db.polls.list.p1.votes
+check(votes["Ana-Azralon"] == 1 and votes["Ana-Gallywix"] == 2, "connected-realm namesakes cast two votes")
+GuildOS.db.calendar = { events = { e1 = { id = "e1" } }, deleted = {} }
+dofile(ADDON .. "/Modules/Calendar.lua")
+GuildOS.Calendar.Refresh = function() end
+GuildOS.Calendar:OnSync({ act = "rsvp", data = { id = "e1", status = "yes" } }, "Ana-Azralon")
+GuildOS.Calendar:OnSync({ act = "rsvp", data = { id = "e1", status = "no" } }, "Ana-Gallywix")
+local rsvps = GuildOS.db.calendar.events.e1.rsvps
+check(rsvps["Ana-Azralon"].status == "yes" and rsvps["Ana-Gallywix"].status == "no", "and answer an event twice")
+
 print(("retail-keys: %d checks passed"):format(checks))
