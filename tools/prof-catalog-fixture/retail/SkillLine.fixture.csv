@@ -1,0 +1,10 @@
+DisplayName_lang,AlternateVerb_lang,Description_lang,HordeDisplayName_lang,NeutralDisplayName,ID,CategoryID,SpellIconFileID,CanLink,ParentSkillLineID,ParentTierIndex,Flags,SpellBookSpellID,ExpansionNameSharedStringID,HordeExpansionNameSharedStringID
+Blacksmithing,Modify,Higher smithing skill allows you to learn higher level smithing plans.  Blacksmithing plans can be found on trainers around the world as well as from quests and monsters.,,,164,11,4620670,1,0,0,4224,2018,0,0
+Cooking,,Higher cooking skill allows you to learn higher level cooking recipes.  Recipes can be found on trainers around the world as well as from quests and as drops from monsters.,,,185,9,4620671,1,0,0,128,2550,0,0
+Enchanting,Enchant,Higher enchanting skill allows you to learn more powerful formulae.  Formulae can be found on trainers around the world as well as from quests and monsters.,,,333,11,4620672,1,0,0,4224,7411,0,0
+Khaz Algar Blacksmithing,,,,,2872,11,4620670,0,164,14,0,0,989,0
+Khaz Algar Cooking,,,,,2873,9,4620671,0,185,14,0,0,989,0
+Khaz Algar Enchanting,,,,,2874,11,4620672,0,333,14,0,0,989,0
+Midnight Blacksmithing,,,,,2907,11,4620670,0,164,15,0,0,1121,0
+Midnight Cooking,,,,,2908,9,4620671,0,185,15,0,0,1121,0
+Midnight Enchanting,,,,,2909,11,4620672,0,333,15,0,0,1121,0

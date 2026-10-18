@@ -1,0 +1,5 @@
+ID,Type,CraftingDifficultyID,CraftedItemID,ItemBonusTreeID,CraftingDifficulty,Field_10_0_0_44649_005,CraftSkillBonusPercent,ReCraftSkillBonusPercent,InspirationSkillBonusPercent,Field_10_0_0_44649_009,Field_10_0_0_45141_011,FirstCraftFlagQuestID,FirstCraftTreasureID,FirstCraftPlayerDataFlagCharacterID,CraftedTreasureID
+109,0,1,0,0,60,0,0,0,0,0,0,71256,113706,0,0
+1313,0,21,217143,4293,275,0,0,0,0,0,0,80625,120375,0,0
+2687,0,34,238018,5275,480,0,0,0,0,0,0,0,139085,20,0
+3223,0,26,0,0,450,0,0,0,0,0,0,0,139085,176,0

@@ -42,6 +42,9 @@ local PROF_ICONS = {
     [185] = "Interface\\Icons\\INV_Misc_Food_15",
     [129] = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
     [356] = "Interface\\Icons\\Trade_Fishing",
+    -- Retail's (issue #167).
+    [755] = "Interface\\Icons\\INV_Misc_Gem_01",
+    [773] = "Interface\\Icons\\INV_Inscription_Tradeskill01",
 }
 local ALL_ICON = "Interface\\Icons\\INV_Misc_Book_09"
 

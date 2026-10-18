@@ -78,6 +78,7 @@ Modules\LootMaster.lua
 Modules\RecipeTracker.lua
 Modules\CraftNet.lua
 Data\ProfCatalogForever.lua
+Data\ProfCatalogRetail.lua
 Modules\Professions.lua
 Modules\ProfSync.lua
 Modules\Look.lua
