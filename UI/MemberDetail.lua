@@ -1009,11 +1009,9 @@ end
 -- Create a gear slot row (with enchant & gem display)
 ----------------------------------------------------------------------
 
--- Slots where missing enchant is a serious issue
-local ENCHANT_WARNING_SLOTS = {
-    [1] = true, [3] = true, [5] = true, [7] = true, [8] = true,
-    [9] = true, [10] = true, [15] = true, [16] = true,
-}
+-- Slots where missing enchant is a serious issue: this game's (Midnight's on retail, ADR-0026).
+local ENCHANT_WARNING_SLOTS = {}
+for _, slot in ipairs(GuildOS.Client.enchantSlots) do ENCHANT_WARNING_SLOTS[slot] = true end
 
 function CreateGearRow(parent, slotId, item, yOff, width)
     local ROW_H = 26

@@ -463,6 +463,26 @@ function Compat.GetItemInfo(item)
     if GetItemInfo then return GetItemInfo(item) end
 end
 
+-- An item's level as it is worn. On retail (ADR-0026) upgrades, crafting and the track an item
+-- dropped from move it away from GetItemInfo's base level, `base`, which every other client keeps.
+function Compat.ItemLevel(link, base)
+    if GuildOS.Client.isRetail and C_Item and C_Item.GetDetailedItemLevelInfo then
+        local level = C_Item.GetDetailedItemLevelInfo(link)
+        if tonumber(level) and level > 0 then return level end
+    end
+    return base
+end
+
+-- My equipped average as the game shows it, on retail; nil elsewhere, where the addon averages its
+-- own slots as it always has.
+function Compat.AverageItemLevel()
+    if not (GuildOS.Client.isRetail and GetAverageItemLevel) then return nil end
+    local _, equipped = GetAverageItemLevel()
+    equipped = tonumber(equipped)
+    if not equipped or equipped <= 0 then return nil end
+    return math.floor(equipped)
+end
+
 -- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
 function Compat.GetSpellInfo(spell)
     if C_Spell and C_Spell.GetSpellInfo then

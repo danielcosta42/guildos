@@ -7,11 +7,11 @@
 local GearAudit = {}
 GuildOS.GearAudit = GearAudit
 
--- Inventory slots where a missing enchant is a real problem in TBC.
--- Mirrors UI/MemberDetail.lua ENCHANT_WARNING_SLOTS:
--- 1 Head, 3 Shoulder, 5 Chest, 7 Legs, 8 Feet, 9 Wrist, 10 Hands,
--- 15 Back, 16 Main Hand.
-local ENCHANTABLE_SLOTS = { 1, 3, 5, 7, 8, 9, 10, 15, 16 }
+-- Inventory slots where a missing enchant is a real problem, this game's (GuildOS.Client.enchantSlots):
+-- TBC's 1 Head, 3 Shoulder, 5 Chest, 7 Legs, 8 Feet, 9 Wrist, 10 Hands, 15 Back, 16 Main Hand; on
+-- retail Midnight's 1 Head, 3 Shoulder, 5 Chest, 8 Feet, 11 and 12 the rings, 16 Main Hand.
+-- UI/MemberDetail.lua's ENCHANT_WARNING_SLOTS reads the same list.
+local ENCHANTABLE_SLOTS = GuildOS.Client.enchantSlots
 
 function GearAudit:GetEnchantableSlots()
     return ENCHANTABLE_SLOTS
