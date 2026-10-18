@@ -635,7 +635,9 @@ function GuildOS:CreateRosterPanel(parent, host)
     local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
     local CHIP_GAP = 6
     local CHIP_H = 22
-    local CHIP_W = (RAIL_BTN_W - CHIP_GAP) / 2
+    -- Five rows under the rank list: two chips to a row, three for retail's thirteen classes.
+    local GRID = UI:ChipGrid(#CLASS_ORDER, RAIL_BTN_W, CHIP_GAP, 5)
+    local CHIP_W = GRID.w
 
     local function CreateClassChip(classFile)
         local chip = CreateFrame("Button", nil, rail, "BackdropTemplate")
@@ -683,16 +685,15 @@ function GuildOS:CreateRosterPanel(parent, host)
     local CHIP_ROW_H = CHIP_H + 4
     for idx, classFile in ipairs(CLASS_ORDER) do
         local chip = CreateClassChip(classFile)
-        local col = (idx - 1) % 2
-        local rowI = math.floor((idx - 1) / 2)
+        local col, rowI = GRID:Cell(idx)
         local x = RAIL_PAD + col * (CHIP_W + CHIP_GAP)
-        local y = 10 + (4 - rowI) * CHIP_ROW_H   -- bottom-up; 5 rows (row 0 highest)
+        local y = 10 + (GRID.rows - 1 - rowI) * CHIP_ROW_H   -- bottom-up; row 0 highest
         chip:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", x, y)
         host.classChips[classFile] = chip
     end
     local classHeader = UI:CreateText(rail, L["CLASSES"], 9, C.gold.r, C.gold.g, C.gold.b)
     classHeader:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
-    classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + 5 * CHIP_ROW_H + 2)
+    classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + GRID.rows * CHIP_ROW_H + 2)
 
     function host:UpdateRailActive()
         self.segBtns.all:SetActive(self.segment == "all")

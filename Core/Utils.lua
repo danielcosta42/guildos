@@ -234,6 +234,12 @@ function GuildOS:GetPlayerKey(name, realm)
     return name .. "-" .. realm
 end
 
+-- The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's.
+-- On retail that is what tells two connected-realm namesakes apart (ADR-0026).
+function GuildOS:KeyOfRosterName(full)
+    return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
+end
+
 -- A member key another client built, as this client keys that member (issue #97). On WoW: Forever
 -- a key carries its builder's realm and a guild's clients answer different ones, so a key that
 -- arrives inside a payload is rebuilt from its name. Forever names never hold a hyphen (the roster,
