@@ -3,6 +3,9 @@
 -- Master Looter announces items, players roll MS/OS, ML awards loot.
 -- Integrates with wishlists to show interest on items.
 ----------------------------------------------------------------------
+-- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+if GuildOS.Client.isRetail then return end
+
 local LootMaster = {}
 GuildOS.LootMaster = LootMaster
 -- The loot council's addon-message prefix, renamed in #120: a raid on mixed versions

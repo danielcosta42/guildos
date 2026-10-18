@@ -67,6 +67,7 @@ local CLIENTS = {
   { c = ANNIVERSARY, tbc = true,  label = "TBC Anniversary" },
   { c = FOREVER,     tbc = false, label = "a 1.60 client" },
   { c = UNKNOWN,     tbc = false, label = "an unknown client" },
+  { c = RETAIL,      tbc = false, retail = true, label = "retail" },
 }
 
 dofile(ADDON .. "/Core/Core.lua")
@@ -213,11 +214,14 @@ for _, case in ipairs(CLIENTS) do
     and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == case.tbc,
     "the TBC modules start only where they exist (" .. case.label .. ")")
   check(next(GuildOS.State.startup.failed) == nil, "nothing is recorded as failed to start on " .. case.label)
-  check(GuildOS.Wishlist ~= nil, "the wishlist exists on " .. case.label)
-  GuildOS.Wishlist:RebuildItemIndex()
-  check(GuildOS.Wishlist:GetItemInterest(WISHED) ~= nil, "a wished item is searchable on " .. case.label)
-  check((GuildOS.Wishlist:GetItemInterest(RAID_ITEM) ~= nil) == case.tbc,
-    "the TBC raid catalogue is " .. (case.tbc and "" or "not ") .. "seeded on " .. case.label)
+  -- Retail is personal loot only: the wishlist is absent there (issue #165).
+  check((GuildOS.Wishlist ~= nil) == not case.retail, "the wishlist " .. (case.retail and "does not exist" or "exists") .. " on " .. case.label)
+  if GuildOS.Wishlist then
+    GuildOS.Wishlist:RebuildItemIndex()
+    check(GuildOS.Wishlist:GetItemInterest(WISHED) ~= nil, "a wished item is searchable on " .. case.label)
+    check((GuildOS.Wishlist:GetItemInterest(RAID_ITEM) ~= nil) == case.tbc,
+      "the TBC raid catalogue is " .. (case.tbc and "" or "not ") .. "seeded on " .. case.label)
+  end
   local cds = {}
   for _, cd in ipairs(GuildOS.RaidTools:ResolveCoverage(GuildOS.RaidTools.COOLDOWNS, { SHAMAN = 1, HUNTER = 1, DRUID = 1 })) do
     cds[cd.name] = cd.covered
@@ -245,8 +249,12 @@ for _, case in ipairs(CLIENTS) do
     check(UI:IsFeatureAllowed(UI:GetFeature(id)) == case.tbc,
       id .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
   end
-  for _, id in ipairs({ "lootMaster", "lootTracker", "raidTracker", "wishlist" }) do
-    check(listed(id), id .. " is not TBC content and stays listed on " .. case.label)
+  check(listed("raidTracker"), "raidTracker stays listed on " .. case.label)
+  -- Loot and the site: everywhere but retail (issue #165).
+  for _, id in ipairs({ "loot", "dkp", "wishlist", "web", "lootMaster", "lootTracker" }) do
+    check(listed(id) == not case.retail, id .. (case.retail and " is not listed on " or " stays listed on ") .. case.label)
+    check(UI:IsFeatureAllowed(UI:GetFeature(id)) == not case.retail,
+      id .. (case.retail and " is refused on " or " is allowed on ") .. case.label)
   end
   check(GuildOS.db.settings.modules.consumableChecker == true and GuildOS.db.settings.modules.raidHUD == nil,
     "the player's own toggles are untouched on " .. case.label)

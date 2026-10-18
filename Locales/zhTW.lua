@@ -1882,3 +1882,6 @@ L["Detect my alts"] = "偵測我的分身"
 L["Ask to join an alliance"] = "申請加入同盟"
 L["Send request"] = "送出申請"
 L["Alliance tag and an officer of a guild already in it. They approve the request."] = "同盟標籤，以及一位已在同盟中的公會的幹部。由他批准申請。"
+-- Retail (ADR-0026): the welcome and the officer step without loot.
+L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "全方位公會套件：名冊、團隊出席、核心團、招募、專業技能、領導工具與稽核 — 在安裝此插件的公會成員之間同步。"
+L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."] = "身為幹部，你可以使用領導工具。在「設定 -> 幹部」中設定哪些公會階級算作幹部。"

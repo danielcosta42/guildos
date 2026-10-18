@@ -2067,3 +2067,6 @@ L["Detect my alts"] = "Detectar meus alts"
 L["Ask to join an alliance"] = "Pedir para entrar numa aliança"
 L["Send request"] = "Enviar pedido"
 L["Alliance tag and an officer of a guild already in it. They approve the request."] = "Tag da aliança e um oficial de uma guilda que já está nela. Ele aprova o pedido."
+-- Retail (ADR-0026): the welcome and the officer step without loot.
+L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "Uma suíte completa de guild: roster, presença em raid, cores, recrutamento, profissões, ferramentas de liderança e auditorias — tudo sincronizado entre os membros que usam o addon."
+L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."] = "Como oficial você desbloqueia ferramentas de liderança. Em Settings -> Oficial, defina quais ranks contam como oficiais."

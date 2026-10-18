@@ -3,6 +3,9 @@
 -- Native per-character wishlist with guild-wide sync and item search.
 -- Replaces the That's My BiS (TMB) CSV integration.
 ----------------------------------------------------------------------
+-- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+if GuildOS.Client.isRetail then return end
+
 local Wishlist = {}
 GuildOS.Wishlist = Wishlist
 local L = GuildOS.L

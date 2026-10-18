@@ -13,6 +13,9 @@
 --   epgp     - effort/gear (earned vs spent shown as a ratio)
 --   council  - points are informational only (no enforced spend)
 ----------------------------------------------------------------------
+-- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+if GuildOS.Client.isRetail then return end
+
 local Points = {}
 GuildOS.Points = Points
 local L = GuildOS.L

@@ -4,6 +4,9 @@
 -- Supports the Gargul export format (base64 → zlib → JSON) and
 -- the legacy CSV format (ItemId,Name,Class,Note,Plus).
 ----------------------------------------------------------------------
+-- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+if GuildOS.Client.isRetail then return end
+
 local SoftRes = {}
 GuildOS.SoftRes = SoftRes
 

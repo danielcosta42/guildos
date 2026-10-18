@@ -10,6 +10,7 @@ local UI = GuildOS.UI
 local L  = GuildOS.L
 
 -- Tabs, in window order ----------------------------------------------
+-- `retail = false`: not on retail (ADR-0026), where loot is personal and guildos.me takes no guild yet.
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
     build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
@@ -27,18 +28,18 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "loot", label = L["Loot"], order = 30, officerOnly = true,
+    id = "loot", label = L["Loot"], order = 30, officerOnly = true, retail = false,
     build = function(c, win) GuildOS:CreateLootPanel(c, win) end,
 })
 
 UI:RegisterFeature({
-    id = "dkp", label = L["DKP"], order = 35,
+    id = "dkp", label = L["DKP"], order = 35, retail = false,
     condition = function() return GuildOS:LootSystemShowsDKP() end,
     build = function(c, win) GuildOS:CreateDKPPanel(c, win) end,
 })
 
 UI:RegisterFeature({
-    id = "wishlist", label = L["Wishlist"], order = 38,
+    id = "wishlist", label = L["Wishlist"], order = 38, retail = false,
     condition = function() return GuildOS:IsOfficer() and GuildOS:LootSystemShowsWishlist() end,
     build = function(c, win) GuildOS:CreateWishlistGuildPanel(c, win) end,
 })
@@ -83,7 +84,7 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "web", label = L["Web"], order = 95,
+    id = "web", label = L["Web"], order = 95, retail = false,
     -- Not officerOnly: publishing is each player's own choice, and the
     -- guild's picture on the site gets better the more members opt in. The
     -- raid actions gate themselves on raid leadership instead.
@@ -96,18 +97,18 @@ UI:RegisterFeature({
 })
 
 -- Background modules: a Settings toggle and nothing else ------------
--- `tbc`: TBC content, listed only on TBC Anniversary (ADR-0014).
-local function background(id, label, desc, officerOnly, tbc)
+-- `tbc`: TBC content, listed only on TBC Anniversary (ADR-0014). `retail`: false when not on retail.
+local function background(id, label, desc, officerOnly, tbc, retail)
     UI:RegisterFeature({
         id = id, label = label, desc = desc,
-        tab = false, officerOnly = officerOnly, tbc = tbc,
+        tab = false, officerOnly = officerOnly, tbc = tbc, retail = retail,
         module = id,
     })
 end
 
 background("raidTracker",       L["Raid Tracker"],       L["Track raid attendance, penalties, and sessions"], true)
-background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"])
-background("lootMaster",        L["Loot Master"],        L["Master Loot with wishlist auto-council"])
+background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"], nil, nil, false)
+background("lootMaster",        L["Loot Master"],        L["Master Loot with wishlist auto-council"], nil, nil, false)
 background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, true)
 background("raidHUD",           L["Raid CD Tracker"],    L["Floating tracker for raid cooldowns and consumable check"], nil, true)
 background("trialTracker",      L["Trial Tracker"],      L["Track trial member progress (officer)"], true)

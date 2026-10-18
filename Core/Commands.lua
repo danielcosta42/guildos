@@ -46,15 +46,15 @@ local function printHelp()
     helpLine("/gos ally",        L["Alliance status and allied guilds"])
 
     helpHeader(L["Raid and loot"])
-    helpLine("/gos lm",            L["Master Loot helper status"])
-    helpLine("/gos points",        L["Points and DKP window"])
+    if GuildOS.LootMaster then helpLine("/gos lm", L["Master Loot helper status"]) end  -- not on retail (ADR-0026)
+    if GuildOS.Points then helpLine("/gos points", L["Points and DKP window"]) end
     if GuildOS.ConsumableChecker then  -- TBC content (ADR-0014)
         helpLine("/gos cons",      L["Check raid consumables"])
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
     helpLine("/gos export <what>", L["Export roster, attendance or loot"])
-    helpLine("/gos web [on|off]",  L["Copy your guild into the web companion"])
-    helpLine("/gos roster",        L["Bring the raid roster in from the website"])
+    if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
+    if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
 
     helpHeader(L["Personal"])
     helpLine("/gos avail",         L["List yourself as available for a group"])
@@ -85,7 +85,7 @@ local function printHelp()
         helpLine("/gos banlist",               L["Open the ban list"])
         helpLine("/gos autoinvite",            L["Auto-invite settings"])
         helpLine("/gos note <name> <text>",    L["Add an officer note"])
-        helpLine("/gos wish",                  L["Open the loot wishlist"])
+        if GuildOS.Wishlist then helpLine("/gos wish", L["Open the loot wishlist"]) end
         helpLine("/gos scout",                 L["Scan for unguilded recruits"])
         helpLine("/gos ally create <tag> <name>", L["Found an alliance with other guilds"])
         helpLine("/gos ally invite <officer>",    L["Invite a guild into the alliance"])
@@ -168,8 +168,25 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
+-- The verbs of what retail does not have (ADR-0026): loot is personal there and guildos.me takes no
+-- retail guild yet. Each module is absent, so its verb says so rather than doing nothing or raising.
+local RETAIL_ABSENT = { "^points$", "^dkp$", "^equity$", "^lootequity$", "^lm$", "^lm%s", "^lootmaster$",
+    "^web", "^companion", "^roster", "^wish", "^softres" }
+
+local function absentHere(msg)
+    if not GuildOS.Client.isRetail then return false end
+    for _, pat in ipairs(RETAIL_ABSENT) do
+        if msg:match(pat) then return true end
+    end
+    return false
+end
+
 local function handleCommand(msg)
     msg = strtrim(msg or "")
+    if absentHere(msg) then
+        GuildOS:Print(L["Not available on this client."])
+        return
+    end
     -- Deliberately the first branch: "help", "?" and "commands" are exact
     -- literals, so this can never swallow another verb, and sitting at the top
     -- means no present or future prefix pattern below can ever swallow them.

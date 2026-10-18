@@ -932,13 +932,15 @@ end
 
 -- Each loot system exposes only its own UI so players never see screens
 -- that don't apply: wishlist/TMB -> wishlist access; DKP -> DKP access;
--- plain /roll -> neither.
+-- plain /roll -> neither. A system whose module is absent (retail, ADR-0026) shows nothing.
 function GuildOS:LootSystemShowsWishlist()
+    if not self.Wishlist then return false end
     local s = self:GetLootSystem()
     return s == "wishlist" or s == "tmb"
 end
 
 function GuildOS:LootSystemShowsDKP()
+    if not self.Points then return false end
     return self:GetLootSystem() == "dkp"
 end
 

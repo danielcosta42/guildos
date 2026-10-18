@@ -13,6 +13,9 @@
 -- Everything here goes through Companion:IsEnabled(). The gate lives in
 -- the export module so a new entry point cannot forget to ask.
 ----------------------------------------------------------------------
+-- Not on retail: guildos.me takes no retail guild yet (ADR-0026). Absent there, not switched off.
+if GuildOS.Client.isRetail then return end
+
 local Import = {}
 GuildOS.CompanionImport = Import
 

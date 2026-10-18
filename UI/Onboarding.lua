@@ -7,10 +7,14 @@ local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
+-- Retail has no loot suite (ADR-0026): its welcome and officer step say what it does have.
+local RETAIL = GuildOS.Client.isRetail
+
 local STEPS = {
     {
         title = L["Welcome to Guild OS"],
-        body  = L["An all-in-one guild suite: roster, raid attendance, loot, wishlists, attunements, leadership tools and audits — all synced between guildmates who run the addon."]
+        body  = (RETAIL and L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."]
+            or L["An all-in-one guild suite: roster, raid attendance, loot, wishlists, attunements, leadership tools and audits — all synced between guildmates who run the addon."])
             .. "\n\n|cff888888" .. L["Made with care by "] .. "|cffFFD700Chehul|r|r",
     },
     {
@@ -33,7 +37,8 @@ local STEPS = {
     },
     {
         title = L["Officer tools"],
-        body  = L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: /roll, TMB, Wishlist or DKP."],
+        body  = RETAIL and L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."]
+            or L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: /roll, TMB, Wishlist or DKP."],
         officer = true,
     },
 }
