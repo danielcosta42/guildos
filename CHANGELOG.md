@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.78.0] - 2026-10-18
+
+### Added
+- o menu do roster separa a nota de oficial da nota pública, que todo mundo vê (#162)
+
+### Fixed
+- da revisão — a caixa da nota pública limita por bytes como o corte, salvar sem mudar não reescreve, e uma caixa ilegível não apaga a nota (#162)
+
+
 ## [0.77.6] - 2026-10-15
 
 ### Fixed
