@@ -331,6 +331,15 @@ check(cell("Beto", "offline") == "3d ago", "days offline, from the game: " .. to
 check(cell("Ana", "offline"):find("Now", 1, true), "online reads Now")
 check(cell("Ana", "spec") == "Frost 0/0/51", "the spec, its tree first: " .. tostring(cell("Ana", "spec")))
 check(cell("Dora", "roles") == "T", "an offline row's letters are plain, greyed like the rest of it")
+-- A sync takes the spec away while the window is closed; a scroll redraws before any refresh.
+local spec = GuildOS.db.members[ANA].spec
+GuildOS.db.members[ANA].spec = nil
+parent:UpdateRows()
+check(cell("Ana", "spec") == "Frost 0/0/51", "a redraw after the spec went away still draws what was read")
+GuildOS.db.members[ANA].spec = { tree = "Fire", points = {} }
+GuildOS:RefreshRosterUI()
+check(cell("Ana", "spec") == "Fire", "no points, no trailing space: " .. tostring(cell("Ana", "spec")))
+GuildOS.db.members[ANA].spec = spec
 check(cell("Caio", "roles"):find("H", 1, true) and cell("Caio", "roles"):find("D", 1, true)
       and not cell("Caio", "roles"):find("T", 1, true), "the roles' letters")
 check(cell("Dora", "main") == "Beto" and cell("Beto", "main") == "Main", "an alt names its main, a main says so")
@@ -368,6 +377,7 @@ viewOfficer, myRank, lootSystem = true, 0, "dkp"
 GuildOS:RefreshRosterUI()
 flush()
 check(parent.headerButtons.gosNote:IsShown(), "and comes back where it was once offered again")
+check(panelRow("gosNote") ~= nil and panelRow("dkp") ~= nil, "the open panel follows without being reopened")
 GuildOS.db.settings.modules.trialTracker = false
 GuildOS:RefreshRosterUI()
 flush()

@@ -179,13 +179,16 @@ local COLUMNS = {
     { key = "spec",        label = L["SPEC"],         name = L["Spec"],         min = 90,  weight = 1, align = "LEFT", asc = true,
       offered = function() return GuildOS.SpecChecker ~= nil end,
       -- By the tree, so a spec groups together; the points follow it, where a narrow cell cuts.
+      -- The points ride on the row: a scroll redraws it without a refresh, after a sync may have
+      -- taken the spec away.
       value = function(d)
           local m = GuildOS.db.members[d.key]
-          return m and m.spec and textOr(m.spec.tree) or nil
+          local spec = m and m.spec
+          d.specPoints = spec and type(spec.points) == "table" and #spec.points > 0 and table.concat(spec.points, "/") or nil
+          return spec and textOr(spec.tree) or nil
       end,
       text = function(v, d)
-          local points = GuildOS.db.members[d.key].spec.points
-          return points and (v .. " " .. table.concat(points, "/")) or v, C.silver
+          return d.specPoints and (v .. " " .. d.specPoints) or v, C.silver
       end },
     { key = "roles",       label = L["ROLES"],        name = L["Roles"],        min = 50,  weight = 0, align = "CENTER", asc = true,
       offered = function() return GuildOS.RaiderRoster ~= nil end,
@@ -1001,7 +1004,10 @@ function GuildOS:CreateRosterPanel(parent, host)
     function host:RefreshRoster()
         -- What this reader may see changes under an open window (the loot system, a feature, the
         -- officer rank): the table is laid out again when it would choose other columns now (#178).
-        if self.colSig and select(2, ChosenColumns()) ~= self.colSig then UI:Relayout(parent) end
+        if self.colSig and select(2, ChosenColumns()) ~= self.colSig then
+            UI:Relayout(parent)
+            GuildOS:RefreshColumnsPanel()
+        end
         self:BuildMemberList()
         self:UpdateSortIndicators()
         self:UpdateRows()
@@ -1732,6 +1738,11 @@ end
 
 function GuildOS:HideColumnsPanel()
     if columnsPanel then columnsPanel:Hide() end
+end
+
+-- An open panel follows what the reader may see, as the table does.
+function GuildOS:RefreshColumnsPanel()
+    if columnsPanel and columnsPanel:IsShown() then columnsPanel:Refresh() end
 end
 
 ----------------------------------------------------------------------
