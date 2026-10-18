@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.79.0] - 2026-10-18
+
+### Added
+- no retail o loot e o caminho para o site ficam de fora (#165)
+- no retail a chave do membro é Nome-Reino com o reino de cada um (#165)
+- o GuildOS reconhece o retail como terceiro cliente (#165)
+
+### Fixed
+- da revisão — no retail o oficial, o banco da guilda, o core, os votos e as presenças distinguem homônimos de reinos conectados (#165)
+
+
 ## [0.78.0] - 2026-10-18
 
 ### Added
