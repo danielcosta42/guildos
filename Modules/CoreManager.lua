@@ -18,6 +18,8 @@ CoreManager.CLASS_DEFAULT_ROLE = GuildOS.Client.isAnniversary and {
 } or {
     WARRIOR="mdps",  PALADIN="mdps",   HUNTER="rdps",  ROGUE="mdps",
     PRIEST="rdps",   SHAMAN="mdps",    MAGE="rdps",    WARLOCK="rdps", DRUID="mdps",
+    -- Retail's four (ADR-0026), damage first like the rest.
+    DEATHKNIGHT="mdps", DEMONHUNTER="mdps", MONK="mdps", EVOKER="rdps",
 }
 
 CoreManager.ROLE_LABELS = { tank=L["Tank"], healer=L["Healer"], mdps=L["Melee"], rdps=L["Ranged"] }
@@ -42,7 +44,13 @@ CoreManager.CLASS_ROLES = {
     MAGE    = { rdps=true },
     WARLOCK = { rdps=true },
     DRUID   = { tank=true, healer=true, mdps=true, rdps=true },
+    -- Retail's (ADR-0026). The Demon Hunter's Devourer casts; the Hunter's Survival is melee there.
+    DEATHKNIGHT = { tank=true, mdps=true },
+    DEMONHUNTER = { tank=true, mdps=true, rdps=true },
+    MONK        = { tank=true, healer=true, mdps=true },
+    EVOKER      = { healer=true, rdps=true },
 }
+if GuildOS.Client.isRetail then CoreManager.CLASS_ROLES.HUNTER = { mdps=true, rdps=true } end
 
 -- A role as somebody types it ("/gos signup Main healer"): its label or its key, any case.
 CoreManager.ROLE_WORDS = { tank="tank", healer="healer", heal="healer", melee="mdps", mdps="mdps",
@@ -71,6 +79,7 @@ CoreManager.RAID_TARGETS = {
     [10] = { tank=2, healer=2,  mdps=3,  rdps=3 },
     [20] = { tank=2, healer=5,  mdps=6,  rdps=7 },
     [25] = { tank=2, healer=6,  mdps=9,  rdps=8 },
+    [30] = { tank=2, healer=6,  mdps=11, rdps=11 },   -- retail's flex at its top (ADR-0026)
     [40] = { tank=4, healer=10, mdps=13, rdps=13 },
 }
 
@@ -78,6 +87,7 @@ CoreManager.RAID_TARGETS = {
 -- main raid is the 20-player one.
 local function sizesOfThisGame()
     if GuildOS.Client.isAnniversary then return { 10, 25 }, GuildOS.Client.defaultRaidSize end
+    if GuildOS.Client.isRetail then return GuildOS.Client.raidSizes, GuildOS.Client.defaultRaidSize end
     return { 10, 20, 40 }, GuildOS.Client.defaultRaidSize
 end
 

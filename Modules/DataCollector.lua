@@ -95,7 +95,7 @@ function DataCollector:CollectMyData()
     -- Collect gear
     local gear, gearIncomplete = self:CollectGear()
     data.gear = gear
-    data.avgIlvl = self:CalculateAvgIlvl(data.gear)
+    data.avgIlvl = GuildOS.Compat.AverageItemLevel() or self:CalculateAvgIlvl(data.gear)
 
     -- Collect professions
     data.professions = self:CollectProfessions()
@@ -299,6 +299,7 @@ function DataCollector:CollectGear()
 
         if itemLink then
             local itemName, _, itemQuality, itemLevel, _, _, _, _, _, _ = GuildOS.Compat.GetItemInfo(itemLink)
+            itemLevel = GuildOS.Compat.ItemLevel(itemLink, itemLevel)   -- as worn, on retail
             if not itemName or not itemLevel or itemLevel == 0 then
                 incomplete = true  -- item not in cache yet; name/ilvl unresolved
             end
@@ -336,7 +337,8 @@ function DataCollector:ParseItemLink(link)
     local enchantId = tonumber(parts[2]) or 0
     local gems = {}
 
-    for i = 3, 5 do
+    -- Four gem fields; a classic link leaves the fourth at 0, a retail one can fill it.
+    for i = 3, 6 do
         local gemId = tonumber(parts[i]) or 0
         if gemId > 0 then
             tinsert(gems, { id = gemId })

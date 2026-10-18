@@ -161,6 +161,11 @@ end
 
 function GuildOS:FormatItemLevel(ilvl)
     if not ilvl or ilvl == 0 then return "|cff888888--|r" end
+    -- Retail's item levels move every season: a fixed band would be wrong by the next one (ADR-0026).
+    if GuildOS.Client and GuildOS.Client.isRetail then
+        local c = self.QualityColors[1]
+        return self:ColorText(tostring(ilvl), c.r, c.g, c.b)
+    end
     local color
     if ilvl >= 141 then      -- T6+
         color = self.QualityColors[5]

@@ -133,6 +133,21 @@ function UI:ResolveRows(height, rowH, reserved)
 end
 
 ----------------------------------------------------------------------
+-- A grid of `count` equal chips in `width`, at most `maxRows` tall: two
+-- columns while they fit in that many rows, then as many as it takes
+-- (retail's thirteen classes on the roster rail take three). Returns
+-- { cols, rows, w } and :Cell(idx) -> column, row (0-based, row 0 on top).
+----------------------------------------------------------------------
+function UI:ChipGrid(count, width, gap, maxRows)
+    local cols = math.max(2, math.ceil(count / maxRows))
+    local grid = { cols = cols, rows = math.ceil(count / cols), w = (width - gap * (cols - 1)) / cols }
+    function grid:Cell(idx)
+        return (idx - 1) % self.cols, math.floor((idx - 1) / self.cols)
+    end
+    return grid
+end
+
+----------------------------------------------------------------------
 -- Break a list of button widths into rows that each fit `available`.
 -- A button wider than the whole bar gets a row to itself rather than
 -- looping forever.

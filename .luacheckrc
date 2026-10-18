@@ -213,6 +213,8 @@ read_globals = {
     -- WoW: Forever: the talent tree, read node by node (issue #41).
     "C_ClassTalents",
     "C_Traits",
+    "C_SpecializationInfo",                  -- retail's spec (ADR-0026)
+    "GetSpecializationInfoForSpecID",
     "GetProfessions",
     "GetProfessionInfo",
     "IsPlayerSpell",

@@ -860,7 +860,7 @@ function GuildOS:CreateCoresPanel(panel)
         y = y - 18
 
         -- Class breakdown
-        local CLASS_ORDER = { "WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","MAGE","WARLOCK","DRUID" }
+        local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
         local clsCol = 0
         for _, cls in ipairs(CLASS_ORDER) do
             local cnt = comp.classCount[cls]

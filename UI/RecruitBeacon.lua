@@ -89,7 +89,7 @@ end
 -- OFFICER COMPOSER
 ----------------------------------------------------------------------
 local ROLES   = { "TANK", "HEALER", "DPS" }
-local CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+local CLASSES = GuildOS.Client.classes   -- thirteen on retail
 local FOCUS   = { "RAID", "PVP", "CASUAL", "LEVELING", "SOCIAL", "RP" }
 local LANGS   = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }
 local NEEDS   = {}

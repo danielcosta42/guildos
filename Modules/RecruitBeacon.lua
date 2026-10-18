@@ -35,8 +35,7 @@ RB.DEFAULT_TTL_DAYS   = 7
 
 -- Vocabulary the officer picks from / a recruit filters on.
 RB.ROLE_TOKENS  = { "TANK", "HEALER", "DPS" }
-RB.CLASS_TOKENS = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
-                    "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+RB.CLASS_TOKENS = GuildOS.Client.classes   -- this game's classes (thirteen on retail)
 RB.FOCUS_TOKENS = { "RAID", "PVP", "CASUAL", "LEVELING", "SOCIAL", "RP" }
 RB.LANG_TOKENS  = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }
 

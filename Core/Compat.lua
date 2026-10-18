@@ -465,6 +465,26 @@ function Compat.GetItemInfo(item)
     if GetItemInfo then return GetItemInfo(item) end
 end
 
+-- An item's level as it is worn. On retail (ADR-0026) upgrades, crafting and the track an item
+-- dropped from move it away from GetItemInfo's base level, `base`, which every other client keeps.
+function Compat.ItemLevel(link, base)
+    if GuildOS.Client.isRetail and C_Item and C_Item.GetDetailedItemLevelInfo then
+        local level = C_Item.GetDetailedItemLevelInfo(link)
+        if tonumber(level) and level > 0 then return level end
+    end
+    return base
+end
+
+-- My equipped average as the game shows it, on retail; nil elsewhere, where the addon averages its
+-- own slots as it always has.
+function Compat.AverageItemLevel()
+    if not (GuildOS.Client.isRetail and GetAverageItemLevel) then return nil end
+    local _, equipped = GetAverageItemLevel()
+    equipped = tonumber(equipped)
+    if not equipped or equipped <= 0 then return nil end
+    return math.floor(equipped)
+end
+
 -- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
 function Compat.GetSpellInfo(spell)
     if C_Spell and C_Spell.GetSpellInfo then
@@ -594,6 +614,26 @@ function Compat.TraitTreeNodes()
         end
     end
     return nodes
+end
+
+-- A unit's spec on retail (ADR-0026), where a character has one and the client names it: the spec
+-- id, its name in the reader's language and its role ("TANK", "HEALER", "DAMAGER"). "player" is
+-- read directly; any other unit is read from its inspect, so it needs INSPECT_READY first. Nil
+-- before there is a spec, or when the client keeps the unit's identity secret.
+function Compat.SpecOf(unit)
+    local S = C_SpecializationInfo
+    if unit == "player" then
+        local index = S and S.GetSpecialization and S.GetSpecialization()
+        if Compat.IsSecret(index) or not index or index == 0 then return nil end
+        local id, name, _, _, role = S.GetSpecializationInfo(index)
+        if Compat.IsSecret(id, name, role) or not id or id == 0 then return nil end
+        return id, name, role
+    end
+    local id = S and S.GetInspectSpecialization and S.GetInspectSpecialization(unit)
+    if Compat.IsSecret(id) or not id or id == 0 or not GetSpecializationInfoForSpecID then return nil end
+    local _, name, _, _, role = GetSpecializationInfoForSpecID(id)
+    if Compat.IsSecret(name, role) then return nil end
+    return id, name, role
 end
 
 function Compat.GetNumSkillLines()
