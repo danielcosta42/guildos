@@ -286,6 +286,13 @@ function Compat.CanEditPublicNote()
     return false
 end
 
+-- Whether this client may read guild officer notes. Without it the roster answers "" for every one.
+function Compat.CanViewOfficerNote()
+    if C_GuildInfo and C_GuildInfo.CanViewOfficerNote then return C_GuildInfo.CanViewOfficerNote() and true or false end
+    if CanViewOfficerNote then return CanViewOfficerNote() and true or false end
+    return false
+end
+
 -- Resolve a guild roster index for `name`, which may be "Name" or "Name-Realm";
 -- `realm` (from a chat event, say) overrides any suffix on `name`.
 --

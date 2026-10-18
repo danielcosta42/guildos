@@ -17,6 +17,19 @@ function GearAudit:GetEnchantableSlots()
     return ENCHANTABLE_SLOTS
 end
 
+-- The names of the slots in `gear` that hold an item with no enchant. An empty slot is not flagged.
+-- Also the roster's ENCHANTS column (#178).
+function GearAudit:MissingEnchants(gear)
+    local missing = {}
+    for _, slotId in ipairs(ENCHANTABLE_SLOTS) do
+        local item = gear[slotId]
+        if item and item.name and item.name ~= "" and not (item.enchantId and item.enchantId > 0) then
+            missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
+        end
+    end
+    return missing
+end
+
 -- One row per guild member that has synced gear data, listing the
 -- equipped-but-unenchanted slots. Sorted by most-missing first.
 -- Row: { name, key, class, online, avgIlvl, missing = { slotName, ... }, missingCount }
@@ -32,16 +45,7 @@ function GearAudit:GetGuildEnchantAudit()
             local data = GuildOS.db.members[key]
             local gear = data and data.gear
             if gear then
-                local missing = {}
-                for _, slotId in ipairs(ENCHANTABLE_SLOTS) do
-                    local item = gear[slotId]
-                    -- Only flag slots that actually have an item equipped.
-                    if item and item.name and item.name ~= "" then
-                        if not (item.enchantId and item.enchantId > 0) then
-                            missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
-                        end
-                    end
-                end
+                local missing = self:MissingEnchants(gear)
                 rows[#rows + 1] = {
                     name = short, key = key, class = classFile or "",
                     online = isOnline, avgIlvl = data.avgIlvl or 0,
