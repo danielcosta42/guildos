@@ -594,6 +594,26 @@ function Compat.TraitTreeNodes()
     return nodes
 end
 
+-- A unit's spec on retail (ADR-0026), where a character has one and the client names it: the spec
+-- id, its name in the reader's language and its role ("TANK", "HEALER", "DAMAGER"). "player" is
+-- read directly; any other unit is read from its inspect, so it needs INSPECT_READY first. Nil
+-- before there is a spec, or when the client keeps the unit's identity secret.
+function Compat.SpecOf(unit)
+    local S = C_SpecializationInfo
+    if unit == "player" then
+        local index = S and S.GetSpecialization and S.GetSpecialization()
+        if Compat.IsSecret(index) or not index or index == 0 then return nil end
+        local id, name, _, _, role = S.GetSpecializationInfo(index)
+        if Compat.IsSecret(id, name, role) or not id or id == 0 then return nil end
+        return id, name, role
+    end
+    local id = S and S.GetInspectSpecialization and S.GetInspectSpecialization(unit)
+    if Compat.IsSecret(id) or not id or id == 0 or not GetSpecializationInfoForSpecID then return nil end
+    local _, name, _, _, role = GetSpecializationInfoForSpecID(id)
+    if Compat.IsSecret(name, role) then return nil end
+    return id, name, role
+end
+
 function Compat.GetNumSkillLines()
     if not GetNumSkillLines then return nil, "no-api" end
     return GetNumSkillLines()

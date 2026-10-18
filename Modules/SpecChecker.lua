@@ -147,11 +147,24 @@ function SpecChecker:CollectOwnTraitSpec()
     return KeepOwnSpec(self:BuildSpecRecord(points, names))
 end
 
+-- A spec on retail (ADR-0026): one per character, named by the client with its role. No tree
+-- points: there are no classic trees to draw. Nil and why while there is none to read yet.
+function SpecChecker:RetailSpec(unit)
+    local id, name, role = GuildOS.Compat.SpecOf(unit)
+    if not id then return nil, "no-spec" end
+    return { tree = name or L["Unknown"], specID = id, role = role, scannedAt = GetServerTime() }
+end
+
 ----------------------------------------------------------------------
 -- Collect the local player's own spec from their talent tabs.
 -- Stores result in Guild OS.db.members[key].spec and returns it.
 ----------------------------------------------------------------------
 function SpecChecker:CollectOwnSpec()
+    if GuildOS.Client.isRetail then
+        local spec, why = self:RetailSpec("player")
+        if not spec then return nil, why end
+        return KeepOwnSpec(spec)
+    end
     local numTabs, why = GuildOS.Compat.GetNumTalentTabs()
     if why == "no-api" then return self:CollectOwnTraitSpec() end
     if why then return nil, why end
@@ -210,6 +223,7 @@ function SpecChecker:GetSpecLabel(memberKey)
     if not data or not data.spec then return nil end
 
     local s   = data.spec
+    if s.specID then return s.tree end   -- retail: the spec's name, no trees to count
     local pts = s.points or {}
     local dist = table.concat(pts, "/")
     return dist .. "  (" .. (s.tree or "?") .. ")"
@@ -276,6 +290,18 @@ end
 ----------------------------------------------------------------------
 function SpecChecker:OnInspectReady()
     if not inspectPending then return end
+
+    if GuildOS.Client.isRetail then
+        local spec = self:RetailSpec(inspectPending.unit)
+        if spec then
+            local key = inspectPending.key
+            GuildOS.db.members[key] = GuildOS.db.members[key] or { name = inspectPending.name }
+            GuildOS.db.members[key].spec = spec
+        end
+        inspectPending = nil
+        C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
+        return
+    end
 
     local numTabs = GuildOS.Compat.GetNumTalentTabs(true)   -- true = isInspect
     if not numTabs or numTabs == 0 then
