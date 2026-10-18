@@ -99,8 +99,10 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 
 | Symbol | Description |
 |---|---|
-| `GuildOS:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing) |
-| `GuildOS:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) |
+| `GuildOS:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing); on retail the normalized one first, spaces and hyphens removed (ADR-0026) |
+| `GuildOS:KeyOfRosterName(full)` | The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's; through `GetPlayerKey`, so normalized on retail. The core picker and the retail officer check use it (ADR-0026) |
+| `GuildOS:RealmBound()` | Whether a realm is part of who somebody is: true on Anniversary and retail (connected realms), false on Forever; true with no `GuildOS.Client`. The one test the key rules and the start-up rekeys read (ADR-0026) |
+| `GuildOS:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) Retail keeps the caller's realm, normalized (ADR-0026). |
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
 | `PugInspector:Classify(name, srcs)` | Builds its table key with `GetPlayerKey` when the name or the sources give a realm, else the bare name (issue #95) |
 | `GuildOS:LocalMemberKey(key)` | A member key another client built, as this client keys it: on Forever rebuilt from its name with this client's realm (`ally:` keys left alone); elsewhere unchanged (issue #97) |
@@ -127,6 +129,9 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.GetItemQualityColor(quality)` / `Compat.GetItemCount(item, includeBank)` | `C_Item`'s, else the old global's; white / 0 with neither (issue #43) |
 | `Compat.PopupEditBox(dialog)` | A StaticPopup's edit box: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
 | `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
+| `Compat.SpecOf(unit)` | Retail: a unit's spec as `specID, name, role` (`"TANK"`, `"HEALER"`, `"DAMAGER"`), localized by the client; `"player"` read directly, any other unit from its inspect. Nil before there is one or when the client keeps it secret (ADR-0026) |
+| `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
+| `Compat.AverageItemLevel()` | Retail: my equipped average as the game shows it, floored; nil elsewhere, where the addon averages its own slots (ADR-0026) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
 | `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |
 | `Compat.SendAddonMessageNow(prefix, text, channel, target)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send |
@@ -191,7 +196,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:GetClassColorHex(class)` | Returns 6-char hex string for a class color |
 | `GuildOS:ColorText(text, r, g, b)` | Wraps text in WoW `\|cff...` color escape |
 | `GuildOS:FormatItemLevel(ilvl)` | Quality-color-coded item level string |
-| `GuildOS:GetPlayerKey(name, realm)` | "Name-Realm", byte for byte as in 0.53.0; the name alone when neither the caller nor `GuildOS:GetClientRealm()` has a realm (nil or ""); nil for no name (ADR-0018) |
+| `GuildOS:GetPlayerKey(name, realm)` | "Name-Realm", byte for byte as in 0.53.0; the name alone when neither the caller nor `GuildOS:GetClientRealm()` has a realm (nil or ""); nil for no name (ADR-0018) Retail keeps the caller's realm, normalized (ADR-0026). |
 | `GuildOS:RosterKey(name)` | The roster frame's key for somebody on the roster (roster name, its realm or the player's), the shown name and the roster's whole name; nil when nobody has that name (issue #49) |
 | `GuildOS:SplitNameAndText(rest)` | `<name> <text>` from a slash command: a Forever two-word name when it is exactly somebody's roster name, else the first word; nil when the whole text is exactly a roster name, with or without realm (issue #49) |
 | `GuildOS:TimeAgo(timestamp)` | Returns "Xm ago / Xh ago / Xd ago" string |
@@ -598,6 +603,7 @@ Removed: `Compat.NewTimer`.
 | `SpecChecker:CollectOwnSpec()` | Scans own talent tabs, builds spec record with full talent data |
 | `SpecChecker:BuildSpecRecord(points, names)` | Finds max-point tab, returns spec record |
 | `SpecChecker:CollectOwnTraitSpec()` | WoW: Forever: points per classic tree from the trait tree; `nil, "no-points"` / `"no-config"` / `"no-trees"` while there is nothing to read; the collector does not hold the snapshot open for them, the periodic collect picks the spec up |
+| `SpecChecker:RetailSpec(unit)` | Retail: `{ tree = name, specID, role, scannedAt }` from `Compat.SpecOf`, or `nil, "no-spec"`; `CollectOwnSpec` and the inspect path use it there, and `GetSpecLabel` shows the name alone (ADR-0026) |
 | `SpecChecker.ColumnPoints(nodes)` | Pure: splits `{x, points}` nodes into the three classic trees (gap > 1200 starts a tree; the three biggest groups are the trees, a stray node counts for the nearest) and returns their points left to right, or nil |
 | `SpecChecker:GetSpecLabel(memberKey)` | Returns "41/5/15  (Protection)" string or nil |
 | `SpecChecker:ScanGroup()` | Builds inspect queue from group members |

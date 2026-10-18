@@ -29,9 +29,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           # The interfaces are committed now (issue #20), Anniversary first so it shows
-          # no out-of-date warning on it. A TOC that lost Forever's would ship a zip the
-          # beta client will not load, so it fails here instead.
-          grep -qE '^## Interface: [0-9]+, 16001$' GuildOS.toc
+          # no out-of-date warning on it, retail's after Forever's (#168). A TOC that lost
+          # Forever's would ship a zip the beta client will not load, so it fails here instead.
+          grep -qE '^## Interface: [0-9]+, 16001(, [0-9]+)*$' GuildOS.toc
           sed -i "s/^## Version: .*/## Version: ${VERSION}/" GuildOS.toc
           sed -i -E "s/^(GuildOS\.VERSION[[:space:]]*=[[:space:]]*)\"[^\"]*\"/\1\"${VERSION}\"/" Core/Config.lua
           grep -E '^## (Interface|Version):' GuildOS.toc

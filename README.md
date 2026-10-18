@@ -1,12 +1,13 @@
 # ![Guild OS](https://img.shields.io/badge/Guild%20OS-Guild%20Manager-blueviolet?style=for-the-badge) 
 
-### Premium Guild Management Addon for WoW TBC Anniversary and WoW: Forever
+### Premium Guild Management Addon for WoW TBC Anniversary, WoW: Forever and Retail
 
 > Made with care by **Chehul** 🛡️
 
 Guild OS replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
 
-> **Clients:** WoW TBC Anniversary (Interface 20506) and WoW: Forever (16001) — one build serves both
+> **Clients:** WoW TBC Anniversary (Interface 20506), WoW: Forever (16001) and Retail, Midnight (120105) — one build
+> serves all three. On Retail the loot suite (retail is personal loot) and guildos.me are left out.
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 

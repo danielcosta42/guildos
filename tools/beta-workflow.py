@@ -107,11 +107,12 @@ stamp = step(job, "Stamp the beta version")
 check(stamp is not None and "run" in stamp, "the beta job stamps the version")
 toc_before = read("GuildOS.toc")
 config_before = read("Core", "Config.lua")
-INTERFACES = toc_before.split("\n", 1)[0]  # "## Interface: 20506, 16001" today
-# Anniversary first so it shows no out-of-date warning there, then Forever's 16001 (#20). Both are
-# committed now: the stamp step no longer adds them, and what is published is read from this line.
-check(re.fullmatch(r"## Interface: 205\d\d, 16001", INTERFACES) is not None,
-      "the committed TOC declares Anniversary's interface and Forever's: %s" % INTERFACES)
+INTERFACES = toc_before.split("\n", 1)[0]  # "## Interface: 20506, 16001, 120105" today
+# Anniversary first so it shows no out-of-date warning there, then Forever's 16001 (#20), then
+# retail's (#168). All three are committed: the stamp step adds none, and what is published is read
+# from this line.
+check(re.fullmatch(r"## Interface: 205\d\d, 16001, 1\d{5}", INTERFACES) is not None,
+      "the committed TOC declares Anniversary's interface, Forever's and retail's: %s" % INTERFACES)
 bash = shutil.which("bash")
 check(bash is not None, "bash is available to run the steps")
 git = shutil.which("git")
@@ -198,12 +199,14 @@ for tag in ("v0.54.0-beta.1", "v1.2.3-beta.10"):
           "%s: a failing gh release create fails the step, so the job never goes green without a release" % tag)
 
 # A client patch bumps Anniversary's interface in the committed TOC: the beta zip carries it as committed.
-done, toc_after, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(INTERFACES, "## Interface: 20599, 16001", 1))
-check(done.returncode == 0 and toc_after.split("\n", 1)[0] == "## Interface: 20599, 16001",
-      "the stamp keeps whatever interfaces the committed TOC has, so a patch bump reaches the beta zip")
+for bumped in ("## Interface: 20599, 16001, 120105", "## Interface: 20506, 16001, 120107", "## Interface: 20506, 16001"):
+    done, toc_after, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(INTERFACES, bumped, 1))
+    check(done.returncode == 0 and toc_after.split("\n", 1)[0] == bumped,
+          "the stamp keeps whatever interfaces the committed TOC has, so a patch bump reaches the beta zip: %s" % bumped)
 # Forever's interface dropped from the committed TOC fails the step, rather than shipping a zip the beta
 # client will not load — which is the one thing in this pipeline nothing else would notice.
-for line in ("## Interface: 20506", "## Interface: 20506, 16000", "## Interface: 20506,16001"):
+for line in ("## Interface: 20506", "## Interface: 20506, 16000", "## Interface: 20506,16001",
+             "## Interface: 20506, 120105", "## Interface: 20506, 16000, 120105"):
     done, _, _ = run_stamp("v0.54.0-beta.1", toc_before.replace(INTERFACES, line, 1))
     check(done.returncode != 0, "a committed %r fails the stamp step instead of shipping without 16001" % line)
 
