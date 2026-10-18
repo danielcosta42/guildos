@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.80.0] - 2026-10-18
+
+### Added
+- no retail o core vai até 30 jogadores, sem 40 (#166)
+- no retail o item level efetivo, quatro gemas e os slots de encantamento do Midnight (#166)
+- no retail a raide conta por dificuldade, sem LFR (#166)
+- no retail a spec vem do C_SpecializationInfo (#166)
+- no retail as 13 classes em toda lista, e os buffs e cooldowns do Midnight (#166)
+
+### Fixed
+- da revisão — no retail as 13 classes cabem no trilho do roster, em três colunas (#166)
+
+
 ## [0.79.0] - 2026-10-18
 
 ### Added
