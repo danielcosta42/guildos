@@ -204,6 +204,7 @@ read_globals = {
     "GetBuildInfo",                          -- client detection (Compat.lua, ADR-0014)
     "WOW_PROJECT_ID",
     "WOW_PROJECT_BURNING_CRUSADE_CLASSIC",   -- absent on clients without TBC Classic
+    "WOW_PROJECT_MAINLINE",                  -- retail's project id (ADR-0026)
     "issecretvalue",
     "C_TradeSkillUI",
     "C_Club",

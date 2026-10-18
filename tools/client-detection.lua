@@ -46,7 +46,9 @@ local function client(c)
   GetBuildInfo = function() return c.version, c.build, "Sep 1 2026", c.interface end
   WOW_PROJECT_ID = c.project
   WOW_PROJECT_BURNING_CRUSADE_CLASSIC = c.tbcProject
+  WOW_PROJECT_MAINLINE = c.mainline
   local api = c.api or {}
+  C_PlayerInfo = api.surnames and { ShouldDisplaySurname = function() return true end } or nil
   issecretvalue = api.secrets and function() return false end or nil
   C_ChatInfo = { InChatMessagingLockdown = api.chatLockdown and function() return false end or nil }
   C_TradeSkillUI = api.tradeSkillUI and {} or nil
@@ -59,6 +61,8 @@ local ANNIVERSARY = { version = "2.5.6", build = "63110", interface = 20506, pro
 local FOREVER     = { version = "1.60.0", build = "64210", interface = 16000, project = 2, tbcProject = 5 }
 local REUSED_ID   = { version = "1.60.1", build = "64300", interface = 16001, project = 5, tbcProject = 5 }
 local UNKNOWN     = { version = "0.0.0", build = "0", interface = 20506 }  -- no WOW_PROJECT_* constants
+-- Retail (Midnight, issue #165): the mainline project id and a 12.x interface, both.
+local RETAIL      = { version = "12.1.5", build = "70448", interface = 120105, project = 1, tbcProject = 5, mainline = 1 }
 local CLIENTS = {
   { c = ANNIVERSARY, tbc = true,  label = "TBC Anniversary" },
   { c = FOREVER,     tbc = false, label = "a 1.60 client" },
@@ -82,7 +86,8 @@ check(CL.maxLevel == 70, "Anniversary stops at 70")
 -- The raid sizes follow isAnniversary too (issues #89, #92).
 check(table.concat(CL.raidSizes, ",") == "10,25,40" and CL.defaultRaidSize == 25, "Anniversary raids are 10, 25 and 40, 25 first")
 local DOCUMENTED = { version = true, build = true, date = true, interface = true, projectId = true,
-  isAnniversary = true, maxLevel = true, raidSizes = true, defaultRaidSize = true, has = true }
+  isAnniversary = true, isRetail = true, game = true, maxLevel = true, raidSizes = true, defaultRaidSize = true,
+  classes = true, enchantSlots = true, has = true }
 for key in pairs(CL) do
   check(DOCUMENTED[key], "GuildOS.Client carries no flavour guess beyond its documented fields (" .. tostring(key) .. ")")
 end
@@ -104,6 +109,47 @@ check(GuildOS.Client.isAnniversary == false and GuildOS.Client.interface == 0,
 client(UNKNOWN)
 check(GuildOS.Client.isAnniversary == false and GuildOS.Client.projectId == nil,
   "a client without project constants is not Anniversary, even at interface 20506")
+
+-- Retail (issue #165): the third client, by its project id and its interface together, as for
+-- Anniversary. Forever runs the mainline UI and may answer the mainline id; its interface is 16001.
+client(ANNIVERSARY)
+check(GuildOS.Client.isRetail == false and GuildOS.Client.game == "ANNIVERSARY", "Anniversary is not retail")
+check(#GuildOS.Client.classes == 9 and GuildOS.Client.classes[1] == "WARRIOR" and GuildOS.Client.classes[9] == "DRUID",
+  "Anniversary has the nine classic classes")
+check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,7,8,9,10,15,16", "Anniversary keeps the TBC enchant slots")
+client(FOREVER)
+check(GuildOS.Client.isRetail == false and GuildOS.Client.game == "FOREVER", "a 1.60 client is Forever")
+check(#GuildOS.Client.classes == 9 and table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,7,8,9,10,15,16",
+  "Forever has the nine classes and the classic enchant slots")
+client(RETAIL)
+check(GuildOS.Client.isRetail == true and GuildOS.Client.isAnniversary == false and GuildOS.Client.game == "RETAIL",
+  "retail is recognised")
+check(GuildOS.Client.maxLevel == 90, "retail stops at 90")
+check(table.concat(GuildOS.Client.raidSizes, ",") == "10,20,30" and GuildOS.Client.defaultRaidSize == 20,
+  "retail raids are 10, 20 and 30, 20 first")
+check(#GuildOS.Client.classes == 13, "retail has thirteen classes")
+local RETAIL_CLASSES = {}
+for _, c in ipairs(GuildOS.Client.classes) do RETAIL_CLASSES[c] = true end
+for _, c in ipairs({ "WARRIOR", "DRUID", "DEATHKNIGHT", "DEMONHUNTER", "MONK", "EVOKER" }) do
+  check(RETAIL_CLASSES[c], c .. " is a retail class")
+end
+check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,8,11,12,16", "Midnight's enchant slots")
+client(setmetatable({ project = 1, mainline = 1 }, { __index = FOREVER }))
+check(GuildOS.Client.isRetail == false and GuildOS.Client.game == "FOREVER" and GuildOS.Client.maxLevel == 60,
+  "a 1.60 client answering the mainline id is Forever")
+client(setmetatable({ project = 2, mainline = 1 }, { __index = RETAIL }))
+check(GuildOS.Client.isRetail == false, "a retail interface on another project id is not retail")
+client({ version = "12.1.5", build = "1", interface = 120105, project = 1, tbcProject = 5 })
+check(GuildOS.Client.isRetail == false, "a client without the mainline constant is not retail")
+for _, edge in ipairs({ { 99999, false }, { 100000, true } }) do
+  client(setmetatable({ interface = edge[1] }, { __index = RETAIL }))
+  check(GuildOS.Client.isRetail == edge[2], "interface " .. edge[1] .. (edge[2] and " is" or " is not") .. " retail")
+end
+-- Retail's UnitFullName gives the realm in the surname's slot: never a surname there.
+client(setmetatable({ api = { surnames = true } }, { __index = RETAIL }))
+check(GuildOS.Client.has.surnames == false, "retail has no surnames even where the surname API exists")
+client(setmetatable({ api = { surnames = true } }, { __index = FOREVER }))
+check(GuildOS.Client.has.surnames == true, "Forever has surnames where the API exists")
 
 for _, edge in ipairs({ { 20499, false }, { 20500, true }, { 29999, true }, { 30000, false } }) do
   client({ version = "2.5.x", build = "1", interface = edge[1], project = 5, tbcProject = 5 })
