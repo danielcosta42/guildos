@@ -66,11 +66,34 @@ function NoteCommand:_Apply(sender, realm, text)
     if current == want then return end      -- somebody else already applied it
     local ok, failure = Compat.SetGuildPublicNote(sender, want, realm)
     if not ok then return self:_Refused(sender, failure) end
-    local who = realm and (sender .. "-" .. realm) or sender
+    self:_Written(sender, realm, want)
+end
+
+-- A note that went in: logged for the officers and said, the same for !note and the roster's menu.
+function NoteCommand:_Written(name, realm, want)
+    local who = realm and (name .. "-" .. realm) or name
     if GuildOS.GuildManager and GuildOS.GuildManager.LogAction then
         GuildOS.GuildManager:LogAction("note", who, want ~= "" and want or L["(cleared)"])
     end
-    GuildOS:Print(string.format(L["Set %s's note: |cffFFFFFF%s|r"], sender, want ~= "" and want or L["(cleared)"]))
+    GuildOS:Print(string.format(L["Set %s's note: |cffFFFFFF%s|r"], name, want ~= "" and want or L["(cleared)"]))
+end
+
+-- The roster's right-click "Add note" (issue #162): the public note everybody sees. Somebody typed it
+-- and is waiting, so it is written now — no jitter, nobody else is racing to apply it — and every
+-- refusal is said. An empty box clears the note. Returns true when written.
+function NoteCommand:Set(name, realm, text)
+    local Compat = GuildOS.Compat
+    if not Compat.CanEditPublicNote() then return self:_Refused(name, "no-permission") end
+    local want = GuildOS:SanitizeUserText(text or "", NOTE_MAX)
+    local ok, failure = Compat.SetGuildPublicNote(name, want, realm)
+    if not ok then return self:_Refused(name, failure) end
+    self:_Written(name, realm, want)
+    return true
+end
+
+-- The public note as it reads now, for the box to open with; "" when the roster cannot pin the name down.
+function NoteCommand:Current(name, realm)
+    return GuildOS.Compat.GetGuildPublicNote(name, realm) or ""
 end
 
 function NoteCommand:_SetupHook()

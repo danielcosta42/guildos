@@ -247,4 +247,29 @@ onEvent(nil, "CHAT_MSG_GUILD", "!note LFG Kara", "Bob-RealmA")
 check(#printed == 0 and #timers == 0 and #writes == 0, "with !note turned off, an officer's client schedules no write either")
 GuildOS.db.noteCommand.enabled = true
 
+-- ── 7. The roster's right-click "Add note" (issue #162) ─────────────────
+-- An officer typed it and is waiting: written at once, no jitter, every refusal said.
+client({ roster = ANA, setNote = true })
+logged = {}
+check(NoteCommand:Set("Ana", "Firemaw", "Raider main") == true, "the menu's note is written")
+check(#writes == 1 and writes[1][3] == "Raider main" and #timers == 0, "at once: no jitter, the officer is waiting for it")
+check(said("Set Ana's note") and #logged == 1 and logged[1][2] == "Ana-Firemaw", "said and logged like a !note")
+
+client({ roster = ANA, setNote = true, canEdit = false })
+check(NoteCommand:Set("Ana", "Firemaw", "x") ~= true and #writes == 0 and said("can no longer edit public notes"),
+  "without the permission: said, nothing written")
+
+client({ roster = TWO_BOBS, setNote = true })
+NoteCommand:Set("Bob", nil, "x")
+check(#writes == 0 and said("more than one guild member has that name"), "a name two members share is said")
+
+client({ roster = ANA, setNote = true })
+NoteCommand:Set("Ana", "Firemaw", "")
+check(#writes == 1 and writes[1][3] == "" and said("(cleared)"), "an empty box clears the note")
+
+client({ roster = ANA, setNote = true })
+check(NoteCommand:Current("Ana", "Firemaw") == "old", "the box opens with the note as it reads now")
+client({ roster = TWO_BOBS, setNote = true })
+check(NoteCommand:Current("Bob") == "", "a name the roster cannot pin down opens an empty box")
+
 print(("public-note: %d checks passed"):format(checks))
