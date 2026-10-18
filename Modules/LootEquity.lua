@@ -4,6 +4,9 @@
 -- much, how many epics, and their share of all loot. Helps officers
 -- spread loot fairly. Pure read-only aggregation (Rule 2 / Rule 10).
 ----------------------------------------------------------------------
+-- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+if GuildOS.Client.isRetail then return end
+
 local LootEquity = {}
 GuildOS.LootEquity = LootEquity
 local L = GuildOS.L

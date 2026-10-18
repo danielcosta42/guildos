@@ -1626,30 +1626,33 @@ function GuildOS:ShowExportChooser()
     close:SetPoint("TOPRIGHT", -8, -8)
     close:SetScript("OnClick", function() f:Hide() end)
 
+    -- `needs`: the module the dataset reads, absent on retail (ADR-0026), where the row is left out.
     local datasets = {
         { key = "roster",     label = L["Roster"] },
         { key = "attendance", label = L["Attendance"] },
-        { key = "loot",       label = L["Loot History"] },
+        { key = "loot",       label = L["Loot History"], needs = "LootTracker" },
         { key = "readiness",  label = L["Readiness"] },
-        { key = "equity",     label = L["Loot Equity"] },
-        { key = "standings",  label = L["DKP Standings"] },
+        { key = "equity",     label = L["Loot Equity"], needs = "LootEquity" },
+        { key = "standings",  label = L["DKP Standings"], needs = "Points" },
     }
     local y = -56
     for _, d in ipairs(datasets) do
-        local lbl = UI:CreateText(f, d.label, 11, C.text.r, C.text.g, C.text.b)
-        lbl:SetPoint("TOPLEFT", 16, y)
-        local fx = 150
-        for _, fmt in ipairs({ "csv", "tsv", "discord" }) do
-            local b = UI:CreateButton(f, fmt:upper(), 66, 20)
-            b:SetPoint("TOPLEFT", fx, y + 3)
-            b:SetScript("OnClick", function()
-                if not GuildOS.Exporter then return end
-                local text, t = GuildOS.Exporter:Build(d.key, fmt)
-                if text then GuildOS:ShowExportPopup(string.format("%s (%s)", t or d.label, fmt), text) end
-            end)
-            fx = fx + b:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
+        if not d.needs or GuildOS[d.needs] then
+            local lbl = UI:CreateText(f, d.label, 11, C.text.r, C.text.g, C.text.b)
+            lbl:SetPoint("TOPLEFT", 16, y)
+            local fx = 150
+            for _, fmt in ipairs({ "csv", "tsv", "discord" }) do
+                local b = UI:CreateButton(f, fmt:upper(), 66, 20)
+                b:SetPoint("TOPLEFT", fx, y + 3)
+                b:SetScript("OnClick", function()
+                    if not GuildOS.Exporter then return end
+                    local text, t = GuildOS.Exporter:Build(d.key, fmt)
+                    if text then GuildOS:ShowExportPopup(string.format("%s (%s)", t or d.label, fmt), text) end
+                end)
+                fx = fx + b:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
+            end
+            y = y - 32
         end
-        y = y - 32
     end
 end
 
@@ -1932,13 +1935,14 @@ function GuildOS:RefreshSettingsPanel(content, category)
     -- category is remembered on the panel itself.
     local CATS = {
         { key = "general", label = L["General"] },
-        { key = "loot",    label = L["Loot"],    officer = true },
+        { key = "loot",    label = L["Loot"],    officer = true, retail = false },  -- loot is personal on retail (ADR-0026)
         { key = "raid",    label = L["Raid"] },
         { key = "officer", label = L["Officer"], officer = true },
         { key = "about",   label = L["About"] },
     }
     local cat = category or content.__settingsCat or "general"
     if (cat == "loot" or cat == "officer") and not isOfficer then cat = "general" end
+    if cat == "loot" and GuildOS.Client.isRetail then cat = "general" end
     content.__settingsCat = cat
 
     local yOff = 0
@@ -1950,7 +1954,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
 
     local cx = 0
     for _, c in ipairs(CATS) do
-        if not c.officer or isOfficer then
+        if (not c.officer or isOfficer) and not (c.retail == false and GuildOS.Client.isRetail) then
             local b = UI:CreateButton(content, c.label, 92, 24)
             b:SetPoint("TOPLEFT", cx, -yOff)
             if c.key == cat then
@@ -2081,10 +2085,12 @@ function GuildOS:RefreshSettingsPanel(content, category)
     if GuildOS:LootSystemShowsWishlist() then
         quickButtons[#quickButtons + 1] = { label = L["My Wishlist"], fn = function() GuildOS:ShowWishlistFrame() end }
     end
-    quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
-        local txt = GuildOS.Exporter and GuildOS.Exporter:Build("equity", "tsv") or ""
-        GuildOS:ShowExportPopup(L["Loot Equity"], txt)
-    end }
+    if GuildOS.LootEquity then  -- not on retail (ADR-0026)
+        quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
+            local txt = GuildOS.Exporter and GuildOS.Exporter:Build("equity", "tsv") or ""
+            GuildOS:ShowExportPopup(L["Loot Equity"], txt)
+        end }
+    end
     quickButtons[#quickButtons + 1] = { label = L["Bulletin"], fn = function()
         if GuildOS.Bulletin then GuildOS.Bulletin:Show() end
     end }
@@ -2848,88 +2854,91 @@ function GuildOS:RefreshSettingsPanel(content, category)
         yOff = yOff + 32
     end
 
-    -- Test: Loot Master Roll Popup
-    local testLM = UI:CreateButton(content, L["Test Roll Popup"], 200, 26)
-    testLM:SetPoint("TOPLEFT", 8, -yOff)
-    testLM:SetScript("OnClick", function()
-        if GuildOS.LootMaster then
-            GuildOS.LootMaster.testMode = true
-            -- Simulate a roll popup with a fake item
-            GuildOS.LootMaster:ShowRollPopup(
-                "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
-                15,
-                32837
-            )
-            GuildOS:Print(L["Test roll popup shown (15s timer). Try MS/OS/Pass buttons."])
-        else
-            GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-        end
-    end)
-    local testLMDesc = UI:CreateText(content, L["Shows the raider roll popup with a sample item"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testLMDesc:SetPoint("LEFT", testLM, "RIGHT", 10, 0)
-    yOff = yOff + 32
+    -- The Loot Master's tests: only where it exists, never on retail (ADR-0026).
+    if GuildOS.LootMaster then
+        -- Test: Loot Master Roll Popup
+        local testLM = UI:CreateButton(content, L["Test Roll Popup"], 200, 26)
+        testLM:SetPoint("TOPLEFT", 8, -yOff)
+        testLM:SetScript("OnClick", function()
+            if GuildOS.LootMaster then
+                GuildOS.LootMaster.testMode = true
+                -- Simulate a roll popup with a fake item
+                GuildOS.LootMaster:ShowRollPopup(
+                    "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
+                    15,
+                    32837
+                )
+                GuildOS:Print(L["Test roll popup shown (15s timer). Try MS/OS/Pass buttons."])
+            else
+                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
+            end
+        end)
+        local testLMDesc = UI:CreateText(content, L["Shows the raider roll popup with a sample item"], 9, C.silver.r, C.silver.g, C.silver.b)
+        testLMDesc:SetPoint("LEFT", testLM, "RIGHT", 10, 0)
+        yOff = yOff + 32
 
-    -- Test: Wishlist Council Preview
-    local testCouncil = UI:CreateButton(content, L["Test Wishlist Council"], 200, 26)
-    testCouncil:SetPoint("TOPLEFT", 8, -yOff)
-    testCouncil:SetScript("OnClick", function()
-        if GuildOS.LootMaster then
-            GuildOS.LootMaster.testMode = true
-            -- Show council frame with fake data
-            local fakeWinner = { name = GuildOS.Compat.PlayerName(), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
-            local fakeCandidates = {
-                fakeWinner,
-                { name = "TestPlayer", class = "WARRIOR", wishlistType = "wishlist", order = 2 },
-                { name = "AnotherOne", class = "MAGE", wishlistType = "wishlist", order = 3 },
-            }
-            GuildOS.LootMaster.activeLoot = {
-                link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
-                slot = nil,
-                itemId = 32837,
-            }
-            GuildOS.LootMaster:ShowCouncilResultFrame(
-                fakeWinner,
-                "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
-                nil,
-                fakeCandidates
-            )
-            GuildOS:Print(L["Test council frame shown. Award button won't work (no loot slot)."])
-        else
-            GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-        end
-    end)
-    local testCouncilDesc = UI:CreateText(content, L["Shows the ML council result frame with sample data"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testCouncilDesc:SetPoint("LEFT", testCouncil, "RIGHT", 10, 0)
-    yOff = yOff + 32
+        -- Test: Wishlist Council Preview
+        local testCouncil = UI:CreateButton(content, L["Test Wishlist Council"], 200, 26)
+        testCouncil:SetPoint("TOPLEFT", 8, -yOff)
+        testCouncil:SetScript("OnClick", function()
+            if GuildOS.LootMaster then
+                GuildOS.LootMaster.testMode = true
+                -- Show council frame with fake data
+                local fakeWinner = { name = GuildOS.Compat.PlayerName(), class = select(2, UnitClass("player")), wishlistType = "wishlist", order = 1 }
+                local fakeCandidates = {
+                    fakeWinner,
+                    { name = "TestPlayer", class = "WARRIOR", wishlistType = "wishlist", order = 2 },
+                    { name = "AnotherOne", class = "MAGE", wishlistType = "wishlist", order = 3 },
+                }
+                GuildOS.LootMaster.activeLoot = {
+                    link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
+                    slot = nil,
+                    itemId = 32837,
+                }
+                GuildOS.LootMaster:ShowCouncilResultFrame(
+                    fakeWinner,
+                    "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r",
+                    nil,
+                    fakeCandidates
+                )
+                GuildOS:Print(L["Test council frame shown. Award button won't work (no loot slot)."])
+            else
+                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
+            end
+        end)
+        local testCouncilDesc = UI:CreateText(content, L["Shows the ML council result frame with sample data"], 9, C.silver.r, C.silver.g, C.silver.b)
+        testCouncilDesc:SetPoint("LEFT", testCouncil, "RIGHT", 10, 0)
+        yOff = yOff + 32
 
-    -- Test: ML Roll Tracker
-    local testRollFrame = UI:CreateButton(content, L["Test Roll Tracker"], 200, 26)
-    testRollFrame:SetPoint("TOPLEFT", 8, -yOff)
-    testRollFrame:SetScript("OnClick", function()
-        if GuildOS.LootMaster then
-            GuildOS.LootMaster.testMode = true
-            GuildOS.LootMaster.activeLoot = {
-                link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",
-                slot = nil,
-                itemId = 30110,
-                startTime = GetServerTime(),
-                endTime = GetServerTime() + 30,
-            }
-            GuildOS.LootMaster.rolls = {
-                ["TestWarrior-Realm"] = { name = "TestWarrior", class = "WARRIOR", rollType = "MS", roll = 87, prioOrder = 1 },
-                ["TestMage-Realm"] = { name = "TestMage", class = "MAGE", rollType = "MS", roll = 54, wishlist = { order = 2 } },
-                ["TestPriest-Realm"] = { name = "TestPriest", class = "PRIEST", rollType = "OS", roll = 92 },
-                ["TestRogue-Realm"] = { name = "TestRogue", class = "ROGUE", rollType = "PASS", roll = 0 },
-            }
-            GuildOS.LootMaster:ShowRollFrame()
-            GuildOS:Print(L["Test roll tracker shown with sample rolls."])
-        else
-            GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-        end
-    end)
-    local testRFDesc = UI:CreateText(content, L["Shows the ML roll tracker with sample roll data"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testRFDesc:SetPoint("LEFT", testRollFrame, "RIGHT", 10, 0)
-    yOff = yOff + 32
+        -- Test: ML Roll Tracker
+        local testRollFrame = UI:CreateButton(content, L["Test Roll Tracker"], 200, 26)
+        testRollFrame:SetPoint("TOPLEFT", 8, -yOff)
+        testRollFrame:SetScript("OnClick", function()
+            if GuildOS.LootMaster then
+                GuildOS.LootMaster.testMode = true
+                GuildOS.LootMaster.activeLoot = {
+                    link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",
+                    slot = nil,
+                    itemId = 30110,
+                    startTime = GetServerTime(),
+                    endTime = GetServerTime() + 30,
+                }
+                GuildOS.LootMaster.rolls = {
+                    ["TestWarrior-Realm"] = { name = "TestWarrior", class = "WARRIOR", rollType = "MS", roll = 87, prioOrder = 1 },
+                    ["TestMage-Realm"] = { name = "TestMage", class = "MAGE", rollType = "MS", roll = 54, wishlist = { order = 2 } },
+                    ["TestPriest-Realm"] = { name = "TestPriest", class = "PRIEST", rollType = "OS", roll = 92 },
+                    ["TestRogue-Realm"] = { name = "TestRogue", class = "ROGUE", rollType = "PASS", roll = 0 },
+                }
+                GuildOS.LootMaster:ShowRollFrame()
+                GuildOS:Print(L["Test roll tracker shown with sample rolls."])
+            else
+                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
+            end
+        end)
+        local testRFDesc = UI:CreateText(content, L["Shows the ML roll tracker with sample roll data"], 9, C.silver.r, C.silver.g, C.silver.b)
+        testRFDesc:SetPoint("LEFT", testRollFrame, "RIGHT", 10, 0)
+        yOff = yOff + 32
+    end
 
     -- Test: Raid Tracker Status
     local testRT = UI:CreateButton(content, L["Test Raid Status"], 200, 26)
@@ -2951,26 +2960,28 @@ function GuildOS:RefreshSettingsPanel(content, category)
     testRTDesc:SetPoint("LEFT", testRT, "RIGHT", 10, 0)
     yOff = yOff + 32
 
-    -- Test: ML Loot Frame
-    local testLootFrame = UI:CreateButton(content, L["Test Loot Frame"], 200, 26)
-    testLootFrame:SetPoint("TOPLEFT", 8, -yOff)
-    testLootFrame:SetScript("OnClick", function()
-        if GuildOS.LootMaster then
-            GuildOS.LootMaster.testMode = true
-            local fakeItems = {
-                { slot = 1, link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",   name = "Tsunami Talisman",    quality = 4 },
-                { slot = 2, link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r", name = "Warglaive of Azzinoth", quality = 5 },
-                { slot = 3, link = "|cffa335ee|Hitem:30019::::::::70:::::|h[Ring of Endless Coils]|h|r", name = "Ring of Endless Coils", quality = 4 },
-            }
-            GuildOS.LootMaster:ShowLootFrame(fakeItems)
-            GuildOS:Print(L["Test loot frame shown with 3 sample items."])
-        else
-            GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
-        end
-    end)
-    local testLFDesc = UI:CreateText(content, L["Opens the ML loot frame with sample items"], 9, C.silver.r, C.silver.g, C.silver.b)
-    testLFDesc:SetPoint("LEFT", testLootFrame, "RIGHT", 10, 0)
-    yOff = yOff + 32
+    if GuildOS.LootMaster then  -- not on retail (ADR-0026)
+        -- Test: ML Loot Frame
+        local testLootFrame = UI:CreateButton(content, L["Test Loot Frame"], 200, 26)
+        testLootFrame:SetPoint("TOPLEFT", 8, -yOff)
+        testLootFrame:SetScript("OnClick", function()
+            if GuildOS.LootMaster then
+                GuildOS.LootMaster.testMode = true
+                local fakeItems = {
+                    { slot = 1, link = "|cffa335ee|Hitem:30110::::::::70:::::|h[Tsunami Talisman]|h|r",   name = "Tsunami Talisman",    quality = 4 },
+                    { slot = 2, link = "|cffff8000|Hitem:32837::::::::70:::::|h[Warglaive of Azzinoth]|h|r", name = "Warglaive of Azzinoth", quality = 5 },
+                    { slot = 3, link = "|cffa335ee|Hitem:30019::::::::70:::::|h[Ring of Endless Coils]|h|r", name = "Ring of Endless Coils", quality = 4 },
+                }
+                GuildOS.LootMaster:ShowLootFrame(fakeItems)
+                GuildOS:Print(L["Test loot frame shown with 3 sample items."])
+            else
+                GuildOS:Print(L["|cffFF4444Loot Master module is disabled.|r"])
+            end
+        end)
+        local testLFDesc = UI:CreateText(content, L["Opens the ML loot frame with sample items"], 9, C.silver.r, C.silver.g, C.silver.b)
+        testLFDesc:SetPoint("LEFT", testLootFrame, "RIGHT", 10, 0)
+        yOff = yOff + 32
+    end
 
     -- Test: Export Attendance
     local testExport = UI:CreateButton(content, L["Test Attendance Export"], 200, 26)
@@ -3261,8 +3272,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     linksBtn:SetScript("OnClick", function()
         GuildOS:ShowExportPopup(L["Guild OS Links"],
             -- The site first: it is the one link here that does something for the
-            -- person reading it. The other three are where the addon comes from.
-            "App:  https://guildos.me\n"
+            -- person reading it. The other three are where the addon comes from. Not on retail,
+            -- which guildos.me does not take yet (ADR-0026).
+            (GuildOS.Client.isRetail and "" or "App:  https://guildos.me\n")
             .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")

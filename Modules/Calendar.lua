@@ -185,7 +185,9 @@ end
 
 local function keyOf(name)
     local short = (name or ""):match("^([^-]+)") or name
-    return GuildOS:GetPlayerKey(short, GetRealmName())
+    -- Retail: the sender's own realm, or two connected-realm namesakes are one person (ADR-0026).
+    local realm = GuildOS.Client.isRetail and (name or ""):match("^[^-]+%-(.+)$") or GetRealmName()
+    return GuildOS:GetPlayerKey(short, realm)
 end
 
 ----------------------------------------------------------------------

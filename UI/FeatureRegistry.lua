@@ -57,6 +57,7 @@ function UI:AllFeatures(scope)
         local ok = true
         if def.officerOnly and not GuildOS:IsOfficer() then ok = false end
         if ok and def.tbc and not GuildOS.Client.isAnniversary then ok = false end  -- TBC content (ADR-0014)
+        if ok and def.retail == false and GuildOS.Client.isRetail then ok = false end  -- not on retail (ADR-0026)
         if ok and def.condition and not def.condition() then ok = false end
         if ok and scope and not def[scope] then ok = false end
         if ok then out[#out + 1] = def end
@@ -81,6 +82,7 @@ end
 function UI:IsFeatureAllowed(def)
     if not def then return false end
     if def.tbc and not GuildOS.Client.isAnniversary then return false end  -- TBC content (ADR-0014)
+    if def.retail == false and GuildOS.Client.isRetail then return false end  -- not on retail (ADR-0026)
     if not GuildOS:IsFeatureEnabled(def.id) then return false end
     -- A tab whose module failed to start would error while it builds.
     if GuildOS:FeatureStartFailed(def.id) then return false end
@@ -160,115 +162,118 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
-    -- The Web panel greys a button and prints the reason beside it, while the
-    -- slash command refuses with the same words. Both read these predicates,
-    -- so a change to the rule reaches the button and the command together.
-    S:Register("companion.predicates_exist", function()
-        local I = GuildOS.CompanionImport
-        if not I then return false, "CompanionImport missing" end
-        if type(I.CanInvite) ~= "function" then return false, "CanInvite missing" end
-        if type(I.CanOrganize) ~= "function" then return false, "CanOrganize missing" end
-        return true
-    end)
+    -- The companion's tests: only where it exists, never on retail (ADR-0026).
+    if GuildOS.CompanionImport then
+        -- The Web panel greys a button and prints the reason beside it, while the
+        -- slash command refuses with the same words. Both read these predicates,
+        -- so a change to the rule reaches the button and the command together.
+        S:Register("companion.predicates_exist", function()
+            local I = GuildOS.CompanionImport
+            if not I then return false, "CompanionImport missing" end
+            if type(I.CanInvite) ~= "function" then return false, "CanInvite missing" end
+            if type(I.CanOrganize) ~= "function" then return false, "CanOrganize missing" end
+            return true
+        end)
 
-    S:Register("companion.can_invite_needs_roster", function()
-        local I = GuildOS.CompanionImport
-        local saved = GuildOS.db.companionRoster
-        GuildOS.db.companionRoster = nil
-        local ok, reason = I:CanInvite()
-        GuildOS.db.companionRoster = saved
-        if ok then return false, "allowed inviting with no roster loaded" end
-        if not reason or reason == "" then return false, "refused without saying why" end
-        return true
-    end)
+        S:Register("companion.can_invite_needs_roster", function()
+            local I = GuildOS.CompanionImport
+            local saved = GuildOS.db.companionRoster
+            GuildOS.db.companionRoster = nil
+            local ok, reason = I:CanInvite()
+            GuildOS.db.companionRoster = saved
+            if ok then return false, "allowed inviting with no roster loaded" end
+            if not reason or reason == "" then return false, "refused without saying why" end
+            return true
+        end)
 
-    S:Register("companion.can_organize_needs_roster", function()
-        local I = GuildOS.CompanionImport
-        local saved = GuildOS.db.companionRoster
-        GuildOS.db.companionRoster = nil
-        local ok, reason = I:CanOrganize()
-        GuildOS.db.companionRoster = saved
-        if ok then return false, "allowed organising with no roster loaded" end
-        if not reason or reason == "" then return false, "refused without saying why" end
-        return true
-    end)
+        S:Register("companion.can_organize_needs_roster", function()
+            local I = GuildOS.CompanionImport
+            local saved = GuildOS.db.companionRoster
+            GuildOS.db.companionRoster = nil
+            local ok, reason = I:CanOrganize()
+            GuildOS.db.companionRoster = saved
+            if ok then return false, "allowed organising with no roster loaded" end
+            if not reason or reason == "" then return false, "refused without saying why" end
+            return true
+        end)
 
-    -- A greyed button with no reason under it is the exact failure this
-    -- feature exists to remove, so every refusal must carry text.
-    S:Register("companion.refusals_always_explain", function()
-        local I = GuildOS.CompanionImport
-        for _, name in ipairs({ "CanInvite", "CanOrganize" }) do
-            local ok, reason = I[name](I)
-            if not ok and (type(reason) ~= "string" or reason == "") then
-                return false, name .. " refused with no reason"
+        -- A greyed button with no reason under it is the exact failure this
+        -- feature exists to remove, so every refusal must carry text.
+        S:Register("companion.refusals_always_explain", function()
+            local I = GuildOS.CompanionImport
+            for _, name in ipairs({ "CanInvite", "CanOrganize" }) do
+                local ok, reason = I[name](I)
+                if not ok and (type(reason) ~= "string" or reason == "") then
+                    return false, name .. " refused with no reason"
+                end
             end
-        end
-        return true
-    end)
+            return true
+        end)
 
-    -- InviteAll must not re-implement its own gate: it has to answer with
-    -- exactly what the predicate said, or the button and the command disagree.
-    S:Register("companion.action_agrees_with_predicate", function()
-        local I = GuildOS.CompanionImport
-        local saved = GuildOS.db.companionRoster
-        GuildOS.db.companionRoster = nil
-        local ok, want = I:CanInvite()
-        local _, _, got = I:InviteAll()
-        GuildOS.db.companionRoster = saved
-        if ok then return false, "expected the no-roster case to refuse" end
-        if got ~= want then
-            return false, string.format("InviteAll said [%s], predicate said [%s]",
-                tostring(got), tostring(want))
-        end
-        return true
-    end)
+        -- InviteAll must not re-implement its own gate: it has to answer with
+        -- exactly what the predicate said, or the button and the command disagree.
+        S:Register("companion.action_agrees_with_predicate", function()
+            local I = GuildOS.CompanionImport
+            local saved = GuildOS.db.companionRoster
+            GuildOS.db.companionRoster = nil
+            local ok, want = I:CanInvite()
+            local _, _, got = I:InviteAll()
+            GuildOS.db.companionRoster = saved
+            if ok then return false, "expected the no-roster case to refuse" end
+            if got ~= want then
+                return false, string.format("InviteAll said [%s], predicate said [%s]",
+                    tostring(got), tostring(want))
+            end
+            return true
+        end)
 
-    -- The companion writes Inbox.lua into the addon folder and the game executes
-    -- it, so what lands in GuildOSInbox is untrusted input even though it came
-    -- from our own tool. A damaged one must be ignored, never allowed to wipe the
-    -- roster the officer already has.
-    S:Register("companion.inbox_ignores_junk", function()
-        local I = GuildOS.CompanionImport
-        if type(I.ConsumeInbox) ~= "function" then return false, "ConsumeInbox missing" end
+        -- The companion writes Inbox.lua into the addon folder and the game executes
+        -- it, so what lands in GuildOSInbox is untrusted input even though it came
+        -- from our own tool. A damaged one must be ignored, never allowed to wipe the
+        -- roster the officer already has.
+        S:Register("companion.inbox_ignores_junk", function()
+            local I = GuildOS.CompanionImport
+            if type(I.ConsumeInbox) ~= "function" then return false, "ConsumeInbox missing" end
 
-        local saved, savedGlobal = GuildOS.db.companionRoster, GuildOSInbox
-        GuildOS.db.companionRoster = { title = "kept", members = { {} } }
+            local saved, savedGlobal = GuildOS.db.companionRoster, GuildOSInbox
+            GuildOS.db.companionRoster = { title = "kept", members = { {} } }
 
-        -- A table is the current shape, a bare string the older one, and junk
-        -- in either must be ignored rather than wipe what the officer has.
-        local junk = { "", "not a roster", "GOSROST1:", "GOSCOMP1:abc", 42, true,
-                       {}, { "" }, { "nope" }, { 7 }, { "GOSCOMP1:abc" } }
-        for _, v in ipairs(junk) do
-            GuildOSInbox = v
+            -- A table is the current shape, a bare string the older one, and junk
+            -- in either must be ignored rather than wipe what the officer has.
+            local junk = { "", "not a roster", "GOSROST1:", "GOSCOMP1:abc", 42, true,
+                           {}, { "" }, { "nope" }, { 7 }, { "GOSCOMP1:abc" } }
+            for _, v in ipairs(junk) do
+                GuildOSInbox = v
+                I:ConsumeInbox()
+                local now = GuildOS.db.companionRoster
+                if not now or now.title ~= "kept" then
+                    GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
+                    return false, "a junk inbox replaced the loaded roster: " .. tostring(v)
+                end
+            end
+
+            GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
+            return true
+        end)
+
+        -- Consuming twice must not re-import: a /reload with the same inbox should
+        -- leave the stored roster exactly where it was.
+        S:Register("companion.inbox_is_idempotent", function()
+            local I = GuildOS.CompanionImport
+            local saved, savedGlobal = GuildOS.db.companionRoster, GuildOSInbox
+            GuildOS.db.companionRoster = nil
+            GuildOSInbox = "GOSROST1:notarealpayload"
+
             I:ConsumeInbox()
-            local now = GuildOS.db.companionRoster
-            if not now or now.title ~= "kept" then
-                GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
-                return false, "a junk inbox replaced the loaded roster: " .. tostring(v)
-            end
-        end
+            local first = GuildOS.db.companionRoster
+            I:ConsumeInbox()
+            local second = GuildOS.db.companionRoster
 
-        GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
-        return true
-    end)
-
-    -- Consuming twice must not re-import: a /reload with the same inbox should
-    -- leave the stored roster exactly where it was.
-    S:Register("companion.inbox_is_idempotent", function()
-        local I = GuildOS.CompanionImport
-        local saved, savedGlobal = GuildOS.db.companionRoster, GuildOSInbox
-        GuildOS.db.companionRoster = nil
-        GuildOSInbox = "GOSROST1:notarealpayload"
-
-        I:ConsumeInbox()
-        local first = GuildOS.db.companionRoster
-        I:ConsumeInbox()
-        local second = GuildOS.db.companionRoster
-
-        GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
-        if first ~= second then return false, "the second consume changed the store" end
-        return true
-    end)
+            GuildOS.db.companionRoster, GuildOSInbox = saved, savedGlobal
+            if first ~= second then return false, "the second consume changed the store" end
+            return true
+        end)
+    end
 
     -- A raid planned on the site becomes one guild event, not one per officer.
     -- Calendar:Create mints a random id and publishes it, so every officer

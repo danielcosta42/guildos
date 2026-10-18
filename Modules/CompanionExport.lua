@@ -15,6 +15,9 @@
 --
 -- Business logic only — UI calls Build() and shows the result.
 ----------------------------------------------------------------------
+-- Not on retail: guildos.me takes no retail guild yet (ADR-0026). Absent there, not switched off.
+if GuildOS.Client.isRetail then return end
+
 local Companion = {}
 GuildOS.Companion = Companion
 
@@ -526,9 +529,9 @@ function Companion:BuildPayload()
         guildKey = GuildOS:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
         guildName = guildName,
         realm = realm,
-        -- The client, not a guess about it: TBC Anniversary is recognised positively and
-        -- everything else is Forever, which is the only other client this addon loads on.
-        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or "FOREVER",
+        -- The client, not a guess about it: TBC Anniversary and retail are recognised positively
+        -- and everything else is Forever (ADR-0026). Retail never gets here: this module is absent there.
+        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or GuildOS.Client.isRetail and "RETAIL" or "FOREVER",
         exportedAt = math.floor(time()),
         exportedBy = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
         addonVersion = GuildOS.VERSION or "0",

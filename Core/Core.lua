@@ -135,7 +135,17 @@ end
 -- Per-guild DB resolution
 ----------------------------------------------------------------------
 -- The realm a db key is made with, and a guild's db key, "<guild>-<realm>": the one place each is built.
-local function dbRealm() return GetRealmName() or "Unknown" end
+-- On retail a guild spans connected realms, so it is the guild's home realm (GetGuildInfo's fourth
+-- answer, nil when it is this character's own), normalized: one guild, one database, whichever of
+-- its realms a character is on (ADR-0026).
+local function dbRealm()
+    if GuildOS.Client and GuildOS.Client.isRetail then
+        local home = IsInGuild() and select(4, GetGuildInfo("player"))
+        if not home or home == "" then home = GetRealmName() end
+        return home and (home:gsub("[%s%-]", "")) or "Unknown"
+    end
+    return GetRealmName() or "Unknown"
+end
 local function guildDBKey(guildName) return guildName .. "-" .. dbRealm() end
 
 function GuildOS:ResolveGuildDB()
@@ -824,6 +834,18 @@ end
 function GuildOS:IsOfficerByName(fullName)
     if not IsInGuild() or not fullName then return false end
     local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 1
+    -- Retail: connected realms put namesakes in one guild, so only the whole key is trusted: an
+    -- officer's name on another realm carries no rank (ADR-0026). No realm means this client's.
+    if GuildOS.Client and GuildOS.Client.isRetail then
+        local key = self:KeyOfRosterName(fullName)
+        for i = 1, GetNumGuildMembers() or 0 do
+            local name, _, rankIndex = GetGuildRosterInfo(i)
+            if name and self:KeyOfRosterName(name) == key then
+                return rankIndex ~= nil and rankIndex <= maxRank
+            end
+        end
+        return false
+    end
     -- Normalise: strip realm if present
     local shortName = fullName:match("^([^-]+)") or fullName
     local numMembers = GetNumGuildMembers() or 0
@@ -932,13 +954,15 @@ end
 
 -- Each loot system exposes only its own UI so players never see screens
 -- that don't apply: wishlist/TMB -> wishlist access; DKP -> DKP access;
--- plain /roll -> neither.
+-- plain /roll -> neither. A system whose module is absent (retail, ADR-0026) shows nothing.
 function GuildOS:LootSystemShowsWishlist()
+    if not self.Wishlist then return false end
     local s = self:GetLootSystem()
     return s == "wishlist" or s == "tmb"
 end
 
 function GuildOS:LootSystemShowsDKP()
+    if not self.Points then return false end
     return self:GetLootSystem() == "dkp"
 end
 

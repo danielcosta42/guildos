@@ -1882,3 +1882,6 @@ L["Detect my alts"] = "Найти моих твинков"
 L["Ask to join an alliance"] = "Попроситься в союз"
 L["Send request"] = "Отправить запрос"
 L["Alliance tag and an officer of a guild already in it. They approve the request."] = "Тег союза и офицер гильдии, которая уже в нём. Он одобряет запрос."
+-- Retail (ADR-0026): the welcome and the officer step without loot.
+L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "Всё для гильдии в одном аддоне: состав, посещаемость рейдов, статики, набор, профессии, инструменты руководства и проверки — всё синхронизируется между согильдийцами, у которых стоит аддон."
+L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."] = "Как офицеру вам доступны инструменты руководства. В разделе Настройки -> Офицер укажите, какие звания гильдии считаются офицерскими."

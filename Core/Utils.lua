@@ -176,13 +176,36 @@ function GuildOS:FormatItemLevel(ilvl)
     return self:ColorText(tostring(ilvl), color.r, color.g, color.b)
 end
 
+-- Whether a realm is part of who somebody is: on TBC Anniversary, and on retail, where a guild
+-- spans connected realms and "Ana-Azralon" and "Ana-Gallywix" are two people. Not on WoW: Forever,
+-- which has no realms that set players apart (issue #95). A client table with no isRetail is
+-- Forever, as every Forever harness stubs it.
+function GuildOS:RealmBound()
+    local c = GuildOS.Client
+    if not c then return true end
+    return (c.isAnniversary or c.isRetail) and true or false
+end
+
+local function isRetail() return GuildOS.Client and GuildOS.Client.isRetail end
+
+-- A realm as retail spells it in its roster and every addon-message sender: no spaces, no
+-- hyphens ("Tol Barad" -> "TolBarad", "Azjol-Nerub" -> "AzjolNerub"). A hyphen left in would
+-- also cut the key in two wherever a site splits name from realm.
+local function normalizedRealm(realm)
+    return (realm:gsub("[%s%-]", ""))
+end
+
 -- The client's realm for member keys: GetRealmName(), else GetNormalizedRealmName() (a
 -- client with no realm name may still suffix roster names with a normalized one), else
 -- nil; "" counts as nothing. Anniversary always answers the first, so its keys keep their bytes.
+-- Retail asks for the normalized one first: that is how its roster writes everybody (#165).
 function GuildOS:GetClientRealm()
-    local realm = GetRealmName()
+    local realm
+    if isRetail() and GetNormalizedRealmName then realm = GetNormalizedRealmName() end
+    if not realm or realm == "" then realm = GetRealmName() end
     if not realm or realm == "" then realm = GetNormalizedRealmName and GetNormalizedRealmName() end
     if realm == "" then return nil end
+    if realm and isRetail() then realm = normalizedRealm(realm) end
     return realm
 end
 
@@ -198,10 +221,18 @@ end
 -- broadcast or a sender keyed a guildmate apart from their own roster line.
 function GuildOS:GetPlayerKey(name, realm)
     if not name or name == "" then return nil end
-    if GuildOS.Client and not GuildOS.Client.isAnniversary then realm = nil end
+    if not self:RealmBound() then realm = nil end
     if not realm or realm == "" then realm = GuildOS:GetClientRealm() end
     if not realm then return name end
+    -- Retail: a realm from GetRealmName() or a unit ("Tol Barad") meets the roster's "TolBarad" (#165).
+    if isRetail() then realm = normalizedRealm(realm) end
     return name .. "-" .. realm
+end
+
+-- The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's.
+-- On retail that is what tells two connected-realm namesakes apart (ADR-0026).
+function GuildOS:KeyOfRosterName(full)
+    return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
 -- A member key another client built, as this client keys that member (issue #97). On WoW: Forever
@@ -211,7 +242,7 @@ end
 -- one. Anniversary keys pass through: there a realm is part of who somebody is.
 function GuildOS:LocalMemberKey(key)
     if type(key) ~= "string" or key == "" then return key end
-    if not (GuildOS.Client and not GuildOS.Client.isAnniversary) then return key end
+    if self:RealmBound() then return key end
     if key:find("^ally:") then return key end   -- an allied guild's member, realm-free already
     return self:GetPlayerKey(key:match("^([^-]+)") or key)
 end
@@ -241,7 +272,7 @@ end
 -- among them) on every login. Each table is its own step: bad data in one leaves the rest moved,
 -- and the database is marked done only when every step was, so a failed one is retried.
 function GuildOS:LocalizeStoredMemberTables()
-    if not (GuildOS.Client and not GuildOS.Client.isAnniversary) then return end
+    if self:RealmBound() then return end
     local db = self.db
     if type(db) ~= "table" then return end
     local realm = self:GetClientRealm()
@@ -325,7 +356,7 @@ end
 -- the newer record winning, so nobody is shown without their data or counted twice. Forever
 -- only: on Anniversary another realm is another player.
 function GuildOS:RekeyMembersToThisRealm()
-    if not (GuildOS.Client and not GuildOS.Client.isAnniversary) then return end
+    if self:RealmBound() then return end
     local members = self.db and self.db.members
     if type(members) ~= "table" then return end
     local moves = {}

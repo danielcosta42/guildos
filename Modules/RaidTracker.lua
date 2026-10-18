@@ -473,8 +473,16 @@ function RaidTracker:CheckPlayerConsumes(unit)
     return hasFlaskOrElixir and hasFood
 end
 
+-- A boss name the client keeps secret (Midnight's Secret Values, ADR-0026) can be passed along but not
+-- read: concatenated it raises, stored it would raise wherever it is shown. It is kept as nothing.
+local function readableName(name)
+    if GuildOS.Compat.IsSecret(name) then return nil end
+    return name
+end
+
 function RaidTracker:OnEncounterStart(encounterID, encounterName)
     if not self.currentRaid then return end
+    encounterName = readableName(encounterName)
     self:TakeSnapshot("encounter_start")
     -- Guard: ignore duplicate ENCOUNTER_START for the same fight (can fire twice
     -- on some TBC bosses such as Magtheridon due to phase transitions).
@@ -494,6 +502,7 @@ end
 
 function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
     if not self.currentRaid then return end
+    encounterName = readableName(encounterName)
     self:TakeSnapshot("encounter_end")
 
     -- Update the last encounter with this ID
@@ -507,7 +516,7 @@ function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
     end
 
     local status = (success == 1) and L["|cff00ff00KILL|r"] or L["|cffff3333WIPE|r"]
-    GuildOS:Print(encounterName .. " - " .. status)
+    GuildOS:Print((encounterName or L["Unknown"]) .. " - " .. status)
 
     -- Optional DKP auto-award on a kill (raid-leader gated inside Points).
     if success == 1 and GuildOS.Points then

@@ -1882,3 +1882,6 @@ L["Detect my alts"] = "내 부캐 찾기"
 L["Ask to join an alliance"] = "연합 가입 요청"
 L["Send request"] = "요청 보내기"
 L["Alliance tag and an officer of a guild already in it. They approve the request."] = "연합 태그와 이미 가입한 길드의 오피서 이름. 그 사람이 요청을 승인합니다."
+-- Retail (ADR-0026): the welcome and the officer step without loot.
+L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "올인원 길드 도구: 명단, 공격대 출석, 코어, 모집, 전문 기술, 운영 도구, 점검 — 애드온을 쓰는 길드원끼리 모두 동기화됩니다."
+L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."] = "관리자는 운영 도구를 쓸 수 있습니다. 설정 -> 관리자에서 관리자로 볼 길드 등급을 정하세요."

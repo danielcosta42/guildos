@@ -8,17 +8,24 @@ GuildOS.Compat = {}
 local Compat = GuildOS.Compat
 
 ----------------------------------------------------------------------
--- Which client this is and what it can do (ADR-0014). Read once, before any
--- module file loads, so a file can decide whether its content exists here.
--- WoW: Forever has no WOW_PROJECT_ID of its own yet: TBC Anniversary is
--- recognised by its project id and its interface together, and every other
--- client, an unknown one included, is "not Anniversary".
+-- Which client this is and what it can do (ADR-0014, ADR-0026). Read once, before
+-- any module file loads, so a file can decide whether its content exists here.
+-- WoW: Forever has no WOW_PROJECT_ID of its own yet: TBC Anniversary and retail
+-- are each recognised by a project id and an interface together, and every other
+-- client, an unknown one included, is WoW: Forever. Forever runs the mainline UI
+-- and may answer the mainline id, but its interface is 16001.
 ----------------------------------------------------------------------
 local version, build, buildDate, interface = GetBuildInfo()
 interface = tonumber(interface) or 0
 local TBC_PROJECT = WOW_PROJECT_BURNING_CRUSADE_CLASSIC  -- nil on a client without the constant
 local isAnniversary = TBC_PROJECT ~= nil and WOW_PROJECT_ID == TBC_PROJECT
     and interface >= 20500 and interface < 30000
+local isRetail = WOW_PROJECT_MAINLINE ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+    and interface >= 100000
+-- The classes a character can be. Retail adds the four Classic never had, after the nine.
+local CLASSIC_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+local RETAIL_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID",
+    "DEATHKNIGHT", "DEMONHUNTER", "MONK", "EVOKER" }
 GuildOS.Client = {
     version = version,
     build = build,
@@ -26,22 +33,30 @@ GuildOS.Client = {
     interface = interface,
     projectId = WOW_PROJECT_ID,  -- diagnostics only; never branch on it
     isAnniversary = isAnniversary,
-    -- The game's level cap: TBC's 70, WoW: Forever's 60 (issue #53). The Forever beta caps
-    -- lower for a while; the game is 60, and that is what "the top" means to a guild.
-    maxLevel = isAnniversary and 70 or 60,
+    isRetail = isRetail,
+    -- What the companion payload says; nothing else branches on it.
+    game = isAnniversary and "ANNIVERSARY" or isRetail and "RETAIL" or "FOREVER",
+    -- The game's level cap: TBC's 70, WoW: Forever's 60 (issue #53), Midnight's 90. The Forever
+    -- beta caps lower for a while; the game is 60, and that is what "the top" means to a guild.
+    maxLevel = isAnniversary and 70 or isRetail and 90 or 60,
     -- The raid sizes an event can have, and the one it starts at: TBC's 10 and 25, with 40 for
-    -- the old raids; WoW: Forever's 10 and 20 a tier, with Onyxia at 40. The default is each
-    -- game's main raid (issues #89, #92).
-    raidSizes = isAnniversary and { 10, 25, 40 } or { 10, 20, 40 },
+    -- the old raids; WoW: Forever's 10 and 20 a tier, with Onyxia at 40; retail's flex 10 to 30
+    -- with mythic at 20. The default is each game's main raid (issues #89, #92, #165).
+    raidSizes = isAnniversary and { 10, 25, 40 } or isRetail and { 10, 20, 30 } or { 10, 20, 40 },
     defaultRaidSize = isAnniversary and 25 or 20,
+    classes = isRetail and RETAIL_CLASSES or CLASSIC_CLASSES,
+    -- Where a missing enchant is a real problem: TBC's nine slots (Forever's too), Midnight's
+    -- head, shoulder, chest, feet, both rings and the weapon; cloak and wrist enchants are gone.
+    enchantSlots = isRetail and { 1, 3, 5, 8, 11, 12, 16 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
         tradeSkillUI = C_TradeSkillUI ~= nil,
         tooltipData = TooltipDataProcessor ~= nil,
         guildSetNote = (C_GuildInfo and C_GuildInfo.SetNote) ~= nil,
-        -- Never on Anniversary, where UnitFullName's second slot is the realm (issue #26).
-        surnames = not isAnniversary and (C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname) ~= nil,
+        -- Never on Anniversary or retail, where UnitFullName's second slot is the realm (issue #26).
+        surnames = not isAnniversary and not isRetail
+            and (C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname) ~= nil,
     },
 }
 
@@ -283,6 +298,8 @@ function Compat.FindGuildRosterIndex(name, realm)
     if not name or name == "" then return nil, "absent" end
     local short = name:match("^([^-]+)") or name
     realm = realm or name:match("^[^-]+%-(.+)$")
+    -- Retail's roster spells realms normalized; "Tol Barad" from GetRealmName() is its "TolBarad" (ADR-0026).
+    if realm and GuildOS.Client.isRetail then realm = realm:gsub("[%s%-]", "") end
     local n = GetNumGuildMembers() or 0
     local onlyIdx, hits = nil, 0
     for i = 1, n do

@@ -4,6 +4,9 @@
 -- History is populated exclusively via RecordMLAward;
 -- generic CHAT_MSG_LOOT is NOT tracked.
 ----------------------------------------------------------------------
+-- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
+if GuildOS.Client.isRetail then return end
+
 local LootTracker = {}
 GuildOS.LootTracker = LootTracker
 

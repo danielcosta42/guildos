@@ -303,13 +303,17 @@ function GuildOS:CreateDashboardPanel(panel)
         cNext:ClearAllPoints();  cNext:SetPoint("TOPLEFT", M, -M);                 cNext:SetSize(leftW, r1h)
         cReady:ClearAllPoints(); cReady:SetPoint("TOPLEFT", M + leftW + G, -M);    cReady:SetSize(rightW, r1h)
 
-        -- Row 2: Pulse + Recruitment + Loot
+        -- Row 2: Pulse + Recruitment + Loot. No loot card where loot is not tracked (retail, ADR-0026).
+        local hasLoot = GuildOS.LootTracker ~= nil
         local r2y = M + r1h + G
         local r2h = 120
-        local w3 = math.floor((innerW - 2 * G) / 3)
+        local cols = hasLoot and 3 or 2
+        local w3 = math.floor((innerW - (cols - 1) * G) / cols)
         cPulse:ClearAllPoints();   cPulse:SetPoint("TOPLEFT", M, -r2y);                       cPulse:SetSize(w3, r2h)
-        cRecruit:ClearAllPoints(); cRecruit:SetPoint("TOPLEFT", M + w3 + G, -r2y);            cRecruit:SetSize(w3, r2h)
+        cRecruit:ClearAllPoints(); cRecruit:SetPoint("TOPLEFT", M + w3 + G, -r2y)
+        cRecruit:SetSize(hasLoot and w3 or innerW - (w3 + G), r2h)
         cLoot:ClearAllPoints();    cLoot:SetPoint("TOPLEFT", M + 2 * (w3 + G), -r2y);         cLoot:SetSize(innerW - 2 * (w3 + G), r2h)
+        cLoot:SetShown(hasLoot)
 
         -- Row 3: the guild's chat (full width, fills remaining height)
         local r3y = r2y + r2h + G
@@ -326,7 +330,7 @@ function GuildOS:CreateDashboardPanel(panel)
         fillReady(cReady.body, myRow)
         fillPulse(cPulse.body, rows)
         fillRecruit(cRecruit.body)
-        fillLoot(cLoot.body)
+        if hasLoot then fillLoot(cLoot.body) end
         chatRefresh()
     end
 

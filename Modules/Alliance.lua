@@ -93,8 +93,8 @@ function Alliance.ElectBridge(onlineKeys)
     end
     -- On WoW: Forever every client keys a member with its own realm, and a guild's clients answer
     -- different ones, so the election hashes the name alone: every client elects the same member
-    -- (issue #97). On Anniversary the key is who somebody is.
-    local forever = GuildOS.Client and not GuildOS.Client.isAnniversary
+    -- (issue #97). On Anniversary and retail the key is who somebody is.
+    local forever = not GuildOS:RealmBound()
     local best, bestHash, bestId
     for _, key in ipairs(onlineKeys) do
         if type(key) == "string" and key ~= "" then
@@ -2113,7 +2113,7 @@ function Alliance:_RegisterTests()
             return false, "election depends on input order"
         end
         -- What the election hashes: the name alone on WoW: Forever, the whole key elsewhere (#97).
-        local forever = GuildOS.Client and not GuildOS.Client.isAnniversary
+        local forever = not GuildOS:RealmBound()
         local function id(k) return forever and (k:match("^([^-]+)") or k) or k end
         for _, k in ipairs(keys) do
             if Alliance.Hash(id(k)) < Alliance.Hash(id(first)) then return false, "not the lowest hash" end
