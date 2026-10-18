@@ -247,4 +247,47 @@ onEvent(nil, "CHAT_MSG_GUILD", "!note LFG Kara", "Bob-RealmA")
 check(#printed == 0 and #timers == 0 and #writes == 0, "with !note turned off, an officer's client schedules no write either")
 GuildOS.db.noteCommand.enabled = true
 
+-- ── 7. The roster's right-click "Add note" (issue #162) ─────────────────
+-- An officer typed it and is waiting: written at once, no jitter, every refusal said.
+client({ roster = ANA, setNote = true })
+logged = {}
+check(NoteCommand:Set("Ana", "Firemaw", "Raider main") == true, "the menu's note is written")
+check(#writes == 1 and writes[1][3] == "Raider main" and #timers == 0, "at once: no jitter, the officer is waiting for it")
+check(said("Set Ana's note") and #logged == 1 and logged[1][2] == "Ana-Firemaw", "said and logged like a !note")
+
+client({ roster = ANA, setNote = true, canEdit = false })
+check(NoteCommand:Set("Ana", "Firemaw", "x") ~= true and #writes == 0 and said("can no longer edit public notes"),
+  "without the permission: said, nothing written")
+
+client({ roster = TWO_BOBS, setNote = true })
+NoteCommand:Set("Bob", nil, "x")
+check(#writes == 0 and said("more than one guild member has that name"), "a name two members share is said")
+
+client({ roster = ANA, setNote = true })
+NoteCommand:Set("Ana", "Firemaw", "")
+check(#writes == 1 and writes[1][3] == "" and said("(cleared)"), "an empty box clears the note")
+
+-- Saved untouched: nothing to write — no server write, no roster update for the whole guild, no log.
+client({ roster = ANA, setNote = true })
+logged = {}
+check(NoteCommand:Set("Ana", "Firemaw", "old") == true and #writes == 0 and #logged == 0 and #printed == 0,
+  "a note saved as it already reads writes nothing")
+
+-- A box that could not be read is not an empty box: the note the member has stays.
+client({ roster = ANA, setNote = true })
+check(NoteCommand:Set("Ana", "Firemaw", nil) ~= true and #writes == 0, "no text at all clears nothing")
+
+-- WoW: Forever: a name with a surname and no realm suffix on the roster line; the menu passes the
+-- player's own realm name, which the line does not carry.
+client({ roster = { { name = "Chehul Costa", guid = "Player-1-00CC", note = "" } }, setNote = true })
+check(NoteCommand:Set("Chehul Costa", "Classic Beta PvE 2", "Tank main") == true and #writes == 1
+  and writes[1][2] == "Player-1-00CC" and writes[1][3] == "Tank main",
+  "a Forever member, surname and all, gets the note written to their own row")
+check(NoteCommand.NOTE_MAX == 31, "the cap the box is sized to is the module's")
+
+client({ roster = ANA, setNote = true })
+check(NoteCommand:Current("Ana", "Firemaw") == "old", "the box opens with the note as it reads now")
+client({ roster = TWO_BOBS, setNote = true })
+check(NoteCommand:Current("Bob") == "", "a name the roster cannot pin down opens an empty box")
+
 print(("public-note: %d checks passed"):format(checks))

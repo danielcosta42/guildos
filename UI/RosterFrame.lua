@@ -38,6 +38,52 @@ StaticPopupDialogs["GUILDOS_OFFICER_NOTE"] = {
     timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 
+-- The public note everybody sees, from the same menu (issue #162). data = { name, realm }; the
+-- module writes it, and an empty box clears it. No text at all is a box that could not be read, not
+-- an empty one: the member's note stays.
+local function SavePublicNote(data, text)
+    if not data or text == nil or not GuildOS.NoteCommand then return end
+    GuildOS.NoteCommand:Set(data.name, data.realm, strtrim(text))
+end
+
+StaticPopupDialogs["GUILDOS_PUBLIC_NOTE"] = {
+    text = L["Note for %s, which everyone in the guild sees"],
+    button1 = L["Save"], button2 = CANCEL,
+    -- The game's cap on a public note. Letters here; the bytes are capped when it opens, below.
+    hasEditBox = true, maxLetters = 31,
+    -- The box is the popup's own and other dialogs share it: the byte cap leaves with this one.
+    OnHide = function(self)
+        local box = GuildOS.Compat.PopupEditBox(self)
+        if box then box:SetMaxBytes(0) end
+    end,
+    OnAccept = function(self, data)
+        local box = GuildOS.Compat.PopupEditBox(self)
+        SavePublicNote(data, box and box:GetText())
+    end,
+    EditBoxOnEnterPressed = function(editBox, data)
+        local dialog = editBox:GetParent()
+        SavePublicNote(data or dialog.data, editBox:GetText())
+        dialog:Hide()
+    end,
+    EditBoxOnEscapePressed = function(editBox) editBox:GetParent():Hide() end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+
+-- Opens the public note's box with the note as it reads now, filled in after the popup is up: when
+-- `data` reaches OnShow differs between clients, and the box should never open empty over a note.
+local function ShowPublicNote(data)
+    local dialog = StaticPopup_Show("GUILDOS_PUBLIC_NOTE", data.name, nil, { name = data.name, realm = data.realm })
+    local box = dialog and GuildOS.Compat.PopupEditBox(dialog)
+    if box then
+        -- The write cuts at 31 bytes; a box that takes 31 letters would let an accented or Cyrillic
+        -- note be cut short without a word. +1: the cap counts the terminator.
+        box:SetMaxBytes(GuildOS.NoteCommand.NOTE_MAX + 1)
+        box:SetText(GuildOS.NoteCommand:Current(data.name, data.realm))
+        box:SetFocus()
+        box:HighlightText()
+    end
+end
+
 -- Returns -1 if a < b, 0 if equal, 1 if a > b (semver major.minor.patch)
 local function CompareVersions(a, b)
     local function parts(v)
@@ -1452,6 +1498,16 @@ local function MemberDropdown_Initialize(self, level, menuList)
     end
     UIDropDownMenu_AddButton(info, level)
 
+    -- The public note everybody sees (issue #162): for whoever the rank lets edit it, officer or
+    -- not, their own included.
+    if GuildOS.NoteCommand and GuildOS.Compat.CanEditPublicNote() then
+        info = UIDropDownMenu_CreateInfo()
+        info.notCheckable = true
+        info.text = L["Add note"]
+        info.func = function() ShowPublicNote(data) end
+        UIDropDownMenu_AddButton(info, level)
+    end
+
     -- Officer actions
     if not isMe and GuildOS:IsOfficer() then
         -- Mark as trial
@@ -1468,11 +1524,11 @@ local function MemberDropdown_Initialize(self, level, menuList)
             end
         end
 
-        -- Add officer note
+        -- Add officer note: Guild OS's own, private to officers — said in its name, beside the public one.
         if GuildOS.OfficerNotes then
             info = UIDropDownMenu_CreateInfo()
             info.notCheckable = true
-            info.text = L["|cff8888FFAdd Note|r"]
+            info.text = L["|cff8888FFAdd officer note|r"]
             info.func = function()
                 -- A box to type it in (issue #49): only printing the slash command left a Forever
                 -- officer with a command that read "Lethaniel" for "Lethaniel Blightwood".
