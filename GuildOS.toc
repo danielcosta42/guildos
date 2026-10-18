@@ -1,6 +1,6 @@
-## Interface: 20506, 16001
+## Interface: 20506, 16001, 120105
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
-## Notes: Premium Guild Roster & Member Inspector for TBC Anniversary and WoW: Forever
+## Notes: Guild manager for WoW: Forever and Retail: roster, raid attendance, cores, recruitment and professions
 ## Author: Chehul (danielcosta42)
 ## Version: 0.78.0
 ## SavedVariables: GuildOSDB

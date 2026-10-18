@@ -7,17 +7,18 @@ feature list are kept in sync with the current release.
 
 ## Project Title
 
-**Recommended:** `Guild OS — Guild Manager, DKP & Attendance for WoW: Forever`
+**Recommended:** `Guild OS — Guild Manager & Attendance for WoW Forever & Retail`
 
-If CurseForge refuses the length: `Guild OS — Guild Manager for WoW: Forever`.
+If CurseForge refuses the length: `Guild OS — Guild Manager for WoW Forever & Retail`.
 
-The title is the strongest signal both the CurseForge search and Google read, so it carries the three things guild
-officers search for (guild manager, DKP, attendance) and the game. Keep "Guild OS" first: it is the name people who
+The title is the strongest signal both the CurseForge search and Google read, so it carries what guild officers
+search for (guild manager, attendance) and both games. DKP left the title with retail: it is Forever's only, and a
+title that promises it to a retail guild loses the review. Keep "Guild OS" first: it is the name people who
 already know it type. Do not change the project slug (`guild-os`): every link out there points at it.
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> Guild manager addon for WoW: Forever: guild roster, raid attendance tracker, DKP & EPGP, loot master, soft reserves, profession directory and guild chat in one window, plus Discord raid signups on guildos.me.
+> Guild manager addon for WoW: Forever and Retail: guild roster, raid attendance tracker, raid teams, recruitment, profession directory and guild chat in one window. On Forever, DKP & EPGP, loot master, soft reserves and Discord raid signups on guildos.me.
 
 ## Categories
 
@@ -27,7 +28,7 @@ already know it type. Do not change the project slug (`guild-os`): every link ou
 ## Tags / keywords (Wago tags, and the words the page already uses)
 
 guild manager, guild roster, raid attendance, attendance tracker, DKP, EPGP, loot master, loot council, soft reserve,
-softres, wishlist, raid signups, Discord, professions, recruitment, WoW Forever
+softres, wishlist, raid signups, Discord, professions, recruitment, WoW Forever, Retail, Midnight, connected realms
 
 ## Gallery
 
@@ -37,7 +38,8 @@ rolls", "Profession directory: who can craft it", "Guild chat inside the window"
 
 ## Game versions
 
-Mark the files for WoW: Forever only.
+Mark the files for WoW: Forever and Retail. The TOC's interface line carries both (and the old TBC one), and the
+publish job tags each from it: read `Game version:` in its log after every release.
 
 ---
 
@@ -45,11 +47,12 @@ Mark the files for WoW: Forever only.
 
 ---
 
-# Guild OS — Guild Manager for WoW: Forever
+# Guild OS — Guild Manager for WoW: Forever and Retail
 
-**Guild OS is a guild management addon for WoW: Forever.** It replaces the guild panel with one window for your
-whole guild: a guild roster with gear and item level, raid attendance tracking, DKP and EPGP, a loot master with soft
-reserves, a profession directory, guild chat and recruiting. Press `J`, where the old guild frame used to be.
+**Guild OS is a guild management addon for WoW: Forever and Retail (Midnight).** It replaces the guild panel with one
+window for your whole guild: a guild roster with gear and item level, raid attendance tracking, raid teams, a
+profession directory, guild chat and recruiting, and on Forever DKP and EPGP and a loot master with soft reserves.
+Press `J`, where the old guild frame used to be.
 
 **Everything is a button.** Every feature and every setting has its place in the window. Slash commands still work
 for those who like them; nothing needs one.
@@ -60,6 +63,7 @@ throttled, with everyone else in the guild running Guild OS. The more of your gu
 *Made with care by **Chehul**.*
 
 ![Guild OS for WoW: Forever](https://img.shields.io/badge/Client-WoW%3A%20Forever-blueviolet)
+![Guild OS for Retail](https://img.shields.io/badge/Client-Retail%20(Midnight)-orange)
 [![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
 ---
@@ -76,6 +80,23 @@ throttled, with everyone else in the guild running Guild OS. The more of your gu
   for every guild channel.
 - **Raids are ready before Forever's are.** Raid teams, attendance, DKP and the loot master are built and waiting
   for Forever's raids, which open on December 9.
+
+---
+
+## 🌍 Also on Retail (Midnight)
+
+The same window on retail, made for how retail works:
+
+- **Connected realms.** Every member is kept with their own realm, so two guildmates with one name on different
+  realms stay two people.
+- **Item level as worn**, upgrades and crafting included, and the spec each character is playing.
+- **Attendance on Normal, Heroic and Mythic.** Raid Finder and timewalking are left out; raid teams go up to 30.
+- **Raid Tools with Midnight's buffs and cooldowns**, and the enchant audit for Midnight's slots.
+- **Midnight's professions**, Jewelcrafting and Inscription included: who in the guild crafts what.
+- **All thirteen classes** in the roster, raid composition, recruitment and the recruit beacon.
+
+Not on retail: the loot suite (retail is personal loot, so there is no master loot, DKP, soft reserves or
+wishlists), and guildos.me, which takes Forever guilds for now.
 
 ---
 
@@ -98,7 +119,7 @@ throttled, with everyone else in the guild running Guild OS. The more of your gu
 - **Raid Tools**: class composition, raid buff coverage and key cooldowns before you pull
 - **Enchant audit**: every unenchanted slot in the guild, most-missing first
 
-## 💰 Loot master, DKP and EPGP
+## 💰 Loot master, DKP and EPGP (WoW: Forever)
 
 Pick your guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
 or RCLootCouncil already handles it, and then Guild OS stays completely out of the way.
@@ -142,9 +163,10 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
 
 ---
 
-## 🌐 Discord raid signups and a web roster: guildos.me
+## 🌐 Discord raid signups and a web roster: guildos.me (WoW: Forever)
 
-Optional, and off until you turn it on in the **Web** tab. The addon works the same without it.
+Optional, and off until you turn it on in the **Web** tab. The addon works the same without it. Retail guilds are
+not on the site yet.
 
 - **Discord raid signups that know who is signing**: item level, spec and attendance come with each one
 - **Plan on the site, run it in game**: the planned roster arrives by itself, and the Web tab has *Invite all* and a
@@ -160,6 +182,10 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 
 **Does Guild OS work on WoW: Forever?**
 Yes. It is built for it: surnames, no realms, the new professions and the client's privacy rules included.
+
+**Does Guild OS work on Retail?**
+Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat and the officer tools. The loot
+suite is Forever's only, because retail is personal loot.
 
 **Is it free?**
 Yes, and open source under the MIT license.
@@ -177,8 +203,8 @@ Yes, both, plus a council mode where points are only shown. Points are kept per 
 officers.
 
 **Do I need the website or the companion?**
-No. Both are optional. They add Discord raid signups and a web roster; the addon does everything in game without
-them.
+No. Both are optional, and on Forever only for now. They add Discord raid signups and a web roster; the addon does
+everything in game without them.
 
 **Do I need a spreadsheet for attendance or loot?**
 For attendance, loot history and DKP/EPGP, no: they live in the addon. If your guild's loot rules do something the

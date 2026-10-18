@@ -367,6 +367,10 @@ would be a guess, and a guess that reads "retail" would be worse than none.
 - (−) A module file that returns early is invisible to `/guildos errors`: it did not fail, it is not there.
 - (−) Nothing names Forever itself; add a field when a feature needs to tell Forever from an unknown client.
 
+**Amendment (ADR-0026).** Retail is the third client, recognised the same way: `WOW_PROJECT_ID ==
+WOW_PROJECT_MAINLINE` and an interface of 100000 or more (`GuildOS.Client.isRetail`). An unknown client is still
+Forever. `GuildOS.Client.game` names the client for the payload and diagnostics; nothing else branches on it.
+
 ---
 
 ## ADR-0015 — `/guildos probe`: one guarded snapshot of the client, kept in SavedVariables
@@ -509,6 +513,12 @@ back to "" in some places and "Unknown" in others, which split one member across
 
 **Amendment (issue #97).** It is: `GuildOS:LocalMemberKey` rebuilds a carried key from its name (Forever names hold no hyphen, so the name is what comes before the first one), and every receive path that takes a member key out of a payload goes through it, while the sign-up is filed under its envelope's sender rather than any key the payload names. Two of the sender's keys that turn out to be one member are settled by that table's own merge, which only ever sees two records; a value that is not a record never replaces one. What an earlier version stored that way is rekeyed by `LocalizeStoredMemberTables` once per database, each table under its own `SafeCall` so bad stored data in one neither stops start-up nor leaves the others behind. The alliance bridge hashes the name alone on Forever, so clients on different realms elect the same one. Anniversary keys pass through untouched: there a realm is part of who somebody is.
 
+**Amendment (ADR-0026).** None of the Forever rule holds on retail: a realm is part of who somebody is there, as on
+Anniversary, and a guild spans connected realms. `GuildOS:RealmBound()` (Anniversary or retail) is the one test:
+`GetPlayerKey` keeps the caller's realm, `LocalMemberKey` passes a key through, and neither start-up rekey runs. Retail
+spells every realm normalized, without spaces or hyphens, the way its roster and senders write it, so a realm taken
+from `GetRealmName()` or a unit meets the roster's.
+
 ## ADR-0019 — Version-sensitive calls go through Compat, and sync and loot sends act on their result
 
 ### Context
@@ -608,6 +618,10 @@ Wago's registry carries `forever: 1.60.1`, and the packager maps `16???` to `for
 - (−) 16001 is read from the client's crash reports and the rule, not from `GetBuildInfo` on a running client.
   Wrong, it costs an out-of-date warning in game, not a failed upload.
 
+**Amendment (ADR-0026).** The interface line carries retail's too: `## Interface: 20506, 16001, 120105`, added last
+so no half-made release reached the Retail flavour. `beta.yml` still refuses a TOC without 16001 and accepts more
+interfaces after it. A retail patch bumps the third number.
+
 ---
 
 ## ADR-0022 — Professions on Forever by ID: passive IsPlayerSpell over a generated catalog, hash-summarized sync
@@ -640,6 +654,12 @@ primary professions, addon or not, with no rank. Professions are expected to be 
   extra recipes the client found, the signal to regenerate.
 - (−) Recipe required skill for trainer recipes is not in the client data.
 - (−) Names in `db.recipes` are the reader's client's language, as before.
+
+**Amendment (ADR-0026).** Retail has its own catalog, `Data/ProfCatalogRetail.lua` (`tools/prof_catalog.py
+--retail <build>`), with only the current expansion's recipes: they sit on the parent line, and a row's
+`SkillupSkillLineID` names the expansion line it levels. The output comes from `CraftingData` (or its first quality
+tier), enchants from Effect 301; tiered reagents are left out. Forever's catalog loads on Forever only. Regenerate the
+retail one on every retail patch.
 
 ---
 
@@ -806,3 +826,37 @@ hand in the game too (issue #135, guildos-web specs/041).
 - (−) Who waits for a character goes to every client of the guild with the lists, by Discord display name: the
   names the guild's own Discord server already shows them.
 
+---
+
+## ADR-0026 — Retail, the third client: absent where it does not apply, realm-bound keys
+
+### Context
+To reach more players, GuildOS runs on retail (Midnight, 12.1.5, interface 120105) as well as WoW: Forever. Retail
+used to fall into "not Anniversary", which is Forever: a level cap of 60, the realm read as a surname, the Forever
+profession catalog, a payload marked FOREVER and, worst, a start-up rekey that merged members of different connected
+realms into one record. Retail's documented API is the same as Forever's (both builds' API documentation compared,
+2026-10-17), so the work is identity and content, not calls. Retail is personal loot only, and guildos.me takes no
+retail guild yet.
+
+### Decision
+- `GuildOS.Client.isRetail` (ADR-0014's two signals) and per-game fields: `maxLevel` 90, `raidSizes` 10/20/30,
+  `classes` (thirteen), `enchantSlots` (Midnight's head, shoulder, chest, feet, rings and weapon).
+- Keys are realm-bound on retail, normalized (amendment to ADR-0018).
+- Absent on retail, as TBC content is elsewhere: LootMaster, LootTracker, LootEquity, Points, SoftRes, Wishlist,
+  CompanionExport, CompanionImport and Look return before defining their globals. Features carry `retail = false`
+  (loot, dkp, wishlist, web, lootTracker, lootMaster); the Settings loot category, the core's loot rules, the loot
+  quick buttons and tests, the loot export datasets, the dashboard's loot card and the site link follow the modules.
+  A slash verb of an absent module says "Not available on this client." The player's toggles are untouched.
+- Retail content: specs from `C_SpecializationInfo` (`Compat.SpecOf`), raids tracked by difficulty (Normal, Heroic,
+  Mythic; every one progression), the item level as worn (`Compat.ItemLevel`) and the game's average, Raid Tools'
+  Midnight buffs and cooldowns named by the client from the spell, the Midnight profession catalog (ADR-0022).
+- A boss name the client keeps secret is never concatenated or stored, on every client.
+
+### Consequences
+- (+) One build, one TOC, three clients; Forever and Anniversary behave as before.
+- (+) A retail guild sees nothing it cannot use: no loot screens, no site.
+- (−) Nothing reads Mythic+, delves or hero talents yet.
+- (−) The profession catalog and Raid Tools' spell ids must follow retail's patches.
+- (−) Retail's tiered reagents are not in the catalog, and whether `IsPlayerSpell` answers for retail recipes is read
+  in game (`/guildos probe`); the open profession window still fills what it misses.
+- (−) Attendance counts an old raid run on Normal, Heroic or Mythic like a current one.
