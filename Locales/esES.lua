@@ -2011,7 +2011,7 @@ L["As an officer you unlock leadership tools. In Settings -> Officer, set which 
 L["NOTE"] = "NOTA"
 L["OFFICER NOTE"] = "NOTA DE OFICIAL"
 L["RANK"] = "RANGO"
-L["OFFLINE"] = "DESCONECTADO"
+L["OFFLINE"] = "AUSENTE"
 L["SPEC"] = "ESPEC."
 L["ROLES"] = "ROLES"
 L["MAIN"] = "PRINCIPAL"

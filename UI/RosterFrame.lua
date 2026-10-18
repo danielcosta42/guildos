@@ -134,9 +134,12 @@ local COLUMNS = {
     { key = "name",        label = L["MEMBER"],      name = L["Member"],      min = 150, weight = 3, align = "LEFT", asc = true },
     { key = "level",       label = L["LVL"],         name = L["Level"],       min = 34,  weight = 0, align = "CENTER" },
     { key = "class",       label = L["CLASS"],       name = L["Class"],       min = 74,  weight = 1, align = "LEFT" },
-    { key = "avgIlvl",     label = L["iLVL"],        name = L["Item level"],  min = 46,  weight = 0, align = "CENTER" },
-    { key = "race",        label = L["RACE"],        name = L["Race"],        min = 70,  weight = 1, align = "LEFT" },
-    { key = "lastSeen",    label = L["LAST SEEN"],   name = L["Last seen"],   min = 78,  weight = 1, align = "RIGHT" },
+    { key = "avgIlvl",     label = L["iLVL"],        name = L["Item level"],  min = 46,  weight = 0, align = "CENTER",
+      value = function(d) return d.avgIlvl > 0 and d.avgIlvl or nil end },
+    { key = "race",        label = L["RACE"],        name = L["Race"],        min = 70,  weight = 1, align = "LEFT",
+      value = function(d) return textOr(d.race) end },
+    { key = "lastSeen",    label = L["LAST SEEN"],   name = L["Last seen"],   min = 78,  weight = 1, align = "RIGHT",
+      value = function(d) return d.lastUpdate > 0 and d.lastUpdate or nil end },
     { key = "professions", label = L["PROFESSIONS"], name = L["Professions"], min = 160, weight = 2, align = "LEFT", asc = true,
       value = function(d)
           local names = {}
@@ -175,8 +178,15 @@ local COLUMNS = {
     -- What Guild OS syncs: only members who run it.
     { key = "spec",        label = L["SPEC"],         name = L["Spec"],         min = 90,  weight = 1, align = "LEFT", asc = true,
       offered = function() return GuildOS.SpecChecker ~= nil end,
-      value = function(d) return GuildOS.SpecChecker:GetSpecLabel(d.key) end,
-      text = function(v) return v, C.silver end },
+      -- By the tree, so a spec groups together; the points follow it, where a narrow cell cuts.
+      value = function(d)
+          local m = GuildOS.db.members[d.key]
+          return m and m.spec and textOr(m.spec.tree) or nil
+      end,
+      text = function(v, d)
+          local points = GuildOS.db.members[d.key].spec.points
+          return points and (v .. " " .. table.concat(points, "/")) or v, C.silver
+      end },
     { key = "roles",       label = L["ROLES"],        name = L["Roles"],        min = 50,  weight = 0, align = "CENTER", asc = true,
       offered = function() return GuildOS.RaiderRoster ~= nil end,
       value = function(d)
@@ -186,7 +196,8 @@ local COLUMNS = {
           end
           return textOr(s)
       end,
-      text = function(v)
+      text = function(v, d)
+          if not d.isOnline then return v end   -- greyed like the rest of an offline row
           local out = ""
           for _, r in ipairs(ROLE_ORDER) do
               local t = ROLE_TINT[r]
@@ -212,7 +223,7 @@ local COLUMNS = {
       text = function(_, d)
           return d.addonVersion, CompareVersions(d.addonVersion, GuildOS.VERSION) < 0 and C.red or C.silver
       end },
-    { key = "enchants",    label = L["ENCHANTS"],     name = L["Missing enchants"], min = 76, weight = 0, align = "CENTER",
+    { key = "enchants",    label = L["ENCHANTS"],     name = L["Missing enchants"], min = 84, weight = 0, align = "CENTER",
       offered = function() return GuildOS.GearAudit ~= nil end,
       value = function(d) return d.gear and #GuildOS.GearAudit:MissingEnchants(d.gear) or nil end,
       text = function(v) return v, v > 0 and C.red or C.green end },
@@ -257,7 +268,7 @@ local COLUMNS = {
 
     -- Officers only.
     { key = "trial",       label = L["TRIAL"],        name = L["Trial days left"], min = 64, weight = 0, align = "CENTER",
-      offered = function() return GuildOS.TrialTracker ~= nil and officer() end,
+      offered = function() return GuildOS.TrialTracker ~= nil and enabled("trialTracker") and officer() end,
       value = function(d) return GuildOS.TrialTracker:GetDaysRemaining(d.key) end,
       text = function(v) return v .. "d", v > 14 and C.green or (v > 7 and C.gold or C.red) end },
     { key = "gosNote",     label = L["GOS NOTE"],     name = L["Guild OS officer note"], min = 140, weight = 2, align = "LEFT", asc = true,
@@ -279,14 +290,15 @@ local function offered(key)
 end
 
 -- What UI:ResolveColumns lays out: Member, then the reader's columns, each worth one less than the
--- one on its left so the rightmost goes first.
+-- one on its left so the rightmost goes first. Also the keys in one string, to tell when it changed.
 local function ChosenColumns()
     local spec = { { key = "name", min = COLUMN_BY_KEY.name.min, weight = COLUMN_BY_KEY.name.weight, priority = 100, required = true } }
-    for i, key in ipairs(GuildOS.RosterColumns:Visible(offered)) do
+    local keys = GuildOS.RosterColumns:Visible(offered)
+    for i, key in ipairs(keys) do
         local c = COLUMN_BY_KEY[key]
         spec[#spec + 1] = { key = key, min = c.min, weight = c.weight, priority = 100 - i }
     end
-    return spec
+    return spec, table.concat(keys, ",")
 end
 
 -- KPI cards resolve through the same primitive, so they disappear in a
@@ -624,6 +636,10 @@ function GuildOS:CreateRosterPanel(parent, host)
     -- way in here too (#137).
     local analyticsBtn = UI:CreateButton(statsBar, L["Analytics"], 90, 22)
     analyticsBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
+    -- The summary stops short of the buttons instead of running under them in a narrow window.
+    resultText:SetPoint("RIGHT", analyticsBtn, "LEFT", -10, 0)
+    resultText:SetJustifyH("LEFT")
+    resultText:SetWordWrap(false)
     analyticsBtn:SetScript("OnClick", function()
         if GuildOS.GuildAnalytics then GuildOS.GuildAnalytics:Show() end
     end)
@@ -983,6 +999,9 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.searchFilter = ""
 
     function host:RefreshRoster()
+        -- What this reader may see changes under an open window (the loot system, a feature, the
+        -- officer rank): the table is laid out again when it would choose other columns now (#178).
+        if self.colSig and select(2, ChosenColumns()) ~= self.colSig then UI:Relayout(parent) end
         self:BuildMemberList()
         self:UpdateSortIndicators()
         self:UpdateRows()
@@ -997,11 +1016,11 @@ function GuildOS:CreateRosterPanel(parent, host)
         local filter = self.searchFilter and strlower(strtrim(self.searchFilter)) or ""
         local levelMatch = (filter ~= "" and GuildOS.LevelQuery) and GuildOS.LevelQuery:Parse(filter) or nil
 
-        -- Only the columns shown, and the one sorted by, are worth reading (#178).
+        -- Only the values a cell draws, and the one sorted by, are worth reading (#178).
         local sortBy = GuildOS.db.settings.sortBy or "level"
         local wanted, ctx, sortCol = {}, {}, nil
         for _, col in ipairs(COLUMNS) do
-            if col.value and ((self.colKeys and self.colKeys[col.key]) or (col.key == sortBy and offered(col.key))) then
+            if col.value and ((col.text and self.colKeys and self.colKeys[col.key]) or (col.key == sortBy and offered(col.key))) then
                 wanted[#wanted + 1] = col
                 if col.prepare then col.prepare(ctx) end
                 if col.key == sortBy then sortCol = col end
@@ -1098,6 +1117,19 @@ function GuildOS:CreateRosterPanel(parent, host)
         -- Sort
         local sortAsc = GuildOS.db.settings.sortAsc
 
+        -- A column's sort keys, once: lower-cased text, and all of it text when synced data mixed
+        -- numbers in, since comparing a number with a string raises.
+        if sortCol then
+            local anyText = false
+            for _, m in ipairs(members) do
+                if type(m.cols[sortBy]) == "string" then anyText = true break end
+            end
+            for _, m in ipairs(members) do
+                local v = m.cols[sortBy]
+                m.sortKey = (anyText and v ~= nil) and tostring(v):lower() or v
+            end
+        end
+
         table.sort(members, function(a, b)
             -- Online always first
             if a.isOnline ~= b.isOnline then
@@ -1106,25 +1138,18 @@ function GuildOS:CreateRosterPanel(parent, host)
 
             local va, vb
             if sortCol then
-                va, vb = a.cols[sortBy], b.cols[sortBy]
+                va, vb = a.sortKey, b.sortKey
                 -- An empty cell goes last, whichever way the column is sorted.
                 if va == nil or vb == nil then
                     if va == vb then return a.name:lower() < b.name:lower() end
                     return va ~= nil
                 end
-                if type(va) == "string" then va, vb = va:lower(), vb:lower() end
             elseif sortBy == "name" then
                 va, vb = a.name:lower(), b.name:lower()
             elseif sortBy == "level" then
                 va, vb = a.level, b.level
             elseif sortBy == "class" then
                 va, vb = a.classDisplay:lower(), b.classDisplay:lower()
-            elseif sortBy == "race" then
-                va, vb = a.race:lower(), b.race:lower()
-            elseif sortBy == "avgIlvl" then
-                va, vb = a.avgIlvl, b.avgIlvl
-            elseif sortBy == "lastSeen" then
-                va, vb = a.lastUpdate, b.lastUpdate
             else
                 va, vb = a.level, b.level
             end
@@ -1206,8 +1231,9 @@ function GuildOS:CreateRosterPanel(parent, host)
         -- Average 25-man raid attendance across known members
         local attSum, attCount = 0, 0
         if GuildOS.RaidTracker and GuildOS.RaidTracker.GetAttendance25ManPercent then
+            local totals = {}   -- each core's count once, not once per member
             for key in pairs(GuildOS.db.members) do
-                local p = GuildOS.RaidTracker:GetAttendance25ManPercent(key)
+                local p = GuildOS.RaidTracker:GetAttendance25ManPercent(key, nil, totals)
                 if p and p > 0 then
                     attSum = attSum + p
                     attCount = attCount + 1
@@ -1267,7 +1293,9 @@ function GuildOS:CreateRosterPanel(parent, host)
 
         -- Table columns.
         local tableW = w - RAIL_WIDTH - ROW_INSET - SCROLL_GUTTER
-        local layout = UI:ResolveColumns(ChosenColumns(), tableW, COL_GAP)
+        local spec
+        spec, host.colSig = ChosenColumns()
+        local layout = UI:ResolveColumns(spec, tableW, COL_GAP)
         host.colLayout = layout
         host.colKeys = {}
         for _, btn in pairs(host.headerButtons) do btn:Hide() end

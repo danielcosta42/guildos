@@ -193,8 +193,8 @@ local lootSystem, attendanceTables = "dkp", {}
 function GuildOS:GetLootSystem() return lootSystem end
 GuildOS.Points = { Get = function(_, k) return k == ANA and 120 or 0 end }
 GuildOS.LootTracker = {}
-GuildOS.SpecChecker = { GetSpecLabel = function(_, k) return k == ANA and "Frost" or nil end }
-GuildOS.RaiderRoster = { EffectiveRoles = function(_, k) return k == CAIO and { HEALER = true, DPS = true } or {} end }
+GuildOS.SpecChecker = {}
+GuildOS.RaiderRoster = { EffectiveRoles = function(_, k) return (k == CAIO and { HEALER = true, DPS = true }) or (k == DORA and { TANK = true }) or {} end }
 GuildOS.AltRoster = {}
 GuildOS.CoreManager = {
   GetSortedNames = function() return { "Main", "Ten" } end,
@@ -213,7 +213,7 @@ GuildOS.GuildManager = { GetDaysOffline = function(_, i) return ({ nil, 3, nil, 
 GuildOS.db = {
   settings = { sortBy = "level", sortAsc = false, showOffline = true, officerMaxRank = 1, modules = {} },
   members = {
-    [ANA] = { lastUpdate = NOW - 60, avgIlvl = 70, addonVersion = "0.83.0", race = "Orc",
+    [ANA] = { lastUpdate = NOW - 60, avgIlvl = 70, addonVersion = "0.83.0", race = "Orc", spec = { tree = "Frost", points = { 0, 0, 51 } },
               gear = { [1] = { name = "Helm", enchantId = 0 }, [5] = { name = "Chest", enchantId = 9 } } },
     [CAIO] = { lastUpdate = NOW - 120, addonVersion = "0.9.0" },
   },
@@ -294,6 +294,19 @@ fire(parent.headerButtons.note, "OnClick", "LeftButton")
 check(order() == "Caio,Ana,Dora,Beto", "Z to A keeps the empty one last: " .. order())
 fire(parent.headerButtons.zone, "OnClick", "LeftButton")
 check(order() == "Ana,Caio,Beto,Dora", "zone sorts too: " .. order())
+-- A Guild OS note that arrived over sync as a number sorts with the text ones instead of raising.
+local notesOf = GuildOS.OfficerNotes.GetNotes
+GuildOS.OfficerNotes.GetNotes = function(_, k)
+  if k == ANA then return { { text = 42 } } end
+  if k == CAIO then return { { text = "alpha" } } end
+  return notesOf(_, k)
+end
+tick("gosNote", true)
+fire(parent.headerButtons.gosNote, "OnClick", "LeftButton")
+check(order() == "Ana,Caio,Beto,Dora", "a number among the texts sorts as text: " .. order())
+GuildOS.OfficerNotes.GetNotes = notesOf
+tick("gosNote", false)
+fire(parent.headerButtons.zone, "OnClick", "LeftButton")
 fire(parent.headerButtons.zone, "OnClick", "RightButton")
 check(GuildOS.db.settings.sortBy == "zone" and GuildOSColumnsPanel:IsShown(), "a right click on a label opens the panel, not a sort")
 
@@ -316,7 +329,8 @@ check(cell("Ana", "officerNote") == "loot council", "the officer note")
 check(cell("Ana", "rank") == "Officer", "the rank's name")
 check(cell("Beto", "offline") == "3d ago", "days offline, from the game: " .. tostring(cell("Beto", "offline")))
 check(cell("Ana", "offline"):find("Now", 1, true), "online reads Now")
-check(cell("Ana", "spec") == "Frost", "the spec")
+check(cell("Ana", "spec") == "Frost 0/0/51", "the spec, its tree first: " .. tostring(cell("Ana", "spec")))
+check(cell("Dora", "roles") == "T", "an offline row's letters are plain, greyed like the rest of it")
 check(cell("Caio", "roles"):find("H", 1, true) and cell("Caio", "roles"):find("D", 1, true)
       and not cell("Caio", "roles"):find("T", 1, true), "the roles' letters")
 check(cell("Dora", "main") == "Beto" and cell("Beto", "main") == "Main", "an alt names its main, a main says so")
@@ -333,6 +347,10 @@ for t in pairs(attendanceTables) do if t ~= "none" then memos = memos + 1 end en
 check(memos >= 1, "the column asks for attendance with the per-refresh memo")
 fire(parent.headerButtons.offline, "OnClick", "LeftButton")
 check(order() == "Ana,Caio,Dora,Beto", "offline sorts longest away first: " .. order())
+fire(parent.headerButtons.avgIlvl, "OnClick", "LeftButton")
+fire(parent.headerButtons.avgIlvl, "OnClick", "LeftButton")
+check(GuildOS.db.settings.sortAsc, "the second click sorts lowest first")
+check(order() == "Ana,Caio,Beto,Dora", "a member with no item level goes last that way too: " .. order())
 
 -- ── A column this reader may not see is not offered ─────────────────────
 viewOfficer, myRank, lootSystem = false, 5, "council"
@@ -341,15 +359,20 @@ GuildOS:ToggleColumnsPanel(parent.headerButtons.name)    -- and open again elsew
 for _, k in ipairs({ "officerNote", "trial", "gosNote", "dkp" }) do
   check(panelRow(k) == nil, k .. " is not offered to a member here")
 end
-UI:Relayout(parent)
+GuildOS:RefreshRosterUI()   -- an ordinary refresh, not a resize
 flush()
 for _, k in ipairs({ "officerNote", "trial", "gosNote", "dkp" }) do
-  check(not parent.headerButtons[k]:IsShown(), k .. " leaves the table")
+  check(not parent.headerButtons[k]:IsShown(), k .. " leaves the table on the next refresh")
 end
 viewOfficer, myRank, lootSystem = true, 0, "dkp"
-UI:Relayout(parent)
+GuildOS:RefreshRosterUI()
 flush()
 check(parent.headerButtons.gosNote:IsShown(), "and comes back where it was once offered again")
+GuildOS.db.settings.modules.trialTracker = false
+GuildOS:RefreshRosterUI()
+flush()
+check(not parent.headerButtons.trial:IsShown(), "trial days go with the trial tracker turned off")
+GuildOS.db.settings.modules.trialTracker = nil
 
 -- ── A narrow window drops the rightmost first ───────────────────────────
 GuildOS.RosterColumns:Reset()

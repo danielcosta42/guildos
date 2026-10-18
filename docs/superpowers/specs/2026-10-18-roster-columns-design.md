@@ -19,11 +19,13 @@ columns (`COLUMNS` in `UI/RosterFrame.lua`) and drops them right to left as the 
   open one panel: a box per column, ▲▼ to move a shown column, **Restore defaults**.
 - **Saved per account**: `GuildOSDB.rosterColumns`, at the root like `style` and `font`, so it follows the
   account across characters and guilds. Nil is the default; Restore defaults writes nil.
-- **Every column sorts** on a header click. Professions and Zone did not; they now sort as text.
+- **Every column sorts** on a header click, an empty cell last either way (a member without the addon has no
+  item level, race or last seen). Professions and Zone did not sort; they now sort as text.
 - **Narrow window**: the rightmost shown column goes first. Priority follows the reader's order; only Member is
   required. (Level and Class were required before; at the default order they are still the last to go.)
 - **A column the reader cannot use is not offered**, and a stored one that is not offered is skipped, not
-  forgotten: an officer who loses the rank and gets it back finds the layout they had.
+  forgotten: an officer who loses the rank and gets it back finds the layout they had. What is offered is
+  read again on every refresh, so the table follows a change of loot system, feature or rank while open.
 
 ## 3. The columns
 
@@ -33,8 +35,8 @@ columns (`COLUMNS` in `UI/RosterFrame.lua`) and drops them right to left as the 
 | officerNote | OFFICER NOTE | `GetGuildRosterInfo` 8 | `Compat.CanViewOfficerNote()` |
 | rank | RANK | rank name; sorts by rank index | always |
 | offline | OFFLINE | `GuildManager:GetDaysOffline(index)` (the game's, works without the addon) | `GuildManager` |
-| spec | SPEC | `SpecChecker:GetSpecLabel(key)` | `SpecChecker` |
-| roles | ROLES | `RaiderRoster:EffectiveRoles(key)`, letters T/H/D in role colours | `RaiderRoster` |
+| spec | SPEC | the synced spec's tree, then its points ("Frost 0/0/51"); sorts by tree | `SpecChecker` |
+| roles | ROLES | `RaiderRoster:EffectiveRoles(key)`, letters T/H/D in role colours (plain when offline) | `RaiderRoster` |
 | main | MAIN | alt → its main's name; a main with alts → "Main" | `AltRoster` |
 | version | VERSION | live mesh version, else stored; red when older than ours | always |
 | enchants | ENCHANTS | `GearAudit:MissingEnchants(gear)` count | `GearAudit` |
@@ -42,7 +44,7 @@ columns (`COLUMNS` in `UI/RosterFrame.lua`) and drops them right to left as the 
 | core | CORE | names of the cores holding the key | `CoreManager` |
 | dkp | DKP | `Points:Get(key)` | `LootSystemShowsDKP()` |
 | loot | LOOT | loot history count, one pass per refresh | `LootTracker` and `lootTracker` enabled |
-| trial | TRIAL | `TrialTracker:GetDaysRemaining(key)` | officer, `TrialTracker` |
+| trial | TRIAL | `TrialTracker:GetDaysRemaining(key)` | officer, `TrialTracker` and `trialTracker` enabled |
 | gosNote | GOS NOTE | newest Guild OS officer note | officer, `OfficerNotes` and `officerNotes` enabled |
 
 Modules absent on a client (retail: Points, LootTracker) leave their global nil, so "offered" reads the global.
@@ -51,12 +53,14 @@ Left out on purpose: achievements, resistances, attunements, stats, wishlist, so
 ## 4. Design
 
 - `Modules/RosterColumns.lua` owns the preference (Rule 3: UI never writes the db). Pure, no WoW API:
-  `Visible(offered)`, `SetShown(key, on, offered)`, `Move(key, delta, offered)`, `Reset()`, `IsDefault()`.
+  `Visible(offered)`, `SetShown(key, on)`, `Move(key, delta, offered)`, `Reset()`.
   It stores the shown keys in order, not Member. A stored value that is not a list of strings reads as the
   default. Turning a column on appends it at the end.
 - `UI/RosterFrame.lua`: `COLUMNS` becomes the catalogue, keyed. The eight existing columns keep their renderer;
   the new ones are generic: `value(data, ctx)` (the sort value, filled into the member row in
-  `BuildMemberList` only for columns being shown or sorted by) and `text(v, data)` (string and colour).
+  `BuildMemberList` only for a column whose cell draws it or that is sorted by) and `text(v, data)` (string
+  and colour). Sort keys are made once per refresh: lower-cased, and all text when synced data mixed in
+  numbers. `RefreshRoster` lays the table out again when the columns it would choose changed.
   `prepare(ctx)` builds a per-refresh index where a per-row read would scan (loot counts, cores, alt mains,
   attendance totals). Rows own one font string per catalogue column; the layout shows the ones in the spec.
 - `UI:Relayout(container)` in `UI/Layout.lua`: re-runs a responsive container's layout now if it is visible,
@@ -69,7 +73,10 @@ Left out on purpose: achievements, resistances, attunements, stats, wishlist, so
 
 `tools/roster-columns.lua` (luajit, no client): default order; on appends, off removes; Member cannot be turned
 off or moved; Move swaps with the next offered neighbour and stops at the ends; a not-offered stored key is kept
-but skipped; garbage storage reads as default; Reset. Plus luacheck, compat-guard, locales and every harness.
+but skipped; garbage storage reads as default; Reset. `tools/roster-table.lua` builds the real roster panel
+under a stub client: the default header, the panel's offer per reader, on/off/move, every new column's value,
+sorting with empty cells last and mixed types, a refresh dropping and restoring a column no longer offered, the
+narrow window and Restore defaults. Plus luacheck, compat-guard, locales and every harness.
 
 ## 6. Tasks
 
