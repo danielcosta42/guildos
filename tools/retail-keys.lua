@@ -119,6 +119,9 @@ function GetGuildRosterInfo(i) local r = ROSTER[i]; if r then return r[1], "Rank
 local GUILD_REALM
 function GetGuildInfo() return "Guild", "Rank", 1, GUILD_REALM end
 dofile(ADDON .. "/Core/Core.lua")
+function GetBuildInfo() return "12.1.5", "70448", "", 120105 end   -- the real Compat, on retail
+WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
+dofile(ADDON .. "/Core/Compat.lua")
 GuildOS.Client = { isAnniversary = false, isRetail = true }
 REALM, NORM = "Azralon", "Azralon"
 GuildOS.db = { settings = { officerMaxRank = 1 } }
@@ -127,6 +130,10 @@ check(not GuildOS:IsOfficerByName("Bob-Gallywix"), "a connected-realm namesake o
 check(GuildOS:IsOfficerByName("Bob"), "a sender with no realm is on mine")
 check(not GuildOS:IsOfficerByName("Bob-Elsewhere"), "a namesake from a realm the guild is not on is not one")
 check(GuildOS:IsOfficerByName("Cid-Tol Barad"), "a realm spelt with its space is the roster's")
+-- A roster lookup with a realm spelt the way GetRealmName() spells it finds the roster's line.
+ROSTER[#ROSTER + 1] = { "Cid-Gallywix", 5 }
+check(GuildOS.Compat.FindGuildRosterIndex("Cid", "Tol Barad") == 3, "a realm with its space finds its namesake's own line")
+ROSTER[#ROSTER] = nil
 GuildOS.Client = { isAnniversary = false }
 check(GuildOS:IsOfficerByName("Bob-Whatever"), "Forever matches by name, as it always has")
 
