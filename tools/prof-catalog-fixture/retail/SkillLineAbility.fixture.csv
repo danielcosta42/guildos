@@ -1,0 +1,7 @@
+AbilityVerb_lang,AbilityAllVerb_lang,ID,SkillLine,Spell,MinSkillLineRank,ClassMask,SupercedesSpell,AcquireMethod,TrivialSkillLineRankHigh,TrivialSkillLineRankLow,Flags,NumSkillUps,UniqueBit,TradeSkillCategoryID,SkillupSkillLineID,RaceMasks_0,RaceMasks_1
+Forge,,49927,164,438914,1,0,0,0,70,60,0,2,1719,2012,2872,0,0
+Recraft,,51520,164,471041,20,0,0,1,0,0,0,0,1921,2170,2907,0,0
+Cook,,52044,185,1232247,80,0,0,1,100,100,0,2,0,2211,2908,0,0
+,,52333,164,1229598,1,0,0,0,100,90,0,1,1941,2227,2907,0,0
+,,52666,164,1230758,1,0,0,0,45,35,0,1,2012,2231,2907,0,0
+,,52935,333,1236054,1,0,0,0,100,85,0,2,1033,2275,2909,0,0
