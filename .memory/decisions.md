@@ -841,7 +841,12 @@ retail guild yet.
 ### Decision
 - `GuildOS.Client.isRetail` (ADR-0014's two signals) and per-game fields: `maxLevel` 90, `raidSizes` 10/20/30,
   `classes` (thirteen), `enchantSlots` (Midnight's head, shoulder, chest, feet, rings and weapon).
-- Keys are realm-bound on retail, normalized (amendment to ADR-0018).
+- Keys are realm-bound on retail, normalized (amendment to ADR-0018). Everything that names a guildmate keeps
+  their realm: the core's member picker (`GuildOS:KeyOfRosterName`), poll votes and calendar answers, the roster
+  lookup. Officer trust is the whole key: an officer's name on another connected realm carries no rank
+  (`IsOfficerByName`). The guild's database is keyed on the guild's home realm (`GetGuildInfo`'s fourth answer,
+  normalized), so one guild is one database whichever of its realms a character is on.
+- The roster rail lays its class chips out with `UI:ChipGrid`: three columns for retail's thirteen, still five rows.
 - Absent on retail, as TBC content is elsewhere: LootMaster, LootTracker, LootEquity, Points, SoftRes, Wishlist,
   CompanionExport, CompanionImport and Look return before defining their globals. Features carry `retail = false`
   (loot, dkp, wishlist, web, lootTracker, lootMaster); the Settings loot category, the core's loot rules, the loot

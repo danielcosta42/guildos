@@ -100,6 +100,7 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 | Symbol | Description |
 |---|---|
 | `GuildOS:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing); on retail the normalized one first, spaces and hyphens removed (ADR-0026) |
+| `GuildOS:KeyOfRosterName(full)` | The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's; through `GetPlayerKey`, so normalized on retail. The core picker and the retail officer check use it (ADR-0026) |
 | `GuildOS:RealmBound()` | Whether a realm is part of who somebody is: true on Anniversary and retail (connected realms), false on Forever; true with no `GuildOS.Client`. The one test the key rules and the start-up rekeys read (ADR-0026) |
 | `GuildOS:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) Retail keeps the caller's realm, normalized (ADR-0026). |
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
