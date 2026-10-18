@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.81.0] - 2026-10-18
+
+### Added
+- catálogo de profissões do Midnight para o retail (#167)
+
+
 ## [0.80.0] - 2026-10-18
 
 ### Added
