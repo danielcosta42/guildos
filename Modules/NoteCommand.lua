@@ -10,8 +10,9 @@ local NoteCommand = {}
 GuildOS.NoteCommand = NoteCommand
 local L = GuildOS.L
 
-local NOTE_MAX   = 31   -- server cap on a guild public note
+local NOTE_MAX   = 31   -- server cap on a guild public note, in bytes as the write cuts it
 local SENDER_CD  = 15   -- per-sender cooldown
+NoteCommand.NOTE_MAX = NOTE_MAX  -- the roster's "Add note" box is sized to it
 
 function NoteCommand:Initialize()
     GuildOS.db.noteCommand = GuildOS.db.noteCommand or {}
@@ -80,11 +81,16 @@ end
 
 -- The roster's right-click "Add note" (issue #162): the public note everybody sees. Somebody typed it
 -- and is waiting, so it is written now — no jitter, nobody else is racing to apply it — and every
--- refusal is said. An empty box clears the note. Returns true when written.
+-- refusal is said. An empty box clears the note; no text at all (a box that could not be read) clears
+-- nothing; a note saved as it already reads is not written again — a write updates the whole guild's
+-- roster and leaves a log line. Returns true when the note reads as asked.
 function NoteCommand:Set(name, realm, text)
+    if text == nil then return false end
     local Compat = GuildOS.Compat
     if not Compat.CanEditPublicNote() then return self:_Refused(name, "no-permission") end
-    local want = GuildOS:SanitizeUserText(text or "", NOTE_MAX)
+    local want = GuildOS:SanitizeUserText(text, NOTE_MAX)
+    local current = Compat.GetGuildPublicNote(name, realm)
+    if current and GuildOS:SanitizeUserText(current, NOTE_MAX) == want then return true end
     local ok, failure = Compat.SetGuildPublicNote(name, want, realm)
     if not ok then return self:_Refused(name, failure) end
     self:_Written(name, realm, want)

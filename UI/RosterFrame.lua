@@ -39,17 +39,23 @@ StaticPopupDialogs["GUILDOS_OFFICER_NOTE"] = {
 }
 
 -- The public note everybody sees, from the same menu (issue #162). data = { name, realm }; the
--- module writes it, and an empty box clears it.
+-- module writes it, and an empty box clears it. No text at all is a box that could not be read, not
+-- an empty one: the member's note stays.
 local function SavePublicNote(data, text)
-    if not data or not GuildOS.NoteCommand then return end
-    GuildOS.NoteCommand:Set(data.name, data.realm, text and strtrim(text) or "")
+    if not data or text == nil or not GuildOS.NoteCommand then return end
+    GuildOS.NoteCommand:Set(data.name, data.realm, strtrim(text))
 end
 
 StaticPopupDialogs["GUILDOS_PUBLIC_NOTE"] = {
     text = L["Note for %s, which everyone in the guild sees"],
     button1 = L["Save"], button2 = CANCEL,
-    -- The game's cap on a public note.
+    -- The game's cap on a public note. Letters here; the bytes are capped when it opens, below.
     hasEditBox = true, maxLetters = 31,
+    -- The box is the popup's own and other dialogs share it: the byte cap leaves with this one.
+    OnHide = function(self)
+        local box = GuildOS.Compat.PopupEditBox(self)
+        if box then box:SetMaxBytes(0) end
+    end,
     OnAccept = function(self, data)
         local box = GuildOS.Compat.PopupEditBox(self)
         SavePublicNote(data, box and box:GetText())
@@ -69,9 +75,12 @@ local function ShowPublicNote(data)
     local dialog = StaticPopup_Show("GUILDOS_PUBLIC_NOTE", data.name, nil, { name = data.name, realm = data.realm })
     local box = dialog and GuildOS.Compat.PopupEditBox(dialog)
     if box then
+        -- The write cuts at 31 bytes; a box that takes 31 letters would let an accented or Cyrillic
+        -- note be cut short without a word. +1: the cap counts the terminator.
+        box:SetMaxBytes(GuildOS.NoteCommand.NOTE_MAX + 1)
         box:SetText(GuildOS.NoteCommand:Current(data.name, data.realm))
-        box:HighlightText()
         box:SetFocus()
+        box:HighlightText()
     end
 end
 
