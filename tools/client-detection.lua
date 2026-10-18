@@ -228,7 +228,9 @@ for _, case in ipairs(CLIENTS) do
   end
   check((cds["Bloodlust/Heroism"] ~= nil) == case.tbc and (cds["Misdirection"] ~= nil) == case.tbc,
     "Bloodlust/Heroism and Misdirection are " .. (case.tbc and "" or "not ") .. "in Raid Tools on " .. case.label)
-  check(cds["Battle Rez"] == true and cds["Innervate"] == true, "generic raid cooldowns stay in Raid Tools on " .. case.label)
+  -- Retail has its own list, named by the client from the spell (issue #166): the battle rez is Rebirth.
+  local rez = case.retail and "Rebirth" or "Battle Rez"
+  check(cds[rez] == true and cds["Innervate"] == true, "generic raid cooldowns stay in Raid Tools on " .. case.label)
 end
 
 -- ── 4. The hub and the Settings list ────────────────────────────────────

@@ -18,6 +18,8 @@ CoreManager.CLASS_DEFAULT_ROLE = GuildOS.Client.isAnniversary and {
 } or {
     WARRIOR="mdps",  PALADIN="mdps",   HUNTER="rdps",  ROGUE="mdps",
     PRIEST="rdps",   SHAMAN="mdps",    MAGE="rdps",    WARLOCK="rdps", DRUID="mdps",
+    -- Retail's four (ADR-0026), damage first like the rest.
+    DEATHKNIGHT="mdps", DEMONHUNTER="mdps", MONK="mdps", EVOKER="rdps",
 }
 
 CoreManager.ROLE_LABELS = { tank=L["Tank"], healer=L["Healer"], mdps=L["Melee"], rdps=L["Ranged"] }
@@ -42,7 +44,13 @@ CoreManager.CLASS_ROLES = {
     MAGE    = { rdps=true },
     WARLOCK = { rdps=true },
     DRUID   = { tank=true, healer=true, mdps=true, rdps=true },
+    -- Retail's (ADR-0026). The Demon Hunter's Devourer casts; the Hunter's Survival is melee there.
+    DEATHKNIGHT = { tank=true, mdps=true },
+    DEMONHUNTER = { tank=true, mdps=true, rdps=true },
+    MONK        = { tank=true, healer=true, mdps=true },
+    EVOKER      = { healer=true, rdps=true },
 }
+if GuildOS.Client.isRetail then CoreManager.CLASS_ROLES.HUNTER = { mdps=true, rdps=true } end
 
 -- A role as somebody types it ("/gos signup Main healer"): its label or its key, any case.
 CoreManager.ROLE_WORDS = { tank="tank", healer="healer", heal="healer", melee="mdps", mdps="mdps",

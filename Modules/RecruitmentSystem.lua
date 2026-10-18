@@ -7,11 +7,8 @@ local Recruitment = {}
 GuildOS.Recruitment = Recruitment
 local L = GuildOS.L
 
--- TBC class list (used by UI and broadcast)
-Recruitment.CLASSES = {
-    "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
-    "SHAMAN", "MAGE", "WARLOCK", "DRUID",
-}
+-- This game's classes (used by UI and broadcast): nine, thirteen on retail.
+Recruitment.CLASSES = GuildOS.Client.classes
 
 -- Defaults
 Recruitment.DEFAULT_SETTINGS = {

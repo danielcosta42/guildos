@@ -186,6 +186,11 @@ GuildOS.ClassColors = {
     ["MAGE"]        = { r = 0.25, g = 0.78, b = 0.92 },
     ["WARLOCK"]     = { r = 0.53, g = 0.53, b = 0.93 },
     ["DRUID"]       = { r = 1.00, g = 0.49, b = 0.04 },
+    -- Retail's four (ADR-0026); never met on a classic client.
+    ["DEATHKNIGHT"] = { r = 0.77, g = 0.12, b = 0.23 },
+    ["DEMONHUNTER"] = { r = 0.64, g = 0.19, b = 0.79 },
+    ["MONK"]        = { r = 0.00, g = 1.00, b = 0.60 },
+    ["EVOKER"]      = { r = 0.20, g = 0.58, b = 0.50 },
 }
 
 -- Item quality colors

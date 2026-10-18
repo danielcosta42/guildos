@@ -7,11 +7,8 @@ local RaidTools = {}
 GuildOS.RaidTools = RaidTools
 local L = GuildOS.L
 
--- Class display order for the composition breakdown.
-RaidTools.CLASS_ORDER = {
-    "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
-    "SHAMAN", "MAGE", "WARLOCK", "DRUID",
-}
+-- Class display order for the composition breakdown: this game's classes (thirteen on retail).
+RaidTools.CLASS_ORDER = GuildOS.Client.classes
 
 -- Key raid-wide buffs and the classes that provide them (TBC).
 RaidTools.BUFFS = {
@@ -34,6 +31,31 @@ RaidTools.COOLDOWNS = {
     { name = L["Soulstone"],         classes = { WARLOCK = true } },
     { name = L["Salvation"],         classes = { PALADIN = true } },
 }
+
+-- Retail's (Midnight, ADR-0026): one class per raid buff, and the cooldowns several classes share.
+-- `spell` names the entry in the reader's language; `name` is the fallback while the client has no
+-- name for it. Checked against build 12.1.5.70448's SpellName.
+if GuildOS.Client.isRetail then
+    RaidTools.BUFFS = {
+        { spell = 21562,  name = "Power Word: Fortitude",  classes = { PRIEST = true } },
+        { spell = 1459,   name = "Arcane Intellect",       classes = { MAGE = true } },
+        { spell = 1126,   name = "Mark of the Wild",       classes = { DRUID = true } },
+        { spell = 6673,   name = "Battle Shout",           classes = { WARRIOR = true } },
+        { spell = 462854, name = "Skyfury",                classes = { SHAMAN = true } },
+        { spell = 364342, name = "Blessing of the Bronze", classes = { EVOKER = true } },
+        { spell = 8647,   name = "Mystic Touch",           classes = { MONK = true } },
+        { spell = 1490,   name = "Chaos Brand",            classes = { DEMONHUNTER = true } },
+        { spell = 257284, name = "Hunter's Mark",          classes = { HUNTER = true } },
+        { spell = 465,    name = "Devotion Aura",          classes = { PALADIN = true } },
+    }
+    RaidTools.COOLDOWNS = {
+        { spell = 2825,  name = "Bloodlust",      classes = { SHAMAN = true, MAGE = true, HUNTER = true, EVOKER = true } },
+        { spell = 20484, name = "Rebirth",        classes = { DRUID = true, DEATHKNIGHT = true, WARLOCK = true, PALADIN = true } },
+        { spell = 29166, name = "Innervate",      classes = { DRUID = true } },
+        { spell = 10060, name = "Power Infusion", classes = { PRIEST = true } },
+        { spell = 20707, name = "Soulstone",      classes = { WARLOCK = true } },
+    }
+end
 
 -- Returns (list, sourceLabel). list = { { name, class }, ... }.
 -- Uses the raid/party if grouped, otherwise online guild members.
@@ -96,7 +118,7 @@ function RaidTools:ResolveCoverage(defs, classCounts)
                 end
             end
             result[#result + 1] = {
-                name = def.name,
+                name = (def.spell and GuildOS.Compat.GetSpellInfo(def.spell)) or def.name,
                 covered = #providers > 0,
                 providers = providers,
             }

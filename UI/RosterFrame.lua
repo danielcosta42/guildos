@@ -632,7 +632,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     local RANK_TOP, RANK_H = -106, 26
 
     -- CLASSES (fixed chips, anchored to the bottom of the rail, growing upward)
-    local CLASS_ORDER = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+    local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
     local CHIP_GAP = 6
     local CHIP_H = 22
     local CHIP_W = (RAIL_BTN_W - CHIP_GAP) / 2
