@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.82.0] - 2026-10-18
+
+### Added
+- o GuildOS sai também para o retail (#168)
+
+
 ## [0.81.0] - 2026-10-18
 
 ### Added
