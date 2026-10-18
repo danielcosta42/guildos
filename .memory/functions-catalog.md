@@ -648,6 +648,20 @@ Removed: `Compat.NewTimer`.
 | `UpdateRosterRow(row, data, i)` | Populates row: class color, ilvl, attunements, attendance |
 | `ShowRowTooltip(row)` | Shows rich hover tooltip with spec, gear, attunements, wishlist |
 | `GuildOS:ShowMemberContextMenu(_anchor, memberData)` | Opens right-click context menu for a member row |
+| `GuildOS:ToggleColumnsPanel(anchor)` / `HideColumnsPanel()` | The Columns panel (#178): a box per column `offered` to this reader, the shown ones in order with ▲▼, Restore defaults; every change re-lays out every roster panel (`UI:Relayout`) |
+
+`COLUMNS` is every column there is (#178). A column with `value(data, ctx)` fills `data.cols[key]` in `BuildMemberList`, only when shown or sorted by, and sorts generically, an empty cell last; one with `text(v, data)` draws in a plain cell (`row.textCells`); `prepare(ctx)` builds a per-refresh index; `offered()` hides it from readers who may not see it. Priority follows the reader's order (`ChosenColumns`), so the rightmost goes first; only Member is required.
+
+## RosterColumns.lua — GuildOS.RosterColumns (issue #178)
+
+| Function | Description |
+|---|---|
+| `RosterColumns:Visible(offered)` | The shown column keys in order (`GuildOSDB.rosterColumns`, the account's; nil = `DEFAULT`), skipping any `offered(key)` refuses. Anything stored but a list of strings reads as the default; repeats and `name` are dropped |
+| `RosterColumns:SetShown(key, on)` | On appends at the end, off removes; `name` is refused |
+| `RosterColumns:Move(key, delta, offered)` | One place left or right, past columns not offered; stops at the ends |
+| `RosterColumns:Reset()` | Back to the default (stores nil) |
+
+Also: `Compat.CanViewOfficerNote()`, `GearAudit:MissingEnchants(gear)` (slot names; shared with the audit), `RaidTracker:GetAttendance25ManPercent(key, group, totals)` (optional per-core memo), `UI:Relayout(container)` (now if visible, else on next show).
 
 ---
 

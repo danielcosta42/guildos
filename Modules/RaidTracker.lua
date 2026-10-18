@@ -690,9 +690,12 @@ end
 
 -- With no core given, the core where the player has the most nights that count: one where they raid
 -- most can be a 10, whose nights never count on Forever, and would read 0% (#134).
-function RaidTracker:GetAttendance25ManPercent(playerKey, groupTag)
+-- `totals`, optional, keeps each core's count across calls: the roster asks once per member (#178),
+-- and counting walks every session.
+function RaidTracker:GetAttendance25ManPercent(playerKey, groupTag, totals)
     if not groupTag then groupTag = self:GetPlayerGroup(playerKey, "raids25") end
-    local total = self:GetTotal25ManSessions(groupTag)
+    local total = totals and totals[groupTag] or self:GetTotal25ManSessions(groupTag)
+    if totals then totals[groupTag] = total end
     if total == 0 then return 0 end
     local att = self:GetAttendance(playerKey, groupTag)
     local raids25 = att.raids25 or 0

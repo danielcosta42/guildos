@@ -103,6 +103,9 @@ wishlists), and guildos.me, which takes Forever guilds for now.
 ## 📋 Guild roster and member inspector
 
 - Sortable columns (name, level, class, item level, professions, attendance, last seen), search and an online filter
+- **Your own columns**: turn on the public and officer notes, rank, time offline, spec, roles, main or alt, addon
+  version, missing enchants, attendance, raid team, DKP, loot and trial days, and put them in your order. Saved for
+  your whole account
 - Click anyone, online or offline, for their gear (missing enchants flagged), professions and stats
 - Alts grouped under their main
 - **Guild analytics**: the guild at a glance, with *Only online* and *Only max level* filters

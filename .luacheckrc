@@ -320,6 +320,7 @@ read_globals = {
     -- Guild notes
     "GuildRosterSetPublicNote",
     "CanEditPublicNote",
+    "CanViewOfficerNote",
 
     -- The chat frame's raid-icon words ({skull}, {star}…, localized), issue #64
     "ICON_TAG_LIST",
