@@ -72,7 +72,13 @@ RaidTracker.RAID_25MAN = {
 -- until its raids open, and a size needs no list: the raids of 9 December count on the day, and
 -- so does every tier after.
 RaidTracker.FOREVER_PROGRESSION_SIZE = 20
+-- Retail (ADR-0026): what counts is the difficulty, and every one tracked is progression. Normal,
+-- Heroic and Mythic; Raid Finder, timewalking and the legacy sizes are not tracked at all.
+RaidTracker.RETAIL_TRACKED = { [14] = true, [15] = true, [16] = true }
+local function isRetail() return GuildOS.Client and GuildOS.Client.isRetail end
+
 function RaidTracker:Is25Man(instanceID, size)
+    if isRetail() then return true end
     if GuildOS.Client and not GuildOS.Client.isAnniversary then
         return (tonumber(size) or 0) >= self.FOREVER_PROGRESSION_SIZE
     end
@@ -80,8 +86,9 @@ function RaidTracker:Is25Man(instanceID, size)
 end
 
 -- Whether a raid instance is tracked at all: on Anniversary the ones RAID_INSTANCES knows, on
--- WoW: Forever every raid, whose ids nobody has yet (issue #90).
-function RaidTracker:IsTracked(instanceID)
+-- WoW: Forever every raid, whose ids nobody has yet (issue #90); on retail by difficulty.
+function RaidTracker:IsTracked(instanceID, difficultyID)
+    if isRetail() then return self.RETAIL_TRACKED[difficultyID] == true end
     if GuildOS.Client and not GuildOS.Client.isAnniversary then return true end
     return self.RAID_INSTANCES[instanceID] ~= nil
 end
@@ -90,6 +97,9 @@ end
 -- the 20- and 40-player raids are the ones that count (issue #90). It works on the translated
 -- text, which every locale writes with the digits ("25er", "25 jogadores", "à 25").
 function RaidTracker:ProgLabel(text)
+    if isRetail() and type(text) == "string" then
+        return (text:gsub("25%-man", "N/H/M"):gsub("25", "N/H/M"))
+    end
     if GuildOS.Client and not GuildOS.Client.isAnniversary and type(text) == "string" then
         return (text:gsub("25%-man", "20+ man"):gsub("25", "20+"))
     end
@@ -181,8 +191,8 @@ function RaidTracker:Initialize()
 end
 
 function RaidTracker:CheckZone()
-    local _, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
-    if instanceType == "raid" and self:IsTracked(instanceID) then
+    local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceType == "raid" and self:IsTracked(instanceID, difficultyID) then
         -- We're inside a raid instance
         if self.endTimer then
             -- There was a pending end-of-session timer
@@ -229,7 +239,7 @@ local PICK_HOLD = 1800
 
 function RaidTracker:StartSession(instanceID)
     -- The name and size the game gives: a Forever raid is in no list here (issue #90).
-    local zoneName, _, _, _, maxPlayers = GetInstanceInfo()
+    local zoneName, _, difficultyID, difficultyName, maxPlayers = GetInstanceInfo()
     local raidName = self.RAID_INSTANCES[instanceID] or zoneName or L["Unknown"]
     local now = GetServerTime()
 
@@ -266,6 +276,7 @@ function RaidTracker:StartSession(instanceID)
         instanceID = instanceID,
         name = raidName,
         size = (tonumber(maxPlayers) or 0) > 0 and tonumber(maxPlayers) or nil,   -- Is25Man on Forever (#90)
+        difficulty = isRetail() and tonumber(difficultyID) or nil,                -- what counts on retail
         raidId = raidId,
         groupTag = self:GetCurrentGroup(),  -- tag this session with the active group
         startTime = now,
@@ -276,7 +287,9 @@ function RaidTracker:StartSession(instanceID)
     }
     -- On Forever the size is what decides whether the night counts, so it is said (issue #90).
     local said = raidName
-    if GuildOS.Client and not GuildOS.Client.isAnniversary and self.currentRaid.size then
+    if isRetail() and type(difficultyName) == "string" and difficultyName ~= "" then
+        said = raidName .. " (" .. difficultyName .. ")"
+    elseif GuildOS.Client and not GuildOS.Client.isAnniversary and self.currentRaid.size then
         said = raidName .. " (" .. self.currentRaid.size .. ")"
     end
     GuildOS:Print(L["Raid tracking started: |cffFFD700"] .. said .. "|r")
