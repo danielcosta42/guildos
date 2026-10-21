@@ -209,6 +209,12 @@ function RaidTracker:CheckZone()
         -- lockout: Heroic after Normal is a new session, never the Normal one resumed (issue #177).
         local same = self.currentRaid and self.currentRaid.instanceID == instanceID
             and (not isRetail() or self.currentRaid.difficulty == tonumber(difficultyID))
+        -- Another difficulty of the same raid: an officer's core pick, made in the raid or on the
+        -- run-back, carries over to the new session, as after a /reload (issue #177).
+        local rtDB = GuildOS.db.raidTracker
+        local pick = rtDB and rtDB.corePick
+        local keep = not same and self.currentRaid and self.currentRaid.instanceID == instanceID
+            and (self.gracePick or (type(pick) == "table" and pick.instanceID == instanceID and pick.tag)) or nil
         if self.endTimer then
             -- There was a pending end-of-session timer
             if same then
@@ -232,6 +238,9 @@ function RaidTracker:CheckZone()
             end
         elseif isRetail() and self.trackingActive and not same then
             self:EndSession()
+        end
+        if keep and rtDB then
+            rtDB.corePick = { instanceID = instanceID, tag = keep, char = GuildOS.Compat.PlayerName(), at = GetServerTime() }
         end
         if not self.trackingActive then
             self:StartSession(instanceID)

@@ -106,7 +106,8 @@ All of it as `GuildOS.Client` fields or `Compat` functions, never scattered.
     goes with the 25 ("N/H/M", never "N/H/M jogadores", issue #177).
   - A session keeps its difficulty, shows it on the raids panel ("Voidspire (H)"), sends it in the raid sync, and a
     raid's Normal and Heroic the same night stay two sessions: back in on another difficulty during the grace
-    starts a new session, and the merge never joins two difficulties (issue #177). A session relayed by an
+    starts a new session, keeping the core an officer picked, and the merge never joins two difficulties (issue
+    #177). A session relayed by an
     officer on an older addon has no difficulty and shows apart until that officer updates.
   - An old raid run on N/H/M counts as attendance. Accepted for now.
   - `ENCOUNTER_START/END` check `encounterName` with `Compat.IsSecret` before concatenating, on every client; the

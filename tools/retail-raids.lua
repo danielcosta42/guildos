@@ -144,6 +144,44 @@ printed = {}
 RT:CheckZone()
 check(table.concat(printed, " "):find("Raid resumed", 1, true) and RT.currentRaid.difficulty == 15,
   "back on the same difficulty, the session resumes")
+
+-- A switch of difficulty under a running session, with no grace pending, is a new session too.
+INSTANCE = { "The Voidspire", "raid", 16, "Mythic", 20, 0, true, 2912 }
+RT:CheckZone()
+check(RT.currentRaid.difficulty == 16, "a running session that finds itself on Mythic gives way to a Mythic one")
+
+-- The officer's core pick carries over to the next difficulty, picked in the raid or on the run-back.
+local now = 1791000000
+GetServerTime = function() return now end
+function UnitClass() return "Warrior", "WARRIOR" end
+function GetNumGroupMembers() return 1 end
+function IsInRaid() return true end
+function UnitExists() return false end
+GuildOS.CoreManager = { CoreForGroup = function() return "Core 1", 1, 1 end }
+RT.IsGuildRaid = function() return true end
+RT.RebuildAttendanceFromSessions = function() end
+-- The real module, snapshots included: a snapshot is where detection would take the core back.
+dofile(ADDON .. "/Modules/RaidTracker.lua")
+RT = GuildOS.RaidTracker
+RT.IsGuildRaid = function() return true end
+RT.RebuildAttendanceFromSessions = function() end
+for _, onRunBack in ipairs({ false, true }) do
+  RT.currentRaid, RT.trackingActive, RT.endTimer = nil, false, nil
+  GuildOS.db.raidTracker.corePick = nil
+  INSTANCE = { "The Voidspire", "raid", 14, "Normal", 30, 0, true, 2912 }
+  RT:CheckZone()
+  if not onRunBack then RT:PickCore("Core 2") end
+  now = now + 1800
+  INSTANCE = { "Dornogal", "none", 0, "", 0, 0, false, 0 }
+  RT:CheckZone()
+  if onRunBack then RT:PickCore("Core 2") end
+  now = now + 120
+  INSTANCE = { "The Voidspire", "raid", 15, "Heroic", 30, 0, true, 2912 }
+  RT:CheckZone()
+  RT:TakeSnapshot("periodic")
+  check(RT.currentRaid.difficulty == 15 and RT.currentRaid.groupTag == "Core 2" and RT:GetCurrentGroup() == "Core 2",
+    "Heroic keeps the core the officer picked " .. (onRunBack and "on the run-back" or "in Normal"))
+end
 RT.currentRaid, RT.trackingActive, RT.endTimer = nil, false, nil
 
 -- Normal and Heroic the same night are two lockouts, never merged into one session.
