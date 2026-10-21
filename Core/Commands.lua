@@ -52,7 +52,8 @@ local function printHelp()
         helpLine("/gos cons",      L["Check raid consumables"])
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
-    helpLine("/gos export <what>", L["Export roster, attendance or loot"])
+    helpLine("/gos export <what>", GuildOS.LootTracker and L["Export roster, attendance or loot"]
+        or L["Export roster or attendance"])   -- no loot on retail (ADR-0026, issue #177)
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
     if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
 
@@ -387,11 +388,15 @@ local function handleCommand(msg)
             GuildOS:Print(L["Not available on this client."])
         end
     elseif msg:match("^trial") then
-        -- The whole rest is the name: two words on Forever. It lands on the roster's key, so a
-        -- guildmate on a connected realm is found as the roster menu finds them (issue #177).
-        local name = strtrim((msg:gsub("^trial%s*", "")))
-        if name ~= "" and GuildOS.TrialTracker then
-            GuildOS.TrialTracker:AddTrial(GuildOS:RosterKey(name) or GuildOS:GetPlayerKey(name))
+        -- The roster's key, so a guildmate on a connected realm is found as the roster menu finds
+        -- them: the whole rest when it is somebody (two words on Forever), else the first word, as
+        -- it always was (issue #177).
+        local rest = strtrim((msg:gsub("^trial%s*", "")))
+        local key = GuildOS:RosterKey(rest)
+        local name = rest:match("^(%S+)")
+        if not key and name then key = GuildOS:RosterKey(name) or GuildOS:GetPlayerKey(name) end
+        if key and GuildOS.TrialTracker then
+            GuildOS.TrialTracker:AddTrial(key)
         else
             GuildOS:Print(L["Usage: /guildos trial <PlayerName>"])
         end

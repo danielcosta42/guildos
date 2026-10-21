@@ -92,6 +92,8 @@ for _, gone in ipairs({ "/gos lm", "/gos points", "/gos web", "/gos roster", "/g
   check(not help:find(gone, 1, true), gone .. " is not in retail's help")
 end
 check(help:find("/gos specs", 1, true) ~= nil, "the rest of the help is still there")
+check(help:find("Export roster or attendance", 1, true) and not help:find("attendance or loot", 1, true),
+  "the export help names no loot on retail (issue #177)")
 
 -- The loot exports are absent too, and the usage line lists what retail has (issue #177).
 dofile(ADDON .. "/Modules/ExportImport.lua")

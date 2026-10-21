@@ -870,3 +870,6 @@ retail guild yet.
 - (−) Retail's tiered reagents are not in the catalog, and whether `IsPlayerSpell` answers for retail recipes is read
   in game (`/guildos probe`); the open profession window still fills what it misses.
 - (−) Attendance counts an old raid run on Normal, Heroic or Mythic like a current one.
+- (−) A retail session relayed by an officer on an addon from before issue #177 carries no difficulty, so it is not
+  merged with the same night's session that has one: the raids panel shows that night twice until the officer
+  updates and the next sync fills the difficulty in. Attendance is not affected: its lockouts ignore difficulty.

@@ -89,7 +89,8 @@ check(RT.currentRaid.difficulty == 15, "and keeps it")
 check(RT:DifficultyLabel(RT.currentRaid) == "H" and RT:DifficultyLabel({ difficulty = 17 }) == nil
   and RT:DifficultyLabel(nil) == nil, "a session's difficulty has a letter for the screen")
 
--- A difficulty name Midnight keeps secret is never compared or joined (issue #177).
+-- A difficulty name Midnight keeps secret is never compared or joined (issue #177). Lua never calls
+-- __eq between a table and a string, so the compare is checked in the source: IsSecret comes first.
 local SECRET = setmetatable({}, { __eq = function() error("a secret was compared") end,
                                   __concat = function() error("a secret was joined") end })
 INSTANCE = { "The Voidspire", "raid", 15, SECRET, 30, 0, true, 2912 }
@@ -101,6 +102,9 @@ printed = {}
 local okSecret, errSecret = pcall(RT.StartSession, RT, 2912)
 type = realType
 check(okSecret, "a secret difficulty name does not raise: " .. tostring(errSecret))
+local rtSrc = io.open(ADDON .. "/Modules/RaidTracker.lua", "rb"):read("*a")
+local guard, compare = rtSrc:find("IsSecret(difficultyName)", 1, true), rtSrc:find('difficultyName ~= ""', 1, true)
+check(guard and compare and guard < compare, "the secret check comes before the name is compared")
 check(table.concat(printed, " "):find("The Voidspire", 1, true) ~= nil, "and the session still starts")
 INSTANCE = { "The Voidspire", "raid", 15, "Heroic", 30, 0, true, 2912 }
 
@@ -117,6 +121,30 @@ check(sent.sessions[100].difficulty == 16, "the raid sync carries the difficulty
 GuildOS.db.raidTracker.sessions = { [100] = { instanceID = 2912, startTime = 100, players = {} } }
 RT:HandleIncoming(sent)
 check(GuildOS.db.raidTracker.sessions[100].difficulty == 16, "a session that lacked it takes it from the sync")
+
+-- Back in on Heroic during the Normal session's grace: a new session, not the Normal one resumed.
+C_Timer.NewTimer = function() return { Cancel = function() end } end
+RT.currentRaid, RT.trackingActive, RT.endTimer = nil, false, nil
+GuildOS.db.raidTracker.sessions = {}
+INSTANCE = { "The Voidspire", "raid", 14, "Normal", 30, 0, true, 2912 }
+RT:CheckZone()
+INSTANCE = { "Dornogal", "none", 0, "", 0, 0, false, 0 }
+RT:CheckZone()
+check(RT.endTimer ~= nil, "leaving starts the grace")
+INSTANCE = { "The Voidspire", "raid", 15, "Heroic", 30, 0, true, 2912 }
+printed = {}
+RT:CheckZone()
+check(RT.currentRaid.difficulty == 15 and RT:DifficultyLabel(RT.currentRaid) == "H",
+  "Heroic inside the grace starts a Heroic session")
+check(not table.concat(printed, " "):find("Raid resumed", 1, true), "and the Normal one is not resumed")
+INSTANCE = { "Dornogal", "none", 0, "", 0, 0, false, 0 }
+RT:CheckZone()
+INSTANCE = { "The Voidspire", "raid", 15, "Heroic", 30, 0, true, 2912 }
+printed = {}
+RT:CheckZone()
+check(table.concat(printed, " "):find("Raid resumed", 1, true) and RT.currentRaid.difficulty == 15,
+  "back on the same difficulty, the session resumes")
+RT.currentRaid, RT.trackingActive, RT.endTimer = nil, false, nil
 
 -- Normal and Heroic the same night are two lockouts, never merged into one session.
 GuildOS.db.raidTracker.sessions = {

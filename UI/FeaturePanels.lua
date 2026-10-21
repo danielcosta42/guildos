@@ -3256,8 +3256,10 @@ function GuildOS:RefreshSettingsPanel(content, category)
     creditText:SetPoint("TOPLEFT", 8, -yOff)
     yOff = yOff + 22
 
-    local privacy = UI:CreateText(content,
-        L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],
+    -- Retail has no attunements and no wishlist (ADR-0026, issue #177).
+    local privacy = UI:CreateText(content, GuildOS.Client.isRetail
+        and L["Guild OS syncs your gear, professions and spec with guildmates running the addon. Officer notes and trials stay officer-only."]
+        or L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],
         10, C.silver.r, C.silver.g, C.silver.b)
     privacy:SetPoint("TOPLEFT", 8, -yOff)
     privacy:SetWidth(content:GetWidth() - 20)

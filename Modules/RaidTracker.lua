@@ -205,10 +205,13 @@ end
 function RaidTracker:CheckZone()
     local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
     if instanceType == "raid" and self:IsTracked(instanceID, difficultyID) then
-        -- We're inside a raid instance
+        -- We're inside a raid instance. On retail the same raid on another difficulty is another
+        -- lockout: Heroic after Normal is a new session, never the Normal one resumed (issue #177).
+        local same = self.currentRaid and self.currentRaid.instanceID == instanceID
+            and (not isRetail() or self.currentRaid.difficulty == tonumber(difficultyID))
         if self.endTimer then
             -- There was a pending end-of-session timer
-            if self.currentRaid and self.currentRaid.instanceID == instanceID then
+            if same then
                 -- Same raid: cancel the pending end and resume
                 self.endTimer:Cancel()
                 self.endTimer = nil
@@ -227,6 +230,8 @@ function RaidTracker:CheckZone()
                 self.endTimer = nil
                 self:EndSession()
             end
+        elseif isRetail() and self.trackingActive and not same then
+            self:EndSession()
         end
         if not self.trackingActive then
             self:StartSession(instanceID)

@@ -333,6 +333,8 @@ local savedRoster = ROSTER
 ROSTER = { "Bob-Gallywix" }
 slash("trial Bob")
 check(trials[#trials] == "Bob-Gallywix", "/gos trial finds a guildmate on a connected realm by the roster's key")
+slash("trial Bob was here")
+check(trials[#trials] == "Bob-Gallywix", "words after a one-word name are not part of it")
 realmless(function(how)
   ROSTER = { "First Last" }
   slash("trial First Last")
