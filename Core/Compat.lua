@@ -46,8 +46,9 @@ GuildOS.Client = {
     defaultRaidSize = isAnniversary and 25 or 20,
     classes = isRetail and RETAIL_CLASSES or CLASSIC_CLASSES,
     -- Where a missing enchant is a real problem: TBC's nine slots (Forever's too), Midnight's
-    -- head, shoulder, chest, feet, both rings and the weapon; cloak and wrist enchants are gone.
-    enchantSlots = isRetail and { 1, 3, 5, 8, 11, 12, 16 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
+    -- head, shoulder, chest, legs (spellthread, armor kit), feet, both rings and both weapons;
+    -- cloak and wrist enchants are gone. An off hand counts only as a weapon (issue #177).
+    enchantSlots = isRetail and { 1, 3, 5, 7, 8, 11, 12, 16, 17 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
@@ -472,6 +473,15 @@ function Compat.GetItemInfo(item)
     if GetItemInfo then return GetItemInfo(item) end
 end
 
+-- Whether an item is a weapon, from its id alone (no item cache needed); nil when the client
+-- cannot say. A shield or an off-hand frill takes no enchant on retail (issue #177).
+function Compat.IsWeapon(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local _, _, _, _, _, classID = instant(item)
+    return classID == 2   -- Enum.ItemClass.Weapon
+end
+
 -- An item's level as it is worn. On retail (ADR-0026) upgrades, crafting and the track an item
 -- dropped from move it away from GetItemInfo's base level, `base`, which every other client keeps.
 function Compat.ItemLevel(link, base)
@@ -641,6 +651,15 @@ function Compat.SpecOf(unit)
     local _, name, _, _, role = GetSpecializationInfoForSpecID(id)
     if Compat.IsSecret(name, role) then return nil end
     return id, name, role
+end
+
+-- A retail spec's name in the reader's language, from its id: a spec synced from a guildmate's
+-- client arrives in theirs (issue #177). Nil when the client cannot say.
+function Compat.SpecName(id)
+    if not (tonumber(id) and GetSpecializationInfoForSpecID) then return nil end
+    local _, name = GetSpecializationInfoForSpecID(id)
+    if Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    return name
 end
 
 function Compat.GetNumSkillLines()

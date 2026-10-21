@@ -160,19 +160,39 @@ function Exporter:EquityData()
     return headers, rows
 end
 
+-- `needs`: the module a dataset reads, absent on retail (ADR-0026), where the dataset is too: the
+-- command says so and the chooser leaves its row out (issue #177).
 Exporter.DATASETS = {
     roster     = { fn = "RosterData",     title = "Roster" },
     attendance = { fn = "AttendanceData", title = "Attendance" },
-    loot       = { fn = "LootData",       title = "Loot History" },
+    loot       = { fn = "LootData",       title = "Loot History", needs = "LootTracker" },
     readiness  = { fn = "ReadinessData",  title = "Readiness" },
-    standings  = { fn = "StandingsData",  title = "DKP Standings" },
-    equity     = { fn = "EquityData",     title = "Loot Equity" },
+    standings  = { fn = "StandingsData",  title = "DKP Standings", needs = "Points" },
+    equity     = { fn = "EquityData",     title = "Loot Equity", needs = "LootEquity" },
 }
+Exporter.ORDER = { "roster", "attendance", "loot", "readiness", "standings", "equity" }
 
--- Build an export string. Returns (text, title) or nil for an unknown dataset.
+-- Whether this client has the dataset: known, and its module present.
+function Exporter:Has(dataset)
+    local def = self.DATASETS[dataset]
+    return def ~= nil and (not def.needs or GuildOS[def.needs] ~= nil)
+end
+
+-- The datasets this client has, in order, as the usage line lists them: "roster|attendance|...".
+function Exporter:Names()
+    local out = {}
+    for _, key in ipairs(self.ORDER) do
+        if self:Has(key) then out[#out + 1] = key end
+    end
+    return table.concat(out, "|")
+end
+
+-- Build an export string. Returns (text, title); nil for an unknown dataset, and nil, "absent" for
+-- one this client does not have.
 function Exporter:Build(dataset, format)
     local def = self.DATASETS[dataset]
     if not def then return nil end
+    if not self:Has(dataset) then return nil, "absent" end
     local headers, rows = self[def.fn](self)
     return render(headers, rows, format, def.title), def.title
 end

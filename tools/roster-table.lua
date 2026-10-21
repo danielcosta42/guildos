@@ -193,7 +193,7 @@ local lootSystem, attendanceTables = "dkp", {}
 function GuildOS:GetLootSystem() return lootSystem end
 GuildOS.Points = { Get = function(_, k) return k == ANA and 120 or 0 end }
 GuildOS.LootTracker = {}
-GuildOS.SpecChecker = {}
+GuildOS.SpecChecker = { SpecName = function(_, spec) return spec.tree end }   -- a classic spec's name
 GuildOS.RaiderRoster = { EffectiveRoles = function(_, k) return (k == CAIO and { HEALER = true, DPS = true }) or (k == DORA and { TANK = true }) or {} end }
 GuildOS.AltRoster = {}
 GuildOS.CoreManager = {

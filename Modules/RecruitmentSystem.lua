@@ -133,7 +133,8 @@ end
 -- GetChannelName("LookingForGroup") is 0 on a French client (issue #112). A zone channel goes by
 -- its shortcut ("Commerce" for "Commerce - Hurlevent"), LookingForGroup by its name: they differ
 -- only on Forever in Russian. Forever has no GuildRecruitment channel, and its Spanish
--- LookingForGroup is BuscarGrupo.
+-- LookingForGroup is BuscarGrupo. Retail's table (12.1.5.70448) names both as Forever does and has
+-- no GuildRecruitment either (issue #177).
 Recruitment.CHANNELS = {
     { enUS = "Trade", deDE = "Handel", esES = "Comercio", esMX = "Comercio", frFR = "Commerce",
       ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易" },

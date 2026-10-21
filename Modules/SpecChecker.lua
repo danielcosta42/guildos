@@ -213,6 +213,13 @@ function SpecChecker:BuildSpecRecord(points, names)
     }
 end
 
+-- A spec record's name as the reader says it: on retail by its id, in this client's language, since
+-- the stored name is the sender's (issue #177); the stored tree name everywhere else.
+function SpecChecker:SpecName(spec)
+    if type(spec) ~= "table" then return nil end
+    return spec.specID and GuildOS.Compat.SpecName(spec.specID) or spec.tree
+end
+
 ----------------------------------------------------------------------
 -- Returns a display string such as "41/5/15  (Protection)"
 -- Returns nil if no spec data is available for that key.
@@ -223,7 +230,7 @@ function SpecChecker:GetSpecLabel(memberKey)
     if not data or not data.spec then return nil end
 
     local s   = data.spec
-    if s.specID then return s.tree end   -- retail: the spec's name, no trees to count
+    if s.specID then return self:SpecName(s) end   -- retail: the spec's name, no trees to count
     local pts = s.points or {}
     local dist = table.concat(pts, "/")
     return dist .. "  (" .. (s.tree or "?") .. ")"

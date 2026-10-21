@@ -840,7 +840,8 @@ retail guild yet.
 
 ### Decision
 - `GuildOS.Client.isRetail` (ADR-0014's two signals) and per-game fields: `maxLevel` 90, `raidSizes` 10/20/30,
-  `classes` (thirteen), `enchantSlots` (Midnight's head, shoulder, chest, feet, rings and weapon).
+  `classes` (thirteen), `enchantSlots` (Midnight's head, shoulder, chest, legs, feet, rings and both weapons; an
+  off hand only when it is a weapon, `GearAudit:NeedsEnchant`; issue #177).
 - Keys are realm-bound on retail, normalized (amendment to ADR-0018). Everything that names a guildmate keeps
   their realm: the core's member picker (`GuildOS:KeyOfRosterName`), poll votes and calendar answers, the roster
   lookup. Officer trust is the whole key: an officer's name on another connected realm carries no rank
@@ -855,7 +856,11 @@ retail guild yet.
 - Retail content: specs from `C_SpecializationInfo` (`Compat.SpecOf`), raids tracked by difficulty (Normal, Heroic,
   Mythic; every one progression), the item level as worn (`Compat.ItemLevel`) and the game's average, Raid Tools'
   Midnight buffs and cooldowns named by the client from the spell, the Midnight profession catalog (ADR-0022).
-- A boss name the client keeps secret is never concatenated or stored, on every client.
+- A boss name the client keeps secret is never concatenated or stored, on every client; nor is a difficulty name.
+- A spec synced from a guildmate shows in the reader's language, by its id (`SpecChecker:SpecName`). A session keeps
+  its difficulty, shows it ("N", "H", "M"), sends it in the raid sync, and a raid's Normal and Heroic are never
+  merged into one session. A tab or an export this client does not have says "Not available on this client."
+  (`UI:IsFeatureAbsent`, `Exporter:Has`) (issue #177).
 
 ### Consequences
 - (+) One build, one TOC, three clients; Forever and Anniversary behave as before.

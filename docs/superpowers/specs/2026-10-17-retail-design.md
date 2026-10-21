@@ -74,7 +74,13 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
   Misdirection in Raid Tools stay hidden: they exist on retail but read the combat log, which Midnight closes
   to addons in instances.
 - **The registry:** `def.retail == false` hides a feature on retail, in `AllFeatures` and `IsFeatureAllowed`,
-  next to the `tbc` check.
+  next to the `tbc` check (`UI:IsFeatureAbsent`). `/gos open` of one says "Not available on this client.", not
+  officer-only; so do `/gos export loot|equity|standings`, whose usage line lists only what the client has (issue
+  #177).
+- **Words:** the onboarding's getting-started and privacy steps name no attunements or wishlists on retail; the
+  probe lists retail's spec and item-level APIs and names the client it found (issue #177).
+- **Recruitment channels:** retail's ChatChannels (12.1.5.70448, every language) are Forever's: Trade and
+  LookingForGroup, no GuildRecruitment (issue #177).
 - **The payload:** if anything still writes it, `game` is `client.game`, so retail says `RETAIL`.
 
 ## 5. Retail content
@@ -89,22 +95,29 @@ All of it as `GuildOS.Client` fields or `Compat` functions, never scattered.
   UI/CorePanel.lua. CoreManager's default roles gain the four.
 - **Specs.** `Compat.PlayerSpec()` and `Compat.InspectSpec(unit)` read `C_SpecializationInfo` /
   `GetSpecialization` / `GetInspectSpecialization` and `GetSpecializationInfoByID` on retail: the name and the
-  role come from the client, localized. SpecChecker's trait-tree column heuristic (Forever) does not run on
-  retail. Hero talents are out.
+  role come from the client, localized. A synced spec is shown by its id in the reader's language, not the
+  sender's (`SpecChecker:SpecName`, issue #177). SpecChecker's trait-tree column heuristic (Forever) does not run
+  on retail. Hero talents are out.
 - **Raids.**
   - `Client.raidSizes = {10, 20, 30}`, default 20 (mythic's size).
   - Only Normal, Heroic and Mythic (difficulty 14, 15, 16) are tracked; LFR (17), timewalking (33) and
     everything else is not.
-  - Progression labels by difficulty (N/H/M), not by size: on flex the size says nothing.
+  - Progression labels by difficulty (N/H/M), not by size: on flex the size says nothing. The locale's size word
+    goes with the 25 ("N/H/M", never "N/H/M jogadores", issue #177).
+  - A session keeps its difficulty, shows it on the raids panel ("Voidspire (H)"), sends it in the raid sync, and a
+    raid's Normal and Heroic the same night stay two sessions (issue #177).
   - An old raid run on N/H/M counts as attendance. Accepted for now.
-  - `ENCOUNTER_START/END` check `encounterName` with `Compat.IsSecret` before concatenating, on every client.
+  - `ENCOUNTER_START/END` check `encounterName` with `Compat.IsSecret` before concatenating, on every client; the
+    session's difficulty name too (issue #177).
 - **Gear.**
   - Item level is the effective one (`C_Item.GetDetailedItemLevelInfo`), not the base `GetItemInfo` gives.
   - The average is `GetAverageItemLevel()` for me and `C_PaperDollInfo.GetInspectItemLevel(unit)` for an
     inspect.
   - Gems are read from the link's four gem fields.
-  - Enchant slots per client: Midnight's are head, shoulder, chest, feet, both rings and the weapons (cloak
-    and wrist enchants are gone).
+  - Enchant slots per client: Midnight's are head, shoulder, chest, legs (spellthread, armor kit), feet, both
+    rings and both weapons (cloak and wrist enchants are gone). An off hand counts only when it is a weapon: a
+    shield or a frill takes no enchant (issue #177). Whether a spellthread or an armor kit fills the link's
+    enchant field is read in game.
   - Item-level colour bands are TBC's; on retail the colour is neutral, since bands go stale every season.
 - **Professions.**
   - `tools/prof_catalog.py --retail <build>` writes `Data/ProfCatalogRetail.lua`, gated retail-only, with only

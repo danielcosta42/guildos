@@ -5,7 +5,8 @@
 -- On retail an item's level is not the one GetItemInfo gives: upgrades, crafting and the track an
 -- item dropped from all move it, and C_Item.GetDetailedItemLevelInfo answers the real one. The
 -- character's average is the game's own. A link can carry four gems. Midnight enchants the head,
--- shoulder, chest, feet, both rings and the weapon (cloak and wrist enchants are gone), and an item
+-- shoulder, chest, legs, feet, both rings and both weapons, never a shield or an off-hand frill
+-- (cloak and wrist enchants are gone; issue #177), and an item
 -- level's colour band would be stale every season, so it is neutral there. Forever keeps its rules.
 --
 --   luajit -e 'ADDON="."' tools/retail-gear.lua
@@ -46,6 +47,8 @@ local function load(retail)
   -- The base level is 200; the item as worn is 665. The character's average is the game's 668.
   C_Item = {
     GetItemInfo = function() return "Helm", LINK, 4, 200 end,
+    -- 1001 is a fist weapon, 1002 a shield: classID 2 and 4.
+    GetItemInfoInstant = function(id) return id, "", "", "", 0, id == 1001 and 2 or 4, 0 end,
     GetDetailedItemLevelInfo = function() return 665, false, 200 end,
   }
   function GetAverageItemLevel() return 670.4, 668.6, 669 end
@@ -68,7 +71,20 @@ local gear = GuildOS.DataCollector:CollectGear()
 check(gear[1] and gear[1].ilvl == 665, "collected gear carries the worn level")
 local enchant, gems = GuildOS.DataCollector:ParseItemLink(LINK)
 check(enchant == 7364 and #gems == 4, "a link's enchant and its four gems")
-check(table.concat(GuildOS.GearAudit:GetEnchantableSlots(), ",") == "1,3,5,8,11,12,16", "Midnight's enchant slots")
+check(table.concat(GuildOS.GearAudit:GetEnchantableSlots(), ",") == "1,3,5,7,8,11,12,16,17", "Midnight's enchant slots")
+local GA = GuildOS.GearAudit
+local function item(id) return { id = id, name = "Item " .. id } end
+local missing = table.concat(GA:MissingEnchants({ [7] = item(7), [16] = item(1001), [17] = item(1001) }), ",")
+check(missing == GuildOS.SlotNames[7] .. "," .. GuildOS.SlotNames[16] .. "," .. GuildOS.SlotNames[17],
+  "unenchanted legs and both weapons of a dual wielder are flagged: " .. missing)
+check(not GA:NeedsEnchant(17, item(1002)) and #GA:MissingEnchants({ [17] = item(1002) }) == 0,
+  "a shield in the off hand is never flagged")
+check(GA:NeedsEnchant(17, item(1001)) and not GA:NeedsEnchant(15, item(1001)) and not GA:NeedsEnchant(7, nil),
+  "a weapon off hand needs one; a cloak and an empty slot do not")
+local enchanted = item(1001); enchanted.enchantId = 7981
+check(#GA:MissingEnchants({ [17] = enchanted }) == 0, "an enchanted off-hand weapon is not flagged")
+local memberDetail = io.open(ADDON .. "/UI/MemberDetail.lua", "rb"):read("*a")
+check(memberDetail:find("GearAudit:NeedsEnchant(slotId, item)", 1, true) ~= nil, "the member sheet warns by the same rule")
 local shown = GuildOS:FormatItemLevel(665)
 check(shown:find("665", 1, true) and shown:find("|cffffffff", 1, true), "an item level is shown with no colour band")
 

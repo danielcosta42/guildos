@@ -1009,10 +1009,6 @@ end
 -- Create a gear slot row (with enchant & gem display)
 ----------------------------------------------------------------------
 
--- Slots where missing enchant is a serious issue: this game's (Midnight's on retail, ADR-0026).
-local ENCHANT_WARNING_SLOTS = {}
-for _, slot in ipairs(GuildOS.Client.enchantSlots) do ENCHANT_WARNING_SLOTS[slot] = true end
-
 function CreateGearRow(parent, slotId, item, yOff, width)
     local ROW_H = 26
     local subRowH = 14
@@ -1111,7 +1107,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             enchText:SetText(L["Enchanted"])
             enchText:Show()
             hasExtra = true
-        elseif ENCHANT_WARNING_SLOTS[slotId] then
+        elseif GuildOS.GearAudit and GuildOS.GearAudit:NeedsEnchant(slotId, item) then   -- ADR-0026, #177
             local warnText = _pFS(parent)
             GuildOS:ApplyFont(warnText, 9)
             warnText:SetPoint("TOPLEFT", 106, enchantY)

@@ -88,4 +88,14 @@ check(bo and bo.spec and bo.spec.specID == 250 and bo.spec.tree == "Blood" and b
   "an inspected spec lands on the member's own realm key")
 check(SC:GetSpecLabel("Bo-Gallywix") == "Blood", "and is labelled by its name")
 
+-- ── 4. A synced spec reads in my language (issue #177) ─────────────────
+-- A guildmate on a Portuguese client sent "Sangue"; this client names spec 250 itself.
+GuildOS.db.members["Cy-Azralon"] = { spec = { specID = 250, tree = "Sangue", role = "TANK" } }
+check(SC:GetSpecLabel("Cy-Azralon") == "Blood", "a synced spec is labelled by its id, in the reader's language")
+check(SC:SpecName({ specID = 9999, tree = "Sangue" }) == "Sangue", "an id the client cannot name keeps the sender's name")
+check(SC:SpecName({ tree = "Holy", points = { 41, 5, 15 } }) == "Holy" and SC:SpecName(nil) == nil,
+  "a classic spec keeps its tree name")
+local roster = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
+check(roster:find("GuildOS.SpecChecker:SpecName(spec)", 1, true) ~= nil, "the roster's spec column reads the same name")
+
 print(("retail-spec: %d checks passed"):format(checks))

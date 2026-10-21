@@ -93,6 +93,20 @@ for _, gone in ipairs({ "/gos lm", "/gos points", "/gos web", "/gos roster", "/g
 end
 check(help:find("/gos specs", 1, true) ~= nil, "the rest of the help is still there")
 
+-- The loot exports are absent too, and the usage line lists what retail has (issue #177).
+dofile(ADDON .. "/Modules/ExportImport.lua")
+GuildOS.ShowExportPopup = function() end
+for _, what in ipairs({ "loot", "equity", "standings" }) do
+  printed = {}
+  check(pcall(SlashCmdList.GUILDOS, "export " .. what) and table.concat(printed, " "):find(NOT_HERE, 1, true),
+    "/gos export " .. what .. " says it is not on this client")
+end
+check(GuildOS.Exporter:Has("roster") and not GuildOS.Exporter:Has("loot"), "the roster export is here, the loot one is not")
+printed = {}
+SlashCmdList.GUILDOS("export nonsense")
+check(table.concat(printed, " "):find("Usage: /guildos export <roster|attendance|readiness> [csv|tsv|discord]", 1, true),
+  "the usage line lists only retail's exports")
+
 -- ── 3. A secret boss name ─────────────────────────────────────────────
 dofile(ADDON .. "/Modules/RaidTracker.lua")
 local RT = GuildOS.RaidTracker

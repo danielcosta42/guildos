@@ -73,8 +73,9 @@ RaidTracker.RAID_25MAN = {
 -- so does every tier after.
 RaidTracker.FOREVER_PROGRESSION_SIZE = 20
 -- Retail (ADR-0026): what counts is the difficulty, and every one tracked is progression. Normal,
--- Heroic and Mythic; Raid Finder, timewalking and the legacy sizes are not tracked at all.
-RaidTracker.RETAIL_TRACKED = { [14] = true, [15] = true, [16] = true }
+-- Heroic and Mythic; Raid Finder, timewalking and the legacy sizes are not tracked at all. Each with
+-- the letter a session shows (issue #177).
+RaidTracker.RETAIL_TRACKED = { [14] = "N", [15] = "H", [16] = "M" }
 local function isRetail() return GuildOS.Client and GuildOS.Client.isRetail end
 
 function RaidTracker:Is25Man(instanceID, size)
@@ -88,22 +89,33 @@ end
 -- Whether a raid instance is tracked at all: on Anniversary the ones RAID_INSTANCES knows, on
 -- WoW: Forever every raid, whose ids nobody has yet (issue #90); on retail by difficulty.
 function RaidTracker:IsTracked(instanceID, difficultyID)
-    if isRetail() then return self.RETAIL_TRACKED[difficultyID] == true end
+    if isRetail() then return self.RETAIL_TRACKED[difficultyID] ~= nil end
     if GuildOS.Client and not GuildOS.Client.isAnniversary then return true end
     return self.RAID_INSTANCES[instanceID] ~= nil
 end
 
+-- The words that say "players" after the 25 in each locale's label, so retail's label names the
+-- difficulties and no size: "25 jogadores" is "N/H/M", never "N/H/M jogadores" (issue #177).
+local SIZE_WORDS = { "%-man", "er", " jogadores", " jugadores", " joueurs", " чел%.", " ?인", " ?人" }
+
 -- A "25-man" label as this game says it: unchanged on Anniversary, "20+" on WoW: Forever, where
--- the 20- and 40-player raids are the ones that count (issue #90). It works on the translated
--- text, which every locale writes with the digits ("25er", "25 jogadores", "à 25").
+-- the 20- and 40-player raids are the ones that count (issue #90), the difficulties on retail. It
+-- works on the translated text, which every locale writes with the digits ("25er", "25 jogadores",
+-- "à 25").
 function RaidTracker:ProgLabel(text)
     if isRetail() and type(text) == "string" then
-        return (text:gsub("25%-man", "N/H/M"):gsub("25", "N/H/M"))
+        for _, word in ipairs(SIZE_WORDS) do text = text:gsub("25" .. word, "N/H/M") end
+        return (text:gsub("25", "N/H/M"))
     end
     if GuildOS.Client and not GuildOS.Client.isAnniversary and type(text) == "string" then
         return (text:gsub("25%-man", "20+ man"):gsub("25", "20+"))
     end
     return text
+end
+
+-- The letter of a session's retail difficulty, "N", "H" or "M"; nil anywhere else (issue #177).
+function RaidTracker:DifficultyLabel(session)
+    return type(session) == "table" and self.RETAIL_TRACKED[session.difficulty] or nil
 end
 
 RaidTracker.currentRaid = nil
@@ -287,7 +299,9 @@ function RaidTracker:StartSession(instanceID)
     }
     -- On Forever the size is what decides whether the night counts, so it is said (issue #90).
     local said = raidName
-    if isRetail() and type(difficultyName) == "string" and difficultyName ~= "" then
+    -- Midnight may keep the name secret, and a secret is never compared or joined (issue #177).
+    if isRetail() and type(difficultyName) == "string" and not GuildOS.Compat.IsSecret(difficultyName)
+        and difficultyName ~= "" then
         said = raidName .. " (" .. difficultyName .. ")"
     elseif GuildOS.Client and not GuildOS.Client.isAnniversary and self.currentRaid.size then
         said = raidName .. " (" .. self.currentRaid.size .. ")"
@@ -795,7 +809,8 @@ function RaidTracker:MergeDuplicateSessions()
     local byInstance = {}
     for id, s in pairs(sessions) do
         if s and s.instanceID then
-            local bucketKey = (s.groupTag or "") .. "|" .. s.instanceID
+            -- A retail raid's Normal and Heroic are two lockouts, never one session (issue #177).
+            local bucketKey = (s.groupTag or "") .. "|" .. s.instanceID .. "|" .. (s.difficulty or "")
             if not byInstance[bucketKey] then
                 byInstance[bucketKey] = {}
             end
@@ -1117,6 +1132,7 @@ function RaidTracker:BroadcastRaidData()
             instanceID = session.instanceID,
             name       = session.name,
             size       = session.size,   -- issue #90
+            difficulty = session.difficulty,   -- retail, issue #177
             -- A pug night stays one on every officer's client: without it a peer counted it
             -- as a guild raid and exported it as one.
             isGuildRaid = session.isGuildRaid,
@@ -1204,11 +1220,13 @@ function RaidTracker:HandleIncoming(data)
     -- but never re-insert sessions that have been tombstoned.
     for sessionID, session in pairs(payload.sessions or {}) do
         -- A copy relayed by an officer on an older addon lost what that addon did not know to
-        -- send: the size and the pug-night mark. The next copy that carries them fills them in.
+        -- send: the size, the pug-night mark and the difficulty. The next copy that carries them
+        -- fills them in.
         local mine = raidDB.sessions[sessionID]
         if type(mine) == "table" and type(session) == "table" then
             local sz = tonumber(session.size)
             if mine.size == nil and sz and sz > 0 then mine.size = sz end
+            if mine.difficulty == nil then mine.difficulty = tonumber(session.difficulty) end
             if mine.isGuildRaid == nil and session.isGuildRaid ~= nil then mine.isGuildRaid = session.isGuildRaid == true end
         end
         if not deleted[sessionID] and not raidDB.sessions[sessionID] then

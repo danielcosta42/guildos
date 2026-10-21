@@ -82,6 +82,11 @@ Probe.APIS = {
     -- can hook and not read, so both are asked for.
     "TooltipDataProcessor.AddTooltipPostCall", "TooltipUtil.GetDisplayedItem",
     "TooltipUtil.GetDisplayedSpell", "TooltipUtil.GetDisplayedUnit",
+    -- Retail (ADR-0026): the spec the client names, the item level as worn and the game's own
+    -- average, a weapon told from a shield by id, and the realm keys are spelt with (issue #177).
+    "C_SpecializationInfo.GetSpecialization", "C_SpecializationInfo.GetSpecializationInfo",
+    "C_SpecializationInfo.GetInspectSpecialization", "GetSpecializationInfoForSpecID",
+    "C_Item.GetDetailedItemLevelInfo", "GetAverageItemLevel", "C_Item.GetItemInfoInstant", "GetNormalizedRealmName",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -259,12 +264,21 @@ local function names(list)
     return table.concat(shown, ", ") .. (#list > LIST_MAX and ", ..." or "")
 end
 
+-- The game this client was taken for, by name (issue #177): the probe on retail said only
+-- "TBC Anniversary: no".
+local GAME_NAMES = { ANNIVERSARY = "TBC Anniversary", FOREVER = "WoW: Forever", RETAIL = "Retail" }
+local function gameName(c)
+    c = c or {}
+    local game = c.game or (c.isAnniversary and "ANNIVERSARY") or (c.isRetail and "RETAIL") or "FOREVER"
+    return GAME_NAMES[game] or tostring(game)
+end
+
 function Probe:PrintSummary(r)
     local b = r.build
     GuildOS:Print(string.format(L["Probe: build %s (%s), interface %s, project %s."],
         tostring(first(b)), tostring(b[2]), tostring(b[4]), tostring(r.projectId)))
-    GuildOS:Print(string.format(L["TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
-        answer(r.client and r.client.isAnniversary or false), answer(r.secrets.restricted),
+    GuildOS:Print(string.format(L["Client: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
+        gameName(r.client), answer(r.secrets.restricted),
         answer(first(r.chat.lockdown)), tostring(r.chat.instance[2] or first(r.chat.instance))))
     GuildOS:Print(string.format(L["Missing: %d of %d APIs, %d of %d events."],
         #r.missingApis, #self.APIS + #self.TEMPLATES + #self.SCRIPTS, #r.missingEvents, #self.EVENTS))

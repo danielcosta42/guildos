@@ -492,7 +492,9 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local startTime = sd.startTime or s.id
         local weekNum   = math.floor((startTime - TUESDAY_EPOCH) / WEEK_SECS)
         local sgTag     = sd.groupTag or ""
-        local groupKey  = (sd.instanceID or 0) .. "_" .. weekNum .. "|" .. sgTag
+        -- A retail raid's difficulties are separate lockouts, so separate groups (issue #177).
+        local diff      = GuildOS.RaidTracker:DifficultyLabel(sd)
+        local groupKey  = (sd.instanceID or 0) .. "_" .. weekNum .. "|" .. sgTag .. "|" .. (diff or "")
 
         if not groups[groupKey] then
             local wStart = TUESDAY_EPOCH + weekNum * WEEK_SECS
@@ -501,6 +503,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 instanceID = sd.instanceID,
                 size       = 0,
                 name       = sd.name or L["Unknown"],
+                difficulty = diff,
                 groupTag   = sgTag,
                 weekNum    = weekNum,
                 weekStart  = wStart,
@@ -556,7 +559,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
 
         -- Raid name (gold for 25-man, silver for 10-man)
         local nameClr = is25 and C.gold or C.silver
-        local nameLabel = g.name
+        local nameLabel = g.difficulty and (g.name .. " (" .. g.difficulty .. ")") or g.name
         if g.groupTag and g.groupTag ~= "" then
             nameLabel = "|cff9966FF[" .. g.groupTag .. "]|r " .. nameLabel
         end
@@ -1626,18 +1629,18 @@ function GuildOS:ShowExportChooser()
     close:SetPoint("TOPRIGHT", -8, -8)
     close:SetScript("OnClick", function() f:Hide() end)
 
-    -- `needs`: the module the dataset reads, absent on retail (ADR-0026), where the row is left out.
+    -- A dataset this client does not have (retail's loot, ADR-0026) is left out.
     local datasets = {
         { key = "roster",     label = L["Roster"] },
         { key = "attendance", label = L["Attendance"] },
-        { key = "loot",       label = L["Loot History"], needs = "LootTracker" },
+        { key = "loot",       label = L["Loot History"] },
         { key = "readiness",  label = L["Readiness"] },
-        { key = "equity",     label = L["Loot Equity"], needs = "LootEquity" },
-        { key = "standings",  label = L["DKP Standings"], needs = "Points" },
+        { key = "equity",     label = L["Loot Equity"] },
+        { key = "standings",  label = L["DKP Standings"] },
     }
     local y = -56
     for _, d in ipairs(datasets) do
-        if not d.needs or GuildOS[d.needs] then
+        if GuildOS.Exporter:Has(d.key) then
             local lbl = UI:CreateText(f, d.label, 11, C.text.r, C.text.g, C.text.b)
             lbl:SetPoint("TOPLEFT", 16, y)
             local fx = 150

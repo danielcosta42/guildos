@@ -63,6 +63,22 @@ check(RT:Is25Man(2912, 30) and RT:Is25Man(2912, 20) and RT:Is25Man(2912, 12),
 check(RT:ProgLabel("No 25-man raids recorded for group: ") == "No N/H/M raids recorded for group: ",
   "the progression label names the difficulties")
 check(RT:ProgLabel("(%d/%d raids, 25-man)") == "(%d/%d raids, N/H/M)", "in every label")
+-- Every locale's progression label names the difficulties and no size (issue #177): "N/H/M
+-- jogadores" said "N/H/M players".
+local SIZE_LEFT = { "-man", "er", " jogadores", " jugadores", " joueurs", " чел", "인", " 인", "人", " 人" }
+for _, locale in ipairs({ "enUS", "deDE", "esES", "frFR", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }) do
+  for line in io.lines(ADDON .. "/Locales/" .. locale .. ".lua") do
+    local key, value = line:match('^L%["(.-)"%]%s*=%s*"(.*)"%s*$')
+    if key and key:find("25%-man") and value:find("25") then
+      local out = RT:ProgLabel(value)
+      check(not out:find("25") and out:find("N/H/M", 1, true), locale .. ": " .. value .. " names the difficulties")
+      for _, w in ipairs(SIZE_LEFT) do
+        check(not out:find("N/H/M" .. w, 1, true), locale .. ": " .. out .. " says no size")
+      end
+    end
+  end
+end
+check(RT:ProgLabel("Presença em 25 jogadores") == "Presença em N/H/M", "the Portuguese label reads N/H/M alone")
 
 RT.TakeSnapshot = function() end
 printed = {}
@@ -70,6 +86,47 @@ RT:StartSession(2912)
 local said = table.concat(printed, "\n")
 check(said:find("The Voidspire (Heroic)", 1, true) ~= nil, "the session says its difficulty when it starts")
 check(RT.currentRaid.difficulty == 15, "and keeps it")
+check(RT:DifficultyLabel(RT.currentRaid) == "H" and RT:DifficultyLabel({ difficulty = 17 }) == nil
+  and RT:DifficultyLabel(nil) == nil, "a session's difficulty has a letter for the screen")
+
+-- A difficulty name Midnight keeps secret is never compared or joined (issue #177).
+local SECRET = setmetatable({}, { __eq = function() error("a secret was compared") end,
+                                  __concat = function() error("a secret was joined") end })
+INSTANCE = { "The Voidspire", "raid", 15, SECRET, 30, 0, true, 2912 }
+GuildOS.Compat.IsSecret = function(v) return v == SECRET end
+-- A secret string is still a string to type(); only comparing or joining it raises.
+local realType = type
+type = function(v) if rawequal(v, SECRET) then return "string" end return realType(v) end
+printed = {}
+local okSecret, errSecret = pcall(RT.StartSession, RT, 2912)
+type = realType
+check(okSecret, "a secret difficulty name does not raise: " .. tostring(errSecret))
+check(table.concat(printed, " "):find("The Voidspire", 1, true) ~= nil, "and the session still starts")
+INSTANCE = { "The Voidspire", "raid", 15, "Heroic", 30, 0, true, 2912 }
+
+-- The difficulty goes in the raid sync, and a copy without it is filled by one that has it.
+local sent
+LibStub = function() return { Serialize = function(_, t) return t end, Deserialize = function(_, t) return true, t end } end
+function IsInGuild() return true end
+function GuildOS:IsOfficer() return true end
+GuildOS.CommSystem = { MSG_TYPES = { RAID_DATA = "RAID_DATA" }, SendMessage = function(_, _, p) sent = p end }
+C_Timer.NewTimer = function() return { Cancel = function() end } end
+GuildOS.db.raidTracker.sessions = { [100] = { instanceID = 2912, difficulty = 16, startTime = 100, players = {} } }
+RT:BroadcastRaidData()
+check(sent.sessions[100].difficulty == 16, "the raid sync carries the difficulty")
+GuildOS.db.raidTracker.sessions = { [100] = { instanceID = 2912, startTime = 100, players = {} } }
+RT:HandleIncoming(sent)
+check(GuildOS.db.raidTracker.sessions[100].difficulty == 16, "a session that lacked it takes it from the sync")
+
+-- Normal and Heroic the same night are two lockouts, never merged into one session.
+GuildOS.db.raidTracker.sessions = {
+  [1000] = { instanceID = 2912, difficulty = 14, startTime = 1000, endTime = 2000, players = { ["Ana-Azralon"] = true } },
+  [2100] = { instanceID = 2912, difficulty = 15, startTime = 2100, endTime = 3000, players = { ["Ana-Azralon"] = true } },
+}
+RT:MergeDuplicateSessions()
+local s = GuildOS.db.raidTracker.sessions
+check(s[1000] and s[2100] and s[1000].difficulty == 14 and s[2100].difficulty == 15,
+  "a raid's Normal and Heroic stay two sessions")
 
 -- ── WoW: Forever keeps its rule ─────────────────────────────────────
 RT = load(false)

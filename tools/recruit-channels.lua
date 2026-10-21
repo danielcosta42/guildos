@@ -35,6 +35,9 @@ local function load(game, locale, joined, channels)
   if game == "forever" then
     function GetBuildInfo() return "1.60.1", "70170", "", 16001 end
     WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 99
+  elseif game == "retail" then
+    function GetBuildInfo() return "12.1.5", "70448", "", 120105 end
+    WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 5, 1, 1
   else
     function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
     WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
@@ -137,6 +140,19 @@ for loc, want in pairs(FOREVER) do
   R = load("forever", loc, {}, {})
   check(same(R:PresetChannels(), want), "Forever " .. loc .. ": " .. table.concat(want, ", "))
 end
+-- Retail names them as Forever does: ChatChannels of 12.1.5.70448 in every language has Trade (2) and
+-- LookingForGroup (26), no GuildRecruitment (25), and the same Spanish and Russian LookingForGroup
+-- (issue #177). The game lists Trade (Services) too; it is not a preset.
+local RETAIL = {
+  enUS = { "Trade", "LookingForGroup" }, deDE = { "Handel", "SucheNachGruppe" }, esES = { "Comercio", "BuscarGrupo" },
+  esMX = { "Comercio", "BuscarGrupo" }, frFR = { "Commerce", "RechercheDeGroupe" }, ptBR = { "Comércio", "ProcurandoGrupo" },
+  ruRU = { "Торговля", "Поиск спутников" }, koKR = { "거래", "파티찾기" }, zhCN = { "交易", "寻求组队" }, zhTW = { "交易", "尋求組隊" },
+}
+for loc, want in pairs(RETAIL) do
+  R = load("retail", loc, {}, {})
+  check(GuildOS.Client.isRetail and same(R:PresetChannels(), want), "retail " .. loc .. ": " .. table.concat(want, ", "))
+end
+WOW_PROJECT_MAINLINE = nil
 R, sent = load("forever", "esES", { BuscarGrupo = 3 }, { "BuscandoGrupo" })
 R:DoSendRecruitmentMessage()
 check(nums(sent) == "3", "Forever in Spanish: Anniversary's BuscandoGrupo posts to BuscarGrupo")

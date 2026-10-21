@@ -328,6 +328,17 @@ end)
 slash("trial Bob")
 slash("note Bob steady tank")
 check(trials[#trials] == "Bob-Firemaw" and notes[#notes] == "Bob-Firemaw", "Anniversary: /gos trial and /gos note keep their keys")
+-- A guildmate on another realm of the guild, as on retail's connected realms (issue #177).
+local savedRoster = ROSTER
+ROSTER = { "Bob-Gallywix" }
+slash("trial Bob")
+check(trials[#trials] == "Bob-Gallywix", "/gos trial finds a guildmate on a connected realm by the roster's key")
+realmless(function(how)
+  ROSTER = { "First Last" }
+  slash("trial First Last")
+  check(trials[#trials] == "First Last", how .. ": /gos trial takes a two-word name whole")
+end)
+ROSTER = savedRoster
 
 -- ── 10. Pug inspector ───────────────────────────────────────────────────
 local PI = GuildOS.PugInspector
@@ -406,8 +417,8 @@ realmless(function(how)
   check(ps.members[2].key == "Bob-Suffix" and ps.exportedBy == "Ana", how .. ": the export's rows carry the suffix, its author does not")
   check(peerAward("Bob") == "Bob" and rollKey("Bob") == "Bob", how .. ": loot keys stay bare")
   slash("trial Bob")
-  check(trials[#trials] == "Bob" and GuildOS:GetMemberRecord("Bob-Suffix").key == "Bob",
-        how .. ": /gos trial and the member record stay bare")
+  check(trials[#trials] == "Bob-Suffix" and GuildOS:GetMemberRecord("Bob-Suffix").key == "Bob",
+        how .. ": /gos trial follows the roster's key, as /gos note does (issue #177); the member record stays bare")
 end)
 
 -- ── 14. No member key is built by hand any more ─────────────────────────

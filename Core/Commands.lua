@@ -387,11 +387,11 @@ local function handleCommand(msg)
             GuildOS:Print(L["Not available on this client."])
         end
     elseif msg:match("^trial") then
-        local rest = msg:gsub("^trial%s*", "")
-        local name = rest:match("^(%S+)")
-        if name and GuildOS.TrialTracker then
-            local key = GuildOS:GetPlayerKey(name)
-            GuildOS.TrialTracker:AddTrial(key)
+        -- The whole rest is the name: two words on Forever. It lands on the roster's key, so a
+        -- guildmate on a connected realm is found as the roster menu finds them (issue #177).
+        local name = strtrim((msg:gsub("^trial%s*", "")))
+        if name ~= "" and GuildOS.TrialTracker then
+            GuildOS.TrialTracker:AddTrial(GuildOS:RosterKey(name) or GuildOS:GetPlayerKey(name))
         else
             GuildOS:Print(L["Usage: /guildos trial <PlayerName>"])
         end
@@ -453,7 +453,7 @@ local function handleCommand(msg)
             end
         end
     elseif msg:match("^export") then
-        -- /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]
+        -- /guildos export <roster|attendance|loot|readiness|standings|equity> [csv|tsv|discord]
         local rest = strtrim((msg:gsub("^export%s*", "")))
         local dataset, fmt = rest:match("^(%S*)%s*(%S*)$")
         dataset = (dataset and dataset ~= "") and dataset or "roster"
@@ -464,8 +464,10 @@ local function handleCommand(msg)
         end
         if text then
             GuildOS:ShowExportPopup(string.format("%s (%s)", title or L["Export"], fmt), text)
-        else
-            GuildOS:Print(L["Usage: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"])
+        elseif title == "absent" then
+            GuildOS:Print(L["Not available on this client."])
+        elseif GuildOS.Exporter then
+            GuildOS:Print(string.format(L["Usage: /guildos export <%s> [csv|tsv|discord]"], GuildOS.Exporter:Names()))
         end
     elseif msg:match("^wish") then
         if not GuildOS:IsOfficer() then

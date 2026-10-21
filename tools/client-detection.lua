@@ -134,7 +134,7 @@ for _, c in ipairs(GuildOS.Client.classes) do RETAIL_CLASSES[c] = true end
 for _, c in ipairs({ "WARRIOR", "DRUID", "DEATHKNIGHT", "DEMONHUNTER", "MONK", "EVOKER" }) do
   check(RETAIL_CLASSES[c], c .. " is a retail class")
 end
-check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,8,11,12,16", "Midnight's enchant slots")
+check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,7,8,11,12,16,17", "Midnight's enchant slots")
 client(setmetatable({ project = 1, mainline = 1 }, { __index = FOREVER }))
 check(GuildOS.Client.isRetail == false and GuildOS.Client.game == "FOREVER" and GuildOS.Client.maxLevel == 60,
   "a 1.60 client answering the mainline id is Forever")

@@ -287,7 +287,7 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
             -- Synced enrichment (read-only)
             local ilvl = mem and mem.avgIlvl or 0
             row.ilvlFS:SetText(ilvl > 0 and tostring(ilvl) or "—")
-            local spec = mem and mem.spec and mem.spec.tree
+            local spec = mem and GuildOS.SpecChecker and GuildOS.SpecChecker:SpecName(mem.spec)
             row.specFS:SetText((spec and spec ~= "") and spec or "—")
 
             -- Note

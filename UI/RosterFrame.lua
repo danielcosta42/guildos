@@ -185,7 +185,7 @@ local COLUMNS = {
           local m = GuildOS.db.members[d.key]
           local spec = m and m.spec
           d.specPoints = spec and type(spec.points) == "table" and #spec.points > 0 and table.concat(spec.points, "/") or nil
-          return spec and textOr(spec.tree) or nil
+          return spec and textOr(GuildOS.SpecChecker:SpecName(spec)) or nil
       end,
       text = function(v, d)
           return d.specPoints and (v .. " " .. d.specPoints) or v, C.silver

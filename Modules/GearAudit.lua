@@ -9,12 +9,23 @@ GuildOS.GearAudit = GearAudit
 
 -- Inventory slots where a missing enchant is a real problem, this game's (GuildOS.Client.enchantSlots):
 -- TBC's 1 Head, 3 Shoulder, 5 Chest, 7 Legs, 8 Feet, 9 Wrist, 10 Hands, 15 Back, 16 Main Hand; on
--- retail Midnight's 1 Head, 3 Shoulder, 5 Chest, 8 Feet, 11 and 12 the rings, 16 Main Hand.
--- UI/MemberDetail.lua's ENCHANT_WARNING_SLOTS reads the same list.
+-- retail Midnight's 1 Head, 3 Shoulder, 5 Chest, 7 Legs, 8 Feet, 11 and 12 the rings, 16 Main Hand
+-- and 17 Off Hand when it holds a weapon.
 local ENCHANTABLE_SLOTS = GuildOS.Client.enchantSlots
+local OFF_HAND = 17
+local IS_ENCHANTABLE = {}
+for _, slot in ipairs(ENCHANTABLE_SLOTS) do IS_ENCHANTABLE[slot] = true end
 
 function GearAudit:GetEnchantableSlots()
     return ENCHANTABLE_SLOTS
+end
+
+-- Whether an equipped `item` in `slotId` is one that should carry an enchant: the slot is this
+-- game's, and an off hand is a weapon, never a shield or a frill (issue #177). The member sheet's
+-- "Not enchanted" asks the same.
+function GearAudit:NeedsEnchant(slotId, item)
+    if not (IS_ENCHANTABLE[slotId] and item and item.name and item.name ~= "") then return false end
+    return slotId ~= OFF_HAND or GuildOS.Compat.IsWeapon(item.id) == true
 end
 
 -- The names of the slots in `gear` that hold an item with no enchant. An empty slot is not flagged.
@@ -23,7 +34,7 @@ function GearAudit:MissingEnchants(gear)
     local missing = {}
     for _, slotId in ipairs(ENCHANTABLE_SLOTS) do
         local item = gear[slotId]
-        if item and item.name and item.name ~= "" and not (item.enchantId and item.enchantId > 0) then
+        if self:NeedsEnchant(slotId, item) and not (item.enchantId and item.enchantId > 0) then
             missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
         end
     end
