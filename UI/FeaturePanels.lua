@@ -41,7 +41,7 @@ local function RefreshCoreSignupFrame()
     local playerName  = GuildOS.Compat.PlayerName() or ""
     local _, pClass   = UnitClass("player")
     local playerKey   = GuildOS:GetPlayerKey(playerName, GetRealmName())
-    local playerRole  = CM:RoleFor(pClass, f.pickedRole)   -- the one picked, else the class's own (#94)
+    local playerRole  = CM:RoleFor(pClass, f.pickedRole, playerKey)   -- the one picked, else my own (#94, #184)
     local rc          = CM.ROLE_COLORS[playerRole] or { r=1, g=1, b=1 }
 
     -- The role buttons: the picked one lit in its colour
