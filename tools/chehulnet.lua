@@ -50,10 +50,18 @@ local function client(game, before)
     for piece in (s .. sep):gmatch("(.-)" .. sep:gsub("%p", "%%%0")) do out[#out + 1] = piece end
     return (table.unpack or unpack)(out)
   end
+  GetBuildInfo, WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = nil, nil, nil
   if game == "forever" then
     function UnitName() return "Chehul" end
     function UnitFullName() return "Chehul", "Costa" end
     C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
+  elseif game == "retail" then
+    -- The realm in UnitFullName's second slot, and a surname flag that must not be believed.
+    function UnitName() return "Chehul" end
+    function UnitFullName() return "Chehul", "Azralon" end
+    C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
+    function GetBuildInfo() return "12.1.5", "70448", "", 120105 end
+    WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
   else
     function UnitName() return "Chehul" end
     function UnitFullName() return "Chehul", "Nightslayer" end
@@ -104,5 +112,19 @@ on.ChehulNet(hello("Chehul-Nightslayer"), "Chehul-Nightslayer", "GUILD")
 check(CN.peers["Chehul"] == nil and #whispers == 0, "Anniversary: its own HELLO, by its one name, is still its own")
 on.ChehulAlert("ALERT|a1|realm notice", "Chehul-Nightslayer")
 check(#shown == 1, "and the operator's notice still shows")
+
+-- ── Retail (v9, issue #184) ─────────────────────────────────────────────
+CN, on, whispers = client("retail")
+check(CN.version >= 9, "the library is v9 or later")
+on.ChehulNet(hello("Chehul-Azralon"), "Chehul-Azralon", "GUILD")
+check(CN.peers["Chehul"] == nil and CN.peers["Chehul Azralon"] == nil and #whispers == 0,
+  "retail: its own HELLO is its own, the realm never read as a surname")
+on.ChehulNet(hello("Ana-Azralon"), "Ana-Azralon", "GUILD")
+check(CN.peers["Ana"] ~= nil and #whispers == 1, "a guildmate's is answered")
+local v8 = function()
+  _G.ChehulNet = { version = 8, ALERT_SENDERS = { ["chehul costa"] = true }, peers = {}, providers = {}, alertSeen = {} }
+end
+CN = client("retail", v8)
+check(CN.version == 9, "a v9 loaded after a v8 (an addon not yet updated) takes over")
 
 print(string.format("chehulnet: %d checks passed", checks))
