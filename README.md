@@ -8,7 +8,7 @@ Guild OS replaces the default guild frame with a modern, feature-rich management
 
 > **Clients:** WoW TBC Anniversary (Interface 20506), WoW: Forever (16001) and Retail, Midnight (120105) — one build
 > serves all three. On Retail nothing hands loot out (retail is personal loot), but the loot history records what each
-> player received from a boss; guildos.me takes retail guilds too.
+> guildmate received from a boss; guildos.me takes retail guilds too.
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 

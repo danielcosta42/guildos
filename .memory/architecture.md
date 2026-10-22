@@ -231,7 +231,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions },
   attendancePenalties = { LATE, LEFT_EARLY, NO_CONSUMES },  -- the guild's weights (CoreManager, #55); cores override
   lootHistory      = [{ itemLink, itemName, quality, player, playerKey, count, timestamp, raid, instanceID,
-                        fromML }],  -- newest first, 500; retail's personal loot adds itemId, encounterID, no fromML (#183)
+                        fromML }],  -- newest first, 500; retail's personal loot adds itemId, encounterID, no fromML,
+                                    -- and its player is the whole Name-Realm, the key (#183)
   lootMaster       = { rollDuration, autoAnnounce, wishlistOnlyMode, awardHistory },
   guildWishlists   = { [lowerName] = { name, class, wishlist=[] } },
   lootPrios        = { [itemId] = [{ name, class, order }] },

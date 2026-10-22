@@ -219,14 +219,21 @@ Retail loot is personal: each player gets their own item and nobody hands anythi
 history (guildos-web specs/056, "Addon → Loot pessoal").
 
 - **Recorded:** `LootTracker:OnEncounterLoot`, from `ENCOUNTER_LOOT_RECEIVED` (encounterID, itemID, itemLink,
-  quantity, playerName, className), registered on retail only. Every player's item, not only mine, into the same
-  `lootHistory` an ML award goes to and in its shape: `itemLink`, `itemName`, `quality`, `player` (as the event names
-  them), `playerKey` (`Name-Realm` through `GetPlayerKey`: a name with no realm is on this character's realm, a realm
-  is normalized), `count`, `timestamp`, `raid` (the session's name), `instanceID`, plus `itemId` and `encounterID`; no
-  `fromML`.
-- **Only in a tracked raid session** whose instance this client is standing in (Normal, Heroic, Mythic; §5). A
-  session waiting out its grace outside, a dungeon run in the meantime, Raid Finder: nothing. The Loot Tracker
-  switched off in Settings: nothing.
+  quantity, playerName, className), registered on retail only. Every guildmate's item, not only mine, into the same
+  `lootHistory` an ML award goes to and in its shape: `itemLink`, `itemName`, `quality`, `player` and `playerKey`
+  (both the whole `Name-Realm` through `GetPlayerKey`: a name with no realm is on this character's realm, a realm is
+  normalized; a bare `player` would name another person to an alt on a connected realm, and `/gos equity` groups by
+  it), `count`, `timestamp`, `raid` (the session's name), `instanceID`, plus `itemId` and `encounterID`; no `fromML`.
+- **Only the guild:** the player has to be on the guild roster by that key (`Compat.FindGuildRosterIndex`, then
+  `KeyOfRosterName`). A guildmate on a connected realm counts; a pickup raid's strangers and a namesake from another
+  realm do not. On Forever a record needs this guild's officer's award; here any member's client would otherwise send
+  strangers' items to the guild's loot page, `/gos equity` and the digest.
+- **Only in a tracked raid session**, not waiting out its grace, whose instance and difficulty this client is standing
+  in (Normal, Heroic, Mythic; §5). The grace, a dungeon run in the meantime, Raid Finder (of the same raid too, which
+  has the same instance id): nothing. The Loot Tracker switched off in Settings: nothing.
+- **The grace on retail:** in another instance, or in the session's raid on another difficulty, the session takes no
+  snapshot and opens or closes no boss (`RaidTracker:ElsewhereInGrace`): Raid Finder's group is not the guild's
+  Heroic. The open world is the run-back and keeps its snapshots; Forever and Anniversary are as before.
 - **Secret values:** any field the client keeps secret skips the whole item, never half a record.
 - **What is kept:** Rare and up, the loot master's default threshold. An item not cached yet is read from its link
   (retail colours it `|cnIQn:` and names it in brackets), else taken as epic, as an ML award is.
@@ -241,6 +248,6 @@ history (guildos-web specs/056, "Addon → Loot pessoal").
 - **Forever and Anniversary:** the event is never registered and `OnEncounterLoot` returns at once; the ML path is
   unchanged.
 - **Read in game:** whether Midnight fires the event for every player's loot (the boss banner does show it) and
-  whether any field arrives secret.
+  whether any field arrives secret. A guildmate the roster has not loaded yet is not recorded.
 - **Tests:** `tools/retail-loot.lua`; `tools/retail-site.lua` (the row in the payload), `tools/retail-absent.lua`,
   `tools/client-detection.lua`, `tools/window-shell.lua` and `tools/probe.lua` follow.

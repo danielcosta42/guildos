@@ -358,6 +358,7 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:StartSession(instanceID)` | Creates currentRaid table, starts 5-min snapshot ticker |
 | `RaidTracker:IsGuildRaid(session)` | Returns true if ≥50% players are in guild DB/roster |
 | `RaidTracker:EndSession()` | Finalizes session, discards if <10min, saves |
+| `RaidTracker:ElsewhereInGrace()` | Retail only: while the session waits out its grace, whether this client stands in another instance or the session's raid on another difficulty (Raid Finder after the guild's Heroic, a dungeon). The open world (the run-back) is not elsewhere. `TakeSnapshot`, `OnEncounterStart` and `OnEncounterEnd` return at once when it is (issue #183) |
 | `RaidTracker:TakeSnapshot(reason)` | Captures raid roster with consume check into snapshots |
 | `RaidTracker:CheckPlayerConsumes(unit)` | Checks flask/elixir/food buffs via ConsumableChecker |
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
@@ -413,7 +414,7 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `LootTracker:Initialize()` | Ensures lootHistory DB table exists; on retail registers `ENCOUNTER_LOOT_RECEIVED` (issue #183) |
 | `LootTracker:RecordMLAward(entry)` | Prepends entry to lootHistory, caps at 500 |
-| `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one player's personal loot, every player's and not only mine, recorded in an ML award's shape (`player` as the event names them, `playerKey` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session is the instance this client stands in and the Loot Tracker is on. Skipped whole when any field is secret, under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
+| `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one guildmate's personal loot, every guildmate's and not only mine, recorded in an ML award's shape (`player` and `playerKey` both the whole `Name-Realm` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session, not in its grace, is the instance and the difficulty this client stands in and the Loot Tracker is on. Skipped whole when any field is secret, the player is not on the guild roster by that key (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`: a connected-realm guildmate counts, a namesake from elsewhere does not), under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
 | `LootTracker:GetHistory(limit)` | Returns first N entries from lootHistory |
 | `LootTracker:GetPlayerLoot(playerKey, limit)` | Filters lootHistory by player key |
 | `LootTracker:GetLootCount(playerKey)` | Counts items received by player |

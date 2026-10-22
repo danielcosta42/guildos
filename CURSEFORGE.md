@@ -96,7 +96,7 @@ The same window on retail, made for how retail works:
 - **All thirteen classes** in the roster, raid composition, recruitment and the recruit beacon.
 - **guildos.me and its Discord raid signups**, with the raid's difficulty: the roster and the nights go out, the
   planned roster comes back for *Invite all*, connected-realm guildmates included.
-- **Loot history from personal loot.** What each player received from every boss of a tracked raid, on the roster,
+- **Loot history from personal loot.** What each guildmate received from every boss of a tracked raid, on the roster,
   the Loot tab with its equity, the exports and guildos.me.
 
 Not on retail: handing loot out (retail is personal loot, so there is no master loot, DKP, soft reserves or
@@ -193,7 +193,7 @@ Yes. It is built for it: surnames, no realms, the new professions and the client
 **Does Guild OS work on Retail?**
 Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools and guildos.me.
 Handing loot out (master loot, DKP, soft reserves, wishlists) is Forever's only, because retail is personal loot; the
-loot history records what each player received.
+loot history records what each guildmate received.
 
 **Is it free?**
 Yes, and open source under the MIT license.

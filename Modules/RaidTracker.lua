@@ -436,8 +436,21 @@ function RaidTracker:EndSession()
     end)
 end
 
+-- Retail: whether this client, while the session waits out its grace, stands in another instance or in
+-- the session's raid on another difficulty (Raid Finder queued after the guild's Heroic, a dungeon). That
+-- group and those bosses are not the session's (issue #183). The open world is the run-back, still the
+-- raid's group, as before; Forever and Anniversary never ask.
+function RaidTracker:ElsewhereInGrace()
+    local session = self.currentRaid
+    if not (isRetail() and self.endTimer and session) then return false end
+    local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceType == "none" then return false end
+    return instanceID ~= session.instanceID
+        or (session.difficulty ~= nil and tonumber(difficultyID) ~= session.difficulty)
+end
+
 function RaidTracker:TakeSnapshot(reason)
-    if not self.currentRaid then return end
+    if not self.currentRaid or self:ElsewhereInGrace() then return end
 
     local members = {}
     local numMembers = GetNumGroupMembers()
@@ -541,7 +554,7 @@ local function readableName(name)
 end
 
 function RaidTracker:OnEncounterStart(encounterID, encounterName)
-    if not self.currentRaid then return end
+    if not self.currentRaid or self:ElsewhereInGrace() then return end
     encounterName = readableName(encounterName)
     self:TakeSnapshot("encounter_start")
     -- Guard: ignore duplicate ENCOUNTER_START for the same fight (can fire twice
@@ -561,7 +574,7 @@ function RaidTracker:OnEncounterStart(encounterID, encounterName)
 end
 
 function RaidTracker:OnEncounterEnd(encounterID, encounterName, success)
-    if not self.currentRaid then return end
+    if not self.currentRaid or self:ElsewhereInGrace() then return end
     encounterName = readableName(encounterName)
     self:TakeSnapshot("encounter_end")
 

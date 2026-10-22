@@ -907,10 +907,20 @@ SoftRes and Wishlist stay absent and their verbs keep saying so; LootTracker and
 roster's LOOT column, the dashboard's loot card, the digest's loot line, the member sheet's loot section, `/gos equity`,
 the `loot` and `equity` exports and the loot list in the companion payload, in today's row format. The Settings loot
 category stays out: everything in it hands loot out.
-- `LootTracker:OnEncounterLoot` records `ENCOUNTER_LOOT_RECEIVED`, registered on retail only: every player's item, not
-  only mine, in the shape an ML award has (`player` as the event names them, `playerKey` by their own realm through
-  `GetPlayerKey`), plus `itemId` and `encounterID`, and no `fromML`. Only inside a tracked raid session whose instance
-  this client stands in: a session waiting out its grace outside is not where a boss dropped it.
+- `LootTracker:OnEncounterLoot` records `ENCOUNTER_LOOT_RECEIVED`, registered on retail only: every guildmate's item,
+  not only mine, in the shape an ML award has, plus `itemId` and `encounterID`, and no `fromML`. `player` and
+  `playerKey` are both the whole `Name-Realm` by the player's own realm (`GetPlayerKey`): the event names someone on
+  this character's realm without one, so a bare name meant another person to an alt on a connected realm, and
+  `/gos equity`, which groups by `player`, merged namesakes and split one person. Forever's grouping is untouched.
+- Only inside a tracked raid session, not in its grace, whose instance and difficulty this client stands in. Raid
+  Finder of the same raid queued in the 20 minutes is the same instance id with strangers' items. In that grace, on
+  retail, another instance or the session's raid on another difficulty takes no snapshot and opens or closes no boss
+  for the session (`RaidTracker:ElsewhereInGrace`); the open world is the run-back and keeps its snapshots, and
+  Forever and Anniversary are as before.
+- Guild members only (the coordinator's decision): the player has to be on the guild roster by that key
+  (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`), so a guildmate on a connected realm counts and a namesake
+  from another realm does not. On Forever a record needs an award from this guild's officer; on retail any member's
+  client would otherwise send a pickup raid's strangers to the guild's loot page, `/gos equity` and the digest.
 - A field the client keeps secret skips the whole item; a record without it would be half a record. Under Rare (the
   loot master's default threshold) is not kept; an item not cached yet is read from its link (`|cnIQn:`, the name in
   brackets), else taken as epic, as an ML award is. The same boss, item and player within five minutes is a re-fire,
@@ -922,3 +932,4 @@ category stays out: everything in it hands loot out.
   site keeps one row per player, item and second). An ML award has always behaved the same way.
 - (−) Whether Midnight fires `ENCOUNTER_LOOT_RECEIVED` for every player's loot, as the boss banner shows it, and whether
   any of its fields arrive secret, is read in game.
+- (−) A guildmate the roster has not loaded yet, or who left the guild before the loot arrived, is not recorded.
