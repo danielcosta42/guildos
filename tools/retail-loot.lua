@@ -4,11 +4,12 @@
 --
 -- Retail has no loot to hand out: each player gets their own item. What comes back is the history.
 -- LootTracker records ENCOUNTER_LOOT_RECEIVED, every guildmate's item and not only mine, inside a
--- tracked raid session and only there (never in its grace, never on another difficulty), into the
+-- tracked raid session and only there (never elsewhere in its grace, never on another difficulty), into the
 -- same history a master-loot award goes to: the player named and keyed by their own realm, a stranger
 -- from a pickup raid left out, a field the client keeps secret skipping the whole record, a re-fire of
 -- the same drop recorded once, and nothing under the loot master's default threshold (Rare). During
--- the grace, Raid Finder of the same raid adds no snapshot and no boss to the guild's session. The
+-- the grace, Raid Finder of the same raid adds no snapshot and no boss to the guild's session, and a
+-- grace that runs out there, or in another raid, ends the session without a snapshot of that group. The
 -- readers come back with it: equity, the loot and equity exports, `/gos equity`, the digest. Forever
 -- records nothing from that event, and its master-loot path and its grace are what they were.
 --
@@ -253,10 +254,11 @@ check(snapshots() == before and encounters() == bosses and not heroic.players["S
   "nor its group, nor its bosses")
 check(openPull.id == BOSS + 5 and openPull.success == nil and openPull.endTime == nil,
   "and a Raid Finder kill does not close the Heroic's open pull")
--- Each condition on its own. In the grace, even standing where the session is:
+-- In the grace but standing in the session's raid on its difficulty (the zone change missed): the
+-- session's, as its snapshots and bosses are.
 inside("raid", 15, 2912)
-fire("ENCOUNTER_LOOT_RECEIVED", BOSS + 3, 250001, HELM, 1, "Chehul", "DRUID")
-check(#history == 10, "a session waiting out its grace records nothing")
+fire("ENCOUNTER_LOOT_RECEIVED", BOSS + 6, 250001, HELM, 1, "Chehul", "DRUID")
+check(#history == 11 and history[1].encounterID == BOSS + 6, "in its grace, the session's own raid still records")
 -- The open world is the run-back: the group is still the raid's.
 inside("none", 0, 0)
 before = snapshots()
@@ -268,24 +270,24 @@ RT:CheckZone()
 check(RT.currentRaid == heroic and RT.endTimer == nil, "back in: the Heroic session resumes")
 INSTANCE[3] = 17
 fire("ENCOUNTER_LOOT_RECEIVED", BOSS + 3, 250001, HELM, 1, "Chehul", "DRUID")
-check(#history == 10, "another difficulty of the same raid is not the session's, grace or no grace")
+check(#history == 11, "another difficulty of the same raid is not the session's, grace or no grace")
 INSTANCE[3] = 15
 GuildOS.db.settings.modules.lootTracker = false
 fire("ENCOUNTER_LOOT_RECEIVED", BOSS + 3, 250001, HELM, 1, "Chehul", "DRUID")
-check(#history == 10, "the Loot Tracker switched off in Settings records nothing")
+check(#history == 11, "the Loot Tracker switched off in Settings records nothing")
 GuildOS.db.settings.modules.lootTracker = nil
 before = snapshots()
 realSnapshot(RT, "roster_change")
 check(snapshots() == before + 1 and heroic.players["Stranger-Nemesis"], "in the raid, the group is the session's")
 
 -- ── 8. The readers ────────────────────────────────────────────────────
-check(LT:GetLootCount("Ana-Gallywix") == 3 and #LT:GetPlayerLoot("Chehul-TolBarad") == 3,
+check(LT:GetLootCount("Ana-Gallywix") == 3 and #LT:GetPlayerLoot("Chehul-TolBarad") == 4,
   "a member's loot, by key")
 local report, total = GuildOS.LootEquity:GetReport()
 local rows = {}
 for _, r in ipairs(report) do rows[r.name] = r end
-check(total == 10 and rows["Ana-Gallywix"].total == 3 and rows["Ana-Azralon"].total == 1
-  and rows["Chehul-TolBarad"].total == 3, "equity counts each player, two namesakes apart")
+check(total == 11 and rows["Ana-Gallywix"].total == 3 and rows["Ana-Azralon"].total == 1
+  and rows["Chehul-TolBarad"].total == 4, "equity counts each player, two namesakes apart")
 check(rows["Ana-Gallywix"].epics == 3 and rows["Ana-Azralon"].epics == 0, "and their epics")
 
 dofile(ADDON .. "/Modules/ExportImport.lua")
@@ -299,7 +301,7 @@ check(Ex:Build("equity", "csv"):find("Ana-Gallywix", 1, true), "and the equity e
 dofile(ADDON .. "/Modules/Digest.lua")
 GuildOS.Digest:Initialize()
 local digest = table.concat(GuildOS.Digest:Build(NOW - 3600), "\n")
-check(digest:find("10 item(s) looted", 1, true), "the digest says how many items were looted: " .. digest)
+check(digest:find("11 item(s) looted", 1, true), "the digest says how many items were looted: " .. digest)
 
 -- The verbs: equity answers; the loot suite still says it is not here.
 dofile(ADDON .. "/Core/Commands.lua")
@@ -339,6 +341,52 @@ check(rows["Ana-TolBarad"].total == 1 and rows["Ana-Gallywix"].total == 4 and ro
 function GetRealmName() return "Tol Barad" end
 function GetNormalizedRealmName() return "TolBarad" end
 
+-- ── 8c. A grace that runs out where the session is not ───────────────
+RT.TakeSnapshot = realSnapshot
+local fireTimer
+C_Timer.NewTimer = function(_, fn) fireTimer = fn; return { Cancel = function() end } end
+local GUILD = { { "Chehul" }, { "Ana", "Gallywix" }, { "Fulano", "Azralon" } }
+local PUG = { { "Chehul" }, { "Stranger", "Nemesis" }, { "Other", "Nemesis" } }
+local function setGroup(g) for i = 1, math.max(#GROUP, #g) do GROUP[i] = g[i] end end
+local function lastSnap(session) return session.snapshots[#session.snapshots] end
+local function guildNight()
+  setGroup(GUILD)
+  inside("raid", 15, 2912)
+  RT:CheckZone()
+  local night = RT.currentRaid
+  NOW = NOW + 3600
+  inside("none", 0, 0)
+  RT:CheckZone()
+  return night
+end
+-- The night in progress ends on the run-back, in the open world: its last snapshot is taken, as before.
+local night = RT.currentRaid
+inside("none", 0, 0)
+RT:CheckZone()
+NOW = NOW + 1200
+fireTimer()
+check(not RT.trackingActive and lastSnap(night).reason == "session_end", "a grace ending in the open world snapshots the group")
+-- Out of the guild's Heroic into Raid Finder of the same raid, and the twenty minutes run out there.
+night = guildNight()
+inside("raid", 17, 2912)
+RT:CheckZone()
+setGroup(PUG)
+NOW = NOW + 1200
+fireTimer()
+check(not RT.trackingActive and lastSnap(night).reason ~= "session_end" and not night.players["Stranger-Nemesis"],
+  "a grace running out in Raid Finder takes no snapshot of Raid Finder's group")
+-- Out of the guild's Heroic into another raid with a pickup group, inside the grace.
+night = guildNight()
+setGroup(PUG)
+INSTANCE[1] = "The Dreamrift"
+inside("raid", 14, 2939)
+RT:CheckZone()
+check(RT.currentRaid ~= night and RT.currentRaid.instanceID == 2939, "another raid ends the old session and starts its own")
+check(lastSnap(night).reason ~= "session_end" and not night.players["Stranger-Nemesis"],
+  "and the old session's last snapshot is not the pickup group")
+INSTANCE[1] = "The Voidspire"
+setGroup(GUILD)
+
 -- ── 9. Forever: the event records nothing, the master-loot path is unchanged ─
 NOW = 1791000000
 load(false)
@@ -353,6 +401,21 @@ RT:CheckZone()
 local fsnaps = #RT.currentRaid.snapshots
 realSnapshot(RT, "roster_change")
 check(RT.endTimer ~= nil and #RT.currentRaid.snapshots == fsnaps + 1, "Forever still snapshots a group in the grace, anywhere")
+do
+  local fire2
+  local realTimer = C_Timer.NewTimer
+  C_Timer.NewTimer = function(_, fn) fire2 = fn; return { Cancel = function() end } end
+  RT.endTimer = nil
+  RT:CheckZone()
+  local fnight = RT.currentRaid
+  RT.TakeSnapshot = realSnapshot
+  NOW = NOW + 1800
+  fire2()
+  check(not RT.trackingActive and fnight.snapshots[#fnight.snapshots].reason == "session_end",
+    "and a Forever grace running out in another instance ends with its snapshot, as before")
+  RT.TakeSnapshot = function() end
+  C_Timer.NewTimer = realTimer
+end
 inside("raid", 15, 2912)
 RT:CheckZone()
 LT:OnEncounterLoot(BOSS, 250001, HELM, 1, "Chehul", "DRUID")

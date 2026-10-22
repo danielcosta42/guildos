@@ -912,11 +912,14 @@ category stays out: everything in it hands loot out.
   `playerKey` are both the whole `Name-Realm` by the player's own realm (`GetPlayerKey`): the event names someone on
   this character's realm without one, so a bare name meant another person to an alt on a connected realm, and
   `/gos equity`, which groups by `player`, merged namesakes and split one person. Forever's grouping is untouched.
-- Only inside a tracked raid session, not in its grace, whose instance and difficulty this client stands in. Raid
-  Finder of the same raid queued in the 20 minutes is the same instance id with strangers' items. In that grace, on
-  retail, another instance or the session's raid on another difficulty takes no snapshot and opens or closes no boss
-  for the session (`RaidTracker:ElsewhereInGrace`); the open world is the run-back and keeps its snapshots, and
-  Forever and Anniversary are as before.
+- Only inside a tracked raid session whose instance and difficulty this client stands in. Raid Finder of the same
+  raid queued in the 20 minutes is the same instance id with strangers' items. In that grace, on retail, another
+  instance or the session's raid on another difficulty takes no snapshot, opens or closes no boss and records no loot
+  for the session (`RaidTracker:ElsewhereInGrace`); back in the session's raid on its difficulty all three count, as
+  when the zone change was missed. When the grace runs out, or another raid begins, while the client is elsewhere,
+  the session ends with no `session_end` snapshot (`EndSession(away)`, asked before the timer is cleared): the Raid
+  Finder or pickup group there would otherwise join the session's players and give every guildmate the late-leave
+  penalty. The open world is the run-back and keeps its snapshots, and Forever and Anniversary are as before.
 - Guild members only (the coordinator's decision): the player has to be on the guild roster by that key
   (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`), so a guildmate on a connected realm counts and a namesake
   from another realm does not. On Forever a record needs an award from this guild's officer; on retail any member's

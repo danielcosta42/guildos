@@ -249,10 +249,12 @@ function RaidTracker:CheckZone()
                 self:TakeSnapshot("raid_resumed")
                 return
             else
-                -- Different raid: end the old session immediately then start new
+                -- Different raid: end the old session immediately then start new. Asked before the
+                -- timer is cleared: the group here is not the old session's (issue #183).
+                local away = self:ElsewhereInGrace()
                 self.endTimer:Cancel()
                 self.endTimer = nil
-                self:EndSession()
+                self:EndSession(away)
             end
         elseif isRetail() and self.trackingActive and not same then
             self:EndSession()
@@ -270,8 +272,10 @@ function RaidTracker:CheckZone()
             -- This covers wipes (zone to graveyard + run back) and short DCs.
             GuildOS:Print(L["|cffFFAA00Left raid zone — session ends in 20 min if you don't return.|r"])
             self.endTimer = C_Timer.NewTimer(1200, function()
+                -- Where the twenty minutes ran out, asked while the grace still stands (issue #183).
+                local away = RaidTracker:ElsewhereInGrace()
                 self.endTimer = nil
-                RaidTracker:EndSession()
+                RaidTracker:EndSession(away)
             end)
         end
     end
@@ -387,13 +391,15 @@ function RaidTracker:IsGuildRaid(session)
     return (guildCount / total) >= 0.5
 end
 
-function RaidTracker:EndSession()
+-- End the current session and save it. `away` (retail, ElsewhereInGrace when the grace ran out or another
+-- raid began): the group this client stands in is not the session's, so no last snapshot of it (issue #183).
+function RaidTracker:EndSession(away)
     if not self.currentRaid then return end
     -- An officer's pick is its session's: the next raid is asked afresh (issue #99).
     self.gracePick = nil
     if GuildOS.db.raidTracker then GuildOS.db.raidTracker.corePick = nil end
 
-    self:TakeSnapshot("session_end")
+    if not away then self:TakeSnapshot("session_end") end
     local endTime = GetServerTime()
     self.currentRaid.endTime = endTime
     self.currentRaid.duration = endTime - (self.currentRaid.startTime or endTime)

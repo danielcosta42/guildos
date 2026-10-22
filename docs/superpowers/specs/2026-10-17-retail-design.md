@@ -228,12 +228,14 @@ history (guildos-web specs/056, "Addon → Loot pessoal").
   `KeyOfRosterName`). A guildmate on a connected realm counts; a pickup raid's strangers and a namesake from another
   realm do not. On Forever a record needs this guild's officer's award; here any member's client would otherwise send
   strangers' items to the guild's loot page, `/gos equity` and the digest.
-- **Only in a tracked raid session**, not waiting out its grace, whose instance and difficulty this client is standing
-  in (Normal, Heroic, Mythic; §5). The grace, a dungeon run in the meantime, Raid Finder (of the same raid too, which
-  has the same instance id): nothing. The Loot Tracker switched off in Settings: nothing.
+- **Only in a tracked raid session** whose instance and difficulty this client is standing in (Normal, Heroic,
+  Mythic; §5), in its grace too when that is where the client stands. A dungeon run in the meantime, Raid Finder (of
+  the same raid too, which has the same instance id): nothing. The Loot Tracker switched off in Settings: nothing.
 - **The grace on retail:** in another instance, or in the session's raid on another difficulty, the session takes no
-  snapshot and opens or closes no boss (`RaidTracker:ElsewhereInGrace`): Raid Finder's group is not the guild's
-  Heroic. The open world is the run-back and keeps its snapshots; Forever and Anniversary are as before.
+  snapshot, opens or closes no boss and records no loot (`RaidTracker:ElsewhereInGrace`): Raid Finder's group is not
+  the guild's Heroic. A grace that runs out there, or another raid begun inside it, ends the session without its
+  `session_end` snapshot (`EndSession(away)`), so that group never joins its players nor makes every guildmate leave
+  late. The open world is the run-back and keeps its snapshots; Forever and Anniversary are as before.
 - **Secret values:** any field the client keeps secret skips the whole item, never half a record.
 - **What is kept:** Rare and up, the loot master's default threshold. An item not cached yet is read from its link
   (retail colours it `|cnIQn:` and names it in brackets), else taken as epic, as an ML award is.

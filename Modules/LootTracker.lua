@@ -45,12 +45,12 @@ function LootTracker:RecordMLAward(entry)
 end
 
 -- The raid session personal loot belongs to: a tracked one this client is standing in, on its
--- difficulty. A session waiting out its grace is nowhere a boss drops its loot: Raid Finder of the
--- same raid, queued during the 20 minutes, is the same instance id with strangers' items (issue #183).
+-- difficulty, as its snapshots and bosses are (RaidTracker:ElsewhereInGrace). Raid Finder of the same
+-- raid, queued during the grace, is the same instance id with strangers' items (issue #183).
 local function sessionHere()
     local RT = GuildOS.RaidTracker
     local session = RT and RT.trackingActive and RT.currentRaid
-    if not session or RT.endTimer then return nil end
+    if not session or RT:ElsewhereInGrace() then return nil end
     local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
     if instanceType ~= "raid" or instanceID ~= session.instanceID then return nil end
     if session.difficulty and tonumber(difficultyID) ~= session.difficulty then return nil end
