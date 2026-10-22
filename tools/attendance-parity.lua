@@ -21,6 +21,14 @@
 -- the Forever fixture instead, the same nights moved into raids nobody listed:
 --
 --   luajit -e 'ADDON="." FOREVER=true' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-forever.json
+--
+-- Retail counts by difficulty, and Normal and Heroic in one week are two lockouts (issue #182).
+-- With RETAIL set it prints the retail fixture: the same nights as the site's parity test moves
+-- them (apps/web/test/parity.test.ts), each night TBC counted at a difficulty retail counts, one per
+-- place, and Karazhan, the 10, at none. Same lockouts, same chances, so it checks that the answers
+-- are TBC's to the digit, and then the retail rules on nights of their own:
+--
+--   luajit -e 'ADDON="." RETAIL=true' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-retail.json
 ADDON = ADDON or "."
 package.path = ADDON .. "/?.lua;" .. package.path
 
@@ -185,6 +193,59 @@ if FOREVER then
   } })
 end
 
+-- Retail (issue #182): the nights the site's parity test moves to N/H/M, with the answers it expects,
+-- which are the TBC ones; then the retail rules on nights of their own, as the site's test has them.
+if RETAIL then
+  local function fail(what)
+    io.stderr:write("FAIL: " .. what .. "\n")
+    os.exit(1)
+  end
+  local function percents(sessions)
+    GuildOS.db = { raidTracker = { sessions = sessions, attendance = {}, deletedSessions = {} } }
+    RT:RebuildAttendanceFromSessions()
+    local out = {}
+    for _, s in pairs(sessions) do
+      for key in pairs(s.players) do out[key] = RT:GetAttendance25ManPercent(key) end
+    end
+    return out
+  end
+  local tbc = percents(SESSIONS)
+  GuildOS.Client = { isRetail = true }
+  -- The site's DIFFICULTY_OF: one difficulty per place, so a week's recordings of a place stay one lockout.
+  local DIFFICULTY_OF = { [565] = 14, [544] = 15, [548] = 16, [550] = 14, [534] = 15, [564] = 16, [580] = 14 }
+  for _, s in pairs(SESSIONS) do s.difficulty = RT.RAID_25MAN[s.instanceID] and DIFFICULTY_OF[s.instanceID] or nil end
+  for key, p in pairs(percents(SESSIONS)) do
+    if p ~= tbc[key] then fail(("%s is %d%% at N/H/M and %d%% under TBC's rule"):format(key, p, tbc[key])) end
+  end
+
+  -- Nights of retail's own, at one place in one week (T + 7 weeks is a Tuesday).
+  local W = T + 7 * WEEK
+  local function nights(list)
+    local out = {}
+    for _, n in ipairs(list) do
+      local members, players = {}, {}
+      for _, key in ipairs(n[3]) do members[key], players[key] = who(key, true, true), true end
+      out[n[2]] = { instanceID = n[4] or 2912, difficulty = n[1], groupTag = "", startTime = n[2],
+                    players = players, snapshots = { snap(n[2], members), snap(n[2] + HOUR, members) } }
+    end
+    return out
+  end
+  local p = percents(nights({ { 14, W, { "Ana", "Bia" } }, { 15, W + 2 * DAY, { "Ana" } } }))
+  if not (RT:GetTotal25ManSessions() == 2 and p.Ana == 100 and p.Bia == 50) then
+    fail("Normal and Heroic of one raid in one week are two lockouts, and Bia missed the Heroic")
+  end
+  p = percents(nights({ { 14, W, { "Ana", "Bia" } }, { 14, W + 2 * DAY, { "Ana" } } }))
+  if not (RT:GetTotal25ManSessions() == 1 and p.Ana == 100 and p.Bia == 90) then
+    fail("the same two nights at one difficulty are one lockout, which Bia left early")
+  end
+  percents(nights({ { 15, W, { "Ana" }, 1592 } }))
+  if RT:GetTotal25ManSessions() ~= 1 then fail("an old raid at N/H/M counts") end
+  for _, d in ipairs({ 17, false }) do
+    percents(nights({ { d or nil, W, { "Ana" } } }))
+    if RT:GetTotal25ManSessions() ~= 0 then fail("a night at " .. tostring(d) .. " does not count") end
+  end
+end
+
 GuildOS.db = { raidTracker = { sessions = SESSIONS, attendance = {}, deletedSessions = {} } }
 RT:RebuildAttendanceFromSessions()
 
@@ -231,10 +292,11 @@ for i, id in ipairs(ids) do
       '{"key":%s,"snapshots":%d,"first":%d,"last":%d,"chits":%d}',
       q(key), n, first or s.startTime, last or s.startTime, hits)
   end
-  -- `size` only when the night has one, as CompanionExport sends it (issue #90).
+  -- `size` and `difficulty` only when the night has one, as CompanionExport sends them (issues #90, #182).
   out[#out + 1] = string.format(
-    '{"instanceID":%d,%s"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',
-    s.instanceID, s.size and string.format('"size":%d,', s.size) or "", q(s.groupTag),
+    '{"instanceID":%d,%s%s"groupTag":%s,"guildRaid":%s,"startTime":%d,"players":[%s]}%s',
+    s.instanceID, s.size and string.format('"size":%d,', s.size) or "",
+    s.difficulty and string.format('"difficulty":%d,', s.difficulty) or "", q(s.groupTag),
     (s.isGuildRaid == false) and "false" or "true",
     s.startTime, table.concat(players, ","), (i < #ids) and "," or "")
 end

@@ -58,8 +58,11 @@ for _, d in ipairs({ { 14, true, "Normal" }, { 15, true, "Heroic" }, { 16, true,
                      { 17, false, "Raid Finder" }, { 33, false, "timewalking" }, { 3, false, "legacy 10" } }) do
   check(RT:IsTracked(2912, d[1]) == d[2], d[3] .. (d[2] and " is" or " is not") .. " tracked on retail")
 end
-check(RT:Is25Man(2912, 30) and RT:Is25Man(2912, 20) and RT:Is25Man(2912, 12),
+check(RT:Is25Man(2912, 30, 15) and RT:Is25Man(2912, 20, 16) and RT:Is25Man(2912, 12, 14),
   "every tracked retail raid is progression, whatever its size")
+-- A night with no difficulty (relayed by an addon before issue #177) or on one nobody tracks does
+-- not count, as on guildos.me (issue #182).
+check(not RT:Is25Man(2912, 20) and not RT:Is25Man(2912, 20, 17), "a retail night counts by its difficulty")
 check(RT:ProgLabel("No 25-man raids recorded for group: ") == "No N/H/M raids recorded for group: ",
   "the progression label names the difficulties")
 check(RT:ProgLabel("(%d/%d raids, 25-man)") == "(%d/%d raids, N/H/M)", "in every label")

@@ -68,7 +68,10 @@ function GetRaidRosterInfo(i)
 end
 local INVITED, MOVED = {}, {}
 C_PartyInfo = { InviteUnit = function(name) INVITED[#INVITED + 1] = name end }
-function SetRaidSubgroup(i, group) MOVED[#MOVED + 1] = UnitName("raid" .. i) .. "->" .. group end
+function SetRaidSubgroup(i, group)
+  MOVED[#MOVED + 1] = UnitName("raid" .. i) .. "->" .. group
+  GROUP[i][3] = group
+end
 
 -- The guild roster as retail writes it: every name with its realm, normalized.
 local ROSTER = {
@@ -80,6 +83,7 @@ local ROSTER = {
   { "Novato-Gallywix", "Trial",        5, 88, 0, 0, 0, 0, false, 0, "HUNTER" },
   { "Dup-Azralon",     "Raider",       3, 90, 0, 0, 0, 0, false, 0, "ROGUE" },
   { "Dup-Gallywix",    "Raider",       3, 90, 0, 0, 0, 0, false, 0, "ROGUE" },
+  { "Zed-TolBarad",    "Raider",       3, 90, 0, 0, 0, 0, true,  0, "MAGE" },
 }
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i)
@@ -115,12 +119,21 @@ GuildOS.SlotIDs = { { id = 1 }, { id = 9 }, { id = 11 }, { id = 16 }, { id = 17 
 GuildOS.SlotNames = { [1] = "Head", [9] = "Wrist", [11] = "Finger", [16] = "Main Hand", [17] = "Off Hand" }
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 local LD = LibStub("LibDeflate")
-local softres = io.open(ADDON .. "/Modules/SoftResSystem.lua"):read("*a")
-GuildOS.JsonDecode = assert(loadstring(assert(softres:match("(local function JsonDecode.-\nend\n)"),
-  "no JsonDecode in SoftResSystem.lua") .. "\nreturn JsonDecode"))()
-for _, m in ipairs({ "GearAudit", "RaidTracker", "CoreManager", "CompanionExport", "CompanionImport" }) do
-  dofile(ADDON .. "/Modules/" .. m .. ".lua")
+-- The modules this needs, loaded as the TOC loads them on retail: in its order, SoftResSystem with
+-- them, which returns at once there. What a retail client lacks, this lacks too: the JSON decoder
+-- once lived in SoftResSystem, and every roster from the site read as damaged on retail.
+local WANT = { SoftResSystem = true, GearAudit = true, RaidTracker = true, CoreManager = true,
+               CompanionExport = true, CompanionImport = true }
+for line in io.lines(ADDON .. "/GuildOS.toc") do
+  local m = line:match("^Modules[\\/](%w+)%.lua")
+  if m and WANT[m] then
+    dofile(ADDON .. "/Modules/" .. m .. ".lua")
+    WANT[m] = nil
+  end
 end
+check(next(WANT) == nil, "every module this needs is in the TOC")
+check(GuildOS.SoftRes == nil and type(GuildOS.JsonDecode) == "function",
+  "SoftRes is absent on retail, and the JSON decoder is not")
 GuildOS.SyncService = { On = function() end, Publish = function() end }
 local Companion, Import, RT, CM = GuildOS.Companion, GuildOS.CompanionImport, GuildOS.RaidTracker, GuildOS.CoreManager
 check(Companion and Import, "the companion's modules are on retail")
@@ -242,8 +255,9 @@ local MEMBERS = {
   { key = "Chehul-TolBarad", name = "Chehul", class = "DRUID", spec = "Restoration", slot = "HEALER", group = 1 },
   { key = "Fulano-Azralon", name = "Fulano", class = "WARRIOR", spec = "Protection", slot = "TANK", group = 2 },
   { key = "Ana-Azralon", name = "Ana", class = "PRIEST", spec = "Holy", slot = "HEALER", group = 1 },
+  { key = "Zed-TolBarad", name = "Zed", class = "MAGE", spec = "Frost", slot = "RANGED", group = 3 },
 }
-local SIGNUPS = { signup(MEMBERS[1]), signup(MEMBERS[2]), signup(MEMBERS[3]),
+local SIGNUPS = { signup(MEMBERS[1]), signup(MEMBERS[2]), signup(MEMBERS[3]), signup(MEMBERS[4]),
   { name = "Novato", class = "", spec = "", slot = "RANGED", status = "yes", invite = false, why = "unknown" },
   { name = "Dup", class = "", spec = "", slot = "RANGED", status = "yes", invite = false, why = "unknown" } }
 local ROSTER_H = { fmt = "GOSROST1", v = 3, raidId = "raid-h", title = "Voidspire H", startsAt = NIGHT,
@@ -255,13 +269,23 @@ check(PN("Chehul-TolBarad") == "Chehul" and PN("Fulano-Azralon") == "Fulano-Azra
   "PlainName keeps the realm only when it is not this character's")
 check(PN("Chehul") == "Chehul", "a bare name is a bare name")
 
-check(Import:Load(wire("GOSROST1:", ROSTER_H)) == 3, "the v3 roster loads")
+check(Import:Load(wire("GOSROST1:", ROSTER_H)) == 4, "the v3 roster loads, decoded with SoftRes absent")
 local r = Import:Current()
 check(r.difficulty == 15 and r.instanceKey == "midnight-voidspire", "the roster keeps its difficulty")
-local names = {}
-for _, m in ipairs(r.members) do names[#names + 1] = m.name end
-check(table.concat(names, ",") == "Chehul,Fulano-Azralon,Ana-Azralon",
-  "names come from the keys: plain on this realm, with the realm on another")
+local function namesOf(list)
+  local t = {}
+  for _, m in ipairs(list) do t[#t + 1] = m.name end
+  return table.concat(t, ",")
+end
+check(namesOf(r.members) == "Chehul-TolBarad,Fulano-Azralon,Ana-Azralon,Zed-TolBarad",
+  "a name is the site's Name-Realm key, whoever imports it")
+-- Officers on two connected realms keep the same names, so the calendar's list of answers is one
+-- list on every client and a fresher inbox does not republish it for nothing.
+REALM = "Azralon"
+local there = Import:Parse(wire("GOSROST1:", ROSTER_H))
+check(namesOf(there.members) == namesOf(r.members) and namesOf(there.signups) == namesOf(r.signups),
+  "an officer on another connected realm reads the same names")
+REALM = "Tol Barad"
 
 local rescued = Import:Rescued(r)
 check(rescued.Novato == "Novato-Gallywix", "a name the site never confirmed is found on the guild roster, with its realm")
@@ -270,12 +294,32 @@ check(rescued.Dup == nil, "a name two connected realms have is nobody to guess b
 local invited, skipped, err = Import:InviteAll()
 check(not err, "the invite runs: " .. tostring(err))
 table.sort(INVITED)
-check(table.concat(INVITED, ",") == "Ana-Azralon,Novato-Gallywix",
-  "invited: Ana from Azralon (the Ana here is Gallywix's) and the rescued Novato, by name and realm")
-check(invited == 2 and skipped == 2, "me and Fulano, already here from another realm, are not invited again")
+check(table.concat(INVITED, ",") == "Ana-Azralon,Novato-Gallywix,Zed",
+  "invited: Ana from Azralon (the Ana here is Gallywix's) and the rescued Novato by name and realm, Zed from my realm plain")
+check(invited == 3 and skipped == 2, "me and Fulano, already here from another realm, are not invited again")
 
+-- Zed joined from my realm, in the wrong group: the raid roster says "Zed", the site "Zed-TolBarad".
+GROUP[4] = { "Zed", nil, 1 }
 local moved = Import:OrganizeGroups()
-check(moved == 1 and MOVED[1] == "Fulano->2", "Fulano from Azralon moves to the group the site planned; the other Ana does not")
+table.sort(MOVED)
+check(moved == 2 and table.concat(MOVED, ",") == "Fulano->2,Zed->3",
+  "Fulano from Azralon and Zed from my realm move to the groups the site planned; the other Ana does not")
+-- A raid member the client keeps secret is passed over, never read.
+local SECRET = setmetatable({}, { __len = function() error("a secret value was read") end,
+  __index = function() error("a secret value was read") end })
+function issecretvalue(v) return v == SECRET end
+GROUP[5], MOVED = { SECRET, nil, 4 }, {}
+local ok, again = pcall(Import.OrganizeGroups, Import)
+check(ok and again == 0, "a secret name in the raid does not raise: " .. tostring(again))
+GROUP[4], GROUP[5], issecretvalue = nil, nil, nil
+
+-- A leader alone, on the roster, does not invite themselves.
+local group = GROUP
+GROUP, INVITED = {}, {}
+invited, skipped = Import:InviteAll()
+for _, name in ipairs(INVITED) do check(name ~= "Chehul" and name ~= "Chehul-TolBarad", "the leader invited themselves") end
+check(invited == 4 and skipped == 1, "alone: everyone but me is invited")
+GROUP = group
 
 -- ── 4. Which planned raid this night is ───────────────────────────────
 INVITED = {}
@@ -321,6 +365,7 @@ none, whose = CM:ImportFromSite(cores("Gallywix"))
 check(none == nil and whose == "Jardim Escola (Gallywix)", "a namesake guild on another realm is not this one")
 HOME = "Tol Barad"
 check(CM:ImportFromSite(cores("TolBarad")), "the site's normalized realm meets a home realm the client spells with a space")
+check(CM:ImportFromSite(cores("Tol Barad")), "and a realm that arrives with a space is normalized too")
 HOME = "Azralon"
 check(CM:ImportFromSite(cores(nil)), "a package that names no realm is taken by its guild")
 

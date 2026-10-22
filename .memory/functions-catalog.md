@@ -352,6 +352,7 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
 | `RaidTracker:GetWeekNum(timestamp)` | Floor division from TBC Tuesday epoch |
+| `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
 | `RaidTracker:Initialize()` | DB setup, migration, registers zone/roster/encounter events |
 | `RaidTracker:CheckZone()` | Manages session start/resume/end based on GetInstanceInfo |
 | `RaidTracker:StartSession(instanceID)` | Creates currentRaid table, starts 5-min snapshot ticker |
@@ -362,7 +363,7 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
 | `RaidTracker:OnEncounterEnd(encounterID, encounterName, success)` | Updates encounter end/success |
 | `RaidTracker:GetCurrentGroup()` | Returns currentGroupTag string |
-| `RaidTracker:Is25Man(instanceID, size)` / `IsTracked(instanceID)` / `ProgLabel(text)` | Whether a night counts for progression: by id on Anniversary (`RAID_25MAN`), by the session's `size` (20 and up) on WoW: Forever; whether a raid is tracked (RAID_INSTANCES on Anniversary, every raid on Forever); a "25-man" label as the game says it ("20+" on Forever, "N/H/M" with no size word on retail) (ADR-0024, issue #90, #177) |
+| `RaidTracker:Is25Man(instanceID, size, difficulty)` / `IsTracked(instanceID)` / `ProgLabel(text)` | Whether a night counts for progression: by id on Anniversary (`RAID_25MAN`), by the session's `size` (20 and up) on WoW: Forever, by its `difficulty` (14, 15, 16; none does not count) on retail (issue #182); whether a raid is tracked (RAID_INSTANCES on Anniversary, every raid on Forever); a "25-man" label as the game says it ("20+" on Forever, "N/H/M" with no size word on retail) (ADR-0024, issue #90, #177) |
 | `RaidTracker:DifficultyLabel(session)` | Retail: a session's difficulty as "N", "H" or "M" (`RETAIL_TRACKED`); nil elsewhere. The raids panel shows it on each group, and a raid's difficulties are separate groups and never merge into one session; the raid sync carries `difficulty` (issue #177) |
 | `RaidTracker:SetGroupTag(name)` | Sets group tag in memory and DB, and re-reads the loot rules (`LootMaster:LoadCfg`) (issue #99) |
 | `RaidTracker:DetectCore(group, reason)` | After each snapshot inside the raid, until settled: the core whose roster covers `group` (`CoreManager:CoreForGroup`) becomes the active core and the session's, named in chat when it first appears or changes; `encounter_start` settles it; never in the grace period or on `session_end` (ADR-0023, issue #99) |
@@ -876,8 +877,9 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 |---|---|
 | `CompanionExport` payload v10 | Retail's: `game = "RETAIL"`, `region` (`Compat.Region`), `guildKey` and `realm` from `GuildOS:GuildRealm()` (never the exporter's), each session's `difficulty` (14, 15, 16). Forever and Anniversary send v9's bytes under `v = 10`. The enchant summary asks `GearAudit:NeedsEnchant` |
 | `Companion:Refused()` | Why this client publishes nothing, or nil: on retail, a region the site has no world for. `BuildPayload`/`Build` return it as their error; the Web panel shows it |
-| `CompanionImport:Parse(raw)` | GOSROST v3: the roster's `difficulty`. On retail each member's and signup's `name` comes from its `Name-Realm` key, cut by `PlainName` (plain only on this character's realm) |
+| `CompanionImport:Parse(raw)` | GOSROST v3: the roster's `difficulty`. On retail each member's and signup's `name` is its `Name-Realm` key, the same on every officer's client (the calendar's list of answers matches across connected realms); it is cut by `PlainName` only to invite |
 | `CompanionImport:RaidFor(instanceKey, when, difficulty)` | The planned raid covering the night; when the night and the planned raid both have a difficulty they must agree (retail) |
-| `CompanionImport:Rescued(roster)` / `InviteAll()` | `Rescued` maps a signup's name to the name to invite (with the realm on retail; a name two connected realms have is not rescued). On retail the invite knows who is already in the group by name and realm |
+| `CompanionImport:Rescued(roster)` / `InviteAll()` / `OrganizeGroups()` | `Rescued` maps a signup's name to the name the guildmate is kept by (`Name-Realm` on retail; a name two connected realms have is not rescued). On retail the invite and the groups know who is in the raid by name and realm; a raid member the client keeps secret is passed over |
 | `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
-| `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm |
+| `GuildOS.JsonDecode(s)` | The addon's one JSON decoder, in Core/Utils.lua so every client has it: SoftRes (absent on retail) reads Gargul's JSON with it, the companion import the site's |
+| `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the groups, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm, with the modules loaded in TOC order (SoftRes absent) |

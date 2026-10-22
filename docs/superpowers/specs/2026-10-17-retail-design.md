@@ -112,7 +112,8 @@ All of it as `GuildOS.Client` fields or `Compat` functions, never scattered.
     raid's Normal and Heroic the same night stay two sessions: back in on another difficulty during the grace
     starts a new session, keeping the core an officer picked, and the merge never joins two difficulties (issue
     #177). A session relayed by an
-    officer on an older addon has no difficulty and shows apart until that officer updates.
+    officer on an older addon has no difficulty and shows apart until that officer updates. *Since issue #182 the
+    attendance lockout carries the difficulty too, and a night with none does not count (§11).*
   - An old raid run on N/H/M counts as attendance. Accepted for now.
   - `ENCOUNTER_START/END` check `encounterName` with `Compat.IsSecret` before concatenating, on every client; the
     session's difficulty name too (issue #177).
@@ -200,7 +201,17 @@ guildos.me takes retail guilds (guildos-web#191, specs/056; off there until its 
   this character's realm. Who is already in the group is known by name and realm. A name the site never confirmed
   is rescued from the guild roster only when one connected realm has it.
 - **GOSCORE:** a package is this guild's when its `realm` is the guild's home realm, normalized.
-- **Tests:** `tools/retail-site.lua`; `tools/retail-absent.lua` and `tools/client-detection.lua` follow.
+- **Names:** what the addon keeps from the site is the `Name-Realm` key, the same on every officer's client, so the
+  calendar's list of answers matches across connected realms; it is cut to the plain name only to invite. A raid
+  member the client keeps secret is passed over by the groups. The JSON decoder is Core/Utils.lua's: it lived in
+  SoftRes, absent on retail, and every roster from the site read as damaged there.
+- **Attendance as the site counts it:** the lockout is core, instance, week and difficulty
+  (`RaidTracker:LockoutKey`, the site's `lockoutKey`): Normal and Heroic in one week are two lockouts. A retail night
+  counts by its difficulty; one with none (an addon before #177) does not. `tools/attendance-parity.lua` with
+  `RETAIL` prints the site's retail fixture (the TBC nights at N/H/M, Karazhan at none) and checks that its answers
+  are TBC's, then Normal and Heroic in one week, an old raid, Raid Finder and a night with no difficulty.
+- **Tests:** `tools/retail-site.lua` (the modules loaded in TOC order, SoftRes absent); `tools/retail-absent.lua`,
+  `tools/client-detection.lua`, `tools/retail-raids.lua` and `tools/attendance-parity.lua` follow.
 
 ## 12. Personal loot (issue #183)
 

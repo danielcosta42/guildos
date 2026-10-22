@@ -71,8 +71,9 @@ for _, m in ipairs(ABSENT) do
 end
 check(GuildOS:StartModule({ "LootMaster" }) == false and next(GuildOS.State.startup.failed) == nil,
   "an absent module is skipped at start-up, not failed")
--- The site is retail's since issue #182; the loot history and its equity since issue #183.
-GuildOS.JsonDecode = function() end
+-- The site is retail's since issue #182, and so is the JSON decoder its import reads with; the loot
+-- history and its equity since issue #183.
+check(type(GuildOS.JsonDecode) == "function", "the JSON decoder is on retail, with SoftRes absent")
 for _, m in ipairs({ { "CompanionExport", "Companion", 182 }, { "CompanionImport", "CompanionImport", 182 },
                      { "LootTracker", "LootTracker", 183 }, { "LootEquity", "LootEquity", 183 } }) do
   dofile(ADDON .. "/Modules/" .. m[1] .. ".lua")

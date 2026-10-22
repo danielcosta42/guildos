@@ -504,6 +504,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 size       = 0,
                 name       = sd.name or L["Unknown"],
                 difficulty = diff,
+                difficultyID = tonumber(sd.difficulty),   -- what counts on retail (issue #182)
                 groupTag   = sgTag,
                 weekNum    = weekNum,
                 weekStart  = wStart,
@@ -538,7 +539,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     for _, groupKey in ipairs(groupOrder) do
         local g          = groups[groupKey]
         local isGroupExp = _groupExpanded[groupKey]
-        local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size)
+        local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size, g.difficultyID)
         local gRowH      = 26
 
         -- Count unique players

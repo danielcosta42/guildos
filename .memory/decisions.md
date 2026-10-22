@@ -873,6 +873,7 @@ retail guild yet.
 - (−) A retail session relayed by an officer on an addon from before issue #177 carries no difficulty, so it is not
   merged with the same night's session that has one: the raids panel shows that night twice until the officer
   updates and the next sync fills the difficulty in. Attendance is not affected: its lockouts ignore difficulty.
+  *(Changed by issue #182: the lockout carries the difficulty, and a night with none does not count; see below.)*
 
 **Amendment (issue #182).** The site leg is on: guildos.me takes retail guilds (guildos-web specs/056, behind its
 `RETAIL=1`). CompanionExport and CompanionImport load on retail, and with them the Web tab, `/gos web`, `/gos roster`,
@@ -887,7 +888,16 @@ character from the Armory. Only the loot verbs remain in `RETAIL_ABSENT`.
 - On the way back the key is the name: a GOSROST v3 member is invited and grouped by its `Name-Realm` key, cut to the
   plain name only on this character's realm; who is already in the group is known by name and realm; a name the site
   never confirmed is rescued only when one connected realm has it. `RaidFor` needs the same difficulty when the
-  planned raid and the night both have one. A GOSCORE is this guild's by its home realm, normalized.
+  planned raid and the night both have one. A GOSCORE is this guild's by its home realm, normalized. The names kept
+  from the site are the `Name-Realm` keys, the same on every officer's client, so the calendar's list of answers
+  matches across connected realms; a raid member the client keeps secret is passed over. The JSON decoder moved
+  from SoftRes, absent on retail, to Core/Utils.lua.
+- Attendance as the site counts it (its `lockoutKey`, `apps/web/test/parity.test.ts`): a lockout is core, instance,
+  week and, on retail, difficulty (`RaidTracker:LockoutKey`), so Normal and Heroic in one week are two lockouts, as in
+  the game. A retail night counts for progression by its difficulty (`Is25Man(instanceID, size, difficulty)`): one
+  with none, relayed by an addon before issue #177, does not, nor is it the same lockout as that night's recording
+  with one. TBC and Forever keys are unchanged. `tools/attendance-parity.lua` with `RETAIL` prints the site's retail
+  fixture and checks its answers.
 - (−) A region the site has no world for (China, a test client) cannot publish. `GetCurrentRegion()`'s answer on the
   maintainer's client is read in game.
 
