@@ -502,6 +502,18 @@ function Compat.AverageItemLevel()
     return math.floor(equipped)
 end
 
+-- An inspected unit's equipped average as the game computes it, on retail (issue #184): the item
+-- level of a guildmate who has no Guild OS to send theirs. Needs INSPECT_READY first. Nil
+-- elsewhere, before the inspect has the gear, or when the client keeps it secret.
+function Compat.InspectItemLevel(unit)
+    if not (GuildOS.Client.isRetail and C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel) then return nil end
+    local level = C_PaperDollInfo.GetInspectItemLevel(unit)
+    if Compat.IsSecret(level) then return nil end
+    level = tonumber(level)
+    if not level or level <= 0 then return nil end
+    return math.floor(level)
+end
+
 -- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
 function Compat.GetSpellInfo(spell)
     if C_Spell and C_Spell.GetSpellInfo then

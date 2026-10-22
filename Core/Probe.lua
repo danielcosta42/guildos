@@ -87,6 +87,9 @@ Probe.APIS = {
     "C_SpecializationInfo.GetSpecialization", "C_SpecializationInfo.GetSpecializationInfo",
     "C_SpecializationInfo.GetInspectSpecialization", "GetSpecializationInfoForSpecID",
     "C_Item.GetDetailedItemLevelInfo", "GetAverageItemLevel", "C_Item.GetItemInfoInstant", "GetNormalizedRealmName",
+    -- Retail (issue #184): an inspected guildmate's average item level, and the character sheet's ratings.
+    "C_PaperDollInfo.GetInspectItemLevel", "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste",
+    "GetMasteryEffect", "GetCombatRatingBonus", "GetVersatilityBonus",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -110,7 +113,7 @@ Probe.EVENTS = {
     "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
     "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",
-    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_TALENT_UPDATE",
+    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
     "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UPDATE_MOUSEOVER_UNIT", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
