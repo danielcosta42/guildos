@@ -102,6 +102,7 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 |---|---|
 | `GuildOS:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing); on retail the normalized one first, spaces and hyphens removed (ADR-0026) |
 | `GuildOS:KeyOfRosterName(full)` | The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's; through `GetPlayerKey`, so normalized on retail. The core picker and the retail officer check use it (ADR-0026) |
+| `GuildOS:GuildRealm()` | The realm a guild is from: on retail its home realm (`GetGuildInfo`'s fourth answer, else this character's), normalized; elsewhere `GetRealmName()`. The guild's database key and the companion payload's `guildKey`/`realm` (ADR-0026, issue #182) |
 | `GuildOS:RealmBound()` | Whether a realm is part of who somebody is: true on Anniversary and retail (connected realms), false on Forever; true with no `GuildOS.Client`. The one test the key rules and the start-up rekeys read (ADR-0026) |
 | `GuildOS:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) Retail keeps the caller's realm, normalized (ADR-0026). |
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
@@ -137,6 +138,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.SpecOf(unit)` | Retail: a unit's spec as `specID, name, role` (`"TANK"`, `"HEALER"`, `"DAMAGER"`), localized by the client; `"player"` read directly, any other unit from its inspect. Nil before there is one or when the client keeps it secret (ADR-0026) |
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
 | `Compat.IsWeapon(item)` | Whether an item id is a weapon (`GetItemInfoInstant`'s class 2), no cache needed; nil when the client cannot say. A retail off hand needs an enchant only as one (issue #177) |
+| `Compat.Region()` | The client's region as guildos.me writes it, from `GetCurrentRegion()`: `"us"`, `"kr"`, `"eu"` or `"tw"`; nil (and the number) for any other answer (issue #182) |
 | `Compat.SpecName(id)` | A retail spec's name in the reader's language from its id (`GetSpecializationInfoForSpecID`); nil when the client cannot say or keeps it secret (issue #177) |
 | `Compat.AverageItemLevel()` | Retail: my equipped average as the game shows it, floored; nil elsewhere, where the addon averages its own slots (ADR-0026) |
 | `Compat.InspectItemLevel(unit)` | Retail: an inspected unit's equipped average (`C_PaperDollInfo.GetInspectItemLevel`), floored, after INSPECT_READY; nil elsewhere, before the inspect has the gear, or when secret (issue #184) |
@@ -357,17 +359,19 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
 | `RaidTracker:GetWeekNum(timestamp)` | Floor division from TBC Tuesday epoch |
+| `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
 | `RaidTracker:Initialize()` | DB setup, migration, registers zone/roster/encounter events |
 | `RaidTracker:CheckZone()` | Manages session start/resume/end based on GetInstanceInfo |
 | `RaidTracker:StartSession(instanceID)` | Creates currentRaid table, starts 5-min snapshot ticker |
 | `RaidTracker:IsGuildRaid(session)` | Returns true if ≥50% players are in guild DB/roster |
-| `RaidTracker:EndSession()` | Finalizes session, discards if <10min, saves |
+| `RaidTracker:EndSession(away)` | Finalizes session, discards if <10min, saves. `away` (retail: `ElsewhereInGrace()`, asked before the grace timer is cleared, when the grace runs out or another raid begins) skips the `session_end` snapshot of a group that is not the session's (issue #183) |
+| `RaidTracker:ElsewhereInGrace()` | Retail only: while the session waits out its grace, whether this client stands in another instance or the session's raid on another difficulty (Raid Finder after the guild's Heroic, a dungeon). The open world (the run-back) is not elsewhere. `TakeSnapshot`, `OnEncounterStart` and `OnEncounterEnd` return at once when it is, `EndSession` takes no last snapshot, and `LootTracker` records no loot (issue #183) |
 | `RaidTracker:TakeSnapshot(reason)` | Captures raid roster with consume check into snapshots |
 | `RaidTracker:CheckPlayerConsumes(unit)` | Checks flask/elixir/food buffs via ConsumableChecker |
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
 | `RaidTracker:OnEncounterEnd(encounterID, encounterName, success)` | Updates encounter end/success |
 | `RaidTracker:GetCurrentGroup()` | Returns currentGroupTag string |
-| `RaidTracker:Is25Man(instanceID, size)` / `IsTracked(instanceID)` / `ProgLabel(text)` | Whether a night counts for progression: by id on Anniversary (`RAID_25MAN`), by the session's `size` (20 and up) on WoW: Forever; whether a raid is tracked (RAID_INSTANCES on Anniversary, every raid on Forever); a "25-man" label as the game says it ("20+" on Forever, "N/H/M" with no size word on retail) (ADR-0024, issue #90, #177) |
+| `RaidTracker:Is25Man(instanceID, size, difficulty)` / `IsTracked(instanceID)` / `ProgLabel(text)` | Whether a night counts for progression: by id on Anniversary (`RAID_25MAN`), by the session's `size` (20 and up) on WoW: Forever, by its `difficulty` (14, 15, 16; none does not count) on retail (issue #182); whether a raid is tracked (RAID_INSTANCES on Anniversary, every raid on Forever); a "25-man" label as the game says it ("20+" on Forever, "N/H/M" with no size word on retail) (ADR-0024, issue #90, #177) |
 | `RaidTracker:DifficultyLabel(session)` | Retail: a session's difficulty as "N", "H" or "M" (`RETAIL_TRACKED`); nil elsewhere. The raids panel shows it on each group, and a raid's difficulties are separate groups and never merge into one session; the raid sync carries `difficulty` (issue #177) |
 | `RaidTracker:SetGroupTag(name)` | Sets group tag in memory and DB, and re-reads the loot rules (`LootMaster:LoadCfg`) (issue #99) |
 | `RaidTracker:DetectCore(group, reason)` | After each snapshot inside the raid, until settled: the core whose roster covers `group` (`CoreManager:CoreForGroup`) becomes the active core and the session's, named in chat when it first appears or changes; `encounter_start` settles it; never in the grace period or on `session_end` (ADR-0023, issue #99) |
@@ -416,8 +420,9 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `LootTracker:Initialize()` | Ensures lootHistory DB table exists |
+| `LootTracker:Initialize()` | Ensures lootHistory DB table exists; on retail registers `ENCOUNTER_LOOT_RECEIVED` (issue #183) |
 | `LootTracker:RecordMLAward(entry)` | Prepends entry to lootHistory, caps at 500 |
+| `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one guildmate's personal loot, every guildmate's and not only mine, recorded in an ML award's shape (`player` and `playerKey` both the whole `Name-Realm` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session is the instance and the difficulty this client stands in, in its grace too (as its snapshots are) and the Loot Tracker is on. Skipped whole when any field is secret, the player is not on the guild roster by that key (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`: a connected-realm guildmate counts, a namesake from elsewhere does not), under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
 | `LootTracker:GetHistory(limit)` | Returns first N entries from lootHistory |
 | `LootTracker:GetPlayerLoot(playerKey, limit)` | Filters lootHistory by player key |
 | `LootTracker:GetLootCount(playerKey)` | Counts items received by player |
@@ -886,3 +891,16 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `GuildOS:MemberStatCells(stats)` | UI/MemberDetail.lua: the member sheet's cells as `{ label, text, color }`, the client's list (retail: HP, the primary stat the member sent, STA, the four ratings in percent); a value that is not a number shows 0, stats that are not a table draw nothing (issue #184) |
 | Ban checks outside BanList | The keyword whisper (`author`), the invite popup's click (`e.full`) and the /who scanner (`cand.full`, /who's `fullName`) hand `IsBanned` the whole name (issue #184) |
 | The leftovers' gates | A trial's attunement progress (member sheet, trials list), the officer's linked-characters note, the readiness raid target and its ATTUNE column ask `GuildOS.AttunementTracker`; the "no consumables" penalty (raid settings, a core's penalties, the attendance tooltip, the session detail's NO CONS column) and readiness's CONSUMES column ask `GuildOS.ConsumableChecker`; `/gos attune dumpquests` and `/gos resscan` say "Not available on this client." without their module |
+
+## Retail on guildos.me (issue #182)
+
+| Symbol | Description |
+|---|---|
+| `CompanionExport` payload v10 | Retail's: `game = "RETAIL"`, `region` (`Compat.Region`), `guildKey` and `realm` from `GuildOS:GuildRealm()` (never the exporter's), each session's `difficulty` (14, 15, 16). Forever and Anniversary send v9's bytes under `v = 10`. The enchant summary asks `GearAudit:NeedsEnchant` |
+| `Companion:Refused()` | Why this client publishes nothing, or nil: on retail, a region the site has no world for. `BuildPayload`/`Build` return it as their error; the Web panel shows it |
+| `CompanionImport:Parse(raw)` | GOSROST v3: the roster's `difficulty`. On retail each member's and signup's `name` is its `Name-Realm` key, the same on every officer's client (the calendar's list of answers matches across connected realms); it is cut by `PlainName` only to invite |
+| `CompanionImport:RaidFor(instanceKey, when, difficulty)` | The planned raid covering the night; when the night and the planned raid both have a difficulty they must agree (retail) |
+| `CompanionImport:Rescued(roster)` / `InviteAll()` / `OrganizeGroups()` | `Rescued` maps a signup's name to the name the guildmate is kept by (`Name-Realm` on retail; a name two connected realms have is not rescued). On retail the invite and the groups know who is in the raid by name and realm; a raid member the client keeps secret is passed over |
+| `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
+| `GuildOS.JsonDecode(s)` | The addon's one JSON decoder, in Core/Utils.lua so every client has it: SoftRes (absent on retail) reads Gargul's JSON with it, the companion import the site's |
+| `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the groups, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm, with the modules loaded in TOC order (SoftRes absent) |

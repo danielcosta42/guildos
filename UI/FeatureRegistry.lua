@@ -167,7 +167,7 @@ function UI:_RegisterFeatureTests()
         return true
     end)
 
-    -- The companion's tests: only where it exists, never on retail (ADR-0026).
+    -- The companion's tests: only where it exists (on retail too since issue #182).
     if GuildOS.CompanionImport then
         -- The Web panel greys a button and prints the reason beside it, while the
         -- slash command refuses with the same words. Both read these predicates,

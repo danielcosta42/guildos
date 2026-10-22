@@ -10,7 +10,7 @@ local UI = GuildOS.UI
 local L  = GuildOS.L
 
 -- Tabs, in window order ----------------------------------------------
--- `retail = false`: not on retail (ADR-0026), where loot is personal and guildos.me takes no guild yet.
+-- `retail = false`: not on retail (ADR-0026), where loot is personal and nothing hands it out.
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
     build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
@@ -28,7 +28,8 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "loot", label = L["Loot"], order = 30, officerOnly = true, retail = false,
+    -- On retail too since issue #183: the history and the equity of personal loot, no soft reserves.
+    id = "loot", label = L["Loot"], order = 30, officerOnly = true,
     build = function(c, win) GuildOS:CreateLootPanel(c, win) end,
 })
 
@@ -84,7 +85,7 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "web", label = L["Web"], order = 95, retail = false,
+    id = "web", label = L["Web"], order = 95,   -- on retail too since issue #182
     -- Not officerOnly: publishing is each player's own choice, and the
     -- guild's picture on the site gets better the more members opt in. The
     -- raid actions gate themselves on raid leadership instead.
@@ -107,7 +108,7 @@ local function background(id, label, desc, officerOnly, tbc, retail)
 end
 
 background("raidTracker",       L["Raid Tracker"],       L["Track raid attendance, penalties, and sessions"], true)
-background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"], nil, nil, false)
+background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"])  -- personal loot on retail (#183)
 background("lootMaster",        L["Loot Master"],        L["Master Loot with wishlist auto-council"], nil, nil, false)
 background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, true)
 background("raidHUD",           L["Raid CD Tracker"],    L["Floating tracker for raid cooldowns and consumable check"], nil, true)

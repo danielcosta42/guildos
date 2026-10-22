@@ -127,9 +127,7 @@ check(K("Ana", "") == "Ana-Firemaw", "an empty realm from the caller counts as a
 check(K(nil) == nil and K("") == nil and K(nil, "Firemaw") == nil, "no name gives no key, and nothing raises")
 
 -- ── 2. The Anniversary roster fixture ───────────────────────────────────
-dofile(ADDON .. "/Libs/LibDeflate.lua")
-local softres = assert(io.open(ADDON .. "/Modules/SoftResSystem.lua", "rb")):read("*a"):gsub("\r\n", "\n")
-GuildOS.JsonDecode = assert(loadstring(assert(softres:match("(local function JsonDecode.-\nend\n)")) .. "\nreturn JsonDecode"))()
+dofile(ADDON .. "/Libs/LibDeflate.lua")   -- the JSON decoder is Core/Utils.lua's (issue #182)
 local fixture = assert(io.open(ADDON .. "/tools/roster-fixture.txt", "rb")):read("*a")
 local roster, why = GuildOS.CompanionImport:Parse(fixture)
 check(roster and #roster.members > 0, "tools/roster-fixture.txt decodes through the real CompanionImport: " .. tostring(why))
@@ -452,7 +450,9 @@ for line in toc:gmatch("[^\r\n]+") do
     local _, fallbacks = src:gsub('GetRealmName%(%)%s*%)?%s*or%s*["\']', "")
     local _, normalizedFallbacks = src:gsub('GetNormalizedRealmName%(%)%s*%)?%s*or%s*["\']', "")
     local _, clientFallbacks = src:gsub('GetClientRealm%(%)%s*%)?%s*or%s*["\']', "")
-    check(fallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
+    -- The per-guild database key's "Unknown", the one literal left, through the guild's realm (issue #182).
+    local _, guildFallbacks = src:gsub('GuildRealm%(%)%s*%)?%s*or%s*["\']', "")
+    check(fallbacks == 0 and guildFallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
           and clientFallbacks == (rel == "Modules/PugInspector.lua" and 1 or 0),
           rel .. " falls back from the client's realm to a literal")
     -- ChehulNet ships identical in other addons, so it cannot reach GuildOS's Compat.

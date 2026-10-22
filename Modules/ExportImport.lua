@@ -167,8 +167,9 @@ function Exporter:EquityData()
     return headers, rows
 end
 
--- `needs`: the module a dataset reads, absent on retail (ADR-0026), where the dataset is too: the
--- command says so and the chooser leaves its row out (issue #177).
+-- `needs`: the module a dataset reads. Where it is absent (Points on retail, ADR-0026) the dataset is
+-- too: the command says so and the chooser leaves its row out (issue #177). The loot history and its
+-- equity are on retail since issue #183.
 Exporter.DATASETS = {
     roster     = { fn = "RosterData",     title = "Roster" },
     attendance = { fn = "AttendanceData", title = "Attendance" },

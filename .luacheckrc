@@ -229,6 +229,7 @@ read_globals = {
     "C_Secrets",
     "C_RestrictedActions",
     "GetNormalizedRealmName",
+    "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",

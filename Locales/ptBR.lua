@@ -1967,6 +1967,7 @@ L["Usage: /gos signup <CoreName> [tank|healer|melee|ranged] [note]"] = "Uso: /go
 L["Usage: /gos unsignup <CoreName>"] = "Uso: /gos unsignup <NomeDoCore>"
 L["Web Companion (%d members)"] = "Companion Web (%d membros)"
 L["Web companion disabled."] = "Companion web desativado."
+L["guildos.me takes no guild from this client's region: nothing is published."] = "O guildos.me não recebe guildas da região deste cliente: nada é publicado."
 L["Web companion enabled."] = "Companion web ativado."
 L["Wishlist-only mode"] = "Modo só wishlist"
 L["You need to be in a raid to organise groups."] = "Você precisa estar em uma raid para organizar os grupos."

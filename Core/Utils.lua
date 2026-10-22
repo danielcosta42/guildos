@@ -214,6 +214,19 @@ function GuildOS:GetClientRealm()
     return realm
 end
 
+-- The realm a guild is from. On retail a guild spans connected realms, so it is its home realm
+-- (GetGuildInfo's fourth answer, nil when it is this character's own), normalized: one guild,
+-- whichever of its realms a character is on. Elsewhere GetRealmName(). The guild's database key
+-- and the companion payload's guildKey both use it (ADR-0026, issue #182).
+function GuildOS:GuildRealm()
+    if isRetail() then
+        local home = IsInGuild() and select(4, GetGuildInfo("player"))
+        if not home or home == "" then home = GetRealmName() end
+        return home and normalizedRealm(home)
+    end
+    return GetRealmName()
+end
+
 -- A member's key is "Name-Realm", byte for byte as it has always been. WoW: Forever has
 -- no realms: when neither the caller nor the client gives one, the key is the name alone.
 -- "First Last" and "Anne-Marie" then split on the first hyphen and rejoin to themselves,
@@ -543,6 +556,104 @@ function GuildOS:SanitizeUserText(text, maxBytes)
     end
     return s
 end
+
+----------------------------------------------------------------------
+-- Minimal recursive-descent JSON decoder
+-- Handles objects, arrays, strings, numbers, booleans, null.
+----------------------------------------------------------------------
+local function JsonDecode(s)
+    local pos = 1
+
+    local function skip()
+        local np = s:match("^%s*()", pos)
+        if np then pos = np end
+    end
+
+    local parseValue  -- forward declaration (used by parseArray/parseObject)
+
+    local function parseString()
+        pos = pos + 1  -- consume opening "
+        local parts, start = {}, pos
+        while pos <= #s do
+            local c = s:sub(pos, pos)
+            if c == '"' then
+                parts[#parts+1] = s:sub(start, pos - 1)
+                pos = pos + 1
+                return table.concat(parts)
+            elseif c == '\\' then
+                parts[#parts+1] = s:sub(start, pos - 1)
+                pos = pos + 1
+                local e = s:sub(pos, pos)
+                parts[#parts+1] = (e == 'n' and '\n') or (e == 'r' and '\r')
+                              or  (e == 't' and '\t') or e
+                pos   = pos + 1
+                start = pos
+            else
+                pos = pos + 1
+            end
+        end
+        return table.concat(parts)
+    end
+
+    local function parseNumber()
+        local n, np = s:match("^(-?%d+%.?%d*)()", pos)
+        if n then pos = np end
+        return tonumber(n)
+    end
+
+    local function parseArray()
+        pos = pos + 1  -- consume [
+        local arr = {}
+        skip()
+        if s:sub(pos, pos) == ']' then pos = pos + 1; return arr end
+        while true do
+            arr[#arr+1] = parseValue()
+            skip()
+            local c = s:sub(pos, pos)
+            if c == ']' then pos = pos + 1; break end
+            if c == ',' then pos = pos + 1 end
+        end
+        return arr
+    end
+
+    local function parseObject()
+        pos = pos + 1  -- consume {
+        local obj = {}
+        skip()
+        if s:sub(pos, pos) == '}' then pos = pos + 1; return obj end
+        while true do
+            skip()
+            local k = parseString()
+            skip()
+            pos = pos + 1  -- consume :
+            obj[k] = parseValue()
+            skip()
+            local c = s:sub(pos, pos)
+            if c == '}' then pos = pos + 1; break end
+            if c == ',' then pos = pos + 1 end
+        end
+        return obj
+    end
+
+    parseValue = function()
+        skip()
+        local c = s:sub(pos, pos)
+        if     c == '"' then return parseString()
+        elseif c == '{' then return parseObject()
+        elseif c == '[' then return parseArray()
+        elseif c == 't' then pos = pos + 4; return true
+        elseif c == 'f' then pos = pos + 5; return false
+        elseif c == 'n' then pos = pos + 4; return nil
+        else                  return parseNumber()
+        end
+    end
+
+    return parseValue()
+end
+
+-- Shared: SoftRes reads Gargul's JSON with it and the companion import the site's. It lives here,
+-- loaded on every client, because SoftRes is absent on retail and the import is not (issue #182).
+GuildOS.JsonDecode = JsonDecode
 
 function GuildOS:RegisterUtilTests()
     if not self.SelfTest then return end

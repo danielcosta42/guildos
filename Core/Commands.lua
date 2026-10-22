@@ -53,7 +53,7 @@ local function printHelp()
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
     helpLine("/gos export <what>", GuildOS.LootTracker and L["Export roster, attendance or loot"]
-        or L["Export roster or attendance"])   -- no loot on retail (ADR-0026, issue #177)
+        or L["Export roster or attendance"])   -- the loot history is on retail too since issue #183
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
     if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
 
@@ -169,10 +169,10 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
--- The verbs of what retail does not have (ADR-0026): loot is personal there and guildos.me takes no
--- retail guild yet. Each module is absent, so its verb says so rather than doing nothing or raising.
-local RETAIL_ABSENT = { "^points$", "^dkp$", "^equity$", "^lootequity$", "^lm$", "^lm%s", "^lootmaster$",
-    "^web", "^companion", "^roster", "^wish", "^softres" }
+-- The verbs of what retail does not have (ADR-0026): loot is personal there, so nothing hands it out.
+-- Each module is absent, so its verb says so rather than doing nothing or raising. The site's verbs
+-- (web, companion, roster) are retail's too since issue #182, and equity since issue #183.
+local RETAIL_ABSENT = { "^points$", "^dkp$", "^lm$", "^lm%s", "^lootmaster$", "^wish", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end

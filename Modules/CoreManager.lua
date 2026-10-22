@@ -1025,12 +1025,18 @@ end
 -- Whose the package is, when it is not this guild's: its guild, and its realm on Anniversary, where
 -- one Inbox.lua serves every realm of an install and a guild is its realm's. Nil when it is ours.
 -- The name is the site's spelling, so capitals aside, as the game and the site's upload take it (#144).
+-- On retail the realm is the guild's home realm, normalized, whichever connected realm this
+-- character is on: the site keeps the guild by it (issue #182).
 local function notOurs(data)
     local mine = GetGuildInfo("player")
     if type(data.guild) ~= "string" or not mine or data.guild:lower() ~= mine:lower() then return tostring(data.guild) end
-    if GuildOS.Client.isAnniversary and data.realm and data.realm ~= GetRealmName() then
-        return tostring(data.guild) .. " (" .. tostring(data.realm) .. ")"
+    local other
+    if GuildOS.Client.isRetail then
+        other = type(data.realm) == "string" and data.realm:gsub("[%s%-]", "") ~= GuildOS:GuildRealm()
+    elseif GuildOS.Client.isAnniversary then
+        other = data.realm and data.realm ~= GetRealmName()
     end
+    if other then return tostring(data.guild) .. " (" .. tostring(data.realm) .. ")" end
     return nil
 end
 

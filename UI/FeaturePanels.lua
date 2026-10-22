@@ -504,6 +504,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 size       = 0,
                 name       = sd.name or L["Unknown"],
                 difficulty = diff,
+                difficultyID = tonumber(sd.difficulty),   -- what counts on retail (issue #182)
                 groupTag   = sgTag,
                 weekNum    = weekNum,
                 weekStart  = wStart,
@@ -538,7 +539,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     for _, groupKey in ipairs(groupOrder) do
         local g          = groups[groupKey]
         local isGroupExp = _groupExpanded[groupKey]
-        local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size)
+        local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size, g.difficultyID)
         local gRowH      = 26
 
         -- Count unique players
@@ -939,16 +940,20 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     local countText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
     countText:SetPoint("TOPRIGHT", 0, -2)
 
-    -- View toggle: History | Equity | SoftRes
+    -- View toggle: History | Equity | SoftRes. Retail has no soft reserves and no loot master
+    -- (ADR-0026): its tab is the history and the equity of personal loot (issue #183).
     local histBtn = UI:CreateButton(scrollParent, L["History"], 90, 20)
     histBtn:SetPoint("TOPLEFT", 0, -24)
     local eqBtn = UI:CreateButton(scrollParent, L["Equity"], 90, 20)
     eqBtn:SetPoint("LEFT", histBtn, "RIGHT", 6, 0)
-    local srBtn = UI:CreateButton(scrollParent, L["Soft Res"], 90, 20)
-    srBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    local srBtn
+    if GuildOS.SoftRes then
+        srBtn = UI:CreateButton(scrollParent, L["Soft Res"], 90, 20)
+        srBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    end
 
     local exportBtn = UI:CreateButton(scrollParent, L["Export"], 90, 20)
-    exportBtn:SetPoint("LEFT", srBtn, "RIGHT", 6, 0)
+    exportBtn:SetPoint("LEFT", srBtn or eqBtn, "RIGHT", 6, 0)
     exportBtn:SetScript("OnClick", function()
         GuildOS:ShowExportPopup(L["Loot Export"], GuildOS:ExportLoot())
     end)
@@ -958,12 +963,14 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     lmText:SetPoint("RIGHT", scrollParent, "TOPRIGHT", 0, -34)   -- the buttons' row
     lmText:SetWordWrap(false)
     lmText:SetJustifyH("LEFT")
-    local lmEvents = CreateFrame("Frame")
-    GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
-    GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
-    lmEvents:SetScript("OnEvent", function()
-        if parent:IsVisible() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
-    end)
+    if GuildOS.LootMaster then
+        local lmEvents = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
+        GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
+        lmEvents:SetScript("OnEvent", function()
+            if parent:IsVisible() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
+        end)
+    end
 
     local VIEW_TOP = 50  -- space reserved for title + toggle row
 
@@ -1171,7 +1178,7 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
         end
         btnColor(histBtn, which == "history")
         btnColor(eqBtn,   which == "equity")
-        btnColor(srBtn,   which == "softres")
+        if srBtn then btnColor(srBtn, which == "softres") end
 
         if which == "history" then
             GuildOS:RefreshLootPanel(lootContent, countText)
@@ -1183,7 +1190,7 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     end
     histBtn:SetScript("OnClick", function() showView("history") end)
     eqBtn:SetScript("OnClick",   function() showView("equity")  end)
-    srBtn:SetScript("OnClick",   function() showView("softres") end)
+    if srBtn then srBtn:SetScript("OnClick", function() showView("softres") end) end
 
     parent:SetScript("OnShow", function()
         lmText:SetText(GuildOS:LootMasterStatus() or "")
@@ -2100,7 +2107,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
     if GuildOS:LootSystemShowsWishlist() then
         quickButtons[#quickButtons + 1] = { label = L["My Wishlist"], fn = function() GuildOS:ShowWishlistFrame() end }
     end
-    if GuildOS.LootEquity then  -- not on retail (ADR-0026)
+    if GuildOS.LootEquity then  -- on retail too since issue #183
         quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
             local txt = GuildOS.Exporter and GuildOS.Exporter:Build("equity", "tsv") or ""
             GuildOS:ShowExportPopup(L["Loot Equity"], txt)
@@ -3292,9 +3299,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     linksBtn:SetScript("OnClick", function()
         GuildOS:ShowExportPopup(L["Guild OS Links"],
             -- The site first: it is the one link here that does something for the
-            -- person reading it. The other three are where the addon comes from. Not on retail,
-            -- which guildos.me does not take yet (ADR-0026).
-            (GuildOS.Client.isRetail and "" or "App:  https://guildos.me\n")
+            -- person reading it. The other three are where the addon comes from. On
+            -- retail too since issue #182.
+            "App:  https://guildos.me\n"
             .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")

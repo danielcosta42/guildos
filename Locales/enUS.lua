@@ -244,6 +244,7 @@ L["Copy your guild into the web companion"] = "Copy your guild into the web comp
 L["Web Companion (%d members)"] = "Web Companion (%d members)"
 L["Web companion enabled."] = "Web companion enabled."
 L["Web companion disabled."] = "Web companion disabled."
+L["guildos.me takes no guild from this client's region: nothing is published."] = "guildos.me takes no guild from this client's region: nothing is published."
 L["The web companion is off. Turn it on with /gos web on."] = "The web companion is off. Turn it on with /gos web on."
 L["Bring the raid roster in from the website"] = "Bring the raid roster in from the website"
 L["Raid roster from the website"] = "Raid roster from the website"
