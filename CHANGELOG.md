@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.84.0] - 2026-10-22
+
+### Added
+- no retail a presença conta como o site — Normal e Heroico na mesma semana são dois lockouts (#182)
+- no retail o loot pessoal tem histórico — ENCOUNTER_LOOT_RECEIVED na sessão de raide, a aba Loot, a equidade, os exports e o loot no envio (#183)
+- a spec da aliança vai com o specID e aparece na língua de quem lê (#184)
+- os canais de recrutamento de um cliente italiano no retail (#184)
+- no retail o addon fala com o guildos.me — payload v10, roster v3 e os núcleos pelo reino da guilda (#182)
+- a ficha do membro no retail — atributo primário, vigor, crítico, aceleração, maestria e versatilidade (#184)
+- o item level no inspect e a troca de spec na hora, no retail (#184)
+- o núcleo no retail — os buffs da raide pela lista do Raid Tools e o papel pela spec (#184)
+
+### Fixed
+- da revisão — /gos unban não tira um ban antigo já vencido no lugar do que vale, e o painel do /who marca pelo nome inteiro (#184)
+- da segunda revisão — o /who sussurra quem listou, /gos unban diz quando não havia o que tirar e um banimento vencido não esconde o antigo (#184)
+- da segunda revisão — a carência que acaba no LFR ou em outra raide não tira o último snapshot, e o loot conta onde os snapshots contam (#183)
+- da revisão — o banimento tira a linha que mostra, os chamadores passam o nome inteiro, o export do roster sem sintonia e a ficha sem número quebrado (#184)
+- da revisão — o loot pessoal só da guilda, nunca na carência nem em outra dificuldade, com o nome inteiro, e o LFR na carência fica fora da sessão (#183)
+- da revisão — o leitor de JSON sai do SoftRes para todo cliente, o nome do site é o mesmo em todo oficial, e o grupo pula quem é segredo (#182)
+- o ChehulNet não lê o reino como sobrenome no retail (#184)
+- homônimos de reino conectado no retail — banimento, inspetor de grupo, rank, log do roster e raide da guilda (#184)
+- os restos de conteúdo do TBC somem onde o módulo não existe (#184)
+- da revisão — a troca de dificuldade leva junto o núcleo que o oficial escolheu (#177)
+- da revisão — Heroico depois do Normal é sessão nova, /gos trial com texto depois do nome, e os textos do retail que ainda falavam de loot (#177)
+- o que a revisão do retail deixou para depois (#177)
+
+
 ## [0.83.0] - 2026-10-18
 
 ### Added
