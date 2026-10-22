@@ -757,3 +757,9 @@ L["Mastery"] = "Mastery"
 L["Vers"] = "Vers"
 -- /gos unban when no ban stands under that name (issue #184).
 L["No ban to lift for %s."] = "No ban to lift for %s."
+-- Os pontos e o sistema de loot no retail (issue #185).
+L["Free roll"] = "Free roll"
+L["Choose how your guild hands out loot: who awards an item a guildmate offers, and what an award costs."] = "Choose how your guild hands out loot: who awards an item a guildmate offers, and what an award costs."
+L["Free roll: whoever received the item awards it to the best answer, Need before Greed, then the roll. Officers may award too."] = "Free roll: whoever received the item awards it to the best answer, Need before Greed, then the roll. Officers may award too."
+L["An officer awards an item a guildmate offers; whoever holds it then trades it to the winner."] = "An officer awards an item a guildmate offers; whoever holds it then trades it to the winner."
+L["Charged to the winner when the trade of an award is recorded (0 = off)"] = "Charged to the winner when the trade of an award is recorded (0 = off)"

@@ -915,9 +915,10 @@ end
 -- loot UI. "rolls" = /roll MS/OS (default), "tmb"/"wishlist" = interest
 -- lists, "dkp" = the Points economy.
 ----------------------------------------------------------------------
+-- `retail = false`: not offered on retail. That's My BiS is Classic only (issue #185).
 GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
-    { key = "tmb",      label = "TMB" },
+    { key = "tmb",      label = "TMB", retail = false },
     { key = "wishlist", label = "Wishlist" },
     { key = "dkp",      label = "DKP / Points" },
     { key = "external", label = "External / Off" },
@@ -925,6 +926,30 @@ GuildOS.LOOT_SYSTEMS = {
 
 function GuildOS:GetLootSystem()
     return self:GetSetting("lootSystem") or "rolls"
+end
+
+-- The loot systems this client offers, in order.
+function GuildOS:LootSystemsHere()
+    local out = {}
+    for _, sys in ipairs(self.LOOT_SYSTEMS) do
+        if not (sys.retail == false and self.Client.isRetail) then out[#out + 1] = sys end
+    end
+    return out
+end
+
+-- A loot system's name on its button. On retail nobody /rolls: "rolls" is the free roll, where whoever
+-- received a tradeable item awards it to the raid's best answer (TradeCouncil, issue #185).
+function GuildOS:LootSystemLabel(sys)
+    if sys.key == "rolls" and self.Client.isRetail then return L["Free roll"] end
+    return sys.label
+end
+
+-- Whether `key` is a loot system this client offers.
+local function lootSystemHere(key)
+    for _, sys in ipairs(GuildOS:LootSystemsHere()) do
+        if sys.key == key then return true end
+    end
+    return false
 end
 
 -- True unless the guild has opted out of GuildOS loot handling entirely
@@ -935,6 +960,13 @@ end
 
 function GuildOS:SetLootSystem(sys)
     self:SetSetting("lootSystem", sys)
+    -- On retail the system decides who may award an offered item, on every member's client: an
+    -- officer's choice is stamped and published, as the officer threshold is (issue #185).
+    if self.Client.isRetail and self:IsOfficer() then
+        local s = self.db.settings
+        s.lootSystemAt = math.max(GetServerTime(), (s.lootSystemAt or 0) + 1)
+        self:PublishLootSystem()
+    end
     -- Loot Master follows the system: "external" silences it entirely (no
     -- roll popups, ML window, council, or /roll capture — and with no awards
     -- the loot history stops growing too). SetEnabled hides any open frames
@@ -943,6 +975,32 @@ function GuildOS:SetLootSystem(sys)
         self.LootMaster:SetEnabled(self.LootMaster:IsModuleEnabled())
     end
     -- Re-surface only the access points the new system needs (no reload).
+    if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
+end
+
+-- An officer's loot system to the guild, on retail (issue #185): when it changes, and again on the
+-- officers' regular sync, for a client that missed it. Forever keeps it each client's own, as before.
+function GuildOS:PublishLootSystem()
+    if not self.Client.isRetail then return end
+    local s = self.db and self.db.settings
+    if not (s and s.lootSystemAt and self.SyncService and self:IsOfficer()) then return end
+    self.SyncService:Publish("guildcfg", "lootsys", { sys = self:GetLootSystem() }, { rev = s.lootSystemAt })
+end
+
+-- The guild's loot system from an officer (SyncService has checked the officer and GUILD): the newest
+-- stamp wins, and two in the same second settle on the same one on every client. Retail only.
+function GuildOS:OnLootSystemSync(env)
+    if not self.Client.isRetail then return end
+    local data = env and env.data
+    local at = env and tonumber(env.rev)
+    local sys = type(data) == "table" and data.sys
+    if self.Compat.IsSecret(sys) or type(sys) ~= "string" or not lootSystemHere(sys) then return end
+    if not (at and at > 0 and at < math.huge) then return end
+    at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
+    local s = self.db.settings
+    local held = s.lootSystemAt
+    if held and (at < held or (at == held and sys >= self:GetLootSystem())) then return end
+    s.lootSystem, s.lootSystemAt = sys, at
     if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
 end
 

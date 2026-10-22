@@ -34,7 +34,7 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "dkp", label = L["DKP"], order = 35, retail = false,
+    id = "dkp", label = L["DKP"], order = 35,   -- on retail too since issue #185
     condition = function() return GuildOS:LootSystemShowsDKP() end,
     build = function(c, win) GuildOS:CreateDKPPanel(c, win) end,
 })

@@ -169,10 +169,11 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
--- The verbs of what retail does not have (ADR-0026): loot is personal there, so nothing hands it out.
--- Each module is absent, so its verb says so rather than doing nothing or raising. The site's verbs
--- (web, companion, roster) are retail's too since issue #182, and equity since issue #183.
-local RETAIL_ABSENT = { "^points$", "^dkp$", "^lm$", "^lm%s", "^lootmaster$", "^wish", "^softres" }
+-- The verbs of what retail does not have (ADR-0026): no Master Loot, and no soft reserves (softres.it
+-- runs Classic raids only). Each module is absent, so its verb says so rather than doing nothing or
+-- raising. The site's verbs (web, companion, roster) are retail's too since issue #182, equity since
+-- issue #183, and points, dkp and wish since issue #185.
+local RETAIL_ABSENT = { "^lm$", "^lm%s", "^lootmaster$", "^wish", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end

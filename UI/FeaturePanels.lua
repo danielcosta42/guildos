@@ -1957,14 +1957,14 @@ function GuildOS:RefreshSettingsPanel(content, category)
     -- category is remembered on the panel itself.
     local CATS = {
         { key = "general", label = L["General"] },
-        { key = "loot",    label = L["Loot"],    officer = true, retail = false },  -- loot is personal on retail (ADR-0026)
+        -- On retail since issue #185, with what applies there: the loot system and the points.
+        { key = "loot",    label = L["Loot"],    officer = true },
         { key = "raid",    label = L["Raid"] },
         { key = "officer", label = L["Officer"], officer = true },
         { key = "about",   label = L["About"] },
     }
     local cat = category or content.__settingsCat or "general"
     if (cat == "loot" or cat == "officer") and not isOfficer then cat = "general" end
-    if cat == "loot" and GuildOS.Client.isRetail then cat = "general" end
     content.__settingsCat = cat
 
     local yOff = 0
@@ -2391,15 +2391,19 @@ function GuildOS:RefreshSettingsPanel(content, category)
     lsTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 20
 
-    local lsDesc = UI:CreateText(content, L["Choose how your guild distributes loot. Sets the default Loot Master flow."], 9, C.silver.r, C.silver.g, C.silver.b)
+    -- Retail has no loot master: the system says who awards an item a guildmate offers (issue #185).
+    local lsDesc = UI:CreateText(content, GuildOS.Client.isRetail
+        and L["Choose how your guild hands out loot: who awards an item a guildmate offers, and what an award costs."]
+        or L["Choose how your guild distributes loot. Sets the default Loot Master flow."], 9, C.silver.r, C.silver.g, C.silver.b)
     lsDesc:SetPoint("TOPLEFT", 8, -yOff)
     lsDesc:SetWidth(content:GetWidth() - 20)
     yOff = yOff + 18
 
     local curSys = GuildOS:GetLootSystem()
     local lx = 8
-    for _, sys in ipairs(GuildOS.LOOT_SYSTEMS) do
-        local b = UI:CreateButton(content, sys.label, 130, 24)
+    for _, sys in ipairs(GuildOS:LootSystemsHere()) do
+        local label = GuildOS:LootSystemLabel(sys)
+        local b = UI:CreateButton(content, label, 130, 24)
         b:SetPoint("TOPLEFT", lx, -yOff)
         if sys.key == curSys then
             b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
@@ -2407,7 +2411,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
         end
         b:SetScript("OnClick", function()
             GuildOS:SetLootSystem(sys.key)
-            GuildOS:Print(string.format(L["Loot system set to %s."], sys.label))
+            GuildOS:Print(string.format(L["Loot system set to %s."], label))
             GuildOS:RefreshSettingsPanel(content)
         end)
         lx = lx + b:GetWidth() + 6  -- a button its label grew pushes the next one (issue #28)
@@ -2417,6 +2421,16 @@ function GuildOS:RefreshSettingsPanel(content, category)
     -- "External / Off" explainer — this is the full loot-system kill switch.
     if curSys == "external" then
         local note = UI:CreateText(content, L["GuildOS won't touch loot: no roll popups, wishlists, or history. Pick this if your guild distributes loot with Gargul, RCLootCouncil, etc."], 9, C.silver.r, C.silver.g, C.silver.b)
+        note:SetPoint("TOPLEFT", 8, -yOff)
+        note:SetWidth(content:GetWidth() - 20)
+        note:SetJustifyH("LEFT")
+        yOff = yOff + 28
+    elseif GuildOS.Client.isRetail then
+        -- Who awards an offered item on retail (issue #185).
+        local note = UI:CreateText(content, curSys == "rolls"
+            and L["Free roll: whoever received the item awards it to the best answer, Need before Greed, then the roll. Officers may award too."]
+            or L["An officer awards an item a guildmate offers; whoever holds it then trades it to the winner."],
+            9, C.silver.r, C.silver.g, C.silver.b)
         note:SetPoint("TOPLEFT", 8, -yOff)
         note:SetWidth(content:GetWidth() - 20)
         note:SetJustifyH("LEFT")
@@ -2477,7 +2491,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
         numRow(L["Points per boss:"], "bossAward", L["Awarded to raiders on each boss kill"])
         numRow(L["Weekly decay (%):"], "decayPct", L["Use the DKP window's Decay button to apply"])
         numRow(L["Starting points:"], "startingPoints", L["Default for a player's first entry"])
-        numRow(L["Cost per item:"], "itemCost", L["Charged to the winner when the ML awards (0 = off)"])
+        numRow(L["Cost per item:"], "itemCost", GuildOS.Client.isRetail
+            and L["Charged to the winner when the trade of an award is recorded (0 = off)"]
+            or L["Charged to the winner when the ML awards (0 = off)"])
 
         local autoCb = UI:CreateCheckbox(content, L["Auto-award on boss kill (raid leader only)"], 18)
         autoCb:SetPoint("TOPLEFT", 12, -yOff)
@@ -2499,6 +2515,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
     sepLS:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
+    -- The loot master's settings, where there is one: not on retail (ADR-0026, issue #185).
+    if GuildOS.LootMaster then
     --------------------------------------------------------------------
     -- LOOT MASTER SETTINGS (officer only)
     --------------------------------------------------------------------
@@ -2697,6 +2715,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
     sep3:SetPoint("TOPLEFT", 0, -yOff)
     sep3:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
+    end -- GuildOS.LootMaster
 
     end -- isOfficer and cat == "loot" (Loot settings)
 

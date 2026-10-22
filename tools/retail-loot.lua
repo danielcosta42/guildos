@@ -292,7 +292,7 @@ check(rows["Ana-Gallywix"].epics == 3 and rows["Ana-Azralon"].epics == 0, "and t
 
 dofile(ADDON .. "/Modules/ExportImport.lua")
 local Ex = GuildOS.Exporter
-check(Ex:Has("loot") and Ex:Has("equity") and not Ex:Has("standings"), "the loot and equity exports are on retail; DKP is not")
+check(Ex:Has("loot") and Ex:Has("equity"), "the loot and equity exports are on retail")
 local csv = Ex:Build("loot", "csv")
 check(csv:find("Voidforged Helm", 1, true) and csv:find("Ana-Gallywix", 1, true) and csv:find("The Voidspire", 1, true),
   "the loot export lists the personal items")
@@ -303,7 +303,8 @@ GuildOS.Digest:Initialize()
 local digest = table.concat(GuildOS.Digest:Build(NOW - 3600), "\n")
 check(digest:find("11 item(s) looted", 1, true), "the digest says how many items were looted: " .. digest)
 
--- The verbs: equity answers; the loot suite still says it is not here.
+-- The verbs: equity answers; the loot master and soft reserves still say they are not here (points and
+-- the wishlist are retail's since issue #185: tools/retail-points.lua, tools/retail-wishlist.lua).
 dofile(ADDON .. "/Core/Commands.lua")
 GuildOS.ShowExportPopup = function() end
 local NOT_HERE = "Not available on this client."
@@ -316,7 +317,7 @@ for _, verb in ipairs({ "export loot", "export equity" }) do
   printed = {}
   check(pcall(SlashCmdList.GUILDOS, verb) and not said(NOT_HERE), "/gos " .. verb .. " exports on retail")
 end
-for _, verb in ipairs({ "points", "dkp", "lm", "lootmaster", "wish", "softres", "export standings" }) do
+for _, verb in ipairs({ "lm", "lootmaster", "wish", "softres" }) do
   printed = {}
   check(pcall(SlashCmdList.GUILDOS, verb) and said(NOT_HERE), "/gos " .. verb .. " is still not on retail")
 end

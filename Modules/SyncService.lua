@@ -40,7 +40,7 @@ SyncService.OFFICER_DOMAINS = {
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
-    guildcfg  = true,  -- the guild's officer threshold (issue #81)
+    guildcfg  = true,  -- the guild's officer threshold (issue #81) and, on retail, its loot system (#185)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
@@ -74,7 +74,12 @@ function SyncService:Initialize()
     self.seenIds = {}
     self.seenCount = 0
     self.pendingAcks = {}
-    self:On("guildcfg", function(env) GuildOS:OnOfficerMaxRankSync(env) end)
+    -- The guild's settings an officer decides: the officer threshold (issue #81) and, on retail, the
+    -- loot system (issue #185). A client before #185 reads a loot system as a threshold with no `max`.
+    self:On("guildcfg", function(env)
+        if env.act == "lootsys" then return GuildOS:OnLootSystemSync(env) end
+        GuildOS:OnOfficerMaxRankSync(env)
+    end)
 end
 
 local function newId()
