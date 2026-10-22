@@ -73,12 +73,7 @@ local function load(game)
   dofile(ADDON .. "/Core/Utils.lua")
   GuildOS.db = { settings = { companion = true, officerMaxRank = 1 }, members = {}, altLinks = {}, cores = {},
                  raidTracker = { sessions = {}, attendance = {}, deletedSessions = {}, currentGroupTag = "" } }
-  dofile(ADDON .. "/Libs/LibDeflate.lua")
-  -- SoftResSystem owns the JSON decoder the import reuses; lift just the decoder, as
-  -- tools/roster-import.lua does.
-  local softres = io.open(ADDON .. "/Modules/SoftResSystem.lua"):read("*a")
-  local decoderSrc = assert(softres:match("(local function JsonDecode.-\nend\n)"), "no JsonDecode in SoftResSystem.lua")
-  GuildOS.JsonDecode = assert(loadstring(decoderSrc .. "\nreturn JsonDecode"))()
+  dofile(ADDON .. "/Libs/LibDeflate.lua")   -- the JSON decoder is Core/Utils.lua's (issue #182)
   dofile(ADDON .. "/Modules/CompanionExport.lua")
   dofile(ADDON .. "/Modules/CompanionImport.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")

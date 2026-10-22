@@ -74,11 +74,7 @@ GuildOS.SyncService = {
 }
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
-local LibDeflate = LibStub("LibDeflate")
-local softres = io.open(ADDON .. "/Modules/SoftResSystem.lua"):read("*a")
-local decoderSrc = softres:match("(local function JsonDecode.-\nend\n)")
-assert(decoderSrc, "could not find JsonDecode in SoftResSystem.lua")
-GuildOS.JsonDecode = assert(loadstring(decoderSrc .. "\nreturn JsonDecode"))()
+local LibDeflate = LibStub("LibDeflate")   -- the JSON decoder is Core/Utils.lua's (issue #182)
 
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")

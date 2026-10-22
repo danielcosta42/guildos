@@ -70,8 +70,8 @@ for _, m in ipairs(ABSENT) do
 end
 check(GuildOS:StartModule({ "LootMaster" }) == false and next(GuildOS.State.startup.failed) == nil,
   "an absent module is skipped at start-up, not failed")
--- The site is retail's since issue #182.
-GuildOS.JsonDecode = function() end
+-- The site is retail's since issue #182, and so is the JSON decoder its import reads with.
+check(type(GuildOS.JsonDecode) == "function", "the JSON decoder is on retail, with SoftRes absent")
 for _, m in ipairs({ { "CompanionExport", "Companion" }, { "CompanionImport", "CompanionImport" } }) do
   dofile(ADDON .. "/Modules/" .. m[1] .. ".lua")
   check(GuildOS[m[2]] ~= nil, m[1] .. " is on retail (issue #182)")

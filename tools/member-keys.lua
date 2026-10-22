@@ -127,9 +127,7 @@ check(K("Ana", "") == "Ana-Firemaw", "an empty realm from the caller counts as a
 check(K(nil) == nil and K("") == nil and K(nil, "Firemaw") == nil, "no name gives no key, and nothing raises")
 
 -- ── 2. The Anniversary roster fixture ───────────────────────────────────
-dofile(ADDON .. "/Libs/LibDeflate.lua")
-local softres = assert(io.open(ADDON .. "/Modules/SoftResSystem.lua", "rb")):read("*a"):gsub("\r\n", "\n")
-GuildOS.JsonDecode = assert(loadstring(assert(softres:match("(local function JsonDecode.-\nend\n)")) .. "\nreturn JsonDecode"))()
+dofile(ADDON .. "/Libs/LibDeflate.lua")   -- the JSON decoder is Core/Utils.lua's (issue #182)
 local fixture = assert(io.open(ADDON .. "/tools/roster-fixture.txt", "rb")):read("*a")
 local roster, why = GuildOS.CompanionImport:Parse(fixture)
 check(roster and #roster.members > 0, "tools/roster-fixture.txt decodes through the real CompanionImport: " .. tostring(why))
