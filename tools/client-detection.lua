@@ -252,11 +252,15 @@ for _, case in ipairs(CLIENTS) do
       id .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
   end
   check(listed("raidTracker"), "raidTracker stays listed on " .. case.label)
-  -- Loot: everywhere but retail (issue #165).
-  for _, id in ipairs({ "loot", "dkp", "wishlist", "lootMaster", "lootTracker" }) do
+  -- Handing loot out: everywhere but retail, where loot is personal (issue #165).
+  for _, id in ipairs({ "dkp", "wishlist", "lootMaster" }) do
     check(listed(id) == not case.retail, id .. (case.retail and " is not listed on " or " stays listed on ") .. case.label)
     check(UI:IsFeatureAllowed(UI:GetFeature(id)) == not case.retail,
       id .. (case.retail and " is refused on " or " is allowed on ") .. case.label)
+  end
+  -- The loot history and its tab: everywhere, retail's personal loot included (issue #183).
+  for _, id in ipairs({ "loot", "lootTracker" }) do
+    check(listed(id) and UI:IsFeatureAllowed(UI:GetFeature(id)), id .. " is listed and allowed on " .. case.label)
   end
   -- The site: everywhere, retail included since issue #182.
   check(listed("web") and UI:IsFeatureAllowed(UI:GetFeature("web")), "web is listed and allowed on " .. case.label)

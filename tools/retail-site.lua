@@ -4,7 +4,8 @@
 --
 -- The way out is payload v10: game RETAIL, the region, the guild's home realm in guildKey and realm
 -- (never the exporter's: two officers on connected realms publish one guild), every person keyed by
--- their own realm, each session's difficulty, and the enchant summary asking the audit. A region the
+-- their own realm, each session's difficulty, the personal loot in today's row format (issue #183),
+-- and the enchant summary asking the audit. A region the
 -- site has no world for publishes nothing and says why. The way back is GOSROST v3 and GOSCORE:
 -- names keep the realm when it is not this character's, the invite knows who is already in the group
 -- by name and realm, a planned raid matches a night only on the same difficulty, and a package of
@@ -175,7 +176,25 @@ check(#p.sessions == 1 and p.sessions[1].difficulty == 15 and p.sessions[1].inst
 local keys = {}
 for _, pl in ipairs(p.sessions[1].players) do keys[#keys + 1] = pl.key end
 check(table.concat(keys, ",") == "Ana-Gallywix,Chehul-TolBarad", "a session's people keep their realms")
-check(#p.loot == 0, "no loot yet: that is issue #183")
+check(#p.loot == 0, "no loot recorded, none sent")
+
+-- Personal loot goes out in today's row format (issue #183): the real tracker, in a session.
+dofile(ADDON .. "/Modules/LootTracker.lua")
+GuildOS.LootTracker:Initialize()
+RT.TakeSnapshot = function() end
+RT:StartSession(2912)
+GuildOS.LootTracker:OnEncounterLoot(3176, 250001, "|cnIQ4:|Hitem:250001::::::::90:::::|h[Voidforged Helm]|h|r", 1,
+  "Ana-Gallywix", "MAGE")
+RT.trackingActive, RT.currentRaid = false, nil
+local looted = assert(Companion:BuildPayload())
+local row = looted.loot[1]
+check(#looted.loot == 1 and row.playerKey == "Ana-Gallywix" and row.player == "Ana-Gallywix" and row.itemId == 250001
+  and row.itemName == "Voidforged Helm" and row.quality == 4 and row.timestamp == NOW and row.raid == "The Voidspire",
+  "a personal item goes to the site, keyed by its player's own realm")
+local fields = 0
+for _ in pairs(row) do fields = fields + 1 end
+check(fields == 7, "in today's row format: the seven fields the site reads, nothing more")
+GuildOS.db.lootHistory = {}
 
 -- An officer on Azralon publishes the same guild.
 REALM = "Azralon"
