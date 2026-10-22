@@ -139,6 +139,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
 | `Compat.IsWeapon(item)` | Whether an item id is a weapon (`GetItemInfoInstant`'s class 2), no cache needed; nil when the client cannot say. A retail off hand needs an enchant only as one (issue #177) |
 | `Compat.Region()` | The client's region as guildos.me writes it, from `GetCurrentRegion()`: `"us"`, `"kr"`, `"eu"` or `"tw"`; nil (and the number) for any other answer (issue #182) |
+| `Compat.SecondsUntilWeeklyReset()` | The client's own count of the seconds to its region's weekly reset (`C_DateAndTime.GetSecondsUntilWeeklyReset`); nil without the call or when secret. Only RaidTracker's self-test reads it (guildos-web#199) |
 | `Compat.SpecName(id)` | A retail spec's name in the reader's language from its id (`GetSpecializationInfoForSpecID`); nil when the client cannot say or keeps it secret (issue #177) |
 | `Compat.AverageItemLevel()` | Retail: my equipped average as the game shows it, floored; nil elsewhere, where the addon averages its own slots (ADR-0026) |
 | `Compat.InspectItemLevel(unit)` | Retail: an inspected unit's equipped average (`C_PaperDollInfo.GetInspectItemLevel`), floored, after INSPECT_READY; nil elsewhere, before the inspect has the gear, or when secret (issue #184) |
@@ -358,7 +359,8 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
-| `RaidTracker:GetWeekNum(timestamp)` | Floor division from TBC Tuesday epoch |
+| `RaidTracker:GetWeekNum(timestamp)` / `WeekStart(weekNum)` / `ResetOrigin()` | The lockout week a timestamp falls in, counted from this client's region's weekly reset; the moment a week starts; that region's origin. `RESET_ORIGIN` is the client's `Cfg_Regions.Raidorigin` (us Tuesday 15:00 UTC, eu Wednesday 04:00, kr and tw Wednesday 23:00), the region `Compat.Region()`'s, the Americas when the client does not say. Lockouts, attendance and the raids panel's week groups all ask it; the site's `resetWeek` is the same table (guildos-web#199) |
+| `RaidTracker:_RegisterTests()` | `/gos selftest`'s `raidtracker.weekly_reset`: the table's next reset against `Compat.SecondsUntilWeeklyReset()`, within a minute; passes where the client has no such call (guildos-web#199) |
 | `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
 | `RaidTracker:Initialize()` | DB setup, migration, registers zone/roster/encounter events |
 | `RaidTracker:CheckZone()` | Manages session start/resume/end based on GetInstanceInfo |

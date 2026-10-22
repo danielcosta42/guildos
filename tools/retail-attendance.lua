@@ -38,8 +38,9 @@ function LibStub() return nil end
 dofile(ADDON .. "/Modules/RaidTracker.lua")
 local RT = GuildOS.RaidTracker
 
--- Nights at The Voidspire, all in one week (T is a Tuesday), each with two frames.
-local T, HOUR, DAY = 1754380000 + 7 * 604800, 3600, 86400
+-- Nights at The Voidspire, all in one week, each with two frames. T is a Thursday, 00:00 UTC: two days
+-- on, the Americas have not reset yet (Tuesday 15:00 UTC, guildos-web#199), nor has any other region.
+local T, HOUR, DAY = 1754524800 + 7 * 604800, 3600, 86400
 local function nights(list)
   local out = {}
   for _, n in ipairs(list) do

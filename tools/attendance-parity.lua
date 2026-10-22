@@ -29,12 +29,22 @@
 -- are TBC's to the digit, and then the retail rules on nights of their own:
 --
 --   luajit -e 'ADDON="." RETAIL=true' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-retail.json
+--
+-- The lockout week is the region's, from its weekly reset (guildos-web#199): the fixtures above are the
+-- Americas', Tuesday 15:00 UTC. With REGION set to "eu" it prints the same nights counted from
+-- Europe's, Wednesday 04:00 UTC, where Core 3's Tuesday night is the last of its week, not the first
+-- of the next:
+--
+--   luajit -e 'ADDON="." REGION="eu"' tools/attendance-parity.lua > .../apps/web/test/fixtures/attendance-parity-eu.json
 ADDON = ADDON or "."
+REGION = REGION or "us"
 package.path = ADDON .. "/?.lua;" .. package.path
 
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }) }
 function GuildOS:Print() end
 function GuildOS:IsOfficer() return true end
+-- The client's region, as Compat reads it from GetCurrentRegion().
+GuildOS.Compat = { Region = function() return REGION end }
 
 -- ── the WoW surface RaidTracker touches at load ───────────────────────
 function GetServerTime() return 1754380000 end
@@ -78,8 +88,12 @@ GuildOS.CoreManager = {
 --   * a ten-man, which moves nobody's denominator but does decide their core
 --   * a night marked not-a-guild-raid, which counts for nothing at all
 --   * somebody who raids with two cores and belongs to the busier one
+--   * nights either side of a region's weekly reset, a core of their own (guildos-web#199)
+--
+-- Every other night sits between Wednesday 23:00 and Tuesday 15:00 UTC, inside the week of every
+-- region, so the answers are the same whichever reset counts them.
 ----------------------------------------------------------------------
-local T = 1754380000        -- a Tuesday evening
+local T = 1754524800        -- Thursday 7 Aug 2025, 00:00 UTC: Wednesday 21:00 in Brasília
 local HOUR, DAY, WEEK = 3600, 86400, 604800
 
 local function snap(at, members) return { time = at, reason = "tick", members = members } end
@@ -174,6 +188,21 @@ night(T + 5 * WEEK, { startTime = T + 5 * WEEK, snapshots = {
 } })
 SESSIONS[T + 5 * WEEK].players["Mesclada-Firemaw"] = true
 
+-- Either side of the weekly reset (guildos-web#199), in a core of their own so nobody else's number moves.
+-- Gruul three times: Wednesday night in Brasília (Thursday 00:00 UTC), Monday night in Brasília
+-- (Tuesday 01:00 UTC) and Tuesday night in Paris (20:00 UTC, 22:00 there in October). In the Americas,
+-- which reset on Tuesday at 15:00 UTC, Monday's is Wednesday's lockout and Tuesday's the next one; in
+-- Europe, which resets on Wednesday at 04:00 UTC, all three are one. Counted from Tuesday 00:00 UTC
+-- they were Wednesday's alone and Monday's with Tuesday's, which neither region plays.
+local R = T + 8 * WEEK
+for _, n in ipairs({ { R, "Quarta" }, { R + 5 * DAY + HOUR, "Segunda" }, { R + 5 * DAY + 20 * HOUR, "Terca" } }) do
+  local at, key = n[1], n[2] .. "-Firemaw"
+  night(at, { groupTag = "Core 3", startTime = at, snapshots = {
+    snap(at,        { [key] = who(n[2], true, true) }),
+    snap(at + HOUR, { [key] = who(n[2], true, true) }),
+  } })
+end
+
 -- WoW: Forever: the same nights in raids nobody listed, told apart by the size the game gave.
 -- Gruul's place is a 20, Magtheridon's a 40 and Karazhan's a 10, so the size decides exactly as
 -- TBC's ids did; and one more 20, recorded with no size, counts for nothing (issue #90).
@@ -218,7 +247,7 @@ if RETAIL then
     if p ~= tbc[key] then fail(("%s is %d%% at N/H/M and %d%% under TBC's rule"):format(key, p, tbc[key])) end
   end
 
-  -- Nights of retail's own, at one place in one week (T + 7 weeks is a Tuesday).
+  -- Nights of retail's own, at one place in one week (T + 7 weeks is a Thursday, mid-week everywhere).
   local W = T + 7 * WEEK
   local function nights(list)
     local out = {}
@@ -263,6 +292,9 @@ for key in pairs(keys) do names[#names + 1] = key end
 table.sort(names)
 
 local out = { "{" }
+
+-- Whose reset counted the weeks, which the site counts them from too.
+out[#out + 1] = '"region":' .. q(REGION) .. ','
 
 -- The nights, in the shape CompanionExport puts on the wire.
 out[#out + 1] = '"sessions":['

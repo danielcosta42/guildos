@@ -94,6 +94,14 @@ function Compat.Region()
     return REGIONS[id], id
 end
 
+-- The client's own count of the seconds to its region's weekly reset; nil where the client has no
+-- such call. Only RaidTracker's self-test reads it, against the reset table (guildos-web#199).
+function Compat.SecondsUntilWeeklyReset()
+    local left = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
+    if Compat.IsSecret(left) then return nil end
+    return tonumber(left)
+end
+
 -- My own name the way the guild roster and every addon-message sender write it. WoW: Forever
 -- 1.60.1.70009 cut UnitName("player") to the first name ("Chehul") while the roster says
 -- "Chehul Druida"; there UnitFullName("player") returns the first name and the surname apart,
