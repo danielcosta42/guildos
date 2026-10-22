@@ -1,7 +1,8 @@
 # Retail: GuildOS on a third client
 
 Issue: danielcosta42/guildos#164 (epic), with #165, #166, #167 and #168; guildos-web#177. Decided with the
-maintainer on 2026-10-17, section by section, then run in autopilot up to the in-game review.
+maintainer on 2026-10-17, section by section, then run in autopilot up to the in-game review. The content an
+audit found still missing on retail followed in #184 (2026-10-21), marked in place below.
 
 ## 1. Problem and goal
 
@@ -55,7 +56,14 @@ On retail a realm is part of who somebody is, as on Anniversary, and a guild spa
   `LocalizeStoredMemberTables` and `RekeyMembersToThisRealm` at start-up, the alliance bridge hashing the name
   alone, `CompanionImport.PlainName`. Each of those is gated "Forever only" instead of "not Anniversary".
 - **My own name:** `has.surnames` is false on retail, whatever `C_PlayerInfo.ShouldDisplaySurname` exists to
-  say: there `UnitFullName`'s second slot is the realm.
+  say: there `UnitFullName`'s second slot is the realm. ChehulNet, shipped identical in other addons and unable
+  to ask GuildOS, reads the same two signals itself (v9, issue #184).
+- **Namesakes (issue #184):** two members of one guild on two connected realms can share a name. The ban list
+  files a ban under the whole key, lower case; a name without a realm is this realm's, or the one ban of that
+  name on another realm when there is exactly one (two answer nothing, as `Compat.FindGuildRosterIndex`
+  does), and a ban filed under the name alone before still holds on every realm. The group inspector, the
+  rank lookup (`GuildManager:GetRosterIndex`), the roster log and the raid's guild check compare whole keys.
+  Forever and Anniversary keep the name alone.
 - ADR-0018 gets an amendment saying all this.
 
 ## 4. What is absent on retail
@@ -70,9 +78,16 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
 - **The site:** the `web` feature carries `retail = false`; CompanionExport, CompanionImport and Look return
   early; the onboarding step that points to guildos.me is skipped; the Discord core import (ADR-0025) is not
   offered. `Inbox.lua` still loads from the TOC (it is data), and nothing reads it.
-- **Already absent outside Anniversary:** consumables, raid HUD, attunements, resistances. Bloodlust and
-  Misdirection in Raid Tools stay hidden: they exist on retail but read the combat log, which Midnight closes
-  to addons in instances.
+- **Already absent outside Anniversary:** consumables, raid HUD, attunements. What was left of them follows the
+  module, on Forever too (issue #184): a trial's attunement progress, the linked characters' attunement note,
+  the attunement and consumables export columns, the "no consumables" penalty, the readiness target and its
+  attunement and consumables columns, and `/gos attune dumpquests`.
+- **Resistances:** the module is absent on retail, which has no resistance gear, and so are the resistance
+  scan, its sync and `/gos resscan` (issue #184). Forever keeps them.
+- **Raid Tools' cooldowns** on retail are listed by class presence, who in the group can cast one, never
+  whether it is ready, which would read the combat log Midnight closes to addons in instances: Bloodlust
+  (Shaman, Mage, Hunter, Evoker), Rebirth, Innervate, Power Infusion and Soulstone. Misdirection is not on
+  retail's list; TBC's Bloodlust/Heroism and Misdirection entries stay TBC's.
 - **The registry:** `def.retail == false` hides a feature on retail, in `AllFeatures` and `IsFeatureAllowed`,
   next to the `tbc` check (`UI:IsFeatureAbsent`). `/gos open` of one says "Not available on this client.", not
   officer-only; so do `/gos export loot|equity|standings`, whose usage line lists only what the client has (issue
@@ -80,7 +95,9 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
 - **Words:** the onboarding's getting-started and privacy steps name no attunements or wishlists on retail; the
   probe lists retail's spec and item-level APIs and names the client it found (issue #177).
 - **Recruitment channels:** retail's ChatChannels (12.1.5.70448, every language) are Forever's: Trade and
-  LookingForGroup, no GuildRecruitment (issue #177).
+  LookingForGroup, no GuildRecruitment (issue #177). Only retail has an Italian client: Commercio and
+  CercaGruppo; Forever's (1.60.1.70450, 70532) and Anniversary's (2.5.6.70006) itIT rows are English
+  (issue #184).
 - **The payload:** if anything still writes it, `game` is `client.game`, so retail says `RETAIL`.
 
 ## 5. Retail content
@@ -98,6 +115,18 @@ All of it as `GuildOS.Client` fields or `Compat` functions, never scattered.
   role come from the client, localized. A synced spec is shown by its id in the reader's language, not the
   sender's (`SpecChecker:SpecName`, issue #177). SpecChecker's trait-tree column heuristic (Forever) does not run
   on retail. Hero talents are out.
+  - My spec change goes out at once (`PLAYER_SPECIALIZATION_CHANGED`, a burst sent once), not on the next
+    five-minute tick (issue #184).
+  - A scanned spec sets the role a member starts in on a core: tank, healer, and melee or ranged by the spec
+    (ChrSpecialization's melee flag, 12.1.5.70448: Survival is melee; Augmentation and Devourer ranged),
+    when the class can play it; no spec, or another client, the class's own (issue #184).
+  - The alliance roster sends the spec's id beside its name, and an allied reader names it in their own
+    language (issue #184).
+- **Core composition.** A core's raid-buff coverage on retail is Raid Tools' Midnight list, one table for
+  both screens, named by the client from the spell (issue #184). Forever lists none; Anniversary TBC's.
+- **The member sheet** on retail shows the spec's primary stat, stamina and the four ratings in percent:
+  crit (the best of melee, ranged and the weakest spell school, as the character sheet takes it), haste,
+  mastery and versatility; no spirit, no mana (issue #184).
 - **Raids.**
   - `Client.raidSizes = {10, 20, 30}`, default 20 (mythic's size).
   - Only Normal, Heroic and Mythic (difficulty 14, 15, 16) are tracked; LFR (17), timewalking (33) and
@@ -115,7 +144,8 @@ All of it as `GuildOS.Client` fields or `Compat` functions, never scattered.
 - **Gear.**
   - Item level is the effective one (`C_Item.GetDetailedItemLevelInfo`), not the base `GetItemInfo` gives.
   - The average is `GetAverageItemLevel()` for me and `C_PaperDollInfo.GetInspectItemLevel(unit)` for an
-    inspect.
+    inspect: a group scan brings the item level of a guildmate without the addon, never over a broadcast of
+    their own at least as new (issue #184).
   - Gems are read from the link's four gem fields.
   - Enchant slots per client: Midnight's are head, shoulder, chest, legs (spellthread, armor kit), feet, both
     rings and both weapons (cloak and wrist enchants are gone). An off hand counts only when it is a weapon: a

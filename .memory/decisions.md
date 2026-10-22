@@ -849,7 +849,8 @@ retail guild yet.
   normalized), so one guild is one database whichever of its realms a character is on.
 - The roster rail lays its class chips out with `UI:ChipGrid`: three columns for retail's thirteen, still five rows.
 - Absent on retail, as TBC content is elsewhere: LootMaster, LootTracker, LootEquity, Points, SoftRes, Wishlist,
-  CompanionExport, CompanionImport and Look return before defining their globals. Features carry `retail = false`
+  CompanionExport, CompanionImport, Look and Resistances (no resistance gear; its scan, sync and `/gos resscan`
+  follow it, issue #184) return before defining their globals. Features carry `retail = false`
   (loot, dkp, wishlist, web, lootTracker, lootMaster); the Settings loot category, the core's loot rules, the loot
   quick buttons and tests, the loot export datasets, the dashboard's loot card and the site link follow the modules.
   A slash verb of an absent module says "Not available on this client." The player's toggles are untouched.
@@ -861,11 +862,28 @@ retail guild yet.
   its difficulty, shows it ("N", "H", "M"), sends it in the raid sync, and a raid's Normal and Heroic are never
   merged into one session. A tab or an export this client does not have says "Not available on this client."
   (`UI:IsFeatureAbsent`, `Exporter:Has`) (issue #177).
+- What #184 filled in: the core's raid buffs are Raid Tools' Midnight list (one table); a scanned spec sets the
+  role a member starts in (`CoreManager:DefaultRole`, melee or ranged by `MELEE_SPECS` from ChrSpecialization's
+  flags); a group scan brings a guildmate's item level (`Compat.InspectItemLevel`) without overwriting a newer
+  broadcast of theirs; the member sheet shows the primary stat, stamina and the four ratings
+  (`Compat.PrimaryStat`, `Compat.SecondaryStats`); my spec change goes out at once
+  (`PLAYER_SPECIALIZATION_CHANGED`); the alliance roster carries the spec id; recruitment knows the Italian
+  client's channels; a raid roster name the client keeps secret is skipped.
+- Namesakes on connected realms are told apart by the whole key (issue #184): BanList files a ban under it (a
+  name without a realm is this realm's, or the one ban of that name elsewhere when there is exactly one; a
+  ban filed under the name alone before still holds everywhere), and the group inspector, the rank lookup,
+  the roster log and the raid's guild check compare whole keys. Forever and Anniversary keep the name alone.
+- What is left of attunements and consumables follows their modules, on Forever too, where they were as
+  inert (ADR-0014; issue #184): trial progress, export columns, the "no consumables" penalty, readiness.
 
 ### Consequences
 - (+) One build, one TOC, three clients; Forever and Anniversary behave as before.
 - (+) A retail guild sees nothing it cannot use: no loot screens, no site.
 - (−) Nothing reads Mythic+, delves or hero talents yet.
+- (−) A ban added on retail by a client from before issue #184 is filed under the name alone (and holds on
+  every realm, as before); one added after it is not seen by an officer still on the older addon, which
+  looks the name alone up. ChehulNet's v9 must reach the other addons that ship it.
+- (−) `MELEE_SPECS` must follow retail when a spec is added (Devourer came with Midnight).
 - (−) The profession catalog and Raid Tools' spell ids must follow retail's patches.
 - (−) Retail's tiered reagents are not in the catalog, and whether `IsPlayerSpell` answers for retail recipes is read
   in game (`/guildos probe`); the open profession window still fills what it misses.
