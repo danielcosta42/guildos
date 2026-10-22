@@ -19,7 +19,8 @@ client's own realm at login, merging members of different connected realms into 
 Decided:
 
 - **Addon first.** The site does not take retail guilds in this epic. It refuses a retail upload, and the
-  addon on retail never offers the site at all.
+  addon on retail never offers the site at all. *Since issue #182 (guildos-web specs/056) it does: the site
+  leg is on, see §11.*
 - **All loot goes on retail.** Personal loot only; nothing of the loot suite is kept, Points included.
 - **Professions stay, with a Midnight catalog.** Only the current expansion's lines.
 - **One build, one TOC** (ADR-0021). Retail's interface is added last, so no half-made release reaches the
@@ -69,7 +70,8 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
   module; any that does not gets a guard.
 - **The site:** the `web` feature carries `retail = false`; CompanionExport, CompanionImport and Look return
   early; the onboarding step that points to guildos.me is skipped; the Discord core import (ADR-0025) is not
-  offered. `Inbox.lua` still loads from the TOC (it is data), and nothing reads it.
+  offered. `Inbox.lua` still loads from the TOC (it is data), and nothing reads it. *Superseded by issue #182
+  (§11): only Look stays absent.*
 - **Already absent outside Anniversary:** consumables, raid HUD, attunements, resistances. Bloodlust and
   Misdirection in Raid Tools stay hidden: they exist on retail but read the combat log, which Midnight closes
   to addons in instances.
@@ -170,7 +172,29 @@ And guildos-web#177 on its own.
 
 ## 10. Out of scope
 
-- guildos.me for retail guilds (its own epic).
+- guildos.me for retail guilds (its own epic: guildos-web#191, addon #182, §11).
 - A loot suite for personal loot (trade-based council, loot history from `ENCOUNTER_LOOT_RECEIVED`).
 - Mythic+, delves, hero talents, profession specializations, craft quality.
 - Raid Tools cooldowns that need the combat log.
+
+## 11. The site leg (issue #182)
+
+guildos.me takes retail guilds (guildos-web#191, specs/056; off there until its `RETAIL=1`). In the addon:
+
+- **Present on retail:** CompanionExport, CompanionImport, the `web` feature, `/gos web`, `/gos roster`, the site
+  link, the inbox (the planned roster, the site's raids on the calendar, the Discord's cores). Look stays absent:
+  the site draws a retail character from the Armory. `RETAIL_ABSENT` keeps only the loot verbs.
+- **Payload v10.** `game = "RETAIL"`; `region` from `GetCurrentRegion()` (1 `us`, 2 `kr`, 3 `eu`, 4 `tw`; any other
+  answer publishes nothing and the Web panel and `/gos web` say why); `guildKey = "<Guild>-<HomeRealm>"` and
+  `realm` from the guild's home realm, normalized (`GuildOS:GuildRealm`, the database key's rule), never the
+  exporter's; every person `Name-Realm` with their own realm; `sessions[].difficulty` (14, 15, 16); `members[].spec`
+  as stored, `{ tree, specID, role }`. Forever and Anniversary send exactly v9's bytes, with `v = 10`.
+- **Enchants:** the summary asks `GearAudit:NeedsEnchant`, as the member sheet does.
+- **Raids:** `RaidTracker.RAID_KEYS` gains `midnight-voidspire` (2912), `midnight-dreamrift` (2939),
+  `midnight-queldanas` (2913) and `midnight-abyss` (3004).
+- **GOSROST v3:** the raid carries `difficulty`; `RaidFor` needs it to match the night's when both have one. A
+  member is invited and grouped by its `Name-Realm` key (the site sends no region), cut to the plain name only on
+  this character's realm. Who is already in the group is known by name and realm. A name the site never confirmed
+  is rescued from the guild roster only when one connected realm has it.
+- **GOSCORE:** a package is this guild's when its `realm` is the guild's home realm, normalized.
+- **Tests:** `tools/retail-site.lua`; `tools/retail-absent.lua` and `tools/client-detection.lua` follow.

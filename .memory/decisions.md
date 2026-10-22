@@ -873,3 +873,20 @@ retail guild yet.
 - (−) A retail session relayed by an officer on an addon from before issue #177 carries no difficulty, so it is not
   merged with the same night's session that has one: the raids panel shows that night twice until the officer
   updates and the next sync fills the difficulty in. Attendance is not affected: its lockouts ignore difficulty.
+
+**Amendment (issue #182).** The site leg is on: guildos.me takes retail guilds (guildos-web specs/056, behind its
+`RETAIL=1`). CompanionExport and CompanionImport load on retail, and with them the Web tab, `/gos web`, `/gos roster`,
+the inbox (roster, calendar, the Discord's cores) and the site link; Look stays absent, since the site draws a retail
+character from the Armory. Only the loot verbs remain in `RETAIL_ABSENT`.
+- Payload v10, retail's: `game = "RETAIL"`, `region` from `GetCurrentRegion()` (`Compat.Region`: 1 us, 2 kr, 3 eu,
+  4 tw), `guildKey` and `realm` from the guild's home realm (`GuildOS:GuildRealm`, the database key's rule), never the
+  exporter's, and each session's `difficulty`. Any other region publishes nothing and says why
+  (`Companion:Refused`, shown on the Web panel). Forever and Anniversary send v9's bytes under `v = 10`.
+- The enchant summary asks `GearAudit:NeedsEnchant`, so the site and the member sheet agree about an off hand.
+- `RaidTracker.RAID_KEYS` has Midnight's four raids by map id, under the site's catalogue keys.
+- On the way back the key is the name: a GOSROST v3 member is invited and grouped by its `Name-Realm` key, cut to the
+  plain name only on this character's realm; who is already in the group is known by name and realm; a name the site
+  never confirmed is rescued only when one connected realm has it. `RaidFor` needs the same difficulty when the
+  planned raid and the night both have one. A GOSCORE is this guild's by its home realm, normalized.
+- (−) A region the site has no world for (China, a test client) cannot publish. `GetCurrentRegion()`'s answer on the
+  maintainer's client is read in game.

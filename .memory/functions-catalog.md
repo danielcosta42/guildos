@@ -102,6 +102,7 @@ Removed: `UI.Hub`, `UI:CreateWindow`, `UI:ToggleWindow`, `UI:IsWindowOpen`, `UI:
 |---|---|
 | `GuildOS:GetClientRealm()` | The client's realm for keys: `GetRealmName()`, else `GetNormalizedRealmName()`, else nil ("" counts as nothing); on retail the normalized one first, spaces and hyphens removed (ADR-0026) |
 | `GuildOS:KeyOfRosterName(full)` | The key of a guild roster line's name: "Bob-Gallywix" with its own realm, "Bob" on this client's; through `GetPlayerKey`, so normalized on retail. The core picker and the retail officer check use it (ADR-0026) |
+| `GuildOS:GuildRealm()` | The realm a guild is from: on retail its home realm (`GetGuildInfo`'s fourth answer, else this character's), normalized; elsewhere `GetRealmName()`. The guild's database key and the companion payload's `guildKey`/`realm` (ADR-0026, issue #182) |
 | `GuildOS:RealmBound()` | Whether a realm is part of who somebody is: true on Anniversary and retail (connected realms), false on Forever; true with no `GuildOS.Client`. The one test the key rules and the start-up rekeys read (ADR-0026) |
 | `GuildOS:GetPlayerKey(name, realm)` | The one member-key rule: an empty realm counts as absent and the client's fills it; with a realm "Name-Realm", without one the name alone (ADR-0018). On WoW: Forever the passed realm is ignored and the client's always used, since a guild's clients answer different realm names (issue #95) Retail keeps the caller's realm, normalized (ADR-0026). |
 | `GuildOS:RekeyMembersToThisRealm()` | Forever only, at `DataCollector:Initialize`: moves `db.members` records keyed with another client's realm to this client's key; the newer `lastUpdate` wins (a tie keeps the one already there) and the older one's fields fill the winner's gaps (issue #95) |
@@ -133,6 +134,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.SpecOf(unit)` | Retail: a unit's spec as `specID, name, role` (`"TANK"`, `"HEALER"`, `"DAMAGER"`), localized by the client; `"player"` read directly, any other unit from its inspect. Nil before there is one or when the client keeps it secret (ADR-0026) |
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
 | `Compat.IsWeapon(item)` | Whether an item id is a weapon (`GetItemInfoInstant`'s class 2), no cache needed; nil when the client cannot say. A retail off hand needs an enchant only as one (issue #177) |
+| `Compat.Region()` | The client's region as guildos.me writes it, from `GetCurrentRegion()`: `"us"`, `"kr"`, `"eu"` or `"tw"`; nil (and the number) for any other answer (issue #182) |
 | `Compat.SpecName(id)` | A retail spec's name in the reader's language from its id (`GetSpecializationInfoForSpecID`); nil when the client cannot say or keeps it secret (issue #177) |
 | `Compat.AverageItemLevel()` | Retail: my equipped average as the game shows it, floored; nil elsewhere, where the addon averages its own slots (ADR-0026) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
@@ -866,3 +868,15 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `CTA:ShowPopup(e)` / `Answer(id)` | One popup at a time (newest wins, hides after 30s, sound unless `ctaSound` is off); "On my way" publishes `cta`/`going` once, and is hidden on the caller's own call |
 
 `cta` is in `SyncService.OFFICER_DOMAINS` (only an officer over GUILD may call); `going` is in `MEMBER_ACTIONS.cta` — member actions are keyed by domain and taken only over GUILD, or a member's `guildcfg` dressed as an RSVP made them an officer. The Guild hub's "Call to Arms" sub-tab (`BuildCallToArmsSub`) sends, lists recent calls with their own "On my way", and holds each player's settings; its rows flow and wrap (`flow`), and it repaints only while visible; `/gos cta [type] [message]` sends or opens it.
+
+## Retail on guildos.me (issue #182)
+
+| Symbol | Description |
+|---|---|
+| `CompanionExport` payload v10 | Retail's: `game = "RETAIL"`, `region` (`Compat.Region`), `guildKey` and `realm` from `GuildOS:GuildRealm()` (never the exporter's), each session's `difficulty` (14, 15, 16). Forever and Anniversary send v9's bytes under `v = 10`. The enchant summary asks `GearAudit:NeedsEnchant` |
+| `Companion:Refused()` | Why this client publishes nothing, or nil: on retail, a region the site has no world for. `BuildPayload`/`Build` return it as their error; the Web panel shows it |
+| `CompanionImport:Parse(raw)` | GOSROST v3: the roster's `difficulty`. On retail each member's and signup's `name` comes from its `Name-Realm` key, cut by `PlainName` (plain only on this character's realm) |
+| `CompanionImport:RaidFor(instanceKey, when, difficulty)` | The planned raid covering the night; when the night and the planned raid both have a difficulty they must agree (retail) |
+| `CompanionImport:Rescued(roster)` / `InviteAll()` | `Rescued` maps a signup's name to the name to invite (with the realm on retail; a name two connected realms have is not rescued). On retail the invite knows who is already in the group by name and realm |
+| `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
+| `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm |
