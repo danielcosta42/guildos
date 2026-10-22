@@ -134,13 +134,17 @@ end
 -- its shortcut ("Commerce" for "Commerce - Hurlevent"), LookingForGroup by its name: they differ
 -- only on Forever in Russian. Forever has no GuildRecruitment channel, and its Spanish
 -- LookingForGroup is BuscarGrupo. Retail's table (12.1.5.70448) names both as Forever does and has
--- no GuildRecruitment either (issue #177).
+-- no GuildRecruitment either (issue #177). Only retail is in Italian (`retail`): Commercio and
+-- CercaGruppo; Forever's (1.60.1.70450, 70532) and Anniversary's (2.5.6.70006) itIT rows are the
+-- English ones (issue #184).
 Recruitment.CHANNELS = {
     { enUS = "Trade", deDE = "Handel", esES = "Comercio", esMX = "Comercio", frFR = "Commerce",
-      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易" },
+      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易",
+      retail = { itIT = "Commercio" } },
     { enUS = "LookingForGroup", deDE = "SucheNachGruppe", esES = "BuscandoGrupo", esMX = "BuscarGrupo",
       frFR = "RechercheDeGroupe", ptBR = "ProcurandoGrupo", ruRU = "ПоискСпутников", koKR = "파티찾기",
-      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" } },
+      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" },
+      retail = { itIT = "CercaGruppo" } },
     { enUS = "GuildRecruitment", deDE = "Gildenrekrutierung", esES = "BuscaHermandad", esMX = "BuscaHermandad",
       frFR = "RecrutementDeGuilde", ptBR = "RecrutamentoDeGuilda", ruRU = "Гильдии", koKR = "길드모집",
       zhCN = "公会招募", zhTW = "公會招募", anniversaryOnly = true },
@@ -148,7 +152,8 @@ Recruitment.CHANNELS = {
 
 local function channelFor(c)
     local loc = GetLocale and GetLocale() or "enUS"
-    return (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
+    return (GuildOS.Client.isRetail and c.retail and c.retail[loc])
+        or (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
 end
 
 -- This client's preset channels, in order.
@@ -167,7 +172,7 @@ function Recruitment:ChannelName(name)
     local n = tostring(name or ""):lower()
     for _, c in ipairs(self.CHANNELS) do
         if GuildOS.Client.isAnniversary or not c.anniversaryOnly then
-            for _, names in ipairs({ c, c.forever or {} }) do
+            for _, names in ipairs({ c, c.forever or {}, c.retail or {} }) do
                 for _, v in pairs(names) do
                     if type(v) == "string" and v:lower() == n then return channelFor(c) end
                 end
