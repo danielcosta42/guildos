@@ -84,13 +84,20 @@ end
 -- only treat "leave"/"kick" as ex-member, and only for players NOT currently
 -- on the roster, so a stale record can never mislabel a present guildmate.
 ----------------------------------------------------------------------
-function PugInspector:_LastRosterAction(short, log)
-    if not short or short == "" or type(log) ~= "table" then return nil end
-    local want = short:lower()
+-- Who a name is, for matching: the short name elsewhere; on retail the whole key, since a namesake
+-- on another connected realm is somebody else (a name without a realm is on this one; issue #184).
+local function whoIs(name)
+    if GuildOS.Client.isRetail then return (GuildOS:KeyOfRosterName(name) or name):lower() end
+    return (name:match("^([^-]+)") or name):lower()
+end
+
+function PugInspector:_LastRosterAction(name, log)
+    if not name or name == "" or type(log) ~= "table" then return nil end
+    local want = whoIs(name)
     local bestTs, bestAction = -1, nil
     for _, e in ipairs(log) do
-        local t = e.target and (e.target:match("^([^-]+)") or e.target)
-        if t and t:lower() == want then
+        local t = e.target and whoIs(e.target)
+        if t and t == want then
             local ts = e.timestamp or 0
             if ts >= bestTs then
                 bestTs, bestAction = ts, e.action
@@ -107,14 +114,16 @@ end
 function PugInspector:_LiveSources()
     local db = GuildOS.db or {}
 
-    -- Guild roster short-name set (lowercased) for O(1) membership checks.
-    local guildShort = {}
+    -- Guild roster short-name set (lowercased) for O(1) membership checks; on retail the whole
+    -- keys, so a namesake on another connected realm is not taken for a guildmate (issue #184).
+    local guildShort, guildKeys = {}, GuildOS.Client.isRetail and {} or nil
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
         if full then
             local s = full:match("^([^-]+)") or full
             guildShort[s:lower()] = true
+            if guildKeys then guildKeys[GuildOS:KeyOfRosterName(full):lower()] = true end
         end
     end
 
@@ -123,12 +132,14 @@ function PugInspector:_LiveSources()
 
     return {
         guildShort = guildShort,
+        guildKeys  = guildKeys,
         altLinks   = db.altLinks or {},
         log        = log,
         realm      = GuildOS:GetClientRealm() or "",
-        banEntry   = function(short)
-            if GuildOS.BanList and GuildOS.BanList:IsBanned(short) then
-                return GuildOS.BanList:Get(short)
+        -- The member's key on retail, where BanList keeps the realm; the short name elsewhere.
+        banEntry   = function(name)
+            if GuildOS.BanList and GuildOS.BanList:IsBanned(name) then
+                return GuildOS.BanList:Get(name)
             end
             return nil
         end,
@@ -172,23 +183,29 @@ function PugInspector:Classify(name, srcs)
 
     local f = {}
 
-    local ban = srcs.banEntry and srcs.banEntry(short)
+    -- On retail by the whole key: a bare group name is a member of this realm, not a namesake's (#184).
+    local ban = srcs.banEntry and srcs.banEntry(GuildOS.Client.isRetail and key or short)
     if ban then
         f.banned = true
         f.reason = ban.reason or L["(no reason)"]
     end
 
-    f.inGuild = (srcs.guildShort and srcs.guildShort[shortLower]) and true or false
+    -- On retail by the whole key: a guildmate's namesake on another connected realm is not one (#184).
+    local function inGuild(k, s)
+        if srcs.guildKeys and GuildOS.Client.isRetail then return srcs.guildKeys[k:lower()] and true or false end
+        return (srcs.guildShort and srcs.guildShort[s:lower()]) and true or false
+    end
+    f.inGuild = inGuild(key, short)
 
     local mainKey = srcs.altLinks and srcs.altLinks[key]
     if mainKey then
         f.isAlt = true
         f.mainShort = mainKey:match("^([^-]+)") or mainKey
-        f.mainInGuild = (srcs.guildShort and srcs.guildShort[(f.mainShort or ""):lower()]) and true or false
+        f.mainInGuild = inGuild(mainKey, f.mainShort or "")
     end
 
     if srcs.log then
-        local last = self:_LastRosterAction(shortLower, srcs.log)
+        local last = self:_LastRosterAction(name or shortLower, srcs.log)
         f.exMember = (last == "leave" or last == "kick")
     end
 
@@ -217,7 +234,8 @@ function PugInspector:_GroupMembers()
         local n = GetNumGroupMembers() or 0
         for i = 1, n do
             local name, _, _, _, _, classFile = GetRaidRosterInfo(i)
-            if name then
+            -- A name the client keeps secret cannot be matched; that member is skipped (issue #184).
+            if name and not GuildOS.Compat.IsSecret(name, classFile) then
                 local short = name:match("^([^-]+)") or name
                 if not GuildOS.Compat.IsPlayer("raid" .. i) then
                     out[#out + 1] = { name = short, full = name, class = classFile or "" }
@@ -228,9 +246,11 @@ function PugInspector:_GroupMembers()
         for i = 1, (GetNumGroupMembers() or 1) - 1 do
             local unit = "party" .. i
             if UnitExists(unit) then
-                local nm, _, cf = GuildOS.Compat.UnitIdentity(unit)
+                local nm, realm, cf = GuildOS.Compat.UnitIdentity(unit)
                 if nm then
-                    out[#out + 1] = { name = nm:match("^([^-]+)") or nm, full = nm, class = cf or "" }
+                    -- Retail: a connected realm's member keeps their realm (issue #184).
+                    local full = (GuildOS.Client.isRetail and realm and realm ~= "") and GuildOS:GetPlayerKey(nm, realm) or nm
+                    out[#out + 1] = { name = nm:match("^([^-]+)") or nm, full = full, class = cf or "" }
                 end
             end
         end
@@ -437,7 +457,8 @@ function PugInspector:_RegisterTests()
             guildShort = { ["thordak"] = true, ["kaelra"] = true },
             -- Through the key rule: on WoW: Forever a realm never splits a key (issue #95).
             altLinks = { [GuildOS:GetPlayerKey("Bornax", "TestRealm")] = GuildOS:GetPlayerKey("Thordak", "TestRealm") },
-            banEntry = function(s) if s == "Zezinho" then return { reason = "ninja" } end end,
+            -- Asked by the short name, or on retail by the key (#184).
+            banEntry = function(s) if (s:match("^([^-]+)") or s) == "Zezinho" then return { reason = "ninja" } end end,
             noteFor = function() return nil end,
         }
         local a = PugInspector:Classify("Bornax", srcs)

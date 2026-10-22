@@ -348,13 +348,15 @@ function RaidTracker:IsGuildRaid(session)
         if memberData then
             guildCount = guildCount + 1
         else
-            -- Fallback: scan guild roster for this name
+            -- Fallback: scan guild roster for this name; on retail for the whole key, since a
+            -- guildmate's namesake on another connected realm is not one (issue #184).
+            local retail = GuildOS.Client.isRetail
             local numMembers = GetNumGuildMembers() or 0
             for i = 1, numMembers do
                 local fullName = GetGuildRosterInfo(i)
                 if fullName then
                     local short = fullName:match("^([^-]+)") or fullName
-                    if short == name then
+                    if (retail and GuildOS:KeyOfRosterName(fullName) == key) or (not retail and short == name) then
                         guildCount = guildCount + 1
                         break
                     end

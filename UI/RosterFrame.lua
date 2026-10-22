@@ -1758,7 +1758,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
     if level == 2 and menuList == "SETRANK" then
         local GM = GuildOS.GuildManager
         if not GM then return end
-        local currentRank = GM:GetRankIndex(data.name)
+        local currentRank = GM:GetRankIndex(data.fullName or data.name)   -- the realm tells namesakes apart (#184)
         for _, rank in ipairs(GM:GetRanks()) do
             -- Skip Guild Master (rank 0): GuildPromote cannot grant GM rank.
             if rank.index > 0 then
