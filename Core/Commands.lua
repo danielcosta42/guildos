@@ -173,7 +173,7 @@ end
 -- runs Classic raids only). Each module is absent, so its verb says so rather than doing nothing or
 -- raising. The site's verbs (web, companion, roster) are retail's too since issue #182, equity since
 -- issue #183, and points, dkp and wish since issue #185.
-local RETAIL_ABSENT = { "^lm$", "^lm%s", "^lootmaster$", "^wish", "^softres" }
+local RETAIL_ABSENT = { "^lm$", "^lm%s", "^lootmaster$", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end

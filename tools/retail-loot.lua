@@ -317,7 +317,7 @@ for _, verb in ipairs({ "export loot", "export equity" }) do
   printed = {}
   check(pcall(SlashCmdList.GUILDOS, verb) and not said(NOT_HERE), "/gos " .. verb .. " exports on retail")
 end
-for _, verb in ipairs({ "lm", "lootmaster", "wish", "softres" }) do
+for _, verb in ipairs({ "lm", "lootmaster", "softres" }) do
   printed = {}
   check(pcall(SlashCmdList.GUILDOS, verb) and said(NOT_HERE), "/gos " .. verb .. " is still not on retail")
 end

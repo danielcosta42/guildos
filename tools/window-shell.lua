@@ -509,8 +509,8 @@ UI:GetFeature("dkp").retail = false
 printed = {}
 check(not UI:OpenWindow("dkp") and said("Not available on this client."), "a tab retail does not have says it is not on this client")
 UI:GetFeature("dkp").retail = nil
--- The loot tab is retail's since issue #183, the DKP tab since issue #185.
-for _, id in ipairs({ "loot", "dkp" }) do
+-- The loot tab is retail's since issue #183, the DKP and wishlist tabs since issue #185.
+for _, id in ipairs({ "loot", "dkp", "wishlist" }) do
   check(not UI:IsFeatureAbsent(UI:GetFeature(id)), "the " .. id .. " tab is on retail")
 end
 GuildOS.Client.isRetail = nil

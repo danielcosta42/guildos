@@ -624,6 +624,49 @@ function Compat.UseContainerItem(bag, slot)
 end
 
 ----------------------------------------------------------------------
+-- The Encounter Journal (retail, issue #185)
+----------------------------------------------------------------------
+
+-- A raid's loot as the Encounter Journal lists it: { { itemID, name, link, encounterID, boss } },
+-- every class's, plus the raid's name and whether every row had its name yet (the journal fills a list
+-- in as its data arrives, EJ_LOOT_DATA_RECIEVED). The journal's selection is the player's too: nothing
+-- is read while it is open ("busy"), and its class and slot filters and the instance it last showed are
+-- put back after. Nil on a client without the journal (Forever's has none of these).
+function Compat.JournalLoot(journalInstanceID)
+    local J = C_EncounterJournal
+    if not (EJ_SelectInstance and EJ_GetNumLoot and J and J.GetLootInfoByIndex) then return nil end
+    local open = EncounterJournal and EncounterJournal.IsShown and EncounterJournal:IsShown()
+    if open then return nil, "busy" end
+    local prevClass, prevSpec
+    if EJ_GetLootFilter then prevClass, prevSpec = EJ_GetLootFilter() end
+    local prevSlot = J.GetSlotFilter and J.GetSlotFilter()
+    EJ_SelectInstance(journalInstanceID)
+    if EJ_SetLootFilter then EJ_SetLootFilter(0, 0) end      -- 0, 0: every class, every spec
+    if J.ResetSlotFilter then J.ResetSlotFilter() end
+    local raid = EJ_GetInstanceInfo and EJ_GetInstanceInfo(journalInstanceID)
+    local items, complete = {}, true
+    for i = 1, EJ_GetNumLoot() or 0 do
+        local info = J.GetLootInfoByIndex(i)
+        if info and tonumber(info.itemID) then
+            if not info.name then complete = false end
+            items[#items + 1] = {
+                itemID = info.itemID, name = info.name, link = info.link, encounterID = info.encounterID,
+                boss = info.encounterID and EJ_GetEncounterInfo and EJ_GetEncounterInfo(info.encounterID) or nil,
+            }
+        end
+    end
+    if #items == 0 then complete = false end
+    if EJ_SetLootFilter and prevClass then EJ_SetLootFilter(prevClass, prevSpec or 0) end
+    if prevSlot and J.SetSlotFilter then J.SetSlotFilter(prevSlot) end
+    local shown = EncounterJournal and EncounterJournal.instanceID
+    if shown then
+        EJ_SelectInstance(shown)
+        if EncounterJournal.encounterID and EJ_SelectEncounter then EJ_SelectEncounter(EncounterJournal.encounterID) end
+    end
+    return items, complete, raid
+end
+
+----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character
 -- collection leaves the field out instead of raising.

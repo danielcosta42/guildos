@@ -3753,7 +3753,8 @@ local function BuildWishlistFrame()
         local results = {}
         if GuildOS.Wishlist and GuildOS.Wishlist.itemIndex then
             for itemId in pairs(GuildOS.Wishlist.itemIndex) do
-                local name, link, quality = GuildOS.Compat.GetItemInfo(itemId)
+                -- The journal's name stands in for an item not cached yet (retail, issue #185).
+                local name, link, quality = GuildOS.Wishlist:ItemFacts(itemId)
                 if name and strlower(name):find(query, 1, true) then
                     tinsert(results, { itemId = itemId, name = name, link = link, quality = quality or 1 })
                 end
@@ -4111,7 +4112,7 @@ local function BuildPrioModal()
         local results = {}
         if GuildOS.Wishlist and GuildOS.Wishlist.itemIndex then
             for itemId in pairs(GuildOS.Wishlist.itemIndex) do
-                local name, _, quality = GuildOS.Compat.GetItemInfo(itemId)
+                local name, _, quality = GuildOS.Wishlist:ItemFacts(itemId)
                 if name and strlower(name):find(query, 1, true) then
                     tinsert(results, { itemId = itemId, name = name, quality = quality or 1 })
                 end

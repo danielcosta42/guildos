@@ -2048,9 +2048,8 @@ function ShowRowTooltip(row)
     end
 
     -- Wishlist info (native)
-    if GuildOS.db.guildWishlists then
-        local gKey = strlower(data.name or "")
-        local wData = GuildOS.db.guildWishlists[gKey]
+    if GuildOS.db.guildWishlists and GuildOS.Wishlist then
+        local wData = GuildOS.Wishlist:ListFor(data.key, data.name)   -- by the whole key on retail (#185)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")

@@ -283,6 +283,17 @@ read_globals = {
     "GetUnitName",
     "TradeFrameRecipientNameText",
 
+    -- WoW API: the Encounter Journal (retail wishlist, issue #185; Core/Compat.lua only)
+    "EJ_SelectInstance",
+    "EJ_SelectEncounter",
+    "EJ_GetNumLoot",
+    "EJ_GetLootFilter",
+    "EJ_SetLootFilter",
+    "EJ_GetEncounterInfo",
+    "EJ_GetInstanceInfo",
+    "C_EncounterJournal",
+    "EncounterJournal",
+
     -- WoW API: Party
     "C_PartyInfo",
 
