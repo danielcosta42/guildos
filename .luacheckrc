@@ -108,6 +108,7 @@ read_globals = {
     "GetInventoryItemTexture",
     "GetInventoryItemQuality",
     "GetItemInfo",
+    "GetItemInfoInstant",
     "GetItemCount",
     "GetSpellInfo",
     "GetSpellTexture",
@@ -215,6 +216,10 @@ read_globals = {
     "C_Traits",
     "C_SpecializationInfo",                  -- retail's spec (ADR-0026)
     "GetSpecializationInfoForSpecID",
+    "C_PaperDollInfo",                       -- retail: an inspected average item level (issue #184)
+    -- Retail: the character sheet's ratings (Compat.SecondaryStats, issue #184).
+    "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste", "GetMasteryEffect",
+    "GetCombatRatingBonus", "GetVersatilityBonus", "CR_VERSATILITY_DAMAGE_DONE",
     "GetProfessions",
     "GetProfessionInfo",
     "IsPlayerSpell",
@@ -224,6 +229,7 @@ read_globals = {
     "C_Secrets",
     "C_RestrictedActions",
     "GetNormalizedRealmName",
+    "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",

@@ -303,7 +303,7 @@ function GuildOS:CreateDashboardPanel(panel)
         cNext:ClearAllPoints();  cNext:SetPoint("TOPLEFT", M, -M);                 cNext:SetSize(leftW, r1h)
         cReady:ClearAllPoints(); cReady:SetPoint("TOPLEFT", M + leftW + G, -M);    cReady:SetSize(rightW, r1h)
 
-        -- Row 2: Pulse + Recruitment + Loot. No loot card where loot is not tracked (retail, ADR-0026).
+        -- Row 2: Pulse + Recruitment + Loot. No loot card without the tracker; retail has it since issue #183.
         local hasLoot = GuildOS.LootTracker ~= nil
         local r2y = M + r1h + G
         local r2h = 120

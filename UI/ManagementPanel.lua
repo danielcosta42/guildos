@@ -655,8 +655,9 @@ local function BuildBanSub(panel)
                 cell(expTxt, 426, 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
                 del:SetPoint("TOPRIGHT", -4, -y)
-                local nm = e.name
-                del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:Remove(nm) end end)
+                -- By the row's own key: on retail a name alone is a different ban from Name-Realm (#184).
+                local key = e.key
+                del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:RemoveKey(key) end end)
                 y = y + ROW_H
             end
         end

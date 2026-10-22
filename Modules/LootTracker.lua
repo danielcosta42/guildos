@@ -1,18 +1,39 @@
 ----------------------------------------------------------------------
 -- Guild OS - Loot Tracker
--- Records items awarded by the Master Looter (officer-only).
--- History is populated exclusively via RecordMLAward;
--- generic CHAT_MSG_LOOT is NOT tracked.
+-- The loot history. On TBC Anniversary and WoW: Forever: items awarded
+-- by the Master Looter (officer-only), via RecordMLAward; generic
+-- CHAT_MSG_LOOT is NOT tracked. On retail, where loot is personal and
+-- nobody hands anything out: what each guildmate received from a boss
+-- inside a tracked raid session, via OnEncounterLoot (issue #183).
 ----------------------------------------------------------------------
--- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
-if GuildOS.Client.isRetail then return end
-
 local LootTracker = {}
 GuildOS.LootTracker = LootTracker
+
+local HISTORY_MAX = 500         -- entries kept, newest first
+-- Personal loot (retail, issue #183).
+local PERSONAL_MIN_QUALITY = 3  -- Rare: the loot master's default threshold (LootMaster.LOOT_THRESHOLD)
+local PERSONAL_UNKNOWN_QUALITY = 4  -- an item neither cached nor coloured in its link: a boss's, as an ML award assumes
+local REFIRE_WINDOW = 300       -- seconds; the same boss, item and player again within this is the same drop
 
 function LootTracker:Initialize()
     if not GuildOS.db.lootHistory then
         GuildOS.db.lootHistory = {}
+    end
+    -- Retail only: Forever and Anniversary keep the master-loot path and nothing else (issue #183).
+    if GuildOS.Client.isRetail then
+        local frame = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(frame, "ENCOUNTER_LOOT_RECEIVED")
+        frame:SetScript("OnEvent", function(_, _, ...) LootTracker:OnEncounterLoot(...) end)
+    end
+end
+
+local function remember(entry)
+    if not GuildOS.db.lootHistory then
+        GuildOS.db.lootHistory = {}
+    end
+    table.insert(GuildOS.db.lootHistory, 1, entry)
+    while #GuildOS.db.lootHistory > HISTORY_MAX do
+        table.remove(GuildOS.db.lootHistory)
     end
 end
 
@@ -20,13 +41,85 @@ end
 -- Called by LootMaster:AwardLoot (locally) and by the AWARD
 -- addon message handler (peers, officer-verified).
 function LootTracker:RecordMLAward(entry)
-    if not GuildOS.db.lootHistory then
-        GuildOS.db.lootHistory = {}
+    remember(entry)
+end
+
+-- The raid session personal loot belongs to: a tracked one this client is standing in, on its
+-- difficulty, as its snapshots and bosses are (RaidTracker:ElsewhereInGrace). Raid Finder of the same
+-- raid, queued during the grace, is the same instance id with strangers' items (issue #183).
+local function sessionHere()
+    local RT = GuildOS.RaidTracker
+    local session = RT and RT.trackingActive and RT.currentRaid
+    if not session or RT:ElsewhereInGrace() then return nil end
+    local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceType ~= "raid" or instanceID ~= session.instanceID then return nil end
+    if session.difficulty and tonumber(difficultyID) ~= session.difficulty then return nil end
+    return session
+end
+
+-- Whether somebody is on this guild's roster, by their whole key: a guildmate on a connected realm is,
+-- a namesake from a realm the guild is not on is not. A pickup raid's strangers are not the guild's
+-- loot; on Forever an item needs an award from this guild's officer to be recorded at all (issue #183).
+local function guildmate(playerKey)
+    local name, realm = playerKey:match("^([^-]+)%-(.+)$")
+    local idx = GuildOS.Compat.FindGuildRosterIndex(name or playerKey, realm)
+    local full = idx and GetGuildRosterInfo(idx)
+    return full ~= nil and GuildOS:KeyOfRosterName(full) == playerKey
+end
+
+-- An item's quality and name: the client's when it has the item cached, else what the link carries
+-- (retail colours a link by quality, "|cnIQ4:", and names it in brackets).
+local function itemFacts(itemLink)
+    local name, _, quality = GuildOS.Compat.GetItemInfo(itemLink)
+    quality = quality or tonumber(itemLink:match("|cnIQ(%d+):")) or PERSONAL_UNKNOWN_QUALITY
+    return quality, name or itemLink:match("|h%[(.-)%]|h") or ""
+end
+
+-- Whether this drop was just recorded: the event can come again for the same item.
+local function refired(encounterID, itemId, playerKey, now)
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        if now - (tonumber(e.timestamp) or 0) > REFIRE_WINDOW then return false end
+        if e.encounterID == encounterID and e.itemId == itemId and e.playerKey == playerKey then return true end
     end
-    table.insert(GuildOS.db.lootHistory, 1, entry)
-    while #GuildOS.db.lootHistory > 500 do
-        table.remove(GuildOS.db.lootHistory)
-    end
+    return false
+end
+
+-- Record one guildmate's personal loot from ENCOUNTER_LOOT_RECEIVED (retail, issue #183): every
+-- guildmate's item, not only mine, in the shape an ML award has, named and keyed by the player's own
+-- realm. The event names someone on this character's realm without one, so the bare name would mean
+-- another person to an alt on a connected realm: `player` is the whole Name-Realm too.
+function LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)
+    if not GuildOS.Client.isRetail then return end
+    -- Midnight may hand any field as a secret, which is never compared, joined or stored; a record
+    -- without it would be half a record, so the item is skipped whole.
+    if GuildOS.Compat.IsSecret(encounterID, itemID, itemLink, quantity, playerName, className) then return end
+    if type(itemLink) ~= "string" or type(playerName) ~= "string" or playerName == "" then return end
+    if not GuildOS:IsFeatureEnabled("lootTracker") then return end
+    local session = sessionHere()
+    if not session then return end
+
+    local quality, itemName = itemFacts(itemLink)
+    if quality < PERSONAL_MIN_QUALITY then return end
+    local name, realm = playerName:match("^([^-]+)%-(.+)$")
+    local playerKey = GuildOS:GetPlayerKey(name or playerName, realm)
+    if not guildmate(playerKey) then return end
+    local itemId = tonumber(itemID) or tonumber(itemLink:match("item:(%d+)")) or 0
+    local now = GetServerTime()
+    if refired(encounterID, itemId, playerKey, now) then return end
+
+    remember({
+        itemLink    = itemLink,
+        itemId      = itemId,
+        itemName    = itemName,
+        quality     = quality,
+        player      = playerKey,
+        playerKey   = playerKey,
+        count       = tonumber(quantity) or 1,
+        timestamp   = now,
+        raid        = session.name or "",
+        instanceID  = session.instanceID,
+        encounterID = encounterID,
+    })
 end
 
 function LootTracker:GetHistory(limit)

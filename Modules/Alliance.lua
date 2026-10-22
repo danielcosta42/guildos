@@ -48,6 +48,13 @@ local function shortName(name)
     return (Ambiguate and Ambiguate(name or "", "short")) or name
 end
 
+-- A spec as the reader says it: on retail by its id, in this client's language, the sender's tree
+-- name otherwise (SpecChecker:SpecName; issue #184).
+local function specLabel(spec)
+    if GuildOS.SpecChecker then return GuildOS.SpecChecker:SpecName(spec) end
+    return spec.tree
+end
+
 ----------------------------------------------------------------------
 -- Pure helpers. Everything below this line is deterministic and pinned by
 -- /gos selftest, because several of these MUST agree across clients.
@@ -591,7 +598,7 @@ function Alliance:MemberInfo(name)
         guild       = hit.guild,
         class       = row.c,
         level       = row.l,
-        spec        = row.s,
+        spec        = specLabel({ specID = tonumber(row.si), tree = row.s }),
         professions = row.p,
         attunements = row.a,
         main        = row.m,
@@ -1277,7 +1284,7 @@ function Alliance:SpeakerInfo(name)
             guild       = myGuild,
             class       = m.class,
             level       = m.level,
-            spec        = type(m.spec) == "table" and m.spec.tree or nil,
+            spec        = type(m.spec) == "table" and specLabel(m.spec) or nil,
             professions = profs,
             attunements = att,
             main        = mainKey and (mainKey:match("^([^-]+)") or mainKey) or nil,

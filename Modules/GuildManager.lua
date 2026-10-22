@@ -52,9 +52,12 @@ end
 ----------------------------------------------------------------------
 -- Roster / rank lookups
 ----------------------------------------------------------------------
--- Guild roster index for a short or full player name (realm-stripped match).
+-- Guild roster index for a short or full player name (realm-stripped match). On retail a guild
+-- spans connected realms and namesakes share it: the whole name wins, a short one only when it is
+-- the only one (Compat.FindGuildRosterIndex; issue #184).
 function GuildManager:GetRosterIndex(name)
     if not name or name == "" then return nil end
+    if GuildOS.Client.isRetail then return (GuildOS.Compat.FindGuildRosterIndex(name)) end
     local short = name:match("^([^-]+)") or name
     local n = GetNumGuildMembers() or 0
     for i = 1, n do

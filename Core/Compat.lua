@@ -46,8 +46,9 @@ GuildOS.Client = {
     defaultRaidSize = isAnniversary and 25 or 20,
     classes = isRetail and RETAIL_CLASSES or CLASSIC_CLASSES,
     -- Where a missing enchant is a real problem: TBC's nine slots (Forever's too), Midnight's
-    -- head, shoulder, chest, feet, both rings and the weapon; cloak and wrist enchants are gone.
-    enchantSlots = isRetail and { 1, 3, 5, 8, 11, 12, 16 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
+    -- head, shoulder, chest, legs (spellthread, armor kit), feet, both rings and both weapons;
+    -- cloak and wrist enchants are gone. An off hand counts only as a weapon (issue #177).
+    enchantSlots = isRetail and { 1, 3, 5, 7, 8, 11, 12, 16, 17 } or { 1, 3, 5, 7, 8, 9, 10, 15, 16 },
     has = {
         secrets = issecretvalue ~= nil,
         chatLockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown) ~= nil,
@@ -81,6 +82,16 @@ function Compat.UnitIdentity(unit)
     local _, classFile = UnitClass(unit)
     if Compat.IsSecret(name, realm, classFile) then return end
     return name, realm, classFile
+end
+
+-- The region this client plays in, as guildos.me writes it, from GetCurrentRegion(): 1 the Americas
+-- ("us"), 2 Korea, 3 Europe, 4 Taiwan. Nil for any other answer (China, a test client), which the site
+-- has no world for, with the number the client gave (issue #182).
+local REGIONS = { [1] = "us", [2] = "kr", [3] = "eu", [4] = "tw" }
+function Compat.Region()
+    local id = GetCurrentRegion and GetCurrentRegion()
+    if Compat.IsSecret(id) then return nil end
+    return REGIONS[id], id
 end
 
 -- My own name the way the guild roster and every addon-message sender write it. WoW: Forever
@@ -472,6 +483,15 @@ function Compat.GetItemInfo(item)
     if GetItemInfo then return GetItemInfo(item) end
 end
 
+-- Whether an item is a weapon, from its id alone (no item cache needed); nil when the client
+-- cannot say. A shield or an off-hand frill takes no enchant on retail (issue #177).
+function Compat.IsWeapon(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local _, _, _, _, _, classID = instant(item)
+    return classID == 2   -- Enum.ItemClass.Weapon
+end
+
 -- An item's level as it is worn. On retail (ADR-0026) upgrades, crafting and the track an item
 -- dropped from move it away from GetItemInfo's base level, `base`, which every other client keeps.
 function Compat.ItemLevel(link, base)
@@ -490,6 +510,61 @@ function Compat.AverageItemLevel()
     equipped = tonumber(equipped)
     if not equipped or equipped <= 0 then return nil end
     return math.floor(equipped)
+end
+
+-- An inspected unit's equipped average as the game computes it, on retail (issue #184): the item
+-- level of a guildmate who has no Guild OS to send theirs. Needs INSPECT_READY first. Nil
+-- elsewhere, before the inspect has the gear, or when the client keeps it secret.
+function Compat.InspectItemLevel(unit)
+    if not (GuildOS.Client.isRetail and C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel) then return nil end
+    local level = C_PaperDollInfo.GetInspectItemLevel(unit)
+    if Compat.IsSecret(level) then return nil end
+    level = tonumber(level)
+    if not level or level <= 0 then return nil end
+    return math.floor(level)
+end
+
+-- The primary stat my spec plays on, as UnitStat numbers it (1 strength, 2 agility, 4 intellect),
+-- on retail (issue #184); nil elsewhere, or before there is a spec.
+function Compat.PrimaryStat()
+    local S = GuildOS.Client.isRetail and C_SpecializationInfo
+    local index = S and S.GetSpecialization and S.GetSpecialization()
+    if Compat.IsSecret(index) or not index or index == 0 then return nil end
+    local stat = select(6, S.GetSpecializationInfo(index))
+    if Compat.IsSecret(stat) then return nil end
+    stat = tonumber(stat)
+    if stat == 1 or stat == 2 or stat == 4 then return stat end
+    return nil
+end
+
+local SPELL_SCHOOLS = 7                                -- MAX_SPELL_SCHOOLS; school 1 is physical
+local CR_VERSATILITY = CR_VERSATILITY_DAMAGE_DONE or 29 -- the rating PaperDollFrame shows
+
+-- My ratings as the retail character sheet shows them, in percent to two decimals (issue #184):
+-- crit the way PaperDollFrame takes it (the best of melee, ranged and the weakest spell school),
+-- haste, mastery, and versatility's damage bonus. Nil elsewhere, where the sheet has the classic
+-- stats. A rating the client cannot give, or keeps secret, is left out.
+function Compat.SecondaryStats()
+    if not GuildOS.Client.isRetail then return nil end
+    local function read(fn, ...)
+        local v = fn and fn(...)
+        if Compat.IsSecret(v) then return nil end
+        return tonumber(v)
+    end
+    local function round(v) return v and math.floor(v * 100 + 0.5) / 100 end
+    local spell
+    for school = 2, SPELL_SCHOOLS do
+        local v = read(GetSpellCritChance, school)
+        if v and (not spell or v < spell) then spell = v end
+    end
+    local crit
+    for _, v in pairs({ spell, read(GetRangedCritChance), read(GetCritChance) }) do   -- pairs skips the nils
+        if not crit or v > crit then crit = v end
+    end
+    local vers = read(GetCombatRatingBonus, CR_VERSATILITY)
+    if vers then vers = vers + (read(GetVersatilityBonus, CR_VERSATILITY) or 0) end
+    return { crit = round(crit), haste = round(read(GetHaste)), mastery = round(read(GetMasteryEffect)),
+             versatility = round(vers) }
 end
 
 -- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
@@ -641,6 +716,15 @@ function Compat.SpecOf(unit)
     local _, name, _, _, role = GetSpecializationInfoForSpecID(id)
     if Compat.IsSecret(name, role) then return nil end
     return id, name, role
+end
+
+-- A retail spec's name in the reader's language, from its id: a spec synced from a guildmate's
+-- client arrives in theirs (issue #177). Nil when the client cannot say.
+function Compat.SpecName(id)
+    if not (tonumber(id) and GetSpecializationInfoForSpecID) then return nil end
+    local _, name = GetSpecializationInfoForSpecID(id)
+    if Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    return name
 end
 
 function Compat.GetNumSkillLines()

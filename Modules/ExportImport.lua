@@ -55,8 +55,11 @@ end
 ----------------------------------------------------------------------
 -- Dataset builders → (headers, rows)
 ----------------------------------------------------------------------
+-- The roster: attunements only where the game has them (TBC, ADR-0014; issue #184).
 function Exporter:RosterData()
-    local headers = { "Name", "Class", "Level", "Rank", "iLvl", "Attendance%", "Attunements", "LastSeen" }
+    local AT = GuildOS.AttunementTracker
+    local headers = AT and { "Name", "Class", "Level", "Rank", "iLvl", "Attendance%", "Attunements", "LastSeen" }
+        or { "Name", "Class", "Level", "Rank", "iLvl", "Attendance%", "LastSeen" }
     local rows = {}
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
@@ -67,18 +70,17 @@ function Exporter:RosterData()
             local key = GuildOS:GetPlayerKey(short, realm)
             local d = GuildOS.db.members[key] or {}
             local att = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(key) or 0
-            local attDone, attTotal = 0, 0
-            if GuildOS.AttunementTracker then
-                attTotal = #GuildOS.AttunementTracker:GetGuildColumns()
-                for _, a in ipairs(GuildOS.AttunementTracker:GetEffectiveAttunements(key)) do
+            local lastSeen = (d.lastUpdate and d.lastUpdate > 0) and date("%Y-%m-%d", d.lastUpdate) or ""
+            local row = { short, classFile or "", level or 0, rankName or "", d.avgIlvl or 0, att }
+            if AT then
+                local attDone, attTotal = 0, #AT:GetGuildColumns()
+                for _, a in ipairs(AT:GetEffectiveAttunements(key)) do
                     if a.complete and a.questsTotal and a.questsTotal > 0 then attDone = attDone + 1 end
                 end
+                row[#row + 1] = attDone .. "/" .. attTotal
             end
-            local lastSeen = (d.lastUpdate and d.lastUpdate > 0) and date("%Y-%m-%d", d.lastUpdate) or ""
-            rows[#rows + 1] = {
-                short, classFile or "", level or 0, rankName or "",
-                d.avgIlvl or 0, att, attDone .. "/" .. attTotal, lastSeen,
-            }
+            row[#row + 1] = lastSeen
+            rows[#rows + 1] = row
         end
     end
     return headers, rows
@@ -117,17 +119,22 @@ function Exporter:LootData()
     return headers, rows
 end
 
+-- Readiness: the attunement and consumables columns only where the game has them (TBC,
+-- ADR-0014; issue #184).
 function Exporter:ReadinessData()
-    local headers = { "Name", "Status", "iLvl", "Attune", "MissingEnchants", "MissingConsumes" }
+    local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil
+    local headers = { "Name", "Status", "iLvl" }
+    if hasAttune then headers[#headers + 1] = "Attune" end
+    headers[#headers + 1] = "MissingEnchants"
+    if hasCons then headers[#headers + 1] = "MissingConsumes" end
     local rows = {}
     if GuildOS.Readiness then
         for _, r in ipairs(GuildOS.Readiness:GetReport()) do
-            rows[#rows + 1] = {
-                r.name, r.status, r.ilvl,
-                (r.attTotal > 0) and (r.attDone .. "/" .. r.attTotal) or "",
-                r.missEnch or 0,
-                r.missCons == nil and "" or r.missCons,
-            }
+            local row = { r.name, r.status, r.ilvl }
+            if hasAttune then row[#row + 1] = (r.attTotal > 0) and (r.attDone .. "/" .. r.attTotal) or "" end
+            row[#row + 1] = r.missEnch or 0
+            if hasCons then row[#row + 1] = r.missCons == nil and "" or r.missCons end
+            rows[#rows + 1] = row
         end
     end
     return headers, rows
@@ -160,19 +167,40 @@ function Exporter:EquityData()
     return headers, rows
 end
 
+-- `needs`: the module a dataset reads. Where it is absent (Points on retail, ADR-0026) the dataset is
+-- too: the command says so and the chooser leaves its row out (issue #177). The loot history and its
+-- equity are on retail since issue #183.
 Exporter.DATASETS = {
     roster     = { fn = "RosterData",     title = "Roster" },
     attendance = { fn = "AttendanceData", title = "Attendance" },
-    loot       = { fn = "LootData",       title = "Loot History" },
+    loot       = { fn = "LootData",       title = "Loot History", needs = "LootTracker" },
     readiness  = { fn = "ReadinessData",  title = "Readiness" },
-    standings  = { fn = "StandingsData",  title = "DKP Standings" },
-    equity     = { fn = "EquityData",     title = "Loot Equity" },
+    standings  = { fn = "StandingsData",  title = "DKP Standings", needs = "Points" },
+    equity     = { fn = "EquityData",     title = "Loot Equity", needs = "LootEquity" },
 }
+Exporter.ORDER = { "roster", "attendance", "loot", "readiness", "standings", "equity" }
 
--- Build an export string. Returns (text, title) or nil for an unknown dataset.
+-- Whether this client has the dataset: known, and its module present.
+function Exporter:Has(dataset)
+    local def = self.DATASETS[dataset]
+    return def ~= nil and (not def.needs or GuildOS[def.needs] ~= nil)
+end
+
+-- The datasets this client has, in order, as the usage line lists them: "roster|attendance|...".
+function Exporter:Names()
+    local out = {}
+    for _, key in ipairs(self.ORDER) do
+        if self:Has(key) then out[#out + 1] = key end
+    end
+    return table.concat(out, "|")
+end
+
+-- Build an export string. Returns (text, title); nil for an unknown dataset, and nil, "absent" for
+-- one this client does not have.
 function Exporter:Build(dataset, format)
     local def = self.DATASETS[dataset]
     if not def then return nil end
+    if not self:Has(dataset) then return nil, "absent" end
     local headers, rows = self[def.fn](self)
     return render(headers, rows, format, def.title), def.title
 end

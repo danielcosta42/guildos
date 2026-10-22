@@ -65,12 +65,44 @@ function CoreManager:RolesFor(cls)
     return out
 end
 
--- `role` when the class can play it, else the class's own: a sign-up never carries a role its
--- class cannot fill (issue #94).
-function CoreManager:RoleFor(cls, role)
+-- Retail's damage specs that fight in melee: ChrSpecialization (12.1.5.70448) Flags bit 0x4 on a
+-- Role 2 (damage) spec, the "Initial" specs of a character below level 10 included. Every other
+-- damage spec is ranged: the Hunter's Beast Mastery and Marksmanship, Augmentation, Devourer (1480)
+-- (issue #184).
+CoreManager.MELEE_SPECS = {
+    [70] = true, [71] = true, [72] = true, [103] = true, [251] = true, [252] = true, [255] = true,
+    [259] = true, [260] = true, [261] = true, [263] = true, [269] = true, [577] = true,
+    [1446] = true, [1450] = true, [1451] = true, [1453] = true, [1455] = true, [1456] = true,
+}
+local SPEC_ROLES = { TANK = "tank", HEALER = "healer" }
+
+-- The core role a retail spec record plays ("TANK", "HEALER" or "DAMAGER", as the client names
+-- it), or nil for a spec with no id: a classic one names no role.
+function CoreManager:SpecRole(spec)
+    local id = type(spec) == "table" and tonumber(spec.specID)
+    if not id then return nil end
+    if spec.role == "DAMAGER" then return self.MELEE_SPECS[id] and "mdps" or "rdps" end
+    return SPEC_ROLES[spec.role]
+end
+
+-- The role a member starts in: on retail the one their scanned spec plays, when the class can
+-- play it; otherwise, and on every other client, the class's own (issue #184).
+function CoreManager:DefaultRole(cls, key)
+    if GuildOS.Client.isRetail and key then
+        local m = GuildOS.db and GuildOS.db.members and GuildOS.db.members[key]
+        local role = m and self:SpecRole(m.spec)
+        local can = self.CLASS_ROLES[cls]
+        if role and can and can[role] then return role end
+    end
+    return self.CLASS_DEFAULT_ROLE[cls] or "rdps"
+end
+
+-- `role` when the class can play it, else the member's own (`key`, DefaultRole): a sign-up never
+-- carries a role its class cannot fill (issue #94).
+function CoreManager:RoleFor(cls, role, key)
     local can = self.CLASS_ROLES[cls]
     if can and can[role] then return role end
-    return self.CLASS_DEFAULT_ROLE[cls] or "rdps"
+    return self:DefaultRole(cls, key)
 end
 
 -- Composition targets per raid format (T + H + M + R must sum to the size). TBC's raids are
@@ -117,8 +149,9 @@ function CoreManager:RaidTargets(size)
     return self.RAID_TARGETS[isSizeOfThisGame(size) and size or default]
 end
 
-function CoreManager:GetRoleForClass(class)
-    return self.CLASS_DEFAULT_ROLE[class] or "rdps"
+-- The role a member starts in on the core screen; `key` lets a retail spec decide (DefaultRole).
+function CoreManager:GetRoleForClass(class, key)
+    return self:DefaultRole(class, key)
 end
 
 -- A size this game lacks (a 25 saved by a version that only knew TBC) reads as the default.
@@ -632,7 +665,7 @@ local CLASS_BUFFS_MAP = {
 }
 
 -- TBC's raid buffs. WoW: Forever lists none, as the site's Forever catalogue does on purpose,
--- and the core screen leaves the section out (issue #92).
+-- and the core screen leaves the section out (issue #92). Retail's are Raid Tools' (below).
 local IMPORTANT_BUFFS_LIST = not GuildOS.Client.isAnniversary and {} or {
     { name = "Battle Shout",          src = "WARRIOR" },
     { name = "Blessing of Kings",     src = "PALADIN" },
@@ -671,6 +704,14 @@ function CoreManager:GetComposition(coreName)
     end
 
     local buffStatus = {}
+    local RT = GuildOS.RaidTools
+    if GuildOS.Client.isRetail and RT then
+        -- Retail's are Raid Tools' Midnight buffs, one class each, named by the client: one list
+        -- for both screens (issue #184).
+        for i, b in ipairs(RT:ResolveCoverage(RT.BUFFS, classCount)) do
+            buffStatus[#buffStatus + 1] = { name = b.name, covered = b.covered, source = next(RT.BUFFS[i].classes) }
+        end
+    end
     for _, entry in ipairs(IMPORTANT_BUFFS_LIST) do
         buffStatus[#buffStatus + 1] = {
             name    = entry.name,
@@ -699,7 +740,7 @@ function CoreManager:BroadcastSignup(coreName, note, role)
     local info = {
         name  = playerName,
         class = cls or "WARRIOR",
-        role  = self:RoleFor(cls, role),
+        role  = self:RoleFor(cls, role, playerKey),   -- no pick: my spec's on retail (#184)
         note  = note or "",
         ts    = time(),
     }
@@ -792,7 +833,7 @@ local function discordRecord(self, key, m)
     return {
         name  = type(m.name) == "string" and m.name ~= "" and m.name or key,
         class = cls,
-        role  = self:RoleFor(cls, SITE_ROLES[m.slot] and m.slot or nil),
+        role  = self:RoleFor(cls, SITE_ROLES[m.slot] and m.slot or nil, key),
         note  = "",
         src   = "discord",
     }
@@ -984,12 +1025,18 @@ end
 -- Whose the package is, when it is not this guild's: its guild, and its realm on Anniversary, where
 -- one Inbox.lua serves every realm of an install and a guild is its realm's. Nil when it is ours.
 -- The name is the site's spelling, so capitals aside, as the game and the site's upload take it (#144).
+-- On retail the realm is the guild's home realm, normalized, whichever connected realm this
+-- character is on: the site keeps the guild by it (issue #182).
 local function notOurs(data)
     local mine = GetGuildInfo("player")
     if type(data.guild) ~= "string" or not mine or data.guild:lower() ~= mine:lower() then return tostring(data.guild) end
-    if GuildOS.Client.isAnniversary and data.realm and data.realm ~= GetRealmName() then
-        return tostring(data.guild) .. " (" .. tostring(data.realm) .. ")"
+    local other
+    if GuildOS.Client.isRetail then
+        other = type(data.realm) == "string" and data.realm:gsub("[%s%-]", "") ~= GuildOS:GuildRealm()
+    elseif GuildOS.Client.isAnniversary then
+        other = data.realm and data.realm ~= GetRealmName()
     end
+    if other then return tostring(data.guild) .. " (" .. tostring(data.realm) .. ")" end
     return nil
 end
 
@@ -1161,7 +1208,7 @@ function CoreManager:InitSync()
         local cls = rec and rec.class
         if not self.CLASS_ROLES[cls] then cls = self.CLASS_ROLES[info.class] and info.class or "WARRIOR" end
         info.class = cls
-        info.role = self:RoleFor(cls, info.role)
+        info.role = self:RoleFor(cls, info.role, playerKey)
         self:AddSignup(playerKey, info, d.coreName)
         if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
     end)

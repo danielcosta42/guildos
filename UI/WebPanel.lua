@@ -374,8 +374,9 @@ function GuildOS:CreateWebPanel(parent, _win)
         if on then
             -- Build walks the whole guild, so it runs here and nowhere else.
             local _, count = co:Build()
+            -- A retail region the site has no world for says so here (issue #182).
             countText:SetText(type(count) == "number"
-                and string.format(L["%d members go out next time"], count) or "")
+                and string.format(L["%d members go out next time"], count) or co:Refused() or "")
             writtenText:SetText(string.format(L["Last written: %s"], writtenAgo()))
 
             -- The companion's side of the round trip, and the only place in the

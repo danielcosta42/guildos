@@ -44,6 +44,20 @@ function RecruitScanner:_ExpandTemplate(tmpl, cand)
     return out
 end
 
+-- Who a candidate is to the scanner: the name it is selected, shown and whispered by. On retail
+-- /who names a connected realm's player with their realm, and two namesakes differ only by it, so
+-- it is the whole name /who gave; elsewhere the name alone, as before (issue #184).
+function RecruitScanner:Addr(cand)
+    return GuildOS.Client.isRetail and cand.full or cand.name
+end
+
+-- The key a contacted player's cooldown and reply are remembered under: the whole key on retail
+-- (a name without a realm is this realm's), the name alone elsewhere (issue #184).
+local function contactKey(name)
+    if GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
+    return name:match("^([^-]+)") or name
+end
+
 function RecruitScanner:_CandidateOK(cand, filters, isBannedFn)
     if not cand or not cand.name then return false end
     if cand.guilded then return false end                       -- unguilded only
@@ -51,7 +65,7 @@ function RecruitScanner:_CandidateOK(cand, filters, isBannedFn)
     if (filters.minLevel or 0) > 0 and (cand.level or 0) < filters.minLevel then return false end
     if filters.maxLevel and (cand.level or 0) > filters.maxLevel then return false end
     if filters.classes and next(filters.classes) ~= nil and not filters.classes[cand.class] then return false end
-    if isBannedFn and isBannedFn(cand.name) then return false end
+    if isBannedFn and isBannedFn(cand.full or cand.name) then return false end   -- /who's realm too (#184)
     return true
 end
 
@@ -93,7 +107,7 @@ function RecruitScanner:_OnWhoResult()
             if w and w.fullName then
                 local short = w.fullName:match("^([^-]+)") or w.fullName
                 local cand = {
-                    name = short, level = w.level, class = w.filename,
+                    name = short, full = w.fullName, level = w.level, class = w.filename,
                     zone = w.area, guilded = (w.fullGuildName ~= nil and w.fullGuildName ~= ""),
                 }
                 if self:_CandidateOK(cand, cfg, isBanned) then out[#out + 1] = cand end
@@ -123,10 +137,13 @@ function RecruitScanner:WhisperSelected(names)
     local plan = {}
     for _, name in ipairs(names or {}) do
         if #plan >= (cfg.batchMax or 10) then break end
-        local cd = self._contactCd[name]
-        if not (cd and cd > now) then
+        local cd = self._contactCd[contactKey(name)]
+        -- Banned again at the click: a ban may have arrived since the scan, and on retail a name
+        -- without a realm is this realm's player, whoever the scan listed (issue #184).
+        local banned = GuildOS.BanList and GuildOS.BanList:IsBanned(name)
+        if not (cd and cd > now) and not banned then
             local cand
-            for _, r in ipairs(self._results) do if r.name == name then cand = r; break end end
+            for _, r in ipairs(self._results) do if self:Addr(r) == name then cand = r; break end end
             plan[#plan + 1] = { name = name, msg = self:_ExpandTemplate(cfg.template, cand or { name = name }) }
         end
     end
@@ -142,7 +159,7 @@ function RecruitScanner:WhisperSelected(names)
         return
     end
     for i, w in ipairs(plan) do
-        self._contactCd[w.name] = now + (cfg.cooldownSec or 1800)
+        self._contactCd[contactKey(w.name)] = now + (cfg.cooldownSec or 1800)
         GuildOS.Compat.After(i * 1.5, function()    -- throttle: 1.5s between whispers
             SendChatMessage(w.msg, "WHISPER", nil, w.name)
         end)
@@ -161,7 +178,7 @@ function RecruitScanner:WhisperNext()
     local w = q and table.remove(q, 1)
     if w then
         SendChatMessage(w.msg, "WHISPER", nil, w.name)
-        self._contactCd[w.name] = GetServerTime() + ((GuildOS.db.recruitScanner or {}).cooldownSec or 1800)
+        self._contactCd[contactKey(w.name)] = GetServerTime() + ((GuildOS.db.recruitScanner or {}).cooldownSec or 1800)
     end
     return self:PendingWhispers()
 end
@@ -175,7 +192,7 @@ function RecruitScanner:_RegisterEvents()
     f:SetScript("OnEvent", function(_, _, msg, author)
         if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local short = author and (author:match("^([^-]+)") or author)
-        if short and RecruitScanner._contactCd[short] then
+        if short and RecruitScanner._contactCd[contactKey(author)] then
             local inbox = GuildOS.db.recruitScanner.inbox
             table.insert(inbox, 1, { name = short, msg = msg, ts = GetServerTime() })
             while #inbox > 200 do table.remove(inbox) end
@@ -384,7 +401,8 @@ function RecruitScanner:BuildInto(container)
         selectAllCb.checkbox.onChanged = function(_, checked)
             local results = RecruitScanner:GetResults()
             for _, cand in ipairs(results) do
-                if checked then self._selected[cand.name] = true else self._selected[cand.name] = nil end
+                local who = RecruitScanner:Addr(cand)
+                if checked then self._selected[who] = true else self._selected[who] = nil end
             end
             GuildOS:SafeCall(refresh)
         end
@@ -500,7 +518,7 @@ function RecruitScanner:BuildInto(container)
         if isResults then
             local allSelected = #results > 0
             for _, cand in ipairs(results) do
-                if not self._selected[cand.name] then allSelected = false; break end
+                if not self._selected[RecruitScanner:Addr(cand)] then allSelected = false; break end
             end
             f.selectAllCb.checkbox:SetChecked(allSelected)
             f.selectAllCb.checkbox:Enable()
@@ -520,10 +538,11 @@ function RecruitScanner:BuildInto(container)
             for _, cand in ipairs(results) do
                 local sel = UI:CreateCheckbox(child, "", 16)
                 sel:SetPoint("TOPLEFT", 4, -y)
-                sel.checkbox:SetChecked(self._selected[cand.name] and true or false)
+                local who = RecruitScanner:Addr(cand)   -- realm and all on retail (#184)
+                sel.checkbox:SetChecked(self._selected[who] and true or false)
                 sel.checkbox.onChanged = function(_, checked)
-                    if checked then self._selected[cand.name] = true
-                    else self._selected[cand.name] = nil end
+                    if checked then self._selected[who] = true
+                    else self._selected[who] = nil end
                     GuildOS:SafeCall(refresh) -- live-updates "N selected" + Whisper count
                 end
 
@@ -534,7 +553,7 @@ function RecruitScanner:BuildInto(container)
                 -- (e.g. a row element vs. the whole scroll child) — explicit
                 -- -y on every column sidesteps that entirely. Offsets mirror
                 -- the column header row above (HDR + this offset).
-                local nameFS = UI:CreateText(child, cand.name or "?", 11, C.text.r, C.text.g, C.text.b)
+                local nameFS = UI:CreateText(child, who or "?", 11, C.text.r, C.text.g, C.text.b)
                 nameFS:SetPoint("TOPLEFT", 30, -y)
                 nameFS:SetWidth(200)
                 nameFS:SetJustifyH("LEFT")

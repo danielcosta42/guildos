@@ -93,13 +93,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 function GuildOS:Print(...) print(...) end
 
 dofile(ADDON .. "/Libs/LibDeflate.lua")
-
--- SoftResSystem owns the JSON decoder the import reuses. Loading the whole file
--- would drag in tooltip hooks, so lift just the decoder the same way it exports it.
-local softres = io.open(ADDON .. "/Modules/SoftResSystem.lua"):read("*a")
-local decoderSrc = softres:match("(local function JsonDecode.-\nend\n)")
-assert(decoderSrc, "could not find JsonDecode in SoftResSystem.lua")
-GuildOS.JsonDecode = assert(loadstring(decoderSrc .. "\nreturn JsonDecode"))()
+-- The JSON decoder the import reuses came with Core/Utils.lua above (issue #182).
 
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")

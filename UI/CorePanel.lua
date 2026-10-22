@@ -186,8 +186,9 @@ function GuildOS:CreateCoresPanel(panel)
     local gmDropdown    = nil   -- floating dropdown frame, created once on first open
     local lastCoreBuilt = nil   -- detect core switch so we reset the selection
 
-    local function InferRole(class)
-        return GuildOS.CoreManager and GuildOS.CoreManager:GetRoleForClass(class) or "rdps"
+    -- The class's role, or on retail the role of the member's scanned spec (issue #184).
+    local function InferRole(class, key)
+        return GuildOS.CoreManager and GuildOS.CoreManager:DefaultRole(class, key) or "rdps"
     end
 
     ----------------------------------------------------------------
@@ -703,8 +704,11 @@ function GuildOS:CreateCoresPanel(panel)
         local penFields = {
             { key = "LATE",        label = L["Late (pts):"]         },
             { key = "LEFT_EARLY",  label = L["Left early (pts):"]   },
-            { key = "NO_CONSUMES", label = L["No consumables (pts):"] },
         }
+        -- Consumables are checked only where the checker exists (TBC, ADR-0014; issue #184).
+        if GuildOS.ConsumableChecker then
+            penFields[#penFields + 1] = { key = "NO_CONSUMES", label = L["No consumables (pts):"] }
+        end
         for _, pf in ipairs(penFields) do
             local lbl = track(MakeLabel(rightContent, pf.label, 10))
             lbl:SetPoint("TOPLEFT", 4, y)
@@ -988,7 +992,7 @@ function GuildOS:CreateCoresPanel(panel)
             if addGMName then
                 local cls = addGMClass or "WARRIOR"
                 selBtnLbl   = addGMName .. " |cffAAAAAA(" .. cls:sub(1,1) .. cls:sub(2):lower() .. ")|r"
-                currentRole = addGMRole or InferRole(cls)
+                currentRole = addGMRole or InferRole(cls, addGMKey)
             end
 
             -- Forward-declare roleBtn so the dropdown row callbacks can update it in-place
@@ -1130,7 +1134,7 @@ function GuildOS:CreateCoresPanel(panel)
                                     addGMName  = captureGM.name
                                     addGMKey   = GuildOS:KeyOfRosterName(captureGM.full)
                                     addGMClass = captureGM.class
-                                    addGMRole  = InferRole(captureGM.class)
+                                    addGMRole  = InferRole(captureGM.class, addGMKey)
                                     gmDropdown:Hide()
                                     local lbl2 = captureGM.name .. " |cffAAAAAA(" ..
                                         captureGM.class:sub(1,1) .. captureGM.class:sub(2):lower() .. ")|r"
@@ -1195,7 +1199,7 @@ function GuildOS:CreateCoresPanel(panel)
                 CM:AddMember(k, {
                     name  = addGMName,
                     class = addGMClass,
-                    role  = addGMRole or InferRole(addGMClass or "WARRIOR"),
+                    role  = addGMRole or InferRole(addGMClass or "WARRIOR", k),
                 }, coreName)
                 CM:BroadcastRoster(coreName)
                 addGMName = nil; addGMClass = nil; addGMRole = nil; addGMKey = nil

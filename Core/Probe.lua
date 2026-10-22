@@ -82,6 +82,14 @@ Probe.APIS = {
     -- can hook and not read, so both are asked for.
     "TooltipDataProcessor.AddTooltipPostCall", "TooltipUtil.GetDisplayedItem",
     "TooltipUtil.GetDisplayedSpell", "TooltipUtil.GetDisplayedUnit",
+    -- Retail (ADR-0026): the spec the client names, the item level as worn and the game's own
+    -- average, a weapon told from a shield by id, and the realm keys are spelt with (issue #177).
+    "C_SpecializationInfo.GetSpecialization", "C_SpecializationInfo.GetSpecializationInfo",
+    "C_SpecializationInfo.GetInspectSpecialization", "GetSpecializationInfoForSpecID",
+    "C_Item.GetDetailedItemLevelInfo", "GetAverageItemLevel", "C_Item.GetItemInfoInstant", "GetNormalizedRealmName",
+    -- Retail (issue #184): an inspected guildmate's average item level, and the character sheet's ratings.
+    "C_PaperDollInfo.GetInspectItemLevel", "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste",
+    "GetMasteryEffect", "GetCombatRatingBonus", "GetVersatilityBonus",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -102,10 +110,10 @@ Probe.EVENTS = {
     "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED", "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
     "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER", "CLUB_MESSAGE_ADDED",
     "CLUB_MESSAGE_HISTORY_RECEIVED", "CLUB_STREAM_ADDED", "CLUB_STREAM_REMOVED", "CLUB_STREAMS_LOADED",
-    "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
+    "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_LOOT_RECEIVED", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
     "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",
-    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_TALENT_UPDATE",
+    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
     "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UPDATE_MOUSEOVER_UNIT", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
@@ -259,12 +267,21 @@ local function names(list)
     return table.concat(shown, ", ") .. (#list > LIST_MAX and ", ..." or "")
 end
 
+-- The game this client was taken for, by name (issue #177): the probe on retail said only
+-- "TBC Anniversary: no".
+local GAME_NAMES = { ANNIVERSARY = "TBC Anniversary", FOREVER = "WoW: Forever", RETAIL = "Retail" }
+local function gameName(c)
+    c = c or {}
+    local game = c.game or (c.isAnniversary and "ANNIVERSARY") or (c.isRetail and "RETAIL") or "FOREVER"
+    return GAME_NAMES[game] or tostring(game)
+end
+
 function Probe:PrintSummary(r)
     local b = r.build
     GuildOS:Print(string.format(L["Probe: build %s (%s), interface %s, project %s."],
         tostring(first(b)), tostring(b[2]), tostring(b[4]), tostring(r.projectId)))
-    GuildOS:Print(string.format(L["TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
-        answer(r.client and r.client.isAnniversary or false), answer(r.secrets.restricted),
+    GuildOS:Print(string.format(L["Client: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."],
+        gameName(r.client), answer(r.secrets.restricted),
         answer(first(r.chat.lockdown)), tostring(r.chat.instance[2] or first(r.chat.instance))))
     GuildOS:Print(string.format(L["Missing: %d of %d APIs, %d of %d events."],
         #r.missingApis, #self.APIS + #self.TEMPLATES + #self.SCRIPTS, #r.missingEvents, #self.EVENTS))

@@ -26,8 +26,12 @@ end
 ----------------------------------------------------------------------
 -- Pure helpers (deterministic; unit-tested via /gos selftest)
 ----------------------------------------------------------------------
+-- Who an event is about: the short name, except on retail, where a guild spans connected realms
+-- and two members can share a name: there it is the whole key, a name without a realm on this
+-- client's. Officers on different realms then file the same event under the same id (issue #184).
 function RosterLog:_NormShort(name)
     if not name or name == "" then return name end
+    if GuildOS.Client and GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
     return name:match("^([^-]+)") or name
 end
 
@@ -216,19 +220,21 @@ end
 function RosterLog:_RegisterTests()
     if not GuildOS.SelfTest then return end
     local S = GuildOS.SelfTest
+    -- The names as this client files them: with the realm on retail (#184).
+    local grefer, daniel = RosterLog:_NormShort("Grefer"), RosterLog:_NormShort("Daniel")
     S:Register("rosterlog.parse_join", function()
         local e = RosterLog:_ParseSystem("Grefer has joined the guild.")
-        if not e or e.action ~= "join" or e.target ~= "Grefer" then return false, "join" end
+        if not e or e.action ~= "join" or e.target ~= grefer then return false, "join" end
         return true
     end)
     S:Register("rosterlog.parse_kick", function()
         local e = RosterLog:_ParseSystem("Grefer has been kicked out of the guild by Daniel.")
-        if not e or e.action ~= "kick" or e.target ~= "Grefer" or e.author ~= "Daniel" then return false, "kick" end
+        if not e or e.action ~= "kick" or e.target ~= grefer or e.author ~= daniel then return false, "kick" end
         return true
     end)
     S:Register("rosterlog.parse_promote", function()
         local e = RosterLog:_ParseSystem("Daniel has promoted Grefer to Officer.")
-        if not e or e.action ~= "promote" or e.target ~= "Grefer" or e.author ~= "Daniel" then return false, "promote" end
+        if not e or e.action ~= "promote" or e.target ~= grefer or e.author ~= daniel then return false, "promote" end
         return true
     end)
     S:Register("rosterlog.dedup", function()

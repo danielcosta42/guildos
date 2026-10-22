@@ -27,8 +27,10 @@
 -- addon-message sender arrives), not by UnitName's first name: v7 took its own HELLO for a peer's
 -- and answered itself. ALERT_SENDERS names the operator's characters in full, and a v8 loading
 -- after a v7 adds them to the list it finds.
+-- v9: retail. There UnitFullName's second slot is the realm, whatever ShouldDisplaySurname says, so
+-- a retail client knows itself by UnitName: v8 could read "Name Realm" as a name and surname.
 
-local VERSION = 8
+local VERSION = 9
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -48,10 +50,19 @@ CN.layer     = CN.layer or { mapID = 0, zoneUID = 0 } -- built-in detection (non
 
 local Mesh = _G.ChehulMesh -- shared transport (loaded before this file)
 
+-- A retail client: the mainline project past interface 100000, the two signals GuildOS's
+-- Client.isRetail reads (WoW: Forever may answer the mainline id; its interface is 16001). This
+-- file ships identical in other addons and cannot ask GuildOS, so it reads them itself (v9).
+local function IsRetail()
+    local interface = GetBuildInfo and select(4, GetBuildInfo())
+    return WOW_PROJECT_MAINLINE ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and (tonumber(interface) or 0) >= 100000
+end
+
 -- My own name as every addon-message sender writes it. On WoW: Forever UnitName gives the first
--- name only, and UnitFullName returns the first name and the surname apart (the realm, elsewhere).
+-- name only, and UnitFullName returns the first name and the surname apart (the realm, elsewhere;
+-- never a surname on retail, as GuildOS's Client.has.surnames says).
 local function MyShortName()
-    if C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname and C_PlayerInfo.ShouldDisplaySurname() then
+    if not IsRetail() and C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname and C_PlayerInfo.ShouldDisplaySurname() then
         local first, surname = UnitFullName("player")
         local secret = issecretvalue and (issecretvalue(first) or issecretvalue(surname))
         if not secret and first and surname and surname ~= "" then

@@ -78,7 +78,7 @@ for _, name in ipairs(Probe.APIS) do
   check(not seen[name], "the inventory lists " .. name .. " once")
   seen[name] = true
 end
-check(#Probe.EVENTS == 48, "the probe checks the 48 events the addon registers")
+check(#Probe.EVENTS == 50, "the probe checks the 50 events the addon registers")
 
 -- Drift: the events the addon's own files register are exactly Probe.EVENTS.
 -- Static reading: an event name held in a variable is out of its reach.
@@ -264,8 +264,8 @@ local function list(t)
 end
 check(said(("Probe: build %s (%s), interface %s, project %s."):format("1.60.0", "64210", "16000", "2")),
   "the summary's first line: build, build number, interface and project")
-check(said(("TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."):format(
-  "no", "yes", "error: lockdown exploded", "raid")), "the summary's second line: Anniversary, Secret Values, lockdown, instance")
+check(said(("Client: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."):format(
+  "WoW: Forever", "yes", "error: lockdown exploded", "raid")), "the summary's second line: the game, Secret Values, lockdown, instance")
 check(said(("Missing: %d of %d APIs, %d of %d events."):format(#expectedApis,
   #Probe.APIS + #Probe.TEMPLATES + #Probe.SCRIPTS, #expectedEvents, #Probe.EVENTS)), "the summary carries the missing counts")
 check(#expectedApis > 10 and said(list(expectedApis)), "the summary names the first ten missing APIs")
@@ -334,8 +334,16 @@ r = Probe:Run()
 GuildOS.Client = realClient
 check(r.secrets.issecretvalue == false and r.secrets.C_Secrets == true and r.secrets.C_RestrictedActions == true
   and r.secrets.restricted == false, "C_Secrets present with restrictions off records false, not the API's presence")
-check(said(("TBC Anniversary: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."):format(
-  "yes", "no", "no", "raid")), "on an Anniversary-like client the summary reads Anniversary yes, restricted no, lockdown no")
+check(said(("Client: %s. Secret Values restricted: %s. Chat lockdown here: %s (%s)."):format(
+  "TBC Anniversary", "no", "no", "raid")), "on an Anniversary-like client the summary names it, restricted no, lockdown no")
+GuildOS.Client = { isAnniversary = false, isRetail = true, game = "RETAIL" }
+printed = {}
+r = Probe:Run()
+GuildOS.Client = realClient
+check(said("Client: Retail."), "on retail the summary names retail, not \"TBC Anniversary: no\" (issue #177)")
+for _, api in ipairs({ "C_SpecializationInfo.GetSpecialization", "C_Item.GetDetailedItemLevelInfo", "GetAverageItemLevel" }) do
+  check(r.apis[api] ~= nil, "the probe records retail's " .. api .. " (issue #177)")
+end
 
 -- ── 7. A client without the probe's own APIs ────────────────────────────
 GetServerTime, C_GameRules, C_ChatInfo, GameTooltip, IsInInstance, GetNormalizedRealmName, GetRealmName, C_XMLUtil =

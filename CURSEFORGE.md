@@ -18,7 +18,7 @@ already know it type. Do not change the project slug (`guild-os`): every link ou
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> Guild manager addon for WoW: Forever and Retail: guild roster, raid attendance tracker, raid teams, recruitment, profession directory and guild chat in one window. On Forever, DKP & EPGP, loot master, soft reserves and Discord raid signups on guildos.me.
+> Guild manager addon for WoW: Forever and Retail: guild roster, raid attendance tracker, raid teams, recruitment, profession directory, guild chat and Discord raid signups on guildos.me. On Forever, DKP & EPGP, loot master and soft reserves.
 
 ## Categories
 
@@ -94,9 +94,13 @@ The same window on retail, made for how retail works:
 - **Raid Tools with Midnight's buffs and cooldowns**, and the enchant audit for Midnight's slots.
 - **Midnight's professions**, Jewelcrafting and Inscription included: who in the guild crafts what.
 - **All thirteen classes** in the roster, raid composition, recruitment and the recruit beacon.
+- **guildos.me and its Discord raid signups**, with the raid's difficulty: the roster and the nights go out, the
+  planned roster comes back for *Invite all*, connected-realm guildmates included.
+- **Loot history from personal loot.** What each guildmate received from every boss of a tracked raid, on the roster,
+  the Loot tab with its equity, the exports and guildos.me.
 
-Not on retail: the loot suite (retail is personal loot, so there is no master loot, DKP, soft reserves or
-wishlists), and guildos.me, which takes Forever guilds for now.
+Not on retail: handing loot out (retail is personal loot, so there is no master loot, DKP, soft reserves or
+wishlists).
 
 ---
 
@@ -166,16 +170,16 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
 
 ---
 
-## 🌐 Discord raid signups and a web roster: guildos.me (WoW: Forever)
+## 🌐 Discord raid signups and a web roster: guildos.me (WoW: Forever and Retail)
 
-Optional, and off until you turn it on in the **Web** tab. The addon works the same without it. Retail guilds are
-not on the site yet.
+Optional, and off until you turn it on in the **Web** tab. The addon works the same without it.
 
 - **Discord raid signups that know who is signing**: item level, spec and attendance come with each one
 - **Plan on the site, run it in game**: the planned roster arrives by itself, and the Web tab has *Invite all* and a
   button that moves everyone into their groups
 - **Your guild on the web**: roster, loot and attendance for your members, a recruiting page for everyone else, and
-  each character with their gear, drawn as they look in game (visit a barber once so the addon can see it)
+  each character with their gear, drawn as they look in game (on Forever, visit a barber once so the addon can see
+  it)
 - **Nothing to copy on raid night**: a small Windows companion carries the data between the game and the site. The
   site and the Discord bot work anywhere.
 
@@ -187,8 +191,9 @@ not on the site yet.
 Yes. It is built for it: surnames, no realms, the new professions and the client's privacy rules included.
 
 **Does Guild OS work on Retail?**
-Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat and the officer tools. The loot
-suite is Forever's only, because retail is personal loot.
+Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools and guildos.me.
+Handing loot out (master loot, DKP, soft reserves, wishlists) is Forever's only, because retail is personal loot; the
+loot history records what each guildmate received.
 
 **Is it free?**
 Yes, and open source under the MIT license.

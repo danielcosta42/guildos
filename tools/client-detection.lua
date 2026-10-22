@@ -134,7 +134,7 @@ for _, c in ipairs(GuildOS.Client.classes) do RETAIL_CLASSES[c] = true end
 for _, c in ipairs({ "WARRIOR", "DRUID", "DEATHKNIGHT", "DEMONHUNTER", "MONK", "EVOKER" }) do
   check(RETAIL_CLASSES[c], c .. " is a retail class")
 end
-check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,8,11,12,16", "Midnight's enchant slots")
+check(table.concat(GuildOS.Client.enchantSlots, ",") == "1,3,5,7,8,11,12,16,17", "Midnight's enchant slots")
 client(setmetatable({ project = 1, mainline = 1 }, { __index = FOREVER }))
 check(GuildOS.Client.isRetail == false and GuildOS.Client.game == "FOREVER" and GuildOS.Client.maxLevel == 60,
   "a 1.60 client answering the mainline id is Forever")
@@ -252,12 +252,18 @@ for _, case in ipairs(CLIENTS) do
       id .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
   end
   check(listed("raidTracker"), "raidTracker stays listed on " .. case.label)
-  -- Loot and the site: everywhere but retail (issue #165).
-  for _, id in ipairs({ "loot", "dkp", "wishlist", "web", "lootMaster", "lootTracker" }) do
+  -- Handing loot out: everywhere but retail, where loot is personal (issue #165).
+  for _, id in ipairs({ "dkp", "wishlist", "lootMaster" }) do
     check(listed(id) == not case.retail, id .. (case.retail and " is not listed on " or " stays listed on ") .. case.label)
     check(UI:IsFeatureAllowed(UI:GetFeature(id)) == not case.retail,
       id .. (case.retail and " is refused on " or " is allowed on ") .. case.label)
   end
+  -- The loot history and its tab: everywhere, retail's personal loot included (issue #183).
+  for _, id in ipairs({ "loot", "lootTracker" }) do
+    check(listed(id) and UI:IsFeatureAllowed(UI:GetFeature(id)), id .. " is listed and allowed on " .. case.label)
+  end
+  -- The site: everywhere, retail included since issue #182.
+  check(listed("web") and UI:IsFeatureAllowed(UI:GetFeature("web")), "web is listed and allowed on " .. case.label)
   check(GuildOS.db.settings.modules.consumableChecker == true and GuildOS.db.settings.modules.raidHUD == nil,
     "the player's own toggles are untouched on " .. case.label)
 end

@@ -9,10 +9,14 @@ local L = GuildOS.L
 
 -- Time between inspect requests to avoid server throttle
 local INSPECT_DELAY = 1.5
+-- Seconds after PLAYER_SPECIALIZATION_CHANGED before my spec is read: the client settles the
+-- talents and the loadout's gear a moment after the event (issue #184).
+local SPEC_SETTLE = 1
 
 -- Internal state
 local inspectQueue   = {}
 local inspectPending = nil
+local specChangePending = false
 
 ----------------------------------------------------------------------
 -- TBC spec names per class, ordered by talent tab index (1-3).
@@ -213,6 +217,13 @@ function SpecChecker:BuildSpecRecord(points, names)
     }
 end
 
+-- A spec record's name as the reader says it: on retail by its id, in this client's language, since
+-- the stored name is the sender's (issue #177); the stored tree name everywhere else.
+function SpecChecker:SpecName(spec)
+    if type(spec) ~= "table" then return nil end
+    return spec.specID and GuildOS.Compat.SpecName(spec.specID) or spec.tree
+end
+
 ----------------------------------------------------------------------
 -- Returns a display string such as "41/5/15  (Protection)"
 -- Returns nil if no spec data is available for that key.
@@ -223,7 +234,7 @@ function SpecChecker:GetSpecLabel(memberKey)
     if not data or not data.spec then return nil end
 
     local s   = data.spec
-    if s.specID then return s.tree end   -- retail: the spec's name, no trees to count
+    if s.specID then return self:SpecName(s) end   -- retail: the spec's name, no trees to count
     local pts = s.points or {}
     local dist = table.concat(pts, "/")
     return dist .. "  (" .. (s.tree or "?") .. ")"
@@ -284,6 +295,14 @@ function SpecChecker:ProcessNextInspect()
     end
 end
 
+-- An inspected average item level kept on the member's record (retail, issue #184), unless their
+-- own Guild OS sent one at least as new: a broadcast is stamped `lastUpdate` when collected, and
+-- this reading is now. `lastUpdate` is left alone, so their next broadcast still lands.
+function SpecChecker:KeepInspectedItemLevel(rec, ilvl)
+    if (tonumber(rec.lastUpdate) or 0) >= time() then return end
+    rec.avgIlvl = ilvl
+end
+
 ----------------------------------------------------------------------
 -- Called when INSPECT_READY fires. Reads talent tabs for the
 -- currently pending inspect and stores the result.
@@ -293,10 +312,12 @@ function SpecChecker:OnInspectReady()
 
     if GuildOS.Client.isRetail then
         local spec = self:RetailSpec(inspectPending.unit)
-        if spec then
+        local ilvl = GuildOS.Compat.InspectItemLevel(inspectPending.unit)
+        if spec or ilvl then
             local key = inspectPending.key
             GuildOS.db.members[key] = GuildOS.db.members[key] or { name = inspectPending.name }
-            GuildOS.db.members[key].spec = spec
+            if spec then GuildOS.db.members[key].spec = spec end
+            if ilvl then self:KeepInspectedItemLevel(GuildOS.db.members[key], ilvl) end
         end
         inspectPending = nil
         C_Timer.After(INSPECT_DELAY, function() SpecChecker:ProcessNextInspect() end)
@@ -341,12 +362,26 @@ end
 -- Module initialisation: register for INSPECT_READY and collect
 -- the local player's own spec after talents have loaded.
 ----------------------------------------------------------------------
+-- My spec changed (retail, issue #184): the guild hears it now, not on the next five-minute tick.
+-- A burst of swaps sends once. The event also fires for party members; only mine counts.
+function SpecChecker:OnSpecChanged(unit)
+    if unit ~= "player" or specChangePending then return end
+    specChangePending = true
+    GuildOS.Compat.After(SPEC_SETTLE, function()
+        specChangePending = false
+        if GuildOS.CommSystem then GuildOS.CommSystem:BroadcastMyData(true) end   -- collects first
+    end)
+end
+
 function SpecChecker:Initialize()
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "INSPECT_READY")
-    frame:SetScript("OnEvent", function(_, event)
+    if GuildOS.Client.isRetail then GuildOS.Compat.RegisterEvent(frame, "PLAYER_SPECIALIZATION_CHANGED") end
+    frame:SetScript("OnEvent", function(_, event, unit)
         if event == "INSPECT_READY" then
             SpecChecker:OnInspectReady()
+        elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+            SpecChecker:OnSpecChanged(unit)
         end
     end)
 

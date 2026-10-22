@@ -52,7 +52,8 @@ local function printHelp()
         helpLine("/gos cons",      L["Check raid consumables"])
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
-    helpLine("/gos export <what>", L["Export roster, attendance or loot"])
+    helpLine("/gos export <what>", GuildOS.LootTracker and L["Export roster, attendance or loot"]
+        or L["Export roster or attendance"])   -- the loot history is on retail too since issue #183
     if GuildOS.Companion then helpLine("/gos web [on|off]", L["Copy your guild into the web companion"]) end
     if GuildOS.CompanionImport then helpLine("/gos roster", L["Bring the raid roster in from the website"]) end
 
@@ -168,10 +169,10 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
--- The verbs of what retail does not have (ADR-0026): loot is personal there and guildos.me takes no
--- retail guild yet. Each module is absent, so its verb says so rather than doing nothing or raising.
-local RETAIL_ABSENT = { "^points$", "^dkp$", "^equity$", "^lootequity$", "^lm$", "^lm%s", "^lootmaster$",
-    "^web", "^companion", "^roster", "^wish", "^softres" }
+-- The verbs of what retail does not have (ADR-0026): loot is personal there, so nothing hands it out.
+-- Each module is absent, so its verb says so rather than doing nothing or raising. The site's verbs
+-- (web, companion, roster) are retail's too since issue #182, and equity since issue #183.
+local RETAIL_ABSENT = { "^points$", "^dkp$", "^lm$", "^lm%s", "^lootmaster$", "^wish", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end
@@ -333,8 +334,10 @@ local function handleCommand(msg)
     elseif msg == "resscan" then
         -- Diagnostic: run the resistance scan (equipped + bags) and print the max
         -- wearable per school, so the tooltip-based read can be verified in-game.
-        local r = GuildOS.DataCollector and GuildOS.DataCollector:CollectResistances()
-        if r then
+        local r = GuildOS.Resistances and GuildOS.DataCollector and GuildOS.DataCollector:CollectResistances()
+        if not GuildOS.Resistances then
+            GuildOS:Print(L["Not available on this client."])   -- no resistance gear on retail (#184)
+        elseif r then
             GuildOS:Print(string.format(
                 "Resistances (max wearable) - Shadow %d | Nature %d | Frost %d | Fire %d | Arcane %d",
                 r.shadow or 0, r.nature or 0, r.frost or 0, r.fire or 0, r.arcane or 0))
@@ -387,10 +390,14 @@ local function handleCommand(msg)
             GuildOS:Print(L["Not available on this client."])
         end
     elseif msg:match("^trial") then
-        local rest = msg:gsub("^trial%s*", "")
+        -- The roster's key, so a guildmate on a connected realm is found as the roster menu finds
+        -- them: the whole rest when it is somebody (two words on Forever), else the first word, as
+        -- it always was (issue #177).
+        local rest = strtrim((msg:gsub("^trial%s*", "")))
+        local key = GuildOS:RosterKey(rest)
         local name = rest:match("^(%S+)")
-        if name and GuildOS.TrialTracker then
-            local key = GuildOS:GetPlayerKey(name)
+        if not key and name then key = GuildOS:RosterKey(name) or GuildOS:GetPlayerKey(name) end
+        if key and GuildOS.TrialTracker then
             GuildOS.TrialTracker:AddTrial(key)
         else
             GuildOS:Print(L["Usage: /guildos trial <PlayerName>"])
@@ -453,7 +460,7 @@ local function handleCommand(msg)
             end
         end
     elseif msg:match("^export") then
-        -- /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]
+        -- /guildos export <roster|attendance|loot|readiness|standings|equity> [csv|tsv|discord]
         local rest = strtrim((msg:gsub("^export%s*", "")))
         local dataset, fmt = rest:match("^(%S*)%s*(%S*)$")
         dataset = (dataset and dataset ~= "") and dataset or "roster"
@@ -464,8 +471,10 @@ local function handleCommand(msg)
         end
         if text then
             GuildOS:ShowExportPopup(string.format("%s (%s)", title or L["Export"], fmt), text)
-        else
-            GuildOS:Print(L["Usage: /guildos export <roster|attendance|loot|readiness|standings> [csv|tsv|discord]"])
+        elseif title == "absent" then
+            GuildOS:Print(L["Not available on this client."])
+        elseif GuildOS.Exporter then
+            GuildOS:Print(string.format(L["Usage: /guildos export <%s> [csv|tsv|discord]"], GuildOS.Exporter:Names()))
         end
     elseif msg:match("^wish") then
         if not GuildOS:IsOfficer() then
@@ -552,6 +561,8 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "attune dumpquests" and not GuildOS.AttunementTracker then
+        GuildOS:Print(L["Not available on this client."])   -- TBC's attunement quests (issue #184)
     elseif msg == "attune dumpquests" then
         -- Dumps all completed quest IDs in the TBC attunement range.
         -- Covers T4/T5/T6 + some headroom for anniversary-specific hidden flags.
@@ -636,6 +647,8 @@ local function handleCommand(msg)
         local name = strtrim((msg:gsub("^unban%s+", "")))
         if name ~= "" and GuildOS.BanList and GuildOS.BanList:Remove(name) then
             GuildOS:Print(L["Unbanned "] .. name)
+        elseif name ~= "" and GuildOS.BanList and GuildOS:IsOfficer() then
+            GuildOS:Print(string.format(L["No ban to lift for %s."], name))   -- nothing stood there (#184)
         end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")

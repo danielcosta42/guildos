@@ -137,7 +137,8 @@ check(R:SkipNext() == 0 and #env.invited == 1, "Skip invites nobody")
 env.whisper("ginv", "Bran Stone-Realm")
 check(#R._pendingInvites == 0, "and a skipped asker is not asked about again inside the cooldown")
 local bans = {}
-B.BanList = { IsBanned = function(_, n) return bans[n] end }
+-- By the name alone, as BanList keys a ban off retail: a caller may hand it the whole name (#184).
+B.BanList = { IsBanned = function(_, n) return bans[n:match("^([^-]+)") or n] end }
 env.whisper("ginv", "Evil Guy-Realm")
 bans["Evil Guy"] = true                 -- a ban that arrives while the name waits
 env.whisper("ginv", "Unseen Person-Realm")

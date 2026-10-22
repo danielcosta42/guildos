@@ -127,9 +127,7 @@ check(K("Ana", "") == "Ana-Firemaw", "an empty realm from the caller counts as a
 check(K(nil) == nil and K("") == nil and K(nil, "Firemaw") == nil, "no name gives no key, and nothing raises")
 
 -- ── 2. The Anniversary roster fixture ───────────────────────────────────
-dofile(ADDON .. "/Libs/LibDeflate.lua")
-local softres = assert(io.open(ADDON .. "/Modules/SoftResSystem.lua", "rb")):read("*a"):gsub("\r\n", "\n")
-GuildOS.JsonDecode = assert(loadstring(assert(softres:match("(local function JsonDecode.-\nend\n)")) .. "\nreturn JsonDecode"))()
+dofile(ADDON .. "/Libs/LibDeflate.lua")   -- the JSON decoder is Core/Utils.lua's (issue #182)
 local fixture = assert(io.open(ADDON .. "/tools/roster-fixture.txt", "rb")):read("*a")
 local roster, why = GuildOS.CompanionImport:Parse(fixture)
 check(roster and #roster.members > 0, "tools/roster-fixture.txt decodes through the real CompanionImport: " .. tostring(why))
@@ -328,6 +326,19 @@ end)
 slash("trial Bob")
 slash("note Bob steady tank")
 check(trials[#trials] == "Bob-Firemaw" and notes[#notes] == "Bob-Firemaw", "Anniversary: /gos trial and /gos note keep their keys")
+-- A guildmate on another realm of the guild, as on retail's connected realms (issue #177).
+local savedRoster = ROSTER
+ROSTER = { "Bob-Gallywix" }
+slash("trial Bob")
+check(trials[#trials] == "Bob-Gallywix", "/gos trial finds a guildmate on a connected realm by the roster's key")
+slash("trial Bob was here")
+check(trials[#trials] == "Bob-Gallywix", "words after a one-word name are not part of it")
+realmless(function(how)
+  ROSTER = { "First Last" }
+  slash("trial First Last")
+  check(trials[#trials] == "First Last", how .. ": /gos trial takes a two-word name whole")
+end)
+ROSTER = savedRoster
 
 -- ── 10. Pug inspector ───────────────────────────────────────────────────
 local PI = GuildOS.PugInspector
@@ -406,8 +417,8 @@ realmless(function(how)
   check(ps.members[2].key == "Bob-Suffix" and ps.exportedBy == "Ana", how .. ": the export's rows carry the suffix, its author does not")
   check(peerAward("Bob") == "Bob" and rollKey("Bob") == "Bob", how .. ": loot keys stay bare")
   slash("trial Bob")
-  check(trials[#trials] == "Bob" and GuildOS:GetMemberRecord("Bob-Suffix").key == "Bob",
-        how .. ": /gos trial and the member record stay bare")
+  check(trials[#trials] == "Bob-Suffix" and GuildOS:GetMemberRecord("Bob-Suffix").key == "Bob",
+        how .. ": /gos trial follows the roster's key, as /gos note does (issue #177); the member record stays bare")
 end)
 
 -- ── 14. No member key is built by hand any more ─────────────────────────
@@ -439,7 +450,9 @@ for line in toc:gmatch("[^\r\n]+") do
     local _, fallbacks = src:gsub('GetRealmName%(%)%s*%)?%s*or%s*["\']', "")
     local _, normalizedFallbacks = src:gsub('GetNormalizedRealmName%(%)%s*%)?%s*or%s*["\']', "")
     local _, clientFallbacks = src:gsub('GetClientRealm%(%)%s*%)?%s*or%s*["\']', "")
-    check(fallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
+    -- The per-guild database key's "Unknown", the one literal left, through the guild's realm (issue #182).
+    local _, guildFallbacks = src:gsub('GuildRealm%(%)%s*%)?%s*or%s*["\']', "")
+    check(fallbacks == 0 and guildFallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
           and clientFallbacks == (rel == "Modules/PugInspector.lua" and 1 or 0),
           rel .. " falls back from the client's realm to a literal")
     -- ChehulNet ships identical in other addons, so it cannot reach GuildOS's Compat.

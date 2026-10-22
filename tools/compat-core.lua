@@ -95,7 +95,9 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
-for _, m in ipairs({ "DataCollector", "SpecChecker", "CommSystem", "LootMaster", "ConsumableChecker", "CompanionExport" }) do
+-- Resistances: the resistance scan runs where its module is (issue #184).
+for _, m in ipairs({ "DataCollector", "SpecChecker", "CommSystem", "LootMaster", "ConsumableChecker", "CompanionExport",
+                     "Resistances" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
 local Compat = GuildOS.Compat

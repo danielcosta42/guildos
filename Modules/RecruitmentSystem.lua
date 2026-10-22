@@ -133,13 +133,18 @@ end
 -- GetChannelName("LookingForGroup") is 0 on a French client (issue #112). A zone channel goes by
 -- its shortcut ("Commerce" for "Commerce - Hurlevent"), LookingForGroup by its name: they differ
 -- only on Forever in Russian. Forever has no GuildRecruitment channel, and its Spanish
--- LookingForGroup is BuscarGrupo.
+-- LookingForGroup is BuscarGrupo. Retail's table (12.1.5.70448) names both as Forever does and has
+-- no GuildRecruitment either (issue #177). Only retail is in Italian (`retail`): Commercio and
+-- CercaGruppo; Forever's (1.60.1.70450, 70532) and Anniversary's (2.5.6.70006) itIT rows are the
+-- English ones (issue #184).
 Recruitment.CHANNELS = {
     { enUS = "Trade", deDE = "Handel", esES = "Comercio", esMX = "Comercio", frFR = "Commerce",
-      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易" },
+      ptBR = "Comércio", ruRU = "Торговля", koKR = "거래", zhCN = "交易", zhTW = "交易",
+      retail = { itIT = "Commercio" } },
     { enUS = "LookingForGroup", deDE = "SucheNachGruppe", esES = "BuscandoGrupo", esMX = "BuscarGrupo",
       frFR = "RechercheDeGroupe", ptBR = "ProcurandoGrupo", ruRU = "ПоискСпутников", koKR = "파티찾기",
-      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" } },
+      zhCN = "寻求组队", zhTW = "尋求組隊", forever = { esES = "BuscarGrupo", ruRU = "Поиск спутников" },
+      retail = { itIT = "CercaGruppo" } },
     { enUS = "GuildRecruitment", deDE = "Gildenrekrutierung", esES = "BuscaHermandad", esMX = "BuscaHermandad",
       frFR = "RecrutementDeGuilde", ptBR = "RecrutamentoDeGuilda", ruRU = "Гильдии", koKR = "길드모집",
       zhCN = "公会招募", zhTW = "公會招募", anniversaryOnly = true },
@@ -147,7 +152,8 @@ Recruitment.CHANNELS = {
 
 local function channelFor(c)
     local loc = GetLocale and GetLocale() or "enUS"
-    return (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
+    return (GuildOS.Client.isRetail and c.retail and c.retail[loc])
+        or (not GuildOS.Client.isAnniversary and c.forever and c.forever[loc]) or c[loc] or c.enUS
 end
 
 -- This client's preset channels, in order.
@@ -166,7 +172,7 @@ function Recruitment:ChannelName(name)
     local n = tostring(name or ""):lower()
     for _, c in ipairs(self.CHANNELS) do
         if GuildOS.Client.isAnniversary or not c.anniversaryOnly then
-            for _, names in ipairs({ c, c.forever or {} }) do
+            for _, names in ipairs({ c, c.forever or {}, c.retail or {} }) do
                 for _, v in pairs(names) do
                     if type(v) == "string" and v:lower() == n then return channelFor(c) end
                 end
@@ -384,8 +390,9 @@ end
 
 function Recruitment:_HandleKeywordWhisper(sender, author)
     local cfg = GuildOS.db.recruitment.autoInvite
-    -- Ban gate (BanList already alerts on a banned whisper)
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(sender) then return end
+    -- Ban gate (BanList already alerts on a banned whisper). The whole sender: on retail the realm
+    -- tells a banned namesake from this realm's (issue #184).
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(author or sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
     -- Filters need a /who, which Forever runs only from a click: there the officer's click on
@@ -463,7 +470,7 @@ function Recruitment:InviteNext()
     local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
     local e = table.remove(list, 1)
     if not (e and cfg) then return #list end
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.name) then
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.full or e.name) then   -- realm and all (#184)
         GuildOS:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
     elseif not self:_OnInviteCooldown(e.name, GetServerTime()) then
         self:_InviteNow(e.name, e.full)

@@ -10,8 +10,10 @@ client localizes names at run time. Rerun on every beta build, and on retail on 
 Retail keeps only the current expansion's recipes (the child line with the highest tier under each
 profession): a row's SkillupSkillLineID names the expansion it levels. Most of them craft through
 CraftingData (Effect 288) and many in quality tiers (CraftingDataItemQuality); an enchant crafts
-through Effect 301. Their tiered reagents (ModifiedCraftingSpellSlot) are left out: only the plain
-SpellReagents are listed.
+through Effect 301, a feast through Effect 296. Their tiered reagents (ModifiedCraftingSpellSlot) are
+left out: only the plain SpellReagents are listed. A row with no SkillupSkillLineID is left out too: on
+12.1.5.70448 there are 208 that would make something, every one an older expansion's (spell 399040 and
+below; Midnight's start at 471003), mostly WoD and Legion follower and garrison crafts (issue #177).
 """
 import collections
 import csv
@@ -116,7 +118,8 @@ def build_catalog(t, retail=False):
         made = None   # (item, count): the item, or a crafting record's item, or its first quality tier
         for e in effs:
             kind = num(e["Effect"])
-            item = num(e.get("EffectItemType")) if kind in (CREATE_ITEM, CRAFT_FEAST) else 0
+            # A feast's effect is retail's alone: Forever's catalog keeps what Effect 24 makes (issue #177).
+            item = num(e.get("EffectItemType")) if kind == CREATE_ITEM or (retail and kind == CRAFT_FEAST) else 0
             if retail and not item and kind in (CRAFT_ITEM, CRAFT_FEAST):
                 data = num(e.get("EffectMiscValue_0"))
                 item = crafted.get(data) or min(tiered.get(data) or [0])
@@ -223,6 +226,12 @@ def selftest():
     assert lua.startswith("-- Generated")
     assert "[2657] = {186," in lua and 'en = "Mining"' in lua and "[9788] = 164," in lua
     assert "if GuildOS.Client.isAnniversary or GuildOS.Client.isRetail then return end" in lua, "Forever's catalog is Forever's"
+    # A row whose only effect is retail's feast (296) makes nothing on Forever (issue #177).
+    feast = dict(t["SpellEffect"][0], Effect=str(CRAFT_FEAST), EffectItemType="2840", SpellID="999296")
+    row = dict(next(r for r in t["SkillLineAbility"] if r["Spell"] == "2657"), Spell="999296", AcquireMethod="1")
+    t["SpellEffect"].append(feast)
+    t["SkillLineAbility"].append(row)
+    assert 999296 not in build_catalog(t)["recipes"], "Forever's path takes no Effect 296"
     print(f"prof_catalog: self-test passed ({len(cat['recipes'])} fixture recipes)")
     selftest_retail()
 

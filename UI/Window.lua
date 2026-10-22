@@ -688,8 +688,12 @@ function UI:OpenWindow(id, sub, filter)
     local def = self:GetFeature(id)
     if not (def and def.tab) then return false end
     -- Checked here with their own messages, before the tab gate that covers
-    -- all three: a disabled feature, a failed one and a rank refusal read
-    -- differently to the player.
+    -- all four: an absent feature, a disabled one, a failed one and a rank
+    -- refusal read differently to the player.
+    if self:IsFeatureAbsent(def) then
+        GuildOS:Print(L["Not available on this client."])
+        return false
+    end
     if not GuildOS:IsFeatureEnabled(id) then
         GuildOS:Print(string.format(L["%s is disabled in Settings."], def.label))
         return false

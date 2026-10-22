@@ -41,7 +41,7 @@ local function RefreshCoreSignupFrame()
     local playerName  = GuildOS.Compat.PlayerName() or ""
     local _, pClass   = UnitClass("player")
     local playerKey   = GuildOS:GetPlayerKey(playerName, GetRealmName())
-    local playerRole  = CM:RoleFor(pClass, f.pickedRole)   -- the one picked, else the class's own (#94)
+    local playerRole  = CM:RoleFor(pClass, f.pickedRole, playerKey)   -- the one picked, else my own (#94, #184)
     local rc          = CM.ROLE_COLORS[playerRole] or { r=1, g=1, b=1 }
 
     -- The role buttons: the picked one lit in its colour
@@ -492,7 +492,9 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         local startTime = sd.startTime or s.id
         local weekNum   = math.floor((startTime - TUESDAY_EPOCH) / WEEK_SECS)
         local sgTag     = sd.groupTag or ""
-        local groupKey  = (sd.instanceID or 0) .. "_" .. weekNum .. "|" .. sgTag
+        -- A retail raid's difficulties are separate lockouts, so separate groups (issue #177).
+        local diff      = GuildOS.RaidTracker:DifficultyLabel(sd)
+        local groupKey  = (sd.instanceID or 0) .. "_" .. weekNum .. "|" .. sgTag .. "|" .. (diff or "")
 
         if not groups[groupKey] then
             local wStart = TUESDAY_EPOCH + weekNum * WEEK_SECS
@@ -501,6 +503,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                 instanceID = sd.instanceID,
                 size       = 0,
                 name       = sd.name or L["Unknown"],
+                difficulty = diff,
+                difficultyID = tonumber(sd.difficulty),   -- what counts on retail (issue #182)
                 groupTag   = sgTag,
                 weekNum    = weekNum,
                 weekStart  = wStart,
@@ -535,7 +539,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     for _, groupKey in ipairs(groupOrder) do
         local g          = groups[groupKey]
         local isGroupExp = _groupExpanded[groupKey]
-        local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size)
+        local is25       = GuildOS.RaidTracker:Is25Man(g.instanceID, g.size, g.difficultyID)
         local gRowH      = 26
 
         -- Count unique players
@@ -556,7 +560,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
 
         -- Raid name (gold for 25-man, silver for 10-man)
         local nameClr = is25 and C.gold or C.silver
-        local nameLabel = g.name
+        local nameLabel = g.difficulty and (g.name .. " (" .. g.difficulty .. ")") or g.name
         if g.groupTag and g.groupTag ~= "" then
             nameLabel = "|cff9966FF[" .. g.groupTag .. "]|r " .. nameLabel
         end
@@ -723,7 +727,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     local function Hdr(txt, x)
                         UI:CreateText(hdrFrame, txt, 8, C.accent.r, C.accent.g, C.accent.b):SetPoint("LEFT", x, 0)
                     end
-                    Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210); Hdr(L["NO CONS"], 290)
+                    Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210)
+                    if GuildOS.ConsumableChecker then Hdr(L["NO CONS"], 290) end   -- TBC only (issue #184)
                     yOff = yOff + 18
 
                     for pIdx, p in ipairs(playerList) do
@@ -750,9 +755,11 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         Flag(170, p.wasLate,   L["LATE"], L["OK"])
                         Flag(210, p.leftEarly, L["LEFT"], L["OK"])
 
-                        local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
-                        local cr2 = not p.noConsumes and C.green or C.red
-                        UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b):SetPoint("LEFT", 290, 0)
+                        if GuildOS.ConsumableChecker then
+                            local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
+                            local cr2 = not p.noConsumes and C.green or C.red
+                            UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b):SetPoint("LEFT", 290, 0)
+                        end
 
                         yOff = yOff + 20
                     end
@@ -895,7 +902,10 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
             local pen = GuildOS.RaidTracker:GetPenalties(capturedEntry.groupTag)
             if pen.LATE > 0 then GameTooltip:AddLine("-" .. pen.LATE .. L[" Arrived late"], 0.7,0.5,0.5) end
             if pen.LEFT_EARLY > 0 then GameTooltip:AddLine("-" .. pen.LEFT_EARLY .. L[" Left early"], 0.7,0.5,0.5) end
-            if pen.NO_CONSUMES > 0 then GameTooltip:AddLine("-" .. pen.NO_CONSUMES .. L[" No consumables"], 0.7,0.5,0.5) end
+            -- Only where consumables are checked (TBC, ADR-0014): elsewhere it never costs anything (issue #184).
+            if pen.NO_CONSUMES > 0 and GuildOS.ConsumableChecker then
+                GameTooltip:AddLine("-" .. pen.NO_CONSUMES .. L[" No consumables"], 0.7,0.5,0.5)
+            end
             GameTooltip:Show()
             local _ = capturedEntry
         end)
@@ -930,16 +940,20 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     local countText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
     countText:SetPoint("TOPRIGHT", 0, -2)
 
-    -- View toggle: History | Equity | SoftRes
+    -- View toggle: History | Equity | SoftRes. Retail has no soft reserves and no loot master
+    -- (ADR-0026): its tab is the history and the equity of personal loot (issue #183).
     local histBtn = UI:CreateButton(scrollParent, L["History"], 90, 20)
     histBtn:SetPoint("TOPLEFT", 0, -24)
     local eqBtn = UI:CreateButton(scrollParent, L["Equity"], 90, 20)
     eqBtn:SetPoint("LEFT", histBtn, "RIGHT", 6, 0)
-    local srBtn = UI:CreateButton(scrollParent, L["Soft Res"], 90, 20)
-    srBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    local srBtn
+    if GuildOS.SoftRes then
+        srBtn = UI:CreateButton(scrollParent, L["Soft Res"], 90, 20)
+        srBtn:SetPoint("LEFT", eqBtn, "RIGHT", 6, 0)
+    end
 
     local exportBtn = UI:CreateButton(scrollParent, L["Export"], 90, 20)
-    exportBtn:SetPoint("LEFT", srBtn, "RIGHT", 6, 0)
+    exportBtn:SetPoint("LEFT", srBtn or eqBtn, "RIGHT", 6, 0)
     exportBtn:SetScript("OnClick", function()
         GuildOS:ShowExportPopup(L["Loot Export"], GuildOS:ExportLoot())
     end)
@@ -949,12 +963,14 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     lmText:SetPoint("RIGHT", scrollParent, "TOPRIGHT", 0, -34)   -- the buttons' row
     lmText:SetWordWrap(false)
     lmText:SetJustifyH("LEFT")
-    local lmEvents = CreateFrame("Frame")
-    GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
-    GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
-    lmEvents:SetScript("OnEvent", function()
-        if parent:IsVisible() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
-    end)
+    if GuildOS.LootMaster then
+        local lmEvents = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(lmEvents, "PARTY_LOOT_METHOD_CHANGED")
+        GuildOS.Compat.RegisterEvent(lmEvents, "GROUP_ROSTER_UPDATE")
+        lmEvents:SetScript("OnEvent", function()
+            if parent:IsVisible() then lmText:SetText(GuildOS:LootMasterStatus() or "") end
+        end)
+    end
 
     local VIEW_TOP = 50  -- space reserved for title + toggle row
 
@@ -1162,7 +1178,7 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
         end
         btnColor(histBtn, which == "history")
         btnColor(eqBtn,   which == "equity")
-        btnColor(srBtn,   which == "softres")
+        if srBtn then btnColor(srBtn, which == "softres") end
 
         if which == "history" then
             GuildOS:RefreshLootPanel(lootContent, countText)
@@ -1174,7 +1190,7 @@ function GuildOS:CreateLootPanel(parent, _mainFrame)
     end
     histBtn:SetScript("OnClick", function() showView("history") end)
     eqBtn:SetScript("OnClick",   function() showView("equity")  end)
-    srBtn:SetScript("OnClick",   function() showView("softres") end)
+    if srBtn then srBtn:SetScript("OnClick", function() showView("softres") end) end
 
     parent:SetScript("OnShow", function()
         lmText:SetText(GuildOS:LootMasterStatus() or "")
@@ -1328,8 +1344,10 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     hName:SetPoint("LEFT", 6, 0)
     local hIlvl = UI:CreateHeaderText(colHeader, L["iLVL"], 10)
     hIlvl:SetPoint("LEFT", 140, 0)
-    local hAtt = UI:CreateHeaderText(colHeader, L["ATTUNE"], 10)
-    hAtt:SetPoint("LEFT", 210, 0)
+    if GuildOS.AttunementTracker then   -- attunements are TBC's (ADR-0014; issue #184)
+        local hAtt = UI:CreateHeaderText(colHeader, L["ATTUNE"], 10)
+        hAtt:SetPoint("LEFT", 210, 0)
+    end
     local hSponsor = UI:CreateHeaderText(colHeader, L["SPONSOR"], 10)
     hSponsor:SetPoint("LEFT", 290, 0)
     local hDays = UI:CreateHeaderText(colHeader, L["REMAINING"], 10)
@@ -1417,18 +1435,22 @@ function GuildOS:RefreshTrialsPanel(parent)
             ilvlText:SetPoint("LEFT", 140, 0)
 
             -- Attunement progress
-            local attColor = progress.attDelta > 0 and C.green or C.silver
-            local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
-            local attText = UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b)
-            attText:SetPoint("LEFT", 210, 0)
+            if GuildOS.AttunementTracker then
+                local attColor = progress.attDelta > 0 and C.green or C.silver
+                local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
+                local attText = UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b)
+                attText:SetPoint("LEFT", 210, 0)
+            end
         else
             local ilvlVal = memberData and memberData.avgIlvl or 0
             if ilvlVal > 0 then
                 local ilvlText = UI:CreateText(row, tostring(ilvlVal), 9, C.silver.r, C.silver.g, C.silver.b)
                 ilvlText:SetPoint("LEFT", 140, 0)
             end
-            local noProgText = UI:CreateText(row, "-", 9, C.silver.r, C.silver.g, C.silver.b)
-            noProgText:SetPoint("LEFT", 210, 0)
+            if GuildOS.AttunementTracker then
+                local noProgText = UI:CreateText(row, "-", 9, C.silver.r, C.silver.g, C.silver.b)
+                noProgText:SetPoint("LEFT", 210, 0)
+            end
         end
 
         local sponsorText = UI:CreateText(row, data.sponsor or "?", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -1626,18 +1648,18 @@ function GuildOS:ShowExportChooser()
     close:SetPoint("TOPRIGHT", -8, -8)
     close:SetScript("OnClick", function() f:Hide() end)
 
-    -- `needs`: the module the dataset reads, absent on retail (ADR-0026), where the row is left out.
+    -- A dataset this client does not have (retail's loot, ADR-0026) is left out.
     local datasets = {
         { key = "roster",     label = L["Roster"] },
         { key = "attendance", label = L["Attendance"] },
-        { key = "loot",       label = L["Loot History"], needs = "LootTracker" },
+        { key = "loot",       label = L["Loot History"] },
         { key = "readiness",  label = L["Readiness"] },
-        { key = "equity",     label = L["Loot Equity"], needs = "LootEquity" },
-        { key = "standings",  label = L["DKP Standings"], needs = "Points" },
+        { key = "equity",     label = L["Loot Equity"] },
+        { key = "standings",  label = L["DKP Standings"] },
     }
     local y = -56
     for _, d in ipairs(datasets) do
-        if not d.needs or GuildOS[d.needs] then
+        if GuildOS.Exporter:Has(d.key) then
             local lbl = UI:CreateText(f, d.label, 11, C.text.r, C.text.g, C.text.b)
             lbl:SetPoint("TOPLEFT", 16, y)
             local fx = 150
@@ -2085,7 +2107,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
     if GuildOS:LootSystemShowsWishlist() then
         quickButtons[#quickButtons + 1] = { label = L["My Wishlist"], fn = function() GuildOS:ShowWishlistFrame() end }
     end
-    if GuildOS.LootEquity then  -- not on retail (ADR-0026)
+    if GuildOS.LootEquity then  -- on retail too since issue #183
         quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
             local txt = GuildOS.Exporter and GuildOS.Exporter:Build("equity", "tsv") or ""
             GuildOS:ShowExportPopup(L["Loot Equity"], txt)
@@ -2732,8 +2754,11 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local penalties = {
         { key = "LATE",        label = L["Late (missed first snapshot)"] },
         { key = "LEFT_EARLY",  label = L["Left Early (missed last snapshot)"] },
-        { key = "NO_CONSUMES", label = L["No Consumables (<50% snapshots)"] },
     }
+    -- Consumables are checked only where the checker exists (TBC, ADR-0014; issue #184).
+    if GuildOS.ConsumableChecker then
+        penalties[#penalties + 1] = { key = "NO_CONSUMES", label = L["No Consumables (<50% snapshots)"] }
+    end
     local pen = GuildOS.RaidTracker:GetPenalties("")
     local canEdit = isOfficer and GuildOS.CoreManager
     local penBoxes = {}
@@ -3253,8 +3278,10 @@ function GuildOS:RefreshSettingsPanel(content, category)
     creditText:SetPoint("TOPLEFT", 8, -yOff)
     yOff = yOff + 22
 
-    local privacy = UI:CreateText(content,
-        L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],
+    -- Retail has no attunements and no wishlist (ADR-0026, issue #177).
+    local privacy = UI:CreateText(content, GuildOS.Client.isRetail
+        and L["Guild OS syncs your gear, professions and spec with guildmates running the addon. Officer notes and trials stay officer-only."]
+        or L["Guild OS syncs your gear, professions, attunements, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."],
         10, C.silver.r, C.silver.g, C.silver.b)
     privacy:SetPoint("TOPLEFT", 8, -yOff)
     privacy:SetWidth(content:GetWidth() - 20)
@@ -3272,9 +3299,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     linksBtn:SetScript("OnClick", function()
         GuildOS:ShowExportPopup(L["Guild OS Links"],
             -- The site first: it is the one link here that does something for the
-            -- person reading it. The other three are where the addon comes from. Not on retail,
-            -- which guildos.me does not take yet (ADR-0026).
-            (GuildOS.Client.isRetail and "" or "App:  https://guildos.me\n")
+            -- person reading it. The other three are where the addon comes from. On
+            -- retail too since issue #182.
+            "App:  https://guildos.me\n"
             .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")

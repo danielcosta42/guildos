@@ -19,6 +19,37 @@ local STATS_LIST = {
     { label = L["INT"], key = "intellect" },
     { label = L["SPI"], key = "spirit"    },
 }
+-- Retail's sheet (issue #184): the spec's primary stat, named by which one it is, stamina and the
+-- four ratings in percent. No spirit, and no mana bar for most specs.
+local PRIMARY_LABEL = { strength = L["STR"], agility = L["AGI"], intellect = L["INT"] }
+if GuildOS.Client.isRetail then
+    STATS_LIST = {
+        { label = L["HP"],      key = "health", color = "green" },
+        { primary = true },
+        { label = L["STA"],     key = "stamina" },
+        { label = L["Crit"],    key = "crit",        pct = true },
+        { label = L["Haste"],   key = "haste",       pct = true },
+        { label = L["Mastery"], key = "mastery",     pct = true },
+        { label = L["Vers"],    key = "versatility", pct = true },
+    }
+end
+
+-- The stat cells a member's sheet draws, as { label, text, color }: the primary entry becomes the
+-- stat the member sent (left out when they sent none), a rating reads in percent. A value from a
+-- guildmate's broadcast that is not a number shows as 0 rather than stopping the sheet (issue #184).
+function GuildOS:MemberStatCells(stats)
+    local out = {}
+    if type(stats) ~= "table" then return out end
+    for _, s in ipairs(STATS_LIST) do
+        local label, key = s.label, s.key
+        if s.primary then label, key = PRIMARY_LABEL[stats.primary], stats.primary end
+        if label then
+            local v = tonumber(stats[key]) or 0
+            out[#out + 1] = { label = label, text = s.pct and string.format("%.1f%%", v) or tostring(v), color = s.color }
+        end
+    end
+    return out
+end
 
 ----------------------------------------------------------------------
 -- Widget pool for PopulateDetail.
@@ -431,7 +462,7 @@ function PopulateDetail(frame, data)
         statsGrid:Show()
 
         local colWidth = (contentWidth - 20) / 4
-        for i, stat in ipairs(STATS_LIST) do
+        for i, stat in ipairs(GuildOS:MemberStatCells(data.stats)) do
             local col = ((i - 1) % 4)
             local row = math.floor((i - 1) / 4)
             local sc = stat.color and C[stat.color] or C.white
@@ -447,7 +478,7 @@ function PopulateDetail(frame, data)
             GuildOS:ApplyFont(value, 11)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
             value:SetTextColor(sc.r, sc.g, sc.b)
-            value:SetText(tostring(data.stats[stat.key] or 0))
+            value:SetText(stat.text)
             value:Show()
         end
 
@@ -667,15 +698,17 @@ function PopulateDetail(frame, data)
                 ilvlText:SetText(ilvlStr)
                 ilvlText:Show()
 
-                -- Attunement progress
-                local attColor = progress.attDelta > 0 and C.green or C.silver
-                local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
-                local attText = _pFS(child)
-                GuildOS:ApplyFont(attText, 10)
-                attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
-                attText:SetTextColor(attColor.r, attColor.g, attColor.b)
-                attText:SetText(attStr)
-                attText:Show()
+                -- Attunement progress, where the game has attunements (TBC, ADR-0014; issue #184)
+                if GuildOS.AttunementTracker then
+                    local attColor = progress.attDelta > 0 and C.green or C.silver
+                    local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
+                    local attText = _pFS(child)
+                    GuildOS:ApplyFont(attText, 10)
+                    attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
+                    attText:SetTextColor(attColor.r, attColor.g, attColor.b)
+                    attText:SetText(attStr)
+                    attText:Show()
+                end
                 yOff = yOff - 16
             end
 
@@ -812,17 +845,22 @@ function PopulateDetail(frame, data)
         yOff = CreateSectionHeader(child, L["LINKED CHARACTERS"] .. hdrSuffix, yOff, contentWidth)
         yOff = yOff - 5
 
-        local noteLabel = _pFS(child)
-        GuildOS:ApplyFont(noteLabel, 9)
-        noteLabel:SetPoint("TOPLEFT", 12, yOff)
-        noteLabel:SetWidth(contentWidth - 24)
-        noteLabel:SetJustifyH("LEFT")
-        noteLabel:SetWordWrap(true)
-        noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-        noteLabel:SetText(GuildOS:IsOfficer() and L["Linked chars share attunements account-wide."]
-            or L["Add your own alts (any account). An officer's client applies them guild-wide."])
-        noteLabel:Show()
-        yOff = yOff - noteLabel:GetStringHeight() - 6
+        -- The officer's note is about attunements: none where the game has none (issue #184).
+        local noteText = not GuildOS:IsOfficer()
+            and L["Add your own alts (any account). An officer's client applies them guild-wide."]
+            or (GuildOS.AttunementTracker and L["Linked chars share attunements account-wide."])
+        if noteText then
+            local noteLabel = _pFS(child)
+            GuildOS:ApplyFont(noteLabel, 9)
+            noteLabel:SetPoint("TOPLEFT", 12, yOff)
+            noteLabel:SetWidth(contentWidth - 24)
+            noteLabel:SetJustifyH("LEFT")
+            noteLabel:SetWordWrap(true)
+            noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            noteLabel:SetText(noteText)
+            noteLabel:Show()
+            yOff = yOff - noteLabel:GetStringHeight() - 6
+        end
 
         -- /gos myalts: on your own sheet, find your characters in the guild and offer to link them (#142).
         if isSelfManage and GuildOS.AltAutoDetect then
@@ -1009,10 +1047,6 @@ end
 -- Create a gear slot row (with enchant & gem display)
 ----------------------------------------------------------------------
 
--- Slots where missing enchant is a serious issue: this game's (Midnight's on retail, ADR-0026).
-local ENCHANT_WARNING_SLOTS = {}
-for _, slot in ipairs(GuildOS.Client.enchantSlots) do ENCHANT_WARNING_SLOTS[slot] = true end
-
 function CreateGearRow(parent, slotId, item, yOff, width)
     local ROW_H = 26
     local subRowH = 14
@@ -1111,7 +1145,7 @@ function CreateGearRow(parent, slotId, item, yOff, width)
             enchText:SetText(L["Enchanted"])
             enchText:Show()
             hasExtra = true
-        elseif ENCHANT_WARNING_SLOTS[slotId] then
+        elseif GuildOS.GearAudit and GuildOS.GearAudit:NeedsEnchant(slotId, item) then   -- ADR-0026, #177
             local warnText = _pFS(parent)
             GuildOS:ApplyFont(warnText, 9)
             warnText:SetPoint("TOPLEFT", 106, enchantY)

@@ -840,7 +840,8 @@ retail guild yet.
 
 ### Decision
 - `GuildOS.Client.isRetail` (ADR-0014's two signals) and per-game fields: `maxLevel` 90, `raidSizes` 10/20/30,
-  `classes` (thirteen), `enchantSlots` (Midnight's head, shoulder, chest, feet, rings and weapon).
+  `classes` (thirteen), `enchantSlots` (Midnight's head, shoulder, chest, legs, feet, rings and both weapons; an
+  off hand only when it is a weapon, `GearAudit:NeedsEnchant`; issue #177).
 - Keys are realm-bound on retail, normalized (amendment to ADR-0018). Everything that names a guildmate keeps
   their realm: the core's member picker (`GuildOS:KeyOfRosterName`), poll votes and calendar answers, the roster
   lookup. Officer trust is the whole key: an officer's name on another connected realm carries no rank
@@ -848,20 +849,117 @@ retail guild yet.
   normalized), so one guild is one database whichever of its realms a character is on.
 - The roster rail lays its class chips out with `UI:ChipGrid`: three columns for retail's thirteen, still five rows.
 - Absent on retail, as TBC content is elsewhere: LootMaster, LootTracker, LootEquity, Points, SoftRes, Wishlist,
-  CompanionExport, CompanionImport and Look return before defining their globals. Features carry `retail = false`
+  CompanionExport, CompanionImport, Look and Resistances (no resistance gear; its scan, sync and `/gos resscan`
+  follow it, issue #184) return before defining their globals. Features carry `retail = false`
   (loot, dkp, wishlist, web, lootTracker, lootMaster); the Settings loot category, the core's loot rules, the loot
   quick buttons and tests, the loot export datasets, the dashboard's loot card and the site link follow the modules.
   A slash verb of an absent module says "Not available on this client." The player's toggles are untouched.
 - Retail content: specs from `C_SpecializationInfo` (`Compat.SpecOf`), raids tracked by difficulty (Normal, Heroic,
   Mythic; every one progression), the item level as worn (`Compat.ItemLevel`) and the game's average, Raid Tools'
   Midnight buffs and cooldowns named by the client from the spell, the Midnight profession catalog (ADR-0022).
-- A boss name the client keeps secret is never concatenated or stored, on every client.
+- A boss name the client keeps secret is never concatenated or stored, on every client; nor is a difficulty name.
+- A spec synced from a guildmate shows in the reader's language, by its id (`SpecChecker:SpecName`). A session keeps
+  its difficulty, shows it ("N", "H", "M"), sends it in the raid sync, and a raid's Normal and Heroic are never
+  merged into one session. A tab or an export this client does not have says "Not available on this client."
+  (`UI:IsFeatureAbsent`, `Exporter:Has`) (issue #177).
+- What #184 filled in: the core's raid buffs are Raid Tools' Midnight list (one table); a scanned spec sets the
+  role a member starts in (`CoreManager:DefaultRole`, melee or ranged by `MELEE_SPECS` from ChrSpecialization's
+  flags); a group scan brings a guildmate's item level (`Compat.InspectItemLevel`) without overwriting a newer
+  broadcast of theirs; the member sheet shows the primary stat, stamina and the four ratings
+  (`Compat.PrimaryStat`, `Compat.SecondaryStats`); my spec change goes out at once
+  (`PLAYER_SPECIALIZATION_CHANGED`); the alliance roster carries the spec id; recruitment knows the Italian
+  client's channels; a raid roster name the client keeps secret is skipped.
+- Namesakes on connected realms are told apart by the whole key (issue #184): BanList files a ban under it; a
+  name without a realm is this realm's, never a guess at a namesake elsewhere, so every caller hands over the
+  whole name it has (the whisper's author, the popup's queued name, /who's fullName). A ban filed under the
+  name alone before still holds on every realm, also after the whole key's own ban is lifted. The ban list
+  lifts the row it shows by that row's key (`List` carries it, `RemoveKey`); `/gos unban Name-Realm` lifts
+  that key, `/gos unban Name` the old ban by name first, then this realm's, and says so when no ban stood
+  there. The /who scanner selects and whispers a connected realm's player by the whole name /who gave
+  (`RecruitScanner:Addr`). The group inspector, the rank
+  lookup, the roster log and the raid's guild check compare whole keys. Forever and Anniversary keep the name
+  alone.
+- What is left of attunements and consumables follows their modules, on Forever too, where they were as
+  inert (ADR-0014; issue #184): trial progress, export columns, the "no consumables" penalty, readiness.
 
 ### Consequences
 - (+) One build, one TOC, three clients; Forever and Anniversary behave as before.
 - (+) A retail guild sees nothing it cannot use: no loot screens, no site.
 - (−) Nothing reads Mythic+, delves or hero talents yet.
+- (−) A ban added on retail by a client from before issue #184 is filed under the name alone (and holds on
+  every realm, as before); one added after it is not seen by an officer still on the older addon, which
+  looks the name alone up. Worse, that officer's x on a row named "Bob-Gallywix" lifts `bob`: a ban filed
+  under the name alone, if there is one, is lifted for every client, and Bob-Gallywix stays banned. A
+  tombstone carries nothing that tells it from a deliberate lift of the old ban, so it is not filtered:
+  officers update before lifting retail bans. ChehulNet's v9 must reach the other addons that ship it.
+- (−) `MELEE_SPECS` must follow retail when a spec is added (Devourer came with Midnight).
 - (−) The profession catalog and Raid Tools' spell ids must follow retail's patches.
 - (−) Retail's tiered reagents are not in the catalog, and whether `IsPlayerSpell` answers for retail recipes is read
   in game (`/guildos probe`); the open profession window still fills what it misses.
 - (−) Attendance counts an old raid run on Normal, Heroic or Mythic like a current one.
+- (−) A retail session relayed by an officer on an addon from before issue #177 carries no difficulty, so it is not
+  merged with the same night's session that has one: the raids panel shows that night twice until the officer
+  updates and the next sync fills the difficulty in. Attendance is not affected: its lockouts ignore difficulty.
+  *(Changed by issue #182: the lockout carries the difficulty, and a night with none does not count; see below.)*
+
+**Amendment (issue #182).** The site leg is on: guildos.me takes retail guilds (guildos-web specs/056, behind its
+`RETAIL=1`). CompanionExport and CompanionImport load on retail, and with them the Web tab, `/gos web`, `/gos roster`,
+the inbox (roster, calendar, the Discord's cores) and the site link; Look stays absent, since the site draws a retail
+character from the Armory. Only the loot verbs remain in `RETAIL_ABSENT`.
+- Payload v10, retail's: `game = "RETAIL"`, `region` from `GetCurrentRegion()` (`Compat.Region`: 1 us, 2 kr, 3 eu,
+  4 tw), `guildKey` and `realm` from the guild's home realm (`GuildOS:GuildRealm`, the database key's rule), never the
+  exporter's, and each session's `difficulty`. Any other region publishes nothing and says why
+  (`Companion:Refused`, shown on the Web panel). Forever and Anniversary send v9's bytes under `v = 10`.
+- The enchant summary asks `GearAudit:NeedsEnchant`, so the site and the member sheet agree about an off hand.
+- `RaidTracker.RAID_KEYS` has Midnight's four raids by map id, under the site's catalogue keys.
+- On the way back the key is the name: a GOSROST v3 member is invited and grouped by its `Name-Realm` key, cut to the
+  plain name only on this character's realm; who is already in the group is known by name and realm; a name the site
+  never confirmed is rescued only when one connected realm has it. `RaidFor` needs the same difficulty when the
+  planned raid and the night both have one. A GOSCORE is this guild's by its home realm, normalized. The names kept
+  from the site are the `Name-Realm` keys, the same on every officer's client, so the calendar's list of answers
+  matches across connected realms; a raid member the client keeps secret is passed over. The JSON decoder moved
+  from SoftRes, absent on retail, to Core/Utils.lua.
+- Attendance as the site counts it (its `lockoutKey`, `apps/web/test/parity.test.ts`): a lockout is core, instance,
+  week and, on retail, difficulty (`RaidTracker:LockoutKey`), so Normal and Heroic in one week are two lockouts, as in
+  the game. A retail night counts for progression by its difficulty (`Is25Man(instanceID, size, difficulty)`): one
+  with none, relayed by an addon before issue #177, does not, nor is it the same lockout as that night's recording
+  with one. TBC and Forever keys are unchanged. `tools/attendance-parity.lua` with `RETAIL` prints the site's retail
+  fixture and checks its answers.
+- (−) A region the site has no world for (China, a test client) cannot publish. `GetCurrentRegion()`'s answer on the
+  maintainer's client is read in game.
+
+**Amendment (issue #183).** Personal loot has a history on retail. Nothing hands loot out there, so LootMaster, Points,
+SoftRes and Wishlist stay absent and their verbs keep saying so; LootTracker and LootEquity load, and with them the
+`lootTracker` background feature, the Loot tab (History and Equity; no Soft Res button, no loot-master line), the
+roster's LOOT column, the dashboard's loot card, the digest's loot line, the member sheet's loot section, `/gos equity`,
+the `loot` and `equity` exports and the loot list in the companion payload, in today's row format. The Settings loot
+category stays out: everything in it hands loot out.
+- `LootTracker:OnEncounterLoot` records `ENCOUNTER_LOOT_RECEIVED`, registered on retail only: every guildmate's item,
+  not only mine, in the shape an ML award has, plus `itemId` and `encounterID`, and no `fromML`. `player` and
+  `playerKey` are both the whole `Name-Realm` by the player's own realm (`GetPlayerKey`): the event names someone on
+  this character's realm without one, so a bare name meant another person to an alt on a connected realm, and
+  `/gos equity`, which groups by `player`, merged namesakes and split one person. Forever's grouping is untouched.
+- Only inside a tracked raid session whose instance and difficulty this client stands in. Raid Finder of the same
+  raid queued in the 20 minutes is the same instance id with strangers' items. In that grace, on retail, another
+  instance or the session's raid on another difficulty takes no snapshot, opens or closes no boss and records no loot
+  for the session (`RaidTracker:ElsewhereInGrace`); back in the session's raid on its difficulty all three count, as
+  when the zone change was missed. When the grace runs out, or another raid begins, while the client is elsewhere,
+  the session ends with no `session_end` snapshot (`EndSession(away)`, asked before the timer is cleared): the Raid
+  Finder or pickup group there would otherwise join the session's players and give every guildmate the late-leave
+  penalty. The open world is the run-back and keeps its snapshots, and Forever and Anniversary are as before.
+- Guild members only (the coordinator's decision): the player has to be on the guild roster by that key
+  (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`), so a guildmate on a connected realm counts and a namesake
+  from another realm does not. On Forever a record needs an award from this guild's officer; on retail any member's
+  client would otherwise send a pickup raid's strangers to the guild's loot page, `/gos equity` and the digest.
+- A field the client keeps secret skips the whole item; a record without it would be half a record. Under Rare (the
+  loot master's default threshold) is not kept; an item not cached yet is read from its link (`|cnIQn:`, the name in
+  brackets), else taken as epic, as an ML award is. The same boss, item and player within five minutes is a re-fire,
+  checked against the history itself, so it holds across a /reload.
+- Forever and Anniversary never register the event, and `OnEncounterLoot` returns at once there; `RecordMLAward` stores
+  what it is given exactly as before.
+- (−) Each client records what its own client was told. A guildmate who was not in the raid has no history of it, and
+  two officers publishing the same night send one row each when their clocks put the drop in different seconds (the
+  site keeps one row per player, item and second). An ML award has always behaved the same way.
+- (−) Whether Midnight fires `ENCOUNTER_LOOT_RECEIVED` for every player's loot, as the boss banner shows it, and whether
+  any of its fields arrive secret, is read in game.
+- (−) A guildmate the roster has not loaded yet, or who left the guild before the loot arrived, is not recorded.

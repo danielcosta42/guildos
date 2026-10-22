@@ -128,8 +128,9 @@ function DataCollector:CollectMyData()
     -- I own (equipped + bags), NOT just what's equipped now — so officers can see who
     -- can field a Nature/Frost/Shadow set (Hydross, Mother Shahraz...) even when it's
     -- sitting in bags. Only my OWN client can see my bags, so each player reports their
-    -- own; it rides the normal member-data sync.
-    data.resistances = self:CollectResistances()
+    -- own; it rides the normal member-data sync. Not where the game has no resistance gear
+    -- (retail: the Resistances module is absent; issue #184).
+    data.resistances = GuildOS.Resistances and self:CollectResistances() or nil
 
     GuildOS.db.members[key] = data
     GuildOS.db.myData = data
@@ -554,6 +555,8 @@ end
 ----------------------------------------------------------------------
 -- Collect basic stats
 ----------------------------------------------------------------------
+local PRIMARY_STAT_KEYS = { [1] = "strength", [2] = "agility", [4] = "intellect" }  -- UnitStat's numbering
+
 function DataCollector:CollectStats()
     -- While stats are restricted they are secret: left out, never serialised or compared.
     local function readable(v)
@@ -567,6 +570,18 @@ function DataCollector:CollectStats()
     end
     local stats = {}
     stats.health = readable(UnitHealthMax("player"))
+    -- Retail's character sheet (issue #184): the spec's primary stat, stamina and the four ratings.
+    -- Its UnitStat has no fifth stat (spirit), and mana is one spec's resource among many.
+    if GuildOS.Client.isRetail then
+        local primary = GuildOS.Compat.PrimaryStat()
+        if primary then
+            stats.primary = PRIMARY_STAT_KEYS[primary]
+            stats[stats.primary] = base(primary)
+        end
+        stats.stamina = base(3)
+        for k, v in pairs(GuildOS.Compat.SecondaryStats() or {}) do stats[k] = v end
+        return stats
+    end
     stats.mana = readable(UnitPowerMax("player", 0)) -- Mana
 
     -- Base stats
@@ -729,7 +744,7 @@ function DataCollector:GetBroadcastData()
 
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).
     -- StoreReceivedData merges every key generically, so the receiver stores it too.
-    if myData.resistances then
+    if myData.resistances and GuildOS.Resistances then
         clean.resistances = myData.resistances
     end
 
