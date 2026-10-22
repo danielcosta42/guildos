@@ -146,6 +146,8 @@ function AllianceSync._BuildRoster(members, cap, altLinks)
                 p = profs,
                 a = att,
                 s = type(m.spec) == "table" and m.spec.tree or nil,
+                -- Retail: the spec's id, so an allied reader names it in their own language (#184).
+                si = type(m.spec) == "table" and tonumber(m.spec.specID) or nil,
                 m = main and (main:match("^([^-]+)") or main) or nil,
             }
         end
