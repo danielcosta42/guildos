@@ -410,8 +410,9 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `LootTracker:Initialize()` | Ensures lootHistory DB table exists |
+| `LootTracker:Initialize()` | Ensures lootHistory DB table exists; on retail registers `ENCOUNTER_LOOT_RECEIVED` (issue #183) |
 | `LootTracker:RecordMLAward(entry)` | Prepends entry to lootHistory, caps at 500 |
+| `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one player's personal loot, every player's and not only mine, recorded in an ML award's shape (`player` as the event names them, `playerKey` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session is the instance this client stands in and the Loot Tracker is on. Skipped whole when any field is secret, under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
 | `LootTracker:GetHistory(limit)` | Returns first N entries from lootHistory |
 | `LootTracker:GetPlayerLoot(playerKey, limit)` | Filters lootHistory by player key |
 | `LootTracker:GetLootCount(playerKey)` | Counts items received by player |

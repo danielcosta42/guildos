@@ -21,7 +21,8 @@ Decided:
 - **Addon first.** The site does not take retail guilds in this epic. It refuses a retail upload, and the
   addon on retail never offers the site at all. *Since issue #182 (guildos-web specs/056) it does: the site
   leg is on, see §11.*
-- **All loot goes on retail.** Personal loot only; nothing of the loot suite is kept, Points included.
+- **All loot goes on retail.** Personal loot only; nothing of the loot suite is kept, Points included. *Since
+  issue #183 the history comes back, read from personal loot: see §12. Nothing that hands loot out does.*
 - **Professions stay, with a Midnight catalog.** Only the current expansion's lines.
 - **One build, one TOC** (ADR-0021). Retail's interface is added last, so no half-made release reaches the
   Retail flavour.
@@ -67,7 +68,8 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
 - **Loot:** LootMaster, LootTracker, LootEquity, Points, SoftResSystem and WishlistSystem return early; the
   `loot`, `dkp` and `wishlist` features carry `retail = false`. Readers elsewhere (member detail, digest,
   dashboard, raid tracker's boss-kill EP, the companion export's loot list) must already guard on the
-  module; any that does not gets a guard.
+  module; any that does not gets a guard. *Since issue #183 (§12) LootTracker and LootEquity load on retail, and
+  the `loot` tab and the `lootTracker` feature with them; LootMaster, Points, SoftRes and Wishlist stay absent.*
 - **The site:** the `web` feature carries `retail = false`; CompanionExport, CompanionImport and Look return
   early; the onboarding step that points to guildos.me is skipped; the Discord core import (ADR-0025) is not
   offered. `Inbox.lua` still loads from the TOC (it is data), and nothing reads it. *Superseded by issue #182
@@ -173,7 +175,8 @@ And guildos-web#177 on its own.
 ## 10. Out of scope
 
 - guildos.me for retail guilds (its own epic: guildos-web#191, addon #182, §11).
-- A loot suite for personal loot (trade-based council, loot history from `ENCOUNTER_LOOT_RECEIVED`).
+- A loot suite for personal loot (trade-based council, DKP, soft reserves, wishlists: issue #185). The loot
+  history from `ENCOUNTER_LOOT_RECEIVED` is in since issue #183 (§12).
 - Mythic+, delves, hero talents, profession specializations, craft quality.
 - Raid Tools cooldowns that need the combat log.
 
@@ -198,3 +201,35 @@ guildos.me takes retail guilds (guildos-web#191, specs/056; off there until its 
   is rescued from the guild roster only when one connected realm has it.
 - **GOSCORE:** a package is this guild's when its `realm` is the guild's home realm, normalized.
 - **Tests:** `tools/retail-site.lua`; `tools/retail-absent.lua` and `tools/client-detection.lua` follow.
+
+## 12. Personal loot (issue #183)
+
+Retail loot is personal: each player gets their own item and nobody hands anything out. What comes back is the
+history (guildos-web specs/056, "Addon → Loot pessoal").
+
+- **Recorded:** `LootTracker:OnEncounterLoot`, from `ENCOUNTER_LOOT_RECEIVED` (encounterID, itemID, itemLink,
+  quantity, playerName, className), registered on retail only. Every player's item, not only mine, into the same
+  `lootHistory` an ML award goes to and in its shape: `itemLink`, `itemName`, `quality`, `player` (as the event names
+  them), `playerKey` (`Name-Realm` through `GetPlayerKey`: a name with no realm is on this character's realm, a realm
+  is normalized), `count`, `timestamp`, `raid` (the session's name), `instanceID`, plus `itemId` and `encounterID`; no
+  `fromML`.
+- **Only in a tracked raid session** whose instance this client is standing in (Normal, Heroic, Mythic; §5). A
+  session waiting out its grace outside, a dungeon run in the meantime, Raid Finder: nothing. The Loot Tracker
+  switched off in Settings: nothing.
+- **Secret values:** any field the client keeps secret skips the whole item, never half a record.
+- **What is kept:** Rare and up, the loot master's default threshold. An item not cached yet is read from its link
+  (retail colours it `|cnIQn:` and names it in brackets), else taken as epic, as an ML award is.
+- **Re-fires:** the same boss, item and player within five minutes is one record, checked against the history
+  itself.
+- **Back on retail:** the `lootTracker` feature, the Loot tab (History and Equity, Export; no Soft Res button and no
+  loot-master line), the roster's LOOT column, the dashboard's loot card, the digest's loot line, the member sheet's
+  loot section, LootEquity and `/gos equity`, the `loot` and `equity` exports, and the loot list in the payload, in
+  today's row format (`playerKey`, `player`, `itemId`, `itemName`, `quality`, `timestamp`, `raid`).
+- **Still absent:** LootMaster, Points, SoftRes, Wishlist and the Settings loot category; their verbs say "Not
+  available on this client." (`RETAIL_ABSENT`).
+- **Forever and Anniversary:** the event is never registered and `OnEncounterLoot` returns at once; the ML path is
+  unchanged.
+- **Read in game:** whether Midnight fires the event for every player's loot (the boss banner does show it) and
+  whether any field arrives secret.
+- **Tests:** `tools/retail-loot.lua`; `tools/retail-site.lua` (the row in the payload), `tools/retail-absent.lua`,
+  `tools/client-detection.lua`, `tools/window-shell.lua` and `tools/probe.lua` follow.

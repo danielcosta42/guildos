@@ -890,3 +890,25 @@ character from the Armory. Only the loot verbs remain in `RETAIL_ABSENT`.
   planned raid and the night both have one. A GOSCORE is this guild's by its home realm, normalized.
 - (−) A region the site has no world for (China, a test client) cannot publish. `GetCurrentRegion()`'s answer on the
   maintainer's client is read in game.
+
+**Amendment (issue #183).** Personal loot has a history on retail. Nothing hands loot out there, so LootMaster, Points,
+SoftRes and Wishlist stay absent and their verbs keep saying so; LootTracker and LootEquity load, and with them the
+`lootTracker` background feature, the Loot tab (History and Equity; no Soft Res button, no loot-master line), the
+roster's LOOT column, the dashboard's loot card, the digest's loot line, the member sheet's loot section, `/gos equity`,
+the `loot` and `equity` exports and the loot list in the companion payload, in today's row format. The Settings loot
+category stays out: everything in it hands loot out.
+- `LootTracker:OnEncounterLoot` records `ENCOUNTER_LOOT_RECEIVED`, registered on retail only: every player's item, not
+  only mine, in the shape an ML award has (`player` as the event names them, `playerKey` by their own realm through
+  `GetPlayerKey`), plus `itemId` and `encounterID`, and no `fromML`. Only inside a tracked raid session whose instance
+  this client stands in: a session waiting out its grace outside is not where a boss dropped it.
+- A field the client keeps secret skips the whole item; a record without it would be half a record. Under Rare (the
+  loot master's default threshold) is not kept; an item not cached yet is read from its link (`|cnIQn:`, the name in
+  brackets), else taken as epic, as an ML award is. The same boss, item and player within five minutes is a re-fire,
+  checked against the history itself, so it holds across a /reload.
+- Forever and Anniversary never register the event, and `OnEncounterLoot` returns at once there; `RecordMLAward` stores
+  what it is given exactly as before.
+- (−) Each client records what its own client was told. A guildmate who was not in the raid has no history of it, and
+  two officers publishing the same night send one row each when their clocks put the drop in different seconds (the
+  site keeps one row per player, item and second). An ML award has always behaved the same way.
+- (−) Whether Midnight fires `ENCOUNTER_LOOT_RECEIVED` for every player's loot, as the boss banner shows it, and whether
+  any of its fields arrive secret, is read in game.
