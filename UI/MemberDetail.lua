@@ -34,15 +34,18 @@ if GuildOS.Client.isRetail then
     }
 end
 
--- The stat cells to draw for one member's stats: the primary entry becomes the stat it names, and
--- is left out when the member sent none.
-local function StatCells(stats)
+-- The stat cells a member's sheet draws, as { label, text, color }: the primary entry becomes the
+-- stat the member sent (left out when they sent none), a rating reads in percent. A value from a
+-- guildmate's broadcast that is not a number shows as 0 rather than stopping the sheet (issue #184).
+function GuildOS:MemberStatCells(stats)
     local out = {}
+    if type(stats) ~= "table" then return out end
     for _, s in ipairs(STATS_LIST) do
-        if not s.primary then
-            out[#out + 1] = s
-        elseif PRIMARY_LABEL[stats.primary] then
-            out[#out + 1] = { label = PRIMARY_LABEL[stats.primary], key = stats.primary }
+        local label, key = s.label, s.key
+        if s.primary then label, key = PRIMARY_LABEL[stats.primary], stats.primary end
+        if label then
+            local v = tonumber(stats[key]) or 0
+            out[#out + 1] = { label = label, text = s.pct and string.format("%.1f%%", v) or tostring(v), color = s.color }
         end
     end
     return out
@@ -459,7 +462,7 @@ function PopulateDetail(frame, data)
         statsGrid:Show()
 
         local colWidth = (contentWidth - 20) / 4
-        for i, stat in ipairs(StatCells(data.stats)) do
+        for i, stat in ipairs(GuildOS:MemberStatCells(data.stats)) do
             local col = ((i - 1) % 4)
             local row = math.floor((i - 1) / 4)
             local sc = stat.color and C[stat.color] or C.white
@@ -475,8 +478,7 @@ function PopulateDetail(frame, data)
             GuildOS:ApplyFont(value, 11)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
             value:SetTextColor(sc.r, sc.g, sc.b)
-            local v = data.stats[stat.key] or 0
-            value:SetText(stat.pct and string.format("%.1f%%", v) or tostring(v))
+            value:SetText(stat.text)
             value:Show()
         end
 

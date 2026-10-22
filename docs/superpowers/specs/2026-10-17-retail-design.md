@@ -59,11 +59,13 @@ On retail a realm is part of who somebody is, as on Anniversary, and a guild spa
   say: there `UnitFullName`'s second slot is the realm. ChehulNet, shipped identical in other addons and unable
   to ask GuildOS, reads the same two signals itself (v9, issue #184).
 - **Namesakes (issue #184):** two members of one guild on two connected realms can share a name. The ban list
-  files a ban under the whole key, lower case; a name without a realm is this realm's, or the one ban of that
-  name on another realm when there is exactly one (two answer nothing, as `Compat.FindGuildRosterIndex`
-  does), and a ban filed under the name alone before still holds on every realm. The group inspector, the
-  rank lookup (`GuildManager:GetRosterIndex`), the roster log and the raid's guild check compare whole keys.
-  Forever and Anniversary keep the name alone.
+  files a ban under the whole key, lower case; a name without a realm is this realm's, never a guess at a
+  namesake elsewhere, so every caller passes the whole name it has (the whisper's author, the invite popup's
+  name, /who's fullName). A ban filed under the name alone before still holds on every realm. The ban list's
+  x lifts its row by the row's key; `/gos unban Name-Realm` lifts that key, `/gos unban Name` the old ban by
+  name first, then this realm's. An officer still on an older addon lifts the name alone from any row (see
+  ADR-0026). The group inspector, the rank lookup (`GuildManager:GetRosterIndex`), the roster log and the
+  raid's guild check compare whole keys. Forever and Anniversary keep the name alone.
 - ADR-0018 gets an amendment saying all this.
 
 ## 4. What is absent on retail

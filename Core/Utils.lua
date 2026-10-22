@@ -808,8 +808,12 @@ end
 -- Headers stay in English on purpose so exports are a stable interchange
 -- format regardless of the client locale.
 ----------------------------------------------------------------------
+-- The roster as tab-separated text; the Attunements column only where the game has them (TBC,
+-- ADR-0014; issue #184), as Exporter:RosterData.
 function GuildOS:ExportRoster()
-    local lines = { "Name\tClass\tLevel\tRank\tiLvl\tAttendance%\tAttunements\tLastSeen" }
+    local AT = self.AttunementTracker
+    local lines = { AT and "Name\tClass\tLevel\tRank\tiLvl\tAttendance%\tAttunements\tLastSeen"
+        or "Name\tClass\tLevel\tRank\tiLvl\tAttendance%\tLastSeen" }
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
         local name, rankName, _, level, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
@@ -819,18 +823,17 @@ function GuildOS:ExportRoster()
             local key = self:GetPlayerKey(short, realm)
             local d = self.db.members[key] or {}
             local att = self.RaidTracker and self.RaidTracker:GetAttendance25ManPercent(key) or 0
-            local attDone, attTotal = 0, 0
-            if self.AttunementTracker then
-                attTotal = #self.AttunementTracker:GetGuildColumns()
-                for _, a in ipairs(self.AttunementTracker:GetEffectiveAttunements(key)) do
+            local lastSeen = (d.lastUpdate and d.lastUpdate > 0) and date("%Y-%m-%d", d.lastUpdate) or ""
+            local row = { short, classFile or "", level or 0, rankName or "", d.avgIlvl or 0, att }
+            if AT then
+                local attDone, attTotal = 0, #AT:GetGuildColumns()
+                for _, a in ipairs(AT:GetEffectiveAttunements(key)) do
                     if a.complete and a.questsTotal and a.questsTotal > 0 then attDone = attDone + 1 end
                 end
+                row[#row + 1] = attDone .. "/" .. attTotal
             end
-            local lastSeen = (d.lastUpdate and d.lastUpdate > 0) and date("%Y-%m-%d", d.lastUpdate) or ""
-            lines[#lines + 1] = table.concat({
-                short, classFile or "", level or 0, rankName or "",
-                d.avgIlvl or 0, att, attDone .. "/" .. attTotal, lastSeen,
-            }, "\t")
+            row[#row + 1] = lastSeen
+            lines[#lines + 1] = table.concat(row, "\t")
         end
     end
     return table.concat(lines, "\n")

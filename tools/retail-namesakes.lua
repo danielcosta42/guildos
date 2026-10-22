@@ -6,8 +6,10 @@
 -- list was keyed by the name alone, the group inspector, the rank lookup, the roster log and the raid
 -- tracker's guild check matched the name alone, so banning one Bob banned the other, and a namesake
 -- from a third realm counted as a guildmate. This proves each of them tells namesakes apart on retail
--- (the whole key wins; a name without a realm is this client's realm's, or the only one there is),
--- that a ban filed under the name alone before still holds, and that Forever keeps the name alone.
+-- (the whole key wins; a name without a realm is this client's realm's, never a guess elsewhere),
+-- that a ban filed under the name alone before still holds and can still be lifted, that the ban
+-- list lifts the row it shows and nothing else, that every caller hands the ban list the whole name
+-- it has, and that Forever keeps the name alone.
 --
 --   luajit -e 'ADDON="."' tools/retail-namesakes.lua
 --
@@ -91,24 +93,43 @@ check(store["bob-gallywix"] and store["bob-gallywix"].name == "Bob-Gallywix" and
   "the ban is filed under the whole key, and named with the realm")
 check(B:IsBanned("Bob-Gallywix") and B:IsBanned("bob-gallywix"), "Bob-Gallywix is banned, in any case")
 check(not B:IsBanned("Bob-Azralon"), "Bob-Azralon, the guildmate who shares the name, is not")
-check(not B:IsBanned(B:_Who("Bob")), "nor is a Bob the game hands over without a realm: that one is on this realm")
-check(B:IsBanned("Bob"), "a name some code stripped of its realm still finds the only Bob banned")
+check(not B:IsBanned(B:_Who("Bob")) and not B:IsBanned("Bob"),
+  "nor is a Bob without a realm: that one is on this realm, never a guess at the banned namesake")
 B:Add("Zed-Gallywix", "x"); B:Add("Zed-TolBarad", "y")
-check(not B:IsBanned("Zed") and B:IsBanned("Zed-TolBarad"), "two Zeds banned: a bare Zed is a guess, and answers nothing")
+check(not B:IsBanned("Zed") and B:IsBanned("Zed-TolBarad"), "two Zeds banned elsewhere: this realm's Zed is not")
 B:Add("Cy", "typed")
 check(store["cy-azralon"] and store["cy-azralon"].name == "Cy-Azralon", "a name typed without a realm is this realm's")
 
--- A ban filed under the name alone by a version before issue #184 still holds, on any realm.
+-- A ban filed under the name alone by a version before issue #184 still holds, on any realm, and the
+-- ban list lifts exactly the row it shows (the reviewer's case: an old ban plus one of this realm's).
 store.thrall = { name = "Thrall", reason = "old", ts = 100 }
 check(B:IsBanned("Thrall-Gallywix") and B:IsBanned("Thrall") and B:Get("Thrall-Azralon").reason == "old",
   "an old ban by name still holds for that name on every realm")
-check(B:Remove("Thrall") and store.thrall.removed and store["thrall-azralon"] == nil,
-  "and removing it by that name lifts the old entry, not a new one")
-check(B:Remove("Bob-Gallywix") and store["bob-gallywix"].removed and not B:IsBanned("Bob-Gallywix"),
-  "unbanning Bob-Gallywix lifts his ban")
+B:Add("Thrall-Azralon", "new")
+check(B:Remove("Thrall-Azralon") and store["thrall-azralon"].removed and not store.thrall.removed,
+  "/gos unban with the whole name lifts that ban, not the old one")
+check(B:IsBanned("Thrall-Azralon"), "and the old ban by name still holds for him: lifting his own does not lift it")
+local rows = {}
+for _, e in ipairs(B:List()) do rows[e.name] = e.key end
+check(rows.Thrall == "thrall" and rows["Thrall-Azralon"] == nil, "the list shows the old ban, with its own key")
+check(B:RemoveKey(rows.Thrall) and store.thrall.removed and not B:IsBanned("Thrall-Gallywix"),
+  "its row's x lifts the old ban, and only it")
+store.thrall = { name = "Thrall", reason = "old", ts = 100 }
+B:Add("Thrall-Azralon", "new")
+check(B:Remove("Thrall") and store.thrall.removed and not store["thrall-azralon"].removed,
+  "/gos unban with the bare name lifts the old ban by name first")
+check(B:Remove("Thrall") and store["thrall-azralon"].removed, "and, that one lifted, this realm's")
+for _, e in ipairs(B:List()) do rows[e.name] = e.key end
+check(B:RemoveKey(rows["Bob-Gallywix"]) and store["bob-gallywix"].removed and not B:IsBanned("Bob-Gallywix"),
+  "the x on Bob-Gallywix's row lifts his ban")
 B:Add("Bob-Gallywix", "again")
+local manage = assert(io.open(ADDON .. "/UI/ManagementPanel.lua", "rb")):read("*a")
+check(manage:find("GuildOS.BanList:RemoveKey(key)", 1, true) and not manage:find("BanList:Remove(nm)", 1, true),
+  "the ban list's x lifts by the row's key")
 
--- The game's own names: a whisper and a join.
+-- The game's own names: a whisper, a join and a unit's tooltip.
+local tipHook, TIP = nil, {}
+GameTooltip = { HasScript = function() return true end, HookScript = function(_, _, fn) tipHook = fn end }
 B._ready = true
 local onEvent = handlers[#handlers]
 B:_SetupDetection()
@@ -123,6 +144,43 @@ onEvent(nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.")
 check(alerts == 1, "this realm's Bob joining raises no alarm")
 onEvent(nil, "CHAT_MSG_SYSTEM", "Bob-Gallywix has joined the guild.")
 check(alerts == 2, "Bob-Gallywix joining does")
+function UnitName(u) if u == "mouseover" then return TIP[1], TIP[2] end return "Ana" end
+function UnitClass() return "Mage", "MAGE" end
+local function tooltipLines(name, realm)
+  TIP = { name, realm }
+  local tt = { lines = 0 }
+  function tt:GetUnit() return name, "mouseover" end
+  function tt:AddLine() self.lines = self.lines + 1 end
+  function tt:Show() end
+  tipHook(tt)
+  return tt.lines
+end
+check(tipHook and tooltipLines("Bob", "Gallywix") == 1, "Bob-Gallywix's tooltip says he is banned")
+check(tooltipLines("Bob", nil) == 0, "this realm's Bob's tooltip does not")
+
+-- Every caller hands over the whole name it has: the keyword whisper, the popup's click, the /who scan.
+StaticPopupDialogs = {}
+dofile(ADDON .. "/Modules/RecruitEngagement.lua")
+dofile(ADDON .. "/Modules/RecruitmentSystem.lua")
+dofile(ADDON .. "/Modules/RecruitScanner.lua")
+local R = GuildOS.Recruitment
+GuildOS.db.recruitment = { autoInvite = { cooldownSec = 60 } }
+R._OnInviteCooldown = function() return false end
+local invited = {}
+R._DoInvite = function(_, name, full) invited[#invited + 1] = full or name end
+R._InviteNow = function(_, name, full) invited[#invited + 1] = full or name end
+R:_HandleKeywordWhisper("Zed", "Zed-Gallywix")
+check(#invited == 0, "a keyword whisper from Zed-Gallywix, banned, invites nobody")
+R:_HandleKeywordWhisper("Zed", "Zed")
+check(#invited == 1 and invited[1] == "Zed", "this realm's Zed, who shares the name, is invited")
+R._pendingInvites = { { name = "Zed", full = "Zed-TolBarad" } }
+R:InviteNext()
+check(#invited == 1, "the popup's click does not invite a Zed banned on another realm")
+local S = GuildOS.RecruitScanner
+local banned = function(n) return B:IsBanned(n) end
+check(not S:_CandidateOK({ name = "Zed", full = "Zed-Gallywix" }, {}, banned)
+  and S:_CandidateOK({ name = "Zed", full = "Zed" }, {}, banned),
+  "the /who scan leaves out the banned Zed, by the realm /who gives, and keeps this realm's")
 
 -- ── 2. Retail: the group inspector ─────────────────────────────────────
 local PI = GuildOS.PugInspector

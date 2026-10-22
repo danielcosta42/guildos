@@ -51,7 +51,7 @@ function RecruitScanner:_CandidateOK(cand, filters, isBannedFn)
     if (filters.minLevel or 0) > 0 and (cand.level or 0) < filters.minLevel then return false end
     if filters.maxLevel and (cand.level or 0) > filters.maxLevel then return false end
     if filters.classes and next(filters.classes) ~= nil and not filters.classes[cand.class] then return false end
-    if isBannedFn and isBannedFn(cand.name) then return false end
+    if isBannedFn and isBannedFn(cand.full or cand.name) then return false end   -- /who's realm too (#184)
     return true
 end
 
@@ -93,7 +93,7 @@ function RecruitScanner:_OnWhoResult()
             if w and w.fullName then
                 local short = w.fullName:match("^([^-]+)") or w.fullName
                 local cand = {
-                    name = short, level = w.level, class = w.filename,
+                    name = short, full = w.fullName, level = w.level, class = w.filename,
                     zone = w.area, guilded = (w.fullGuildName ~= nil and w.fullGuildName ~= ""),
                 }
                 if self:_CandidateOK(cand, cfg, isBanned) then out[#out + 1] = cand end

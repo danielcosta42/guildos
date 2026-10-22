@@ -869,10 +869,14 @@ retail guild yet.
   (`Compat.PrimaryStat`, `Compat.SecondaryStats`); my spec change goes out at once
   (`PLAYER_SPECIALIZATION_CHANGED`); the alliance roster carries the spec id; recruitment knows the Italian
   client's channels; a raid roster name the client keeps secret is skipped.
-- Namesakes on connected realms are told apart by the whole key (issue #184): BanList files a ban under it (a
-  name without a realm is this realm's, or the one ban of that name elsewhere when there is exactly one; a
-  ban filed under the name alone before still holds everywhere), and the group inspector, the rank lookup,
-  the roster log and the raid's guild check compare whole keys. Forever and Anniversary keep the name alone.
+- Namesakes on connected realms are told apart by the whole key (issue #184): BanList files a ban under it; a
+  name without a realm is this realm's, never a guess at a namesake elsewhere, so every caller hands over the
+  whole name it has (the whisper's author, the popup's queued name, /who's fullName). A ban filed under the
+  name alone before still holds on every realm, also after the whole key's own ban is lifted. The ban list
+  lifts the row it shows by that row's key (`List` carries it, `RemoveKey`); `/gos unban Name-Realm` lifts
+  that key, `/gos unban Name` the old ban by name first, then this realm's. The group inspector, the rank
+  lookup, the roster log and the raid's guild check compare whole keys. Forever and Anniversary keep the name
+  alone.
 - What is left of attunements and consumables follows their modules, on Forever too, where they were as
   inert (ADR-0014; issue #184): trial progress, export columns, the "no consumables" penalty, readiness.
 
@@ -882,7 +886,10 @@ retail guild yet.
 - (−) Nothing reads Mythic+, delves or hero talents yet.
 - (−) A ban added on retail by a client from before issue #184 is filed under the name alone (and holds on
   every realm, as before); one added after it is not seen by an officer still on the older addon, which
-  looks the name alone up. ChehulNet's v9 must reach the other addons that ship it.
+  looks the name alone up. Worse, that officer's x on a row named "Bob-Gallywix" lifts `bob`: a ban filed
+  under the name alone, if there is one, is lifted for every client, and Bob-Gallywix stays banned. A
+  tombstone carries nothing that tells it from a deliberate lift of the old ban, so it is not filtered:
+  officers update before lifting retail bans. ChehulNet's v9 must reach the other addons that ship it.
 - (−) `MELEE_SPECS` must follow retail when a spec is added (Devourer came with Midnight).
 - (−) The profession catalog and Raid Tools' spell ids must follow retail's patches.
 - (−) Retail's tiered reagents are not in the catalog, and whether `IsPlayerSpell` answers for retail recipes is read

@@ -35,26 +35,31 @@ function BanList:_NormalizeKey(name)
     return short:lower()
 end
 
--- The ban a name points at, and the key it is filed under (the key a new one would take when there
--- is none). On retail, after the whole key: a ban filed under the name alone before issue #184,
--- which still holds for that name on any realm; then, for a name that came without a realm, the
--- one standing ban of that name on another realm, when there is exactly one. Two are a guess, and
--- answer nothing, as Compat.FindGuildRosterIndex does.
+-- The ban a name points at, and the key it is filed under. On retail a standing ban under the
+-- whole key, else one filed under the name alone before issue #184, which holds for that name on
+-- every realm (lifting the whole key's ban does not lift it), else the whole key's entry, lifted or
+-- absent. A name without a realm is this realm's: never a guess at a namesake elsewhere.
 function BanList:_Find(name, store)
     store = store or GuildOS.db.banList or {}
     local key = self:_NormalizeKey(name)
-    if key == "" or store[key] or not GuildOS.Client.isRetail then return key, store[key] end
+    local held = store[key]
+    if key == "" or not GuildOS.Client.isRetail or (held and not held.removed) then return key, held end
     local short = (name:match("^([^-]+)") or name):lower()
-    if store[short] then return short, store[short] end
-    if name:find("-", 1, true) then return key, nil end
-    local only, hits = nil, 0
-    for k, e in pairs(store) do
-        if not e.removed and k ~= short and (k:match("^([^-]+)") or k) == short then
-            only, hits = k, hits + 1
-        end
-    end
-    if hits == 1 then return only, store[only] end
-    return key, nil
+    local old = store[short]
+    if old and not old.removed then return short, old end
+    return key, held
+end
+
+-- The key `Remove` lifts for a name an officer typed: elsewhere the name alone. On retail a
+-- name with a realm is that whole key; one without is the standing ban filed under the name
+-- alone before issue #184 when there is one, else this realm's (issue #184).
+function BanList:_RemovalKey(name, store)
+    store = store or GuildOS.db.banList or {}
+    local key = self:_NormalizeKey(name)
+    if not GuildOS.Client.isRetail or key == "" or name:find("-", 1, true) then return key end
+    local old = store[name:lower()]
+    if old and not old.removed then return name:lower() end
+    return key
 end
 
 function BanList:Get(name, store)
@@ -78,11 +83,17 @@ function BanList:IsBanned(name, now, store)
     return true
 end
 
+-- The standing bans, newest first, each a copy carrying the `key` it is filed under: the list
+-- removes a row by that key (RemoveKey), never by its name (issue #184).
 function BanList:List(store)
     store = store or GuildOS.db.banList or {}
     local out = {}
-    for _, e in pairs(store) do
-        if not e.removed then out[#out + 1] = e end
+    for key, e in pairs(store) do
+        if not e.removed then
+            local row = { key = key }
+            for f, v in pairs(e) do row[f] = v end
+            out[#out + 1] = row
+        end
     end
     table.sort(out, function(a, b) return (a.ts or 0) > (b.ts or 0) end)
     return out
@@ -128,11 +139,19 @@ function BanList:Add(name, reason, durationSec)
     return true
 end
 
+-- Lift a ban by the name an officer typed (/gos unban; `_RemovalKey`).
 function BanList:Remove(name)
-    if not GuildOS:IsOfficer() then return false end
-    local key, existing = self:_Find(name)
+    if not name or name == "" then return false end
+    return self:RemoveKey(self:_RemovalKey(name), self:_Who(name))
+end
+
+-- Lift the ban filed under `key`, exactly that one: the ban list's own rows (issue #184).
+-- `name` names the tombstone when there is no entry to take it from.
+function BanList:RemoveKey(key, name)
+    if not GuildOS:IsOfficer() or not key or key == "" then return false end
+    local existing = GuildOS.db.banList[key]
     local tomb = {
-        name = (existing and existing.name) or self:_Who(name),
+        name = (existing and existing.name) or name or key,
         author = GuildOS.Compat.PlayerName(), ts = GetServerTime(), removed = true,
     }
     GuildOS.db.banList[key] = tomb

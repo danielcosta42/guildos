@@ -390,8 +390,9 @@ end
 
 function Recruitment:_HandleKeywordWhisper(sender, author)
     local cfg = GuildOS.db.recruitment.autoInvite
-    -- Ban gate (BanList already alerts on a banned whisper)
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(sender) then return end
+    -- Ban gate (BanList already alerts on a banned whisper). The whole sender: on retail the realm
+    -- tells a banned namesake from this realm's (issue #184).
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(author or sender) then return end
     -- Cooldown
     if self:_OnInviteCooldown(sender, GetServerTime()) then return end
     -- Filters need a /who, which Forever runs only from a click: there the officer's click on
@@ -469,7 +470,7 @@ function Recruitment:InviteNext()
     local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
     local e = table.remove(list, 1)
     if not (e and cfg) then return #list end
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.name) then
+    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.full or e.name) then   -- realm and all (#184)
         GuildOS:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
     elseif not self:_OnInviteCooldown(e.name, GetServerTime()) then
         self:_InviteNow(e.name, e.full)

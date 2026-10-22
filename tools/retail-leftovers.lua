@@ -119,6 +119,16 @@ headers, rows = GuildOS.Exporter:ReadinessData()
 check(not has(headers, "Attune") and not has(headers, "MissingConsumes") and has(headers, "MissingEnchants"),
   "the readiness export has no attunement or consumables column")
 check(#rows[1] == #headers and rows[1][4] == 1, "and its rows line up")
+-- Audit > Sync's "Export Roster" writes its own text (GuildOS:ExportRoster).
+local function tsv()
+  local head, first = GuildOS:ExportRoster():match("^([^\n]*)\n([^\n]*)")
+  local cols = {}
+  for c in (first .. "\t"):gmatch("([^\t]*)\t") do cols[#cols + 1] = c end
+  return head, cols
+end
+local head, cols = tsv()
+check(not head:find("Attunements", 1, true) and head:find("\tLastSeen$") and #cols == 7,
+  "the sync tab's roster export has no attunements either, and its rows line up")
 
 -- ── 3. Forever: resistances as before; attunements and consumables absent ─
 DC = load("forever")
@@ -141,6 +151,8 @@ GuildOS.ConsumableChecker = {}
 headers, rows = GuildOS.Exporter:RosterData()
 check(#headers == 8 and headers[7] == "Attunements" and rows[1][7] == "1/2" and rows[1][8] == "",
   "Anniversary's roster export keeps its attunements")
+head, cols = tsv()
+check(head:find("\tAttunements\tLastSeen$") and #cols == 8 and cols[7] == "1/2", "and so does the sync tab's")
 GuildOS.Readiness = { GetReport = function()
   return { { name = "Ana", status = "ready", ilvl = 120, attDone = 1, attTotal = 2, missEnch = 0, missCons = 2 } }
 end }
@@ -165,7 +177,10 @@ check(fp:find('if GuildOS.ConsumableChecker then\n?%s*penalties%[#penalties %+ 1
   and fp:find("pen.NO_CONSUMES > 0 and GuildOS.ConsumableChecker", 1, true)
   and fp:find('if GuildOS.ConsumableChecker then Hdr(L["NO CONS"]', 1, true),
   "the raid settings, the attendance tooltip and the session detail offer consumables only with the checker")
-check(fp:find('if GuildOS.AttunementTracker then[^\n]*\n%s*local hAtt'), "the trials list shows attunements only with the tracker")
+check(fp:find('if GuildOS.AttunementTracker then[^\n]*\n%s*local hAtt')
+  and fp:find("if GuildOS.AttunementTracker then%s*local attColor = progress.attDelta")
+  and fp:find("if GuildOS.AttunementTracker then%s*local noProgText"),
+  "the trials list shows attunements only with the tracker: its header, a trial's progress and the dash")
 check(src("UI/CorePanel.lua"):find('if GuildOS.ConsumableChecker then\n?%s*penFields%[#penFields %+ 1%] = { key = "NO_CONSUMES"'),
   "a core's penalties offer consumables only with the checker")
 local md = src("UI/MemberDetail.lua")

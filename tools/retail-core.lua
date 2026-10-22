@@ -133,6 +133,10 @@ check(#comp.buffStatus == 0, "Forever lists no raid buffs (issue #92)")
 GuildOS.db.members["Bo"] = { spec = { specID = 255, role = "DAMAGER" } }
 check(CM:DefaultRole("HUNTER", "Bo") == "rdps" and CM:RoleFor("PRIEST", nil, "Bo") == "rdps",
   "Forever starts a member in the class's role")
+-- A druid can tank on Forever too: only the retail rule would read the spec's role.
+GuildOS.db.members["Du"] = { spec = { specID = 104, tree = "Guardian", role = "TANK" } }
+check(CM.CLASS_ROLES.DRUID.tank and CM:DefaultRole("DRUID", "Du") == "mdps"
+  and CM:RoleFor("DRUID", nil, "Du") == "mdps", "Forever reads no spec's role, even one the class can play")
 
 -- ── 4. Anniversary keeps TBC's list ───────────────────────────────────
 CM = load("anniversary")
@@ -141,5 +145,8 @@ comp = withCore(CM, { ["Ana-Azralon"] = { class = "PRIEST" } })
 check(#comp.buffStatus == 11 and comp.buffStatus[5].name == "Power Word: Fortitude" and comp.buffStatus[5].covered
   and not comp.buffStatus[1].covered, "Anniversary keeps TBC's eleven buffs")
 check(CM:DefaultRole("PRIEST", "Ana-Azralon") == "healer", "and its class roles")
+GuildOS.db.members["Sha-Azralon"] = { spec = { specID = 258, tree = "Shadow", role = "DAMAGER" } }
+check(CM.CLASS_ROLES.PRIEST.rdps and CM:DefaultRole("PRIEST", "Sha-Azralon") == "healer",
+  "even for a spec the class can play")
 
 print(("retail-core: %d checks passed"):format(checks))
