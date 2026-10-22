@@ -726,7 +726,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     local function Hdr(txt, x)
                         UI:CreateText(hdrFrame, txt, 8, C.accent.r, C.accent.g, C.accent.b):SetPoint("LEFT", x, 0)
                     end
-                    Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210); Hdr(L["NO CONS"], 290)
+                    Hdr(L["PLAYER"], 6); Hdr(L["SCORE"], 120); Hdr(L["LATE"], 170); Hdr(L["LEFT EARLY"], 210)
+                    if GuildOS.ConsumableChecker then Hdr(L["NO CONS"], 290) end   -- TBC only (issue #184)
                     yOff = yOff + 18
 
                     for pIdx, p in ipairs(playerList) do
@@ -753,9 +754,11 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         Flag(170, p.wasLate,   L["LATE"], L["OK"])
                         Flag(210, p.leftEarly, L["LEFT"], L["OK"])
 
-                        local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
-                        local cr2 = not p.noConsumes and C.green or C.red
-                        UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b):SetPoint("LEFT", 290, 0)
+                        if GuildOS.ConsumableChecker then
+                            local consStr = p.consumeChecks > 0 and format("%d/%d", p.consumeHits, p.consumeChecks) or "-"
+                            local cr2 = not p.noConsumes and C.green or C.red
+                            UI:CreateText(pRow, consStr, 8, cr2.r, cr2.g, cr2.b):SetPoint("LEFT", 290, 0)
+                        end
 
                         yOff = yOff + 20
                     end
@@ -898,7 +901,10 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
             local pen = GuildOS.RaidTracker:GetPenalties(capturedEntry.groupTag)
             if pen.LATE > 0 then GameTooltip:AddLine("-" .. pen.LATE .. L[" Arrived late"], 0.7,0.5,0.5) end
             if pen.LEFT_EARLY > 0 then GameTooltip:AddLine("-" .. pen.LEFT_EARLY .. L[" Left early"], 0.7,0.5,0.5) end
-            if pen.NO_CONSUMES > 0 then GameTooltip:AddLine("-" .. pen.NO_CONSUMES .. L[" No consumables"], 0.7,0.5,0.5) end
+            -- Only where consumables are checked (TBC, ADR-0014): elsewhere it never costs anything (issue #184).
+            if pen.NO_CONSUMES > 0 and GuildOS.ConsumableChecker then
+                GameTooltip:AddLine("-" .. pen.NO_CONSUMES .. L[" No consumables"], 0.7,0.5,0.5)
+            end
             GameTooltip:Show()
             local _ = capturedEntry
         end)
@@ -1331,8 +1337,10 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     hName:SetPoint("LEFT", 6, 0)
     local hIlvl = UI:CreateHeaderText(colHeader, L["iLVL"], 10)
     hIlvl:SetPoint("LEFT", 140, 0)
-    local hAtt = UI:CreateHeaderText(colHeader, L["ATTUNE"], 10)
-    hAtt:SetPoint("LEFT", 210, 0)
+    if GuildOS.AttunementTracker then   -- attunements are TBC's (ADR-0014; issue #184)
+        local hAtt = UI:CreateHeaderText(colHeader, L["ATTUNE"], 10)
+        hAtt:SetPoint("LEFT", 210, 0)
+    end
     local hSponsor = UI:CreateHeaderText(colHeader, L["SPONSOR"], 10)
     hSponsor:SetPoint("LEFT", 290, 0)
     local hDays = UI:CreateHeaderText(colHeader, L["REMAINING"], 10)
@@ -1420,18 +1428,22 @@ function GuildOS:RefreshTrialsPanel(parent)
             ilvlText:SetPoint("LEFT", 140, 0)
 
             -- Attunement progress
-            local attColor = progress.attDelta > 0 and C.green or C.silver
-            local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
-            local attText = UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b)
-            attText:SetPoint("LEFT", 210, 0)
+            if GuildOS.AttunementTracker then
+                local attColor = progress.attDelta > 0 and C.green or C.silver
+                local attStr = format("%d/%d (+%d)", progress.currentAttDone, progress.attTotal, progress.attDelta)
+                local attText = UI:CreateText(row, attStr, 9, attColor.r, attColor.g, attColor.b)
+                attText:SetPoint("LEFT", 210, 0)
+            end
         else
             local ilvlVal = memberData and memberData.avgIlvl or 0
             if ilvlVal > 0 then
                 local ilvlText = UI:CreateText(row, tostring(ilvlVal), 9, C.silver.r, C.silver.g, C.silver.b)
                 ilvlText:SetPoint("LEFT", 140, 0)
             end
-            local noProgText = UI:CreateText(row, "-", 9, C.silver.r, C.silver.g, C.silver.b)
-            noProgText:SetPoint("LEFT", 210, 0)
+            if GuildOS.AttunementTracker then
+                local noProgText = UI:CreateText(row, "-", 9, C.silver.r, C.silver.g, C.silver.b)
+                noProgText:SetPoint("LEFT", 210, 0)
+            end
         end
 
         local sponsorText = UI:CreateText(row, data.sponsor or "?", 10, C.silver.r, C.silver.g, C.silver.b)
@@ -2735,8 +2747,11 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local penalties = {
         { key = "LATE",        label = L["Late (missed first snapshot)"] },
         { key = "LEFT_EARLY",  label = L["Left Early (missed last snapshot)"] },
-        { key = "NO_CONSUMES", label = L["No Consumables (<50% snapshots)"] },
     }
+    -- Consumables are checked only where the checker exists (TBC, ADR-0014; issue #184).
+    if GuildOS.ConsumableChecker then
+        penalties[#penalties + 1] = { key = "NO_CONSUMES", label = L["No Consumables (<50% snapshots)"] }
+    end
     local pen = GuildOS.RaidTracker:GetPenalties("")
     local canEdit = isOfficer and GuildOS.CoreManager
     local penBoxes = {}

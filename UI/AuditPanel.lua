@@ -60,16 +60,26 @@ end
 ----------------------------------------------------------------------
 local function BuildReadySub(panel)
     panel.targetIdx = 0   -- 0 = all raids; 1..N = a specific attunement raid
+    -- The attunement target and the consumables column are TBC's (ADR-0014): where the game has
+    -- neither, there is nothing to cycle through or to count (issue #184).
+    local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil
 
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -4)
 
-    local targetBtn = UI:CreateButton(panel, L["Target: All raids"], 220, 20)
-    targetBtn:SetPoint("TOPRIGHT", -12, -2)
+    local targetBtn
+    if hasAttune then
+        targetBtn = UI:CreateButton(panel, L["Target: All raids"], 220, 20)
+        targetBtn:SetPoint("TOPRIGHT", -12, -2)
+    end
 
     -- /gos specs: the group's talent specs, read now (#142).
     local specsBtn = UI:CreateButton(panel, L["Scan group talents"], 150, 20)
-    specsBtn:SetPoint("TOPRIGHT", targetBtn, "TOPLEFT", -6, 0)
+    if targetBtn then
+        specsBtn:SetPoint("TOPRIGHT", targetBtn, "TOPLEFT", -6, 0)
+    else
+        specsBtn:SetPoint("TOPRIGHT", -12, -2)
+    end
     specsBtn:SetScript("OnClick", function()
         if GuildOS.SpecChecker then GuildOS.SpecChecker:ScanGroup() end
     end)
@@ -89,9 +99,9 @@ local function BuildReadySub(panel)
     hcol(L["MEMBER"], 8)
     hcol(L["STATUS"], 160)
     hcol(L["iLVL"], 250)
-    hcol(L["ATTUNE"], 310)
+    if hasAttune then hcol(L["ATTUNE"], 310) end
     hcol(L["ENCHANTS"], 400)
-    hcol(L["CONSUMES"], 510)
+    if hasCons then hcol(L["CONSUMES"], 510) end
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -46)
@@ -105,7 +115,7 @@ local function BuildReadySub(panel)
         local targets = GuildOS.Readiness:GetTargets()
         local target = (panel.targetIdx > 0) and targets[panel.targetIdx] or nil
         local targetShort = target and target.short or nil
-        targetBtn.label:SetText(target and (L["Target: "] .. target.short) or L["Target: All raids"])
+        if targetBtn then targetBtn.label:SetText(target and (L["Target: "] .. target.short) or L["Target: All raids"]) end
 
         local rows = GuildOS.Readiness:GetReport(targetShort)
         local c = GuildOS.Readiness:Summarize(rows)
@@ -136,11 +146,13 @@ local function BuildReadySub(panel)
                 10, C.silver.r, C.silver.g, C.silver.b)
             ilvlFS:SetPoint("LEFT", 250, 0)
 
-            local attColor = (r.attTotal > 0 and r.attDone == r.attTotal) and C.green or C.gold
-            if r.targetOk == false then attColor = C.red elseif r.targetOk == true then attColor = C.green end
-            local attTxt = r.attTotal > 0 and (r.attDone .. "/" .. r.attTotal) or "\226\128\148"
-            local attFS = UI:CreateText(row, attTxt, 10, attColor.r, attColor.g, attColor.b)
-            attFS:SetPoint("LEFT", 310, 0)
+            if hasAttune then
+                local attColor = (r.attTotal > 0 and r.attDone == r.attTotal) and C.green or C.gold
+                if r.targetOk == false then attColor = C.red elseif r.targetOk == true then attColor = C.green end
+                local attTxt = r.attTotal > 0 and (r.attDone .. "/" .. r.attTotal) or "\226\128\148"
+                local attFS = UI:CreateText(row, attTxt, 10, attColor.r, attColor.g, attColor.b)
+                attFS:SetPoint("LEFT", 310, 0)
+            end
 
             local enchTxt, ec
             if not r.hasGear then enchTxt, ec = "\226\128\148", C.textDim
@@ -149,12 +161,14 @@ local function BuildReadySub(panel)
             local enchFS = UI:CreateText(row, enchTxt, 10, ec.r, ec.g, ec.b)
             enchFS:SetPoint("LEFT", 400, 0)
 
-            local consTxt, cc
-            if r.missCons == nil then consTxt, cc = "\226\128\148", C.textDim
-            elseif r.missCons > 0 then consTxt, cc = string.format(L["%d missing"], r.missCons), C.red
-            else consTxt, cc = "OK", C.green end
-            local consFS = UI:CreateText(row, consTxt, 10, cc.r, cc.g, cc.b)
-            consFS:SetPoint("LEFT", 510, 0)
+            if hasCons then
+                local consTxt, cc
+                if r.missCons == nil then consTxt, cc = "\226\128\148", C.textDim
+                elseif r.missCons > 0 then consTxt, cc = string.format(L["%d missing"], r.missCons), C.red
+                else consTxt, cc = "OK", C.green end
+                local consFS = UI:CreateText(row, consTxt, 10, cc.r, cc.g, cc.b)
+                consFS:SetPoint("LEFT", 510, 0)
+            end
 
             yOff = yOff + ROW_H + 2
         end
@@ -166,12 +180,14 @@ local function BuildReadySub(panel)
         content:SetHeight(math.max(1, yOff))
     end
 
-    targetBtn:SetScript("OnClick", function()
-        local targets = GuildOS.Readiness:GetTargets()
-        panel.targetIdx = panel.targetIdx + 1
-        if panel.targetIdx > #targets then panel.targetIdx = 0 end
-        refresh()
-    end)
+    if targetBtn then
+        targetBtn:SetScript("OnClick", function()
+            local targets = GuildOS.Readiness:GetTargets()
+            panel.targetIdx = panel.targetIdx + 1
+            if panel.targetIdx > #targets then panel.targetIdx = 0 end
+            refresh()
+        end)
+    end
 
     return refresh
 end

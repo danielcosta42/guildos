@@ -704,8 +704,11 @@ function GuildOS:CreateCoresPanel(panel)
         local penFields = {
             { key = "LATE",        label = L["Late (pts):"]         },
             { key = "LEFT_EARLY",  label = L["Left early (pts):"]   },
-            { key = "NO_CONSUMES", label = L["No consumables (pts):"] },
         }
+        -- Consumables are checked only where the checker exists (TBC, ADR-0014; issue #184).
+        if GuildOS.ConsumableChecker then
+            penFields[#penFields + 1] = { key = "NO_CONSUMES", label = L["No consumables (pts):"] }
+        end
         for _, pf in ipairs(penFields) do
             local lbl = track(MakeLabel(rightContent, pf.label, 10))
             lbl:SetPoint("TOPLEFT", 4, y)

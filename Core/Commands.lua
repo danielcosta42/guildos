@@ -334,8 +334,10 @@ local function handleCommand(msg)
     elseif msg == "resscan" then
         -- Diagnostic: run the resistance scan (equipped + bags) and print the max
         -- wearable per school, so the tooltip-based read can be verified in-game.
-        local r = GuildOS.DataCollector and GuildOS.DataCollector:CollectResistances()
-        if r then
+        local r = GuildOS.Resistances and GuildOS.DataCollector and GuildOS.DataCollector:CollectResistances()
+        if not GuildOS.Resistances then
+            GuildOS:Print(L["Not available on this client."])   -- no resistance gear on retail (#184)
+        elseif r then
             GuildOS:Print(string.format(
                 "Resistances (max wearable) - Shadow %d | Nature %d | Frost %d | Fire %d | Arcane %d",
                 r.shadow or 0, r.nature or 0, r.frost or 0, r.fire or 0, r.arcane or 0))
@@ -559,6 +561,8 @@ local function handleCommand(msg)
         else
             GuildOS:Print(L["Not available on this client."])
         end
+    elseif msg == "attune dumpquests" and not GuildOS.AttunementTracker then
+        GuildOS:Print(L["Not available on this client."])   -- TBC's attunement quests (issue #184)
     elseif msg == "attune dumpquests" then
         -- Dumps all completed quest IDs in the TBC attunement range.
         -- Covers T4/T5/T6 + some headroom for anniversary-specific hidden flags.

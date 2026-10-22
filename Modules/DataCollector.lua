@@ -128,8 +128,9 @@ function DataCollector:CollectMyData()
     -- I own (equipped + bags), NOT just what's equipped now — so officers can see who
     -- can field a Nature/Frost/Shadow set (Hydross, Mother Shahraz...) even when it's
     -- sitting in bags. Only my OWN client can see my bags, so each player reports their
-    -- own; it rides the normal member-data sync.
-    data.resistances = self:CollectResistances()
+    -- own; it rides the normal member-data sync. Not where the game has no resistance gear
+    -- (retail: the Resistances module is absent; issue #184).
+    data.resistances = GuildOS.Resistances and self:CollectResistances() or nil
 
     GuildOS.db.members[key] = data
     GuildOS.db.myData = data
@@ -743,7 +744,7 @@ function DataCollector:GetBroadcastData()
 
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).
     -- StoreReceivedData merges every key generically, so the receiver stores it too.
-    if myData.resistances then
+    if myData.resistances and GuildOS.Resistances then
         clean.resistances = myData.resistances
     end
 

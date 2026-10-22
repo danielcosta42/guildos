@@ -696,15 +696,17 @@ function PopulateDetail(frame, data)
                 ilvlText:SetText(ilvlStr)
                 ilvlText:Show()
 
-                -- Attunement progress
-                local attColor = progress.attDelta > 0 and C.green or C.silver
-                local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
-                local attText = _pFS(child)
-                GuildOS:ApplyFont(attText, 10)
-                attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
-                attText:SetTextColor(attColor.r, attColor.g, attColor.b)
-                attText:SetText(attStr)
-                attText:Show()
+                -- Attunement progress, where the game has attunements (TBC, ADR-0014; issue #184)
+                if GuildOS.AttunementTracker then
+                    local attColor = progress.attDelta > 0 and C.green or C.silver
+                    local attStr = format(L["Attunements: %d/%d >> %d/%d  (+%d)"], progress.startAttDone, progress.attTotal, progress.currentAttDone, progress.attTotal, progress.attDelta)
+                    local attText = _pFS(child)
+                    GuildOS:ApplyFont(attText, 10)
+                    attText:SetPoint("TOPLEFT", contentWidth / 2, yOff - 3)
+                    attText:SetTextColor(attColor.r, attColor.g, attColor.b)
+                    attText:SetText(attStr)
+                    attText:Show()
+                end
                 yOff = yOff - 16
             end
 
@@ -841,17 +843,22 @@ function PopulateDetail(frame, data)
         yOff = CreateSectionHeader(child, L["LINKED CHARACTERS"] .. hdrSuffix, yOff, contentWidth)
         yOff = yOff - 5
 
-        local noteLabel = _pFS(child)
-        GuildOS:ApplyFont(noteLabel, 9)
-        noteLabel:SetPoint("TOPLEFT", 12, yOff)
-        noteLabel:SetWidth(contentWidth - 24)
-        noteLabel:SetJustifyH("LEFT")
-        noteLabel:SetWordWrap(true)
-        noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
-        noteLabel:SetText(GuildOS:IsOfficer() and L["Linked chars share attunements account-wide."]
-            or L["Add your own alts (any account). An officer's client applies them guild-wide."])
-        noteLabel:Show()
-        yOff = yOff - noteLabel:GetStringHeight() - 6
+        -- The officer's note is about attunements: none where the game has none (issue #184).
+        local noteText = not GuildOS:IsOfficer()
+            and L["Add your own alts (any account). An officer's client applies them guild-wide."]
+            or (GuildOS.AttunementTracker and L["Linked chars share attunements account-wide."])
+        if noteText then
+            local noteLabel = _pFS(child)
+            GuildOS:ApplyFont(noteLabel, 9)
+            noteLabel:SetPoint("TOPLEFT", 12, yOff)
+            noteLabel:SetWidth(contentWidth - 24)
+            noteLabel:SetJustifyH("LEFT")
+            noteLabel:SetWordWrap(true)
+            noteLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            noteLabel:SetText(noteText)
+            noteLabel:Show()
+            yOff = yOff - noteLabel:GetStringHeight() - 6
+        end
 
         -- /gos myalts: on your own sheet, find your characters in the guild and offer to link them (#142).
         if isSelfManage and GuildOS.AltAutoDetect then
