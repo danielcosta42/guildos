@@ -252,12 +252,14 @@ for _, case in ipairs(CLIENTS) do
       id .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
   end
   check(listed("raidTracker"), "raidTracker stays listed on " .. case.label)
-  -- Loot and the site: everywhere but retail (issue #165).
-  for _, id in ipairs({ "loot", "dkp", "wishlist", "web", "lootMaster", "lootTracker" }) do
+  -- Loot: everywhere but retail (issue #165).
+  for _, id in ipairs({ "loot", "dkp", "wishlist", "lootMaster", "lootTracker" }) do
     check(listed(id) == not case.retail, id .. (case.retail and " is not listed on " or " stays listed on ") .. case.label)
     check(UI:IsFeatureAllowed(UI:GetFeature(id)) == not case.retail,
       id .. (case.retail and " is refused on " or " is allowed on ") .. case.label)
   end
+  -- The site: everywhere, retail included since issue #182.
+  check(listed("web") and UI:IsFeatureAllowed(UI:GetFeature("web")), "web is listed and allowed on " .. case.label)
   check(GuildOS.db.settings.modules.consumableChecker == true and GuildOS.db.settings.modules.raidHUD == nil,
     "the player's own toggles are untouched on " .. case.label)
 end

@@ -1,11 +1,12 @@
 -- What retail does not have (issue #165), run against the real Core files, the loot and site modules,
 -- the slash router and the raid tracker, under a stubbed retail client.
 --
--- Retail is personal loot only, and guildos.me takes no retail guild yet, so the loot suite and every
--- way to the site are absent there, the way TBC content is absent outside Anniversary (ADR-0014): the
--- module file returns before defining its global. This proves each one is absent on retail; that a
--- slash verb reaching one says so instead of raising or saying nothing; and that a boss whose name
--- Midnight keeps secret neither raises nor is printed.
+-- Retail is personal loot only, so the loot suite is absent there, the way TBC content is absent
+-- outside Anniversary (ADR-0014): the module file returns before defining its global. So is the look
+-- read in the barber's chair, which the site takes from the Armory on retail. This proves each one is
+-- absent on retail; that a slash verb reaching one says so instead of raising or saying nothing; that
+-- the site's modules and verbs are there since issue #182; and that a boss whose name Midnight keeps
+-- secret neither raises nor is printed.
 --
 -- ponytail: the interface gates (the core's loot rules, the Settings quick buttons and officer tests,
 -- the roster's wishlist button, the export chooser) are one module check each and are checked in game.
@@ -61,8 +62,7 @@ GuildOS.db = { settings = { modules = {} }, members = {}, raidTracker = {} }
 -- ── 1. The loot suite and the site are absent ─────────────────────────
 local ABSENT = {
   { "LootMaster", "LootMaster" }, { "LootTracker", "LootTracker" }, { "LootEquity", "LootEquity" },
-  { "Points", "Points" }, { "SoftResSystem", "SoftRes" }, { "WishlistSystem", "Wishlist" },
-  { "CompanionExport", "Companion" }, { "CompanionImport", "CompanionImport" }, { "Look", "Look" },
+  { "Points", "Points" }, { "SoftResSystem", "SoftRes" }, { "WishlistSystem", "Wishlist" }, { "Look", "Look" },
 }
 for _, m in ipairs(ABSENT) do
   dofile(ADDON .. "/Modules/" .. m[1] .. ".lua")
@@ -70,12 +70,18 @@ for _, m in ipairs(ABSENT) do
 end
 check(GuildOS:StartModule({ "LootMaster" }) == false and next(GuildOS.State.startup.failed) == nil,
   "an absent module is skipped at start-up, not failed")
+-- The site is retail's since issue #182.
+GuildOS.JsonDecode = function() end
+for _, m in ipairs({ { "CompanionExport", "Companion" }, { "CompanionImport", "CompanionImport" } }) do
+  dofile(ADDON .. "/Modules/" .. m[1] .. ".lua")
+  check(GuildOS[m[2]] ~= nil, m[1] .. " is on retail (issue #182)")
+end
 
 -- ── 2. Its slash verbs say so ─────────────────────────────────────────
 dofile(ADDON .. "/Core/Commands.lua")
 local NOT_HERE = "Not available on this client."
-for _, verb in ipairs({ "points", "dkp", "equity", "lootequity", "lm", "lootmaster", "lm announce", "web", "web on",
-                        "companion", "roster", "roster invite", "roster groups", "wish", "wish list", "softres" }) do
+for _, verb in ipairs({ "points", "dkp", "equity", "lootequity", "lm", "lootmaster", "lm announce",
+                        "wish", "wish list", "softres" }) do
   printed = {}
   local ok, err = pcall(SlashCmdList.GUILDOS, verb)
   check(ok, "/gos " .. verb .. " does not raise on retail: " .. tostring(err))
@@ -88,8 +94,17 @@ end
 printed = {}
 check(pcall(SlashCmdList.GUILDOS, "help"), "/gos help does not raise on retail")
 local help = table.concat(printed, "\n")
-for _, gone in ipairs({ "/gos lm", "/gos points", "/gos web", "/gos roster", "/gos wish" }) do
+for _, gone in ipairs({ "/gos lm", "/gos points", "/gos wish" }) do
   check(not help:find(gone, 1, true), gone .. " is not in retail's help")
+end
+check(help:find("/gos web", 1, true) and help:find("/gos roster", 1, true), "the site's commands are in retail's help (issue #182)")
+-- And they answer as anywhere else, never that they are missing: the companion off, how to turn it on.
+GuildOS.db.settings.companion = false
+for _, case in ipairs({ { "web", "/gos web on" }, { "companion", "/gos web on" }, { "roster invite", "Import a roster first." } }) do
+  printed = {}
+  check(pcall(SlashCmdList.GUILDOS, case[1]), "/gos " .. case[1] .. " does not raise on retail")
+  local all = table.concat(printed, " ")
+  check(not all:find(NOT_HERE, 1, true) and all:find(case[2], 1, true), "/gos " .. case[1] .. " answers on retail: " .. all)
 end
 check(help:find("/gos specs", 1, true) ~= nil, "the rest of the help is still there")
 check(help:find("Export roster or attendance", 1, true) and not help:find("attendance or loot", 1, true),

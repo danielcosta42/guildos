@@ -3277,9 +3277,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     linksBtn:SetScript("OnClick", function()
         GuildOS:ShowExportPopup(L["Guild OS Links"],
             -- The site first: it is the one link here that does something for the
-            -- person reading it. The other three are where the addon comes from. Not on retail,
-            -- which guildos.me does not take yet (ADR-0026).
-            (GuildOS.Client.isRetail and "" or "App:  https://guildos.me\n")
+            -- person reading it. The other three are where the addon comes from. On
+            -- retail too since issue #182.
+            "App:  https://guildos.me\n"
             .. "GitHub:  https://github.com/danielcosta42/GuildOS\n"
             .. "CurseForge:  https://www.curseforge.com/projects/1549177\n"
             .. "Wago:  https://addons.wago.io/addons/rNkyABKa")

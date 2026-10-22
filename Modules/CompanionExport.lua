@@ -15,11 +15,9 @@
 --
 -- Business logic only — UI calls Build() and shows the result.
 ----------------------------------------------------------------------
--- Not on retail: guildos.me takes no retail guild yet (ADR-0026). Absent there, not switched off.
-if GuildOS.Client.isRetail then return end
-
 local Companion = {}
 GuildOS.Companion = Companion
+local L = GuildOS.L
 
 -- The marker on the wire carries a colon; the `fmt` field inside the payload
 -- does not. They are two different things and the web checks both.
@@ -43,8 +41,11 @@ local FMT = "GOSCOMP1"
 -- (issue #35, the site's specs/037). 8 adds `look` on WoW: Forever: the {option, choice}
 -- pairs a member's addon read in the barber's chair (issue #37, the site's specs/038). 9 adds
 -- each session's `size`, the raid size the game gave on the way in: on WoW: Forever it is what
--- decides whether a night counts for attendance (issue #90).
-local PAYLOAD_VERSION = 9
+-- decides whether a night counts for attendance (issue #90). 10 is retail's: the `region`, the guild's
+-- home realm in `guildKey` and `realm` (never the exporter's), and each session's `difficulty`, 14
+-- Normal, 15 Heroic, 16 Mythic (issue #182, the site's specs/056). Forever and Anniversary send what
+-- they sent at 9.
+local PAYLOAD_VERSION = 10
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -113,20 +114,22 @@ Companion.EncodeJson = encode
 -- Per-member pieces
 ----------------------------------------------------------------------
 
--- Slots where a missing enchant is a real problem in TBC. Same list the
--- audit panel uses — one source, so the site and the in-game audit can
--- never disagree about who is missing what.
+-- Slots where a missing enchant is a real problem in this game. Same list and
+-- the same question the audit panel asks — one source, so the site and the
+-- in-game audit can never disagree about who is missing what.
 local function enchantSummary(gear)
     if not gear then return nil end
-    local slots = GuildOS.GearAudit and GuildOS.GearAudit:GetEnchantableSlots()
+    local audit = GuildOS.GearAudit
+    local slots = audit and audit:GetEnchantableSlots()
     if not slots then return nil end
 
     local missing, checked = {}, 0
     for _, slotId in ipairs(slots) do
         local item = gear[slotId]
         -- Only an equipped slot can be missing an enchant. An empty slot is a
-        -- different problem and saying "unenchanted" about it would be wrong.
-        if item and item.name and item.name ~= "" then
+        -- different problem and saying "unenchanted" about it would be wrong. On
+        -- retail an off hand that is a shield or a frill takes none (issue #182).
+        if audit:NeedsEnchant(slotId, item) then
             checked = checked + 1
             if not (item.enchantId and item.enchantId > 0) then
                 missing[#missing + 1] = GuildOS.SlotNames[slotId] or ("Slot " .. slotId)
@@ -371,6 +374,9 @@ local function raidSessions()
                 -- The raid's size as the game gave it on the way in: on WoW: Forever, 20 and up
                 -- is what counts for attendance (issue #90). Absent for a night recorded before.
                 size = tonumber(s.size),
+                -- Retail's difficulty, 14, 15 or 16: Normal and Heroic the same week are two
+                -- lockouts (issue #182). Absent everywhere else, where a session never has one.
+                difficulty = tonumber(s.difficulty),
                 -- Only when false, mirroring the addon's own `isGuildRaid ~= false`:
                 -- every session recorded before the flag existed is a guild raid, and
                 -- absent has to keep meaning that on the far side too. Attendance
@@ -424,13 +430,28 @@ function Companion:SetEnabled(on)
     GuildOS:SetSetting("companion", on and true or false)
 end
 
+-- Why this client publishes nothing, or nil when it may. A retail guild's world on the site is its
+-- region, and a region the site has none for (China, a test client) is refused here rather than at
+-- the site's door, where nobody in game would read why (issue #182). Build returns it as its error;
+-- the Web panel shows it.
+function Companion:Refused()
+    if not GuildOS.Client.isRetail or GuildOS.Compat.Region() then return nil end
+    return L["guildos.me takes no guild from this client's region: nothing is published."]
+end
+
 ----------------------------------------------------------------------
 -- Payload
 ----------------------------------------------------------------------
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
+    local refused = self:Refused()
+    if refused then return nil, refused end
     local realm = GuildOS:GetClientRealm()
+    -- The guild's realm: on retail its home realm, never the exporter's, so officers on two connected
+    -- realms publish one guild (issue #182). Elsewhere this client's, as it always was.
+    local retail = GuildOS.Client.isRetail
+    local guildRealm = retail and GuildOS:GuildRealm() or realm
 
     local members, count = {}, 0
     local n = GetNumGuildMembers() or 0
@@ -526,12 +547,14 @@ function Companion:BuildPayload()
     return {
         fmt = FMT,
         v = PAYLOAD_VERSION,
-        guildKey = GuildOS:GetPlayerKey(guildName, realm), -- same rule: "Guild-Realm", or the name alone
+        guildKey = GuildOS:GetPlayerKey(guildName, guildRealm), -- same rule: "Guild-Realm", or the name alone
         guildName = guildName,
-        realm = realm,
+        realm = guildRealm,
         -- The client, not a guess about it: TBC Anniversary and retail are recognised positively
-        -- and everything else is Forever (ADR-0026). Retail never gets here: this module is absent there.
-        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or GuildOS.Client.isRetail and "RETAIL" or "FOREVER",
+        -- and everything else is Forever (ADR-0026).
+        game = GuildOS.Client.isAnniversary and "ANNIVERSARY" or retail and "RETAIL" or "FOREVER",
+        -- Retail only: the same realm name is two realms in two regions (issue #182).
+        region = retail and GuildOS.Compat.Region() or nil,
         exportedAt = math.floor(time()),
         exportedBy = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
         addonVersion = GuildOS.VERSION or "0",

@@ -6,7 +6,8 @@
 -- Those are the ids guildos.me's model viewer draws, so the look is kept as {option, choice}
 -- pairs on the player's own member record, travels with the broadcast like race and sex, and
 -- goes out in the companion export (payload v8, the site's specs/038).
--- Nor on retail: the look only feeds guildos.me, which takes no retail guild yet (ADR-0026).
+-- Nor on retail: the site draws a retail character from the Armory, and the look only feeds the
+-- site (ADR-0026; guildos-web specs/056, issue #182).
 if GuildOS.Client.isAnniversary or GuildOS.Client.isRetail then return end
 
 local Look = {}

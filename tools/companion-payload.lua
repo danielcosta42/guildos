@@ -144,7 +144,8 @@ dofile(ADDON .. "/Core/Utils.lua")  -- the real member-key rule (issue #8), not 
 function GuildOS:GetSetting(key) return self.db.settings[key] end
 function GuildOS:SetSetting(key, v) self.db.settings[key] = v end
 
-GuildOS.GearAudit = { GetEnchantableSlots = function() return { 1, 3, 5, 7, 8, 9, 10, 15, 16 } end }
+-- The real audit: the export asks it which slot needs an enchant, as the member sheet does (issue #182).
+dofile(ADDON .. "/Modules/GearAudit.lua")
 
 GuildOS.RaidTracker = {
   GetAttendance25ManPercent = function(_, key)
@@ -288,6 +289,12 @@ GuildOS.db.raidTracker.sessions[NIGHT].size = 20
 assert(GuildOS.Companion:BuildPayload().sessions[1].size == 20, "a night's size travels")
 GuildOS.db.raidTracker.sessions[NIGHT].size = nil
 GuildOS.Client.isAnniversary = true
+
+-- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
+-- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
+assert(anniversary.v == 10, "the payload is v10")
+assert(anniversary.region == nil and anniversary.sessions[1].difficulty == nil and anniversary.realm == "Firemaw",
+  "Anniversary sends no region and no difficulty, and its realm is the client's")
 
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then

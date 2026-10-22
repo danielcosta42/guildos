@@ -13,9 +13,6 @@
 -- Everything here goes through Companion:IsEnabled(). The gate lives in
 -- the export module so a new entry point cannot forget to ask.
 ----------------------------------------------------------------------
--- Not on retail: guildos.me takes no retail guild yet (ADR-0026). Absent there, not switched off.
-if GuildOS.Client.isRetail then return end
-
 local Import = {}
 GuildOS.CompanionImport = Import
 
@@ -26,7 +23,9 @@ GuildOS.CompanionImport = Import
 --- hyphen would invite somebody else. What comes off there is exactly the client's own
 --- realm, if it reports one ("Chehul-Costa-70") — as it writes it, or without spaces the
 --- way a roster row does — compared as plain text, never as a pattern. The site does the
---- same with the keys it receives (the site's specs/036).
+--- same with the keys it receives (the site's specs/036). Retail takes the same path: a
+--- "Name-Realm" on this character's realm comes back plain, one on another connected realm
+--- keeps its realm, which is what an invite there needs (issue #182).
 function Import.PlainName(name)
     if GuildOS.Client.isAnniversary then return name:match("^([^-]+)") or name end
     local realm = GuildOS:GetClientRealm()
@@ -44,6 +43,15 @@ end
 local L = GuildOS.L
 local WIRE_PREFIX = "GOSROST1:"
 local CORES_PREFIX = "GOSCORE1:"
+
+-- The name somebody from the site is invited, grouped and shown by. On retail the key is
+-- "Name-Realm" with their own realm and the name has none: the name alone would invite a
+-- namesake on this character's realm, so the key is what is cut (issue #182). Elsewhere the
+-- name, as it always was.
+local function nameOf(entry)
+    local key = GuildOS.Client.isRetail and type(entry.key) == "string" and entry.key ~= "" and entry.key
+    return Import.PlainName(key or entry.name)
+end
 
 ----------------------------------------------------------------------
 -- Reading the string
@@ -86,7 +94,7 @@ function Import:Parse(raw)
             members[#members + 1] = {
                 key = m.key or m.name,
                 -- The invite API wants the plain name for a same-realm player.
-                name = Import.PlainName(m.name),
+                name = nameOf(m),
                 class = m.class or "",
                 spec = m.spec or "",
                 slot = m.slot or "RANGED",
@@ -108,7 +116,7 @@ function Import:Parse(raw)
             if type(s) == "table" and type(s.name) == "string" and s.name ~= "" then
                 signups[#signups + 1] = {
                     key = type(s.key) == "string" and s.key or nil,
-                    name = Import.PlainName(s.name),
+                    name = nameOf(s),
                     class = s.class or "",
                     spec = s.spec or "",
                     slot = s.slot or "RANGED",
@@ -128,6 +136,8 @@ function Import:Parse(raw)
         instance = data.instance,
         instanceKey = type(data.instanceKey) == "string" and data.instanceKey or nil,
         size = tonumber(data.size) or 0,
+        -- v3, retail: 14 Normal, 15 Heroic, 16 Mythic; nil elsewhere and from an older site (issue #182).
+        difficulty = tonumber(data.difficulty),
         startsAt = tonumber(data.startsAt) or 0,
         members = members,
         signups = signups,
@@ -219,10 +229,11 @@ function Import:ConsumeInbox()
     -- leftover on an earlier night would otherwise take it over (#146); with none answered, the
     -- soonest of all.
     local soonest, soonestAny, imported, raids = nil, nil, 0, {}
-    -- And all of them, stripped to the three fields that answer "which planned raid is
-    -- this night". The full rosters are not kept: the soonest is the one anybody acts on,
-    -- and holding ten of them in SavedVariables to answer one question later is ten
-    -- rosters of churn at every logout.
+    -- And all of them, stripped to the fields that answer "which planned raid is this
+    -- night": where, when and, on retail, on which difficulty (issue #182). The full
+    -- rosters are not kept: the soonest is the one anybody acts on, and holding ten of
+    -- them in SavedVariables to answer one question later is ten rosters of churn at
+    -- every logout.
     local planned = {}
     for _, raw in ipairs(raws) do
         local roster = self:Parse(raw)
@@ -234,6 +245,7 @@ function Import:ConsumeInbox()
                     raidId = roster.raidId,
                     instanceKey = roster.instanceKey,
                     startsAt = roster.startsAt or 0,
+                    difficulty = roster.difficulty,
                 }
             end
             local answered = #roster.members > 0 or (roster.signups and #roster.signups > 0)
@@ -288,14 +300,17 @@ end
 local MATCH_EARLY = 2 * 3600
 local MATCH_LATE = 8 * 3600
 
---- Returns the raidId of the planned raid covering `when` in `instanceKey`, or nil.
-function Import:RaidFor(instanceKey, when)
+--- Returns the raidId of the planned raid covering `when` in `instanceKey`, or nil. On retail
+--- `difficulty` is the night's (14, 15, 16): a raid planned on another one is another lockout,
+--- so when both say one they must agree (issue #182).
+function Import:RaidFor(instanceKey, when, difficulty)
     if type(instanceKey) ~= "string" or instanceKey == "" then return nil end
     when = tonumber(when) or 0
+    difficulty = tonumber(difficulty)
 
     local best, bestGap
     for _, r in ipairs((GuildOS.db and GuildOS.db.companionRaids) or {}) do
-        if r.instanceKey == instanceKey then
+        if r.instanceKey == instanceKey and not (difficulty and r.difficulty and r.difficulty ~= difficulty) then
             local gap = when - (r.startsAt or 0)
             if gap >= -MATCH_EARLY and gap <= MATCH_LATE then
                 gap = math.abs(gap)
@@ -335,12 +350,22 @@ function Import:CanOrganize()
     return true
 end
 
---- Short names of everyone on the live guild roster.
+--- Everyone on the live guild roster, by the name the site would send: the name to invite.
+--- On retail the site sends a name it never confirmed without a realm, and that is a guildmate
+--- only when one connected realm has it: two namesakes are nobody to guess between (issue #182).
 local function guildNames()
-    local names = {}
+    local names, retail = {}, GuildOS.Client.isRetail
     for i = 1, (GetNumGuildMembers() or 0) do
         local full = GetGuildRosterInfo(i)
-        if full then names[Import.PlainName(full)] = true end
+        if full then
+            local plain = Import.PlainName(full)
+            if retail then
+                local short = full:match("^([^-]+)") or full
+                if names[short] == nil then names[short] = plain else names[short] = false end
+            else
+                names[plain] = plain
+            end
+        end
     end
     return names
 end
@@ -358,15 +383,26 @@ end
 --- The panel and the invite button both read this, for the reason every predicate in
 --- this file is shared: a button that says "the game has never seen this character"
 --- beside somebody it just invited is two versions of the truth.
+---
+--- Keyed by the signup's name; the value is the name to invite, with the realm on retail
+--- when the guildmate is on another connected realm (issue #182).
 function Import:Rescued(roster)
     local out, guild = {}, nil
     for _, p in ipairs((roster and roster.signups) or {}) do
         if p.why == "unknown" and not p.invite and type(p.name) == "string" then
             guild = guild or guildNames()
-            if guild[p.name] then out[p.name] = true end
+            if guild[p.name] then out[p.name] = guild[p.name] end
         end
     end
     return out
+end
+
+-- Who a name stands for in the group: on retail the name with its realm, so a guildmate already
+-- here from another connected realm is not invited again, and a namesake from another realm is
+-- not taken for them (issue #182). Elsewhere the name.
+local function presence(name, realm)
+    if not GuildOS.Client.isRetail then return name end
+    return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, realm or name:match("^[^-]+%-(.+)$"))
 end
 
 --- Invite everyone on the loaded roster who is not already in the group.
@@ -380,11 +416,11 @@ function Import:InviteAll()
     -- message in their chat for no reason.
     local present = {}
     local me = GuildOS.Compat.PlayerName()
-    present[me] = true
+    present[presence(me)] = true
     for i = 1, (GetNumGroupMembers() or 0) do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local n = GuildOS.Compat.UnitIdentity(unit)
-        if n then present[n] = true end
+        local n, realm = GuildOS.Compat.UnitIdentity(unit)
+        if n then present[presence(n, realm)] = true end
     end
 
     -- Compat knows which invite the client has: WoW: Forever only has C_PartyInfo's (issue #43).
@@ -394,19 +430,20 @@ function Import:InviteAll()
 
     local invited, skipped = 0, 0
     local function send(name)
-        if present[name] then
+        local who = presence(name)
+        if present[who] then
             skipped = skipped + 1
         else
             ask(name)
             -- Marked here as well as counted: two signups can name the same character,
             -- and a second invite to a name already asked is an error in their chat.
-            present[name] = true
+            present[who] = true
             invited = invited + 1
         end
     end
 
     for _, m in ipairs(roster.members) do send(m.name) end
-    for name in pairs(self:Rescued(roster)) do send(name) end
+    for _, name in pairs(self:Rescued(roster)) do send(name) end
     return invited, skipped, nil
 end
 

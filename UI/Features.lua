@@ -10,7 +10,7 @@ local UI = GuildOS.UI
 local L  = GuildOS.L
 
 -- Tabs, in window order ----------------------------------------------
--- `retail = false`: not on retail (ADR-0026), where loot is personal and guildos.me takes no guild yet.
+-- `retail = false`: not on retail (ADR-0026), where loot is personal.
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
     build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
@@ -84,7 +84,7 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "web", label = L["Web"], order = 95, retail = false,
+    id = "web", label = L["Web"], order = 95,   -- on retail too since issue #182
     -- Not officerOnly: publishing is each player's own choice, and the
     -- guild's picture on the site gets better the more members opt in. The
     -- raid actions gate themselves on raid leadership instead.

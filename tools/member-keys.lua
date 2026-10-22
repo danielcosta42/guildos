@@ -452,7 +452,9 @@ for line in toc:gmatch("[^\r\n]+") do
     local _, fallbacks = src:gsub('GetRealmName%(%)%s*%)?%s*or%s*["\']', "")
     local _, normalizedFallbacks = src:gsub('GetNormalizedRealmName%(%)%s*%)?%s*or%s*["\']', "")
     local _, clientFallbacks = src:gsub('GetClientRealm%(%)%s*%)?%s*or%s*["\']', "")
-    check(fallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
+    -- The per-guild database key's "Unknown", the one literal left, through the guild's realm (issue #182).
+    local _, guildFallbacks = src:gsub('GuildRealm%(%)%s*%)?%s*or%s*["\']', "")
+    check(fallbacks == 0 and guildFallbacks == (rel == "Core/Core.lua" and 1 or 0) and normalizedFallbacks == 0
           and clientFallbacks == (rel == "Modules/PugInspector.lua" and 1 or 0),
           rel .. " falls back from the client's realm to a literal")
     -- ChehulNet ships identical in other addons, so it cannot reach GuildOS's Compat.

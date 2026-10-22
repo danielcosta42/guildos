@@ -169,10 +169,11 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
--- The verbs of what retail does not have (ADR-0026): loot is personal there and guildos.me takes no
--- retail guild yet. Each module is absent, so its verb says so rather than doing nothing or raising.
+-- The verbs of what retail does not have (ADR-0026): loot is personal there. Each module is absent, so
+-- its verb says so rather than doing nothing or raising. The site's verbs (web, companion, roster) are
+-- retail's too since issue #182.
 local RETAIL_ABSENT = { "^points$", "^dkp$", "^equity$", "^lootequity$", "^lm$", "^lm%s", "^lootmaster$",
-    "^web", "^companion", "^roster", "^wish", "^softres" }
+    "^wish", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end

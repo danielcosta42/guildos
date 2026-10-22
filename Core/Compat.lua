@@ -84,6 +84,16 @@ function Compat.UnitIdentity(unit)
     return name, realm, classFile
 end
 
+-- The region this client plays in, as guildos.me writes it, from GetCurrentRegion(): 1 the Americas
+-- ("us"), 2 Korea, 3 Europe, 4 Taiwan. Nil for any other answer (China, a test client), which the site
+-- has no world for, with the number the client gave (issue #182).
+local REGIONS = { [1] = "us", [2] = "kr", [3] = "eu", [4] = "tw" }
+function Compat.Region()
+    local id = GetCurrentRegion and GetCurrentRegion()
+    if Compat.IsSecret(id) then return nil end
+    return REGIONS[id], id
+end
+
 -- My own name the way the guild roster and every addon-message sender write it. WoW: Forever
 -- 1.60.1.70009 cut UnitName("player") to the first name ("Chehul") while the roster says
 -- "Chehul Druida"; there UnitFullName("player") returns the first name and the surname apart,

@@ -214,6 +214,19 @@ function GuildOS:GetClientRealm()
     return realm
 end
 
+-- The realm a guild is from. On retail a guild spans connected realms, so it is its home realm
+-- (GetGuildInfo's fourth answer, nil when it is this character's own), normalized: one guild,
+-- whichever of its realms a character is on. Elsewhere GetRealmName(). The guild's database key
+-- and the companion payload's guildKey both use it (ADR-0026, issue #182).
+function GuildOS:GuildRealm()
+    if isRetail() then
+        local home = IsInGuild() and select(4, GetGuildInfo("player"))
+        if not home or home == "" then home = GetRealmName() end
+        return home and normalizedRealm(home)
+    end
+    return GetRealmName()
+end
+
 -- A member's key is "Name-Realm", byte for byte as it has always been. WoW: Forever has
 -- no realms: when neither the caller nor the client gives one, the key is the name alone.
 -- "First Last" and "Anne-Marie" then split on the first hyphen and rejoin to themselves,

@@ -41,8 +41,10 @@ RaidTracker.RAID_INSTANCES = {
 -- "Magtheridon's Lair" there was enough to lose a night. Keys are shared
 -- deliberately, they are short, and neither side ever translates them.
 --
--- Only the nine the site plans. A vanilla raid has no key because the site has no
--- catalogue entry for it, and stamping one would be inventing a raid.
+-- Only the ones the site plans: TBC's nine and Midnight's four, by map id (the eighth
+-- answer of GetInstanceInfo; retail's names arrive in the player's language, issue #182).
+-- A vanilla raid has no key because the site has no catalogue entry for it, and stamping
+-- one would be inventing a raid.
 RaidTracker.RAID_KEYS = {
     [532] = "kara",
     [544] = "mag",
@@ -53,6 +55,10 @@ RaidTracker.RAID_KEYS = {
     [534] = "hyjal",
     [564] = "bt",
     [580] = "swp",
+    [2912] = "midnight-voidspire",  -- The Voidspire
+    [2939] = "midnight-dreamrift",  -- The Dreamrift
+    [2913] = "midnight-queldanas",  -- March on Quel'Danas
+    [3004] = "midnight-abyss",      -- The Venomous Abyss
 }
 
 -- Raids that count for attendance (25-man progression)
@@ -279,7 +285,8 @@ function RaidTracker:StartSession(instanceID)
     local key = self.RAID_KEYS[instanceID]
     if key and GuildOS.CompanionImport then
         GuildOS:SafeCall(function()
-            raidId = GuildOS.CompanionImport:RaidFor(key, now)
+            -- On retail a raid planned on another difficulty is another night (issue #182).
+            raidId = GuildOS.CompanionImport:RaidFor(key, now, isRetail() and tonumber(difficultyID) or nil)
         end)
     end
 

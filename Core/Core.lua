@@ -135,16 +135,10 @@ end
 -- Per-guild DB resolution
 ----------------------------------------------------------------------
 -- The realm a db key is made with, and a guild's db key, "<guild>-<realm>": the one place each is built.
--- On retail a guild spans connected realms, so it is the guild's home realm (GetGuildInfo's fourth
--- answer, nil when it is this character's own), normalized: one guild, one database, whichever of
--- its realms a character is on (ADR-0026).
+-- On retail a guild spans connected realms, so it is the guild's home realm (`GuildOS:GuildRealm`):
+-- one guild, one database, whichever of its realms a character is on (ADR-0026).
 local function dbRealm()
-    if GuildOS.Client and GuildOS.Client.isRetail then
-        local home = IsInGuild() and select(4, GetGuildInfo("player"))
-        if not home or home == "" then home = GetRealmName() end
-        return home and (home:gsub("[%s%-]", "")) or "Unknown"
-    end
-    return GetRealmName() or "Unknown"
+    return GuildOS:GuildRealm() or "Unknown"
 end
 local function guildDBKey(guildName) return guildName .. "-" .. dbRealm() end
 
