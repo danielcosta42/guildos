@@ -126,6 +126,11 @@ check(B:IsBanned("Thrall-Azralon") and B:Get("Thrall-Azralon").reason == "old",
   "a temporary ban that ran out does not hide the old ban by name, which still holds")
 check(not B:Remove("Thrall-Gallywix") and B:IsBanned("Thrall-Gallywix") and store["thrall-gallywix"] == nil,
   "/gos unban Thrall-Gallywix lifts nothing when only the old ban by name holds him")
+-- An old ban by name that ran out is not the one /gos unban lifts: this realm's standing one is.
+store.thrall = { name = "Thrall", reason = "old temp", ts = 100, expiry = GetServerTime() - 3600 }
+store["thrall-azralon"] = { name = "Thrall-Azralon", reason = "standing", ts = 200 }
+check(B:Remove("Thrall") and store["thrall-azralon"].removed and not store.thrall.removed and not B:IsBanned("Thrall"),
+  "/gos unban Thrall lifts this realm's standing ban, not an old ban by name that ran out")
 check(not B:Remove("Zed") and store["zed-azralon"] == nil and B:IsBanned("Zed-Gallywix"),
   "/gos unban Zed with only other realms' Zeds banned lifts nothing, and writes nothing")
 local said = {}
@@ -227,6 +232,11 @@ onWhisper(nil, "CHAT_MSG_WHISPER", "no thanks", "Zed")
 check(#GuildOS.db.recruitScanner.inbox == 0, "a whisper from this realm's Zed is not his reply")
 onWhisper(nil, "CHAT_MSG_WHISPER", "sure", "Zed-Gallywix")
 check(#GuildOS.db.recruitScanner.inbox == 1, "Zed-Gallywix's is")
+-- The panel's checkbox selects by the same whole name the whisper sends to (not driven here: a
+-- frame-built panel; read from the source).
+local scannerSrc = io.open(ADDON .. "/Modules/RecruitScanner.lua", "rb"):read("*a")
+check(scannerSrc:find("local who = RecruitScanner:Addr(cand)", 1, true) ~= nil,
+  "the scan panel's checkbox selects a candidate by RecruitScanner:Addr")
 
 -- ── 2. Retail: the group inspector ─────────────────────────────────────
 local PI = GuildOS.PugInspector

@@ -59,13 +59,13 @@ end
 
 -- The key `Remove` lifts for a name an officer typed: elsewhere the name alone. On retail a
 -- name with a realm is that whole key; one without is the standing ban filed under the name
--- alone before issue #184 when there is one, else this realm's (issue #184).
-function BanList:_RemovalKey(name, store)
+-- alone before issue #184 when it is still in force, else this realm's (issue #184).
+function BanList:_RemovalKey(name, store, now)
     store = store or GuildOS.db.banList or {}
     local key = self:_NormalizeKey(name)
     if not GuildOS.Client.isRetail or key == "" or name:find("-", 1, true) then return key end
     local old = store[name:lower()]
-    if old and not old.removed then return name:lower() end
+    if inForce(old, now or GetServerTime()) then return name:lower() end
     return key
 end
 
