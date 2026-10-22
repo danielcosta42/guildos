@@ -1921,3 +1921,8 @@ L["Main"] = "Основа"
 L["Columns"] = "Столбцы"
 L["Restore defaults"] = "По умолчанию"
 L["Saved for every character on this account."] = "Для всех персонажей этой учётной записи."
+-- Характеристики в ритейле (issue #184).
+L["Crit"] = "Крит"
+L["Haste"] = "Скорость"
+L["Mastery"] = "Искусность"
+L["Vers"] = "Универс."

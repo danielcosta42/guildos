@@ -1921,3 +1921,8 @@ L["Main"] = "主角色"
 L["Columns"] = "欄位"
 L["Restore defaults"] = "恢復預設"
 L["Saved for every character on this account."] = "套用至此帳號的所有角色。"
+-- 正式服屬性 (issue #184).
+L["Crit"] = "致命一擊"
+L["Haste"] = "加速"
+L["Mastery"] = "精通"
+L["Vers"] = "臨機應變"

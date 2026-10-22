@@ -19,6 +19,34 @@ local STATS_LIST = {
     { label = L["INT"], key = "intellect" },
     { label = L["SPI"], key = "spirit"    },
 }
+-- Retail's sheet (issue #184): the spec's primary stat, named by which one it is, stamina and the
+-- four ratings in percent. No spirit, and no mana bar for most specs.
+local PRIMARY_LABEL = { strength = L["STR"], agility = L["AGI"], intellect = L["INT"] }
+if GuildOS.Client.isRetail then
+    STATS_LIST = {
+        { label = L["HP"],      key = "health", color = "green" },
+        { primary = true },
+        { label = L["STA"],     key = "stamina" },
+        { label = L["Crit"],    key = "crit",        pct = true },
+        { label = L["Haste"],   key = "haste",       pct = true },
+        { label = L["Mastery"], key = "mastery",     pct = true },
+        { label = L["Vers"],    key = "versatility", pct = true },
+    }
+end
+
+-- The stat cells to draw for one member's stats: the primary entry becomes the stat it names, and
+-- is left out when the member sent none.
+local function StatCells(stats)
+    local out = {}
+    for _, s in ipairs(STATS_LIST) do
+        if not s.primary then
+            out[#out + 1] = s
+        elseif PRIMARY_LABEL[stats.primary] then
+            out[#out + 1] = { label = PRIMARY_LABEL[stats.primary], key = stats.primary }
+        end
+    end
+    return out
+end
 
 ----------------------------------------------------------------------
 -- Widget pool for PopulateDetail.
@@ -431,7 +459,7 @@ function PopulateDetail(frame, data)
         statsGrid:Show()
 
         local colWidth = (contentWidth - 20) / 4
-        for i, stat in ipairs(STATS_LIST) do
+        for i, stat in ipairs(StatCells(data.stats)) do
             local col = ((i - 1) % 4)
             local row = math.floor((i - 1) / 4)
             local sc = stat.color and C[stat.color] or C.white
@@ -447,7 +475,8 @@ function PopulateDetail(frame, data)
             GuildOS:ApplyFont(value, 11)
             value:SetPoint("LEFT", label, "RIGHT", 4, 0)
             value:SetTextColor(sc.r, sc.g, sc.b)
-            value:SetText(tostring(data.stats[stat.key] or 0))
+            local v = data.stats[stat.key] or 0
+            value:SetText(stat.pct and string.format("%.1f%%", v) or tostring(v))
             value:Show()
         end
 

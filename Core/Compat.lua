@@ -514,6 +514,49 @@ function Compat.InspectItemLevel(unit)
     return math.floor(level)
 end
 
+-- The primary stat my spec plays on, as UnitStat numbers it (1 strength, 2 agility, 4 intellect),
+-- on retail (issue #184); nil elsewhere, or before there is a spec.
+function Compat.PrimaryStat()
+    local S = GuildOS.Client.isRetail and C_SpecializationInfo
+    local index = S and S.GetSpecialization and S.GetSpecialization()
+    if Compat.IsSecret(index) or not index or index == 0 then return nil end
+    local stat = select(6, S.GetSpecializationInfo(index))
+    if Compat.IsSecret(stat) then return nil end
+    stat = tonumber(stat)
+    if stat == 1 or stat == 2 or stat == 4 then return stat end
+    return nil
+end
+
+local SPELL_SCHOOLS = 7                                -- MAX_SPELL_SCHOOLS; school 1 is physical
+local CR_VERSATILITY = CR_VERSATILITY_DAMAGE_DONE or 29 -- the rating PaperDollFrame shows
+
+-- My ratings as the retail character sheet shows them, in percent to two decimals (issue #184):
+-- crit the way PaperDollFrame takes it (the best of melee, ranged and the weakest spell school),
+-- haste, mastery, and versatility's damage bonus. Nil elsewhere, where the sheet has the classic
+-- stats. A rating the client cannot give, or keeps secret, is left out.
+function Compat.SecondaryStats()
+    if not GuildOS.Client.isRetail then return nil end
+    local function read(fn, ...)
+        local v = fn and fn(...)
+        if Compat.IsSecret(v) then return nil end
+        return tonumber(v)
+    end
+    local function round(v) return v and math.floor(v * 100 + 0.5) / 100 end
+    local spell
+    for school = 2, SPELL_SCHOOLS do
+        local v = read(GetSpellCritChance, school)
+        if v and (not spell or v < spell) then spell = v end
+    end
+    local crit
+    for _, v in pairs({ spell, read(GetRangedCritChance), read(GetCritChance) }) do   -- pairs skips the nils
+        if not crit or v > crit then crit = v end
+    end
+    local vers = read(GetCombatRatingBonus, CR_VERSATILITY)
+    if vers then vers = vers + (read(GetVersatilityBonus, CR_VERSATILITY) or 0) end
+    return { crit = round(crit), haste = round(read(GetHaste)), mastery = round(read(GetMasteryEffect)),
+             versatility = round(vers) }
+end
+
 -- C_Spell.GetSpellInfo returns a table; every caller reads the old global's order.
 function Compat.GetSpellInfo(spell)
     if C_Spell and C_Spell.GetSpellInfo then

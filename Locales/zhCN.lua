@@ -1921,3 +1921,8 @@ L["Main"] = "大号"
 L["Columns"] = "列"
 L["Restore defaults"] = "恢复默认"
 L["Saved for every character on this account."] = "对此账号的所有角色生效。"
+-- 正式服属性 (issue #184).
+L["Crit"] = "爆击"
+L["Haste"] = "急速"
+L["Mastery"] = "精通"
+L["Vers"] = "全能"

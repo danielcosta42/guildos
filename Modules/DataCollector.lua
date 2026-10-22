@@ -554,6 +554,8 @@ end
 ----------------------------------------------------------------------
 -- Collect basic stats
 ----------------------------------------------------------------------
+local PRIMARY_STAT_KEYS = { [1] = "strength", [2] = "agility", [4] = "intellect" }  -- UnitStat's numbering
+
 function DataCollector:CollectStats()
     -- While stats are restricted they are secret: left out, never serialised or compared.
     local function readable(v)
@@ -567,6 +569,18 @@ function DataCollector:CollectStats()
     end
     local stats = {}
     stats.health = readable(UnitHealthMax("player"))
+    -- Retail's character sheet (issue #184): the spec's primary stat, stamina and the four ratings.
+    -- Its UnitStat has no fifth stat (spirit), and mana is one spec's resource among many.
+    if GuildOS.Client.isRetail then
+        local primary = GuildOS.Compat.PrimaryStat()
+        if primary then
+            stats.primary = PRIMARY_STAT_KEYS[primary]
+            stats[stats.primary] = base(primary)
+        end
+        stats.stamina = base(3)
+        for k, v in pairs(GuildOS.Compat.SecondaryStats() or {}) do stats[k] = v end
+        return stats
+    end
     stats.mana = readable(UnitPowerMax("player", 0)) -- Mana
 
     -- Base stats

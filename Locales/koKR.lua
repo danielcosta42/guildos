@@ -1921,3 +1921,8 @@ L["Main"] = "본캐"
 L["Columns"] = "열"
 L["Restore defaults"] = "기본값 복원"
 L["Saved for every character on this account."] = "이 계정의 모든 캐릭터에 적용됩니다."
+-- 리테일 능력치 (issue #184).
+L["Crit"] = "치명타"
+L["Haste"] = "가속"
+L["Mastery"] = "특화"
+L["Vers"] = "유연성"

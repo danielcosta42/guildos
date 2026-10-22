@@ -2042,3 +2042,8 @@ L["Main"] = "Principal"
 L["Columns"] = "Columnas"
 L["Restore defaults"] = "Restablecer"
 L["Saved for every character on this account."] = "Para todos los personajes de esta cuenta."
+-- La hoja del retail (issue #184).
+L["Crit"] = "Crítico"
+L["Haste"] = "Celeridad"
+L["Mastery"] = "Maestría"
+L["Vers"] = "Versat."

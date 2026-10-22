@@ -749,3 +749,8 @@ L["Alliance tag and an officer of a guild already in it. They approve the reques
 -- Retail (ADR-0026): the welcome and the officer step without loot.
 L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."
 L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."] = "As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."
+-- Retail's character sheet on the member detail (issue #184).
+L["Crit"] = "Crit"
+L["Haste"] = "Haste"
+L["Mastery"] = "Mastery"
+L["Vers"] = "Vers"

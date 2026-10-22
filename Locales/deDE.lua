@@ -2041,3 +2041,8 @@ L["Main"] = "Main"
 L["Columns"] = "Spalten"
 L["Restore defaults"] = "Standard"
 L["Saved for every character on this account."] = "Gilt für alle Charaktere dieses Accounts."
+-- Die Werte im Retail (issue #184).
+L["Crit"] = "Krit"
+L["Haste"] = "Tempo"
+L["Mastery"] = "Meisterschaft"
+L["Vers"] = "Vielseit."
