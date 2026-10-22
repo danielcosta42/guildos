@@ -874,7 +874,9 @@ retail guild yet.
   whole name it has (the whisper's author, the popup's queued name, /who's fullName). A ban filed under the
   name alone before still holds on every realm, also after the whole key's own ban is lifted. The ban list
   lifts the row it shows by that row's key (`List` carries it, `RemoveKey`); `/gos unban Name-Realm` lifts
-  that key, `/gos unban Name` the old ban by name first, then this realm's. The group inspector, the rank
+  that key, `/gos unban Name` the old ban by name first, then this realm's, and says so when no ban stood
+  there. The /who scanner selects and whispers a connected realm's player by the whole name /who gave
+  (`RecruitScanner:Addr`). The group inspector, the rank
   lookup, the roster log and the raid's guild check compare whole keys. Forever and Anniversary keep the name
   alone.
 - What is left of attunements and consumables follows their modules, on Forever too, where they were as

@@ -119,6 +119,25 @@ B:Add("Thrall-Azralon", "new")
 check(B:Remove("Thrall") and store.thrall.removed and not store["thrall-azralon"].removed,
   "/gos unban with the bare name lifts the old ban by name first")
 check(B:Remove("Thrall") and store["thrall-azralon"].removed, "and, that one lifted, this realm's")
+check(not B:Remove("Thrall") and not B:RemoveKey("thrall"), "a ban already lifted is not lifted again")
+store.thrall = { name = "Thrall", reason = "old", ts = 100 }
+store["thrall-azralon"] = { name = "Thrall-Azralon", reason = "temp", ts = 200, expiry = GetServerTime() - 3600 }
+check(B:IsBanned("Thrall-Azralon") and B:Get("Thrall-Azralon").reason == "old",
+  "a temporary ban that ran out does not hide the old ban by name, which still holds")
+check(not B:Remove("Thrall-Gallywix") and B:IsBanned("Thrall-Gallywix") and store["thrall-gallywix"] == nil,
+  "/gos unban Thrall-Gallywix lifts nothing when only the old ban by name holds him")
+check(not B:Remove("Zed") and store["zed-azralon"] == nil and B:IsBanned("Zed-Gallywix"),
+  "/gos unban Zed with only other realms' Zeds banned lifts nothing, and writes nothing")
+local said = {}
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) said[#said + 1] = m end }
+dofile(ADDON .. "/Core/Commands.lua")
+SlashCmdList.GUILDOS("unban Zed")
+check(table.concat(said, " "):find("No ban to lift for Zed.", 1, true) and not table.concat(said, " "):find("Unbanned"),
+  "and says so, never 'Unbanned'")
+said = {}
+SlashCmdList.GUILDOS("unban Zed-TolBarad")
+check(table.concat(said, " "):find("Unbanned Zed-TolBarad", 1, true) and store["zed-tolbarad"].removed, "a real unban is said as before")
+B:Add("Zed-TolBarad", "y")
 for _, e in ipairs(B:List()) do rows[e.name] = e.key end
 check(B:RemoveKey(rows["Bob-Gallywix"]) and store["bob-gallywix"].removed and not B:IsBanned("Bob-Gallywix"),
   "the x on Bob-Gallywix's row lifts his ban")
@@ -181,6 +200,33 @@ local banned = function(n) return B:IsBanned(n) end
 check(not S:_CandidateOK({ name = "Zed", full = "Zed-Gallywix" }, {}, banned)
   and S:_CandidateOK({ name = "Zed", full = "Zed" }, {}, banned),
   "the /who scan leaves out the banned Zed, by the realm /who gives, and keeps this realm's")
+
+-- The /who scan from its result to the whisper and the reply: this realm's Zed is banned, and /who
+-- names a connected realm's Zed with his realm (the reviewer's case).
+B:RemoveKey("zed-gallywix")
+B:Add("Zed", "this realm's")
+local WHO = { { fullName = "Zed", level = 80, filename = "MAGE" }, { fullName = "Zed-Gallywix", level = 80, filename = "MAGE" } }
+C_FriendList = { GetNumWhoResults = function() return #WHO end, GetWhoInfo = function(i) return WHO[i] end }
+GuildOS.db.recruitScanner = { template = "hi [player]", batchMax = 10, cooldownSec = 1800, inbox = {} }
+S._contactCd = {}
+S:_OnWhoResult()
+local res = S:GetResults()
+check(#res == 1 and res[1].name == "Zed" and S:Addr(res[1]) == "Zed-Gallywix",
+  "the scan keeps Zed-Gallywix, under his whole name, and leaves this realm's banned Zed out")
+local whispered = {}
+SendChatMessage = function(msg, kind, _, target) whispered[#whispered + 1] = { msg = msg, kind = kind, target = target } end
+S:WhisperSelected({ S:Addr(res[1]) })
+check(#whispered == 1 and whispered[1].target == "Zed-Gallywix" and whispered[1].msg == "hi Zed",
+  "the whisper goes to Zed-Gallywix, never to this realm's banned Zed, and greets him by name")
+check(S._contactCd["Zed-Gallywix"] and not S._contactCd["Zed-Azralon"], "and his cooldown is his own")
+S:WhisperSelected({ "Zed" })
+check(#whispered == 1, "a bare Zed handed to the whisper is this realm's, banned, and is not whispered")
+S:_RegisterEvents()
+local onWhisper = handlers[#handlers]
+onWhisper(nil, "CHAT_MSG_WHISPER", "no thanks", "Zed")
+check(#GuildOS.db.recruitScanner.inbox == 0, "a whisper from this realm's Zed is not his reply")
+onWhisper(nil, "CHAT_MSG_WHISPER", "sure", "Zed-Gallywix")
+check(#GuildOS.db.recruitScanner.inbox == 1, "Zed-Gallywix's is")
 
 -- ── 2. Retail: the group inspector ─────────────────────────────────────
 local PI = GuildOS.PugInspector

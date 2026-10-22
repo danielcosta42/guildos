@@ -647,6 +647,8 @@ local function handleCommand(msg)
         local name = strtrim((msg:gsub("^unban%s+", "")))
         if name ~= "" and GuildOS.BanList and GuildOS.BanList:Remove(name) then
             GuildOS:Print(L["Unbanned "] .. name)
+        elseif name ~= "" and GuildOS.BanList and GuildOS:IsOfficer() then
+            GuildOS:Print(string.format(L["No ban to lift for %s."], name))   -- nothing stood there (#184)
         end
     elseif msg == "banlist" then
         GuildOS.UI:OpenWindow("management", "ban")

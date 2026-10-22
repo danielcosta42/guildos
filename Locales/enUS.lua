@@ -754,3 +754,5 @@ L["Crit"] = "Crit"
 L["Haste"] = "Haste"
 L["Mastery"] = "Mastery"
 L["Vers"] = "Vers"
+-- /gos unban when no ban stands under that name (issue #184).
+L["No ban to lift for %s."] = "No ban to lift for %s."
