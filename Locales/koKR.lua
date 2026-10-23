@@ -1928,3 +1928,8 @@ L["Haste"] = "가속"
 L["Mastery"] = "특화"
 L["Vers"] = "유연성"
 L["No ban to lift for %s."] = "%s에게 해제할 차단이 없습니다."
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d명은 읽을 수 없습니다 (사거리 밖이거나 게임이 숨김)."
+L["Augment Rune"] = "증강의 룬"
+L["Chat is locked during the encounter: announce after it."] = "우두머리 전투 중에는 대화가 잠겨 있습니다. 전투 후에 알리세요."

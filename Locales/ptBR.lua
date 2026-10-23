@@ -2113,3 +2113,8 @@ L["Haste"] = "Aceleração"
 L["Mastery"] = "Maestria"
 L["Vers"] = "Versat."
 L["No ban to lift for %s."] = "Nenhum banimento de %s para remover."
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d não puderam ser lidos (fora de alcance, ou ocultos pelo jogo)."
+L["Augment Rune"] = "Runa de Aumento"
+L["Chat is locked during the encounter: announce after it."] = "O chat está bloqueado durante o encontro: anuncie depois dele."

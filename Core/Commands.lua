@@ -48,7 +48,7 @@ local function printHelp()
     helpHeader(L["Raid and loot"])
     if GuildOS.LootMaster then helpLine("/gos lm", L["Master Loot helper status"]) end  -- not on retail (ADR-0026)
     if GuildOS.Points then helpLine("/gos points", L["Points and DKP window"]) end
-    if GuildOS.ConsumableChecker then  -- TBC content (ADR-0014)
+    if GuildOS.ConsumableChecker then  -- Anniversary and retail, not Forever (ADR-0014, issue #187)
         helpLine("/gos cons",      L["Check raid consumables"])
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
@@ -379,6 +379,11 @@ local function handleCommand(msg)
             if results then
                 local missing = GuildOS.ConsumableChecker:GetMissingCount(results)
                 GuildOS:Print(string.format(L["Consumable check done. %d players missing buffs."], missing))
+                -- Retail: what the client could not read is said apart, never counted as missing (#187).
+                local unknown = GuildOS.ConsumableChecker:GetUnknownCount(results)
+                if unknown > 0 then
+                    GuildOS:Print(string.format(L["%d could not be read (out of range, or hidden by the game)."], unknown))
+                end
             end
         else
             GuildOS:Print(L["Not available on this client."])

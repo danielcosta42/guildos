@@ -72,6 +72,7 @@ read_globals = {
     "C_Spell",
     "C_UnitAuras",
     "C_PlayerInfo",
+    "GetWeaponEnchantInfo",                  -- my weapon's temporary enchant (the consumable check, #187)
 
     -- WoW API: Unit functions
     "UnitName",

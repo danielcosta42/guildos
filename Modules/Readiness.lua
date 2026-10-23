@@ -39,12 +39,14 @@ function Readiness:GetReport(targetShort)
         end
     end
 
-    -- Index the last consumable check by lowercase short name (live, in-raid).
-    local consumeByName = {}
+    -- Index the last consumable check by player key, and by lowercase short name (live, in-raid).
+    -- On retail by the key alone: two namesakes on connected realms are two raiders (issue #187).
+    local consumeByName, consumeByKey = {}, {}
     if GuildOS.ConsumableChecker then
-        for _, res in pairs(GuildOS.ConsumableChecker:GetLastResults() or {}) do
+        for key, res in pairs(GuildOS.ConsumableChecker:GetLastResults() or {}) do
             local short = (res.name or ""):match("^([^-]+)") or res.name
             if short and short ~= "" then consumeByName[short:lower()] = res end
+            consumeByKey[res.playerKey or key] = res
         end
     end
 
@@ -76,9 +78,12 @@ function Readiness:GetReport(targetShort)
             local hasGear = er ~= nil
             local missEnch = (er and er.missingCount) or 0
 
-            -- Consumables (nil = never checked / not in raid).
-            local cres = consumeByName[short:lower()]
+            -- Consumables (nil = never checked / not in raid / nothing the client could read: on retail
+            -- unknown is never missing, issue #187).
+            local cres = consumeByKey[key]
+            if not cres and not GuildOS.Client.isRetail then cres = consumeByName[short:lower()] end
             local missCons = cres and #cres.missing or nil
+            if missCons == 0 and not next(cres.buffs or {}) then missCons = nil end
 
             local ilvl = (m and m.avgIlvl) or 0
 

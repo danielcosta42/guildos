@@ -111,6 +111,7 @@ Modules\Calendar.lua
 Modules\Milestones.lua
 Modules\Search.lua
 Modules\RaidTools.lua
+Data\ConsumablesRetail.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
 Modules\GuildAnalytics.lua

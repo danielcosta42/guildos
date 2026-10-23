@@ -1928,3 +1928,8 @@ L["Haste"] = "Скорость"
 L["Mastery"] = "Искусность"
 L["Vers"] = "Универс."
 L["No ban to lift for %s."] = "У %s нет бана, который можно снять."
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d не удалось прочитать (вне досягаемости или скрыто игрой)."
+L["Augment Rune"] = "Руна усиления"
+L["Chat is locked during the encounter: announce after it."] = "Чат заблокирован во время боя с боссом: объявите после него."

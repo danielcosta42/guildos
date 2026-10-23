@@ -757,3 +757,8 @@ L["Mastery"] = "Mastery"
 L["Vers"] = "Vers"
 -- /gos unban when no ban stands under that name (issue #184).
 L["No ban to lift for %s."] = "No ban to lift for %s."
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d could not be read (out of range, or hidden by the game)."
+L["Augment Rune"] = "Augment Rune"
+L["Chat is locked during the encounter: announce after it."] = "Chat is locked during the encounter: announce after it."

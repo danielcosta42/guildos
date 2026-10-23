@@ -99,10 +99,11 @@ UI:RegisterFeature({
 
 -- Background modules: a Settings toggle and nothing else ------------
 -- `tbc`: TBC content, listed only on TBC Anniversary (ADR-0014). `retail`: false when not on retail.
-local function background(id, label, desc, officerOnly, tbc, retail)
+-- `forever`: false when not on WoW: Forever (issue #187).
+local function background(id, label, desc, officerOnly, tbc, retail, forever)
     UI:RegisterFeature({
         id = id, label = label, desc = desc,
-        tab = false, officerOnly = officerOnly, tbc = tbc, retail = retail,
+        tab = false, officerOnly = officerOnly, tbc = tbc, retail = retail, forever = forever,
         module = id,
     })
 end
@@ -110,7 +111,8 @@ end
 background("raidTracker",       L["Raid Tracker"],       L["Track raid attendance, penalties, and sessions"], true)
 background("lootTracker",       L["Loot Tracker"],       L["Record loot drops from boss kills"])  -- personal loot on retail (#183)
 background("lootMaster",        L["Loot Master"],        L["Master Loot with wishlist auto-council"], nil, nil, false)
-background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, true)
+-- Anniversary's and retail's (Midnight's flask, food and rune; issue #187); WoW: Forever has none.
+background("consumableChecker", L["Consumable Checker"], L["Scan raid for missing flasks/food/elixirs"], nil, nil, nil, false)
 background("raidHUD",           L["Raid CD Tracker"],    L["Floating tracker for raid cooldowns and consumable check"], nil, true)
 background("trialTracker",      L["Trial Tracker"],      L["Track trial member progress (officer)"], true)
 background("officerNotes",      L["Officer Notes"],      L["Private notes on guild members (officer)"], true)
