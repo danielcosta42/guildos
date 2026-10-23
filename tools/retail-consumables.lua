@@ -134,6 +134,21 @@ check(joined(ids) == OTHER .. "," .. FLASK and complete == false, "a buff the cl
 check(GuildOS.Compat.UnitBuffIDs(SECRET) == nil, "a secret unit token reads nothing")
 AURAS.player = {}
 check(GuildOS.Compat.UnitBuffIDs("player") == nil, "a unit showing no buff at all reads nothing: its auras did not arrive")
+-- Retail has no 40-buff cap: forty read and a forty-first there is a partial list.
+local many = {}
+for i = 1, 40 do many[i] = OTHER end
+AURAS.player = many
+ids, complete = GuildOS.Compat.UnitBuffIDs("player")
+check(#ids == 40 and complete == true, "exactly forty buffs are the whole list")
+many[41] = FLASK
+ids, complete = GuildOS.Compat.UnitBuffIDs("player")
+check(#ids == 40 and complete == false, "a forty-first makes the list partial")
+GROUP = {}
+local past = CC:ReadUnit("player")
+check(past.flask == nil, "so a flask past slot forty is unknown, never missing")
+many[41] = SECRET
+ids, complete = GuildOS.Compat.UnitBuffIDs("player")
+check(complete == false, "a secret forty-first too")
 AURAS.player = { FLASK }
 combat = true
 check(GuildOS.Compat.UnitBuffIDs("player") == nil and GuildOS.Compat.MainHandTempEnchant() == nil,
@@ -171,6 +186,11 @@ check(#dan.missing == 0 and joined(dan.unknown) == "Flask,Augment Rune" and dan.
 check(#eva.missing == 0 and joined(eva.unknown) == "Flask,Food Buff,Augment Rune" and next(eva.buffs) == nil,
   "out of range, everything is unknown")
 check(CC:GetMissingCount(res) == 1 and CC:GetUnknownCount(res) == 2, "one raider missing something, two unread")
+local problems, total, ready, unread = CC:Tally(res)
+check(#problems == 1 and problems[1].name == "Cid" and total == 5 and ready == 2 and unread == 2,
+  "the popup lists Cid, counts Ana and Bia ready, and Dan and Eva as neither")
+problems, total, ready, unread = CC:Tally(nil)
+check(#problems == 0 and total == 0 and ready == 0 and unread == 0, "no check yet: nothing to tally")
 weapon = false
 res = CC:CheckRaid()
 check(joined(res[key("Ana")].missing) == "Weapon Buff", "my weapon without its oil is missing")
@@ -201,16 +221,32 @@ check(RT:CheckPlayerConsumes("raid2", key("Bia")) == true, "flask and food read:
 check(RT:CheckPlayerConsumes("raid3", key("Cid")) == false, "no flask, read: false")
 check(RT:CheckPlayerConsumes("raid4", key("Dan")) == nil, "a flask unknown and the food there: unknown")
 check(RT:CheckPlayerConsumes("raid5", key("Eva", "Gallywix")) == nil, "nothing read: unknown")
+-- A reading is never wiped by a later one that could not read.
+GuildOS.State.consumables.reads = {}
+CC:Remember("Zed", true)
+CC:Remember("Zed", nil)
+check(CC:Recent("Zed") == true, "an unread verdict leaves the good reading in place")
 GuildOS.State.consumables.reads = {}
 CC:Initialize()
+local finished = false
+for _, f in ipairs(frames) do if f.events.READY_CHECK and f.events.READY_CHECK_FINISHED then finished = true end end
+check(finished, "retail listens to the ready check's start and its end")
+-- Cid has no food when the check starts, and eats in answer to it; Bia is out of range by its end.
+AURAS.Cid = { OTHER }
 fire("READY_CHECK")
+check(RT:CheckPlayerConsumes("raid3", key("Cid")) == false, "at the start Cid is read without his food")
+AURAS.Cid, AURAS.Bia = { OTHER, FLASK, FOOD }, {}
+clock = clock + 20
+fire("READY_CHECK_FINISHED")
 combat, clock = true, clock + 30
-check(RT:CheckPlayerConsumes("raid2", key("Bia")) == true and RT:CheckPlayerConsumes("raid3", key("Cid")) == false,
-  "the pull's snapshot, in combat, answers with what the ready check read")
-check(RT:CheckPlayerConsumes("raid5", key("Eva", "Gallywix")) == nil, "and what it could not read stays unknown")
+check(RT:CheckPlayerConsumes("raid3", key("Cid")) == true,
+  "the pull's snapshot, in combat, answers with what the end of the ready check read: Cid ate")
+check(RT:CheckPlayerConsumes("raid2", key("Bia")) == true, "Bia, unread at the end, keeps the start's reading")
+check(RT:CheckPlayerConsumes("raid5", key("Eva", "Gallywix")) == nil, "and what was never read stays unknown")
 clock = clock + 600
-check(RT:CheckPlayerConsumes("raid2", key("Bia")) == nil, "ten minutes on, that reading no longer answers")
+check(RT:CheckPlayerConsumes("raid3", key("Cid")) == nil, "ten minutes on, that reading no longer answers")
 combat = false
+AURAS.Cid, AURAS.Bia = { OTHER, FOOD }, { OTHER, FLASK, HEARTY, RUNE }
 
 -- ── 5. The score: unknown is never missing, and the site counts alike ──
 -- One night, four snapshots. Ana: four unknown. Bia: two unknown, two without. Cid: one unknown,
@@ -237,9 +273,20 @@ check(score("Ana") == 100 and score("Dan") == 100, "never read, or always there:
 check(score("Bia") == 100, "two unknown and two without: the unknown count for the player, half is not under half")
 check(score("Cid") == 75, "three of four without: docked")
 -- The site's rule on CompanionExport's count (chits: every snapshot not known to be without).
-local src = assert(io.open(ADDON .. "/Modules/CompanionExport.lua", "rb")):read("*a")
-check(src:find("if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end", 1, true),
+local function source(path)
+  local f = assert(io.open(ADDON .. "/" .. path, "rb"))
+  local s = f:read("*a")
+  f:close()
+  return s
+end
+check(source("Modules/CompanionExport.lua"):find("if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end", 1, true),
   "the export counts an unread snapshot for the player, as the score does")
+check(source("UI/FeaturePanels.lua"):find("if snap.members[key].hasConsumes ~= false then consumeHits = consumeHits + 1 end", 1, true),
+  "and so does the session detail's NO CONS count")
+local hud = source("UI/RaidHUD.lua")
+check(hud:find("local problems, total, ready, unread = CC:Tally(results)", 1, true)
+  and hud:find("elseif #problems == 0 and unread > 0 then", 1, true),
+  "the popup tallies through the checker and says when raiders were unread rather than 'everyone is prepared'")
 for name, row in pairs(ROWS) do
   local chits = 0
   for i = 1, 4 do if row[i] ~= false then chits = chits + 1 end end

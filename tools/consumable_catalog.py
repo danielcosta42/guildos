@@ -137,12 +137,14 @@ def selftest():
     cat = build_catalog(t)
     assert cat["expansion"] == 11, "the current expansion is the highest a consumable carries"
     assert cat["flask"] == [1235108], f"a combat flask; no profession phial, no PvP flask, no older one: {cat['flask']}"
-    assert cat["rune"] == [1264426], f"the augment rune raises a stat; a weightstone is an enchant: {cat['rune']}"
-    assert cat["become"] == 1219179, "the expansion's own Become Well Fed, not the last one's"
+    assert cat["rune"] == [1264426], (
+        f"the augment rune raises a stat; a weightstone is an enchant, a charm that raises a rating no rune: {cat['rune']}")
+    assert cat["become"] == 1219179, (
+        "the Become Well Fed the expansion's food ticks most, not the lowest one any of it ticks (the last expansion's)")
     assert cat["food"] == [1232318, 1233703], (
         f"Well Fed and Hearty Well Fed above it that raise a stat: not the older one, not a dummy, not "
         f"another name: {cat['food']}")
-    no_food = dict(t, SpellEffect=[r for r in t["SpellEffect"] if r["EffectTriggerSpell"] != "1219179"])
+    no_food = dict(t, SpellEffect=[r for r in t["SpellEffect"] if r["EffectAura"] != str(PERIODIC_TRIGGER)])
     assert build_catalog(no_food)["food"] == [], "with no Become Well Fed to stand on, no food is guessed"
     lua = render(cat, "fixture")
     assert lua.startswith("-- Generated") and "if not GuildOS.Client.isRetail then return end" in lua

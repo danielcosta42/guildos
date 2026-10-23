@@ -530,21 +530,9 @@ local function BuildConsPopup(f)
         f.statusText:SetText(L["No data"])
     end
 
-    -- Collect only players missing something; tally ready vs total. On retail a raider the client
-    -- could not read is neither (issue #187).
-    local problems, total, ready, unread = {}, 0, 0, 0
-    if results then
-        for _, p in pairs(results) do
-            total = total + 1
-            if p.missing and #p.missing > 0 then
-                table.insert(problems, p)
-            elseif type(p.unknown) == "table" and #p.unknown > 0 then
-                unread = unread + 1
-            else
-                ready = ready + 1
-            end
-        end
-    end
+    -- Only players missing something are listed; on retail one the client could not read is neither
+    -- missing nor ready (issue #187).
+    local problems, total, ready, unread = CC:Tally(results)
     table.sort(problems, function(a, b)
         local ca, cb = a.class or "ZZZ", b.class or "ZZZ"
         if ca == cb then return (a.name or "") < (b.name or "") end

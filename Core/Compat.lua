@@ -597,16 +597,17 @@ end
 ----------------------------------------------------------------------
 -- Retail: the raid's consumables (issue #187)
 ----------------------------------------------------------------------
-local MAX_AURAS = 40   -- a unit's buff slots
+local MAX_AURAS = 40   -- buffs read per unit; retail has no such cap, so one more means the list is partial
 
 local function inCombat() return InCombatLockdown ~= nil and InCombatLockdown() and true or false end
 
 -- The spell ids of a unit's buffs, for the consumable check, and whether the list is all of them.
 -- Midnight keeps auras secret in combat and in instances: a buff the client keeps secret, or a unit
 -- token, is passed over and the list is partial, and a partial list can show a buff is there but
--- never that one is missing. Nil, nothing read: in combat (the check runs out of it, at the ready
--- check and before the pull), while the client says auras are secret, without the aura API, or for a
--- unit showing no buff at all, whose auras have not reached this client.
+-- never that one is missing; so is one with a buff past the MAX_AURAS read. Nil, nothing read: in
+-- combat (the check runs out of it, at the ready check and before the pull), while the client says
+-- auras are secret, without the aura API, or for a unit showing no buff at all, whose auras have not
+-- reached this client.
 function Compat.UnitBuffIDs(unit)
     if Compat.IsSecret(unit) or inCombat() then return nil end
     local secrets = C_Secrets and C_Secrets.ShouldAurasBeSecret
@@ -617,12 +618,12 @@ function Compat.UnitBuffIDs(unit)
     local get = C_UnitAuras and C_UnitAuras.GetBuffDataByIndex
     if not get then return nil end
     local ids, complete = {}, true
-    for i = 1, MAX_AURAS do
+    for i = 1, MAX_AURAS + 1 do
         local a = get(unit, i)
-        if Compat.IsSecret(a) then
+        local present = Compat.IsSecret(a) or type(a) == "table"
+        if not present then break end
+        if i > MAX_AURAS or Compat.IsSecret(a) then
             complete = false
-        elseif type(a) ~= "table" then
-            break
         else
             local id = a.spellId
             if Compat.IsSecret(id) or not tonumber(id) then complete = false else ids[#ids + 1] = id end

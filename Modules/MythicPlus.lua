@@ -20,7 +20,8 @@ local RAID_LETTER = { [17] = "LFR", [14] = "N", [15] = "H", [16] = "M" }
 local ROWS = { "raid", "dungeon", "world" }
 local ROW_LABEL = { raid = L["Raid"], dungeon = L["Dungeons"], world = L["World"] }
 
--- Session state (Rule 6): whether the season's data has arrived, and a send already waiting.
+-- Session state (Rule 6): whether the season's data and the vault's have arrived, and a send already
+-- waiting.
 local function state()
     local s = GuildOS.State
     if not s then return {} end
@@ -44,6 +45,7 @@ end
 function MythicPlus:OnEvent(event)
     local s = state()
     if event == "CHALLENGE_MODE_MAPS_UPDATE" then s.ready = true end
+    if event == "WEEKLY_REWARDS_UPDATE" then s.vaultReady = true end
     if s.pending then return end
     s.pending = true
     GuildOS.Compat.After(SEND_DELAY, function()
@@ -52,12 +54,15 @@ function MythicPlus:OnEvent(event)
     end)
 end
 
--- What my client says now, for my own record: my Mythic+ once the season's data has arrived (before
--- it, a rating of 0 would overwrite the real one), and my vault, summed up and stamped. Nil for
--- either the client cannot give yet.
+-- What my client says now, for my own record: my Mythic+ once the season's data has arrived, and my
+-- vault, summed up and stamped, once the vault's has (WEEKLY_REWARDS_UPDATE). Before either, the
+-- client may answer 0 rating or empty rows, which would overwrite the real ones guildmates hold. Nil
+-- for either the client cannot give yet.
 function MythicPlus:Collect()
-    local mplus = state().ready and GuildOS.Compat.MythicPlus() or nil
-    return mplus, self:SumVault(GuildOS.Compat.WeeklyActivities(), GetServerTime())
+    local s = state()
+    local mplus = s.ready and GuildOS.Compat.MythicPlus() or nil
+    local vault = s.vaultReady and self:SumVault(GuildOS.Compat.WeeklyActivities(), GetServerTime()) or nil
+    return mplus, vault
 end
 
 -- Whether `level` beats `best` in a row: a raid by its difficulty's rank, the others by number.

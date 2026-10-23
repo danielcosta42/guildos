@@ -982,14 +982,17 @@ maintainer ("pode resolver as últimas issues"), in autopilot; the calls below a
   (`GetWeaponEnchantInfo`); nobody else's reaches the client, so it is never asked for a raider but me.
 - **Unknown is never missing.** Auras are read through `Compat.UnitBuffIDs` with `Compat.IsSecret` on the aura and its
   id: nothing in combat, nothing while `C_Secrets.ShouldAurasBeSecret()`, nothing for a unit that shows no buff at all
-  (out of range). A list with a secret entry is partial: it can find a buff, never declare one missing. Each raider's
+  (out of range). A list with a secret entry, or with a buff past the fortieth (retail has no 40-buff cap), is partial:
+  it can find a buff, never declare one missing. Each raider's
   row lists `unknown` beside `missing`; `/gos cons`, the popup and the readiness column count only `missing`, and say how
   many could not be read. A raider of whom nothing was read has no count, never "all missing". Readiness matches a raider
   by key alone on retail: a namesake on a connected realm is another raider. The announce (`/gos consreport`) names only
   what is missing, and is held back in an encounter's chat lockdown, which would drop it.
-- **When it reads.** Out of combat: on READY_CHECK (retail only) the raid is read quietly, and every out-of-combat
-  snapshot reads it. A snapshot in combat (the pull's `encounter_start`) answers with the verdict read out of combat in
-  the last 600 seconds (`ConsumableChecker:Recent`, session state), else nil.
+- **When it reads.** Out of combat: on READY_CHECK and again on READY_CHECK_FINISHED (retail only) the raid is read
+  quietly, so whoever eats or flasks in answer to the check is read with it on; every out-of-combat snapshot reads it
+  too. A snapshot in combat (the pull's `encounter_start`) answers with the verdict read out of combat in the last 600
+  seconds (`ConsumableChecker:Recent`, session state), else nil; a later reading that could not read never wipes an
+  earlier one.
 - **The penalty.** A snapshot's `hasConsumes` is true, false, or nil when unread (retail). The score counts a snapshot
   as a hit unless it is known to be without (`~= false`): the player is docked when the snapshots they were known to be
   without are more than half of the ones that saw them. CompanionExport's `chits` counts the same way, so guildos.me's
@@ -1003,8 +1006,9 @@ maintainer ("pode resolver as últimas issues"), in autopilot; the calls below a
   tier) through Compat, never a secret value. The record keeps `mplus = { rating, key = { map, level } }` and
   `vault = { at, raid/dungeon/world = { n, best } }` (slots open and the best level; a raid's best by difficulty rank,
   Raid Finder lowest), sent in the member broadcast: absent from an older addon, never null; what the client cannot
-  give yet keeps the old value. The rating is read only after CHALLENGE_MODE_MAPS_UPDATE (asked for at start-up), so a 0
-  never overwrites a real one. A run's end, a vault update or the season's data sends one broadcast two seconds later.
+  give yet keeps the old value. The rating is read only after CHALLENGE_MODE_MAPS_UPDATE (asked for at start-up) and
+  the vault only after WEEKLY_REWARDS_UPDATE, so a 0 or a vault of empty rows read before the server's data never
+  overwrites the real one guildmates hold. A run's end, a vault update or the season's data sends one broadcast two seconds later.
 - **Where it shows.** The member sheet: MYTHIC+ (the rating in the game's colour, the keystone named in the reader's
   language) and GREAT VAULT (raid, dungeons and world, x/3 with the best level), the vault only when it was read after
   this week's reset by the reader's clock (`C_DateAndTime.GetWeeklyResetStartTime`). An optional roster column, M+,
@@ -1012,6 +1016,8 @@ maintainer ("pode resolver as últimas issues"), in autopilot; the calls below a
 - **A separate delves tracker is out**, as are hero talents.
 - (−) Whether Midnight keeps raid members' auras readable out of combat inside a raid instance is read in game. If
   `ShouldAurasBeSecret` holds there all the time, the check reads nothing in raids and docks nobody.
+- (−) Whether WEEKLY_REWARDS_UPDATE fires at login without the vault being opened is read in game; if it does not, my
+  vault goes out only once its progress changes or the vault window opens.
 - (−) The catalog follows retail's patches: a new flask or food is a new spell id, and the Well Fed rule rests on
   Become Well Fed staying the expansion's anchor.
 - (−) The weapon is read for me only; a guildmate's oil is never counted.

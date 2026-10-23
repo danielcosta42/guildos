@@ -303,12 +303,14 @@ Decided by the coordinator for the maintainer, in autopilot (recorded in ADR-002
   enchant, read for me alone (`GetWeaponEnchantInfo`): nobody else's reaches the client.
 - **Unknown is never missing.** Auras are read with `C_UnitAuras`, every aura and id through `Compat.IsSecret`; nothing
   in combat, nothing while `C_Secrets.ShouldAurasBeSecret()`, nothing for a raider showing no buff (out of range). A
-  partial list can find a buff, never declare one missing. `/gos cons`, the popup (now also on the readiness tab: the
+  partial list (a secret entry, or a buff past the fortieth) can find a buff, never declare one missing. `/gos cons`, the popup (now also on the readiness tab: the
   Raid HUD is TBC's) and the readiness column count only what is known to be missing and say how many were unread.
   Readiness matches a raider by key alone (namesakes on connected realms). The announce names only what is missing and
   waits out an encounter's chat lockdown.
-- **When.** On the ready check (READY_CHECK, retail only) and on every out-of-combat snapshot; the pull's snapshot, in
-  combat, answers with what was read in the last ten minutes, else unknown.
+- **When.** When the ready check starts and again when it ends (READY_CHECK, READY_CHECK_FINISHED; retail only), so
+  whoever eats in answer to it is read with the food on, and on every out-of-combat snapshot; the pull's snapshot, in
+  combat, answers with what was read in the last ten minutes, else unknown. A reading that could not read never wipes
+  an earlier one.
 - **The penalty.** A snapshot's `hasConsumes` is nil when unread, and counts for the player: the "no consumables"
   penalty applies when the snapshots known to be without are more than half. The export's `chits` counts alike, so
   guildos.me's ratio agrees with no payload change (`tools/retail-site.lua`). Anniversary and Forever are unchanged.
@@ -320,14 +322,16 @@ Decided by the coordinator for the maintainer, in autopilot (recorded in ADR-002
 - **The Great Vault.** `C_WeeklyRewards.GetActivities`' raid, dungeon and world rows (a delve fills the world row, its
   level the tier) become `vault = { at, raid/dungeon/world = { n, best } }`, sent the same way, shown on the sheet as
   "Raid 2/3 · H", "Dungeons 2/3 · +12", "World 3/3 · Tier 8", and only when read after this week's reset
-  (`C_DateAndTime.GetWeeklyResetStartTime`, the reader's).
+  (`C_DateAndTime.GetWeeklyResetStartTime`, the reader's). It is read only after WEEKLY_REWARDS_UPDATE, as the rating
+  only after CHALLENGE_MODE_MAPS_UPDATE: empty rows read before the server's data never overwrite a good copy.
 - **Members without the addon:** nothing. The companion payload carries neither.
-- **The probe** lists the new APIs and READY_CHECK, CHALLENGE_MODE_MAPS_UPDATE, CHALLENGE_MODE_COMPLETED and
-  WEEKLY_REWARDS_UPDATE.
+- **The probe** lists the new APIs and READY_CHECK, READY_CHECK_FINISHED, CHALLENGE_MODE_MAPS_UPDATE,
+  CHALLENGE_MODE_COMPLETED and WEEKLY_REWARDS_UPDATE.
 - **Read in game:** whether raid members' auras are readable out of combat inside a raid instance (if
   `ShouldAurasBeSecret` holds there all the time, the check reads nothing and docks nobody); whether the Well Fed ids
-  match what food gives; that the rating and keystone answer after CHALLENGE_MODE_MAPS_UPDATE; the vault's rows and
-  levels as the vault window shows them.
+  match what food gives; that the rating and keystone answer after CHALLENGE_MODE_MAPS_UPDATE; that
+  WEEKLY_REWARDS_UPDATE fires at login without opening the vault (else the vault goes out only once it changes); the
+  vault's rows and levels as the vault window shows them.
 - **Tests:** `tools/retail-consumables.lua`, `tools/retail-mplus.lua`, `tools/consumable_catalog.py`'s self-test;
   `tools/client-detection.lua`, `tools/retail-leftovers.lua`, `tools/retail-site.lua`, `tools/attendance-parity.lua`,
   `tools/commands-in-ui.lua` and `tools/probe.lua` follow.

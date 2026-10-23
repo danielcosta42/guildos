@@ -187,10 +187,19 @@ check(MP:KeystoneText({ rating = 1 }) == nil and MP:KeyLevel({ key = { level = 0
 -- ── 4. My record, and what goes out ──────────────────────────────────
 MP:Initialize()
 check(GuildOS._requested, "the season's data is asked for at start-up")
+-- Before its data arrives the client may answer a 0 rating and rows with no progress.
+score, activities = 0, { slot(3, 1, 2, 0, 0), slot(1, 1, 1, 0, 0), slot(6, 1, 2, 0, 0) }
 local data = DC:CollectMyData()
-check(data.mplus == nil and data.vault and data.vault.raid.n == 2,
-  "before the season's data has arrived no rating is kept (a 0 would overwrite the real one); the vault is")
+check(data.mplus == nil and data.vault == nil,
+  "before the season's and the vault's data arrive nothing is kept: a 0 or an empty vault would overwrite the real ones")
+local out = DC:GetBroadcastData()
+check(out.mplus == nil and out.vault == nil, "and nothing is sent: absent, never null or false")
+score, activities = 2450.4, WEEK
 fire(frames, "CHALLENGE_MODE_MAPS_UPDATE")
+data = DC:CollectMyData()
+check(data.mplus and data.mplus.rating == 2450 and data.mplus.key.level == 12 and data.vault == nil,
+  "the season's data brings my rating and keystone, and not the vault")
+check(DC:GetBroadcastData().vault == nil, "the vault is still not sent")
 fire(frames, "WEEKLY_REWARDS_UPDATE")
 check(#timers == 1, "two events, one send waiting")
 runTimers()
@@ -199,8 +208,8 @@ fire(frames, "CHALLENGE_MODE_COMPLETED")
 runTimers()
 check(sent == 2, "a run's end sends again")
 data = DC:CollectMyData()
-check(data.mplus and data.mplus.rating == 2450 and data.mplus.key.level == 12, "once it has, my rating and keystone are kept")
-local out = DC:GetBroadcastData()
+check(data.vault and data.vault.raid.n == 2, "once the vault's data has arrived, the vault is kept")
+out = DC:GetBroadcastData()
 check(out.mplus and out.mplus.rating == 2450 and out.vault and out.vault.world.best == 8, "and sent with my member data")
 score, activities = SECRET, nil
 data = DC:CollectMyData()

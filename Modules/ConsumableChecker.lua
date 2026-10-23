@@ -155,15 +155,18 @@ function ConsumableChecker:Initialize()
         GuildOS.db.consumableChecks = { lastResults = {} }
     end
     -- Retail reads auras before the pull, out of combat: the ready check is when a raid looks (issue #187).
+    -- Read when it starts and again when it ends: whoever eats or flasks in answer to it is read with
+    -- the food on, and that later reading is the one the pull's snapshot uses.
     if isRetail and not self.frame then
         self.frame = CreateFrame("Frame")
         GuildOS.Compat.RegisterEvent(self.frame, "READY_CHECK")
+        GuildOS.Compat.RegisterEvent(self.frame, "READY_CHECK_FINISHED")
         self.frame:SetScript("OnEvent", function() ConsumableChecker:OnReadyCheck() end)
     end
 end
 
--- A ready check, on retail: the raid's consumables are read quietly, for the screens and for the
--- snapshot the pull takes in combat.
+-- A ready check starting or ending, on retail: the raid's consumables are read quietly, for the
+-- screens and for the snapshot the pull takes in combat.
 function ConsumableChecker:OnReadyCheck()
     self:CheckRaid(true)
 end
@@ -377,6 +380,23 @@ function ConsumableChecker:GetUnknownCount(results)
         if type(player.unknown) == "table" and #player.unknown > 0 then count = count + 1 end
     end
     return count
+end
+
+-- The popup's tally: the raiders missing something (a list), how many there are, how many are ready,
+-- and how many the client could not read and are neither (retail; issue #187).
+function ConsumableChecker:Tally(results)
+    local problems, total, ready, unread = {}, 0, 0, 0
+    for _, p in pairs(results or {}) do
+        total = total + 1
+        if p.missing and #p.missing > 0 then
+            problems[#problems + 1] = p
+        elseif type(p.unknown) == "table" and #p.unknown > 0 then
+            unread = unread + 1
+        else
+            ready = ready + 1
+        end
+    end
+    return problems, total, ready, unread
 end
 
 function ConsumableChecker:ReportToChat(channel)
