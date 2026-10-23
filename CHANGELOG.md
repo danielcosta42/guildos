@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.85.0] - 2026-10-23
+
+### Added
+- o addon em italiano — o itIT com todas as strings que o código pede, nos termos do cliente italiano da Blizzard (#186)
+- no retail as boas-vindas e o Sobre falam da wishlist, e o passo do oficial das configurações de loot (#185)
+- Mítica+ e o Grande Cofre no retail — a pedra-chave, a pontuação e o cofre da semana de cada um, na ficha e numa coluna do roster (#187)
+- os consumíveis do Midnight no retail — frasco, comida, runa e o óleo da arma, lidos fora de combate; o que o jogo esconde nunca é falta (#187)
+- o conselho de loot por troca no retail — oferecer, responder, entregar e registrar quando a troca acontece (#185)
+- a wishlist volta no retail, com os itens das raides de Midnight lidos do Diário de Encontros (#185)
+- os pontos voltam no retail, e o sistema de loot do oficial chega a cada membro (#185)
+
+### Fixed
+- o grau da scorribanda em italiano é Grado, não Livello, que é o da chave (#186)
+- da revisão — o relógio de quem oferece um pouco adiantado ainda vale para a hora do drop, e o teste da espera do roll a partir do envio (#185)
+- da terceira revisão — a resposta de quem recebeu a entrega fica, a rolagem sai depois da resposta, a hora do drop dentro da janela e o link mais estrito (#185)
+- no retail a wishlist só entra de um membro da guilda pela GUILD (#185)
+- da revisão — um D só vale para uma entrega que o cliente viu, a rolagem é a do servidor, a linha leva a hora do drop e o link tem de ser um só (#185)
+- da revisão — o ready check que termina em combate não apaga as leituras, e sem leitura não se anuncia All OK (#187)
+- da revisão — o fim do ready check lê de novo, um 41º buff deixa a lista parcial, o cofre só depois do WEEKLY_REWARDS_UPDATE e os testes que faltavam (#187)
+- da revisão — a troca demorada ainda registra, a rolagem livre só vale onde a guilda rola, o D leva quem entregou e a cobrança sai uma vez, links inteiros, e a wishlist do retail na ficha e na aba (#185)
+- no retail um nome digitado na janela de pontos guarda o próprio reino (#185)
+- a semana do lockout vira no reset da região, não na terça 00:00 UTC, nos três jogos (guildos-web#199)
+
+### Changed
+- o contexto do conselho fica só com a presença, que é o que a janela mostra (#185)
+
+
 ## [0.84.0] - 2026-10-22
 
 ### Added

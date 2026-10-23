@@ -2,7 +2,7 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Guild manager for WoW: Forever and Retail: roster, raid attendance, cores, recruitment and professions
 ## Author: Chehul (danielcosta42)
-## Version: 0.84.0
+## Version: 0.85.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
 ## X-License: MIT
