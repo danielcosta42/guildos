@@ -146,16 +146,54 @@ function RaidTracker:GetPenalties(groupTag)
     return (GuildOS.CoreManager and GuildOS.CoreManager:GetPenalties(groupTag or "")) or self.PENALTIES
 end
 
--- TBC weekly reset epoch: 2006-01-03 00:00 UTC (a known Tuesday)
-local TUESDAY_EPOCH = 1136246400
-local WEEK_SECS     = 7 * 86400
+-- The weekly raid reset of each region, as a moment it happened: the client's own
+-- Cfg_Regions.Raidorigin, rows 1 to 4, the same in retail 12.1.5.70448 and 70529, WoW: Forever
+-- 1.60.1.70450 and 70532 and TBC Anniversary 2.5.6.70006 (wago.tools/db2/Cfg_Regions, read on
+-- 22 Oct 2026). Every reset since is that moment plus whole weeks, in UTC. The week used to start
+-- on Tuesday 00:00 UTC, which put a Monday-night raid in Brasília, after 21:00, and a Tuesday-night
+-- raid in Europe in the week after their own (guildos-web#199). guildos.me keeps the same table (its
+-- packages/wow/src/reset.ts), and tools/attendance-parity.lua holds the two together.
+RaidTracker.RESET_ORIGIN = {
+    us = 1127228400,  -- Tuesday 20 Sep 2005, 15:00 UTC: the Americas, and Oceania with them
+    kr = 1135810800,  -- Wednesday 28 Dec 2005, 23:00 UTC: Thursday 08:00 in Seoul
+    eu = 1135742400,  -- Wednesday 28 Dec 2005, 04:00 UTC
+    tw = 1135810800,  -- Wednesday 28 Dec 2005, 23:00 UTC: Thursday 07:00 in Taipei
+}
+local WEEK_SECS = 7 * 86400
+
+-- The origin of this client's region; the Americas' when the client does not say (China, a test
+-- client), which is also what guildos.me falls back to.
+function RaidTracker:ResetOrigin()
+    local region = GuildOS.Compat and GuildOS.Compat.Region and GuildOS.Compat.Region()
+    return self.RESET_ORIGIN[region] or self.RESET_ORIGIN.us
+end
 
 ----------------------------------------------------------------------
--- Returns the TBC reset week number for a given server timestamp.
--- Week boundaries fall on Tuesday 00:00 UTC.
+-- The lockout week a server timestamp falls in: two nights with one number share a lockout.
+-- Counted from the region's weekly reset (guildos-web#199). Every place that buckets lockouts or
+-- groups sessions by week asks this.
 ----------------------------------------------------------------------
 function RaidTracker:GetWeekNum(timestamp)
-    return math.floor(((timestamp or 0) - TUESDAY_EPOCH) / WEEK_SECS)
+    return math.floor(((timestamp or 0) - self:ResetOrigin()) / WEEK_SECS)
+end
+
+-- The moment a week from GetWeekNum starts: its region's reset.
+function RaidTracker:WeekStart(weekNum)
+    return self:ResetOrigin() + weekNum * WEEK_SECS
+end
+
+-- /gos selftest: the table against the client's own count of the seconds to the weekly reset,
+-- where the client has one. A cross-check, never the source: the week is the table's (guildos-web#199).
+function RaidTracker:_RegisterTests()
+    if not GuildOS.SelfTest then return end
+    GuildOS.SelfTest:Register("raidtracker.weekly_reset", function()
+        local left = GuildOS.Compat.SecondsUntilWeeklyReset()
+        if not left then return true end
+        local now = GetServerTime()
+        local gap = self:WeekStart(self:GetWeekNum(now) + 1) - (now + left)
+        if math.abs(gap) <= 60 then return true end
+        return false, string.format("the %s reset is %+.1f h off the client's", GuildOS.Compat.Region() or "us", gap / 3600)
+    end)
 end
 
 -- A session's lockout: its core, its instance and its reset week; on retail its difficulty too,
@@ -183,6 +221,7 @@ function RaidTracker:Initialize()
 
     -- One-time migration: detect old flat attendance structure and rebuild
     self:MigrateAttendanceIfNeeded()
+    self:_RegisterTests()
 
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "ZONE_CHANGED_NEW_AREA")

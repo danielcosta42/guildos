@@ -230,6 +230,7 @@ read_globals = {
     "C_RestrictedActions",
     "GetNormalizedRealmName",
     "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
+    "C_DateAndTime",                         -- the seconds to the weekly reset, a self-test's (guildos-web#199)
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",

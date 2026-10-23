@@ -475,13 +475,9 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     statusText:SetText(groupStr .. totalAll .. L[" lockouts ("] .. total25 .. Prog(L[" 25-man)  |  "]) .. trackStr)
 
     ----------------------------------------------------------------
-    -- Sessions grouped by instance + TBC reset week (Tuesday reset)
+    -- Sessions grouped by instance + the region's reset week (guildos-web#199)
     ----------------------------------------------------------------
     local sessions = GuildOS.RaidTracker:GetRecentSessions(200, _raidFilter25, true)
-
-    -- TBC weekly reset epoch: 2006-01-03 00:00 UTC (a known Tuesday)
-    local TUESDAY_EPOCH = 1136246400
-    local WEEK_SECS     = 7 * 86400
 
     -- Build groups keyed by "instanceID_weekNum"
     local groups     = {}
@@ -490,14 +486,14 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
     for _, s in ipairs(sessions) do
         local sd        = s.data
         local startTime = sd.startTime or s.id
-        local weekNum   = math.floor((startTime - TUESDAY_EPOCH) / WEEK_SECS)
+        local weekNum   = GuildOS.RaidTracker:GetWeekNum(startTime)
         local sgTag     = sd.groupTag or ""
         -- A retail raid's difficulties are separate lockouts, so separate groups (issue #177).
         local diff      = GuildOS.RaidTracker:DifficultyLabel(sd)
         local groupKey  = (sd.instanceID or 0) .. "_" .. weekNum .. "|" .. sgTag .. "|" .. (diff or "")
 
         if not groups[groupKey] then
-            local wStart = TUESDAY_EPOCH + weekNum * WEEK_SECS
+            local wStart = GuildOS.RaidTracker:WeekStart(weekNum)
             groups[groupKey] = {
                 key        = groupKey,
                 instanceID = sd.instanceID,

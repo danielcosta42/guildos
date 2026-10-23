@@ -963,3 +963,46 @@ category stays out: everything in it hands loot out.
 - (−) Whether Midnight fires `ENCOUNTER_LOOT_RECEIVED` for every player's loot, as the boss banner shows it, and whether
   any of its fields arrive secret, is read in game.
 - (−) A guildmate the roster has not loaded yet, or who left the guild before the loot arrived, is not recorded.
+
+---
+
+## ADR-0027 — The lockout week is the region's, from the client's own reset table
+
+### Context
+A lockout is core, instance and week (and on retail its difficulty), and the week started on Tuesday 00:00 UTC on
+every client: `RaidTracker:GetWeekNum` counted from 3 January 2006, and the raids panel kept its own copy of the
+constant. The game resets each region at its own hour. A Monday-night raid in Brasília after 21:00 (Tuesday 00:00
+UTC on) landed in the week after its own, which split a guild's one lockout in two or merged two into one, and a
+Tuesday-night raid in Europe the same; on all three games (guildos-web#199).
+
+### Decision
+- The week is counted from the region's weekly raid reset. The table is the client's own `Cfg_Regions.Raidorigin`,
+  rows 1 to 4, the same in retail 12.1.5.70448 and 70529, WoW: Forever 1.60.1.70450 and 70532 and TBC Anniversary
+  2.5.6.70006 (wago.tools/db2/Cfg_Regions, read on 22 Oct 2026): `us` 1127228400 (Tuesday 15:00 UTC), `eu`
+  1135742400 (Wednesday 04:00 UTC), `kr` and `tw` 1135810800 (Wednesday 23:00 UTC). Every reset since is the
+  origin plus whole weeks. A constant (`RaidTracker.RESET_ORIGIN`): an addon cannot read a DB2 table.
+- The region is `Compat.Region()` (`GetCurrentRegion()`). Any other answer, or none, counts the Americas' week, as
+  the site does.
+- One helper: `RaidTracker:GetWeekNum` and `WeekStart`. `LockoutKey` (both lockout counts, the attendance rebuild)
+  and the raids panel's week groups and their dates ask it; the panel's own epoch is gone. A week's heading in
+  Brasília now reads Tuesday to Monday.
+- `C_DateAndTime.GetSecondsUntilWeeklyReset`, where the client has it, is a cross-check in `/gos selftest`
+  (`raidtracker.weekly_reset`, through `Compat.SecondsUntilWeeklyReset`), never the source. `/guildos probe` records
+  whether it and `GetCurrentRegion` exist.
+- guildos.me counts the same weeks from the same table (its `packages/wow/src/reset.ts`), by the guild's region.
+  `tools/attendance-parity.lua` prints the Americas' fixture and, with `REGION="eu"`, Europe's, with nights either
+  side of both resets, and the site checks both to the digit (`tools/reset-week.lua` checks the rest).
+
+### Consequences
+- (+) A guild raiding Wednesday and Monday nights in Brasília has one lockout a week, as in the game; a European
+  guild's Tuesday night is the last of its week.
+- (+) Nothing stored changes: attendance is rebuilt from the sessions at every login (`MergeDuplicateSessions`
+  rebuilds it), so each client's numbers move at its first login on this version.
+- (−) Attendance near the boundary changes for existing guilds, on purpose: lockouts that were split in two become
+  one (one chance fewer in the denominator, and the late or left-early penalty for whoever came to only one of the
+  nights), and nights merged across the real reset become two.
+- (−) Officers on versions either side of this one disagree about those weeks until both update; the site follows
+  this version.
+- (−) If Blizzard moves a region's reset, the table has to follow; the self-test says when it disagrees.
+- (?) Whether `GetCurrentRegion` and `C_DateAndTime.GetSecondsUntilWeeklyReset` exist on WoW: Forever and TBC
+  Anniversary, and agree with the table, is read in game (`/guildos probe`, `/gos selftest`).

@@ -90,6 +90,9 @@ Probe.APIS = {
     -- Retail (issue #184): an inspected guildmate's average item level, and the character sheet's ratings.
     "C_PaperDollInfo.GetInspectItemLevel", "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste",
     "GetMasteryEffect", "GetCombatRatingBonus", "GetVersatilityBonus",
+    -- The lockout week (guildos-web#199): the region whose reset counts it, and the client's own count of
+    -- the seconds to that reset, which the self-test compares with the table.
+    "GetCurrentRegion", "C_DateAndTime.GetSecondsUntilWeeklyReset",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
