@@ -98,7 +98,7 @@ function GuildOS:ShowPointsFrame()
             local nm = strtrim(nameInput:GetText() or "")
             local amt = tonumber(amtInput:GetText())
             if nm == "" or not amt or amt == 0 then return end
-            local key = GuildOS:GetPlayerKey(nm, GetRealmName())
+            local key = GuildOS.Points:KeyOf(nm)   -- with its realm on retail (#185)
             GuildOS.Points:Adjust(key, sign * math.abs(amt), strtrim(reasonInput:GetText() or ""),
                 sign > 0 and "award" or "spend")
             amtInput:SetText(""); reasonInput:SetText(""); nameInput:ClearFocus()

@@ -135,6 +135,10 @@ P:OnBossKill("Imperator Averzian")
 check(P:Get("Bob-TolBarad") == 12, "only the raid leader's client awards a kill")
 leader = true
 
+-- A name typed in the points window: with its realm on retail, else this realm's.
+check(P:KeyOf("Ana-Gallywix") == "Ana-Gallywix" and P:KeyOf("Bob") == "Bob-TolBarad"
+  and P:KeyOf("Bob-Tol Barad") == "Bob-TolBarad", "a typed name is keyed by its own realm on retail")
+
 -- Decay.
 check(P:ApplyDecay(50) == 4 and P:Get("Ana-Gallywix") == 15, "decay takes its share of everyone")
 
@@ -222,6 +226,7 @@ load(false)
 check(not GuildOS.Client.isRetail and GuildOS.Points ~= nil, "Forever has points, as before")
 GuildOS.Points:Initialize()
 check(GuildOS.Points:Award("Ana", 5, "x").name == "Ana", "and names a member as before")
+check(GuildOS.Points:KeyOf("Ana") == GuildOS:GetPlayerKey("Ana", GetRealmName()), "and keys a typed name as before")
 offered = {}
 for _, sys in ipairs(GuildOS:LootSystemsHere()) do offered[sys.key] = GuildOS:LootSystemLabel(sys) end
 check(offered.tmb == "TMB" and offered.rolls == "/roll (MS/OS)", "Forever offers every loot system, as before")

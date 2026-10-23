@@ -91,6 +91,14 @@ function Points:SetMode(mode)
     self:Refresh()
 end
 
+-- The key a name typed in the points window means. On retail a guildmate on a connected realm is typed
+-- with their realm ("Ana-Gallywix"), and a name without one is this realm's (issue #185); elsewhere the
+-- name on this client's realm, as always.
+function Points:KeyOf(name)
+    if GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
+    return GuildOS:GetPlayerKey(name, GetRealmName())
+end
+
 function Points:Get(key)
     local s = standings()[key]
     return s and s.current or cfg().startingPoints
