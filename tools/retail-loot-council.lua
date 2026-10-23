@@ -556,6 +556,8 @@ for i, drop in ipairs({ 0, NOW + 3600, 99999999999, NOW - 7200 - 61 }) do
 end
 incoming(("O|65A1B2C30045|0|0|%d|%s"):format(NOW - 7200, CAPE), "Bob-TolBarad")
 check(TC:Get("65A1B2C30045").dropTs == NOW - 7200, "one inside it is kept")
+incoming(("O|65A1B2C30046|0|0|%d|%s"):format(NOW + 30, CAPE), "Bob-TolBarad")
+check(TC:Get("65A1B2C30046").dropTs == NOW + 30, "a holder's clock a little ahead is believed, so every client writes one row")
 -- One item link: the colour a link's own, the quality atlas at a chat icon's size, no escapes.
 local LINKS = {
   { false, "|cnIQ4:|Hitem:1|h[x |A:Professions-ChatIcon-Quality-Tier3:2000:2000::1|a]|h|r" },
@@ -593,8 +595,12 @@ lockdown = false
 local nr, na = #rolls, #addon
 TC:Answer("65A1B2C30070", "N")
 check(#rolls == nr and #addon == na, "an answer held behind another message has not gone out, and has not rolled")
+NOW = NOW + 30   -- held longer than the roll's wait
 C.FlushHeldMessages()
 check(addon[#addon].text == "A|65A1B2C30070|N|" and #rolls == nr + 1, "once it goes out, the roll follows it")
+rolled("Chehul", 42)
+check(TC:Get("65A1B2C30070").answers["Chehul-TolBarad"].roll == 42, "and my own roll still binds: the wait starts when the answer went out")
+NOW = NOW - 30
 
 -- ── 7. Midnight's lockdown holds what is sent, and an answer waits for it ─
 resetBags()

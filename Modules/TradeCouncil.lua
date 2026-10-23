@@ -583,9 +583,11 @@ function HANDLERS.O(from, rest)
     if not id or not wellFormed(link) or state().offers[id] then return end
     local now = GetServerTime()
     secs = tonumber(secs) or 0
-    -- The drop's time is the holder's word: believed only inside the trade window it could have come from.
+    -- The drop's time is the holder's word: believed only inside the trade window it could have come from,
+    -- with a minute for a holder's clock running ahead of this one — two clients a second apart must still
+    -- write the same winner row (issue #185).
     drop = tonumber(drop)
-    if not drop or drop > now or drop < now - OFFER_TTL - EXPIRY_SLACK then drop = now end
+    if not drop or drop > now + EXPIRY_SLACK or drop < now - OFFER_TTL - EXPIRY_SLACK then drop = now end
     newOffer({
         id = id, holder = from, link = link, itemId = itemIdOf(link), at = now, dropTs = drop,
         free = free == "1" and GuildOS:GetLootSystem() == "rolls",
