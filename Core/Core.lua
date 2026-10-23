@@ -268,6 +268,8 @@ local MODULE_START = {
     { "LootTracker", feature = "lootTracker" },
     { "LootMaster", feature = "lootMaster", ui = "loot" },
     { "Points", feature = "points", ui = "dkp" },
+    -- Retail only (issue #185): the loot council by trade; the module does not exist elsewhere.
+    { "TradeCouncil" },
     { "Digest" },
     { "Bulletin" },
     { "CallToArms" },

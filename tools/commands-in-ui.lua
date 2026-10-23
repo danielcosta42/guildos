@@ -65,6 +65,10 @@ local IN_UI = {
   trial       = { { "UI/RosterFrame.lua", "GuildOS.TrialTracker:AddTrial(key)" } },
   note        = { { "UI/RosterFrame.lua", "GuildOS.OfficerNotes:AddNote(" } },
   lm          = { { "UI/FeaturePanels.lua", "GuildOS:LootMasterStatus()" } },
+  -- Retail's loot council (issue #185): an Offer button by each tradeable item and on my own loot
+  -- history rows, and the council in Settings' quick access.
+  offer       = { { "UI/TradeCouncil.lua", "GuildOS.TradeCouncil:Offer(" }, { "UI/FeaturePanels.lua", "GuildOS.TradeCouncil:Offer(entry.itemLink)" },
+                  { "UI/FeaturePanels.lua", "GuildOS:ShowTradeCouncil()" } },
   web         = { { "UI/WebPanel.lua", "GuildOS:ShowWebString()" }, { "UI/WebPanel.lua", "co:SetEnabled(" } },
   roster      = { { "UI/WebPanel.lua", 'L["Bring roster"]' } },
   exportatt   = { { "UI/FeaturePanels.lua", 'L["Test Attendance Export"]' } },

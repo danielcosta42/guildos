@@ -101,6 +101,7 @@ Modules\ExportImport.lua
 Modules\CompanionExport.lua
 Modules\CompanionImport.lua
 Modules\Points.lua
+Modules\TradeCouncil.lua
 Modules\LootEquity.lua
 Modules\Digest.lua
 Modules\Backup.lua
@@ -143,6 +144,7 @@ UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua
 UI\PointsPanel.lua
+UI\TradeCouncil.lua
 UI\CommunityPanel.lua
 UI\AlliancePanel.lua
 UI\RaidToolsPanel.lua

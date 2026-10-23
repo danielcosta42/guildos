@@ -667,6 +667,125 @@ function Compat.JournalLoot(journalInstanceID)
 end
 
 ----------------------------------------------------------------------
+-- Trading a personal item (retail, issue #185)
+----------------------------------------------------------------------
+
+-- The tooltip line that says how long an item can still be traded (Enum.TooltipDataLineType, 36 in
+-- 12.1.5's documentation).
+local TRADE_TIME_LINE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.TradeTimeRemaining or 36
+local TRADE_SLOTS = 6   -- MAX_TRADE_ITEMS is 7: the last slot is "will not be traded"
+
+-- Lua patterns that read a duration format ("%d |4hour:hours;") back: each grammatical form, the
+-- longest first, then the format as written. Lower case, as the text is read lower case.
+local function durationPatterns(fmt)
+    if type(fmt) ~= "string" or fmt == "" then return {} end
+    local function pattern(s)
+        local escaped = s:lower():gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+        return (escaped:gsub("%%%%d", "(%%d+)"))
+    end
+    local out = {}
+    local pre, forms, post = fmt:match("^(.-)|4([^;]*);(.*)$")
+    if pre then
+        local list = {}
+        for f in forms:gmatch("[^:]+") do list[#list + 1] = f end
+        table.sort(list, function(a, b) return #a > #b end)
+        for _, f in ipairs(list) do out[#out + 1] = pattern(pre .. f .. post) end
+    end
+    out[#out + 1] = pattern(fmt)
+    return out
+end
+
+-- The seconds a trade-time line names, read with the client's own duration strings, so in any language:
+-- "... for the next 1 hour 52 min." Nil when no part of it can be read.
+local DURATIONS = {
+    { 3600, { "INT_SPELL_DURATION_HOURS", "D_HOURS" } },
+    { 60,   { "INT_SPELL_DURATION_MIN", "D_MINUTES" } },
+    { 1,    { "INT_SPELL_DURATION_SEC", "D_SECONDS" } },
+}
+function Compat.TradeSeconds(text)
+    if type(text) ~= "string" then return nil end
+    text = text:lower()
+    local total, found = 0, false
+    for _, unit in ipairs(DURATIONS) do
+        local done = false
+        for _, global in ipairs(unit[2]) do
+            for _, pat in ipairs(durationPatterns(_G[global])) do
+                local n = tonumber(text:match(pat))
+                if n then total, found, done = total + n * unit[1], true, true break end
+            end
+            if done then break end
+        end
+    end
+    return found and total or nil
+end
+
+-- How long an item in my bags can still be traded: "timed", with the seconds when the line can be read
+-- and the line itself; "free" when the item is not bound at all; "bound" when it can no longer be
+-- traded. Nil on a client without the retail tooltip data, or for a slot with nothing in it. A personal
+-- item's trade window is only on its tooltip, a line of type TradeTimeRemaining.
+function Compat.TradeTimeLeft(bag, slot)
+    local info = Compat.GetContainerItemInfo(bag, slot)
+    if not info or Compat.IsSecret(info.isBound) then return nil end
+    if not info.isBound then return "free" end
+    local getter = C_TooltipInfo and C_TooltipInfo.GetBagItem
+    local data = getter and getter(bag, slot)
+    if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+    for _, line in ipairs(data.lines) do
+        if not Compat.IsSecret(line.type) and line.type == TRADE_TIME_LINE then
+            local text = line.leftText
+            if Compat.IsSecret(text) or type(text) ~= "string" then return "timed" end
+            return "timed", Compat.TradeSeconds(text), text
+        end
+    end
+    return "bound"
+end
+
+-- Who the open trade window is with: name and realm (nil realm: this one), or nothing when the client
+-- does not say or keeps it secret.
+function Compat.TradePartner()
+    local name, realm = UnitName("NPC")
+    if Compat.IsSecret(name, realm) or type(name) ~= "string" or name == "" then return nil end
+    return name, realm
+end
+
+-- The links of what I have put in the trade window, slot by slot.
+function Compat.TradeItemLinks()
+    local out = {}
+    if not GetTradePlayerItemLink then return out end
+    for i = 1, TRADE_SLOTS do
+        local link = GetTradePlayerItemLink(i)
+        if type(link) == "string" and not Compat.IsSecret(link) then out[#out + 1] = link end
+    end
+    return out
+end
+
+-- Whether a UI_INFO_MESSAGE says a trade has just gone through ("Trade complete.").
+function Compat.IsTradeComplete(messageType, message)
+    if Compat.IsSecret(messageType, message) then return false end
+    if LE_GAME_ERR_TRADE_COMPLETE ~= nil and messageType == LE_GAME_ERR_TRADE_COMPLETE then return true end
+    return ERR_TRADE_COMPLETE ~= nil and message == ERR_TRADE_COMPLETE
+end
+
+-- An item's equip location ("INVTYPE_HEAD"), with no item cache needed; nil when it is not worn or the
+-- client cannot say.
+function Compat.EquipLoc(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local _, _, _, equipLoc = instant(item)
+    if type(equipLoc) ~= "string" or equipLoc == "" then return nil end
+    return equipLoc
+end
+
+-- Say a line in a chat channel: retail's C_ChatInfo.SendChatMessage, else the global. Nothing while the
+-- client holds chat in lockdown (Midnight, during an encounter); returns whether it went.
+function Compat.SendChatMessage(text, chatType)
+    if Compat.IsSecret(text) or (Compat.InChatLockdown and Compat.InChatLockdown()) then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not send then return false end
+    return (pcall(send, text, chatType))
+end
+
+----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character
 -- collection leaves the field out instead of raising.

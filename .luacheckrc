@@ -294,6 +294,12 @@ read_globals = {
     "C_EncounterJournal",
     "EncounterJournal",
 
+    -- WoW API: trading a personal item (retail loot council, issue #185; Core/Compat.lua only)
+    "C_TooltipInfo",
+    "GetTradePlayerItemLink",
+    "LE_GAME_ERR_TRADE_COMPLETE",
+    "ERR_TRADE_COMPLETE",
+
     -- WoW API: Party
     "C_PartyInfo",
 

@@ -48,6 +48,9 @@ local function printHelp()
     helpHeader(L["Raid and loot"])
     if GuildOS.LootMaster then helpLine("/gos lm", L["Master Loot helper status"]) end  -- not on retail (ADR-0026)
     if GuildOS.Points then helpLine("/gos points", L["Points and DKP window"]) end
+    if GuildOS.TradeCouncil then   -- retail's loot council by trade (issue #185)
+        helpLine("/gos offer [item]", L["Offer a tradeable item to the raid, or open the loot council"])
+    end
     if GuildOS.ConsumableChecker then  -- TBC content (ADR-0014)
         helpLine("/gos cons",      L["Check raid consumables"])
     end
@@ -417,6 +420,16 @@ local function handleCommand(msg)
             end
         else
             GuildOS:Print(L["Usage: /guildos note <PlayerName> <text>"])
+        end
+    elseif msg == "offer" or msg:match("^offer%s") then
+        -- /gos offer [item link]: retail's loot council by trade (issue #185); the link keeps its case.
+        local link = strtrim((msg:gsub("^offer%s*", "")))
+        if not GuildOS.TradeCouncil then
+            GuildOS:Print(L["Not available on this client."])
+        elseif link == "" then
+            GuildOS:ShowTradeCouncil()
+        else
+            GuildOS.TradeCouncil:Offer(link)
         end
     elseif msg == "lm" or msg == "lootmaster" then
         local status = GuildOS:LootMasterStatus()

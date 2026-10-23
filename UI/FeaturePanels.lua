@@ -1243,6 +1243,15 @@ function GuildOS:RefreshLootPanel(content, countText)
             end)
         end
 
+        -- My own personal item, still in my bags to trade: offered to the raid from here (retail, #185).
+        if GuildOS.TradeCouncil and not entry.awarded and entry.itemLink
+            and GetServerTime() - (entry.timestamp or 0) < GuildOS.TradeCouncil.OFFER_TTL
+            and entry.playerKey == GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) then
+            local offerBtn = UI:CreateButton(row, L["Offer"], 56, 18)
+            offerBtn:SetPoint("RIGHT", -4, 0)
+            offerBtn:SetScript("OnClick", function() GuildOS.TradeCouncil:Offer(entry.itemLink) end)
+        end
+
         -- Player
         local memberData = GuildOS.db.members[entry.playerKey]
         local pClass = memberData and memberData.class
@@ -2106,6 +2115,10 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     if GuildOS:LootSystemShowsWishlist() then
         quickButtons[#quickButtons + 1] = { label = L["My Wishlist"], fn = function() GuildOS:ShowWishlistFrame() end }
+    end
+    -- Retail's loot council by trade, for every member: offering an item, answering one (issue #185).
+    if GuildOS.TradeCouncil and GuildOS:LootSystemActive() then
+        quickButtons[#quickButtons + 1] = { label = L["Loot Council"], fn = function() GuildOS:ShowTradeCouncil() end }
     end
     if GuildOS.LootEquity then  -- on retail too since issue #183
         quickButtons[#quickButtons + 1] = { label = L["Loot Equity"], fn = function()
