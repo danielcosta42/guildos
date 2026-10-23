@@ -210,6 +210,21 @@ C_ChatInfo = { InChatMessagingLockdown = function() return true end }
 CC:ReportToChat("RAID")
 check(#said == 0, "in an encounter's chat lockdown nothing is sent (it would be dropped)")
 C_ChatInfo = nil
+-- Nobody missing but some unread: no "All OK!" goes to the raid, the officer is told locally.
+combat = true
+local unreadRes = CC:CheckRaid()
+combat = false
+CC.lastCheck, GuildOS.db.consumableChecks.lastResults = unreadRes, unreadRes
+said = {}
+CC:ReportToChat("RAID")
+check(#said == 0, "with everyone unread, no All OK! is announced")
+-- A ready check ending in combat (timed out after the pull) keeps the last readings.
+res = CC:CheckRaid()
+CC.lastCheck, GuildOS.db.consumableChecks.lastResults = res, res
+combat = true
+CC:OnReadyCheck()
+combat = false
+check(CC:GetLastResults() == res, "a ready check ending in combat does not replace the readings")
 GROUP = {}
 check(CC:CheckRaid(true) == nil, "outside a raid a quiet check reads nothing and says nothing")
 

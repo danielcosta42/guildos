@@ -168,6 +168,9 @@ end
 -- A ready check starting or ending, on retail: the raid's consumables are read quietly, for the
 -- screens and for the snapshot the pull takes in combat.
 function ConsumableChecker:OnReadyCheck()
+    -- A check that times out after the pull ends in combat, where nothing can be read: it would
+    -- replace the last readings with all-unknown rows (issue #187).
+    if InCombatLockdown and InCombatLockdown() then return end
     self:CheckRaid(true)
 end
 
@@ -418,7 +421,11 @@ function ConsumableChecker:ReportToChat(channel)
         end
     end
 
-    if #missing == 0 then
+    -- Nobody missing, but some not read (retail): "All OK!" would be a claim nobody checked (issue #187).
+    local unread = self:GetUnknownCount(results)
+    if #missing == 0 and unread > 0 then
+        GuildOS:Print(string.format(L["%d could not be read (out of range, or hidden by the game)."], unread))
+    elseif #missing == 0 then
         SendChatMessage(L["[Guild OS] Consumable check: All OK!"], channel or "RAID")
     else
         SendChatMessage(L["[Guild OS] Consumable check - Missing:"], channel or "RAID")
