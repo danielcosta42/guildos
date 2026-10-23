@@ -233,7 +233,8 @@ addon does not, tell us in the Discord.
 
 ## Good to know
 
-- Languages: English, Português, Español, Deutsch, Français, Русский, 한국어, 简体中文, 繁體中文
+- Languages: English, Português, Español, Deutsch, Français, Русский, 한국어, 简体中文, 繁體中文, and Italiano on
+  retail (the only game with an Italian client)
 - Channel messages (LookingForGroup, Trade) need a hardware click, so Guild OS asks for it with a popup instead of
   sending silently
 - Data is stored per guild in SavedVariables

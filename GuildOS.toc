@@ -39,6 +39,7 @@ Locales\ruRU.lua
 Locales\koKR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
+Locales\itIT.lua
 
 Core\Core.lua
 Core\Compat.lua

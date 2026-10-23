@@ -50,7 +50,7 @@ for _, locale in ipairs({ "koKR", "zhCN", "zhTW" }) do
   check(GuildOS.GameFontOnly == true, locale .. ": the setting is forced on")
 end
 
-for _, locale in ipairs({ "enUS", "ptBR", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
+for _, locale in ipairs({ "enUS", "ptBR", "deDE", "esES", "esMX", "frFR", "ruRU", "itIT" }) do
   load(locale, nil)
   check(drawn(12):find("IBMPlexMono", 1, true), locale .. ": small text keeps GuildOS's mono")
   check(drawn(18):find("Spectral", 1, true), locale .. ": large text keeps GuildOS's serif")

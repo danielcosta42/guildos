@@ -40,7 +40,8 @@ GuildOS/
   Locales/
     Locale.lua            — GuildOS.L bootstrap (metatable fallback to English key)
     enUS.lua              — master/stub (English is implicit)
-    ptBR.lua esES.lua deDE.lua frFR.lua — translations (guarded by GetLocale)
+    ptBR.lua esES.lua deDE.lua frFR.lua ruRU.lua koKR.lua zhCN.lua zhTW.lua itIT.lua — translations
+                          (guarded by GetLocale; itIT is retail's alone, #186)
   ConsumableChecker.lua   — flask/elixir/food buff detection
   SpecChecker.lua         — spec/talent detection
   UI/
@@ -116,7 +117,7 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | # | File | Depends on |
 |---|------|------------|
 | 1–5 | `Libs/*` | nothing |
-| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR.lua` | Config — creates `GuildOS.L`; must load before any file that does `local L = GuildOS.L` |
+| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR/ruRU/koKR/zhCN/zhTW/itIT.lua` | Config — creates `GuildOS.L`; must load before any file that does `local L = GuildOS.L` |
 | 6 | `Core.lua` | Libs — creates GuildOS global, Logger, Compat, State, Config |
 | 7 | `DataCollector.lua` | GuildOS |
 | 8 | `AttunementTracker.lua` | GuildOS, GuildOS.Compat |

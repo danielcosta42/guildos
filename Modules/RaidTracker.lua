@@ -104,7 +104,8 @@ end
 
 -- The words that say "players" after the 25 in each locale's label, so retail's label names the
 -- difficulties and no size: "25 jogadores" is "N/H/M", never "N/H/M jogadores" (issue #177).
-local SIZE_WORDS = { "%-man", "er", " jogadores", " jugadores", " joueurs", " чел%.", " ?인", " ?人" }
+-- Italian, a retail-only client, says "25 giocatori" (#186).
+local SIZE_WORDS = { "%-man", "er", " jogadores", " jugadores", " joueurs", " giocatori", " чел%.", " ?인", " ?人" }
 
 -- A "25-man" label as this game says it: unchanged on Anniversary, "20+" on WoW: Forever, where
 -- the 20- and 40-player raids are the ones that count (issue #90), the difficulties on retail. It
