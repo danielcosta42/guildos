@@ -81,6 +81,11 @@ See existing ADRs in `decisions.md` as examples.
 - **Versioning**: auto-semver from Conventional Commits
 - **Changelog**: auto-generated, prepended to `CHANGELOG.md`
 - **Publish**: BigWigsMods packager → CurseForge (project ID 1549177, BCC client)
+- **After a Forever release**: the site (guildos-web) draws this addon's tabs and words in its tour
+  (`/como-funciona`) and its manual (`/manual`) from a generated copy. In guildos-web run
+  `node --experimental-strip-types scripts/addon-snapshot.mts` and commit `apps/web/lib/addon-snapshot.json`;
+  its tests then fail if a tab or sub-tab has no page in the manual. When a behaviour the manual describes
+  changes here, its rule changes there (`apps/web/lib/manual/text/`).
 
 ---
 
