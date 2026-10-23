@@ -179,20 +179,15 @@ function TradeCouncil:Wishers(o)
     return out
 end
 
--- What the council weighs about a guildmate: attendance of the raid's core (the roster's when that
--- core has no night that counts), and the items received this raid session (LootMaster's figures).
+-- What the council weighs about a guildmate beside the answer: attendance of the raid's core, the
+-- roster's when that core has no night that counts (LootMaster's figure).
 function TradeCouncil:Context(key)
-    local ctx = { att = 0, recv = 0 }
+    local ctx = { att = 0 }
     local RT = GuildOS.RaidTracker
     if RT then
         local core = RT.GetCurrentGroup and RT:GetCurrentGroup()
         if core == "" or (core and RT:GetTotal25ManSessions(core) == 0) then core = nil end
         ctx.att = RT:GetAttendance25ManPercent(key, core) or 0
-    end
-    local since = (RT and RT.currentRaid and RT.currentRaid.startTime) or (GetServerTime() - OFFER_TTL)
-    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
-        if (tonumber(e.timestamp) or 0) < since then break end   -- newest first
-        if e.playerKey == key then ctx.recv = ctx.recv + 1 end
     end
     return ctx
 end
