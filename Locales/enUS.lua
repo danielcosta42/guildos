@@ -757,3 +757,23 @@ L["Mastery"] = "Mastery"
 L["Vers"] = "Vers"
 -- /gos unban when no ban stands under that name (issue #184).
 L["No ban to lift for %s."] = "No ban to lift for %s."
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d could not be read (out of range, or hidden by the game)."
+L["Augment Rune"] = "Augment Rune"
+L["Chat is locked during the encounter: announce after it."] = "Chat is locked during the encounter: announce after it."
+
+-- Retail: Mythic+ and the Great Vault (issue #187)
+L["Mythic+ rating and keystone"] = "Mythic+ rating and keystone"
+L["M+"] = "M+"
+L["MYTHIC+"] = "MYTHIC+"
+L["Rating"] = "Rating"
+L["Keystone"] = "Keystone"
+L["none"] = "none"
+L["GREAT VAULT"] = "GREAT VAULT"
+L["No vault data yet."] = "No vault data yet."
+L["Not updated since the weekly reset."] = "Not updated since the weekly reset."
+L["World"] = "World"
+L["Unknown dungeon"] = "Unknown dungeon"
+L["Dungeons"] = "Dungeons"
+L["Tier %d"] = "Tier %d"

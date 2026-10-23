@@ -72,6 +72,12 @@ read_globals = {
     "C_Spell",
     "C_UnitAuras",
     "C_PlayerInfo",
+    -- Retail's Mythic+, the Great Vault and the week it counts (issue #187).
+    "C_MythicPlus",
+    "C_ChallengeMode",
+    "C_WeeklyRewards",
+    "C_DateAndTime",                         -- also the seconds to the reset, a self-test's (guildos-web#199)
+    "GetWeaponEnchantInfo",                  -- my weapon's temporary enchant (the consumable check, #187)
 
     -- WoW API: Unit functions
     "UnitName",
@@ -230,7 +236,6 @@ read_globals = {
     "C_RestrictedActions",
     "GetNormalizedRealmName",
     "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
-    "C_DateAndTime",                         -- the seconds to the weekly reset, a self-test's (guildos-web#199)
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",

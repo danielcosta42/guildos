@@ -105,6 +105,14 @@ function DataCollector:CollectMyData()
     -- Collect basic stats
     data.stats = self:CollectStats()
 
+    -- Retail: my keystone, my Mythic+ rating and my weekly vault (issue #187). What the client cannot
+    -- give yet keeps what was read before, never blanked.
+    if GuildOS.MythicPlus then
+        local mplus, vault = GuildOS.MythicPlus:Collect()
+        data.mplus = mplus or data.mplus
+        data.vault = vault or data.vault
+    end
+
     -- Collect own spec (requires talents to be loaded)
     local specMissing = false
     if GuildOS.SpecChecker then
@@ -740,6 +748,13 @@ function DataCollector:GetBroadcastData()
     -- StoreReceivedData into db.members[key].prefRoles.
     if GuildOS.db.profile and GuildOS.db.profile.prefRoles then
         clean.prefRoles = GuildOS.db.profile.prefRoles
+    end
+
+    -- Retail's Mythic+ and vault (issue #187): StoreReceivedData merges them like any field. Absent
+    -- from a client without the module, or before mine has read them; never null.
+    if GuildOS.MythicPlus then
+        clean.mplus = myData.mplus
+        clean.vault = myData.vault
     end
 
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).

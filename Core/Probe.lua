@@ -93,6 +93,13 @@ Probe.APIS = {
     -- The lockout week (guildos-web#199): the region whose reset counts it, and the client's own count of
     -- the seconds to that reset, which the self-test compares with the table.
     "GetCurrentRegion", "C_DateAndTime.GetSecondsUntilWeeklyReset",
+    -- Retail (issue #187): the raid's consumables read from its auras, whether the client keeps them
+    -- secret, my weapon's oil.
+    "C_UnitAuras.GetBuffDataByIndex", "C_Secrets.ShouldAurasBeSecret", "GetWeaponEnchantInfo",
+    -- Retail (issue #187): my keystone and rating, a dungeon named, the Great Vault and the week.
+    "C_MythicPlus.RequestMapInfo", "C_MythicPlus.GetOwnedKeystoneChallengeMapID", "C_MythicPlus.GetOwnedKeystoneLevel",
+    "C_ChallengeMode.GetOverallDungeonScore", "C_ChallengeMode.GetMapUIInfo", "C_ChallengeMode.GetDungeonScoreRarityColor",
+    "C_WeeklyRewards.GetActivities", "Enum.WeeklyRewardChestThresholdType", "C_DateAndTime.GetWeeklyResetStartTime",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -110,16 +117,18 @@ Probe.SCRIPTS = { "OnTooltipSetItem", "OnTooltipSetSpell", "OnTooltipSetUnit", "
 -- Every event the addon's own files register. tools/probe.lua fails when the
 -- source registers one that is not listed here.
 Probe.EVENTS = {
-    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED", "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
+    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "ADDON_LOADED", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_MAPS_UPDATE",
+    "CHANNEL_UI_UPDATE", "CHARACTER_POINTS_CHANGED", "CHAT_MSG_ADDON", "CHAT_MSG_CHANNEL",
     "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_SKILL", "CHAT_MSG_SYSTEM", "CHAT_MSG_WHISPER", "CLUB_MESSAGE_ADDED",
     "CLUB_MESSAGE_HISTORY_RECEIVED", "CLUB_STREAM_ADDED", "CLUB_STREAM_REMOVED", "CLUB_STREAMS_LOADED",
     "COMBAT_LOG_EVENT_UNFILTERED", "CRAFT_SHOW", "ENCOUNTER_END", "ENCOUNTER_LOOT_RECEIVED", "ENCOUNTER_START", "GET_ITEM_INFO_RECEIVED",
     "GROUP_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "INSPECT_READY", "LOOT_CLOSED", "LOOT_OPENED",
     "MACRO_ACTION_BLOCKED", "MACRO_ACTION_FORBIDDEN", "PARTY_LOOT_METHOD_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_GUILD_UPDATE",
     "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
-    "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "SKILL_LINES_CHANGED",
-    "TRADE_ACCEPT_UPDATE", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UPDATE_MOUSEOVER_UNIT", "WHO_LIST_UPDATE",
-    "ZONE_CHANGED_NEW_AREA",
+    "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
+    "SKILL_LINES_CHANGED",
+    "TRADE_ACCEPT_UPDATE", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE",
+    "WHO_LIST_UPDATE", "ZONE_CHANGED_NEW_AREA",
 }
 
 -- Look up "Name", "C_Namespace.Function" or "Frame.Method" in _G.

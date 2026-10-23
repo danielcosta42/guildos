@@ -5,9 +5,10 @@
 -- WoW: Forever is in the Classic family but has none of the TBC content, and
 -- no WOW_PROJECT_ID of its own yet. This proves GuildOS.Client recognises TBC
 -- Anniversary only by its project id and its interface together, reports each
--- capability from the API behind it, and that attunements, consumables, the
--- raid cooldown HUD toggle and the wishlist raid catalogue exist only there,
--- without touching the player's own toggles.
+-- capability from the API behind it, and that attunements, the raid cooldown
+-- HUD toggle and the wishlist raid catalogue exist only there, and the
+-- consumable check there and on retail (issue #187), without touching the
+-- player's own toggles.
 --
 -- ponytail: the audit sub-tab filter, the HUD gates, the member detail
 -- attunement section, the /gos help lines, the Settings consumable test and
@@ -204,15 +205,20 @@ for _, case in ipairs(CLIENTS) do
   GuildOS.AttunementTracker, GuildOS.ConsumableChecker, GuildOS.Wishlist = nil, nil, nil
   GuildOS.State.startup.failed = {}
   dofile(ADDON .. "/Modules/AttunementTracker.lua")
+  GuildOS.ConsumableCatalog = nil
+  dofile(ADDON .. "/Data/ConsumablesRetail.lua")
   dofile(ADDON .. "/Modules/ConsumableChecker.lua")
   dofile(ADDON .. "/Modules/WishlistSystem.lua")
   dofile(ADDON .. "/Modules/RaidTools.lua")
   local on = case.tbc and " exists on " or " does not exist on "
+  -- Consumables: TBC's table on Anniversary, Midnight's on retail (issue #187); none on Forever.
+  local cons = case.tbc or case.retail == true
   check((GuildOS.AttunementTracker ~= nil) == case.tbc, "the attunement tracker" .. on .. case.label)
-  check((GuildOS.ConsumableChecker ~= nil) == case.tbc, "the consumable checker" .. on .. case.label)
+  check((GuildOS.ConsumableChecker ~= nil) == cons,
+    "the consumable checker" .. (cons and " exists on " or " does not exist on ") .. case.label)
   check(GuildOS:StartModule({ "AttunementTracker" }) == case.tbc
-    and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == case.tbc,
-    "the TBC modules start only where they exist (" .. case.label .. ")")
+    and GuildOS:StartModule({ "ConsumableChecker", feature = "consumableChecker" }) == cons,
+    "the attunement and consumable modules start only where they exist (" .. case.label .. ")")
   check(next(GuildOS.State.startup.failed) == nil, "nothing is recorded as failed to start on " .. case.label)
   -- Retail is personal loot only: the wishlist is absent there (issue #165).
   check((GuildOS.Wishlist ~= nil) == not case.retail, "the wishlist " .. (case.retail and "does not exist" or "exists") .. " on " .. case.label)
@@ -246,11 +252,15 @@ local function listed(id)
 end
 for _, case in ipairs(CLIENTS) do
   client(case.c)
-  for _, id in ipairs({ "consumableChecker", "raidHUD" }) do
-    check(listed(id) == case.tbc, id .. (case.tbc and " is listed on " or " is not listed on ") .. case.label)
-    check(UI:IsFeatureAllowed(UI:GetFeature(id)) == case.tbc,
-      id .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
-  end
+  check(listed("raidHUD") == case.tbc, "raidHUD" .. (case.tbc and " is listed on " or " is not listed on ") .. case.label)
+  check(UI:IsFeatureAllowed(UI:GetFeature("raidHUD")) == case.tbc,
+    "raidHUD" .. (case.tbc and " is allowed on " or " is refused on ") .. case.label)
+  -- The consumable check: Anniversary's and retail's, never Forever's (issue #187).
+  local cons = case.tbc or case.retail == true
+  check(listed("consumableChecker") == cons,
+    "consumableChecker" .. (cons and " is listed on " or " is not listed on ") .. case.label)
+  check(UI:IsFeatureAllowed(UI:GetFeature("consumableChecker")) == cons,
+    "consumableChecker" .. (cons and " is allowed on " or " is refused on ") .. case.label)
   check(listed("raidTracker"), "raidTracker stays listed on " .. case.label)
   -- Handing loot out: everywhere but retail, where loot is personal (issue #165).
   for _, id in ipairs({ "dkp", "wishlist", "lootMaster" }) do

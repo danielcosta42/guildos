@@ -530,18 +530,9 @@ local function BuildConsPopup(f)
         f.statusText:SetText(L["No data"])
     end
 
-    -- Collect only players missing something; tally ready vs total
-    local problems, total, ready = {}, 0, 0
-    if results then
-        for _, p in pairs(results) do
-            total = total + 1
-            if p.missing and #p.missing > 0 then
-                table.insert(problems, p)
-            else
-                ready = ready + 1
-            end
-        end
-    end
+    -- Only players missing something are listed; on retail one the client could not read is neither
+    -- missing nor ready (issue #187).
+    local problems, total, ready, unread = CC:Tally(results)
     table.sort(problems, function(a, b)
         local ca, cb = a.class or "ZZZ", b.class or "ZZZ"
         if ca == cb then return (a.name or "") < (b.name or "") end
@@ -557,6 +548,9 @@ local function BuildConsPopup(f)
 
     if total == 0 then
         f.emptyText:SetText(L["Join a raid and scan."])
+        f.emptyText:Show()
+    elseif #problems == 0 and unread > 0 then
+        f.emptyText:SetText(string.format(L["%d could not be read (out of range, or hidden by the game)."], unread))
         f.emptyText:Show()
     elseif #problems == 0 then
         f.emptyText:SetText("|cff4CFF4C" .. L["Everyone is prepared!"] .. "|r")

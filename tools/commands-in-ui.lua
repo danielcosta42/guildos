@@ -60,7 +60,9 @@ local IN_UI = {
   reset       = { { "UI/FeaturePanels.lua", "GuildOS:EraseGuildData()" } },
   recruit     = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
   autoinvite  = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
-  cons        = { { "UI/RaidHUD.lua", "GuildOS.ConsumableChecker:CheckRaid()" } },
+  -- The Raid HUD is TBC's; on retail the readiness tab is the way in (issue #187).
+  cons        = { { "UI/RaidHUD.lua", "GuildOS.ConsumableChecker:CheckRaid()" },
+                  { "UI/AuditPanel.lua", "GuildOS:ShowConsumablePopup()" } },
   consreport  = { { "UI/RaidHUD.lua", 'GuildOS.ConsumableChecker:ReportToChat("RAID")' } },
   trial       = { { "UI/RosterFrame.lua", "GuildOS.TrialTracker:AddTrial(key)" } },
   note        = { { "UI/RosterFrame.lua", "GuildOS.OfficerNotes:AddNote(" } },

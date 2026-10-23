@@ -7,7 +7,8 @@
 -- of nothing, a "no consumables" penalty offered that never cost anything, a readiness target that
 -- cycled through no raids, a resistance scan collected and sent on every broadcast, and two debug
 -- verbs that ran anyway. This proves each one follows its module: absent where the module is, as it
--- was where the module is there.
+-- was where the module is there. (Retail has its own consumable check since issue #187, and its
+-- consumables column with it.)
 --
 --   luajit -e 'ADDON="."' tools/retail-leftovers.lua
 --
@@ -107,7 +108,7 @@ printed = {}
 local ok = pcall(SlashCmdList.GUILDOS, "attune dumpquests")
 check(ok and said(NOT_HERE) and not said("Completed quests"), "/gos attune dumpquests says it is not on this client")
 
--- ── 2. Retail: the exports carry no attunement or consumables column ───
+-- ── 2. Retail: the exports carry no attunement column ─────────────────
 local headers = GuildOS.Exporter:RosterData()
 check(not has(headers, "Attunements") and has(headers, "LastSeen") and #headers == 7, "the roster export has no attunements")
 local _, rows = GuildOS.Exporter:RosterData()
@@ -117,8 +118,13 @@ GuildOS.Readiness = { GetReport = function()
 end }
 headers, rows = GuildOS.Exporter:ReadinessData()
 check(not has(headers, "Attune") and not has(headers, "MissingConsumes") and has(headers, "MissingEnchants"),
-  "the readiness export has no attunement or consumables column")
+  "the readiness export has no attunement column, and no consumables column without the checker")
 check(#rows[1] == #headers and rows[1][4] == 1, "and its rows line up")
+GuildOS.ConsumableChecker = {}   -- retail's own check (issue #187)
+headers, rows = GuildOS.Exporter:ReadinessData()
+check(not has(headers, "Attune") and has(headers, "MissingConsumes") and #rows[1] == #headers,
+  "with retail's consumable check the readiness export counts consumables again")
+GuildOS.ConsumableChecker = nil
 -- Audit > Sync's "Export Roster" writes its own text (GuildOS:ExportRoster).
 local function tsv()
   local head, first = GuildOS:ExportRoster():match("^([^\n]*)\n([^\n]*)")

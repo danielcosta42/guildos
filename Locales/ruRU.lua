@@ -1928,3 +1928,23 @@ L["Haste"] = "Скорость"
 L["Mastery"] = "Искусность"
 L["Vers"] = "Универс."
 L["No ban to lift for %s."] = "У %s нет бана, который можно снять."
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d не удалось прочитать (вне досягаемости или скрыто игрой)."
+L["Augment Rune"] = "Руна усиления"
+L["Chat is locked during the encounter: announce after it."] = "Чат заблокирован во время боя с боссом: объявите после него."
+
+-- Retail: Mythic+ and the Great Vault (issue #187)
+L["Mythic+ rating and keystone"] = "Рейтинг М+ и ключ"
+L["M+"] = "М+"
+L["MYTHIC+"] = "ЭПОХАЛЬНЫЙ+"
+L["Rating"] = "Рейтинг"
+L["Keystone"] = "Ключ"
+L["none"] = "нет"
+L["GREAT VAULT"] = "ВЕЛИКОЕ ХРАНИЛИЩЕ"
+L["No vault data yet."] = "Данных хранилища пока нет."
+L["Not updated since the weekly reset."] = "Не обновлялось с еженедельного сброса."
+L["World"] = "Мир"
+L["Unknown dungeon"] = "Неизвестное подземелье"
+L["Dungeons"] = "Подземелья"
+L["Tier %d"] = "Уровень %d"

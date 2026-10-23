@@ -690,7 +690,8 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                         for _, snap in ipairs(snapshots) do
                             if snap.members and snap.members[key] then
                                 consumeChecks = consumeChecks + 1
-                                if snap.members[key].hasConsumes then consumeHits = consumeHits + 1 end
+                                -- Unread (retail, nil) is never missing, as the score counts it (#187).
+                                if snap.members[key].hasConsumes ~= false then consumeHits = consumeHits + 1 end
                             end
                         end
                         local noConsumes = consumeChecks > 0 and (consumeHits / consumeChecks) < 0.5

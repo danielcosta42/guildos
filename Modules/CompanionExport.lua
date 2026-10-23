@@ -274,8 +274,9 @@ local function rollUpPlayers(session, startTime)
             -- ratio: `RaidTracker:UpdateAttendanceForLockout` docks the score when
             -- consumables show up in under half the snapshots that saw the person.
             -- "At least once" cannot answer that, so the site could never arrive at
-            -- the same number the game shows.
-            if m.hasConsumes then p.chits = (p.chits or 0) + 1 end
+            -- the same number the game shows. A snapshot whose consumables retail could
+            -- not read (nil) counts as the addon counts it, for the player (issue #187).
+            if m.hasConsumes ~= false then p.chits = (p.chits or 0) + 1 end
         end
     end
 

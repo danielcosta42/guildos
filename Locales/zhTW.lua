@@ -1928,3 +1928,23 @@ L["Haste"] = "加速"
 L["Mastery"] = "精通"
 L["Vers"] = "臨機應變"
 L["No ban to lift for %s."] = "%s 沒有可解除的封鎖。"
+
+-- Retail: the consumable check (issue #187)
+L["%d could not be read (out of range, or hidden by the game)."] = "%d人無法讀取（超出範圍或被遊戲隱藏）。"
+L["Augment Rune"] = "強化符文"
+L["Chat is locked during the encounter: announce after it."] = "首領戰期間聊天被鎖定：請在戰鬥後通報。"
+
+-- Retail: Mythic+ and the Great Vault (issue #187)
+L["Mythic+ rating and keystone"] = "傳奇鑰石評分與鑰石"
+L["M+"] = "M+"
+L["MYTHIC+"] = "傳奇鑰石"
+L["Rating"] = "評分"
+L["Keystone"] = "鑰石"
+L["none"] = "無"
+L["GREAT VAULT"] = "宏偉寶庫"
+L["No vault data yet."] = "尚無寶庫資料。"
+L["Not updated since the weekly reset."] = "每週重置後尚未更新。"
+L["World"] = "世界"
+L["Unknown dungeon"] = "未知地城"
+L["Dungeons"] = "地城"
+L["Tier %d"] = "層級%d"

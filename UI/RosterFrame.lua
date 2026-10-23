@@ -230,6 +230,18 @@ local COLUMNS = {
       offered = function() return GuildOS.GearAudit ~= nil end,
       value = function(d) return d.gear and #GuildOS.GearAudit:MissingEnchants(d.gear) or nil end,
       text = function(v) return v, v > 0 and C.red or C.green end },
+    -- Retail (issue #187): the rating in the game's colour, then the keystone's level. By the rating.
+    { key = "mplus",       label = L["M+"],           name = L["Mythic+ rating and keystone"], min = 70, weight = 0, align = "CENTER",
+      offered = function() return GuildOS.MythicPlus ~= nil end,
+      value = function(d)
+          d.keyLevel = GuildOS.MythicPlus:KeyLevel(d.mplus)
+          return GuildOS.MythicPlus:Rating(d.mplus)
+      end,
+      text = function(v, d)
+          local r, g, b = GuildOS.Compat.RatingColor(v)
+          local text = d.keyLevel and (v .. " |cff999999+" .. d.keyLevel .. "|r") or tostring(v)
+          return text, r and { r = r, g = g, b = b } or C.gold
+      end },
 
     -- The modules'.
     { key = "attendance",  label = L["ATT."],         name = L["Attendance"],   min = 50,  weight = 0, align = "CENTER",
@@ -1104,6 +1116,8 @@ function GuildOS:CreateRosterPanel(parent, host)
                             or (GuildOS.Professions and GuildOS.Professions:LegacyList(key)),
                         attunements = addonData.attunements,
                         stats = addonData.stats,
+                        mplus = addonData.mplus,   -- retail (issue #187)
+                        vault = addonData.vault,
                         race = addonData.race or "",
                         lastUpdate = addonData.lastUpdate or 0,
                         lastSync = addonData.lastSync or 0,

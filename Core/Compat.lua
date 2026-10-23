@@ -602,6 +602,138 @@ function Compat.UnitBuff(unit, index)
     if UnitBuff then return UnitBuff(unit, index) end
 end
 
+----------------------------------------------------------------------
+-- Retail: the raid's consumables (issue #187)
+----------------------------------------------------------------------
+local MAX_AURAS = 40   -- buffs read per unit; retail has no such cap, so one more means the list is partial
+
+local function inCombat() return InCombatLockdown ~= nil and InCombatLockdown() and true or false end
+
+-- The spell ids of a unit's buffs, for the consumable check, and whether the list is all of them.
+-- Midnight keeps auras secret in combat and in instances: a buff the client keeps secret, or a unit
+-- token, is passed over and the list is partial, and a partial list can show a buff is there but
+-- never that one is missing; so is one with a buff past the MAX_AURAS read. Nil, nothing read: in
+-- combat (the check runs out of it, at the ready check and before the pull), while the client says
+-- auras are secret, without the aura API, or for a unit showing no buff at all, whose auras have not
+-- reached this client.
+function Compat.UnitBuffIDs(unit)
+    if Compat.IsSecret(unit) or inCombat() then return nil end
+    local secrets = C_Secrets and C_Secrets.ShouldAurasBeSecret
+    if secrets then
+        local secret = secrets()
+        if Compat.IsSecret(secret) or secret then return nil end
+    end
+    local get = C_UnitAuras and C_UnitAuras.GetBuffDataByIndex
+    if not get then return nil end
+    local ids, complete = {}, true
+    for i = 1, MAX_AURAS + 1 do
+        local a = get(unit, i)
+        local present = Compat.IsSecret(a) or type(a) == "table"
+        if not present then break end
+        if i > MAX_AURAS or Compat.IsSecret(a) then
+            complete = false
+        else
+            local id = a.spellId
+            if Compat.IsSecret(id) or not tonumber(id) then complete = false else ids[#ids + 1] = id end
+        end
+    end
+    if #ids == 0 and complete then return nil end
+    return ids, complete
+end
+
+-- Whether my main hand carries a temporary enchant (an oil, a stone, a shaman's imbue), on retail:
+-- true or false; nil elsewhere, in combat, or when the client keeps it secret. Only mine: nobody
+-- else's temporary enchant reaches this client (issue #187).
+function Compat.MainHandTempEnchant()
+    if not (GuildOS.Client.isRetail and GetWeaponEnchantInfo) or inCombat() then return nil end
+    local has = GetWeaponEnchantInfo()
+    if Compat.IsSecret(has) then return nil end
+    return has and true or false
+end
+
+----------------------------------------------------------------------
+-- Retail: Mythic+ and the Great Vault (issue #187)
+----------------------------------------------------------------------
+
+-- Ask the client for this season's Mythic+ data; CHALLENGE_MODE_MAPS_UPDATE says it has arrived.
+function Compat.RequestMythicPlus()
+    if GuildOS.Client.isRetail and C_MythicPlus and C_MythicPlus.RequestMapInfo then C_MythicPlus.RequestMapInfo() end
+end
+
+-- My Mythic+ this season, on retail: { rating, key = { map, level } }, the key left out when I hold
+-- none. Nil elsewhere, or when the client cannot say or keeps any of it secret, so a guildmate keeps
+-- what I sent before rather than a wrong answer (issue #187).
+function Compat.MythicPlus()
+    if not GuildOS.Client.isRetail then return nil end
+    local CM, MP = C_ChallengeMode, C_MythicPlus
+    local rating = CM and CM.GetOverallDungeonScore and CM.GetOverallDungeonScore()
+    if Compat.IsSecret(rating) or not tonumber(rating) then return nil end
+    local map = MP and MP.GetOwnedKeystoneChallengeMapID and MP.GetOwnedKeystoneChallengeMapID()
+    local level = MP and MP.GetOwnedKeystoneLevel and MP.GetOwnedKeystoneLevel()
+    if Compat.IsSecret(map, level) then return nil end
+    local out = { rating = math.floor(tonumber(rating) + 0.5) }
+    map, level = tonumber(map), tonumber(level)
+    if map and level and map > 0 and level > 0 then out.key = { map = map, level = level } end
+    return out
+end
+
+-- A Mythic+ dungeon's name in the reader's language, from its challenge map id; nil when unknown.
+function Compat.ChallengeMapName(map)
+    local get = C_ChallengeMode and C_ChallengeMode.GetMapUIInfo
+    if not (get and tonumber(map)) then return nil end
+    local name = get(tonumber(map))
+    if Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    return name
+end
+
+-- The colour the game gives a Mythic+ rating, as r, g, b; nil when the client cannot say.
+function Compat.RatingColor(score)
+    local get = C_ChallengeMode and C_ChallengeMode.GetDungeonScoreRarityColor
+    if not (get and tonumber(score)) then return nil end
+    local c = get(tonumber(score))
+    if Compat.IsSecret(c) or type(c) ~= "table" or Compat.IsSecret(c.r, c.g, c.b) or not tonumber(c.r) then return nil end
+    return c.r, c.g, c.b
+end
+
+-- The Great Vault's rows by Enum.WeeklyRewardChestThresholdType, with 12.1.5's numbers for a client
+-- that does not name them. The world row is the delves' (a delve tier is its level).
+local VAULT_TYPES = { Raid = { "raid", 3 }, Activities = { "dungeon", 1 }, World = { "world", 6 } }
+
+-- My Great Vault this week, on retail: one { row, progress, threshold, level } per slot of the raid,
+-- dungeon and world rows. Nil elsewhere, before the client has the activities (WEEKLY_REWARDS_UPDATE),
+-- or when it keeps any of them secret (issue #187).
+function Compat.WeeklyActivities()
+    local get = GuildOS.Client.isRetail and C_WeeklyRewards and C_WeeklyRewards.GetActivities
+    if not get then return nil end
+    local enum = Enum and Enum.WeeklyRewardChestThresholdType or {}
+    local rowOf = {}
+    for name, v in pairs(VAULT_TYPES) do rowOf[tonumber(enum[name]) or v[2]] = v[1] end
+    local list = get()
+    if Compat.IsSecret(list) or type(list) ~= "table" then return nil end
+    local out = {}
+    for _, a in ipairs(list) do
+        if Compat.IsSecret(a) or type(a) ~= "table" then return nil end
+        if Compat.IsSecret(a.type, a.progress, a.threshold, a.level) then return nil end
+        local row = rowOf[a.type]
+        if row then
+            out[#out + 1] = { row = row, progress = tonumber(a.progress) or 0, threshold = tonumber(a.threshold) or 0,
+                              level = tonumber(a.level) or 0 }
+        end
+    end
+    return #out > 0 and out or nil
+end
+
+-- When this week began, by the server's clock: the weekly reset this client's region had last. Nil
+-- where the client cannot say (issue #187). The Great Vault's week, which is the game's own, so it is
+-- asked of the client; RaidTracker:WeekStart(n) is the lockout week from the region table, which the
+-- site shares and the self-test holds against this client (guildos-web#199).
+function Compat.WeekStart()
+    local get = C_DateAndTime and C_DateAndTime.GetWeeklyResetStartTime
+    local at = get and get()
+    if Compat.IsSecret(at) then return nil end
+    return tonumber(at)
+end
+
 function Compat.GetContainerNumSlots(bag)
     if C_Container and C_Container.GetContainerNumSlots then return C_Container.GetContainerNumSlots(bag) or 0 end
     if GetContainerNumSlots then return GetContainerNumSlots(bag) or 0 end

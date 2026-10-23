@@ -371,6 +371,9 @@ would be a guess, and a guess that reads "retail" would be worse than none.
 WOW_PROJECT_MAINLINE` and an interface of 100000 or more (`GuildOS.Client.isRetail`). An unknown client is still
 Forever. `GuildOS.Client.game` names the client for the payload and diagnostics; nothing else branches on it.
 
+**Amendment (issue #187).** `ConsumableChecker.lua` exists on retail too, with Midnight's table: it returns early only
+on WoW: Forever, and its feature carries `forever = false` (`UI:IsFeatureAbsent`) instead of `tbc = true`.
+
 ---
 
 ## ADR-0015 — `/guildos probe`: one guarded snapshot of the client, kept in SavedVariables
@@ -885,7 +888,8 @@ retail guild yet.
 ### Consequences
 - (+) One build, one TOC, three clients; Forever and Anniversary behave as before.
 - (+) A retail guild sees nothing it cannot use: no loot screens, no site.
-- (−) Nothing reads Mythic+, delves or hero talents yet.
+- (−) Nothing reads Mythic+, delves or hero talents yet. *(Mythic+ and the delves' vault row since issue #187; see
+  below.)*
 - (−) A ban added on retail by a client from before issue #184 is filed under the name alone (and holds on
   every realm, as before); one added after it is not seen by an officer still on the older addon, which
   looks the name alone up. Worse, that officer's x on a row named "Bob-Gallywix" lifts `bob`: a ban filed
@@ -964,6 +968,63 @@ category stays out: everything in it hands loot out.
   any of its fields arrive secret, is read in game.
 - (−) A guildmate the roster has not loaded yet, or who left the guild before the loot arrived, is not recorded.
 
+**Amendment (issue #187).** Midnight's consumables, Mythic+ and the Great Vault. Decided by the coordinator for the
+maintainer ("pode resolver as últimas issues"), in autopilot; the calls below are recorded as made.
+- **The consumable check comes to retail.** `ConsumableChecker` loads on Anniversary and retail (absent on Forever):
+  flask, food, augment rune and weapon enhancement. The buffs are spell ids from `Data/ConsumablesRetail.lua`, written
+  by `tools/consumable_catalog.py` from wago.tools' DB2 for 12.1.5.70448: the current expansion is the highest
+  `ExpansionID` a consumable carries (11); a flask is a Flask (class 0, subclass 3) whose on-use spell raises a rating or
+  a stat (aura 189 or 29), which leaves out the Haranir profession phials (aura 511) and the PvP flask; the rune is an
+  Other consumable (subclass 8) whose spell raises a stat; food is the spells named Well Fed or Hearty Well Fed that
+  raise a stat, above the expansion's own Become Well Fed (1219179, the spell its food ticks; the buff that follows is
+  the server's and linked to nothing in the data, and The War Within's last Well Fed is 465481). Four flasks, one rune,
+  94 food buffs. A weapon oil or stone is a temporary enchant, not an aura: only my own is read
+  (`GetWeaponEnchantInfo`); nobody else's reaches the client, so it is never asked for a raider but me.
+- **Unknown is never missing.** Auras are read through `Compat.UnitBuffIDs` with `Compat.IsSecret` on the aura and its
+  id: nothing in combat, nothing while `C_Secrets.ShouldAurasBeSecret()`, nothing for a unit that shows no buff at all
+  (out of range). A list with a secret entry, or with a buff past the fortieth (retail has no 40-buff cap), is partial:
+  it can find a buff, never declare one missing. Each raider's
+  row lists `unknown` beside `missing`; `/gos cons`, the popup and the readiness column count only `missing`, and say how
+  many could not be read. A raider of whom nothing was read has no count, never "all missing". Readiness matches a raider
+  by key alone on retail: a namesake on a connected realm is another raider. The announce (`/gos consreport`) names only
+  what is missing, and is held back in an encounter's chat lockdown, which would drop it.
+- **When it reads.** Out of combat: on READY_CHECK and again on READY_CHECK_FINISHED (retail only) the raid is read
+  quietly, so whoever eats or flasks in answer to the check is read with it on; every out-of-combat snapshot reads it
+  too. A snapshot in combat (the pull's `encounter_start`) answers with the verdict read out of combat in the last 600
+  seconds (`ConsumableChecker:Recent`, session state), else nil; a later reading that could not read never wipes an
+  earlier one.
+- **The penalty.** A snapshot's `hasConsumes` is true, false, or nil when unread (retail). The score counts a snapshot
+  as a hit unless it is known to be without (`~= false`): the player is docked when the snapshots they were known to be
+  without are more than half of the ones that saw them. CompanionExport's `chits` counts the same way, so guildos.me's
+  rule (`chits / snapshots < 0.5`) gives the same verdict with no new payload field; on Anniversary every value is a
+  boolean and nothing changes, and Forever's are all true. The penalty setting, the readiness column, the dashboard
+  card, `/gos cons` and the Settings test follow the module onto retail; the readiness tab gains a Check Consumables
+  button, since the Raid HUD (the TBC way in) is not there.
+- **Mythic+ and the vault (`Modules/MythicPlus.lua`, retail only).** Each member's own client reads its rating
+  (`C_ChallengeMode.GetOverallDungeonScore`), its keystone (`C_MythicPlus.GetOwnedKeystone*`) and its vault
+  (`C_WeeklyRewards.GetActivities`: the raid, dungeon and world rows; a delve fills the world row and its level is the
+  tier) through Compat, never a secret value. The record keeps `mplus = { rating, key = { map, level } }` and
+  `vault = { at, raid/dungeon/world = { n, best } }` (slots open and the best level; a raid's best by difficulty rank,
+  Raid Finder lowest), sent in the member broadcast: absent from an older addon, never null; what the client cannot
+  give yet keeps the old value. The rating is read only after CHALLENGE_MODE_MAPS_UPDATE (asked for at start-up) and
+  the vault only after WEEKLY_REWARDS_UPDATE, so a 0 or a vault of empty rows read before the server's data never
+  overwrites the real one guildmates hold. A run's end, a vault update or the season's data sends one broadcast two seconds later.
+- **Where it shows.** The member sheet: MYTHIC+ (the rating in the game's colour, the keystone named in the reader's
+  language) and GREAT VAULT (raid, dungeons and world, x/3 with the best level), the vault only when it was read after
+  this week's reset by the reader's clock (`C_DateAndTime.GetWeeklyResetStartTime`). An optional roster column, M+,
+  offered on retail alone. Members without the addon: nothing. The companion payload does not carry them.
+- **A separate delves tracker is out**, as are hero talents.
+- (−) Whether Midnight keeps raid members' auras readable out of combat inside a raid instance is read in game. If
+  `ShouldAurasBeSecret` holds there all the time, the check reads nothing in raids and docks nobody.
+- (−) Whether WEEKLY_REWARDS_UPDATE fires at login without the vault being opened is read in game; if it does not, my
+  vault goes out only once its progress changes or the vault window opens.
+- (−) The catalog follows retail's patches: a new flask or food is a new spell id, and the Well Fed rule rests on
+  Become Well Fed staying the expansion's anchor.
+- (−) The weapon is read for me only; a guildmate's oil is never counted.
+- (−) `chits` now means "snapshots not known to be without", where guildos-web's type comment (packages/goscomp) says
+  "seen with". The site's arithmetic needs no change; its wording does, on the site's side.
+- (−) `GetOverallDungeonScore` and the keystone APIs are trusted to answer for the player after
+  CHALLENGE_MODE_MAPS_UPDATE; the vault's enum numbers fall back to 12.1.5's (raid 3, dungeons 1, world 6).
 ---
 
 ## ADR-0027 — The lockout week is the region's, from the client's own reset table
@@ -989,6 +1050,10 @@ Tuesday-night raid in Europe the same; on all three games (guildos-web#199).
 - `C_DateAndTime.GetSecondsUntilWeeklyReset`, where the client has it, is a cross-check in `/gos selftest`
   (`raidtracker.weekly_reset`, through `Compat.SecondsUntilWeeklyReset`), never the source. `/guildos probe` records
   whether it and `GetCurrentRegion` exist.
+- The Great Vault's week (ADR-0026's #187 amendment) is not this one: the vault is the game's, so the member sheet
+  asks the client when its week began (`Compat.WeekStart`, `C_DateAndTime.GetWeeklyResetStartTime`). Kept apart on
+  purpose when the two branches met: the lockout week has to be the site's, the vault's has to be the game's, and on
+  retail the self-test says when the two disagree.
 - guildos.me counts the same weeks from the same table (its `packages/wow/src/reset.ts`), by the guild's region.
   `tools/attendance-parity.lua` prints the Americas' fixture and, with `REGION="eu"`, Europe's, with nights either
   side of both resets, and the site checks both to the digit (`tools/reset-week.lua` checks the rest).

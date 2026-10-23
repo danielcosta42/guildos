@@ -74,10 +74,13 @@ function UI:VisibleFeatures(scope)
 end
 
 -- Whether this client has no such feature at all: TBC content outside Anniversary (ADR-0014),
--- what retail leaves out (ADR-0026). Absent, not refused, so an opener says so (issue #177).
+-- what retail leaves out (ADR-0026), what WoW: Forever has no content for (`forever = false`: the
+-- consumable check, issue #187). Absent, not refused, so an opener says so (issue #177).
 function UI:IsFeatureAbsent(def)
-    return (def.tbc and not GuildOS.Client.isAnniversary)
-        or (def.retail == false and GuildOS.Client.isRetail) or false
+    local client = GuildOS.Client
+    return (def.tbc and not client.isAnniversary)
+        or (def.retail == false and client.isRetail)
+        or (def.forever == false and not client.isAnniversary and not client.isRetail) or false
 end
 
 ----------------------------------------------------------------------

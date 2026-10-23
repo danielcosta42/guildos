@@ -315,7 +315,7 @@ for i, id in ipairs(ids) do
         n = n + 1
         first = first or sn.time
         last = sn.time
-        if m.hasConsumes then hits = hits + 1 end
+        if m.hasConsumes ~= false then hits = hits + 1 end   -- unread counts for the player (#187)
       end
     end
     -- Same rule CompanionExport uses: somebody in `players` and in no frame travels

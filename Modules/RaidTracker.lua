@@ -515,7 +515,7 @@ function RaidTracker:TakeSnapshot(reason)
                     name = name,
                     class = classFile or "UNKNOWN",
                     online = UnitIsConnected(unit),
-                    hasConsumes = self:CheckPlayerConsumes(unit),
+                    hasConsumes = self:CheckPlayerConsumes(unit, key),
                 }
                 self.currentRaid.players[key] = true
             end
@@ -529,7 +529,7 @@ function RaidTracker:TakeSnapshot(reason)
         name = myName,
         class = select(2, UnitClass("player")),
         online = true,
-        hasConsumes = self:CheckPlayerConsumes("player"),
+        hasConsumes = self:CheckPlayerConsumes("player", myKey),
     }
     self.currentRaid.players[myKey] = true
 
@@ -555,42 +555,13 @@ function RaidTracker:TakeSnapshot(reason)
 end
 
 ----------------------------------------------------------------------
--- Check if a unit has at least flask/elixir + food active
+-- Whether a raider has their flask (or TBC's battle elixir) and food at this snapshot: the
+-- checker's verdict, true or false, and on retail nil when the client could not read it (issue
+-- #187). Where the game has no checker (WoW: Forever), true: nobody is docked for what is not read.
 ----------------------------------------------------------------------
-function RaidTracker:CheckPlayerConsumes(unit)
+function RaidTracker:CheckPlayerConsumes(unit, key)
     if not GuildOS.ConsumableChecker then return true end
-
-    local CC = GuildOS.ConsumableChecker
-    local hasFlaskOrElixir = false
-    local hasFood = false
-
-    -- Check flask
-    for buffID in pairs(CC.CONSUMABLES.flask.buffs) do
-        if CC:UnitHasBuff(unit, buffID) then
-            hasFlaskOrElixir = true
-            break
-        end
-    end
-
-    -- If no flask, check battle elixir as alternative
-    if not hasFlaskOrElixir then
-        for buffID in pairs(CC.CONSUMABLES.battleElixir.buffs) do
-            if CC:UnitHasBuff(unit, buffID) then
-                hasFlaskOrElixir = true
-                break
-            end
-        end
-    end
-
-    -- Check food
-    for buffID in pairs(CC.CONSUMABLES.food.buffs) do
-        if CC:UnitHasBuff(unit, buffID) then
-            hasFood = true
-            break
-        end
-    end
-
-    return hasFlaskOrElixir and hasFood
+    return GuildOS.ConsumableChecker:RaidVerdict(unit, key)
 end
 
 -- A boss name the client keeps secret (Midnight's Secret Values, ADR-0026) can be passed along but not
@@ -1108,11 +1079,13 @@ function RaidTracker:UpdateAttendanceForLockout(lockout)
         if lastSnap and lastSnap.members and not lastSnap.members[playerKey] then
             score = score - penalties.LEFT_EARLY
         end
+        -- A snapshot whose consumables the client could not read (retail, nil) counts for the player:
+        -- unknown is never missing, and the site counts the same way (CompanionExport's chits; #187).
         local consumeChecks, consumeHits = 0, 0
         for _, snap in ipairs(allSnapshots) do
             if snap.members and snap.members[playerKey] then
                 consumeChecks = consumeChecks + 1
-                if snap.members[playerKey].hasConsumes then
+                if snap.members[playerKey].hasConsumes ~= false then
                     consumeHits = consumeHits + 1
                 end
             end
