@@ -92,7 +92,9 @@ local function load(retail)
   function GetGuildInfo() return "Jardim Escola", "Officer", 1, "Azralon" end
   function GetRealmName() return retail and "Tol Barad" or "Classic Beta PvE" end
   function GetNormalizedRealmName() return retail and "TolBarad" or "ClassicBetaPvE" end
-  function GetNumGuildMembers() return 0 end
+  local roster = { "Chehul-TolBarad", "Ana-Gallywix", "Ana-TolBarad" }
+  function GetNumGuildMembers() return #roster end
+  function GetGuildRosterInfo(i) return roster[i] end
   function UnitName() return "Chehul" end
   function UnitClass() return "Druid", "DRUID", 11 end
   C_Item = { GetItemInfo = function(item)
@@ -175,9 +177,14 @@ check(sent[#sent].t == "WL" and sent[#sent].data.name == "Chehul-TolBarad", "my 
 check(GuildOS.db.guildWishlists["chehul-tolbarad"] ~= nil, "and is kept under it")
 
 -- Guildmates' lists are kept by who sent them, never by the name inside.
-W:HandleWishlistBroadcast("Ana-Gallywix", { name = "Bob", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } })
-W:HandleWishlistBroadcast("Ana", { name = "Ana", class = "PRIEST", wishlist = { { itemId = 250001, order = 2 } } })
-W:HandleWishlistBroadcast("Chehul-TolBarad", { name = "Chehul", class = "DRUID", wishlist = {} })
+W:HandleWishlistBroadcast("Ana-Gallywix", { name = "Bob", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } }, "GUILD")
+W:HandleWishlistBroadcast("Ana", { name = "Ana", class = "PRIEST", wishlist = { { itemId = 250001, order = 2 } } }, "GUILD")
+W:HandleWishlistBroadcast("Chehul-TolBarad", { name = "Chehul", class = "DRUID", wishlist = {} }, "GUILD")
+-- Only a guildmate's list, and only over GUILD.
+W:HandleWishlistBroadcast("Mallory-Nemesis", { name = "Mallory", class = "ROGUE", wishlist = { { itemId = 250001, order = 1 } } }, "GUILD")
+W:HandleWishlistBroadcast("Ana-TolBarad", { name = "Ana", class = "PRIEST", wishlist = { { itemId = 250002, order = 1 } } }, "WHISPER")
+check(GuildOS.db.guildWishlists["mallory-nemesis"] == nil, "a list from outside the guild is not kept")
+check(GuildOS.db.guildWishlists["ana-tolbarad"].wishlist[1].itemId == 250001, "nor one that came by whisper")
 local gw = GuildOS.db.guildWishlists
 check(gw["ana-gallywix"] and gw["ana-gallywix"].name == "Ana-Gallywix" and gw.bob == nil,
   "a list is filed under its sender's whole name, not the one it claims")

@@ -411,8 +411,9 @@ function Wishlist:BroadcastMyWishlist()
     end
 end
 
--- Handle an incoming wishlist broadcast from another guild member.
-function Wishlist:HandleWishlistBroadcast(sender, data)
+-- Handle an incoming wishlist broadcast from another guild member. `channel`: how it arrived (retail
+-- takes it only over GUILD, issue #185; Forever and Anniversary as before, from anywhere).
+function Wishlist:HandleWishlistBroadcast(sender, data, channel)
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
@@ -422,11 +423,13 @@ function Wishlist:HandleWishlistBroadcast(sender, data)
     local wishlist = payload.wishlist
     if not wishlist or type(wishlist) ~= "table" then return end
     -- On retail the list is its sender's, by their whole key: never the name it carries, so nobody
-    -- files a list under a guildmate's name, and namesakes on connected realms stay apart (issue #185).
+    -- files a list under a guildmate's name, and namesakes on connected realms stay apart; and only a
+    -- guildmate's, over GUILD, so nobody outside the guild shows up as one (issue #185).
     local me = GuildOS.Compat.PlayerName() or ""
     if isRetail then
-        if type(sender) ~= "string" or sender == "" then return end
+        if type(sender) ~= "string" or sender == "" or channel ~= "GUILD" then return end
         name, me = GuildOS:KeyOfRosterName(sender), GuildOS:GetPlayerKey(me)
+        if not GuildOS:IsGuildmate(name) then return end
     end
     if type(name) ~= "string" then return end
 

@@ -241,7 +241,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         self:HandleVersionCheck(sender, data)
     elseif msgType == "WL" then
         if GuildOS.Wishlist then
-            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data)
+            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data, channel)
         end
     elseif msgType == "LP" then
         -- Officer-set priorities, stored by everyone: only an officer's, over GUILD, replace them.
