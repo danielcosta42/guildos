@@ -808,3 +808,5 @@ L["Guild OS shares your gear, professions, spec and wishlist with guildmates run
 L["Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."] = "Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."
 -- A rolagem do servidor no conselho de loot (issue #185).
 L["Chat is locked during the encounter: answer once it ends."] = "Chat is locked during the encounter: answer once it ends."
+-- A resposta de quem recebeu a entrega fica (issue #185).
+L["The item was awarded to you: your answer stands."] = "The item was awarded to you: your answer stands."

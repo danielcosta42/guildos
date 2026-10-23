@@ -318,24 +318,26 @@ someone who was eligible for it. The guild's distribution tools come back built 
     unknown.
   - *Wire.* Addon messages on `GuildOSTC` over RAID: `O|id|free|secs|drop|link`, `A|id|choice|link`, `W|id|winner`,
     `X|id`, `D|id|winner|by`. Only a guildmate's message is read (a pickup raid's strangers have no say), a link only
-    when it is one item link (no control character; inside the brackets no `|` but a quality atlas, no bracket); a
-    secret one is never touched; Midnight holds what is sent during an encounter until the lockdown lifts.
+    when it is one item link (no control character; a link's own colour; inside the brackets no `|` but the
+    crafted-quality atlas at a chat icon's size, no bracket); a secret one is never touched; Midnight holds what is sent during an encounter until the lockdown lifts.
   - *Answers.* Need, Greed or Pass, with the item worn in that slot (the lower of a pair). A first Need or Greed rolls
-    the server's `/roll 1-100` after the answer, and every client binds that player's next 1-100 roll line seen within
+    the server's `/roll 1-100` once the answer has really gone out (not while held or retried), and every client binds that player's next 1-100 roll line seen within
     10 seconds to it; a roll before the answer, of another range or late is nobody's, a changed answer keeps its roll.
     No answer in a chat lockdown (the roll line is secret then): the player is told to answer after the encounter. The
     window ranks Need, Greed, Pass, then by the guild's system (DKP points, wishlist place), then the roll, an answer
     with no roll seen last, and shows who has the item on a wishlist, points and attendance.
   - *Award.* An officer awards it; under the free roll its holder may too (the offer says so, and each client believes it
     only when the guild's loot system it holds is the free roll). Only to a guildmate who answered Need or Greed; never
-    a Pass. The winner is announced in raid chat (printed instead in a lockdown).
+    a Pass. Once an award names a player, their answer stands (a change is refused on their client and ignored on
+    the others), so the trade still records. The winner is announced in raid chat (printed instead in a lockdown).
   - *Trade.* When the holder trades the offered item to the winner (`TRADE_SHOW`, `TRADE_PLAYER_ITEM_CHANGED`,
     `TRADE_ACCEPT_UPDATE`, then "Trade complete.", however long the winner takes; the item must be the offered one), the award goes into
     the loot history: the holder's row of that drop becomes the winner's (`awarded`, `from`), or a new row on a client
-    that missed the drop, stamped with the drop's time the offer carried, so every client writes the same row. The
+    that missed the drop, stamped with the drop's time the offer carried (believed only inside the trade window, else
+    the offer's time), so every client writes the same row. The
     holder's `D` tells every client the award as the holder saw it (winner and who gave it), believed only for an
-    award that client saw given (a `W` from the giver naming that winner, or the free roll's holder) to a guildmate who
-    asked for it; the officer named there charges it under DKP, once, for the award that officer gave. Traded to
+    award that client saw given (a `W` from the giver naming that winner; or the free roll's holder, to a guildmate who
+    asked for it), to somebody still in the guild; the officer named there charges it under DKP, once, for the award that officer gave. Traded to
     anyone else, nothing is recorded, the holder is told so and the offer is withdrawn.
 - **Wishlist sync** on retail only from a guildmate over GUILD; a guildmate on another realm reads with it.
 - **Still absent:** the loot master (no Master Loot) and soft reserves: softres.it's page says "Soft-reserves for your

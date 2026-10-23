@@ -1976,3 +1976,5 @@ L["Your guild hands out loot outside Guild OS (External / Off)."] = "你的公�
 L["[Loot] %s goes to %s: %s trades it to them."] = "[战利品] %s归%s：由%s交易。"
 -- A rolagem do servidor no conselho de loot (issue #185).
 L["Chat is locked during the encounter: answer once it ends."] = "首领战期间聊天被锁定：战斗结束后再回应。"
+-- A resposta de quem recebeu a entrega fica (issue #185).
+L["The item was awarded to you: your answer stands."] = "物品已分配给你：你的回应保持不变。"

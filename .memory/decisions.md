@@ -989,8 +989,9 @@ verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
   from their bags (`/gos offer [item]`, the council's Offer buttons, the Offer button on their own recent row of the loot
   history; Settings' quick access opens the council for every member). The offer goes to the raid on its own prefix
   (`GuildOSTC`: `O|id|free|secs|drop|link`, `A|id|choice|link`, `W|id|winner`, `X|id`, `D|id|winner|by`); only a
-  guildmate's message over RAID is read, and a link only when it is one item link: no control character, and inside the
-  brackets no `|` but retail's quality atlas (`|A...|a`) and no bracket, since a link is printed, put on a tooltip,
+  guildmate's message over RAID is read, and a link only when it is one item link: no control character, a link's own
+  colour (`|cffRRGGBB` or retail's `|cnIQn:`), and inside the brackets no `|` but the crafted-quality atlas
+  (`|A:Professions-ChatIcon-Quality-...|a`, at a chat icon's size) and no bracket, since a link is printed, put on a tooltip,
   relayed to raid chat and stored (and uploaded) as an uncached item's name. Guildmates answer Need, Greed or Pass with
   the item they wear in that slot (the lower of a pair). The council ranks the answers Need, Greed, Pass, then by the
   guild's system (DKP points, wishlist place), then the server's roll; it shows who wished for the item (by name, with
@@ -998,17 +999,20 @@ verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
 - **Who awards.** An officer, or the offer's holder when it was made under the free roll: the holder's client says so on
   the offer, and every client believes it only when the guild's loot system it holds is the free roll, so no holder
   makes their own item theirs to award. Only to a guildmate who answered Need or Greed (an `A` this client saw), never
-  a Pass. Each awarder's latest award is kept per offer (`awards[by] = winner`); the last one shows. The winner is
+  a Pass. Once an award a client saw names a player, that player's answer stands there: a later change is refused on
+  their client (they are told so) and ignored on every other, so the trade's `D` still finds what the award was
+  given for. Each awarder's latest award is kept per offer (`awards[by] = winner`); the last one shows. The winner is
   announced in raid chat.
 - **The trade.** When the holder trades the item to the winner (`TRADE_SHOW`, `TRADE_PLAYER_ITEM_CHANGED`,
   `TRADE_ACCEPT_UPDATE`, then "Trade complete." in `UI_INFO_MESSAGE` however long the other player took, and the item
   in the window must be the offered one: this link, else the same item id), the award is recorded:
   `LootTracker:RecordTradeAward` turns the holder's row of that drop into the winner's (`awarded`, `from`), or adds one
   on a client that missed the drop, stamped either way with the drop's time the offer carried (`drop`, the holder's own
-  history; the offer's time when it has none), so every client writes the same row and the site keeps one. The holder's
+  history; the offer's time when it has none, and on a receiving client also when the holder's figure falls outside the
+  trade window it could have come from, two hours and a minute back to now), so every client writes the same row and the site keeps one. The holder's
   `D` tells every other client the award as the holder saw it, winner and who gave it. **A `D` is believed only for an
-  award this client saw given** (a `W` from `by` naming that winner, or, under a free roll, `by` the holder), to a
-  guildmate who answered Need or Greed and is still in the guild: before this, any raid guildmate could send an offer and
+  award this client saw given** (a `W` from `by` naming that winner, given for a Need or Greed that then stood; or,
+  under a free roll, `by` the holder, to a guildmate who answered Need or Greed), to somebody still in the guild: before this, any raid guildmate could send an offer and
   a `D` naming an officer as the giver and have that officer's client charge a guildmate's DKP and every client write
   them a loot row. Every client then records that one award, whichever it saw last, so two officers awarding at once
   charge once: the officer named in `D`, and only for the award that client gave (`awards[me] == winner`), under DKP
@@ -1021,8 +1025,9 @@ verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
   `BIND_TRADE_TIME_REMAINING` with a duration. `Compat.TradeTimeLeft` finds the line by its type (any language) and
   `Compat.TradeSeconds` reads the duration with the client's own `INT_SPELL_DURATION_*` / `D_*` strings, every plural
   form. Unreadable, the holder can still offer: the offer runs at most two hours and shows the time as unknown.
-- **The roll** is the server's. A player's first Need or Greed on an offer sends the answer, then `/roll 1-100`
-  (`Compat.RandomRoll`); every client binds that player's next 1-100 roll line (`CHAT_MSG_SYSTEM`, read with
+- **The roll** is the server's. A player's first Need or Greed on an offer sends the answer, then, once the answer has
+  really gone out (`Compat.SendAddonMessageNow`'s `onSent`: not while a lockdown's queue holds it or a throttle retries
+  it, or the roll's line would reach the raid first and bind nothing), `/roll 1-100` (`Compat.RandomRoll`); every client binds that player's next 1-100 roll line (`CHAT_MSG_SYSTEM`, read with
   `RANDOM_ROLL_RESULT` by `GuildOS:MatchFormat`, as the loot master reads rolls) seen within 10 seconds after the answer to
   it, the earliest waiting answer first when one player answers several offers. A roll seen before the answer, of
   another range or after the wait is nobody's, and a changed answer keeps its roll, so nobody fishes for a better one;

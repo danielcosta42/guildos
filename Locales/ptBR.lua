@@ -2161,3 +2161,5 @@ L["Your guild hands out loot outside Guild OS (External / Off)."] = "Sua guilda 
 L["[Loot] %s goes to %s: %s trades it to them."] = "[Loot] %s vai para %s: %s faz a troca."
 -- A rolagem do servidor no conselho de loot (issue #185).
 L["Chat is locked during the encounter: answer once it ends."] = "O chat está bloqueado durante o encontro: responda quando ele acabar."
+-- A resposta de quem recebeu a entrega fica (issue #185).
+L["The item was awarded to you: your answer stands."] = "O item foi entregue a você: sua resposta fica como está."

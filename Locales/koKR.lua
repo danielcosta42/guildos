@@ -1976,3 +1976,5 @@ L["Your guild hands out loot outside Guild OS (External / Off)."] = "길드가 G
 L["[Loot] %s goes to %s: %s trades it to them."] = "[전리품] %s → %s: %s 님이 거래합니다."
 -- A rolagem do servidor no conselho de loot (issue #185).
 L["Chat is locked during the encounter: answer once it ends."] = "보스전 중에는 채팅이 잠겨 있습니다: 전투가 끝난 뒤 응답하세요."
+-- A resposta de quem recebeu a entrega fica (issue #185).
+L["The item was awarded to you: your answer stands."] = "아이템이 배정되었습니다: 응답은 그대로 유지됩니다."

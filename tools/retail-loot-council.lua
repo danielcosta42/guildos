@@ -521,6 +521,81 @@ local open = {}
 for _, x in ipairs(TC:OpenOffers()) do open[x.id] = true end
 check(not open[id5] and TC:Get(id5).closed, "an offer whose trade window closed is over")
 
+-- ── 6b. An answer an award names stands; the roll follows the answer out; the holder's word on time ─
+GuildOS.db.settings.lootSystem = "dkp"
+GuildOS.db.lootHistory = {}
+-- Ana asked, I awarded her; then she clicks Pass. Her answer stands, and Bob's trade records and charges.
+incoming(("O|%s|0|0|%d|%s"):format("65A1B2C30030", NOW - 100, HELM), "Bob-TolBarad")
+local o30 = TC:Get("65A1B2C30030")
+incoming("A|65A1B2C30030|N|", "Ana-Gallywix")
+TC:Award("65A1B2C30030", "Ana-Gallywix")
+incoming("A|65A1B2C30030|P|", "Ana-Gallywix")
+check(o30.answers["Ana-Gallywix"].choice == "N", "once an award names a player, their answer stands")
+local anaPts = GuildOS.Points:Get("Ana-Gallywix")
+incoming("D|65A1B2C30030|Ana-Gallywix|Chehul-TolBarad", "Bob-TolBarad")
+check(o30.done and GuildOS.db.lootHistory[1] and GuildOS.db.lootHistory[1].playerKey == "Ana-Gallywix"
+  and GuildOS.Points:Get("Ana-Gallywix") == anaPts - 20, "so the trade of her award still records, and is charged")
+-- Awarded to me by another officer: my own Pass is refused, and says why.
+incoming(("O|%s|0|0|%d|%s"):format("65A1B2C30031", NOW - 100, CAPE), "Bob-TolBarad")
+TC:Answer("65A1B2C30031", "N")
+incoming("W|65A1B2C30031|Chehul-TolBarad", "Off-TolBarad")
+local sentBefore = #addon
+printed = {}
+TC:Answer("65A1B2C30031", "P")
+check(TC:Get("65A1B2C30031").answers["Chehul-TolBarad"].choice == "N" and #addon == sentBefore
+  and said("The item was awarded to you"), "my answer stands once I am awarded, and I am told so")
+-- A holder naming themselves as the giver on a council offer is believed by nobody.
+incoming(("O|%s|0|0|%d|%s"):format("65A1B2C30032", NOW - 100, CAPE), "Bob-TolBarad")
+incoming("A|65A1B2C30032|N|", "Ana-Gallywix")
+incoming("D|65A1B2C30032|Ana-Gallywix|Bob-TolBarad", "Bob-TolBarad")
+check(not TC:Get("65A1B2C30032").done, "a council offer's holder cannot give the award themselves")
+-- The holder's drop time is believed only inside the trade window it could have come from.
+for i, drop in ipairs({ 0, NOW + 3600, 99999999999, NOW - 7200 - 61 }) do
+  incoming(("O|65A1B2C3004%d|0|0|%d|%s"):format(i, drop, CAPE), "Bob-TolBarad")
+  check(TC:Get(("65A1B2C3004%d"):format(i)).dropTs == NOW, "a drop time outside the window is the offer's: " .. drop)
+end
+incoming(("O|65A1B2C30045|0|0|%d|%s"):format(NOW - 7200, CAPE), "Bob-TolBarad")
+check(TC:Get("65A1B2C30045").dropTs == NOW - 7200, "one inside it is kept")
+-- One item link: the colour a link's own, the quality atlas at a chat icon's size, no escapes.
+local LINKS = {
+  { false, "|cnIQ4:|Hitem:1|h[x |A:Professions-ChatIcon-Quality-Tier3:2000:2000::1|a]|h|r" },
+  { false, "|cFAKE TEXT BEFORE THE LINK |Hitem:1|h[x]|h|r" },
+  { false, "|cnIQ4:|Hitem:1|h[a||b]|h|r" },
+  { false, "|cnIQ4:|Hitem:1|h[a|nb]|h|r" },
+  { false, "|cnIQ4:|Hitem:1|h[x |A:SomeHugeArt:17:15::1|a]|h|r" },
+  { true, "|cffa335ee|Hitem:250001::::::::90:::::|h[Voidforged Helm]|h|r" },
+  { true, CRAFTED },
+}
+for i, case in ipairs(LINKS) do
+  local oid = ("65A1B2C3005%d"):format(i)
+  incoming(("O|%s|0|0|%d|%s"):format(oid, NOW, case[2]), "Bob-TolBarad")
+  check((TC:Get(oid) ~= nil) == case[1], (case[1] and "an item link is taken: " or "not one item link: ") .. case[2])
+end
+-- The earliest answer still waiting takes a player's roll; a secret roll line is nobody's.
+incoming(("O|%s|0|0|%d|%s"):format("65A1B2C30060", NOW, CAPE), "Bob-TolBarad")
+incoming(("O|%s|0|0|%d|%s"):format("65A1B2C30061", NOW, HELM), "Bob-TolBarad")
+incoming("A|65A1B2C30060|N|", "Cid-TolBarad")
+incoming("A|65A1B2C30061|N|", "Cid-TolBarad")
+local secretLine = RANDOM_ROLL_RESULT:format("Cid", 50, 1, 100)
+SECRET_STRS[secretLine] = true
+fire("CHAT_MSG_SYSTEM", secretLine)
+SECRET_STRS[secretLine] = nil
+check(TC:Get("65A1B2C30060").answers["Cid-TolBarad"].roll == nil, "a roll line the client keeps secret is nobody's")
+rolled("Cid", 11)
+rolled("Cid", 22)
+check(TC:Get("65A1B2C30060").answers["Cid-TolBarad"].roll == 11 and TC:Get("65A1B2C30061").answers["Cid-TolBarad"].roll == 22,
+  "one player's rolls go to their waiting answers in the order they answered")
+-- My roll waits for my answer to go out: held behind what a lockdown kept, it rolls when that is sent.
+incoming(("O|%s|0|0|%d|%s"):format("65A1B2C30070", NOW, CAPE), "Bob-TolBarad")
+lockdown = true
+C.SendAddonMessage("GuildOS", "some sync", "GUILD")
+lockdown = false
+local nr, na = #rolls, #addon
+TC:Answer("65A1B2C30070", "N")
+check(#rolls == nr and #addon == na, "an answer held behind another message has not gone out, and has not rolled")
+C.FlushHeldMessages()
+check(addon[#addon].text == "A|65A1B2C30070|N|" and #rolls == nr + 1, "once it goes out, the roll follows it")
+
 -- ── 7. Midnight's lockdown holds what is sent, and an answer waits for it ─
 resetBags()
 GuildOS.db.settings.lootSystem = nil

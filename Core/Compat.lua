@@ -1183,7 +1183,11 @@ end
 local send
 
 local function onResult(msg, didSend, result)
-    if didSend or result == SUCCESS then return end
+    if didSend or result == SUCCESS then
+        -- What has to follow the message, once it is really out (the loot council's /roll, issue #185).
+        if msg.onSent then pcall(msg.onSent) end
+        return
+    end
     if result == LOCKDOWN then return hold(msg) end
     -- ChatThrottleLib re-queues AddonMessageThrottle on its own path; a message sent now retries it here.
     local throttled = result == CHANNEL_THROTTLE or (msg.now and result == ADDON_THROTTLE)
@@ -1252,8 +1256,11 @@ function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
 end
 
 -- Send an addon message now, past ChatThrottleLib's queue, with the same results: loot, whose timers start at send.
-function Compat.SendAddonMessageNow(prefix, text, channel, target)
-    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1 })
+-- `onSent`, optional, runs once the message has really gone out: not while a lockdown holds it or a
+-- throttle retries it, and never for one that is dropped.
+function Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)
+    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1,
+            onSent = onSent })
 end
 
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the
