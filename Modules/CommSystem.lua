@@ -67,8 +67,12 @@ function CommSystem:Initialize()
                         GuildOS.Recruitment:BroadcastStatus(true)
                     end)
                 end
-                -- And the guild's officer threshold, for a client that missed the change (issue #81).
-                C_Timer.After(15, function() GuildOS:PublishOfficerMaxRank() end)
+                -- And the guild's officer threshold, for a client that missed the change (issue #81),
+                -- and on retail its loot system (issue #185).
+                C_Timer.After(15, function()
+                    GuildOS:PublishOfficerMaxRank()
+                    GuildOS:PublishLootSystem()
+                end)
             end
         end
     end)
@@ -237,7 +241,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         self:HandleVersionCheck(sender, data)
     elseif msgType == "WL" then
         if GuildOS.Wishlist then
-            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data)
+            GuildOS.Wishlist:HandleWishlistBroadcast(sender, data, channel)
         end
     elseif msgType == "LP" then
         -- Officer-set priorities, stored by everyone: only an officer's, over GUILD, replace them.
@@ -446,9 +450,12 @@ function CommSystem:HandleRequest(_sender, _data)
             end)
         end
 
-        -- And the guild's officer threshold (issue #81)
+        -- And the guild's officer threshold (issue #81), and on retail its loot system (issue #185)
         if GuildOS:IsOfficer() then
-            C_Timer.After(3, function() GuildOS:PublishOfficerMaxRank() end)
+            C_Timer.After(3, function()
+                GuildOS:PublishOfficerMaxRank()
+                GuildOS:PublishLootSystem()
+            end)
         end
 
         -- Share the guild recruitment config so alts/late-loggers reliably get

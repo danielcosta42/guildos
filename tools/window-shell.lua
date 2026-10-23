@@ -503,11 +503,16 @@ officer = true
 f:UpdateTabVisibility()
 
 -- A tab this client does not have says so, not that it is officer-only (issue #177).
+-- Every tab is retail's since issue #185, so one is marked `retail = false` for the check.
 GuildOS.Client.isRetail = true
+UI:GetFeature("dkp").retail = false
 printed = {}
 check(not UI:OpenWindow("dkp") and said("Not available on this client."), "a tab retail does not have says it is not on this client")
--- The loot tab is retail's since issue #183: the history and the equity of personal loot.
-check(not UI:IsFeatureAbsent(UI:GetFeature("loot")), "the loot tab is on retail (issue #183)")
+UI:GetFeature("dkp").retail = nil
+-- The loot tab is retail's since issue #183, the DKP and wishlist tabs since issue #185.
+for _, id in ipairs({ "loot", "dkp", "wishlist" }) do
+  check(not UI:IsFeatureAbsent(UI:GetFeature(id)), "the " .. id .. " tab is on retail")
+end
 GuildOS.Client.isRetail = nil
 
 do

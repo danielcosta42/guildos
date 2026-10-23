@@ -2062,9 +2062,8 @@ function ShowRowTooltip(row)
     end
 
     -- Wishlist info (native)
-    if GuildOS.db.guildWishlists then
-        local gKey = strlower(data.name or "")
-        local wData = GuildOS.db.guildWishlists[gKey]
+    if GuildOS.db.guildWishlists and GuildOS.Wishlist then
+        local wData = GuildOS.Wishlist:ListFor(data.key, data.name)   -- by the whole key on retail (#185)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")
@@ -2292,7 +2291,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             local attStr = "-"
             local attR, attG, attB = 0.35, 0.35, 0.35
             if GuildOS.RaidTracker then
-                local pKey = GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
+                -- On retail a list's name is its owner's whole key already (issue #185).
+                local pKey = GuildOS.Client.isRetail and charData.name
+                    or GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
                 local attVal = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey) or 0
                 if attVal > 0 then
                     attStr = attVal .. "%"

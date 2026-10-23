@@ -609,8 +609,8 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Wishlist (nativa)
     ----------------------------------------------------------------
-    local guildKey = strlower(data.name or "")
-    local wishData = GuildOS.db.guildWishlists and GuildOS.db.guildWishlists[guildKey]
+    -- By the whole key on retail, where a list is filed under it (issue #185).
+    local wishData = GuildOS.Wishlist and GuildOS.Wishlist:ListFor(playerKey, data.name)
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
         local wishHeader = L["WISHLIST  --  "] .. #wishData.wishlist .. L[" item(s)"]

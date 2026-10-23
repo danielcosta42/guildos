@@ -10,7 +10,7 @@ local UI = GuildOS.UI
 local L  = GuildOS.L
 
 -- Tabs, in window order ----------------------------------------------
--- `retail = false`: not on retail (ADR-0026), where loot is personal and nothing hands it out.
+-- `retail = false`: not on retail (ADR-0026), which has no Master Loot: the loot master (issue #185).
 UI:RegisterFeature({
     id = "home", label = L["Now"], order = 5, core = true,
     build = function(c, win) GuildOS:CreateNowPanel(c, win) end,
@@ -34,13 +34,13 @@ UI:RegisterFeature({
 })
 
 UI:RegisterFeature({
-    id = "dkp", label = L["DKP"], order = 35, retail = false,
+    id = "dkp", label = L["DKP"], order = 35,   -- on retail too since issue #185
     condition = function() return GuildOS:LootSystemShowsDKP() end,
     build = function(c, win) GuildOS:CreateDKPPanel(c, win) end,
 })
 
 UI:RegisterFeature({
-    id = "wishlist", label = L["Wishlist"], order = 38, retail = false,
+    id = "wishlist", label = L["Wishlist"], order = 38,   -- on retail too since issue #185
     condition = function() return GuildOS:IsOfficer() and GuildOS:LootSystemShowsWishlist() end,
     build = function(c, win) GuildOS:CreateWishlistGuildPanel(c, win) end,
 })
