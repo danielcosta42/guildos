@@ -1974,3 +1974,5 @@ L["You offered %s to the raid."] = "공격대에 %s 아이템을 내놓았습니
 L["You won %s: %s will trade it to you."] = "%s 아이템을 얻었습니다: %s 님이 거래해 줄 것입니다."
 L["Your guild hands out loot outside Guild OS (External / Off)."] = "길드가 Guild OS 밖에서 전리품을 분배합니다 (외부 / 끔)."
 L["[Loot] %s goes to %s: %s trades it to them."] = "[전리품] %s → %s: %s 님이 거래합니다."
+-- A rolagem do servidor no conselho de loot (issue #185).
+L["Chat is locked during the encounter: answer once it ends."] = "보스전 중에는 채팅이 잠겨 있습니다: 전투가 끝난 뒤 응답하세요."

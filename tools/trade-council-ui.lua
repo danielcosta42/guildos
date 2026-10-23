@@ -124,6 +124,9 @@ function IsInRaid() return true end
 function UnitName() return "Chehul" end
 function UnitClass() return "Druid", "DRUID", 11 end
 function GetInventoryItemLink() return nil end
+local rolls = 0
+function RandomRoll() rolls = rolls + 1 end
+RANDOM_ROLL_RESULT = "%s rolls %d (%d-%d)"
 local function link(id, name) return ("|cnIQ4:|Hitem:%d::::::::90:::::|h[%s]|h|r"):format(id, name) end
 local HELM, CAPE, RING = link(250001, "Voidforged Helm"), link(250003, "Gloomweave Cloak"), link(240011, "Old Band")
 local BAGS = { [0] = { { itemID = 250001, hyperlink = HELM, quality = 4, isBound = true } } }
@@ -181,7 +184,7 @@ end
 
 -- ── 1. A guildmate's offer opens the window on it ─────────────────────
 local id = "65A1B2C30001"
-TC:OnAddonMessage("GuildOSTC", ("O|%s|0|5400|%s"):format(id, CAPE), "RAID", "Ana-Gallywix")
+TC:OnAddonMessage("GuildOSTC", ("O|%s|0|5400|%d|%s"):format(id, NOW - 60, CAPE), "RAID", "Ana-Gallywix")
 local f = _G.GuildOSTradeCouncil
 check(f and f:IsShown(), "a new offer opens the loot council")
 local d = f.detail
@@ -200,9 +203,11 @@ TC:OnAddonMessage("GuildOSTC", ("A|%s|G|%s"):format(id, RING), "RAID", "Bob-TolB
 run(d.choiceButtons[1], "OnClick")
 check(addon[#addon] == ("A|%s|N|"):format(id), "my Need goes to the raid")
 local r1, r2 = d.rows[1], d.rows[2]
-check(r1:IsShown() and r1.name.text == "Chehul-TolBarad" and r1.answer.text == "Need", "my Need ranks first")
-check(r2.name.text == "Bob-TolBarad" and r2.answer.text == "Greed" and r2.worn.label.text == RING, "Bob's Greed, with what he wears")
-check(r1.roll.text == tostring(TC.Roll(id, "Chehul-TolBarad")), "with the roll every screen agrees on")
+check(r1:IsShown() and r1.name.text == "Chehul" and r1.answer.text == "Need", "my Need ranks first, named without my own realm")
+check(r2.name.text == "Bob" and r2.answer.text == "Greed" and r2.worn.label.text == RING, "Bob's Greed, with what he wears")
+check(rolls == 1 and r1.roll.text == "-", "my Need rolls the server's /roll; until its line is seen there is no roll")
+TC:OnSystemMessage("Chehul rolls 63 (1-100)")
+check(d.rows[1].roll.text == "63", "and when it is seen, the row shows it")
 check(not d.rows[3]:IsShown() and not d.noAnswers:IsShown(), "two answers, two rows")
 check(r1.award:IsShown() and r2.award:IsShown(), "an officer sees Award by each answer")
 run(r2.award, "OnClick")

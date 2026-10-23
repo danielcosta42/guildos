@@ -806,3 +806,5 @@ L["Your guild hands out loot outside Guild OS (External / Off)."] = "Your guild 
 L["[Loot] %s goes to %s: %s trades it to them."] = "[Loot] %s goes to %s: %s trades it to them."
 L["Guild OS shares your gear, professions, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."] = "Guild OS shares your gear, professions, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."
 L["Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."] = "Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."
+-- A rolagem do servidor no conselho de loot (issue #185).
+L["Chat is locked during the encounter: answer once it ends."] = "Chat is locked during the encounter: answer once it ends."

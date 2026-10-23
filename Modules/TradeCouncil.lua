@@ -2,20 +2,23 @@
 -- Guild OS - Trade Council (retail, issue #185)
 -- Retail has no Master Loot: every item is personal, and one that is still tradeable can be handed to
 -- someone who was eligible for it. A guildmate who received such an item offers it to the raid;
--- guildmates with Guild OS answer Need, Greed or Pass, with what they wear in that slot; an officer
--- (or, under the guild's free roll, the holder) awards it; and when the holder trades it to the
--- winner, the award goes into the loot history and, where the guild runs DKP, is charged.
+-- guildmates with Guild OS answer Need, Greed or Pass, with what they wear in that slot, and a Need or
+-- Greed rolls the server's /roll; an officer (or, under the guild's free roll, the holder) awards it;
+-- and when the holder trades it to the winner, the award goes into the loot history and, where the
+-- guild runs DKP, is charged by the officer who gave it.
 --
 -- Wire: addon messages on PREFIX over RAID, "|"-separated, an item link always last:
---   O|id|free|secs|link   an offer, from its holder (free: 1 under the free roll, believed only where the
---                         guild's loot system is the free roll; secs: the trade time the holder's client
---                         read, 0 when it could not)
---   A|id|choice|link      an answer, N, G or P, and the equipped item it would replace ("" for none)
---   W|id|winnerKey        an award, from an officer or, when the offer is free, its holder
---   X|id                  the offer withdrawn, by its holder or an officer
---   D|id|winner|by        the holder traded the item to the award's winner; `by` gave the award
--- Only a guildmate's message is read (a pickup raid's strangers have no say in the guild's loot), and
--- Midnight holds addon messages during an encounter, so offers go out after the boss (Compat).
+--   O|id|free|secs|drop|link  an offer, from its holder (free: 1 under the free roll, believed only where
+--                             the guild's loot system is the free roll; secs: the trade time the holder's
+--                             client read, 0 when it could not; drop: when the item dropped, as the
+--                             holder's history has it, the time every client stamps the award's row with)
+--   A|id|choice|link          an answer, N, G or P, and the equipped item it would replace ("" for none)
+--   W|id|winnerKey            an award, from an officer or, when the offer is free, its holder
+--   X|id                      the offer withdrawn, by its holder or an officer
+--   D|id|winner|by            the holder traded the item to the award's winner; `by` gave the award
+-- Only a guildmate's message is read (a pickup raid's strangers have no say in the guild's loot), a link
+-- only when it is one item link, and a holder's D only for an award this client saw given. Midnight
+-- holds addon messages during an encounter, so offers go out after the boss (Compat).
 ----------------------------------------------------------------------
 if not GuildOS.Client.isRetail then return end
 
@@ -31,7 +34,8 @@ local OFFER_TTL = 7200         -- seconds: a personal item can be traded for two
 TradeCouncil.OFFER_TTL = OFFER_TTL
 local EXPIRY_SLACK = 60        -- seconds: a trade time is read in whole minutes, so up to one more may be left
 local ROLL_MAX = 100
-local HASH_MOD = 2147483647    -- 2^31 - 1: keeps the roll's hash an exact integer in a double
+local ROLL_WAIT = 10           -- seconds after an answer in which its player's next /roll 1-100 is its roll
+local NO_ROLL = -1             -- ranks an answer whose roll was not seen after every one whose roll was
 local BAGS_LAST = 4            -- backpack 0 and four bags; the reagent bag holds no gear
 local MIN_QUALITY = 3          -- Rare: what the loot history keeps
 local NO_WISH = 999            -- the wishlist place of somebody who has not wished for the item
@@ -50,14 +54,15 @@ local SLOTS = {
 }
 
 ----------------------------------------------------------------------
--- Session state: GuildOS.State.tradeCouncil = { offers = { [id] = offer }, trade = { partner, items, at } }
--- An offer: { id, holder, link, itemId, free, expires, timeKnown, at, answers = { [key] = { choice,
--- equipped } }, award = { winner, by }, closed, done }. Lost on a reload, as a roll window is.
+-- Session state: GuildOS.State.tradeCouncil = { offers = { [id] = offer }, trade = { partner, items },
+-- seq }. An offer: { id, holder, link, itemId, free, dropTs, expires, timeKnown, at, answers = { [key] =
+-- { choice, equipped, roll, rolled, awaitAt, awaitSeq } }, awards = { [awarder] = winner },
+-- award = { winner, by }, closed, done }. Lost on a reload, as a roll window is.
 ----------------------------------------------------------------------
 local function state()
     local s = GuildOS.State.tradeCouncil
     if not s then
-        s = { offers = {} }
+        s = { offers = {}, seq = 0 }
         GuildOS.State.tradeCouncil = s
     end
     return s
@@ -69,10 +74,14 @@ local function itemIdOf(link)
     return type(link) == "string" and tonumber(link:match("|Hitem:(%d+)")) or nil
 end
 
--- Whether a link from another client is one whole item link and nothing else: it is printed, stored in
--- the loot history, sent to raid chat and shown on a tooltip, where a malformed one raises.
+-- Whether a link from another client is one item link and nothing else: it is printed, stored in the
+-- loot history (and uploaded), sent to raid chat and shown on a tooltip. No control character; inside
+-- the brackets no "|" but retail's quality atlas (|A...|a), and no bracket, so nothing else hides in it.
 local function wellFormed(link)
-    return type(link) == "string" and link:match("^|c[^|]*|Hitem:[%-%d:]+|h%[.-%]|h|r$") ~= nil
+    if type(link) ~= "string" or link:find("%c") then return false end
+    local name = link:match("^|c[^|]*|Hitem:[%-%d:]+|h%[(.-)%]|h|r$")
+    if not name then return false end
+    return not (name:gsub("|A[^|]*|a", "")):find("[|%[%]]")
 end
 
 local function refresh()
@@ -87,6 +96,12 @@ local function newId()
     return string.format("%X%04X", GetServerTime(), math.random(0, 0xFFFF))
 end
 
+local function newOffer(fields)
+    fields.answers, fields.awards = {}, {}
+    state().offers[fields.id] = fields
+    return fields
+end
+
 ----------------------------------------------------------------------
 -- Lifecycle
 ----------------------------------------------------------------------
@@ -95,6 +110,7 @@ function TradeCouncil:Initialize()
     Compat.RegisterAddonPrefix(self.PREFIX)
     local frame = CreateFrame("Frame")
     Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
+    Compat.RegisterEvent(frame, "CHAT_MSG_SYSTEM")       -- the server's /roll lines
     Compat.RegisterEvent(frame, "TRADE_SHOW")
     Compat.RegisterEvent(frame, "TRADE_PLAYER_ITEM_CHANGED")
     Compat.RegisterEvent(frame, "TRADE_ACCEPT_UPDATE")
@@ -106,6 +122,7 @@ end
 -- Route one event to its handler.
 function TradeCouncil:OnEvent(event, ...)
     if event == "CHAT_MSG_ADDON" then return self:OnAddonMessage(...) end
+    if event == "CHAT_MSG_SYSTEM" then return self:OnSystemMessage(...) end
     if event == "TRADE_SHOW" then return self:OnTradeShow() end
     if event == "TRADE_PLAYER_ITEM_CHANGED" or event == "TRADE_ACCEPT_UPDATE" then return self:SnapshotTrade() end
     if event == "UI_INFO_MESSAGE" then return self:OnInfoMessage(...) end
@@ -150,8 +167,14 @@ end
 
 -- Whether `key` may award the offer now: entitled, and the offer still open.
 local function mayAward(o, key, isLocal)
-    if not o or o.closed or o.done then return false end
+    if not o or o.closed then return false end
     return entitled(o, key, isLocal)
+end
+
+-- Whether a guildmate asked for the offered item: a Need or a Greed this client saw.
+local function askedFor(o, key)
+    local a = o.answers[key]
+    return a ~= nil and a.choice ~= "P"
 end
 
 -- Whether I may award the offer.
@@ -162,14 +185,6 @@ end
 -- Whether I may withdraw the offer: its holder or an officer.
 function TradeCouncil:MayIWithdraw(o)
     return o ~= nil and not o.closed and (self:IsMine(o) or GuildOS:IsOfficer())
-end
-
--- A roll every screen agrees on, with no message of its own: a hash of the offer and the player,
--- 1..100. Only the holder chooses an offer's id, and the holder holds the item anyway.
-function TradeCouncil.Roll(offerId, key)
-    local h, s = 5381, tostring(offerId) .. "|" .. tostring(key)
-    for i = 1, #s do h = (h * 33 + s:byte(i)) % HASH_MOD end
-    return h % ROLL_MAX + 1
 end
 
 -- A guildmate's place on their wishlist for an item, or nil.
@@ -206,8 +221,8 @@ function TradeCouncil:Context(key)
 end
 
 -- The answers in the order an awarder reads them: Need, Greed, Pass; within each, by the guild's loot
--- system (DKP: the most points; a wishlist: the highest place), then the roll.
--- Row: { key, choice, equipped, roll, wish, points }.
+-- system (DKP: the most points; a wishlist: the highest place), then the server's roll, an answer whose
+-- roll was not seen after those whose roll was. Row: { key, choice, equipped, roll, wish, points }.
 function TradeCouncil:Ranked(o)
     local rows = {}
     if not o then return rows end
@@ -215,7 +230,7 @@ function TradeCouncil:Ranked(o)
     local P = GuildOS.Points
     for key, a in pairs(o.answers) do
         rows[#rows + 1] = {
-            key = key, choice = a.choice, equipped = a.equipped, roll = self.Roll(o.id, key),
+            key = key, choice = a.choice, equipped = a.equipped, roll = a.roll,
             wish = self:WishOrder(o.itemId, key), points = P and P.GetDB and P:GetDB() and P:Get(key) or nil,
         }
     end
@@ -226,10 +241,52 @@ function TradeCouncil:Ranked(o)
         if sys == "wishlist" and (a.wish or NO_WISH) ~= (b.wish or NO_WISH) then
             return (a.wish or NO_WISH) < (b.wish or NO_WISH)
         end
-        if a.roll ~= b.roll then return a.roll > b.roll end
+        local ar, br = a.roll or NO_ROLL, b.roll or NO_ROLL
+        if ar ~= br then return ar > br end
         return a.key < b.key
     end)
     return rows
+end
+
+----------------------------------------------------------------------
+-- Answers and the server's roll
+----------------------------------------------------------------------
+
+-- Keep an answer. A player's first Need or Greed on an offer waits for their roll: the next /roll 1-100
+-- the client sees from them within ROLL_WAIT seconds (OnSystemMessage). A later answer keeps the roll it
+-- has or waits on, so a changed answer never rolls again. Returns the answer and whether it now waits.
+local function answered(o, key, choice, equipped)
+    local prev = o.answers[key] or {}
+    local a = { choice = choice, equipped = equipped, roll = prev.roll, rolled = prev.rolled,
+                awaitAt = prev.awaitAt, awaitSeq = prev.awaitSeq }
+    local fresh = false
+    if choice ~= "P" and not a.rolled then
+        local s = state()
+        s.seq = (s.seq or 0) + 1
+        a.rolled, a.awaitAt, a.awaitSeq, fresh = true, GetServerTime(), s.seq, true
+    end
+    o.answers[key] = a
+    return a, fresh
+end
+
+-- CHAT_MSG_SYSTEM: a /roll 1-100 is the roll of its player's earliest answer still waiting for one.
+-- A roll seen before the answer, of another range, or after the wait, is nobody's.
+function TradeCouncil:OnSystemMessage(message)
+    if Compat.IsSecret(message) or type(message) ~= "string" then return end
+    local args = GuildOS:MatchFormat(message, RANDOM_ROLL_RESULT or "%s rolls %d (%d-%d)")
+    local roll = args and tonumber(args[2])
+    if not (roll and args[1] and tonumber(args[3]) == 1 and tonumber(args[4]) == ROLL_MAX) then return end
+    local key = GuildOS:KeyOfRosterName(args[1])
+    local now, waiting = GetServerTime(), nil
+    for _, o in pairs(state().offers) do
+        local a = o.answers[key]
+        if a and a.awaitSeq and now - a.awaitAt <= ROLL_WAIT and (not waiting or a.awaitSeq < waiting.awaitSeq) then
+            waiting = a
+        end
+    end
+    if not waiting then return end
+    waiting.roll, waiting.awaitAt, waiting.awaitSeq = roll, nil, nil
+    refresh()
 end
 
 ----------------------------------------------------------------------
@@ -327,46 +384,55 @@ function TradeCouncil:Offer(link)
         end
     end
     local now = GetServerTime()
-    local o = {
-        id = newId(), holder = mine, link = held, itemId = itemIdOf(held),
-        free = GuildOS:GetLootSystem() == "rolls", at = now,
-        expires = now + (secs and secs + EXPIRY_SLACK or OFFER_TTL), timeKnown = secs ~= nil, answers = {},
-    }
-    local msg = string.format("O|%s|%d|%d|%s", o.id, o.free and 1 or 0, secs or 0, held)
+    local drop = GuildOS.LootTracker and GuildOS.LootTracker:DropOf(mine, itemIdOf(held))
+    local dropTs = tonumber(drop and drop.timestamp) or now
+    local id, free = newId(), GuildOS:GetLootSystem() == "rolls"
+    local msg = string.format("O|%s|%d|%d|%d|%s", id, free and 1 or 0, secs or 0, dropTs, held)
     if #msg > MAX_MESSAGE then
         GuildOS:Print(L["That item's link is too long to send."])
         return nil
     end
-    state().offers[o.id] = o
+    local o = newOffer({
+        id = id, holder = mine, link = held, itemId = itemIdOf(held), free = free, at = now, dropTs = dropTs,
+        expires = now + (secs and secs + EXPIRY_SLACK or OFFER_TTL), timeKnown = secs ~= nil,
+    })
     send(msg)
     GuildOS:Print(string.format(L["You offered %s to the raid."], held))
     if GuildOS.ShowTradeCouncil then GuildOS:ShowTradeCouncil(o.id) end
     return o
 end
 
--- Answer an offer: "N" (Need), "G" (Greed) or "P" (Pass), with what I wear in that slot.
+-- Answer an offer: "N" (Need), "G" (Greed) or "P" (Pass), with what I wear in that slot. My first Need
+-- or Greed rolls the server's /roll 1-100, after the answer, so every client binds it to the answer.
+-- Not in a chat lockdown, where the roll's line would be secret to everyone.
 function TradeCouncil:Answer(id, choice)
     local o = state().offers[id]
     if not o or o.closed or not self.CHOICES[choice] or self:IsMine(o) then return end
+    if Compat.InChatLockdown() then
+        GuildOS:Print(L["Chat is locked during the encounter: answer once it ends."])
+        return
+    end
     local equipped = choice ~= "P" and self:EquippedFor(o.link) or nil
     local msg = string.format("A|%s|%s|%s", id, choice, equipped or "")
     if #msg > MAX_MESSAGE then equipped, msg = nil, string.format("A|%s|%s|", id, choice) end
-    o.answers[me()] = { choice = choice, equipped = equipped }
+    local _, fresh = answered(o, me(), choice, equipped)
     send(msg)
+    if fresh then Compat.RandomRoll(1, ROLL_MAX) end
     refresh()
 end
 
 -- Award an offer to a guildmate who asked for it: an officer, or the holder of a free-roll offer.
 function TradeCouncil:Award(id, winner)
     local o = state().offers[id]
-    if not o or o.closed or o.done then return end
+    if not o or o.closed then return end
     if not self:MayIAward(o) then
         GuildOS:Print(L["Only an officer can award this item."])
         return
     end
-    local a = o.answers[winner]
-    if not a or a.choice == "P" then return end
-    o.award = { winner = winner, by = me() }
+    if not askedFor(o, winner) then return end
+    local mine = me()
+    o.awards[mine] = winner
+    o.award = { winner = winner, by = mine }
     send(string.format("W|%s|%s", id, winner))
     local line = string.format(L["[Loot] %s goes to %s: %s trades it to them."], o.link, winner, o.holder)
     if not Compat.SendChatMessage(line, CHANNEL) then GuildOS:Print(line) end
@@ -403,7 +469,7 @@ end
 function TradeCouncil:OnTradeShow()
     local name, realm = Compat.TradePartner()
     local partner = name and GuildOS:GetPlayerKey(name, realm)
-    state().trade = { partner = partner, items = {}, at = GetServerTime() }
+    state().trade = { partner = partner, items = {} }
     if not partner then return end
     local mine = me()
     for _, o in pairs(state().offers) do
@@ -418,7 +484,6 @@ function TradeCouncil:SnapshotTrade()
     local t = state().trade
     if not t then return end
     t.items = Compat.TradeItemLinks()
-    t.at = GetServerTime()
 end
 
 -- UI_INFO_MESSAGE: a trade that went through, with what I handed over in it. However long the other
@@ -452,8 +517,8 @@ function TradeCouncil:OnTradeDone(partner, links)
     refresh()
 end
 
--- An award whose trade went through: into the loot history, and charged by the officer who awarded
--- it when the guild runs DKP with a cost per item.
+-- An award whose trade went through: into the loot history at the drop's time, and charged by the officer
+-- who gave it, when that is this client and the award is the one it gave, under DKP with a cost per item.
 function TradeCouncil:Complete(o)
     if o.done then return end
     o.done, o.closed = true, true
@@ -461,12 +526,13 @@ function TradeCouncil:Complete(o)
     local session = RT and RT.trackingActive and RT.currentRaid
     if GuildOS.LootTracker then
         GuildOS.LootTracker:RecordTradeAward({
-            itemLink = o.link, itemId = o.itemId, holder = o.holder, winner = o.award.winner,
+            itemLink = o.link, itemId = o.itemId, holder = o.holder, winner = o.award.winner, timestamp = o.dropTs,
             raid = session and session.name or "", instanceID = session and session.instanceID or 0,
         })
     end
     GuildOS:Print(string.format(L["%s was traded to %s: the award is recorded."], o.link, o.award.winner))
-    if o.award.by == me() then self:Charge(o) end
+    local mine = me()
+    if o.award.by == mine and o.awards[mine] == o.award.winner then self:Charge(o) end
 end
 
 -- Charge the winner the guild's cost per item (DKP only; an officer's client, once).
@@ -488,39 +554,42 @@ local HANDLERS = {}
 -- An offer from its holder. It is a free roll only when the guild's loot system says so here too: a
 -- holder cannot make their own item theirs to award.
 function HANDLERS.O(from, rest)
-    local id, free, secs, link = rest:match("^(%x+)|([01])|(%d+)|(.+)$")
+    local id, free, secs, drop, link = rest:match("^(%x+)|([01])|(%d+)|(%d+)|(.+)$")
     if not id or not wellFormed(link) or state().offers[id] then return end
     local now = GetServerTime()
     secs = tonumber(secs) or 0
-    state().offers[id] = {
-        id = id, holder = from, link = link, itemId = itemIdOf(link), at = now,
+    newOffer({
+        id = id, holder = from, link = link, itemId = itemIdOf(link), at = now, dropTs = tonumber(drop) or now,
         free = free == "1" and GuildOS:GetLootSystem() == "rolls",
         expires = now + (secs > 0 and math.min(secs + EXPIRY_SLACK, OFFER_TTL) or OFFER_TTL), timeKnown = secs > 0,
-        answers = {},
-    }
-    GuildOS:Print(string.format(L["%s offers %s to the raid."], from, link))
+    })
+    GuildOS:Print(string.format(L["%s offers %s to the raid."], GuildOS:DisplayKey(from), link))
     if GuildOS.ShowTradeCouncil then GuildOS:ShowTradeCouncil(id) end
 end
 
--- An answer.
+-- An answer, never the holder's own.
 function HANDLERS.A(from, rest)
     local id, choice, equipped = rest:match("^(%x+)|([NGP])|(.*)$")
     local o = id and state().offers[id]
     if not o or o.closed or from == o.holder then return end
-    o.answers[from] = { choice = choice, equipped = wellFormed(equipped) and equipped or nil }
+    answered(o, from, choice, wellFormed(equipped) and equipped or nil)
     refresh()
 end
 
--- An award, from someone who may give it.
+-- An award, from someone who may give it, to a guildmate who asked for it. Each awarder's latest award
+-- is kept: a holder's D is believed only for one of them.
 function HANDLERS.W(from, rest)
     local id, winner = rest:match("^(%x+)|(.+)$")
     local o = id and state().offers[id]
-    if not o or not mayAward(o, from, false) or not GuildOS:IsGuildmate(winner) then return end
+    if not o or not mayAward(o, from, false) or not askedFor(o, winner) or not GuildOS:IsGuildmate(winner) then
+        return
+    end
+    o.awards[from] = winner
     o.award = { winner = winner, by = from }
     if o.holder == me() then
         GuildOS:Print(string.format(L["Trade %s to %s."], o.link, winner))
     elseif winner == me() then
-        GuildOS:Print(string.format(L["You won %s: %s will trade it to you."], o.link, o.holder))
+        GuildOS:Print(string.format(L["You won %s: %s will trade it to you."], o.link, GuildOS:DisplayKey(o.holder)))
     end
     refresh()
 end
@@ -528,20 +597,22 @@ end
 -- An offer withdrawn.
 function HANDLERS.X(from, rest)
     local o = state().offers[rest]
-    if not o or o.done or not (from == o.holder or GuildOS:IsOfficerByName(from)) then return end
+    if not o or not (from == o.holder or GuildOS:IsOfficerByName(from)) then return end
     o.closed = true
     refresh()
 end
 
--- The holder's trade to the winner, with the award as the holder saw it: winner and who gave it. Every
--- client records that one, whichever award it saw last, so two officers awarding at once charge once; it
--- counts when who gave it was entitled to. An offer this client already closed (its trade time read a
--- minute apart) still records.
+-- The holder's trade to the winner, with the award as the holder saw it: winner and who gave it. Believed
+-- only for an award this client saw given (a W from `by` naming that winner, or the holder's own under a
+-- free roll), to a guildmate who asked for it: a holder's word alone charges nobody and writes nobody a
+-- row. Every client then records that one award, whichever it saw last, so two officers awarding at once
+-- charge once. An offer this client already closed (its trade time read a minute apart) still records.
 function HANDLERS.D(from, rest)
     local id, winner, by = rest:match("^(%x+)|([^|]+)|([^|]+)$")
     local o = id and state().offers[id]
-    if not o or o.done or from ~= o.holder or not GuildOS:IsGuildmate(winner) then return end
-    if not entitled(o, by, by == me()) then return end
+    if not o or o.done or from ~= o.holder then return end
+    local seen = o.awards[by] == winner or (o.free and by == o.holder)
+    if not seen or not askedFor(o, winner) or not GuildOS:IsGuildmate(winner) then return end
     o.award = { winner = winner, by = by }
     TradeCouncil:Complete(o)
     refresh()

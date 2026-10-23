@@ -1974,3 +1974,5 @@ L["You offered %s to the raid."] = "你向團隊拿出了%s。"
 L["You won %s: %s will trade it to you."] = "你贏得了%s：%s會把它交易給你。"
 L["Your guild hands out loot outside Guild OS (External / Off)."] = "你的公會在 Guild OS 之外分配戰利品（外部 / 關閉）。"
 L["[Loot] %s goes to %s: %s trades it to them."] = "[戰利品] %s歸%s：由%s交易。"
+-- A rolagem do servidor no conselho de loot (issue #185).
+L["Chat is locked during the encounter: answer once it ends."] = "首領戰期間聊天被鎖定：戰鬥結束後再回應。"

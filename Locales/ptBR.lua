@@ -2159,3 +2159,5 @@ L["You offered %s to the raid."] = "Você ofereceu %s à raide."
 L["You won %s: %s will trade it to you."] = "Você ganhou %s: %s vai trocá-lo com você."
 L["Your guild hands out loot outside Guild OS (External / Off)."] = "Sua guilda distribui o loot fora do Guild OS (Externo / Desligado)."
 L["[Loot] %s goes to %s: %s trades it to them."] = "[Loot] %s vai para %s: %s faz a troca."
+-- A rolagem do servidor no conselho de loot (issue #185).
+L["Chat is locked during the encounter: answer once it ends."] = "O chat está bloqueado durante o encontro: responda quando ele acabar."

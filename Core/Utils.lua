@@ -253,6 +253,15 @@ function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
+-- How a guildmate's key reads on screen: the name alone when they are on this character's realm, the
+-- whole "Name-Realm" when they are not, so connected-realm namesakes never read as one person (#185).
+function GuildOS:DisplayKey(key)
+    if type(key) ~= "string" or key == "" then return "?" end
+    local name, realm = key:match("^([^-]+)%-(.+)$")
+    if name and realm == self:GetClientRealm() then return name end
+    return key
+end
+
 -- Whether somebody is on this guild's roster, by their whole key: a guildmate on a connected realm is,
 -- a namesake from a realm the guild is not on is not (issues #183, #185).
 function GuildOS:IsGuildmate(playerKey)

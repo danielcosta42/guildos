@@ -33,8 +33,9 @@ local function itemName(link)
     return (type(link) == "string" and link:match("|h%[(.-)%]|h")) or link or "?"
 end
 
-local function short(key)
-    return (key or "?"):match("^([^-]+)") or key
+-- A guildmate by name, with the realm when it is not this one: namesakes never read as one person.
+local function who(key)
+    return GuildOS:DisplayKey(key)
 end
 
 local function showLink(owner, link)
@@ -235,7 +236,7 @@ local function fillOffers(offers)
         r.id, r.link = o and o.id, o and o.link
         if o then
             paint(r, i, o.id == selected)
-            r.label:SetText(itemName(o.link) .. " |cff999999" .. short(o.holder) .. "|r")
+            r.label:SetText(itemName(o.link) .. " |cff999999" .. who(o.holder) .. "|r")
             r.time:SetText(o.award and "|cff33ff33" .. L["awarded"] .. "|r" or clock(o.timeKnown and (o.expires - now) or nil))
             r:Show()
         else
@@ -275,7 +276,7 @@ local function fillDetail(o)
     d.item.link = o.link
     d.item.label:SetText(o.link)
     local left = o.timeKnown and clock(o.expires - GetServerTime()) or L["unknown"]
-    d.info:SetText(string.format(L["Offered by %s, tradeable for %s."], o.holder, left))
+    d.info:SetText(string.format(L["Offered by %s, tradeable for %s."], who(o.holder), left))
     local status
     if o.done then
         status = "|cff33ff33" .. string.format(L["Traded to %s: the award is recorded."], o.award.winner) .. "|r"
@@ -288,7 +289,7 @@ local function fillDetail(o)
     end
     d.status:SetText(status)
     local wishers = {}
-    for _, w in ipairs(T:Wishers(o)) do wishers[#wishers + 1] = string.format("%s #%d", short(w.key), w.order) end
+    for _, w in ipairs(T:Wishers(o)) do wishers[#wishers + 1] = string.format("%s #%d", who(w.key), w.order) end
     d.wish:SetText(#wishers > 0 and (L["On the wishlist of:"] .. " " .. table.concat(wishers, ", ")) or "")
     d.withdraw:SetShown(T:MayIWithdraw(o))
 
@@ -311,12 +312,12 @@ local function fillDetail(o)
         if a then
             paint(r, i, o.award and o.award.winner == a.key)
             local cr, cg, cb = GuildOS:GetClassColor(GuildOS.db.members[a.key] and GuildOS.db.members[a.key].class or "")
-            r.name:SetText(a.key)
+            r.name:SetText(who(a.key))
             r.name:SetTextColor(cr, cg, cb)
             local col = a.choice == "N" and C.green or (a.choice == "G" and C.gold or C.silver)
             r.answer:SetText(T.CHOICE_LABEL[a.choice] or "?")
             r.answer:SetTextColor(col.r, col.g, col.b)
-            r.roll:SetText(tostring(a.roll))
+            r.roll:SetText(a.roll and tostring(a.roll) or "-")   -- the server's /roll, once seen
             r.worn.link = a.equipped
             r.worn.label:SetText(a.equipped or "-")
             r.wish:SetText(a.wish and ("#" .. a.wish) or "-")

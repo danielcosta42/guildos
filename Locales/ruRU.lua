@@ -1974,3 +1974,5 @@ L["You offered %s to the raid."] = "Вы предложили рейду %s."
 L["You won %s: %s will trade it to you."] = "Вы выиграли %s: %s передаст его вам."
 L["Your guild hands out loot outside Guild OS (External / Off)."] = "Ваша гильдия распределяет добычу вне Guild OS (Внешняя / Выкл.)."
 L["[Loot] %s goes to %s: %s trades it to them."] = "[Добыча] %s достаётся %s: %s передаёт его."
+-- A rolagem do servidor no conselho de loot (issue #185).
+L["Chat is locked during the encounter: answer once it ends."] = "Чат заблокирован во время боя с боссом: ответьте, когда он закончится."

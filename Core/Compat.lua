@@ -776,6 +776,13 @@ function Compat.EquipLoc(item)
     return equipLoc
 end
 
+-- The server's /roll low-high: the line everybody in the group sees (CHAT_MSG_SYSTEM, RANDOM_ROLL_RESULT).
+-- False on a client without it.
+function Compat.RandomRoll(low, high)
+    if not RandomRoll then return false end
+    return (pcall(RandomRoll, low, high))
+end
+
 -- Say a line in a chat channel: retail's C_ChatInfo.SendChatMessage, else the global. Nothing while the
 -- client holds chat in lockdown (Midnight, during an encounter); returns whether it went.
 function Compat.SendChatMessage(text, chatType)

@@ -121,22 +121,31 @@ function LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, pl
     })
 end
 
+-- The row of a guildmate's drop of an item still within its trade window, not awarded yet: the newest.
+function LootTracker:DropOf(playerKey, itemId)
+    local now = GetServerTime()
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        if now - (tonumber(e.timestamp) or 0) > TRADE_WINDOW then return nil end   -- newest first
+        local id = e.itemId or tonumber((e.itemLink or ""):match("item:(%d+)"))
+        if e.playerKey == playerKey and id == itemId and not e.awarded then return e end
+    end
+    return nil
+end
+
 -- Record an award by trade (retail, issue #185): a guildmate's personal item, offered to the raid,
 -- awarded and traded to the winner. The holder's own row of that drop becomes the winner's, so one
 -- item is one row and equity counts it once, with `awarded` and the holder in `from`; a client that
--- missed the drop gets a new row. `award`: { itemLink, itemId, holder, winner, raid, instanceID }.
--- Returns the row.
+-- missed the drop gets a new row. Either way the row is stamped with the drop's time as the holder's
+-- client had it (`timestamp`, carried by the offer), so every client writes the same row and the site
+-- keeps one. `award`: { itemLink, itemId, holder, winner, timestamp, raid, instanceID }. Returns the row.
 function LootTracker:RecordTradeAward(award)
     if not (award and award.holder and award.winner and award.itemLink) then return nil end
-    local now = GetServerTime()
     local itemId = tonumber(award.itemId) or tonumber(award.itemLink:match("item:(%d+)")) or 0
-    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
-        if now - (tonumber(e.timestamp) or 0) > TRADE_WINDOW then break end   -- newest first
-        local id = e.itemId or tonumber((e.itemLink or ""):match("item:(%d+)"))
-        if e.playerKey == award.holder and id == itemId and not e.awarded then
-            e.player, e.playerKey, e.awarded, e.from = award.winner, award.winner, true, award.holder
-            return e
-        end
+    local stamp = tonumber(award.timestamp) or GetServerTime()
+    local e = self:DropOf(award.holder, itemId)
+    if e then
+        e.player, e.playerKey, e.awarded, e.from, e.timestamp = award.winner, award.winner, true, award.holder, stamp
+        return e
     end
     local quality, itemName = itemFacts(award.itemLink)
     local row = {
@@ -147,13 +156,18 @@ function LootTracker:RecordTradeAward(award)
         player     = award.winner,
         playerKey  = award.winner,
         count      = 1,
-        timestamp  = now,
+        timestamp  = stamp,
         raid       = award.raid or "",
         instanceID = award.instanceID or 0,
         awarded    = true,
         from       = award.holder,
     }
-    remember(row)
+    -- Where its time puts it, so the history stays newest first for the readers that stop at an old row.
+    local h = GuildOS.db.lootHistory
+    local at = 1
+    while h[at] and (tonumber(h[at].timestamp) or 0) > stamp do at = at + 1 end
+    table.insert(h, at, row)
+    while #h > HISTORY_MAX do table.remove(h) end
     return row
 end
 
