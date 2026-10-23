@@ -100,7 +100,7 @@ The same window on retail, made for how retail works:
   the Loot tab with its equity, the exports and guildos.me.
 - **A loot council by trade.** Got an item you can still trade? Offer it to the raid (`/gos offer`, or the Offer
   button). Guildmates answer Need, Greed or Pass with what they wear in that slot; the council ranks them by your
-  loot system (DKP points, wishlist place) and a roll everyone sees alike; an officer awards it, or the holder in a
+  loot system (DKP points, wishlist place) and the server's /roll; an officer awards it, or the holder in a
   free roll. Trade it to the winner and the award is recorded, and charged under DKP.
 - **DKP, EPGP and wishlists**, as on Forever. Wishlists list Midnight's raid items straight from the Encounter
   Journal.
