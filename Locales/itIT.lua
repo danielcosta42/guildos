@@ -619,7 +619,7 @@ L["%s in the guild panel: %s"] = "%s nel pannello della gilda: %s"
 L["Dungeons"] = "Spedizioni"
 L["World"] = "Mondo"
 L["Unknown dungeon"] = "Spedizione sconosciuta"
-L["Tier %d"] = "Livello %d"
+L["Tier %d"] = "Grado %d"
 
 -- Modules/NoteCommand.lua
 L["Could not set %s's note: not found in the guild roster."] = "Impossibile impostare la nota di %s: non trovato nell'elenco della gilda."
