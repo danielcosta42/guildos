@@ -747,9 +747,9 @@ L["Detect my alts"] = "Detect my alts"
 L["Ask to join an alliance"] = "Ask to join an alliance"
 L["Send request"] = "Send request"
 L["Alliance tag and an officer of a guild already in it. They approve the request."] = "Alliance tag and an officer of a guild already in it. They approve the request."
--- Retail (ADR-0026): the welcome and the officer step without loot.
+-- Retail (ADR-0026): the welcome without loot; the officer step with retail's loot systems (issue #185).
 L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."
-L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."] = "As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers."
+L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: free roll, Wishlist or DKP."] = "As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: free roll, Wishlist or DKP."
 -- Retail's character sheet on the member detail (issue #184).
 L["Crit"] = "Crit"
 L["Haste"] = "Haste"
@@ -804,3 +804,5 @@ L["You offered %s to the raid."] = "You offered %s to the raid."
 L["You won %s: %s will trade it to you."] = "You won %s: %s will trade it to you."
 L["Your guild hands out loot outside Guild OS (External / Off)."] = "Your guild hands out loot outside Guild OS (External / Off)."
 L["[Loot] %s goes to %s: %s trades it to them."] = "[Loot] %s goes to %s: %s trades it to them."
+L["Guild OS shares your gear, professions, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."] = "Guild OS shares your gear, professions, spec and wishlist with guildmates running the addon, so everyone sees the same roster. Officer notes and trials stay officer-only."
+L["Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."] = "Guild OS syncs your gear, professions, spec and wishlist with guildmates running the addon. Officer notes and trials stay officer-only."
