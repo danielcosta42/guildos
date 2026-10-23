@@ -2277,7 +2277,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             local attStr = "-"
             local attR, attG, attB = 0.35, 0.35, 0.35
             if GuildOS.RaidTracker then
-                local pKey = GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
+                -- On retail a list's name is its owner's whole key already (issue #185).
+                local pKey = GuildOS.Client.isRetail and charData.name
+                    or GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
                 local attVal = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey) or 0
                 if attVal > 0 then
                     attStr = attVal .. "%"

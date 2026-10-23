@@ -220,7 +220,7 @@ GuildOS.ShowTradeCouncil = function(_, id) GuildShow = id end
 local o = TC:Offer(HELM)
 check(o and o.holder == "Chehul-TolBarad" and o.link == HELM and o.itemId == 250001 and o.free == true,
   "my helm is offered, as a free roll (the guild rolls)")
-check(o.expires == NOW + 5400 and o.timeKnown, "until its trade window closes")
+check(o.expires == NOW + 5400 + 60 and o.timeKnown, "until its trade window closes, a minute's slack for the whole minutes it is read in")
 local sent = lastAddon()
 check(sent.prefix == "GuildOSTC" and sent.channel == "RAID" and sent.text == ("O|%s|1|5400|%s"):format(o.id, HELM),
   "the offer goes to the raid: id, free, seconds, link")
@@ -289,13 +289,15 @@ fire("TRADE_SHOW")
 check(said("Put " .. HELM .. " in the trade window"), "trading the winner, I am told what to put in")
 tradeSlots = { HELM }
 fire("TRADE_PLAYER_ITEM_CHANGED", 1)
-fire("TRADE_ACCEPT_UPDATE", 1, 1)
+fire("TRADE_ACCEPT_UPDATE", 1, 0)
+NOW = NOW + 90   -- the winner takes a minute and a half to accept
 fire("UI_INFO_MESSAGE", 999, "Trade complete.")
 local row = GuildOS.db.lootHistory[1]
 check(#GuildOS.db.lootHistory == 1 and row.playerKey == "Ana-Gallywix" and row.player == "Ana-Gallywix"
   and row.awarded and row.from == "Chehul-TolBarad" and row.raid == "The Voidspire",
   "the award is recorded: my row of that drop becomes the winner's")
-check(o.done and o.closed and lastAddon().text == ("D|%s|Ana-Gallywix"):format(o.id), "and the raid hears it went through")
+check(o.done and o.closed and lastAddon().text == ("D|%s|Ana-Gallywix|Chehul-TolBarad"):format(o.id),
+  "however long the winner took, and the raid hears it went through: winner and who awarded it")
 check(GuildOS.Wishlist:IsItemDelivered(250001) == false, "the item is the winner's now, not mine")
 
 -- An offered item traded to someone who was not awarded it: nothing recorded, and it says so.
@@ -311,7 +313,7 @@ fire("UI_INFO_MESSAGE", 999, "Trade complete.")
 check(#GuildOS.db.lootHistory == before and said("who was not awarded it: nothing was recorded."),
   "a trade to anyone else records nothing, and says so")
 check(o2.closed and not o2.done and lastAddon().text == "X|" .. o2.id, "and the offer is over for the raid too")
--- A trade long after its look at the window, or with nothing offered in it, is nothing.
+-- A second "Trade complete." with no trade window opened since is nothing.
 fire("UI_INFO_MESSAGE", 999, "Trade complete.")
 check(#GuildOS.db.lootHistory == before, "a second 'Trade complete.' with no trade open is nothing")
 
@@ -321,16 +323,29 @@ GuildOS.Points:GetDB().config.itemCost = 20
 local id = "65A1B2C30001"
 incoming(("O|%s|0|3600|%s"):format(id, CAPE), "Ana-Gallywix")
 local o3 = TC:Get(id)
-check(o3 and o3.holder == "Ana-Gallywix" and not o3.free and o3.expires == NOW + 3600, "a guildmate's offer arrives")
+check(o3 and o3.holder == "Ana-Gallywix" and not o3.free and o3.expires == NOW + 3600 + 60, "a guildmate's offer arrives")
 check(GuildShow == id, "and the council opens on it")
 incoming(("O|%s|1|60|%s"):format(id, HELM), "Bob")
 check(TC:Get(id).holder == "Ana-Gallywix" and TC:Get(id).link == CAPE, "nobody takes over an offer's id")
 incoming(("O|%s|0|0|%s"):format("65A1B2C30002", CAPE), "Stranger-Nemesis")
 check(TC:Get("65A1B2C30002") == nil, "a stranger offers nothing to the guild")
+for i, bad in ipairs({ "|Hitem:250003|h[Cloak]|h", CAPE .. "|Hitem:1|h", "x " .. CAPE, "|cff00ff00|Hitem:abc|h[x]|h|r" }) do
+  incoming(("O|65A1B2C3001%d|0|0|%s"):format(i, bad), "Bob-TolBarad")
+  check(TC:Get(("65A1B2C3001%d"):format(i)) == nil, "an offer whose link is not one whole item link is not taken: " .. bad)
+end
+-- A holder's free roll is believed only where the guild's loot system is the free roll.
+incoming(("O|%s|1|3600|%s"):format("65A1B2C30020", CAPE), "Bob-TolBarad")
+local greedy = TC:Get("65A1B2C30020")
+check(greedy and not greedy.free, "under DKP a holder's offer is no free roll, whatever it says")
+incoming(("A|%s|N|"):format(greedy.id), "Ana-Gallywix")
+incoming(("W|%s|Ana-Gallywix"):format(greedy.id), "Bob-TolBarad")
+check(greedy.award == nil, "so its holder cannot award it")
 TC:Answer(id, "N")
 check(lastAddon().text == ("A|%s|N|"):format(id) and o3.answers["Chehul-TolBarad"].choice == "N",
   "I answer Need, with no cloak worn to replace")
-incoming(("A|%s|G|"):format(id), "Bob-TolBarad")
+incoming(("A|%s|G|%s"):format(id, "|Hitem:1|h"), "Bob-TolBarad")
+check(o3.answers["Bob-TolBarad"].choice == "G" and o3.answers["Bob-TolBarad"].equipped == nil,
+  "an answer's equipped item that is not a whole link is left out")
 -- An award from somebody who may not give it.
 incoming(("W|%s|Bob-TolBarad"):format(id), "Ana-Gallywix")
 incoming(("W|%s|Bob-TolBarad"):format(id), "Bob-TolBarad")
@@ -341,15 +356,21 @@ check(o3.award and o3.award.by == "Chehul-TolBarad" and lastAddon().text == ("W|
   "an officer awards it")
 GuildOS.db.lootHistory = {}
 local pointsBefore = GuildOS.Points:Get("Bob-TolBarad")
-incoming(("D|%s|Bob-TolBarad"):format(id), "Off-TolBarad")
-incoming(("D|%s|Ana-Gallywix"):format(id), "Ana-Gallywix")
-check(#GuildOS.db.lootHistory == 0 and not o3.done, "only the holder's word that the winner got it counts")
+-- Another officer awards it to Ana at the same moment; Ana-Gallywix, the holder, saw mine last.
+incoming(("W|%s|Ana-Gallywix"):format(id), "Off-TolBarad")
+check(o3.award.winner == "Ana-Gallywix" and o3.award.by == "Off-TolBarad", "the later award is the one this client shows")
+incoming(("D|%s|Bob-TolBarad|Chehul-TolBarad"):format(id), "Off-TolBarad")
+incoming(("D|%s|Bob-TolBarad|Bob-TolBarad"):format(id), "Ana-Gallywix")
 incoming(("D|%s|Bob-TolBarad"):format(id), "Ana-Gallywix")
+check(#GuildOS.db.lootHistory == 0 and not o3.done,
+  "only the holder's word counts, and only for an award somebody entitled gave")
+incoming(("D|%s|Bob-TolBarad|Chehul-TolBarad"):format(id), "Ana-Gallywix")
 row = GuildOS.db.lootHistory[1]
 check(o3.done and row and row.playerKey == "Bob-TolBarad" and row.awarded and row.from == "Ana-Gallywix" and row.itemId == 250003,
   "the holder's trade is recorded here too, as a new row when this client missed the drop")
-check(GuildOS.Points:Get("Bob-TolBarad") == pointsBefore - 20, "and the officer who awarded it charges the item's cost")
-incoming(("D|%s|Bob-TolBarad"):format(id), "Ana-Gallywix")
+check(o3.award.winner == "Bob-TolBarad" and o3.award.by == "Chehul-TolBarad", "the holder's award is the one recorded")
+check(GuildOS.Points:Get("Bob-TolBarad") == pointsBefore - 20, "and the officer who gave it, I, charge the item's cost")
+incoming(("D|%s|Bob-TolBarad|Chehul-TolBarad"):format(id), "Ana-Gallywix")
 check(#GuildOS.db.lootHistory == 1 and GuildOS.Points:Get("Bob-TolBarad") == pointsBefore - 20, "once")
 
 -- Another officer's award: believed; a member's withdrawal of someone else's offer: not.
@@ -357,21 +378,25 @@ local id4 = "65A1B2C30003"
 incoming(("O|%s|0|0|%s"):format(id4, BAND), "Bob-TolBarad")
 local o4 = TC:Get(id4)
 check(o4.timeKnown == false and o4.expires == NOW + 7200, "an offer whose trade time was not read runs at most two hours")
+local id7 = "65A1B2C30007"
+incoming(("O|%s|0|0|%s"):format(id7, HELM), "Bob-TolBarad")
 incoming(("A|%s|N|"):format(id4), "Ana-Gallywix")
 incoming(("W|%s|Ana-Gallywix"):format(id4), "Off-TolBarad")
 check(o4.award and o4.award.winner == "Ana-Gallywix" and o4.award.by == "Off-TolBarad", "another officer's award is believed")
-incoming("X|" .. id4, "Ana-Gallywix")
-check(not o4.closed, "a member withdraws nobody else's offer")
-incoming("X|" .. id4, "Bob-TolBarad")
-check(o4.closed, "its holder does")
+incoming("X|" .. id7, "Ana-Gallywix")
+check(not TC:Get(id7).closed, "a member withdraws nobody else's offer")
+incoming("X|" .. id7, "Bob-TolBarad")
+check(TC:Get(id7).closed, "its holder does")
+-- This client read the trade time a minute short and closed the offer; the holder's trade still records.
+o4.closed = true
 GuildOS.db.lootHistory = {}
-incoming(("D|%s|Ana-Gallywix"):format(id4), "Bob-TolBarad")
-check(#GuildOS.db.lootHistory == 1 and GuildOS.Points:Get("Ana-Gallywix") == 50,
-  "a trade another officer awarded is recorded, and charged by that officer, not here")
+incoming(("D|%s|Ana-Gallywix|Off-TolBarad"):format(id4), "Bob-TolBarad")
+check(#GuildOS.db.lootHistory == 1 and o4.done and GuildOS.Points:Get("Ana-Gallywix") == 50,
+  "a trade another officer awarded is recorded here, even on an offer closed here, and charged by that officer, not here")
 -- Time runs out.
 local id5 = "65A1B2C30004"
 incoming(("O|%s|1|600|%s"):format(id5, CAPE), "Bob-TolBarad")
-NOW = NOW + 601
+NOW = NOW + 661
 local open = {}
 for _, x in ipairs(TC:OpenOffers()) do open[x.id] = true end
 check(not open[id5] and TC:Get(id5).closed, "an offer whose trade window closed is over")

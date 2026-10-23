@@ -988,17 +988,21 @@ verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
 - **The loot council by trade** (`TradeCouncil`, retail only; `UI/TradeCouncil.lua`). A guildmate offers a tradeable item
   from their bags (`/gos offer [item]`, the council's Offer buttons, the Offer button on their own recent row of the loot
   history; Settings' quick access opens the council for every member). The offer goes to the raid on its own prefix
-  (`GuildOSTC`, `O|id|free|secs|link`, `A|id|choice|link`, `W|id|winner`, `X|id`, `D|id|winner`); only a guildmate's
-  message over RAID is read. Guildmates answer Need, Greed or Pass with the item they wear in that slot (the lower of a
+  (`GuildOSTC`, `O|id|free|secs|link`, `A|id|choice|link`, `W|id|winner`, `X|id`, `D|id|winner|by`); only a guildmate's
+  message over RAID is read, and a link only when it is one whole item link. Guildmates answer Need, Greed or Pass with the item they wear in that slot (the lower of a
   pair). The council ranks the answers Need, Greed, Pass, then by the guild's system (DKP points, wishlist place), then a
   roll; it shows who wished for the item, each player's attendance and points. An officer awards it, or its holder when
-  the offer was made under the free roll (the holder's client stamps that on the offer, so every client agrees); the
+  the offer was made under the free roll: the holder's client says so on the offer, and every client believes it only
+  when the guild's loot system it holds is the free roll, so no holder makes their own item theirs to award. The
   winner is announced in raid chat. When the holder trades the item to the winner (`TRADE_SHOW`,
-  `TRADE_PLAYER_ITEM_CHANGED`, `TRADE_ACCEPT_UPDATE`, then "Trade complete." in `UI_INFO_MESSAGE` within 15 seconds, and
-  the item in the window must be the offered one: this link, else the same item id), the award is recorded:
+  `TRADE_PLAYER_ITEM_CHANGED`, `TRADE_ACCEPT_UPDATE`, then "Trade complete." in `UI_INFO_MESSAGE` however long the
+  other player took, and the item in the window must be the offered one: this link, else the same item id), the award is recorded:
   `LootTracker:RecordTradeAward` turns the holder's row of that drop into the winner's (`awarded`, `from`), so one item
-  is one row, or adds a row on a client that missed the drop; the holder's `D` tells every other client. The officer who
-  awarded it charges the guild's cost per item when the guild runs DKP. A trade of an offered item to anyone else
+  is one row, or adds a row on a client that missed the drop. The holder's `D` tells every other client the award as the
+  holder saw it, winner and who gave it (believed when that player was entitled to), so every client records the same
+  award and two officers awarding at once charge once: the one named in `D` charges the guild's cost per item when the
+  guild runs DKP. An offer this client closed a little early (its trade time is read in whole minutes, so an offer
+  runs a minute past it) still records the holder's `D`. A trade of an offered item to anyone else
   records nothing, says so and withdraws the offer.
 - **What the client really exposes for trade time** (12.1.5.70529's API documentation, read 2026-10-22): no function
   answers it. `C_Container.GetContainerItemInfo` says `isBound`; the time is only on the tooltip, a line of type
@@ -1021,6 +1025,9 @@ verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
   trade's `D`: one that left the raid before it charges nothing.
 - (−) The loot history is append-only on guildos.me: an item published as the holder's before the trade stays the
   holder's row there too, beside the winner's.
+- An award by trade is recorded with the Loot Tracker switched off in Settings, as a master-loot award is: the switch
+  is for what drops, an award is the guild's decision. The DKP charge rests on the holder's word that the trade went
+  through (the winner confirms nothing), as a master-loot award's rests on the loot master's.
 - (−) Read in game: whether `C_TooltipInfo.GetBagItem` carries the `TradeTimeRemaining` line and the duration words
   `TradeSeconds` reads; whether "Trade complete." arrives as `UI_INFO_MESSAGE` with `LE_GAME_ERR_TRADE_COMPLETE` or the
   string; whether `GetTradePlayerItemLink` gives the bag's very link; whether the `EJ_*` functions answer with the

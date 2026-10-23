@@ -185,10 +185,10 @@ TC:OnAddonMessage("GuildOSTC", ("O|%s|0|5400|%s"):format(id, CAPE), "RAID", "Ana
 local f = _G.GuildOSTradeCouncil
 check(f and f:IsShown(), "a new offer opens the loot council")
 local d = f.detail
-check(d.item.label.text == CAPE and d.info.text == "Offered by Ana-Gallywix, tradeable for 1:30.", "the offer picked: its item and who offered it")
+check(d.item.label.text == CAPE and d.info.text == "Offered by Ana-Gallywix, tradeable for 1:31.", "the offer picked: its item and who offered it")
 check(f.offerRows[1]:IsShown() and f.offerRows[1].label.text:find("Gloomweave Cloak", 1, true)
-  and f.offerRows[1].label.text:find("Ana", 1, true) and f.offerRows[1].time.text == "1:30",
-  "the raid's offers: item, holder and the time left")
+  and f.offerRows[1].label.text:find("Ana", 1, true) and f.offerRows[1].time.text == "1:31",
+  "the raid's offers: item, holder and the time left (a minute's slack)")
 check(not f.offerRows[2]:IsShown() and not f.noOffers:IsShown(), "one offer, one row")
 check(f.itemRows[1]:IsShown() and f.itemRows[1].label.text == HELM and f.itemRows[1].time.text == "1:30",
   "my tradeable items, with their time left")

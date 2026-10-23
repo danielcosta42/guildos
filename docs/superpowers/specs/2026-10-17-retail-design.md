@@ -317,17 +317,18 @@ someone who was eligible for it. The guild's distribution tools come back built 
     duration strings. When it cannot be read the offer still goes out, runs at most two hours, and shows the time as
     unknown.
   - *Wire.* Addon messages on `GuildOSTC` over RAID: `O|id|free|secs|link`, `A|id|choice|link`, `W|id|winner`, `X|id`,
-    `D|id|winner`. Only a guildmate's message is read (a pickup raid's strangers have no say); a secret one is never
-    touched; Midnight holds what is sent during an encounter until the lockdown lifts.
+    `D|id|winner|by`. Only a guildmate's message is read (a pickup raid's strangers have no say), a link only when it
+    is one whole item link; a secret one is never touched; Midnight holds what is sent during an encounter until the lockdown lifts.
   - *Answers.* Need, Greed or Pass, with the item worn in that slot (the lower of a pair). The window ranks them Need,
     Greed, Pass, then by the guild's system (DKP points, wishlist place), then a roll every screen computes alike (a
     hash of the offer and the player, 1 to 100), and shows who has the item on a wishlist, points and attendance.
-  - *Award.* An officer awards it; under the free roll its holder may too (the offer carries that, so every client
-    agrees). A Pass is never awarded. The winner is announced in raid chat (printed instead in a lockdown).
+  - *Award.* An officer awards it; under the free roll its holder may too (the offer says so, and each client believes it
+    only when the guild's loot system it holds is the free roll). A Pass is never awarded. The winner is announced in raid chat (printed instead in a lockdown).
   - *Trade.* When the holder trades the offered item to the winner (`TRADE_SHOW`, `TRADE_PLAYER_ITEM_CHANGED`,
-    `TRADE_ACCEPT_UPDATE`, "Trade complete." within 15 seconds; the item must be the offered one), the award goes into
+    `TRADE_ACCEPT_UPDATE`, then "Trade complete.", however long the winner takes; the item must be the offered one), the award goes into
     the loot history: the holder's row of that drop becomes the winner's (`awarded`, `from`), or a new row on a client
-    that missed the drop; the holder's `D` tells every client, and the awarding officer charges it under DKP. Traded to
+    that missed the drop; the holder's `D` tells every client the award as the holder saw it (winner and who gave
+    it), and the officer named there charges it under DKP, once. Traded to
     anyone else, nothing is recorded, the holder is told so and the offer is withdrawn.
 - **Still absent:** the loot master (no Master Loot) and soft reserves: softres.it's page says "Soft-reserves for your
   Classic WoW raids!" and names no retail raid (read 2026-10-22).

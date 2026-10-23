@@ -7,12 +7,13 @@
 -- winner, the award goes into the loot history and, where the guild runs DKP, is charged.
 --
 -- Wire: addon messages on PREFIX over RAID, "|"-separated, an item link always last:
---   O|id|free|secs|link   an offer, from its holder (free: 1 when the holder may award it; secs: the
---                         trade time the holder's client read, 0 when it could not)
+--   O|id|free|secs|link   an offer, from its holder (free: 1 under the free roll, believed only where the
+--                         guild's loot system is the free roll; secs: the trade time the holder's client
+--                         read, 0 when it could not)
 --   A|id|choice|link      an answer, N, G or P, and the equipped item it would replace ("" for none)
 --   W|id|winnerKey        an award, from an officer or, when the offer is free, its holder
 --   X|id                  the offer withdrawn, by its holder or an officer
---   D|id|winnerKey        the holder traded the item to the award's winner
+--   D|id|winner|by        the holder traded the item to the award's winner; `by` gave the award
 -- Only a guildmate's message is read (a pickup raid's strangers have no say in the guild's loot), and
 -- Midnight holds addon messages during an encounter, so offers go out after the boss (Compat).
 ----------------------------------------------------------------------
@@ -28,7 +29,7 @@ local CHANNEL = "RAID"
 local MAX_MESSAGE = 255        -- bytes an addon message may carry
 local OFFER_TTL = 7200         -- seconds: a personal item can be traded for two hours after it drops
 TradeCouncil.OFFER_TTL = OFFER_TTL
-local TRADE_SETTLE = 15        -- seconds from the last look at the trade window to "Trade complete"
+local EXPIRY_SLACK = 60        -- seconds: a trade time is read in whole minutes, so up to one more may be left
 local ROLL_MAX = 100
 local HASH_MOD = 2147483647    -- 2^31 - 1: keeps the roll's hash an exact integer in a double
 local BAGS_LAST = 4            -- backpack 0 and four bags; the reagent bag holds no gear
@@ -66,6 +67,12 @@ local function me() return GuildOS:GetPlayerKey(Compat.PlayerName()) end
 
 local function itemIdOf(link)
     return type(link) == "string" and tonumber(link:match("|Hitem:(%d+)")) or nil
+end
+
+-- Whether a link from another client is one whole item link and nothing else: it is printed, stored in
+-- the loot history, sent to raid chat and shown on a tooltip, where a malformed one raises.
+local function wellFormed(link)
+    return type(link) == "string" and link:match("^|c[^|]*|Hitem:[%-%d:]+|h%[.-%]|h|r$") ~= nil
 end
 
 local function refresh()
@@ -132,13 +139,19 @@ function TradeCouncil:IsMine(o)
     return o ~= nil and o.holder == me()
 end
 
--- Whether `key` may award the offer: an officer always; its holder when the guild's loot system was the
--- free roll when it was offered. `local` asks for this client's own rank, which the roster may not have.
-local function mayAward(o, key, isLocal)
-    if not o or o.closed or o.done then return false end
+-- Whether `key` is entitled to award the offer: an officer always; its holder when the guild's loot system
+-- was the free roll when it was offered. `isLocal` asks for this client's own rank, which the roster may
+-- not have.
+local function entitled(o, key, isLocal)
     if o.free and key == o.holder then return true end
     if isLocal then return GuildOS:IsOfficer() end
     return GuildOS:IsOfficerByName(key)
+end
+
+-- Whether `key` may award the offer now: entitled, and the offer still open.
+local function mayAward(o, key, isLocal)
+    if not o or o.closed or o.done then return false end
+    return entitled(o, key, isLocal)
 end
 
 -- Whether I may award the offer.
@@ -317,7 +330,7 @@ function TradeCouncil:Offer(link)
     local o = {
         id = newId(), holder = mine, link = held, itemId = itemIdOf(held),
         free = GuildOS:GetLootSystem() == "rolls", at = now,
-        expires = now + (secs or OFFER_TTL), timeKnown = secs ~= nil, answers = {},
+        expires = now + (secs and secs + EXPIRY_SLACK or OFFER_TTL), timeKnown = secs ~= nil, answers = {},
     }
     local msg = string.format("O|%s|%d|%d|%s", o.id, o.free and 1 or 0, secs or 0, held)
     if #msg > MAX_MESSAGE then
@@ -408,12 +421,13 @@ function TradeCouncil:SnapshotTrade()
     t.at = GetServerTime()
 end
 
--- UI_INFO_MESSAGE: a trade that went through, with what I handed over just before.
+-- UI_INFO_MESSAGE: a trade that went through, with what I handed over in it. However long the other
+-- player took to accept: the trade is the one TRADE_SHOW opened, and it is forgotten once complete.
 function TradeCouncil:OnInfoMessage(messageType, message)
     if not Compat.IsTradeComplete(messageType, message) then return end
     local t = state().trade
     state().trade = nil
-    if not (t and t.partner) or GetServerTime() - (t.at or 0) > TRADE_SETTLE then return end
+    if not (t and t.partner) then return end
     self:OnTradeDone(t.partner, t.items)
 end
 
@@ -426,7 +440,7 @@ function TradeCouncil:OnTradeDone(partner, links)
         if o then
             if o.award and o.award.winner == partner then
                 self:Complete(o)
-                send(string.format("D|%s|%s", o.id, partner))
+                send(string.format("D|%s|%s|%s", o.id, partner, o.award.by))
             else
                 o.closed = true
                 send("X|" .. o.id)
@@ -471,15 +485,18 @@ end
 ----------------------------------------------------------------------
 local HANDLERS = {}
 
--- An offer from its holder.
+-- An offer from its holder. It is a free roll only when the guild's loot system says so here too: a
+-- holder cannot make their own item theirs to award.
 function HANDLERS.O(from, rest)
     local id, free, secs, link = rest:match("^(%x+)|([01])|(%d+)|(.+)$")
-    if not id or not itemIdOf(link) or state().offers[id] then return end
+    if not id or not wellFormed(link) or state().offers[id] then return end
     local now = GetServerTime()
     secs = tonumber(secs) or 0
     state().offers[id] = {
-        id = id, holder = from, link = link, itemId = itemIdOf(link), free = free == "1", at = now,
-        expires = now + (secs > 0 and math.min(secs, OFFER_TTL) or OFFER_TTL), timeKnown = secs > 0, answers = {},
+        id = id, holder = from, link = link, itemId = itemIdOf(link), at = now,
+        free = free == "1" and GuildOS:GetLootSystem() == "rolls",
+        expires = now + (secs > 0 and math.min(secs + EXPIRY_SLACK, OFFER_TTL) or OFFER_TTL), timeKnown = secs > 0,
+        answers = {},
     }
     GuildOS:Print(string.format(L["%s offers %s to the raid."], from, link))
     if GuildOS.ShowTradeCouncil then GuildOS:ShowTradeCouncil(id) end
@@ -490,7 +507,7 @@ function HANDLERS.A(from, rest)
     local id, choice, equipped = rest:match("^(%x+)|([NGP])|(.*)$")
     local o = id and state().offers[id]
     if not o or o.closed or from == o.holder then return end
-    o.answers[from] = { choice = choice, equipped = itemIdOf(equipped) and equipped or nil }
+    o.answers[from] = { choice = choice, equipped = wellFormed(equipped) and equipped or nil }
     refresh()
 end
 
@@ -516,11 +533,16 @@ function HANDLERS.X(from, rest)
     refresh()
 end
 
--- The holder's trade to the winner.
+-- The holder's trade to the winner, with the award as the holder saw it: winner and who gave it. Every
+-- client records that one, whichever award it saw last, so two officers awarding at once charge once; it
+-- counts when who gave it was entitled to. An offer this client already closed (its trade time read a
+-- minute apart) still records.
 function HANDLERS.D(from, rest)
-    local id, winner = rest:match("^(%x+)|(.+)$")
+    local id, winner, by = rest:match("^(%x+)|([^|]+)|([^|]+)$")
     local o = id and state().offers[id]
-    if not o or o.done or from ~= o.holder or not (o.award and o.award.winner == winner) then return end
+    if not o or o.done or from ~= o.holder or not GuildOS:IsGuildmate(winner) then return end
+    if not entitled(o, by, by == me()) then return end
+    o.award = { winner = winner, by = by }
     TradeCouncil:Complete(o)
     refresh()
 end
