@@ -338,11 +338,11 @@ Removed: `Compat.NewTimer`.
 | `Wishlist:Initialize()` | DB setup, data migration, rebuilds index, hooks tooltips |
 | `Wishlist:RebuildItemIndex()` | Builds itemId→{wishers} index from guildWishlists |
 | `Wishlist:GetItemInterest(itemId)` | Returns itemIndex[itemId] entries |
-| `Wishlist:GetItemName(itemId)` | Returns GetItemInfo name or "Item #N" |
+| `Wishlist:GetItemName(itemId)` | Returns `ItemFacts`'s name (GetItemInfo, else the journal's on retail) or "Item #N" |
 | `Wishlist:GetItemQuality(itemId)` | Returns GetItemInfo quality or 1 |
 | `Wishlist:GetMyList()` | Lazily creates and returns per-character wishlist table |
 | `Wishlist:AddToWishlist(itemId, itemLink, isOffspec)` | Adds/updates item, broadcasts |
-| `Wishlist:IsItemDelivered(itemId)` | Checks lootHistory for ML award of item to self |
+| `Wishlist:IsItemDelivered(itemId)` | Checks lootHistory for ML award of item to self; on retail any row of mine (personal loot, or an award recorded by trade, issue #185) |
 | `Wishlist:RemoveFromWishlist(itemId)` | Removes item if not delivered, reorders, broadcasts |
 | `Wishlist:ReorderWishlist(itemId, direction)` | Swaps item with neighbor, broadcasts |
 | `Wishlist:BroadcastMyWishlist()` | Stores locally + sends "WL" comm message |
@@ -422,6 +422,7 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `LootTracker:Initialize()` | Ensures lootHistory DB table exists; on retail registers `ENCOUNTER_LOOT_RECEIVED` (issue #183) |
 | `LootTracker:RecordMLAward(entry)` | Prepends entry to lootHistory, caps at 500 |
+| `LootTracker:RecordTradeAward(award)` | Retail (issue #185): an award by trade, `{ itemLink, itemId, holder, winner, raid, instanceID }`. The holder's own row of that drop (same item, within two hours, not awarded) becomes the winner's, with `awarded = true` and `from` = the holder, so one item is one row; with none (this client missed the drop) a new row. Returns the row |
 | `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one guildmate's personal loot, every guildmate's and not only mine, recorded in an ML award's shape (`player` and `playerKey` both the whole `Name-Realm` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session is the instance and the difficulty this client stands in, in its grace too (as its snapshots are) and the Loot Tracker is on. Skipped whole when any field is secret, the player is not on the guild roster by that key (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`: a connected-realm guildmate counts, a namesake from elsewhere does not), under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
 | `LootTracker:GetHistory(limit)` | Returns first N entries from lootHistory |
 | `LootTracker:GetPlayerLoot(playerKey, limit)` | Filters lootHistory by player key |
@@ -904,3 +905,31 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
 | `GuildOS.JsonDecode(s)` | The addon's one JSON decoder, in Core/Utils.lua so every client has it: SoftRes (absent on retail) reads Gargul's JSON with it, the companion import the site's |
 | `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the groups, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm, with the modules loaded in TOC order (SoftRes absent) |
+
+## Retail loot distribution (issue #185)
+
+| Symbol | Description |
+|---|---|
+| `GuildOS:LootSystemsHere()` / `LootSystemLabel(sys)` | The loot systems this client offers (TMB, Classic only, is `retail = false`), and a system's button name: on retail "rolls" is "Free roll" |
+| `GuildOS:PublishLootSystem()` / `OnLootSystemSync(env)` | Retail only: an officer's loot system goes out on `guildcfg`/`lootsys`, stamped (`settings.lootSystemAt`) when it changes and again with the officer threshold on the regular sync; every client keeps the newest stamp, and two in one second settle on the same system everywhere; a system retail does not offer, or a secret, is turned away. Forever keeps it each client's own |
+| `GuildOS:IsGuildmate(playerKey)` | Core/Utils.lua: whether a whole key is on the guild roster (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`): a connected-realm guildmate is, a namesake from elsewhere is not. LootTracker and TradeCouncil use it |
+| `Points:MakeEntry(...)` | On retail the entry's `name` is the whole key, as the loot history names a guildmate |
+| `Points:OnBossKill(name)` | Awards nothing while the pool is not set up (the module switched off, so never initialized) |
+| `Compat.JournalLoot(journalInstanceID)` | Retail: a raid's loot from the Encounter Journal, `{ { itemID, name, link, encounterID, boss } }`, every class's (`EJ_SetLootFilter(0, 0)`, slot filter reset), plus whether every row had its name, and the raid's name. Nothing while the journal is open ("busy"); the class and slot filters and the instance (and boss) the journal last showed are put back. Nil without the journal |
+| `Wishlist.JOURNAL_RAIDS` / `LoadJournal(force)` / `OnJournalData()` | Midnight's raids by journal instance (1307, 1314, 1308, 1320), read into `Wishlist.catalog`; read again 2 s after `EJ_LOOT_DATA_RECIEVED` until every list is whole |
+| `Wishlist:CatalogEntry(itemId)` / `ItemFacts(itemId)` | The journal's `{ name, link, raid, boss }`; an item's name, link and quality, the client's when cached, else the journal's (quality from the link's `\|cnIQn:`, else 4). The wishlist and prio searches use it |
+| `Wishlist:ListFor(key, name)` | A guildmate's synced list: by the whole key on retail, by the name elsewhere. The roster tooltip uses it |
+| Retail wishlist keys | `BroadcastMyWishlist` sends my whole key as the name; `HandleWishlistBroadcast` files a list under its sender's whole key (`KeyOfRosterName(sender)`), never the name it carries |
+| `Compat.TradeSeconds(text)` | The seconds a trade-time line names, read with the client's own duration strings (`INT_SPELL_DURATION_*`, `D_*`; every `\|4` plural form, longest first, lower case); nil when nothing can be read |
+| `Compat.TradeTimeLeft(bag, slot)` | `"timed"` with the seconds and the line (the tooltip's `TradeTimeRemaining` line, `C_TooltipInfo.GetBagItem`), `"free"` when not bound, `"bound"` when no longer tradeable; nil without the retail tooltip data, for an empty slot, or a secret |
+| `Compat.TradePartner()` / `TradeItemLinks()` / `IsTradeComplete(type, msg)` | The trade window's other player (`UnitName("NPC")`), what I put in its six slots (`GetTradePlayerItemLink`), and whether a `UI_INFO_MESSAGE` is "Trade complete." (`LE_GAME_ERR_TRADE_COMPLETE`, else `ERR_TRADE_COMPLETE`) |
+| `Compat.EquipLoc(item)` / `Compat.SendChatMessage(text, chatType)` | An item's equip location with no cache (`GetItemInfoInstant`); a chat line through `C_ChatInfo.SendChatMessage`, else the global, never in a chat lockdown (false then) |
+| `TradeCouncil` (Modules/TradeCouncil.lua) | Retail only. Prefix `GuildOSTC` over RAID: `O\|id\|free\|secs\|link`, `A\|id\|choice\|link`, `W\|id\|winner`, `X\|id`, `D\|id\|winner`; only a guildmate's message (`IsGuildmate`), never a secret. State in `GuildOS.State.tradeCouncil` (the offers, the trade) |
+| `TradeCouncil:Offer(link)` | Offer a tradeable item from my bags (`FindInBags`: this link, else the same item still tradeable) to the raid: needs a raid and an active loot system; refused when the item is gone, bound or already offered; `free` when the guild's system is the free roll; expires with its trade window (two hours when unreadable). Opens the council |
+| `TradeCouncil:Answer(id, choice)` / `Award(id, winner)` / `Withdraw(id)` | Need, Greed or Pass with `EquippedFor` (the lower of a pair, nothing for an empty slot); an award by an officer, or the holder of a free offer, to someone who did not pass, announced in raid chat (printed in a lockdown); a withdrawal by the holder or an officer |
+| `TradeCouncil:Ranked(o)` / `Roll(id, key)` / `Wishers(o)` / `WishOrder(itemId, key)` / `Context(key)` | Answers ranked Need, Greed, Pass, then DKP points or wishlist place by the guild's system, then the roll: a djb2 hash of the offer and the player, 1-100, the same on every screen. Who wished for the item; attendance of the raid's core |
+| `TradeCouncil:MyTradeableItems()` / `MyOfferFor(link)` / `MayIAward(o)` / `MayIWithdraw(o)` / `IsMine(o)` / `Get(id)` / `OpenOffers()` | My Rare-and-up items with a trade window open, soonest first; the open offer of mine for a link; the permissions; one offer; the open ones, oldest first, a run-out one closed on the way |
+| `TradeCouncil:OnTradeShow()` / `SnapshotTrade()` / `OnInfoMessage(type, msg)` / `OnTradeDone(partner, links)` | The trade: its partner (told what to put in when they won), what I hand over (kept from `TRADE_PLAYER_ITEM_CHANGED`/`TRADE_ACCEPT_UPDATE`), and "Trade complete." within 15 s of that: an offered item to its award's winner is `Complete`d and `D` sent; to anyone else nothing is recorded, it says so and the offer is withdrawn |
+| `TradeCouncil:Complete(o)` / `Charge(o)` | Into the loot history (`RecordTradeAward`, the tracked session's raid); the officer who awarded it charges the item's cost when the guild runs DKP with one; once |
+| `GuildOS:ShowTradeCouncil(offerId)` / `RefreshTradeCouncil()` | UI/TradeCouncil.lua: the loot council window (the raid's offers, my tradeable items with Offer, the offer picked with Need/Greed/Pass, the ranked answers with Award, Withdraw); `/gos offer`, Settings' quick access "Loot Council" and every incoming offer open it |
+| `tools/retail-points.lua` / `retail-wishlist.lua` / `retail-loot-council.lua` / `trade-council-ui.lua` | The harnesses of issue #185 |

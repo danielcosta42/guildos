@@ -7,8 +7,10 @@
 Guild OS replaces the default guild frame with a modern, feature-rich management hub that automatically collects and shares gear, professions, attunements, TMB wishlists, raid attendance, loot history and stats across your guild — no inspection required.
 
 > **Clients:** WoW TBC Anniversary (Interface 20506), WoW: Forever (16001) and Retail, Midnight (120105) — one build
-> serves all three. On Retail nothing hands loot out (retail is personal loot), but the loot history records what each
-> guildmate received from a boss; guildos.me takes retail guilds too.
+> serves all three. Retail has no Master Loot: the loot history records what each guildmate received from a boss, a
+> guildmate offers an item they can still trade to the raid's loot council (`/gos offer`) and the trade to the winner is
+> recorded as the award; DKP/EPGP and wishlists (Midnight's raid items from the Encounter Journal) work as on Forever.
+> guildos.me takes retail guilds too.
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 

@@ -90,7 +90,8 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `WishlistSystem.lua` | Wishlists + loot prio data | UI, comm internals |
 | `RaidTracker.lua` | Raid sessions, attendance, snapshot scores | UI |
 | `LootTracker.lua` | Loot history recording | UI |
-| `LootMaster.lua` | ML loot distribution | roster data |
+| `LootMaster.lua` | ML loot distribution (not on retail) | roster data |
+| `TradeCouncil.lua` | Retail's loot council by trade: offers, answers, awards, the trade that records them (#185) | UI (UI/TradeCouncil.lua) |
 | `RecipeTracker.lua` | Recipe scanning + sync | UI |
 | `OfficerNotes.lua` | Officer note storage + sync | UI |
 | `TrialTracker.lua` | Trial lifecycle + sync | UI |
@@ -198,6 +199,7 @@ GuildOS.State = {
     raid        = { currentRaid, trackingActive, snapshotTimer, endTimer },
     consumables = { lastCheck },
     raidCD      = { state = {}, members = {} },   -- [playerName][cdKey], [name]=classFile
+    tradeCouncil = { offers = { [id] = offer }, trade },  -- retail's loot council (#185)
 }
 ```
 
@@ -232,9 +234,10 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   attendancePenalties = { LATE, LEFT_EARLY, NO_CONSUMES },  -- the guild's weights (CoreManager, #55); cores override
   lootHistory      = [{ itemLink, itemName, quality, player, playerKey, count, timestamp, raid, instanceID,
                         fromML }],  -- newest first, 500; retail's personal loot adds itemId, encounterID, no fromML,
-                                    -- and its player is the whole Name-Realm, the key (#183)
+                                    -- and its player is the whole Name-Realm, the key (#183); an award by
+                                    -- trade sets awarded and from (the holder) on the winner's row (#185)
   lootMaster       = { rollDuration, autoAnnounce, wishlistOnlyMode, awardHistory },
-  guildWishlists   = { [lowerName] = { name, class, wishlist=[] } },
+  guildWishlists   = { [lowerName] = { name, class, wishlist=[] } },  -- retail: the lower-case whole key (#185)
   lootPrios        = { [itemId] = [{ name, class, order }] },
   wishlists        = { [charKey] = [{ itemId, itemLink, order, isOffspec }] },
   recruitment      = { enabled, interval, message, channels, welcomeEnabled,
@@ -262,7 +265,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
 
 ## Communication Protocol
 
-- Prefix: `"GuildOS"`
+- Prefix: `"GuildOS"` (the loot council has its own over RAID: `GuildOSLM` on Forever and Anniversary, `GuildOSTC` on
+  retail, plain `|`-separated text with the item link last; ADR-0026's #185 amendment)
 - Format: `TYPE:PAYLOAD` → LibSerialize → LibDeflate compress → encode → chunk 230 bytes
 - LibSerialize is Guild OS's own copy, `LibStub("GuildOS-LibSerialize")`, never the shared name: LibStub hands the
   highest minor to everyone, DBM-Core's minor 6 divides `1 / num`, and WoW: Forever raises on every division by

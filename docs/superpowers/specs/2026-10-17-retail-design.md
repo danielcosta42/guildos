@@ -79,7 +79,8 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
   `loot`, `dkp` and `wishlist` features carry `retail = false`. Readers elsewhere (member detail, digest,
   dashboard, raid tracker's boss-kill EP, the companion export's loot list) must already guard on the
   module; any that does not gets a guard. *Since issue #183 (§12) LootTracker and LootEquity load on retail, and
-  the `loot` tab and the `lootTracker` feature with them; LootMaster, Points, SoftRes and Wishlist stay absent.*
+  the `loot` tab and the `lootTracker` feature with them; since issue #185 (§13) Points and Wishlist too, with a loot
+  council by trade. LootMaster and SoftRes stay absent.*
 - **The site:** the `web` feature carries `retail = false`; CompanionExport, CompanionImport and Look return
   early; the onboarding step that points to guildos.me is skipped; the Discord core import (ADR-0025) is not
   offered. `Inbox.lua` still loads from the TOC (it is data), and nothing reads it. *Superseded by issue #182
@@ -99,7 +100,8 @@ Absent, not disabled (ADR-0014): the module file returns before defining its glo
   officer-only; so do `/gos export loot|equity|standings`, whose usage line lists only what the client has (issue
   #177).
 - **Words:** the onboarding's getting-started and privacy steps name no attunements or wishlists on retail; the
-  probe lists retail's spec and item-level APIs and names the client it found (issue #177).
+  probe lists retail's spec and item-level APIs and names the client it found (issue #177). *Since issue #185 the
+  privacy step and About name the wishlist, and the officer step the Loot settings (free roll, Wishlist or DKP).*
 - **Recruitment channels:** retail's ChatChannels (12.1.5.70448, every language) are Forever's: Trade and
   LookingForGroup, no GuildRecruitment (issue #177). Only retail has an Italian client: Commercio and
   CercaGruppo; Forever's (1.60.1.70450, 70532) and Anniversary's (2.5.6.70006) itIT rows are English
@@ -208,8 +210,9 @@ And guildos-web#177 on its own.
 ## 10. Out of scope
 
 - guildos.me for retail guilds (its own epic: guildos-web#191, addon #182, §11).
-- A loot suite for personal loot (trade-based council, DKP, soft reserves, wishlists: issue #185). The loot
-  history from `ENCOUNTER_LOOT_RECEIVED` is in since issue #183 (§12).
+- Soft reserves for retail raids (softres.it runs Classic raids only). The loot history from
+  `ENCOUNTER_LOOT_RECEIVED` is in since issue #183 (§12); points, the wishlist and a council by trade since issue #185
+  (§13).
 - Mythic+, delves, hero talents, profession specializations, craft quality.
 - Raid Tools cooldowns that need the combat log.
 
@@ -285,3 +288,54 @@ history (guildos-web specs/056, "Addon → Loot pessoal").
   whether any field arrives secret. A guildmate the roster has not loaded yet is not recorded.
 - **Tests:** `tools/retail-loot.lua`; `tools/retail-site.lua` (the row in the payload), `tools/retail-absent.lua`,
   `tools/client-detection.lua`, `tools/window-shell.lua` and `tools/probe.lua` follow.
+
+## 13. Loot distribution (issue #185)
+
+Retail has no Master Loot: every item is personal, and one that is still tradeable can be handed, for a while, to
+someone who was eligible for it. The guild's distribution tools come back built on that.
+
+- **Points** (DKP, EPGP, council modes) load: boss-kill EP, manual awards, decay, standings, the `standings` export and
+  the DKP tab, as on Forever; an entry is named by the whole `Name-Realm`. An item is charged only when an award by trade
+  is recorded (below), by the officer who awarded it, with the guild's cost per item.
+- **The loot system** is the guild's: an officer's choice goes to every member (`guildcfg`/`lootsys`, stamped, newest
+  wins, re-sent with the officer threshold). Retail offers the free roll (the "rolls" key), Wishlist, DKP and
+  External / Off; TMB is Classic only. External / Off switches the council off. The Settings Loot category is back with
+  the loot system and the points; the loot master's sections stay out.
+- **The wishlist** loads. Its items come from the Encounter Journal at run time for Midnight's raids, by journal
+  instance: 1307 The Voidspire, 1314 The Dreamrift, 1308 March on Quel'Danas, 1320 The Venomous Abyss (every class's
+  loot; never read while the journal is open; its filters and instance put back; read again on
+  `EJ_LOOT_DATA_RECIEVED` until whole). An item not cached yet is found and wished for by the journal's name. A list is
+  kept under its sender's whole key, never the name it carries. On retail an item is delivered when the history has it
+  as mine: personal loot, or an award by trade.
+- **The loot council by trade:**
+  - *Offer.* Whoever received a tradeable item offers it: `/gos offer [item]`, the council window's Offer button by each
+    tradeable item in their bags, or the Offer button on their own recent row of the loot history. Settings' quick
+    access ("Loot Council") opens the window for every member. Needs a raid; refused when the item is not in the bags,
+    is past its trade window or is already offered.
+  - *Trade time.* Read on the holder's client only. The client has no function for it: `C_Container`'s `isBound`, then
+    the `TradeTimeRemaining` line (type 36) of `C_TooltipInfo.GetBagItem`, its duration read with the client's own
+    duration strings. When it cannot be read the offer still goes out, runs at most two hours, and shows the time as
+    unknown.
+  - *Wire.* Addon messages on `GuildOSTC` over RAID: `O|id|free|secs|link`, `A|id|choice|link`, `W|id|winner`, `X|id`,
+    `D|id|winner`. Only a guildmate's message is read (a pickup raid's strangers have no say); a secret one is never
+    touched; Midnight holds what is sent during an encounter until the lockdown lifts.
+  - *Answers.* Need, Greed or Pass, with the item worn in that slot (the lower of a pair). The window ranks them Need,
+    Greed, Pass, then by the guild's system (DKP points, wishlist place), then a roll every screen computes alike (a
+    hash of the offer and the player, 1 to 100), and shows who has the item on a wishlist, points and attendance.
+  - *Award.* An officer awards it; under the free roll its holder may too (the offer carries that, so every client
+    agrees). A Pass is never awarded. The winner is announced in raid chat (printed instead in a lockdown).
+  - *Trade.* When the holder trades the offered item to the winner (`TRADE_SHOW`, `TRADE_PLAYER_ITEM_CHANGED`,
+    `TRADE_ACCEPT_UPDATE`, "Trade complete." within 15 seconds; the item must be the offered one), the award goes into
+    the loot history: the holder's row of that drop becomes the winner's (`awarded`, `from`), or a new row on a client
+    that missed the drop; the holder's `D` tells every client, and the awarding officer charges it under DKP. Traded to
+    anyone else, nothing is recorded, the holder is told so and the offer is withdrawn.
+- **Still absent:** the loot master (no Master Loot) and soft reserves: softres.it's page says "Soft-reserves for your
+  Classic WoW raids!" and names no retail raid (read 2026-10-22).
+- **Forever and Anniversary:** unchanged. TradeCouncil does not exist there; `/gos offer` says "Not available on this
+  client."
+- **Read in game:** the tooltip's trade line and its duration words; "Trade complete." as `UI_INFO_MESSAGE`;
+  `GetTradePlayerItemLink`'s link against the bag's; the journal's functions with the journal never opened; addon
+  messages over RAID across connected realms.
+- **Tests:** `tools/retail-points.lua`, `tools/retail-wishlist.lua`, `tools/retail-loot-council.lua`,
+  `tools/trade-council-ui.lua`; `tools/retail-absent.lua`, `tools/retail-loot.lua`, `tools/client-detection.lua`,
+  `tools/window-shell.lua`, `tools/probe.lua` and `tools/commands-in-ui.lua` follow.

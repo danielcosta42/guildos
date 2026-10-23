@@ -929,7 +929,8 @@ character from the Armory. Only the loot verbs remain in `RETAIL_ABSENT`.
   maintainer's client is read in game.
 
 **Amendment (issue #183).** Personal loot has a history on retail. Nothing hands loot out there, so LootMaster, Points,
-SoftRes and Wishlist stay absent and their verbs keep saying so; LootTracker and LootEquity load, and with them the
+SoftRes and Wishlist stay absent and their verbs keep saying so *(points, the wishlist and a loot council by trade come
+back with issue #185, below)*; LootTracker and LootEquity load, and with them the
 `lootTracker` background feature, the Loot tab (History and Equity; no Soft Res button, no loot-master line), the
 roster's LOOT column, the dashboard's loot card, the digest's loot line, the member sheet's loot section, `/gos equity`,
 the `loot` and `equity` exports and the loot list in the companion payload, in today's row format. The Settings loot
@@ -963,3 +964,65 @@ category stays out: everything in it hands loot out.
 - (−) Whether Midnight fires `ENCOUNTER_LOOT_RECEIVED` for every player's loot, as the boss banner shows it, and whether
   any of its fields arrive secret, is read in game.
 - (−) A guildmate the roster has not loaded yet, or who left the guild before the loot arrived, is not recorded.
+
+**Amendment (issue #185).** Retail hands loot out again, built on what it has: personal loot that can be traded for a
+while to someone who was eligible for it. LootMaster stays absent (no Master Loot), and so does SoftRes: softres.it's own
+page says "Soft-reserves for your Classic WoW raids!" and names no retail raid (read 2026-10-22), so nothing could be
+verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
+- **Points** load on retail: boss-kill EP, manual awards, decay, standings, their export and the DKP tab, as on Forever.
+  An entry is named by the whole key there (`Points:MakeEntry`), as the loot history names a guildmate. An item is
+  charged when an award by trade is recorded, never from Master Loot. `Points:OnBossKill` awards nothing while its pool
+  is not set up (the module switched off).
+- **The guild's loot system** decides who awards an offered item, on every member's client, so on retail an officer's
+  choice is published (`guildcfg`/`lootsys`, stamped like the officer threshold, re-sent on the officers' regular sync;
+  newest stamp wins). Forever keeps the setting each client's own, as before; a client before #185 reads a `lootsys`
+  envelope as a threshold with no `max` and drops it. TMB, Classic only, is not offered on retail; "rolls" is the free
+  roll there. The Settings Loot category returns on retail with the loot system and the points; the loot master's and
+  the loot distribution's sections are the loot master's and stay out.
+- **The wishlist** loads on retail. Its items come from the Encounter Journal at run time for Midnight's raids (journal
+  instances 1307, 1314, 1308, 1320; `Compat.JournalLoot`), every class's, never read while the journal is open, its
+  filters and instance put back after; read again on `EJ_LOOT_DATA_RECIEVED` until every list is whole. An item not
+  cached yet is found and wished for by the journal's name (`Wishlist:ItemFacts`). A list is filed under its sender's
+  whole key, never the name it carries, so namesakes on connected realms stay apart and nobody files a list under a
+  guildmate's name. Delivered, on retail, is any history row of mine: personal loot or an award by trade.
+- **The loot council by trade** (`TradeCouncil`, retail only; `UI/TradeCouncil.lua`). A guildmate offers a tradeable item
+  from their bags (`/gos offer [item]`, the council's Offer buttons, the Offer button on their own recent row of the loot
+  history; Settings' quick access opens the council for every member). The offer goes to the raid on its own prefix
+  (`GuildOSTC`, `O|id|free|secs|link`, `A|id|choice|link`, `W|id|winner`, `X|id`, `D|id|winner`); only a guildmate's
+  message over RAID is read. Guildmates answer Need, Greed or Pass with the item they wear in that slot (the lower of a
+  pair). The council ranks the answers Need, Greed, Pass, then by the guild's system (DKP points, wishlist place), then a
+  roll; it shows who wished for the item, each player's attendance and points. An officer awards it, or its holder when
+  the offer was made under the free roll (the holder's client stamps that on the offer, so every client agrees); the
+  winner is announced in raid chat. When the holder trades the item to the winner (`TRADE_SHOW`,
+  `TRADE_PLAYER_ITEM_CHANGED`, `TRADE_ACCEPT_UPDATE`, then "Trade complete." in `UI_INFO_MESSAGE` within 15 seconds, and
+  the item in the window must be the offered one: this link, else the same item id), the award is recorded:
+  `LootTracker:RecordTradeAward` turns the holder's row of that drop into the winner's (`awarded`, `from`), so one item
+  is one row, or adds a row on a client that missed the drop; the holder's `D` tells every other client. The officer who
+  awarded it charges the guild's cost per item when the guild runs DKP. A trade of an offered item to anyone else
+  records nothing, says so and withdraws the offer.
+- **What the client really exposes for trade time** (12.1.5.70529's API documentation, read 2026-10-22): no function
+  answers it. `C_Container.GetContainerItemInfo` says `isBound`; the time is only on the tooltip, a line of type
+  `Enum.TooltipDataLineType.TradeTimeRemaining` (36) in `C_TooltipInfo.GetBagItem`'s data, whose text is
+  `BIND_TRADE_TIME_REMAINING` with a duration. `Compat.TradeTimeLeft` finds the line by its type (any language) and
+  `Compat.TradeSeconds` reads the duration with the client's own `INT_SPELL_DURATION_*` / `D_*` strings, every plural
+  form. Unreadable, the holder can still offer: the offer runs at most two hours and shows the time as unknown.
+- **The roll** is a hash of the offer's id and the player (1 to 100): every screen computes the same number with no
+  message of its own, and only the holder, who holds the item anyway, chooses an offer's id. A `/roll` read from chat
+  could not be tied to one of several offers open at once.
+- **Midnight:** a secret message, sender, tooltip line or trade partner is never read; addon messages sent during an
+  encounter are held by `Compat` until the lockdown lifts (offers happen after the boss), and the award's chat line is
+  printed instead of sent in a lockdown (`Compat.SendChatMessage`).
+- Words: retail's onboarding privacy step and the About text name the wishlist, which is shared once a player keeps
+  one; the officer step points at the Loot settings (free roll, Wishlist or DKP).
+- Forever and Anniversary: TradeCouncil does not exist (`/gos offer` says "Not available on this client."), the wishlist
+  reads no journal and keys lists by name, points and the loot system are as before.
+- (−) An offer lives in the session: a holder's /reload loses theirs (offer it again); a client that missed the offer,
+  or the holder's `D`, records nothing of that award. The DKP charge needs the awarding officer's client to see the
+  trade's `D`: one that left the raid before it charges nothing.
+- (−) The loot history is append-only on guildos.me: an item published as the holder's before the trade stays the
+  holder's row there too, beside the winner's.
+- (−) Read in game: whether `C_TooltipInfo.GetBagItem` carries the `TradeTimeRemaining` line and the duration words
+  `TradeSeconds` reads; whether "Trade complete." arrives as `UI_INFO_MESSAGE` with `LE_GAME_ERR_TRADE_COMPLETE` or the
+  string; whether `GetTradePlayerItemLink` gives the bag's very link; whether the `EJ_*` functions answer with the
+  journal never opened, and fill the list after `EJ_LOOT_DATA_RECIEVED`; whether addon messages over RAID reach every
+  connected-realm guildmate in the raid.
