@@ -512,6 +512,8 @@ function GuildOS:GetMemberRecord(name, realm)
         attunements  = data.attunements,
         stats        = data.stats,
         spec         = data.spec,
+        mplus        = data.mplus,   -- retail, from the member's own client (issue #187)
+        vault        = data.vault,
         race         = data.race or "",
         lastUpdate   = data.lastUpdate or 0,
         lastSync     = data.lastSync or 0,

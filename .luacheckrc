@@ -72,6 +72,11 @@ read_globals = {
     "C_Spell",
     "C_UnitAuras",
     "C_PlayerInfo",
+    -- Retail's Mythic+, the Great Vault and the week it counts (issue #187).
+    "C_MythicPlus",
+    "C_ChallengeMode",
+    "C_WeeklyRewards",
+    "C_DateAndTime",
     "GetWeaponEnchantInfo",                  -- my weapon's temporary enchant (the consumable check, #187)
 
     -- WoW API: Unit functions

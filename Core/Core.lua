@@ -276,6 +276,8 @@ local MODULE_START = {
     { "Milestones" },
     { "ConsumableChecker", feature = "consumableChecker" },
     { "SpecChecker" },
+    -- Retail only (issue #187): my keystone, rating and vault, carried by the member broadcast.
+    { "MythicPlus" },
     { "GuildAnalytics" },
     { "Mentions" },
     { "NoteCommand" },

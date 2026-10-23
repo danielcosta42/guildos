@@ -114,6 +114,7 @@ Modules\RaidTools.lua
 Data\ConsumablesRetail.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
+Modules\MythicPlus.lua
 Modules\GuildAnalytics.lua
 Modules\Mentions.lua
 Modules\NoteCommand.lua
