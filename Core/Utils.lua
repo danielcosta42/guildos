@@ -253,6 +253,25 @@ function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
+-- How a guildmate's key reads on screen: the name alone when they are on this character's realm, the
+-- whole "Name-Realm" when they are not, so connected-realm namesakes never read as one person (#185).
+function GuildOS:DisplayKey(key)
+    if type(key) ~= "string" or key == "" then return "?" end
+    local name, realm = key:match("^([^-]+)%-(.+)$")
+    if name and realm == self:GetClientRealm() then return name end
+    return key
+end
+
+-- Whether somebody is on this guild's roster, by their whole key: a guildmate on a connected realm is,
+-- a namesake from a realm the guild is not on is not (issues #183, #185).
+function GuildOS:IsGuildmate(playerKey)
+    if type(playerKey) ~= "string" or playerKey == "" then return false end
+    local name, realm = playerKey:match("^([^-]+)%-(.+)$")
+    local idx = GuildOS.Compat.FindGuildRosterIndex(name or playerKey, realm)
+    local full = idx and GetGuildRosterInfo(idx)
+    return full ~= nil and self:KeyOfRosterName(full) == playerKey
+end
+
 -- A member key another client built, as this client keys that member (issue #97). On WoW: Forever
 -- a key carries its builder's realm and a guild's clients answer different ones, so a key that
 -- arrives inside a payload is rebuilt from its name. Forever names never hold a hyphen (the roster,
@@ -512,6 +531,8 @@ function GuildOS:GetMemberRecord(name, realm)
         attunements  = data.attunements,
         stats        = data.stats,
         spec         = data.spec,
+        mplus        = data.mplus,   -- retail, from the member's own client (issue #187)
+        vault        = data.vault,
         race         = data.race or "",
         lastUpdate   = data.lastUpdate or 0,
         lastSync     = data.lastSync or 0,

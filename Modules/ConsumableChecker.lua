@@ -2,10 +2,13 @@
 -- Guild OS - Consumable Checker
 -- Inspects raid members for expected buffs/consumables before pulls
 ----------------------------------------------------------------------
--- TBC content (flask and elixir buff ids): outside TBC Anniversary this module
--- does not exist, and every reader already treats a missing module as absent
--- (ADR-0014).
-if not GuildOS.Client.isAnniversary then return end
+-- TBC Anniversary's flasks, elixirs, food and weapon buffs, and retail's Midnight flask, food,
+-- augment rune and weapon enhancement (issue #187; the buffs are Data/ConsumablesRetail.lua's).
+-- WoW: Forever has no table: there this module does not exist, and every reader already treats a
+-- missing module as absent (ADR-0014, ADR-0026).
+local client = GuildOS.Client
+if not (client.isAnniversary or client.isRetail) then return end
+local isRetail = client.isRetail
 
 local ConsumableChecker = {}
 GuildOS.ConsumableChecker = ConsumableChecker
@@ -109,15 +112,171 @@ ConsumableChecker.COLUMN_ORDER = {
     { key = "guardianElixir", icon = 28502  }, -- Elixir of Major Mageblood
 }
 
+----------------------------------------------------------------------
+-- Retail (issue #187): Midnight's buffs by spell id, from the client's own data. A weapon oil or
+-- stone is a temporary enchant, not an aura: only my own can be read (Compat.MainHandTempEnchant).
+----------------------------------------------------------------------
+local RETAIL_ORDER = { "flask", "food", "rune", "weapon" }
+local READ_TTL = 600   -- seconds a reading taken out of combat answers for a snapshot taken in it
+
+if isRetail then
+    local catalog = GuildOS.ConsumableCatalog or {}
+    local function set(ids)
+        local s = {}
+        for _, id in ipairs(ids or {}) do s[id] = true end
+        return s
+    end
+    ConsumableChecker.CONSUMABLES = {
+        flask  = { label = L["Flask"],        buffs = set(catalog.flask) },
+        food   = { label = L["Food Buff"],    buffs = set(catalog.food) },
+        rune   = { label = L["Augment Rune"], buffs = set(catalog.rune) },
+        weapon = { label = L["Weapon Buff"] },
+    }
+end
+
+-- Both of two readings: false when either is known to be off, true when both are on, nil otherwise.
+local function both(a, b)
+    if a == false or b == false then return false end
+    if a and b then return true end
+    return nil
+end
+
+-- The readings kept for this session, by player key: { at = GetTime(), on = verdict } (Rule 6).
+local function memory()
+    local state = GuildOS.State
+    if not state then return {} end
+    state.consumables = state.consumables or {}
+    state.consumables.reads = state.consumables.reads or {}
+    return state.consumables.reads
+end
+
 function ConsumableChecker:Initialize()
     if not GuildOS.db.consumableChecks then
         GuildOS.db.consumableChecks = { lastResults = {} }
     end
+    -- Retail reads auras before the pull, out of combat: the ready check is when a raid looks (issue #187).
+    -- Read when it starts and again when it ends: whoever eats or flasks in answer to it is read with
+    -- the food on, and that later reading is the one the pull's snapshot uses.
+    if isRetail and not self.frame then
+        self.frame = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(self.frame, "READY_CHECK")
+        GuildOS.Compat.RegisterEvent(self.frame, "READY_CHECK_FINISHED")
+        self.frame:SetScript("OnEvent", function() ConsumableChecker:OnReadyCheck() end)
+    end
 end
 
-function ConsumableChecker:CheckRaid()
+-- A ready check starting or ending, on retail: the raid's consumables are read quietly, for the
+-- screens and for the snapshot the pull takes in combat.
+function ConsumableChecker:OnReadyCheck()
+    -- A check that times out after the pull ends in combat, where nothing can be read: it would
+    -- replace the last readings with all-unknown rows (issue #187).
+    if InCombatLockdown and InCombatLockdown() then return end
+    self:CheckRaid(true)
+end
+
+-- One unit's consumables on retail, per category: the buff's spell id (or true for my weapon), false
+-- when the client showed all the unit's buffs and none of them, nil when it could not tell. In combat,
+-- or with the auras secret, everything is nil: unknown is never missing.
+function ConsumableChecker:ReadUnit(unit)
+    local out = {}
+    local ids, complete = GuildOS.Compat.UnitBuffIDs(unit)
+    for _, catKey in ipairs(RETAIL_ORDER) do
+        local buffs = self.CONSUMABLES[catKey].buffs
+        if buffs then
+            for _, id in ipairs(ids or {}) do
+                if buffs[id] then out[catKey] = id break end
+            end
+            if not out[catKey] and ids and complete then out[catKey] = false end
+        end
+    end
+    if GuildOS.Compat.IsPlayer(unit) then out.weapon = GuildOS.Compat.MainHandTempEnchant() end
+    return out
+end
+
+-- Remember a raider's flask-and-food verdict, read out of combat.
+function ConsumableChecker:Remember(key, on)
+    if key and on ~= nil then memory()[key] = { at = GetTime(), on = on } end
+end
+
+-- The verdict read for a raider in the last READ_TTL seconds, or nil.
+function ConsumableChecker:Recent(key)
+    local r = key and memory()[key]
+    if r and GetTime() - r.at <= READ_TTL then return r.on end
+    return nil
+end
+
+-- TBC: a flask or a battle elixir, and food.
+local function tbcVerdict(CC, unit)
+    local hasFlaskOrElixir = false
+    local hasFood = false
+
+    -- Check flask
+    for buffID in pairs(CC.CONSUMABLES.flask.buffs) do
+        if CC:UnitHasBuff(unit, buffID) then
+            hasFlaskOrElixir = true
+            break
+        end
+    end
+
+    -- If no flask, check battle elixir as alternative
+    if not hasFlaskOrElixir then
+        for buffID in pairs(CC.CONSUMABLES.battleElixir.buffs) do
+            if CC:UnitHasBuff(unit, buffID) then
+                hasFlaskOrElixir = true
+                break
+            end
+        end
+    end
+
+    -- Check food
+    for buffID in pairs(CC.CONSUMABLES.food.buffs) do
+        if CC:UnitHasBuff(unit, buffID) then
+            hasFood = true
+            break
+        end
+    end
+
+    return hasFlaskOrElixir and hasFood
+end
+
+-- Whether a raider has their flask and their food, for the attendance snapshot (RaidTracker): true or
+-- false; on retail nil when the client could not read it, now or out of combat in the last
+-- READ_TTL seconds (the ready check before the pull), which never costs the penalty (issue #187).
+function ConsumableChecker:RaidVerdict(unit, key)
+    if not isRetail then return tbcVerdict(self, unit) end
+    local read = self:ReadUnit(unit)
+    local on = both(read.flask, read.food)
+    if on ~= nil then
+        self:Remember(key, on)
+        return on
+    end
+    return self:Recent(key)
+end
+
+-- Retail: a raider's row from what the client could read. `unknown` lists what it could not; the
+-- weapon is listed for me alone, since nobody else's can ever be read.
+local function fillRetail(CC, result, unit)
+    local read = CC:ReadUnit(unit)
+    local mine = GuildOS.Compat.IsPlayer(unit)
+    result.unknown = {}
+    for _, catKey in ipairs(RETAIL_ORDER) do
+        local v, label = read[catKey], CC.CONSUMABLES[catKey].label
+        if v then
+            local id = tonumber(v)
+            result.buffs[catKey] = { id = id, name = id and GuildOS.Compat.GetSpellInfo(id) or label }
+        elseif v == false then
+            table.insert(result.missing, label)
+        elseif catKey ~= "weapon" or mine then
+            table.insert(result.unknown, label)
+        end
+    end
+    CC:Remember(result.playerKey, both(read.flask, read.food))
+end
+
+-- `quiet`: no word when not in a raid (the ready check asks in a party too).
+function ConsumableChecker:CheckRaid(quiet)
     if not IsInRaid() then
-        GuildOS:Print(L["You are not in a raid."])
+        if not quiet then GuildOS:Print(L["You are not in a raid."]) end
         return nil
     end
 
@@ -140,24 +299,28 @@ function ConsumableChecker:CheckRaid()
                 missing = {},
             }
 
-            -- Check each consumable category
-            for catKey, category in pairs(self.CONSUMABLES) do
-                local found = false
-                local foundName = nil
-                local foundID = nil
-                for buffID, buffName in pairs(category.buffs) do
-                    local auraName = self:UnitHasBuff(unit, buffID, buffName)
-                    if auraName then
-                        found = true
-                        foundName = buffName
-                        foundID = buffID
-                        break
+            if isRetail then
+                fillRetail(self, playerResult, unit)
+            else
+                -- Check each consumable category
+                for catKey, category in pairs(self.CONSUMABLES) do
+                    local found = false
+                    local foundName = nil
+                    local foundID = nil
+                    for buffID, buffName in pairs(category.buffs) do
+                        local auraName = self:UnitHasBuff(unit, buffID, buffName)
+                        if auraName then
+                            found = true
+                            foundName = buffName
+                            foundID = buffID
+                            break
+                        end
                     end
-                end
-                if found then
-                    playerResult.buffs[catKey] = { name = foundName, id = foundID }
-                else
-                    table.insert(playerResult.missing, category.label)
+                    if found then
+                        playerResult.buffs[catKey] = { name = foundName, id = foundID }
+                    else
+                        table.insert(playerResult.missing, category.label)
+                    end
                 end
             end
 
@@ -211,10 +374,43 @@ function ConsumableChecker:GetMissingCount(results)
     return count
 end
 
+-- Retail: how many raiders had something the client could not read (out of range, or kept secret);
+-- 0 on Anniversary, which reads every aura (issue #187).
+function ConsumableChecker:GetUnknownCount(results)
+    results = results or self:GetLastResults()
+    local count = 0
+    for _, player in pairs(results) do
+        if type(player.unknown) == "table" and #player.unknown > 0 then count = count + 1 end
+    end
+    return count
+end
+
+-- The popup's tally: the raiders missing something (a list), how many there are, how many are ready,
+-- and how many the client could not read and are neither (retail; issue #187).
+function ConsumableChecker:Tally(results)
+    local problems, total, ready, unread = {}, 0, 0, 0
+    for _, p in pairs(results or {}) do
+        total = total + 1
+        if p.missing and #p.missing > 0 then
+            problems[#problems + 1] = p
+        elseif type(p.unknown) == "table" and #p.unknown > 0 then
+            unread = unread + 1
+        else
+            ready = ready + 1
+        end
+    end
+    return problems, total, ready, unread
+end
+
 function ConsumableChecker:ReportToChat(channel)
     local results = self:GetLastResults()
     if not results or not next(results) then
         GuildOS:Print(L["No results. Use /guildos to check consumables first."])
+        return
+    end
+    -- An encounter's chat lockdown (Midnight, Forever) drops the lines without an error (issue #187).
+    if GuildOS.Compat.InChatLockdown and GuildOS.Compat.InChatLockdown() then
+        GuildOS:Print(L["Chat is locked during the encounter: announce after it."])
         return
     end
 
@@ -225,7 +421,11 @@ function ConsumableChecker:ReportToChat(channel)
         end
     end
 
-    if #missing == 0 then
+    -- Nobody missing, but some not read (retail): "All OK!" would be a claim nobody checked (issue #187).
+    local unread = self:GetUnknownCount(results)
+    if #missing == 0 and unread > 0 then
+        GuildOS:Print(string.format(L["%d could not be read (out of range, or hidden by the game)."], unread))
+    elseif #missing == 0 then
         SendChatMessage(L["[Guild OS] Consumable check: All OK!"], channel or "RAID")
     else
         SendChatMessage(L["[Guild OS] Consumable check - Missing:"], channel or "RAID")

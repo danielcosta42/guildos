@@ -12,13 +12,13 @@ feature list are kept in sync with the current release.
 If CurseForge refuses the length: `Guild OS — Guild Manager for WoW Forever & Retail`.
 
 The title is the strongest signal both the CurseForge search and Google read, so it carries what guild officers
-search for (guild manager, attendance) and both games. DKP left the title with retail: it is Forever's only, and a
-title that promises it to a retail guild loses the review. Keep "Guild OS" first: it is the name people who
+search for (guild manager, attendance) and both games. DKP left the title when retail came and stays out now that
+retail has it too (issue #185): the title carries what every guild searches for first. Keep "Guild OS" first: it is the name people who
 already know it type. Do not change the project slug (`guild-os`): every link out there points at it.
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> Guild manager addon for WoW: Forever and Retail: guild roster, raid attendance tracker, raid teams, recruitment, profession directory, guild chat and Discord raid signups on guildos.me. On Forever, DKP & EPGP, loot master and soft reserves.
+> Guild manager addon for WoW: Forever and Retail: roster, raid attendance, raid teams, recruitment, professions, guild chat and Discord raid signups on guildos.me. DKP, EPGP and wishlists; a loot council by trade on Retail, a loot master on Forever.
 
 ## Categories
 
@@ -98,9 +98,18 @@ The same window on retail, made for how retail works:
   planned roster comes back for *Invite all*, connected-realm guildmates included.
 - **Loot history from personal loot.** What each guildmate received from every boss of a tracked raid, on the roster,
   the Loot tab with its equity, the exports and guildos.me.
+- **Consumables before the pull.** The ready check reads Midnight's flask, food and augment rune across the raid, and
+  your own weapon oil; what the game keeps hidden is never counted as missing, nor docked from attendance.
+- **Mythic+ and the Great Vault.** Each member's rating and keystone, and their vault for the week (raid, dungeons,
+  delves), on the member sheet and in an optional roster column.
+- **A loot council by trade.** Got an item you can still trade? Offer it to the raid (`/gos offer`, or the Offer
+  button). Guildmates answer Need, Greed or Pass with what they wear in that slot; the council ranks them by your
+  loot system (DKP points, wishlist place) and the server's /roll; an officer awards it, or the holder in a
+  free roll. Trade it to the winner and the award is recorded, and charged under DKP.
+- **DKP, EPGP and wishlists**, as on Forever. Wishlists list Midnight's raid items straight from the Encounter
+  Journal.
 
-Not on retail: handing loot out (retail is personal loot, so there is no master loot, DKP, soft reserves or
-wishlists).
+Not on retail: the master loot (retail has none) and soft reserves (softres.it runs Classic raids).
 
 ---
 
@@ -129,7 +138,8 @@ wishlists).
 ## 💰 Loot master, DKP and EPGP (WoW: Forever)
 
 Pick your guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
-or RCLootCouncil already handles it, and then Guild OS stays completely out of the way.
+or RCLootCouncil already handles it, and then Guild OS stays completely out of the way. On retail the same points and
+wishlists run beside the loot council by trade (above).
 
 - **Loot master**: announce, players roll MS / OS / Pass, award in one click. Ties go to officer priority, then soft
   reserve, then wishlist, then whoever has received fewer items this lockout, then (if you want) attendance, then the
@@ -191,7 +201,8 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 Yes. It is built for it: surnames, no realms, the new professions and the client's privacy rules included.
 
 **Does Guild OS work on Retail?**
-Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools and guildos.me.
+Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools, the consumable
+check, Mythic+ and the Great Vault, and guildos.me.
 Handing loot out (master loot, DKP, soft reserves, wishlists) is Forever's only, because retail is personal loot; the
 loot history records what each guildmate received.
 
@@ -222,7 +233,8 @@ addon does not, tell us in the Discord.
 
 ## Good to know
 
-- Languages: English, Português, Español, Deutsch, Français, Русский, 한국어, 简体中文, 繁體中文
+- Languages: English, Português, Español, Deutsch, Français, Русский, 한국어, 简体中文, 繁體中文, and Italiano on
+  retail (the only game with an Italian client)
 - Channel messages (LookingForGroup, Trade) need a hardware click, so Guild OS asks for it with a popup instead of
   sending silently
 - Data is stored per guild in SavedVariables

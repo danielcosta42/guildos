@@ -40,7 +40,8 @@ GuildOS/
   Locales/
     Locale.lua            — GuildOS.L bootstrap (metatable fallback to English key)
     enUS.lua              — master/stub (English is implicit)
-    ptBR.lua esES.lua deDE.lua frFR.lua — translations (guarded by GetLocale)
+    ptBR.lua esES.lua deDE.lua frFR.lua ruRU.lua koKR.lua zhCN.lua zhTW.lua itIT.lua — translations
+                          (guarded by GetLocale; itIT is retail's alone, #186)
   ConsumableChecker.lua   — flask/elixir/food buff detection
   SpecChecker.lua         — spec/talent detection
   UI/
@@ -90,14 +91,16 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `WishlistSystem.lua` | Wishlists + loot prio data | UI, comm internals |
 | `RaidTracker.lua` | Raid sessions, attendance, snapshot scores | UI |
 | `LootTracker.lua` | Loot history recording | UI |
-| `LootMaster.lua` | ML loot distribution | roster data |
+| `LootMaster.lua` | ML loot distribution (not on retail) | roster data |
+| `TradeCouncil.lua` | Retail's loot council by trade: offers, answers, awards, the trade that records them (#185) | UI (UI/TradeCouncil.lua) |
 | `RecipeTracker.lua` | Recipe scanning + sync | UI |
 | `OfficerNotes.lua` | Officer note storage + sync | UI |
 | `TrialTracker.lua` | Trial lifecycle + sync | UI |
 | `GuildManager.lua` | Rank changes, kicks, MOTD/Info, inactivity, suggestions, action log | UI, comm |
 | `GearAudit.lua` | Guild-wide enchant audit from synced gear | UI |
 | `RaidTools.lua` | Composition + buff/cooldown coverage of group/online roster | UI |
-| `ConsumableChecker.lua` | Detect flask/elixir/food buffs | UI |
+| `ConsumableChecker.lua` | Detect flask/elixir/food buffs (TBC's; Midnight's flask, food, rune and my weapon on retail, unknown never missing, #187) | UI |
+| `MythicPlus.lua` | Retail only: my keystone, Mythic+ rating and weekly vault, read through Compat and sent with my member data; formats a member's for the sheet and the roster (#187) | UI, comm internals |
 | `SpecChecker.lua` | Detect talent spec | UI |
 | `UI/Helpers.lua` | ALL UI components + theme (until split) | data logic, comms |
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
@@ -114,7 +117,7 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | # | File | Depends on |
 |---|------|------------|
 | 1–5 | `Libs/*` | nothing |
-| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR.lua` | Config — creates `GuildOS.L`; must load before any file that does `local L = GuildOS.L` |
+| 6a | `Locales/Locale.lua` + `enUS/ptBR/esES/deDE/frFR/ruRU/koKR/zhCN/zhTW/itIT.lua` | Config — creates `GuildOS.L`; must load before any file that does `local L = GuildOS.L` |
 | 6 | `Core.lua` | Libs — creates GuildOS global, Logger, Compat, State, Config |
 | 7 | `DataCollector.lua` | GuildOS |
 | 8 | `AttunementTracker.lua` | GuildOS, GuildOS.Compat |
@@ -198,6 +201,7 @@ GuildOS.State = {
     raid        = { currentRaid, trackingActive, snapshotTimer, endTimer },
     consumables = { lastCheck },
     raidCD      = { state = {}, members = {} },   -- [playerName][cdKey], [name]=classFile
+    tradeCouncil = { offers = { [id] = offer }, trade },  -- retail's loot council (#185)
 }
 ```
 
@@ -222,6 +226,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules },
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
+                                   mplus, vault,   -- retail: { rating, key = { map, level } },
+                                                   -- { at, raid/dungeon/world = { n, best } } (#187)
                                    addonVersion, lastUpdate, lastSync } },
   myData   = {},              -- local player's CollectMyData snapshot
   altLinks = { [altKey] = mainKey },
@@ -232,9 +238,10 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   attendancePenalties = { LATE, LEFT_EARLY, NO_CONSUMES },  -- the guild's weights (CoreManager, #55); cores override
   lootHistory      = [{ itemLink, itemName, quality, player, playerKey, count, timestamp, raid, instanceID,
                         fromML }],  -- newest first, 500; retail's personal loot adds itemId, encounterID, no fromML,
-                                    -- and its player is the whole Name-Realm, the key (#183)
+                                    -- and its player is the whole Name-Realm, the key (#183); an award by
+                                    -- trade sets awarded and from (the holder) on the winner's row (#185)
   lootMaster       = { rollDuration, autoAnnounce, wishlistOnlyMode, awardHistory },
-  guildWishlists   = { [lowerName] = { name, class, wishlist=[] } },
+  guildWishlists   = { [lowerName] = { name, class, wishlist=[] } },  -- retail: the lower-case whole key (#185)
   lootPrios        = { [itemId] = [{ name, class, order }] },
   wishlists        = { [charKey] = [{ itemId, itemLink, order, isOffspec }] },
   recruitment      = { enabled, interval, message, channels, welcomeEnabled,
@@ -262,7 +269,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
 
 ## Communication Protocol
 
-- Prefix: `"GuildOS"`
+- Prefix: `"GuildOS"` (the loot council has its own over RAID: `GuildOSLM` on Forever and Anniversary, `GuildOSTC` on
+  retail, plain `|`-separated text with the item link last; ADR-0026's #185 amendment)
 - Format: `TYPE:PAYLOAD` → LibSerialize → LibDeflate compress → encode → chunk 230 bytes
 - LibSerialize is Guild OS's own copy, `LibStub("GuildOS-LibSerialize")`, never the shared name: LibStub hands the
   highest minor to everyone, DBM-Core's minor 6 divides `1 / num`, and WoW: Forever raises on every division by

@@ -72,6 +72,12 @@ read_globals = {
     "C_Spell",
     "C_UnitAuras",
     "C_PlayerInfo",
+    -- Retail's Mythic+, the Great Vault and the week it counts (issue #187).
+    "C_MythicPlus",
+    "C_ChallengeMode",
+    "C_WeeklyRewards",
+    "C_DateAndTime",                         -- also the seconds to the reset, a self-test's (guildos-web#199)
+    "GetWeaponEnchantInfo",                  -- my weapon's temporary enchant (the consumable check, #187)
 
     -- WoW API: Unit functions
     "UnitName",
@@ -282,6 +288,23 @@ read_globals = {
     "ContainerFrameItemButton_OnModifiedClick",    -- bag button modifier-click handler
     "GetUnitName",
     "TradeFrameRecipientNameText",
+
+    -- WoW API: the Encounter Journal (retail wishlist, issue #185; Core/Compat.lua only)
+    "EJ_SelectInstance",
+    "EJ_SelectEncounter",
+    "EJ_GetNumLoot",
+    "EJ_GetLootFilter",
+    "EJ_SetLootFilter",
+    "EJ_GetEncounterInfo",
+    "EJ_GetInstanceInfo",
+    "C_EncounterJournal",
+    "EncounterJournal",
+
+    -- WoW API: trading a personal item (retail loot council, issue #185; Core/Compat.lua only)
+    "C_TooltipInfo",
+    "GetTradePlayerItemLink",
+    "LE_GAME_ERR_TRADE_COMPLETE",
+    "ERR_TRADE_COMPLETE",
 
     -- WoW API: Party
     "C_PartyInfo",

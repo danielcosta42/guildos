@@ -189,6 +189,10 @@ check(#p.sessions == 1 and p.sessions[1].difficulty == 15 and p.sessions[1].inst
 local keys = {}
 for _, pl in ipairs(p.sessions[1].players) do keys[#keys + 1] = pl.key end
 check(table.concat(keys, ",") == "Ana-Gallywix,Chehul-TolBarad", "a session's people keep their realms")
+-- These frames say nothing about consumables (retail could not read them): they count for the player,
+-- as the attendance score counts them, so the site's ratio docks nobody for it (issue #187).
+check(p.sessions[1].players[1].chits == 1 and p.sessions[1].players[2].chits == 1,
+  "a frame whose consumables were not read counts for the player")
 check(#p.loot == 0, "no loot recorded, none sent")
 
 -- Personal loot goes out in today's row format (issue #183): the real tracker, in a session.

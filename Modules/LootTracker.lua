@@ -4,7 +4,8 @@
 -- by the Master Looter (officer-only), via RecordMLAward; generic
 -- CHAT_MSG_LOOT is NOT tracked. On retail, where loot is personal and
 -- nobody hands anything out: what each guildmate received from a boss
--- inside a tracked raid session, via OnEncounterLoot (issue #183).
+-- inside a tracked raid session, via OnEncounterLoot (issue #183), and
+-- the awards of the loot council by trade, via RecordTradeAward (#185).
 ----------------------------------------------------------------------
 local LootTracker = {}
 GuildOS.LootTracker = LootTracker
@@ -14,6 +15,7 @@ local HISTORY_MAX = 500         -- entries kept, newest first
 local PERSONAL_MIN_QUALITY = 3  -- Rare: the loot master's default threshold (LootMaster.LOOT_THRESHOLD)
 local PERSONAL_UNKNOWN_QUALITY = 4  -- an item neither cached nor coloured in its link: a boss's, as an ML award assumes
 local REFIRE_WINDOW = 300       -- seconds; the same boss, item and player again within this is the same drop
+local TRADE_WINDOW = 7200       -- seconds a personal item stays tradeable after it drops (issue #185)
 
 function LootTracker:Initialize()
     if not GuildOS.db.lootHistory then
@@ -57,14 +59,11 @@ local function sessionHere()
     return session
 end
 
--- Whether somebody is on this guild's roster, by their whole key: a guildmate on a connected realm is,
--- a namesake from a realm the guild is not on is not. A pickup raid's strangers are not the guild's
--- loot; on Forever an item needs an award from this guild's officer to be recorded at all (issue #183).
+-- Only a guildmate's loot, by their whole key (GuildOS:IsGuildmate). A pickup raid's strangers are not
+-- the guild's loot; on Forever an item needs an award from this guild's officer to be recorded at all
+-- (issue #183).
 local function guildmate(playerKey)
-    local name, realm = playerKey:match("^([^-]+)%-(.+)$")
-    local idx = GuildOS.Compat.FindGuildRosterIndex(name or playerKey, realm)
-    local full = idx and GetGuildRosterInfo(idx)
-    return full ~= nil and GuildOS:KeyOfRosterName(full) == playerKey
+    return GuildOS:IsGuildmate(playerKey)
 end
 
 -- An item's quality and name: the client's when it has the item cached, else what the link carries
@@ -120,6 +119,56 @@ function LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, pl
         instanceID  = session.instanceID,
         encounterID = encounterID,
     })
+end
+
+-- The row of a guildmate's drop of an item still within its trade window, not awarded yet: the newest.
+function LootTracker:DropOf(playerKey, itemId)
+    local now = GetServerTime()
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        if now - (tonumber(e.timestamp) or 0) > TRADE_WINDOW then return nil end   -- newest first
+        local id = e.itemId or tonumber((e.itemLink or ""):match("item:(%d+)"))
+        if e.playerKey == playerKey and id == itemId and not e.awarded then return e end
+    end
+    return nil
+end
+
+-- Record an award by trade (retail, issue #185): a guildmate's personal item, offered to the raid,
+-- awarded and traded to the winner. The holder's own row of that drop becomes the winner's, so one
+-- item is one row and equity counts it once, with `awarded` and the holder in `from`; a client that
+-- missed the drop gets a new row. Either way the row is stamped with the drop's time as the holder's
+-- client had it (`timestamp`, carried by the offer), so every client writes the same row and the site
+-- keeps one. `award`: { itemLink, itemId, holder, winner, timestamp, raid, instanceID }. Returns the row.
+function LootTracker:RecordTradeAward(award)
+    if not (award and award.holder and award.winner and award.itemLink) then return nil end
+    local itemId = tonumber(award.itemId) or tonumber(award.itemLink:match("item:(%d+)")) or 0
+    local stamp = tonumber(award.timestamp) or GetServerTime()
+    local e = self:DropOf(award.holder, itemId)
+    if e then
+        e.player, e.playerKey, e.awarded, e.from, e.timestamp = award.winner, award.winner, true, award.holder, stamp
+        return e
+    end
+    local quality, itemName = itemFacts(award.itemLink)
+    local row = {
+        itemLink   = award.itemLink,
+        itemId     = itemId,
+        itemName   = itemName,
+        quality    = quality,
+        player     = award.winner,
+        playerKey  = award.winner,
+        count      = 1,
+        timestamp  = stamp,
+        raid       = award.raid or "",
+        instanceID = award.instanceID or 0,
+        awarded    = true,
+        from       = award.holder,
+    }
+    -- Where its time puts it, so the history stays newest first for the readers that stop at an old row.
+    local h = GuildOS.db.lootHistory
+    local at = 1
+    while h[at] and (tonumber(h[at].timestamp) or 0) > stamp do at = at + 1 end
+    table.insert(h, at, row)
+    while #h > HISTORY_MAX do table.remove(h) end
+    return row
 end
 
 function LootTracker:GetHistory(limit)

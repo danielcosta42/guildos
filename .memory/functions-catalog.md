@@ -68,7 +68,7 @@ Removed: `GuildOS.ACCENT_PRESETS`, `GuildOS:ApplyTheme()`.
 
 | Symbol | Description |
 |---|---|
-| `UI:IsFeatureAbsent(def)` | Whether this client has no such feature at all: `tbc` outside Anniversary, `retail = false` on retail. `AllFeatures`, `IsFeatureAllowed` and `OpenWindow` ask it (ADR-0026, issue #177) |
+| `UI:IsFeatureAbsent(def)` | Whether this client has no such feature at all: `tbc` outside Anniversary, `retail = false` on retail, `forever = false` on WoW: Forever (the consumable check, issue #187). `AllFeatures`, `IsFeatureAllowed` and `OpenWindow` ask it (ADR-0026, issue #177) |
 | `UI:OpenWindow(id, sub, filter)` | The one opener: refuses an unknown id or a background module, then says not on this client / disabled / could not start / officer-only; shows the window, unfolds it when the saved fold says so, opens tab `id` (remembered), then `panel.SelectSub(sub, filter)`; true when the tab opened (ADR-0016) |
 | `UI:ToggleMain()` | Shows or hides the window on the remembered tab |
 | `UI:GetMainWindow()` | The window (`GuildOS.RosterFrame`, frame `GuildOSWindow`), created on first use; nil before the saved data loads |
@@ -139,6 +139,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
 | `Compat.IsWeapon(item)` | Whether an item id is a weapon (`GetItemInfoInstant`'s class 2), no cache needed; nil when the client cannot say. A retail off hand needs an enchant only as one (issue #177) |
 | `Compat.Region()` | The client's region as guildos.me writes it, from `GetCurrentRegion()`: `"us"`, `"kr"`, `"eu"` or `"tw"`; nil (and the number) for any other answer (issue #182) |
+| `Compat.SecondsUntilWeeklyReset()` | The client's own count of the seconds to its region's weekly reset (`C_DateAndTime.GetSecondsUntilWeeklyReset`); nil without the call or when secret. Only RaidTracker's self-test reads it (guildos-web#199) |
 | `Compat.SpecName(id)` | A retail spec's name in the reader's language from its id (`GetSpecializationInfoForSpecID`); nil when the client cannot say or keeps it secret (issue #177) |
 | `Compat.AverageItemLevel()` | Retail: my equipped average as the game shows it, floored; nil elsewhere, where the addon averages its own slots (ADR-0026) |
 | `Compat.InspectItemLevel(unit)` | Retail: an inspected unit's equipped average (`C_PaperDollInfo.GetInspectItemLevel`), floored, after INSPECT_READY; nil elsewhere, before the inspect has the gear, or when secret (issue #184) |
@@ -146,7 +147,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.SecondaryStats()` | Retail: `{ crit, haste, mastery, versatility }` in percent, two decimals: crit as the character sheet takes it (best of melee, ranged and the weakest spell school), versatility's damage rating plus its bonus; a rating the client cannot give or keeps secret is left out; nil elsewhere (issue #184) |
 | `Compat.GetNumSkillLines()` / `GetSkillLineInfo(i)` | The skill-line globals; the count returns `nil, "no-api"` when the client has none |
 | `Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)` | Through ChatThrottleLib (BULK by default), acting on the result: a lockdown holds it and every later send until combat ends, the zone changes or a 2-second poll finds it lifted (200 at most, oldest dropped); a channel throttle retries after 1, 2, 4 and 8 s; any other failure, or a message the client would refuse (prefix over 16 bytes, text over 255, no channel, unknown priority), is recorded once per reason and dropped (ADR-0019) |
-| `Compat.SendAddonMessageNow(prefix, text, channel, target)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send |
+| `Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)` | Sent at once past ChatThrottleLib's queue with the same results, and an AddonMessageThrottle (which ChatThrottleLib would have re-queued) retried after 1, 2, 4 and 8 s: loot messages, whose roll timers start at send. `onSent`, optional, runs once the message has really gone out (never while held or retried, never for one dropped): the loot council's `/roll` (issue #185) |
 | `Compat.FlushHeldMessages()` | Sends what a lockdown held, in order and one at a time under pcall (one that raises is recorded, the rest still go); while it lasts, each is held again |
 | `Compat.ChannelHidesRaidIcons(name, number)` | Does the server show this channel without raid icons (ChatChannels DisableRaidIcons → the chat event's `suppressRaidIcons`)? On WoW: Forever General 1, Trade 2, LocalDefense 22, Services 42, TradeLocal 46, by zone channel id from `C_ChatInfo.GetChannelInfoFromIdentifier` (name, else the number as a string, as Blizzard's own UI looks it up); on Anniversary no channel (issue #64) |
 | `Compat.SetWhoToUI(toApi)` / `Compat.WhoExact(name)` | `/who` on both clients: `C_FriendList.SetWhoToUi` (lower-case i, its real name everywhere) first; `WhoExact` builds each client's own exact filter: `WHO_TAG_EXACT .. C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator(name)` on Forever, `WHO_TAG_EXACT .. name` on Anniversary, else `n-"Name"`. Giving the flag back leaves it on while Blizzard's Who list is open (issue #71) |
@@ -266,7 +267,7 @@ Removed: `Compat.NewTimer`.
 | `DataCollector:IsGatheringProfession(name)` | Returns PROF_LOOKUP[name].isGathering |
 | `DataCollector:CollectStats()` | Collects health/mana/STR/AGI/STA/INT/SPI via UnitStat; on retail health, the spec's primary stat (`primary` names it), stamina and `Compat.SecondaryStats`'s four ratings, never a fifth UnitStat (issue #184). The resistance scan in `CollectMyData` and its broadcast run only where `GuildOS.Resistances` exists (absent on retail) |
 | `DataCollector:StoreReceivedData(playerKey, data)` | Merges received data with timestamp check; handles recipes separately |
-| `DataCollector:GetBroadcastData()` | Returns clean copy (gear/prof/attunements/spec/recipes/addonVersion) for broadcast |
+| `DataCollector:GetBroadcastData()` | Returns clean copy (gear/prof/attunements/spec/recipes/addonVersion) for broadcast; on retail `mplus` and `vault` too (issue #187) |
 
 ---
 
@@ -338,11 +339,11 @@ Removed: `Compat.NewTimer`.
 | `Wishlist:Initialize()` | DB setup, data migration, rebuilds index, hooks tooltips |
 | `Wishlist:RebuildItemIndex()` | Builds itemId→{wishers} index from guildWishlists |
 | `Wishlist:GetItemInterest(itemId)` | Returns itemIndex[itemId] entries |
-| `Wishlist:GetItemName(itemId)` | Returns GetItemInfo name or "Item #N" |
+| `Wishlist:GetItemName(itemId)` | Returns `ItemFacts`'s name (GetItemInfo, else the journal's on retail) or "Item #N" |
 | `Wishlist:GetItemQuality(itemId)` | Returns GetItemInfo quality or 1 |
 | `Wishlist:GetMyList()` | Lazily creates and returns per-character wishlist table |
 | `Wishlist:AddToWishlist(itemId, itemLink, isOffspec)` | Adds/updates item, broadcasts |
-| `Wishlist:IsItemDelivered(itemId)` | Checks lootHistory for ML award of item to self |
+| `Wishlist:IsItemDelivered(itemId)` | Checks lootHistory for ML award of item to self; on retail any row of mine (personal loot, or an award recorded by trade, issue #185) |
 | `Wishlist:RemoveFromWishlist(itemId)` | Removes item if not delivered, reorders, broadcasts |
 | `Wishlist:ReorderWishlist(itemId, direction)` | Swaps item with neighbor, broadcasts |
 | `Wishlist:BroadcastMyWishlist()` | Stores locally + sends "WL" comm message |
@@ -358,7 +359,8 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
-| `RaidTracker:GetWeekNum(timestamp)` | Floor division from TBC Tuesday epoch |
+| `RaidTracker:GetWeekNum(timestamp)` / `WeekStart(weekNum)` / `ResetOrigin()` | The lockout week a timestamp falls in, counted from this client's region's weekly reset; the moment a week starts; that region's origin. `RESET_ORIGIN` is the client's `Cfg_Regions.Raidorigin` (us Tuesday 15:00 UTC, eu Wednesday 04:00, kr and tw Wednesday 23:00), the region `Compat.Region()`'s, the Americas when the client does not say. Lockouts, attendance and the raids panel's week groups all ask it; the site's `resetWeek` is the same table (guildos-web#199) |
+| `RaidTracker:_RegisterTests()` | `/gos selftest`'s `raidtracker.weekly_reset`: the table's next reset against `Compat.SecondsUntilWeeklyReset()`, within a minute; passes where the client has no such call (guildos-web#199) |
 | `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
 | `RaidTracker:Initialize()` | DB setup, migration, registers zone/roster/encounter events |
 | `RaidTracker:CheckZone()` | Manages session start/resume/end based on GetInstanceInfo |
@@ -367,7 +369,7 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:EndSession(away)` | Finalizes session, discards if <10min, saves. `away` (retail: `ElsewhereInGrace()`, asked before the grace timer is cleared, when the grace runs out or another raid begins) skips the `session_end` snapshot of a group that is not the session's (issue #183) |
 | `RaidTracker:ElsewhereInGrace()` | Retail only: while the session waits out its grace, whether this client stands in another instance or the session's raid on another difficulty (Raid Finder after the guild's Heroic, a dungeon). The open world (the run-back) is not elsewhere. `TakeSnapshot`, `OnEncounterStart` and `OnEncounterEnd` return at once when it is, `EndSession` takes no last snapshot, and `LootTracker` records no loot (issue #183) |
 | `RaidTracker:TakeSnapshot(reason)` | Captures raid roster with consume check into snapshots |
-| `RaidTracker:CheckPlayerConsumes(unit)` | Checks flask/elixir/food buffs via ConsumableChecker |
+| `RaidTracker:CheckPlayerConsumes(unit, key)` | A snapshot's `hasConsumes`: `ConsumableChecker:RaidVerdict` (true, false, or on retail nil when unread), true without the checker (Forever). The score counts a snapshot not known to be without (`~= false`) as a hit, as CompanionExport's `chits` does (issue #187) |
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
 | `RaidTracker:OnEncounterEnd(encounterID, encounterName, success)` | Updates encounter end/success |
 | `RaidTracker:GetCurrentGroup()` | Returns currentGroupTag string |
@@ -422,6 +424,7 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `LootTracker:Initialize()` | Ensures lootHistory DB table exists; on retail registers `ENCOUNTER_LOOT_RECEIVED` (issue #183) |
 | `LootTracker:RecordMLAward(entry)` | Prepends entry to lootHistory, caps at 500 |
+| `LootTracker:RecordTradeAward(award)` / `DropOf(playerKey, itemId)` | Retail (issue #185): an award by trade, `{ itemLink, itemId, holder, winner, timestamp, raid, instanceID }`. The holder's own row of that drop (`DropOf`: same item, within two hours, not awarded) becomes the winner's, with `awarded = true` and `from` = the holder, so one item is one row; with none (this client missed the drop) a new row, put where its time falls. Either way stamped with `timestamp`, the drop's time the offer carried, so every client writes the same row. Returns the row |
 | `LootTracker:OnEncounterLoot(encounterID, itemID, itemLink, quantity, playerName, className)` | Retail only (issue #183): one guildmate's personal loot, every guildmate's and not only mine, recorded in an ML award's shape (`player` and `playerKey` both the whole `Name-Realm` by their own realm, `itemId`, `encounterID`, no `fromML`) when a tracked raid session is the instance and the difficulty this client stands in, in its grace too (as its snapshots are) and the Loot Tracker is on. Skipped whole when any field is secret, the player is not on the guild roster by that key (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`: a connected-realm guildmate counts, a namesake from elsewhere does not), under Rare (the cached quality, else the link's `\|cnIQn:`, else 4), or a re-fire of the same boss, item and player within 5 minutes |
 | `LootTracker:GetHistory(limit)` | Returns first N entries from lootHistory |
 | `LootTracker:GetPlayerLoot(playerKey, limit)` | Filters lootHistory by player key |
@@ -603,12 +606,18 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists |
-| `ConsumableChecker:CheckRaid()` | Checks all connected raid members for flask/food/elixirs |
+| `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists; on retail registers READY_CHECK and READY_CHECK_FINISHED (issue #187) |
+| `ConsumableChecker:CheckRaid(quiet)` | Checks all connected raid members: TBC's five categories on Anniversary; on retail flask, food, rune (by the catalog's spell ids) and my own weapon, each raider's row with `buffs`, `missing` and `unknown` (never read: out of range, secret, in combat; the weapon only for me). `quiet` says nothing outside a raid |
+| `ConsumableChecker:OnReadyCheck()` | Retail: a quiet `CheckRaid` when the ready check starts and when it ends (whoever eats in answer is read with the food on), for the screens and for the pull's snapshot |
+| `ConsumableChecker:Tally(results)` | The popup's tally: `problems` (raiders missing something), `total`, `ready`, `unread` (retail: unread raiders are neither) |
+| `ConsumableChecker:ReadUnit(unit)` | Retail: per category the buff's spell id (true for my weapon), false when every buff was read and none is it, nil when unknown (`Compat.UnitBuffIDs` partial or nil) |
+| `ConsumableChecker:RaidVerdict(unit, key)` | The snapshot's verdict: TBC's flask-or-battle-elixir and food on Anniversary (boolean); on retail flask and food, true/false when read, else the reading `Remember`ed out of combat in the last 600 s (the ready check before the pull), else nil |
+| `ConsumableChecker:Remember(key, on)` / `Recent(key)` | Retail: a raider's verdict kept in `GuildOS.State.consumables.reads` with `GetTime()`, and read back within 600 s; a nil verdict never wipes a kept one |
+| `ConsumableChecker:GetUnknownCount(results)` | Raiders with something unread (retail); `/gos cons` and the popup say it apart, never as missing |
 | `ConsumableChecker:UnitHasBuff(unit, spellID, nameHint)` | Scans UnitBuff(1..40), matches by spellId or name |
 | `ConsumableChecker:GetLastResults()` | Returns lastCheck.results or db.consumableChecks.lastResults |
 | `ConsumableChecker:GetMissingCount(results)` | Counts players with non-empty missing array |
-| `ConsumableChecker:ReportToChat(channel)` | Sends missing consumables report to raid channel |
+| `ConsumableChecker:ReportToChat(channel)` | Sends missing consumables report to raid channel; nothing in an encounter's chat lockdown, which would drop it (issue #187) |
 
 ---
 
@@ -904,3 +913,55 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
 | `GuildOS.JsonDecode(s)` | The addon's one JSON decoder, in Core/Utils.lua so every client has it: SoftRes (absent on retail) reads Gargul's JSON with it, the companion import the site's |
 | `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the groups, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm, with the modules loaded in TOC order (SoftRes absent) |
+
+## Retail: consumables, Mythic+ and the Great Vault (issue #187)
+
+| Symbol | Description |
+|---|---|
+| `Compat.UnitBuffIDs(unit)` | A unit's buff spell ids and whether the list is all of them (`C_UnitAuras.GetBuffDataByIndex`): a secret aura or id is passed over and the list is partial, as it is when a forty-first buff is there; nil (nothing read) in combat, while `C_Secrets.ShouldAurasBeSecret()`, for a secret unit token, without the API, or when the unit shows no buff at all |
+| `Compat.MainHandTempEnchant()` | Retail: whether my main hand has a temporary enchant (`GetWeaponEnchantInfo`); nil elsewhere, in combat or secret |
+| `Compat.RequestMythicPlus()` | Retail: `C_MythicPlus.RequestMapInfo()`; CHALLENGE_MODE_MAPS_UPDATE answers |
+| `Compat.MythicPlus()` | Retail: `{ rating, key = { map, level } }` (`C_ChallengeMode.GetOverallDungeonScore`, `C_MythicPlus.GetOwnedKeystone*`), the key left out when none is held; nil elsewhere, or when anything is secret |
+| `Compat.ChallengeMapName(map)` / `Compat.RatingColor(score)` | A Mythic+ dungeon's name in the reader's language (`GetMapUIInfo`); a rating's colour as r, g, b (`GetDungeonScoreRarityColor`) |
+| `Compat.WeeklyActivities()` | Retail: the Great Vault's raid, dungeon and world slots as `{ row, progress, threshold, level }` (`C_WeeklyRewards.GetActivities`, rows by `Enum.WeeklyRewardChestThresholdType`, 12.1.5's 3/1/6 without it); nil before the activities arrive or when any field is secret |
+| `Compat.WeekStart()` | When this week began by the server's clock (`C_DateAndTime.GetWeeklyResetStartTime`), or nil. The Great Vault's "this week", the game's own; the lockout week is `RaidTracker:GetWeekNum`/`WeekStart`'s table (guildos-web#199) |
+| `GuildOS.ConsumableCatalog` | Data/ConsumablesRetail.lua, generated by `tools/consumable_catalog.py` from 12.1.5.70448: `flask`, `rune`, `food` buff spell ids, retail only |
+| `MythicPlus:Initialize()` / `OnEvent(event)` | Registers CHALLENGE_MODE_MAPS_UPDATE (sets `GuildOS.State.mythicPlus.ready`), CHALLENGE_MODE_COMPLETED and WEEKLY_REWARDS_UPDATE (sets `vaultReady`); each schedules one member broadcast 2 s later |
+| `MythicPlus:Collect()` | My `mplus` (only once the season's data has arrived) and my vault summed and stamped (only once the vault's has); `CollectMyData` keeps the old value for whichever is nil |
+| `MythicPlus:SumVault(slots, at)` | `{ at, raid/dungeon/world = { n, best } }`: slots open and the best level (a raid by difficulty rank, LFR lowest) |
+| `MythicPlus:Rating(mplus)` / `KeyLevel(mplus)` / `KeystoneText(mplus)` | A stored record read defensively: the rating, the key's level, "<dungeon> +N" in the reader's language |
+| `MythicPlus:VaultCells(vault, weekStart)` | The sheet's three cells `{ label, text }` ("2/3 · H", "+12", "Tier 8"); nil, "old" for a vault from before this week's reset |
+| Roster column `mplus` | UI/RosterFrame.lua: the rating in the game's colour and the key's level, offered only with `GuildOS.MythicPlus`; not in `RosterColumns.DEFAULT` |
+| Member sheet | UI/MemberDetail.lua: MYTHIC+ (rating, keystone) and GREAT VAULT, only with the module and the member's own data |
+| `Readiness:GetReport(targetShort)` | `missCons` is the count known missing, nil when nothing was read (never "all missing"); a raider is matched by key, and only off retail by name too (issue #187) |
+| `tools/retail-consumables.lua` / `tools/retail-mplus.lua` / `tools/consumable_catalog.py` | The harnesses and the generator (its self-test runs on `tools/consumable-catalog-fixture/`) |
+
+## Retail loot distribution (issue #185)
+
+| Symbol | Description |
+|---|---|
+| `GuildOS:LootSystemsHere()` / `LootSystemLabel(sys)` | The loot systems this client offers (TMB, Classic only, is `retail = false`), and a system's button name: on retail "rolls" is "Free roll" |
+| `GuildOS:PublishLootSystem()` / `OnLootSystemSync(env)` | Retail only: an officer's loot system goes out on `guildcfg`/`lootsys`, stamped (`settings.lootSystemAt`) when it changes and again with the officer threshold on the regular sync; every client keeps the newest stamp, and two in one second settle on the same system everywhere; a system retail does not offer, or a secret, is turned away. Forever keeps it each client's own |
+| `GuildOS:DisplayKey(key)` | Core/Utils.lua: a guildmate's key as it reads on screen: the name alone on this character's realm, the whole `Name-Realm` otherwise (the loot council's names, issue #185) |
+| `GuildOS:IsGuildmate(playerKey)` | Core/Utils.lua: whether a whole key is on the guild roster (`Compat.FindGuildRosterIndex`, then `KeyOfRosterName`): a connected-realm guildmate is, a namesake from elsewhere is not. LootTracker and TradeCouncil use it |
+| `Points:MakeEntry(...)` | On retail the entry's `name` is the whole key, as the loot history names a guildmate |
+| `Points:KeyOf(name)` | The key a name typed in the points window means: `KeyOfRosterName` on retail (a realm typed is kept, none is this realm's), `GetPlayerKey(name, GetRealmName())` elsewhere, as before |
+| `Points:OnBossKill(name)` | Awards nothing while the pool is not set up (the module switched off, so never initialized) |
+| `Compat.JournalLoot(journalInstanceID)` | Retail: a raid's loot from the Encounter Journal, `{ { itemID, name, link, encounterID, boss } }`, every class's (`EJ_SetLootFilter(0, 0)`, slot filter reset), plus whether every row had its name, and the raid's name. Nothing while the journal is open ("busy"); the class and slot filters and the instance (and boss) the journal last showed are put back. Nil without the journal |
+| `Wishlist.JOURNAL_RAIDS` / `LoadJournal(force)` / `OnJournalData()` | Midnight's raids by journal instance (1307, 1314, 1308, 1320), read into `Wishlist.catalog`; read again 2 s after `EJ_LOOT_DATA_RECIEVED` until every list is whole |
+| `Wishlist:CatalogEntry(itemId)` / `ItemFacts(itemId)` | The journal's `{ name, link, raid, boss }`; an item's name, link and quality, the client's when cached, else the journal's (quality from the link's `\|cnIQn:`, else 4). The wishlist and prio searches use it |
+| `Wishlist:ListFor(key, name)` | A guildmate's synced list: by the whole key on retail, by the name elsewhere. The roster tooltip uses it |
+| Retail wishlist keys | `BroadcastMyWishlist` sends my whole key as the name; `HandleWishlistBroadcast(sender, data, channel)` files a list under its sender's whole key (`KeyOfRosterName(sender)`), never the name it carries, and only from a guildmate over GUILD (CommSystem passes the channel) |
+| `Compat.TradeSeconds(text)` | The seconds a trade-time line names, read with the client's own duration strings (`INT_SPELL_DURATION_*`, `D_*`; every `\|4` plural form, longest first, lower case); nil when nothing can be read |
+| `Compat.TradeTimeLeft(bag, slot)` | `"timed"` with the seconds and the line (the tooltip's `TradeTimeRemaining` line, `C_TooltipInfo.GetBagItem`), `"free"` when not bound, `"bound"` when no longer tradeable; nil without the retail tooltip data, for an empty slot, or a secret |
+| `Compat.TradePartner()` / `TradeItemLinks()` / `IsTradeComplete(type, msg)` | The trade window's other player (`UnitName("NPC")`), what I put in its six slots (`GetTradePlayerItemLink`), and whether a `UI_INFO_MESSAGE` is "Trade complete." (`LE_GAME_ERR_TRADE_COMPLETE`, else `ERR_TRADE_COMPLETE`) |
+| `Compat.EquipLoc(item)` / `Compat.SendChatMessage(text, chatType)` / `Compat.RandomRoll(low, high)` | An item's equip location with no cache (`GetItemInfoInstant`); a chat line through `C_ChatInfo.SendChatMessage`, else the global, never in a chat lockdown (false then); the server's `/roll` |
+| `TradeCouncil` (Modules/TradeCouncil.lua) | Retail only. Prefix `GuildOSTC` over RAID: `O\|id\|free\|secs\|drop\|link`, `A\|id\|choice\|link`, `W\|id\|winner`, `X\|id`, `D\|id\|winner\|by`; only a guildmate's message (`IsGuildmate`), never a secret, a link only when it is one item link (no control character; colour `\|cffRRGGBB` or `\|cnIQn:`; inside the brackets no `\|` but the crafted-quality atlas at a chat icon's size, and no bracket). An incoming offer is a free roll only when this client's loot system is; its drop time is believed only within two hours and a minute back to now, else the offer's. State in `GuildOS.State.tradeCouncil` (the offers, each with its `awards[by] = winner`; the trade; a sequence for the rolls) |
+| `TradeCouncil:Offer(link)` | Offer a tradeable item from my bags (`FindInBags`: this link, else the same item still tradeable) to the raid: needs a raid and an active loot system; refused when the item is gone, bound or already offered; `free` when the guild's system is the free roll; expires with its trade window (two hours when unreadable). Opens the council |
+| `TradeCouncil:Answer(id, choice)` / `Award(id, winner)` / `Withdraw(id)` | Need, Greed or Pass with `EquippedFor` (the lower of a pair, nothing for an empty slot); a first Need or Greed sends the answer, then the server's `/roll 1-100` once the answer has really gone out (`SendAddonMessageNow`'s `onSent`); none in a chat lockdown, nor once an award names me (it says so; every other client ignores the change too). An award by an officer, or the holder of a free offer, to a guildmate who answered Need or Greed, kept as `awards[me]`, announced in raid chat (printed in a lockdown); a withdrawal by the holder or an officer |
+| `TradeCouncil:Ranked(o)` / `OnSystemMessage(text)` / `Wishers(o)` / `WishOrder(itemId, key)` / `Context(key)` | Answers ranked Need, Greed, Pass, then DKP points or wishlist place by the guild's system, then the server's roll, an answer whose roll was not seen last. A 1-100 roll line (`RANDOM_ROLL_RESULT`, `MatchFormat`) is the roll of its player's earliest answer still waiting for one, within 10 s after it; earlier, other ranges, late rolls and second answers bind nothing. Who wished for the item; attendance of the raid's core |
+| `TradeCouncil:MyTradeableItems()` / `MyOfferFor(link)` / `MayIAward(o)` / `MayIWithdraw(o)` / `IsMine(o)` / `Get(id)` / `OpenOffers()` | My Rare-and-up items with a trade window open, soonest first; the open offer of mine for a link; the permissions; one offer; the open ones, oldest first, a run-out one closed on the way |
+| `TradeCouncil:OnTradeShow()` / `SnapshotTrade()` / `OnInfoMessage(type, msg)` / `OnTradeDone(partner, links)` | The trade: its partner (told what to put in when they won), what I hand over (kept from `TRADE_PLAYER_ITEM_CHANGED`/`TRADE_ACCEPT_UPDATE`), and "Trade complete." however long the other player took: an offered item to its award's winner is `Complete`d and `D` sent with the award as the holder saw it (winner, who gave it); to anyone else nothing is recorded, it says so and the offer is withdrawn |
+| `TradeCouncil:Complete(o)` / `Charge(o)` | Into the loot history (`RecordTradeAward` at the offer's drop time, the tracked session's raid); the officer named as giver charges the item's cost under DKP with one, only for the award that client gave (`awards[me] == winner`); once. A holder's `D` is believed for an award this client saw given (`awards[by] == winner`), or, under a free roll, the holder's own to a guildmate who answered Need or Greed; the winner still in the guild; also on an offer this client closed a minute early |
+| `GuildOS:ShowTradeCouncil(offerId)` / `RefreshTradeCouncil()` | UI/TradeCouncil.lua: the loot council window (the raid's offers, my tradeable items with Offer, the offer picked with Need/Greed/Pass, the ranked answers with Award, Withdraw); `/gos offer`, Settings' quick access "Loot Council" and every incoming offer open it |
+| `tools/retail-points.lua` / `retail-wishlist.lua` / `retail-loot-council.lua` / `trade-council-ui.lua` | The harnesses of issue #185 |

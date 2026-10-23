@@ -230,6 +230,18 @@ local COLUMNS = {
       offered = function() return GuildOS.GearAudit ~= nil end,
       value = function(d) return d.gear and #GuildOS.GearAudit:MissingEnchants(d.gear) or nil end,
       text = function(v) return v, v > 0 and C.red or C.green end },
+    -- Retail (issue #187): the rating in the game's colour, then the keystone's level. By the rating.
+    { key = "mplus",       label = L["M+"],           name = L["Mythic+ rating and keystone"], min = 70, weight = 0, align = "CENTER",
+      offered = function() return GuildOS.MythicPlus ~= nil end,
+      value = function(d)
+          d.keyLevel = GuildOS.MythicPlus:KeyLevel(d.mplus)
+          return GuildOS.MythicPlus:Rating(d.mplus)
+      end,
+      text = function(v, d)
+          local r, g, b = GuildOS.Compat.RatingColor(v)
+          local text = d.keyLevel and (v .. " |cff999999+" .. d.keyLevel .. "|r") or tostring(v)
+          return text, r and { r = r, g = g, b = b } or C.gold
+      end },
 
     -- The modules'.
     { key = "attendance",  label = L["ATT."],         name = L["Attendance"],   min = 50,  weight = 0, align = "CENTER",
@@ -1104,6 +1116,8 @@ function GuildOS:CreateRosterPanel(parent, host)
                             or (GuildOS.Professions and GuildOS.Professions:LegacyList(key)),
                         attunements = addonData.attunements,
                         stats = addonData.stats,
+                        mplus = addonData.mplus,   -- retail (issue #187)
+                        vault = addonData.vault,
                         race = addonData.race or "",
                         lastUpdate = addonData.lastUpdate or 0,
                         lastSync = addonData.lastSync or 0,
@@ -2048,9 +2062,8 @@ function ShowRowTooltip(row)
     end
 
     -- Wishlist info (native)
-    if GuildOS.db.guildWishlists then
-        local gKey = strlower(data.name or "")
-        local wData = GuildOS.db.guildWishlists[gKey]
+    if GuildOS.db.guildWishlists and GuildOS.Wishlist then
+        local wData = GuildOS.Wishlist:ListFor(data.key, data.name)   -- by the whole key on retail (#185)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")
@@ -2278,7 +2291,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             local attStr = "-"
             local attR, attG, attB = 0.35, 0.35, 0.35
             if GuildOS.RaidTracker then
-                local pKey = GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
+                -- On retail a list's name is its owner's whole key already (issue #185).
+                local pKey = GuildOS.Client.isRetail and charData.name
+                    or GuildOS:GetPlayerKey(charData.name or charKey, GetRealmName())
                 local attVal = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey) or 0
                 if attVal > 0 then
                     attStr = attVal .. "%"

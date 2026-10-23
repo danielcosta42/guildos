@@ -94,6 +94,14 @@ function Compat.Region()
     return REGIONS[id], id
 end
 
+-- The client's own count of the seconds to its region's weekly reset; nil where the client has no
+-- such call. Only RaidTracker's self-test reads it, against the reset table (guildos-web#199).
+function Compat.SecondsUntilWeeklyReset()
+    local left = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
+    if Compat.IsSecret(left) then return nil end
+    return tonumber(left)
+end
+
 -- My own name the way the guild roster and every addon-message sender write it. WoW: Forever
 -- 1.60.1.70009 cut UnitName("player") to the first name ("Chehul") while the roster says
 -- "Chehul Druida"; there UnitFullName("player") returns the first name and the surname apart,
@@ -594,6 +602,138 @@ function Compat.UnitBuff(unit, index)
     if UnitBuff then return UnitBuff(unit, index) end
 end
 
+----------------------------------------------------------------------
+-- Retail: the raid's consumables (issue #187)
+----------------------------------------------------------------------
+local MAX_AURAS = 40   -- buffs read per unit; retail has no such cap, so one more means the list is partial
+
+local function inCombat() return InCombatLockdown ~= nil and InCombatLockdown() and true or false end
+
+-- The spell ids of a unit's buffs, for the consumable check, and whether the list is all of them.
+-- Midnight keeps auras secret in combat and in instances: a buff the client keeps secret, or a unit
+-- token, is passed over and the list is partial, and a partial list can show a buff is there but
+-- never that one is missing; so is one with a buff past the MAX_AURAS read. Nil, nothing read: in
+-- combat (the check runs out of it, at the ready check and before the pull), while the client says
+-- auras are secret, without the aura API, or for a unit showing no buff at all, whose auras have not
+-- reached this client.
+function Compat.UnitBuffIDs(unit)
+    if Compat.IsSecret(unit) or inCombat() then return nil end
+    local secrets = C_Secrets and C_Secrets.ShouldAurasBeSecret
+    if secrets then
+        local secret = secrets()
+        if Compat.IsSecret(secret) or secret then return nil end
+    end
+    local get = C_UnitAuras and C_UnitAuras.GetBuffDataByIndex
+    if not get then return nil end
+    local ids, complete = {}, true
+    for i = 1, MAX_AURAS + 1 do
+        local a = get(unit, i)
+        local present = Compat.IsSecret(a) or type(a) == "table"
+        if not present then break end
+        if i > MAX_AURAS or Compat.IsSecret(a) then
+            complete = false
+        else
+            local id = a.spellId
+            if Compat.IsSecret(id) or not tonumber(id) then complete = false else ids[#ids + 1] = id end
+        end
+    end
+    if #ids == 0 and complete then return nil end
+    return ids, complete
+end
+
+-- Whether my main hand carries a temporary enchant (an oil, a stone, a shaman's imbue), on retail:
+-- true or false; nil elsewhere, in combat, or when the client keeps it secret. Only mine: nobody
+-- else's temporary enchant reaches this client (issue #187).
+function Compat.MainHandTempEnchant()
+    if not (GuildOS.Client.isRetail and GetWeaponEnchantInfo) or inCombat() then return nil end
+    local has = GetWeaponEnchantInfo()
+    if Compat.IsSecret(has) then return nil end
+    return has and true or false
+end
+
+----------------------------------------------------------------------
+-- Retail: Mythic+ and the Great Vault (issue #187)
+----------------------------------------------------------------------
+
+-- Ask the client for this season's Mythic+ data; CHALLENGE_MODE_MAPS_UPDATE says it has arrived.
+function Compat.RequestMythicPlus()
+    if GuildOS.Client.isRetail and C_MythicPlus and C_MythicPlus.RequestMapInfo then C_MythicPlus.RequestMapInfo() end
+end
+
+-- My Mythic+ this season, on retail: { rating, key = { map, level } }, the key left out when I hold
+-- none. Nil elsewhere, or when the client cannot say or keeps any of it secret, so a guildmate keeps
+-- what I sent before rather than a wrong answer (issue #187).
+function Compat.MythicPlus()
+    if not GuildOS.Client.isRetail then return nil end
+    local CM, MP = C_ChallengeMode, C_MythicPlus
+    local rating = CM and CM.GetOverallDungeonScore and CM.GetOverallDungeonScore()
+    if Compat.IsSecret(rating) or not tonumber(rating) then return nil end
+    local map = MP and MP.GetOwnedKeystoneChallengeMapID and MP.GetOwnedKeystoneChallengeMapID()
+    local level = MP and MP.GetOwnedKeystoneLevel and MP.GetOwnedKeystoneLevel()
+    if Compat.IsSecret(map, level) then return nil end
+    local out = { rating = math.floor(tonumber(rating) + 0.5) }
+    map, level = tonumber(map), tonumber(level)
+    if map and level and map > 0 and level > 0 then out.key = { map = map, level = level } end
+    return out
+end
+
+-- A Mythic+ dungeon's name in the reader's language, from its challenge map id; nil when unknown.
+function Compat.ChallengeMapName(map)
+    local get = C_ChallengeMode and C_ChallengeMode.GetMapUIInfo
+    if not (get and tonumber(map)) then return nil end
+    local name = get(tonumber(map))
+    if Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    return name
+end
+
+-- The colour the game gives a Mythic+ rating, as r, g, b; nil when the client cannot say.
+function Compat.RatingColor(score)
+    local get = C_ChallengeMode and C_ChallengeMode.GetDungeonScoreRarityColor
+    if not (get and tonumber(score)) then return nil end
+    local c = get(tonumber(score))
+    if Compat.IsSecret(c) or type(c) ~= "table" or Compat.IsSecret(c.r, c.g, c.b) or not tonumber(c.r) then return nil end
+    return c.r, c.g, c.b
+end
+
+-- The Great Vault's rows by Enum.WeeklyRewardChestThresholdType, with 12.1.5's numbers for a client
+-- that does not name them. The world row is the delves' (a delve tier is its level).
+local VAULT_TYPES = { Raid = { "raid", 3 }, Activities = { "dungeon", 1 }, World = { "world", 6 } }
+
+-- My Great Vault this week, on retail: one { row, progress, threshold, level } per slot of the raid,
+-- dungeon and world rows. Nil elsewhere, before the client has the activities (WEEKLY_REWARDS_UPDATE),
+-- or when it keeps any of them secret (issue #187).
+function Compat.WeeklyActivities()
+    local get = GuildOS.Client.isRetail and C_WeeklyRewards and C_WeeklyRewards.GetActivities
+    if not get then return nil end
+    local enum = Enum and Enum.WeeklyRewardChestThresholdType or {}
+    local rowOf = {}
+    for name, v in pairs(VAULT_TYPES) do rowOf[tonumber(enum[name]) or v[2]] = v[1] end
+    local list = get()
+    if Compat.IsSecret(list) or type(list) ~= "table" then return nil end
+    local out = {}
+    for _, a in ipairs(list) do
+        if Compat.IsSecret(a) or type(a) ~= "table" then return nil end
+        if Compat.IsSecret(a.type, a.progress, a.threshold, a.level) then return nil end
+        local row = rowOf[a.type]
+        if row then
+            out[#out + 1] = { row = row, progress = tonumber(a.progress) or 0, threshold = tonumber(a.threshold) or 0,
+                              level = tonumber(a.level) or 0 }
+        end
+    end
+    return #out > 0 and out or nil
+end
+
+-- When this week began, by the server's clock: the weekly reset this client's region had last. Nil
+-- where the client cannot say (issue #187). The Great Vault's week, which is the game's own, so it is
+-- asked of the client; RaidTracker:WeekStart(n) is the lockout week from the region table, which the
+-- site shares and the self-test holds against this client (guildos-web#199).
+function Compat.WeekStart()
+    local get = C_DateAndTime and C_DateAndTime.GetWeeklyResetStartTime
+    local at = get and get()
+    if Compat.IsSecret(at) then return nil end
+    return tonumber(at)
+end
+
 function Compat.GetContainerNumSlots(bag)
     if C_Container and C_Container.GetContainerNumSlots then return C_Container.GetContainerNumSlots(bag) or 0 end
     if GetContainerNumSlots then return GetContainerNumSlots(bag) or 0 end
@@ -621,6 +761,175 @@ end
 function Compat.UseContainerItem(bag, slot)
     if C_Container and C_Container.UseContainerItem then return C_Container.UseContainerItem(bag, slot) end
     if UseContainerItem then return UseContainerItem(bag, slot) end
+end
+
+----------------------------------------------------------------------
+-- The Encounter Journal (retail, issue #185)
+----------------------------------------------------------------------
+
+-- A raid's loot as the Encounter Journal lists it: { { itemID, name, link, encounterID, boss } },
+-- every class's, plus the raid's name and whether every row had its name yet (the journal fills a list
+-- in as its data arrives, EJ_LOOT_DATA_RECIEVED). The journal's selection is the player's too: nothing
+-- is read while it is open ("busy"), and its class and slot filters and the instance it last showed are
+-- put back after. Nil on a client without the journal (Forever's has none of these).
+function Compat.JournalLoot(journalInstanceID)
+    local J = C_EncounterJournal
+    if not (EJ_SelectInstance and EJ_GetNumLoot and J and J.GetLootInfoByIndex) then return nil end
+    local open = EncounterJournal and EncounterJournal.IsShown and EncounterJournal:IsShown()
+    if open then return nil, "busy" end
+    local prevClass, prevSpec
+    if EJ_GetLootFilter then prevClass, prevSpec = EJ_GetLootFilter() end
+    local prevSlot = J.GetSlotFilter and J.GetSlotFilter()
+    EJ_SelectInstance(journalInstanceID)
+    if EJ_SetLootFilter then EJ_SetLootFilter(0, 0) end      -- 0, 0: every class, every spec
+    if J.ResetSlotFilter then J.ResetSlotFilter() end
+    local raid = EJ_GetInstanceInfo and EJ_GetInstanceInfo(journalInstanceID)
+    local items, complete = {}, true
+    for i = 1, EJ_GetNumLoot() or 0 do
+        local info = J.GetLootInfoByIndex(i)
+        if info and tonumber(info.itemID) then
+            if not info.name then complete = false end
+            items[#items + 1] = {
+                itemID = info.itemID, name = info.name, link = info.link, encounterID = info.encounterID,
+                boss = info.encounterID and EJ_GetEncounterInfo and EJ_GetEncounterInfo(info.encounterID) or nil,
+            }
+        end
+    end
+    if #items == 0 then complete = false end
+    if EJ_SetLootFilter and prevClass then EJ_SetLootFilter(prevClass, prevSpec or 0) end
+    if prevSlot and J.SetSlotFilter then J.SetSlotFilter(prevSlot) end
+    local shown = EncounterJournal and EncounterJournal.instanceID
+    if shown then
+        EJ_SelectInstance(shown)
+        if EncounterJournal.encounterID and EJ_SelectEncounter then EJ_SelectEncounter(EncounterJournal.encounterID) end
+    end
+    return items, complete, raid
+end
+
+----------------------------------------------------------------------
+-- Trading a personal item (retail, issue #185)
+----------------------------------------------------------------------
+
+-- The tooltip line that says how long an item can still be traded (Enum.TooltipDataLineType, 36 in
+-- 12.1.5's documentation).
+local TRADE_TIME_LINE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.TradeTimeRemaining or 36
+local TRADE_SLOTS = 6   -- MAX_TRADE_ITEMS is 7: the last slot is "will not be traded"
+
+-- Lua patterns that read a duration format ("%d |4hour:hours;") back: each grammatical form, the
+-- longest first, then the format as written. Lower case, as the text is read lower case.
+local function durationPatterns(fmt)
+    if type(fmt) ~= "string" or fmt == "" then return {} end
+    local function pattern(s)
+        local escaped = s:lower():gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+        return (escaped:gsub("%%%%d", "(%%d+)"))
+    end
+    local out = {}
+    local pre, forms, post = fmt:match("^(.-)|4([^;]*);(.*)$")
+    if pre then
+        local list = {}
+        for f in forms:gmatch("[^:]+") do list[#list + 1] = f end
+        table.sort(list, function(a, b) return #a > #b end)
+        for _, f in ipairs(list) do out[#out + 1] = pattern(pre .. f .. post) end
+    end
+    out[#out + 1] = pattern(fmt)
+    return out
+end
+
+-- The seconds a trade-time line names, read with the client's own duration strings, so in any language:
+-- "... for the next 1 hour 52 min." Nil when no part of it can be read.
+local DURATIONS = {
+    { 3600, { "INT_SPELL_DURATION_HOURS", "D_HOURS" } },
+    { 60,   { "INT_SPELL_DURATION_MIN", "D_MINUTES" } },
+    { 1,    { "INT_SPELL_DURATION_SEC", "D_SECONDS" } },
+}
+function Compat.TradeSeconds(text)
+    if type(text) ~= "string" then return nil end
+    text = text:lower()
+    local total, found = 0, false
+    for _, unit in ipairs(DURATIONS) do
+        local done = false
+        for _, global in ipairs(unit[2]) do
+            for _, pat in ipairs(durationPatterns(_G[global])) do
+                local n = tonumber(text:match(pat))
+                if n then total, found, done = total + n * unit[1], true, true break end
+            end
+            if done then break end
+        end
+    end
+    return found and total or nil
+end
+
+-- How long an item in my bags can still be traded: "timed", with the seconds when the line can be read
+-- and the line itself; "free" when the item is not bound at all; "bound" when it can no longer be
+-- traded. Nil on a client without the retail tooltip data, or for a slot with nothing in it. A personal
+-- item's trade window is only on its tooltip, a line of type TradeTimeRemaining.
+function Compat.TradeTimeLeft(bag, slot)
+    local info = Compat.GetContainerItemInfo(bag, slot)
+    if not info or Compat.IsSecret(info.isBound) then return nil end
+    if not info.isBound then return "free" end
+    local getter = C_TooltipInfo and C_TooltipInfo.GetBagItem
+    local data = getter and getter(bag, slot)
+    if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+    for _, line in ipairs(data.lines) do
+        if not Compat.IsSecret(line.type) and line.type == TRADE_TIME_LINE then
+            local text = line.leftText
+            if Compat.IsSecret(text) or type(text) ~= "string" then return "timed" end
+            return "timed", Compat.TradeSeconds(text), text
+        end
+    end
+    return "bound"
+end
+
+-- Who the open trade window is with: name and realm (nil realm: this one), or nothing when the client
+-- does not say or keeps it secret.
+function Compat.TradePartner()
+    local name, realm = UnitName("NPC")
+    if Compat.IsSecret(name, realm) or type(name) ~= "string" or name == "" then return nil end
+    return name, realm
+end
+
+-- The links of what I have put in the trade window, slot by slot.
+function Compat.TradeItemLinks()
+    local out = {}
+    if not GetTradePlayerItemLink then return out end
+    for i = 1, TRADE_SLOTS do
+        local link = GetTradePlayerItemLink(i)
+        if type(link) == "string" and not Compat.IsSecret(link) then out[#out + 1] = link end
+    end
+    return out
+end
+
+-- Whether a UI_INFO_MESSAGE says a trade has just gone through ("Trade complete.").
+function Compat.IsTradeComplete(messageType, message)
+    if Compat.IsSecret(messageType, message) then return false end
+    if LE_GAME_ERR_TRADE_COMPLETE ~= nil and messageType == LE_GAME_ERR_TRADE_COMPLETE then return true end
+    return ERR_TRADE_COMPLETE ~= nil and message == ERR_TRADE_COMPLETE
+end
+
+-- An item's equip location ("INVTYPE_HEAD"), with no item cache needed; nil when it is not worn or the
+-- client cannot say.
+function Compat.EquipLoc(item)
+    local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
+    if not (instant and item) then return nil end
+    local _, _, _, equipLoc = instant(item)
+    if type(equipLoc) ~= "string" or equipLoc == "" then return nil end
+    return equipLoc
+end
+
+-- The server's /roll low-high: the line everybody in the group sees (CHAT_MSG_SYSTEM, RANDOM_ROLL_RESULT).
+-- False on a client without it.
+function Compat.RandomRoll(low, high)
+    if not RandomRoll then return false end
+    return (pcall(RandomRoll, low, high))
+end
+
+-- Say a line in a chat channel: retail's C_ChatInfo.SendChatMessage, else the global. Nothing while the
+-- client holds chat in lockdown (Midnight, during an encounter); returns whether it went.
+function Compat.SendChatMessage(text, chatType)
+    if Compat.IsSecret(text) or (Compat.InChatLockdown and Compat.InChatLockdown()) then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not send then return false end
+    return (pcall(send, text, chatType))
 end
 
 ----------------------------------------------------------------------
@@ -1014,7 +1323,11 @@ end
 local send
 
 local function onResult(msg, didSend, result)
-    if didSend or result == SUCCESS then return end
+    if didSend or result == SUCCESS then
+        -- What has to follow the message, once it is really out (the loot council's /roll, issue #185).
+        if msg.onSent then pcall(msg.onSent) end
+        return
+    end
     if result == LOCKDOWN then return hold(msg) end
     -- ChatThrottleLib re-queues AddonMessageThrottle on its own path; a message sent now retries it here.
     local throttled = result == CHANNEL_THROTTLE or (msg.now and result == ADDON_THROTTLE)
@@ -1083,8 +1396,11 @@ function Compat.SendAddonMessage(prefix, text, channel, target, prio, queueName)
 end
 
 -- Send an addon message now, past ChatThrottleLib's queue, with the same results: loot, whose timers start at send.
-function Compat.SendAddonMessageNow(prefix, text, channel, target)
-    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1 })
+-- `onSent`, optional, runs once the message has really gone out: not while a lockdown holds it or a
+-- throttle retries it, and never for one that is dropped.
+function Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)
+    queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1,
+            onSent = onSent })
 end
 
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the

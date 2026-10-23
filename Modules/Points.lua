@@ -12,9 +12,10 @@
 --   dkp      - flat points, spent on items
 --   epgp     - effort/gear (earned vs spent shown as a ratio)
 --   council  - points are informational only (no enforced spend)
+--
+-- On retail too since issue #185: boss-kill EP, awards, decay and standings as anywhere else. With no
+-- Master Loot there, an item is charged when an award by trade is recorded (TradeCouncil).
 ----------------------------------------------------------------------
--- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
-if GuildOS.Client.isRetail then return end
 
 local Points = {}
 GuildOS.Points = Points
@@ -90,6 +91,14 @@ function Points:SetMode(mode)
     self:Refresh()
 end
 
+-- The key a name typed in the points window means. On retail a guildmate on a connected realm is typed
+-- with their realm ("Ana-Gallywix"), and a name without one is this realm's (issue #185); elsewhere the
+-- name on this client's realm, as always.
+function Points:KeyOf(name)
+    if GuildOS.Client.isRetail then return GuildOS:KeyOfRosterName(name) end
+    return GuildOS:GetPlayerKey(name, GetRealmName())
+end
+
 function Points:Get(key)
     local s = standings()[key]
     return s and s.current or cfg().startingPoints
@@ -124,7 +133,9 @@ end
 -- Event entries
 ----------------------------------------------------------------------
 function Points:MakeEntry(key, delta, reason, kind)
-    local short = key:match("^([^-]+)") or key
+    -- Retail names a guildmate with their realm, as its loot history does: two namesakes on connected
+    -- realms are two standings (ADR-0026). Elsewhere the name alone, as always.
+    local short = GuildOS.Client.isRetail and key or (key:match("^([^-]+)") or key)
     local class = (GuildOS.db.members[key] and GuildOS.db.members[key].class) or ""
     -- Tag with the active core so receivers can route to the right pool
     local coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
@@ -254,7 +265,9 @@ end
 -- Called by RaidTracker on a successful boss kill (raid-leader gated so
 -- exactly one client awards). No-op unless auto-award is enabled.
 function Points:OnBossKill(encounterName)
-    if not cfg().autoAward then return end
+    -- A pool not set up yet (the module switched off in Settings, so never initialized) awards nothing.
+    local pool = self:GetDB()
+    if not (pool and pool.config and pool.config.autoAward) then return end
     if not GuildOS:IsOfficer() then return end
     if not (UnitIsGroupLeader and UnitIsGroupLeader("player")) then return end
     local amount = cfg().bossAward or 0

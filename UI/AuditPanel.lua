@@ -60,8 +60,9 @@ end
 ----------------------------------------------------------------------
 local function BuildReadySub(panel)
     panel.targetIdx = 0   -- 0 = all raids; 1..N = a specific attunement raid
-    -- The attunement target and the consumables column are TBC's (ADR-0014): where the game has
-    -- neither, there is nothing to cycle through or to count (issue #184).
+    -- The attunement target is TBC's (ADR-0014) and the consumables column the checker's, on
+    -- Anniversary and retail (issue #187): where the game has neither, there is nothing to cycle
+    -- through or to count (issue #184).
     local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil
 
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
@@ -83,8 +84,17 @@ local function BuildReadySub(panel)
     specsBtn:SetScript("OnClick", function()
         if GuildOS.SpecChecker then GuildOS.SpecChecker:ScanGroup() end
     end)
+    -- /gos cons: the raid's consumables, read now, with the announce (on retail the Raid HUD that
+    -- holds the other way in does not exist; issue #187).
+    local leftmost = specsBtn
+    if hasCons then
+        local consBtn = UI:CreateButton(panel, L["Check Consumables"], 150, 20)
+        consBtn:SetPoint("TOPRIGHT", specsBtn, "TOPLEFT", -6, 0)
+        consBtn:SetScript("OnClick", function() GuildOS:ShowConsumablePopup() end)
+        leftmost = consBtn
+    end
     -- A narrow window cuts the summary short rather than lay the buttons over it.
-    summary:SetPoint("TOPRIGHT", specsBtn, "TOPLEFT", -8, -2)
+    summary:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -8, -2)
     summary:SetWordWrap(false)
     summary:SetJustifyH("LEFT")
 

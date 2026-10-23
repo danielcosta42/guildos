@@ -371,6 +371,9 @@ would be a guess, and a guess that reads "retail" would be worse than none.
 WOW_PROJECT_MAINLINE` and an interface of 100000 or more (`GuildOS.Client.isRetail`). An unknown client is still
 Forever. `GuildOS.Client.game` names the client for the payload and diagnostics; nothing else branches on it.
 
+**Amendment (issue #187).** `ConsumableChecker.lua` exists on retail too, with Midnight's table: it returns early only
+on WoW: Forever, and its feature carries `forever = false` (`UI:IsFeatureAbsent`) instead of `tbc = true`.
+
 ---
 
 ## ADR-0015 — `/guildos probe`: one guarded snapshot of the client, kept in SavedVariables
@@ -885,7 +888,8 @@ retail guild yet.
 ### Consequences
 - (+) One build, one TOC, three clients; Forever and Anniversary behave as before.
 - (+) A retail guild sees nothing it cannot use: no loot screens, no site.
-- (−) Nothing reads Mythic+, delves or hero talents yet.
+- (−) Nothing reads Mythic+, delves or hero talents yet. *(Mythic+ and the delves' vault row since issue #187; see
+  below.)*
 - (−) A ban added on retail by a client from before issue #184 is filed under the name alone (and holds on
   every realm, as before); one added after it is not seen by an officer still on the older addon, which
   looks the name alone up. Worse, that officer's x on a row named "Bob-Gallywix" lifts `bob`: a ban filed
@@ -929,7 +933,8 @@ character from the Armory. Only the loot verbs remain in `RETAIL_ABSENT`.
   maintainer's client is read in game.
 
 **Amendment (issue #183).** Personal loot has a history on retail. Nothing hands loot out there, so LootMaster, Points,
-SoftRes and Wishlist stay absent and their verbs keep saying so; LootTracker and LootEquity load, and with them the
+SoftRes and Wishlist stay absent and their verbs keep saying so *(points, the wishlist and a loot council by trade come
+back with issue #185, below)*; LootTracker and LootEquity load, and with them the
 `lootTracker` background feature, the Loot tab (History and Equity; no Soft Res button, no loot-master line), the
 roster's LOOT column, the dashboard's loot card, the digest's loot line, the member sheet's loot section, `/gos equity`,
 the `loot` and `equity` exports and the loot list in the companion payload, in today's row format. The Settings loot
@@ -963,3 +968,202 @@ category stays out: everything in it hands loot out.
 - (−) Whether Midnight fires `ENCOUNTER_LOOT_RECEIVED` for every player's loot, as the boss banner shows it, and whether
   any of its fields arrive secret, is read in game.
 - (−) A guildmate the roster has not loaded yet, or who left the guild before the loot arrived, is not recorded.
+
+**Amendment (issue #187).** Midnight's consumables, Mythic+ and the Great Vault. Decided by the coordinator for the
+maintainer ("pode resolver as últimas issues"), in autopilot; the calls below are recorded as made.
+- **The consumable check comes to retail.** `ConsumableChecker` loads on Anniversary and retail (absent on Forever):
+  flask, food, augment rune and weapon enhancement. The buffs are spell ids from `Data/ConsumablesRetail.lua`, written
+  by `tools/consumable_catalog.py` from wago.tools' DB2 for 12.1.5.70448: the current expansion is the highest
+  `ExpansionID` a consumable carries (11); a flask is a Flask (class 0, subclass 3) whose on-use spell raises a rating or
+  a stat (aura 189 or 29), which leaves out the Haranir profession phials (aura 511) and the PvP flask; the rune is an
+  Other consumable (subclass 8) whose spell raises a stat; food is the spells named Well Fed or Hearty Well Fed that
+  raise a stat, above the expansion's own Become Well Fed (1219179, the spell its food ticks; the buff that follows is
+  the server's and linked to nothing in the data, and The War Within's last Well Fed is 465481). Four flasks, one rune,
+  94 food buffs. A weapon oil or stone is a temporary enchant, not an aura: only my own is read
+  (`GetWeaponEnchantInfo`); nobody else's reaches the client, so it is never asked for a raider but me.
+- **Unknown is never missing.** Auras are read through `Compat.UnitBuffIDs` with `Compat.IsSecret` on the aura and its
+  id: nothing in combat, nothing while `C_Secrets.ShouldAurasBeSecret()`, nothing for a unit that shows no buff at all
+  (out of range). A list with a secret entry, or with a buff past the fortieth (retail has no 40-buff cap), is partial:
+  it can find a buff, never declare one missing. Each raider's
+  row lists `unknown` beside `missing`; `/gos cons`, the popup and the readiness column count only `missing`, and say how
+  many could not be read. A raider of whom nothing was read has no count, never "all missing". Readiness matches a raider
+  by key alone on retail: a namesake on a connected realm is another raider. The announce (`/gos consreport`) names only
+  what is missing, and is held back in an encounter's chat lockdown, which would drop it.
+- **When it reads.** Out of combat: on READY_CHECK and again on READY_CHECK_FINISHED (retail only) the raid is read
+  quietly, so whoever eats or flasks in answer to the check is read with it on; every out-of-combat snapshot reads it
+  too. A snapshot in combat (the pull's `encounter_start`) answers with the verdict read out of combat in the last 600
+  seconds (`ConsumableChecker:Recent`, session state), else nil; a later reading that could not read never wipes an
+  earlier one.
+- **The penalty.** A snapshot's `hasConsumes` is true, false, or nil when unread (retail). The score counts a snapshot
+  as a hit unless it is known to be without (`~= false`): the player is docked when the snapshots they were known to be
+  without are more than half of the ones that saw them. CompanionExport's `chits` counts the same way, so guildos.me's
+  rule (`chits / snapshots < 0.5`) gives the same verdict with no new payload field; on Anniversary every value is a
+  boolean and nothing changes, and Forever's are all true. The penalty setting, the readiness column, the dashboard
+  card, `/gos cons` and the Settings test follow the module onto retail; the readiness tab gains a Check Consumables
+  button, since the Raid HUD (the TBC way in) is not there.
+- **Mythic+ and the vault (`Modules/MythicPlus.lua`, retail only).** Each member's own client reads its rating
+  (`C_ChallengeMode.GetOverallDungeonScore`), its keystone (`C_MythicPlus.GetOwnedKeystone*`) and its vault
+  (`C_WeeklyRewards.GetActivities`: the raid, dungeon and world rows; a delve fills the world row and its level is the
+  tier) through Compat, never a secret value. The record keeps `mplus = { rating, key = { map, level } }` and
+  `vault = { at, raid/dungeon/world = { n, best } }` (slots open and the best level; a raid's best by difficulty rank,
+  Raid Finder lowest), sent in the member broadcast: absent from an older addon, never null; what the client cannot
+  give yet keeps the old value. The rating is read only after CHALLENGE_MODE_MAPS_UPDATE (asked for at start-up) and
+  the vault only after WEEKLY_REWARDS_UPDATE, so a 0 or a vault of empty rows read before the server's data never
+  overwrites the real one guildmates hold. A run's end, a vault update or the season's data sends one broadcast two seconds later.
+- **Where it shows.** The member sheet: MYTHIC+ (the rating in the game's colour, the keystone named in the reader's
+  language) and GREAT VAULT (raid, dungeons and world, x/3 with the best level), the vault only when it was read after
+  this week's reset by the reader's clock (`C_DateAndTime.GetWeeklyResetStartTime`). An optional roster column, M+,
+  offered on retail alone. Members without the addon: nothing. The companion payload does not carry them.
+- **A separate delves tracker is out**, as are hero talents.
+- (−) Whether Midnight keeps raid members' auras readable out of combat inside a raid instance is read in game. If
+  `ShouldAurasBeSecret` holds there all the time, the check reads nothing in raids and docks nobody.
+- (−) Whether WEEKLY_REWARDS_UPDATE fires at login without the vault being opened is read in game; if it does not, my
+  vault goes out only once its progress changes or the vault window opens.
+- (−) The catalog follows retail's patches: a new flask or food is a new spell id, and the Well Fed rule rests on
+  Become Well Fed staying the expansion's anchor.
+- (−) The weapon is read for me only; a guildmate's oil is never counted.
+- (−) `chits` now means "snapshots not known to be without", where guildos-web's type comment (packages/goscomp) says
+  "seen with". The site's arithmetic needs no change; its wording does, on the site's side.
+- (−) `GetOverallDungeonScore` and the keystone APIs are trusted to answer for the player after
+  CHALLENGE_MODE_MAPS_UPDATE; the vault's enum numbers fall back to 12.1.5's (raid 3, dungeons 1, world 6).
+
+**Amendment (issue #185).** Retail hands loot out again, built on what it has: personal loot that can be traded for a
+while to someone who was eligible for it. LootMaster stays absent (no Master Loot), and so does SoftRes: softres.it's own
+page says "Soft-reserves for your Classic WoW raids!" and names no retail raid (read 2026-10-22), so nothing could be
+verified to import. `RETAIL_ABSENT` keeps `lm`, `lootmaster` and `softres`.
+- **Points** load on retail: boss-kill EP, manual awards, decay, standings, their export and the DKP tab, as on Forever.
+  An entry is named by the whole key there (`Points:MakeEntry`), as the loot history names a guildmate. An item is
+  charged when an award by trade is recorded, never from Master Loot. `Points:OnBossKill` awards nothing while its pool
+  is not set up (the module switched off).
+- **The guild's loot system** decides who awards an offered item, on every member's client, so on retail an officer's
+  choice is published (`guildcfg`/`lootsys`, stamped like the officer threshold, re-sent on the officers' regular sync;
+  newest stamp wins). Forever keeps the setting each client's own, as before; a client before #185 reads a `lootsys`
+  envelope as a threshold with no `max` and drops it. TMB, Classic only, is not offered on retail; "rolls" is the free
+  roll there. The Settings Loot category returns on retail with the loot system and the points; the loot master's and
+  the loot distribution's sections are the loot master's and stay out.
+- **The wishlist** loads on retail. Its items come from the Encounter Journal at run time for Midnight's raids (journal
+  instances 1307, 1314, 1308, 1320; `Compat.JournalLoot`), every class's, never read while the journal is open, its
+  filters and instance put back after; read again on `EJ_LOOT_DATA_RECIEVED` until every list is whole. An item not
+  cached yet is found and wished for by the journal's name (`Wishlist:ItemFacts`). A list is filed under its sender's
+  whole key, never the name it carries, so namesakes on connected realms stay apart and nobody files a list under a
+  guildmate's name. Delivered, on retail, is any history row of mine: personal loot or an award by trade.
+- **The loot council by trade** (`TradeCouncil`, retail only; `UI/TradeCouncil.lua`). A guildmate offers a tradeable item
+  from their bags (`/gos offer [item]`, the council's Offer buttons, the Offer button on their own recent row of the loot
+  history; Settings' quick access opens the council for every member). The offer goes to the raid on its own prefix
+  (`GuildOSTC`: `O|id|free|secs|drop|link`, `A|id|choice|link`, `W|id|winner`, `X|id`, `D|id|winner|by`); only a
+  guildmate's message over RAID is read, and a link only when it is one item link: no control character, a link's own
+  colour (`|cffRRGGBB` or retail's `|cnIQn:`), and inside the brackets no `|` but the crafted-quality atlas
+  (`|A:Professions-ChatIcon-Quality-...|a`, at a chat icon's size) and no bracket, since a link is printed, put on a tooltip,
+  relayed to raid chat and stored (and uploaded) as an uncached item's name. Guildmates answer Need, Greed or Pass with
+  the item they wear in that slot (the lower of a pair). The council ranks the answers Need, Greed, Pass, then by the
+  guild's system (DKP points, wishlist place), then the server's roll; it shows who wished for the item (by name, with
+  the realm when it is not this one: `GuildOS:DisplayKey`), each player's attendance and points.
+- **Who awards.** An officer, or the offer's holder when it was made under the free roll: the holder's client says so on
+  the offer, and every client believes it only when the guild's loot system it holds is the free roll, so no holder
+  makes their own item theirs to award. Only to a guildmate who answered Need or Greed (an `A` this client saw), never
+  a Pass. Once an award a client saw names a player, that player's answer stands there: a later change is refused on
+  their client (they are told so) and ignored on every other, so the trade's `D` still finds what the award was
+  given for. Each awarder's latest award is kept per offer (`awards[by] = winner`); the last one shows. The winner is
+  announced in raid chat.
+- **The trade.** When the holder trades the item to the winner (`TRADE_SHOW`, `TRADE_PLAYER_ITEM_CHANGED`,
+  `TRADE_ACCEPT_UPDATE`, then "Trade complete." in `UI_INFO_MESSAGE` however long the other player took, and the item
+  in the window must be the offered one: this link, else the same item id), the award is recorded:
+  `LootTracker:RecordTradeAward` turns the holder's row of that drop into the winner's (`awarded`, `from`), or adds one
+  on a client that missed the drop, stamped either way with the drop's time the offer carried (`drop`, the holder's own
+  history; the offer's time when it has none, and on a receiving client also when the holder's figure falls outside the
+  trade window it could have come from, two hours and a minute back to now), so every client writes the same row and the site keeps one. The holder's
+  `D` tells every other client the award as the holder saw it, winner and who gave it. **A `D` is believed only for an
+  award this client saw given** (a `W` from `by` naming that winner, given for a Need or Greed that then stood; or,
+  under a free roll, `by` the holder, to a guildmate who answered Need or Greed), to somebody still in the guild: before this, any raid guildmate could send an offer and
+  a `D` naming an officer as the giver and have that officer's client charge a guildmate's DKP and every client write
+  them a loot row. Every client then records that one award, whichever it saw last, so two officers awarding at once
+  charge once: the officer named in `D`, and only for the award that client gave (`awards[me] == winner`), under DKP
+  with a cost per item. An offer this client closed a little early (its trade time is read in whole minutes, so an offer
+  runs a minute past it) still records the holder's `D`. A trade of an offered item to anyone else records nothing,
+  says so and withdraws the offer.
+- **What the client really exposes for trade time** (12.1.5.70529's API documentation, read 2026-10-22): no function
+  answers it. `C_Container.GetContainerItemInfo` says `isBound`; the time is only on the tooltip, a line of type
+  `Enum.TooltipDataLineType.TradeTimeRemaining` (36) in `C_TooltipInfo.GetBagItem`'s data, whose text is
+  `BIND_TRADE_TIME_REMAINING` with a duration. `Compat.TradeTimeLeft` finds the line by its type (any language) and
+  `Compat.TradeSeconds` reads the duration with the client's own `INT_SPELL_DURATION_*` / `D_*` strings, every plural
+  form. Unreadable, the holder can still offer: the offer runs at most two hours and shows the time as unknown.
+- **The roll** is the server's. A player's first Need or Greed on an offer sends the answer, then, once the answer has
+  really gone out (`Compat.SendAddonMessageNow`'s `onSent`: not while a lockdown's queue holds it or a throttle retries
+  it, or the roll's line would reach the raid first and bind nothing), `/roll 1-100` (`Compat.RandomRoll`); every client binds that player's next 1-100 roll line (`CHAT_MSG_SYSTEM`, read with
+  `RANDOM_ROLL_RESULT` by `GuildOS:MatchFormat`, as the loot master reads rolls) seen within 10 seconds after the answer to
+  it, the earliest waiting answer first when one player answers several offers. A roll seen before the answer, of
+  another range or after the wait is nobody's, and a changed answer keeps its roll, so nobody fishes for a better one;
+  an answer whose roll was not seen ranks after those whose roll was. No answer goes in a chat lockdown, where the
+  roll's line is secret to everyone: the player is told to answer after the encounter. (A first cut hashed the offer id
+  and the player instead; the holder chooses the id, and could try ids until a friend out-rolled the raid.)
+- **Midnight:** a secret message, sender, tooltip line or trade partner is never read; addon messages sent during an
+  encounter are held by `Compat` until the lockdown lifts (offers happen after the boss), and the award's chat line is
+  printed instead of sent in a lockdown (`Compat.SendChatMessage`).
+- **Wishlist sync on retail** is taken only from a guildmate over GUILD (`HandleWishlistBroadcast`'s channel); a
+  stranger's list was stored under their key and shown as a guildmate's. Forever and Anniversary as before.
+- Words: retail's onboarding privacy step and the About text name the wishlist, which is shared once a player keeps
+  one; the officer step points at the Loot settings (free roll, Wishlist or DKP).
+- Forever and Anniversary: TradeCouncil does not exist (`/gos offer` says "Not available on this client."), the wishlist
+  reads no journal and keys lists by name, points and the loot system are as before.
+- (−) An offer lives in the session: a holder's /reload loses theirs (offer it again); a client that missed the offer,
+  the winner's answer, the award or the holder's `D` records nothing of that award; one that missed a player's roll
+  line ranks them last. The DKP charge needs the awarding officer's client to see the
+  trade's `D`: one that left the raid before it charges nothing.
+- (−) The loot history is append-only on guildos.me: an item published as the holder's before the trade stays the
+  holder's row there too, beside the winner's.
+- An award by trade is recorded with the Loot Tracker switched off in Settings, as a master-loot award is: the switch
+  is for what drops, an award is the guild's decision. The DKP charge rests on the holder's word that the trade went
+  through (the winner confirms nothing), as a master-loot award's rests on the loot master's.
+- (−) Read in game: whether `C_TooltipInfo.GetBagItem` carries the `TradeTimeRemaining` line and the duration words
+  `TradeSeconds` reads; whether "Trade complete." arrives as `UI_INFO_MESSAGE` with `LE_GAME_ERR_TRADE_COMPLETE` or the
+  string; whether `GetTradePlayerItemLink` gives the bag's very link; whether the `EJ_*` functions answer with the
+  journal never opened, and fill the list after `EJ_LOOT_DATA_RECIEVED`; whether addon messages over RAID reach every
+  connected-realm guildmate in the raid; whether a connected-realm player's roll line names them with their realm, and
+  arrives within ten seconds of their answer.
+
+---
+
+## ADR-0027 — The lockout week is the region's, from the client's own reset table
+
+### Context
+A lockout is core, instance and week (and on retail its difficulty), and the week started on Tuesday 00:00 UTC on
+every client: `RaidTracker:GetWeekNum` counted from 3 January 2006, and the raids panel kept its own copy of the
+constant. The game resets each region at its own hour. A Monday-night raid in Brasília after 21:00 (Tuesday 00:00
+UTC on) landed in the week after its own, which split a guild's one lockout in two or merged two into one, and a
+Tuesday-night raid in Europe the same; on all three games (guildos-web#199).
+
+### Decision
+- The week is counted from the region's weekly raid reset. The table is the client's own `Cfg_Regions.Raidorigin`,
+  rows 1 to 4, the same in retail 12.1.5.70448 and 70529, WoW: Forever 1.60.1.70450 and 70532 and TBC Anniversary
+  2.5.6.70006 (wago.tools/db2/Cfg_Regions, read on 22 Oct 2026): `us` 1127228400 (Tuesday 15:00 UTC), `eu`
+  1135742400 (Wednesday 04:00 UTC), `kr` and `tw` 1135810800 (Wednesday 23:00 UTC). Every reset since is the
+  origin plus whole weeks. A constant (`RaidTracker.RESET_ORIGIN`): an addon cannot read a DB2 table.
+- The region is `Compat.Region()` (`GetCurrentRegion()`). Any other answer, or none, counts the Americas' week, as
+  the site does.
+- One helper: `RaidTracker:GetWeekNum` and `WeekStart`. `LockoutKey` (both lockout counts, the attendance rebuild)
+  and the raids panel's week groups and their dates ask it; the panel's own epoch is gone. A week's heading in
+  Brasília now reads Tuesday to Monday.
+- `C_DateAndTime.GetSecondsUntilWeeklyReset`, where the client has it, is a cross-check in `/gos selftest`
+  (`raidtracker.weekly_reset`, through `Compat.SecondsUntilWeeklyReset`), never the source. `/guildos probe` records
+  whether it and `GetCurrentRegion` exist.
+- The Great Vault's week (ADR-0026's #187 amendment) is not this one: the vault is the game's, so the member sheet
+  asks the client when its week began (`Compat.WeekStart`, `C_DateAndTime.GetWeeklyResetStartTime`). Kept apart on
+  purpose when the two branches met: the lockout week has to be the site's, the vault's has to be the game's, and on
+  retail the self-test says when the two disagree.
+- guildos.me counts the same weeks from the same table (its `packages/wow/src/reset.ts`), by the guild's region.
+  `tools/attendance-parity.lua` prints the Americas' fixture and, with `REGION="eu"`, Europe's, with nights either
+  side of both resets, and the site checks both to the digit (`tools/reset-week.lua` checks the rest).
+
+### Consequences
+- (+) A guild raiding Wednesday and Monday nights in Brasília has one lockout a week, as in the game; a European
+  guild's Tuesday night is the last of its week.
+- (+) Nothing stored changes: attendance is rebuilt from the sessions at every login (`MergeDuplicateSessions`
+  rebuilds it), so each client's numbers move at its first login on this version.
+- (−) Attendance near the boundary changes for existing guilds, on purpose: lockouts that were split in two become
+  one (one chance fewer in the denominator, and the late or left-early penalty for whoever came to only one of the
+  nights), and nights merged across the real reset become two.
+- (−) Officers on versions either side of this one disagree about those weeks until both update; the site follows
+  this version.
+- (−) If Blizzard moves a region's reset, the table has to follow; the self-test says when it disagrees.
+- (?) Whether `GetCurrentRegion` and `C_DateAndTime.GetSecondsUntilWeeklyReset` exist on WoW: Forever and TBC
+  Anniversary, and agree with the table, is read in game (`/guildos probe`, `/gos selftest`).

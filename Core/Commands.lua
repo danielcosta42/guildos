@@ -48,7 +48,10 @@ local function printHelp()
     helpHeader(L["Raid and loot"])
     if GuildOS.LootMaster then helpLine("/gos lm", L["Master Loot helper status"]) end  -- not on retail (ADR-0026)
     if GuildOS.Points then helpLine("/gos points", L["Points and DKP window"]) end
-    if GuildOS.ConsumableChecker then  -- TBC content (ADR-0014)
+    if GuildOS.TradeCouncil then   -- retail's loot council by trade (issue #185)
+        helpLine("/gos offer [item]", L["Offer a tradeable item to the raid, or open the loot council"])
+    end
+    if GuildOS.ConsumableChecker then  -- Anniversary and retail, not Forever (ADR-0014, issue #187)
         helpLine("/gos cons",      L["Check raid consumables"])
     end
     helpLine("/gos specs",         L["Scan group talent specs"])
@@ -169,10 +172,11 @@ function GuildOS:EraseGuildData()
     ReloadUI()
 end
 
--- The verbs of what retail does not have (ADR-0026): loot is personal there, so nothing hands it out.
--- Each module is absent, so its verb says so rather than doing nothing or raising. The site's verbs
--- (web, companion, roster) are retail's too since issue #182, and equity since issue #183.
-local RETAIL_ABSENT = { "^points$", "^dkp$", "^lm$", "^lm%s", "^lootmaster$", "^wish", "^softres" }
+-- The verbs of what retail does not have (ADR-0026): no Master Loot, and no soft reserves (softres.it
+-- runs Classic raids only). Each module is absent, so its verb says so rather than doing nothing or
+-- raising. The site's verbs (web, companion, roster) are retail's too since issue #182, equity since
+-- issue #183, and points, dkp and wish since issue #185.
+local RETAIL_ABSENT = { "^lm$", "^lm%s", "^lootmaster$", "^softres" }
 
 local function absentHere(msg)
     if not GuildOS.Client.isRetail then return false end
@@ -379,6 +383,11 @@ local function handleCommand(msg)
             if results then
                 local missing = GuildOS.ConsumableChecker:GetMissingCount(results)
                 GuildOS:Print(string.format(L["Consumable check done. %d players missing buffs."], missing))
+                -- Retail: what the client could not read is said apart, never counted as missing (#187).
+                local unknown = GuildOS.ConsumableChecker:GetUnknownCount(results)
+                if unknown > 0 then
+                    GuildOS:Print(string.format(L["%d could not be read (out of range, or hidden by the game)."], unknown))
+                end
             end
         else
             GuildOS:Print(L["Not available on this client."])
@@ -416,6 +425,16 @@ local function handleCommand(msg)
             end
         else
             GuildOS:Print(L["Usage: /guildos note <PlayerName> <text>"])
+        end
+    elseif msg == "offer" or msg:match("^offer%s") then
+        -- /gos offer [item link]: retail's loot council by trade (issue #185); the link keeps its case.
+        local link = strtrim((msg:gsub("^offer%s*", "")))
+        if not GuildOS.TradeCouncil then
+            GuildOS:Print(L["Not available on this client."])
+        elseif link == "" then
+            GuildOS:ShowTradeCouncil()
+        else
+            GuildOS.TradeCouncil:Offer(link)
         end
     elseif msg == "lm" or msg == "lootmaster" then
         local status = GuildOS:LootMasterStatus()

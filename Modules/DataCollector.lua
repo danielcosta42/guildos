@@ -105,6 +105,14 @@ function DataCollector:CollectMyData()
     -- Collect basic stats
     data.stats = self:CollectStats()
 
+    -- Retail: my keystone, my Mythic+ rating and my weekly vault (issue #187). What the client cannot
+    -- give yet keeps what was read before, never blanked.
+    if GuildOS.MythicPlus then
+        local mplus, vault = GuildOS.MythicPlus:Collect()
+        data.mplus = mplus or data.mplus
+        data.vault = vault or data.vault
+    end
+
     -- Collect own spec (requires talents to be loaded)
     local specMissing = false
     if GuildOS.SpecChecker then
@@ -453,53 +461,54 @@ local function RegisterProf(canonical, isPrimary, names, isGathering)
     end
 end
 
--- English, Portuguese (BR), Spanish, French, German, Russian, Korean, Chinese
+-- English, Portuguese (BR), Spanish, French, German, Russian, Korean, Chinese, and Italian (#186): the
+-- itIT client's own SkillLine names (wago.tools DB2, read 23 Oct 2026). Italian has no Poisons skill line.
 RegisterProf("Alchemy", true, {
-    "Alchemy", "Alquimia", "Alchimie", "Alchemie",
+    "Alchemy", "Alquimia", "Alchimie", "Alchemie", "Alchimia",
     "Алхимия", "연금술", "炼金术", "鍊金術",
 })
 RegisterProf("Blacksmithing", true, {
-    "Blacksmithing", "Ferraria", "Herrería", "Forge", "Schmiedekunst",
+    "Blacksmithing", "Ferraria", "Herrería", "Forge", "Schmiedekunst", "Forgiatura",
     "Кузнечное дело", "대장기술", "锻造", "鍛造",
 })
 RegisterProf("Enchanting", true, {
-    "Enchanting", "Encantamento", "Encantamiento", "Enchantement", "Verzauberkunst",
+    "Enchanting", "Encantamento", "Encantamiento", "Enchantement", "Verzauberkunst", "Incantamento",
     "Наложение чар", "마법부여", "附魔",
 })
 RegisterProf("Engineering", true, {
-    "Engineering", "Engenharia", "Ingeniería", "Ingénierie", "Ingenieurskunst",
+    "Engineering", "Engenharia", "Ingeniería", "Ingénierie", "Ingenieurskunst", "Ingegneria",
     "Инженерное дело", "기계공학", "工程学", "工程學",
 })
 RegisterProf("Herbalism", true, {
-    "Herbalism", "Herborismo", "Herboristería", "Herboristerie", "Kräuterkunde",
+    "Herbalism", "Herborismo", "Herboristería", "Herboristerie", "Kräuterkunde", "Erbalismo",
     "Травничество", "약초채집", "草药学", "草藥學",
 }, true)
 RegisterProf("Jewelcrafting", true, {
-    "Jewelcrafting", "Joalheria", "Joyería", "Joaillerie", "Juwelenschleifen",
+    "Jewelcrafting", "Joalheria", "Joyería", "Joaillerie", "Juwelenschleifen", "Oreficeria",
     "Ювелирное дело", "보석세공", "珠宝加工", "珠寶設計",
 })
 RegisterProf("Leatherworking", true, {
-    "Leatherworking", "Couraria", "Peletería", "Travail du cuir", "Lederverarbeitung",
+    "Leatherworking", "Couraria", "Peletería", "Travail du cuir", "Lederverarbeitung", "Conciatura",
     "Кожевничество", "가죽세공", "制皮", "製皮",
 })
 RegisterProf("Mining", true, {
-    "Mining", "Mineração", "Minería", "Minage", "Bergbau",
+    "Mining", "Mineração", "Minería", "Minage", "Bergbau", "Estrazione",
     "Горное дело", "채광", "采矿", "採礦",
 }, true)
 RegisterProf("Skinning", true, {
-    "Skinning", "Esfolamento", "Desuello", "Dépeçage", "Kürschnerei",
+    "Skinning", "Esfolamento", "Desuello", "Dépeçage", "Kürschnerei", "Scuoiatura",
     "Снятие шкур", "무두질", "剥皮", "剝皮",
 }, true)
 RegisterProf("Tailoring", true, {
-    "Tailoring", "Alfaiataria", "Sastrería", "Couture", "Schneiderei",
+    "Tailoring", "Alfaiataria", "Sastrería", "Couture", "Schneiderei", "Sartoria",
     "Портняжное дело", "재봉술", "裁缝", "裁縫",
 })
 RegisterProf("Cooking", false, {
-    "Cooking", "Culinária", "Cocina", "Cuisine", "Kochkunst",
+    "Cooking", "Culinária", "Cocina", "Cuisine", "Kochkunst", "Cucina",
     "Кулинария", "요리", "烹饪", "烹飪",
 })
 RegisterProf("First Aid", false, {
-    "First Aid", "Primeiros Socorros", "Primeros auxilios", "Secourisme", "Erste Hilfe",
+    "First Aid", "Primeiros Socorros", "Primeros auxilios", "Secourisme", "Erste Hilfe", "Primo Soccorso",
     "Первая помощь", "응급치료", "急救",
 })
 RegisterProf("Fishing", false, {
@@ -740,6 +749,13 @@ function DataCollector:GetBroadcastData()
     -- StoreReceivedData into db.members[key].prefRoles.
     if GuildOS.db.profile and GuildOS.db.profile.prefRoles then
         clean.prefRoles = GuildOS.db.profile.prefRoles
+    end
+
+    -- Retail's Mythic+ and vault (issue #187): StoreReceivedData merges them like any field. Absent
+    -- from a client without the module, or before mine has read them; never null.
+    if GuildOS.MythicPlus then
+        clean.mplus = myData.mplus
+        clean.vault = myData.vault
     end
 
     -- Include resistance gear (small { fire,nature,frost,shadow,arcane } table).

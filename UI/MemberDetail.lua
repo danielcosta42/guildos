@@ -486,6 +486,54 @@ function PopulateDetail(frame, data)
     end
 
     ----------------------------------------------------------------
+    -- Section: Mythic+ and the Great Vault (retail, issue #187): what the member's own client sent.
+    -- A guildmate without Guild OS sent nothing, and has no section.
+    ----------------------------------------------------------------
+    local MP = GuildOS.MythicPlus
+    if MP and (type(data.mplus) == "table" or type(data.vault) == "table") then
+        local function cell(label, text, x, y, color)
+            local l = _pFS(child)
+            GuildOS:ApplyFont(l, 9)
+            l:SetPoint("TOPLEFT", x, y)
+            l:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.7)
+            l:SetText(label)
+            l:Show()
+            local v = _pFS(child)
+            GuildOS:ApplyFont(v, 11)
+            v:SetPoint("LEFT", l, "RIGHT", 4, 0)
+            color = color or C.white
+            v:SetTextColor(color.r, color.g, color.b)
+            v:SetText(text)
+            v:Show()
+        end
+
+        yOff = CreateSectionHeader(child, L["MYTHIC+"], yOff, contentWidth)
+        yOff = yOff - 5
+        local rating = MP:Rating(data.mplus)
+        local r, g, b = GuildOS.Compat.RatingColor(rating)
+        cell(L["Rating"], rating and tostring(rating) or "\226\128\148", 10, yOff, r and { r = r, g = g, b = b } or C.gold)
+        cell(L["Keystone"], MP:KeystoneText(data.mplus) or L["none"], 10 + (contentWidth - 20) / 3, yOff)
+        yOff = yOff - 26
+
+        yOff = CreateSectionHeader(child, L["GREAT VAULT"], yOff, contentWidth)
+        yOff = yOff - 5
+        local cells, why = MP:VaultCells(data.vault, GuildOS.Compat.WeekStart())
+        if cells then
+            for i, c in ipairs(cells) do
+                cell(c.label, c.text, 10 + (i - 1) * (contentWidth - 20) / 3, yOff)
+            end
+        else
+            local none = _pFS(child)
+            GuildOS:ApplyFont(none, 11)
+            none:SetPoint("TOPLEFT", 15, yOff)
+            none:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            none:SetText(why == "old" and L["Not updated since the weekly reset."] or L["No vault data yet."])
+            none:Show()
+        end
+        yOff = yOff - 26
+    end
+
+    ----------------------------------------------------------------
     -- Section: Equipment
     ----------------------------------------------------------------
      yOff = CreateSectionHeader(child, L["EQUIPMENT"] .. (data.avgIlvl and data.avgIlvl > 0 and (L["  -  Avg iLvl: "] .. data.avgIlvl) or ""), yOff, contentWidth)
@@ -561,8 +609,8 @@ function PopulateDetail(frame, data)
     ----------------------------------------------------------------
     -- Section: Wishlist (nativa)
     ----------------------------------------------------------------
-    local guildKey = strlower(data.name or "")
-    local wishData = GuildOS.db.guildWishlists and GuildOS.db.guildWishlists[guildKey]
+    -- By the whole key on retail, where a list is filed under it (issue #185).
+    local wishData = GuildOS.Wishlist and GuildOS.Wishlist:ListFor(playerKey, data.name)
     if wishData and wishData.wishlist and #wishData.wishlist > 0 then
         yOff = yOff - 10
         local wishHeader = L["WISHLIST  --  "] .. #wishData.wishlist .. L[" item(s)"]

@@ -39,6 +39,7 @@ Locales\ruRU.lua
 Locales\koKR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
+Locales\itIT.lua
 
 Core\Core.lua
 Core\Compat.lua
@@ -101,6 +102,7 @@ Modules\ExportImport.lua
 Modules\CompanionExport.lua
 Modules\CompanionImport.lua
 Modules\Points.lua
+Modules\TradeCouncil.lua
 Modules\LootEquity.lua
 Modules\Digest.lua
 Modules\Backup.lua
@@ -111,8 +113,10 @@ Modules\Calendar.lua
 Modules\Milestones.lua
 Modules\Search.lua
 Modules\RaidTools.lua
+Data\ConsumablesRetail.lua
 Modules\ConsumableChecker.lua
 Modules\SpecChecker.lua
+Modules\MythicPlus.lua
 Modules\GuildAnalytics.lua
 Modules\Mentions.lua
 Modules\NoteCommand.lua
@@ -143,6 +147,7 @@ UI\CorePanel.lua
 UI\ManagementPanel.lua
 UI\AuditPanel.lua
 UI\PointsPanel.lua
+UI\TradeCouncil.lua
 UI\CommunityPanel.lua
 UI\AlliancePanel.lua
 UI\RaidToolsPanel.lua

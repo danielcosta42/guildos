@@ -68,8 +68,8 @@ check(RT:ProgLabel("No 25-man raids recorded for group: ") == "No N/H/M raids re
 check(RT:ProgLabel("(%d/%d raids, 25-man)") == "(%d/%d raids, N/H/M)", "in every label")
 -- Every locale's progression label names the difficulties and no size (issue #177): "N/H/M
 -- jogadores" said "N/H/M players".
-local SIZE_LEFT = { "-man", "er", " jogadores", " jugadores", " joueurs", " чел", "인", " 인", "人", " 人" }
-for _, locale in ipairs({ "enUS", "deDE", "esES", "frFR", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }) do
+local SIZE_LEFT = { "-man", "er", " jogadores", " jugadores", " joueurs", " giocatori", " чел", "인", " 인", "人", " 人" }
+for _, locale in ipairs({ "enUS", "deDE", "esES", "frFR", "koKR", "ptBR", "ruRU", "zhCN", "zhTW", "itIT" }) do
   for line in io.lines(ADDON .. "/Locales/" .. locale .. ".lua") do
     local key, value = line:match('^L%["(.-)"%]%s*=%s*"(.*)"%s*$')
     if key and key:find("25%-man") and value:find("25") then

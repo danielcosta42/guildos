@@ -2,9 +2,10 @@
 -- Guild OS - Wishlist System
 -- Native per-character wishlist with guild-wide sync and item search.
 -- Replaces the That's My BiS (TMB) CSV integration.
+--
+-- On retail too since issue #185: its items come from the Encounter Journal at run time, for
+-- Midnight's raids, and every list is kept by the whole Name-Realm of who sent it.
 ----------------------------------------------------------------------
--- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
-if GuildOS.Client.isRetail then return end
 
 local Wishlist = {}
 GuildOS.Wishlist = Wishlist
@@ -14,6 +15,20 @@ local L = GuildOS.L
 Wishlist.TypeColors = {
     wishlist = { r = 0.3,  g = 0.7,  b = 1.0 },  -- blue
 }
+
+-- Midnight's raids in the Encounter Journal, by JournalInstance id (retail, issue #185): The Voidspire,
+-- The Dreamrift, March on Quel'Danas, The Venomous Abyss. RaidTracker.RAID_KEYS has them by map id.
+Wishlist.JOURNAL_RAIDS = { 1307, 1314, 1308, 1320 }
+local JOURNAL_RETRY = 2          -- seconds after the journal's data arrives before it is read again
+local UNKNOWN_QUALITY = 4        -- a raid boss's item neither cached nor coloured in its link: epic
+
+local isRetail = GuildOS.Client.isRetail
+
+-- Where a guildmate's list is kept: on retail by their whole key, which tells namesakes on connected
+-- realms apart (ADR-0026); elsewhere by the name, as always.
+local function storeKey(key, name)
+    return strlower((isRetail and key or name) or "")
+end
 
 function Wishlist:Initialize()
     if not GuildOS.db.wishlists then
@@ -30,8 +45,81 @@ function Wishlist:Initialize()
     if not GuildOS.db.guildWishlists then
         GuildOS.db.guildWishlists = {}
     end
+    if isRetail then
+        -- The journal fills a list in as its data arrives: read it again then, until it is whole.
+        local frame = CreateFrame("Frame")
+        GuildOS.Compat.RegisterEvent(frame, "EJ_LOOT_DATA_RECIEVED")
+        frame:SetScript("OnEvent", function() Wishlist:OnJournalData() end)
+        self.journalFrame = frame
+        self:LoadJournal()
+    end
     self:RebuildItemIndex()
     self:HookTooltips()
+end
+
+----------------------------------------------------------------------
+-- Retail's raid items, from the Encounter Journal (issue #185)
+-- self.catalog[itemId] = { name, link, raid, boss }, read at run time for JOURNAL_RAIDS.
+----------------------------------------------------------------------
+
+-- Read the journal's loot for Midnight's raids into the catalog. Once every raid has given its whole
+-- list it is not read again unless `force`. Returns true when the catalog is complete.
+function Wishlist:LoadJournal(force)
+    if not isRetail then return false end
+    if self.journalComplete and not force then return true end
+    self.catalog = self.catalog or {}
+    local complete = true
+    for _, journalID in ipairs(self.JOURNAL_RAIDS) do
+        local items, whole, raid = GuildOS.Compat.JournalLoot(journalID)
+        if not items then
+            complete = false
+        else
+            if not whole then complete = false end
+            for _, it in ipairs(items) do
+                local held = self.catalog[it.itemID] or {}
+                held.name = it.name or held.name
+                held.link = it.link or held.link
+                held.raid = raid or held.raid
+                held.boss = it.boss or held.boss
+                self.catalog[it.itemID] = held
+            end
+        end
+    end
+    self.journalComplete = complete
+    if complete and self.journalFrame then self.journalFrame:UnregisterEvent("EJ_LOOT_DATA_RECIEVED") end
+    return complete
+end
+
+-- EJ_LOOT_DATA_RECIEVED: the journal has more of a list; read it again shortly, once for a burst.
+function Wishlist:OnJournalData()
+    if self.journalComplete or self.journalPending then return end
+    self.journalPending = true
+    GuildOS.Compat.After(JOURNAL_RETRY, function()
+        Wishlist.journalPending = nil
+        Wishlist:LoadJournal()
+        Wishlist:RebuildItemIndex()
+    end)
+end
+
+-- What the journal says about an item: { name, link, raid, boss }, or nil.
+function Wishlist:CatalogEntry(itemId)
+    return self.catalog and self.catalog[itemId]
+end
+
+-- An item's name, link and quality: the client's when it has the item cached, else what the journal
+-- gave (retail colours a link by quality, "|cnIQ4:"). Nil when neither knows the name yet.
+function Wishlist:ItemFacts(itemId)
+    local name, link, quality = GuildOS.Compat.GetItemInfo(itemId)
+    if name then return name, link, quality end
+    local c = self:CatalogEntry(itemId)
+    if not (c and c.name) then return nil end
+    return c.name, c.link, tonumber(c.link and c.link:match("|cnIQ(%d+):")) or UNKNOWN_QUALITY
+end
+
+-- A guildmate's synced list, by their member key and name (the right one for this client).
+function Wishlist:ListFor(key, name)
+    local guild = GuildOS.db and GuildOS.db.guildWishlists
+    return guild and guild[storeKey(key, name)]
 end
 
 ----------------------------------------------------------------------
@@ -131,6 +219,10 @@ function Wishlist:RebuildItemIndex()
             end
         end
     end
+    -- Retail's from the Encounter Journal (issue #185).
+    for itemId in pairs(self.catalog or {}) do
+        if not index[itemId] then index[itemId] = {} end
+    end
 
     self.itemIndex = index
 end
@@ -148,7 +240,7 @@ end
 ----------------------------------------------------------------------
 function Wishlist:GetItemName(itemId)
     if not itemId then return L["Item #?"] end
-    local name = GuildOS.Compat.GetItemInfo(itemId)
+    local name = self:ItemFacts(itemId)
     return name or (L["Item #"] .. itemId)
 end
 
@@ -195,7 +287,7 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
         return
     end
 
-    local name = GuildOS.Compat.GetItemInfo(itemId)
+    local name = self:ItemFacts(itemId)
     if not name then
         GuildOS:Print(L["|cffFF4444[Wishlist]|r Unknown item. Try again in a few seconds."])
         return
@@ -215,14 +307,16 @@ function Wishlist:AddToWishlist(itemId, itemLink, isOffspec)
 end
 
 -- Remove an item from the player's own wishlist by itemId.
--- Returns true if the local player has received this item via master-loot.
+-- Returns true if the local player has received this item via master-loot. On retail every row of
+-- the history is an item its player ended up with: personal loot, or an award recorded by trade
+-- (issue #185).
 function Wishlist:IsItemDelivered(itemId)
     local history = GuildOS.db and GuildOS.db.lootHistory
     if not history then return false end
     local myName = GuildOS.Compat.PlayerName()
     local myKey  = GuildOS:GetPlayerKey(myName)
     for _, entry in ipairs(history) do
-        if entry.fromML and entry.playerKey == myKey then
+        if (entry.fromML or isRetail) and entry.playerKey == myKey then
             -- Match by itemId stored in entry, or extract from itemLink
             local entryId = entry.itemId
             if not entryId and entry.itemLink then
@@ -289,6 +383,8 @@ function Wishlist:BroadcastMyWishlist()
 
     local myName  = GuildOS.Compat.PlayerName()
     local myClass = select(2, UnitClass("player")) or ""
+    -- On retail a guildmate is named with their realm (issue #185).
+    if isRetail then myName = GuildOS:GetPlayerKey(myName) end
 
     -- Store own data locally immediately (WoW does not echo addon messages back to sender)
     if not GuildOS.db.guildWishlists then
@@ -315,8 +411,9 @@ function Wishlist:BroadcastMyWishlist()
     end
 end
 
--- Handle an incoming wishlist broadcast from another guild member.
-function Wishlist:HandleWishlistBroadcast(sender, data)
+-- Handle an incoming wishlist broadcast from another guild member. `channel`: how it arrived (retail
+-- takes it only over GUILD, issue #185; Forever and Anniversary as before, from anywhere).
+function Wishlist:HandleWishlistBroadcast(sender, data, channel)
     local LibSerialize = LibStub("GuildOS-LibSerialize")
     local ok, payload = LibSerialize:Deserialize(data)
     if not ok or type(payload) ~= "table" then return end
@@ -325,9 +422,19 @@ function Wishlist:HandleWishlistBroadcast(sender, data)
     local class    = payload.class or ""
     local wishlist = payload.wishlist
     if not wishlist or type(wishlist) ~= "table" then return end
+    -- On retail the list is its sender's, by their whole key: never the name it carries, so nobody
+    -- files a list under a guildmate's name, and namesakes on connected realms stay apart; and only a
+    -- guildmate's, over GUILD, so nobody outside the guild shows up as one (issue #185).
+    local me = GuildOS.Compat.PlayerName() or ""
+    if isRetail then
+        if type(sender) ~= "string" or sender == "" or channel ~= "GUILD" then return end
+        name, me = GuildOS:KeyOfRosterName(sender), GuildOS:GetPlayerKey(me)
+        if not GuildOS:IsGuildmate(name) then return end
+    end
+    if type(name) ~= "string" then return end
 
     -- Don't overwrite our own data with a stale broadcast of ourselves
-    if strlower(name) == strlower(GuildOS.Compat.PlayerName() or "") then return end
+    if strlower(name) == strlower(me) then return end
 
     if not GuildOS.db.guildWishlists then
         GuildOS.db.guildWishlists = {}
