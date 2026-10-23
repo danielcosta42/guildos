@@ -98,6 +98,10 @@ The same window on retail, made for how retail works:
   planned roster comes back for *Invite all*, connected-realm guildmates included.
 - **Loot history from personal loot.** What each guildmate received from every boss of a tracked raid, on the roster,
   the Loot tab with its equity, the exports and guildos.me.
+- **Consumables before the pull.** The ready check reads Midnight's flask, food and augment rune across the raid, and
+  your own weapon oil; what the game keeps hidden is never counted as missing, nor docked from attendance.
+- **Mythic+ and the Great Vault.** Each member's rating and keystone, and their vault for the week (raid, dungeons,
+  delves), on the member sheet and in an optional roster column.
 
 Not on retail: handing loot out (retail is personal loot, so there is no master loot, DKP, soft reserves or
 wishlists).
@@ -191,7 +195,8 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 Yes. It is built for it: surnames, no realms, the new professions and the client's privacy rules included.
 
 **Does Guild OS work on Retail?**
-Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools and guildos.me.
+Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools, the consumable
+check, Mythic+ and the Great Vault, and guildos.me.
 Handing loot out (master loot, DKP, soft reserves, wishlists) is Forever's only, because retail is personal loot; the
 loot history records what each guildmate received.
 

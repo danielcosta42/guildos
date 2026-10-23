@@ -97,7 +97,8 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `GuildManager.lua` | Rank changes, kicks, MOTD/Info, inactivity, suggestions, action log | UI, comm |
 | `GearAudit.lua` | Guild-wide enchant audit from synced gear | UI |
 | `RaidTools.lua` | Composition + buff/cooldown coverage of group/online roster | UI |
-| `ConsumableChecker.lua` | Detect flask/elixir/food buffs | UI |
+| `ConsumableChecker.lua` | Detect flask/elixir/food buffs (TBC's; Midnight's flask, food, rune and my weapon on retail, unknown never missing, #187) | UI |
+| `MythicPlus.lua` | Retail only: my keystone, Mythic+ rating and weekly vault, read through Compat and sent with my member data; formats a member's for the sheet and the roster (#187) | UI, comm internals |
 | `SpecChecker.lua` | Detect talent spec | UI |
 | `UI/Helpers.lua` | ALL UI components + theme (until split) | data logic, comms |
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
@@ -222,6 +223,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules },
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
+                                   mplus, vault,   -- retail: { rating, key = { map, level } },
+                                                   -- { at, raid/dungeon/world = { n, best } } (#187)
                                    addonVersion, lastUpdate, lastSync } },
   myData   = {},              -- local player's CollectMyData snapshot
   altLinks = { [altKey] = mainKey },

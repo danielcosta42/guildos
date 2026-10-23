@@ -8,7 +8,8 @@ Guild OS replaces the default guild frame with a modern, feature-rich management
 
 > **Clients:** WoW TBC Anniversary (Interface 20506), WoW: Forever (16001) and Retail, Midnight (120105) — one build
 > serves all three. On Retail nothing hands loot out (retail is personal loot), but the loot history records what each
-> guildmate received from a boss; guildos.me takes retail guilds too.
+> guildmate received from a boss; guildos.me takes retail guilds too. Retail also checks Midnight's consumables and shows
+> each member's Mythic+ rating, keystone and Great Vault.
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
@@ -69,10 +70,17 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - View recent sessions and per-member attendance in the Raids tab
 
 ### Consumable Checker
-- Scans all raid members for expected TBC consumable buffs
-- Checks 5 categories: Flask, Food, Weapon Buff, Battle Elixir, Guardian Elixir
+- Scans all raid members for expected consumable buffs (TBC Anniversary and Retail; not on WoW: Forever)
+- TBC: Flask, Food, Weapon Buff, Battle Elixir, Guardian Elixir
+- Retail: Midnight's flask, food and augment rune, and your own weapon oil, read out of combat (on the ready check);
+  what the game keeps hidden is unknown, never missing
 - Reports which categories each player is missing
 - Integrates with attendance scoring
+
+### Mythic+ and the Great Vault (Retail)
+- Each member's own client sends their Mythic+ rating, their keystone and their Great Vault for the week (raid,
+  dungeons, delves and world)
+- Shown on the member sheet and in an optional M+ roster column
 
 ### Loot Tracker
 - Automatically records every Rare+ item looted in raids and dungeons

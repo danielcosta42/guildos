@@ -68,7 +68,7 @@ Removed: `GuildOS.ACCENT_PRESETS`, `GuildOS:ApplyTheme()`.
 
 | Symbol | Description |
 |---|---|
-| `UI:IsFeatureAbsent(def)` | Whether this client has no such feature at all: `tbc` outside Anniversary, `retail = false` on retail. `AllFeatures`, `IsFeatureAllowed` and `OpenWindow` ask it (ADR-0026, issue #177) |
+| `UI:IsFeatureAbsent(def)` | Whether this client has no such feature at all: `tbc` outside Anniversary, `retail = false` on retail, `forever = false` on WoW: Forever (the consumable check, issue #187). `AllFeatures`, `IsFeatureAllowed` and `OpenWindow` ask it (ADR-0026, issue #177) |
 | `UI:OpenWindow(id, sub, filter)` | The one opener: refuses an unknown id or a background module, then says not on this client / disabled / could not start / officer-only; shows the window, unfolds it when the saved fold says so, opens tab `id` (remembered), then `panel.SelectSub(sub, filter)`; true when the tab opened (ADR-0016) |
 | `UI:ToggleMain()` | Shows or hides the window on the remembered tab |
 | `UI:GetMainWindow()` | The window (`GuildOS.RosterFrame`, frame `GuildOSWindow`), created on first use; nil before the saved data loads |
@@ -266,7 +266,7 @@ Removed: `Compat.NewTimer`.
 | `DataCollector:IsGatheringProfession(name)` | Returns PROF_LOOKUP[name].isGathering |
 | `DataCollector:CollectStats()` | Collects health/mana/STR/AGI/STA/INT/SPI via UnitStat; on retail health, the spec's primary stat (`primary` names it), stamina and `Compat.SecondaryStats`'s four ratings, never a fifth UnitStat (issue #184). The resistance scan in `CollectMyData` and its broadcast run only where `GuildOS.Resistances` exists (absent on retail) |
 | `DataCollector:StoreReceivedData(playerKey, data)` | Merges received data with timestamp check; handles recipes separately |
-| `DataCollector:GetBroadcastData()` | Returns clean copy (gear/prof/attunements/spec/recipes/addonVersion) for broadcast |
+| `DataCollector:GetBroadcastData()` | Returns clean copy (gear/prof/attunements/spec/recipes/addonVersion) for broadcast; on retail `mplus` and `vault` too (issue #187) |
 
 ---
 
@@ -367,7 +367,7 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:EndSession(away)` | Finalizes session, discards if <10min, saves. `away` (retail: `ElsewhereInGrace()`, asked before the grace timer is cleared, when the grace runs out or another raid begins) skips the `session_end` snapshot of a group that is not the session's (issue #183) |
 | `RaidTracker:ElsewhereInGrace()` | Retail only: while the session waits out its grace, whether this client stands in another instance or the session's raid on another difficulty (Raid Finder after the guild's Heroic, a dungeon). The open world (the run-back) is not elsewhere. `TakeSnapshot`, `OnEncounterStart` and `OnEncounterEnd` return at once when it is, `EndSession` takes no last snapshot, and `LootTracker` records no loot (issue #183) |
 | `RaidTracker:TakeSnapshot(reason)` | Captures raid roster with consume check into snapshots |
-| `RaidTracker:CheckPlayerConsumes(unit)` | Checks flask/elixir/food buffs via ConsumableChecker |
+| `RaidTracker:CheckPlayerConsumes(unit, key)` | A snapshot's `hasConsumes`: `ConsumableChecker:RaidVerdict` (true, false, or on retail nil when unread), true without the checker (Forever). The score counts a snapshot not known to be without (`~= false`) as a hit, as CompanionExport's `chits` does (issue #187) |
 | `RaidTracker:OnEncounterStart(encounterID, encounterName)` | Records encounter, guards duplicates |
 | `RaidTracker:OnEncounterEnd(encounterID, encounterName, success)` | Updates encounter end/success |
 | `RaidTracker:GetCurrentGroup()` | Returns currentGroupTag string |
@@ -603,12 +603,17 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists |
-| `ConsumableChecker:CheckRaid()` | Checks all connected raid members for flask/food/elixirs |
+| `ConsumableChecker:Initialize()` | Ensures consumableChecks DB table exists; on retail registers READY_CHECK (issue #187) |
+| `ConsumableChecker:CheckRaid(quiet)` | Checks all connected raid members: TBC's five categories on Anniversary; on retail flask, food, rune (by the catalog's spell ids) and my own weapon, each raider's row with `buffs`, `missing` and `unknown` (never read: out of range, secret, in combat; the weapon only for me). `quiet` says nothing outside a raid |
+| `ConsumableChecker:OnReadyCheck()` | Retail: a quiet `CheckRaid`, for the screens and for the pull's snapshot |
+| `ConsumableChecker:ReadUnit(unit)` | Retail: per category the buff's spell id (true for my weapon), false when every buff was read and none is it, nil when unknown (`Compat.UnitBuffIDs` partial or nil) |
+| `ConsumableChecker:RaidVerdict(unit, key)` | The snapshot's verdict: TBC's flask-or-battle-elixir and food on Anniversary (boolean); on retail flask and food, true/false when read, else the reading `Remember`ed out of combat in the last 600 s (the ready check before the pull), else nil |
+| `ConsumableChecker:Remember(key, on)` / `Recent(key)` | Retail: a raider's verdict kept in `GuildOS.State.consumables.reads` with `GetTime()`, and read back within 600 s |
+| `ConsumableChecker:GetUnknownCount(results)` | Raiders with something unread (retail); `/gos cons` and the popup say it apart, never as missing |
 | `ConsumableChecker:UnitHasBuff(unit, spellID, nameHint)` | Scans UnitBuff(1..40), matches by spellId or name |
 | `ConsumableChecker:GetLastResults()` | Returns lastCheck.results or db.consumableChecks.lastResults |
 | `ConsumableChecker:GetMissingCount(results)` | Counts players with non-empty missing array |
-| `ConsumableChecker:ReportToChat(channel)` | Sends missing consumables report to raid channel |
+| `ConsumableChecker:ReportToChat(channel)` | Sends missing consumables report to raid channel; nothing in an encounter's chat lockdown, which would drop it (issue #187) |
 
 ---
 
@@ -904,3 +909,25 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `RaidTracker.RAID_KEYS` | Midnight's four raids by map id: 2912 `midnight-voidspire`, 2939 `midnight-dreamrift`, 2913 `midnight-queldanas`, 3004 `midnight-abyss` |
 | `GuildOS.JsonDecode(s)` | The addon's one JSON decoder, in Core/Utils.lua so every client has it: SoftRes (absent on retail) reads Gargul's JSON with it, the companion import the site's |
 | `tools/retail-site.lua` | Payload v10, GOSROST v3 back into the game, the invite, the groups, the difficulty match and GOSCORE's home realm, under a retail client on a connected realm, with the modules loaded in TOC order (SoftRes absent) |
+
+## Retail: consumables, Mythic+ and the Great Vault (issue #187)
+
+| Symbol | Description |
+|---|---|
+| `Compat.UnitBuffIDs(unit)` | A unit's buff spell ids and whether the list is all of them (`C_UnitAuras.GetBuffDataByIndex`): a secret aura or id is passed over and the list is partial; nil (nothing read) in combat, while `C_Secrets.ShouldAurasBeSecret()`, for a secret unit token, without the API, or when the unit shows no buff at all |
+| `Compat.MainHandTempEnchant()` | Retail: whether my main hand has a temporary enchant (`GetWeaponEnchantInfo`); nil elsewhere, in combat or secret |
+| `Compat.RequestMythicPlus()` | Retail: `C_MythicPlus.RequestMapInfo()`; CHALLENGE_MODE_MAPS_UPDATE answers |
+| `Compat.MythicPlus()` | Retail: `{ rating, key = { map, level } }` (`C_ChallengeMode.GetOverallDungeonScore`, `C_MythicPlus.GetOwnedKeystone*`), the key left out when none is held; nil elsewhere, or when anything is secret |
+| `Compat.ChallengeMapName(map)` / `Compat.RatingColor(score)` | A Mythic+ dungeon's name in the reader's language (`GetMapUIInfo`); a rating's colour as r, g, b (`GetDungeonScoreRarityColor`) |
+| `Compat.WeeklyActivities()` | Retail: the Great Vault's raid, dungeon and world slots as `{ row, progress, threshold, level }` (`C_WeeklyRewards.GetActivities`, rows by `Enum.WeeklyRewardChestThresholdType`, 12.1.5's 3/1/6 without it); nil before the activities arrive or when any field is secret |
+| `Compat.WeekStart()` | When this week began by the server's clock (`C_DateAndTime.GetWeeklyResetStartTime`), or nil |
+| `GuildOS.ConsumableCatalog` | Data/ConsumablesRetail.lua, generated by `tools/consumable_catalog.py` from 12.1.5.70448: `flask`, `rune`, `food` buff spell ids, retail only |
+| `MythicPlus:Initialize()` / `OnEvent(event)` | Registers CHALLENGE_MODE_MAPS_UPDATE (sets `GuildOS.State.mythicPlus.ready`), CHALLENGE_MODE_COMPLETED and WEEKLY_REWARDS_UPDATE; each schedules one member broadcast 2 s later |
+| `MythicPlus:Collect()` | My `mplus` (only once the season's data has arrived) and my vault summed and stamped; `CollectMyData` keeps the old value for whichever is nil |
+| `MythicPlus:SumVault(slots, at)` | `{ at, raid/dungeon/world = { n, best } }`: slots open and the best level (a raid by difficulty rank, LFR lowest) |
+| `MythicPlus:Rating(mplus)` / `KeyLevel(mplus)` / `KeystoneText(mplus)` | A stored record read defensively: the rating, the key's level, "<dungeon> +N" in the reader's language |
+| `MythicPlus:VaultCells(vault, weekStart)` | The sheet's three cells `{ label, text }` ("2/3 · H", "+12", "Tier 8"); nil, "old" for a vault from before this week's reset |
+| Roster column `mplus` | UI/RosterFrame.lua: the rating in the game's colour and the key's level, offered only with `GuildOS.MythicPlus`; not in `RosterColumns.DEFAULT` |
+| Member sheet | UI/MemberDetail.lua: MYTHIC+ (rating, keystone) and GREAT VAULT, only with the module and the member's own data |
+| `Readiness:GetReport(targetShort)` | `missCons` is the count known missing, nil when nothing was read (never "all missing"); a raider is matched by key, and only off retail by name too (issue #187) |
+| `tools/retail-consumables.lua` / `tools/retail-mplus.lua` / `tools/consumable_catalog.py` | The harnesses and the generator (its self-test runs on `tools/consumable-catalog-fixture/`) |
