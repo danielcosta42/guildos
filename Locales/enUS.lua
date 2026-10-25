@@ -662,7 +662,7 @@ L["%d start-up problem(s):"] = "%d start-up problem(s):"
 L["Not available on this client."] = "Not available on this client."
 
 -- Core/Probe.lua, Core/Commands.lua (probe)
-L["Record this client's facts for the Forever beta"] = "Record this client's facts for the Forever beta"
+L["Record this client's facts for support"] = "Record this client's facts for support"
 L["Post two test lines in guild chat to see whether an addon may post on its own"] = "Post two test lines in guild chat to see whether an addon may post on its own"
 L["The probe does not run in combat. Try again after the fight."] = "The probe does not run in combat. Try again after the fight."
 L["Probe: build %s (%s), interface %s, project %s."] = "Probe: build %s (%s), interface %s, project %s."

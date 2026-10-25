@@ -15,7 +15,7 @@ Guild OS replaces the default guild frame with a modern, feature-rich management
 
 [![Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
-> **Help, bugs and the WoW: Forever beta:** join the [GuildOS support server on Discord](https://discord.gg/8XA6gmNjja).
+> **Help, bugs and ideas:** join the [GuildOS support server on Discord](https://discord.gg/8XA6gmNjja).
 
 ---
 

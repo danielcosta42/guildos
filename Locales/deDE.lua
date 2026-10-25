@@ -1214,7 +1214,7 @@ L["%d start-up problem(s):"] = "%d Startproblem(e):"
 L["Not available on this client."] = "Auf diesem Client nicht verfügbar."
 
 -- Core/Probe.lua, Core/Commands.lua
-L["Record this client's facts for the Forever beta"] = "Erfasst die Daten dieses Clients für die Forever-Beta"
+L["Record this client's facts for support"] = "Erfasst die Daten dieses Clients für den Support"
 L["Post two test lines in guild chat to see whether an addon may post on its own"] = "Schreibt zwei Testzeilen in den Gildenchat, um zu sehen, ob ein Addon von sich aus schreiben darf"
 L["The probe does not run in combat. Try again after the fight."] = "Die Sonde läuft nicht im Kampf. Versuche es nach dem Kampf erneut."
 L["Probe: build %s (%s), interface %s, project %s."] = "Sonde: Build %s (%s), Interface %s, Projekt %s."
