@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2026-10-25
+
+### Added
+- GuildOS 1.0 — o início oficial, com o lançamento do WoW: Forever (#195)
+
+
 ## [0.85.0] - 2026-10-23
 
 ### Added
