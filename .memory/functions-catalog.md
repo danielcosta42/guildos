@@ -411,7 +411,7 @@ Removed: `Compat.NewTimer`.
 | `RaidTracker:HandleDeleteIncoming(data)` | Applies incoming session deletion and tombstone |
 | `RaidTracker:CountTable(t)` | Counts entries in a table |
 | `RaidTracker:BroadcastRaidData()` | Sends compact attendance + session metadata (officer only) |
-| `RaidTracker:HandleIncoming(data)` | Merges incoming raid data; handles migration, tombstones, dedup |
+| `RaidTracker:HandleIncoming(data)` | Merges incoming raid data; handles migration, tombstones, dedup; never takes back a session merged away here (#197) |
 | `RaidTracker:ExportForTMB(groupTag)` | Exports attendance as TMB-compatible JSON string |
 | `RaidTracker:MigrateAttendanceIfNeeded()` | Detects old flat attendance format and triggers rebuild |
 | `RaidTracker:GetSnapshotScore(sessionData, playerKey)` | Returns score, wasLate, leftEarly, noConsumes, consumeHits, consumeChecks for a player in a session (Rule 10) |

@@ -69,6 +69,7 @@ local DB_DEFAULTS = {
         attendance = {},
         currentGroupTag = "",
         deletedSessions = {},  -- [sessionID] = true; permanent tombstone set
+        mergedSessions = {},   -- [sessionID] = id it was folded into here; never sent (issue #197)
     },
     lootHistory = {},
     lootMaster = {

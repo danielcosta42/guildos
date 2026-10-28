@@ -234,7 +234,7 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   trials   = { [key] = { status, startDate, endDate, notes, snapshots } },
   officerNotes     = { [key] = { notes=[], tags={} } },
   managementLog    = [{ action, target, detail, author, timestamp }],  -- capped ring buffer (200)
-  raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions },
+  raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions, mergedSessions },  -- mergedSessions: local only, never sent (#197)
   attendancePenalties = { LATE, LEFT_EARLY, NO_CONSUMES },  -- the guild's weights (CoreManager, #55); cores override
   lootHistory      = [{ itemLink, itemName, quality, player, playerKey, count, timestamp, raid, instanceID,
                         fromML }],  -- newest first, 500; retail's personal loot adds itemId, encounterID, no fromML,
