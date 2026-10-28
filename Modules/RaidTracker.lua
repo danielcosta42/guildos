@@ -834,6 +834,12 @@ end
 function RaidTracker:MergeDuplicateSessions()
     local sessions = GuildOS.db.raidTracker.sessions
     if not sessions then return 0 end
+    -- What this client folded away. A peer whose copy of the kept session is older does not fold
+    -- the same pair, and re-sends the other half every five minutes: taken back, it was merged and
+    -- announced again, forever (issue #197). Kept here only: sent as a tombstone, it would make that
+    -- peer drop a half whose players its own copy does not have.
+    local merged = GuildOS.db.raidTracker.mergedSessions
+    if merged == nil then merged = {}; GuildOS.db.raidTracker.mergedSessions = merged end
 
     local MERGE_WINDOW = 1800  -- 30 min: covers wipe→run-back; separates distinct raid attempts
     local ENC_PROX    = 300   -- 5 min proximity = same encounter event
@@ -971,6 +977,7 @@ function RaidTracker:MergeDuplicateSessions()
                         end
 
                         sessions[b.id] = nil
+                        merged[b.id] = a.id
                         totalMerged = totalMerged + 1
                         changed = true
                         break
@@ -1283,7 +1290,15 @@ function RaidTracker:HandleIncoming(data)
     end
 
     -- Merge sessions: add any session we don't already have,
-    -- but never re-insert sessions that have been tombstoned.
+    -- but never re-insert sessions that have been tombstoned or that we merged away (issue #197).
+    -- A folded half comes back only when the session it went into is gone here (a peer deleted
+    -- it), or its night would be lost. Each fold points to an earlier id, so the walk ends.
+    local merged = raidDB.mergedSessions or {}
+    local function foldedHere(id)
+        local into = merged[id]
+        while into and not raidDB.sessions[into] do into = merged[into] end
+        return into ~= nil
+    end
     for sessionID, session in pairs(payload.sessions or {}) do
         -- A copy relayed by an officer on an older addon lost what that addon did not know to
         -- send: the size, the pug-night mark and the difficulty. The next copy that carries them
@@ -1295,7 +1310,7 @@ function RaidTracker:HandleIncoming(data)
             if mine.difficulty == nil then mine.difficulty = tonumber(session.difficulty) end
             if mine.isGuildRaid == nil and session.isGuildRaid ~= nil then mine.isGuildRaid = session.isGuildRaid == true end
         end
-        if not deleted[sessionID] and not raidDB.sessions[sessionID] then
+        if not deleted[sessionID] and not raidDB.sessions[sessionID] and not foldedHere(sessionID) then
             if type(session) == "table" and type(session.players) == "table" then
                 session.players = GuildOS:LocalizeMemberTable(session.players)   -- issue #97
             end
