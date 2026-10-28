@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-10-28
+
+### Fixed
+- a sessão fundida não volta do broadcast de outro oficial, e o "merged 1 duplicate raid session(s)" para de repetir a cada 5 minutos (#197)
+
+
 ## [1.0.0] - 2026-10-25
 
 ### Added
