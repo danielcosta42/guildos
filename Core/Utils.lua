@@ -1009,30 +1009,45 @@ function GuildOS:GetFirstSeen(playerKey)
 end
 
 ----------------------------------------------------------------------
+-- The guild roster's names, or nil while it is not the whole guild: not loaded yet (it reads as
+-- empty), or listing only who is online because "Show Offline Members" is off, when every offline
+-- member would read as gone. Whatever acts on "not on the roster" asks here first (issue #203).
+----------------------------------------------------------------------
+function GuildOS:WholeRoster()
+    local n = GetNumGuildMembers() or 0
+    if n == 0 or (GetGuildRosterShowOffline and not GetGuildRosterShowOffline()) then return nil end
+    local names = {}
+    for i = 1, n do
+        local full = GetGuildRosterInfo(i)
+        if not full then return nil end
+        names[i] = full
+    end
+    return names
+end
+
+----------------------------------------------------------------------
 -- Whoever leaves the guild goes with it (issue #203): on every roster update, in every client,
 -- with no button to press. What describes them as a member goes: the member row, first-seen,
 -- professions, recipes and wishlist. What happened and what officers wrote stays: attendance,
--- loot, notes, trials, the ban list, loot priorities, alts. Nothing happens while the roster has
--- not loaded (it reads as empty then), nor while the loaded db is another guild's (it is resolved
--- at login only: a guild changed mid-session would be read against the wrong roster). The player's
--- own records always stay: were the own key ever to differ from the roster's (a surname the client
+-- loot, notes, trials, the ban list, loot priorities, alts. Nothing happens while the roster is
+-- not whole (WholeRoster), nor while the loaded db is another guild's (it is resolved at login
+-- only: a guild changed mid-session would be read against the wrong roster). The player's own
+-- records always stay: were the own key ever to differ from the roster's (a surname the client
 -- did not give), dropping them would wipe what this client publishes.
+-- ponytail: a full pass on every GUILD_ROSTER_UPDATE, like RecordFirstSeen's; throttle it if a big
+-- guild ever shows it in a profile.
 ----------------------------------------------------------------------
 function GuildOS:DropDeparted()
-    if not (self.db and self:IsOnGuildDB()) then return end
-    local n = GetNumGuildMembers() or 0
-    if n == 0 then return end
+    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster()
+    if not roster then return end
     local me = self:GetPlayerKey(self.Compat.PlayerName())
     local present = { [me] = true }
     -- guildWishlists is keyed by the name lowercased, with its realm on retail only.
     local names = { [me:lower()] = true, [(self.Compat.PlayerName() or ""):lower()] = true }
-    for i = 1, n do
-        local full = GetGuildRosterInfo(i)
-        if full then
-            local key = self:KeyOfRosterName(full)
-            present[key] = true
-            names[key:lower()], names[(full:match("^([^-]+)") or full):lower()] = true, true
-        end
+    for _, full in ipairs(roster) do
+        local key = self:KeyOfRosterName(full)
+        present[key] = true
+        names[key:lower()], names[(full:match("^([^-]+)") or full):lower()] = true, true
     end
     for _, store in ipairs({ "members", "firstSeen", "recipes" }) do
         for key in pairs(self.db[store] or {}) do
@@ -1042,7 +1057,7 @@ function GuildOS:DropDeparted()
     for key in pairs(self.db.professions or {}) do
         if not present[key] then
             self.db.professions[key] = nil
-            self.Professions:Changed(key)
+            if self.Professions then self.Professions:Changed(key) end
         end
     end
     for key in pairs(self.db.guildWishlists or {}) do

@@ -39,6 +39,7 @@ Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via m
 |---|---|
 | `GuildOS.Logger.Debug/Info/Warn(msg)` | Structured logger; Debug gated by `GuildOS.Logger.debug` (toggle via `/guildos debug`) |
 | `GuildOS:SafeCall(fn, ...)` | pcall wrapper; captures errors to `GuildOS.State.errors` ring (view via `/guildos errors`) |
+| `GuildOS:WholeRoster()` | The guild roster's names, or nil while it is not the whole guild (not loaded, or "Show Offline Members" off, or a row missing): what acts on "not on the roster" asks here (issue #203) |
 | `GuildOS:DropDeparted()` | On every roster update: drops the member row, first-seen, professions, recipes and wishlist of whoever left the guild (issue #203); history and officer records stay |
 | `GuildOS:ShowOnboarding()` / `:MaybeShowOnboarding()` | First-run welcome wizard (once; `settings.onboarded`) |
 | Slash: `/guildos minimap | debug | errors` | Toggle minimap button / debug / dump errors |

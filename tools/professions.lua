@@ -99,6 +99,8 @@ C_TradeSkillUI = {
 -- The guild: roster names and the Communities roster's profession fields.
 local ROSTER = { "Ana Silva", "Bob", "Cid", "Dee" }
 local OFFLINE, CLASS = {}, {}
+local SHOW_OFFLINE = true
+function GetGuildRosterShowOffline() return SHOW_OFFLINE end
 function GetNumGuildMembers() return #ROSTER end
 function GetGuildRosterInfo(i)
   local n = ROSTER[i]
@@ -466,7 +468,16 @@ GuildOS.db.officerNotes = { [DEE] = "kept" }
 ROSTER = {}
 fire("GUILD_ROSTER_UPDATE")
 check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster that has not loaded drops nobody")
-ROSTER, ON_GUILD_DB = { "Ana Silva", "Cid" }, false
+ROSTER, SHOW_OFFLINE = { "Ana Silva", "Cid" }, false
+fire("GUILD_ROSTER_UPDATE")
+check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster showing only who is online drops nobody")
+SHOW_OFFLINE = true
+local count = GetNumGuildMembers
+GetNumGuildMembers = function() return 3 end   -- a row the client did not answer
+fire("GUILD_ROSTER_UPDATE")
+check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster with a row missing drops nobody")
+GetNumGuildMembers = count
+ON_GUILD_DB = false
 fire("GUILD_ROSTER_UPDATE")
 check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "another guild's db is never read against this roster")
 ON_GUILD_DB = true
