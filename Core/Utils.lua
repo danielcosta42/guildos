@@ -1009,43 +1009,43 @@ function GuildOS:GetFirstSeen(playerKey)
 end
 
 ----------------------------------------------------------------------
--- DB hygiene: drop cached data for members who left the guild.
--- Manual-only (never auto-run) to avoid data loss if the roster is mid-load.
--- Prunes the volatile caches (members gear/spec, firstSeen) but keeps officer
--- records (trials, officer notes) for historical reference.
+-- Whoever leaves the guild goes with it (issue #203): on every roster update, in every client,
+-- with no button to press. What describes them as a member goes: the member row, first-seen,
+-- professions, recipes and wishlist. What happened and what officers wrote stays: attendance,
+-- loot, notes, trials, the ban list, loot priorities, alts. Nothing happens while the roster has
+-- not loaded (it reads as empty then), nor while the loaded db is another guild's (it is resolved
+-- at login only: a guild changed mid-session would be read against the wrong roster). The player's
+-- own records always stay: were the own key ever to differ from the roster's (a surname the client
+-- did not give), dropping them would wipe what this client publishes.
 ----------------------------------------------------------------------
-function GuildOS:PruneStaleData()
-    if not self.db then return 0 end
+function GuildOS:DropDeparted()
+    if not (self.db and self:IsOnGuildDB()) then return end
     local n = GetNumGuildMembers() or 0
-    if n == 0 then return 0 end  -- roster not loaded yet; refuse to prune
-
-    local roster = {}
+    if n == 0 then return end
+    local me = self:GetPlayerKey(self.Compat.PlayerName())
+    local present = { [me] = true }
+    -- guildWishlists is keyed by the name lowercased, with its realm on retail only.
+    local names = { [me:lower()] = true, [(self.Compat.PlayerName() or ""):lower()] = true }
     for i = 1, n do
-        local name = GetGuildRosterInfo(i)
-        if name then
-            local short = name:match("^([^-]+)") or name
-            local realm = name:match("-(.+)$") or GetRealmName()
-            roster[self:GetPlayerKey(short, realm)] = true
+        local full = GetGuildRosterInfo(i)
+        if full then
+            local key = self:KeyOfRosterName(full)
+            present[key] = true
+            names[key:lower()], names[(full:match("^([^-]+)") or full):lower()] = true, true
         end
     end
-
-    local removed = 0
-    for key in pairs(self.db.members or {}) do
-        if not roster[key] then
-            self.db.members[key] = nil
-            removed = removed + 1
-        end
-    end
-    for key in pairs(self.db.firstSeen or {}) do
-        if not roster[key] then
-            self.db.firstSeen[key] = nil
+    for _, store in ipairs({ "members", "firstSeen", "recipes" }) do
+        for key in pairs(self.db[store] or {}) do
+            if not present[key] then self.db[store][key] = nil end
         end
     end
     for key in pairs(self.db.professions or {}) do
-        if not roster[key] then
+        if not present[key] then
             self.db.professions[key] = nil
-            if self.Professions then self.Professions:Changed(key) end
+            self.Professions:Changed(key)
         end
     end
-    return removed
+    for key in pairs(self.db.guildWishlists or {}) do
+        if not names[key] then self.db.guildWishlists[key] = nil end
+    end
 end
