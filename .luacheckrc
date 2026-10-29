@@ -104,7 +104,6 @@ read_globals = {
     "GuildInvite",
     "GetGuildInfo",
     "GetGuildRosterInfo",
-    "GetGuildRosterShowOffline",
     "GetNumGuildMembers",
     "GetGuildRosterMOTD",
     "GuildRoster",         -- nil in TBC Classic; guarded in Compat.lua

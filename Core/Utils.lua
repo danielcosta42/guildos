@@ -1010,12 +1010,14 @@ end
 
 ----------------------------------------------------------------------
 -- The guild roster's names, or nil while it is not the whole guild: not loaded yet (it reads as
--- empty), or listing only who is online because "Show Offline Members" is off, when every offline
--- member would read as gone. Whatever acts on "not on the roster" asks here first (issue #203).
+-- empty), or with a row the client did not answer, when that member would read as gone. Whatever
+-- acts on "not on the roster" asks here first (issue #203). "Show Offline Members" is not asked:
+-- GetNumGuildMembers counts the whole guild either way, and with it off retail 12.1.5 still
+-- answered all 943 rows of a guild with 10 online; a client that hid them would leave rows empty.
 ----------------------------------------------------------------------
 function GuildOS:WholeRoster()
     local n = GetNumGuildMembers() or 0
-    if n == 0 or (GetGuildRosterShowOffline and not GetGuildRosterShowOffline()) then return nil end
+    if n == 0 then return nil end
     local names = {}
     for i = 1, n do
         local full = GetGuildRosterInfo(i)
