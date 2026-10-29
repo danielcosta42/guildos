@@ -41,6 +41,11 @@ rolls", "Profession directory: who can craft it", "Guild chat inside the window"
 Mark the files for WoW: Forever and Retail. The TOC's interface line carries both (and the old TBC one), and the
 publish job tags each from it: read `Game version:` in its log after every release.
 
+## Badges
+
+A space in a badge URL is `_`, never `%20`, and the URL has no parentheses: CurseForge's editor decodes `%20` and
+`%3A` on paste, the URL ends up with a space in it and the image shows as raw markdown (issue #199).
+
 ---
 
 ## CurseForge Project Description (copy/paste everything below)
@@ -51,7 +56,8 @@ publish job tags each from it: read `Game version:` in its log after every relea
 
 **Guild OS is a guild management addon for WoW: Forever and Retail (Midnight).** It replaces the guild panel with one
 window for your whole guild: a guild roster with gear and item level, raid attendance tracking, raid teams, a
-profession directory, guild chat and recruiting, and on Forever DKP and EPGP and a loot master with soft reserves.
+profession directory, guild chat and recruiting, DKP, EPGP and wishlists, a loot master with soft reserves on Forever
+and a loot council by trade on Retail.
 Press `J`, where the old guild frame used to be.
 
 **Everything is a button.** Every feature and every setting has its place in the window. Slash commands still work
@@ -62,9 +68,9 @@ throttled, with everyone else in the guild running Guild OS. The more of your gu
 
 *Made with care by **Chehul**.*
 
-![Guild OS for WoW: Forever](https://img.shields.io/badge/Client-WoW%3A%20Forever-blueviolet)
-![Guild OS for Retail](https://img.shields.io/badge/Client-Retail%20(Midnight)-orange)
-[![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
+![Guild OS for WoW: Forever](https://img.shields.io/badge/Client-WoW:_Forever-blueviolet)
+![Guild OS for Retail](https://img.shields.io/badge/Client-Retail_Midnight-orange)
+[![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS_support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 
 ---
 
@@ -135,11 +141,11 @@ Not on retail: the master loot (retail has none) and soft reserves (softres.it r
 - **Raid Tools**: class composition, raid buff coverage and key cooldowns before you pull
 - **Enchant audit**: every unenchanted slot in the guild, most-missing first
 
-## 💰 Loot master, DKP and EPGP (WoW: Forever)
+## 💰 Loot master, DKP and EPGP
 
 Pick your guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
 or RCLootCouncil already handles it, and then Guild OS stays completely out of the way. On retail the same points and
-wishlists run beside the loot council by trade (above).
+wishlists run beside the loot council by trade (above); the loot master and soft reserves are Forever's only.
 
 - **Loot master**: announce, players roll MS / OS / Pass, award in one click. Ties go to officer priority, then soft
   reserve, then wishlist, then whoever has received fewer items this lockout, then (if you want) attendance, then the
@@ -203,8 +209,8 @@ Yes. It is built for it: surnames, no realms, the new professions and the client
 **Does Guild OS work on Retail?**
 Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools, the consumable
 check, Mythic+ and the Great Vault, and guildos.me.
-Handing loot out (master loot, DKP, soft reserves, wishlists) is Forever's only, because retail is personal loot; the
-loot history records what each guildmate received.
+Retail is personal loot, so the master loot and soft reserves are Forever's only. On retail, DKP, EPGP and wishlists
+run beside a loot council by trade, and the loot history records what each guildmate received.
 
 **Is it free?**
 Yes, and open source under the MIT license.
@@ -222,7 +228,7 @@ Yes, both, plus a council mode where points are only shown. Points are kept per 
 officers.
 
 **Do I need the website or the companion?**
-No. Both are optional, and on Forever only for now. They add Discord raid signups and a web roster; the addon does
+No. Both are optional, on Forever and on Retail. They add Discord raid signups and a web roster; the addon does
 everything in game without them.
 
 **Do I need a spreadsheet for attendance or loot?**
@@ -252,5 +258,5 @@ Rather write it down? Open an issue on the project page — feedback is welcome 
 
 If Guild OS has been useful to your guild and you'd like to help keep it maintained, you can [buy me a coffee ☕](https://buymeacoffee.com/chehul).
 
-[![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS%20support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
+[![Guild OS support on Discord](https://img.shields.io/badge/Discord-GuildOS_support-5865F2?logo=discord&logoColor=white)](https://discord.gg/8XA6gmNjja)
 [![Guild OS source on GitHub](https://img.shields.io/badge/GitHub-GuildOS-181717?logo=github)](https://github.com/danielcosta42/guildos)
