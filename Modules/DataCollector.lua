@@ -13,6 +13,11 @@ function DataCollector:Initialize()
     -- Register inventory change events
     local frame = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
+    -- A transmog changes what the character shows without changing what it wears (issue #201).
+    -- Midnight's transmog frame saves a slot of the outfit on display with the last one.
+    GuildOS.Compat.RegisterEvent(frame, "TRANSMOGRIFY_SUCCESS")
+    GuildOS.Compat.RegisterEvent(frame, "TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
+    GuildOS.Compat.RegisterEvent(frame, "VIEWED_TRANSMOG_OUTFIT_SLOT_SAVE_SUCCESS")
     GuildOS.Compat.RegisterEvent(frame, "SKILL_LINES_CHANGED")
     GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_SKILL")
     -- Cache/talent readiness events: on a cold first login the item cache and
@@ -24,7 +29,8 @@ function DataCollector:Initialize()
     GuildOS.Compat.RegisterEvent(frame, "PLAYER_TALENT_UPDATE")
     GuildOS.Compat.RegisterEvent(frame, "CHARACTER_POINTS_CHANGED")
     frame:SetScript("OnEvent", function(_, event)
-        if event == "PLAYER_EQUIPMENT_CHANGED" then
+        if event == "PLAYER_EQUIPMENT_CHANGED" or event == "TRANSMOGRIFY_SUCCESS"
+            or event == "TRANSMOG_DISPLAYED_OUTFIT_CHANGED" or event == "VIEWED_TRANSMOG_OUTFIT_SLOT_SAVE_SUCCESS" then
             C_Timer.After(0.5, function()
                 DataCollector:CollectMyData()
                 -- Broadcast updated gear to guild after a short delay
@@ -326,6 +332,7 @@ function DataCollector:CollectGear()
                 ilvl = itemLevel or 0,
                 enchantId = enchantId,
                 gems = gems,
+                transmog = GuildOS.Compat.Transmog(slotId),   -- source id, or true when hidden (issue #201)
             }
         else
             gear[slotId] = nil
@@ -723,6 +730,7 @@ function DataCollector:GetBroadcastData()
                 quality = item.quality,
                 ilvl = item.ilvl,
                 enchantId = item.enchantId,
+                transmog = item.transmog,   -- issue #201; absent from an older client
             }
             if item.gems and #item.gems > 0 then
                 gearEntry.gems = {}

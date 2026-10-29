@@ -292,9 +292,27 @@ GuildOS.Client.isAnniversary = true
 
 -- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
 -- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
-assert(anniversary.v == 10, "the payload is v10")
+assert(anniversary.v == 11, "the payload is v11")
 assert(anniversary.region == nil and anniversary.sessions[1].difficulty == nil and anniversary.realm == "Firemaw",
   "Anniversary sends no region and no difficulty, and its realm is the client's")
+
+-- v11 (issue #201): what a slot shows when it is not the item, a source id or hidden; nothing otherwise.
+local keptGear = GuildOS.db.members["Chehul-Firemaw"].gear
+GuildOS.db.members["Chehul-Firemaw"].gear = {
+  [1] = { id = 28224, name = "Helm", transmog = 7000 },
+  [5] = { id = 28204, name = "Tunic" },
+  [15] = { id = 28249, name = "Cloak", transmog = true },
+}
+for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do
+  if m.key == "Chehul-Firemaw" then
+    local by = {}
+    for _, g in ipairs(m.gear) do by[g.slot] = g end
+    assert(by[1].appearance == 7000 and by[1].hidden == nil, "a transmogged slot sends its appearance")
+    assert(by[15].hidden == true and by[15].appearance == nil, "a hidden slot says hidden")
+    assert(by[5].appearance == nil and by[5].hidden == nil, "a slot showing its item sends neither")
+  end
+end
+GuildOS.db.members["Chehul-Firemaw"].gear = keptGear
 
 for _, m in ipairs(anniversary.members) do
   if m.key == "Chehul-Firemaw" then
