@@ -107,6 +107,8 @@ Probe.APIS = {
     -- Retail (issue #185): the loot council by trade, a personal item's trade window on its tooltip.
     "C_TooltipInfo.GetBagItem", "GetTradePlayerItemLink", "Enum.TooltipDataLineType", "ERR_TRADE_COMPLETE",
     "INT_SPELL_DURATION_HOURS", "INT_SPELL_DURATION_MIN",
+    -- Forever and retail (issue #201): the transmog a slot shows, for guildos.me to draw.
+    "C_Transmog.GetSlotVisualInfo", "Enum.TransmogType", "Enum.TransmogModification",
 }
 
 -- Templates the addon inherits, with the frame type each one needs.
@@ -134,7 +136,8 @@ Probe.EVENTS = {
     "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
     "PLAYER_TARGET_CHANGED", "QUEST_TURNED_IN", "RAID_ROSTER_UPDATE", "READY_CHECK", "READY_CHECK_FINISHED",
     "SKILL_LINES_CHANGED",
-    "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW", "UI_INFO_MESSAGE",
+    "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW",
+    "TRANSMOG_DISPLAYED_OUTFIT_CHANGED", "TRANSMOGRIFY_SUCCESS", "UI_INFO_MESSAGE",
     "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
 }
@@ -230,6 +233,17 @@ function Probe:Run()
             extra = extra + #(e.extra or {})
         end
         r.professions = { catalog = GuildOS.ProfCatalog.build, lines = lines, extra = extra }
+    end
+
+    -- The transmog as the game answers it, head, chest and main hand, raw (issue #201): whether a slot
+    -- with no transmog comes back 0 or as its own item, and what a hidden head says.
+    local E = Enum
+    if member(C_Transmog, "GetSlotVisualInfo") and E and E.TransmogType and E.TransmogModification then
+        r.transmog = {}
+        for _, slot in ipairs({ 1, 5, 16 }) do
+            r.transmog[slot] = capture(C_Transmog.GetSlotVisualInfo, { slotID = slot,
+                type = E.TransmogType.Appearance, modification = E.TransmogModification.Main })[1]
+        end
     end
 
     r.apis, r.missingApis = {}, {}

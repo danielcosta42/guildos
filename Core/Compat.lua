@@ -520,6 +520,33 @@ function Compat.AverageItemLevel()
     return math.floor(equipped)
 end
 
+-- The slots a transmog can change. Neck, rings and trinkets never show on the character.
+local TRANSMOG_SLOTS = { [1] = true, [3] = true, [5] = true, [6] = true, [7] = true, [8] = true, [9] = true,
+    [10] = true, [15] = true, [16] = true, [17] = true, [18] = true }
+
+-- What one of my slots shows when it is not the item's own look (issue #201): the applied transmog's
+-- source id, an ItemModifiedAppearance id that guildos.me can draw, or true for a slot hidden by
+-- transmog. Nil with no transmog, where the game has none (TBC Anniversary), or when the client
+-- keeps it secret. The table argument is TransmogLocationMixin:GetData's shape, so Blizzard's
+-- load-on-demand transmog UI never has to be loaded; pcall because the call is unread on Forever
+-- until its launch.
+function Compat.Transmog(slotId)
+    if GuildOS.Client.isAnniversary or not TRANSMOG_SLOTS[slotId] then return nil end
+    local T, E = C_Transmog, Enum
+    if not (T and T.GetSlotVisualInfo and E and E.TransmogType and E.TransmogModification) then return nil end
+    local ok, info = pcall(T.GetSlotVisualInfo, {
+        slotID = slotId, type = E.TransmogType.Appearance, modification = E.TransmogModification.Main,
+    })
+    if not ok or type(info) ~= "table" then return nil end
+    if info.isHideVisual == true then return true end
+    local applied, base = info.appliedSourceID, info.baseSourceID
+    if Compat.IsSecret(applied) or Compat.IsSecret(base) then return nil end
+    applied = tonumber(applied)
+    -- 0 is Constants.Transmog.NoTransmogID: the item's own look.
+    if not applied or applied <= 0 or applied == tonumber(base) then return nil end
+    return applied
+end
+
 -- An inspected unit's equipped average as the game computes it, on retail (issue #184): the item
 -- level of a guildmate who has no Guild OS to send theirs. Needs INSPECT_READY first. Nil
 -- elsewhere, before the inspect has the gear, or when the client keeps it secret.

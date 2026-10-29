@@ -223,6 +223,7 @@ read_globals = {
     "C_SpecializationInfo",                  -- retail's spec (ADR-0026)
     "GetSpecializationInfoForSpecID",
     "C_PaperDollInfo",                       -- retail: an inspected average item level (issue #184)
+    "C_Transmog",                            -- the appearance a slot shows (issue #201)
     -- Retail: the character sheet's ratings (Compat.SecondaryStats, issue #184).
     "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetHaste", "GetMasteryEffect",
     "GetCombatRatingBonus", "GetVersatilityBonus", "CR_VERSATILITY_DAMAGE_DONE",

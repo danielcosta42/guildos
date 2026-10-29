@@ -44,8 +44,10 @@ local FMT = "GOSCOMP1"
 -- decides whether a night counts for attendance (issue #90). 10 is retail's: the `region`, the guild's
 -- home realm in `guildKey` and `realm` (never the exporter's), and each session's `difficulty`, 14
 -- Normal, 15 Heroic, 16 Mythic (issue #182, the site's specs/056). Forever and Anniversary send what
--- they sent at 9.
-local PAYLOAD_VERSION = 10
+-- they sent at 9. 11 adds the transmog to a gear entry: `appearance`, the source id the slot shows
+-- instead of the item's own look, or `hidden` (issue #201, the site's #227). Both absent with no
+-- transmog, on TBC Anniversary and from a member whose addon predates it.
+local PAYLOAD_VERSION = 11
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -174,6 +176,13 @@ local function gearFor(data)
                     if id and id > 0 then gems[#gems + 1] = id end
                 end
                 if #gems > 0 then entry.gems = gems end
+            end
+            -- What the slot shows, when it is not the item (issue #201): the site draws this one.
+            local transmog = item.transmog
+            if transmog == true then
+                entry.hidden = true
+            elseif tonumber(transmog) and tonumber(transmog) > 0 then
+                entry.appearance = tonumber(transmog)
             end
             out[#out + 1] = entry
         end
