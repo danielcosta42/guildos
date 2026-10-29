@@ -465,6 +465,8 @@ GuildOS.db.recipes[GONE] = { Alchemy = { { name = "Elixir", spellId = 2329 } } }
 GuildOS.db.firstSeen = { [DEE] = NOW, [CID] = NOW }
 GuildOS.db.guildWishlists = { dee = { name = "Dee" }, cid = { name = "Cid" }, ["ana silva"] = { name = "Ana Silva" } }
 GuildOS.db.officerNotes = { [DEE] = "kept" }
+local PUG = GuildOS:GetPlayerKey("Pug")
+GuildOS.db.members[PUG] = { name = "Pug", spec = { specID = 62 } }   -- inspected, never published
 ROSTER = {}
 fire("GUILD_ROSTER_UPDATE")
 check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster that has not loaded drops nobody")
@@ -490,6 +492,7 @@ check(GuildOS.db.members[DEE] == nil and GuildOS.db.firstSeen[DEE] == nil and Gu
 local wl = GuildOS.db.guildWishlists
 check(wl.dee == nil and wl.cid and wl["ana silva"], "the wishlist goes, a guildmate's and the own stay")
 check(GuildOS.db.officerNotes[DEE] == "kept", "what officers wrote stays")
+check(GuildOS.db.members[PUG], "an inspected stranger's row is no guildmate's sheet, and stays")
 
 table.insert(GuildOS.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
 check(P:Scan() == true and #P:CraftersOf(2657) == 1, "a recipe two of my professions share lists me once")

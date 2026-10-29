@@ -1049,7 +1049,12 @@ function GuildOS:DropDeparted()
         present[key] = true
         names[key:lower()], names[(full:match("^([^-]+)") or full):lower()] = true, true
     end
-    for _, store in ipairs({ "members", "firstSeen", "recipes" }) do
+    -- A members row their own client never published is an inspect (SpecChecker): a pug, or on
+    -- retail a cross-guild core member whose scanned spec picks their role. Not a guildmate's sheet.
+    for key, rec in pairs(self.db.members or {}) do
+        if not present[key] and (tonumber(rec.lastUpdate) or 0) > 0 then self.db.members[key] = nil end
+    end
+    for _, store in ipairs({ "firstSeen", "recipes" }) do
         for key in pairs(self.db[store] or {}) do
             if not present[key] then self.db[store][key] = nil end
         end
