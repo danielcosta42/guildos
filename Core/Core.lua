@@ -538,6 +538,7 @@ end
 
 function GuildOS:OnGuildRosterUpdate()
     if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
+    if GuildOS.DropDeparted then GuildOS:DropDeparted() end
     GuildOS:RefreshRosterUI()
 end
 

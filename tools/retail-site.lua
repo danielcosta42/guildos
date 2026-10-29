@@ -168,7 +168,7 @@ GuildOS.db.raidTracker.sessions[NIGHT] = {
 }
 
 local p = assert(Companion:BuildPayload())
-check(p.v == 10 and p.game == "RETAIL" and p.region == "us", "v10 says the game and the region")
+check(p.v == 11 and p.game == "RETAIL" and p.region == "us", "v11 says the game and the region")
 check(p.guildKey == "Jardim Escola-Azralon" and p.realm == "Azralon",
   "guildKey and realm are the guild's home realm, never the exporter's Tol Barad")
 check(p.exportedBy == "Chehul-TolBarad", "the exporter is keyed by their own realm")

@@ -128,6 +128,9 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 local Compat = GuildOS.Compat
+-- The db login resolved is this guild's, unless a check says otherwise (issue #203).
+local ON_GUILD_DB = true
+function GuildOS:IsOnGuildDB() return ON_GUILD_DB end
 
 -- ── 1. Compat ───────────────────────────────────────────────────────────
 check(not GuildOS.Client.isAnniversary, "the stub is a Forever client")
@@ -309,7 +312,7 @@ check(GuildOS.db.professions[BOB].profs[164] and not GuildOS.db.professions[BOB]
 check(GuildOS.db.professions[GONE] == nil, "a member no longer on the roster loses the record")
 local keepRoster = ROSTER
 ROSTER = { "Bob", "Cid", "Dee" }
-P:DropDeparted()
+GuildOS:DropDeparted()
 check(GuildOS.db.professions[ME] ~= nil, "the player's own record is never dropped, even missing from the roster")
 ROSTER = keepRoster
 check(P:KnowsRecipe(ME, 2657) and not P:KnowsRecipe(BOB, 2657), "KnowsRecipe")
@@ -454,10 +457,37 @@ DC:StoreReceivedData(DEE, { name = "Dee", class = "MAGE", lastUpdate = NOW, abse
 local dee = GuildOS:GetMemberRecord("Dee")
 check(GuildOS.db.members[DEE].professions == nil and dee.professions and dee.professions[1].name == "Blacksmithing",
       "a broadcast from a version that sends no professions does not hide the roster's")
+-- Whoever leaves goes with it, on the roster update, with no button (issue #203).
+local CID = GuildOS:GetPlayerKey("Cid")
+GuildOS.db.recipes[GONE] = { Alchemy = { { name = "Elixir", spellId = 2329 } } }   -- no professions record
+GuildOS.db.firstSeen = { [DEE] = NOW, [CID] = NOW }
+GuildOS.db.guildWishlists = { dee = { name = "Dee" }, cid = { name = "Cid" }, ["ana silva"] = { name = "Ana Silva" } }
+GuildOS.db.officerNotes = { [DEE] = "kept" }
+local PUG = GuildOS:GetPlayerKey("Pug")
+GuildOS.db.members[PUG] = { name = "Pug", spec = { specID = 62 } }   -- inspected, never published
+ROSTER = {}
+fire("GUILD_ROSTER_UPDATE")
+check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster that has not loaded drops nobody")
 ROSTER = { "Ana Silva", "Cid" }
-GuildOS:PruneStaleData()
+local count = GetNumGuildMembers
+GetNumGuildMembers = function() return 3 end   -- a row the client did not answer
+fire("GUILD_ROSTER_UPDATE")
+check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "a roster with a row missing drops nobody")
+GetNumGuildMembers = count
+ON_GUILD_DB = false
+fire("GUILD_ROSTER_UPDATE")
+check(GuildOS.db.recipes[GONE] and GuildOS.db.members[DEE], "another guild's db is never read against this roster")
+ON_GUILD_DB = true
+fire("GUILD_ROSTER_UPDATE")
 check(GuildOS.db.professions[BOB] == nil and GuildOS.db.recipes[BOB] == nil and GuildOS.db.professions[ME],
       "a member who left loses the profession record and its projection")
+check(GuildOS.db.recipes[GONE] == nil, "recipes with no profession record go too")
+check(GuildOS.db.members[DEE] == nil and GuildOS.db.firstSeen[DEE] == nil and GuildOS.db.firstSeen[CID],
+      "the member row and first-seen go, a guildmate's stay")
+local wl = GuildOS.db.guildWishlists
+check(wl.dee == nil and wl.cid and wl["ana silva"], "the wishlist goes, a guildmate's and the own stay")
+check(GuildOS.db.officerNotes[DEE] == "kept", "what officers wrote stays")
+check(GuildOS.db.members[PUG], "an inspected stranger's row is no guildmate's sheet, and stays")
 
 table.insert(GuildOS.ProfCatalog.byLine[185], 1, 2657)   -- a recipe two professions learn
 check(P:Scan() == true and #P:CraftersOf(2657) == 1, "a recipe two of my professions share lists me once")

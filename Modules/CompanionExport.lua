@@ -44,8 +44,10 @@ local FMT = "GOSCOMP1"
 -- decides whether a night counts for attendance (issue #90). 10 is retail's: the `region`, the guild's
 -- home realm in `guildKey` and `realm` (never the exporter's), and each session's `difficulty`, 14
 -- Normal, 15 Heroic, 16 Mythic (issue #182, the site's specs/056). Forever and Anniversary send what
--- they sent at 9.
-local PAYLOAD_VERSION = 10
+-- they sent at 9. 11 adds `rosterComplete`, true only when `members` is the whole guild
+-- (GuildOS:WholeRoster): the one upload the site may read "not listed" from as "left the guild"
+-- (issue #203, the site's #229). Absent otherwise.
+local PAYLOAD_VERSION = 11
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -560,6 +562,7 @@ function Companion:BuildPayload()
         exportedBy = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
         addonVersion = GuildOS.VERSION or "0",
         count = count,
+        rosterComplete = GuildOS:WholeRoster() and true or nil,
         members = members,
         loot = loot,
         sessions = sessions,

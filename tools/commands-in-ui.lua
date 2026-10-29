@@ -51,7 +51,6 @@ local IN_UI = {
   pug         = { { "UI/Minimap.lua", "GuildOS:TogglePugInspector()" } },
   minimap     = { { "UI/FeaturePanels.lua", 'L["Show minimap button"]' } },
   guildbutton = { { "UI/FeaturePanels.lua", "hijackGuildButton" } },
-  prune       = { { "UI/FeaturePanels.lua", "GuildOS:PruneStaleData()" } },
   debug       = { { "UI/FeaturePanels.lua", "GuildOS.Logger.debug = checked" } },
   errors      = { { "UI/FeaturePanels.lua", "GuildOS:ShowErrors()" } },
   style       = { { "UI/StylePreview.lua", "self:Apply(id)" }, { "UI/FeaturePanels.lua", "GuildOS.Style:ShowPreview()" } },

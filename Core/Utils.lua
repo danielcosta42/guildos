@@ -1009,43 +1009,65 @@ function GuildOS:GetFirstSeen(playerKey)
 end
 
 ----------------------------------------------------------------------
--- DB hygiene: drop cached data for members who left the guild.
--- Manual-only (never auto-run) to avoid data loss if the roster is mid-load.
--- Prunes the volatile caches (members gear/spec, firstSeen) but keeps officer
--- records (trials, officer notes) for historical reference.
+-- The guild roster's names, or nil while it is not the whole guild: not loaded yet (it reads as
+-- empty), or with a row the client did not answer, when that member would read as gone. Whatever
+-- acts on "not on the roster" asks here first (issue #203). "Show Offline Members" is not asked:
+-- GetNumGuildMembers counts the whole guild either way, and with it off retail 12.1.5 still
+-- answered all 943 rows of a guild with 10 online; a client that hid them would leave rows empty.
 ----------------------------------------------------------------------
-function GuildOS:PruneStaleData()
-    if not self.db then return 0 end
+function GuildOS:WholeRoster()
     local n = GetNumGuildMembers() or 0
-    if n == 0 then return 0 end  -- roster not loaded yet; refuse to prune
-
-    local roster = {}
+    if n == 0 then return nil end
+    local names = {}
     for i = 1, n do
-        local name = GetGuildRosterInfo(i)
-        if name then
-            local short = name:match("^([^-]+)") or name
-            local realm = name:match("-(.+)$") or GetRealmName()
-            roster[self:GetPlayerKey(short, realm)] = true
-        end
+        local full = GetGuildRosterInfo(i)
+        if not full then return nil end
+        names[i] = full
     end
+    return names
+end
 
-    local removed = 0
-    for key in pairs(self.db.members or {}) do
-        if not roster[key] then
-            self.db.members[key] = nil
-            removed = removed + 1
-        end
+----------------------------------------------------------------------
+-- Whoever leaves the guild goes with it (issue #203): on every roster update, in every client,
+-- with no button to press. What describes them as a member goes: the member row, first-seen,
+-- professions, recipes and wishlist. What happened and what officers wrote stays: attendance,
+-- loot, notes, trials, the ban list, loot priorities, alts. Nothing happens while the roster is
+-- not whole (WholeRoster), nor while the loaded db is another guild's (it is resolved at login
+-- only: a guild changed mid-session would be read against the wrong roster). The player's own
+-- records always stay: were the own key ever to differ from the roster's (a surname the client
+-- did not give), dropping them would wipe what this client publishes.
+-- ponytail: a full pass on every GUILD_ROSTER_UPDATE, like RecordFirstSeen's; throttle it if a big
+-- guild ever shows it in a profile.
+----------------------------------------------------------------------
+function GuildOS:DropDeparted()
+    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster()
+    if not roster then return end
+    local me = self:GetPlayerKey(self.Compat.PlayerName())
+    local present = { [me] = true }
+    -- guildWishlists is keyed by the name lowercased, with its realm on retail only.
+    local names = { [me:lower()] = true, [(self.Compat.PlayerName() or ""):lower()] = true }
+    for _, full in ipairs(roster) do
+        local key = self:KeyOfRosterName(full)
+        present[key] = true
+        names[key:lower()], names[(full:match("^([^-]+)") or full):lower()] = true, true
     end
-    for key in pairs(self.db.firstSeen or {}) do
-        if not roster[key] then
-            self.db.firstSeen[key] = nil
+    -- A members row their own client never published is an inspect (SpecChecker): a pug, or on
+    -- retail a cross-guild core member whose scanned spec picks their role. Not a guildmate's sheet.
+    for key, rec in pairs(self.db.members or {}) do
+        if not present[key] and (tonumber(rec.lastUpdate) or 0) > 0 then self.db.members[key] = nil end
+    end
+    for _, store in ipairs({ "firstSeen", "recipes" }) do
+        for key in pairs(self.db[store] or {}) do
+            if not present[key] then self.db[store][key] = nil end
         end
     end
     for key in pairs(self.db.professions or {}) do
-        if not roster[key] then
+        if not present[key] then
             self.db.professions[key] = nil
             if self.Professions then self.Professions:Changed(key) end
         end
     end
-    return removed
+    for key in pairs(self.db.guildWishlists or {}) do
+        if not names[key] then self.db.guildWishlists[key] = nil end
+    end
 end

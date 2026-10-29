@@ -2853,15 +2853,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
     mtTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22
 
-    local pruneBtn = UI:CreateButton(content, L["Prune Left Members"], 170, 24)
-    pruneBtn:SetPoint("TOPLEFT", 8, -yOff)
-    pruneBtn:SetScript("OnClick", function()
-        local removed = GuildOS:PruneStaleData()
-        GuildOS:Print(string.format(L["Pruned %d member(s) who left the guild."], removed))
-    end)
-
     local errBtn = UI:CreateButton(content, L["View Errors"], 120, 24)
-    errBtn:SetPoint("LEFT", pruneBtn, "RIGHT", 8, 0)
+    errBtn:SetPoint("TOPLEFT", 8, -yOff)
     errBtn:SetScript("OnClick", function() GuildOS:ShowErrors() end)
 
     local dbgCb = UI:CreateCheckbox(content, L["Debug logging"], 18)
@@ -3318,7 +3311,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
     yOff = yOff + 42
 
     local cmds = UI:CreateText(content,
-        "/guildos  |  /guildos sync  |  /guildos prune  |  /guildos minimap  |  /guildos debug",
+        "/guildos  |  /guildos sync  |  /guildos minimap  |  /guildos debug",
         9, C.textDim.r, C.textDim.g, C.textDim.b)
     cmds:SetPoint("TOPLEFT", 8, -yOff)
     yOff = yOff + 22

@@ -292,7 +292,21 @@ GuildOS.Client.isAnniversary = true
 
 -- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
 -- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
-assert(anniversary.v == 10, "the payload is v10")
+assert(anniversary.v == 11, "the payload is v11")
+
+-- v11 (issue #203): the site reads "not listed" as "left the guild" only from a whole roster.
+assert(anniversary.rosterComplete == true, "a whole roster says so")
+-- "Show Offline Members" off is still the whole guild when every row answers: retail 12.1.5 gave
+-- all 943 rows of a guild with 10 online.
+GetGuildRosterShowOffline = function() return false end
+assert(GuildOS.Companion:BuildPayload().rosterComplete == true, "the window's option is not the roster")
+local fulano = table.remove(ROSTER, 2)
+local n = #ROSTER + 1
+GetNumGuildMembers = function() return n end
+assert(GuildOS.Companion:BuildPayload().rosterComplete == nil, "a roster with a row missing is not whole")
+GetNumGuildMembers = function() return #ROSTER end
+table.insert(ROSTER, 2, fulano)
+GetGuildRosterShowOffline = nil
 assert(anniversary.region == nil and anniversary.sessions[1].difficulty == nil and anniversary.realm == "Firemaw",
   "Anniversary sends no region and no difficulty, and its realm is the client's")
 

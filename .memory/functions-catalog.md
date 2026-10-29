@@ -39,9 +39,10 @@ Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via m
 |---|---|
 | `GuildOS.Logger.Debug/Info/Warn(msg)` | Structured logger; Debug gated by `GuildOS.Logger.debug` (toggle via `/guildos debug`) |
 | `GuildOS:SafeCall(fn, ...)` | pcall wrapper; captures errors to `GuildOS.State.errors` ring (view via `/guildos errors`) |
-| `GuildOS:PruneStaleData()` | Manual (`/guildos prune`) removal of cached data for members who left the guild |
+| `GuildOS:WholeRoster()` | The guild roster's names, or nil while it is not the whole guild (not loaded, or a row the client did not answer): what acts on "not on the roster" asks here (issue #203) |
+| `GuildOS:DropDeparted()` | On every roster update: drops the member row, first-seen, professions, recipes and wishlist of whoever left the guild (issue #203); history and officer records stay |
 | `GuildOS:ShowOnboarding()` / `:MaybeShowOnboarding()` | First-run welcome wizard (once; `settings.onboarded`) |
-| Slash: `/guildos minimap | debug | errors | prune` | Toggle minimap button / debug / dump errors / prune left members |
+| Slash: `/guildos minimap | debug | errors` | Toggle minimap button / debug / dump errors |
 
 Branding: user-facing text says "Guild OS" and the commands are `/guildos` and `/gos`; the old name, its global alias, saved variable, comm prefix and slash commands are gone (#120).
 

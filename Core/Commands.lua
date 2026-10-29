@@ -329,9 +329,6 @@ local function handleCommand(msg)
         GuildOS:SetSetting("hijackGuildButton", on)
         GuildOS:Print(on and L["Guild button now opens Guild OS."]
             or L["Guild button now opens the Blizzard guild UI. Open Guild OS from the minimap button."])
-    elseif msg == "prune" then
-        local removed = GuildOS:PruneStaleData()
-        GuildOS:Print(string.format(L["Pruned %d member(s) who left the guild."], removed))
     elseif msg == "debug" then
         GuildOS.Logger.debug = not GuildOS.Logger.debug
         GuildOS:Print(GuildOS.Logger.debug and L["Debug mode ON."] or L["Debug mode OFF."])
