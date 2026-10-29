@@ -138,6 +138,7 @@ Probe.EVENTS = {
     "SKILL_LINES_CHANGED",
     "TRADE_ACCEPT_UPDATE", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_SHOW", "TRADE_SKILL_SHOW",
     "TRANSMOG_DISPLAYED_OUTFIT_CHANGED", "TRANSMOGRIFY_SUCCESS", "UI_INFO_MESSAGE",
+    "VIEWED_TRANSMOG_OUTFIT_SLOT_SAVE_SUCCESS",
     "UPDATE_MOUSEOVER_UNIT", "WEEKLY_REWARDS_UPDATE", "WHO_LIST_UPDATE",
     "ZONE_CHANGED_NEW_AREA",
 }
@@ -241,8 +242,9 @@ function Probe:Run()
     if member(C_Transmog, "GetSlotVisualInfo") and E and E.TransmogType and E.TransmogModification then
         r.transmog = {}
         for _, slot in ipairs({ 1, 5, 16 }) do
-            r.transmog[slot] = capture(C_Transmog.GetSlotVisualInfo, { slotID = slot,
-                type = E.TransmogType.Appearance, modification = E.TransmogModification.Main })[1]
+            -- `first`, so an error is kept as one and never reads as "answered nothing".
+            r.transmog[slot] = first(capture(C_Transmog.GetSlotVisualInfo, { slotID = slot,
+                type = E.TransmogType.Appearance, modification = E.TransmogModification.Main }))
         end
     end
 
