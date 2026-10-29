@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-10-29
+
+### Fixed
+- a opção de mostrar offline não é o roster (#203)
+- um inspect não é a ficha de um guildmate (#203)
+- só o roster inteiro diz quem saiu (#203)
+- quem sai da guilda some de tudo sozinho, sem botão de prune (#203)
+
+
 ## [1.0.1] - 2026-10-28
 
 ### Fixed
