@@ -961,6 +961,7 @@ L["Usage: /guildos export <%s> [csv|tsv|discord]"] = "Uso: /guildos export <%s> 
 -- Readiness sub-panel
 L["Readiness"] = "Prontidão"
 L["reserve"] = "reserva"
+L["starter"] = "titular"
 L["Open: %d  (T %d · H %d · M %d · R %d)"] = "Vagas: %d  (T %d · H %d · M %d · R %d)"
 L["%d in reserve"] = "%d na reserva"
 L["%d members reached level %s"] = "%d membros chegaram ao nível %s"

@@ -482,8 +482,11 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:LinkDiscord("Sozinho", "nucleo-alfa") == false and not CM:IsFromDiscord("Sozinho") and said("/gos web on"),
     G("with no core holding the tag and no inbox to bring it, nothing is linked, and the chat says why"))
   GuildOS.db.settings.companion = true
+  CM:AddMember(K("Bruno"), { name = "Bruno" }, "Sozinho")   -- an officer's entry for the Discord's reserve
   check(CM:LinkDiscord("Sozinho", "nucleo-alfa") and CM:IsFromDiscord("Sozinho") and not CM:IsFromDiscord("Núcleo Alfa")
     and GuildOS.db.cores["Sozinho"].members[K("Bruno")], G("with the inbox, the core is made again and its people move to the link"))
+  check(GuildOS.db.cores["Sozinho"].members[K("Bruno")].status == "bench",
+    G("somebody the core already held keeps the Discord's reserve when it is linked"))
   CM = load(game)
   CM:ImportFromSite({ guild = "Nucleo BR", realm = "Outro Reino", unlinked = 0, cores = { { tag = "x", name = "x", size = 10,
     members = { { key = "Ana-Firemaw", name = "Ana" } } } } })

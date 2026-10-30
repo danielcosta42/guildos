@@ -866,7 +866,7 @@ function GuildOS:CreateCoresPanel(panel)
 
         -- The open slots, by role, for titulars (issue #212).
         local open = CM:OpenSlots(coreName)
-        if open.total > 0 then
+        if open.total + open.tank + open.healer + open.mdps + open.rdps > 0 then   -- a role short is a slot, full or not
             local openStr = string.format(L["Open: %d  (T %d · H %d · M %d · R %d)"], open.total, open.tank, open.healer, open.mdps, open.rdps)
             local openLbl = track(MakeLabel(rightContent, openStr, 10, C.gold.r, C.gold.g, C.gold.b))
             openLbl:SetPoint("TOPLEFT", 4, y)
@@ -985,6 +985,18 @@ function GuildOS:CreateCoresPanel(panel)
                     local capKey2 = mk
                     remBtn:SetScript("OnClick", function()
                         CM:RemoveMember(capKey2, coreName)
+                        CM:BroadcastRoster(coreName)
+                        BuildSettings(coreName)
+                    end)
+                    -- Titular or reserve, for somebody the officers put here (issue #212); the
+                    -- Discord's people are the Discord's. The button names where it moves them.
+                    local stBtn = track(UI:CreateButton(rightContent, m.status == "bench" and L["starter"] or L["reserve"], 56, 16))
+                    stBtn:SetPoint("LEFT", remBtn, "RIGHT", 3, 0)
+                    local capKey3 = mk
+                    stBtn:SetScript("OnClick", function()
+                        local mem = CM:GetMembers(coreName)[capKey3]
+                        if not mem then return end
+                        mem.status = mem.status ~= "bench" and "bench" or nil
                         CM:BroadcastRoster(coreName)
                         BuildSettings(coreName)
                     end)

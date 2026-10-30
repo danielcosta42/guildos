@@ -1013,6 +1013,7 @@ L["Manage"] = "Gestisci"
 -- UI/AuditPanel.lua
 L["Readiness"] = "Prontezza"
 L["reserve"] = "riserva"
+L["starter"] = "titolare"
 L["Open: %d  (T %d · H %d · M %d · R %d)"] = "Posti: %d  (T %d · C %d · M %d · D %d)"
 L["%d in reserve"] = "%d di riserva"
 L["%d members reached level %s"] = "%d membri hanno raggiunto il livello %s"

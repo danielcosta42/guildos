@@ -941,7 +941,12 @@ local function moveTag(self, coreName, tag, linkAt)
         local old, members = GuildOS.db.cores[from], self:GetMembers(coreName)
         for key, rec in pairs(type(old.members) == "table" and old.members or {}) do
             if type(rec) == "table" and rec.src == "discord" then
-                if type(members[key]) == "table" then members[key].src = "discord" else members[key] = rec end
+                -- Titular or reserve rides with the Discord's record (issue #212).
+                if type(members[key]) == "table" then
+                    members[key].src, members[key].status = "discord", rec.status
+                else
+                    members[key] = rec
+                end
             end
         end
         core.discordWaiting = old.discordWaiting
