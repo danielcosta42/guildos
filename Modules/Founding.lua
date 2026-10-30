@@ -248,7 +248,8 @@ function Founding:_Founders()
             local key = GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
             -- The member's own claim and this client's first sighting both only bound the join from
             -- above (each is "known since"): the earlier is the better guess.
-            local claim = GuildOS.db.foundingJoins[key]
+            -- Switched on with no /reload, Initialize has not made this table yet.
+            local claim = (GuildOS.db.foundingJoins or {})[key]
             local joinedAt, src = claim and claim.joinedAt, claim and claim.src
             local seen = GuildOS:GetFirstSeen(key)
             if seen and (not joinedAt or seen < joinedAt) then joinedAt, src = seen, "firstSeen" end

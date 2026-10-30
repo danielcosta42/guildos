@@ -914,8 +914,8 @@ function GuildOS:IsFeatureEnabled(id)
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
     if def and def.core then return true end
     local mods = self.db and self.db.settings and self.db.settings.modules
+    if OFF_UNTIL_TESTED[id] and (not mods or mods[id] == nil) then return false end
     if not mods then return true end
-    if mods[id] == nil and OFF_UNTIL_TESTED[id] then return false end
     return mods[id] ~= false
 end
 

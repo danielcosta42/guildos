@@ -37,6 +37,10 @@ check(not GuildOS:IsFeatureEnabled("journal"), "the journal is off until tested"
 check(not GuildOS:IsFeatureEnabled("founding"), "and so is the founding")
 check(GuildOS:IsFeatureEnabled("raidTracker"), "everything else stays as it was: on")
 
+GuildOS.db = nil
+check(not GuildOS:IsFeatureEnabled("journal") and GuildOS:IsFeatureEnabled("raidTracker"), "before the db exists too, the same answer")
+fresh({})
+
 -- ── A choice is kept, both ways ─────────────────────────────────────
 GuildOS:SetFeatureEnabled("journal", true)
 check(GuildOS:IsFeatureEnabled("journal"), "switched on in Settings, it is on")
