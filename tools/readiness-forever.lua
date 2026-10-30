@@ -134,6 +134,7 @@ check(R:GetMinIlvl() == 55, "a minimum that is no item level is ignored")
 R:OnMinIlvlSync({ rev = at + 10, data = {} })
 check(R:GetMinIlvl() == nil and G.db.settings.readyMinIlvlAt == at + 10, "a newer one with none clears it")
 check(R:SetMinIlvl(nil) and R:MinIlvlKnown() and published[#published].data.min == nil, "an officer clears it, and that is said too")
+check(R:SetMinIlvl(55) and R:SetMinIlvl(0) and R:GetMinIlvl() == nil, "zero clears it too")
 
 -- ── Not on the other games ──────────────────────────────────────────────
 published = {}

@@ -576,10 +576,11 @@ function Companion:BuildPayload()
         -- v12, WoW: Forever only: absent where the module does not exist (issue #205).
         journal = GuildOS.Journal and GuildOS.Journal:ForExport() or nil,
         -- v12, WoW: Forever only (issue #206): only from a client that has heard the guild's choice,
-        -- since an empty one tells the site the minimum was cleared.
+        -- since an empty one tells the site the minimum was cleared — and with its stamp, so the site
+        -- keeps the newest, whichever officer's upload lands last.
         guildConfig = not GuildOS.Client.isAnniversary and not retail and GuildOS.Readiness
             and GuildOS.Readiness:MinIlvlKnown()
-            and { readyMinIlvl = GuildOS.Readiness:GetMinIlvl() } or nil,
+            and { readyMinIlvl = GuildOS.Readiness:GetMinIlvl(), readyMinIlvlAt = GuildOS.db.settings.readyMinIlvlAt } or nil,
     }
 end
 
