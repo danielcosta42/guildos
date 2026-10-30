@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-10-30
+
+### Added
+- Diário e Fundação desligados até o teste de 4/11, e nada novo derruba o upload (#232)
+- fatias no Dashboard — quantos grupos e raides dá para formar com quem está no 60 (#230)
+- o tabardo da guilda lido do jogo vai no export (#213)
+- titular e reserva no núcleo, a composição só com titulares e as vagas abertas (#212)
+- a aba Diário, os marcos de 10 em 10 no resumo e o aviso de primeira masmorra (#211)
+- as masmorras novas do Forever no diário — DungeonLog e o catálogo (#210)
+- o selo de fundador no roster e no membro, e a fundação no resumo do login (#209)
+- a carta de fundação — o GM registra o dia em que a guilda nasceu e os fundadores saem dele (#208)
+- a contagem até as raides no Dashboard e o nível no painel de prontidão (#207)
+- o diário — cada personagem escreve o que aconteceu com ele, a guilda guarda e o export leva (payload v12) (#205)
+
+### Fixed
+- da revisão das chaves — ligar sem /reload não quebra o roster, e desligada a fundação não publica (#232)
+- da revisão do núcleo — o link leva a reserva, o oficial marca titular e reserva no núcleo do jogo, e a lista e as vagas contam direito (#212)
+- da revisão do Diário — as primeiras da guilda guardadas à parte e sem quem pediu para não ser nomeado, o resumo lido do diário com as masmorras, e a aba ausente fora do Forever (#211)
+- da revisão do registro de masmorras — a run acaba ao sair depois do clear, no logout e em outra instância, e é de um personagem só (#210)
+- da revisão do selo — quem sai perde o selo e não recupera sozinho, e o aniversário diz completou (#209)
+- da revisão da fundação — só o GM decide e o mais novo vence, repete no sync, nada fora do banco da guilda (#208)
+- da revisão da contagem — dias inteiros como o site, o card sem vazar texto e o só-nível na coluna do item level (#207)
+- da revisão da prontidão — o carimbo do mínimo vai no export e zero também apaga (#206)
+- no Forever a prontidão começa no nível 60, e o oficial define o item level mínimo da guilda (#206)
+- da revisão do diário — a chave de quem escreveu no formato deste cliente, só os campos do tipo, e o opt-out na linha de cada personagem (#205)
+
+### Other
+- merge: a main (1.0.3) na pilha do roteiro
+
+
 ## [1.0.3] - 2026-10-30
 
 ### Fixed
