@@ -68,10 +68,37 @@ local function has(id)
     return false
 end
 
+local GROUP_S = 120   -- clears of one dungeon this close are one group's (each client logs itself)
+
+local function catalogued(dungeonId)
+    for _, d in pairs(GuildOS.ForeverDungeons and GuildOS.ForeverDungeons.byInstance or {}) do
+        if d.id == dungeonId then return d end
+    end
+    return nil
+end
+
+-- The guild's first clear of each catalogued dungeon (issue #211), kept apart from the entries:
+-- those go at 30 days or 1,000, oldest first, and the firsts are exactly the oldest. An earlier
+-- clear arriving late (somebody offline) takes the place; one within two minutes of it joins it.
+local function noteFirst(e)
+    if e.type ~= "dungeon.clear" or not catalogued(e.data.dungeonId) then return end
+    local firsts = GuildOS.db.journal.firsts
+    local f, k = firsts[e.data.dungeonId], GuildOS:LocalMemberKey(e.subjectKey)
+    if not f or e.at < f.at - GROUP_S then
+        firsts[e.data.dungeonId] = { at = e.at, bosses = e.data.bosses, full = e.data.fullClear, who = { [k] = true } }
+    elseif math.abs(e.at - f.at) <= GROUP_S then
+        f.who[k] = true
+    end
+end
+
 function Journal:Initialize()
     GuildOS.db.journal = GuildOS.db.journal or {}
     GuildOS.db.journal.entries = GuildOS.db.journal.entries or {}
     GuildOS.db.journal.seq = GuildOS.db.journal.seq or 0
+    if not GuildOS.db.journal.firsts then
+        GuildOS.db.journal.firsts = {}
+        for _, e in ipairs(GuildOS.db.journal.entries) do noteFirst(e) end
+    end
     self:Prune(GetServerTime())
     if GuildOS.SyncService then
         GuildOS.SyncService:On("journal", function(env, sender) Journal:OnSync(env, sender) end)
@@ -106,6 +133,7 @@ function Journal:Add(etype, data)
     local e = { id = key .. ":" .. GuildOS.db.journal.seq, subjectKey = key, at = now, type = etype, data = data }
     if not valid(e, now) then return nil end
     table.insert(GuildOS.db.journal.entries, e)
+    noteFirst(e)
     self:Prune(now)
     if GuildOS.SyncService then GuildOS.SyncService:Publish("journal", "add", { entry = e }) end
     return e
@@ -136,6 +164,7 @@ function Journal:OnSync(env, sender)
             local kept = keptOf(e)
             if kept.subjectKey == who then
                 table.insert(GuildOS.db.journal.entries, kept)
+                noteFirst(kept)
                 added = true
             end
         end
@@ -184,7 +213,6 @@ end
 -- What the Journal tab shows (issue #211). Only numbers about the guild as a whole and firsts:
 -- no ranking of anybody by level, speed or count (guildos.me #242).
 ----------------------------------------------------------------------
-local GROUP_S = 120   -- clears of one dungeon this close are one group's (each client logs itself)
 local WEEK_S = 7 * 86400
 
 -- My own entries, newest first.
@@ -198,26 +226,17 @@ function Journal:Mine()
 end
 
 -- The guild's first clear of each dungeon this client knows of, and who was in it, oldest first.
+-- Somebody who chose not to be named (guildos.me #247) is not named here either.
 function Journal:GuildFirsts()
-    local first = {}
-    for _, e in ipairs(entries()) do
-        if e.type == "dungeon.clear" and e.data and e.data.dungeonId then
-            local f = first[e.data.dungeonId]
-            if not f or e.at < f.at then first[e.data.dungeonId] = { at = e.at, entry = e } end
-        end
-    end
-    local out = {}
-    for dungeonId, f in pairs(first) do
-        local who, seen = {}, {}
-        for _, e in ipairs(entries()) do
-            if e.type == "dungeon.clear" and e.data and e.data.dungeonId == dungeonId and math.abs(e.at - f.at) <= GROUP_S then
-                local k = GuildOS:LocalMemberKey(e.subjectKey)
-                if not seen[k] then seen[k] = true; who[#who + 1] = k:match("^(.-)%-[^-]*$") or k end
-            end
+    local out, members = {}, GuildOS.db.members or {}
+    for dungeonId, f in pairs(GuildOS.db.journal and GuildOS.db.journal.firsts or {}) do
+        local who = {}
+        for k in pairs(f.who) do
+            if not (members[k] and members[k].feedOptOut) then who[#who + 1] = k:match("^(.-)%-[^-]*$") or k end
         end
         table.sort(who)
-        out[#out + 1] = { dungeonId = dungeonId, name = f.entry.data.dungeonName or dungeonId, at = f.at,
-            bosses = f.entry.data.bosses, full = f.entry.data.fullClear, who = who }
+        local d = catalogued(dungeonId)
+        out[#out + 1] = { dungeonId = dungeonId, name = d and d.name or dungeonId, at = f.at, bosses = f.bosses, full = f.full, who = who }
     end
     table.sort(out, function(a, b) return a.at < b.at end)
     return out
@@ -241,13 +260,12 @@ function Journal:ThisWeek(now)
     return { milestones = milestones, members = n, clears = clears }
 end
 
--- Whether a clear of mine is the first of its dungeon this client knows of: the toast is local and
--- hopeful — another group may have cleared it and not synced yet; guildos.me decides the real first.
+-- Whether a clear of mine, already written down, is the guild's first of its dungeon this client
+-- knows of — mine or my group's. The toast is local and hopeful: another group may have cleared it
+-- and not synced yet; guildos.me decides the real first.
 function Journal:IsFirstClear(entry)
-    for _, e in ipairs(entries()) do
-        if e ~= entry and e.type == "dungeon.clear" and e.data and e.data.dungeonId == entry.data.dungeonId then return false end
-    end
-    return true
+    local f = GuildOS.db.journal and GuildOS.db.journal.firsts and GuildOS.db.journal.firsts[entry.data.dungeonId]
+    return f ~= nil and math.abs(entry.at - f.at) <= GROUP_S
 end
 
 ----------------------------------------------------------------------

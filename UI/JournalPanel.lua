@@ -8,13 +8,17 @@ local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
-local function day(t) return date("!%Y-%m-%d", t) end
+local function day(t) return date("%Y-%m-%d", t) end   -- the reader's own day
 
 function GuildOS:CreateJournalPanel(parent)
     local scroll, content = UI:CreateScrollFrame(parent, "GuildOSJournalScroll")
     scroll:SetPoint("TOPLEFT", 4, -4)
     scroll:SetPoint("BOTTOMRIGHT", -26, 4)
     local pool, used, y = {}, 0, 0
+    local function width()
+        local w = scroll:GetWidth() or 0
+        return w > 1 and w or 400   -- 0 before the first layout, not nil
+    end
 
     local function line(text, size, col, indent, gap)
         used = used + 1
@@ -28,7 +32,7 @@ function GuildOS:CreateJournalPanel(parent)
         fs:SetTextColor(col.r, col.g, col.b)
         fs:ClearAllPoints()
         fs:SetPoint("TOPLEFT", indent or 4, -y)
-        fs:SetWidth(math.max(1, (scroll:GetWidth() or 400) - (indent or 4) - 8))
+        fs:SetWidth(math.max(1, width() - (indent or 4) - 8))
         fs:SetText(text)
         fs:Show()
         y = y + (fs:GetStringHeight() or size) + (gap or 6)
@@ -39,7 +43,7 @@ function GuildOS:CreateJournalPanel(parent)
         if not J then return end
         for _, fs in ipairs(pool) do fs:Hide() end
         used, y = 0, 4
-        content:SetWidth(math.max(1, scroll:GetWidth() or 1))
+        content:SetWidth(width())
 
         local week = J:ThisWeek(GetServerTime())
         line(L["THIS WEEK"], 12, C.gold)
@@ -71,6 +75,8 @@ function GuildOS:CreateJournalPanel(parent)
     end
 
     parent:HookScript("OnShow", function() GuildOS:SafeCall(refresh) end)
+    -- ponytail: drawn on show and on resize; a clear that syncs in while it is open waits for the next show.
+    scroll:HookScript("OnSizeChanged", function() if parent:IsShown() then GuildOS:SafeCall(refresh) end end)
     GuildOS:SafeCall(refresh)
     return refresh
 end

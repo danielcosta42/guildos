@@ -3,8 +3,9 @@
 --
 -- What this holds: a run opens in a catalogued Forever dungeon; killing its final boss writes one
 -- dungeon.clear into my journal, with how many of its bosses died and whether that was all of them;
--- dying and coming back inside 15 minutes is the same run, longer or another instance is a new one;
--- a secret or unknown encounter changes nothing; nothing of it exists outside WoW: Forever.
+-- dying and coming back inside 15 minutes is the same run, longer, after the clear, after a logout
+-- or another instance is a new one; an alt never inherits a run; a secret or unknown encounter
+-- changes nothing; nothing of it exists outside WoW: Forever.
 --
 --   luajit -e 'ADDON="."' tools/dungeon-log.lua
 --
@@ -129,8 +130,30 @@ go("party", 3109, NOW + 6000)
 D:OnEncounterEnd(3496, 1, NOW + 6100)
 check(#clears() == 2, "a dungeon with no final boss known records no clear")
 go("party", 9999, NOW + 7000)
-check(G.db.dungeonRun.instanceID == 3109 and G.db.dungeonRun.leftAt, "an instance off the catalogue opens no run")
+check(G.db.dungeonRun == nil, "an instance off the catalogue opens no run, and ends the one there was")
+go("party", 3109, NOW + 7100)
 go("raid", 109, NOW + 8000)
-check(G.db.dungeonRun == nil or G.db.dungeonRun.leftAt, "a raid is RaidTracker's, not a run")
+check(G.db.dungeonRun == nil, "a raid is RaidTracker's, not a run, and ends the one there was")
+
+-- ── Chain runs, logouts, alts ───────────────────────────────────────────
+local T = NOW + 10000
+go("party", 2998, T)
+for _, b in ipairs({ 3480, 3481, 3644, 3482 }) do D:OnEncounterEnd(b, 1, T + 100) end
+check(#clears() == 3, "the third clear")
+go("none", 0, T + 200)
+check(G.db.dungeonRun == nil, "leaving after the clear ends the run")
+go("party", 2998, T + 300)                  -- reset and straight back in
+D:OnEncounterEnd(3482, 1, T + 400)
+check(#clears() == 4 and clears()[4].data.bosses == 1, "a chain run is a run of its own: its clear is written")
+D:OnLogout(T + 500)
+go("party", 2998, T + 86400)                -- tomorrow, logged back in there
+check(G.db.dungeonRun.runId == "2998:" .. (T + 86400), "a logout inside ends the run: the next day is another")
+D:OnLogout(T + 86400)
+go("party", 2998, T + 86400 + 60)           -- a /reload fires the logout too
+check(G.db.dungeonRun.runId == "2998:" .. (T + 86400), "a /reload inside keeps the run")
+D:OnEncounterEnd(3480, 1, T + 86500)
+UnitFullName = function() return "Mira", "Costa" end
+go("party", 2998, T + 86600)
+check(G.db.dungeonRun.who ~= clears()[1].subjectKey and next(G.db.dungeonRun.kills) == nil, "an alt never inherits a run")
 
 print(("dungeon-log: %d checks passed"):format(checks))
