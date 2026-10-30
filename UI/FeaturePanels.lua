@@ -111,7 +111,8 @@ local function RefreshCoreSignupFrame()
         cntLbl:SetPoint("TOPRIGHT", -8, y - 6)
         cntLbl:SetTextColor(0.5, 0.5, 0.5)
         local sz = CM:GetRaidSize(coreName)
-        cntLbl:SetText(comp.total .. "/" .. sz .. " " .. L["members"])
+        cntLbl:SetText(comp.total .. "/" .. sz .. " " .. L["members"]
+            .. ((comp.bench or 0) > 0 and ("  " .. string.format(L["%d in reserve"], comp.bench)) or ""))
 
         local hdrLine = content:CreateTexture(nil, "ARTWORK")
         hdrLine:SetTexture(WHITE8); hdrLine:SetHeight(1)
