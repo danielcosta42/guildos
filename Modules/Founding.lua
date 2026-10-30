@@ -252,12 +252,29 @@ function Founding:_Founders()
             local joinedAt, src = claim and claim.joinedAt, claim and claim.src
             local seen = GuildOS:GetFirstSeen(key)
             if seen and (not joinedAt or seen < joinedAt) then joinedAt, src = seen, "firstSeen" end
-            if rankIndex == 0 or (joinedAt and joinedAt <= last) or (f.manual and f.manual[key]) then
+            local manual = f.manual and f.manual[key]
+            local left = GuildOS.db.foundingLeft and GuildOS.db.foundingLeft[key]
+            if rankIndex == 0 or manual or (not left and joinedAt and joinedAt <= last) then
                 out[key] = { joinedAt = joinedAt or f.foundedAt, src = src or "firstSeen" }
             end
         end
     end
     return out
+end
+
+-- Founders who left the guild (DropDeparted, issue #209): they keep their place in the guild's book on
+-- guildos.me, and lose the badge here; coming back does not bring it back, the GM's manual
+-- addition does. Called with who is in the whole roster, before their dates are dropped.
+function Founding:Departed(present)
+    if not self:Get() or not onGuild() then return end
+    GuildOS.db.foundingLeft = GuildOS.db.foundingLeft or {}
+    for key in pairs(self:_Founders()) do
+        if not present[key] then GuildOS.db.foundingLeft[key] = true end
+    end
+    for key in pairs(GuildOS.db.foundingJoins or {}) do
+        if not present[key] then GuildOS.db.foundingJoins[key] = nil end
+    end
+    self:Forget()
 end
 
 function Founding:IsFounder(key)
@@ -367,9 +384,12 @@ function Founding:GetDigestLines(since, now)
     elseif (since or 0) < last then
         out[#out + 1] = string.format(L["Founding window closed: %d founding members"], count)
     end
+    -- Since the last login, not "today": somebody back after three weeks reads it then.
     local a = lastAnniversary(f.foundedAt, now)
     if a and a.at > (since or 0) then
-        out[#out + 1] = string.format(L["%s is %d month(s) old today"], GetGuildInfo("player") or "", a.months)
+        local guild = GetGuildInfo("player") or ""
+        out[#out + 1] = a.months % 12 == 0 and string.format(L["%s turned %d year(s) old"], guild, a.months / 12)
+            or string.format(L["%s turned %d month(s) old"], guild, a.months)
     end
     return out
 end

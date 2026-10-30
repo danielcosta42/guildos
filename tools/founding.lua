@@ -203,10 +203,26 @@ local closed = digest(LAUNCH + 14 * DAY, LAUNCH + 16 * DAY)
 check(closed:find("Founding window closed: 4 founding members", 1, true), "the window's closing, once: " .. closed)
 check(not digest(LAUNCH + 16 * DAY, LAUNCH + 17 * DAY):find("closed", 1, true), "and not again")
 local month = F.AddMonths(LAUNCH, 1)
-check(digest(month - DAY, month + 3600):find("Ashen Vow is 1 month(s) old today", 1, true), "an anniversary")
-check(not digest(month + 3600, month + 7200):find("old today", 1, true), "said once")
+check(digest(month - DAY, month + 3600):find("Ashen Vow turned 1 month(s) old", 1, true), "an anniversary")
+check(not digest(month + 3600, month + 7200):find("turned", 1, true), "said once")
+local year = F.AddMonths(LAUNCH, 12)
+check(digest(year - DAY, year + 3600):find("Ashen Vow turned 1 year(s) old", 1, true), "a year is a year, not 12 months")
 
 check(F.BADGE:find("|T", 1, true) == 1, "the badge is a texture")
+
+-- A founder who leaves loses the badge, and coming back does not bring it back (issue #209).
+local present = {}
+for _, r in ipairs(ROSTER) do present[key(r[1])] = true end
+present[key("Mira Thornwood")] = nil
+F:Departed(present)
+check(not F:IsFounder(key("Mira Thornwood")), "a founder who left has no badge")
+check(G.db.foundingJoins[key("Mira Thornwood")] == nil, "and their claim is dropped")
+claim("Mira Thornwood", LAUNCH + 3600)                    -- back, their client says the old date again
+check(not F:IsFounder(key("Mira Thornwood")), "back in the guild: still no badge")
+G.db.founding.manual[key("Mira Thornwood")] = { by = key("Chehul Costa"), reason = "came back", at = NOW }
+F:Forget()
+check(F:IsFounder(key("Mira Thornwood")), "the GM's manual addition brings it back")
+check(F:IsFounder(key("Chehul Costa")), "and the GM is untouched")
 check(F:IsFounder(key("Mira Thornwood")) and not F:IsFounder(key("Late Comer")), "the badge goes to founders only")
 
 print(("founding: %d checks passed"):format(checks))
