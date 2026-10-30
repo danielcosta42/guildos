@@ -448,6 +448,15 @@ end
 ----------------------------------------------------------------------
 -- Payload
 ----------------------------------------------------------------------
+-- A field newer than the client that tested it: if it fails it is left out, and goes to
+-- /guildos errors. The roster, the raids and the loot still go up (issue #232).
+local function optional(what, fn, ...)
+    local ok, value = pcall(fn, ...)
+    if ok then return value end
+    GuildOS:RecordError("export " .. what .. ": " .. tostring(value))
+    return nil
+end
+
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
@@ -529,7 +538,7 @@ function Companion:BuildPayload()
                 -- v12. Only ever true: absent is "name me" (issue #205).
                 feedOptOut = data.feedOptOut == true or nil,
                 -- v12, WoW: Forever: when they say they joined, their own claim only (issue #208).
-                joinedAt = GuildOS.Founding and GuildOS.Founding:JoinedAtOf(key) or nil,
+                joinedAt = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") and GuildOS.Founding:JoinedAtOf(key) or nil,
             }
         end
     end
@@ -576,12 +585,14 @@ function Companion:BuildPayload()
         deletedSessions = deletedSessions,
         attendanceRules = attendanceRules(sessions),
         -- v12, WoW: Forever only: absent where the module does not exist (issue #205).
-        journal = GuildOS.Journal and GuildOS.Journal:ForExport() or nil,
+        journal = GuildOS.Journal and GuildOS:IsFeatureEnabled("journal")
+            and optional("journal", GuildOS.Journal.ForExport, GuildOS.Journal) or nil,
         -- v12: the guild's tabard as the game draws it, absent without one (issue #213). Not on TBC
         -- Anniversary, whose guilds the site's tabard contest is not for.
-        tabard = not GuildOS.Client.isAnniversary and GuildOS.Compat.GuildTabard() or nil,
+        tabard = not GuildOS.Client.isAnniversary and optional("tabard", GuildOS.Compat.GuildTabard) or nil,
         -- v12, WoW: Forever only: absent until the GM records it (issue #208).
-        founding = GuildOS.Founding and GuildOS.Founding:ForExport() or nil,
+        founding = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding")
+            and optional("founding", GuildOS.Founding.ForExport, GuildOS.Founding) or nil,
         -- v12, WoW: Forever only (issue #206): only from a client that has heard the guild's choice,
         -- since an empty one tells the site the minimum was cleared — and with its stamp, so the site
         -- keeps the newest, whichever officer's upload lands last.

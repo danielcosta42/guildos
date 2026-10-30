@@ -388,10 +388,10 @@ function GuildOS:CreateDashboardPanel(panel)
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 
         fillNext(cNext.body)
-        local countdown = GuildOS.Readiness and GuildOS.Readiness.Countdown and GuildOS.Readiness:Countdown(rows, GetServerTime())
-        if countdown then
-            fillCountdown(cReady, countdown)
-        else
+        -- If the countdown fails, the card it replaced: the rest of the Dashboard still draws (issue #232).
+        local R, ok, countdown = GuildOS.Readiness, false, nil
+        if R and R.Countdown then ok, countdown = GuildOS:SafeCall(R.Countdown, R, rows, GetServerTime()) end
+        if not (ok and countdown and GuildOS:SafeCall(fillCountdown, cReady, countdown)) then
             cReady.hdr:SetText(L["YOUR READINESS"])
             fillReady(cReady.body, myRow)
         end

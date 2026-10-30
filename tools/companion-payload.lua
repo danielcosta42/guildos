@@ -232,6 +232,37 @@ assert(tabardJson == '{"background":[33,220,255],"border":[0,0,0],"emblem":[255,
 GuildOS.Client.isAnniversary = true
 GetGuildLogoInfo, GetGuildTabardFiles = nil, nil
 
+-- Nothing new costs the upload (issue #232): a field that fails is left out and said, the roster still
+-- goes up; and what is switched off is not even asked.
+do
+  local recorded, asked = {}, 0
+  local on = { journal = true, founding = true }
+  GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+  GuildOS.IsFeatureEnabled = function(_, id) return on[id] == true end
+  local boom = function() asked = asked + 1; error("no such thing on this client") end
+  GuildOS.Journal = { ForExport = boom, IsOptedOut = function() return false end }
+  GuildOS.Founding = { ForExport = boom, JoinedAtOf = function() return nil end }
+  local tabard = GuildOS.Compat.GuildTabard
+  GuildOS.Compat.GuildTabard = boom
+  GuildOS.Client.isAnniversary = false
+  local payload = assert(GuildOS.Companion:BuildPayload(), "the upload went with its new fields")
+  assert(#payload.members > 0, "the roster still goes up")
+  assert(payload.journal == nil and payload.founding == nil and payload.tabard == nil, "what failed is left out")
+  assert(#recorded == 3, "and each one is in /guildos errors: " .. #recorded)
+  GuildOS.Compat.GuildTabard = function() return nil end
+  on.journal, on.founding, asked = false, false, 0
+  payload = assert(GuildOS.Companion:BuildPayload())
+  assert(asked == 0 and payload.journal == nil and payload.founding == nil, "switched off: not asked, and absent")
+  on.journal, on.founding = true, true
+  GuildOS.Journal = { ForExport = function() return { { id = "x" } } end, IsOptedOut = function() return false end }
+  GuildOS.Founding = { ForExport = function() return { revision = 1 } end, JoinedAtOf = function() return nil end }
+  payload = assert(GuildOS.Companion:BuildPayload())
+  assert(#payload.journal == 1 and payload.founding.revision == 1, "switched on: they go")
+  GuildOS.Compat.GuildTabard = tabard
+  GuildOS.Journal, GuildOS.Founding, GuildOS.IsFeatureEnabled, GuildOS.RecordError = nil, nil, nil, nil
+  GuildOS.Client.isAnniversary = true
+end
+
 -- v7 (issue #35): on Forever each member carries the profession model's lines by skill-line
 -- ID -- rank, max, specialization and the recipes they know, or only the line for a member
 -- known from the guild roster. Absent where there is no model, or no record of the member.

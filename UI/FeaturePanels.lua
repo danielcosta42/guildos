@@ -2072,8 +2072,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
             GuildOS:SetFeatureEnabled(def.id, checked)
             -- Tabs build lazily, so UI features toggle live. Background
             -- modules register their events at Initialize, so only those
-            -- still need a reload.
-            local needsReload = def.module and not def.tab
+            -- still need a reload, and a tab whose module does (`restart`).
+            local needsReload = def.restart or (def.module and not def.tab)
             GuildOS:Print(def.label .. (checked
                 and L[" |cff00ff00enabled|r."]
                 or  L[" |cffFF4444disabled|r."])
@@ -3103,7 +3103,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
 
         -- The founding letter, for after the prompt was put away (issue #208): the GM records, an
         -- officer suggests.
-        if GuildOS.Founding then
+        if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then
             local foundBtn = UI:CreateButton(content,
                 GuildOS.Founding:IsGM() and L["Record founding"] or L["Suggest founding date to your GM"], 240, 22)
             foundBtn:SetPoint("TOPLEFT", 8, -yOff)

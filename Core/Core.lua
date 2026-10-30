@@ -278,11 +278,11 @@ local MODULE_START = {
     { "Calendar" },
     { "Milestones" },
     -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
-    { "Journal" },
+    { "Journal", feature = "journal" },
     -- WoW: Forever only (issue #208): the guild's founding and its founding members.
-    { "Founding" },
+    { "Founding", feature = "founding" },
     -- WoW: Forever only (issue #210): a clear of a new dungeon, into my journal.
-    { "DungeonLog" },
+    { "DungeonLog", feature = "journal" },
     { "ConsumableChecker", feature = "consumableChecker" },
     { "SpecChecker" },
     -- Retail only (issue #187): my keystone, rating and vault, carried by the member broadcast.
@@ -902,6 +902,12 @@ end
 -- never be turned off — that is how a user would lock themselves out of
 -- the Settings window that would turn them back on.
 ----------------------------------------------------------------------
+-- Off for whoever has not chosen, until a release takes the name off this list (issue #232): these
+-- publish on the guild's channel or open a window, and they shipped with no client to try them on.
+-- A list and not a default in db.settings.modules: a default is saved into every player's file, and a
+-- later release could not turn it on for them. Somebody who chose keeps their choice either way.
+local OFF_UNTIL_TESTED = { journal = true, founding = true }
+
 function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end
     -- UI loads after Core, so the registry is resolved per call, not per load.
@@ -909,6 +915,7 @@ function GuildOS:IsFeatureEnabled(id)
     if def and def.core then return true end
     local mods = self.db and self.db.settings and self.db.settings.modules
     if not mods then return true end
+    if mods[id] == nil and OFF_UNTIL_TESTED[id] then return false end
     return mods[id] ~= false
 end
 
