@@ -96,7 +96,7 @@ J:OnLevelUp(40)
 local e = G.db.journal.entries[1]
 check(e and e.type == "member.level" and e.data.level == 40, "40 is written down")
 check(e.subjectKey == me and e.at == NOW and e.id == me .. ":1", "about me, now, with my id")
-check(e.data.name == "Chehul Costa" and e.data.class == "SHAMAN", "with my whole name and class")
+check(e.data.name == nil and e.data.class == nil, "with no name in it: the roster names people")
 check(#sent == 1 and sent[1].dom == "journal" and sent[1].act == "add", "and the guild is told")
 J:OnLevelUp(60)
 check(G.db.journal.entries[2].type == "member.level60", "the cap is its own entry")
@@ -135,6 +135,17 @@ check(count() == base + 1, "a level past the cap, a date ahead, an unknown type 
 receive("Mira Thornwood", "snap", { entries = { entry(MIRA, MIRA .. ":7"), entry(MIRA, MIRA .. ":8",
   { type = "dungeon.clear", data = { dungeonId = "ruins", runId = "r1", bosses = 7, fullClear = true } }) } })
 check(count() == base + 3, "a snapshot brings what was missed")
+
+-- On WoW: Forever each client answers its own realm name (#95): Mira's says another one.
+local THEIRS = "Mira Thornwood-Classic Beta PvE"
+receive("Mira Thornwood-Classic Beta PvE", "add", { entry = entry(THEIRS, THEIRS .. ":9",
+  { data = { level = 30, name = "Chehul Costa", extra = string.rep("x", 5000) } }) })
+check(count() == base + 4, "an entry whose key carries the sender's own realm answer is still the sender's")
+local got
+for _, x in ipairs(G.db.journal.entries) do if x.id == THEIRS .. ":9" then got = x end end
+check(got.subjectKey == MIRA, "kept in this client's shape of the key: " .. tostring(got.subjectKey))
+check(got.data.level == 30 and got.data.name == nil and got.data.extra == nil, "and only with the fields its type has")
+check(got.id == THEIRS .. ":9", "the id stays as its author minted it")
 
 -- ── Limits ──────────────────────────────────────────────────────────────
 G.db.journal.entries[#G.db.journal.entries + 1] = entry(MIRA, "old", { at = NOW - 31 * 86400 })

@@ -111,6 +111,20 @@ function Journal:Add(etype, data)
     return e
 end
 
+-- What is kept of an entry that makes sense: the fields its type has, nothing else (a name rides
+-- nowhere: the roster names people), and the subject's key in this client's shape. On WoW: Forever
+-- each client answers its own realm name (#95), and a key built by another one carries it (#97).
+local function keptOf(e)
+    local d, data = e.data, {}
+    if e.type == "member.level" then
+        data.level = d.level
+    elseif e.type == "dungeon.clear" then
+        data.dungeonId, data.runId, data.bosses, data.fullClear = d.dungeonId, d.runId, d.bosses, d.fullClear
+        if type(d.dungeonName) == "string" then data.dungeonName = d.dungeonName:sub(1, 100) end
+    end
+    return { id = e.id, subjectKey = GuildOS:LocalMemberKey(e.subjectKey), at = e.at, type = e.type, data = data }
+end
+
 -- Entries from the guild: only the sender's own, only ones that make sense, each once.
 function Journal:OnSync(env, sender)
     if type(sender) ~= "string" or sender == "" or type(env.data) ~= "table" then return end
@@ -118,9 +132,12 @@ function Journal:OnSync(env, sender)
     if type(list) ~= "table" then return end
     local who, now, added = senderKey(sender), GetServerTime(), false
     for _, e in ipairs(list) do
-        if valid(e, now) and e.subjectKey == who and not has(e.id) then
-            table.insert(GuildOS.db.journal.entries, e)
-            added = true
+        if valid(e, now) and not has(e.id) then
+            local kept = keptOf(e)
+            if kept.subjectKey == who then
+                table.insert(GuildOS.db.journal.entries, kept)
+                added = true
+            end
         end
     end
     if added then self:Prune(now) end
@@ -130,7 +147,7 @@ end
 function Journal:Snap()
     local key, since, mine = myKey(), GetServerTime() - SNAP, {}
     for _, e in ipairs(entries()) do
-        if e.subjectKey == key and e.at >= since then mine[#mine + 1] = e end
+        if GuildOS:LocalMemberKey(e.subjectKey) == key and e.at >= since then mine[#mine + 1] = e end
     end
     if #mine > 0 and GuildOS.SyncService then GuildOS.SyncService:Publish("journal", "snap", { entries = mine }) end
 end
@@ -138,12 +155,10 @@ end
 function Journal:OnLevelUp(level)
     level = tonumber(level)
     if not level then return end
-    local who = { name = Compat.PlayerName(), class = select(2, UnitClass("player")) }
     if level == GuildOS.Client.maxLevel then
-        self:Add("member.level60", who)
+        self:Add("member.level60", {})
     elseif MILESTONES[level] then
-        who.level = level
-        self:Add("member.level", who)
+        self:Add("member.level", { level = level })
     end
 end
 

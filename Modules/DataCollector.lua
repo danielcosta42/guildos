@@ -140,6 +140,10 @@ function DataCollector:CollectMyData()
     -- (retail: the Resistances module is absent; issue #184).
     data.resistances = GuildOS.Resistances and self:CollectResistances() or nil
 
+    -- Not named on Discord (issue #205): the choice is the guild database's, which every character
+    -- of the account in this guild shares, so each one's own row says it — the export reads the row.
+    if GuildOS.Journal then data.feedOptOut = GuildOS.Journal:IsOptedOut() end
+
     GuildOS.db.members[key] = data
     GuildOS.db.myData = data
 

@@ -102,6 +102,7 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `ConsumableChecker.lua` | Detect flask/elixir/food buffs (TBC's; Midnight's flask, food, rune and my weapon on retail, unknown never missing, #187) | UI |
 | `MythicPlus.lua` | Retail only: my keystone, Mythic+ rating and weekly vault, read through Compat and sent with my member data; formats a member's for the sheet and the roster (#187) | UI, comm internals |
 | `SpecChecker.lua` | Detect talent spec | UI |
+| `Journal.lua` | WoW: Forever only: what happened to my character (level milestones; dungeon clears later), the guild's journal as it arrives on the `journal` sync domain, the export's `journal` and the Discord opt-out (#205) | UI, the guild's feed (guildos.me) |
 | `UI/Helpers.lua` | ALL UI components + theme (until split) | data logic, comms |
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
 | `UI/MemberDetail.lua` | Per-member detail panel | data writes |
@@ -251,6 +252,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   consumableChecks = { lastResults },
   recipes          = { [charKey] = { [canonProfName] = [{ name, spellId, itemId }] } },
   recipeScanTimes  = { [profName] = timestamp },
+  journal          = { seq, entries = [{ id, subjectKey, at, type, data }] },  -- Forever: the guild's, 30 days, 1,000 (#205)
+  profile          = { prefRoles, feedOptOut },  -- feedOptOut: not named on Discord; also on my own members row (#205)
 }
 ```
 
@@ -306,7 +309,8 @@ GUILD from a current officer (`IsOfficerByName(sender)`); `RX` and `AL` check th
 trust to channel and sender in `Recruitment:ApplyIncoming`. Every legitimate sender of these is
 officer-gated at the source and sends over GUILD. Since #81 `RX`, `AL`, `RR`, every officer
 SyncService domain and the two domains whose handlers check the officer themselves (`alliance`,
-`core.roster`, in `GUILD_ONLY_DOMAINS`) ask for GUILD as well. Who is an officer is the guild's
+`core.roster`, in `GUILD_ONLY_DOMAINS`) ask for GUILD as well. So does `journal` (#205), a member
+domain: its handler keeps an entry only when its subject, localized, is the sender's key. Who is an officer is the guild's
 choice: `officerMaxRank` changes go out stamped on the `guildcfg` domain, and every client keeps
 the newest one an officer sent (#81).
 
