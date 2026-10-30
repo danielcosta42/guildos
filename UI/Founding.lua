@@ -8,8 +8,6 @@ local UI = GuildOS.UI
 local L = GuildOS.L
 local C = GuildOS.Colors
 
-local DAY = 86400
-
 local function build()
     local f = UI:CreatePanel(UIParent, "GuildOSFoundingLetter")
     f:SetSize(440, 250)
@@ -39,10 +37,10 @@ local function build()
     prev:SetPoint("RIGHT", dateFS, "LEFT", -12, 0)
     local nextB = UI:CreateButton(f, ">", 26, 22)
     nextB:SetPoint("LEFT", dateFS, "RIGHT", 12, 0)
+    -- A day the GM picks is the GM's word, whatever the letter offered (issue #208).
     local function move(days)
-        local now = GetServerTime()
-        local t = f.day + days * DAY
-        if GuildOS.Founding.ValidDay(t, now) then f.day = t end
+        local t = GuildOS.Founding:Step(f.day, days, GetServerTime())
+        if t ~= f.day then f.day, f.source = t, "declared" end
         f.render()
     end
     prev:SetScript("OnClick", function() move(-1) end)
@@ -63,16 +61,13 @@ local function build()
     end)
 
     ok:SetScript("OnClick", function()
-        local F = GuildOS.Founding
-        if F:IsGM() then
-            if F:Record(f.day, f.source) then
-                GuildOS:Print(string.format(L["Founding recorded: %s"], date("!%Y-%m-%d", f.day)))
-                f:Hide()
-            end
-        elseif F:Suggest(f.day) then
+        local done = GuildOS.Founding:Submit(f.day, f.source)
+        if done == "recorded" then
+            GuildOS:Print(string.format(L["Founding recorded: %s"], date("!%Y-%m-%d", f.day)))
+        elseif done == "suggested" then
             GuildOS:Print(L["Suggestion sent to your GM"])
-            f:Hide()
         end
+        if done then f:Hide() end
     end)
 
     function f.render()

@@ -1012,7 +1012,8 @@ L["Manage"] = "Gestisci"
 
 -- UI/AuditPanel.lua
 L["Readiness"] = "Prontezza"
-L["%s is %d month(s) old today"] = "%s compie oggi %d mese/i"
+L["%s turned %d month(s) old"] = "%s ha compiuto %d mese/i"
+L["%s turned %d year(s) old"] = "%s ha compiuto %d anno/i"
 L["Founding window closed: %d founding members"] = "Periodo di fondazione chiuso: %d membri fondatori"
 L["Founding window: %d days left · %d founding members"] = "Periodo di fondazione: mancano %d giorni · %d membri fondatori"
 L["%s joined as a founding member"] = "%s è entrato come membro fondatore"
