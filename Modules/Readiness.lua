@@ -79,10 +79,12 @@ function Readiness:Countdown(rows, now)
     return {
         opensAt = target.opensAt,
         open = now >= target.opensAt,
-        days = math.max(1, math.ceil((target.opensAt - now) / 86400)),
+        -- Whole days left, rounded down as guildos.me counts them ("36d 04h" is 36): 0 is the last day.
+        days = math.max(0, math.floor((target.opensAt - now) / 86400)),
         cap = cap,
         cores = cores,
-        guild = { ready = atCap, enough = enough, short = math.max(0, RAID_SIZES_DESC[#RAID_SIZES_DESC] - atCap) },
+        guild = { ready = atCap, enough = enough, smallest = RAID_SIZES_DESC[#RAID_SIZES_DESC],
+            short = math.max(0, RAID_SIZES_DESC[#RAID_SIZES_DESC] - atCap) },
         me = me,
     }
 end
