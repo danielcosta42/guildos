@@ -966,3 +966,65 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `TradeCouncil:Complete(o)` / `Charge(o)` | Into the loot history (`RecordTradeAward` at the offer's drop time, the tracked session's raid); the officer named as giver charges the item's cost under DKP with one, only for the award that client gave (`awards[me] == winner`); once. A holder's `D` is believed for an award this client saw given (`awards[by] == winner`), or, under a free roll, the holder's own to a guildmate who answered Need or Greed; the winner still in the guild; also on an offer this client closed a minute early |
 | `GuildOS:ShowTradeCouncil(offerId)` / `RefreshTradeCouncil()` | UI/TradeCouncil.lua: the loot council window (the raid's offers, my tradeable items with Offer, the offer picked with Need/Greed/Pass, the ranked answers with Award, Withdraw); `/gos offer`, Settings' quick access "Loot Council" and every incoming offer open it |
 | `tools/retail-points.lua` / `retail-wishlist.lua` / `retail-loot-council.lua` / `trade-council-ui.lua` | The harnesses of issue #185 |
+
+## v1.1 — Journal (#205, guildos.me #238)
+
+| Function | Purpose |
+|---|---|
+| `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
+| `Journal:Add(type, data)` / `OnLevelUp(level)` | Write down, keep and publish an entry about me (`<myKey>:<seq>`, `GetServerTime()`); `PLAYER_LEVEL_UP` writes `member.level` `{level}` at 10–50 and `member.level60` `{}` at the cap: no name, the roster names people |
+| `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild, kept with only their type's fields and the subject's key localized (`LocalMemberKey`: each Forever client answers its own realm, #95); my last week again at login (30 s); oldest out past 30 days and 1,000 |
+| `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
+| `Journal:IsOptedOut()` / `SetOptedOut(on)` | Not named on Discord: `db.profile.feedOptOut`, mirrored on my member row, always a boolean in the broadcast, `feedOptOut` (true only) in the export; Settings' checkbox |
+| `tools/journal.lua` | The harness of issue #205 |
+
+## v1.1 — Readiness on WoW: Forever (#206, guildos.me #241)
+
+| Function | Purpose |
+|---|---|
+| `Readiness.ForeverStatus(r, minIlvl, cap)` | Pure: below the cap `notready`/`level`; no gear data `ready` by level only; under the guild's minimum `warn`/`ilvl`; an enchant missing `warn`/`enchants`; else `ready`. The cases are guildos.me's too (`tools/readiness-forever.lua`) |
+| `Readiness:GetReport()` | On Forever every row is ruled by `ForeverStatus` and carries `level`, `reason`, `levelOnly`; the attunement path stays for Anniversary |
+| `Readiness.FOREVER_RAIDS` | Barrow Deeps 10, Hyjal Summit 20, Onyxia's Lair 40, `opensAt` 9 Dec 2026 00:00 UTC |
+| `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > officer: "Readiness" |
+| `Readiness.Slices(atCap)` | What the guild can form with who is at the cap (the same as guildos.me's): `{ dungeons, raids = { { size, count } }, short, shortSize }`. Pure. |
+| `Readiness:Countdown(rows, now)` | WoW: Forever, until a week after the raids open (#207): `{ opensAt, open, days, cap, cores = up to 3 { name, size, ready } largest first (titulars at the cap, nobody who left), guild = { ready, enough, short }, me }`. `UI/Dashboard.lua` draws it in the readiness card's place; the readiness panel shows the level and sorts by it within a status |
+
+## v1.1 — Founding (#208, guildos.me #240)
+
+| Function | Purpose |
+|---|---|
+| `Founding` (Modules/Founding.lua) | WoW: Forever only. `db.founding` `{ foundedAt, source, declaredBy, recordedAt, windowDays, manual, revision }`; `db.foundingJoins[key] = { joinedAt, src }`; `db.foundingSuggested`; `db.foundingPrompt` |
+| `Founding.ValidDay(t, now)` / `WindowEnd(foundedAt)` | 00:00 UTC, from the launch (`FIRST_DAY`, 4 Nov 2026) to today; the window ends at the last second of the 14th day after |
+| `Founding:Record(day, source)` / `Suggest(day)` / `Publish()` / `OnSync(env, sender)` | The GM records (revision + 1), an officer suggests; officer domain `founding` (`set` with `rev`, `suggest`); highest revision wins, `declaredBy` localized |
+| `Founding:MyJoinedAt()` / `PublishSelf()` / `OnSelf(env, sender)` / `JoinedAtOf(key)` | My own join date (`firstSeen` until a probe finds the game's, #214), published at login on `foundingSelf` (GUILD only), filed under its sender |
+| `Founding:Founders()` / `IsFounder(key)` / `ForExport()` | Worked out the same everywhere: the GM, today's roster with a join date (claim, else this client's `firstSeen`) inside the window, and manual additions; the export's `founding` (v12) |
+| `Founding:ShouldPrompt(now)` / `Later(now)` / `SuggestedDay(now)` | The letter to the GM while nothing is recorded: three times at most, a day apart; offers an officer's suggestion, else the earliest `firstSeen`, else today |
+| `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > officer: "Record founding" / "Suggest founding date to your GM" |
+| `tools/founding.lua` | The harness of issue #208 |
+| `Founding.BADGE` / `Founding:Forget()` / `Founding.AddMonths(t, n)` / `Founding:GetDigestLines(since, now)` | The founder's scroll by the name in the roster and the member card (with "joined"); the founders are cached 5 s (`Forget` on any change); months in UTC with no time zone; the digest's founders since the last login (3 at most, never me), the window's days left or its closing, and the guild's 1/3/6/12-month anniversaries (#209) |
+
+## v1.1 — Dungeon log (#210, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `GuildOS.ForeverDungeons` (Data/ForeverDungeons.lua) | `forever-dungeons.v1`: by instance id, `{ id, name, final, bosses }` from DB2 1.60.1.70685; `final` provisional (last `OrderIndex`) until the launch build (#214); Half-Pint Tavern missing, Manor Mistmantle with no boss |
+| `DungeonLog:OnZone(now)` / `OnEncounterEnd(encounterID, success)` | WoW: Forever only. A run (`db.dungeonRun`: instance, runId, kills, cleared, leftAt) opens in a catalogued `party` instance, survives 15 min away, ends in another; the final boss's death writes one `dungeon.clear` `{ dungeonId, dungeonName, bosses, fullClear, runId }` into the Journal. Secret or unknown encounters count nothing |
+| `tools/dungeon-log.lua` | The harness of issue #210 |
+
+## v1.1 — The Journal tab (#211, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `Journal:Mine()` / `GuildFirsts()` / `ThisWeek(now)` / `IsFirstClear(entry)` | My entries newest first; each dungeon's first clear with everyone within 120 s; the week's milestones, members who reached one, clears — collective only, no ranking; whether a clear is the first this client knows of |
+| `GuildOS:CreateJournalPanel(parent)` | UI/JournalPanel.lua, the "Journal" tab (Forever: `condition` = the module exists): this week, guild firsts, your journal |
+| `Milestones:Check` on Forever | Also records `level` at every ten levels below the cap (the highest crossed); `GetDigestLines` groups them per level, three names or a count; the ding fallback is the client's cap |
+| DungeonLog's toast | "First clear of X for <guild>!" when `Journal:IsFirstClear` — hopeful and local; guildos.me decides the real first |
+
+## v1.1 — Titular and reserve (#212, guildos.me #243)
+
+| Function | Purpose |
+|---|---|
+| core member `status` | `"bench"` for a reserve, nil for a titular (every older record); from the site's `GOSCORE1` (`status`, guildos-web #249) on the Discord's records, kept by `AddMember`, carried in the officers' `discordList` |
+| `CoreManager:GetComposition` | Titulars only; `bench` counts the reserves |
+| `CoreManager:OpenSlots(coreName)` | Per role, the target for the size less the titulars playing it; `total` = size less titulars. The core panel shows them, reserves dimmed below the titulars |
+| `Compat.GuildTabard()` | The guild's tabard as the game draws it (#213): `GetGuildLogoInfo`'s colours as bytes and emblem style, `GetGuildTabardFiles`' six files; nil without one or with anything secret. Exported as `tabard` (v12) off TBC Anniversary; guildos.me turns it into its `GT1` code |

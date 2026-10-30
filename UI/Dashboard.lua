@@ -190,6 +190,67 @@ function GuildOS:CreateDashboardPanel(panel)
         v:SetPoint("TOPLEFT", 2, -(y + 4))
     end
 
+    -- WoW: Forever, until a week after the raids open (issue #207): the countdown in the readiness
+    -- card's place. Readiness:Countdown counts; this only draws.
+    local function fillCountdown(card, cd)
+        local body = card.body
+        clearBody(body)
+        local title = cd.open and L["RAIDS ARE OPEN"]
+            or cd.days == 0 and L["RAIDS OPEN IN UNDER A DAY"]
+            or cd.days == 1 and L["RAIDS OPEN IN 1 DAY"]
+            or string.format(L["RAIDS OPEN IN %d DAYS"], cd.days)
+        card.hdr:SetText(title)
+        -- One line, short of the arrow: a long translation cuts, never runs into it (#148).
+        card.hdr:SetWidth(math.max(1, card:GetWidth() - 44)); card.hdr:SetWordWrap(false); card.hdr:SetJustifyH("LEFT")
+        local w = body:GetWidth()
+        local y = 0
+        local function line(label, value, frac)
+            local name = UI:CreateText(body, label, 11, C.text.r, C.text.g, C.text.b)
+            name:SetPoint("TOPLEFT", 2, -y)
+            name:SetWidth(math.floor(w * 0.36)); name:SetWordWrap(false); name:SetJustifyH("LEFT")
+            local val = UI:CreateText(body, value, 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            val:SetPoint("TOPLEFT", math.floor(w * 0.38), -y)
+            local barW = frac and math.max(20, math.floor(w * 0.22)) or 0
+            val:SetWidth(math.max(1, w - math.floor(w * 0.38) - barW - 8)); val:SetWordWrap(false); val:SetJustifyH("LEFT")
+            if frac then
+                local bar = UI:CreateProgressBar(body, barW, 6)
+                bar:SetPoint("TOPRIGHT", -2, -(y + 4))
+                bar:SetProgress(frac)
+            end
+            y = y + 20
+        end
+        for _, c in ipairs(cd.cores) do
+            line(c.name, string.format(L["%d / %d at %d"], c.ready, c.size, cd.cap), c.ready / c.size)
+        end
+        -- The slices, as on guildos.me: on a line of their own, or a long guild would cut them.
+        local g, s = cd.guild, cd.guild.slices
+        if s.short then
+            line(L["Guild"], s.shortSize == GuildOS.Readiness.DUNGEON_GROUP and string.format(L["%d at %d · %d more for a group"], g.ready, cd.cap, s.short)
+                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, s.short, s.shortSize))
+        else
+            line(L["Guild"], string.format(L["%d at %d"], g.ready, cd.cap))
+        end
+        if s.dungeons > 0 then
+            local parts = { s.dungeons == 1 and L["1 group"] or string.format(L["%d groups"], s.dungeons) }
+            for _, r in ipairs(s.raids) do parts[#parts + 1] = r.count .. "×" .. r.size end
+            line(L["Can form"], table.concat(parts, " · "))
+        end
+        local me = cd.me
+        if me then
+            local mine
+            if (me.level or 0) < cd.cap then
+                mine = string.format(L["Level %d · %d to go"], me.level or 0, cd.cap - (me.level or 0))
+            elseif me.reason == "enchants" then
+                mine = string.format(L["Ready · %d enchants missing"], me.missEnch or 0)
+            elseif me.reason == "ilvl" then
+                mine = L["Ready · under the guild's item level"]
+            else
+                mine = L["Ready"]
+            end
+            line(L["You"], mine)
+        end
+    end
+
     local function fillPulse(body, rows)
         clearBody(body)
         local total, online, iSum, iN = 0, 0, 0, 0
@@ -327,7 +388,13 @@ function GuildOS:CreateDashboardPanel(panel)
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 
         fillNext(cNext.body)
-        fillReady(cReady.body, myRow)
+        -- If the countdown fails, the card it replaced: the rest of the Dashboard still draws (issue #232).
+        local R, ok, countdown = GuildOS.Readiness, false, nil
+        if R and R.Countdown then ok, countdown = GuildOS:SafeCall(R.Countdown, R, rows, GetServerTime()) end
+        if not (ok and countdown and GuildOS:SafeCall(fillCountdown, cReady, countdown)) then
+            cReady.hdr:SetText(L["YOUR READINESS"])
+            fillReady(cReady.body, myRow)
+        end
         fillPulse(cPulse.body, rows)
         fillRecruit(cRecruit.body)
         if hasLoot then fillLoot(cLoot.body) end

@@ -11,6 +11,7 @@ local L = GuildOS.L
 
 local MAX = 50
 local YEAR = 365 * 86400
+local NAMED = 3   -- names in one digest line; past that, a count
 
 function Milestones:Initialize()
     GuildOS.db.milestones = GuildOS.db.milestones or { events = {} }
@@ -59,10 +60,47 @@ function Milestones:GetDigestLines(since)
     for _, ev in ipairs((GuildOS.db.milestones and GuildOS.db.milestones.events) or {}) do
         if (ev.ts or 0) > since then
             if ev.type == "ding" then
-                out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or "70")
+                out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or tostring(GuildOS.Client.maxLevel))
             elseif ev.type == "attune" then
                 out[#out + 1] = string.format(L["%s completed a new attunement"], ev.name or "?")
             end
+        end
+    end
+
+    -- WoW: Forever's journal (issue #211): the milestones every ten levels and the dungeon clears,
+    -- one line per level and per dungeon, each person once — a few names, or how many. Read from
+    -- the journal, which keeps a month of them, not from the fifty events above, which a launch
+    -- week would flood. The cap is the ding above.
+    local groups = {}
+    for _, e in ipairs(GuildOS.Journal and GuildOS.Journal:GetSince(since) or {}) do
+        local g = e.type == "member.level" and { level = e.data.level, sort = 1000 - e.data.level }
+            or e.type == "dungeon.clear" and { name = e.data.dungeonName or e.data.dungeonId, sort = 2000 }
+        if g then
+            local id = (g.level or g.name)
+            groups[id] = groups[id] or { g = g, who = {} }
+            groups[id].who[GuildOS:LocalMemberKey(e.subjectKey)] = true
+        end
+    end
+    local list = {}
+    for _, grp in pairs(groups) do
+        local names = {}
+        for k in pairs(grp.who) do names[#names + 1] = k:match("^(.-)%-[^-]*$") or k end
+        table.sort(names)
+        grp.names = names
+        list[#list + 1] = grp
+    end
+    table.sort(list, function(a, b)
+        if a.g.sort ~= b.g.sort then return a.g.sort < b.g.sort end
+        return tostring(a.g.name) < tostring(b.g.name)
+    end)
+    for _, grp in ipairs(list) do
+        local n, named = #grp.names, table.concat(grp.names, ", ")
+        if grp.g.level then
+            out[#out + 1] = n <= NAMED and string.format(L["Level %s reached by %s"], tostring(grp.g.level), named)
+                or string.format(L["%d members reached level %s"], n, tostring(grp.g.level))
+        else
+            out[#out + 1] = n <= NAMED and string.format(L["Dungeon cleared — %s: %s"], grp.g.name, named)
+                or string.format(L["Dungeon cleared — %s: %d members"], grp.g.name, n)
         end
     end
 

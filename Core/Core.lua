@@ -277,6 +277,12 @@ local MODULE_START = {
     { "Polls" },
     { "Calendar" },
     { "Milestones" },
+    -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
+    { "Journal", feature = "journal" },
+    -- WoW: Forever only (issue #208): the guild's founding and its founding members.
+    { "Founding", feature = "founding" },
+    -- WoW: Forever only (issue #210): a clear of a new dungeon, into my journal.
+    { "DungeonLog", feature = "journal" },
     { "ConsumableChecker", feature = "consumableChecker" },
     { "SpecChecker" },
     -- Retail only (issue #187): my keystone, rating and vault, carried by the member broadcast.
@@ -374,6 +380,10 @@ function GuildOS:InitModules()
     -- First-run welcome (once); delayed so guild info + frames are ready.
     if GuildOS.MaybeShowOnboarding then
         GuildOS.Compat.After(6, function() GuildOS:MaybeShowOnboarding() end)
+    end
+    -- WoW: Forever: the founding letter to a GM whose guild has none yet (issue #208).
+    if GuildOS.MaybeShowFoundingLetter then
+        GuildOS.Compat.After(12, function() GuildOS:MaybeShowFoundingLetter() end)
     end
     -- Login digest: shown a bit later so guild/roster data is ready and it
     -- doesn't collide with the first-run onboarding wizard.
@@ -892,12 +902,19 @@ end
 -- never be turned off — that is how a user would lock themselves out of
 -- the Settings window that would turn them back on.
 ----------------------------------------------------------------------
+-- Off for whoever has not chosen, until a release takes the name off this list (issue #232): these
+-- publish on the guild's channel or open a window, and they shipped with no client to try them on.
+-- A list and not a default in db.settings.modules: a default is saved into every player's file, and a
+-- later release could not turn it on for them. Somebody who chose keeps their choice either way.
+local OFF_UNTIL_TESTED = { journal = true, founding = true }
+
 function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end
     -- UI loads after Core, so the registry is resolved per call, not per load.
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
     if def and def.core then return true end
     local mods = self.db and self.db.settings and self.db.settings.modules
+    if OFF_UNTIL_TESTED[id] and (not mods or mods[id] == nil) then return false end
     if not mods then return true end
     return mods[id] ~= false
 end

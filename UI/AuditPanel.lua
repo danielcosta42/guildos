@@ -64,6 +64,8 @@ local function BuildReadySub(panel)
     -- Anniversary and retail (issue #187): where the game has neither, there is nothing to cycle
     -- through or to count (issue #184).
     local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil
+    -- WoW: Forever has no attunements: its column is the level, the door to a raid (issue #207).
+    local forever = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
 
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -4)
@@ -110,6 +112,7 @@ local function BuildReadySub(panel)
     hcol(L["STATUS"], 160)
     hcol(L["iLVL"], 250)
     if hasAttune then hcol(L["ATTUNE"], 310) end
+    if forever then hcol(L["LEVEL"], 310) end
     hcol(L["ENCHANTS"], 400)
     if hasCons then hcol(L["CONSUMES"], 510) end
 
@@ -144,6 +147,8 @@ local function BuildReadySub(panel)
             stFS:SetPoint("LEFT", 160, 0)
             if r.status == "ready" then
                 stFS:SetText(ICON_DONE .. " |cff4CFF4C" .. L["ready"] .. "|r")
+            elseif r.status == "notready" and r.reason == "level" then
+                stFS:SetText(ICON_NONE .. " |cffFF5555" .. L["Level"] .. " " .. (r.level or 0) .. "|r")
             elseif r.status == "notready" then
                 stFS:SetText(ICON_NONE .. " |cffFF5555" .. L["not attuned"] .. "|r")
             elseif r.status == "warn" then
@@ -152,10 +157,16 @@ local function BuildReadySub(panel)
                 stFS:SetText("|cff808080\226\128\147|r")
             end
 
-            local ilvlFS = UI:CreateText(row, r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
+            -- A 60 with no addon data is ready by level only, said where its item level would be (#207).
+            local ilvlFS = UI:CreateText(row, r.levelOnly and L["level only"] or r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
                 10, C.silver.r, C.silver.g, C.silver.b)
             ilvlFS:SetPoint("LEFT", 250, 0)
+            ilvlFS:SetWidth(56); ilvlFS:SetWordWrap(false); ilvlFS:SetJustifyH("LEFT")
 
+            if forever then
+                local lvlFS = UI:CreateText(row, tostring(r.level or 0), 10, C.silver.r, C.silver.g, C.silver.b)
+                lvlFS:SetPoint("LEFT", 310, 0)
+            end
             if hasAttune then
                 local attColor = (r.attTotal > 0 and r.attDone == r.attTotal) and C.green or C.gold
                 if r.targetOk == false then attColor = C.red elseif r.targetOk == true then attColor = C.green end

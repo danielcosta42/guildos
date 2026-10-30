@@ -140,6 +140,10 @@ function DataCollector:CollectMyData()
     -- (retail: the Resistances module is absent; issue #184).
     data.resistances = GuildOS.Resistances and self:CollectResistances() or nil
 
+    -- Not named on Discord (issue #205): the choice is the guild database's, which every character
+    -- of the account in this guild shares, so each one's own row says it — the export reads the row.
+    if GuildOS.Journal then data.feedOptOut = GuildOS.Journal:IsOptedOut() end
+
     GuildOS.db.members[key] = data
     GuildOS.db.myData = data
 
@@ -749,6 +753,12 @@ function DataCollector:GetBroadcastData()
     -- StoreReceivedData into db.members[key].prefRoles.
     if GuildOS.db.profile and GuildOS.db.profile.prefRoles then
         clean.prefRoles = GuildOS.db.profile.prefRoles
+    end
+
+    -- Not named on Discord (issue #205): always a boolean on WoW: Forever, so turning it off clears
+    -- what the receivers kept — StoreReceivedData copies every key, false included.
+    if GuildOS.Journal then
+        clean.feedOptOut = GuildOS.Journal:IsOptedOut()
     end
 
     -- Retail's Mythic+ and vault (issue #187): StoreReceivedData merges them like any field. Absent

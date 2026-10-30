@@ -61,6 +61,12 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 
+-- WoW: Forever only (issue #211): the guild's journal, where the module exists.
+UI:RegisterFeature({
+    id = "journal", label = L["Journal"], order = 55, tbc = false, retail = false, restart = true,
+    build = function(c, win) GuildOS:CreateJournalPanel(c, win) end,
+})
+
 UI:RegisterFeature({
     id = "alliance", label = L["Alliance"], order = 60,
     condition = function()
@@ -117,3 +123,5 @@ background("raidHUD",           L["Raid CD Tracker"],    L["Floating tracker for
 background("trialTracker",      L["Trial Tracker"],      L["Track trial member progress (officer)"], true)
 background("officerNotes",      L["Officer Notes"],      L["Private notes on guild members (officer)"], true)
 background("commSystem",        L["Comm System"],        L["Sync member data between addon users"])
+-- WoW: Forever only: off until the release that takes it off OFF_UNTIL_TESTED (issue #232).
+background("founding",          L["Founding"],           L["The guild's founding and its founding members"], nil, false, false)

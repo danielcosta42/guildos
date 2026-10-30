@@ -41,6 +41,7 @@ SyncService.OFFICER_DOMAINS = {
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
     guildcfg  = true,  -- the guild's officer threshold (issue #81) and, on retail, its loot system (#185)
+    founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
@@ -48,6 +49,8 @@ SyncService.OFFICER_DOMAINS = {
 SyncService.GUILD_ONLY_DOMAINS = {
     alliance       = true,   -- AllianceSync's trusted fan-out
     ["core.roster"] = true,  -- CoreManager's officer roster updates
+    journal        = true,   -- each member's own journal (#205): from the guild, never a whisper
+    foundingSelf   = true,   -- each member's own join date (#208), filed under its sender
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:
@@ -78,6 +81,12 @@ function SyncService:Initialize()
     -- loot system (issue #185). A client before #185 reads a loot system as a threshold with no `max`.
     self:On("guildcfg", function(env)
         if env.act == "lootsys" then return GuildOS:OnLootSystemSync(env) end
+        -- WoW: Forever's minimum item level for a 60 (issue #206); a client before it reads a
+        -- threshold with no `max`, which it ignores.
+        if env.act == "readymin" then
+            if GuildOS.Readiness then GuildOS.Readiness:OnMinIlvlSync(env) end
+            return
+        end
         GuildOS:OnOfficerMaxRankSync(env)
     end)
 end

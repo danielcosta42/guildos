@@ -111,7 +111,8 @@ local function RefreshCoreSignupFrame()
         cntLbl:SetPoint("TOPRIGHT", -8, y - 6)
         cntLbl:SetTextColor(0.5, 0.5, 0.5)
         local sz = CM:GetRaidSize(coreName)
-        cntLbl:SetText(comp.total .. "/" .. sz .. " " .. L["members"])
+        cntLbl:SetText(comp.total .. "/" .. sz .. " " .. L["members"]
+            .. ((comp.bench or 0) > 0 and ("  " .. string.format(L["%d in reserve"], comp.bench)) or ""))
 
         local hdrLine = content:CreateTexture(nil, "ARTWORK")
         hdrLine:SetTexture(WHITE8); hdrLine:SetHeight(1)
@@ -2071,8 +2072,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
             GuildOS:SetFeatureEnabled(def.id, checked)
             -- Tabs build lazily, so UI features toggle live. Background
             -- modules register their events at Initialize, so only those
-            -- still need a reload.
-            local needsReload = def.module and not def.tab
+            -- still need a reload, and a tab whose module does (`restart`).
+            local needsReload = def.restart or (def.module and not def.tab)
             GuildOS:Print(def.label .. (checked
                 and L[" |cff00ff00enabled|r."]
                 or  L[" |cffFF4444disabled|r."])
@@ -2222,6 +2223,15 @@ function GuildOS:RefreshSettingsPanel(content, category)
         GuildOS.db.digest.enabled = checked and true or false
     end
     yOff = yOff + 30
+
+    -- WoW: Forever's guild feed on guildos.me (issue #205): the member's own choice.
+    if GuildOS.Journal then
+        local feedCb = UI:CreateCheckbox(content, L["Don't name me in Discord posts"], 18)
+        feedCb:SetPoint("TOPLEFT", 8, -yOff)
+        feedCb.checkbox:SetChecked(GuildOS.Journal:IsOptedOut())
+        feedCb.checkbox.onChanged = function(_, checked) GuildOS.Journal:SetOptedOut(checked) end
+        yOff = yOff + 30
+    end
 
     local welcomeBtn = UI:CreateButton(content, L["Show welcome again"], 160, 24)
     welcomeBtn:SetPoint("TOPLEFT", 8, -yOff)
@@ -3057,6 +3067,50 @@ function GuildOS:RefreshSettingsPanel(content, category)
     sep5:SetPoint("TOPLEFT", 0, -yOff)
     sep5:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
+    --------------------------------------------------------------------
+    -- WoW: Forever: the item level a 60 needs to be ready without a warning (issue #206),
+    -- the guild's, like the officer ranks below.
+    --------------------------------------------------------------------
+    if not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+        local readyTitle = UI:CreateHeaderText(content, L["Readiness"], 12)
+        readyTitle:SetPoint("TOPLEFT", 0, -yOff)
+        yOff = yOff + 22
+        local minLabel = UI:CreateText(content, L["Minimum item level for a level 60:"], 11, C.white.r, C.white.g, C.white.b)
+        minLabel:SetPoint("TOPLEFT", 8, -yOff)
+        local minBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+        minBox:SetSize(50, 22)
+        minBox:SetPoint("LEFT", minLabel, "RIGHT", 10, 0)
+        minBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        minBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
+        minBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+        GuildOS:ApplyFont(minBox, 11)
+        minBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        minBox:SetNumeric(true)
+        minBox:SetMaxLetters(3)
+        minBox:SetAutoFocus(false)
+        minBox:SetText(tostring(GuildOS.Readiness:GetMinIlvl() or ""))
+        minBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        UI:AttachSaveButton(minBox, function(box)
+            GuildOS.Readiness:SetMinIlvl(tonumber(box:GetText()))
+            box:SetText(tostring(GuildOS.Readiness:GetMinIlvl() or ""))
+            box:ClearFocus()
+        end)
+        local minHint = UI:CreateText(content, L["Empty: no minimum. Below it, a 60 still counts, with a warning."],
+            9, C.silver.r, C.silver.g, C.silver.b)
+        minHint:SetPoint("LEFT", minBox.saveButton, "RIGHT", 8, 0)
+        minHint:SetWidth(280)
+        yOff = yOff + 34
+
+        -- The founding letter, for after the prompt was put away (issue #208): the GM records, an
+        -- officer suggests.
+        if GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") then
+            local foundBtn = UI:CreateButton(content,
+                GuildOS.Founding:IsGM() and L["Record founding"] or L["Suggest founding date to your GM"], 240, 22)
+            foundBtn:SetPoint("TOPLEFT", 8, -yOff)
+            foundBtn:SetScript("OnClick", function() GuildOS:ShowFoundingLetter(false) end)
+            yOff = yOff + 32
+        end
+    end
     --------------------------------------------------------------------
     -- OFFICER RANK CONFIGURATION (officer only)
     --------------------------------------------------------------------

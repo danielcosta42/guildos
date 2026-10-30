@@ -236,6 +236,8 @@ read_globals = {
     "C_RestrictedActions",
     "GetNormalizedRealmName",
     "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
+    "GetGuildLogoInfo",                      -- the guild tabard's colours and emblem (issue #213)
+    "GetGuildTabardFiles",                   -- and its six files, where the border's style is (issue #213)
     "C_XMLUtil",
     "GetRealmName",
     "GetPlayerInfoByGUID",
