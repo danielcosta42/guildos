@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-10-30
+
+### Fixed
+- as opções de Loot Rules não ficam mais uma em cima da outra (#228)
+
+
 ## [1.0.2] - 2026-10-29
 
 ### Fixed

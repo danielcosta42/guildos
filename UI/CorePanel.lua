@@ -449,7 +449,7 @@ function GuildOS:CreateCoresPanel(panel)
                 wmCheck:SetScript("OnClick", function(self) lmSave("wishlistOnlyMode", self:GetChecked()) end)
 
                 local maLabel = track(MakeLabel(rightContent, L["Min attendance % for MS:"], 10))
-                maLabel:SetPoint("LEFT", wmCheck, "RIGHT", 24, 0)
+                maLabel:SetPoint("LEFT", wmCheck.label, "RIGHT", 24, 0)
                 local maInput = track(MakeInput(rightContent, 40, true))
                 maInput:SetPoint("LEFT", maLabel, "RIGHT", 6, 1)
                 maInput:SetText(tostring(lootCfg.minAttendancePct or 0))
@@ -468,7 +468,7 @@ function GuildOS:CreateCoresPanel(panel)
                 atCheck:SetScript("OnClick", function(self) lmSave("attTiebreaker", self:GetChecked()) end)
 
                 local rpCheck = track(MakeCheck(rightContent, L["Recent loot penalty"]))
-                rpCheck:SetPoint("LEFT", atCheck, "RIGHT", 24, 0)
+                rpCheck:SetPoint("LEFT", atCheck.label, "RIGHT", 24, 0)
                 rpCheck:SetChecked(lootCfg.recvPenalty ~= false)
                 rpCheck:SetScript("OnClick", function(self) lmSave("recvPenalty", self:GetChecked()) end)
                 y = y - 28
