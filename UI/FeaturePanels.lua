@@ -2223,6 +2223,15 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
+    -- WoW: Forever's guild feed on guildos.me (issue #205): the member's own choice.
+    if GuildOS.Journal then
+        local feedCb = UI:CreateCheckbox(content, L["Don't name me in Discord posts"], 18)
+        feedCb:SetPoint("TOPLEFT", 8, -yOff)
+        feedCb.checkbox:SetChecked(GuildOS.Journal:IsOptedOut())
+        feedCb.checkbox.onChanged = function(_, checked) GuildOS.Journal:SetOptedOut(checked) end
+        yOff = yOff + 30
+    end
+
     local welcomeBtn = UI:CreateButton(content, L["Show welcome again"], 160, 24)
     welcomeBtn:SetPoint("TOPLEFT", 8, -yOff)
     welcomeBtn:SetScript("OnClick", function()

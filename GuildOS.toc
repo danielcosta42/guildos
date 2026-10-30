@@ -111,6 +111,7 @@ Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua
 Modules\Milestones.lua
+Modules\Journal.lua
 Modules\Search.lua
 Modules\RaidTools.lua
 Data\ConsumablesRetail.lua

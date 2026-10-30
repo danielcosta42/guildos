@@ -1263,6 +1263,7 @@ L["Shift-click an item or type its id"] = "Shift+клик по предмету 
 L["Short note:"] = "Короткая заметка:"
 L["Show Offline"] = "Показывать не в сети"
 L["Show login digest"] = "Показывать сводку при входе"
+L["Don't name me in Discord posts"] = "Не упоминать меня в сообщениях Discord"
 L["Show minimap button"] = "Показывать кнопку у миникарты"
 L["Show recent errors"] = "Показать последние ошибки"
 L["Show welcome again"] = "Показать приветствие снова"

@@ -46,8 +46,11 @@ local FMT = "GOSCOMP1"
 -- Normal, 15 Heroic, 16 Mythic (issue #182, the site's specs/056). Forever and Anniversary send what
 -- they sent at 9. 11 adds `rosterComplete`, true only when `members` is the whole guild
 -- (GuildOS:WholeRoster): the one upload the site may read "not listed" from as "left the guild"
--- (issue #203, the site's #229). Absent otherwise.
-local PAYLOAD_VERSION = 11
+-- (issue #203, the site's #229). Absent otherwise. 12 starts what WoW: Forever's guild feed reads (the
+-- site's #238, contract #246): `journal`, what happened to each character as that character's own
+-- client wrote it down (issue #205), and each member's `feedOptOut`, true for whoever asked not to be
+-- named on Discord. The founding, the readiness threshold and the tabard join it in the same version.
+local PAYLOAD_VERSION = 12
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -523,6 +526,8 @@ function Companion:BuildPayload()
                 crafting = craftingFor(key),
                 -- v8. Absent until the member has sat in a barber's chair with the addon.
                 look = type(data.look) == "table" and data.look or nil,
+                -- v12. Only ever true: absent is "name me" (issue #205).
+                feedOptOut = data.feedOptOut == true or nil,
             }
         end
     end
@@ -568,6 +573,8 @@ function Companion:BuildPayload()
         sessions = sessions,
         deletedSessions = deletedSessions,
         attendanceRules = attendanceRules(sessions),
+        -- v12, WoW: Forever only: absent where the module does not exist (issue #205).
+        journal = GuildOS.Journal and GuildOS.Journal:ForExport() or nil,
     }
 end
 

@@ -966,3 +966,14 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `TradeCouncil:Complete(o)` / `Charge(o)` | Into the loot history (`RecordTradeAward` at the offer's drop time, the tracked session's raid); the officer named as giver charges the item's cost under DKP with one, only for the award that client gave (`awards[me] == winner`); once. A holder's `D` is believed for an award this client saw given (`awards[by] == winner`), or, under a free roll, the holder's own to a guildmate who answered Need or Greed; the winner still in the guild; also on an offer this client closed a minute early |
 | `GuildOS:ShowTradeCouncil(offerId)` / `RefreshTradeCouncil()` | UI/TradeCouncil.lua: the loot council window (the raid's offers, my tradeable items with Offer, the offer picked with Need/Greed/Pass, the ranked answers with Award, Withdraw); `/gos offer`, Settings' quick access "Loot Council" and every incoming offer open it |
 | `tools/retail-points.lua` / `retail-wishlist.lua` / `retail-loot-council.lua` / `trade-council-ui.lua` | The harnesses of issue #185 |
+
+## v1.1 — Journal (#205, guildos.me #238)
+
+| Function | Purpose |
+|---|---|
+| `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
+| `Journal:Add(type, data)` / `OnLevelUp(level)` | Write down, keep and publish an entry about me (`<myKey>:<seq>`, `GetServerTime()`); `PLAYER_LEVEL_UP` writes `member.level` at 10–50 and `member.level60` at the cap |
+| `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild; my last week again at login (30 s); oldest out past 30 days and 1,000 |
+| `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
+| `Journal:IsOptedOut()` / `SetOptedOut(on)` | Not named on Discord: `db.profile.feedOptOut`, mirrored on my member row, always a boolean in the broadcast, `feedOptOut` (true only) in the export; Settings' checkbox |
+| `tools/journal.lua` | The harness of issue #205 |

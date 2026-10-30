@@ -751,6 +751,12 @@ function DataCollector:GetBroadcastData()
         clean.prefRoles = GuildOS.db.profile.prefRoles
     end
 
+    -- Not named on Discord (issue #205): always a boolean on WoW: Forever, so turning it off clears
+    -- what the receivers kept — StoreReceivedData copies every key, false included.
+    if GuildOS.Journal then
+        clean.feedOptOut = GuildOS.Journal:IsOptedOut()
+    end
+
     -- Retail's Mythic+ and vault (issue #187): StoreReceivedData merges them like any field. Absent
     -- from a client without the module, or before mine has read them; never null.
     if GuildOS.MythicPlus then

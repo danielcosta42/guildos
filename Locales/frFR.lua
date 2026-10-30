@@ -1744,6 +1744,7 @@ L["Sets composition targets for roster analysis."] = "Définit les objectifs de 
 L["Shadow"] = "Ombre"
 L["Share with the alliance"] = "Partager avec l'alliance"
 L["Show login digest"] = "Afficher le résumé de connexion"
+L["Don't name me in Discord posts"] = "Ne pas me nommer dans les messages Discord"
 L["Show minimap button"] = "Afficher le bouton de minicarte"
 L["Show welcome again"] = "Réafficher l'accueil"
 L["Sign Up"] = "S'inscrire"

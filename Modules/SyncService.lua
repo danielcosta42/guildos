@@ -48,6 +48,7 @@ SyncService.OFFICER_DOMAINS = {
 SyncService.GUILD_ONLY_DOMAINS = {
     alliance       = true,   -- AllianceSync's trusted fan-out
     ["core.roster"] = true,  -- CoreManager's officer roster updates
+    journal        = true,   -- each member's own journal (#205): from the guild, never a whisper
 }
 
 -- Actions any guild member may perform inside an officer domain, over GUILD. Keyed by domain:

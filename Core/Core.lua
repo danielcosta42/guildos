@@ -277,6 +277,8 @@ local MODULE_START = {
     { "Polls" },
     { "Calendar" },
     { "Milestones" },
+    -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
+    { "Journal" },
     { "ConsumableChecker", feature = "consumableChecker" },
     { "SpecChecker" },
     -- Retail only (issue #187): my keystone, rating and vault, carried by the member broadcast.

@@ -1263,6 +1263,7 @@ L["Shift-click an item or type its id"] = "아이템을 Shift+클릭하거나 ID
 L["Short note:"] = "짧은 메모:"
 L["Show Offline"] = "오프라인 표시"
 L["Show login digest"] = "접속 요약 표시"
+L["Don't name me in Discord posts"] = "디스코드 게시물에 내 이름 표시 안 함"
 L["Show minimap button"] = "미니맵 버튼 표시"
 L["Show recent errors"] = "최근 오류 보기"
 L["Show welcome again"] = "환영 화면 다시 보기"

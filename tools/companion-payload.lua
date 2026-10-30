@@ -292,7 +292,9 @@ GuildOS.Client.isAnniversary = true
 
 -- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
 -- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
-assert(anniversary.v == 11, "the payload is v11")
+assert(anniversary.v == 12, "the payload is v12")
+-- v12 (issue #205) starts the WoW: Forever guild feed: no journal outside Forever (tools/journal.lua).
+assert(anniversary.journal == nil, "no journal on TBC Anniversary")
 
 -- v11 (issue #203): the site reads "not listed" as "left the guild" only from a whole roster.
 assert(anniversary.rosterComplete == true, "a whole roster says so")
