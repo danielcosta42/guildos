@@ -577,6 +577,9 @@ function Companion:BuildPayload()
         attendanceRules = attendanceRules(sessions),
         -- v12, WoW: Forever only: absent where the module does not exist (issue #205).
         journal = GuildOS.Journal and GuildOS.Journal:ForExport() or nil,
+        -- v12: the guild's tabard as the game draws it, absent without one (issue #213). Not on TBC
+        -- Anniversary, whose guilds the site's tabard contest is not for.
+        tabard = not GuildOS.Client.isAnniversary and GuildOS.Compat.GuildTabard() or nil,
         -- v12, WoW: Forever only: absent until the GM records it (issue #208).
         founding = GuildOS.Founding and GuildOS.Founding:ForExport() or nil,
         -- v12, WoW: Forever only (issue #206): only from a client that has heard the guild's choice,
