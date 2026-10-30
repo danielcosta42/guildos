@@ -195,7 +195,13 @@ function GuildOS:CreateDashboardPanel(panel)
     local function fillCountdown(card, cd)
         local body = card.body
         clearBody(body)
-        card.hdr:SetText(cd.open and L["RAIDS ARE OPEN"] or string.format(L["RAIDS OPEN IN %d DAYS"], cd.days))
+        local title = cd.open and L["RAIDS ARE OPEN"]
+            or cd.days == 0 and L["RAIDS OPEN IN UNDER A DAY"]
+            or cd.days == 1 and L["RAIDS OPEN IN 1 DAY"]
+            or string.format(L["RAIDS OPEN IN %d DAYS"], cd.days)
+        card.hdr:SetText(title)
+        -- One line, short of the arrow: a long translation cuts, never runs into it (#148).
+        card.hdr:SetWidth(math.max(1, card:GetWidth() - 44)); card.hdr:SetWordWrap(false); card.hdr:SetJustifyH("LEFT")
         local w = body:GetWidth()
         local y = 0
         local function line(label, value, frac)
@@ -204,8 +210,10 @@ function GuildOS:CreateDashboardPanel(panel)
             name:SetWidth(math.floor(w * 0.36)); name:SetWordWrap(false); name:SetJustifyH("LEFT")
             local val = UI:CreateText(body, value, 10, C.textDim.r, C.textDim.g, C.textDim.b)
             val:SetPoint("TOPLEFT", math.floor(w * 0.38), -y)
+            local barW = frac and math.max(20, math.floor(w * 0.22)) or 0
+            val:SetWidth(math.max(1, w - math.floor(w * 0.38) - barW - 8)); val:SetWordWrap(false); val:SetJustifyH("LEFT")
             if frac then
-                local bar = UI:CreateProgressBar(body, math.max(20, math.floor(w * 0.26)), 6)
+                local bar = UI:CreateProgressBar(body, barW, 6)
                 bar:SetPoint("TOPRIGHT", -2, -(y + 4))
                 bar:SetProgress(frac)
             end
@@ -217,7 +225,7 @@ function GuildOS:CreateDashboardPanel(panel)
         if #cd.cores == 0 then
             local g = cd.guild
             line(L["Guild"], g.enough and string.format(L["%d at %d · enough for a %d"], g.ready, cd.cap, g.enough)
-                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, g.short, 10))
+                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, g.short, g.smallest))
         end
         local me = cd.me
         if me then

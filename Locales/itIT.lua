@@ -1012,6 +1012,8 @@ L["Manage"] = "Gestisci"
 
 -- UI/AuditPanel.lua
 L["Readiness"] = "Prontezza"
+L["RAIDS OPEN IN UNDER A DAY"] = "LE INCURSIONI APRONO TRA MENO DI UN GIORNO"
+L["RAIDS OPEN IN 1 DAY"] = "LE INCURSIONI APRONO TRA 1 GIORNO"
 L["level only"] = "solo livello"
 L["Ready · under the guild's item level"] = "Pronto · sotto il livello oggetto della gilda"
 L["Ready · %d enchants missing"] = "Pronto · mancano %d incantamenti"

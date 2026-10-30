@@ -960,6 +960,8 @@ L["%s soon: %s at %s"] = "%s em breve: %s às %s"
 L["Usage: /guildos export <%s> [csv|tsv|discord]"] = "Uso: /guildos export <%s> [csv|tsv|discord]"
 -- Readiness sub-panel
 L["Readiness"] = "Prontidão"
+L["RAIDS OPEN IN UNDER A DAY"] = "AS RAIDES ABREM EM MENOS DE UM DIA"
+L["RAIDS OPEN IN 1 DAY"] = "AS RAIDES ABREM EM 1 DIA"
 L["level only"] = "só nível"
 L["Ready · under the guild's item level"] = "Pronto · abaixo do nível de item da guilda"
 L["Ready · %d enchants missing"] = "Pronto · faltam %d encantamentos"
