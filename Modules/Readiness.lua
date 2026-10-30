@@ -11,6 +11,86 @@ GuildOS.Readiness = Readiness
 -- Status ranking for sorting (most actionable first).
 local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
 
+-- WoW: Forever has no attunements: the door to a raid is level 60 (issue #206, guildos.me #238).
+local FOREVER = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
+local MIN_ILVL_MAX = 1000
+local STAMP_FUTURE_SLACK = 300   -- seconds an officer's stamp may run ahead of this clock, as the rank's
+
+-- The raids that open on 9 December 2026, 00:00 UTC until the hour is known (guildos.me #241).
+Readiness.FOREVER_RAIDS = {
+    { key = "barrow-deeps", name = "Barrow Deeps", size = 10, opensAt = 1796774400 },
+    { key = "hyjal", name = "Hyjal Summit", size = 20, opensAt = 1796774400 },
+    { key = "onyxia", name = "Onyxia's Lair", size = 40, opensAt = 1796774400 },
+}
+
+----------------------------------------------------------------------
+-- A member's readiness on WoW: Forever, the same rule and the same cases as guildos.me's:
+--   below the cap: not ready (the level);
+--   no gear data (never published): ready, by level only — the door is public, nobody is
+--     punished on the board for not running the addon;
+--   under the guild's minimum item level, or an enchant missing: ready, with a warning.
+-- `r` = { level, hasGear, ilvl, missEnch }. Returns status, reason, levelOnly. Pure.
+----------------------------------------------------------------------
+function Readiness.ForeverStatus(r, minIlvl, cap)
+    if (r.level or 0) < cap then return "notready", "level", false end
+    if not r.hasGear then return "ready", nil, true end
+    if minIlvl and (r.ilvl or 0) < minIlvl then return "warn", "ilvl", false end
+    if (r.missEnch or 0) > 0 then return "warn", "enchants", false end
+    return "ready", nil, false
+end
+
+----------------------------------------------------------------------
+-- The guild's minimum item level for a 60 (issue #206): an officer's, stamped, the newest stamp
+-- winning on every client, as the officer threshold is (#81). Nil: no minimum.
+----------------------------------------------------------------------
+function Readiness:GetMinIlvl()
+    local s = GuildOS.db and GuildOS.db.settings
+    return s and s.readyMinIlvl or nil
+end
+
+-- Whether this client has heard the guild's minimum at all (set, cleared, or from an officer).
+function Readiness:MinIlvlKnown()
+    local s = GuildOS.db and GuildOS.db.settings
+    return s ~= nil and s.readyMinIlvlAt ~= nil
+end
+
+local function sane(n)
+    return n == nil or (type(n) == "number" and n == math.floor(n) and n >= 1 and n <= MIN_ILVL_MAX)
+end
+
+-- An officer sets it (nil clears it). Returns whether it was taken.
+function Readiness:SetMinIlvl(n)
+    if not FOREVER or not GuildOS:IsOfficer() or not sane(n) then return false end
+    local s = GuildOS.db.settings
+    s.readyMinIlvl = n
+    s.readyMinIlvlAt = math.max(GetServerTime(), (s.readyMinIlvlAt or 0) + 1)
+    self:PublishMinIlvl()
+    return true
+end
+
+-- To the guild: when it changes, and again on the officers' regular sync, for a client that missed it.
+function Readiness:PublishMinIlvl()
+    if not FOREVER then return end
+    local s = GuildOS.db and GuildOS.db.settings
+    if not (s and s.readyMinIlvlAt and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    GuildOS.SyncService:Publish("guildcfg", "readymin", { min = s.readyMinIlvl }, { rev = s.readyMinIlvlAt })
+end
+
+-- From an officer (SyncService checked the officer and GUILD): the newest stamp wins, and two in the
+-- same second settle on the lower minimum on every client.
+function Readiness:OnMinIlvlSync(env)
+    if not FOREVER then return end
+    local data = env and env.data
+    local min = type(data) == "table" and data.min or nil
+    local at = env and tonumber(env.rev)
+    if not sane(min) or not (at and at > 0 and at < math.huge) then return end
+    at = math.min(at, GetServerTime() + STAMP_FUTURE_SLACK)
+    local s = GuildOS.db.settings
+    local held = s.readyMinIlvlAt
+    if held and (at < held or (at == held and (min or 0) >= (s.readyMinIlvl or 0))) then return end
+    s.readyMinIlvl, s.readyMinIlvlAt = min, at
+end
+
 ----------------------------------------------------------------------
 -- Raids you can target a readiness check at (the quest-attunement raids).
 -- Returns { { short, name, tier }, ... } or {}.
@@ -51,9 +131,10 @@ function Readiness:GetReport(targetShort)
     end
 
     local rows = {}
+    local minIlvl, cap = self:GetMinIlvl(), GuildOS.Client.maxLevel
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
-        local name, _, _, _, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
+        local name, _, _, level, _, _, _, _, isOnline, _, classFile = GetGuildRosterInfo(i)
         if name then
             local short = name:match("^([^-]+)") or name
             local realm = name:match("-(.+)$") or GetRealmName()
@@ -87,8 +168,11 @@ function Readiness:GetReport(targetShort)
 
             local ilvl = (m and m.avgIlvl) or 0
 
-            local status
-            if targetShort and targetOk == false then
+            local status, reason, levelOnly
+            if FOREVER then
+                status, reason, levelOnly = Readiness.ForeverStatus(
+                    { level = level, hasGear = hasGear, ilvl = ilvl, missEnch = missEnch }, minIlvl, cap)
+            elseif targetShort and targetOk == false then
                 status = "notready"
             elseif (missEnch > 0) or (missCons and missCons > 0) then
                 status = "warn"
@@ -100,10 +184,10 @@ function Readiness:GetReport(targetShort)
 
             rows[#rows + 1] = {
                 name = short, key = key, class = classFile or "", online = isOnline,
-                ilvl = ilvl, hasGear = hasGear,
+                level = level or 0, ilvl = ilvl, hasGear = hasGear,
                 attDone = attDone, attTotal = attTotal, targetOk = targetOk,
                 missEnch = missEnch, missCons = missCons,
-                status = status,
+                status = status, reason = reason, levelOnly = levelOnly or false,
             }
         end
     end

@@ -960,6 +960,8 @@ L["%s soon: %s at %s"] = "%s em breve: %s às %s"
 L["Usage: /guildos export <%s> [csv|tsv|discord]"] = "Uso: /guildos export <%s> [csv|tsv|discord]"
 -- Readiness sub-panel
 L["Readiness"] = "Prontidão"
+L["Empty: no minimum. Below it, a 60 still counts, with a warning."] = "Vazio: sem mínimo. Abaixo dele, um 60 continua contando, com um aviso."
+L["Minimum item level for a level 60:"] = "Nível de item mínimo para um nível 60:"
 L["Target: All raids"] = "Alvo: Todas as raids"
 L["Target: "] = "Alvo: "
 L["STATUS"] = "STATUS"

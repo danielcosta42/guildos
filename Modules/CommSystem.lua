@@ -72,6 +72,7 @@ function CommSystem:Initialize()
                 C_Timer.After(15, function()
                     GuildOS:PublishOfficerMaxRank()
                     GuildOS:PublishLootSystem()
+                    if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
                 end)
             end
         end
@@ -455,6 +456,7 @@ function CommSystem:HandleRequest(_sender, _data)
             C_Timer.After(3, function()
                 GuildOS:PublishOfficerMaxRank()
                 GuildOS:PublishLootSystem()
+                if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
             end)
         end
 

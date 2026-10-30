@@ -224,7 +224,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
 ```lua
 {
   version  = 1,
-  settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules },
+  settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules,
+               readyMinIlvl, readyMinIlvlAt },  -- Forever: the guild's minimum item level for a 60, on guildcfg/readymin (#206)
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
                                    mplus, vault,   -- retail: { rating, key = { map, level } },

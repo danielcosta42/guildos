@@ -1012,6 +1012,8 @@ L["Manage"] = "Gestisci"
 
 -- UI/AuditPanel.lua
 L["Readiness"] = "Prontezza"
+L["Empty: no minimum. Below it, a 60 still counts, with a warning."] = "Vuoto: nessun minimo. Sotto, un 60 conta comunque, con un avviso."
+L["Minimum item level for a level 60:"] = "Livello oggetto minimo per un livello 60:"
 L["Resistances"] = "Resistenze"
 L["Enchants"] = "Incantamenti"
 L["Sync"] = "Sincronizza"

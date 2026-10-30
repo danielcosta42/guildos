@@ -977,3 +977,12 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
 | `Journal:IsOptedOut()` / `SetOptedOut(on)` | Not named on Discord: `db.profile.feedOptOut`, mirrored on my member row, always a boolean in the broadcast, `feedOptOut` (true only) in the export; Settings' checkbox |
 | `tools/journal.lua` | The harness of issue #205 |
+
+## v1.1 — Readiness on WoW: Forever (#206, guildos.me #241)
+
+| Function | Purpose |
+|---|---|
+| `Readiness.ForeverStatus(r, minIlvl, cap)` | Pure: below the cap `notready`/`level`; no gear data `ready` by level only; under the guild's minimum `warn`/`ilvl`; an enchant missing `warn`/`enchants`; else `ready`. The cases are guildos.me's too (`tools/readiness-forever.lua`) |
+| `Readiness:GetReport()` | On Forever every row is ruled by `ForeverStatus` and carries `level`, `reason`, `levelOnly`; the attunement path stays for Anniversary |
+| `Readiness.FOREVER_RAIDS` | Barrow Deeps 10, Hyjal Summit 20, Onyxia's Lair 40, `opensAt` 9 Dec 2026 00:00 UTC |
+| `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > officer: "Readiness" |

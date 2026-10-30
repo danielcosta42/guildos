@@ -3067,6 +3067,41 @@ function GuildOS:RefreshSettingsPanel(content, category)
     sep5:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
     --------------------------------------------------------------------
+    -- WoW: Forever: the item level a 60 needs to be ready without a warning (issue #206),
+    -- the guild's, like the officer ranks below.
+    --------------------------------------------------------------------
+    if not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail then
+        local readyTitle = UI:CreateHeaderText(content, L["Readiness"], 12)
+        readyTitle:SetPoint("TOPLEFT", 0, -yOff)
+        yOff = yOff + 22
+        local minLabel = UI:CreateText(content, L["Minimum item level for a level 60:"], 11, C.white.r, C.white.g, C.white.b)
+        minLabel:SetPoint("TOPLEFT", 8, -yOff)
+        local minBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+        minBox:SetSize(50, 22)
+        minBox:SetPoint("LEFT", minLabel, "RIGHT", 10, 0)
+        minBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        minBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
+        minBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+        GuildOS:ApplyFont(minBox, 11)
+        minBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        minBox:SetNumeric(true)
+        minBox:SetMaxLetters(4)
+        minBox:SetAutoFocus(false)
+        minBox:SetText(tostring(GuildOS.Readiness:GetMinIlvl() or ""))
+        minBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        UI:AttachSaveButton(minBox, function(box)
+            local n = tonumber(box:GetText())
+            GuildOS.Readiness:SetMinIlvl(n and n > 0 and n or nil)
+            box:SetText(tostring(GuildOS.Readiness:GetMinIlvl() or ""))
+            box:ClearFocus()
+        end)
+        local minHint = UI:CreateText(content, L["Empty: no minimum. Below it, a 60 still counts, with a warning."],
+            9, C.silver.r, C.silver.g, C.silver.b)
+        minHint:SetPoint("LEFT", minBox.saveButton, "RIGHT", 8, 0)
+        minHint:SetWidth(280)
+        yOff = yOff + 34
+    end
+    --------------------------------------------------------------------
     -- OFFICER RANK CONFIGURATION (officer only)
     --------------------------------------------------------------------
     local rankTitle = UI:CreateHeaderText(content, L["OFFICER RANKS"], 12)
