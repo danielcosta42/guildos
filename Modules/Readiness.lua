@@ -23,6 +23,70 @@ Readiness.FOREVER_RAIDS = {
     { key = "onyxia", name = "Onyxia's Lair", size = 40, opensAt = 1796774400 },
 }
 
+local SHOWN_AFTER_OPEN = 7 * 86400   -- "the raids are open" stays a week, then the card goes
+local CORES_SHOWN = 3
+local RAID_SIZES_DESC = { 40, 20, 10 }
+
+----------------------------------------------------------------------
+-- The countdown to the raids on WoW: Forever (issue #207), from a report's rows: how many days, how
+-- many of each core are at the cap (its titulars; up to three cores, largest first), how many of the
+-- guild, and me. Nil off Forever, and a week after the raids opened.
+-- Business logic only: UI/Dashboard.lua draws it.
+----------------------------------------------------------------------
+function Readiness:Countdown(rows, now)
+    if not FOREVER then return nil end
+    local target
+    for _, r in ipairs(Readiness.FOREVER_RAIDS) do
+        if now < r.opensAt + SHOWN_AFTER_OPEN and (not target or r.opensAt < target.opensAt) then target = r end
+    end
+    if not target then return nil end
+
+    local cap = GuildOS.Client.maxLevel
+    -- The guild roster's levels: somebody on a core who left the guild counts nowhere.
+    local levelOf, atCap = {}, 0
+    for _, r in ipairs(rows or {}) do
+        levelOf[r.key] = r.level or 0
+        if (r.level or 0) >= cap then atCap = atCap + 1 end
+    end
+
+    local cores = {}
+    local CM = GuildOS.CoreManager
+    for name, core in pairs(CM and CM:GetAll() or {}) do
+        local ready = 0
+        for key, rec in pairs(core.members or {}) do
+            local main = type(rec) ~= "table" or rec.status ~= "bench"
+            if main and (levelOf[GuildOS:LocalMemberKey(key)] or 0) >= cap then ready = ready + 1 end
+        end
+        cores[#cores + 1] = { name = name, size = CM:GetRaidSize(name), ready = ready }
+    end
+    table.sort(cores, function(a, b)
+        if a.size ~= b.size then return a.size > b.size end
+        return a.name < b.name
+    end)
+    while #cores > CORES_SHOWN do table.remove(cores) end
+
+    local enough
+    for _, size in ipairs(RAID_SIZES_DESC) do
+        if atCap >= size then enough = size break end
+    end
+
+    local me
+    local myKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
+    for _, r in ipairs(rows or {}) do
+        if r.key == myKey then me = r break end
+    end
+
+    return {
+        opensAt = target.opensAt,
+        open = now >= target.opensAt,
+        days = math.max(1, math.ceil((target.opensAt - now) / 86400)),
+        cap = cap,
+        cores = cores,
+        guild = { ready = atCap, enough = enough, short = math.max(0, RAID_SIZES_DESC[#RAID_SIZES_DESC] - atCap) },
+        me = me,
+    }
+end
+
 ----------------------------------------------------------------------
 -- A member's readiness on WoW: Forever, the same rule and the same cases as guildos.me's:
 --   below the cap: not ready (the level);
@@ -195,6 +259,8 @@ function Readiness:GetReport(targetShort)
     table.sort(rows, function(a, b)
         local ra, rb = STATUS_RANK[a.status] or 9, STATUS_RANK[b.status] or 9
         if ra ~= rb then return ra < rb end
+        -- On Forever, the closest to the door first within a status (issue #207).
+        if FOREVER and a.level ~= b.level then return a.level > b.level end
         return a.name:lower() < b.name:lower()
     end)
     return rows

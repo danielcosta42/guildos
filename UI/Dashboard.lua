@@ -190,6 +190,51 @@ function GuildOS:CreateDashboardPanel(panel)
         v:SetPoint("TOPLEFT", 2, -(y + 4))
     end
 
+    -- WoW: Forever, until a week after the raids open (issue #207): the countdown in the readiness
+    -- card's place. Readiness:Countdown counts; this only draws.
+    local function fillCountdown(card, cd)
+        local body = card.body
+        clearBody(body)
+        card.hdr:SetText(cd.open and L["RAIDS ARE OPEN"] or string.format(L["RAIDS OPEN IN %d DAYS"], cd.days))
+        local w = body:GetWidth()
+        local y = 0
+        local function line(label, value, frac)
+            local name = UI:CreateText(body, label, 11, C.text.r, C.text.g, C.text.b)
+            name:SetPoint("TOPLEFT", 2, -y)
+            name:SetWidth(math.floor(w * 0.36)); name:SetWordWrap(false); name:SetJustifyH("LEFT")
+            local val = UI:CreateText(body, value, 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            val:SetPoint("TOPLEFT", math.floor(w * 0.38), -y)
+            if frac then
+                local bar = UI:CreateProgressBar(body, math.max(20, math.floor(w * 0.26)), 6)
+                bar:SetPoint("TOPRIGHT", -2, -(y + 4))
+                bar:SetProgress(frac)
+            end
+            y = y + 20
+        end
+        for _, c in ipairs(cd.cores) do
+            line(c.name, string.format(L["%d / %d at %d"], c.ready, c.size, cd.cap), c.ready / c.size)
+        end
+        if #cd.cores == 0 then
+            local g = cd.guild
+            line(L["Guild"], g.enough and string.format(L["%d at %d · enough for a %d"], g.ready, cd.cap, g.enough)
+                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, g.short, 10))
+        end
+        local me = cd.me
+        if me then
+            local mine
+            if (me.level or 0) < cd.cap then
+                mine = string.format(L["Level %d · %d to go"], me.level or 0, cd.cap - (me.level or 0))
+            elseif me.reason == "enchants" then
+                mine = string.format(L["Ready · %d enchants missing"], me.missEnch or 0)
+            elseif me.reason == "ilvl" then
+                mine = L["Ready · under the guild's item level"]
+            else
+                mine = L["Ready"]
+            end
+            line(L["You"], mine)
+        end
+    end
+
     local function fillPulse(body, rows)
         clearBody(body)
         local total, online, iSum, iN = 0, 0, 0, 0
@@ -327,7 +372,13 @@ function GuildOS:CreateDashboardPanel(panel)
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 
         fillNext(cNext.body)
-        fillReady(cReady.body, myRow)
+        local countdown = GuildOS.Readiness and GuildOS.Readiness.Countdown and GuildOS.Readiness:Countdown(rows, GetServerTime())
+        if countdown then
+            fillCountdown(cReady, countdown)
+        else
+            cReady.hdr:SetText(L["YOUR READINESS"])
+            fillReady(cReady.body, myRow)
+        end
         fillPulse(cPulse.body, rows)
         fillRecruit(cRecruit.body)
         if hasLoot then fillLoot(cLoot.body) end

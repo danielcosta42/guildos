@@ -135,6 +135,43 @@ R:OnMinIlvlSync({ rev = at + 10, data = {} })
 check(R:GetMinIlvl() == nil and G.db.settings.readyMinIlvlAt == at + 10, "a newer one with none clears it")
 check(R:SetMinIlvl(nil) and R:MinIlvlKnown() and published[#published].data.min == nil, "an officer clears it, and that is said too")
 
+-- ── The countdown (issue #207) ──────────────────────────────────────────
+local OPENS = R.FOREVER_RAIDS[1].opensAt
+for i = 1, 8 do ROSTER[#ROSTER + 1] = { "Sixty " .. i, 60 } end   -- 11 at 60 in all
+ROSTER[#ROSTER + 1] = { "Chehul Costa", 52 }
+local rows = R:GetReport()
+G.CoreManager = nil
+local cd = R:Countdown(rows, OPENS - 36 * 86400 + 3600)
+check(cd and cd.days == 36 and not cd.open, "36 days to go: " .. tostring(cd and cd.days))
+check(#cd.cores == 0 and cd.guild.ready == 11 and cd.guild.enough == 10, "no cores: the guild, 11 at 60, enough for a 10")
+check(cd.me and cd.me.level == 52, "and my own line")
+G.CoreManager = {
+  GetAll = function() return {
+    ["Ember 10"] = { raidSize = 10, members = { [key("Tess Varn")] = {}, [key("Kael Dunmore")] = {}, [key("Orin Vale")] = { status = "bench" } } },
+    ["Ember 20"] = { raidSize = 20, members = { [key("Tess Varn")] = {}, [key("Mira Thornwood")] = {}, [key("Somebody Gone")] = {} } },
+    ["Alpha 40"] = { raidSize = 40, members = {} },
+    ["Beta 10"] = { raidSize = 10, members = {} },
+  } end,
+  GetRaidSize = function(_, name) return ({ ["Ember 10"] = 10, ["Ember 20"] = 20, ["Alpha 40"] = 40, ["Beta 10"] = 10 })[name] end,
+}
+cd = R:Countdown(rows, OPENS - 86400 * 3)
+check(#cd.cores == 3 and cd.cores[1].name == "Alpha 40" and cd.cores[2].name == "Ember 20" and cd.cores[3].name == "Beta 10",
+  "three cores at most, largest first")
+local ember20 = cd.cores[2]
+check(ember20.ready == 2 and ember20.size == 20, "a core counts its members at 60, and nobody who left the guild")
+cd = R:Countdown(rows, OPENS - 86400 * 3)
+for _, c in ipairs(cd.cores) do
+  if c.name == "Ember 10" then check(false, "Ember 10 should have been cut as the fourth") end
+end
+G.CoreManager.GetAll = function() return { ["Ember 10"] = { raidSize = 10, members = { [key("Tess Varn")] = {}, [key("Orin Vale")] = { status = "bench" } } } } end
+cd = R:Countdown(rows, OPENS - 86400 * 3)
+check(cd.cores[1].ready == 1, "a reserve is not counted")
+cd = R:Countdown(rows, OPENS + 3 * 86400)
+check(cd and cd.open, "open for a week")
+check(R:Countdown(rows, OPENS + 8 * 86400) == nil, "then gone")
+ROSTER[#ROSTER] = nil
+for _ = 1, 8 do ROSTER[#ROSTER] = nil end
+
 -- ── Not on the other games ──────────────────────────────────────────────
 published = {}
 local A = load("anniversary")
