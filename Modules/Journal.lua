@@ -181,6 +181,76 @@ function Journal:ForExport()
 end
 
 ----------------------------------------------------------------------
+-- What the Journal tab shows (issue #211). Only numbers about the guild as a whole and firsts:
+-- no ranking of anybody by level, speed or count (guildos.me #242).
+----------------------------------------------------------------------
+local GROUP_S = 120   -- clears of one dungeon this close are one group's (each client logs itself)
+local WEEK_S = 7 * 86400
+
+-- My own entries, newest first.
+function Journal:Mine()
+    local key, out = myKey(), {}
+    for _, e in ipairs(entries()) do
+        if GuildOS:LocalMemberKey(e.subjectKey) == key then out[#out + 1] = e end
+    end
+    table.sort(out, function(a, b) return a.at > b.at end)
+    return out
+end
+
+-- The guild's first clear of each dungeon this client knows of, and who was in it, oldest first.
+function Journal:GuildFirsts()
+    local first = {}
+    for _, e in ipairs(entries()) do
+        if e.type == "dungeon.clear" and e.data and e.data.dungeonId then
+            local f = first[e.data.dungeonId]
+            if not f or e.at < f.at then first[e.data.dungeonId] = { at = e.at, entry = e } end
+        end
+    end
+    local out = {}
+    for dungeonId, f in pairs(first) do
+        local who, seen = {}, {}
+        for _, e in ipairs(entries()) do
+            if e.type == "dungeon.clear" and e.data and e.data.dungeonId == dungeonId and math.abs(e.at - f.at) <= GROUP_S then
+                local k = GuildOS:LocalMemberKey(e.subjectKey)
+                if not seen[k] then seen[k] = true; who[#who + 1] = k:match("^(.-)%-[^-]*$") or k end
+            end
+        end
+        table.sort(who)
+        out[#out + 1] = { dungeonId = dungeonId, name = f.entry.data.dungeonName or dungeonId, at = f.at,
+            bosses = f.entry.data.bosses, full = f.entry.data.fullClear, who = who }
+    end
+    table.sort(out, function(a, b) return a.at < b.at end)
+    return out
+end
+
+-- The week, the guild's as a whole: milestones reached, how many members reached one, clears.
+function Journal:ThisWeek(now)
+    local since, milestones, clears, members = now - WEEK_S, 0, 0, {}
+    for _, e in ipairs(entries()) do
+        if e.at >= since then
+            if e.type == "dungeon.clear" then
+                clears = clears + 1
+            else
+                milestones = milestones + 1
+                members[GuildOS:LocalMemberKey(e.subjectKey)] = true
+            end
+        end
+    end
+    local n = 0
+    for _ in pairs(members) do n = n + 1 end
+    return { milestones = milestones, members = n, clears = clears }
+end
+
+-- Whether a clear of mine is the first of its dungeon this client knows of: the toast is local and
+-- hopeful — another group may have cleared it and not synced yet; guildos.me decides the real first.
+function Journal:IsFirstClear(entry)
+    for _, e in ipairs(entries()) do
+        if e ~= entry and e.type == "dungeon.clear" and e.data and e.data.dungeonId == entry.data.dungeonId then return false end
+    end
+    return true
+end
+
+----------------------------------------------------------------------
 -- Not named on Discord (guildos.me #247): the member's own choice, carried by the member
 -- broadcast like the roles they play, and in the export as `feedOptOut`.
 ----------------------------------------------------------------------

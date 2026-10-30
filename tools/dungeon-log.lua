@@ -22,9 +22,11 @@ end
 
 local NOW = 1794139200
 local where = { type = "none", id = 0 }
+local printed = {}
 
 local function load(game)
-  DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+  DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = m end }
+  function GetGuildInfo() return "Ashen Vow" end
   function CreateFrame()
     local f = {}
     function f:RegisterEvent() end
@@ -101,6 +103,9 @@ D:OnEncounterEnd(9999, 1, NOW + 1100)       -- not this dungeon's
 D:OnEncounterEnd(3412, 1, NOW + 1200)       -- Bjork, the final boss
 local c = clears()
 check(#c == 1, "the final boss is the clear")
+local toasts = 0
+for _, m in ipairs(printed) do if m:find("First clear of Ruins of Lordaeron for Ashen Vow!", 1, true) then toasts = toasts + 1 end end
+check(toasts == 1, "the first clear this client knows of is said once")
 local e = c[1]
 check(e.data.dungeonId == "ruins-of-lordaeron" and e.data.runId == run.runId, "of this dungeon and this run")
 check(e.data.bosses == 3 and e.data.fullClear == false, "three of seven: not a full clear")

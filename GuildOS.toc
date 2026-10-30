@@ -160,5 +160,6 @@ UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
 UI\Founding.lua
+UI\JournalPanel.lua
 UI\RaidHUD.lua
 UI\Features.lua

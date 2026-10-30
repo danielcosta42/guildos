@@ -1009,3 +1009,12 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `GuildOS.ForeverDungeons` (Data/ForeverDungeons.lua) | `forever-dungeons.v1`: by instance id, `{ id, name, final, bosses }` from DB2 1.60.1.70685; `final` provisional (last `OrderIndex`) until the launch build (#214); Half-Pint Tavern missing, Manor Mistmantle with no boss |
 | `DungeonLog:OnZone(now)` / `OnEncounterEnd(encounterID, success)` | WoW: Forever only. A run (`db.dungeonRun`: instance, runId, kills, cleared, leftAt) opens in a catalogued `party` instance, survives 15 min away, ends in another; the final boss's death writes one `dungeon.clear` `{ dungeonId, dungeonName, bosses, fullClear, runId }` into the Journal. Secret or unknown encounters count nothing |
 | `tools/dungeon-log.lua` | The harness of issue #210 |
+
+## v1.1 — The Journal tab (#211, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `Journal:Mine()` / `GuildFirsts()` / `ThisWeek(now)` / `IsFirstClear(entry)` | My entries newest first; each dungeon's first clear with everyone within 120 s; the week's milestones, members who reached one, clears — collective only, no ranking; whether a clear is the first this client knows of |
+| `GuildOS:CreateJournalPanel(parent)` | UI/JournalPanel.lua, the "Journal" tab (Forever: `condition` = the module exists): this week, guild firsts, your journal |
+| `Milestones:Check` on Forever | Also records `level` at every ten levels below the cap (the highest crossed); `GetDigestLines` groups them per level, three names or a count; the ding fallback is the client's cap |
+| DungeonLog's toast | "First clear of X for <guild>!" when `Journal:IsFirstClear` — hopeful and local; guildos.me decides the real first |

@@ -11,6 +11,8 @@ local L = GuildOS.L
 
 local MAX = 50
 local YEAR = 365 * 86400
+local NAMED = 3   -- names in one digest line; past that, a count
+local FOREVER = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
 
 function Milestones:Initialize()
     GuildOS.db.milestones = GuildOS.db.milestones or { events = {} }
@@ -36,6 +38,10 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
     local cap = GuildOS.Client.maxLevel
     if prevLevel and prevLevel < cap and (data.level or 0) >= cap then
         self:Record("ding", key, name, tostring(cap))
+    elseif FOREVER and prevLevel and math.floor((data.level or 0) / 10) > math.floor(prevLevel / 10) then
+        -- WoW: Forever's journal milestones, every ten levels below the cap (issue #211): the highest
+        -- one crossed, as guildos.me counts them.
+        self:Record("level", key, name, tostring(math.floor(data.level / 10) * 10))
     end
 
     local newCount = 0
@@ -56,14 +62,26 @@ function Milestones:GetDigestLines(since)
     since = since or 0
     local out = {}
 
+    local byLevel, levels = {}, {}
     for _, ev in ipairs((GuildOS.db.milestones and GuildOS.db.milestones.events) or {}) do
         if (ev.ts or 0) > since then
             if ev.type == "ding" then
-                out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or "70")
+                out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or tostring(GuildOS.Client.maxLevel))
             elseif ev.type == "attune" then
                 out[#out + 1] = string.format(L["%s completed a new attunement"], ev.name or "?")
+            elseif ev.type == "level" and ev.detail then
+                if not byLevel[ev.detail] then byLevel[ev.detail] = {}; levels[#levels + 1] = ev.detail end
+                table.insert(byLevel[ev.detail], ev.name or "?")
             end
         end
+    end
+    -- The journal's milestones, one line per level: a few names, or how many (issue #211).
+    table.sort(levels, function(a, b) return tonumber(a) > tonumber(b) end)
+    for _, lv in ipairs(levels) do
+        local names = byLevel[lv]
+        table.sort(names)
+        out[#out + 1] = #names <= NAMED and string.format(L["%s reached level %s!"], table.concat(names, ", "), lv)
+            or string.format(L["%d members reached level %s"], #names, lv)
     end
 
     -- Guild anniversaries: first-seen date crossed a whole-year boundary

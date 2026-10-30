@@ -70,6 +70,7 @@ local function load(game)
   dofile(ADDON .. "/Modules/SyncService.lua")
   dofile(ADDON .. "/Modules/DataCollector.lua")
   dofile(ADDON .. "/Modules/Journal.lua")
+  dofile(ADDON .. "/Modules/Milestones.lua")
   GuildOS.CommSystem = { SendMessage = function(_, _, payload) sent[#sent + 1] = store[tonumber(payload)] end,
     BroadcastMyData = function() end }
   GuildOS.db = { members = {}, settings = {}, profile = {}, myData = { name = "Chehul Costa", level = 40 } }
@@ -174,5 +175,39 @@ check(J:IsOptedOut() and G.db.members[me].feedOptOut == true, "opting out marks 
 check(G.DataCollector:GetBroadcastData().feedOptOut == true, "and the broadcast says so")
 J:SetOptedOut(false)
 check(not J:IsOptedOut() and G.db.members[me].feedOptOut == false, "and back")
+
+-- ── The Journal tab and the digest (issue #211) ─────────────────────────
+G.db.journal.entries = {}
+local function put(subject, id, at, etype, data)
+  table.insert(G.db.journal.entries, { id = id, subjectKey = subject, at = at, type = etype, data = data })
+end
+local clear = function(d, n) return { dungeonId = d, dungeonName = "Ruins of Lordaeron", bosses = n, fullClear = n == 7, runId = "r" } end
+put(MIRA, "m1", NOW - 3600, "dungeon.clear", clear("ruins", 7))
+put(me, "c1", NOW - 3600 + 90, "dungeon.clear", clear("ruins", 7))      -- the same group, 90 s later
+put(THEIRS, "t1", NOW - 3600 - 600, "member.level", { level = 30 })      -- another realm answer, same Mira
+put(me, "c2", NOW - 60, "member.level", { level = 40 })
+put(MIRA, "m2", NOW - 9 * 86400, "dungeon.clear", clear("old", 5))
+local firsts = J:GuildFirsts()
+check(#firsts == 2 and firsts[1].dungeonId == "old" and firsts[2].dungeonId == "ruins", "each dungeon's first, oldest first")
+check(#firsts[2].who == 2, "with everyone who cleared it within two minutes: " .. table.concat(firsts[2].who, ","))
+local mine = J:Mine()
+check(#mine == 2 and mine[1].id == "c2", "my own entries, newest first")
+local week = J:ThisWeek(NOW)
+check(week.clears == 2 and week.milestones == 2 and week.members == 2, "the week: two clears, two milestones by two members")
+check(not J:IsFirstClear(G.db.journal.entries[2]), "a clear after another of the same dungeon is no first")
+check(J:IsFirstClear({ type = "dungeon.clear", data = { dungeonId = "never" } }), "one of a dungeon nobody cleared is")
+
+local M = G.Milestones
+G.db.milestones = { events = {} }
+M:Check("A-Normal", { name = "A", level = 41 }, 38, 0, true)
+M:Check("B-Normal", { name = "B", level = 40 }, 39, 0, true)
+M:Check("C-Normal", { name = "C", level = 33 }, 32, 0, true)
+M:Check("D-Normal", { name = "D", level = 60 }, 58, 0, true)
+local lines = table.concat(M:GetDigestLines(0), "|")
+check(lines:find("A, B reached level 40!", 1, true), "a milestone line names a few: " .. lines)
+check(not lines:find("C reached", 1, true), "33 is no milestone")
+check(lines:find("D reached level 60!", 1, true), "the cap is the ding")
+for i = 1, 5 do M:Check("E" .. i .. "-Normal", { name = "E" .. i, level = 20 }, 19, 0, true) end
+check(table.concat(M:GetDigestLines(0), "|"):find("5 members reached level 20", 1, true), "past three, a count")
 
 print(("journal: %d checks passed"):format(checks))

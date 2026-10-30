@@ -61,6 +61,13 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 
+-- WoW: Forever only (issue #211): the guild's journal, where the module exists.
+UI:RegisterFeature({
+    id = "journal", label = L["Journal"], order = 55,
+    condition = function() return GuildOS.Journal ~= nil end,
+    build = function(c, win) GuildOS:CreateJournalPanel(c, win) end,
+})
+
 UI:RegisterFeature({
     id = "alliance", label = L["Alliance"], order = 60,
     condition = function()

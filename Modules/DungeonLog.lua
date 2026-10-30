@@ -76,10 +76,12 @@ function DungeonLog:OnEncounterEnd(encounterID, success)
     run.cleared = true
     local n = 0
     for _ in pairs(run.kills) do n = n + 1 end
-    if GuildOS.Journal then
-        GuildOS.Journal:Add("dungeon.clear", {
-            dungeonId = d.id, dungeonName = d.name, bosses = n, fullClear = n == #d.bosses, runId = run.runId,
-        })
+    local e = GuildOS.Journal and GuildOS.Journal:Add("dungeon.clear", {
+        dungeonId = d.id, dungeonName = d.name, bosses = n, fullClear = n == #d.bosses, runId = run.runId,
+    })
+    -- The first this client knows of, said to whoever was in it (issue #211): hopeful, local.
+    if e and GuildOS.Journal:IsFirstClear(e) then
+        GuildOS:Print(string.format(GuildOS.L["First clear of %s for %s!"], d.name, GetGuildInfo("player") or ""))
     end
     return true
 end
