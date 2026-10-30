@@ -1056,6 +1056,8 @@ function GuildOS:DropDeparted()
     for key, rec in pairs(self.db.members or {}) do
         if not present[key] and (tonumber(rec.lastUpdate) or 0) > 0 then self.db.members[key] = nil end
     end
+    -- A founder who left loses the badge before their date goes (WoW: Forever, issue #209).
+    if self.Founding then self.Founding:Departed(present) end
     for _, store in ipairs({ "firstSeen", "recipes" }) do
         for key in pairs(self.db[store] or {}) do
             if not present[key] then self.db[store][key] = nil end
