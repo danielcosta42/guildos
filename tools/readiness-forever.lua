@@ -143,7 +143,7 @@ ROSTER[#ROSTER + 1] = { "Chehul Costa", 52 }
 local rows = R:GetReport()
 G.CoreManager = nil
 local cd = R:Countdown(rows, OPENS - 36 * 86400 + 3600)
-check(cd and cd.days == 36 and not cd.open, "36 days to go: " .. tostring(cd and cd.days))
+check(cd and cd.days == 35 and not cd.open, "35 whole days to go (35d 23h): " .. tostring(cd and cd.days))
 check(#cd.cores == 0 and cd.guild.ready == 11 and cd.guild.enough == 10, "no cores: the guild, 11 at 60, enough for a 10")
 check(cd.me and cd.me.level == 52, "and my own line")
 G.CoreManager = {
@@ -169,6 +169,7 @@ cd = R:Countdown(rows, OPENS - 86400 * 3)
 check(cd.cores[1].ready == 1, "a reserve is not counted")
 cd = R:Countdown(rows, OPENS + 3 * 86400)
 check(cd and cd.open, "open for a week")
+check(R:Countdown(rows, OPENS - 3600).days == 0, "the last day counts 0 whole days")
 check(R:Countdown(rows, OPENS + 8 * 86400) == nil, "then gone")
 ROSTER[#ROSTER] = nil
 for _ = 1, 8 do ROSTER[#ROSTER] = nil end

@@ -146,8 +146,7 @@ local function BuildReadySub(panel)
             local stFS = UI:CreateText(row, "", 11, 1, 1, 1)
             stFS:SetPoint("LEFT", 160, 0)
             if r.status == "ready" then
-                stFS:SetText(ICON_DONE .. " |cff4CFF4C" .. L["ready"] .. "|r"
-                    .. (r.levelOnly and (" |cff808080" .. L["level only"] .. "|r") or ""))
+                stFS:SetText(ICON_DONE .. " |cff4CFF4C" .. L["ready"] .. "|r")
             elseif r.status == "notready" and r.reason == "level" then
                 stFS:SetText(ICON_NONE .. " |cffFF5555" .. L["Level"] .. " " .. (r.level or 0) .. "|r")
             elseif r.status == "notready" then
@@ -158,9 +157,11 @@ local function BuildReadySub(panel)
                 stFS:SetText("|cff808080\226\128\147|r")
             end
 
-            local ilvlFS = UI:CreateText(row, r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
+            -- A 60 with no addon data is ready by level only, said where its item level would be (#207).
+            local ilvlFS = UI:CreateText(row, r.levelOnly and L["level only"] or r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
                 10, C.silver.r, C.silver.g, C.silver.b)
             ilvlFS:SetPoint("LEFT", 250, 0)
+            ilvlFS:SetWidth(56); ilvlFS:SetWordWrap(false); ilvlFS:SetJustifyH("LEFT")
 
             if forever then
                 local lvlFS = UI:CreateText(row, tostring(r.level or 0), 10, C.silver.r, C.silver.g, C.silver.b)
