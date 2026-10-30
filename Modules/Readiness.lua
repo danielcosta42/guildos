@@ -122,8 +122,9 @@ local function sane(n)
     return n == nil or (type(n) == "number" and n == math.floor(n) and n >= 1 and n <= MIN_ILVL_MAX)
 end
 
--- An officer sets it (nil clears it). Returns whether it was taken.
+-- An officer sets it; nil or 0 clears it. Returns whether it was taken.
 function Readiness:SetMinIlvl(n)
+    if n == 0 then n = nil end
     if not FOREVER or not GuildOS:IsOfficer() or not sane(n) then return false end
     local s = GuildOS.db.settings
     s.readyMinIlvl = n
