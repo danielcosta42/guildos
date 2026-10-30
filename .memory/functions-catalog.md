@@ -1001,3 +1001,11 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > officer: "Record founding" / "Suggest founding date to your GM" |
 | `tools/founding.lua` | The harness of issue #208 |
 | `Founding.BADGE` / `Founding:Forget()` / `Founding.AddMonths(t, n)` / `Founding:GetDigestLines(since, now)` | The founder's scroll by the name in the roster and the member card (with "joined"); the founders are cached 5 s (`Forget` on any change); months in UTC with no time zone; the digest's founders since the last login (3 at most, never me), the window's days left or its closing, and the guild's 1/3/6/12-month anniversaries (#209) |
+
+## v1.1 — Dungeon log (#210, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `GuildOS.ForeverDungeons` (Data/ForeverDungeons.lua) | `forever-dungeons.v1`: by instance id, `{ id, name, final, bosses }` from DB2 1.60.1.70685; `final` provisional (last `OrderIndex`) until the launch build (#214); Half-Pint Tavern missing, Manor Mistmantle with no boss |
+| `DungeonLog:OnZone(now)` / `OnEncounterEnd(encounterID, success)` | WoW: Forever only. A run (`db.dungeonRun`: instance, runId, kills, cleared, leftAt) opens in a catalogued `party` instance, survives 15 min away, ends in another; the final boss's death writes one `dungeon.clear` `{ dungeonId, dungeonName, bosses, fullClear, runId }` into the Journal. Secret or unknown encounters count nothing |
+| `tools/dungeon-log.lua` | The harness of issue #210 |

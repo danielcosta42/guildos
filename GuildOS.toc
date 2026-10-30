@@ -113,6 +113,8 @@ Modules\Calendar.lua
 Modules\Milestones.lua
 Modules\Journal.lua
 Modules\Founding.lua
+Data\ForeverDungeons.lua
+Modules\DungeonLog.lua
 Modules\Search.lua
 Modules\RaidTools.lua
 Data\ConsumablesRetail.lua
