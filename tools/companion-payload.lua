@@ -220,6 +220,18 @@ GuildOS.Client.isAnniversary = false
 assert(GuildOS.Companion:BuildPayload().game == "FOREVER", "a Forever client did not say so")
 GuildOS.Client.isAnniversary = true
 
+-- v12 (issue #213): the guild's tabard as the game draws it, never on Anniversary, in the shape the
+-- site reads: colours as whole bytes, the emblem's style and the six files.
+GetGuildLogoInfo = function() return 33.2, 220, 255.4, 0, 0, 0, 255, 254.6, 1, 0, 42 end
+GetGuildTabardFiles = function() return 1, 2, 3, 4, 5, 6 end
+assert(GuildOS.Companion:BuildPayload().tabard == nil, "no tabard on Anniversary")
+GuildOS.Client.isAnniversary = false
+local tabardJson = GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload().tabard)
+assert(tabardJson == '{"background":[33,220,255],"border":[0,0,0],"emblem":[255,255,1],"emblemStyle":42,"files":[1,2,3,4,5,6]}',
+  "the tabard's shape: " .. tabardJson)
+GuildOS.Client.isAnniversary = true
+GetGuildLogoInfo, GetGuildTabardFiles = nil, nil
+
 -- v7 (issue #35): on Forever each member carries the profession model's lines by skill-line
 -- ID -- rank, max, specialization and the recipes they know, or only the line for a member
 -- known from the guild roster. Absent where there is no model, or no record of the member.
