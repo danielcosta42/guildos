@@ -26,6 +26,7 @@ local SKEW = 600                   -- a client's clock a little ahead is a clock
 local PUBLISH_DELAY = 20           -- seconds after login: the guild channel is up by then
 local LATER_S = DAY                -- "Later" puts the letter away for a day
 local LATER_MAX = 3                -- and after three, it waits in Settings
+local REVISION_MAX = 1e9           -- guildos.me takes no revision past this
 
 local function dayOf(t) return t - t % DAY end
 
@@ -37,6 +38,22 @@ local function senderKey(sender)
 end
 
 local function isInt(v) return type(v) == "number" and v == math.floor(v) end
+
+-- The guild's own db is loaded: on launch day guilds are made mid-session, and a founding written
+-- before the next login would land in the guildless db (#150).
+local function onGuild() return GuildOS:IsOnGuildDB() end
+
+-- Whether a key is the GM's on the guild roster this client holds.
+local function isGMKey(key)
+    local n = GetNumGuildMembers() or 0
+    for i = 1, n do
+        local name, _, rankIndex = GetGuildRosterInfo(i)
+        if name and rankIndex == 0 then
+            return GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$")) == key
+        end
+    end
+    return false
+end
 
 -- A founding day: 00:00 UTC, not before the launch, not after today.
 function Founding.ValidDay(t, now)
@@ -84,7 +101,7 @@ end
 -- The GM records it (or corrects it). Returns whether it was taken.
 function Founding:Record(foundedAt, source)
     local now = GetServerTime()
-    if not self:IsGM() or not Founding.ValidDay(foundedAt, now) then return false end
+    if not onGuild() or not self:IsGM() or not Founding.ValidDay(foundedAt, now) then return false end
     local old = self:Get()
     GuildOS.db.founding = {
         foundedAt = foundedAt,
@@ -93,29 +110,54 @@ function Founding:Record(foundedAt, source)
         recordedAt = now,
         windowDays = Founding.WINDOW_DAYS,
         manual = old and old.manual or {},
-        revision = (old and old.revision or 0) + 1,
+        revision = math.min(REVISION_MAX, (old and old.revision or 0) + 1),
     }
     GuildOS.db.foundingSuggested = nil
     self:Publish()
     return true
 end
 
--- An officer who is not the GM suggests a day; the GM's letter offers it.
+-- An officer who is not the GM suggests a day; the GM's letter offers it. Kept, and sent again on
+-- the officers' regular sync until the GM records one: the GM is often offline when it is made.
 function Founding:Suggest(foundedAt)
-    if self:IsGM() or not GuildOS:IsOfficer() or not Founding.ValidDay(foundedAt, GetServerTime()) then return false end
-    if GuildOS.SyncService then GuildOS.SyncService:Publish("founding", "suggest", { foundedAt = foundedAt }) end
+    if not onGuild() or self:IsGM() or not GuildOS:IsOfficer() or not Founding.ValidDay(foundedAt, GetServerTime()) then return false end
+    GuildOS.db.foundingSuggested = { foundedAt = foundedAt, by = myKey() }
+    self:Publish()
     return true
 end
 
-function Founding:Publish()
-    local f = self:Get()
-    if f and GuildOS.SyncService then GuildOS.SyncService:Publish("founding", "set", { founding = f }, { rev = f.revision }) end
+-- What the letter's button does: the GM records, an officer suggests. "recorded", "suggested" or nil.
+function Founding:Submit(foundedAt, source)
+    if self:IsGM() then return self:Record(foundedAt, source) and "recorded" or nil end
+    return self:Suggest(foundedAt) and "suggested" or nil
 end
 
--- From an officer (SyncService checked the officer and the guild channel).
+-- The letter's arrows: a day earlier or later, never off the founding days.
+function Founding:Step(day, delta, now)
+    local t = day + delta * DAY
+    return Founding.ValidDay(t, now) and t or day
+end
+
+-- To the guild: when it changes, and again on the officers' regular sync (CommSystem), for a client
+-- that missed it. The founding by the GM; an officer's own suggestion while nothing is recorded.
+function Founding:Publish()
+    if not onGuild() or not GuildOS.SyncService then return end
+    local f = self:Get()
+    if f and self:IsGM() then
+        GuildOS.SyncService:Publish("founding", "set", { founding = f }, { rev = f.revision })
+    end
+    local s = GuildOS.db.foundingSuggested
+    if not f and s and s.by == myKey() then
+        GuildOS.SyncService:Publish("founding", "suggest", { foundedAt = s.foundedAt })
+    end
+end
+
+-- From an officer (SyncService checked the officer and the guild channel); the founding itself only
+-- from the GM. The newest record wins (a new GM, or one on a fresh install, records revision 1 again),
+-- and a tie in time keeps the higher revision.
 function Founding:OnSync(env, sender)
     local d = type(env.data) == "table" and env.data or nil
-    if not d then return end
+    if not d or not onGuild() or type(sender) ~= "string" then return end
     local now = GetServerTime()
     if env.act == "suggest" then
         if Founding.ValidDay(d.foundedAt, now) then
@@ -123,18 +165,28 @@ function Founding:OnSync(env, sender)
         end
         return
     end
-    if env.act ~= "set" then return end
+    if env.act ~= "set" or not isGMKey(senderKey(sender)) then return end
     local f = type(d.founding) == "table" and d.founding or nil
-    if not f or not Founding.ValidDay(f.foundedAt, now + SKEW) or not isInt(f.revision) or f.revision < 1 then return end
+    if not f or not Founding.ValidDay(f.foundedAt, now + SKEW) then return end
+    if not isInt(f.revision) or f.revision < 1 or f.revision > REVISION_MAX then return end
+    if not isInt(f.recordedAt) or f.recordedAt <= 0 or f.recordedAt > now + SKEW then return end
     local held = self:Get()
-    if held and f.revision <= (held.revision or 0) then return end
+    if held and (f.recordedAt < (held.recordedAt or 0)
+        or (f.recordedAt == held.recordedAt and f.revision <= (held.revision or 0))) then return end
+    local manual = {}
+    for key, m in pairs(type(f.manual) == "table" and f.manual or {}) do
+        if type(key) == "string" and type(m) == "table" and type(m.reason) == "string" and m.reason ~= "" then
+            manual[GuildOS:LocalMemberKey(key)] = { by = type(m.by) == "string" and GuildOS:LocalMemberKey(m.by) or nil,
+                reason = m.reason, at = isInt(m.at) and m.at or nil }
+        end
+    end
     GuildOS.db.founding = {
         foundedAt = f.foundedAt,
-        source = type(f.source) == "string" and f.source or "declared",
+        source = (f.source == "club" or f.source == "firstSeen" or f.source == "site") and f.source or "declared",
         declaredBy = type(f.declaredBy) == "string" and GuildOS:LocalMemberKey(f.declaredBy) or nil,
-        recordedAt = isInt(f.recordedAt) and f.recordedAt or now,
+        recordedAt = f.recordedAt,
         windowDays = Founding.WINDOW_DAYS,
-        manual = type(f.manual) == "table" and f.manual or {},
+        manual = manual,
         revision = f.revision,
     }
 end
@@ -150,7 +202,7 @@ end
 
 function Founding:PublishSelf()
     local t, src = self:MyJoinedAt()
-    if not t then return end
+    if not t or not onGuild() then return end
     GuildOS.db.foundingJoins[myKey()] = { joinedAt = t, src = src }
     if GuildOS.SyncService then GuildOS.SyncService:Publish("foundingSelf", "join", { joinedAt = t, src = src }) end
 end
@@ -158,9 +210,10 @@ end
 -- A member's claim about themselves: filed under who sent it, never a key the payload names.
 function Founding:OnSelf(env, sender)
     local d = type(env.data) == "table" and env.data or nil
-    if not d or type(sender) ~= "string" or sender == "" then return end
-    if not isInt(d.joinedAt) or d.joinedAt <= 0 or d.joinedAt > GetServerTime() + SKEW then return end
-    GuildOS.db.foundingJoins[senderKey(sender)] = { joinedAt = d.joinedAt, src = d.src == "club" and "club" or "firstSeen" }
+    if not d or type(sender) ~= "string" or sender == "" or not onGuild() then return end
+    -- No guild on WoW: Forever is older than the launch, so nobody joined one before it.
+    if not isInt(d.joinedAt) or d.joinedAt < Founding.FIRST_DAY or d.joinedAt > GetServerTime() + SKEW then return end
+    GuildOS.db.foundingJoins[senderKey(sender)] = { joinedAt = d.joinedAt, src = "firstSeen" }
 end
 
 ----------------------------------------------------------------------
@@ -177,9 +230,12 @@ function Founding:Founders()
         local name, _, rankIndex = GetGuildRosterInfo(i)
         if name then
             local key = GuildOS:GetPlayerKey(name:match("^([^-]+)") or name, name:match("-(.+)$"))
+            -- The member's own claim and this client's first sighting both only bound the join from
+            -- above (each is "known since"): the earlier is the better guess.
             local claim = GuildOS.db.foundingJoins[key]
             local joinedAt, src = claim and claim.joinedAt, claim and claim.src
-            if not joinedAt then joinedAt, src = GuildOS:GetFirstSeen(key), "firstSeen" end
+            local seen = GuildOS:GetFirstSeen(key)
+            if seen and (not joinedAt or seen < joinedAt) then joinedAt, src = seen, "firstSeen" end
             if rankIndex == 0 or (joinedAt and joinedAt <= last) or (f.manual and f.manual[key]) then
                 out[key] = { joinedAt = joinedAt or f.foundedAt, src = src or "firstSeen" }
             end
@@ -218,7 +274,7 @@ end
 -- The letter (UI/Founding.lua): to the GM, while nothing is recorded, at most three times a day apart.
 ----------------------------------------------------------------------
 function Founding:ShouldPrompt(now)
-    if not IsInGuild() or self:Get() or not self:IsGM() then return false end
+    if now < Founding.FIRST_DAY or not onGuild() or self:Get() or not self:IsGM() then return false end
     local p = GuildOS.db.foundingPrompt
     return (p.later or 0) < LATER_MAX and now >= (p.untilAt or 0)
 end

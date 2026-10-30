@@ -73,6 +73,7 @@ function CommSystem:Initialize()
                     GuildOS:PublishOfficerMaxRank()
                     GuildOS:PublishLootSystem()
                     if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
+                    if GuildOS.Founding then GuildOS.Founding:Publish() end  -- Forever (issue #208)
                 end)
             end
         end
@@ -457,6 +458,7 @@ function CommSystem:HandleRequest(_sender, _data)
                 GuildOS:PublishOfficerMaxRank()
                 GuildOS:PublishLootSystem()
                 if GuildOS.Readiness then GuildOS.Readiness:PublishMinIlvl() end  -- Forever (issue #206)
+                if GuildOS.Founding then GuildOS.Founding:Publish() end  -- Forever (issue #208)
             end)
         end
 
