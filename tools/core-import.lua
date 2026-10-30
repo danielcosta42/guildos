@@ -130,6 +130,15 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     G("who waits for a character is kept, by their Discord name"))
   check(alfa[K("Bruno")] and alfa[K("Bruno")].src == "discord" and alfa[K("Bruno")].class == "ROGUE"
     and alfa[K("Bruno")].role == CM:RoleFor("ROGUE"), G("a newcomer from the Discord joins, with the class's role when the site names none"))
+  -- #212: a reserve on the Discord is one here, and out of the composition and the open slots.
+  check(alfa[K("Bruno")].status == "bench" and alfa[K("Ana")].status == nil, G("the Discord's reserve is one here, its titulars are titulars"))
+  local comp = CM:GetComposition("Nucleo Alfa")
+  local titulars = 0
+  for _, m in pairs(alfa) do if m.status ~= "bench" then titulars = titulars + 1 end end
+  check(comp.bench == 1 and comp.total == titulars, G("the composition counts titulars only"))
+  local open = CM:OpenSlots("Nucleo Alfa")
+  check(open.total == math.max(0, CM:GetRaidSize("Nucleo Alfa") - titulars), G("the open slots are the size less the titulars"))
+  check(open.tank == math.max(0, CM:RaidTargets(CM:GetRaidSize("Nucleo Alfa")).tank - comp.roleCounts.tank), G("and per role, its target less who plays it"))
   check(alfa[K("Carla")] ~= nil, G("whoever an officer put here stays"))
   check(alfa[K("Velho")] == nil, G("whoever came from the Discord and left it goes"))
   check(CM:GetRaidSize("Nucleo Alfa") == (game == "forever" and 20 or 25), G("the Discord's size, as this game has it"))

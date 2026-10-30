@@ -1018,3 +1018,11 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `GuildOS:CreateJournalPanel(parent)` | UI/JournalPanel.lua, the "Journal" tab (Forever: `condition` = the module exists): this week, guild firsts, your journal |
 | `Milestones:Check` on Forever | Also records `level` at every ten levels below the cap (the highest crossed); `GetDigestLines` groups them per level, three names or a count; the ding fallback is the client's cap |
 | DungeonLog's toast | "First clear of X for <guild>!" when `Journal:IsFirstClear` — hopeful and local; guildos.me decides the real first |
+
+## v1.1 — Titular and reserve (#212, guildos.me #243)
+
+| Function | Purpose |
+|---|---|
+| core member `status` | `"bench"` for a reserve, nil for a titular (every older record); from the site's `GOSCORE1` (`status`, guildos-web #249) on the Discord's records, kept by `AddMember`, carried in the officers' `discordList` |
+| `CoreManager:GetComposition` | Titulars only; `bench` counts the reserves |
+| `CoreManager:OpenSlots(coreName)` | Per role, the target for the size less the titulars playing it; `total` = size less titulars. The core panel shows them, reserves dimmed below the titulars |

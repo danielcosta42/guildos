@@ -858,10 +858,21 @@ function GuildOS:CreateCoresPanel(panel)
             roleColor("healer", roles.healer), roles.healer, T.healer,
             roleColor("mdps",   roles.mdps),   roles.mdps,   T.mdps,
             roleColor("rdps",   roles.rdps),   roles.rdps,   T.rdps)
+        if (comp.bench or 0) > 0 then compStr = compStr .. "  " .. string.format(L["%d in reserve"], comp.bench) end
         local compLbl = track(MakeLabel(rightContent, compStr, 10, C.silver.r, C.silver.g, C.silver.b))
         compLbl:SetPoint("TOPLEFT", 4, y)
         compLbl:SetWidth(CFG_W - 20)
         y = y - 18
+
+        -- The open slots, by role, for titulars (issue #212).
+        local open = CM:OpenSlots(coreName)
+        if open.total > 0 then
+            local openStr = string.format(L["Open: %d  (T %d · H %d · M %d · R %d)"], open.total, open.tank, open.healer, open.mdps, open.rdps)
+            local openLbl = track(MakeLabel(rightContent, openStr, 10, C.gold.r, C.gold.g, C.gold.b))
+            openLbl:SetPoint("TOPLEFT", 4, y)
+            openLbl:SetWidth(CFG_W - 20)
+            y = y - 18
+        end
 
         -- Class breakdown
         local CLASS_ORDER = GuildOS.Client.classes   -- thirteen on retail
@@ -912,7 +923,10 @@ function GuildOS:CreateCoresPanel(panel)
         -- Member list (with inline role editing for RLs)
         local sortedMbrs = {}
         for k, m in pairs(members) do sortedMbrs[#sortedMbrs + 1] = { key=k, m=m } end
+        -- Titulars first, then the reserves (issue #212).
         table.sort(sortedMbrs, function(a, b)
+            local ab, bb = a.m.status == "bench", b.m.status == "bench"
+            if ab ~= bb then return bb end
             if (a.m.role or "") ~= (b.m.role or "") then return (a.m.role or "") < (b.m.role or "") end
             return (a.m.name or "") < (b.m.name or "")
         end)
@@ -943,9 +957,11 @@ function GuildOS:CreateCoresPanel(panel)
             local rowLbl = track(MakeLabel(rightContent,
                 string.format("|cff%02X%02X%02X[%s]|r %s%s",
                     math.floor(rc.r * 255), math.floor(rc.g * 255), math.floor(rc.b * 255),
-                    ROLE_LBL[m.role] or "?", m.name or mk, discordOwned and " |cff7289da(Discord)|r" or ""),
+                    ROLE_LBL[m.role] or "?", m.name or mk, discordOwned and " |cff7289da(Discord)|r" or "")
+                    .. (m.status == "bench" and (" |cff808080" .. L["reserve"] .. "|r") or ""),
                 10, cr, cg, cb))
             rowLbl:SetPoint("TOPLEFT", 4, y)
+            if m.status == "bench" then rowLbl:SetAlpha(0.6) end
             if isRL then
                 -- Cycle role without removing the member
                 local roleBtn = track(UI:CreateButton(rightContent, ROLE_SHORT[m.role] or "?", 20, 16))
