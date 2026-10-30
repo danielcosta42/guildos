@@ -63,8 +63,7 @@ UI:RegisterFeature({
 
 -- WoW: Forever only (issue #211): the guild's journal, where the module exists.
 UI:RegisterFeature({
-    id = "journal", label = L["Journal"], order = 55,
-    condition = function() return GuildOS.Journal ~= nil end,
+    id = "journal", label = L["Journal"], order = 55, tbc = false, retail = false,
     build = function(c, win) GuildOS:CreateJournalPanel(c, win) end,
 })
 

@@ -961,6 +961,9 @@ L["Usage: /guildos export <%s> [csv|tsv|discord]"] = "Uso: /guildos export <%s> 
 -- Readiness sub-panel
 L["Readiness"] = "Prontidão"
 L["%d members reached level %s"] = "%d membros chegaram ao nível %s"
+L["Level %s reached by %s"] = "Nível %s alcançado por %s"
+L["Dungeon cleared — %s: %s"] = "Masmorra fechada — %s: %s"
+L["Dungeon cleared — %s: %d members"] = "Masmorra fechada — %s: %d membros"
 L["First clear of %s for %s!"] = "Primeira vez de %s para a %s!"
 L["%s · %d bosses"] = "%s · %d chefes"
 L["Level %d"] = "Nível %d"

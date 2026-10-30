@@ -70,6 +70,7 @@ local function load(game)
   dofile(ADDON .. "/Modules/SyncService.lua")
   dofile(ADDON .. "/Modules/DataCollector.lua")
   dofile(ADDON .. "/Modules/Journal.lua")
+  dofile(ADDON .. "/Data/ForeverDungeons.lua")
   dofile(ADDON .. "/Modules/Milestones.lua")
   GuildOS.CommSystem = { SendMessage = function(_, _, payload) sent[#sent + 1] = store[tonumber(payload)] end,
     BroadcastMyData = function() end }
@@ -181,33 +182,55 @@ G.db.journal.entries = {}
 local function put(subject, id, at, etype, data)
   table.insert(G.db.journal.entries, { id = id, subjectKey = subject, at = at, type = etype, data = data })
 end
-local clear = function(d, n) return { dungeonId = d, dungeonName = "Ruins of Lordaeron", bosses = n, fullClear = n == 7, runId = "r" } end
-put(MIRA, "m1", NOW - 3600, "dungeon.clear", clear("ruins", 7))
-put(me, "c1", NOW - 3600 + 90, "dungeon.clear", clear("ruins", 7))      -- the same group, 90 s later
+local RUINS, WET = "ruins-of-lordaeron", "excavation-site-wetlands"
+local clear = function(d, n) return { dungeonId = d, dungeonName = "Ruins", bosses = n, fullClear = n == 7, runId = "r" } end
+put(MIRA, "m1", NOW - 3600, "dungeon.clear", clear(RUINS, 7))
+put(me, "c1", NOW - 3600 + 90, "dungeon.clear", clear(RUINS, 7))      -- the same group, 90 s later
 put(THEIRS, "t1", NOW - 3600 - 600, "member.level", { level = 30 })      -- another realm answer, same Mira
 put(me, "c2", NOW - 60, "member.level", { level = 40 })
-put(MIRA, "m2", NOW - 9 * 86400, "dungeon.clear", clear("old", 5))
+put(MIRA, "m2", NOW - 9 * 86400, "dungeon.clear", clear(WET, 4))
+put(MIRA, "m3", NOW - 9 * 86400, "dungeon.clear", clear("not-a-dungeon", 4))
+G.db.journal.firsts = nil
+J:Initialize()                                                            -- a journal from before the firsts
 local firsts = J:GuildFirsts()
-check(#firsts == 2 and firsts[1].dungeonId == "old" and firsts[2].dungeonId == "ruins", "each dungeon's first, oldest first")
+check(#firsts == 2 and firsts[1].dungeonId == WET and firsts[2].dungeonId == RUINS, "each catalogued dungeon's first, oldest first")
+check(firsts[2].name == "Ruins of Lordaeron", "named by the catalogue, not by whoever sent it")
 check(#firsts[2].who == 2, "with everyone who cleared it within two minutes: " .. table.concat(firsts[2].who, ","))
 local mine = J:Mine()
 check(#mine == 2 and mine[1].id == "c2", "my own entries, newest first")
 local week = J:ThisWeek(NOW)
 check(week.clears == 2 and week.milestones == 2 and week.members == 2, "the week: two clears, two milestones by two members")
-check(not J:IsFirstClear(G.db.journal.entries[2]), "a clear after another of the same dungeon is no first")
-check(J:IsFirstClear({ type = "dungeon.clear", data = { dungeonId = "never" } }), "one of a dungeon nobody cleared is")
+check(J:IsFirstClear(G.db.journal.entries[2]), "my group's clear is the first")
+check(not J:IsFirstClear({ type = "dungeon.clear", at = NOW, data = { dungeonId = RUINS } }), "a later one is not")
+G.db.journal.entries = {}
+J:Prune(NOW + 40 * 86400)
+check(#J:GuildFirsts() == 2, "the firsts outlive the entries they came from, so no later group takes their place")
+receive("Mira Thornwood", "add", { entry = entry(MIRA, MIRA .. ":early", { type = "dungeon.clear", at = NOW - 10 * 86400,
+  data = { dungeonId = RUINS, runId = "e", bosses = 7, fullClear = true } }) })
+check(J:GuildFirsts()[1].dungeonId == RUINS and #J:GuildFirsts()[1].who == 1, "an earlier clear arriving late takes the place")
+G.db.members[G:LocalMemberKey(MIRA)] = { feedOptOut = true }
+check(#J:GuildFirsts()[1].who == 0, "somebody who chose not to be named is not named in the firsts")
+G.db.members[G:LocalMemberKey(MIRA)] = nil
 
 local M = G.Milestones
 G.db.milestones = { events = {} }
-M:Check("A-Normal", { name = "A", level = 41 }, 38, 0, true)
-M:Check("B-Normal", { name = "B", level = 40 }, 39, 0, true)
-M:Check("C-Normal", { name = "C", level = 33 }, 32, 0, true)
-M:Check("D-Normal", { name = "D", level = 60 }, 58, 0, true)
+G.db.journal.entries = {}
+local A, B = "A-" .. REALM, "B-" .. REALM
+put(A, "a1", NOW - 100, "member.level", { level = 40 })
+put(B, "b1", NOW - 100, "member.level", { level = 40 })
+put(B, "b2", NOW - 90, "member.level", { level = 40 })                    -- the same person twice
+put("D-" .. REALM, "d1", NOW - 80, "member.level60", {})
+put(me, "c3", NOW - 70, "dungeon.clear", clear(RUINS, 7))
+for i = 1, 5 do put("E" .. i .. "-" .. REALM, "e" .. i, NOW - 60, "member.level", { level = 20 }) end
+M:Check(A, { name = "A", level = 41 }, 38, 0, true)
+M:Check("D-" .. REALM, { name = "D", level = 60 }, 58, 0, true)
+check(#G.db.milestones.events == 1, "the fifty events keep only the ding: the ten-level ones are the journal's")
 local lines = table.concat(M:GetDigestLines(0), "|")
-check(lines:find("A, B reached level 40!", 1, true), "a milestone line names a few: " .. lines)
-check(not lines:find("C reached", 1, true), "33 is no milestone")
-check(lines:find("D reached level 60!", 1, true), "the cap is the ding")
-for i = 1, 5 do M:Check("E" .. i .. "-Normal", { name = "E" .. i, level = 20 }, 19, 0, true) end
-check(table.concat(M:GetDigestLines(0), "|"):find("5 members reached level 20", 1, true), "past three, a count")
+check(lines:find("Level 40 reached by A, B", 1, true), "a milestone line names a few, each once: " .. lines)
+check(lines:find("D reached level 60!", 1, true) and not lines:find("Level 60", 1, true), "the cap is the ding, said once")
+check(lines:find("5 members reached level 20", 1, true), "past three, a count")
+check(lines:find("Dungeon cleared — Ruins: Chehul Costa", 1, true), "and the dungeon clears")
+check(lines:find("Level 40", 1, true) < lines:find("level 20", 1, true) and lines:find("level 20", 1, true) < lines:find("Dungeon", 1, true),
+  "highest level first, then the dungeons")
 
 print(("journal: %d checks passed"):format(checks))
