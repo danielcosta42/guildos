@@ -144,7 +144,20 @@ local rows = R:GetReport()
 G.CoreManager = nil
 local cd = R:Countdown(rows, OPENS - 36 * 86400 + 3600)
 check(cd and cd.days == 35 and not cd.open, "35 whole days to go (35d 23h): " .. tostring(cd and cd.days))
-check(#cd.cores == 0 and cd.guild.ready == 11 and cd.guild.enough == 10, "no cores: the guild, 11 at 60, enough for a 10")
+check(#cd.cores == 0 and cd.guild.ready == 11, "no cores: the guild, 11 at 60")
+local s = cd.guild.slices
+check(s.dungeons == 2 and #s.raids == 1 and s.raids[1].size == 10 and s.raids[1].count == 1 and not s.short, "11 at 60: 2 groups and a raid of 10")
+s = R.Slices(27)
+check(s.dungeons == 5 and #s.raids == 2 and s.raids[1].count == 2 and s.raids[2].size == 20 and s.raids[2].count == 1,
+  "27 at 60: 5 groups, 2 raids of 10, 1 of 20, the same as guildos.me's")
+s = R.Slices(40)
+check(s.dungeons == 8 and #s.raids == 3 and s.raids[3].size == 40 and s.raids[3].count == 1, "40 at 60: a raid of 40 too")
+s = R.Slices(3)
+check(s.dungeons == 0 and #s.raids == 0 and s.short == 2 and s.shortSize == 5, "3 at 60: 2 more for a group")
+s = R.Slices(7)
+check(s.dungeons == 1 and #s.raids == 0 and s.short == 3 and s.shortSize == 10, "7 at 60: a group, and 3 more for a raid of 10")
+s = R.Slices(10)
+check(#s.raids == 1 and not s.short, "10 at 60: nothing is missing any more")
 check(cd.me and cd.me.level == 52, "and my own line")
 G.CoreManager = {
   GetAll = function() return {

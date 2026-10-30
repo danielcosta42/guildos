@@ -25,7 +25,27 @@ Readiness.FOREVER_RAIDS = {
 
 local SHOWN_AFTER_OPEN = 7 * 86400   -- "the raids are open" stays a week, then the card goes
 local CORES_SHOWN = 3
-local RAID_SIZES_DESC = { 40, 20, 10 }
+local RAID_SIZES = { 10, 20, 40 }
+local DUNGEON_GROUP = 5
+Readiness.DUNGEON_GROUP = DUNGEON_GROUP
+
+----------------------------------------------------------------------
+-- What the guild can form with who is at the cap, the same slices as guildos.me's: so many dungeon
+-- groups, so many raids of each size. They do not add up: each says how many the whole guild makes.
+-- Before the first raid, `short` says how many more for the next first thing, of `shortSize`. Pure.
+----------------------------------------------------------------------
+function Readiness.Slices(atCap)
+    local s = { dungeons = math.floor(atCap / DUNGEON_GROUP), raids = {} }
+    for _, size in ipairs(RAID_SIZES) do
+        local count = math.floor(atCap / size)
+        if count > 0 then s.raids[#s.raids + 1] = { size = size, count = count } end
+    end
+    if #s.raids == 0 then
+        s.shortSize = atCap < DUNGEON_GROUP and DUNGEON_GROUP or RAID_SIZES[1]
+        s.short = s.shortSize - atCap
+    end
+    return s
+end
 
 ----------------------------------------------------------------------
 -- The countdown to the raids on WoW: Forever (issue #207), from a report's rows: how many days, how
@@ -65,11 +85,6 @@ function Readiness:Countdown(rows, now)
     end)
     while #cores > CORES_SHOWN do table.remove(cores) end
 
-    local enough
-    for _, size in ipairs(RAID_SIZES_DESC) do
-        if atCap >= size then enough = size break end
-    end
-
     local me
     local myKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
     for _, r in ipairs(rows or {}) do
@@ -83,8 +98,7 @@ function Readiness:Countdown(rows, now)
         days = math.max(0, math.floor((target.opensAt - now) / 86400)),
         cap = cap,
         cores = cores,
-        guild = { ready = atCap, enough = enough, smallest = RAID_SIZES_DESC[#RAID_SIZES_DESC],
-            short = math.max(0, RAID_SIZES_DESC[#RAID_SIZES_DESC] - atCap) },
+        guild = { ready = atCap, slices = Readiness.Slices(atCap) },
         me = me,
     }
 end

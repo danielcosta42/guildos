@@ -222,10 +222,18 @@ function GuildOS:CreateDashboardPanel(panel)
         for _, c in ipairs(cd.cores) do
             line(c.name, string.format(L["%d / %d at %d"], c.ready, c.size, cd.cap), c.ready / c.size)
         end
-        if #cd.cores == 0 then
-            local g = cd.guild
-            line(L["Guild"], g.enough and string.format(L["%d at %d · enough for a %d"], g.ready, cd.cap, g.enough)
-                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, g.short, g.smallest))
+        -- The slices, as on guildos.me: on a line of their own, or a long guild would cut them.
+        local g, s = cd.guild, cd.guild.slices
+        if s.short then
+            line(L["Guild"], s.shortSize == GuildOS.Readiness.DUNGEON_GROUP and string.format(L["%d at %d · %d more for a group"], g.ready, cd.cap, s.short)
+                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, s.short, s.shortSize))
+        else
+            line(L["Guild"], string.format(L["%d at %d"], g.ready, cd.cap))
+        end
+        if s.dungeons > 0 then
+            local parts = { s.dungeons == 1 and L["1 group"] or string.format(L["%d groups"], s.dungeons) }
+            for _, r in ipairs(s.raids) do parts[#parts + 1] = r.count .. "×" .. r.size end
+            line(L["Can form"], table.concat(parts, " · "))
         end
         local me = cd.me
         if me then
