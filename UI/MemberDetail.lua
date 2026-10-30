@@ -280,7 +280,9 @@ function PopulateDetail(frame, data)
     frame.classIconFrame:SetBackdropBorderColor(cr, cg, cb, 0.9)
 
     -- Name
-    frame.nameText:SetText(data.name)
+    -- A founding member's scroll and since when (WoW: Forever, issue #209).
+    local founder = GuildOS.Founding and data.key and GuildOS.Founding:Founders()[data.key]
+    frame.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     frame.nameText:SetTextColor(cr, cg, cb)
 
     -- Info line
@@ -296,6 +298,9 @@ function PopulateDetail(frame, data)
     -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
     if GuildOS.Mesh then
         infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
+    end
+    if founder then
+        infoLine = infoLine .. "  |  " .. string.format(L["Founding member · joined %s"], date("!%Y-%m-%d", founder.joinedAt))
     end
     frame.infoText:SetText(infoLine)
 

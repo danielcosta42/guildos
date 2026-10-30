@@ -96,6 +96,7 @@ function Founding:Record(foundedAt, source)
         revision = (old and old.revision or 0) + 1,
     }
     GuildOS.db.foundingSuggested = nil
+    self:Forget()
     self:Publish()
     return true
 end
@@ -137,6 +138,7 @@ function Founding:OnSync(env, sender)
         manual = type(f.manual) == "table" and f.manual or {},
         revision = f.revision,
     }
+    self:Forget()
 end
 
 ----------------------------------------------------------------------
@@ -152,6 +154,7 @@ function Founding:PublishSelf()
     local t, src = self:MyJoinedAt()
     if not t then return end
     GuildOS.db.foundingJoins[myKey()] = { joinedAt = t, src = src }
+    self:Forget()
     if GuildOS.SyncService then GuildOS.SyncService:Publish("foundingSelf", "join", { joinedAt = t, src = src }) end
 end
 
@@ -161,14 +164,27 @@ function Founding:OnSelf(env, sender)
     if not d or type(sender) ~= "string" or sender == "" then return end
     if not isInt(d.joinedAt) or d.joinedAt <= 0 or d.joinedAt > GetServerTime() + SKEW then return end
     GuildOS.db.foundingJoins[senderKey(sender)] = { joinedAt = d.joinedAt, src = d.src == "club" and "club" or "firstSeen" }
+    self:Forget()
 end
 
 ----------------------------------------------------------------------
 -- The founding members, worked out the same way on every client: the GM, everyone the guild roster
 -- holds whose join date (their own claim, else when this client first saw them) is within the
 -- window, and the GM's manual additions. Key -> { joinedAt, src }.
+-- Kept for a few seconds: the roster asks once per row (issue #209), and a change drops it.
 ----------------------------------------------------------------------
+local cache, cacheAt
+local CACHE_S = 5
+function Founding:Forget() cache = nil end
+
 function Founding:Founders()
+    local t = GetTime()
+    if cache and cacheAt and t - cacheAt < CACHE_S then return cache end
+    cache, cacheAt = self:_Founders(), t
+    return cache
+end
+
+function Founding:_Founders()
     local f = self:Get()
     if not f then return {} end
     local out, last = {}, Founding.WindowEnd(f.foundedAt)
@@ -227,4 +243,77 @@ function Founding:Later(now)
     local p = GuildOS.db.foundingPrompt
     p.later = (p.later or 0) + 1
     p.untilAt = now + LATER_S
+end
+
+----------------------------------------------------------------------
+-- The badge (issue #209): a scroll by a founding member's name, in the roster and their card.
+----------------------------------------------------------------------
+Founding.BADGE = "|TInterface\\Icons\\INV_Scroll_03:12|t"
+
+-- Days since 1970-01-01 of a UTC calendar date (H. Hinnant's days_from_civil), so an anniversary
+-- needs no time zone: the client's own clock zone is not the guild's.
+local function daysFromCivil(y, m, d)
+    if m <= 2 then y = y - 1 end
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local mp = (m + 9) % 12
+    local doy = math.floor((153 * mp + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
+
+-- The day `months` after `t`, 00:00 UTC; a day past the month's end is its last (Jan 31 + 1 = Feb 28).
+function Founding.AddMonths(t, months)
+    local d = date("!*t", t)
+    local m0 = d.month - 1 + months
+    local y, m = d.year + math.floor(m0 / 12), m0 % 12 + 1
+    local last = daysFromCivil(m == 12 and y + 1 or y, m == 12 and 1 or m + 1, 1) - daysFromCivil(y, m, 1)
+    return daysFromCivil(y, m, math.min(d.day, last)) * DAY
+end
+
+-- 1, 3 and 6 months in the first year, then every 12 (guildos.me #240): the last one reached by `now`.
+local function lastAnniversary(foundedAt, now)
+    local found
+    for _, m in ipairs({ 1, 3, 6 }) do
+        local at = Founding.AddMonths(foundedAt, m)
+        if at <= now then found = { months = m, at = at } end
+    end
+    local m = 12
+    while true do
+        local at = Founding.AddMonths(foundedAt, m)
+        if at > now then break end
+        found = { months = m, at = at }
+        m = m + 12
+    end
+    return found
+end
+
+local function shortName(key) return (key:match("^(.-)%-[^-]*$") or key) end
+
+-- The login digest's founding lines since `since`: who joined as a founder (three at most), the
+-- window's days left or its closing, and an anniversary.
+function Founding:GetDigestLines(since, now)
+    local L = GuildOS.L
+    local f = self:Get()
+    if not f then return {} end
+    local out, last = {}, Founding.WindowEnd(f.foundedAt)
+    local founders, count, named = self:Founders(), 0, 0
+    for key, v in pairs(founders) do
+        count = count + 1
+        if now <= last and (v.joinedAt or 0) > (since or 0) and named < 3 and key ~= myKey() then
+            named = named + 1
+            out[#out + 1] = string.format(L["%s joined as a founding member"], shortName(key))
+        end
+    end
+    if now <= last then
+        out[#out + 1] = string.format(L["Founding window: %d days left · %d founding members"],
+            math.max(1, math.ceil((last - now) / DAY)), count)
+    elseif (since or 0) < last then
+        out[#out + 1] = string.format(L["Founding window closed: %d founding members"], count)
+    end
+    local a = lastAnniversary(f.foundedAt, now)
+    if a and a.at > (since or 0) then
+        out[#out + 1] = string.format(L["%s is %d month(s) old today"], GetGuildInfo("player") or "", a.months)
+    end
+    return out
 end

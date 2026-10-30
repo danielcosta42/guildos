@@ -1544,7 +1544,9 @@ function UpdateRosterRow(row, data, rowIndex)
     -- Name (class-colored, grayscale if offline)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     local nr, ng, nb = textColor(cr, cg, cb)
-    row.nameText:SetText(data.name)
+    -- A founding member's scroll (WoW: Forever, issue #209).
+    local founder = GuildOS.Founding and data.key and GuildOS.Founding:IsFounder(data.key)
+    row.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
     -- Addon data indicator. __hasAddon is remembered so a later layout

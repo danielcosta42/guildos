@@ -1012,6 +1012,11 @@ L["Manage"] = "Gestisci"
 
 -- UI/AuditPanel.lua
 L["Readiness"] = "Prontezza"
+L["%s is %d month(s) old today"] = "%s compie oggi %d mese/i"
+L["Founding window closed: %d founding members"] = "Periodo di fondazione chiuso: %d membri fondatori"
+L["Founding window: %d days left · %d founding members"] = "Periodo di fondazione: mancano %d giorni · %d membri fondatori"
+L["%s joined as a founding member"] = "%s è entrato come membro fondatore"
+L["Founding member · joined %s"] = "Membro fondatore · entrato il %s"
 L["Suggested by %s"] = "Suggerito da %s"
 L["Suggestion sent to your GM"] = "Suggerimento inviato al GM"
 L["Founding recorded: %s"] = "Fondazione registrata: %s"

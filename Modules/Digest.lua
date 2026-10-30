@@ -85,6 +85,12 @@ function Digest:Build(since)
             lines[#lines + 1] = line
         end
     end
+    -- WoW: Forever's founding: who joined as a founder, the window, the guild's anniversaries (#209)
+    if GuildOS.Founding then
+        for _, line in ipairs(GuildOS.Founding:GetDigestLines(since, GetServerTime())) do
+            lines[#lines + 1] = line
+        end
+    end
 
     -- Upcoming raid reminder (event within the next 24h)
     if GuildOS.Calendar and GuildOS.Calendar.GetDigestLines then

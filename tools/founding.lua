@@ -50,6 +50,7 @@ local function load(game)
   function GetNormalizedRealmName() return "Normal" end
   function GetServerTime() return NOW end
   function GetTime() return 1 end
+  date = os.date
   function IsInGuild() return true end
   function GetGuildInfo() return "Ashen Vow", "Rank", myRank end
   function GetNumGuildMembers() return #ROSTER end
@@ -157,5 +158,27 @@ check(not founders[key("Late Comer")], "the day after the window, nobody is")
 
 local out = F:ForExport()
 check(out.foundedAt == LAUNCH and out.revision >= 1 and #out.founders == 4 and type(out.manual) == "table", "the export carries it, founders as a list")
+
+-- ── Months, the digest and the badge (issue #209) ───────────────────────
+check(F.AddMonths(LAUNCH, 1) == LAUNCH + 30 * DAY, "a month after 4 Nov is 4 Dec")
+check(F.AddMonths(LAUNCH, 12) == LAUNCH + 365 * DAY, "a year after is 4 Nov 2027")
+local jan31 = LAUNCH + 88 * DAY                       -- 31 Jan 2027
+check(os.date("!%m-%d", jan31) == "01-31", "the fixture's 31 Jan")
+check(os.date("!%m-%d", F.AddMonths(jan31, 1)) == "02-28", "a day past the month's end is its last")
+
+local function digest(since, now) return table.concat(F:GetDigestLines(since, now), "\n") end
+local inWindow = digest(LAUNCH, LAUNCH + 5 * DAY)
+check(inWindow:find("Mira Thornwood joined as a founding member", 1, true), "who joined as a founder since the last login")
+check(not inWindow:find("Chehul Costa joined", 1, true), "never myself")
+check(inWindow:find("Founding window: 10 days left", 1, true), "the days the window has left: " .. inWindow)
+local closed = digest(LAUNCH + 14 * DAY, LAUNCH + 16 * DAY)
+check(closed:find("Founding window closed: 4 founding members", 1, true), "the window's closing, once: " .. closed)
+check(not digest(LAUNCH + 16 * DAY, LAUNCH + 17 * DAY):find("closed", 1, true), "and not again")
+local month = F.AddMonths(LAUNCH, 1)
+check(digest(month - DAY, month + 3600):find("Ashen Vow is 1 month(s) old today", 1, true), "an anniversary")
+check(not digest(month + 3600, month + 7200):find("old today", 1, true), "said once")
+
+check(F.BADGE:find("|T", 1, true) == 1, "the badge is a texture")
+check(F:IsFounder(key("Mira Thornwood")) and not F:IsFounder(key("Late Comer")), "the badge goes to founders only")
 
 print(("founding: %d checks passed"):format(checks))
