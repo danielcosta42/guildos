@@ -279,6 +279,8 @@ local MODULE_START = {
     { "Milestones" },
     -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
     { "Journal" },
+    -- WoW: Forever only (issue #208): the guild's founding and its founding members.
+    { "Founding" },
     { "ConsumableChecker", feature = "consumableChecker" },
     { "SpecChecker" },
     -- Retail only (issue #187): my keystone, rating and vault, carried by the member broadcast.
@@ -376,6 +378,10 @@ function GuildOS:InitModules()
     -- First-run welcome (once); delayed so guild info + frames are ready.
     if GuildOS.MaybeShowOnboarding then
         GuildOS.Compat.After(6, function() GuildOS:MaybeShowOnboarding() end)
+    end
+    -- WoW: Forever: the founding letter to a GM whose guild has none yet (issue #208).
+    if GuildOS.MaybeShowFoundingLetter then
+        GuildOS.Compat.After(12, function() GuildOS:MaybeShowFoundingLetter() end)
     end
     -- Login digest: shown a bit later so guild/roster data is ready and it
     -- doesn't collide with the first-run onboarding wizard.

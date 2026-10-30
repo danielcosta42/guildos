@@ -528,6 +528,8 @@ function Companion:BuildPayload()
                 look = type(data.look) == "table" and data.look or nil,
                 -- v12. Only ever true: absent is "name me" (issue #205).
                 feedOptOut = data.feedOptOut == true or nil,
+                -- v12, WoW: Forever: when they say they joined, their own claim only (issue #208).
+                joinedAt = GuildOS.Founding and GuildOS.Founding:JoinedAtOf(key) or nil,
             }
         end
     end
@@ -575,6 +577,8 @@ function Companion:BuildPayload()
         attendanceRules = attendanceRules(sessions),
         -- v12, WoW: Forever only: absent where the module does not exist (issue #205).
         journal = GuildOS.Journal and GuildOS.Journal:ForExport() or nil,
+        -- v12, WoW: Forever only: absent until the GM records it (issue #208).
+        founding = GuildOS.Founding and GuildOS.Founding:ForExport() or nil,
         -- v12, WoW: Forever only (issue #206): only from a client that has heard the guild's choice,
         -- since an empty one tells the site the minimum was cleared — and with its stamp, so the site
         -- keeps the newest, whichever officer's upload lands last.

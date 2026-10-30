@@ -254,6 +254,8 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   recipes          = { [charKey] = { [canonProfName] = [{ name, spellId, itemId }] } },
   recipeScanTimes  = { [profName] = timestamp },
   journal          = { seq, entries = [{ id, subjectKey, at, type, data }] },  -- Forever: the guild's, 30 days, 1,000 (#205)
+  founding         = { foundedAt, source, declaredBy, recordedAt, windowDays, manual, revision },  -- Forever (#208)
+  foundingJoins    = { [key] = { joinedAt, src } },  -- each member's own claim, filed under its sender (#208)
   profile          = { prefRoles, feedOptOut },  -- feedOptOut: not named on Discord; also on my own members row (#205)
 }
 ```

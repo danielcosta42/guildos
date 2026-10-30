@@ -112,6 +112,7 @@ Modules\Polls.lua
 Modules\Calendar.lua
 Modules\Milestones.lua
 Modules\Journal.lua
+Modules\Founding.lua
 Modules\Search.lua
 Modules\RaidTools.lua
 Data\ConsumablesRetail.lua
@@ -156,5 +157,6 @@ UI\GuildMap.lua
 UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
+UI\Founding.lua
 UI\RaidHUD.lua
 UI\Features.lua

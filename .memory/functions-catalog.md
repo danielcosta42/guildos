@@ -987,3 +987,16 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Readiness.FOREVER_RAIDS` | Barrow Deeps 10, Hyjal Summit 20, Onyxia's Lair 40, `opensAt` 9 Dec 2026 00:00 UTC |
 | `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > officer: "Readiness" |
 | `Readiness:Countdown(rows, now)` | WoW: Forever, until a week after the raids open (#207): `{ opensAt, open, days, cap, cores = up to 3 { name, size, ready } largest first (titulars at the cap, nobody who left), guild = { ready, enough, short }, me }`. `UI/Dashboard.lua` draws it in the readiness card's place; the readiness panel shows the level and sorts by it within a status |
+
+## v1.1 — Founding (#208, guildos.me #240)
+
+| Function | Purpose |
+|---|---|
+| `Founding` (Modules/Founding.lua) | WoW: Forever only. `db.founding` `{ foundedAt, source, declaredBy, recordedAt, windowDays, manual, revision }`; `db.foundingJoins[key] = { joinedAt, src }`; `db.foundingSuggested`; `db.foundingPrompt` |
+| `Founding.ValidDay(t, now)` / `WindowEnd(foundedAt)` | 00:00 UTC, from the launch (`FIRST_DAY`, 4 Nov 2026) to today; the window ends at the last second of the 14th day after |
+| `Founding:Record(day, source)` / `Suggest(day)` / `Publish()` / `OnSync(env, sender)` | The GM records (revision + 1), an officer suggests; officer domain `founding` (`set` with `rev`, `suggest`); highest revision wins, `declaredBy` localized |
+| `Founding:MyJoinedAt()` / `PublishSelf()` / `OnSelf(env, sender)` / `JoinedAtOf(key)` | My own join date (`firstSeen` until a probe finds the game's, #214), published at login on `foundingSelf` (GUILD only), filed under its sender |
+| `Founding:Founders()` / `IsFounder(key)` / `ForExport()` | Worked out the same everywhere: the GM, today's roster with a join date (claim, else this client's `firstSeen`) inside the window, and manual additions; the export's `founding` (v12) |
+| `Founding:ShouldPrompt(now)` / `Later(now)` / `SuggestedDay(now)` | The letter to the GM while nothing is recorded: three times at most, a day apart; offers an officer's suggestion, else the earliest `firstSeen`, else today |
+| `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > officer: "Record founding" / "Suggest founding date to your GM" |
+| `tools/founding.lua` | The harness of issue #208 |

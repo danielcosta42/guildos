@@ -3099,6 +3099,16 @@ function GuildOS:RefreshSettingsPanel(content, category)
         minHint:SetPoint("LEFT", minBox.saveButton, "RIGHT", 8, 0)
         minHint:SetWidth(280)
         yOff = yOff + 34
+
+        -- The founding letter, for after the prompt was put away (issue #208): the GM records, an
+        -- officer suggests.
+        if GuildOS.Founding then
+            local foundBtn = UI:CreateButton(content,
+                GuildOS.Founding:IsGM() and L["Record founding"] or L["Suggest founding date to your GM"], 240, 22)
+            foundBtn:SetPoint("TOPLEFT", 8, -yOff)
+            foundBtn:SetScript("OnClick", function() GuildOS:ShowFoundingLetter(false) end)
+            yOff = yOff + 32
+        end
     end
     --------------------------------------------------------------------
     -- OFFICER RANK CONFIGURATION (officer only)
