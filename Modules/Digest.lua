@@ -45,10 +45,11 @@ function Digest:Build(since)
     local lines = {}
     local feed, told = fromSite()
 
-    -- New members (first observed by Guild OS since last login)
+    -- New members (first observed by Guild OS since last login, after its first look at the guild)
     local newCount, newNames = 0, {}
+    local newSince = math.max(since, GuildOS.db.firstSeenSince or 0)
     for key, ts in pairs(GuildOS.db.firstSeen or {}) do
-        if ts and ts > since then
+        if ts and ts > newSince then
             newCount = newCount + 1
             if #newNames < 3 then newNames[#newNames + 1] = key:match("^([^-]+)") or key end
         end

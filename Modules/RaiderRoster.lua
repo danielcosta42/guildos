@@ -126,6 +126,12 @@ function RaiderRoster:HandleIncoming(sender, data)
             local cur = GuildOS.db.raiders[key]
             if not cur or (rec.updatedAt or 0) >= (cur.updatedAt or 0) then
                 rec.roles = rec.roles or {}
+                -- Officers only, as OfficerNotes (#170). A copy with no note is a member's who was
+                -- promoted: it clears nothing, since clearing a note sends "". A rank the client has
+                -- not loaded yet reads as no officer (#79), and that is no reason to drop one.
+                if rec.note == nil and cur then rec.note = cur.note end
+                local _, _, rank = GetGuildInfo("player")
+                if rank and not GuildOS:IsOfficer() then rec.note = nil end
                 GuildOS.db.raiders[key] = rec
                 changed = true
             end

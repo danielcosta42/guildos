@@ -263,6 +263,8 @@ read_globals = {
     "GetNumGroupMembers",
     "IsInGroup",
     "IsInRaid",
+    "C_InstanceEncounter",
+    "IsEncounterInProgress",                 -- the deprecated spelling, as a fallback in Compat
     "UnitIsGroupLeader",
     "UnitIsGroupAssistant",
     "GetRaidRosterInfo",

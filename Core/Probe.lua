@@ -72,6 +72,7 @@ Probe.APIS = {
     "C_Traits.GetConfigInfo", "C_TradeSkillUI.GetAllProfessionTradeSkillLines", "C_TradeSkillUI.GetBaseProfessionInfo",
     -- WoW: Forever professions (issue #31).
     "GetProfessions", "GetProfessionInfo", "IsPlayerSpell", "C_TradeSkillUI.GetAllRecipeIDs",
+    "C_InstanceEncounter.IsEncounterInProgress", "IsEncounterInProgress",
     "C_TradeSkillUI.GetRecipeInfo", "C_TradeSkillUI.IsDataSourceChanging", "C_Club.GetGuildClubId", "C_Club.GetMemberInfo",
     -- The guild's chat as the server keeps it (issue #126).
     "C_Club.GetStreams", "C_Club.GetMessageRanges", "C_Club.GetMessagesBefore", "C_Club.FocusStream",

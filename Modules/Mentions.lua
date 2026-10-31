@@ -45,9 +45,14 @@ local function normWords(s)
 end
 
 -- whole-word, case-insensitive: normalize BOTH sides the same way, then look
--- for " needle " inside " haystack ".
+-- for " needle " inside " haystack ". Chinese has no spaces and Korean glues a particle to a
+-- name ("철수님"), so there a word in their script is any stretch of the message (issue #106).
+local NO_WORD_EDGES = { zhCN = true, zhTW = true, koKR = true }
 local function hasWord(hay, needle)
     if not hay or not needle then return false end
+    if NO_WORD_EDGES[GetLocale()] and needle:find("[\128-\255]") then
+        return hay:lower():find(needle:lower(), 1, true) ~= nil
+    end
     local n = normWords(needle)
     -- A needle made only of separators would normalize to "  " and match any
     -- haystack; treat it as matching nothing instead.
@@ -194,7 +199,7 @@ function Mentions:PrintLog()
     if #log == 0 then GuildOS:Print(L["(none)"]) end
     for i = 1, math.min(#log, 15) do
         local e = log[i]
-        GuildOS:Print(string.format("|cff888888%s|r %s: %s", date("%m/%d %H:%M", e.ts or 0), e.sender or "?", e.msg or ""))
+        GuildOS:Print(string.format("|cff888888%s|r %s: %s", GuildOS:DateText(e.ts or 0, " %H:%M"), e.sender or "?", e.msg or ""))
     end
 end
 

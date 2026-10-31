@@ -35,6 +35,7 @@ local function load(game)
     return f
   end
   function hooksecurefunc() end
+  C_InstanceEncounter = { IsEncounterInProgress = function() return false end }
   if game == "forever" then
     function GetBuildInfo() return "1.60.1", "70205", "", 16001 end
     WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 99
@@ -306,6 +307,120 @@ for _, game in ipairs({ "forever", "anniversary" }) do
   GuildOS.Compat.PlayerName = function() return "Other Char" end
   RT:StartSession(409)
   check(RT.currentRaid.groupTag == "Alpha", G("another character on the account is asked again"))
+  -- The night survives a /reload or a logout: what it noted is kept, and it goes on (issue #170).
+  local function night()
+    RT, CM = load(game)
+    roster(CM, "Alpha", { "Ann", "Bob", "Cid" })
+    group({ "Ann", "Bob", "Cid" })
+    RT:StartSession(409)
+    RT:OnEncounterStart(1, "Boss"); RT:OnEncounterEnd(1, "Boss", 1)
+    NOW = NOW + 1200
+    RT:TakeSnapshot("periodic")
+    return RT.currentRaid
+  end
+  local kept = night(); reload()
+  NOW = NOW + 60
+  RT:ReopenSession()
+  check(RT.currentRaid == kept and RT.trackingActive and #kept.encounters == 1 and #kept.snapshots == 5,
+    G("a /reload inside the raid picks the session back up with all it had, and a snapshot of now"))
+  check(RT.currentRaid.groupTag == "Alpha" and RT.coreSettled, G("a boss was pulled: the core stays settled"))
+  RT:EndSession()
+  check(GuildOS.db.raidTracker.openSession == nil and GuildOS.db.raidTracker.sessions[kept.startTime] == kept,
+    G("and it ends as any session does"))
+  kept = night(); reload()
+  function GetInstanceInfo() return "Dalaran", "none", 0, "", 0, 0, false, 0 end
+  RT:ReopenSession()
+  check(RT.currentRaid == kept, G("outside the raid, within the grace, it is back too"))
+  RT:CheckZone()
+  check(RT.endTimer ~= nil and said("session ends in 20 min"), G("and the grace runs"))
+  RT.endTimer = nil
+  function GetInstanceInfo() return "Molten Core", "raid", 9, "", 40, 0, false, 409 end
+  local at = night().startTime + 1200; reload()
+  NOW = NOW + 86400
+  RT:ReopenSession()
+  local ended = GuildOS.db.raidTracker.sessions[at - 1200]
+  check(RT.currentRaid == nil and ended and ended.endTime == at and ended.duration == 1200,
+    G("a day later it is over, where its last snapshot left it and not at this login"))
+  at = night().startTime + 1200; reload()
+  function GetInstanceInfo() return "Karazhan", "raid", 9, "", 10, 0, false, 532 end
+  RT:ReopenSession()
+  check(RT.currentRaid == nil and GuildOS.db.raidTracker.sessions[at - 1200], G("in another raid it ends too"))
+  function GetInstanceInfo() return "Molten Core", "raid", 9, "", 40, 0, false, 409 end
+  at = night().startTime + 1200; reload()
+  GuildOS.Compat.PlayerName = function() return "Other Char" end
+  RT:ReopenSession()
+  check(RT.currentRaid == nil and GuildOS.db.raidTracker.sessions[at - 1200], G("and on an alt, whose group this is not"))
+  RT:ReopenSession()
+  check(RT.currentRaid == nil, G("with nothing open there is nothing to pick up"))
+  GuildOS.Compat.PlayerName = function() return game == "forever" and "Lead Er" or "Leader" end
+  -- Ending it asks who is in the guild, and at a login the roster may not be here yet.
+  kept = night(); reload()
+  local waits, soon = 0, C_Timer.After
+  C_Timer.After = function(_, f) waits = waits + 1; f() end
+  RT:ResumeAtLogin(3)
+  check(waits == 3 and RT.currentRaid == kept, G("an open session waits for the roster, for a while, and goes on"))
+  reload(); GuildOS.db.raidTracker.openSession = nil; waits = 0
+  RT:ResumeAtLogin(3)
+  check(waits == 0 and RT.currentRaid ~= kept and RT.trackingActive, G("with nothing open a login does not wait: inside a raid it starts one"))
+  C_Timer.After = soon
+  -- A zone change during that wait must not start a session over the open one.
+  kept = night(); reload()
+  RT.resuming = true
+  RT:CheckZone()
+  check(RT.currentRaid == nil and GuildOS.db.raidTracker.openSession == kept, G("nothing starts while a login resumes"))
+  RT:ResumeAtLogin(0)
+  check(RT.currentRaid == kept and not RT.resuming, G("and the session is picked up when it is done"))
+  -- A cold login gets to Initialize after PLAYER_ENTERING_WORLD, so the resume does not hang on that event.
+  kept = night(); reload()
+  local queued
+  C_Timer.After = function(_, f) queued = queued or f end
+  RT:Initialize()
+  check(RT.resuming and queued, G("Initialize schedules the resume by itself"))
+  C_Timer.After = soon
+  GuildOS.WholeRoster = function() return { "Ann" } end
+  queued()
+  GuildOS.WholeRoster = nil
+  check(RT.currentRaid == kept, G("and it runs"))
+  -- A pull cut by a disconnect is over, or the next pull of that boss reads as the same fight.
+  kept = night()
+  RT:OnEncounterStart(2, "Boss Two")
+  reload(); NOW = NOW + 60
+  RT:ReopenSession()
+  check(kept.encounters[2].endTime ~= nil, G("a pull cut short is closed"))
+  RT:OnEncounterStart(2, "Boss Two")
+  check(#kept.encounters == 3, G("and the next one is its own row"))
+  RT:OnEncounterEnd(2, "Boss Two", 1)
+  RT:OnEncounterStart(3, "Boss Three")
+  reload()
+  C_InstanceEncounter.IsEncounterInProgress = function() return true end
+  RT:ReopenSession()
+  check(kept.encounters[4].endTime == nil, G("a /reload in the middle of the fight keeps its row"))
+  RT:OnEncounterEnd(3, "Boss Three", 1)
+  check(kept.encounters[4].success == true, G("for the kill to land on"))
+  C_InstanceEncounter = nil
+  function IsEncounterInProgress() return true end
+  check(GuildOS.Compat.IsEncounterInProgress(), G("a client with only the old spelling answers by it"))
+  IsEncounterInProgress = nil
+  check(GuildOS.Compat.IsEncounterInProgress() == false, G("and one with neither says no, without raising"))
+  -- An officer's pick outlives a session a reopen ends, or the second half of a night goes to the wrong core.
+  picked(); reload()
+  NOW = NOW + 1560
+  RT:ReopenSession()
+  check(RT.currentRaid == nil and GuildOS.db.raidTracker.corePick ~= nil, G("the pick outlives a session past its hold"))
+  RT:StartSession(409)
+  check(RT.currentRaid.groupTag == "Bravo" and RT.coreSettled, G("and the raid goes on under it"))
+  -- A pick on the run-back was the session's only in memory: the active core still says it.
+  kept = night(); reload()
+  RT:SetGroupTag("Bravo")
+  RT:ReopenSession()
+  check(kept.groupTag == "Bravo" and RT.coreSettled, G("back inside, a pick made on the run-back takes the session"))
+  check(said("Raid core: |cffFFD700Bravo|r, as you set it."), G("and says so"))
+  kept = night(); reload()
+  RT:SetGroupTag("Bravo")
+  function GetInstanceInfo() return "Dalaran", "none", 0, "", 0, 0, false, 0 end
+  RT:ReopenSession()
+  check(kept.groupTag == "Alpha" and RT.gracePick == "Bravo", G("still outside, it waits for the raid"))
+  function GetInstanceInfo() return "Molten Core", "raid", 9, "", 40, 0, false, 409 end
   picked()
   RT.currentRaid.startTime = NOW - 7200
   RT:EndSession()

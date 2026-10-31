@@ -50,7 +50,7 @@ local function stamp(at)
     if not at or at <= 0 then return L["never"] end
     local dt = (GetServerTime() or time()) - at
     if dt < 120 then return L["just now"] end
-    return date("%d/%m %H:%M", at)
+    return GuildOS:DateText(at, " %H:%M")
 end
 
 local function writtenAgo()

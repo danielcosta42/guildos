@@ -240,3 +240,12 @@ GetRealmName = realRealm
 GetNormalizedRealmName = nil
 GuildOS.Client.isAnniversary = true
 print("forever: the whole name is the name")
+
+-- What ships is empty: the file is the companion's, and a confirmation committed in it tells every new
+-- install about a companion it never ran (issue #169). Read from git, since a checkout that plays is
+-- where the companion writes.
+local shipped = io.popen('git -C "' .. ADDON .. '" show HEAD:Inbox.lua'):read("*a")
+local inbox = {}
+setfenv(assert(loadstring(shipped)), inbox)()
+assert(type(inbox.GuildOSInbox) == "table" and next(inbox.GuildOSInbox) == nil, "the committed Inbox.lua carries a roster")
+assert(inbox.GuildOSInboxAck == nil, "the committed Inbox.lua carries a companion's confirmation")
