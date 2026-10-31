@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-10-31
+
+### Fixed
+- uma corrida de cinco é uma masmorra na semana do Diário (#297)
+
+
 ## [1.2.1] - 2026-10-31
 
 ### Fixed

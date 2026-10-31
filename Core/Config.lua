@@ -15,7 +15,7 @@ GuildOS.ADDON_NAME        = "Guild OS"
 GuildOS.NAMESPACE         = "GuildOS"
 
 -- ── Version ───────────────────────────────────────────────────────
-GuildOS.VERSION           = "1.2.1"  -- kept in sync with GuildOS.toc by the release workflow
+GuildOS.VERSION           = "1.2.2"  -- kept in sync with GuildOS.toc by the release workflow
 GuildOS.COMM_VERSION      = 1
 
 -- ── SavedVariables ────────────────────────────────────────────────
