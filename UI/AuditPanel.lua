@@ -66,6 +66,8 @@ local function BuildReadySub(panel)
     local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil
     -- WoW: Forever has no attunements: its column is the level, the door to a raid (issue #207).
     local forever = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
+    panel.statusIdx = 0   -- 0 = every status; 1..N = one of them (issue #220)
+    local STATUSES = { { "ready", L["ready"] }, { "warn", L["check"] }, { "notready", L["not ready"] } }
 
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -4)
@@ -95,6 +97,15 @@ local function BuildReadySub(panel)
         consBtn:SetScript("OnClick", function() GuildOS:ShowConsumablePopup() end)
         leftmost = consBtn
     end
+    -- Forever's filters: a core and a status, each cycled like the target above (issue #220).
+    local coreBtn, statusBtn
+    if forever then
+        statusBtn = UI:CreateButton(panel, L["Status: All"], 120, 20)
+        statusBtn:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -6, 0)
+        coreBtn = UI:CreateButton(panel, L["Core: All"], 130, 20)
+        coreBtn:SetPoint("TOPRIGHT", statusBtn, "TOPLEFT", -6, 0)
+        leftmost = coreBtn
+    end
     -- A narrow window cuts the summary short rather than lay the buttons over it.
     summary:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -8, -2)
     summary:SetWordWrap(false)
@@ -115,6 +126,14 @@ local function BuildReadySub(panel)
     if forever then hcol(L["LEVEL"], 310) end
     hcol(L["ENCHANTS"], 400)
     if hasCons then hcol(L["CONSUMES"], 510) end
+    if forever then
+        hcol(L["CORE"], 470)
+        hcol(L["ROLE"], 580)
+    end
+
+    local foot = UI:CreateText(panel, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    foot:SetPoint("BOTTOMLEFT", 4, 2)
+    foot:SetJustifyH("LEFT")
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -46)
@@ -134,6 +153,26 @@ local function BuildReadySub(panel)
         local c = GuildOS.Readiness:Summarize(rows)
         summary:SetText(string.format(L["%d ready  |  %d need attention  |  %d not ready"],
             c.ready, c.warn, c.notready))
+
+        if forever then
+            local names = GuildOS.CoreManager and GuildOS.CoreManager:GetSortedNames() or {}
+            if panel.coreIdx > #names then panel.coreIdx = 0 end
+            panel.coreName = names[panel.coreIdx]
+            local status = STATUSES[panel.statusIdx]
+            coreBtn.label:SetText(panel.coreName and (L["Core: "] .. panel.coreName) or L["Core: All"])
+            statusBtn.label:SetText(status and (L["Status: "] .. status[2]) or L["Status: All"])
+
+            GuildOS.Readiness:WithSeats(rows)
+            -- The footer reads the whole guild: a status filter hides rows, not what a core has.
+            local lines = {}
+            for _, x in ipairs(GuildOS.Readiness:Compositions(rows, panel.coreName)) do
+                lines[#lines + 1] = string.format(L["%s: tanks %d/%d  |  healers %d/%d  |  dps %d/%d"],
+                    x.core, x.tanks, x.wantTanks, x.healers, x.wantHealers, x.dps, x.wantDps)
+            end
+            foot:SetText(table.concat(lines, "\n"))
+            listHolder:SetPoint("BOTTOMRIGHT", 0, #lines > 0 and #lines * 14 + 6 or 0)
+            rows = GuildOS.Readiness.Filtered(rows, panel.coreName, status and status[1] or nil)
+        end
 
         local yOff = 0
         for idx, r in ipairs(rows) do
@@ -182,6 +221,22 @@ local function BuildReadySub(panel)
             local enchFS = UI:CreateText(row, enchTxt, 10, ec.r, ec.g, ec.b)
             enchFS:SetPoint("LEFT", 400, 0)
 
+            if forever then
+                -- The seat in the chosen core, or the first, with how many more.
+                local seat = r.seats[1]
+                for _, s in ipairs(r.seats) do
+                    if s.core == panel.coreName then seat = s end
+                end
+                local more = (#r.seats > 1 and not panel.coreName) and (" +" .. (#r.seats - 1)) or ""
+                local coreFS = UI:CreateText(row, seat and (seat.core .. more) or "\226\128\148", 10, C.silver.r, C.silver.g, C.silver.b)
+                coreFS:SetPoint("LEFT", 470, 0)
+                coreFS:SetWidth(104); coreFS:SetWordWrap(false); coreFS:SetJustifyH("LEFT")
+                local rc = (seat and seat.main) and C.silver or C.textDim
+                local roleName = seat and GuildOS.CoreManager.ROLE_LABELS[seat.role]
+                local roleFS = UI:CreateText(row, roleName or "\226\128\148", 10, rc.r, rc.g, rc.b)
+                roleFS:SetPoint("LEFT", 580, 0)
+            end
+
             if hasCons then
                 local consTxt, cc
                 if r.missCons == nil then consTxt, cc = "\226\128\148", C.textDim
@@ -199,6 +254,18 @@ local function BuildReadySub(panel)
             empty:SetPoint("TOPLEFT", 4, -4)
         end
         content:SetHeight(math.max(1, yOff))
+    end
+
+    if forever then
+        panel.coreIdx = 0
+        coreBtn:SetScript("OnClick", function()
+            panel.coreIdx = panel.coreIdx + 1
+            refresh()
+        end)
+        statusBtn:SetScript("OnClick", function()
+            panel.statusIdx = (panel.statusIdx + 1) % (#STATUSES + 1)
+            refresh()
+        end)
     end
 
     if targetBtn then

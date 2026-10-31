@@ -105,6 +105,84 @@ function Readiness:Countdown(rows, now)
 end
 
 ----------------------------------------------------------------------
+-- The readiness panel on WoW: Forever (issue #220): who sits where, and what a core has at the cap.
+-- Business logic only: UI/AuditPanel.lua draws it.
+----------------------------------------------------------------------
+
+-- Each row's seats, { core, role, main }, one per core: a raider may be on several. A reserve is no
+-- titular (`status = "bench"`).
+function Readiness:WithSeats(rows)
+    local seats = {}
+    local CM = GuildOS.CoreManager
+    for _, name in ipairs(CM and CM:GetSortedNames() or {}) do
+        for key, rec in pairs(CM:GetMembers(name)) do
+            local k = GuildOS:LocalMemberKey(key)
+            seats[k] = seats[k] or {}
+            table.insert(seats[k], {
+                core = name,
+                role = type(rec) == "table" and rec.role or nil,
+                main = type(rec) ~= "table" or rec.status ~= "bench",
+            })
+        end
+    end
+    for _, r in ipairs(rows) do r.seats = seats[r.key] or {} end
+    return rows
+end
+
+-- The rows of one core and of one status; nil is any. Pure.
+function Readiness.Filtered(rows, coreName, status)
+    local out = {}
+    for _, r in ipairs(rows) do
+        local here = coreName == nil
+        for _, s in ipairs(r.seats or {}) do
+            if s.core == coreName then here = true end
+        end
+        if here and (status == nil or r.status == status) then out[#out + 1] = r end
+    end
+    return out
+end
+
+-- What a core has at the cap, titulars only, against its size's targets. From the guild roster's
+-- rows: somebody on a core who left the guild counts nowhere.
+function Readiness:Composition(rows, coreName)
+    local CM = GuildOS.CoreManager
+    local cap, tanks, healers, dps = GuildOS.Client.maxLevel, 0, 0, 0
+    for _, r in ipairs(rows) do
+        for _, s in ipairs(r.seats or {}) do
+            if s.core == coreName and s.main and (r.level or 0) >= cap then
+                if s.role == "tank" then
+                    tanks = tanks + 1
+                elseif s.role == "healer" then
+                    healers = healers + 1
+                else
+                    dps = dps + 1
+                end
+            end
+        end
+    end
+    local want = CM:RaidTargets(CM:GetRaidSize(coreName))
+    return {
+        core = coreName, tanks = tanks, healers = healers, dps = dps,
+        wantTanks = want.tank, wantHealers = want.healer, wantDps = want.mdps + want.rdps,
+    }
+end
+
+-- The panel's footer: the chosen core, or the three largest as the Dashboard has them.
+function Readiness:Compositions(rows, coreName)
+    local CM = GuildOS.CoreManager
+    if not CM then return {} end
+    local names = coreName and { coreName } or CM:GetSortedNames()
+    table.sort(names, function(a, b)
+        local sa, sb = CM:GetRaidSize(a), CM:GetRaidSize(b)
+        if sa ~= sb then return sa > sb end
+        return a < b
+    end)
+    local out = {}
+    for i = 1, math.min(#names, CORES_SHOWN) do out[i] = self:Composition(rows, names[i]) end
+    return out
+end
+
+----------------------------------------------------------------------
 -- A member's readiness on WoW: Forever, the same rule and the same cases as guildos.me's:
 --   below the cap: not ready (the level);
 --   no gear data (never published): ready, by level only — the door is public, nobody is
