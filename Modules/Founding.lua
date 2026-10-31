@@ -193,12 +193,13 @@ function Founding:FromSite()
     local f = block and type(block.founding) == "table" and block.founding or nil
     if not f or not onGuild() then return end
     -- The site sends who, never why: a reason is for whoever may edit the founding. One held here stays.
-    local held, manual = (self:Get() or {}).manual or {}, {}
+    local held, copy = (self:Get() or {}).manual or {}, {}
+    for k, v in pairs(f) do copy[k] = v end
+    copy.manual = {}
     for _, key in ipairs(type(f.manual) == "table" and f.manual or {}) do
-        if type(key) == "string" then manual[key] = held[GuildOS:LocalMemberKey(key)] or { reason = "guildos.me" } end
+        if type(key) == "string" then copy.manual[key] = held[GuildOS:LocalMemberKey(key)] or { reason = "guildos.me" } end
     end
-    f.manual = manual
-    if adopt(f, GetServerTime()) then self:Publish() end
+    if adopt(copy, GetServerTime()) then self:Publish() end
 end
 
 -- From an officer (SyncService checked the officer and the guild channel); the founding itself only

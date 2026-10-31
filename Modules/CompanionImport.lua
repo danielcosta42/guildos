@@ -302,7 +302,11 @@ function Import:GuildBlock()
     if type(inbox) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
     for _, v in ipairs(inbox) do
         if type(v) == "string" and v:sub(1, #GUILD_PREFIX) == GUILD_PREFIX then
-            local data = unwrap(v:sub(#GUILD_PREFIX + 1), "GOSGILD1")
+            -- Decoded once: the window's title asks every few seconds, and the file only changes on a reload.
+            if self._blockRaw ~= v then
+                self._blockRaw, self._blockData = v, unwrap(v:sub(#GUILD_PREFIX + 1), "GOSGILD1")
+            end
+            local data = self._blockData
             local mine = GetGuildInfo("player")
             if not data or not mine or type(data.guild) ~= "string" or data.guild:lower() ~= mine:lower() then return nil end
             if GetServerTime() - (tonumber(data.at) or 0) > BLOCK_MAX_AGE then return nil end
@@ -312,8 +316,13 @@ function Import:GuildBlock()
     return nil
 end
 
--- The block's feed, cleaned again: the text comes off the network onto a line of ours, so nothing
--- in it may open a colour, a link or a texture, and one line stays one line.
+-- Text off the network, for a line of ours: nothing in it may open a colour, a link or a texture, and
+-- one line stays one line.
+function Import.Inert(text)
+    return (text:gsub("|", ""):gsub("[\r\n]+", " "))
+end
+
+-- The block's feed, cleaned again.
 function Import:FeedLines()
     local block = self:GuildBlock()
     local out = {}
@@ -324,7 +333,7 @@ function Import:FeedLines()
                 type = tostring(item.type),
                 key = type(item.key) == "string" and GuildOS:LocalMemberKey(item.key) or nil,
                 at = tonumber(item.at) or 0,
-                text = (item.text:gsub("|", ""):gsub("[\r\n]+", " ")),
+                text = Import.Inert(item.text),
             }
         end
     end

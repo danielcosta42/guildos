@@ -67,6 +67,12 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateJournalPanel(c, win) end,
 })
 
+-- WoW: Forever only (issue #216): what the guild earned, as guildos.me says it.
+UI:RegisterFeature({
+    id = "achievements", label = L["Achievements"], order = 56, tbc = false, retail = false,
+    build = function(c, win) GuildOS:CreateAchievementsPanel(c, win) end,
+})
+
 UI:RegisterFeature({
     id = "alliance", label = L["Alliance"], order = 60,
     condition = function()

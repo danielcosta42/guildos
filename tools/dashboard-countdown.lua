@@ -102,4 +102,27 @@ check(#GuildOS.State.errors == 1, "and /guildos errors has it")
 show(function() return nil end)
 check(shown(THE_OLD_CARD) and #GuildOS.State.errors == 0, "no countdown here: the old card, and nothing recorded")
 
+-- ── The guild's setup (issue #217) ────────────────────────────────────
+local function setup(activation)
+  GuildOS.Activation = activation
+  show(function() return nil end)
+  GuildOS.Activation = nil
+end
+setup({
+  STEPS = { "publish", "bot", "account", "members", "run" },
+  ShouldShow = function() return true end,
+  Read = function() return { done = 2, steps = { publish = true, bot = true }, staleDays = 4 } end,
+})
+check(shown("SET UP GUILD OS FOR YOUR GUILD"), "the card, for who it is due")
+check(shown("Publish through the companion") and shown("First group run"), "with its steps")
+check(shown("Verified 4 days ago"), "and how old what the site said is")
+check(shown(THE_REST), "and the rest of the Dashboard")
+
+setup({ STEPS = {}, ShouldShow = function() return false end })
+check(shown(THE_REST) and #GuildOS.State.errors == 0, "not due: nothing changes")
+
+setup({ STEPS = {}, ShouldShow = function() error("no such thing on this client") end })
+check(shown(THE_REST), "a failure leaves the Dashboard as it was")
+check(#GuildOS.State.errors == 1, "and /guildos errors has it")
+
 print(("dashboard-countdown: %d checks passed"):format(checks))

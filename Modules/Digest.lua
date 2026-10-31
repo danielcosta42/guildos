@@ -180,6 +180,15 @@ function Digest:Build(since)
         end
     end
 
+    -- WoW: Forever: what the guild earned (#216), and the officers' reminder of its setup (#217)
+    if GuildOS.Achievements then
+        for _, line in ipairs(GuildOS.Achievements:GetDigestLines(since)) do
+            lines[#lines + 1] = line
+        end
+    end
+    local setup = GuildOS.Activation and GuildOS.Activation:GetDigestLine(GetServerTime())
+    if setup then lines[#lines + 1] = setup end
+
     if #feed > 0 then
         lines[#lines + 1] = "|cffEDCC7B" .. L["From guildos.me"] .. "|r"
         for _, item in ipairs(feed) do lines[#lines + 1] = item.text end
@@ -282,6 +291,9 @@ function Digest:ShowOnLogin()
 
     local lines = self:Build(since)
     self:MarkFeedSeen(GetServerTime())
+    if GuildOS.Activation then
+        if GuildOS.Activation:GetDigestLine(GetServerTime()) then GuildOS.Activation:Reminded(GetServerTime()) end
+    end
     GuildOS.db.digest.lastSeen = GetServerTime()
     self.shownThisSession = true
     if #lines > 0 then
