@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-10-31
+
+### Added
+- o painel de prontidão com núcleo, função, filtros e composição (#220)
+
+
 ## [1.2.2] - 2026-10-31
 
 ### Fixed
