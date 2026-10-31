@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-10-31
+
+### Fixed
+- o que protege quem instala no dia 4 — a noite sobrevive ao /reload, a rolagem lê o nome inteiro, o coreano é lido (#169, #118, #106, #48, #170, #171)
+
+
 ## [1.3.0] - 2026-10-31
 
 ### Added
