@@ -2051,3 +2051,5 @@ L["[Loot] %s goes to %s: %s trades it to them."] = "[전리품] %s → %s: %s �
 L["Chat is locked during the encounter: answer once it ends."] = "보스전 중에는 채팅이 잠겨 있습니다: 전투가 끝난 뒤 응답하세요."
 -- A resposta de quem recebeu a entrega fica (issue #185).
 L["The item was awarded to you: your answer stands."] = "아이템이 배정되었습니다: 응답은 그대로 유지됩니다."
+-- As linhas do guildos.me no resumo do login (issue #215).
+L["From guildos.me"] = "guildos.me 소식"

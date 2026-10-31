@@ -43,6 +43,8 @@ end
 local L = GuildOS.L
 local WIRE_PREFIX = "GOSROST1:"
 local CORES_PREFIX = "GOSCORE1:"
+local GUILD_PREFIX = "GOSGILD1:"
+local BLOCK_MAX_AGE = 7 * 86400   -- the feed is a week long: an older block is a companion that stopped
 
 -- The name somebody from the site is kept, shown and matched by. On retail it is their key,
 -- "Name-Realm" with their own realm: the name alone would invite a namesake on this character's
@@ -290,6 +292,43 @@ function Import:CoresFromInbox()
         end
     end
     return nil
+end
+
+-- The inbox's GOSGILD1 (guildos-web #259): what only the site knows, decoded, or nil when there is
+-- none, it is damaged, it is another guild's or more than a week old, or the companion is off.
+-- It is shown and never run. Forever's: no other game's site sends one.
+function Import:GuildBlock()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #GUILD_PREFIX) == GUILD_PREFIX then
+            local data = unwrap(v:sub(#GUILD_PREFIX + 1), "GOSGILD1")
+            local mine = GetGuildInfo("player")
+            if not data or not mine or type(data.guild) ~= "string" or data.guild:lower() ~= mine:lower() then return nil end
+            if GetServerTime() - (tonumber(data.at) or 0) > BLOCK_MAX_AGE then return nil end
+            return data
+        end
+    end
+    return nil
+end
+
+-- The block's feed, cleaned again: the text comes off the network onto a line of ours, so nothing
+-- in it may open a colour, a link or a texture, and one line stays one line.
+function Import:FeedLines()
+    local block = self:GuildBlock()
+    local out = {}
+    for _, item in ipairs(block and type(block.feed) == "table" and block.feed or {}) do
+        if type(item) == "table" and type(item.id) == "string" and type(item.text) == "string" and item.text ~= "" then
+            out[#out + 1] = {
+                id = item.id,
+                type = tostring(item.type),
+                key = type(item.key) == "string" and GuildOS:LocalMemberKey(item.key) or nil,
+                at = tonumber(item.at) or 0,
+                text = (item.text:gsub("|", ""):gsub("[\r\n]+", " ")),
+            }
+        end
+    end
+    return out
 end
 
 ----------------------------------------------------------------------

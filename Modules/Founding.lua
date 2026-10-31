@@ -72,7 +72,10 @@ function Founding:Initialize()
         GuildOS.SyncService:On("founding", function(env, sender) Founding:OnSync(env, sender) end)
         GuildOS.SyncService:On("foundingSelf", function(env, sender) Founding:OnSelf(env, sender) end)
     end
-    Compat.After(PUBLISH_DELAY, function() Founding:PublishSelf() end)
+    Compat.After(PUBLISH_DELAY, function()
+        Founding:FromSite()
+        Founding:PublishSelf()
+    end)
 end
 
 function Founding:Get() return GuildOS.db and GuildOS.db.founding end
@@ -153,27 +156,16 @@ function Founding:Publish()
     end
 end
 
--- From an officer (SyncService checked the officer and the guild channel); the founding itself only
--- from the GM. The newest record wins (a new GM, or one on a fresh install, records revision 1 again),
--- and a tie in time keeps the higher revision.
-function Founding:OnSync(env, sender)
-    local d = type(env.data) == "table" and env.data or nil
-    if not d or not onGuild() or type(sender) ~= "string" then return end
-    local now = GetServerTime()
-    if env.act == "suggest" then
-        if Founding.ValidDay(d.foundedAt, now) then
-            GuildOS.db.foundingSuggested = { foundedAt = d.foundedAt, by = senderKey(sender) }
-        end
-        return
-    end
-    if env.act ~= "set" or not isGMKey(senderKey(sender)) then return end
-    local f = type(d.founding) == "table" and d.founding or nil
-    if not f or not Founding.ValidDay(f.foundedAt, now + SKEW) then return end
-    if not isInt(f.revision) or f.revision < 1 or f.revision > REVISION_MAX then return end
-    if not isInt(f.recordedAt) or f.recordedAt <= 0 or f.recordedAt > now + SKEW then return end
-    local held = self:Get()
+-- A founding from outside this client, kept when it is the newest: the newest record wins (a new GM,
+-- or one on a fresh install, records revision 1 again), and a tie in time keeps the higher revision.
+-- Returns whether it was kept.
+local function adopt(f, now)
+    if not f or not Founding.ValidDay(f.foundedAt, now + SKEW) then return false end
+    if not isInt(f.revision) or f.revision < 1 or f.revision > REVISION_MAX then return false end
+    if not isInt(f.recordedAt) or f.recordedAt <= 0 or f.recordedAt > now + SKEW then return false end
+    local held = Founding:Get()
     if held and (f.recordedAt < (held.recordedAt or 0)
-        or (f.recordedAt == held.recordedAt and f.revision <= (held.revision or 0))) then return end
+        or (f.recordedAt == held.recordedAt and f.revision <= (held.revision or 0))) then return false end
     local manual = {}
     for key, m in pairs(type(f.manual) == "table" and f.manual or {}) do
         if type(key) == "string" and type(m) == "table" and type(m.reason) == "string" and m.reason ~= "" then
@@ -190,7 +182,38 @@ function Founding:OnSync(env, sender)
         manual = manual,
         revision = f.revision,
     }
-    self:Forget()
+    Founding:Forget()
+    return true
+end
+
+-- The founding the site holds (guildos-web #259), by the same order. The GM's client tells the guild;
+-- anybody else's keeps it, since the founding itself travels only from the GM.
+function Founding:FromSite()
+    local block = GuildOS.CompanionImport and GuildOS.CompanionImport:GuildBlock()
+    local f = block and type(block.founding) == "table" and block.founding or nil
+    if not f or not onGuild() then return end
+    local manual = {}
+    for _, m in ipairs(type(f.manual) == "table" and f.manual or {}) do
+        if type(m) == "table" and type(m.key) == "string" then manual[m.key] = m end
+    end
+    f.manual = manual
+    if adopt(f, GetServerTime()) then self:Publish() end
+end
+
+-- From an officer (SyncService checked the officer and the guild channel); the founding itself only
+-- from the GM.
+function Founding:OnSync(env, sender)
+    local d = type(env.data) == "table" and env.data or nil
+    if not d or not onGuild() or type(sender) ~= "string" then return end
+    local now = GetServerTime()
+    if env.act == "suggest" then
+        if Founding.ValidDay(d.foundedAt, now) then
+            GuildOS.db.foundingSuggested = { foundedAt = d.foundedAt, by = senderKey(sender) }
+        end
+        return
+    end
+    if env.act ~= "set" or not isGMKey(senderKey(sender)) then return end
+    adopt(type(d.founding) == "table" and d.founding or nil, now)
 end
 
 ----------------------------------------------------------------------
@@ -365,8 +388,9 @@ end
 local function shortName(key) return (key:match("^(.-)%-[^-]*$") or key) end
 
 -- The login digest's founding lines since `since`: who joined as a founder (three at most), the
--- window's days left or its closing, and an anniversary.
-function Founding:GetDigestLines(since, now)
+-- window's days left or its closing, and an anniversary. `told` is what guildos.me says in this
+-- digest (guildos-web #259): the closing and an anniversary it tells are not told twice.
+function Founding:GetDigestLines(since, now, told)
     local L = GuildOS.L
     local f = self:Get()
     if not f then return {} end
@@ -382,12 +406,12 @@ function Founding:GetDigestLines(since, now)
     if now <= last then
         out[#out + 1] = string.format(L["Founding window: %d days left · %d founding members"],
             math.max(1, math.ceil((last - now) / DAY)), count)
-    elseif (since or 0) < last then
+    elseif (since or 0) < last and not (told and told["founding.closed"]) then
         out[#out + 1] = string.format(L["Founding window closed: %d founding members"], count)
     end
     -- Since the last login, not "today": somebody back after three weeks reads it then.
     local a = lastAnniversary(f.foundedAt, now)
-    if a and a.at > (since or 0) then
+    if a and a.at > (since or 0) and not (told and told["guild.anniversary"]) then
         local guild = GetGuildInfo("player") or ""
         out[#out + 1] = a.months % 12 == 0 and string.format(L["%s turned %d year(s) old"], guild, a.months / 12)
             or string.format(L["%s turned %d month(s) old"], guild, a.months)

@@ -989,6 +989,15 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Readiness.Slices(atCap)` | What the guild can form with who is at the cap (the same as guildos.me's): `{ dungeons, raids = { { size, count } }, short, shortSize }`. Pure. |
 | `Readiness:Countdown(rows, now)` | WoW: Forever, until a week after the raids open (#207): `{ opensAt, open, days, cap, cores = up to 3 { name, size, ready } largest first (titulars at the cap, nobody who left), guild = { ready, enough, short }, me }`. `UI/Dashboard.lua` draws it in the readiness card's place; the readiness panel shows the level and sorts by it within a status |
 
+## v1.2 — The guild's block (#215, guildos.me #259)
+
+| Function | Purpose |
+|---|---|
+| `CompanionImport:GuildBlock()` | The inbox's GOSGILD1, decoded, for this guild, under a week old and with the companion on; nil otherwise. Shown, never run |
+| `CompanionImport:FeedLines()` | The block's feed, with `\|` and line breaks taken out again |
+| `Founding:FromSite()` | The site's founding by the same order as `OnSync`; the GM's client then publishes it, nobody else's does. Runs with `PublishSelf`, after `founding` starts |
+| `Digest:MarkFeedSeen(now)` | What the login digest showed from the site, kept 14 days in `db.digest.feedSeen`. `Build` adds "From guildos.me", five lines at most, and passes `told` so `Milestones` and `Founding` leave out their own line for the same event |
+
 ## v1.1 — Founding (#208, guildos.me #240)
 
 | Function | Purpose |

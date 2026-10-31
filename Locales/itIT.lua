@@ -2195,3 +2195,5 @@ L["Leatherworker's Tool Bench"] = "Panca con Attrezzi del conciatore"
 L["Enchanter's Lectern"] = "Leggio dell'Incantatore"
 L["Tailor's Work Table"] = "Tavolo da lavoro da sarto"
 L["Scribe's Drafting Table"] = "Tavolo da lavoro da scriba"
+-- As linhas do guildos.me no resumo do login (issue #215).
+L["From guildos.me"] = "Da guildos.me"

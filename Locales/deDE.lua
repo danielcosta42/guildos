@@ -2171,3 +2171,5 @@ L["[Loot] %s goes to %s: %s trades it to them."] = "[Beute] %s geht an %s: %s ha
 L["Chat is locked during the encounter: answer once it ends."] = "Der Chat ist während des Bosskampfs gesperrt: Antworte, wenn er vorbei ist."
 -- A resposta de quem recebeu a entrega fica (issue #185).
 L["The item was awarded to you: your answer stands."] = "Der Gegenstand wurde dir vergeben: Deine Antwort bleibt bestehen."
+-- As linhas do guildos.me no resumo do login (issue #215).
+L["From guildos.me"] = "Von guildos.me"

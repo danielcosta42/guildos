@@ -2051,3 +2051,5 @@ L["[Loot] %s goes to %s: %s trades it to them."] = "[戰利品] %s歸%s：由%s�
 L["Chat is locked during the encounter: answer once it ends."] = "首領戰期間聊天被鎖定：戰鬥結束後再回應。"
 -- A resposta de quem recebeu a entrega fica (issue #185).
 L["The item was awarded to you: your answer stands."] = "物品已分配給你：你的回應保持不變。"
+-- As linhas do guildos.me no resumo do login (issue #215).
+L["From guildos.me"] = "來自 guildos.me"
