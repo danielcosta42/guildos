@@ -207,4 +207,24 @@ local since, at = LAUNCH + 14 * DAY, LAUNCH + 16 * DAY
 check(table.concat(Founding:GetDigestLines(since, at), "\n"):find("Founding window closed", 1, true), "the closing, with nothing from the site")
 check(not table.concat(Founding:GetDigestLines(since, at, { ["founding.closed"] = true }), "\n"):find("closed", 1, true), "not when the site tells it")
 
+-- ── The first look at a guild is nobody's arrival (issue #170) ─────────────
+fresh()
+local ROSTER = {}
+GetNumGuildMembers = function() return #ROSTER end
+GetGuildRosterInfo = function(i) return ROSTER[i] end
+local function newcomers() return has(Digest:Build(LAUNCH), "new member(s)") end
+ROSTER = { "Ana", "Bob", "Cid" }
+local whole = GetGuildRosterInfo
+GetGuildRosterInfo = function(i) if i < 3 then return ROSTER[i] end end
+GuildOS:RecordFirstSeen()
+check(next(GuildOS.db.firstSeen) == nil, "half a roster is no first look")
+GetGuildRosterInfo = whole
+GuildOS:RecordFirstSeen()
+check(next(GuildOS.db.firstSeen) ~= nil and not newcomers(), "a first install does not list the guild as new members")
+NOW = NOW + 60
+ROSTER[4] = "Dan"
+GuildOS:RecordFirstSeen()
+check(newcomers(), "whoever joins after it is new")
+GetNumGuildMembers, GetGuildRosterInfo = function() return 0 end, function() end
+
 print(("guild-block: %d checks passed"):format(checks))

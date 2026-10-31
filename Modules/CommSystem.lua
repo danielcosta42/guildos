@@ -634,7 +634,7 @@ function CommSystem:GetSyncHealth()
             local d = GuildOS.db.members[key]
             local has = (d and d.lastUpdate and d.lastUpdate > 0) and true or false
             local ver = d and d.addonVersion or nil
-            local isOld = (has and ver and ver ~= cur) and true or false
+            local isOld = (has and ver and GuildOS.Mesh.CompareVersions(ver, cur) < 0) and true or false
             if has then withAddon = withAddon + 1 end
             if isOld then outdated = outdated + 1 end
             rows[#rows + 1] = {

@@ -65,6 +65,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Commands.lua")
 dofile(ADDON .. "/Modules/Mentions.lua")
+function GuildOS:DateText() return "today" end
 
 local buttons = {}
 local function widget(fields)

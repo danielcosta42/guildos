@@ -18,7 +18,7 @@ already know it type. Do not change the project slug (`guild-os`): every link ou
 
 ## Summary (the short tagline shown in search & cards — keep under 255 chars)
 
-> Guild manager addon for WoW: Forever and Retail: roster, raid attendance, raid teams, recruitment, professions, guild chat and Discord raid signups on guildos.me. DKP, EPGP and wishlists; a loot council by trade on Retail, a loot master on Forever.
+> Guild manager addon for WoW: Forever and Retail: roster, raid attendance, raid teams, recruitment, professions, guild chat and Discord raid signups on guildos.me. DKP and wishlists; a loot council by trade on Retail, a loot master on Forever.
 
 ## Categories
 
@@ -27,7 +27,7 @@ already know it type. Do not change the project slug (`guild-os`): every link ou
 
 ## Tags / keywords (Wago tags, and the words the page already uses)
 
-guild manager, guild roster, raid attendance, attendance tracker, DKP, EPGP, loot master, loot council, soft reserve,
+guild manager, guild roster, raid attendance, attendance tracker, DKP, loot master, loot council, soft reserve,
 softres, wishlist, raid signups, Discord, professions, recruitment, WoW Forever, Retail, Midnight, connected realms
 
 ## Gallery
@@ -56,7 +56,7 @@ A space in a badge URL is `_`, never `%20`, and the URL has no parentheses: Curs
 
 **Guild OS is a guild management addon for WoW: Forever and Retail (Midnight).** It replaces the guild panel with one
 window for your whole guild: a guild roster with gear and item level, raid attendance tracking, raid teams, a
-profession directory, guild chat and recruiting, DKP, EPGP and wishlists, a loot master with soft reserves on Forever
+profession directory, guild chat and recruiting, DKP and wishlists, a loot master with soft reserves on Forever
 and a loot council by trade on Retail.
 Press `J`, where the old guild frame used to be.
 
@@ -112,7 +112,7 @@ The same window on retail, made for how retail works:
   button). Guildmates answer Need, Greed or Pass with what they wear in that slot; the council ranks them by your
   loot system (DKP points, wishlist place) and the server's /roll; an officer awards it, or the holder in a
   free roll. Trade it to the winner and the award is recorded, and charged under DKP.
-- **DKP, EPGP and wishlists**, as on Forever. Wishlists list Midnight's raid items straight from the Encounter
+- **DKP and wishlists**, as on Forever. Wishlists list Midnight's raid items straight from the Encounter
   Journal.
 
 Not on retail: the master loot (retail has none) and soft reserves (softres.it runs Classic raids).
@@ -126,38 +126,38 @@ Not on retail: the master loot (retail has none) and soft reserves (softres.it r
   version, missing enchants, attendance, raid team, DKP, loot and trial days, and put them in your order. Saved for
   your whole account
 - Click anyone, online or offline, for their gear (missing enchants flagged), professions and stats
-- Alts grouped under their main
+- Alts linked to their main, with a column that says which is which
 - **Guild analytics**: the guild at a glance, with *Only online* and *Only max level* filters
 - **Now**, the front door: guild chat in the big card, with what is happening in the guild around it
 
 ## ⚔️ Raid attendance tracker and raid teams
 
 - **Attendance that is measured, not declared.** Raids are detected on their own and checked every 5 minutes. Each
-  raid scores 100 per person, minus a penalty for arriving late or leaving early, and each raid team sets its own
-  penalties.
+  lockout scores 100 per person, minus a penalty for arriving late or leaving early, and each raid team sets its own
+  penalties. On Forever, the raids of 20 players or more are the ones that count.
 - **Cores are your raid teams.** Run as many as you need. A raider can be in more than one and signs up with a role
   their class can play, and each raid is counted for the right team. Teams set up in Discord with the GuildOS bot
   come into the addon through the companion.
 - **Raid Tools**: class composition, raid buff coverage and key cooldowns before you pull
 - **Enchant audit**: every unenchanted slot in the guild, most-missing first
 
-## 💰 Loot master, DKP and EPGP
+## 💰 Loot master and DKP
 
-Pick your guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
+An officer picks the guild's loot system in Settings: **/roll MS/OS**, **wishlists**, **DKP / points**, or **off** when Gargul
 or RCLootCouncil already handles it, and then Guild OS stays completely out of the way. On retail the same points and
 wishlists run beside the loot council by trade (above); the loot master and soft reserves are Forever's only.
 
 - **Loot master**: announce, players roll MS / OS / Pass, award in one click. Ties go to officer priority, then soft
   reserve, then wishlist, then whoever has received fewer items this lockout, then (if you want) attendance, then the
-  roll. Designated disenchanter, undo and trade tracking.
-- **DKP, EPGP or loot council**: points kept per raid team. Points per boss kill (automatic if you want), a starting
-  value, weekly decay, a fixed cost charged when an item is awarded in DKP mode, and manual adjustments with a
-  reason. Every change is logged and synced between officers.
-- **Soft reserves**: paste softres.it's Gargul export. Reserves and +1 counts show on the item tooltip, and a reserve
-  beats an unreserved roll.
+  roll. Designated disenchanter and trade tracking.
+- **DKP**: points kept per raid team. Points per boss kill (automatic if you want), a starting value, a decay an
+  officer applies with one click, a fixed cost charged when an item is awarded, and manual adjustments with a
+  reason. Every change is logged and sent to the guild online.
+- **Soft reserves**: paste softres.it's Gargul export. Reserves and +1 counts show on the item tooltip, and in a
+  tie a reserve comes right after MS/OS and officer priority.
 - **Wishlists**: every character keeps their own, synced to the guild, and the item tooltip says who wants it (always,
   only with Shift, or never).
-- **Loot history**: every rare-or-better drop, with who got it, where and when.
+- **Loot history**: what the loot master handed out, with who got it, where and when.
 
 ## 🛠️ Guild profession directory
 
@@ -175,13 +175,13 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
 
 - A recruiting message that comes back on your interval and goes out with one click (Blizzard requires the click).
   Members can help spread it, and officers choose up to which rank
-- Auto-welcome for new members, with your Discord link
-- Trials with a sponsor, a period and notes, flagged when they run over
+- Auto-welcome for new members, in your words
+- 30-day trials with a sponsor and notes, flagged when they run over
 
 ## 🔐 Officer tools
 
 - Your guild decides which ranks are officers
-- Officer notes with quick tags, synced between officers
+- Officer notes, sent to the officers online
 - A ban list that flags banned players on the tooltip
 
 ---
@@ -191,13 +191,16 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
 Optional, and off until you turn it on in the **Web** tab. The addon works the same without it.
 
 - **Discord raid signups that know who is signing**: item level, spec and attendance come with each one
-- **Plan on the site, run it in game**: the planned roster arrives by itself, and the Web tab has *Invite all* and a
-  button that moves everyone into their groups
+- **Plan on the site, run it in game**: with publishing on, the planned roster arrives at your next login or
+  `/reload`, and the Web tab has *Invite* and a button that moves everyone into their groups
 - **Your guild on the web**: roster, loot and attendance for your members, a recruiting page for everyone else, and
   each character with their gear, drawn as they look in game (on Forever, visit a barber once so the addon can see
   it)
 - **Nothing to copy on raid night**: a small Windows companion carries the data between the game and the site. The
   site and the Discord bot work anywhere.
+
+See it before installing: [the tour](https://guildos.me/como-funciona) walks through the addon, the site and the
+bot, and [the manual](https://guildos.me/manual) says what each function does, in nine languages.
 
 ---
 
@@ -209,7 +212,7 @@ Yes. It is built for it: surnames, no realms, the new professions and the client
 **Does Guild OS work on Retail?**
 Yes, on Midnight: roster, attendance, raid teams, professions, recruitment, chat, the officer tools, the consumable
 check, Mythic+ and the Great Vault, and guildos.me.
-Retail is personal loot, so the master loot and soft reserves are Forever's only. On retail, DKP, EPGP and wishlists
+Retail is personal loot, so the master loot and soft reserves are Forever's only. On retail, DKP and wishlists
 run beside a loot council by trade, and the loot history records what each guildmate received.
 
 **Is it free?**
@@ -223,16 +226,16 @@ Guild OS, so the more of the guild has it, the more complete it gets.
 Yes. Set the loot system to *off* in Settings and Guild OS leaves loot alone while the roster, attendance and
 everything else keep working.
 
-**Does it do DKP and EPGP?**
-Yes, both, plus a council mode where points are only shown. Points are kept per raid team and synced between
-officers.
+**Does it do DKP?**
+Yes. The EPGP and loot council modes keep the same points under another name: there is no EP/GP ratio. Points are
+kept per raid team and sent to the guild online.
 
 **Do I need the website or the companion?**
 No. Both are optional, on Forever and on Retail. They add Discord raid signups and a web roster; the addon does
 everything in game without them.
 
 **Do I need a spreadsheet for attendance or loot?**
-For attendance, loot history and DKP/EPGP, no: they live in the addon. If your guild's loot rules do something the
+For attendance, loot history and DKP, no: they live in the addon. If your guild's loot rules do something the
 addon does not, tell us in the Discord.
 
 ---

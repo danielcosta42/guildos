@@ -10,35 +10,52 @@ local L = GuildOS.L
 -- say them in another order: "%s has been kicked out of the guild by %s." in English,
 -- "%1$s wurde von %2$s aus der Gilde geworfen." in German. Reading "%1$s" as text made "%1" a
 -- back-reference in the Lua pattern: "invalid capture index" on every system message.
+-- The client also fills in a language's grammar, so a message never shows these escapes (#106):
+-- Russian declines a name, |3-3(%s), and it reads declined here: a line in the log, where nothing was
+-- logged before. French picks "de " or "d'" for |2. Korean picks a particle for what comes before it,
+-- |1이;가;, which ends up glued to that argument.
 ----------------------------------------------------------------------
 local MARK = "\001"          -- stands in for a placeholder while the rest is escaped
 local formatCache = {}
 
 local function formatPattern(fmt)
     local hit = formatCache[fmt]
-    if hit then return hit[1], hit[2] end
-    local order, n = {}, 0
-    local marked = fmt:gsub("%%(%d*)%$?([sd])", function(index, kind)
+    if hit then return hit[1], hit[2], hit[3] end
+    local order, tails, n = {}, {}, 0
+    local plain = fmt:gsub("|3%-%d+%((.-)%)", "%1")
+    local marked = plain:gsub("%%(%d*)%$?([sd])()", function(index, kind, after)
         n = n + 1
         order[n] = tonumber(index) or n
+        tails[n] = { plain:match("^|1([^;]*);([^;]*);", after) }
         return MARK .. kind
     end)
+    marked = marked:gsub("|1[^;]*;[^;]*;", MARK .. "g"):gsub("|2 ?", MARK .. "f")
     local pat = marked:gsub("([%%%(%)%.%+%-%*%?%[%]%^%$])", "%%%1")
-    pat = pat:gsub(MARK .. "s", "(.+)"):gsub(MARK .. "d", "(%%d+)")
+    pat = pat:gsub(MARK .. "s", "(.+)"):gsub(MARK .. "d", "(%%d+)"):gsub(MARK .. "g", ".-")
+    pat = pat:gsub(MARK .. "f", "d[e'] ?")
     pat = "^" .. pat .. "$"
-    formatCache[fmt] = { pat, order }
-    return pat, order
+    formatCache[fmt] = { pat, order, tails }
+    return pat, order, tails
 end
 
 -- Pure. The arguments of `msg` as `fmt` numbers them (args[1] is the format's first argument,
 -- wherever the language says it), as strings; nil when `msg` is not that message.
 function GuildOS:MatchFormat(msg, fmt)
     if type(msg) ~= "string" or type(fmt) ~= "string" or fmt == "" then return nil end
-    local pat, order = formatPattern(fmt)
+    local pat, order, tails = formatPattern(fmt)
     local caps = { msg:match(pat) }
     if caps[1] == nil then return nil end
     local args = {}
-    for i, index in ipairs(order) do args[index] = caps[i] end
+    for i, index in ipairs(order) do
+        local arg = caps[i]
+        for _, tail in ipairs(tails[i]) do
+            if tail ~= "" and #arg > #tail and arg:sub(-#tail) == tail then
+                arg = arg:sub(1, -#tail - 1)
+                break
+            end
+        end
+        args[index] = arg
+    end
     return args
 end
 
@@ -725,6 +742,13 @@ function GuildOS:RegisterUtilTests()
     end)
 end
 
+-- A date with day and month in the order the client's language writes them, then `rest`
+-- (" %H:%M", "/%Y"): the addon read month first in every language (issue #170).
+local MONTH_FIRST = { enUS = true, koKR = true, zhCN = true, zhTW = true }
+function GuildOS:DateText(timestamp, rest)
+    return date((MONTH_FIRST[GetLocale()] and "%m/%d" or "%d/%m") .. (rest or ""), timestamp)
+end
+
 function GuildOS:TimeAgo(timestamp)
     if not timestamp or timestamp == 0 then return L["Never"] end
     local diff = time() - timestamp
@@ -989,6 +1013,12 @@ end
 function GuildOS:RecordFirstSeen()
     if not self.db then return end
     if not self.db.firstSeen then self.db.firstSeen = {} end
+    -- The first look at a guild sees everybody at once, and nobody there just joined: the digest
+    -- counts from it (issue #170). It waits for the whole roster, or the rest would read as new.
+    if not next(self.db.firstSeen) then
+        if not self:WholeRoster() then return end
+        self.db.firstSeenSince = GetServerTime()
+    end
     local now = GetServerTime()
     local n = GetNumGuildMembers() or 0
     for i = 1, n do

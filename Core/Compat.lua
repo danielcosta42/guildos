@@ -84,6 +84,13 @@ function Compat.UnitIdentity(unit)
     return name, realm, classFile
 end
 
+-- Whether a boss fight is going on. The global is a deprecation fallback on all three clients, kept by a
+-- CVar and bound for removal; the addon asks the namespace first and takes no for an answer without either.
+function Compat.IsEncounterInProgress()
+    local ask = C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress or IsEncounterInProgress
+    return ask ~= nil and ask() == true
+end
+
 -- The region this client plays in, as guildos.me writes it, from GetCurrentRegion(): 1 the Americas
 -- ("us"), 2 Korea, 3 Europe, 4 Taiwan. Nil for any other answer (China, a test client), which the site
 -- has no world for, with the number the client gave (issue #182).

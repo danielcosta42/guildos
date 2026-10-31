@@ -193,8 +193,13 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
 
 ## Still for the game to answer
 
-- **Chat lockdown.** When it starts on Forever: combat, instances, encounters? This decides how often roll capture
-  and mention alerts go quiet.
+- **Chat lockdown.** When it starts on Forever. Public reports from retail 12.0 put
+  `C_ChatInfo.InChatMessagingLockdown()` on during an instance encounter, an active Mythic+ or a live PvP match, not in
+  ordinary combat; nothing has been read on Forever yet. If that holds, a `/roll` is readable once the boss is dead and
+  roll capture works there; a roll line arriving secret while a roll is open tells the master looter so, once. The test
+  is in issue #48: four moments in a dungeon, and `/console addonChatRestrictionsForced 1` forces it to try that message.
+- **Who rolled.** Whether the `/roll` line carries the surname, and what `UnitName("raidN")` gives.
+  `LootMaster:WholeRollerName` takes the surname joined, apart or missing, on either side (issue #48).
 - **Group members' identity.** Whether it is restricted outside instances.
 - **`GetRaidRosterInfo`.** Whether its names come back secret too. It is not in the documentation's secret list,
   and RaidTools, PugInspector, LootMaster's master looter, CompanionImport and RaidHUD read names from it.

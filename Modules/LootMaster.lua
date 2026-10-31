@@ -336,6 +336,7 @@ end
 ----------------------------------------------------------------------
 function LootMaster:StartListeningForRolls()
     self.listeningForRolls = true
+    self.saidHidden = nil
 end
 
 function LootMaster:StopListeningForRolls()
@@ -345,9 +346,31 @@ end
 -- Called on every CHAT_MSG_SYSTEM event
 function LootMaster:OnSystemMessage(message)
     -- In lockdown a roll's line cannot be read, so it is not counted: the roll is missed, not misread.
-    if GuildOS.Compat.IsSecret(message) then return end
+    -- Whoever runs the roll is told, once, or it looks as if nobody rolled (issue #48).
+    if GuildOS.Compat.IsSecret(message) then
+        if self.listeningForRolls and self.activeLoot and not self.saidHidden then
+            self.saidHidden = true
+            GuildOS:Print(L["|cffFFAA00[Loot] The game is hiding chat right now, so rolls are not being read.|r"])
+        end
+        return
+    end
     if not self.listeningForRolls or not self.activeLoot then return end
     self:ProcessSystemRoll(message)
+end
+
+----------------------------------------------------------------------
+-- WoW: Forever: the whole name when a /roll line and a raid unit are the same person, else nil.
+-- Neither has been seen in a raid: the line may or may not carry the surname, and UnitName may
+-- give it joined, in its second slot or not at all (issue #48). With the surname on one side
+-- only, the first name decides: a stranger nearby who shares it could roll, and two raiders who
+-- share it read as the first one, but a raider's roll going unread is worse.
+----------------------------------------------------------------------
+function LootMaster:WholeRollerName(roller, name, surname)
+    local whole = (surname and surname ~= "") and (name .. " " .. surname) or name
+    if whole == roller then return whole end
+    if whole:find(" ", 1, true) and roller:find(" ", 1, true) then return nil end
+    if whole:match("^%S+") ~= roller:match("^%S+") then return nil end
+    return #whole > #roller and whole or roller
 end
 
 ----------------------------------------------------------------------
@@ -383,7 +406,13 @@ function LootMaster:ProcessSystemRoll(message)
     if not inRaid then
         local numMembers = GetNumGroupMembers() or 0
         for i = 1, numMembers do
-            local uName = GuildOS.Compat.UnitIdentity("raid" .. i)
+            local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
+            local whole = uName and GuildOS.Client.has.surnames
+                and self:WholeRollerName(cleanName, uName, uSecond)
+            if whole then
+                inRaid, cleanName = true, whole
+                break
+            end
             if uName and (uName == cleanName or uName == roller) then
                 inRaid = true
                 break
@@ -1057,8 +1086,9 @@ function LootMaster:RegisterRoll(name, rollType, roll)
     if numMembers > 0 then
         for i = 1, numMembers do
             local unit = "raid" .. i
-            local uName, _, classFile = GuildOS.Compat.UnitIdentity(unit)
-            if uName and uName == name then
+            local uName, uSecond, classFile = GuildOS.Compat.UnitIdentity(unit)
+            if uName and (uName == name
+                or (GuildOS.Client.has.surnames and self:WholeRollerName(name, uName, uSecond))) then
                 class = classFile or "UNKNOWN"
                 break
             end
@@ -1205,16 +1235,24 @@ function LootMaster:AwardLoot(playerName, silent)
     -- Path 1: ML loot window open + ML API available -> GiveMasterLoot
     if self.lootWindowOpen and slot and GiveMasterLoot and GetMasterLootCandidate then
         local numCandidates = 40
+        local found, matches = nil, 0
         for i = 1, numCandidates do
             local candidateName = GetMasterLootCandidate(slot, i)
             if candidateName then
                 local cName = candidateName:match("^([^-]+)")
                 if cName == playerName then
-                    GiveMasterLoot(slot, i)
-                    awarded = true
+                    found, matches = i, 1
                     break
+                elseif GuildOS.Client.has.surnames and self:WholeRollerName(cName, playerName) then
+                    found, matches = i, matches + 1
                 end
             end
+        end
+        -- An item handed out does not come back: a first name alone gives it only when it can be nobody
+        -- else's. Two who share one go to the trade below (issue #48).
+        if matches == 1 then
+            GiveMasterLoot(slot, found)
+            awarded = true
         end
     end
 

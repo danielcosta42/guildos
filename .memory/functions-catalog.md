@@ -360,6 +360,9 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
+| `GuildOS:DateText(timestamp, rest)` | Day and month in the order the client's language writes them, then `rest` (" %H:%M", "/%Y"): every date on screen (#170) |
+| `LootMaster:WholeRollerName(roller, name, surname)` | Forever: the whole name when a /roll line and a unit are one person, whichever side has the surname; nil if not (#48). Alone it hands out an item only when exactly one candidate matches |
+| `RaidTracker:ReopenSession()` / `ResumeAtLogin(tries)` / `StartSnapshots()` | The night in progress lives in `raidTracker.openSession`: a /reload or a logout picks it back up within `OPEN_HOLD` on the same character, or ends it at its last snapshot (#170). `CheckZone` waits for this (`resuming`) |
 | `RaidTracker:GetWeekNum(timestamp)` / `WeekStart(weekNum)` / `ResetOrigin()` | The lockout week a timestamp falls in, counted from this client's region's weekly reset; the moment a week starts; that region's origin. `RESET_ORIGIN` is the client's `Cfg_Regions.Raidorigin` (us Tuesday 15:00 UTC, eu Wednesday 04:00, kr and tw Wednesday 23:00), the region `Compat.Region()`'s, the Americas when the client does not say. Lockouts, attendance and the raids panel's week groups all ask it; the site's `resetWeek` is the same table (guildos-web#199) |
 | `RaidTracker:_RegisterTests()` | `/gos selftest`'s `raidtracker.weekly_reset`: the table's next reset against `Compat.SecondsUntilWeeklyReset()`, within a minute; passes where the client has no such call (guildos-web#199) |
 | `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
@@ -1047,4 +1050,5 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | core member `status` | `"bench"` for a reserve, nil for a titular (every older record); from the site's `GOSCORE1` (`status`, guildos-web #249) on the Discord's records, kept by `AddMember`, carried in the officers' `discordList` |
 | `CoreManager:GetComposition` | Titulars only; `bench` counts the reserves |
 | `CoreManager:OpenSlots(coreName)` | Per role, the target for the size less the titulars playing it; `total` = size less titulars. The core panel shows them, reserves dimmed below the titulars |
+| `Compat.IsEncounterInProgress()` | Whether a boss fight is going on: `C_InstanceEncounter` first, then the deprecated global, and no with neither |
 | `Compat.GuildTabard()` | The guild's tabard as the game draws it (#213): `GetGuildLogoInfo`'s colours as bytes and emblem style, `GetGuildTabardFiles`' six files; nil without one or with anything secret. Exported as `tabard` (v12) off TBC Anniversary; guildos.me turns it into its `GT1` code |

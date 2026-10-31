@@ -565,7 +565,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
             :SetPoint("LEFT", 18, 0)
 
         -- Week range label  e.g.  "22/04 – 28/04"
-        local weekLabel = date("%d/%m", g.weekStart) .. " – " .. date("%d/%m", g.weekStart + 6 * 86400)
+        local weekLabel = GuildOS:DateText(g.weekStart) .. " – " .. GuildOS:DateText(g.weekStart + 6 * 86400)
         UI:CreateText(gRow, weekLabel, 10, C.silver.r, C.silver.g, C.silver.b)
             :SetPoint("LEFT", 170, 0)
 
@@ -865,7 +865,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
         avgScoreText:SetPoint("LEFT", 355, 0)
 
         local lastStr = entry.data.lastRaid and entry.data.lastRaid > 0
-            and date("%m/%d/%Y", entry.data.lastRaid) or "-"
+            and GuildOS:DateText(entry.data.lastRaid, "/%Y") or "-"
         local lastText = UI:CreateText(row, lastStr, 9, C.silver.r, C.silver.g, C.silver.b)
         lastText:SetPoint("LEFT", 450, 0)
 
@@ -1265,7 +1265,7 @@ function GuildOS:RefreshLootPanel(content, countText)
         raidText:SetPoint("LEFT", 450, 0)
 
         -- Date
-        local dateStr = date("%m/%d %H:%M", entry.timestamp or 0)
+        local dateStr = GuildOS:DateText(entry.timestamp or 0, " %H:%M")
         local dateText = UI:CreateText(row, dateStr, 10, C.silver.r, C.silver.g, C.silver.b)
         dateText:SetPoint("LEFT", 600, 0)
 
@@ -1531,7 +1531,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             local dY = -6
 
             -- Start date
-            local startStr = date("%m/%d/%y", data.startDate or 0)
+            local startStr = GuildOS:DateText(data.startDate or 0, "/%y")
             local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(trial.key)
             local infoFS = detailFrame:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(infoFS, 9)
@@ -1558,7 +1558,7 @@ function GuildOS:RefreshTrialsPanel(parent)
                     noteFS:SetWidth(content:GetWidth() - 60)
                     noteFS:SetJustifyH("LEFT")
                     noteFS:SetWordWrap(true)
-                    local dateStr = note.timestamp and date("%m/%d %H:%M", note.timestamp) or ""
+                    local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
                     noteFS:SetText(format("|cffAAAAAA[%s %s]|r %s", note.author or "?", dateStr, note.text or ""))
                     noteFS:Show()
                     dY = dY - (noteFS:GetStringHeight() + 3)
@@ -3903,7 +3903,7 @@ local function BuildWishlistFrame()
     local syncBtn = UI:CreateButton(f, L["Sync"], 80, 28)
     syncBtn:SetPoint("BOTTOMRIGHT", -8, 11)
     syncBtn:SetScript("OnClick", function()
-        if GuildOS.Wishlist then GuildOS.Wishlist:BroadcastMyWishlist() end
+        if GuildOS.Wishlist then GuildOS.Wishlist:BroadcastMyWishlist(true) end
         GuildOS:Print(L["[Wishlist] Sent to the guild."])
     end)
 

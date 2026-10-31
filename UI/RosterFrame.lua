@@ -584,18 +584,22 @@ function GuildOS:CreateRosterPanel(parent, host)
     local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
     offlineBtn:SetPoint("RIGHT", -12, 0)
     offlineBtn.isToggled = true
-    offlineBtn:SetScript("OnClick", function(self)
-        self.isToggled = not self.isToggled
-        GuildOS.db.settings.showOffline = self.isToggled
-        if self.isToggled then
-            self.label:SetText(L["Show Offline"])
-            self:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
+    local function paintOffline(on)
+        offlineBtn.isToggled = on
+        if on then
+            offlineBtn.label:SetText(L["Show Offline"])
+            offlineBtn:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
         else
-            self.label:SetText(L["Online Only"])
-            self:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+            offlineBtn.label:SetText(L["Online Only"])
+            offlineBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
+    end
+    offlineBtn:SetScript("OnClick", function(self)
+        paintOffline(not self.isToggled)
+        GuildOS.db.settings.showOffline = self.isToggled
         host:RefreshRoster()
     end)
+    if not GuildOS.db.settings.showOffline then paintOffline(false) end   -- saved from the last session
     host.offlineBtn = offlineBtn
 
     -- Which columns, in what order (#178). A right click on the header opens the same panel.
