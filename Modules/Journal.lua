@@ -153,6 +153,19 @@ local function keptOf(e)
     return { id = e.id, subjectKey = GuildOS:LocalMemberKey(e.subjectKey), at = e.at, type = e.type, data = data }
 end
 
+-- The way through finished after the end (issue #235): the clear I wrote says so. Its row on
+-- guildos.me is written once, so this holds until my next upload, which is what a run lasts.
+function Journal:Complete(id, bosses)
+    for _, e in ipairs(entries()) do
+        if e.id == id then
+            e.data.bosses, e.data.fullClear = bosses, true
+            local f = GuildOS.db.journal.firsts[e.data.dungeonId]
+            if f and f.at == e.at then f.bosses, f.full = bosses, true end
+            return
+        end
+    end
+end
+
 -- Entries from the guild: only the sender's own, only ones that make sense, each once.
 function Journal:OnSync(env, sender)
     if type(sender) ~= "string" or sender == "" or type(env.data) ~= "table" then return end

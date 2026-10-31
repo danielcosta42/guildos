@@ -101,7 +101,7 @@ go("party", 2999, NOW + 900)
 check(G.db.dungeonRun.runId == run.runId, "back inside 15 minutes: the same run")
 D:OnEncounterEnd(3355, 1, NOW + 1000)
 D:OnEncounterEnd(9999, 1, NOW + 1100)       -- not this dungeon's
-D:OnEncounterEnd(3412, 1, NOW + 1200)       -- Bjork, the final boss
+D:OnEncounterEnd(3354, 1, NOW + 1200)       -- Rath'mael, the final boss
 local c = clears()
 check(#c == 1, "the final boss is the clear")
 local toasts = 0
@@ -109,9 +109,9 @@ for _, m in ipairs(printed) do if m:find("First clear of Ruins of Lordaeron for 
 check(toasts == 1, "the first clear this client knows of is said once")
 local e = c[1]
 check(e.data.dungeonId == "ruins-of-lordaeron" and e.data.runId == run.runId, "of this dungeon and this run")
-check(e.data.bosses == 3 and e.data.fullClear == false, "three of seven: not a full clear")
+check(e.data.bosses == 3 and e.data.fullClear == false, "three of five: not a full clear")
 check(e.subjectKey == G:GetPlayerKey(G.Compat.PlayerName()), "about me")
-D:OnEncounterEnd(3412, 1, NOW + 1300)
+D:OnEncounterEnd(3354, 1, NOW + 1300)
 check(#clears() == 1, "killing it again in the same run writes nothing")
 
 -- ── Leaving, another dungeon, secrets ───────────────────────────────────
@@ -125,7 +125,7 @@ G.Compat.IsSecret = function(v) return v == secret end
 D:OnEncounterEnd(secret, 1, NOW + 5100)
 check(next(G.db.dungeonRun.kills) == nil, "a secret encounter counts nothing")
 for _, b in ipairs({ 3480, 3481, 3644, 3482 }) do D:OnEncounterEnd(b, 1, NOW + 5200) end
-check(#clears() == 2 and clears()[2].data.fullClear == true and clears()[2].data.bosses == 4, "all four of Wetlands: a full clear")
+check(#clears() == 2 and clears()[2].data.fullClear == true and clears()[2].data.bosses == 3, "the three of Wetlands: a full clear, one faction's quest boss apart")
 go("party", 3109, NOW + 6000)
 D:OnEncounterEnd(3496, 1, NOW + 6100)
 check(#clears() == 2, "a dungeon with no final boss known records no clear")
@@ -138,7 +138,7 @@ check(G.db.dungeonRun == nil, "a raid is RaidTracker's, not a run, and ends the 
 -- ── Chain runs, logouts, alts ───────────────────────────────────────────
 local T = NOW + 10000
 go("party", 2998, T)
-for _, b in ipairs({ 3480, 3481, 3644, 3482 }) do D:OnEncounterEnd(b, 1, T + 100) end
+for _, b in ipairs({ 3480, 3481, 3482 }) do D:OnEncounterEnd(b, 1, T + 100) end
 check(#clears() == 3, "the third clear")
 go("none", 0, T + 200)
 check(G.db.dungeonRun == nil, "leaving after the clear ends the run")
@@ -155,5 +155,41 @@ D:OnEncounterEnd(3480, 1, T + 86500)
 UnitFullName = function() return "Mira", "Costa" end
 go("party", 2998, T + 86600)
 check(G.db.dungeonRun.who ~= clears()[1].subjectKey and next(G.db.dungeonRun.kills) == nil, "an alt never inherits a run")
+
+-- ── Where a dungeon ends ────────────────────────────────────────────────
+-- The game's own count of who ends one (issue #235), with the rest of the way a full clear.
+local function runOf(instance, kills, t)
+  go("none", 0, t - 2000)
+  go("party", instance, t)
+  for i, b in ipairs(kills) do D:OnEncounterEnd(b, 1, t + i) end
+  go("none", 0, t + 100)
+  return clears()[#clears()]
+end
+local F = NOW + 20000
+local ended = runOf(2959, { 3311, 3298, 3301, 3310, 3302, 3299, 3300, 3312, 3303 }, F)
+check(ended.data.dungeonId == "city-of-dalaran" and ended.data.fullClear == true and ended.data.bosses == 7, "Shade of the Archmage ends Dalaran, the summoned and the phantom apart")
+local before = #clears()
+runOf(2959, { 3312, 3310 }, F + 5000)
+check(#clears() == before, "neither of those is an end")
+ended = runOf(2999, { 3353, 3355, 3357, 3412, 3354 }, F + 10000)
+check(ended.data.dungeonId == "ruins-of-lordaeron" and ended.data.fullClear == true and ended.data.bosses == 5, "Rath'mael ends Ruins, with the five of the way")
+before = #clears()
+runOf(2999, { 3353, 3412, 3408 }, F + 15000)
+check(#clears() == before, "Bjork in the middle ends nothing")
+ended = runOf(3065, { 3493, 3495, 3494, 3496 }, F + 20000)
+check(ended.data.dungeonId == "hall-of-thanes" and ended.data.fullClear == true, "Durgen Dirgehammer ends the Hall of Thanes")
+ended = runOf(2999, { 3353, 3355, 3357, 3354 }, F + 30000)
+check(ended.data.bosses == 4 and ended.data.fullClear == false, "the end first, with one of the way to go: not yet")
+before = #clears()
+go("party", 2999, F + 40000)
+D:OnEncounterEnd(3353, 1, F + 40001)
+D:OnEncounterEnd(3355, 1, F + 40002)
+D:OnEncounterEnd(3357, 1, F + 40003)
+D:OnEncounterEnd(3354, 1, F + 40004)
+D:OnEncounterEnd(3408, 1, F + 40005)        -- the rare: off the way, and it finishes nothing
+check(clears()[#clears()].data.fullClear == false, "a rare after the end changes nothing")
+D:OnEncounterEnd(3412, 1, F + 40006)
+go("none", 0, F + 40100)
+check(#clears() == before + 1 and clears()[#clears()].data.fullClear == true and clears()[#clears()].data.bosses == 5, "the last of the way after the end: the same clear, now a full one")
 
 print(("dungeon-log: %d checks passed"):format(checks))

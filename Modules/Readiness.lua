@@ -11,7 +11,8 @@ GuildOS.Readiness = Readiness
 -- Status ranking for sorting (most actionable first).
 local STATUS_RANK = { notready = 0, warn = 1, ready = 2, nodata = 3 }
 
--- WoW: Forever has no attunements: the door to a raid is level 60 (issue #206, guildos.me #238).
+-- WoW: Forever's door to a raid is level 60 (issue #206, guildos.me #238). Onyxia's also asks for the
+-- Drakefire Amulet, which nothing here reads: a 40 counts who is at the cap, not who holds it.
 local FOREVER = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
 local MIN_ILVL_MAX = 1000
 local STAMP_FUTURE_SLACK = 300   -- seconds an officer's stamp may run ahead of this clock, as the rank's
