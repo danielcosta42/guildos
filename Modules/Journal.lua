@@ -257,15 +257,25 @@ end
 
 -- The week, the guild's as a whole: milestones reached, how many members reached one, clears.
 function Journal:ThisWeek(now)
-    local since, milestones, clears, members = now - WEEK_S, 0, 0, {}
+    local since, milestones, clears, members, cleared = now - WEEK_S, 0, 0, {}, {}
     for _, e in ipairs(entries()) do
         if e.at >= since then
             if e.type == "dungeon.clear" then
-                clears = clears + 1
+                cleared[#cleared + 1] = e
             else
                 milestones = milestones + 1
                 members[GuildOS:LocalMemberKey(e.subjectKey)] = true
             end
+        end
+    end
+    -- Each client writes down only itself: five people in one run are one clear, as guildos.me counts it.
+    table.sort(cleared, function(a, b) return a.at < b.at end)
+    local start = {}
+    for _, e in ipairs(cleared) do
+        local id = e.data.dungeonId
+        if not start[id] or e.at - start[id] > GROUP_S then
+            start[id] = e.at
+            clears = clears + 1
         end
     end
     local n = 0
