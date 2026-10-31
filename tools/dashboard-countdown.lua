@@ -126,4 +126,20 @@ setup({ STEPS = {}, ShouldShow = function() error("no such thing on this client"
 check(shown(THE_REST), "a failure leaves the Dashboard as it was")
 check(#GuildOS.State.errors == 1, "and /guildos errors has it")
 
+-- ── The Achievements tab (issue #216): it draws, with something and with nothing ──
+dofile(ADDON .. "/UI/AchievementsPanel.lua")
+GuildOS.ApplyFont = function() end
+GuildOS.UI.CreateScrollFrame = function() return stub, stub end
+date = os.date
+GuildOS.State.errors = {}
+GuildOS.Achievements = {
+  Renown = function() return 7, 700 end,
+  Next = function() return { { title = "Ready", current = 8, target = 10 } } end,
+  Earned = function() return { { title = "First", at = 1000 } } end,
+}
+GuildOS:CreateAchievementsPanel(stub)
+GuildOS.Achievements = { Renown = function() return nil end }
+GuildOS:CreateAchievementsPanel(stub)
+check(#GuildOS.State.errors == 0, "the tab draws, with a block and without one")
+
 print(("dashboard-countdown: %d checks passed"):format(checks))

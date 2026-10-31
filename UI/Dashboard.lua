@@ -350,7 +350,7 @@ function GuildOS:CreateDashboardPanel(panel)
         end
     end
 
-    -- Each step, and what opens it. The site knows the rest: the Web tab says how to get there.
+    -- Each step, and the tab that helps with it; the line under them says what the site asks for.
     local SETUP = {
         publish = { L["Publish through the companion"], "web" },
         bot = { L["Add the bot to your Discord"], "web" },
@@ -381,6 +381,9 @@ function GuildOS:CreateDashboardPanel(panel)
                 b:SetScript("OnClick", function() goTab(step[2]) end)
             end
         end
+        local how = UI:CreateText(body, L["The bot and the character are set up on guildos.me/start. A group run is a dungeon cleared by 3 members with the addon."], 10, C.silver.r, C.silver.g, C.silver.b)
+        how:SetPoint("TOPLEFT", 2, -76)
+        how:SetWidth(math.max(1, body:GetWidth() - 4)); how:SetWordWrap(false); how:SetJustifyH("LEFT")
         if state.staleDays then
             local old = UI:CreateText(body, string.format(L["Verified %d days ago · log out once to update"], state.staleDays), 10, C.silver.r, C.silver.g, C.silver.b)
             old:SetPoint("LEFT", count, "RIGHT", 10, 0)
@@ -404,9 +407,9 @@ function GuildOS:CreateDashboardPanel(panel)
             local ok, show = GuildOS:SafeCall(A.ShouldShow, A, GetServerTime())
             cSetup:SetShown(ok and show or false)
             if ok and show then
-                cSetup:ClearAllPoints(); cSetup:SetPoint("TOPLEFT", M, -M); cSetup:SetSize(innerW, 112)
+                cSetup:ClearAllPoints(); cSetup:SetPoint("TOPLEFT", M, -M); cSetup:SetSize(innerW, 128)
                 GuildOS:SafeCall(fillSetup, cSetup, A:Read(GetServerTime()))
-                top = M + 112 + G
+                top = M + 128 + G
             end
         end
 

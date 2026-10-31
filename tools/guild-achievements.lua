@@ -126,10 +126,31 @@ check(not earned[2].title:find("|", 1, true), "no colour reaches a line of ours"
 check(A:Of(G:LocalMemberKey("Mira Thornwood"))[1] == "First to Sixty", "a member's own, for the tooltip")
 check(#A:Of(G:LocalMemberKey("Nobody Here")) == 0, "and nobody else's")
 check(#A:Next() == 1 and A:Next()[1].target == 10, "the nearest, with a bad row out")
+check(not has(D:Build(NOW - DAY), "Achievement:"), "the first time, everything the guild already had is no news")
+A:MarkSeen()
+inbox(HEAD .. [[,"feed":[{"id":"f1","type":"achievement.earned","at":]] .. (NOW - 30) .. [[,"text":"Achievement: Rare One"}],"achievements":{"renown":135,"level":2,"earned":[
+  {"id":"level.first_60","title":"First to Sixty","at":]] .. (NOW - 60) .. [[,"key":"Mira Thornwood"},
+  {"id":"founding.charter","title":"Charter Signed","at":]] .. (NOW - 10 * DAY) .. [[},
+  {"id":"craft.late","title":"Told Late","at":]] .. (NOW - 5 * DAY) .. [[},
+  {"id":"rare.one","title":"Rare One","at":]] .. (NOW - 30) .. [[}
+],"next":[{"title":"Ready for Ten I","current":8,"target":10}]}}]])
 local lines = D:Build(NOW - DAY)
-check(has(lines, "Achievement: First to Sixty"), "new since the last login")
-check(not has(lines, "Charter"), "old ones are not said again")
-check(has(lines, "Next: Ready for Ten I (8/10)"), "and the nearest")
+check(has(lines, "Achievement: Told Late"), "new to this client, whatever the fact's own date")
+check(not has(lines, "Achievement: Charter"), "what was said is not said again")
+check(not has(lines, "Achievement: First to Sixty"), "nor what was already there")
+local rare = 0
+for _, l in ipairs(lines) do if l:find("Rare One", 1, true) then rare = rare + 1 end end
+check(rare == 1, "a rare one the site's feed tells is told once")
+check(has(lines, "Next: Ready for Ten I (8/10)"), "and the nearest, beside the news")
+A:MarkSeen()
+GuildOS.db.digest.feedSeen.f1 = NOW
+GuildOS.db.activation.hiddenUntil = NOW + DAY
+check(#D:Build(NOW - DAY) == 0, "with nothing else to say the nearest does not open the digest")
+GuildOS.db.activation.hiddenUntil = nil
+
+GuildOS.db.settings.modules = { achievements = false }
+check(A:Renown() == nil, "switched off: nothing")
+GuildOS.db.settings.modules = nil
 
 GuildOS.db.settings.companion = false
 check(A:Renown() == nil, "the companion off: nothing")
@@ -184,5 +205,8 @@ S:Celebrate()
 check(#printed == 1 and printed[1]:find("set up for your guild", 1, true), "celebrated")
 S:Celebrate()
 check(#printed == 1, "once")
+GuildOS.db.settings.companion = false
+check(S:Read(NOW).activated and not S:ShouldShow(NOW), "the companion off does not un-activate the guild")
+GuildOS.db.settings.companion = true
 
 print(("guild-achievements: %d checks passed"):format(checks))

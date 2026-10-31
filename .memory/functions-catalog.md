@@ -1002,7 +1002,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 
 | Function | Purpose |
 |---|---|
-| `Achievements` (Modules/Achievements.lua) | WoW: Forever only. Reads the block's `achievements`: `Data()`, `Renown()`, `Earned()`, `Next()`, `Of(key)`, `GetDigestLines(since)`. Titles come ready; no catalogue, no rule |
+| `Achievements` (Modules/Achievements.lua) | WoW: Forever only. Reads the block's `achievements`: `Data()`, `Renown()`, `Earned()`, `Next()`, `Of(key)`, `Unseen()`/`MarkSeen()` (`db.digest.achievementsSeen`: `at` is the fact's date, not comparable with the last login), `GetDigestLines(told)`, `NextLine()`. Titles come ready; no catalogue, no rule |
 | `Activation` (Modules/Activation.lua) | WoW: Forever only. `Read(now)`: `publish` and `members` the client knows, `bot`, `account` and `run` from the block. `ShouldShow(now)` for the GM and officers, `Hide(now)` for 30 days, `GetDigestLine(now)` every 3 days, `Celebrate()` once. `db.activation` holds only `hiddenUntil`, `remindedAt`, `celebrated` |
 | `CompanionImport.Inert(text)` | Text off the network with `\|` and line breaks out |
 | `GuildOS:CreateAchievementsPanel(parent)` | The tab; `UI/Dashboard.lua` has the setup card |

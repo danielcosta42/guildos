@@ -25,6 +25,7 @@ local function fromSite()
     local unseen, told = {}, {}
     for _, item in ipairs(GuildOS.CompanionImport and GuildOS.CompanionImport:FeedLines() or {}) do
         told[item.type] = true
+        told[item.type .. "|" .. item.at] = true
         if item.key then told[item.type .. "|" .. item.key] = true end
         if not seen[item.id] and #unseen < FEED_LINES then unseen[#unseen + 1] = item end
     end
@@ -182,12 +183,15 @@ function Digest:Build(since)
 
     -- WoW: Forever: what the guild earned (#216), and the officers' reminder of its setup (#217)
     if GuildOS.Achievements then
-        for _, line in ipairs(GuildOS.Achievements:GetDigestLines(since)) do
+        for _, line in ipairs(GuildOS.Achievements:GetDigestLines(told)) do
             lines[#lines + 1] = line
         end
     end
     local setup = GuildOS.Activation and GuildOS.Activation:GetDigestLine(GetServerTime())
     if setup then lines[#lines + 1] = setup end
+    -- Beside other news, never a reason to open the digest on its own at every login.
+    local nearest = GuildOS.Achievements and GuildOS.Achievements:NextLine()
+    if nearest and (#lines > 0 or #feed > 0) then lines[#lines + 1] = nearest end
 
     if #feed > 0 then
         lines[#lines + 1] = "|cffEDCC7B" .. L["From guildos.me"] .. "|r"
@@ -270,6 +274,8 @@ function Digest:Show(lines)
             y = y + math.max(20, (fs:GetStringHeight() or 14) + 8)
         end
     end
+    -- The title above and the button below: a long digest grows, never runs under the button.
+    f:SetHeight(math.max(280, 44 + y + 48))
 
     f:Show()
     return f
@@ -291,6 +297,7 @@ function Digest:ShowOnLogin()
 
     local lines = self:Build(since)
     self:MarkFeedSeen(GetServerTime())
+    if GuildOS.Achievements then GuildOS.Achievements:MarkSeen() end
     if GuildOS.Activation then
         if GuildOS.Activation:GetDigestLine(GetServerTime()) then GuildOS.Activation:Reminded(GetServerTime()) end
     end

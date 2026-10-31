@@ -59,9 +59,11 @@ function Activation:Read(now)
     for _, id in ipairs(self.STEPS) do
         if steps[id] then done = done + 1 end
     end
-    local at = a and GuildOS.CompanionImport:Ack()
+    local at = GuildOS.CompanionImport:Ack()
     local stale = at and now - at > STALE_S and math.floor((now - at) / DAY) or nil
-    return { steps = steps, done = done, activated = a and tonumber(a.activatedAt) ~= nil, staleDays = stale }
+    -- Once said it stays: a block gone old, or the companion off, does not un-activate a guild.
+    local activated = (a and tonumber(a.activatedAt) ~= nil) or (GuildOS.db.activation and GuildOS.db.activation.celebrated == true) or false
+    return { steps = steps, done = done, activated = activated, staleDays = stale }
 end
 
 -- For the GM and the officers, while the guild is not there and they did not put it away.
