@@ -3,7 +3,8 @@
 --
 -- A clear of one of WoW: Forever's new dungeons, written into my own journal: entering one of
 -- them opens a run, a boss killed inside it counts, and killing its final boss is the clear —
--- one per run, however often it dies again. Leaving after the clear, leaving for more than 15
+-- one per run, however often it dies again. Not every dungeon is a line: the last of the way
+-- falling after the end makes that clear a full one. Leaving after the clear, leaving for more than 15
 -- minutes (a logout inside counts as leaving), or entering any other instance ends the run; dying
 -- and running back keeps it. A run is one character's: the saved variables are the account's, and
 -- an alt in the same guild would otherwise inherit it.
@@ -87,13 +88,18 @@ function DungeonLog:OnEncounterEnd(encounterID, success)
     end
     if not known then return end
     run.kills[encounterID] = true
-    if encounterID ~= d.final or run.cleared then return end
-    run.cleared = true
     local n = 0
     for _ in pairs(run.kills) do n = n + 1 end
+    if run.cleared then
+        if n == #d.bosses and run.entry and GuildOS.Journal then GuildOS.Journal:Complete(run.entry, n) end
+        return
+    end
+    if encounterID ~= d.final then return end
+    run.cleared = true
     local e = GuildOS.Journal and GuildOS.Journal:Add("dungeon.clear", {
         dungeonId = d.id, dungeonName = d.name, bosses = n, fullClear = n == #d.bosses, runId = run.runId,
     })
+    run.entry = e and e.id
     -- The first this client knows of, said to whoever was in it (issue #211): hopeful, local.
     if e and GuildOS.Journal:IsFirstClear(e) then
         GuildOS:Print(string.format(GuildOS.L["First clear of %s for %s!"], d.name, GetGuildInfo("player") or ""))

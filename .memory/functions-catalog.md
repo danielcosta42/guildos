@@ -972,6 +972,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | Function | Purpose |
 |---|---|
 | `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
+| `Journal:Complete(id, bosses)` | The way through finished after the end: my clear becomes a full one, in the entry and in the firsts (#235) |
 | `Journal:Add(type, data)` / `OnLevelUp(level)` | Write down, keep and publish an entry about me (`<myKey>:<seq>`, `GetServerTime()`); `PLAYER_LEVEL_UP` writes `member.level` `{level}` at 10–50 and `member.level60` `{}` at the cap: no name, the roster names people |
 | `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild, kept with only their type's fields and the subject's key localized (`LocalMemberKey`: each Forever client answers its own realm, #95); my last week again at login (30 s); oldest out past 30 days and 1,000 |
 | `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
