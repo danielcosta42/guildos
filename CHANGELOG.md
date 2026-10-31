@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-10-31
+
+### Added
+- as conquistas e a preparação da guilda no jogo (#216, #217)
+- o GOSGILD1 no jogo — a fundação do site e as linhas do guildos.me no resumo (#215)
+
+### Fixed
+- da revisão do addon — o que já foi dito não repete, a guilda ativada fica ativada, o resumo cresce e o cartão diz o que fazer (#215, #216, #217)
+- o site manda quem foi adicionado à mão, nunca o motivo (#215)
+
+
 ## [1.1.0] - 2026-10-30
 
 ### Added
