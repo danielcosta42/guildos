@@ -1969,6 +1969,11 @@ function ShowRowTooltip(row)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
 
+    -- What this member earned for the guild (issue #216).
+    for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do
+        GameTooltip:AddLine(title, C.gold.r, C.gold.g, C.gold.b)
+    end
+
     -- First seen by Guild OS (approximate "member since")
     local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)
     if firstSeen then

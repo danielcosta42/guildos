@@ -281,6 +281,8 @@ local MODULE_START = {
     { "Journal", feature = "journal" },
     -- WoW: Forever only (issue #208): the guild's founding and its founding members.
     { "Founding", feature = "founding" },
+    -- WoW: Forever only (issue #217): the guild's setup, for its GM and officers.
+    { "Activation" },
     -- WoW: Forever only (issue #210): a clear of a new dungeon, into my journal.
     { "DungeonLog", feature = "journal" },
     { "ConsumableChecker", feature = "consumableChecker" },

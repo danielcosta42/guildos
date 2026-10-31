@@ -51,16 +51,19 @@ function Milestones:Check(key, data, prevLevel, prevAttune, hadPrior)
 end
 
 ----------------------------------------------------------------------
--- Digest lines for milestones + guild anniversaries since `since`.
+-- Digest lines for milestones + guild anniversaries since `since`. `told` is what guildos.me says
+-- in this digest (guildos-web #259): a ding it tells is not told twice.
 ----------------------------------------------------------------------
-function Milestones:GetDigestLines(since)
+function Milestones:GetDigestLines(since, told)
     since = since or 0
     local out = {}
 
     for _, ev in ipairs((GuildOS.db.milestones and GuildOS.db.milestones.events) or {}) do
         if (ev.ts or 0) > since then
             if ev.type == "ding" then
-                out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or tostring(GuildOS.Client.maxLevel))
+                if not (told and told["member.level60|" .. tostring(ev.key)]) then
+                    out[#out + 1] = string.format(L["%s reached level %s!"], ev.name or "?", ev.detail or tostring(GuildOS.Client.maxLevel))
+                end
             elseif ev.type == "attune" then
                 out[#out + 1] = string.format(L["%s completed a new attunement"], ev.name or "?")
             end

@@ -47,6 +47,7 @@ GuildOS.UI = setmetatable({
   GetFeature = function() return nil end,
   CreateText = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
   CreateButton = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
+  CreateHeaderText = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
 }, { __index = function() return function() return stub end end })
 dofile(ADDON .. "/UI/Dashboard.lua")
 function GuildOS:CreateGuildChatFeed() return function() end end
@@ -101,5 +102,44 @@ check(#GuildOS.State.errors == 1, "and /guildos errors has it")
 -- ── Off Forever: the card it always was, and no error ─────────────
 show(function() return nil end)
 check(shown(THE_OLD_CARD) and #GuildOS.State.errors == 0, "no countdown here: the old card, and nothing recorded")
+
+-- ── The guild's setup (issue #217) ────────────────────────────────────
+local function setup(activation)
+  GuildOS.Activation = activation
+  show(function() return nil end)
+  GuildOS.Activation = nil
+end
+setup({
+  STEPS = { "publish", "bot", "account", "members", "run" },
+  ShouldShow = function() return true end,
+  Read = function() return { done = 2, steps = { publish = true, bot = true }, staleDays = 4 } end,
+})
+check(shown("SET UP GUILD OS FOR YOUR GUILD"), "the card, for who it is due")
+check(shown("Publish through the companion") and shown("First group run"), "with its steps")
+check(shown("Verified 4 days ago"), "and how old what the site said is")
+check(shown(THE_REST), "and the rest of the Dashboard")
+
+setup({ STEPS = {}, ShouldShow = function() return false end })
+check(shown(THE_REST) and #GuildOS.State.errors == 0, "not due: nothing changes")
+
+setup({ STEPS = {}, ShouldShow = function() error("no such thing on this client") end })
+check(shown(THE_REST), "a failure leaves the Dashboard as it was")
+check(#GuildOS.State.errors == 1, "and /guildos errors has it")
+
+-- ── The Achievements tab (issue #216): it draws, with something and with nothing ──
+dofile(ADDON .. "/UI/AchievementsPanel.lua")
+GuildOS.ApplyFont = function() end
+GuildOS.UI.CreateScrollFrame = function() return stub, stub end
+date = os.date
+GuildOS.State.errors = {}
+GuildOS.Achievements = {
+  Renown = function() return 7, 700 end,
+  Next = function() return { { title = "Ready", current = 8, target = 10 } } end,
+  Earned = function() return { { title = "First", at = 1000 } } end,
+}
+GuildOS:CreateAchievementsPanel(stub)
+GuildOS.Achievements = { Renown = function() return nil end }
+GuildOS:CreateAchievementsPanel(stub)
+check(#GuildOS.State.errors == 0, "the tab draws, with a block and without one")
 
 print(("dashboard-countdown: %d checks passed"):format(checks))
