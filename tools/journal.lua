@@ -199,7 +199,7 @@ check(#firsts[2].who == 2, "with everyone who cleared it within two minutes: " .
 local mine = J:Mine()
 check(#mine == 2 and mine[1].id == "c2", "my own entries, newest first")
 local week = J:ThisWeek(NOW)
-check(week.clears == 2 and week.milestones == 2 and week.members == 2, "the week: two clears, two milestones by two members")
+check(week.clears == 1 and week.milestones == 2 and week.members == 2, "the week: two clients, one run, as guildos.me counts it; two milestones by two members")
 check(J:IsFirstClear(G.db.journal.entries[2]), "my group's clear is the first")
 check(not J:IsFirstClear({ type = "dungeon.clear", at = NOW, data = { dungeonId = RUINS } }), "a later one is not")
 G.db.journal.entries = {}
