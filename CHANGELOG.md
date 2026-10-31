@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-10-31
+
+### Fixed
+- da revisão do addon — o subtítulo sem 0–0 e o que o cabeçalho promete (#235)
+- da revisão do addon — o último chefe depois do fim ainda completa a corrida (#235)
+- o fim de cada masmorra é o chefe que o jogo conta (#235)
+
+
 ## [1.2.0] - 2026-10-31
 
 ### Added
