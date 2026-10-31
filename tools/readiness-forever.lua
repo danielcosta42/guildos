@@ -81,6 +81,40 @@ end
 local G = load("forever")
 local R = G.Readiness
 
+-- ── The panel: seats, filters and the footer (issue #220) ───────────────
+do
+  local key = function(name) return G:GetPlayerKey(name, "Normal") end
+  local members = {
+    Ember = { [key("Tess Varn")] = { role = "tank" }, [key("Mira Thornwood")] = { role = "healer" }, [key("Orin Vale")] = { role = "rdps", status = "bench" }, [key("Kael Dunmore")] = { role = "mdps" }, [key("Gone Longago")] = { role = "tank" } },
+    Ash = { [key("Tess Varn")] = { role = "mdps" } },
+  }
+  G.CoreManager = {
+    GetSortedNames = function() return { "Ash", "Ember" } end,
+    GetMembers = function(_, n) return members[n] end,
+    GetRaidSize = function(_, n) return n == "Ember" and 20 or 10 end,
+    RaidTargets = function(_, s) return s == 20 and { tank = 2, healer = 5, mdps = 6, rdps = 7 } or { tank = 2, healer = 2, mdps = 3, rdps = 3 } end,
+  }
+  local rows = R:WithSeats(R:GetReport())
+  local of = function(name)
+    for _, r in ipairs(rows) do if r.key == key(name) then return r end end
+  end
+  check(#of("Tess Varn").seats == 2, "a raider on two cores has two seats")
+  check(#of("Orin Vale").seats == 1 and of("Orin Vale").seats[1].main == false, "a reserve is a seat and no titular")
+  check(#R.Filtered(rows, "Ash") == 1, "one core's rows")
+  check(#R.Filtered(rows, "Ember") == 4, "the other core's: who left the guild is no row")
+  check(#R.Filtered(rows, nil, "notready") == 1 and R.Filtered(rows, nil, "notready")[1].key == key("Kael Dunmore"), "by status")
+  check(#R.Filtered(rows, "Ash", "notready") == 0, "both at once")
+  check(#R.Filtered(rows) == #rows, "no filter: everybody")
+  local c = R:Composition(rows, "Ember")
+  check(c.tanks == 1 and c.healers == 1 and c.dps == 0, "at the cap and titular only: not the reserve, not the 30, not who left")
+  check(c.wantTanks == 2 and c.wantHealers == 5 and c.wantDps == 13, "against the targets of its size")
+  local list = R:Compositions(rows)
+  check(#list == 2 and list[1].core == "Ember" and list[2].core == "Ash", "the footer: the largest first")
+  check(R:Compositions(rows, "Ash")[1].dps == 1 and #R:Compositions(rows, "Ash") == 1, "the chosen core alone")
+  G.CoreManager = nil
+  check(#R:Compositions(rows) == 0, "no cores, no footer")
+end
+
 -- ── The rule, case by case ──────────────────────────────────────────────
 for _, c in ipairs(CASES) do
   local status, reason, levelOnly = R.ForeverStatus(c[2], c[3], 60)
