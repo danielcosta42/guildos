@@ -192,9 +192,10 @@ function Founding:FromSite()
     local block = GuildOS.CompanionImport and GuildOS.CompanionImport:GuildBlock()
     local f = block and type(block.founding) == "table" and block.founding or nil
     if not f or not onGuild() then return end
-    local manual = {}
-    for _, m in ipairs(type(f.manual) == "table" and f.manual or {}) do
-        if type(m) == "table" and type(m.key) == "string" then manual[m.key] = m end
+    -- The site sends who, never why: a reason is for whoever may edit the founding. One held here stays.
+    local held, manual = (self:Get() or {}).manual or {}, {}
+    for _, key in ipairs(type(f.manual) == "table" and f.manual or {}) do
+        if type(key) == "string" then manual[key] = held[GuildOS:LocalMemberKey(key)] or { reason = "guildos.me" } end
     end
     f.manual = manual
     if adopt(f, GetServerTime()) then self:Publish() end

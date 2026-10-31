@@ -169,9 +169,14 @@ GuildOS.db.founding = { foundedAt = LAUNCH, source = "declared", recordedAt = LA
 Founding:FromSite()
 local f = GuildOS.db.founding
 check(f.foundedAt == LAUNCH + DAY and f.source == "site" and f.revision == 5, "a newer founding from the site is kept")
-check(f.manual[mira] and f.manual[mira].reason == "Founded it with us", "with its manual additions, as a map")
-check(f.manual[mira].by == GuildOS:LocalMemberKey("Chehul Costa"), "by whoever added them")
+check(f.manual[mira] and f.manual[mira].reason == "guildos.me", "with who was added by hand, and no reason from the site")
 check(#published == 1 and published[1].domain == "founding" and published[1].act == "set", "the GM's client tells the guild")
+
+fresh()
+GuildOS.db.founding = { foundedAt = LAUNCH, source = "declared", recordedAt = LAUNCH, windowDays = 14, revision = 1,
+                        manual = { [mira] = { by = "Me", reason = "Founded it with us", at = LAUNCH } } }
+Founding:FromSite()
+check(GuildOS.db.founding.manual[mira].reason == "Founded it with us", "a reason held here stays")
 
 fresh()
 myRank = 1
