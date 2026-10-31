@@ -154,6 +154,18 @@ Readable records only; eight maps and 57 encounters are still encrypted (see abo
 - **Other new maps:** Dalaran City, Zephras Isle, Hyjal Crater (arena), Battle for Gilneas and Darkspear Islands
   (battlegrounds), and a winter Warsong Gulch.
 - **6,715 item ids** that Classic Era does not have. The same ten classes.
+- **Build 1.60.1.70707 (2026-10-30, product `wowf`):** the five dungeons beyond the four below, and both new raids, still have
+  no `Map` or `DungeonEncounter` row. Half-Pint Tavern left the readable maps. What the client does name:
+  - **Onyxia's Lair** is map 249, 40 players, encounter 1084. Blizzard's raid overview says level 60, the Drakefire Amulet
+    in the bags, and 9 December.
+  - **Blizzard's counts:** The Barrow Deeps has 8 bosses and Hyjal Summit 13, neither with an attunement.
+  - **Kill statistics** (`Achievement`, category 14821) name who ends a place: Rath'mael (Ruins of Lordaeron), Shade of the
+    Archmage and Lyn the Ignored (City of Dalaran), Durgen Dirgehammer (Hall of Thanes), Blazeroar (Alcaz Prison), Nanaya,
+    Cinder, Bolt and Snowtalon (Shaper's Terrace), The Wild King (Hyjal Summit), Sonya Darkhallow (Barrow Deeps). Their
+    criteria trees are still empty, so no encounter id comes with them.
+  - **Raid and dungeon names in every language** come from those strings and from `AreaTable`, before the maps themselves.
+  - **The table's `OrderIndex` is not a route:** it ended City of Dalaran on Mana Wraith, and Ruins of Lordaeron on Bjork
+    (issue #235). The way through and its end are in `Data/ForeverDungeons.lua`.
 - **The beta:** 2026-09-17 to 2026-10-21, level cap 30, no raids. Launch 2026-11-04; raids 2026-12-09.
 - **Chat lines, guild invites and /who need a click.** `SendChatMessage` is `HasRestrictions` in every beta build's API
   documentation, 69893 included, and on Anniversary 2.5.6 too, so the flag says nothing about when it started to bite.
