@@ -199,6 +199,9 @@ Optional, and off until you turn it on in the **Web** tab. The addon works the s
 - **Nothing to copy on raid night**: a small Windows companion carries the data between the game and the site. The
   site and the Discord bot work anywhere.
 
+**See it working before you install anything:** [guildos.me/como-funciona](https://guildos.me/como-funciona) follows
+one raid week through Discord, the site and the game, in all nine of the addon's languages.
+
 ---
 
 ## FAQ
@@ -249,6 +252,9 @@ addon does not, tell us in the Discord.
 ---
 
 ## Support
+
+**Not sure whether something is a bug?** [The manual](https://guildos.me/manual) lists every function, in the game, on
+the site and in Discord, with how it should behave and what looks like a bug but is not.
 
 **[Join the Guild OS Discord](https://discord.gg/8XA6gmNjja)**: questions get answered there, bugs get looked at,
 and new builds are announced there first. If something misbehaves, `/guildos errors` says what the addon could not
