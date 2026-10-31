@@ -47,6 +47,7 @@ GuildOS.UI = setmetatable({
   GetFeature = function() return nil end,
   CreateText = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
   CreateButton = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
+  CreateHeaderText = function(_, _, t) texts[#texts + 1] = tostring(t); return stub end,
 }, { __index = function() return function() return stub end end })
 dofile(ADDON .. "/UI/Dashboard.lua")
 function GuildOS:CreateGuildChatFeed() return function() end end
