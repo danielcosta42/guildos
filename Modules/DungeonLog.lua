@@ -6,7 +6,7 @@
 -- one per run, however often it dies again. Not every dungeon is a line: the last of the way
 -- falling after the end makes that clear a full one. Leaving after the clear, leaving for more than 15
 -- minutes (a logout inside counts as leaving), or entering any other instance ends the run; dying
--- and running back keeps it. A run is one character's: the saved variables are the account's, and
+-- and running back before the clear keeps it. A run is one character's: the saved variables are the account's, and
 -- an alt in the same guild would otherwise inherit it.
 --
 -- Separate from RaidTracker, which leaves dungeons alone on purpose. Each client records only its
