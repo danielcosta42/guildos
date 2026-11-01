@@ -135,6 +135,13 @@ check(insignia([=[,"insignia":2,"title":"Company"]=]):find("renown%-alliance%-2$
 myFaction = "Neutral"
 tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
 check(tex == nil and title == "Company", "no faction: the title, with no picture")
+-- Indexing with a secret raises, so a reader asks first (Core/Compat.lua).
+local secret, asked = {}, false
+myFaction = secret
+issecretvalue = function(v) asked = asked or v == secret; return v == secret end
+tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
+check(asked and tex == nil and title == "Company", "a faction the client keeps secret is not read")
+issecretvalue = nil
 myFaction = "Horde"
 tex, title = insignia([=[,"insignia":7,"title":"Fortress"]=])
 check(tex and tex:find("renown%-horde%-6$") and title == "Fortress", "past what the addon has: the highest it has, with its own title")
