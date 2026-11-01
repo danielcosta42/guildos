@@ -526,7 +526,9 @@ local function createWindow()
             local A = UI.Agora
             local online = A:RosterLoading() and DASH or string.format(L["%d online"], A:OnlineCount())
             local level = GuildOS.Achievements and GuildOS.Achievements:Renown()
-            local renown = level and (DOT .. string.format(L["renown %d"], level)) or ""
+            local badge = level and GuildOS.Achievements:Insignia()
+            local renown = level and (DOT .. (badge and ("|T" .. badge .. ":14:14|t ") or "")
+                .. string.format(L["renown %d"], level)) or ""
             meta:SetText((GetGuildInfo("player") or "Guild OS") .. DOT .. online .. renown)
             local last = A:LastSync()
             sync:SetText(last and string.format(L["sync %s"], GuildOS:TimeAgo(last)) or L["not synced yet"])

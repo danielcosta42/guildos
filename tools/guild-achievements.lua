@@ -25,6 +25,8 @@ end
 local DAY = 86400
 local NOW = 1793750400 + 20 * DAY
 local myRank = 0
+local myFaction = "Horde"
+UnitFactionGroup = function() return myFaction end
 local printed = {}
 
 local function load(game)
@@ -120,6 +122,49 @@ inbox(HEAD .. [[,"achievements":{"renown":135,"level":2,"earned":[
 ],"next":[{"title":"Ready for Ten I","current":8,"target":10},{"title":"x"}]}}]])
 local level, points = A:Renown()
 check(level == 2 and points == 135, "the renown as the site says it")
+
+-- The insignia (guildos.me specs/068): the art travels in the addon, the title in the block.
+local function insignia(extra)
+  inbox(HEAD .. [=[,"achievements":{"renown":135,"level":2,"earned":[],"next":[]]=] .. extra .. [=[}}]=])
+  return A:Insignia()
+end
+local tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
+check(tex and tex:find("renown%-horde%-2$") and title == "Company", "the insignia as the site says it, in the character's series")
+myFaction = "Alliance"
+check(insignia([=[,"insignia":2,"title":"Company"]=]):find("renown%-alliance%-2$"), "the other faction, the other series")
+myFaction = "Neutral"
+tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
+check(tex == nil and title == "Company", "no faction: the title, with no picture")
+-- Indexing with a secret raises, so a reader asks first (Core/Compat.lua).
+local secret, asked = {}, false
+myFaction = secret
+issecretvalue = function(v) asked = asked or v == secret; return v == secret end
+tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
+check(asked and tex == nil and title == "Company", "a faction the client keeps secret is not read")
+issecretvalue = nil
+myFaction = "Horde"
+tex, title = insignia([=[,"insignia":7,"title":"Fortress"]=])
+check(tex and tex:find("renown%-horde%-6$") and title == "Fortress", "past what the addon has: the highest it has, with its own title")
+for _, series in ipairs({ "horde", "alliance" }) do
+  for n = 1, 6 do
+    local file = io.open(ADDON .. "/Media/renown-" .. series .. "-" .. n .. ".tga", "rb")
+    check(file, "the addon carries " .. series .. " " .. n)
+    if file then file:close() end
+  end
+end
+tex, title = insignia([=[,"insignia":"x","title":7]=])
+check(tex == nil and title == nil, "a value the site sent badly is dropped")
+tex, title = insignia([=[,"insignia":0]=])
+check(tex == nil, "and so is an insignia that does not exist")
+tex, title = insignia("")
+check(tex == nil and title == nil, "an older site: nothing, and the text stays as it was")
+tex, title = insignia([=[,"insignia":1,"title":"Band|cffff0000"]=])
+check(title and not title:find("|", 1, true), "a title is inert, as every title from the site")
+inbox(HEAD .. [[,"achievements":{"renown":135,"level":2,"earned":[
+  {"id":"level.first_60","title":"First to Sixty","at":]] .. (NOW - 60) .. [[,"key":"Mira Thornwood"},
+  {"id":"founding.charter","title":"Charter |cffff0000Signed","at":]] .. (NOW - 10 * DAY) .. [[},
+  {"title":7}
+],"next":[{"title":"Ready for Ten I","current":8,"target":10},{"title":"x"}]}}]])
 local earned = A:Earned()
 check(#earned == 2, "a row the site sent badly is dropped")
 check(not earned[2].title:find("|", 1, true), "no colour reaches a line of ours")
