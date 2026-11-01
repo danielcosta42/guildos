@@ -25,6 +25,8 @@ end
 local DAY = 86400
 local NOW = 1793750400 + 20 * DAY
 local myRank = 0
+local myFaction = "Horde"
+UnitFactionGroup = function() return myFaction end
 local printed = {}
 
 local function load(game)
@@ -127,9 +129,22 @@ local function insignia(extra)
   return A:Insignia()
 end
 local tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
-check(tex and tex:find("renown%-2$") and title == "Company", "the insignia as the site says it")
+check(tex and tex:find("renown%-horde%-2$") and title == "Company", "the insignia as the site says it, in the character's series")
+myFaction = "Alliance"
+check(insignia([=[,"insignia":2,"title":"Company"]=]):find("renown%-alliance%-2$"), "the other faction, the other series")
+myFaction = "Neutral"
+tex, title = insignia([=[,"insignia":2,"title":"Company"]=])
+check(tex == nil and title == "Company", "no faction: the title, with no picture")
+myFaction = "Horde"
 tex, title = insignia([=[,"insignia":7,"title":"Fortress"]=])
-check(tex and tex:find("renown%-6$") and title == "Fortress", "past what the addon has: the highest it has, with its own title")
+check(tex and tex:find("renown%-horde%-6$") and title == "Fortress", "past what the addon has: the highest it has, with its own title")
+for _, series in ipairs({ "horde", "alliance" }) do
+  for n = 1, 6 do
+    local file = io.open(ADDON .. "/Media/renown-" .. series .. "-" .. n .. ".tga", "rb")
+    check(file, "the addon carries " .. series .. " " .. n)
+    if file then file:close() end
+  end
+end
 tex, title = insignia([=[,"insignia":"x","title":7]=])
 check(tex == nil and title == nil, "a value the site sent badly is dropped")
 tex, title = insignia([=[,"insignia":0]=])
