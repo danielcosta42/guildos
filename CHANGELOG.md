@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-11-01
+
+### Added
+- duas séries de insígnias, pela facção do personagem (guildos-web#309)
+- a insígnia de Renome no jogo (guildos-web#309)
+
+### Fixed
+- a facção secreta não é lida (guildos-web#309)
+
+
 ## [1.3.1] - 2026-10-31
 
 ### Fixed
