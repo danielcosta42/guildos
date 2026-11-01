@@ -228,6 +228,20 @@ local json = LD:DecompressDeflate(LD:DecodeForPrint(text:sub(#"GOSCOMP1:" + 1)))
 check(json:find('"region":"us"', 1, true) and json:find('"difficulty":15', 1, true) and json:find('"game":"RETAIL"', 1, true)
   and json:find('"guildKey":"Jardim Escola-Azralon"', 1, true), "the region, the difficulty, the game and the key are on the wire")
 
+-- The character's own pack (the site's specs/070), through the real IsOnGuildDB: the guild is its home
+-- realm's, the line is on mine, and the site cannot place it without the region.
+function UnitLevel() return 90 end
+GuildOS.isGuilded, GuildOS.guildKey = true, "Jardim Escola-Azralon"
+local packText = assert(Companion:BuildSelf())
+local pack = assert(GuildOS.JsonDecode(LD:DecompressDeflate(LD:DecodeForPrint(packText:sub(#"GOSCOMP1:" + 1)))))
+check(pack.self == true and pack.game == "RETAIL" and pack.region == "us" and pack.guildKey == "Jardim Escola-Azralon"
+  and pack.realm == "Azralon", "the pack names the guild by its home realm, with the region")
+check(pack.count == 1 and #pack.members == 1 and pack.members[1].key == "Chehul-TolBarad" and pack.members[1].name == "Chehul"
+  and pack.exportedBy == "Chehul-TolBarad", "and carries one line, on the character's own realm")
+GuildOS.guildKey = "Another Guild-Azralon"
+check(Companion:BuildSelf() == nil, "a character whose guild is not the db's sends no pack")
+GuildOS.guildKey = "Jardim Escola-Azralon"
+
 -- Each region the site has, and none it does not.
 for id, region in pairs({ [1] = "us", [2] = "kr", [3] = "eu", [4] = "tw" }) do
   REGION = id
@@ -239,6 +253,8 @@ for _, id in ipairs({ 5, 72, false }) do
   local built, err = Companion:Build()
   check(none == nil and built == nil and why == Companion:Refused() and err == why and why:find("region", 1, true),
     "region " .. tostring(id) .. ": nothing is published, and it says why")
+  local own, ownWhy = Companion:BuildSelf()
+  check(own == nil and ownWhy == why, "region " .. tostring(id) .. ": and no pack either")
 end
 local realRegion = GetCurrentRegion
 GetCurrentRegion = nil

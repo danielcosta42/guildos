@@ -1053,3 +1053,10 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Achievements:Insignia()` | The renown level's insignia as guildos.me says it: the texture in `Media/renown-<series>-<n>.tga`, in the series of the character's faction, the highest the addon carries past that, and the title, ready in the guild's language |
 | `Compat.IsEncounterInProgress()` | Whether a boss fight is going on: `C_InstanceEncounter` first, then the deprecated global, and no with neither |
 | `Compat.GuildTabard()` | The guild's tabard as the game draws it (#213): `GetGuildLogoInfo`'s colours as bytes and emblem style, `GetGuildTabardFiles`' six files; nil without one or with anything secret. Exported as `tabard` (v12) off TBC Anniversary; guildos.me turns it into its `GT1` code |
+
+## The character's own pack (guildos.me #323, ADR-0028)
+
+| Function | Purpose |
+|---|---|
+| `Companion:BuildSelf()` | My own line as a `GOSCOMP1:` string, or nil and why: same wire format and decoder as the export, `members` with one line (the export's own, built by the same local `memberLine`), `self = true`, `count = 1` and an empty `loot` the decoder requires. No sessions, journal, tabard, founding, guildConfig or rosterComplete. Asks `Refused` and `IsOnGuildDB`, never the switch. Nil on a character not read yet. Needs no guild roster. The key comes from `Compat.PlayerName()` |
+| The logout writer | One `GOSCOMP1:` string per file, in `GuildOSDB.__companion`: with the switch on the export, as ever, with it off the pack. Only the export stamps `__companionAt`; `__companionSelf` says the field holds a pack, so a failed export takes a leftover pack away instead of keeping it |
