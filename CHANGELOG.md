@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-11-01
+
+### Added
+- o pacote do próprio personagem para o companion
+
+### Fixed
+- o painel Web não promete que nada sai do jogo
+
+
 ## [1.4.0] - 2026-11-01
 
 ### Added
