@@ -1200,9 +1200,10 @@ know about `/gos web on`, and with the switch off the addon wrote nothing for it
 - (+) A member's own gear reaches the site with no setting, no window and no officer.
 - (+) The export is byte for byte what it was: `tools/companion-payload.lua`'s output did not change.
 - (−) The string is the account's and the switch is the guild's. An officer who logs out on an alt in another guild
-  leaves that alt's pack in the field, and a token-holding companion uploads it to `/api/ingest`, which refuses it as
-  another guild's until the officer next logs out on the main. Exports are whole snapshots, so nothing is lost.
-- (−) A token-holding companion with the switch off now uploads the pack through `/api/ingest` as a one-line roster.
-  With no `rosterComplete` nobody is read as having left, and the line is the one an export would carry.
+  leaves that alt's pack in the field, and a pending export waits for the next logout on the main. Exports are whole
+  snapshots, so that is a delay and nothing is lost.
+- (−) A token-holding companion with the switch off now sends the pack to `/api/ingest`, which answers 200 and writes
+  nothing (`self: true`, guildos-web#323). The site has to be deployed before this release, or an older `/api/ingest`
+  would take a pack for a one-line roster.
 - (?) Whether `IsInGuild`, `UnitClass`, `UnitLevel` and the rank from `GetGuildInfo` still answer at PLAYER_LOGOUT on
   WoW: Forever is read in game, from 4 November. If one does not, the pack is not written and the export is untouched.
