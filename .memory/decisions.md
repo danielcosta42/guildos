@@ -1167,3 +1167,43 @@ Tuesday-night raid in Europe the same; on all three games (guildos-web#199).
 - (−) If Blizzard moves a region's reset, the table has to follow; the self-test says when it disagrees.
 - (?) Whether `GetCurrentRegion` and `C_DateAndTime.GetSecondsUntilWeeklyReset` exist on WoW: Forever and TBC
   Anniversary, and agree with the table, is read in game (`/guildos probe`, `/gos selftest`).
+
+---
+
+## ADR-0028 — A character's own pack, outside the switch, in the export's one field
+
+### Context
+`Companion:IsEnabled()` is off by default because the export carries the whole guild. guildos.me's companion became
+an app for any member (the site's specs/070): somebody who installs it and signs in with Discord has no reason to
+know about `/gos web on`, and with the switch off the addon wrote nothing for it to send.
+
+### Decision
+- With the switch off the logout writer stores a pack: the export's wire format and decoder, `members` with the
+  player's one line, `self = true`, and none of what only an officer's upload may say.
+- It sits outside the switch on purpose. The switch exists for the guild's data, and this is one line in a file on
+  the player's own PC, which only leaves it when somebody is logged into the companion.
+- **One `GOSCOMP1:` string per file.** The app lifts the first regex match, so an export and a pack side by side
+  could send an officer's upload the pack. Both live in `GuildOSDB.__companion`, so neither the app nor `payloadRe`
+  changes. Switch on: the export and no pack, and a failed build removes a leftover pack (`__companionSelf` says what
+  the field holds) while it keeps a good export, as it always has. Switch off: the pack and no export.
+- `loot` is an empty list, not absent: `packages/goscomp`'s `assertPayload` refuses a payload without one. Every
+  other guild field is absent.
+- The pack never stamps `__companionAt`: the Web panel's "last written" and Activation's publish step read that as
+  the guild publishing.
+- It asks `IsOnGuildDB`, not only `GetGuildInfo`. A db that never resolved reads the switch as off whatever the guild
+  chose, and a pack there would replace that officer's export.
+- The line comes from one `memberLine`, so the two cannot drift, and the guild's rank and the unit APIs feed it: a
+  quick relog has no roster loaded. What a roster fills in as a default (a rank nobody gave, an average of 0) is
+  absent here: the site writes what it is given.
+
+### Consequences
+- (+) A member's own gear reaches the site with no setting, no window and no officer.
+- (+) The export is byte for byte what it was: `tools/companion-payload.lua`'s output did not change.
+- (−) The string is the account's and the switch is the guild's. An officer who logs out on an alt in another guild
+  leaves that alt's pack in the field, and a pending export waits for the next logout on the main. Exports are whole
+  snapshots, so that is a delay and nothing is lost.
+- (−) A token-holding companion with the switch off now sends the pack to `/api/ingest`, which answers 200 and writes
+  nothing (`self: true`, guildos-web#323). The site has to be deployed before this release, or an older `/api/ingest`
+  would take a pack for a one-line roster.
+- (?) Whether `IsInGuild`, `UnitClass`, `UnitLevel` and the rank from `GetGuildInfo` still answer at PLAYER_LOGOUT on
+  WoW: Forever is read in game, from 4 November. If one does not, the pack is not written and the export is untouched.

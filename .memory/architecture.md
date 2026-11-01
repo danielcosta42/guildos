@@ -260,6 +260,17 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
 }
 ```
 
+### What sits beside the guilds, at the top of GuildOSDB
+
+The account's, not a guild's, so it is one per SavedVariables file:
+
+```lua
+__companion     = "GOSCOMP1:...",  -- the one string the desktop companion lifts: the export with the guild's
+                                   -- switch on, the character's own pack with it off (ADR-0028)
+__companionAt   = 1791000000,      -- when the addon last wrote the EXPORT: never a pack
+__companionSelf = true,            -- __companion is a pack, absent when it is the export
+```
+
 ### Field conventions
 
 | Convention | Rule |
