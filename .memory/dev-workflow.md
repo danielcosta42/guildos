@@ -81,6 +81,7 @@ See existing ADRs in `decisions.md` as examples.
 - **Versioning**: auto-semver from Conventional Commits
 - **Changelog**: auto-generated, prepended to `CHANGELOG.md`
 - **Publish**: BigWigsMods packager → CurseForge (project ID 1549177, BCC client)
+- **GitHub Release**: stable tags only, `publish.yml`'s `github-release` job: `GuildOS-vX.Y.Z.zip` (`GuildOS/` at the root) and `GuildOS-vX.Y.Z.zip.sha256` (the hash alone), which the desktop companion installs from. A job of its own, after the stores, so a failure there fails only there and the store job never changes; `tools/beta-workflow.py` checks both
 
 ---
 
