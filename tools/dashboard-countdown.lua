@@ -134,9 +134,12 @@ date = os.date
 GuildOS.State.errors = {}
 GuildOS.Achievements = {
   Renown = function() return 7, 700 end,
+  Insignia = function() return "Interface\AddOns\GuildOS\Media\renown-2", "Company" end,
   Next = function() return { { title = "Ready", current = 8, target = 10 } } end,
   Earned = function() return { { title = "First", at = 1000 } } end,
 }
+GuildOS:CreateAchievementsPanel(stub)
+GuildOS.Achievements.Insignia = function() return nil, nil end   -- an older site: the line alone
 GuildOS:CreateAchievementsPanel(stub)
 GuildOS.Achievements = { Renown = function() return nil end }
 GuildOS:CreateAchievementsPanel(stub)

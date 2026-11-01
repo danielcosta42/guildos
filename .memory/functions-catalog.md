@@ -1050,5 +1050,6 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | core member `status` | `"bench"` for a reserve, nil for a titular (every older record); from the site's `GOSCORE1` (`status`, guildos-web #249) on the Discord's records, kept by `AddMember`, carried in the officers' `discordList` |
 | `CoreManager:GetComposition` | Titulars only; `bench` counts the reserves |
 | `CoreManager:OpenSlots(coreName)` | Per role, the target for the size less the titulars playing it; `total` = size less titulars. The core panel shows them, reserves dimmed below the titulars |
+| `Achievements:Insignia()` | The renown level's insignia as guildos.me says it: the texture in `Media/renown-<n>.tga`, the highest the addon carries past that, and the title, ready in the guild's language |
 | `Compat.IsEncounterInProgress()` | Whether a boss fight is going on: `C_InstanceEncounter` first, then the deprecated global, and no with neither |
 | `Compat.GuildTabard()` | The guild's tabard as the game draws it (#213): `GetGuildLogoInfo`'s colours as bytes and emblem style, `GetGuildTabardFiles`' six files; nil without one or with anything secret. Exported as `tabard` (v12) off TBC Anniversary; guildos.me turns it into its `GT1` code |

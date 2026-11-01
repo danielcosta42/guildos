@@ -8,6 +8,7 @@ local C = GuildOS.Colors
 local L = GuildOS.L
 
 local function day(t) return date("%Y-%m-%d", t) end   -- the reader's own day
+local BADGE = 48   -- the insignia beside the renown
 
 function GuildOS:CreateAchievementsPanel(parent)
     local scroll, content = UI:CreateScrollFrame(parent, "GuildOSAchievementsScroll")
@@ -37,10 +38,15 @@ function GuildOS:CreateAchievementsPanel(parent)
         y = y + (fs:GetStringHeight() or size) + (gap or 6)
     end
 
+    local badge = content:CreateTexture(nil, "ARTWORK")
+    badge:SetSize(BADGE, BADGE)
+    badge:Hide()
+
     local function refresh()
         local A = GuildOS.Achievements
         if not A then return end
         for _, fs in ipairs(pool) do fs:Hide() end
+        badge:Hide()
         used, y = 0, 4
         content:SetWidth(width())
 
@@ -50,7 +56,18 @@ function GuildOS:CreateAchievementsPanel(parent)
             content:SetHeight(math.max(1, y))
             return
         end
-        line(string.format(L["Renown %d · %d points"], level, points), 12, C.gold, 4, 14)
+        -- The insignia beside the renown, its title above it. With neither, an older site: the line alone.
+        local tex, title = A:Insignia()
+        local top, indent = y, tex and BADGE + 12 or 4
+        if tex then
+            badge:SetTexture(tex)
+            badge:ClearAllPoints()
+            badge:SetPoint("TOPLEFT", 4, -y)
+            badge:Show()
+        end
+        if title then line(title, 13, C.gold, indent, 2) end
+        line(string.format(L["Renown %d · %d points"], level, points), 12, title and C.text or C.gold, indent, 14)
+        if tex then y = math.max(y, top + BADGE + 8) end
 
         local nearest = A:Next()
         if #nearest > 0 then

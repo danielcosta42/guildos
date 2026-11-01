@@ -13,6 +13,7 @@ GuildOS.Achievements = Achievements
 local L = GuildOS.L
 
 local DIGEST_NEW = 3   -- new ones named in one digest
+local DRAWN = 6        -- the insignias this addon carries (Media/renown-<n>.tga)
 
 local function plain(text) return GuildOS.CompanionImport.Inert(text) end
 
@@ -27,6 +28,15 @@ end
 function Achievements:Renown()
     local a = self:Data()
     return a and tonumber(a.level) or nil, a and tonumber(a.renown) or 0
+end
+
+-- The level's insignia (guildos.me, specs/068): its texture, past what this addon carries the highest it
+-- has, and its title, ready in the guild's language. Either is nil when the site sent none, or sent it badly.
+function Achievements:Insignia()
+    local a = self:Data()
+    local n = a and tonumber(a.insignia)
+    local tex = n and n >= 1 and ("Interface\\AddOns\\GuildOS\\Media\\renown-" .. math.min(DRAWN, math.floor(n))) or nil
+    return tex, a and type(a.title) == "string" and plain(a.title) or nil
 end
 
 -- What was earned, the newest first, each { title, at, key }. A row the site sent badly is dropped.
