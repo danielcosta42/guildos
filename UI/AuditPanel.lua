@@ -514,6 +514,7 @@ local function RecruitLines()
             string.format(L["Whisper test: %s"], g.whisper or L["no spelling came back: gossip and requests do not whisper"]),
             string.format(L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"],
                 r.open or 0, r.asked or 0, r.delivered or 0, r.invites or 0, r.confirmed or 0, d.name or 0, d.guild or 0),
+            string.format(L["Senders refused as officers: %d"], g.officerRefused or 0),
         }
         if type(ch) == "table" then
             local h = type(ch.heard) == "table" and ch.heard or {}

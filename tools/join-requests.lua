@@ -851,6 +851,8 @@ S.whisper = nil
 check(Gossip:Audit().gossip.whisper == false, "no spelling came back: said so")
 S.whisper = "space"
 GuildOSDB.probeChannel = { timer = true, click = false, heard = { timer = true, click = false }, at = 5 }
+local audit_ui = io.open(ADDON .. "/UI/AuditPanel.lua", "rb"):read("*a")
+check(audit_ui:find('L["Senders refused as officers: %d"], g.officerRefused or 0', 1, true), "the panel shows who the officer check refused")
 check(Gossip:Audit().channel.timer == true and Gossip:Audit().channel.heard.click == false, "the channel probe's result rides along")
 GuildOSDB.probeChannel = nil
 check(Gossip:Audit().channel == false, "and its absence is said")

@@ -1253,7 +1253,7 @@ available before 4 November.
   / asked / delivered, invites sent and how many times the game's invite line came back, drops by name and by guild,
   and the channel probe's result. Every source is read in its own `pcall`.
 - What the last whole-branch review changed, each of them something the pieces only showed running together:
-  - A guild keeps its own ad. `RB:IngestCR3` takes it only over GUILD and from who `IsOfficerByName` calls an officer: a
+  - A guild keeps its own ad. `RB:IngestCR3` takes it only over GUILD and from who `Gossip:IsOfficerSender` calls an officer: a
     whisper in that name (the check drops the realm) or a member is refused, and `want` never asks for it, at any
     version. That is how a member holds the ad, says the guild in `CRB`, is found by `:PeerFor` and answers a request as
     `member`. A roster not loaded yet vouches for nobody and the officer's next repeat lands: no mechanism of its own.
@@ -1271,6 +1271,14 @@ available before 4 November.
     the choice of one ad per name, so a namesake elsewhere hides nobody. `want` reads all the client has and not only
     what it offers: an ad kept and not offered, asked for every round, would be the loop a guild once ran on its own ad.
     The guild's own ad always goes: it needs no judging, and without it the beacon says no guild.
+  - Who is an officer, for what only an officer may say over GUILD, is `Gossip:IsOfficerSender`, the one door of both
+    the guild's ad and a decision. `IsOfficerByName` compares the part before the hyphen, so a roster with `Bruno Reis`
+    and a sender spelled `Bruno-Reis` would refuse the officer: no member holds the ad, no decision crosses the guild,
+    on launch night with nothing to see. It stays as it is, because other modules rely on it. On WoW: Forever the door
+    asks with the sender as it came and again as `Whole` reads it, the hyphens turned into spaces and a realm dropped.
+    Elsewhere a hyphen means a realm, and only the first question is asked. `officerRefused` in `Gossip:Stats()`, on
+    the Audit panel, is the senders refused right now: one vouched for later leaves it, so a roster that came late is
+    no noise on every login, and what stays is the failure this exists to show.
   - The whisper test goes over the spellings `TEST_PASSES` times, `TEST_AGAIN` seconds apart, and its token lives the
     session: an echo that comes after the last try still counts. With one pass, a lagged opening night left a client
     with no gossip and no requests until a `/reload`.
@@ -1304,8 +1312,9 @@ available before 4 November.
   `ERR_GUILD_INVITE_S` is the line a Forever invite prints, which `confirmed` in the Audit counts. If it never comes
   back, an invite never closes its row by itself and the site's roster ingest does.
 - (?) And, from the last review, what no harness can reach:
-  - Whether a sender's name reads as the roster's. `IsOfficerByName` compares the part before the hyphen, so a roster
-    with `Bruno Reis` and a sender spelled `Bruno-Reis` would refuse the officer, and then no member ever holds the ad.
+  - Whether a sender's name reads as the roster's. `Gossip:IsOfficerSender` covers a roster with a space and a sender with
+    a hyphen. The other way round, a roster with `Bruno-Reis` and a sender with the space, is still refused, and a roster
+    with hyphens also makes `IsOfficerByName` read first names alone: `officerRefused` on the Audit panel is how to see it.
     `sameName` has the same exposure: a sender spelled differently drops a real `CRQ`, silently.
   - Whether the text of the "no such player" line is `ERR_CHAT_PLAYER_NOT_FOUND_S`, and whether AceComm echoes a whisper
     to oneself on a client where it splits a message.

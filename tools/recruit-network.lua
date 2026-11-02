@@ -687,6 +687,72 @@ late = client("Ana Lima", { guild = "Ordem", rank = 5, site = SITE })
 run(30)
 check(late.JR:OpenCount() == 1 and #late.notices == 0, "a member keeps the row and is told nothing")
 
+-- ── An officer, however a sender is spelled ─────────────────────────────
+-- The client writes "Bruno Reis" on the roster and, as far as anyone has read, on the sender. A sender that
+-- comes as "Bruno-Reis" reads as Bruno to IsOfficerByName, and nobody would hold the ad, with nothing to see.
+fresh()
+world.hyphen = true
+officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+local melo = client("Bruno Melo", { guild = "Ordem", zone = "m2" })   -- the officer's first name, and no rank
+local eva = client("Eva Reis", { guild = "Ordem", zone = "m3" })
+run(70)
+check(ana.RB:Cache3().Ordem ~= nil, "a hyphen on the sender: the member holds the guild's ad")
+check(melo.RB:Cache3().Ordem ~= nil and eva.RB:Cache3().Ordem ~= nil, "every member does")
+check(ana.Gossip:Stats().officerRefused == 0, "and nobody was refused")
+
+local ID = "abcdefghij"
+ana.hear("CRQ|" .. ID .. "|Zed Fora|MAGE|30|DPS|Ordem|oi", "Zed Fora", "WHISPER")
+run(1)
+check(ana.GuildOS.db.joinRequests[ID] and officer.GuildOS.db.joinRequests[ID] and eva.GuildOS.db.joinRequests[ID], "the request crossed the guild")
+for _, spelled in ipairs({ "Bruno Melo", "Bruno-Melo", "Eva Reis", "Eva-Reis" }) do
+  check(ana.RB:IngestCR3(cr3(ana, { p = "FORJADO", v = EPOCH + 1 }), spelled, "GUILD") == false, "a member is no officer, spelled " .. spelled)
+  ana.hear("CRA|" .. ID .. "|declined|" .. spelled, spelled, "GUILD")
+  check(ana.GuildOS.db.joinRequests[ID].status == "open", "and closes no request, spelled " .. spelled)
+end
+check(ana.RB:Cache3().Ordem.p == "Raids", "the ad stays the officer's")
+check(ana.Gossip:Stats().officerRefused == 2, "two senders, however many spellings: " .. tostring(ana.Gossip:Stats().officerRefused))
+local seenBy = ana.Gossip:Audit()
+check(seenBy.gossip.officerRefused == 2, "and the Audit panel reads it")
+check(ana.env.GuildOSDB.recruitAudit.gossip.officerRefused == 2, "and it is kept for the morning after")
+
+check(officer.JR:Decide(ID, "declined") == true, "the officer decides")
+run(1)
+check(ana.GuildOS.db.joinRequests[ID].status == "declined" and eva.GuildOS.db.joinRequests[ID].status == "declined",
+  "and the decision crosses the guild with a hyphen on the sender")
+
+-- With the space, as the client is said to send it.
+fresh()
+officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+run(70)
+check(ana.RB:Cache3().Ordem ~= nil and ana.Gossip:Stats().officerRefused == 0, "the space works as it did")
+ana.RB:IngestCR3(cr3(ana, { p = "FORJADO", v = EPOCH + 1 }), "Zed Fora", "GUILD")
+check(ana.Gossip:Stats().officerRefused == 1, "and a stranger is counted")
+
+-- A roster that came late refused nobody for long, or launch night's number is noise on every login.
+fresh()
+officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1", rosterAt = 100 })
+run(95)
+check(ana.Gossip:Stats().officerRefused == 1, "no roster yet: the officer is refused, and it shows")
+run(65)
+check(ana.Gossip:Stats().officerRefused == 0 and ana.RB:Cache3().Ordem ~= nil, "the roster loads, and what is left of the number is who is still refused")
+
+-- Retail: a hyphen means a realm, and is asked about as it came and only that.
+fresh()
+officer = client("Bruno", { game = "retail", guild = "Ordem", rank = 0, zone = "city" })
+ana = client("Ana", { game = "retail", guild = "Ordem", zone = "m1" })
+local asked, realAsk = {}, ana.GuildOS.IsOfficerByName
+ana.GuildOS.IsOfficerByName = function(self, name)
+  asked[#asked + 1] = name
+  return realAsk(self, name)
+end
+check(ana.Gossip:IsOfficerSender("Bruno-Gallywix") == false, "retail: a namesake on another realm is refused")
+check(#asked == 1 and asked[1] == "Bruno-Gallywix", "retail: one question, as the sender came: " .. table.concat(asked, " / "))
+check(ana.Gossip:IsOfficerSender("Bruno") == true, "retail: the officer here is the officer")
+check(ana.Gossip:Stats().officerRefused == 1, "retail: and the refusal counts")
+
 -- ── An officer's broadcast pauses where the gossip does ─────────────────
 for _, pause in ipairs({ "inInstance", "lockdown" }) do
   fresh()

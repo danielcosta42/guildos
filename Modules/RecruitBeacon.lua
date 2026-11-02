@@ -244,7 +244,7 @@ end
 function RB:IngestCR3(payload, sender, dist)
     local ad = ReadCR3(payload)
     if not ad then return false end
-    if IsOwnGuild(ad.key) and not (dist == "GUILD" and GuildOS:IsOfficerByName(sender)) then return false end
+    if IsOwnGuild(ad.key) and not (dist == "GUILD" and GuildOS.ChehulGossip:IsOfficerSender(sender)) then return false end
     if not Store(ad) then return false end
     if self.onUpdate then pcall(self.onUpdate) end
     return true

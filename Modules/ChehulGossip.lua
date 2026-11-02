@@ -59,6 +59,7 @@ GuildOS.State.gossip = {
     asks      = 0,    -- questions asked this round
     dialed    = {},   -- [whole name] = true: a digest went there this round, and one list of names may come back
     failed    = {},   -- [error text] = true: each kind recorded once
+    refused   = {},   -- [whole name] = true: senders the officer check refuses right now
     allowance = 0,    -- whispers left this round for answering anybody
     turns     = { digest = 0, beacon = 0 },   -- where each rotation stands
     stats     = { rounds = 0, adsIn = 0, adsOut = 0, dropped = 0 },
@@ -577,11 +578,29 @@ function Gossip:PeerFor(guild)
     return nil
 end
 
--- What the Audit panel reads. `whisper` is the spelling the test kept, false with none.
+-- What the Audit panel reads. `whisper` is the spelling the test kept, false with none. `officerRefused`
+-- is how many senders the officer check refuses right now.
 function Gossip:Stats()
     local s = S.stats
+    local refused = 0
+    for _ in pairs(S.refused) do refused = refused + 1 end
     return { rounds = s.rounds, adsIn = s.adsIn, adsOut = s.adsOut, dropped = s.dropped,
-             peers = #self:Peers(), whisper = S.whisper or false }
+             peers = #self:Peers(), whisper = S.whisper or false, officerRefused = refused }
+end
+
+-- Whether `sender` is an officer, for what only an officer may say over GUILD: the guild's own ad and a
+-- decision on a request. IsOfficerByName compares the part before the hyphen, so a roster with "Bruno Reis"
+-- and a sender spelled "Bruno-Reis" would refuse the officer: no member holds the ad, no decision crosses the
+-- guild, on launch night with nothing to see. It stays as it is, because other modules rely on it. On WoW:
+-- Forever it is asked again as Whole reads the name, the hyphens turned into spaces. Elsewhere a hyphen means
+-- a realm, and the one question stands. A sender vouched for later leaves the count: a roster that came
+-- late is no noise on every login, and what stays is the failure this exists to show.
+function Gossip:IsOfficerSender(sender)
+    if type(sender) ~= "string" then return false end
+    local vouched = GuildOS:IsOfficerByName(sender)
+    if not vouched and not GuildOS:RealmBound() then vouched = GuildOS:IsOfficerByName(Whole(sender)) end
+    S.refused[Whole(sender)] = (not vouched) or nil
+    return vouched
 end
 
 -- Everything the Audit panel shows about the recruitment, and the copy of it kept in GuildOSDB.recruitAudit:

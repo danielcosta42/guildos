@@ -495,9 +495,10 @@ function JR:OnCRA(payload, sender, dist)
     end
 
     if dist ~= "GUILD" or ANSWER[state] or not inGuild() then return end
-    -- The channel and the rank both: IsOfficerByName reads the roster, and a row the roster could not
-    -- vouch for stays open until the site's own block closes it.
-    if type(sender) ~= "string" or not GuildOS:IsOfficerByName(sender) then return end
+    -- The channel and the rank both: the check reads the roster, and a row the roster could not vouch for
+    -- stays open until the site's own block closes it.
+    local gossip = GuildOS.ChehulGossip
+    if not (gossip and gossip:IsOfficerSender(sender)) then return end
     local r = store()[id]
     if r and r.status == "open" then
         r.status, r.decidedBy, r.decidedAt = state, who, now()
