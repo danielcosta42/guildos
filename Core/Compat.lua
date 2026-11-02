@@ -981,6 +981,15 @@ function Compat.SendChatMessage(text, chatType)
     return (pcall(send, text, chatType))
 end
 
+-- Lets `fn` hide lines of a chat event from every chat frame: retail moved the filter to ChatFrameUtil, and
+-- the global is a deprecation fallback there. False on a client with neither.
+function Compat.AddChatFilter(event, fn)
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if not add then return false end
+    add(event, fn)
+    return true
+end
+
 ----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character

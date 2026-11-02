@@ -84,6 +84,7 @@ Modules\Professions.lua
 Modules\ProfSync.lua
 Modules\Look.lua
 Modules\ProfDirectory.lua
+Modules\ChehulGossip.lua
 Modules\GuildFinder.lua
 Modules\RecruitBeacon.lua
 Modules\RecruitScanner.lua

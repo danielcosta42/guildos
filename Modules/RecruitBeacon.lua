@@ -118,7 +118,11 @@ function RB:Initialize()
     local mesh = _G.ChehulMesh
     if mesh and not self._registered then
         self._registered = true
-        mesh:Register(self.PREFIX, function(payload, sender) RB:OnMessage(payload, sender) end)
+        -- The mesh keeps one handler per prefix: the gossip reads the first field, and CR2 comes back here.
+        mesh:Register(self.PREFIX, function(payload, sender, dist)
+            local gossip = GuildOS.ChehulGossip
+            if not (gossip and gossip:Receive(payload, sender, dist)) then RB:OnMessage(payload, sender) end
+        end)
     end
     if C_Timer and C_Timer.NewTicker then
         if not self._bcast then

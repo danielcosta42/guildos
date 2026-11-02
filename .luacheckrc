@@ -147,6 +147,7 @@ read_globals = {
     "ChannelModerator",
     "SetChannelOwner",
     "ChatFrame_AddMessageEventFilter",
+    "ChatFrameUtil",
     "ChatFrame_SendTell",
 
     -- WoW API: Social & Group
@@ -351,6 +352,7 @@ read_globals = {
     "LOCALIZED_CLASS_NAMES_MALE",
     "FACTION_BAR_COLORS",
     "RAID_CLASS_COLORS",
+    "ERR_CHAT_PLAYER_NOT_FOUND_S",
     "ERR_GUILD_INVITE_S",
 
     -- Guild notes

@@ -304,6 +304,8 @@ local MODULE_START = {
     -- WoW: Forever only (issue #37): the look, read in the barber's chair.
     { "Look" },
     { "RecruitBeacon" },
+    -- WoW: Forever and retail: the whisper gossip. After RecruitBeacon, whose handler feeds it.
+    { "ChehulGossip" },
     -- WoW: Forever and retail: lights the minimap button on the first guild a character with no guild hears.
     { "GuildFinder" },
     { "RecruitScanner" },
