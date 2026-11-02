@@ -12,9 +12,9 @@
 --
 --   CRB|ad|version|guild|officer  the beacon, from every client. Empty where there is nothing; guild
 --                                 and officer only while the sender's guild is recruiting
---   CRD|name:v,name:v,...         a digest, up to DIGEST_MAX pairs, in rotation
+--   CRD|name:v,name:v,...         a digest, up to DIGEST_MAX pairs: the newest, then the rest in rotation
 --   CRG|name                      asks for one payload
---   CRP|name,name,...             up to PEX_MAX peers heard lately
+--   CRP|name,name,...             up to PEX_MAX peers heard lately, only to who sent me a digest
 --   CRW|token|try                 the whisper test, only ever sent to myself
 --
 -- The mesh keeps one handler per prefix and RecruitBeacon owns it: everything arriving goes to
@@ -28,8 +28,10 @@ local Compat = GuildOS.Compat
 Gossip.ROUND_SECONDS  = 120     -- a client opens exchanges this often at most
 Gossip.ROUND_PEERS    = 2       -- peers a round talks to
 Gossip.DIGEST_MAX     = 12      -- pairs in a digest
+Gossip.DIGEST_NEWEST  = 4       -- of them, the seats kept for the newest ads by version
 Gossip.REPLY_MAX      = 4       -- payloads in one answer
 Gossip.PEX_MAX        = 5       -- names in a CRP
+Gossip.HEARD_OF_MAX   = 10      -- names off lists held at once: what a round's two answers bring
 Gossip.PEER_FRESH     = 300     -- seconds a peer stays on the list unheard
 Gossip.BEACON_SECONDS = 180
 Gossip.CHANNEL        = false   -- the beacon's route by a created channel: only a new version turns it on
@@ -46,11 +48,13 @@ local NAME_MAX      = 96      -- bytes of a name: two names of three-byte letter
 local GUILD_CHARS   = 24      -- the game's own limit
 
 GuildOS.State.gossip = {
-    peers     = {},   -- [whole name] = { name, at, guild, officer, heardOf, since, count }
+    peers     = {},   -- [whole name] = { name, at, guild, officer, heardOf, since, count, answered, served }
     topics    = {},   -- [name] = { digest, want, pull, push }
     routes    = {},   -- [first field] = fn(payload, sender, dist)
     tried     = {},   -- [whole name] = when the error line stops being hidden
     asked     = {},   -- [key] = version asked for this round
+    asks      = 0,    -- questions asked this round
+    dialed    = {},   -- [whole name] = true: a digest went there this round, and one list of names may come back
     failed    = {},   -- [error text] = true: each kind recorded once
     allowance = 0,    -- whispers left this round for answering anybody
     turns     = { digest = 0, beacon = 0 },   -- where each rotation stands
@@ -126,16 +130,36 @@ local function Sample(list, max)
 end
 
 -- What the digest and the beacon hold, in an order that makes a rotation of it mean something. A
--- name on the wire has neither ',' nor ':'.
+-- name on the wire has neither ',' nor ':', and what is no name does not go out.
 local function Holdings()
     local list = {}
     for _, topic in pairs(S.topics) do
         for _, entry in ipairs(Guarded(topic.digest) or {}) do
-            list[#list + 1] = { key = (entry[1]:gsub("[,:]", " ")), version = entry[2], topic = topic }
+            local key = entry[1]:gsub("[,:]", " ")
+            if IsName(key) then list[#list + 1] = { key = key, version = entry[2], topic = topic } end
         end
     end
     table.sort(list, function(a, b) return a.key < b.key end)
     return list
+end
+
+-- The digest's two kinds of seat: the newest ads, and the rest for the rotation to walk. A rotation
+-- alone leaves a new ad waiting for its turn among forty, an hour to cross fifty clients. Seated, it
+-- goes in every digest at no cost: the digest is the same size, and nothing is sent on suspicion.
+local function Seats(holdings)
+    local byAge, newest, rest, seated = {}, {}, {}, {}
+    for i, held in ipairs(holdings) do byAge[i] = held end
+    table.sort(byAge, function(a, b)
+        if a.version ~= b.version then return a.version > b.version end
+        return a.key < b.key
+    end)
+    for i = 1, math.min(Gossip.DIGEST_NEWEST, #byAge) do
+        newest[i], seated[byAge[i]] = byAge[i], true
+    end
+    for _, held in ipairs(holdings) do
+        if not seated[held] then rest[#rest + 1] = held end
+    end
+    return newest, rest
 end
 
 -- The next `max` entries of a rotation. Digest and beacon each keep their own, or an ad a beacon
@@ -164,23 +188,47 @@ local function CanAnswer()
     return Gossip:CanWhisper() and not Quiet()
 end
 
-local function SendAd(name, ad)
+-- One ad to `peer`, who takes REPLY_MAX in a round however they ask: the allowance is for everybody,
+-- and one sender asking twenty ways would otherwise spend it all.
+local function Serve(peer, ad)
+    if (peer.served or 0) >= Gossip.REPLY_MAX then
+        S.stats.dropped = S.stats.dropped + 1
+        return false
+    end
+    if not Spend() then return false end
+    peer.served = (peer.served or 0) + 1
     S.stats.adsOut = S.stats.adsOut + 1
-    Gossip:Whisper(name, ad)
+    Gossip:Whisper(peer.name, ad)
+    return true
 end
 
--- Asks `sender` for what they hold if I want it, once a round, however many have it.
+-- Asks `sender` for what they hold if I want it, once a round, however many have it. REPLY_MAX
+-- questions a round: no peer gives one asker more, and the rest of the allowance is for answering.
 local function Ask(key, version, sender)
-    if (S.asked[key] or -1) >= version then return end
+    if S.asks >= Gossip.REPLY_MAX or (S.asked[key] or -1) >= version then return end
     for _, topic in pairs(S.topics) do
         if Guarded(topic.want, key, version) then
             if Spend() then
-                S.asked[key] = version
+                S.asks, S.asked[key] = S.asks + 1, version
                 Gossip:Whisper(sender, "CRG|" .. key)
             end
             return
         end
     end
+end
+
+-- Who a round talks to. A name off a list takes one seat at most: that seat is how a round reaches
+-- past what it hears, and the rest go to who I heard myself, so that a list can never replace them.
+local function Pick(peers)
+    local heard, told = {}, {}
+    for _, peer in ipairs(peers) do
+        local kind = peer.heardOf and told or heard
+        kind[#kind + 1] = peer
+    end
+    Sample(told, 1)
+    Sample(heard, Gossip.ROUND_PEERS - #told)
+    heard[#heard + 1] = told[1]
+    return heard
 end
 
 ----------------------------------------------------------------------
@@ -190,6 +238,11 @@ end
 ----------------------------------------------------------------------
 local function TryNext(test)
     if S.test ~= test then return end   -- an echo already settled it
+    -- First: a try that raises must not take the next spelling down with it.
+    Compat.After(TEST_WAIT, function() Guarded(TryNext, test) end)
+    -- A try that finds the door shut waits behind it, a login inside an instance included: otherwise
+    -- walking in mid-test would read as "no whisper" for the whole session.
+    if Quiet() then return end
     test.at = test.at + 1
     local try = test.tries[test.at]
     if not try then
@@ -198,13 +251,9 @@ local function TryNext(test)
     end
     S.tried[Whole(try.name)] = GetTime() + TRIED_SECONDS
     Compat.SendAddonMessageNow(PREFIX, "CRW|" .. test.token .. "|" .. test.at, "WHISPER", try.name)
-    Compat.After(TEST_WAIT, function() Guarded(TryNext, test) end)
 end
 
--- Once a session, and not until it can be answered: a login inside an instance waits for the door.
 local function StartTest()
-    if S.tested or Quiet() then return end
-    S.tested = true
     local me = Compat.PlayerName()
     local tries = { { name = me, spelling = "plain" } }
     if GuildOS.Client.has.surnames and me:find(" ", 1, true) then
@@ -247,67 +296,87 @@ local function OnBeacon(payload, sender)
     local _, key, version, guild, officer = strsplit("|", payload)
     Gossip:Note(sender, guild or "", officer == "1")
     version = tonumber(version)
-    if key and key ~= "" and version and CanAnswer() then Ask(key, version, sender) end
+    if IsName(key) and version and CanAnswer() then Ask(key, version, sender) end
 end
 
--- An answer to a digest. One that fits says all the sender holds, so what it leaves out is what they
--- lack. A full one has left things out on purpose: sending on suspicion would be REPLY_MAX ads a
--- round between two clients holding the same forty. What they lack then comes from asking, the
--- other way, when their turn in my rotation reaches them.
+-- An answer to a digest, one per sender per round. One that fits says all the sender holds, so what it
+-- leaves out is what they lack. A full one has left things out on purpose, and sending on suspicion would
+-- be REPLY_MAX ads a round between two clients holding the same forty. It still proves one thing: its
+-- first seats are the sender's newest, so an ad newer than the last of them that it does not list is
+-- one it lacks, or it would have a seat. Anything older comes from asking, the other way, when my
+-- digest lists it.
 local function OnDigest(payload, sender)
     if not CanAnswer() then return end
-    local listed, count = {}, 0
-    for name, version in payload:gmatch("([^,:|]+):(%d+)") do
-        count = count + 1
-        if count > Gossip.DIGEST_MAX then break end
-        listed[name] = tonumber(version)
+    local peer = S.peers[Whole(sender)]
+    if peer.answered or S.allowance <= 0 then
+        S.stats.dropped = S.stats.dropped + 1
+        return
     end
-    local complete = count < Gossip.DIGEST_MAX
-    local sent = 0
-    for _, held in ipairs(Holdings()) do
-        local theirs = listed[held.key]
-        if sent < Gossip.REPLY_MAX and ((theirs and theirs < held.version) or (not theirs and complete)) then
-            local ad = Guarded(held.topic.pull, held.key)
-            if type(ad) == "string" then
-                if not Spend() then break end
-                SendAd(sender, ad)
-                sent = sent + 1
-            end
+    peer.answered = true
+    local listed, order = {}, {}
+    for name, version in payload:gmatch("([^,:|]+):(%d+)") do
+        if #order >= Gossip.DIGEST_MAX then break end
+        if IsName(name) and not listed[name] then
+            order[#order + 1] = name
+            listed[name] = tonumber(version)
         end
     end
-    for name, version in pairs(listed) do Ask(name, version, sender) end
-    -- Only who I heard myself: passed on from a list, a name that logged off would circle for ever.
-    local names, asker = {}, Whole(sender)
-    for _, peer in ipairs(Gossip:Peers()) do
-        if not peer.heardOf and peer.name ~= asker then names[#names + 1] = peer.name end
+    -- The names go first, because they are what crosses zones: an answer that has spent itself on ads
+    -- and questions leaves its asker knowing nobody new. Only who I heard myself: passed on from a
+    -- list, a name that logged off would circle for ever.
+    local names = {}
+    for _, known in ipairs(Gossip:Peers()) do
+        if not known.heardOf and known ~= peer then names[#names + 1] = known.name end
     end
     Sample(names, Gossip.PEX_MAX)
-    if #names > 0 and Spend() then Gossip:Whisper(sender, "CRP|" .. table.concat(names, ",")) end
+    if #names > 0 and Spend() then Gossip:Whisper(peer.name, "CRP|" .. table.concat(names, ",")) end
+    local proved = #order < Gossip.DIGEST_MAX and -1 or listed[order[Gossip.DIGEST_NEWEST]]
+    for _, held in ipairs(Holdings()) do
+        local theirs = listed[held.key]
+        if (theirs and theirs < held.version) or (not theirs and held.version > proved) then
+            local ad = Guarded(held.topic.pull, held.key)
+            if type(ad) == "string" and not Serve(peer, ad) then break end
+        end
+    end
+    for _, name in ipairs(order) do Ask(name, listed[name], peer.name) end   -- in its order: newest first
 end
 
 local function OnGet(payload, sender)
     if not CanAnswer() then return end
     local key = payload:sub(#"CRG|" + 1)
+    if not IsName(key) then return end
     for _, topic in pairs(S.topics) do
         local ad = Guarded(topic.pull, key)
         if type(ad) == "string" then
-            if Spend() then SendAd(sender, ad) end
+            Serve(S.peers[Whole(sender)], ad)
             return
         end
     end
 end
 
--- A name off a list is somebody to try, for as long as a peer is fresh; hearing of them again does not
--- renew it. Only hearing them does.
-local function OnNames(payload)
+-- A list of names is read only from somebody I sent a digest this round, and once: a list from anybody
+-- is a way to fill my rounds with strangers. A name off it is somebody to try, for as long as a peer is
+-- fresh; hearing of them again does not renew it. Only hearing them does.
+local function OnNames(payload, sender)
+    local from = Whole(sender)
+    if not S.dialed[from] then
+        S.stats.dropped = S.stats.dropped + 1
+        return
+    end
+    S.dialed[from] = nil
+    local room = Gossip.HEARD_OF_MAX
+    for _, peer in ipairs(Gossip:Peers()) do
+        if peer.heardOf then room = room - 1 end
+    end
     local count = 0
     for name in payload:sub(#"CRP|" + 1):gmatch("[^,]+") do
         count = count + 1
-        if count > Gossip.PEX_MAX then break end
+        if count > Gossip.PEX_MAX or room <= 0 then break end
         if IsName(name) then
             local whole = Whole(name)
             if not IsMe(whole) and not S.peers[whole] then
                 S.peers[whole] = { name = whole, at = GetTime(), heardOf = true }
+                room = room - 1
             end
         end
     end
@@ -369,21 +438,25 @@ end
 -- One round: the allowance comes back, and a digest goes to up to ROUND_PEERS peers. An empty digest
 -- still goes: that is how a newcomer says it holds nothing.
 function Gossip:Round()
-    S.allowance, S.asked = Allowance(), {}
+    S.allowance, S.asks, S.asked, S.dialed = Allowance(), 0, {}, {}
     local now = GetTime()
     for name, till in pairs(S.tried) do
         if now > till then S.tried[name] = nil end
     end
     local peers = self:Peers()   -- asked before anything can stop the round: this is what prunes the list
-    StartTest()
+    for _, peer in ipairs(peers) do peer.answered, peer.served = nil, nil end
     if not CanAnswer() then return end
-    Sample(peers, self.ROUND_PEERS)
-    if #peers == 0 then return end
-    local holdings = Holdings()
-    for _, peer in ipairs(peers) do
-        local pairsOut = {}
-        for i, held in ipairs(Turn("digest", holdings, self.DIGEST_MAX)) do pairsOut[i] = held.key .. ":" .. held.version end
-        self:Whisper(peer.name, "CRD|" .. table.concat(pairsOut, ","))
+    local picks = Pick(peers)
+    if #picks == 0 then return end
+    local newest, rest = Seats(Holdings())
+    for _, peer in ipairs(picks) do
+        local listed = {}
+        for _, held in ipairs(newest) do listed[#listed + 1] = held.key .. ":" .. held.version end
+        for _, held in ipairs(Turn("digest", rest, self.DIGEST_MAX - #newest)) do
+            listed[#listed + 1] = held.key .. ":" .. held.version
+        end
+        S.dialed[peer.name] = true
+        self:Whisper(peer.name, "CRD|" .. table.concat(listed, ","))
     end
     S.stats.rounds = S.stats.rounds + 1
 end
@@ -405,9 +478,9 @@ function Gossip:Initialize()
     if S.started or GuildOS.Client.isAnniversary then return end
     S.started = true
     -- A try at an offline name prints a line, and none may: with no filter there is no test, so no whisper.
-    S.tested = not Guarded(Compat.AddChatFilter, "CHAT_MSG_SYSTEM", HideNotFound)
+    local filtered = Guarded(Compat.AddChatFilter, "CHAT_MSG_SYSTEM", HideNotFound)
     Compat.After(TEST_DELAY, function()
-        Guarded(StartTest)
+        if filtered then Guarded(StartTest) end
         Guarded(Gossip.Beacon, Gossip)
     end)
     Compat.NewTicker(self.BEACON_SECONDS, function() Guarded(Gossip.Beacon, Gossip) end)

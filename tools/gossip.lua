@@ -5,11 +5,16 @@
 -- fake clock. Whisper, GUILD, group and YELL each reach who they reach in the game; a whisper to nobody
 -- answers with the client's "no such player" line, through the chat filters.
 --
--- The rules: 50 clients in separate zones, each knowing two neighbours, all get an ad within 12 rounds;
--- no client ever says more than its ceiling, however many ask; a peer goes stale; inside an instance
+-- The rules: 50 clients in separate zones, each knowing two neighbours, all get a new ad within 12
+-- rounds, on an empty cache and on a nearly full one; no client ever says more than its ceiling, however
+-- many ask, and one sender cannot spend it for the others; a list of names is read only when I asked
+-- for it, and can never take my rounds from who I heard myself; a peer goes stale; inside an instance
 -- or a chat lockdown nothing goes out; with no echo from the whisper test nothing goes by whisper, and
 -- the spelling that came back is the one used; no line reaches the chat; trash off the network breaks
 -- nothing; CR2 still reaches RecruitBeacon; and Anniversary stays out of it.
+--
+-- `pairs` order differs from one run to the next, and so do who ties with whom and the number of checks
+-- that make: a rule here holds on every order, and a test must not lean on one.
 --
 --   luajit -e 'ADDON="."' tools/gossip.lua
 --
@@ -92,9 +97,11 @@ local function senderSeenBy(from, to)
   return from.name .. "-" .. from.realm
 end
 
+-- `mute`: online, so a whisper reaches them and no error comes back, and never answering. It is how
+-- somebody stays somebody I only heard of for as long as a test needs.
 local function deliver(to, prefix, text, dist, from)
   local fn = to.recv[prefix]
-  if fn and to.online then fn(prefix, text, dist, senderSeenBy(from, to)) end
+  if fn and to.online and not to.mute then fn(prefix, text, dist, senderSeenBy(from, to)) end
 end
 
 local function send(c, prefix, text, dist, target, prio)
@@ -185,6 +192,7 @@ local function client(name, o)
     InChatMessagingLockdown = function() return c.lockdown end,
     RegisterAddonMessagePrefix = function() return true end,
     SendAddonMessage = function(prefix, text, channel, target)
+      if world.refuse and target:find(world.refuse, 1, true) then error("the client refused that target") end
       send(c, prefix, text, channel, target, "NOW")
       return true
     end,
@@ -278,10 +286,11 @@ end
 
 --- The topic RecruitBeacon will register in B3: a guild name, a version, and an ad made of the two.
 local function stock(c, list)
-  c.ads, c.pushed = {}, 0
+  c.ads, c.pushed, c.digests = {}, 0, 0
   for k, v in pairs(list or {}) do c.ads[k] = v end
   c.Gossip:Topic("CR3", {
     digest = function()
+      c.digests = c.digests + 1
       local out = {}
       for k, v in pairs(c.ads) do out[#out + 1] = { k, v } end
       return out
@@ -314,6 +323,22 @@ local function has(list, name)
   for _, p in ipairs(list) do
     if p.name == name then return p end
   end
+end
+
+--- `c` opens a round to these names, the way anybody earns the right to hand it names back.
+local function dial(c, ...)
+  for _, name in ipairs({ ... }) do c.Gossip:Note(name) end
+  c.Gossip:Round()
+  run(1)
+end
+
+--- How many names `c` holds only because somebody told it.
+local function heardOf(c)
+  local n = 0
+  for _, p in ipairs(c.Gossip:Peers()) do
+    if p.heardOf then n = n + 1 end
+  end
+  return n
 end
 
 --- No client said more than its ceiling in any one round of its own.
@@ -397,6 +422,26 @@ a.hear("CRD|", b.name)
 a.hear("CRG|Ordem", b.name)
 run(1)
 check(#ops({ from = a.name, op = "CR3" }) == 0, "a client that cannot whisper does not try to answer")
+
+-- A try that raises costs that try: the next one was already on its way.
+fresh("hyphen")
+world.refuse = " "
+a = client("Chehul Costa")
+run(30)
+check(a.Gossip:CanWhisper() and a.Gossip:WhisperName("Chehul Costa") == "Chehul-Costa", "the client refusing the space leaves the hyphen to try")
+check(#a.GuildOS.State.errors == 1, "and the refusal is recorded")
+
+-- The door closing between two tries holds the second one, and costs nothing else.
+fresh("hyphen")
+a = client("Chehul Costa")
+run(11)
+check(#ops({ op = "CRW" }) == 1, "the space has gone")
+a.inInstance = true
+run(120)
+check(#ops({ op = "CRW" }) == 1 and not a.Gossip:CanWhisper(), "inside an instance the hyphen waits")
+a.inInstance = false
+run(10)
+check(#ops({ op = "CRW" }) == 2 and a.Gossip:Stats().whisper == "hyphen", "and goes on the way out, and the session keeps its whisper")
 
 fresh()
 a = client("Ana", { game = "retail", realm = "Azralon" })
@@ -569,25 +614,41 @@ check(#ops({ from = b.name, op = "CRG", text = "CRG|Novo" }) == 1, "two people y
 fresh()
 a = client("Ana Lima")
 stock(a, ads(40))
+-- Four ads newer than the rest, in no order the keys would give.
+a.ads["Guild 20"], a.ads["Guild 30"], a.ads["Guild 38"], a.ads["Guild 07"] = 9, 8, 7, 6
+local NEWEST = { "Guild 20", "Guild 30", "Guild 38", "Guild 07" }
 run(11)
 for _, n in ipairs({ "Bruno Melo", "Carla Dias", "Dora Rosa", "Edu Lobo" }) do client(n) end
 for _, n in ipairs({ "Bruno Melo", "Carla Dias", "Dora Rosa", "Edu Lobo" }) do a.Gossip:Note(n) end
 run(600)
 local digests = ops({ from = a.name, op = "CRD" })
 check(#digests >= 2, "rounds go out")
+check(G.DIGEST_NEWEST > 0 and G.DIGEST_NEWEST < G.DIGEST_MAX, "a digest keeps some seats for the newest and some for the rest")
+check(G.DIGEST_NEWEST == #NEWEST, "this test seats exactly DIGEST_NEWEST ads")
 local walked = {}
 for _, e in ipairs(digests) do
-  local n = 0
+  local n, once = 0, {}
   for name in e.text:sub(5):gmatch("([^,]+):%d+") do
     n = n + 1
-    walked[#walked + 1] = name
+    check(not once[name], "a digest lists an ad once: " .. name)
+    once[name] = true
+    if n <= #NEWEST then
+      check(name == NEWEST[n], "the newest by version lead every digest, in that order: " .. name)
+    else
+      walked[#walked + 1] = name
+    end
   end
   check(n == G.DIGEST_MAX, "a digest of forty ads holds DIGEST_MAX pairs")
   check(e.dist == "WHISPER" and e.prio == "NORMAL", "by whisper, through ChatThrottleLib at NORMAL")
 end
-check(#walked > 40, "enough digests to go all the way round, with beacons taking their turns in between")
+local others = {}
+for i = 1, 40 do
+  local name = ("Guild %02d"):format(i)
+  if name ~= "Guild 20" and name ~= "Guild 30" and name ~= "Guild 38" and name ~= "Guild 07" then others[#others + 1] = name end
+end
+check(#walked > #others, "enough digests to go all the way round, with beacons taking their turns in between")
 for i, name in ipairs(walked) do
-  check(name == ("Guild %02d"):format((i - 1) % 40 + 1), "the digest walks all forty in turn, skipping none: " .. name)
+  check(name == others[(i - 1) % #others + 1], "the other seats walk the rest in turn, skipping none: " .. name)
 end
 for i = 2, #a.roundsAt do
   local gap = a.roundsAt[i] - a.roundsAt[i - 1]
@@ -599,6 +660,23 @@ for i = 3, #a.roundsAt do
 end
 check(not same, "and the gap varies, or a whole city would fire at once")
 check(a.Gossip:Stats().rounds >= 2, "Stats counts the rounds")
+
+-- What fits goes whole, each ad once: the seats change nothing below DIGEST_MAX.
+for _, held in ipairs({ 1, 3, 5, 12, 13 }) do
+  fresh()
+  a = client("Ana Lima")
+  stock(a, ads(held))
+  run(11)
+  dial(a, client("Bruno Melo").name)
+  local text = ops({ from = a.name, op = "CRD" })[1].text
+  local n, once = 0, {}
+  for name in text:sub(5):gmatch("([^,]+):%d+") do
+    n = n + 1
+    check(not once[name], held .. " ads: nothing listed twice")
+    once[name] = true
+  end
+  check(n == math.min(held, G.DIGEST_MAX), held .. " ads: all of them, up to DIGEST_MAX, saw " .. n)
+end
 
 -- A newcomer says it holds nothing, and gets the first four: a digest that fits says all there is.
 fresh()
@@ -627,8 +705,40 @@ check(#ad3 == 1 and ad3[1].text == "CR3|Nova|5", "only what the digest does not 
 local before = #ops({ from = a.name, op = "CRG" })
 check(before == 1, "and what the digest has that I lack is asked for, " .. before)
 
+-- A full digest still proves one thing: its first seats are the sender's newest, so an ad newer than the
+-- last of them that it does not list is one it lacks, or it would have a seat. Anything else is a guess.
+fresh()
+a = client("Ana Lima")
+stock(a, { Nova = 12, Meio = 6, Igual = 5, Velha = 3, Sentada = 9 })
+run(11)
+local seated = { "Sentada:9", "Guild 02:8", "Guild 03:8", "Guild 04:5" }
+for i = 5, 12 do seated[i] = ("Guild %02d:1"):format(i) end
+a.hear("CRD|" .. table.concat(seated, ","), "Bruno Melo")
+run(1)
+local proved = {}
+for _, e in ipairs(ops({ from = a.name, op = "CR3" })) do proved[e.text] = true end
+check(proved["CR3|Nova|12"] and proved["CR3|Meio|6"], "newer than its last seat and not listed: proved lacking, and sent")
+check(not proved["CR3|Igual|5"] and not proved["CR3|Velha|3"], "level with that seat or older proves nothing, and stays")
+check(not proved["CR3|Sentada|9"], "and what it lists at my version it holds")
+
 -- Two clients holding the same forty ads have nothing to say: a full digest proves nothing about the
--- ads it left out, so they are not sent on suspicion.
+-- ads it left out, so they are not sent on suspicion. At any mix of versions.
+for _, spread in ipairs({ false, true }) do
+  fresh()
+  a = client("Ana Lima")
+  b = client("Bruno Melo")
+  local same = ads(40)
+  if spread then
+    for i = 1, 40 do same[("Guild %02d"):format(i)] = 1 + i % 7 end
+  end
+  stock(a, same)
+  stock(b, same)
+  run(11)
+  a.Gossip:Note(b.name)
+  b.Gossip:Note(a.name)
+  run(3000)
+  check(#ops({ op = "CR3" }) == 0 and #ops({ op = "CRG" }) == 0, "two full caches trade nothing but digests, spread " .. tostring(spread))
+end
 fresh()
 a = client("Ana Lima")
 b = client("Bruno Melo")
@@ -657,45 +767,173 @@ check(b.ads["Guild 99"] == 1, "an ad past the digest's size still reaches a full
 -- ── Names: what crosses zones, and what must not outlive its owner ──────
 fresh()
 a = client("Ana Lima")
+local z = client("Zeca Baleiro")
 stock(a)
 run(11)
-a.hear("CRP|Bruno Melo,Carla Dias,Dora Rosa,Edu Lobo,Fabi Reis,Gabi Lins,Hugo Ramos", "Zeca Baleiro")
+dial(a, z.name)
+a.hear("CRP|Bruno Melo,Carla Dias,Dora Rosa,Edu Lobo,Fabi Reis,Gabi Lins,Hugo Ramos", z.name)
 check(#a.Gossip:Peers() == 1 + a.Gossip.PEX_MAX, "a list of names counts only PEX_MAX")
-fresh("none")
-a = client("Ana Lima")
-a.hear("CRP|Ana Lima,Bruno|Melo,Carla:Dias," .. ("x"):rep(200) .. ",Dora\nRosa", "Zeca Baleiro")
-peers = a.Gossip:Peers()
-check(#peers == 1 and peers[1].name == "Zeca Baleiro", "not me, not a bar, not a colon, not a line, not a novel")
-
--- A name I only heard of expires, and is not passed on: an offline ghost must not circle for ever.
-fresh("none")
-a = client("Ana Lima")
-a.hear("CRP|Fantasma Velho", "Zeca Baleiro")
-check(has(a.Gossip:Peers(), "Fantasma Velho"), "a name off a list is a peer to try")
-run(280)
-a.hear("CRP|Fantasma Velho", "Bruno Melo")
-run(30)
-check(not has(a.Gossip:Peers(), "Fantasma Velho"), "hearing of somebody again does not make them fresh")
-a.hear("CRP|Fantasma Novo", "Zeca Baleiro")
-a.hear("CRB||||", "Carla Dias", "YELL")
 fresh()
 a = client("Ana Lima")
+z = client("Zeca Baleiro")
+run(11)
+dial(a, z.name)
+a.hear("CRP|Ana Lima,Bruno|Melo,Carla:Dias," .. ("x"):rep(200) .. ",Dora\nRosa", z.name)
+peers = a.Gossip:Peers()
+check(#peers == 1 and peers[1].name == z.name, "not me, not a bar, not a colon, not a line, not a novel")
+
+-- A name I only heard of expires, and is not passed on: an offline ghost must not circle for ever.
+fresh()
+a = client("Ana Lima")
+z = client("Zeca Baleiro")
+client("Fantasma Velho").mute = true
+run(11)
+dial(a, z.name)
+a.hear("CRP|Fantasma Velho", z.name)
+check(has(a.Gossip:Peers(), "Fantasma Velho"), "a name off a list is a peer to try")
+run(280)
+dial(a, z.name)
+a.hear("CRP|Fantasma Velho", z.name)
+run(30)
+check(not has(a.Gossip:Peers(), "Fantasma Velho"), "hearing of somebody again does not make them fresh")
+fresh()
+a = client("Ana Lima")
+z = client("Zeca Baleiro")
+client("Fantasma Novo").mute = true
 stock(a)
 run(11)
-a.hear("CRP|Fantasma Novo", "Zeca Baleiro")
+dial(a, z.name)
+a.hear("CRP|Fantasma Novo", z.name)
 a.Gossip:Note("Carla Dias")
 a.hear("CRD|", "Bruno Melo")
 run(1)
 names = ops({ from = a.name, op = "CRP" })
 check(#names == 1 and not names[1].text:find("Fantasma", 1, true), "only somebody I heard myself is passed on")
 check(names[1].text:find("Carla Dias", 1, true), "and they are")
-fresh("none")
+fresh()
 a = client("Ana Lima")
-a.hear("CRP|Bruno Melo", "Zeca Baleiro")
+z = client("Zeca Baleiro")
+client("Bruno Melo").mute = true
+run(11)
+dial(a, z.name)
+a.hear("CRP|Bruno Melo", z.name)
 run(280)
 a.hear("CRB||||", "Bruno Melo", "YELL")
 run(30)
 check(has(a.Gossip:Peers(), "Bruno Melo"), "somebody heard of and then heard is fresh")
+
+-- ── A sender who wants my rounds for himself ────────────────────────────
+-- Nobody hands me names unasked.
+fresh()
+a = client("Vitima Um")
+z = client("Zeca Baleiro")
+run(11)
+a.Gossip:Note(z.name)
+local droppedBefore = a.Gossip:Stats().dropped
+a.hear("CRP|Falso Um,Falso Dois", z.name)
+check(not has(a.Gossip:Peers(), "Falso Um"), "a list nobody asked for is not read")
+check(a.Gossip:Stats().dropped == droppedBefore + 1, "and is counted")
+
+-- And somebody I did ask, once, and for this round only.
+dial(a, z.name)
+a.hear("CRP|Falso Um", z.name)
+check(has(a.Gossip:Peers(), "Falso Um"), "the answer to my digest is read")
+a.hear("CRP|Falso Dois", z.name)
+check(not has(a.Gossip:Peers(), "Falso Dois"), "and one answer is all a digest buys")
+fresh()
+a = client("Vitima Um")
+z = client("Zeca Baleiro")
+z.mute = true
+run(11)
+dial(a, z.name)
+run(a.Gossip.PEER_FRESH + 200)
+check(not has(a.Gossip:Peers(), z.name), "the peer has gone stale, so no round reached them again")
+a.hear("CRP|Falso Um", z.name)
+check(not has(a.Gossip:Peers(), "Falso Um"), "a digest of an old round buys nothing now")
+
+-- The rows that came off lists have a ceiling, whoever fills them.
+fresh()
+a = client("Vitima Um")
+z = client("Zeca Baleiro")
+z.mute = true
+run(11)
+local serial = 0
+for _ = 1, 12 do
+  dial(a, z.name)
+  local list = {}
+  for i = 1, 5 do
+    serial = serial + 1
+    list[i] = "Falso X" .. serial
+  end
+  a.hear("CRP|" .. table.concat(list, ","), z.name)
+  check(heardOf(a) <= a.Gossip.HEARD_OF_MAX, "names off lists stop at HEARD_OF_MAX, saw " .. heardOf(a))
+end
+check(heardOf(a) > 0, "and there are some, so the ceiling was what stopped them")
+
+-- A round takes one of them at most: with nobody I heard, one digest and not two.
+fresh()
+a = client("Vitima Um")
+z = client("Zeca Baleiro")
+z.mute = true
+for i = 1, 4 do client("Falso X" .. i).mute = true end
+run(11)
+dial(a, z.name)
+a.hear("CRP|Falso X1,Falso X2,Falso X3,Falso X4", z.name)
+local mark = #ops({ from = a.name, op = "CRD" })
+a.GuildOS.State.gossip.peers[z.name] = nil
+a.Gossip:Round()
+run(1)
+check(#ops({ from = a.name, op = "CRD" }) == mark + 1, "a round with only names off lists sends one digest")
+
+-- The whole attack: thirty lists a round from a sender who is really there, against four honest peers.
+math.randomseed(7)
+fresh()
+a = client("Vitima Um")
+stock(a, ads(3))
+local honest = {}
+for i = 1, 4 do
+  honest[i] = client("Honesto N" .. i)
+  stock(honest[i])
+end
+local mau = client("Mau Ator")
+mau.mute = true
+run(11)
+for _, c in ipairs(honest) do
+  a.Gossip:Note(c.name)
+  c.Gossip:Note(a.name)
+end
+local peak = 0
+serial = 0
+for _ = 1, 30 do
+  for _ = 1, 30 do
+    local list = {}
+    for j = 1, 5 do
+      serial = serial + 1
+      list[j] = "Falso X" .. serial
+    end
+    a.hear("CRP|" .. table.concat(list, ","), mau.name)
+  end
+  peak = math.max(peak, heardOf(a))
+  run(121)
+end
+local toHonest, told, heardMe = 0, {}, {}
+for _, e in ipairs(ops({ from = a.name, op = "CRD" })) do
+  if e.target:find("^Falso") then
+    told[e.cycle] = (told[e.cycle] or 0) + 1
+  else
+    heardMe[e.cycle] = true
+    if e.target:find("^Honesto") then toHonest = toHonest + 1 end
+  end
+end
+local cycles = 0
+for cycle, n in pairs(told) do
+  check(n <= 1, "cycle " .. cycle .. ": never more than one digest to a name off a list, saw " .. n)
+  check(heardMe[cycle], "cycle " .. cycle .. ": and a name off a list never takes the seat of somebody I heard")
+  cycles = cycles + 1
+end
+check(cycles > 0, "the attack did get names in, so it is the seats that held")
+check(peak <= a.Gossip.HEARD_OF_MAX, "the flood never passes the ceiling, peak " .. peak)
+check(toHonest >= 15, "the honest peers keep their rounds, " .. toHonest .. " digests of 30 rounds")
 
 -- ── The ceiling: however many ask ───────────────────────────────────────
 fresh()
@@ -728,41 +966,157 @@ stock(a)
 run(11)
 for i = 1, 40 do a.hear(("CRB|Guild %02d|1||"):format(i), "Yeller N" .. i, "YELL") end
 run(1)
-check(#ops({ from = a.name, op = "CRG" }) <= a.Gossip.ROUND_PEERS * (a.Gossip.REPLY_MAX + 1), "questions come out of the same allowance")
+check(#ops({ from = a.name, op = "CRG" }) == a.Gossip.REPLY_MAX, "a round asks no more than an answer can carry")
+check(a.GuildOS.State.gossip.allowance >= a.Gossip.REPLY_MAX + 1, "and leaves a whole answer for whoever asks me")
+a.Gossip:Round()
+a.hear("CRB|Guild 39|1||", "Yeller N39", "YELL")
+run(1)
+check(#ops({ from = a.name, op = "CRG" }) == a.Gossip.REPLY_MAX + 1, "and the next round may ask again")
+
+-- One sender is one answer, however it asks.
+fresh()
+a = client("Vitima Um")
+stock(a, ads(20))
+client("Mau Ator").mute = true
+client("Honesto Um").mute = true
+client("Carla Dias").mute = true
+run(11)
+a.Gossip:Note("Carla Dias")
+for _ = 1, 3 do a.hear("CRD|", "Mau Ator") end
+for i = 1, 12 do a.hear(("CRG|Guild %02d"):format(i), "Mau Ator") end
+run(1)
+local function adsTo(c, target) return #ops({ from = c.name, op = "CR3", target = target }) end
+check(adsTo(a, "Mau Ator") == a.Gossip.REPLY_MAX, "one sender takes REPLY_MAX ads in a round, saw " .. adsTo(a, "Mau Ator"))
+check(#ops({ from = a.name, op = "CRP", target = "Mau Ator" }) == 1, "and one list of names, however many digests it sends")
+a.hear("CRD|", "Honesto Um")
+run(1)
+check(adsTo(a, "Honesto Um") == a.Gossip.REPLY_MAX, "and the next asker gets a whole answer, saw " .. adsTo(a, "Honesto Um"))
+a.Gossip:Round()
+a.hear("CRD|", "Mau Ator")
+run(1)
+check(adsTo(a, "Mau Ator") == 2 * a.Gossip.REPLY_MAX, "and the next round it is served again")
+
+-- The list of names goes first: it is what crosses zones, and an answer's asks must not starve it.
+fresh()
+a = client("Novato Um")
+stock(a)
+run(11)
+a.Gossip:Note("Carla Dias")
+a.Gossip:Note("Dora Rosa")
+local full = {}
+for i = 1, 12 do full[i] = ("Guild %02d:1"):format(i) end
+a.hear("CRD|" .. table.concat(full, ","), "Bruno Melo")
+run(1)
+check(#ops({ from = a.name, op = "CRP" }) == 1, "twelve pairs I want leave room for the names")
+check(#ops({ from = a.name, op = "CRG" }) == a.Gossip.REPLY_MAX, "and I ask for what a peer can give me, no more")
+check(ops({ from = a.name, op = "CRG" })[1].text == "CRG|Guild 01", "in the order of the digest, the newest first")
+
+-- Down to the last whisper of the round, that whisper is the names.
+fresh()
+a = client("Vitima Um")
+stock(a, ads(20))
+run(11)
+a.Gossip:Note("Carla Dias")
+for _, who in ipairs({ "Bruno Melo", "Dora Rosa" }) do
+  for i = 1, 4 do a.hear(("CRG|Guild %02d"):format(i), who) end
+end
+a.hear("CRG|Guild 09", "Edu Lobo")
+check(a.GuildOS.State.gossip.allowance == 1, "a round spent down to its last whisper")
+a.hear("CRD|Novo:1", "Fabi Reis")
+run(1)
+check(#ops({ from = a.name, op = "CRP", target = "Fabi Reis" }) == 1, "and it carries the names")
+check(adsTo(a, "Fabi Reis") == 0 and #ops({ from = a.name, op = "CRG" }) == 0, "and nothing else got there first")
+
+-- With nothing left a digest is not even read.
+local reads = a.digests
+local droppedThen = a.Gossip:Stats().dropped
+a.hear("CRD|", "Gabi Lins")
+run(1)
+check(a.digests == reads, "an allowance at zero answers nothing and works out nothing")
+check(a.Gossip:Stats().dropped == droppedThen + 1, "and counts one discard")
+
+-- ── Keys off the network, and on their way out ──────────────────────────
+fresh()
+a = client("Ana Lima")
+stock(a)
+local answers = 0
+a.Gossip:Topic("ANY", {
+  digest = function() return { { ("k"):rep(300), 1 }, { "with|bar", 1 }, { "Boa", 1 } } end,
+  want = function() return true end,
+  pull = function() answers = answers + 1; return "ANY|ad" end,
+  push = function() end,
+})
+run(11)
+local long = ("k"):rep(2000)
+a.hear("CRB|" .. long .. "|1||", "Bruno Melo", "YELL")
+a.hear("CRB|tab\1bed|1||", "Bruno Melo", "YELL")
+a.hear("CRD|" .. ("k"):rep(200) .. ":1", "Carla Dias")
+a.hear("CRD|ctrl\1char:1", "Dora Rosa")
+run(1)
+check(#ops({ from = a.name, op = "CRG" }) == 0, "a key that is no name is never asked for")
+answers = 0
+a.hear("CRG|" .. ("g"):rep(200), "Edu Lobo")
+a.hear("CRG|tab\1bed", "Edu Lobo")
+a.hear("CRG|bar|bar", "Edu Lobo")
+run(1)
+check(answers == 0, "nor looked up")
+a.hear("CRG|Boa", "Edu Lobo")
+run(1)
+check(answers == 1, "while a key that is one is")
+dial(a, client("Fabi Reis").name)
+for _, e in ipairs(ops({ from = a.name, op = "CRD" })) do
+  check(#e.text < 200 and e.text:find("Boa", 1, true), "a digest carries the good key and no other: " .. e.text:sub(1, 60))
+  check(not e.text:find("with", 1, true), "and never a bar inside a field")
+end
+a.Gossip:Beacon()
+for _, e in ipairs(ops({ from = a.name, op = "CRB" })) do
+  check(#e.text < 200, "and the beacon the same")
+end
 
 -- ── Fifty clients, each in its own zone, each knowing two neighbours ────
-for seed = 1, 6 do
-  math.randomseed(seed)
-  fresh()
-  local ring = {}
-  for i = 1, 50 do
-    ring[i] = client("Node N" .. i)
-    stock(ring[i])
-  end
-  ring[1].ads.Ordem = 1
-  run(11)
-  for i, c in ipairs(ring) do
-    c.Gossip:Note(ring[i % 50 + 1].name)
-    c.Gossip:Note(ring[(i + 48) % 50 + 1].name)
-  end
-  local slowest, covered = 0, false
-  while not covered and slowest <= 12 do
-    run(5)
-    covered = true
-    for _, c in ipairs(ring) do
-      slowest = math.max(slowest, c.cycle)
-      if not c.ads.Ordem then covered = false end
+-- `held` is what every client already holds: a healthy network sits near the cache's forty, and a new
+-- ad has to cross that as fast as it crosses an empty one. Its version is what says it is new.
+for _, held in ipairs({ 0, 11, 12, 30, 39 }) do
+  for _, edit in ipairs(held > 0 and { false, true } or { false }) do
+    for seed = 1, 6 do
+      math.randomseed(seed)
+      fresh()
+      local ring = {}
+      for i = 1, 50 do
+        ring[i] = client("Node N" .. i)
+        stock(ring[i], ads(held))
+      end
+      local key = edit and "Guild 01" or "Ordem"
+      ring[1].ads[key] = 2
+      run(11)
+      for i, c in ipairs(ring) do
+        c.Gossip:Note(ring[i % 50 + 1].name)
+        c.Gossip:Note(ring[(i + 48) % 50 + 1].name)
+      end
+      local slowest, covered = 0, false
+      while not covered and slowest <= 12 do
+        run(5)
+        covered = true
+        for _, c in ipairs(ring) do
+          slowest = math.max(slowest, c.cycle)
+          if (c.ads[key] or 0) < 2 then covered = false end
+        end
+      end
+      local what = ("seed %d, %d held%s"):format(seed, held, edit and ", an edit" or "")
+      check(covered and slowest <= 12, what .. ": the ad reaches all fifty in at most 12 rounds, took " .. slowest)
+      ceilingHolds(ring[1].Gossip, what)
+      check(#ops({ op = "CR3", dist = "YELL" }) == 0, "a whole ad never goes out on YELL")
+      for _, e in ipairs(ops({ dist = "WHISPER" })) do
+        check(e.op == "CRW" or e.prio == "NORMAL", "everything but the test goes through ChatThrottleLib at NORMAL")
+      end
+      if held >= 12 then
+        check(#ops({ op = "CR3" }) <= 3 * 50, what .. ": one ad costs a few answers each, not ads on suspicion, saw " .. #ops({ op = "CR3" }))
+      end
+      local crossed = 0
+      for _, c in ipairs(ring) do crossed = math.max(crossed, #c.Gossip:Peers()) end
+      check(crossed > 2, "names crossed the ring: somebody knows more than their two neighbours")
     end
   end
-  check(covered and slowest <= 12, "seed " .. seed .. ": the ad reaches all fifty in at most 12 rounds, took " .. slowest)
-  ceilingHolds(ring[1].Gossip, "seed " .. seed)
-  check(#ops({ op = "CR3", dist = "YELL" }) == 0, "a whole ad never goes out on YELL")
-  for _, e in ipairs(ops({ dist = "WHISPER" })) do
-    check(e.op == "CRW" or e.prio == "NORMAL", "everything but the test goes through ChatThrottleLib at NORMAL")
-  end
-  local crossed = 0
-  for _, c in ipairs(ring) do crossed = math.max(crossed, #c.Gossip:Peers()) end
-  check(crossed > 2, "names crossed the ring: somebody knows more than their two neighbours")
 end
 
 -- ── Inside an instance, and in a lockdown ───────────────────────────────
@@ -809,7 +1163,7 @@ a = client("Ana Lima", { inInstance = true })
 run(600)
 check(#ops({ from = a.name }) == 0 and not a.Gossip:CanWhisper(), "logged in inside an instance: the whisper test waits")
 a.inInstance = false
-run(200)
+run(10)
 check(a.Gossip:CanWhisper() and #ops({ from = a.name, op = "CRW" }) == 1, "and runs as soon as it is out")
 
 -- ── Trash off the network ───────────────────────────────────────────────
@@ -877,10 +1231,27 @@ check(#ops({ from = a.name, op = "CRB", dist = "GUILD" }) >= 4, "and the beacons
 check(#ops({ from = a.name, op = "CRD" }) >= 2, "a digest with nothing in it still goes")
 check(#a.GuildOS.State.errors >= 1 and #a.GuildOS.State.errors < 10, "recorded, and once per kind, not per message")
 a.Gossip:Note("Carla Dias")
-a.hear("CRD|Guild 01:1", b.name)
+a.hear("CRD|Guild 01:1", "Edu Lobo")
 run(1)
-local list = ops({ from = a.name, op = "CRP" })
-check(#list >= 1 and list[#list].text:find("Carla Dias", 1, true), "and the answer's names still go")
+local list = ops({ from = a.name, op = "CRP", target = "Edu Lobo" })
+check(#list == 1 and list[1].text:find("Carla Dias", 1, true), "and the answer's names still go")
+
+-- A topic that raises over one key costs that key: the digest's next one is still asked for.
+fresh()
+a = client("Ana Lima")
+a.Gossip:Topic("CR3", {
+  digest = function() return {} end,
+  want = function(k)
+    if k == "Mala" then error("this key broke") end
+    return true
+  end,
+  pull = function() end,
+  push = function() end,
+})
+run(11)
+a.hear("CRD|Mala:1,Boa:1", "Edu Lobo")
+run(1)
+check(#ops({ from = a.name, op = "CRG", text = "CRG|Boa" }) == 1, "one bad key does not stop the next")
 
 -- A round or a beacon that raises does not stop the next one.
 fresh()
