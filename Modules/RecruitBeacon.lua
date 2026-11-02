@@ -265,22 +265,36 @@ function RB:SeedOwnAd()
     return own
 end
 
--- What this client can hand over, by key: the CR3 cache and the live ads of the site's list, which is how
--- the companion's list reaches who has no companion (the owner's call in specs/071). One ad per name: the
--- newer version, and at the same version the list's, which no peer wrote. The list is read here and never
--- copied into the cache: forty seats would not hold it, and the seal stays with whoever's own list it is.
-local function Held()
+-- What this client has, by key, of what `keep(ad, key)` lets through: the CR3 cache and the live ads of the
+-- site's list, which is how the companion's list reaches who has no companion (the owner's call in
+-- specs/071). `keep` comes first: one ad per name is chosen among what passes, so a namesake that does not
+-- hides nobody. Of those the newer version, and at the same version the list's, which no peer wrote. The
+-- list is read here and never copied into the cache: forty seats would not hold it, and the seal stays
+-- with whoever's own list it is.
+local function Gather(keep)
     RB:SeedOwnAd()
     RB:Prune3()
-    local held, t = {}, now()
-    for key, ad in pairs(RB:Cache3()) do held[key] = ad end
+    local found, t = {}, now()
+    for key, ad in pairs(RB:Cache3()) do
+        if keep(ad, key) then found[key] = ad end
+    end
     local GF = GuildOS.GuildFinder
     for _, ad in ipairs(GF and GF:Directory() or {}) do
         local key = ad.n:gsub("[,:]", " ")
-        local cur = held[key]
-        if ad.x > t and (not cur or ad.v >= cur.v) then held[key] = ad end
+        local cur = found[key]
+        if ad.x > t and keep(ad, key) and (not cur or ad.v >= cur.v) then found[key] = ad end
     end
-    return held
+    return found
+end
+
+local function Anything() return true end
+
+-- What this client offers: only what somebody it can reach can use (GF:Reaches). The guild's own ad always
+-- goes: it needs no judging, and without it the beacon says no guild and nobody finds a member.
+local function Held()
+    local GF = GuildOS.GuildFinder
+    local place = GF and GF:Context()
+    return Gather(function(ad, key) return IsOwnGuild(key) or (GF ~= nil and GF:Reaches(ad, place)) end)
 end
 
 ----------------------------------------------------------------------
@@ -312,7 +326,9 @@ function RB:Initialize()
                 if type(version) ~= "number" or version > now() + RB.CLOCK_SKEW then return false end
                 -- Never asked for: it comes by GUILD from an officer, and a guildmate would only refuse what it got.
                 if IsOwnGuild(key) then return false end
-                local cur = Held()[key]
+                -- All it has and not only what it offers: an ad kept and not offered, asked for every round,
+                -- would be the same loop.
+                local cur = Gather(Anything)[key]
                 return not cur or cur.v < version
             end,
             pull = function(key)

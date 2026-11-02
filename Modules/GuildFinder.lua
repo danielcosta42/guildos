@@ -529,6 +529,17 @@ function GF:WorldParts(w)
     return splitWorld(w)
 end
 
+-- Whether `ad` is worth passing on from `place` (GF:Context()): the player's own faction and region, because
+-- a whisper from here reaches nobody else and that guild could invite nobody else. An ad with no faction
+-- is a guild with no roster yet, and goes. The ruleset stays out of it: the client cannot read it. What
+-- cannot be judged is not offered: a client that does not know its faction or its region, or an ad that
+-- names no world, passes on only what needs no answer, never everything.
+function GF:Reaches(ad, place)
+    if ad.f and ad.f ~= place.faction then return false end
+    local _, region = splitWorld(ad.w)
+    return region ~= nil and region == place.region
+end
+
 -- "The list was updated 3 h ago" from the list the companion wrote; nil with no list (or one too old).
 function GF:UpdatedAgo()
     local Import = GuildOS.CompanionImport

@@ -1260,10 +1260,17 @@ available before 4 November.
     `:Prune3` never cuts that ad, and among ads of one validity cuts the oldest version: an export gives a whole list
     one `x`, and the night with more guilds than seats is when a member most needs its own.
   - The companion's list goes on the gossip (the owner's call in spec 071, "o ChehulNet repassa a quem não tem
-    companion"). `digest`, `want` and `pull` read `Held`: the cache and the live ads of the list, one per name, the
+    companion"). `digest` and `pull` read `Held`: the cache and the live ads of the list, one per name, the
     newer version and at the same version the list's. The list is copied into nobody's cache, the ceilings and the
     digest's order are the gossip's, the seal still comes from one's own `GOSRECR1` alone, and `x` goes out as it is and
     is cut to 72 hours on the way in.
+  - A client offers only what somebody it can reach can use: its own faction and region (`GF:Reaches`), any ruleset,
+    because the addon cannot read one. An ad with no faction is a guild with no roster yet, and goes. What it cannot
+    judge it does not offer, rather than everything: a client that does not know its faction passes on the faction-less
+    alone, one that does not know its region nothing, and an ad with no world is not offered. The filter comes before
+    the choice of one ad per name, so a namesake elsewhere hides nobody. `want` reads all the client has and not only
+    what it offers: an ad kept and not offered, asked for every round, would be the loop a guild once ran on its own ad.
+    The guild's own ad always goes: it needs no judging, and without it the beacon says no guild.
   - The whisper test goes over the spellings `TEST_PASSES` times, `TEST_AGAIN` seconds apart, and its token lives the
     session: an echo that comes after the last try still counts. With one pass, a lagged opening night left a client
     with no gossip and no requests until a `/reload`.
@@ -1276,7 +1283,7 @@ available before 4 November.
     stays open after their invite, and `:Decide` prints why it refused. A card with no slug promises no companion:
     `WriteWire` passes over it, because the site could not tell whose guild it is.
   - Left as it is, on purpose: `ad.key` is the name alone, so two guilds of one name in two worlds share a slot (changing
-    it changes the contract). Open: a list's ads of another region or faction go on the gossip too, and take seats.
+    it changes the contract).
 
 ### Consequences
 - (+) A new ad crosses zones in rounds, not in the time one yell takes to reach the next client.

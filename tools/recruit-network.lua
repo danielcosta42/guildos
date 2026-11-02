@@ -82,7 +82,8 @@ end
 
 -- What AceComm hands over: Ambiguate(sender, "none"), the realm only when it is not the reader's.
 local function senderSeenBy(from, to)
-  if from.game == "forever" or from.realm == to.realm then return from.name end
+  if from.game == "forever" then return world.hyphen and (from.name:gsub(" ", "-")) or from.name end
+  if from.realm == to.realm then return from.name end
   return from.name .. "-" .. from.realm
 end
 
@@ -140,12 +141,15 @@ end
 
 --- `o.own`: the guild's ad, what the block's recruitAd gives. `o.list`: the site's list, what GOSRECR1 gives.
 --- `o.site`: the block's joinRequests. `o.rankAt`, `o.rosterAt`: when the game answers about each.
+--- `o.faction`, `o.region`: what the game says, false for nothing at all.
 local function client(name, o)
   o = o or {}
   local c = { name = name, game = o.game or "forever", realm = o.realm or "Azralon", zone = o.zone or name,
               guild = o.guild, rank = o.rank or 5, rankAt = o.rankAt or 0, rosterAt = o.rosterAt or 0,
               inInstance = false, lockdown = false, online = true, chat = {}, filters = {}, recv = {}, cycle = 0,
               notices = {}, printed = {}, list = o.list }
+  if o.faction == nil then c.faction = "Horde" else c.faction = o.faction end
+  if o.region == nil then c.region = 1 else c.region = o.region end
   local env = setmetatable({}, { __index = _G })
   env._G = env
   env.GuildOSDB = {}
@@ -220,9 +224,9 @@ local function client(name, o)
   env.UnitIsGhost = function() return false end
   env.UnitClass = function() return "Paladin", "PALADIN" end
   env.UnitLevel = function() return 30 end
-  env.UnitFactionGroup = function() return "Horde" end
+  env.UnitFactionGroup = function() return c.faction or nil end
   env.GetLocale = function() return "enUS" end
-  env.GetCurrentRegion = function() return 1 end
+  env.GetCurrentRegion = function() return c.region or nil end
   env.GetRealmName = function() return c.realm end
   env.GetNormalizedRealmName = function() return c.realm end
   if c.game == "forever" then
@@ -540,7 +544,7 @@ for _, e in ipairs(T.digest()) do check(e[1] ~= "Vencida", "nor offered") end
 fresh()
 seed = client("Ana Lima", { zone = "city", list = listOf(0, {
   { n = "Xara", u = "xara-us", w = "normal:us", v = EPOCH - 100, x = EPOCH + 3600 },
-  { n = "Xara", u = "xara-eu", w = "normal:eu", v = EPOCH - 50, x = EPOCH + 3600 },
+  { n = "Xara", u = "xara-pvp", w = "pvp:us", v = EPOCH - 50, x = EPOCH + 3600 },
 }) })
 T = seed.GuildOS.State.gossip.topics.CR3
 local seats = 0
@@ -548,6 +552,115 @@ for _, e in ipairs(T.digest()) do
   if e[1] == "Xara" then seats = seats + 1; check(e[2] == EPOCH - 50, "the newer of the two") end
 end
 check(seats == 1, "one name, one seat")
+
+-- ── Only what somebody here can use: this client's faction and region ──
+local function placed(n, f, w, v)
+  return { n = n, u = (n:lower():gsub(" ", "-")), f = f, w = w, v = v or EPOCH - 100, x = EPOCH + 3600 }
+end
+local NAMES = { "Aqui", "Outro Ruleset", "Sem Faccao", "Outra Faccao", "Outra Regiao", "Longe", "Sem Faccao Longe", "Sem Mundo" }
+local function mixedList()
+  return listOf(0, { placed("Aqui", "H", "normal:us"), placed("Outro Ruleset", "H", "pvp:us"), placed("Sem Faccao", nil, "normal:us"),
+    placed("Outra Faccao", "A", "normal:us"), placed("Outra Regiao", "H", "normal:eu"), placed("Longe", "A", "pvp:eu"),
+    placed("Sem Faccao Longe", nil, "normal:eu"), placed("Sem Mundo", "H", nil) })
+end
+--- What `c`'s digest offers, sorted, with pull made to agree with it name by name.
+local function offered(c)
+  local topic3 = c.GuildOS.State.gossip.topics.CR3
+  local names, set = {}, {}
+  for _, e in ipairs(topic3.digest()) do
+    names[#names + 1] = e[1]
+    set[e[1]] = true
+  end
+  table.sort(names)
+  for _, n in ipairs(NAMES) do
+    check((topic3.pull(n) ~= nil) == (set[n] == true), c.name .. ": pull and the digest agree on " .. n)
+  end
+  return table.concat(names, ",")
+end
+
+fresh()
+seed = client("Ana Lima", { zone = "city", list = mixedList() })
+local says = offered(seed)
+check(says == "Aqui,Outro Ruleset,Sem Faccao", "Horde in the Americas: its faction and region, any ruleset, and the guild with no faction yet: " .. says)
+local bia = client("Bia Lima", { zone = "a", faction = "Alliance", list = mixedList() })
+says = offered(bia)
+check(says == "Outra Faccao,Sem Faccao", "the other faction offers the other side: " .. says)
+local caio = client("Caio Lima", { zone = "b", region = 3, list = mixedList() })
+says = offered(caio)
+check(says == "Outra Regiao,Sem Faccao Longe", "another region offers its own: " .. says)
+
+-- What it cannot judge it does not offer: never everything.
+local unsure = {
+  { client("Davi Lima", { zone = "c", faction = false, list = mixedList() }), "Sem Faccao", "no faction" },
+  { client("Edu Lima", { zone = "d", faction = "Neutral", list = mixedList() }), "Sem Faccao", "a neutral character" },
+  { client("Gil Lima", { zone = "e", region = false, list = mixedList() }), "", "no region" },
+  { client("Ivo Lima", { zone = "f", region = 5, list = mixedList() }), "", "a region the site has no world for" },
+  { client("Jon Lima", { zone = "g", faction = false, region = false, list = mixedList() }), "", "neither" },
+}
+for _, case in ipairs(unsure) do
+  says = offered(case[1])
+  check(says == case[2], case[3] .. ": only what needs no answer goes: " .. says)
+  check(#case[1].GuildOS.State.errors == 0, case[3] .. ": and nothing raised")
+end
+
+-- And down the wire: a client with no list ends up holding what was offered, and nothing else went.
+fresh()
+seed = client("Ana Lima", { zone = "city", list = mixedList() })
+local novo = client("Novo Silva", { zone = "city" })
+run(1800)
+local got = {}
+for key in pairs(novo.RB:Cache3()) do got[#got + 1] = key end
+table.sort(got)
+check(table.concat(got, ",") == "Aqui,Outro Ruleset,Sem Faccao", "who has no list holds what fits and nothing else: " .. table.concat(got, ","))
+for _, e in ipairs(ops({ from = seed.name, op = "CR3" })) do
+  for _, far in ipairs({ "Outra Faccao", "Outra Regiao", "Longe", "Sem Faccao Longe", "Sem Mundo" }) do
+    check(not e.text:find("CR3|" .. far .. "|", 1, true), "nothing else crossed the wire: " .. far)
+  end
+end
+novo.hear("CRG|Outra Faccao", seed.name)
+seed.hear("CRG|Outra Faccao", novo.name)
+run(1)
+for _, e in ipairs(ops({ from = seed.name, op = "CR3" })) do
+  check(not e.text:find("Outra Faccao", 1, true), "asking by name does not get it either")
+end
+
+-- The filter comes before the choice of one ad per name: a namesake far away hides nobody here.
+fresh()
+seed = client("Ana Lima", { zone = "city", list = listOf(0, { placed("Xara", "H", "normal:us", EPOCH - 100), placed("Xara", "H", "normal:eu", EPOCH - 50) }) })
+T = seed.GuildOS.State.gossip.topics.CR3
+local seen
+for _, e in ipairs(T.digest()) do if e[1] == "Xara" then seen = e[2] end end
+check(seen == EPOCH - 100, "the namesake in another region does not take this one's seat: " .. tostring(seen))
+check(T.pull("Xara"):find("|normal:us|", 1, true), "and pull hands out this region's")
+check(seed.RB:IngestCR3(cr3(seed, { n = "Xara", u = "xara-a", f = "A", v = EPOCH - 10 }), "Eva Reis", "WHISPER") == true, "a heard one of the other faction is kept")
+seen = nil
+for _, e in ipairs(T.digest()) do if e[1] == "Xara" then seen = e[2] end end
+check(seen == EPOCH - 100, "and shadows nothing either: " .. tostring(seen))
+
+-- What was heard and is not offered is still known: asked for again every round, it would be the loop
+-- a guild once ran on its own ad.
+fresh()
+seed = client("Ana Lima", { zone = "city" })
+T = seed.GuildOS.State.gossip.topics.CR3
+check(seed.RB:IngestCR3(cr3(seed, { n = "Ouvida", u = "ouvida", f = "A", v = EPOCH - 9 }), "Eva Reis", "WHISPER") == true, "a heard ad of the other faction lands")
+check(offered(seed) == "", "and is not offered")
+check(T.want("Ouvida", EPOCH - 9) == false, "and is not asked for again")
+check(T.want("Ouvida", EPOCH - 8) == true, "a newer version still is")
+seed = client("Bia Lima", { zone = "city", list = listOf(0, { placed("Longe", "A", "pvp:eu", EPOCH - 9) }) })
+T = seed.GuildOS.State.gossip.topics.CR3
+check(T.want("Longe", EPOCH - 9) == false, "and what the list has, offered or not, is not wanted at its version")
+
+-- A guild's own ad is the one a client can always judge: it is its guild. Without it the beacon says no
+-- guild, and nobody finds the member.
+fresh()
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1", faction = false, own = ownAd })
+run(200)
+check(offered(ana) == "Ordem", "a member with no faction read yet still offers its guild's ad")
+local named = 0
+for _, e in ipairs(ops({ from = ana.name, op = "CRB", dist = "GUILD" })) do
+  if e.text:match("^CRB|[^|]*|[^|]*|Ordem|0$") then named = named + 1 end
+end
+check(named >= 1, "and says the guild in its beacon")
 
 -- ── The officer hears of a request from the site once the rank is known ─
 local SITE = { { id = "550e8400-e29b-41d4-a716-446655440000", character = "Davi Rocha", class = "MAGE", level = 14,
