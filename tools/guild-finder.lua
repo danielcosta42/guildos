@@ -527,55 +527,78 @@ check(#GF:All() == 2, "but one of the other faction is another guild")
 only({ bare(ad({ n = "Lonely", f = "H", heard = true, verified = false })) })
 check(#GF:All() == 1, "and a CR2 alone stays")
 
--- ── The request form and the officer's list (Tasks B4 and B5), drawn over a stand-in for the module ──
--- The rules are tools/join-requests.lua's; here what is checked is what the screens say and press.
+-- ── The request form (Task B4), over the REAL JoinRequests ──────────────────────────────────────────
+-- A stand-in once hid a form that did nothing for a guild heard only by CR2; the module is the real one.
+-- The officer's list below is drawn over a stand-in: its rules are tools/join-requests.lua's.
 function GetTime() return 1 end
 function time() return NOW end   -- GuildOS:TimeAgo reads the clock
+function UnitLevel() return 12 end
 GuildOS.UI.CreateScrollFrame = function() return widget(), widget() end
-local listeners, outbox, sentNote = {}, {}, nil
-local stateOf = { state = "stored" }
-local fake = {
-  ONLINE_SECONDS = 360,
-  Listen = function(_, fn) listeners[#listeners + 1] = fn end,
-  Me = function() return { character = "Chehul Costa", class = "PALADIN", level = 12, role = "HEALER" } end,
-  Latest = function(_, a) return outbox[a.u] end,
-  Status = function() return stateOf.state, stateOf.by end,
-  Send = function(_, a, note)
-    if stateOf.refuse then return nil, stateOf.refuse end
-    sentNote = note
-    outbox[a.u] = { id = "abc123DEF4", guild = a.n, status = "open" }
-    return outbox[a.u]
-  end,
-}
-GuildOS.JoinRequests = fake
+GuildOSDB = {}
+GuildOS.db = { profile = { prefRoles = { HEALER = true } } }
+dofile(ADDON .. "/Modules/JoinRequests.lua")
+local realJR = GuildOS.JoinRequests
+local fake = realJR
 dofile(ADDON .. "/UI/GuildFinder.lua")
-GuildOS:ShowJoinForm({ n = "Ordem do Crepusculo", u = "ordem", f = "H", w = "normal:us" })
+-- The card is the one a CR2 made: no slug (C1).
+local oldAd = { n = "Ordem do Crepusculo", f = "H", w = "normal:us", ct = { "Zed Rocha" } }
+GuildOS:ShowJoinForm(oldAd)
 local form = GuildOS.joinForm
 check(form:IsShown() and has("Ordem do Crepusculo") and has("Ask to join"), "the form names the guild")
-check(has("Goes to the officers: Chehul Costa, Paladin level 12, Healer"), "and who it goes with: name, class and level, role")
-check(has("Note (optional)") and buttons["Send request"] and buttons["Back"], "a note, Send request and Back")
-stateOf.refuse = "too-many"
+check(has("Goes to the officers: Ana, Paladin level 12, Healer"), "and who it goes with: name, class and level, role")
+check(has("Message (optional)") and buttons["Send request"] and buttons["Back"], "a message, Send request and Back")
 press("Send request")
-check(has("You already have 3 open requests."), "a refusal says why")
-stateOf.refuse = nil
-press("Send request")
-check(sentNote ~= nil and has("Saved here"), "sent: with no answer it says Saved here, never delivered")
-check(has("Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."),
-  "and what happens next, as the site can really do it")
+local sentReq = realJR:Latest(oldAd)
+check(sentReq ~= nil, "Send request on a card with no slug sends")
+check(has("Saved here"), "and with no answer says Saved here, never delivered")
+check(has("Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."),
+  "a session that cannot whisper says the truth: the companion's queue")
 check(buttons["Send request"].shown == false, "the form is gone once it is sent")
-stateOf.state, stateOf.by = "officer", "Ana Lima"
-for _, fn in ipairs(listeners) do fn() end
+-- every reason the module can refuse with has a line
+local REFUSALS = { ["in-guild"] = "You are already in a guild.", ["no-ad"] = "This guild cannot be asked right now.",
+  ["too-many"] = "You already have 3 open requests.", already = "You already asked this guild." }
+for why, line in pairs(REFUSALS) do
+  GuildOS.joinForm.ad = { n = "Another Guild " .. why }
+  local realSend = realJR.Send
+  realJR.Send = function() return nil, why end
+  GuildOS.joinForm.Refresh()
+  press("Send request")
+  realJR.Send = realSend
+  check(has(line), "a refusal for " .. why .. " is said: " .. line)
+end
+GuildOS.joinForm.ad = oldAd
+GuildOS.joinForm.Refresh()
+GuildOS.ChehulGossip = { CanWhisper = function() return true end }
+GuildOS.joinForm.Refresh()
+check(has("Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."),
+  "where whispers work, the original line")
+GuildOS.ChehulGossip = nil
+realJR:OnCRA("CRA|" .. sentReq.id .. "|officer|Ana Lima", "Ana Lima", "WHISPER")
 check(has("Delivered to Ana Lima") and has("An officer is online and has already seen your request."), "an officer's answer shows, live")
-stateOf.state, stateOf.by = "member", "Bruno Reis"
-for _, fn in ipairs(listeners) do fn() end
+realJR:OnCRA("CRA|" .. sentReq.id .. "|member|Bruno Reis", "Bruno Reis", "WHISPER")
+check(has("Delivered to Ana Lima"), "a member's after it does not take the officer back")
+-- a second card, to see the member's text alone
+local second = { n = "Second Guild", ct = { "Zed Rocha" } }
+GuildOS:ShowJoinForm(second)
+press("Send request")
+local secondReq = realJR:Latest(second)
+realJR:OnCRA("CRA|" .. secondReq.id .. "|member|Bruno Reis", "Bruno Reis", "WHISPER")
 check(has("Delivered to a guild member")
   and has("No officer online right now. Bruno Reis kept the request and will pass it to the next officer who logs in."), "a member's answer")
-stateOf.state = "invited"
-for _, fn in ipairs(listeners) do fn() end
-check(has("Invite from Ordem do Crepusculo") and has("Accept in the game window that just opened."), "an invite")
-stateOf.state = "declined"
-for _, fn in ipairs(listeners) do fn() end
-check(has("Ordem do Crepusculo thanked you, but is not opening spots right now"), "a refusal from the guild")
+realJR:OnCRA("CRA|" .. secondReq.id .. "|invited|Ana Lima", "Ana Lima", "WHISPER")
+check(has("Invite from Second Guild") and has("Accept in the game window that just opened."), "an invite names the window while it is fresh")
+NOW = NOW + 600
+GuildOS.joinForm.Refresh()
+check(has("The invite window has closed. Ask an officer to invite you again."), "and stops naming it when it can no longer be there")
+GuildOS:ShowJoinForm(oldAd)
+realJR:OnCRA("CRA|" .. sentReq.id .. "|declined|Ana Lima", "Ana Lima", "WHISPER")
+check(has("The guild thanked you, but is not opening spots right now"), "a refusal from the guild, as the mock says it")
+only({ ad({ n = "Ordem do Crepusculo" }), ad({ n = "Other One" }) })
+GuildOS.joinForm.Refresh()
+check(has("There is 1 other guild to look at."), "with one other guild it says so in the singular")
+only({ ad({ n = "Ordem do Crepusculo" }), ad({ n = "Other One" }), ad({ n = "Other Two" }) })
+GuildOS.joinForm.Refresh()
+check(has("There are 2 other guilds to look at."), "and in the plural for more")
 press("Back")
 
 -- the officer's list
@@ -597,7 +620,7 @@ dofile(ADDON .. "/UI/JoinRequests.lua")
 check(GuildOS.ShowJoinRequests and GuildOS.JoinRequestsHeard, "the list and the notice have their entries")
 alert = false
 GuildOS:JoinRequestsHeard(rows[1])
-check(alert == true and has("New guild request") and has("Chehul Costa, Paladin 12 \194\183 Healer") and has("Click to see"), "the notice names who asked, and lights the minimap")
+check(alert == true and has("New guild request") and has("Chehul Costa, Paladin 12, Healer") and has("Click to see"), "the notice names who asked, and lights the minimap")
 GuildOS:ShowJoinRequests()
 check(GuildOS.joinRequestsFrame:IsShown() and alert == false, "the list opens from it, and puts the light out")
 check(has("Join requests") and has("3 open"), "the list says how many are open")

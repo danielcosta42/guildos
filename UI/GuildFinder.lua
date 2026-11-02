@@ -470,13 +470,17 @@ local TONE = { ok = { 0.49, 0.85, 0.56 }, wait = { 0.72, 0.64, 0.48 }, warn = { 
 local REFUSAL = {
     ["too-many"] = L["You already have 3 open requests."],
     already = L["You already asked this guild."],
+    ["in-guild"] = L["You are already in a guild."],
+    ["no-ad"] = L["This guild cannot be asked right now."],
 }
+-- How long the game's invite window can still be on the screen.
+local INVITE_WINDOW = 120
 
 local function JR() return GuildOS.JoinRequests end
 
 -- The tone, title and line under it for a request that was sent.
 local function StateOf(e)
-    local state, by = JR():Status(e.id)
+    local state, by, at = JR():Status(e.id)
     by = (by and by ~= "") and by or nil
     if state == "officer" then
         return "ok", by and string.format(L["Delivered to %s"], by) or L["Delivered to an officer"],
@@ -485,11 +489,21 @@ local function StateOf(e)
         return "wait", L["Delivered to a guild member"],
             string.format(L["No officer online right now. %s kept the request and will pass it to the next officer who logs in."], by or L["A guild member"])
     elseif state == "invited" then
-        return "ok", string.format(L["Invite from %s"], e.guild), L["Accept in the game window that just opened."]
+        -- The window is the game's and lasts a little: later the line must not point at it.
+        local fresh = at and GetServerTime() - at <= INVITE_WINDOW
+        return "ok", string.format(L["Invite from %s"], e.guild),
+            fresh and L["Accept in the game window that just opened."] or L["The invite window has closed. Ask an officer to invite you again."]
     elseif state == "declined" then
         local others = math.max(0, #GF():All() - 1)
-        return "wait", string.format(L["%s thanked you, but is not opening spots right now"], e.guild),
-            others > 0 and string.format(L["There are %d other guilds to look at."], others) or ""
+        return "wait", L["The guild thanked you, but is not opening spots right now"],
+            others == 1 and L["There is 1 other guild to look at."]
+            or others > 1 and string.format(L["There are %d other guilds to look at."], others) or ""
+    end
+    -- Nobody answered. Where this session cannot whisper, "as soon as someone shows up" cannot happen
+    -- here: the queue is the companion's.
+    if not JR():CanReach() then
+        return "warn", L["Saved here"],
+            L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."]
     end
     return "warn", L["Saved here"],
         L["Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."]
@@ -531,7 +545,7 @@ local function BuildJoinForm()
     local who = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     who:SetPoint("TOPLEFT", 14, -94)
     who:SetWidth(FORM_W - 28); who:SetJustifyH("LEFT"); who:SetWordWrap(true)
-    local noteLabel = UI:CreateHeaderText(f, L["Note (optional)"], 10)
+    local noteLabel = UI:CreateHeaderText(f, L["Message (optional)"], 10)
     noteLabel:SetPoint("TOPLEFT", 14, -134)
     local box = CreateFrame("EditBox", nil, f, "BackdropTemplate")
     box:SetSize(FORM_W - 28, 24)
@@ -606,7 +620,7 @@ local function BuildJoinForm()
         local ad = f.ad
         if not ad then return end
         local e, why = JR():Send(ad, box:GetText())
-        problem:SetText(e and "" or (REFUSAL[why] or ""))
+        problem:SetText(e and "" or (REFUSAL[why] or REFUSAL["no-ad"]))
         if e then box:SetText("") end
         f.Refresh()
     end)

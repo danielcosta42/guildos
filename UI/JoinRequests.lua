@@ -20,14 +20,20 @@ local function className(class)
     return (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
 end
 
--- "Paladin 12 · Healer", whatever of it the request carried.
-local function Detail(r)
+-- "3 open", and "1 open" where the language has a singular.
+function GuildOS:JoinRequestsOpenText(n)
+    if n == 1 then return L["1 open"] end
+    return string.format(L["%d open"], n)
+end
+
+-- "Paladin 12 · Healer" (the mock's list) or "Paladin 12, Healer" (its notice), whatever of it the request carried.
+local function Detail(r, sep)
     local parts = {}
     if r.class or r.level then
         parts[#parts + 1] = ((r.class and className(r.class) or "") .. " " .. (r.level or "")):gsub("^%s+", ""):gsub("%s+$", "")
     end
     if r.role then parts[#parts + 1] = ROLE_NAME[r.role] end
-    return table.concat(parts, " \194\183 ")
+    return table.concat(parts, sep or " \194\183 ")
 end
 
 -- "4m ago · online now", "1h ago · came from the site", "yesterday · delivered by Bruno Reis"...
@@ -115,7 +121,7 @@ local function Build()
     function f.Refresh()
         local list = JR():List()
         local open = JR():OpenCount()
-        count:SetText(string.format(L["%d open"], open))
+        count:SetText(GuildOS:JoinRequestsOpenText(open))
         empty:SetShown(#list == 0)
         for i, r in ipairs(list) do
             if i > MAX_ROWS then break end
@@ -193,7 +199,7 @@ function GuildOS:JoinRequestsHeard(r)
     if self.SetMinimapAlert then self:SetMinimapAlert(true) end
     if not (UI and r) then return end
     toast = toast or BuildToast()
-    local detail = Detail(r)
+    local detail = Detail(r, ", ")
     toast.who:SetText(r.character .. (detail ~= "" and (", " .. detail) or ""))
     toast.shownAt = GetTime()
     toast:Show()
