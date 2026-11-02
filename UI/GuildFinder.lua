@@ -260,7 +260,7 @@ local function BuildFinder()
         dots[i] = dot
     end
 
-    local clock = UI:CreateText(f,L["Times are on your clock."], 10, C.label.r, C.label.g, C.label.b)
+    local clock = UI:CreateText(f, L["Times are on your clock."], 10, C.label.r, C.label.g, C.label.b)
     clock:SetPoint("BOTTOMLEFT", 14, 12)
 
     ------------------------------------------------------------------
@@ -430,6 +430,9 @@ local function BuildFinder()
         for i = #ROW1 + 1, #chips do chips[i]:SetShown(f.more) end
         moreBtn.label:SetText(f.more and L["Fewer filters"] or L["More filters"])
         wants.checkbox:SetChecked(GF():Saved().wantsMe ~= false)
+        -- The sub-line: the clock note, and how old the site's list is when the companion has left one.
+        local ago = GF():UpdatedAgo()
+        clock:SetText(ago and (L["Times are on your clock."] .. " " .. ago) or L["Times are on your clock."])
 
         f.ads = GF():Ads(cur)
         if f.index > #f.ads then f.index = 1 end

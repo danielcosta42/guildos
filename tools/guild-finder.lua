@@ -498,4 +498,31 @@ check(GuildOS.GuildFinderHeard ~= nil, "the minimap entry exists")
 GuildOS:GuildFinderHeard()
 check(alert == true, "hearing a guild lights the minimap")
 
+-- ── The list's age on the screen's sub-line (Task B3) ───────────────────
+GuildOS.CompanionImport = nil
+check(GF:UpdatedAgo() == nil, "no list, no line")
+local listAt
+GuildOS.CompanionImport = { RecruitDirectory = function() return listAt and { at = listAt, ads = {} } or nil end }
+check(GF:UpdatedAgo() == nil, "a companion with no list says nothing")
+listAt = NOW - 30
+check(GF:UpdatedAgo() == "The list was updated 1 min ago.", "under a minute reads as one")
+listAt = NOW - 25 * 60
+check(GF:UpdatedAgo() == "The list was updated 25 min ago.", "minutes")
+listAt = NOW - 5 * 3600 - 59
+check(GF:UpdatedAgo() == "The list was updated 5 h ago.", "hours")
+listAt = NOW - 3 * 86400
+check(GF:UpdatedAgo() == "The list was updated 3 d ago.", "days")
+GuildOS.CompanionImport = nil
+
+-- ── One guild, however many roads it came by (Task B3) ─
+local function bare(a) a.w, a.u = nil, nil; return a end
+only({ bare(ad({ n = "Same Name", f = "H", v = 50, heard = true, verified = false })),
+       ad({ n = "same name", u = "same-name-normal-us", v = 10 }) })
+check(#GF:All() == 1 and GF:All()[1].u == "same-name-normal-us", "an old client's CR2 gives way to the full ad of the same guild, whatever its version")
+only({ bare(ad({ n = "Same Name", f = "A", v = 50, heard = true, verified = false })),
+       ad({ n = "Same Name", u = "same-name-normal-us", f = "H" }) })
+check(#GF:All() == 2, "but one of the other faction is another guild")
+only({ bare(ad({ n = "Lonely", f = "H", heard = true, verified = false })) })
+check(#GF:All() == 1, "and a CR2 alone stays")
+
 print(("guild-finder: %d checks passed"):format(checks))

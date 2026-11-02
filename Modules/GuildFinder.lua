@@ -18,7 +18,7 @@ local MAX_PITCH    = 120    -- characters (the site's cap)
 local MAX_NAME     = 24     -- a guild name
 local MAX_CONTACT  = 48
 local MAX_LIST     = 12
-local MAX_ADS      = 200
+local MAX_ADS      = 600    -- the site's list holds 500, and what the network brings comes on top
 
 GF.SITE = "guildos.me"
 
@@ -51,14 +51,25 @@ local function now() return (GetServerTime and GetServerTime()) or time() end
 -- never cut in half (a CJK pitch cut by bytes would leave a broken sequence on screen).
 ----------------------------------------------------------------------
 local function cutChars(s, max)
-    local n, i = 0, 1
-    while i <= #s do
-        n = n + 1
-        if n > max then return s:sub(1, i - 1) end
+    local out, n, i = {}, 0, 1
+    while i <= #s and n < max do
         local b = s:byte(i)
-        i = i + ((b >= 240 and 4) or (b >= 224 and 3) or (b >= 192 and 2) or 1)
+        local len = (b < 0x80 and 1) or (b >= 0xC2 and b < 0xE0 and 2) or (b >= 0xE0 and b < 0xF0 and 3)
+                    or (b >= 0xF0 and b < 0xF5 and 4) or 0
+        local whole = len > 0 and i + len - 1 <= #s
+        for k = 1, whole and len - 1 or 0 do
+            local c = s:byte(i + k)
+            if c < 0x80 or c > 0xBF then whole = false; break end
+        end
+        -- A stray or truncated byte is dropped: off the network, half a character is a box on screen.
+        if whole then
+            out[#out + 1] = s:sub(i, i + len - 1)
+            n, i = n + 1, i + len
+        else
+            i = i + 1
+        end
     end
-    return s
+    return table.concat(out)
 end
 
 local function text(v, max)
@@ -149,6 +160,7 @@ end
 ----------------------------------------------------------------------
 local CR2_LANG = { enUS = "en", ptBR = "pt", esES = "es", deDE = "de", frFR = "fr", ruRU = "ru",
                    koKR = "ko", zhCN = "zh-CN", zhTW = "zh-TW" }
+GF.CR2_LANG = CR2_LANG
 local CR2_LANG_ORDER = { "ptBR", "enUS", "esES", "deDE", "frFR", "ruRU", "koKR", "zhCN", "zhTW" }
 local ROLE_ORDER = { "TANK", "HEALER", "DPS" }
 
@@ -200,6 +212,49 @@ function GF.HeardAds()
 end
 GF:AddSource("CR2", GF.HeardAds)
 
+-- The site's list in the person's own GOSRECR1 (the companion writes it, no token needed): verified,
+-- because it came from the site and not from a peer. Normalized once per decoded list.
+function GF:Directory()
+    local Import = GuildOS.CompanionImport
+    local data = Import and Import:RecruitDirectory()
+    if not data then self._dirData, self._dirAds = nil, nil; return {} end
+    if self._dirData ~= data then
+        local ads = {}
+        for _, raw in ipairs(data.ads) do
+            if type(raw) == "table" then
+                local copy = {}
+                for k, v in pairs(raw) do copy[k] = v end
+                copy.heard, copy.verified = false, true
+                ads[#ads + 1] = self:Normalize(copy)
+            end
+        end
+        self._dirData, self._dirAds = data, ads
+    end
+    return self._dirAds
+end
+GF:AddSource("GOSRECR1", function() return GF:Directory() end)
+
+-- What peers handed over as a CR3, never verified here. An ad whose name and version are in the
+-- person's own list is skipped: the list's copy of it is what shows, with the seal and with the list's
+-- own words, so a forged ad that borrows a real name and version shows nothing of its own. No field of
+-- a message can turn the seal on, because nothing in a message is looked at for it.
+function GF.HeardCR3()
+    local RB = GuildOS.RecruitBeacon
+    local sealed = {}
+    for _, ad in ipairs(GF:Directory()) do sealed[ad.n .. "|" .. ad.v] = true end
+    local out = {}
+    for _, ad in ipairs(RB and RB:Heard3() or {}) do
+        if not sealed[ad.n .. "|" .. ad.v] then
+            local copy = {}
+            for k, v in pairs(ad) do copy[k] = v end
+            copy.heard, copy.verified = true, false
+            out[#out + 1] = copy
+        end
+    end
+    return out
+end
+GF:AddSource("CR3", GF.HeardCR3)
+
 -- Every live ad, one per guild name: the newer version wins, and at the same version the verified one.
 function GF:All()
     local best, t = {}, now()
@@ -222,8 +277,22 @@ function GF:All()
             GuildOS:RecordError("GuildFinder source " .. src.name .. ": " .. tostring(got))
         end
     end
+    -- An old client's CR2 names no slug and no world; when the same guild is here in full (same name, a
+    -- faction that does not contradict it), the full ad is the one to show.
+    local full = {}
+    for _, ad in pairs(best) do
+        if ad.u then full[#full + 1] = ad end
+    end
     local out = {}
-    for _, ad in pairs(best) do out[#out + 1] = ad end
+    for _, ad in pairs(best) do
+        local shadowed = false
+        if not ad.u and not ad.w then
+            for _, other in ipairs(full) do
+                if other.n:lower() == ad.n:lower() and (not ad.f or not other.f or ad.f == other.f) then shadowed = true; break end
+            end
+        end
+        if not shadowed then out[#out + 1] = ad end
+    end
     table.sort(out, function(a, b) return a.n < b.n end)   -- a stable start for Rank
     while #out > MAX_ADS do out[#out] = nil end
     return out
@@ -457,6 +526,20 @@ function GF:WorldParts(w)
     return splitWorld(w)
 end
 
+-- "The list was updated 3 h ago" from the list the companion wrote; nil with no list (or one too old).
+function GF:UpdatedAgo()
+    local Import = GuildOS.CompanionImport
+    local data = Import and Import:RecruitDirectory()
+    if not data then return nil end
+    local L = GuildOS.L
+    local minutes = math.max(1, math.floor((now() - (tonumber(data.at) or 0)) / 60))
+    local when
+    if minutes < 60 then when = string.format(L["%d min"], minutes)
+    elseif minutes < 48 * 60 then when = string.format(L["%d h"], math.floor(minutes / 60))
+    else when = string.format(L["%d d"], math.floor(minutes / 1440)) end
+    return string.format(L["The list was updated %s ago."], when)
+end
+
 ----------------------------------------------------------------------
 -- The first guild of the session lights the minimap button. Only a character with no guild is
 -- looking, and only where the finder exists.
@@ -465,12 +548,14 @@ function GF:Initialize()
     local RB = GuildOS.RecruitBeacon
     if not (RB and hooksecurefunc) or self._hooked then return end
     self._hooked = true
-    hooksecurefunc(RB, "Ingest", function()
+    local function heard()
         if GF.heardThisSession or not GF:Available() or IsInGuild() then return end
         -- The filters the finder opens with, so the button never promises a guild the screen hides.
         if #GF:Ads() > 0 and GuildOS.GuildFinderHeard then
             GF.heardThisSession = true
             GuildOS:GuildFinderHeard()
         end
-    end)
+    end
+    hooksecurefunc(RB, "Ingest", heard)
+    hooksecurefunc(RB, "IngestCR3", heard)
 end

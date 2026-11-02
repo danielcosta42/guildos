@@ -20,18 +20,24 @@
 --   ad     : "CR2|guild|faction|needs|days|note|langs|focus|version|expiry"
 --     needs/langs/focus : '+'-joined tokens · days/note : free text (no '|')
 --     version, expiry   : GetServerTime() integers
+--   ad (CR3): "CR3|name|f|w|p|d|s|e|pc|l|fo|r|c|lo|t|ct|u|v|x" - the site's GosrecrAd, fields in the
+--     order of specs/071; lists '+'-joined, d ','-joined, '|' never inside a field. Whisper and GUILD
+--     only. It has no removal: it leaves by x, and x is cut to 72 hours ahead on the way in.
 ----------------------------------------------------------------------
 local RB = {}
 GuildOS.RecruitBeacon = RB
 
 RB.PREFIX = "ChehulRecruit"
 RB.PROTO  = "CR2"
+RB.PROTO3 = "CR3"
 
 RB.BROADCAST_INTERVAL = 60    -- officer re-broadcast cadence (also refreshes expiry)
 RB.RELAY_INTERVAL     = 30    -- everyone: relay a subset of cached ads
 RB.RELAY_PER_TICK     = 4     -- cap ads yelled per relay cycle (anti-spam)
 RB.CACHE_CAP          = 40    -- max cached ads (evict soonest-to-expire over cap)
 RB.DEFAULT_TTL_DAYS   = 7
+RB.MAX_AHEAD          = 72 * 3600   -- a CR3's validity is cut to this far ahead on arrival
+RB.CLOCK_SKEW         = 600         -- seconds a version may be ahead of this clock: a forged future one would hold a digest seat for good
 
 -- Vocabulary the officer picks from / a recruit filters on.
 RB.ROLE_TOKENS  = { "TANK", "HEALER", "DPS" }
@@ -41,6 +47,8 @@ RB.LANG_TOKENS  = { "enUS", "ptBR", "esES", "deDE", "frFR", "ruRU", "koKR", "zhC
 
 RB.onUpdate = nil        -- UI hook (inbox panel sets it)
 local relayCursor = 0
+local CR3_FIELDS = 19         -- the name of the message and the 18 fields after it
+local CR3_MAX    = 2048       -- bytes; a whole one is under a kilobyte
 
 local function now() return (GetServerTime and GetServerTime()) or time() end
 local function sanitize(s) return (tostring(s or ""):gsub("|", "/")) end
@@ -97,6 +105,7 @@ function RB:Cache()
 end
 
 function RB:Prune()
+    self:Prune3()
     local cache, n = self:Cache(), now()
     for g, ad in pairs(cache) do
         if (ad.expiry or 0) <= n then cache[g] = nil end
@@ -108,6 +117,128 @@ function RB:Prune()
         table.sort(list, function(a, b) return (a.expiry or 0) < (b.expiry or 0) end)
         for i = 1, #list - self.CACHE_CAP do cache[list[i].guild] = nil end
     end
+end
+
+----------------------------------------------------------------------
+-- The CR3 cache, db.recruitAds[key] = a GuildFinder ad (the site's shape, no heard or verified: those are
+-- worked out when it is read, never stored). The key is the guild's name as the digest spells it.
+----------------------------------------------------------------------
+function RB:Cache3()
+    if not GuildOS.db then return {} end
+    GuildOS.db.recruitAds = GuildOS.db.recruitAds or {}
+    return GuildOS.db.recruitAds
+end
+
+-- A CR3 leaves by expiring and by the cap, never because a message said so.
+function RB:Prune3()
+    local cache, n = self:Cache3(), now()
+    local list = {}
+    for key, ad in pairs(cache) do
+        if (ad.x or 0) <= n then cache[key] = nil else list[#list + 1] = ad end
+    end
+    if #list > self.CACHE_CAP then
+        table.sort(list, function(a, b) return a.x < b.x end)
+        for i = 1, #list - self.CACHE_CAP do cache[list[i].key] = nil end
+    end
+end
+
+-- The CR3 ads heard, minus the player's own guild (as GetInbox leaves it out), as copies.
+function RB:Heard3()
+    self:Prune3()
+    local mine = GetGuildInfo and GetGuildInfo("player")
+    local out = {}
+    for _, ad in pairs(self:Cache3()) do
+        if not (mine and mine == ad.n) then
+            local copy = {}
+            for k, v in pairs(ad) do copy[k] = v end
+            out[#out + 1] = copy
+        end
+    end
+    return out
+end
+
+local function field(v) return v == nil and "" or (tostring(v):gsub("|", "")) end
+local function join(t, sep, strip)
+    local out = {}
+    for i, v in ipairs(t or {}) do out[i] = strip and (tostring(v):gsub("[|+,]", " ")) or tostring(v) end
+    return table.concat(out, sep)
+end
+
+-- A CR3 payload out of an ad. Nothing in a field may be a '|', and a contact may not hold the list's '+'.
+function RB:AdToPayload(ad)
+    return table.concat({
+        self.PROTO3, field(ad.n), field(ad.f), field(ad.w), field(ad.p), join(ad.d, ","), field(ad.s), field(ad.e),
+        field(ad.pc), join(ad.l, "+"), join(ad.fo, "+"), join(ad.r, "+"), join(ad.c, "+"), field(ad.lo), field(ad.t),
+        join(ad.ct, "+", true), field(ad.u), field(ad.v), field(ad.x),
+    }, "|")
+end
+
+local function splitList(s, sep)
+    local out = {}
+    for item in string.gmatch(s or "", "[^" .. sep .. "]+") do out[#out + 1] = item end
+    return out
+end
+
+-- Keeps a CR3 ad: a newer version replaces, an older does not, the same version only renews the validity.
+local function Store(ad)
+    local cache = RB:Cache3()
+    local cur = cache[ad.key]
+    if cur then
+        if ad.v < cur.v then return false end
+        if ad.v == cur.v then
+            if ad.x <= cur.x then return false end
+            cur.x = ad.x
+            return true
+        end
+    end
+    cache[ad.key] = ad
+    RB:Prune3()
+    return true
+end
+
+-- The ad in a CR3 payload, cleaned by GuildFinder (every text inert, one line, cut by character; every
+-- list a closed set), or nil. `x` is cut to 72 hours ahead whatever came; one already past is no ad and
+-- deletes nothing; a version from the future is refused.
+local function ReadCR3(payload)
+    local GF = GuildOS.GuildFinder
+    if type(payload) ~= "string" or #payload > CR3_MAX or not GF then return nil end
+    local f = { strsplit("|", payload) }
+    if f[1] ~= RB.PROTO3 or #f < CR3_FIELDS then return nil end
+    local v, x, t = tonumber(f[18]), tonumber(f[19]), now()
+    if not v or not x or v <= 0 or v > t + RB.CLOCK_SKEW or x <= t then return nil end
+    local days = {}
+    for _, d in ipairs(splitList(f[6], ",")) do days[#days + 1] = tonumber(d) end
+    local ad = GF:Normalize({
+        n = f[2], f = f[3], w = f[4], p = f[5], d = days, s = tonumber(f[7]), e = tonumber(f[8]), pc = f[9],
+        l = splitList(f[10], "+"), fo = splitList(f[11], "+"), r = splitList(f[12], "+"), c = splitList(f[13], "+"),
+        lo = f[14], t = f[15], ct = splitList(f[16], "+"), u = f[17], v = math.floor(v), x = math.min(math.floor(x), t + RB.MAX_AHEAD),
+    })
+    if not ad then return nil end
+    ad.heard, ad.verified, ad.dt, ad.m = nil, nil, nil, nil
+    ad.key = (ad.n:gsub("[,:]", " "))
+    return ad
+end
+
+-- A CR3 off the network. True when it was kept or renewed something.
+function RB:IngestCR3(payload, _)
+    local ad = ReadCR3(payload)
+    if not ad or not Store(ad) then return false end
+    if self.onUpdate then pcall(self.onUpdate) end
+    return true
+end
+
+-- The guild's own ad, out of the site's GOSGILD1, into the cache under the name the game spells (it is
+-- what the beacon compares to know this guild recruits). Nil with none.
+function RB:SeedOwnAd()
+    local Import = GuildOS.CompanionImport
+    local mine = GetGuildInfo and GetGuildInfo("player")
+    local own = Import and Import.OwnRecruitAd and Import:OwnRecruitAd()
+    if not own or not mine or mine == "" then return nil end
+    own.n, own.key = mine, (mine:gsub("[,:]", " "))
+    own.dt, own.m = nil, nil
+    own.x = math.min(own.x, now() + self.MAX_AHEAD)
+    Store(own)
+    return self:Cache3()[own.key]
 end
 
 ----------------------------------------------------------------------
@@ -123,6 +254,32 @@ function RB:Initialize()
             local gossip = GuildOS.ChehulGossip
             if not (gossip and gossip:Receive(payload, sender, dist)) then RB:OnMessage(payload, sender) end
         end)
+    end
+    local gossip = GuildOS.ChehulGossip
+    if gossip and gossip.Topic and not self._topic then
+        self._topic = true
+        -- The gossip trades CR3 by guild name and version. The digest holds the guild's own ad: that is how
+        -- the beacon knows this guild recruits.
+        gossip:Topic(self.PROTO3, {
+            digest = function()
+                RB:SeedOwnAd()
+                RB:Prune3()
+                local out = {}
+                for key, ad in pairs(RB:Cache3()) do out[#out + 1] = { key, ad.v } end
+                return out
+            end,
+            want = function(key, version)
+                if type(version) ~= "number" or version > now() + RB.CLOCK_SKEW then return false end
+                local cur = RB:Cache3()[key]
+                return not cur or cur.v < version
+            end,
+            pull = function(key)
+                RB:SeedOwnAd()
+                local ad = RB:Cache3()[key]
+                if ad and ad.x > now() then return RB:AdToPayload(ad) end
+            end,
+            push = function(payload, sender) RB:IngestCR3(payload, sender) end,
+        })
     end
     if C_Timer and C_Timer.NewTicker then
         if not self._bcast then
@@ -163,15 +320,45 @@ end
 -- it into our own cache so guildmates relay it too. Refreshes expiry each cycle
 -- (keeps the ad alive while any officer is online; it decays after they leave).
 ----------------------------------------------------------------------
+-- The site's ad as a CR2, for the clients that predate CR3.
+local function OwnAdAsCR2(own, guild, faction)
+    local needs, langs, focus = {}, {}, {}
+    for _, t in ipairs(own.r or {}) do needs[#needs + 1] = t end
+    for _, t in ipairs(own.c or {}) do needs[#needs + 1] = t end
+    local code = {}
+    for k, v in pairs(GuildOS.GuildFinder.CR2_LANG) do code[v] = k end
+    for _, l in ipairs(own.l or {}) do if code[l] then langs[#langs + 1] = code[l] end end
+    for _, t in ipairs(own.fo or {}) do focus[#focus + 1] = t end
+    if own.pc == "casual" then focus[#focus + 1] = "CASUAL" end
+    return RecordToPayload({
+        guild = guild, faction = own.f or faction, needsList = needs, days = "", note = own.p or "",
+        langsList = langs, focusList = focus, version = own.v, expiry = own.x, author = GuildOS.Compat.PlayerName(),
+    })
+end
+
 function RB:Broadcast()
-    local ad = self:GetAd()
-    if not ad or not ad.enabled then return end
     if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
     if IsInGuild and not IsInGuild() then return end
     local guild = GetGuildInfo and GetGuildInfo("player")
     if not guild or guild == "" then return end
     local mesh = _G.ChehulMesh
     if not mesh then return end
+
+    -- The site's ad, when there is one, is what the guild spreads: a CR3 to the guild (the beacon and the
+    -- gossip carry it from there) and a CR2 of it for old clients. The /gos beacon ad is the fallback.
+    local own = self:SeedOwnAd()
+    if own then
+        local faction = (UnitFactionGroup and UnitFactionGroup("player") == "Alliance") and "A" or "H"
+        local cr2 = OwnAdAsCR2(own, guild, faction)
+        self:Ingest(cr2, GuildOS.Compat.PlayerName())
+        mesh:Guild(self.PREFIX, self:AdToPayload(own))
+        mesh:Guild(self.PREFIX, cr2)
+        mesh:Realm(self.PREFIX, cr2, self.PREFIX .. ":" .. guild)
+        return
+    end
+
+    local ad = self:GetAd()
+    if not ad or not ad.enabled then return end
 
     local faction = (UnitFactionGroup and UnitFactionGroup("player") == "Alliance") and "A" or "H"
     local expiry  = now() + (ad.ttlDays or self.DEFAULT_TTL_DAYS) * 86400

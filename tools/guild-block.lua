@@ -23,6 +23,11 @@ local function check(cond, what)
 end
 
 local FIXTURE = io.open(ADDON .. "/tools/guild-fixture.txt", "rb"):read("*a")
+-- The recruiting strings (specs/071), made by the site's own encoders: a GOSGILD1 with a recruitAd, and the
+-- public GOSRECR1 list for Forever and for retail. See tools/recruit-beacon.lua.
+local GUILD_AD = io.open(ADDON .. "/tools/guild-ad-fixture.txt", "rb"):read("*a")
+local RECRUIT = io.open(ADDON .. "/tools/recruit-fixture.txt", "rb"):read("*a")
+local RECRUIT_RETAIL = io.open(ADDON .. "/tools/recruit-retail-fixture.txt", "rb"):read("*a")
 
 local DAY = 86400
 local LAUNCH = 1793750400
@@ -69,6 +74,7 @@ dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 dofile(ADDON .. "/Modules/CompanionExport.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")
+dofile(ADDON .. "/Modules/GuildFinder.lua")
 dofile(ADDON .. "/Modules/Founding.lua")
 dofile(ADDON .. "/Modules/Milestones.lua")
 dofile(ADDON .. "/Modules/Digest.lua")
@@ -122,6 +128,69 @@ check(Import:GuildBlock() == nil, "no inbox: nothing")
 -- An addon reading the block as a roster finds no roster in it, and the raids beside it stand.
 GuildOSInbox = { FIXTURE }
 check(Import:ConsumeInbox() == false, "the roster reader passes over it")
+
+-- ── The recruiting ad and the public list (specs/071) ─────────────────────
+fresh()
+GuildOSInbox = { GUILD_AD }
+local own = Import:OwnRecruitAd()
+check(own and own.n == "Ashen Vow" and own.p == "We raid Tuesdays" and own.v == NOW - DAY, "the block carries the guild's own ad")
+check(table.concat(own.ct, "+") == "Chehul Costa+Mira Thornwood" and own.u == "ashen-vow-normal-us", "with its contacts and slug")
+check(own.heard == nil and own.verified == nil, "and it is nobody's heard-of or verified")
+check(Import:GuildBlock() ~= nil, "the same block still reads for the rest")
+local ownX = own.x
+NOW = ownX - 1
+check(Import:OwnRecruitAd() ~= nil, "the ad lives until its x")
+NOW = ownX
+check(Import:OwnRecruitAd() == nil, "and is nil from x on, with the block still good for a week")
+check(Import:GuildBlock() ~= nil, "the block itself is")
+NOW = LAUNCH + 20 * DAY
+GUILD = "Outra Guilda"
+check(Import:OwnRecruitAd() == nil, "another guild's ad is not mine")
+GUILD = "Ashen Vow"
+GuildOSInbox = { FIXTURE }
+check(Import:OwnRecruitAd() == nil, "a block with no ad has none")
+GuildOS.db.settings.companion = false
+GuildOSInbox = { GUILD_AD }
+check(Import:OwnRecruitAd() == nil, "with the companion off there is no block, so no ad")
+GuildOS.db.settings.companion = true
+
+-- The list: public, so it needs no companion switch.
+GuildOSInbox = { RECRUIT }
+local dir = Import:RecruitDirectory()
+check(dir and dir.fmt == "GOSRECR1" and dir.game == "FOREVER" and #dir.ads == 3, "the site's own list reads")
+check(dir.ads[1].n == "Ordem do Crepúsculo" and dir.ads[1].w == "normal:us", "ads and all")
+GuildOS.db.settings.companion = false
+check(Import:RecruitDirectory() ~= nil, "it is read with the companion off: it is public data")
+GuildOS.db.settings.companion = true
+check(Import:RecruitDirectory() == dir, "decoded once per load")
+NOW = dir.at + 3 * DAY
+check(Import:RecruitDirectory() ~= nil, "three days old still stands")
+NOW = dir.at + 3 * DAY + 1
+check(Import:RecruitDirectory() == nil, "older than three days is nil")
+NOW = LAUNCH + 20 * DAY
+GuildOSInbox = { RECRUIT_RETAIL }
+check(Import:RecruitDirectory() == nil, "a list for the other game is nil: a client folder can hold what another install left")
+GuildOSInbox = { RECRUIT_RETAIL, RECRUIT }
+check(Import:RecruitDirectory() ~= nil and Import:RecruitDirectory().game == "FOREVER", "and this game's list is found beside it")
+GuildOSInbox = { "GOSRECR1:notareal(list)" }
+check(Import:RecruitDirectory() == nil, "a damaged one is dropped")
+GuildOSInbox = { FIXTURE }
+check(Import:RecruitDirectory() == nil, "a block is not a list")
+GuildOSInbox = nil
+check(Import:RecruitDirectory() == nil, "no inbox: nothing")
+
+-- Everything that reads the inbox passes over a GOSRECR1 and still finds its own.
+fresh()
+GuildOSInbox = { RECRUIT }
+check(Import:ConsumeInbox() == false and GuildOS.db.companionRoster == nil, "the roster reader passes over the list")
+check(Import:GuildBlock() == nil and Import:CoresFromInbox() == nil, "so do the block and the cores")
+GuildOSInbox = { RECRUIT, FIXTURE, GUILD_AD }
+check(Import:GuildBlock() ~= nil, "the block is found behind it")
+check(Import:CoresFromInbox() == nil, "no cores in there")
+Import:ConsumeInbox()
+check(GuildOS.db.companionRoster == nil and Import._webRaids == nil, "and no raid is made of it")
+Import:CalendarFromInbox()
+check(true, "the calendar reader has nothing to do with it")
 
 -- ── The digest ──────────────────────────────────────────────────────────
 fresh()

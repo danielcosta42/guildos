@@ -44,6 +44,8 @@ local L = GuildOS.L
 local WIRE_PREFIX = "GOSROST1:"
 local CORES_PREFIX = "GOSCORE1:"
 local GUILD_PREFIX = "GOSGILD1:"
+local RECRUIT_PREFIX = "GOSRECR1:"
+local RECRUIT_MAX_AGE = 3 * 86400   -- the list is public and asked for every 15 minutes: three days of silence is a companion that stopped
 local BLOCK_MAX_AGE = 7 * 86400   -- the feed is a week long: an older block is a companion that stopped
 
 -- The name somebody from the site is kept, shown and matched by. On retail it is their key,
@@ -314,6 +316,41 @@ function Import:GuildBlock()
         end
     end
     return nil
+end
+
+-- The inbox's GOSRECR1 (specs/071 in guildos-web): every guild recruiting in this client's game, public
+-- and written with or without a token, so it is read whether the companion is on in game or not. Decoded
+-- once per string, as the block is. Nil with none, a damaged one, one for the other game (a client folder
+-- can hold the list another install left) or one more than three days old. Raw ads: GuildFinder cleans them.
+function Import:RecruitDirectory()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" then return nil end
+    local game = GuildOS.Client.isRetail and "RETAIL" or "FOREVER"
+    self._recruit = self._recruit or {}
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #RECRUIT_PREFIX) == RECRUIT_PREFIX then
+            if self._recruit[v] == nil then self._recruit[v] = unwrap(v:sub(#RECRUIT_PREFIX + 1), "GOSRECR1") or false end
+            local data = self._recruit[v]
+            if data and type(data.ads) == "table" and data.game == game
+               and GetServerTime() - (tonumber(data.at) or 0) <= RECRUIT_MAX_AGE then
+                return data
+            end
+        end
+    end
+    return nil
+end
+
+-- The guild's own recruiting ad out of its GOSGILD1, for the officers' addon to spread: cleaned, and nil
+-- once its own `x` has passed even though the block is good for a week.
+function Import:OwnRecruitAd()
+    local block = self:GuildBlock()
+    local GF = GuildOS.GuildFinder
+    local raw = block and block.recruitAd
+    if type(raw) ~= "table" or not GF then return nil end
+    local ad = GF:Normalize(raw)
+    if not ad or ad.x <= GetServerTime() then return nil end
+    ad.heard, ad.verified = nil, nil
+    return ad
 end
 
 -- Text off the network, for a line of ours: nothing in it may open a colour, a link or a texture, and
