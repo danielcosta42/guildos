@@ -51,8 +51,9 @@ local FMT = "GOSCOMP1"
 -- client wrote it down (issue #205), and each member's `feedOptOut`, true for whoever asked not to be
 -- named on Discord. The founding, the readiness threshold and the tabard join it in the same version.
 -- The character's own pack (BuildSelf) is this same version: `self` is one more absent field, and an
--- export gains nothing by the pack existing.
-local PAYLOAD_VERSION = 12
+-- export gains nothing by the pack existing. 13 adds `joinRequests`, what the guild's client holds of
+-- the people who asked to join (the site's specs/071, issue guildos#245): absent without any.
+local PAYLOAD_VERSION = 13
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -614,6 +615,10 @@ function Companion:BuildPayload()
     payload.guildConfig = not GuildOS.Client.isAnniversary and not retail and GuildOS.Readiness
         and GuildOS.Readiness:MinIlvlKnown()
         and { readyMinIlvl = GuildOS.Readiness:GetMinIlvl(), readyMinIlvlAt = GuildOS.db.settings.readyMinIlvlAt } or nil
+    -- v13 (specs/071, guildos#245): who asked to join and what was decided. Optional: a bug in it must
+    -- never keep the roster, the raids and the loot from going up.
+    payload.joinRequests = GuildOS.JoinRequests
+        and optional("joinRequests", GuildOS.JoinRequests.ForExport, GuildOS.JoinRequests) or nil
     return payload
 end
 

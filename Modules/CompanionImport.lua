@@ -353,6 +353,26 @@ function Import:OwnRecruitAd()
     return ad
 end
 
+-- The GOSGILD1's joinRequests (specs/071, guildos#245): who asked the guild to take them, on the site or
+-- in the game, and what was decided. The strings are cleaned here; the class, level and role are
+-- checked where they are used. Nil with no block, and an empty list when it holds none.
+function Import:SiteJoinRequests()
+    local block = self:GuildBlock()
+    local GF = GuildOS.GuildFinder
+    local raw = block and block.joinRequests
+    if type(raw) ~= "table" or not GF then return nil end
+    local out = {}
+    for _, r in ipairs(raw) do
+        local character = type(r) == "table" and GF.Text(r.character, 48)
+        if character and type(r.id) == "string" and #r.id <= 40 and r.id:match("^[%w_%-]+$")
+           and type(r.status) == "string" and tonumber(r.at) then
+            out[#out + 1] = { id = r.id, character = character, class = r.class, level = r.level, role = r.role,
+                note = GF.Text(r.note, 120), source = r.source == "addon" and "addon" or "site", status = r.status, at = tonumber(r.at) }
+        end
+    end
+    return out
+end
+
 -- Text off the network, for a line of ours: nothing in it may open a colour, a link or a texture, and
 -- one line stays one line.
 function Import.Inert(text)

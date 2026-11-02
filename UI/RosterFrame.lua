@@ -3303,6 +3303,27 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
 
     ----------------------------------------------------------------
+    -- Join requests: people with no guild who asked this one to take them
+    ----------------------------------------------------------------
+    yOff = yOff - 66
+    yOff = SectionHeader(L["Join requests"], yOff)
+    RowLabel(L["Status:"], yOff)
+    local requestsStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
+    requestsStatus:SetPoint("TOPLEFT", 140, yOff)
+    local requestsBtn = UI:CreateButton(parent, L["Open the list"], 130, 22)
+    requestsBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+    requestsBtn:SetScript("OnClick", function()
+        if GuildOS.ShowJoinRequests then GuildOS:ShowJoinRequests() end
+    end)
+    local function UpdateRequestsStatus()
+        local n = GuildOS.JoinRequests and GuildOS.JoinRequests:OpenCount() or 0
+        requestsStatus:SetText(n > 0 and string.format(L["%d open"], n) or L["|cff888888None|r"])
+    end
+    UpdateRequestsStatus()
+    local requestsHint = UI:CreateText(parent, L["Players who asked your guild to take them, from the game or from guildos.me."], 10, 0.6, 0.6, 0.65)
+    requestsHint:SetPoint("TOPLEFT", 30, yOff - 22)
+
+    ----------------------------------------------------------------
     -- Refresh function for the "Recruiting" sub-tab. Registered into
     -- root.subPanels so selectSub() runs it whenever this sub-tab becomes
     -- active (and root's OnShow below re-runs it every time the officer
@@ -3322,6 +3343,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
         UpdateBeaconStatus()
+        UpdateRequestsStatus()
     end
     root.subPanels.recruiting = { panel = recruitingSub, refresh = recruitingRefresh }
 

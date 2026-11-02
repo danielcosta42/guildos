@@ -149,6 +149,7 @@ UI\ProfessionsPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
 UI\GuildFinder.lua
+UI\JoinRequests.lua
 UI\CalendarPanel.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua

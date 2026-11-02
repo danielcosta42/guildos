@@ -578,4 +578,48 @@ for _, fn in ipairs(listeners) do fn() end
 check(has("Ordem do Crepusculo thanked you, but is not opening spots right now"), "a refusal from the guild")
 press("Back")
 
+-- the officer's list
+local rows = {
+  { id = "r1", character = "Chehul Costa", class = "PALADIN", level = 12, role = "HEALER", note = "Jogo toda noite", at = NOW - 240, seen = NOW - 30, status = "open", source = "addon" },
+  { id = "r2", character = "Marta Vilar", class = "WARRIOR", level = 9, role = "TANK", at = NOW - 3600, status = "open", source = "site" },
+  { id = "r3", character = "Davi Rocha", class = "MAGE", level = 14, role = "DPS", at = NOW - 86400, seen = NOW - 86000, status = "open", source = "addon", relayedBy = "Bruno Reis" },
+}
+local invited, decided = {}, {}
+fake.List = function() return rows end
+fake.OpenCount = function() return 3 end
+fake.CanInvite = function(_, id) return id ~= "r3" end
+fake.Invite = function(_, id) invited[#invited + 1] = id; return true end
+fake.Decide = function(_, id, st) decided[#decided + 1] = id .. ":" .. st; return true end
+fake.Refresh = function() end
+LOCALIZED_CLASS_NAMES_MALE.MAGE = "Mage"
+GuildOS.Client.has.surnames = true
+dofile(ADDON .. "/UI/JoinRequests.lua")
+check(GuildOS.ShowJoinRequests and GuildOS.JoinRequestsHeard, "the list and the notice have their entries")
+alert = false
+GuildOS:JoinRequestsHeard(rows[1])
+check(alert == true and has("New guild request") and has("Chehul Costa, Paladin 12 \194\183 Healer") and has("Click to see"), "the notice names who asked, and lights the minimap")
+GuildOS:ShowJoinRequests()
+check(GuildOS.joinRequestsFrame:IsShown() and alert == false, "the list opens from it, and puts the light out")
+check(has("Join requests") and has("3 open"), "the list says how many are open")
+check(has("Paladin 12 \194\183 Healer") and has("Warrior 9 \194\183 Tank"), "each request: class, level and role")
+check(has("\226\128\156Jogo toda noite\226\128\157"), "the note, quoted")
+check(hasLike("^4m ago \194\183 online now$") and hasLike("^1h ago \194\183 came from the site$")
+  and hasLike("^1d ago \194\183 offline \194\183 delivered by Bruno Reis$"), "when, whether the player is there, where it came from")
+local function labelled(label)
+  local list = {}
+  for _, w in ipairs(allButtons) do if w.label.text == label then list[#list + 1] = w end end
+  return list
+end
+local invites = labelled("Invite")
+check(#invites == 3, "an Invite on each open request")
+check(invites[1].enabled == true and invites[2].enabled == true, "live for the one heard now and the one from the site")
+check(invites[3].enabled == false, "and dimmed for the one nobody has heard from")
+invites[1].scripts.OnClick()
+check(invited[1] == "r1", "Invite asks the module, from the click")
+labelled("Decline")[2].scripts.OnClick()
+check(decided[1] == "r2:declined", "Decline decides that request")
+opened = {}
+labelled("Whisper")[2].scripts.OnClick()   -- [1] is the finder card's
+check(opened[1] == "/w Chehul-Costa ", "Whisper opens /w with the hyphen the game's chat takes")
+
 print(("guild-finder: %d checks passed"):format(checks))

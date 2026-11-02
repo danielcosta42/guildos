@@ -70,6 +70,15 @@ local function MinimapMenu_Init(_, level)
     info.text = "|cffFFD700Guild|r |cffD4AC0DOS|r"
     UIDropDownMenu_AddButton(info, level)
 
+    -- An officer with people waiting: the list is one click away (the mock's tab 3).
+    local requests = GuildOS.JoinRequests
+    if requests and GuildOS.ShowJoinRequests and IsInGuild() and GuildOS:IsOfficer() and requests:OpenCount() > 0 then
+        info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
+        info.text = string.format(L["Join requests (%d)"], requests:OpenCount())
+        info.func = function() GuildOS:ShowJoinRequests(); CloseDropDownMenus() end
+        UIDropDownMenu_AddButton(info, level)
+    end
+
     for _, def in ipairs(GuildOS.UI:VisibleFeatures("tab")) do
         info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
         info.text = def.label
@@ -161,7 +170,9 @@ function GuildOS:CreateMinimapButton()
         GameTooltip:AddLine(L["Left-click: open"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Right-click: menu"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Drag: move button"], 0.5, 0.5, 0.5)
-        if GuildOS.minimapAlert then
+        if GuildOS.minimapAlert and IsInGuild() then
+            GameTooltip:AddLine(L["Somebody asked to join the guild: right-click for the list"], C.ok.r, C.ok.g, C.ok.b)
+        elseif GuildOS.minimapAlert then
             GameTooltip:AddLine(L["A guild is recruiting nearby: left-click to look"], C.ok.r, C.ok.g, C.ok.b)
         end
         GameTooltip:Show()

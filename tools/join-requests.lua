@@ -446,6 +446,80 @@ NOW = NOW + 14 * DAY + 1
 JR:Prune()
 check(find("old1234567").status == "expired" and JR:OpenCount() == 0, "a request nobody answered expires in fourteen days")
 
+-- ── The export: an optional field, in v13 ───────────────────────────────
+reset()
+GUILD, officer = "Ashen Vow", true
+handler(crq("exp1234567"), "Marta Vilar", "WHISPER")
+handler(crq("exp7654321", "Davi Rocha", { class = "MAGE", level = "14", role = "DPS", note = "" }), "Davi Rocha", "WHISPER")
+JR:Decide("exp7654321", "declined")
+local list = JR:ForExport()
+local byId = {}
+for _, r in ipairs(list or {}) do byId[r.id] = r end
+check(#list == 2 and byId.exp1234567.status == "open" and byId.exp1234567.character == "Marta Vilar" and byId.exp1234567.class == "WARRIOR"
+  and byId.exp1234567.level == 9 and byId.exp1234567.role == "TANK" and byId.exp1234567.note == "Procuro guilda" and byId.exp1234567.at, "the contract's shape")
+check(byId.exp1234567.decidedBy == nil and byId.exp7654321.status == "declined" and byId.exp7654321.decidedBy == "Chehul Costa", "decidedBy only where somebody decided")
+check(byId.exp7654321.note == nil, "a field with nothing in it is absent, never empty or null")
+for _, r in ipairs(list) do
+  for k, v in pairs(r) do check(type(v) == "string" or type(v) == "number", "field " .. k .. " is a plain value") end
+end
+NOW = NOW + 15 * DAY
+JR:Prune()
+local later = JR:ForExport()
+check(#later == 1 and later[1].id == "exp7654321", "an expired request is not told to the site: it has its own clock")
+JR:Decide("exp1234567", "declined")
+for _, r in pairs(GuildOS.db.joinRequests) do r.status = "expired" end
+check(JR:ForExport() == nil, "and with nothing to tell the field is absent")
+
+reset()
+GUILD, officer = "Ashen Vow", true
+GuildOS.Client.isAnniversary = false
+handler(crq("exp1234567"), "Marta Vilar", "WHISPER")
+local payload = Companion:BuildPayload()
+check(payload and payload.v == 13, "the payload is v13")
+check(payload.joinRequests and #payload.joinRequests == 1 and payload.joinRequests[1].id == "exp1234567", "joinRequests rides the export")
+local realExport = JR.ForExport
+JR.ForExport = function() error("a bug in the requests") end
+local ok, broken = pcall(Companion.BuildPayload, Companion)
+check(ok and broken and broken.joinRequests == nil and broken.members ~= nil and broken.v == 13, "joinRequests failing is left out and the rest of the export goes")
+check(#errors >= 1 and errors[#errors]:find("joinRequests", 1, true), "and the error is recorded")
+JR.ForExport = realExport
+
+-- ── The site's joinRequests in the block ────────────────────────────────
+local function block(requests)
+  local json = Companion.EncodeJson({ fmt = "GOSGILD1", v = 1, guild = "Ashen Vow", at = NOW - 60, joinRequests = requests })
+  return "GOSGILD1:" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(json))
+end
+reset()
+GUILD, officer = "Ashen Vow", true
+handler(crq("sit1234567"), "Marta Vilar", "WHISPER")
+GuildOSInbox = { block({
+  { id = "siteRowAAA1", character = "Davi Rocha", class = "MAGE", level = 14, role = "DPS", note = "Procuro", source = "site", status = "open", at = NOW - 3600 },
+  { id = "sit1234567", character = "Marta Vilar", class = "WARRIOR", level = 9, role = "TANK", source = "addon", status = "declined", at = NOW - 100 },
+  { id = "siteOldBBB2", character = "Gone Away", source = "site", status = "declined", at = NOW - 9000 },
+  { id = "siteDupCCC3", character = "Davi Rocha", source = "site", status = "open", at = NOW - 50 },
+  { id = "siteBadDDD4", character = "|cffff0000Eve", class = "NOTACLASS", level = 14, role = "BARD", source = "site", status = "open", at = NOW - 20 },
+}) }
+local site = Import:SiteJoinRequests()
+check(site and #site == 5 and site[1].id == "siteRowAAA1", "the block's requests are read")
+JR:Refresh()
+local davi = find("siteRowAAA1")
+check(davi and davi.source == "site" and davi.status == "open" and davi.character == "Davi Rocha" and davi.class == "MAGE" and davi.level == 14, "a request from the site becomes a row")
+check(find("sit1234567").status == "declined" and find("sit1234567").decidedBy == "Discord", "a decision made in Discord closes the row here")
+check(find("siteOldBBB2") == nil, "a closed request this client never had is not added")
+check(find("siteDupCCC3") == nil, "a site request for somebody who already has one open is not a second row")
+local eve = find("siteBadDDD4")
+check(eve and not eve.character:find("|", 1, true) and eve.class == nil and eve.role == nil, "and what the site sent is cleaned the same way")
+local n = #JR:List()
+JR:Refresh()
+check(#JR:List() == n, "reading it again adds nothing")
+check(JR:CanInvite("siteRowAAA1") == true, "a site request can always be invited")
+NOW = NOW + 3 * DAY
+GuildOSInbox = { block({}) }
+Import._blockRaw = nil
+check(JR:CanInvite("siteRowAAA1") == true, "even when nobody has heard from the player in days")
+check(JR:Decide("siteRowAAA1", "declined") and find("siteRowAAA1").status == "declined", "and decided here")
+check(JR:ForExport()[1] ~= nil, "decisions about site requests go back up")
+
 -- A screen that listens hears the changes, and one that errors costs the others nothing.
 reset()
 GUILD, officer = "Ashen Vow", true
