@@ -10,7 +10,12 @@ local L  = GuildOS.L
 
 local function GF() return GuildOS.GuildFinder end
 
-local WIDTH, HEIGHT = 580, 470
+local WIDTH, HEIGHT = 700, 480
+local MAX_DOTS = 20
+-- The mock's down arrow on a chip, and its check on a verified seal, as textures: the game's fonts
+-- do not all carry the glyphs.
+local ARROW = " |TInterface\\Buttons\\Arrow-Down-Up:12:12|t"
+local CHECK = "|TInterface\\Buttons\\UI-CheckBox-Check:14:14|t "
 local CHIP_W, CHIP_H, CHIP_GAP = 104, 22, 6
 local ROW_PITCH = 20           -- a card row
 local LABEL_W   = 84           -- the grey word before a row's value
@@ -63,9 +68,9 @@ local ROW1 = {
       name = function(v) return L[GF().DAY_KEYS[v]] end },
     { key = "period", any = L["Any time of day"], values = function() return GF().PERIODS end, name = function(v) return PERIOD_NAME[v] end },
     { key = "pace",   any = L["Any pace"],     values = function() return GF().PACES end, name = function(v) return PACE_NAME[v] end },
+    { key = "world",  any = L["Any world"],    values = function() return GF():Worlds() end, name = worldName },
 }
 local ROW2 = {
-    { key = "world",  any = L["Any world"],    values = function() return GF():Worlds() end, name = worldName },
     { key = "focus",  any = L["Any focus"],    values = function() return GF().FOCUS end, name = function(v) return FOCUS_NAME[v] end },
     { key = "loot",   any = L["Any loot rule"], values = function() return GF().LOOTS end, name = function(v) return LOOT_NAME[v] end },
     { key = "trial",  any = L["Any trial"],    values = function() return GF().TRIALS end, name = function(v) return TRIAL_NAME[v] end },
@@ -79,6 +84,33 @@ local function chipValue(chip, direction)
     local nextAt = (at + direction) % (#values + 1)
     local v = nextAt > 0 and values[nextAt] or nil
     return v
+end
+
+-- A chip opens a real drop-down (the same UIDropDownMenu the minimap menu uses) with "any" and every
+-- value, the current one ticked. Where that menu is not there, a click cycles to the next value.
+local menuFrame
+local function OpenMenu(button, spec, pick)
+    if not (UIDropDownMenu_Initialize and UIDropDownMenu_CreateInfo and UIDropDownMenu_AddButton and ToggleDropDownMenu) then
+        return false
+    end
+    menuFrame = menuFrame or CreateFrame("Frame", "GuildOSFinderMenu", UIParent, "UIDropDownMenuTemplate")
+    UIDropDownMenu_Initialize(menuFrame, function(_, level)
+        local cur = GF():Current()[spec.key]
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = spec.any
+        info.checked = cur == nil
+        info.func = function() pick(nil) end
+        UIDropDownMenu_AddButton(info, level)
+        for _, v in ipairs(spec.values()) do
+            info = UIDropDownMenu_CreateInfo()
+            info.text = spec.name(v)
+            info.checked = cur == v
+            info.func = function() pick(v) end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end, "MENU")
+    ToggleDropDownMenu(1, nil, menuFrame, button, 0, 0)
+    return true
 end
 
 local function BuildFinder()
@@ -113,12 +145,16 @@ local function BuildFinder()
             local b = UI:CreateButton(f, spec.any, CHIP_W, CHIP_H)
             b:SetPoint("TOPLEFT", 14 + (i - 1) * (CHIP_W + CHIP_GAP), y)
             b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-            b:SetScript("OnClick", function(_, mouse)
-                local v = chipValue(spec, mouse == "RightButton" and -1 or 1)
+            local function choose(v)
                 if spec.write then v = spec.write(v) end
                 GF():SetFilter(spec.key, v)
                 f.index = 1
                 f.Refresh()
+            end
+            b:SetScript("OnClick", function(self, mouse)
+                if mouse == "RightButton" or not OpenMenu(self, spec, choose) then
+                    choose(chipValue(spec, mouse == "RightButton" and -1 or 1))
+                end
             end)
             b.spec = spec
             chips[#chips + 1] = b
@@ -189,8 +225,16 @@ local function BuildFinder()
         rows[i] = { label = label, value = value }
     end
 
-    local proof = UI:CreateText(card, "", 11, C.gold.r, C.gold.g, C.gold.b)
-    proof:SetPoint("BOTTOMLEFT", 14, 50)
+    -- The measured numbers, three blocks: a big figure and what it counts (the mock).
+    local proof = {}
+    for i = 1, 3 do
+        local number = UI:CreateTitle(card, "", 16)
+        number:SetPoint("BOTTOMLEFT", 14 + (i - 1) * 130, 66)
+        number:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+        local caption = UI:CreateText(card, "", 10, C.label.r, C.label.g, C.label.b)
+        caption:SetPoint("TOPLEFT", number, "BOTTOMLEFT", 0, -2)
+        proof[i] = { number = number, caption = caption }
+    end
 
     local join = UI:CreateButton(card, L["Ask to join"], 130, 26)
     join:SetPoint("BOTTOMLEFT", 14, 12)
@@ -205,7 +249,18 @@ local function BuildFinder()
     local count = UI:CreateText(card, "", 10, C.label.r, C.label.g, C.label.b)
     count:SetPoint("BOTTOMRIGHT", -14, 18)
 
-    local clock = UI:CreateText(f, L["Times are on your clock."], 10, C.label.r, C.label.g, C.label.b)
+    -- One dot per guild, the one being read in gold (the mock's pager).
+    local dots = {}
+    for i = 1, MAX_DOTS do
+        local dot = f:CreateTexture(nil, "ARTWORK")
+        dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+        dot:SetSize(6, 6)
+        dot:SetPoint("TOP", f, "TOP", (i - (MAX_DOTS + 1) / 2) * 10, CARD_TOP - 310)
+        dot:Hide()
+        dots[i] = dot
+    end
+
+    local clock = UI:CreateText(f,L["Times are on your clock."], 10, C.label.r, C.label.g, C.label.b)
     clock:SetPoint("BOTTOMLEFT", 14, 12)
 
     ------------------------------------------------------------------
@@ -298,7 +353,7 @@ local function BuildFinder()
         gworld:SetText(table.concat(world, " \194\183 "))
         if ad.verified then
             seal:SetTextColor(C.ok.r, C.ok.g, C.ok.b)
-            seal:SetText(L["Verified by GuildOS"])
+            seal:SetText(CHECK .. L["Verified by GuildOS"])
         else
             seal:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             seal:SetText(L["Heard in the game, not verified"])
@@ -309,10 +364,10 @@ local function BuildFinder()
         local lines = {}
         local nights = GF():Schedule(ad)
         if nights then lines[#lines + 1] = { L["Nights"], nights } end
-        local pace = {}
-        if ad.pc then pace[#pace + 1] = PACE_NAME[ad.pc] end
+        -- A guild that did not say its pace reads "Not stated", as in the mock's third card.
+        local pace = { ad.pc and PACE_NAME[ad.pc] or L["Not stated"] }
         for _, tok in ipairs(ad.fo or {}) do pace[#pace + 1] = FOCUS_NAME[tok] end
-        if #pace > 0 then lines[#lines + 1] = { L["Pace"], table.concat(pace, " \194\183 ") } end
+        lines[#lines + 1] = { L["Pace"], table.concat(pace, " \194\183 ") }
         if ad.l then
             local names = {}
             for _, code in ipairs(ad.l) do names[#names + 1] = LANG_NAME[code] end
@@ -341,10 +396,14 @@ local function BuildFinder()
 
         local m = ad.m
         local numbers = {}
-        if m and m.n then numbers[#numbers + 1] = string.format(L["%d members"], m.n) end
-        if m and m.nt then numbers[#numbers + 1] = string.format(L["%d nights a week"], m.nt) end
-        if m and m.a then numbers[#numbers + 1] = string.format(L["%d%% attendance"], m.a) end
-        proof:SetText(table.concat(numbers, "     "))
+        if m and m.n then numbers[#numbers + 1] = { tostring(m.n), L["members"] } end
+        if m and m.nt then numbers[#numbers + 1] = { tostring(m.nt), L["nights a week"] } end
+        if m and m.a then numbers[#numbers + 1] = { m.a .. "%", L["attendance"] } end
+        for i, block in ipairs(proof) do
+            local n = numbers[i]
+            block.number:SetText(n and n[1] or "")
+            block.caption:SetText(n and n[2] or "")
+        end
 
         local contact = ad.ct and ad.ct[1]
         whisper:SetShown(contact ~= nil)
@@ -366,7 +425,7 @@ local function BuildFinder()
             local spec = b.spec
             local v = cur[spec.key]
             local shown = v ~= nil and spec.name(v) or nil
-            b.label:SetText(shown or spec.any)
+            b.label:SetText((shown or spec.any) .. ARROW)
         end
         for i = #ROW1 + 1, #chips do chips[i]:SetShown(f.more) end
         moreBtn.label:SetText(f.more and L["Fewer filters"] or L["More filters"])
@@ -377,9 +436,15 @@ local function BuildFinder()
         local ad = f.ads[f.index]
         card:SetShown(ad ~= nil); prev:SetShown(ad ~= nil); nxt:SetShown(ad ~= nil)
         empty:SetShown(ad == nil)
+        for _, dot in ipairs(dots) do dot:Hide() end
         if ad then
             DrawCard(ad)
             count:SetText(string.format(L["%d of %d"], f.index, #f.ads))
+            for i, dot in ipairs(dots) do
+                dot:SetShown(i <= #f.ads)
+                local on = i == f.index
+                dot:SetVertexColor(on and C.gold.r or C.label.r, on and C.gold.g or C.label.g, on and C.gold.b or C.label.b, on and 1 or 0.5)
+            end
         elseif #GF():All() > 0 then
             eTitle:SetText(L["No guild fits these filters"])
             eText:SetText(L["Loosen a filter to see the others."])

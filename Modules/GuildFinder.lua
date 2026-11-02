@@ -117,7 +117,10 @@ function GF:Normalize(raw)
     ad.l  = list(raw.l, LOCALE_SET)
     ad.fo = list(raw.fo, FOCUS_SET)
     ad.r  = list(raw.r, { TANK = true, HEALER = true, DPS = true })
-    ad.c  = list(raw.c, nil)
+    -- Classes are a closed set too: this game's own tokens, so nothing off the network reaches the screen.
+    local classes = {}
+    for _, token in ipairs(GuildOS.Client.classes) do classes[token] = true end
+    ad.c  = list(raw.c, classes)
     ad.lo = LOOT_SET[raw.lo] and raw.lo or nil
     ad.t  = TRIAL_SET[raw.t] and raw.t or nil
 
@@ -206,7 +209,9 @@ function GF:All()
             for _, raw in ipairs(got) do
                 local ad = self:Normalize(raw)
                 if ad and ad.x > t then
-                    local key = ad.n:lower()
+                    -- A slug names one guild; without one, the name on its world. The same name on
+                    -- another world is another guild, and no peer's ad may shadow it.
+                    local key = ad.u or (ad.n:lower() .. "|" .. (ad.w or ""))
                     local cur = best[key]
                     if not cur or ad.v > cur.v or (ad.v == cur.v and ad.verified and not cur.verified) then
                         best[key] = ad
@@ -293,7 +298,7 @@ local function clock(m)
     return string.format("%02d:%02d", math.floor(m / 60), m % 60)
 end
 
--- "Tue, Thu · 21:00–00:00" (an en dash, so no name-join looks like a hyphen): days that share a window read together. Nil when the ad names no night
+-- "Tue and Thu · 21:00 to 00:00": days that share a window read together. Nil when the ad names no night
 -- (the card then falls back to the free text an old ad carries).
 function GF:Schedule(ad, offset)
     local times = self:LocalTimes(ad, offset)
@@ -301,9 +306,11 @@ function GF:Schedule(ad, offset)
     local L = GuildOS.L
     local days = {}
     for _, t in ipairs(times) do days[#days + 1] = L[DAY_KEYS[t.day]] end
+    -- "Tue and Thu", "Mon, Wed, Fri": two read with the word, more with commas (the mock).
+    local joined = #days == 2 and string.format(L["%s and %s"], days[1], days[2]) or table.concat(days, ", ")
     local first = times[1]
-    if not first.clock then return table.concat(days, ", ") end
-    return table.concat(days, ", ") .. " \194\183 " .. clock(first.from) .. "\226\128\147" .. clock(first.to)
+    if not first.clock then return joined end
+    return joined .. " \194\183 " .. string.format(L["%s to %s"], clock(first.from), clock(first.to))
 end
 
 ----------------------------------------------------------------------
@@ -460,7 +467,8 @@ function GF:Initialize()
     self._hooked = true
     hooksecurefunc(RB, "Ingest", function()
         if GF.heardThisSession or not GF:Available() or IsInGuild() then return end
-        if #GF:Ads(GF:Context()) > 0 and GuildOS.GuildFinderHeard then
+        -- The filters the finder opens with, so the button never promises a guild the screen hides.
+        if #GF:Ads() > 0 and GuildOS.GuildFinderHeard then
             GF.heardThisSession = true
             GuildOS:GuildFinderHeard()
         end

@@ -28,6 +28,7 @@ RAID_CLASS_COLORS = {}
 
 -- Any method does nothing, except what the screen reads back: its text, whether it is shown, and the
 -- scripts it sets, so a test can press the real button.
+local textures = {}
 local function widget(extra)
   local w = extra or {}
   w.scripts = {}
@@ -40,6 +41,7 @@ local function widget(extra)
     if k == "SetShown" then return function(self, v) self.shown = v and true or false end end
     if k == "IsShown" then return function(self) return self.shown == true end end
     if k == "GetChildren" or k == "GetRegions" then return function() end end
+    if k == "CreateTexture" then return function() local t = widget(); textures[#textures + 1] = t; return t end end
     if k == "GetWidth" then return function() return 300 end end
     return function() end
   end })
@@ -135,6 +137,12 @@ only({ ad({ n = "Same", v = 10, p = "old" }), ad({ n = "same", v = 20, p = "new"
 check(#GF:All() == 1 and GF:All()[1].p == "new", "the newer version of a guild wins")
 only({ ad({ n = "Tie", v = 10, verified = false, heard = true }), ad({ n = "Tie", v = 10, verified = true }) })
 check(GF:All()[1].verified == true, "at the same version the verified one wins")
+-- The same name on two worlds is two guilds: a newer ad from elsewhere must not shadow the one I can join.
+only({ ad({ n = "Twin", w = "normal:us", v = 10, p = "mine" }), ad({ n = "Twin", w = "normal:eu", v = 99, p = "theirs" }) })
+check(#GF:All() == 2, "one name on two worlds is two ads")
+check(names(GF:Ads({ region = "us" })) == "Twin" and GF:Ads({ region = "us" })[1].p == "mine", "and the one on my world survives the filter")
+only({ ad({ n = "Slugged", u = "slug-a", v = 1 }), ad({ n = "Renamed", u = "slug-a", v = 2 }), ad({ n = "Other", u = "slug-b" }) })
+check(names(GF:All()) == "Other,Renamed","a slug names one guild, whatever it is called now")
 only({ ad({ n = "Old", x = NOW - 1 }), ad({ n = "Fresh" }) })
 check(names(GF:All()) == "Fresh", "an expired ad is gone")
 GF:AddSource("second", function() return { ad({ n = "Other" }) } end)
@@ -200,8 +208,9 @@ local function t1(offset) return GF:LocalTimes(night, offset)[1] end
 check(t1(0).day == 2 and t1(0).from == 1260 and t1(0).to == 1260 + 360, "UTC reader: Tuesday 21:00, six hours")
 check(t1(-180).day == 2 and t1(-180).from == 1080 and t1(-180).to == 1440, "west of UTC (Sao Paulo): Tuesday 18:00, midnight")
 check(t1(540).day == 3 and t1(540).from == 360 and t1(540).to == 720, "east of UTC (Tokyo): it is Wednesday morning")
-check(GF:Schedule(night, 540) == "Wed \194\183 06:00\226\128\14712:00", "the card says what the clock says")
-check(GF:Schedule(ad({ n = "Two", d = { 2, 4 }, s = 1260, e = 0 }), 0) == "Tue, Thu \194\183 21:00\226\128\14700:00", "two nights with one window read together")
+check(GF:Schedule(night, 540) == "Wed \194\183 06:00 to 12:00", "the card says what the clock says")
+check(GF:Schedule(ad({ n = "Two", d = { 2, 4 }, s = 1260, e = 0 }), 0) == "Tue and Thu \194\183 21:00 to 00:00", "two nights with one window read like the mock")
+check(GF:Schedule(ad({ n = "Three", d = { 1, 3, 5 }, s = 600, e = 720 }), 0) == "Mon, Wed, Fri \194\183 10:00 to 12:00", "three nights are a comma list")
 check(GF:Schedule(ad({ n = "Days", d = { 5 } }), 0) == "Fri", "days with no clock time are only days")
 check(GF:Schedule(ad({ n = "None" }), 0) == nil, "no nights, nothing to say")
 
@@ -260,6 +269,12 @@ local w = GF:All()[1]
 check(w.pc == nil and w.lo == nil and w.t == nil, "a pace, loot or trial outside the vocabulary is absent")
 check(#w.l == 1 and w.l[1] == "pt" and #w.fo == 1, "unknown languages and foci are dropped")
 check(#w.d == 1 and w.d[1] == 2 and w.s == nil and w.m == nil, "bad days, minutes and numbers are dropped, absent and never zero")
+-- classes are this game's own tokens: nothing else reaches the screen
+only({ ad({ n = "Klass", c = { "PALADIN", "|cffff0000RED|r", string.rep("X", 500), "NOTACLASS", "WARRIOR" } }) })
+local klass = GF:All()[1]
+check(table.concat(klass.c, ",") == "PALADIN,WARRIOR", "a class off the network that is not one of this game's tokens is dropped")
+only({ ad({ n = "Nothing", c = { "|cffff0000RED|r" } }) })
+check(GF:All()[1].c == nil, "and a list of nothing but those is absent")
 only({ { n = "" }, { n = 5 }, "string", {} })
 check(#GF:All() == 0, "records that are not ads are not ads")
 
@@ -285,17 +300,20 @@ function GuildOS:GuildFinderHeard() lit = lit + 1 end
 GF.sources = {}
 GF:AddSource("CR2", GF.HeardAds)
 GuildOS.db.recruitRelay = {}
+GuildOSDB = {}
 GF:Initialize()
 guilded = true
-RB:Ingest("CR2|Guilded One|H|||x|enUS||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
+RB:Ingest("CR2|Guilded One|H|||x|ptBR||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
 check(lit == 0, "a character in a guild is not looking: nothing lights")
 guilded = false
 GuildOS.db.recruitRelay = {}
-RB:Ingest("CR2|Wrong Side|A|||x|enUS||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
+RB:Ingest("CR2|Wrong Side|A|||x|ptBR||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
 check(lit == 0, "an ad of the other faction is not a guild to look at")
-RB:Ingest("CR2|Right Side|H|||x|enUS||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
+RB:Ingest("CR2|English Only|H|||x|enUS||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
+check(lit == 0, "nor one the language filter the finder opens with would hide: the button never promises a guild the screen then hides")
+RB:Ingest("CR2|Right Side|H|||x|ptBR||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
 check(lit == 1, "the first guild of the session lights the minimap")
-RB:Ingest("CR2|Another|H|||x|enUS||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
+RB:Ingest("CR2|Another|H|||x|ptBR||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed", "Zed")
 check(lit == 1, "once")
 
 -- ── The screen, pressed like a player would ────────────────────────────
@@ -337,6 +355,9 @@ local function hasLike(pat)
 end
 local function press(label, mouse) buttons[label].scripts.OnClick(buttons[label], mouse or "LeftButton") end
 
+local ARROW = " |TInterface\\Buttons\\Arrow-Down-Up:12:12|t"
+local CHECK = "|TInterface\\Buttons\\UI-CheckBox-Check:14:14|t "
+function GF:UtcOffset() return 0 end    -- the card's times are read at a known clock
 GuildOSDB = {}
 GuildOS.db.recruitRelay = {}
 GF.sources = {}
@@ -355,7 +376,13 @@ check(has("Alpha Guild") and has("1 of 1"), "in Portuguese only the Portuguese g
 check(has("Heard in the game, not verified"), "a CR2 ad is heard, not verified")
 check(has("\226\128\156Raide de noite\226\128\157") and has("Seg e Qua"), "the pitch and the nights are on the card")
 check(hasLike("Healer, Warrior, Paladin %(you!%)"), "who the guild wants, with my class marked")
-check(buttons["Any language"].label.text == "Portuguese", "the language chip says the language it is on")
+check(buttons["Any language"].label.text == "Portuguese" .. ARROW, "the language chip says the language it is on, with the drop-down arrow")
+check(has("Not stated \194\183 Raid"), "a heard ad with no pace reads Not stated, then its focus")
+check(buttons["Any world"].shown ~= false and buttons["Any focus"].shown == false, "World is in the top row; focus, loot and trial wait behind More filters")
+check(buttons["Any trial"].shown == false and buttons["Any loot rule"].shown == false, "and so do loot and trial")
+local dotsShown = 0
+for _, t in ipairs(textures) do if t.shown then dotsShown = dotsShown + 1 end end
+check(dotsShown == 1, "one dot per guild under the card")
 check(buttons["Whisper"].shown == true, "a contact can be whispered")
 press("Whisper")
 check(opened[1] == "/w Ana-Realm ", "and the whisper opens addressed to them")
@@ -381,6 +408,30 @@ press("Any language")
 check(GuildOSDB.guildFinder.locale == "pt", "a click on the chip goes forward to the first language")
 check(finder.index == 1, "a filter sends the deck back to its first card")
 
+-- a chip is a real drop-down where the client has one
+local menuItems, menuAnchor
+function UIDropDownMenu_Initialize(frame, fn) frame.initFn = fn end
+function UIDropDownMenu_CreateInfo() return {} end
+function UIDropDownMenu_AddButton(info) menuItems[#menuItems + 1] = info end
+function ToggleDropDownMenu(_, _, frame, anchor) menuItems = {}; menuAnchor = anchor; frame.initFn(frame, 1) end
+press("Any day")
+check(menuAnchor == buttons["Any day"] and #menuItems == 8, "a click on a chip opens its menu under it: any, and the seven days")
+check(menuItems[1].text == "Any day" and menuItems[1].checked == true and menuItems[4].text == "Tue" and menuItems[4].checked == false, "any is ticked while no day is picked")
+menuItems[4].func()
+check(GuildOSDB.guildFinder.day == 2 and finder.index == 1, "picking a day from the menu saves it")
+press("Any day")
+check(menuItems[4].checked == true and menuItems[1].checked == false, "and the menu ticks what is picked")
+menuItems[1].func()
+check(GuildOSDB.guildFinder.day == nil, "any clears it")
+press("Any language", "RightButton")
+check(GuildOSDB.guildFinder.locale == false, "a right click still steps back, menu or not")
+GF:SetFilter("locale", "pt")
+menuItems = nil
+UIDropDownMenu_Initialize, ToggleDropDownMenu = nil, nil
+press("Any day")
+check(GuildOSDB.guildFinder.day == 0, "with no drop-down in the client the chip cycles to the next value")
+GF:SetFilter("day", nil)
+
 -- more filters, and a filter nobody fits
 press("More filters")
 check(buttons["Any focus"].shown == true and buttons["More filters"].label.text == "Fewer filters", "more filters opens the second row")
@@ -388,6 +439,24 @@ GF:SetFilter("pace", "hardcore")
 finder.Refresh()
 check(has("No guild fits these filters") and buttons[">"].shown == false and buttons["<"].shown == false, "filters that cut everything say so, and the arrows go")
 GF:SetFilter("pace", nil)
+
+-- a verified ad from the site's block: the seal, the schedule, the measured numbers as three blocks
+GF:AddSource("block", function()
+  return { ad({ n = "Sigma Order", u = "sigma", w = "normal:us", l = { "pt" }, c = { "PALADIN" }, d = { 2, 4 }, s = 1260, e = 0,
+                pc = "regular", fo = { "RAID" }, lo = "council", t = "week2", p = "Two nights a week.",
+                m = { n = 38, nt = 2, a = 86 }, v = NOW }) }
+end)
+finder.Refresh()
+check(has("Sigma Order") and has("2 of 2") == false and has("1 of 2"), "the site's guild joins the deck, first: it names my class")
+check(has(CHECK .. "Verified by GuildOS"), "a verified seal has its check")
+check(hasLike("Horde \194\183 Normal \194\183 Americas"), "faction, ruleset and region on the card")
+check(has("Tue and Thu \194\183 21:00 to 00:00"), "the days read as in the mock: Tue and Thu, 21:00 to 00:00")
+check(has("Regular \194\183 Raid") and has("Loot council \194\183 2 week trial"), "pace with focus; loot with trial")
+check(has("38") and has("members") and has("2") and has("nights a week") and has("86%") and has("attendance"), "the measured numbers are three blocks, a figure and its caption")
+local shownDots = 0
+for _, t in ipairs(textures) do if t.shown then shownDots = shownDots + 1 end end
+check(shownDots == 2, "two guilds, two dots")
+GF.sources[#GF.sources] = nil
 
 -- nothing heard at all
 GuildOS.db.recruitRelay = {}
