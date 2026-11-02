@@ -369,7 +369,7 @@ nobody routes there (CR2 above all) goes back to `RecruitBeacon`. Forever and re
 | `CRA\|id\|state\|who` | WHISPER, GUILD | The answer: `officer` and `member` say where it got to and do not stop the repetition, `invited` and `declined` end it. Only an officer's word over GUILD closes a row |
 | `CRW\|token\|try` | WHISPER, to myself | The whisper test. The token lives the session, so a late echo still counts |
 
-What a client offers is what it holds of its own faction and region, the guild's own ad always: the CR3 cache and the
+What a client offers is what it holds of its own faction and region, the guild's own ad in the cache always: the CR3 cache and the
 live ads of the site's list, which is copied into nobody's
 cache. The seal comes from one's own `GOSRECR1` alone, and nothing in a message can turn it on.
 

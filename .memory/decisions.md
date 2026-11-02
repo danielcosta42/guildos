@@ -1270,15 +1270,32 @@ available before 4 November.
     alone, one that does not know its region nothing, and an ad with no world is not offered. The filter comes before
     the choice of one ad per name, so a namesake elsewhere hides nobody. `want` reads all the client has and not only
     what it offers: an ad kept and not offered, asked for every round, would be the loop a guild once ran on its own ad.
-    The guild's own ad always goes: it needs no judging, and without it the beacon says no guild.
+    The guild's own ad in the cache always goes: it needs no judging, and without it the beacon says no guild. A list
+    entry is only spelled like this guild and goes through `Reaches` like any other, or a member would serve another
+    guild of that name and claim it. On retail `Reaches` also asks for a realm that can invite this character. A namesake
+    of the same faction and region on another ruleset still passes: it comes from `ad.key` being the name alone, which
+    stays, and the addon cannot read a ruleset anyway.
   - Who is an officer, for what only an officer may say over GUILD, is `Gossip:IsOfficerSender`, the one door of both
     the guild's ad and a decision. `IsOfficerByName` compares the part before the hyphen, so a roster with `Bruno Reis`
     and a sender spelled `Bruno-Reis` would refuse the officer: no member holds the ad, no decision crosses the guild,
     on launch night with nothing to see. It stays as it is, because other modules rely on it. On WoW: Forever the door
-    asks with the sender as it came and again as `Whole` reads it, the hyphens turned into spaces and a realm dropped.
-    Elsewhere a hyphen means a realm, and only the first question is asked. `officerRefused` in `Gossip:Stats()`, on
+    reads the roster itself, both sides lower case with hyphens as spaces, the whole name against the whole name, never
+    by prefix and never `IsOfficerByName`, whose first question gave the false positives: with hyphens on the roster or an
+    officer with no surname it took `Bruno-Melo` for Bruno. Only this client's own realm comes off the end, by
+    `Import.PlainName`, so a roster with a realm keeps working.
+    Elsewhere a hyphen means a realm, and `IsOfficerByName` is right. `officerRefused` in `Gossip:Stats()`, on
     the Audit panel, is the senders refused right now: one vouched for later leaves it, so a roster that came late is
     no noise on every login, and what stays is the failure this exists to show.
+  - A number off the network goes through `GuildOS.Finite`, and every check on one says what must hold, never what
+    refuses. NaN answers false to every comparison, so a whisper `CR3|Ordem|...|nan|nan` once replaced a held ad, `want`
+    then refused the real newer version, and a second client held the forgery within half an hour; inf passes any
+    `> 0`; and `tonumber` takes both as text. A NaN or inf reaches no saved table: a NaN in SavedVariables is an unknown
+    risk to the whole `GuildOSDB` file. That covers CR3, CR2 (where it would also have deleted), the beacon, the digest,
+    a request's level and the `at` of `GOSRECR1` and `GOSGILD1`, which `SiteJoinRequests` wrote onto a saved row; a date
+    that is no number is too old to believe, never good for ever. `RB:Prune` drops what a save already holds wrong.
+  - `probeChannelOpen` is cleared only once the channel is seen gone. A leave from a timer may be dropped with no
+    error, so `Probe:LeaveStaleChannel` looks again `STALE_AGAIN` seconds later and leaves at most `STALE_TRIES` times, and
+    what is still there keeps its name for the next login or key press. `FinishChannel`'s leave is one of those tries.
   - The whisper test goes over the spellings `TEST_PASSES` times, `TEST_AGAIN` seconds apart, and its token lives the
     session: an echo that comes after the last try still counts. With one pass, a lagged opening night left a client
     with no gossip and no requests until a `/reload`.
@@ -1312,9 +1329,13 @@ available before 4 November.
   `ERR_GUILD_INVITE_S` is the line a Forever invite prints, which `confirmed` in the Audit counts. If it never comes
   back, an invite never closes its row by itself and the site's roster ingest does.
 - (?) And, from the last review, what no harness can reach:
-  - Whether a sender's name reads as the roster's. `Gossip:IsOfficerSender` covers a roster with a space and a sender with
-    a hyphen. The other way round, a roster with `Bruno-Reis` and a sender with the space, is still refused, and a roster
-    with hyphens also makes `IsOfficerByName` read first names alone: `officerRefused` on the Audit panel is how to see it.
+  - **The first three reads on 4 November**, before anything else: `/dump GetGuildRosterInfo(1)` on Forever, which says
+    the roster's format and which the officer check, the invite and the keys all rest on; the Audit panel's
+    `officerRefused` at 0 with an officer online, which says the guild's ad and decisions are crossing GUILD; and which
+    whisper spelling came back, in the same panel.
+  - Whether a sender's name reads as the roster's. `Gossip:IsOfficerSender` covers a space or a hyphen on either side and
+    this client's own realm on the end. A sender that carries any other realm is refused: the whole name is what is
+    compared, and a Forever client's realm string is not known to be the same for two people. `officerRefused` shows it.
     `sameName` has the same exposure: a sender spelled differently drops a real `CRQ`, silently.
   - Whether the text of the "no such player" line is `ERR_CHAT_PLAYER_NOT_FOUND_S`, and whether AceComm echoes a whisper
     to oneself on a client where it splits a message.
@@ -1324,5 +1345,7 @@ available before 4 November.
     reaches who was meant. It is the Alt-click's pattern, and that one is proven only for a name off a whisper.
   - Whether `GetRealmName()` says the ruleset on Forever: until then the World filter offers the ones in the list.
   - Whether `STALE_WAIT` is long enough for the game to have joined a character's channels, on a login and on a `/reload`.
+  - Whether the game drops `LeaveChannelByName` from a timer at all, and how long a leave takes to show in `GetChannelName`.
+  - Whether `tonumber("nan")` reads as NaN on the client as it does in LuaJIT, and what writing one to SavedVariables does.
   - Everything on a screen. The finder, the form, the notice and the list were only ever drawn on fake widgets: the
     drop-down menus and their arrow and check, layout, line wrap at 700x480, `SetEnabled` on Invite.

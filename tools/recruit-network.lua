@@ -14,6 +14,9 @@
 --     within the ceilings, with the seal nowhere, with a full list.
 --   * The officer hears of a request from the site once the rank is known, once per new row.
 --   * An officer's broadcast pauses inside an instance and in a lockdown, and comes back after.
+--   * A client offers only what somebody it can reach can use, and an officer is known however the roster and
+--     the sender spell the name, the whole name and never a prefix.
+--   * NaN and inf off the network pass no check and reach no saved table.
 --
 --   luajit -e 'ADDON="."' tools/recruit-network.lua
 --
