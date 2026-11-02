@@ -500,13 +500,16 @@ local function StateOf(e)
             or others > 1 and string.format(L["There are %d other guilds to look at."], others) or ""
     end
     -- Nobody answered. Where this session cannot whisper, "as soon as someone shows up" cannot happen
-    -- here: the queue is the companion's.
+    -- here: the queue is the companion's. A card with no slug has no road to the companion at all (the
+    -- site cannot tell whose guild it is, and WriteWire passes over it): the line promises nothing of it.
     if not JR():CanReach() then
-        return "warn", L["Saved here"],
-            L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."]
+        return "warn", L["Saved here"], e.slug
+            and L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."]
+            or L["Nothing can be sent from the game this session. The request stays saved here for the next one."]
     end
-    return "warn", L["Saved here"],
-        L["Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."]
+    return "warn", L["Saved here"], e.slug
+        and L["Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."]
+        or L["Nobody from the guild is online nearby. We deliver as soon as someone shows up."]
 end
 
 local function BuildJoinForm()

@@ -561,8 +561,10 @@ press("Send request")
 local sentReq = realJR:Latest(oldAd)
 check(sentReq ~= nil, "Send request on a card with no slug sends")
 check(has("Saved here"), "and with no answer says Saved here, never delivered")
-check(has("Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."),
-  "a session that cannot whisper says the truth: the companion's queue")
+-- WriteWire passes over a request with no slug: this one can never go by the companion.
+check(has("Nothing can be sent from the game this session. The request stays saved here for the next one."),
+  "a session that cannot whisper says the truth, and a card with no slug promises no companion")
+check(not hasLike("goes to Discord when you leave the game"), "not a word about Discord")
 check(buttons["Send request"].shown == false, "the form is gone once it is sent")
 -- every reason the module can refuse with has a line
 local REFUSALS = { ["in-guild"] = "You are already in a guild.", ["no-ad"] = "This guild cannot be asked right now.",
@@ -580,9 +582,22 @@ GuildOS.joinForm.ad = oldAd
 GuildOS.joinForm.Refresh()
 GuildOS.ChehulGossip = { CanWhisper = function() return true end }
 GuildOS.joinForm.Refresh()
+check(has("Nobody from the guild is online nearby. We deliver as soon as someone shows up."),
+  "where whispers work, the line with the same promise left out")
+check(not hasLike("goes to Discord when you leave the game"), "for a card with no slug")
+-- A card with a slug has the companion's road, and says so both ways.
+local sluggedAd = { n = "Third Guild", u = "third-guild", f = "H", w = "normal:us", ct = { "Zed Rocha" } }
+GuildOS.ChehulGossip.PeerFor, GuildOS.ChehulGossip.Whisper = function() end, function() return false end
+GuildOS:ShowJoinForm(sluggedAd)
+press("Send request")
+check(realJR:Latest(sluggedAd), "the card with a slug is asked too")
 check(has("Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."),
-  "where whispers work, the original line")
+  "and its line keeps the companion")
 GuildOS.ChehulGossip = nil
+GuildOS.joinForm.Refresh()
+check(has("Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."),
+  "with no whisper too: the companion's queue is real for it")
+GuildOS:ShowJoinForm(oldAd)
 realJR:OnCRA("CRA|" .. sentReq.id .. "|officer|Ana Lima", "Ana Lima", "WHISPER")
 check(has("Delivered to Ana Lima") and has("An officer is online and has already seen your request."), "an officer's answer shows, live")
 realJR:OnCRA("CRA|" .. sentReq.id .. "|member|Bruno Reis", "Bruno Reis", "WHISPER")
