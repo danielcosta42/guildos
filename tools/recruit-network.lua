@@ -228,6 +228,7 @@ local function client(name, o)
   env.GetLocale = function() return "enUS" end
   env.GetCurrentRegion = function() return c.region or nil end
   env.GetRealmName = function() return c.realm end
+  env.GetAutoCompleteRealms = function() return o.connected end
   env.GetNormalizedRealmName = function() return c.realm end
   if c.game == "forever" then
     local first, surname = name:match("^(%S+) (%S+)$")
@@ -695,6 +696,42 @@ for _, e in ipairs(ops({ from = ana.name, op = "CRB", dist = "GUILD" })) do
   if e.text:match("^CRB|[^|]*|[^|]*|Ordem|0$") then named = named + 1 end
 end
 check(named >= 1, "and the beacon says the guild")
+
+-- Retail: a guild on a realm that cannot invite this character is of no use here. Sixty newer ads from an
+-- unconnected realm once pushed five older local ones out of the cache, and the finder showed nothing.
+local function retailList()
+  local list = {}
+  for i = 1, 60 do
+    list[i] = { n = ("Longe %02d"):format(i), u = ("longe-%02d"):format(i), f = "H", w = "Gallywix:us", p = "x",
+                v = EPOCH - i * 60, x = EPOCH + 60 * 3600, pc = "regular", l = { "en" } }
+  end
+  for i = 1, 5 do
+    list[#list + 1] = { n = ("Aqui %02d"):format(i), u = ("aqui-%02d"):format(i), f = "H", w = "Azralon:us", p = "x",
+                        v = EPOCH - 90000 - i, x = EPOCH + 60 * 3600, pc = "regular", l = { "en" } }
+  end
+  return { fmt = "GOSRECR1", v = 1, at = EPOCH, game = "RETAIL", ads = list }
+end
+fresh()
+seed = client("Semente", { game = "retail", zone = "z", list = retailList() })
+novo = client("Novato", { game = "retail", zone = "z" })
+run(7200)
+local here, away = 0, 0
+for key in pairs(novo.RB:Cache3()) do
+  if key:find("^Aqui") then here = here + 1 else away = away + 1 end
+end
+check(here == 5 and away == 0, "only this realm's guilds cross: " .. here .. " here, " .. away .. " from elsewhere")
+local wide = novo.GF:Current()
+wide.locale, wide.class = nil, nil
+check(#novo.GF:Ads(wide) == 5, "and the finder shows the five: " .. #novo.GF:Ads(wide))
+-- A connected realm is reachable; on Forever, with no realms, the ruleset stays out of it.
+fresh()
+seed = client("Semente", { game = "retail", zone = "z", connected = { "Gallywix" }, list = retailList() })
+local names = 0
+for _ in pairs(seed.GuildOS.State.gossip.topics.CR3.digest()) do names = names + 1 end
+check(names == 65, "a connected realm's guilds are offered too: " .. names)
+check(seed.GF:Reaches({ f = "H", w = "Tol Barad:us" }, { faction = "H", region = "us", realms = { tolbarad = true } }) == true, "a realm reads as the roster spells it")
+check(seed.GF:Reaches({ f = "H", w = "normal:us" }, { faction = "H", region = "us" }) == true, "and with no realms to compare there is no realm check")
+check(seed.GF:Reaches({ f = "H", w = "Azralon:us" }, { faction = "H", region = "us", realms = {} }) == false, "a client that knows no realm of its own offers none")
 
 -- ── The officer hears of a request from the site once the rank is known ─
 local SITE = { { id = "550e8400-e29b-41d4-a716-446655440000", character = "Davi Rocha", class = "MAGE", level = 14,
