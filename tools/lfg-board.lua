@@ -20,13 +20,25 @@ local function check(cond, what)
 end
 
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
-function CreateFrame()
-  local f = {}
-  function f:RegisterEvent() end
-  function f:UnregisterEvent() end
-  function f:SetScript() end
-  return f
+UIParent = {}
+RAID_CLASS_COLORS = {}
+
+-- Any method does nothing, except what the board reads back and the scripts it sets, so a test can
+-- press the real button.
+local function widget(extra)
+  local w = extra or {}
+  w.scripts = {}
+  return setmetatable(w, { __index = function(_, k)
+    if k == "SetScript" then return function(self, name, fn) self.scripts[name] = fn end end
+    if k == "IsShown" then return function() return true end end
+    if k == "GetChildren" or k == "GetRegions" then return function() end end
+    if k == "GetWidth" then return function() return 300 end end
+    if k == "GetText" then return function(self) return self.text or "" end end
+    if k == "SetText" then return function(self, v) self.text = v end end
+    return function() end
+  end })
 end
+function CreateFrame() return widget() end
 function hooksecurefunc() end
 function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
@@ -38,6 +50,7 @@ time = function() return NOW end
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 function tContains(t, v) for _, x in ipairs(t) do if x == v then return true end end return false end
 C_Timer = { After = function() end, NewTicker = function() end }
+function GetNumGuildMembers() return 0 end
 
 local guilded = true
 function IsInGuild() return guilded end
@@ -64,6 +77,29 @@ local printed = {}
 GuildOS.Print = function(_, msg) printed[#printed + 1] = msg end
 local locked = false
 GuildOS.Compat.InChatLockdown = function() return locked end
+
+-- The widgets the board builds, by label.
+local boxes, buttons = {}, {}
+GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
+GuildOS.UI = {
+  StylePopup = function() end,
+  CreateTitle = function() return widget() end,
+  CreateCloseButton = function() return widget() end,
+  CreateText = function() return widget() end,
+  CreateSeparator = function() return widget() end,
+  CreateScrollFrame = function() return widget(), widget() end,
+  CreateButton = function(_, _, label)
+    local b = widget({ label = widget() })
+    buttons[label] = b
+    return b
+  end,
+  CreateCheckbox = function(_, _, label)
+    local cb = widget()
+    function cb:SetChecked(v) self.checked = v end
+    boxes[label] = widget({ checkbox = cb })
+    return boxes[label]
+  end,
+}
 
 local Board = GuildOS.LFGBoard
 local function fresh(prefs)
@@ -127,6 +163,7 @@ Board:ClearAvailable()
 check(#said == 0, "nor does taking the post down")
 Board:SetAvailable("TANK", "Karazhan", 3600, true)
 said = {}
+NOW = NOW + 300
 Board:Rebroadcast()
 Board:ClearAvailable()
 Board:HandleCommand({ "off" }, "off")
@@ -166,5 +203,28 @@ check(GuildOS.db.lfgBoard[GuildOS:GetPlayerKey("Cid", "Realm")] ~= nil, "and is 
 GuildOS.db.lfgPrefs.notify = false
 Board:HandleEntry("Dan-Realm", { role = "TANK", note = "Karazhan", ttl = 3600 })
 check(#printed == 1, "somebody who turned it off is not told")
+
+-- The addon can't know a line reached anyone, so a post that also went to chat is still told
+fresh(nil)
+Board:SetAvailable("TANK", "Karazhan", 3600, true)
+check(#said == 1, "the line went")
+Board:HandleEntry("Bea-Realm", wire[1])
+check(#printed == 1, "and the notice is told all the same")
+
+-- The click: the real board, its real button and box
+fresh(nil)
+Board:Show()
+local box, action = boxes["Also post in guild chat"].checkbox, buttons["I'm available"]
+check(box.checked == true, "the box opens ticked")
+action.scripts.OnClick(action)
+check(#said == 1, "a click with the box ticked speaks")
+action.scripts.OnClick(action)
+check(not onTheBoard(), "the second click takes the post down")
+box:onChanged(nil)   -- what GetChecked gives on TBC when it is off
+check(GuildOS.db.lfgPrefs.postToGuild == false, "unticking is remembered")
+NOW = NOW + 300
+action.scripts.OnClick(action)
+check(onTheBoard(), "a click with the box unticked still posts")
+check(#said == 1, "and says nothing in chat")
 
 print(checks .. " checks ok")
