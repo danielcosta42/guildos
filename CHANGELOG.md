@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-11-02
+
+### Added
+- o mural de LFG é visto por quem não está com ele aberto: aviso ligado e anúncio no chat da guilda (#243)
+
+### Fixed
+- da revisão: o aviso não depende do chat, a linha só sai do botão do mural e a pausa sobrevive ao /reload (#243)
+
+
 ## [1.5.0] - 2026-11-01
 
 ### Added
