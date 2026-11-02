@@ -283,11 +283,11 @@ function RB:Initialize()
     end
     if C_Timer and C_Timer.NewTicker then
         if not self._bcast then
-            self._bcast = C_Timer.NewTicker(self.BROADCAST_INTERVAL, function() RB:Broadcast() end)
-            if C_Timer.After then C_Timer.After(8, function() RB:Broadcast() end) end
+            self._bcast = C_Timer.NewTicker(self.BROADCAST_INTERVAL, function() GuildOS:SafeCall(RB.Broadcast, RB) end)
+            if C_Timer.After then C_Timer.After(8, function() GuildOS:SafeCall(RB.Broadcast, RB) end) end
         end
         if not self._relay then
-            self._relay = C_Timer.NewTicker(self.RELAY_INTERVAL, function() RB:RelayTick() end)
+            self._relay = C_Timer.NewTicker(self.RELAY_INTERVAL, function() GuildOS:SafeCall(RB.RelayTick, RB) end)
         end
     end
 end
