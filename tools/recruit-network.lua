@@ -483,7 +483,11 @@ check(#mine == 500, "the holder's own finder shows the whole list: " .. #mine)
 for _, a in ipairs(mine) do check(a.verified == true, "with its seal") end
 check(count(seed.RB:Cache3()) <= 40, "and the list is not copied into the holder's cache")
 
--- What the list holds is not asked for; what is newer than it is.
+-- What the list holds is not asked for; what is newer than it is. On a client that has heard nothing: after
+-- an hour its peers have pushed copies back into its cache, and that would prove the cache and not the list.
+fresh()
+seed = client("Ana Lima", { zone = "city", list = listOf(500) })
+check(count(seed.RB:Cache3()) == 0, "the cache is empty")
 local T = seed.GuildOS.State.gossip.topics.CR3
 local v1 = EPOCH - 60
 check(T.want("Guilda 001", v1) == false, "the list has it at this version: not wanted")
