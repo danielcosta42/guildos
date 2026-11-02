@@ -498,6 +498,25 @@ check(not T.pull("Guilda 001"):find("FORJADO", 1, true), "at the same version wh
 seed.RB:IngestCR3(cr3(seed, { n = "Guilda 001", v = v1 + 1, p = "Nova" }), "Eva Reis", "WHISPER")
 check(T.pull("Guilda 001"):find("Nova", 1, true), "and a newer one heard is the one to pass on")
 
+-- The opening night: more guilds than the cache seats, every ad with the same validity. The newest stay, and
+-- a member never loses its own guild's ad to them: that ad is what says the guild in the beacon.
+fresh()
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+for i = 1, 60 do
+  ana.RB:IngestCR3(cr3(ana, { n = ("Guilda %03d"):format(i), u = ("guilda-%03d"):format(i), v = EPOCH - i, x = EPOCH + 3600 }), "Eva Reis", "WHISPER")
+end
+check(count(ana.RB:Cache3()) == ana.RB.CACHE_CAP, "the cache keeps its forty")
+for i = 1, ana.RB.CACHE_CAP do
+  check(ana.RB:Cache3()[("Guilda %03d"):format(i)], "at the same validity the older version goes first: Guilda " .. i)
+end
+ana.RB:IngestCR3(cr3(ana, { v = EPOCH - 9000, x = EPOCH + 60 }), "Bruno Reis", "GUILD")
+check(not ana.RB:Cache3().Ordem, "with no officer on the roster nothing lands")
+local bruno = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city" })
+check(ana.RB:IngestCR3(cr3(ana, { v = EPOCH - 9000, x = EPOCH + 60 }), bruno.name, "GUILD") == true, "the officer's ad lands in a full cache")
+ana.RB:Prune3()
+check(ana.RB:Cache3().Ordem ~= nil, "and stays, the oldest and the soonest to expire of them all")
+check(count(ana.RB:Cache3()) == ana.RB.CACHE_CAP + 1, "beside the forty, and taking none of their seats")
+
 -- Validity: the relayed CR3 carries the ad's own, the way in still cuts it, and what is past is not offered.
 fresh()
 seed = client("Ana Lima", { zone = "city", list = listOf(2, {

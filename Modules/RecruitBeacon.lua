@@ -129,15 +129,32 @@ function RB:Cache3()
     return GuildOS.db.recruitAds
 end
 
--- A CR3 leaves by expiring and by the cap, never because a message said so.
+-- Whether `key` names this character's own guild. The site and the game do not agree on the case of a name.
+local function IsOwnGuild(key)
+    local mine = GetGuildInfo and GetGuildInfo("player")
+    return mine ~= nil and mine ~= "" and (mine:gsub("[,:]", " ")):lower() == key:lower()
+end
+
+-- A CR3 leaves by expiring and by the cap, never because a message said so. The cap takes the soonest to
+-- expire, and among those the oldest version: one export gives a whole list the same validity. The
+-- guild's own ad holds no seat among them: it is what says the guild in the beacon, and the night with more
+-- guilds than seats is the night it matters.
 function RB:Prune3()
     local cache, n = self:Cache3(), now()
     local list = {}
     for key, ad in pairs(cache) do
-        if (ad.x or 0) <= n then cache[key] = nil else list[#list + 1] = ad end
+        if (ad.x or 0) <= n then
+            cache[key] = nil
+        elseif not IsOwnGuild(key) then
+            list[#list + 1] = ad
+        end
     end
     if #list > self.CACHE_CAP then
-        table.sort(list, function(a, b) return a.x < b.x end)
+        table.sort(list, function(a, b)
+            if a.x ~= b.x then return a.x < b.x end
+            if a.v ~= b.v then return a.v < b.v end
+            return a.key < b.key
+        end)
         for i = 1, #list - self.CACHE_CAP do cache[list[i].key] = nil end
     end
 end
@@ -217,12 +234,6 @@ local function ReadCR3(payload)
     ad.heard, ad.verified, ad.dt, ad.m = nil, nil, nil, nil
     ad.key = (ad.n:gsub("[,:]", " "))
     return ad
-end
-
--- Whether `key` names this character's own guild. The site and the game do not agree on the case of a name.
-local function IsOwnGuild(key)
-    local mine = GetGuildInfo and GetGuildInfo("player")
-    return mine ~= nil and mine ~= "" and (mine:gsub("[,:]", " ")):lower() == key:lower()
 end
 
 -- A CR3 off the network. True when it was kept or renewed something. This guild's own ad comes from its
