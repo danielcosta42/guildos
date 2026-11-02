@@ -35,6 +35,7 @@ Gossip.HEARD_OF_MAX   = 10      -- names off lists held at once: what a round's 
 Gossip.PEER_FRESH     = 300     -- seconds a peer stays on the list unheard
 Gossip.BEACON_SECONDS = 180
 Gossip.CHANNEL        = false   -- the beacon's route by a created channel: only a new version turns it on
+Gossip.CHANNEL_NAME   = "GuildOSNet"   -- the channel it joins; /gos probe channel measures whether it can carry anything
 Gossip.SENDER_MAX     = 30      -- messages heard from one sender per ROUND_SECONDS; a relayer's CR2 stays under it
 
 local PREFIX        = "ChehulRecruit"       -- RecruitBeacon registers it
@@ -432,7 +433,18 @@ function Gossip:Beacon()
     local payload = table.concat({ "CRB", ad and ad.key or "", ad and ad.version or "", guild, officer }, "|")
     mesh:Guild(PREFIX, payload)
     mesh:Group(PREFIX, payload)
-    mesh:Realm(PREFIX, payload, BEACON_KEY)
+    if self.CHANNEL then
+        -- The wide bus is the created channel here and YELL is left alone. A channel the game has not
+        -- numbered yet carries nothing this time: the join is asked for again, and the next beacon goes.
+        local id = Compat.ChannelId(self.CHANNEL_NAME)
+        if id > 0 then
+            Compat.SendAddonMessage(PREFIX, payload, "CHANNEL", id)
+        else
+            Compat.JoinChannel(self.CHANNEL_NAME)
+        end
+    else
+        mesh:Realm(PREFIX, payload, BEACON_KEY)
+    end
 end
 
 -- One round: the allowance comes back, and a digest goes to up to ROUND_PEERS peers. An empty digest
@@ -479,6 +491,7 @@ function Gossip:Initialize()
     S.started = true
     -- A try at an offline name prints a line, and none may: with no filter there is no test, so no whisper.
     local filtered = Guarded(Compat.AddChatFilter, "CHAT_MSG_SYSTEM", HideNotFound)
+    if self.CHANNEL then Guarded(Compat.JoinChannel, self.CHANNEL_NAME) end
     Compat.After(TEST_DELAY, function()
         if filtered then Guarded(StartTest) end
         Guarded(Gossip.Beacon, Gossip)
@@ -562,6 +575,28 @@ function Gossip:Stats()
     local s = S.stats
     return { rounds = s.rounds, adsIn = s.adsIn, adsOut = s.adsOut, dropped = s.dropped,
              peers = #self:Peers(), whisper = S.whisper or false }
+end
+
+-- Everything the Audit panel shows about the recruitment, and the copy of it kept in GuildOSDB.recruitAudit:
+-- rounds, ads by origin, known peers and discards, the spelling the whisper test kept (false: none came back),
+-- what the requests count, and the channel probe's result (false: never run). Nothing goes to the site. Each
+-- part is read alone, because a counter an older save or a module that is not there lacks must not take the
+-- panel down.
+function Gossip:Audit()
+    local out = { gossip = {}, requests = {}, channel = false }
+    local ok, stats = pcall(self.Stats, self)
+    if ok then out.gossip = stats end
+    local JR = GuildOS.JoinRequests
+    if JR and JR.Audit then
+        ok, stats = pcall(JR.Audit, JR)
+        if ok then out.requests = stats end
+    end
+    if type(GuildOSDB) == "table" then
+        out.channel = GuildOSDB.probeChannel or false
+        out.at = GetServerTime()
+        GuildOSDB.recruitAudit = out
+    end
+    return out
 end
 
 -- `name` as this client's whispers reach it: whole, in the spelling the test kept.

@@ -59,6 +59,19 @@ function JR:Stats()
     return { name = dropped.name, guild = dropped.guild, invites = dropped.invites, confirmed = dropped.confirmed }
 end
 
+-- Everything the Audit panel counts about requests: the rows open here, this character's own asking (the ones
+-- still in its queue, and of those the ones somebody answered), and the numbers above.
+function JR:Audit()
+    local asked, delivered = 0, 0
+    local box = GuildOSDB and GuildOSDB.recruitOutbox and GuildOSDB.recruitOutbox[Compat.PlayerName()] or {}
+    for _, e in pairs(box) do
+        asked = asked + 1
+        if e.delivered or e.status == "invited" or e.status == "declined" then delivered = delivered + 1 end
+    end
+    return { open = self:OpenCount(), asked = asked, delivered = delivered, invites = dropped.invites,
+             confirmed = dropped.confirmed, dropped = { name = dropped.name, guild = dropped.guild } }
+end
+
 -- A request is relayed (and a closed one announced again) at most this often per row: the player repeats
 -- every REPEAT_SECONDS, and a little less keeps one late timer from skipping a repetition.
 JR.RELAY_GAP = 240

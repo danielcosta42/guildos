@@ -489,6 +489,35 @@ end
 ----------------------------------------------------------------------
 -- SYNC sub-panel — addon adoption / version / last sync
 ----------------------------------------------------------------------
+
+-- The recruitment's numbers as lines of text: ChehulGossip:Audit() has them and keeps a copy in
+-- GuildOSDB. Whatever it lacks reads as zero, and one that raises shows nothing: the panel never falls
+-- over a counter.
+local function RecruitLines()
+    local gossip = GuildOS.ChehulGossip
+    if GuildOS.Client.isAnniversary or not (gossip and gossip.Audit) then return nil end
+    local ok, a = pcall(gossip.Audit, gossip)
+    if not ok or type(a) ~= "table" then return nil end
+    local g, r, ch = a.gossip or {}, a.requests or {}, a.channel
+    local d = r.dropped or {}
+    local function yn(v) return v and L["yes"] or L["no"] end
+    local lines = {
+        string.format(L["rounds %d  -  ads in %d, out %d  -  peers %d  -  dropped %d"],
+            g.rounds or 0, g.adsIn or 0, g.adsOut or 0, g.peers or 0, g.dropped or 0),
+        string.format(L["Whisper test: %s"], g.whisper or L["no spelling came back: gossip and requests do not whisper"]),
+        string.format(L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"],
+            r.open or 0, r.asked or 0, r.delivered or 0, r.invites or 0, r.confirmed or 0, d.name or 0, d.guild or 0),
+    }
+    if type(ch) == "table" then
+        local h = ch.heard or {}
+        lines[#lines + 1] = string.format(L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"],
+            yn(ch.click), yn(ch.timer), yn(h.click), yn(h.timer))
+    else
+        lines[#lines + 1] = L["Channel probe: not run"]
+    end
+    return lines
+end
+
 local function BuildSyncSub(panel)
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -6)
@@ -528,6 +557,15 @@ local function BuildSyncSub(panel)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSAuditSyncScroll")
 
+    -- /gos probe channel (specs/071-o-recrutamento). Made once; the list clears its children and the
+    -- refresh puts it back under the recruitment lines.
+    local probeBtn = UI:CreateButton(content, L["Probe channel"], 140, 20)
+    probeBtn:SetScript("OnClick", function()
+        if GuildOS.Probe then GuildOS.Probe:RunChannel() end
+        -- The verdict is in the chat by then; the counters take it up here.
+        C_Timer.After(8, function() if refresh and panel:IsShown() then refresh() end end)
+    end)
+
     refresh = function()
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
@@ -542,6 +580,26 @@ local function BuildSyncSub(panel)
         end
 
         local yOff = 0
+
+        ------------------------------------------------------------------
+        -- The recruitment: the gossip's rounds, the requests, the whisper test and the channel probe.
+        ------------------------------------------------------------------
+        local lines = RecruitLines()
+        probeBtn:Hide()
+        if lines then
+            local head = UI:CreateText(content, L["Recruitment"], 10, C.gold.r, C.gold.g, C.gold.b)
+            head:SetPoint("TOPLEFT", 8, -yOff)
+            yOff = yOff + 15
+            for _, line in ipairs(lines) do
+                local fs = UI:CreateText(content, line, 9, C.silver.r, C.silver.g, C.silver.b)
+                fs:SetPoint("TOPLEFT", 8, -yOff)
+                yOff = yOff + 14
+            end
+            probeBtn:ClearAllPoints()
+            probeBtn:SetPoint("TOPLEFT", 8, -(yOff + 2))
+            probeBtn:Show()
+            yOff = yOff + 32
+        end
 
         ------------------------------------------------------------------
         -- Alliance diagnostics. A cross-guild sync with no instrumentation

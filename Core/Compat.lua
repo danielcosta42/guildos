@@ -1461,6 +1461,31 @@ function Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)
             onSent = onSent })
 end
 
+----------------------------------------------------------------------
+-- Created channels. A channel is joined by name and addressed by the number the game gives it; both
+-- calls are the same on retail and WoW: Forever, and neither is trusted to exist or to answer.
+----------------------------------------------------------------------
+
+-- Joins `name`, creating it when nobody has. True when the call went; the number comes from ChannelId.
+function Compat.JoinChannel(name)
+    if not JoinChannelByName then return false end
+    return (pcall(JoinChannelByName, name))
+end
+
+-- The number of the channel `name` as this client has it, 0 when it is not joined (or the game keeps it secret).
+function Compat.ChannelId(name)
+    if not GetChannelName then return 0 end
+    local ok, id = pcall(GetChannelName, name)
+    id = ok and not Compat.IsSecret(id) and tonumber(id) or 0
+    return id
+end
+
+-- Leaves `name`. True when the call went, whether or not the channel was joined.
+function Compat.LeaveChannel(name)
+    if not LeaveChannelByName then return false end
+    return (pcall(LeaveChannelByName, name))
+end
+
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the
 -- rest still go. While the lockdown lasts, send() holds each one again.
 function Compat.FlushHeldMessages()

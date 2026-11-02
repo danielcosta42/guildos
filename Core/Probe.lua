@@ -481,3 +481,97 @@ function Probe:FinishChat()
     end
     GuildOS:Print(L["Saved in GuildOSDB.probeChat. Type /reload to write it to disk."])
 end
+
+----------------------------------------------------------------------
+-- /gos probe channel (specs/071-o-recrutamento in guildos-web)
+-- Whether an addon message may go through a created channel, measured: the one thing the recruitment's
+-- beacon would use to reach past the zone and the layer that YELL stops at. The probe joins a temporary
+-- channel of its own, sends one message from the command (the Enter behind it is the key press) and one
+-- from a timer, listens for its own text coming back, leaves, and keeps the result in
+-- GuildOSDB.probeChannel = { timer, click, heard = { timer, click }, joined, at }: timer and click say the
+-- game took the message, heard says it came back through the channel. The channel always ends, whatever
+-- went wrong, and nothing is said in any chat but the player's own window.
+----------------------------------------------------------------------
+local CHANNEL_WAIT = 6         -- seconds until the verdict; the timer's message goes at 2 and an echo is quick
+local CHANNEL_TIMER_AT = 2
+
+-- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
+local function hideChannelNotice(_, _, _, _, _, channel)
+    if GuildOS.Compat.IsSecret(channel) or type(channel) ~= "string" or not Probe._channelName then return false end
+    return channel == Probe._channelName
+end
+
+function Probe:RunChannel()
+    if InCombatLockdown and InCombatLockdown() then
+        GuildOS:Print(L["The probe does not run in combat. Try again after the fight."])
+        return nil
+    end
+    if self._channel then
+        GuildOS:Print(L["The channel probe is already running."])
+        return nil
+    end
+
+    local Compat = GuildOS.Compat
+    local name = "GOSProbe" .. math.random(1000, 9999)
+    local run = {
+        name = name, timer = false, click = false, heard = { timer = false, click = false }, joined = false,
+        texts = { click = name .. " click", timer = name .. " timer" },
+    }
+    self._channel, self._channelName = run, name
+    -- The verdict first of all: whatever raises below, the channel still ends.
+    Compat.After(CHANNEL_WAIT, function() Probe:FinishChannel(run) end)
+
+    pcall(function()
+        if not self._noticeFilter then self._noticeFilter = Compat.AddChatFilter("CHAT_MSG_CHANNEL_NOTICE", hideChannelNotice) end
+        self._channelFrame = self._channelFrame or CreateFrame("Frame")
+        self._channelFrame:SetScript("OnEvent", function(_, _, prefix, text, dist)
+            if Compat.IsSecret(prefix, text, dist) then return end
+            for how, own in pairs(run.texts) do
+                if prefix == PREFIX and text == own and dist == "CHANNEL" then run.heard[how] = true end
+            end
+        end)
+        Compat.RegisterEvent(self._channelFrame, "CHAT_MSG_ADDON")
+        pcall(Compat.RegisterAddonPrefix, PREFIX)
+        Compat.JoinChannel(name)
+    end)
+
+    -- One attempt: the game took it when the send reports it went out, which is what onSent says.
+    local function attempt(how)
+        pcall(function()
+            local id = Compat.ChannelId(name)
+            if id <= 0 then return end   -- the game has not given the channel a number yet
+            run.joined = true
+            Compat.SendAddonMessageNow(PREFIX, run.texts[how], "CHANNEL", id, function() run[how] = true end)
+        end)
+    end
+    GuildOS:Print(L["Channel probe: a temporary channel is joined and one message goes through it from the command and one from a timer. The verdict follows in a few seconds."])
+    attempt("click")
+    Compat.After(CHANNEL_TIMER_AT, function()
+        if Probe._channel == run then attempt("timer") end   -- never after the verdict
+    end)
+    return run
+end
+
+function Probe:FinishChannel(run)
+    if self._channel ~= run then return end
+    self._channel = nil
+    local Compat = GuildOS.Compat
+    pcall(function() self._channelFrame:UnregisterEvent("CHAT_MSG_ADDON") end)
+    if Compat.ChannelId(run.name) > 0 then run.joined = true end
+    local left = Compat.LeaveChannel(run.name)
+    local clockOk, now = pcall(GetServerTime)
+    local result = { timer = run.timer, click = run.click, heard = run.heard, joined = run.joined,
+                     left = left, at = (clockOk and now) or 0 }
+    if not GuildOSDB then GuildOSDB = {} end
+    GuildOSDB.probeChannel = result
+
+    if not result.joined then
+        GuildOS:Print(L["The channel could not be joined."])
+    end
+    local labels = { click = L["the message sent from the command"], timer = L["the message sent from a timer"] }
+    for _, how in ipairs({ "click", "timer" }) do
+        local outcome = not result[how] and L["not sent"] or result.heard[how] and L["came back"] or L["did not come back"]
+        GuildOS:Print(string.format("  %s: %s", labels[how], outcome))
+    end
+    GuildOS:Print(L["Saved in GuildOSDB.probeChannel. Type /reload to write it to disk."])
+end

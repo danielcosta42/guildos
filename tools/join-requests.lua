@@ -793,6 +793,45 @@ fire("CHAT_MSG_SYSTEM", "You have invited Ana to join your guild.")
 check(find("rt44444444").status == "invited", "retail: the game leaves this realm off, and a side with no realm compares the name")
 GuildOS.Client.isRetail, GuildOS.Client.has.surnames = false, true
 
+-- B6: what the Audit panel reads, kept in GuildOSDB and nowhere else.
+reset(); GUILD, officer = "Ashen Vow", true
+local beforeAudit = Gossip:Audit().requests
+handler(crq("aud1111111", "Marta Vilar"), "Marta Vilar", "WHISPER")
+JR:Invite("aud1111111")
+fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
+local audit = Gossip:Audit()
+check(audit.requests.confirmed == beforeAudit.confirmed + 1 and audit.requests.invites == beforeAudit.invites + 1,
+  "the invite and its confirmation are counted: " .. tostring(audit.requests.confirmed))
+check(audit.requests.open == 0 and audit.requests.dropped.name >= 0 and audit.requests.dropped.guild >= 0, "with the drops")
+check(audit.requests.asked == 0 and audit.requests.delivered == 0, "a guildless character's open and delivered requests are counted too")
+check(audit.gossip.rounds ~= nil and audit.gossip.adsIn ~= nil and audit.gossip.adsOut ~= nil and audit.gossip.peers ~= nil
+  and audit.gossip.dropped ~= nil, "the gossip's rounds, ads by origin, known peers and discards")
+check(audit.gossip.whisper == "space", "and the spelling the whisper test kept")
+check(GuildOSDB.recruitAudit and GuildOSDB.recruitAudit.requests.confirmed == audit.requests.confirmed, "all of it in GuildOSDB")
+S.whisper = nil
+check(Gossip:Audit().gossip.whisper == false, "no spelling came back: said so")
+S.whisper = "space"
+GuildOSDB.probeChannel = { timer = true, click = false, heard = { timer = true, click = false }, at = 5 }
+check(Gossip:Audit().channel.timer == true and Gossip:Audit().channel.heard.click == false, "the channel probe's result rides along")
+GuildOSDB.probeChannel = nil
+check(Gossip:Audit().channel == false, "and its absence is said")
+local oldJR = GuildOS.JoinRequests
+GuildOS.JoinRequests = nil
+check(pcall(Gossip.Audit, Gossip), "no counter to read costs nothing")
+GuildOS.JoinRequests = oldJR
+local realStats = JR.Stats
+JR.Stats = function() error("an old save") end
+check(pcall(Gossip.Audit, Gossip), "a counter that raises costs nothing either")
+JR.Stats = realStats
+
+-- B6: the guildless side's numbers.
+reset()
+Gossip:Note("Ana Lima", "Ashen Vow", true)
+local mine = JR:Send(ASHEN, "oi")
+check(Gossip:Audit().requests.asked == 1 and Gossip:Audit().requests.delivered == 0, "one asked, none delivered")
+handler("CRA|" .. mine.id .. "|officer|Ana Lima", "Ana Lima", "WHISPER")
+check(Gossip:Audit().requests.asked == 1 and Gossip:Audit().requests.delivered == 1, "an answer that says officer is a delivery")
+
 -- M12: the recruiting tab hides the section where the module never starts.
 local roster_ui = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
 check(roster_ui:find("isAnniversary", roster_ui:find("Join requests", 1, true), true), "the join requests section of the recruiting tab checks for Anniversary")

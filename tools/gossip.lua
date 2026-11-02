@@ -117,6 +117,7 @@ local function send(c, prefix, text, dist, target, prio)
       local hears = (dist == "GUILD" and to.guild == c.guild)
         or ((dist == "YELL" or dist == "SAY") and to.zone == c.zone)
         or ((dist == "PARTY" or dist == "RAID") and to.party == c.party)
+      if dist == "CHANNEL" then hears = to.channels[c.idName[target] or ""] ~= nil end
       if hears then deliver(to, prefix, text, dist, c) end
     end
   end)
@@ -155,7 +156,8 @@ local function client(name, o)
   o = o or {}
   local c = { name = name, game = o.game or "forever", realm = o.realm or "Azralon", zone = o.zone or name,
               guild = o.guild, rank = o.rank or 5, party = o.party, inInstance = o.inInstance or false,
-              lockdown = false, online = true, chat = {}, filters = {}, recv = {}, cycle = 0, roundsAt = {} }
+              lockdown = false, online = true, chat = {}, filters = {}, recv = {}, cycle = 0, roundsAt = {},
+              channels = {}, idName = {} }
   local env = setmetatable({}, { __index = _G })
   env._G = env
   -- The client calls a secret a string: only asking issecretvalue tells it apart.
@@ -208,6 +210,16 @@ local function client(name, o)
     SendCommMessage = function(_, prefix, text, dist, target, prio) send(c, prefix, text, dist, target, prio) end,
   }
   env.LibStub = function() return comm end
+  -- Created channels: a name, the number this client gives it, and whoever joined the same name hears it.
+  env.JoinChannelByName = function(channel)
+    if not c.channels[channel] then
+      local id = 4
+      for _ in pairs(c.channels) do id = id + 1 end
+      c.channels[channel], c.idName[id] = id, channel
+    end
+  end
+  env.GetChannelName = function(channel) return c.channels[channel] or 0, channel end
+  env.LeaveChannelByName = function(channel) c.channels[channel] = nil end
   env.IsInGuild = function() return c.guild ~= nil end
   env.GetGuildInfo = function()
     if c.guild then return c.guild, "Rank", c.rank end
@@ -260,6 +272,7 @@ local function client(name, o)
   env.GuildOS.db = {}
   c.env, c.GuildOS = env, env.GuildOS
   c.Gossip, c.RB = env.GuildOS.ChehulGossip, env.GuildOS.RecruitBeacon
+  if o.channel then c.Gossip.CHANNEL = true end   -- a version that turns the route on
 
   --- One line of the system chat, through the filters, as a chat frame takes it.
   function c.system(line)
@@ -1297,6 +1310,26 @@ check(a.ads.Outra == 1, "and nobody else pays for it")
 run(a.Gossip.ROUND_SECONDS + 1)
 a.hear("CR3|Volta|1", "Bruno Melo")
 check(a.ads.Volta == 1, "and the limit is per round")
+
+-- ── The channel route: off, and only a new version turns it on ─────────
+fresh()
+a = client("Ana Lima", { zone = "Orgrimmar", guild = "Ordem" })
+local b2 = client("Bruno Melo", { zone = "Durotar", guild = "Outra" })
+check(a.Gossip.CHANNEL == false, "the channel route ships off")
+run(400)
+check(#ops({ op = "CRB", dist = "CHANNEL" }) == 0 and next(a.channels) == nil, "off: no channel is joined and nothing goes through one")
+check(#ops({ from = a.name, op = "CRB", dist = "YELL" }) >= 1, "off: the beacon yells, as it always did")
+
+fresh()
+a = client("Ana Lima", { zone = "Orgrimmar", guild = "Ordem", channel = true })
+b2 = client("Bruno Melo", { zone = "Durotar", guild = "Outra", channel = true })
+a.env.ChehulMesh.YELL_PERCENT, b2.env.ChehulMesh.YELL_PERCENT = 100, 100
+run(400)
+check(a.channels[a.Gossip.CHANNEL_NAME] and b2.channels[b2.Gossip.CHANNEL_NAME], "on: both join the beacon's channel")
+check(#ops({ from = a.name, op = "CRB", dist = "CHANNEL" }) >= 1, "on: the beacon goes through the channel")
+check(#ops({ from = a.name, op = "CRB", dist = "YELL" }) == 0, "and not by YELL")
+check(has(b2.Gossip:Peers(), "Ana Lima"), "a client in another zone hears it")
+check(#a.chat == 0 and #b2.chat == 0, "and nothing reaches a chat line")
 
 -- ── Anniversary ─────────────────────────────────────────────────────────
 fresh()

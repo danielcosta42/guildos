@@ -76,6 +76,7 @@ local function printHelp()
     helpLine("/gos errors",   L["Show recent errors"])
     helpLine("/gos probe",    L["Record this client's facts for support"])
     helpLine("/gos probe chat", L["Post two test lines in guild chat to see whether an addon may post on its own"])
+    helpLine("/gos probe channel", L["Join a temporary channel to see whether an addon message may go through one"])
     helpLine("/gos style preview", L["Show the Forever style's pieces side by side"])
     helpLine("/gos debug",    L["Toggle debug output"])
 
@@ -368,6 +369,9 @@ local function handleCommand(msg)
     elseif msg == "probe chat" then
         -- Whether chat from a timer gets through, measured (issue #75).
         if GuildOS.Probe then GuildOS.Probe:RunChat() end
+    elseif msg == "probe channel" then
+        -- Whether an addon message may go through a created channel, measured (specs/071-o-recrutamento).
+        if GuildOS.Probe then GuildOS.Probe:RunChannel() end
     elseif msg == "reset" then
         GuildOS:EraseGuildData()
     elseif msg:match("^recruit") then
