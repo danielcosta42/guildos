@@ -234,6 +234,8 @@ joined["GOSProbe5555"] = { id = 9, at = 0 }
 run = fromCommand(Probe)
 check(not joined["GOSProbe5555"], "the next run's key press leaves it")
 check(GuildOSDB.probeChannelOpen == run.name, "and the run keeps its own name")
+advance(clock + 11)
+check(GuildOSDB.probeChannelOpen == run.name, "and the old channel's next look, coming due in the middle of the run, leaves that name alone")
 
 -- The verdict's own leave comes from a timer too.
 Probe = load({ leaveBlocked = function() return true end })
