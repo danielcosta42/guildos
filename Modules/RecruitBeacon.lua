@@ -380,6 +380,9 @@ end
 function RB:Broadcast()
     if not (GuildOS.IsOfficer and GuildOS:IsOfficer()) then return end
     if IsInGuild and not IsInGuild() then return end
+    -- A raid is no time for the ad: it pauses where the gossip does, and the ticker picks it up on the way out.
+    local gossip = GuildOS.ChehulGossip
+    if gossip and gossip.Quiet and gossip:Quiet() then return end
     local guild = GetGuildInfo and GetGuildInfo("player")
     if not guild or guild == "" then return end
     local mesh = _G.ChehulMesh

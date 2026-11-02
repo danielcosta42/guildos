@@ -570,4 +570,42 @@ late = client("Ana Lima", { guild = "Ordem", rank = 5, site = SITE })
 run(30)
 check(late.JR:OpenCount() == 1 and #late.notices == 0, "a member keeps the row and is told nothing")
 
+-- ── An officer's broadcast pauses where the gossip does ─────────────────
+for _, pause in ipairs({ "inInstance", "lockdown" }) do
+  fresh()
+  officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+  ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+  run(100)
+  check(#ops({ from = officer.name, op = "CR3", dist = "GUILD" }) >= 2 and ana.RB:Cache3().Ordem, pause .. ": out of it the GUILD road works")
+  officer[pause] = true
+  -- The old CR2 relay yells from the mesh's queue, every client's and not the officer's broadcast: the shared
+  -- file gates YELL on instances and not on a lockdown, where the client refuses it. Only Broadcast is measured.
+  officer.env.ChehulMesh.YELL_PERCENT = 0
+  local mark = #world.log
+  run(300)
+  local spoke = 0
+  for i = mark + 1, #world.log do
+    local e = world.log[i]
+    if e.from == officer.name and (e.op == "CR3" or e.op == "CR2") then spoke = spoke + 1 end
+  end
+  check(spoke == 0, pause .. ": nothing of the ad goes out: " .. spoke)
+  officer[pause] = false
+  mark = #world.log
+  run(70)
+  local back = 0
+  for i = mark + 1, #world.log do
+    local e = world.log[i]
+    if e.from == officer.name and e.op == "CR3" and e.dist == "GUILD" then back = back + 1 end
+  end
+  check(back >= 1, pause .. ": and it picks up again on the way out")
+end
+
+-- Anniversary keeps the plain beacon as it always ran.
+fresh()
+officer = client("Bob", { game = "anniversary", realm = "Nightslayer", guild = "Ordem", rank = 0, zone = "city" })
+officer.RB:GetAd().enabled = true
+officer.inInstance = true
+run(70)
+check(#ops({ from = officer.name, op = "CR2", dist = "GUILD" }) >= 1, "Anniversary: the /gos beacon goes on, in an instance as before")
+
 print(("recruit-network: %d checks passed"):format(checks))

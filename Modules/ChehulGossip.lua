@@ -613,6 +613,12 @@ function Gossip:WhisperName(name)
     return whole
 end
 
+-- Whether what the recruitment says should wait: inside an instance or in a chat lockdown. Only where the
+-- gossip runs: Anniversary keeps the plain beacon, as it always ran.
+function Gossip:Quiet()
+    return S.started == true and Quiet()
+end
+
 -- Whether a whisper from this client arrives: its own came back this session.
 function Gossip:CanWhisper()
     return S.whisper ~= nil
