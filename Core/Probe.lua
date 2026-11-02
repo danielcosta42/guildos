@@ -493,6 +493,7 @@ end
 -- went wrong, and nothing is said in any chat but the player's own window.
 ----------------------------------------------------------------------
 local CHANNEL_WAIT = 15        -- seconds until the verdict: long enough to press the command a second time
+Probe.CHANNEL_WAIT = CHANNEL_WAIT   -- the Audit panel reads the result one second after it
 local CHANNEL_TIMER_AT = 2
 local STALE_WAIT = 15          -- seconds after login before a channel a /reload left behind can be left
 

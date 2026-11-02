@@ -269,4 +269,12 @@ local src = f:read("*a")
 f:close()
 check(src:find('msg == "probe channel"', 1, true) and src:find("Probe:RunChannel()", 1, true), "/gos probe channel runs it")
 
+-- The Audit panel's button reads the result: not before the verdict is out.
+check(Probe.CHANNEL_WAIT == 15, "the wait until the verdict is the module's to say")
+f = io.open(ADDON .. "/UI/AuditPanel.lua", "rb")
+src = f:read("*a")
+f:close()
+check(src:find("C_Timer.After(GuildOS.Probe.CHANNEL_WAIT + 1,", 1, true), "the Audit panel refreshes one second after the verdict")
+check(not src:find("C_Timer.After(8,", 1, true), "and not eight seconds in, with the verdict still seven away")
+
 print(("probe-channel: %d checks passed"):format(checks))

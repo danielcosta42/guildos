@@ -571,9 +571,10 @@ local function BuildSyncSub(panel)
     -- refresh puts it back under the recruitment lines.
     local probeBtn = UI:CreateButton(content, L["Probe channel"], 140, 20)
     probeBtn:SetScript("OnClick", function()
-        if GuildOS.Probe then GuildOS.Probe:RunChannel() end
-        -- The verdict is in the chat by then; the counters take it up here.
-        C_Timer.After(8, function() if refresh and panel:IsShown() then refresh() end end)
+        if not GuildOS.Probe then return end
+        GuildOS.Probe:RunChannel()
+        -- The verdict comes CHANNEL_WAIT seconds in; a second later the counters take it up here.
+        C_Timer.After(GuildOS.Probe.CHANNEL_WAIT + 1, function() if refresh and panel:IsShown() then refresh() end end)
     end)
 
     refresh = function()
