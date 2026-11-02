@@ -266,7 +266,7 @@ function RB:SeedOwnAd()
     return own
 end
 
--- What this client has, by key, of what `keep(ad, key)` lets through: the CR3 cache and the live ads of the
+-- What this client has, by key, of what `keep(ad, key, listed)` lets through: the CR3 cache and the live ads of the
 -- site's list, which is how the companion's list reaches who has no companion (the owner's call in
 -- specs/071). `keep` comes first: one ad per name is chosen among what passes, so a namesake that does not
 -- hides nobody. Of those the newer version, and at the same version the list's, which no peer wrote. The
@@ -283,19 +283,23 @@ local function Gather(keep)
     for _, ad in ipairs(GF and GF:Directory() or {}) do
         local key = ad.n:gsub("[,:]", " ")
         local cur = found[key]
-        if ad.x > t and keep(ad, key) and (not cur or ad.v >= cur.v) then found[key] = ad end
+        if ad.x > t and keep(ad, key, true) and (not cur or ad.v >= cur.v) then found[key] = ad end
     end
     return found
 end
 
 local function Anything() return true end
 
--- What this client offers: only what somebody it can reach can use (GF:Reaches). The guild's own ad always
--- goes: it needs no judging, and without it the beacon says no guild and nobody finds a member.
+-- What this client offers: only what somebody it can reach can use (GF:Reaches). The guild's own ad in the cache
+-- always goes: an officer of this guild handed it in, it needs no judging, and without it the beacon says no
+-- guild and nobody finds a member. A list entry is only spelled like this guild: it may be another guild of
+-- that name, and it goes through Reaches like any other, or a member would serve it and claim it.
 local function Held()
     local GF = GuildOS.GuildFinder
     local place = GF and GF:Context()
-    return Gather(function(ad, key) return IsOwnGuild(key) or (GF ~= nil and GF:Reaches(ad, place)) end)
+    return Gather(function(ad, key, listed)
+        return (IsOwnGuild(key) and not listed) or (GF ~= nil and GF:Reaches(ad, place))
+    end)
 end
 
 ----------------------------------------------------------------------

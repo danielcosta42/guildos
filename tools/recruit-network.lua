@@ -662,6 +662,40 @@ for _, e in ipairs(ops({ from = ana.name, op = "CRB", dist = "GUILD" })) do
 end
 check(named >= 1, "and says the guild in its beacon")
 
+-- The exemption is for the ad this guild's own people handed in, never for what the list spells the same.
+-- A member of Horde Ordem with an Alliance Ordem on the list must not offer it, serve it or say its guild
+-- recruits: a seeker in the region would get CRA|member from the wrong guild.
+fresh()
+local namesake = { n = "Ordem", u = "ordem-eu", f = "A", w = "pvp:eu", p = "Outra guilda", ct = { "Xara Longe" }, v = EPOCH - 10, x = EPOCH + 3600 }
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1", list = listOf(1, { namesake }) })
+run(200)
+T = ana.GuildOS.State.gossip.topics.CR3
+for _, e in ipairs(T.digest()) do check(e[1] ~= "Ordem", "the namesake is not offered") end
+check(T.pull("Ordem") == nil, "nor served")
+for _, e in ipairs(ops({ from = ana.name, op = "CRB" })) do
+  check(not e.text:match("^CRB|[^|]*|[^|]*|Ordem|"), "and the beacon does not say this guild recruits: " .. e.text)
+end
+-- The same member, once the officer's own ad is in the cache: that one is offered, and the namesake still is not.
+ana.hear(cr3(ana, { v = EPOCH - 3600 }), "Bruno Reis", "GUILD")
+check(not ana.RB:Cache3().Ordem, "with nobody on the roster to vouch nothing lands")
+local bruno = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city" })
+ana.hear(cr3(ana, { v = EPOCH - 3600 }), bruno.name, "GUILD")
+check(ana.RB:Cache3().Ordem ~= nil, "the officer's lands")
+check(T.pull("Ordem"):find("|H|normal:us|", 1, true), "and what goes out is the guild's own")
+local offeredAt
+for _, e in ipairs(T.digest()) do if e[1] == "Ordem" then offeredAt = e[2] end end
+check(offeredAt == EPOCH - 3600, "at its own version, not the namesake's newer one: " .. tostring(offeredAt))
+-- A guild's own ad on the list, in its own faction and region, still goes: that one Reaches.
+fresh()
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1", list = listOf(0, { ownAd() }) })
+run(200)
+check(ana.GuildOS.State.gossip.topics.CR3.pull("Ordem") ~= nil, "a guild's own ad on the list is offered")
+named = 0
+for _, e in ipairs(ops({ from = ana.name, op = "CRB", dist = "GUILD" })) do
+  if e.text:match("^CRB|[^|]*|[^|]*|Ordem|0$") then named = named + 1 end
+end
+check(named >= 1, "and the beacon says the guild")
+
 -- ── The officer hears of a request from the site once the rank is known ─
 local SITE = { { id = "550e8400-e29b-41d4-a716-446655440000", character = "Davi Rocha", class = "MAGE", level = 14,
                  role = "DPS", note = "Procuro", source = "site", status = "open", at = EPOCH - 60 } }
