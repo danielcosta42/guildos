@@ -261,11 +261,11 @@ local function client(name, o)
   source(env, "Modules/GuildFinder.lua")
   source(env, "Modules/RecruitBeacon.lua")
   source(env, "Modules/JoinRequests.lua")
-  env.GuildOS.CompanionImport = {
-    OwnRecruitAd = function() return o.own and o.own() or nil end,
-    RecruitDirectory = function() return c.list end,
-    SiteJoinRequests = function() return o.site end,
-  }
+  source(env, "Modules/CompanionImport.lua")
+  local Import = env.GuildOS.CompanionImport
+  Import.OwnRecruitAd = function() return o.own and o.own() or nil end
+  Import.RecruitDirectory = function() return c.list end
+  Import.SiteJoinRequests = function() return o.site end
   env.GuildOS.JoinRequestsHeard = function(_, r) c.notices[#c.notices + 1] = r.id end
   c.env, c.GuildOS = env, env.GuildOS
   c.Gossip, c.RB, c.GF, c.JR = env.GuildOS.ChehulGossip, env.GuildOS.RecruitBeacon, env.GuildOS.GuildFinder, env.GuildOS.JoinRequests
@@ -929,6 +929,60 @@ seed.RB:Prune()
 check(not seed.RB:Cache3().Salva and not seed.RB:Cache3().Salva2 and not seed.RB:Cache3().Salva3 and not seed.RB:Cache().Salva4,
   "a number a save holds wrong is pruned")
 check(poisoned(seed.env.GuildOSDB) == nil, "and the save is clean again")
+
+-- The reviewer's matrix. On Forever the roster is read with both sides lower case and hyphens as spaces, the
+-- whole name against the whole name: a first name, or the first two words of three, is somebody else.
+local function matrix(title, rows, verdicts)
+  fresh()
+  local c = client("Mel Silva", { guild = "Ordem", zone = "z" })
+  c.env.GetNumGuildMembers = function() return #rows end
+  c.env.GetGuildRosterInfo = function(i) return rows[i][1], "Rank", rows[i][2] end
+  local real = c.GuildOS.IsOfficerByName
+  local asked = 0
+  c.GuildOS.IsOfficerByName = function(self, name) asked = asked + 1; return real(self, name) end
+  for sender, verdict in pairs(verdicts) do
+    check(c.Gossip:IsOfficerSender(sender) == verdict, title .. ": " .. sender .. " should be " .. tostring(verdict))
+  end
+  check(asked == 0, title .. ": on Forever the hyphen-blind question is not asked at all: " .. asked)
+end
+matrix("roster with spaces", { { "Bruno Reis", 0 }, { "Bruno Melo", 5 }, { "Ana Lima", 5 } }, {
+  ["Bruno Reis"] = true, ["Bruno-Reis"] = true, ["bruno reis"] = true, ["BRUNO-REIS"] = true,
+  ["Bruno Melo"] = false, ["Bruno-Melo"] = false, ["Ana Lima"] = false, ["Bruno"] = false, ["Reis"] = false, ["Zed Fora"] = false })
+matrix("roster with hyphens", { { "Bruno-Reis", 0 }, { "Bruno-Melo", 5 } }, {
+  ["Bruno-Reis"] = true, ["Bruno Reis"] = true, ["Bruno-Melo"] = false, ["Bruno Melo"] = false, ["Bruno"] = false })
+matrix("three words in a name", { { "Bruno Reis", 0 }, { "Bruno Reis Melo", 5 } }, {
+  ["Bruno Reis"] = true, ["Bruno-Reis"] = true, ["Bruno Reis Melo"] = false, ["Bruno-Reis-Melo"] = false })
+matrix("three words, the officer the longer", { { "Bruno Reis Melo", 0 }, { "Bruno Reis", 5 } }, {
+  ["Bruno Reis Melo"] = true, ["Bruno-Reis-Melo"] = true, ["Bruno Reis"] = false, ["Bruno-Reis"] = false })
+matrix("an officer with no surname", { { "Bruno", 0 }, { "Bruno Melo", 5 } }, {
+  ["Bruno"] = true, ["Bruno Melo"] = false, ["Bruno-Melo"] = false })
+matrix("a member with no surname", { { "Bruno Reis", 0 }, { "Bruno", 5 } }, {
+  ["Bruno"] = false, ["Bruno Reis"] = true })
+-- The format the roster has on Forever is still unread: this client's own realm on the end of a name is no word
+-- of the name, on either side, as written or without its spaces. Any other last word is.
+matrix("roster with this client's realm", { { "Bruno Reis-Azralon", 0 }, { "Bruno Melo-Azralon", 5 } }, {
+  ["Bruno Reis"] = true, ["Bruno-Reis"] = true, ["Bruno Reis-Azralon"] = true, ["Bruno-Reis-Azralon"] = true,
+  ["Bruno Melo"] = false, ["Bruno-Melo"] = false, ["Bruno Melo-Azralon"] = false, ["Bruno-Reis-Gallywix"] = false })
+
+-- The rank is the guild's setting, as IsOfficerByName reads it.
+fresh()
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+eva = client("Eva Reis", { guild = "Ordem", zone = "m2", rank = 2 })
+check(ana.Gossip:IsOfficerSender(eva.name) == false, "rank 2 is no officer by default")
+ana.GuildOS.db.settings.officerMaxRank = 2
+check(ana.Gossip:IsOfficerSender(eva.name) == true, "and is one when the guild says so")
+ana.GuildOS.db.settings.officerMaxRank = 1
+-- A roster line the client keeps to itself is passed over, and the count still reads whole names apart.
+check(ana.Gossip:IsOfficerSender("Bruno-Reis-Melo") == false and ana.Gossip:IsOfficerSender("Bruno Reis Melo") == false, "not on the roster: refused")
+local before3 = ana.Gossip:Stats().officerRefused
+check(ana.Gossip:IsOfficerSender("Bruno Reis") == false, "and two words of those three are another person")
+check(ana.Gossip:Stats().officerRefused == before3 + 1, "who counts on their own")
+fresh()
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+ana.env.GetNumGuildMembers = function() return 0 end
+check(ana.Gossip:IsOfficerSender("Bruno Reis") == false, "no roster loaded vouches for nobody")
+ana.env.IsInGuild = function() return false end
+check(ana.Gossip:IsOfficerSender("Bruno Reis") == false, "and out of a guild neither")
 
 -- ── An officer's broadcast pauses where the gossip does ─────────────────
 for _, pause in ipairs({ "inInstance", "lockdown" }) do

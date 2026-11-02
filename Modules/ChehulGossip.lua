@@ -590,18 +590,42 @@ function Gossip:Stats()
              peers = #self:Peers(), whisper = S.whisper or false, officerRefused = refused }
 end
 
+-- A WoW: Forever name as a roster line and a sender can both be compared: no case, hyphens as spaces, and without
+-- this client's own realm on the end, which is no word of the name. Any other last word is: the name stays whole.
+local function Bare(name)
+    local Import = GuildOS.CompanionImport
+    if Import and Import.PlainName then name = Import.PlainName(name) end
+    return (name:lower():gsub("[%s%-]+", " "))
+end
+
+-- Whether `sender` is on the roster at an officer's rank, by the whole name.
+local function OnRosterAsOfficer(sender)
+    if not IsInGuild() then return false end
+    local wanted = Bare(sender)
+    local maxRank = (GuildOS.db and GuildOS.db.settings and GuildOS.db.settings.officerMaxRank) or 1
+    for i = 1, GetNumGuildMembers() or 0 do
+        local name, _, rankIndex = GetGuildRosterInfo(i)
+        if name and not Compat.IsSecret(name, rankIndex) and Bare(name) == wanted then
+            return rankIndex ~= nil and rankIndex <= maxRank
+        end
+    end
+    return false
+end
+
 -- Whether `sender` is an officer, for what only an officer may say over GUILD: the guild's own ad and a
--- decision on a request. IsOfficerByName compares the part before the hyphen, so a roster with "Bruno Reis"
--- and a sender spelled "Bruno-Reis" would refuse the officer: no member holds the ad, no decision crosses the
--- guild, on launch night with nothing to see. It stays as it is, because other modules rely on it. On WoW:
--- Forever it is asked again as Whole reads the name, the hyphens turned into spaces. Elsewhere a hyphen means
--- a realm, and the one question stands. A sender vouched for later leaves the count: a roster that came
--- late is no noise on every login, and what stays is the failure this exists to show.
+-- decision on a request. IsOfficerByName compares the part before the first hyphen, which on WoW: Forever goes
+-- wrong both ways: a roster with "Bruno Reis" and a sender spelled "Bruno-Reis" refuses the officer, and then no
+-- member holds the ad and no decision crosses the guild, with nothing to see; and a roster with hyphens, or
+-- an officer with no surname, takes "Bruno-Melo" for Bruno. It stays as it is, because other modules rely on it.
+-- On Forever the roster is read here instead, the whole name against the whole name, never by prefix.
+-- Elsewhere a hyphen means a realm, and IsOfficerByName is right. A sender vouched for later leaves the count:
+-- a roster that came late is no noise on every login, and what stays is the failure this exists to show.
 function Gossip:IsOfficerSender(sender)
     if type(sender) ~= "string" then return false end
-    local vouched = GuildOS:IsOfficerByName(sender)
-    if not vouched and not GuildOS:RealmBound() then vouched = GuildOS:IsOfficerByName(Whole(sender)) end
-    S.refused[Whole(sender)] = (not vouched) or nil
+    local bound = GuildOS:RealmBound()
+    local vouched
+    if bound then vouched = GuildOS:IsOfficerByName(sender) else vouched = OnRosterAsOfficer(sender) end
+    S.refused[bound and Whole(sender) or Bare(sender)] = (not vouched) or nil
     return vouched
 end
 
