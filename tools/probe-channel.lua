@@ -198,6 +198,36 @@ Probe:LeaveStaleChannel()
 check(not joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == nil, "a channel left open by a /reload is left on the next load")
 check(pcall(Probe.LeaveStaleChannel, Probe), "and with none open it is nothing")
 
+-- The same, by the road a login takes: the real InitModules, and no direct call. The channels are not
+-- joined yet at PLAYER_LOGIN, so nothing happens at once.
+local function logIn(stale)
+  local P = load()
+  function GetGuildInfo() return "Ordem", "Rank", 5 end
+  function GetNumGuildMembers() return 0 end
+  GuildOSDB = { probeChannelOpen = stale }
+  GuildOS.db = { settings = {} }
+  joined[stale] = { id = 9, at = 0 }
+  GuildOS:InitModules()
+  return P
+end
+Probe = logIn("GOSProbe5555")
+check(joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == "GOSProbe5555", "at login the old channel is left alone: the game has not joined it yet")
+advance(clock + 30)
+check(not joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == nil and left[1] == "GOSProbe5555", "a moment later the real start has left it")
+check(#left == 1, "once")
+
+-- A run that starts first has to take the old name out before it writes its own over it, and the start's
+-- wait coming due in the middle of that run must not end the run.
+Probe = logIn("GOSProbe5555")
+advance(clock + 8)
+run = fromCommand(Probe)
+check(not joined["GOSProbe5555"] and left[1] == "GOSProbe5555", "the next run leaves the old channel before it joins its own")
+check(GuildOSDB.probeChannelOpen == run.name, "and the name kept is its own")
+advance(clock + 8)
+check(Probe._channel == run and joined[run.name] and GuildOSDB.probeChannelOpen == run.name, "the start's wait coming due leaves a running probe alone")
+advance(clock + 20)
+check(not stillJoined() and GuildOSDB.probeChannelOpen == nil and GuildOSDB.probeChannel, "and the run ends as any other")
+
 -- ── 4. Hearing is not believing ─────────────────────────────────────────
 Probe = load({ echo = function() return "somebody else's text" end })
 run = fromCommand(Probe)

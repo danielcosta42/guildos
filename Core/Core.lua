@@ -310,6 +310,8 @@ local MODULE_START = {
     { "JoinRequests" },
     -- WoW: Forever and retail: lights the minimap button on the first guild a character with no guild hears.
     { "GuildFinder" },
+    -- Leaves the channel of a /gos probe channel that a /reload cut short, a moment after login.
+    { "Probe" },
     { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only
     -- Initialize in OFFICER_START handles just the auto-post/welcome flow).

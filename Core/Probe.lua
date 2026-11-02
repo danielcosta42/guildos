@@ -494,6 +494,7 @@ end
 ----------------------------------------------------------------------
 local CHANNEL_WAIT = 15        -- seconds until the verdict: long enough to press the command a second time
 local CHANNEL_TIMER_AT = 2
+local STALE_WAIT = 15          -- seconds after login before a channel a /reload left behind can be left
 
 -- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
 -- The client hands the channel as "5. GOSProbe1234" and its base name ninth, so either one names it.
@@ -505,11 +506,18 @@ local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
 end
 
 -- A run that a /reload cut short leaves its channel joined: the name was kept in GuildOSDB, and it goes now.
+-- The name of the probe that is running is no leftover: the wait below can come due in the middle of a run.
 function Probe:LeaveStaleChannel()
     local stale = GuildOSDB and GuildOSDB.probeChannelOpen
-    if type(stale) ~= "string" then return end
+    if type(stale) ~= "string" or (self._channel and self._channel.name == stale) then return end
     GuildOSDB.probeChannelOpen = nil
     GuildOS.Compat.LeaveChannel(stale)
+end
+
+-- Started with the modules. At PLAYER_LOGIN the game has not joined the character's channels yet, and
+-- leaving one then would do nothing: the wait is for the game.
+function Probe:Initialize()
+    GuildOS.Compat.After(STALE_WAIT, function() GuildOS:SafeCall(Probe.LeaveStaleChannel, Probe) end)
 end
 
 -- One attempt to send `how` ("click" or "timer"). A channel with no number yet is not a refusal by the
@@ -567,6 +575,8 @@ function Probe:RunChannel()
         end)
         Compat.RegisterEvent(self._channelFrame, "CHAT_MSG_ADDON")
         pcall(Compat.RegisterAddonPrefix, PREFIX)
+        -- The name kept here is all that is left of a run a /reload cut short: it goes before this one replaces it.
+        self:LeaveStaleChannel()
         if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = name end
         Compat.JoinChannel(name)
     end)
