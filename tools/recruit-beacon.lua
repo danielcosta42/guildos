@@ -234,6 +234,23 @@ NOW = NOW + 4 * DAY
 check(heard(ordem.n) == nil or heard(ordem.n).verified == false, "a list over three days old seals nothing")
 reset()
 
+-- The list goes on from the site's own string: the digest offers it, what it holds is not asked for, and
+-- what comes out of a pull is a CR3 any client takes, with no seal on the other side.
+GuildOSInbox = { RECRUIT }
+local listTopic = GuildOS.State.gossip.topics.CR3
+local inDigest = {}
+for _, e in ipairs(listTopic.digest()) do inDigest[e[1]] = e[2] end
+check(inDigest[ordem.n] == ordem.v, "the digest offers the list's ads at the list's version")
+check(listTopic.want(ordem.n, ordem.v) == false and listTopic.want(ordem.n, ordem.v - 1) == false, "the list has it: not wanted")
+check(listTopic.want(ordem.n, ordem.v + 1) == true, "a newer one is")
+local passedOn = listTopic.pull(ordem.n)
+check(passedOn and passedOn:find("^CR3|"), "the list's ad comes out as a CR3")
+check(count(RB:Cache3()) == 0, "and nothing of the list is copied into the cache")
+GuildOSInbox = nil
+check(RB:IngestCR3(passedOn, "Bob", "WHISPER") == true, "a client with no list takes it")
+check(heard(ordem.n).p == ordem.p and heard(ordem.n).verified == false and heard(ordem.n).heard == true, "heard in the game, with no seal")
+reset()
+
 -- ── Text off the network ────────────────────────────────────────────────
 local han = string.rep("公会招募", 60)
 local cases = {

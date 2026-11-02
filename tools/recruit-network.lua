@@ -430,4 +430,100 @@ for _, m in ipairs(mates) do
 end
 check(kept == 20, "and the whole guild keeps the request, from the GUILD relay: " .. kept)
 
+-- ── The companion's list crosses to who has no companion ────────────────
+local function ceilingHolds(G, what)
+  local replies = G.ROUND_PEERS * (G.REPLY_MAX + 1)
+  local tally, worstD, worstR = {}, 0, 0
+  for _, e in ipairs(world.log) do
+    if e.dist == "WHISPER" and e.op ~= "CRW" then
+      local key = e.from .. "#" .. e.cycle
+      local t = tally[key] or { d = 0, r = 0 }
+      tally[key] = t
+      if e.op == "CRD" then t.d = t.d + 1 else t.r = t.r + 1 end
+      worstD, worstR = math.max(worstD, t.d), math.max(worstR, t.r)
+    end
+  end
+  print(("%s: worst round, %d digests and %d answers"):format(what, worstD, worstR))
+  check(worstD <= G.ROUND_PEERS, what .. ": no client opens more than ROUND_PEERS exchanges in a round, saw " .. worstD)
+  check(worstR <= replies, what .. ": no client answers past its allowance in a round, saw " .. worstR)
+end
+
+fresh()
+local seed = client("Ana Lima", { zone = "city", list = listOf(500) })
+local newcomers = {}
+for i = 1, 6 do newcomers[i] = client(("Novo%d Silva"):format(i), { zone = "city" }) end
+run(3600)
+local G = seed.Gossip
+local digest = ops({ from = seed.name, op = "CRD" })[1]
+check(digest, "the block's holder opens rounds")
+local pairsSent = {}
+for name, version in digest.text:gmatch("([^,:|]+):(%d+)") do pairsSent[#pairsSent + 1] = { name, tonumber(version) } end
+check(#pairsSent == G.DIGEST_MAX, "a digest holds DIGEST_MAX of the list, no more: " .. #pairsSent)
+for i = 1, G.DIGEST_NEWEST do
+  check(pairsSent[i][1] == ("Guilda %03d"):format(i), "the four newest first: " .. pairsSent[i][1])
+end
+for _, e in ipairs(ops({ from = seed.name, op = "CR3" })) do
+  check(e.dist == "WHISPER", "the list's ads go by whisper, and never to a public bus")
+end
+ceilingHolds(G, "a full list")
+for _, c in ipairs(newcomers) do
+  local n = count(c.RB:Cache3())
+  check(n > 0 and n <= c.RB.CACHE_CAP, "who has no companion holds ads, within the cache: " .. n)
+  for i = 1, G.DIGEST_NEWEST do
+    check(c.RB:Cache3()[("Guilda %03d"):format(i)], c.name .. " has the newest of the list, Guilda " .. i)
+  end
+  local shown = c.GF:All()
+  check(#shown > 0, "and the finder shows them")
+  for _, a in ipairs(shown) do
+    check(a.verified == false and a.heard == true, "heard in the game, with no seal")
+  end
+end
+local mine = seed.GF:All()
+check(#mine == 500, "the holder's own finder shows the whole list: " .. #mine)
+for _, a in ipairs(mine) do check(a.verified == true, "with its seal") end
+check(count(seed.RB:Cache3()) <= 40, "and the list is not copied into the holder's cache")
+
+-- What the list holds is not asked for; what is newer than it is.
+local T = seed.GuildOS.State.gossip.topics.CR3
+local v1 = EPOCH - 60
+check(T.want("Guilda 001", v1) == false, "the list has it at this version: not wanted")
+check(T.want("Guilda 001", v1 - 100) == false, "nor an older one")
+check(T.want("Guilda 001", v1 + 1) == true, "a newer version is")
+check(T.want("Guilda 999", v1) == true, "and one it does not have")
+local found
+for _, e in ipairs(T.digest()) do if e[1] == "Guilda 001" then found = e end end
+check(found and found[2] == v1, "the digest offers it at the list's version")
+seed.RB:IngestCR3(cr3(seed, { n = "Guilda 001", v = v1, p = "FORJADO" }), "Eva Reis", "WHISPER")
+check(not T.pull("Guilda 001"):find("FORJADO", 1, true), "at the same version what is handed out is the list's")
+seed.RB:IngestCR3(cr3(seed, { n = "Guilda 001", v = v1 + 1, p = "Nova" }), "Eva Reis", "WHISPER")
+check(T.pull("Guilda 001"):find("Nova", 1, true), "and a newer one heard is the one to pass on")
+
+-- Validity: the relayed CR3 carries the ad's own, the way in still cuts it, and what is past is not offered.
+fresh()
+seed = client("Ana Lima", { zone = "city", list = listOf(2, {
+  { n = "Longa", u = "longa", w = "normal:us", v = EPOCH - 5, x = EPOCH + 30 * 86400 },
+  { n = "Vencida", u = "vencida", w = "normal:us", v = EPOCH - 4, x = EPOCH - 1 },
+}) })
+T = seed.GuildOS.State.gossip.topics.CR3
+local longa = T.pull("Longa")
+check(longa and longa:find("|" .. (EPOCH + 30 * 86400) .. "$"), "x in the relayed CR3 is the ad's own")
+local listener = client("Novo Silva", { zone = "elsewhere" })
+check(listener.RB:IngestCR3(longa, seed.name, "WHISPER") == true, "and it lands")
+check(listener.RB:Cache3().Longa.x == EPOCH + 72 * 3600, "cut to 72 hours on the way in")
+check(T.pull("Vencida") == nil, "an expired ad of the list is not handed out")
+for _, e in ipairs(T.digest()) do check(e[1] ~= "Vencida", "nor offered") end
+
+-- Two guilds of one name in the list: one seat, the newer.
+fresh()
+seed = client("Ana Lima", { zone = "city", list = listOf(0, {
+  { n = "Xara", u = "xara-us", w = "normal:us", v = EPOCH - 100, x = EPOCH + 3600 },
+  { n = "Xara", u = "xara-eu", w = "normal:eu", v = EPOCH - 50, x = EPOCH + 3600 },
+}) })
+T = seed.GuildOS.State.gossip.topics.CR3
+local seats = 0
+for _, e in ipairs(T.digest()) do
+  if e[1] == "Xara" then seats = seats + 1; check(e[2] == EPOCH - 50, "the newer of the two") end
+end
+check(seats == 1, "one name, one seat")
+
 print(("recruit-network: %d checks passed"):format(checks))

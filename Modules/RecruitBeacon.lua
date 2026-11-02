@@ -254,6 +254,24 @@ function RB:SeedOwnAd()
     return own
 end
 
+-- What this client can hand over, by key: the CR3 cache and the live ads of the site's list, which is how
+-- the companion's list reaches who has no companion (the owner's call in specs/071). One ad per name: the
+-- newer version, and at the same version the list's, which no peer wrote. The list is read here and never
+-- copied into the cache: forty seats would not hold it, and the seal stays with whoever's own list it is.
+local function Held()
+    RB:SeedOwnAd()
+    RB:Prune3()
+    local held, t = {}, now()
+    for key, ad in pairs(RB:Cache3()) do held[key] = ad end
+    local GF = GuildOS.GuildFinder
+    for _, ad in ipairs(GF and GF:Directory() or {}) do
+        local key = ad.n:gsub("[,:]", " ")
+        local cur = held[key]
+        if ad.x > t and (not cur or ad.v >= cur.v) then held[key] = ad end
+    end
+    return held
+end
+
 ----------------------------------------------------------------------
 -- Init: register receiver + officer-broadcast + gossip-relay tickers.
 ----------------------------------------------------------------------
@@ -271,26 +289,23 @@ function RB:Initialize()
     local gossip = GuildOS.ChehulGossip
     if gossip and gossip.Topic and not self._topic then
         self._topic = true
-        -- The gossip trades CR3 by guild name and version. The digest holds the guild's own ad: that is how
-        -- the beacon knows this guild recruits.
+        -- The gossip trades CR3 by guild name and version, out of what this client holds (Held). The digest
+        -- holds the guild's own ad: that is how the beacon knows this guild recruits.
         gossip:Topic(self.PROTO3, {
             digest = function()
-                RB:SeedOwnAd()
-                RB:Prune3()
                 local out = {}
-                for key, ad in pairs(RB:Cache3()) do out[#out + 1] = { key, ad.v } end
+                for key, ad in pairs(Held()) do out[#out + 1] = { key, ad.v } end
                 return out
             end,
             want = function(key, version)
                 if type(version) ~= "number" or version > now() + RB.CLOCK_SKEW then return false end
                 -- Never asked for: it comes by GUILD from an officer, and a guildmate would only refuse what it got.
                 if IsOwnGuild(key) then return false end
-                local cur = RB:Cache3()[key]
+                local cur = Held()[key]
                 return not cur or cur.v < version
             end,
             pull = function(key)
-                RB:SeedOwnAd()
-                local ad = RB:Cache3()[key]
+                local ad = Held()[key]
                 if ad and ad.x > now() then return RB:AdToPayload(ad) end
             end,
             push = function(payload, sender, dist) RB:IngestCR3(payload, sender, dist) end,
