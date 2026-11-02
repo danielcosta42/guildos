@@ -304,6 +304,14 @@ local MODULE_START = {
     -- WoW: Forever only (issue #37): the look, read in the barber's chair.
     { "Look" },
     { "RecruitBeacon" },
+    -- WoW: Forever and retail: the whisper gossip. After RecruitBeacon, whose handler feeds it.
+    { "ChehulGossip" },
+    -- WoW: Forever and retail: the request to join a guild, from both sides. After the gossip, whose prefix it rides.
+    { "JoinRequests" },
+    -- WoW: Forever and retail: lights the minimap button on the first guild a character with no guild hears.
+    { "GuildFinder" },
+    -- Leaves the channel of a /gos probe channel that a /reload cut short, a moment after login.
+    { "Probe" },
     { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only
     -- Initialize in OFFICER_START handles just the auto-post/welcome flow).
@@ -327,6 +335,8 @@ local OFFICER_START = {
     { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckExpired" },
     -- What the Discord's cores changed at login, to the other officers (#135).
     { "CoreManager", method = "SendDiscordChanges" },
+    -- The requests from the site: read at the start with no rank known, they reached no officer's notice.
+    { "JoinRequests", method = "Refresh" },
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN
@@ -696,6 +706,17 @@ end
 ----------------------------------------------------------------------
 -- Toggle the Guild OS window
 ----------------------------------------------------------------------
+-- What a character with no guild looks at to find one: the guild finder on WoW: Forever and retail,
+-- the old inbox on Anniversary, and the inbox again if the finder cannot be built (specs/071).
+function GuildOS:OpenGuildFinder()
+    if self.GuildFinder and self.GuildFinder:Available() and self.ShowGuildFinder then
+        local ok, err = pcall(self.ShowGuildFinder, self)
+        if ok then return end
+        self:RecordError("GuildFinder: " .. tostring(err))
+    end
+    if self.ShowRecruitInbox then self:ShowRecruitInbox() end
+end
+
 function GuildOS:ToggleRoster()
     if not self.db then
         self:Print(L["|cff888888Not in a guild \226\128\148 addon inactive.|r"])
@@ -704,7 +725,7 @@ function GuildOS:ToggleRoster()
     if not IsInGuild() then
         -- Guildless: the roster is guild data — open the recruitment finder,
         -- which is exactly what a guildless player is here for.
-        if self.ShowRecruitInbox then self:ShowRecruitInbox() end
+        self:OpenGuildFinder()
         return
     end
     self.Compat.GuildRoster()

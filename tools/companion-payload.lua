@@ -345,7 +345,18 @@ GuildOS.Client.isAnniversary = true
 
 -- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
 -- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
-assert(anniversary.v == 12, "the payload is v12")
+assert(anniversary.v == 13, "the payload is v13")
+-- v13 (guildos#245): what the guild holds of the people who asked to join; absent without any (tools/join-requests.lua
+-- runs the rest of it), and a bug in it is left out of the export alone.
+assert(anniversary.joinRequests == nil, "no joinRequests without the module, and none without requests")
+GuildOS.JoinRequests = { ForExport = function() return { { id = "abc123DEF4", character = "Marta Vilar", at = NOW, status = "open" } } end }
+assert(GuildOS.Companion:BuildPayload().joinRequests[1].id == "abc123DEF4", "joinRequests rides the export")
+GuildOS.JoinRequests = { ForExport = function() error("boom") end }
+GuildOS.RecordError = function() end
+local survived = GuildOS.Companion:BuildPayload()
+GuildOS.RecordError = nil
+assert(survived.joinRequests == nil and survived.members and survived.v == 13, "a failing joinRequests is left out and the rest goes")
+GuildOS.JoinRequests = nil
 -- v12 (issue #205) starts the WoW: Forever guild feed: no journal outside Forever (tools/journal.lua).
 assert(anniversary.journal == nil, "no journal on TBC Anniversary")
 
@@ -412,7 +423,7 @@ do
   assert(#files == 1 and files[1] == GuildOSDB.__companion, "switch off: one string, in __companion: " .. #files)
   assert(files[1] == files[1]:match("^GOSCOMP1:[a-zA-Z0-9()]+$"), "the app's regex lifts the whole string")
   local pack, json = opened(files[1])
-  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 12 and pack.count == 1, "it says it is the pack")
+  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 13 and pack.count == 1, "it says it is the pack")
   assert(pack.guildKey == "Raid Guild-Firemaw" and pack.guildName == "Raid Guild" and pack.realm == "Firemaw"
     and pack.game == "ANNIVERSARY", "it names the guild and the game, as the site's upload picks by them")
   assert(pack.exportedBy == PLAYER and pack.exportedAt == NOW and pack.addonVersion == GuildOS.VERSION, "and who, when, which addon")

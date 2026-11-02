@@ -56,6 +56,7 @@ local IN_UI = {
   style       = { { "UI/StylePreview.lua", "self:Apply(id)" }, { "UI/FeaturePanels.lua", "GuildOS.Style:ShowPreview()" } },
   probe       = { { "UI/FeaturePanels.lua", "GuildOS.Probe:Run()" } },
   ["probe chat"] = { { "UI/FeaturePanels.lua", "GuildOS.Probe:RunChat()" } },
+  ["probe channel"] = { { "UI/AuditPanel.lua", "GuildOS.Probe:RunChannel()" } },
   reset       = { { "UI/FeaturePanels.lua", "GuildOS:EraseGuildData()" } },
   recruit     = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
   autoinvite  = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },

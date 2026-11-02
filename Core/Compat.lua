@@ -101,6 +101,23 @@ function Compat.Region()
     return REGIONS[id], id
 end
 
+-- The realms a character here can be invited from: its own and the ones connected to it (retail's
+-- GetAutoCompleteRealms; Forever has no realms and answers nothing). A guild on any other realm
+-- cannot invite this character, so the guild finder leaves it out (specs/071). Names as the client
+-- writes them, never nil.
+function Compat.ConnectedRealms()
+    local out = {}
+    local own = GetRealmName and GetRealmName()
+    if type(own) == "string" and own ~= "" and not Compat.IsSecret(own) then out[1] = own end
+    local linked = GetAutoCompleteRealms and GetAutoCompleteRealms()
+    if type(linked) == "table" then
+        for _, name in ipairs(linked) do
+            if type(name) == "string" and name ~= "" and not Compat.IsSecret(name) then out[#out + 1] = name end
+        end
+    end
+    return out
+end
+
 -- The guild's tabard as the game draws it (issue #213; read in game on retail 2026-10-29, Forever's API is
 -- the same): GetGuildLogoInfo's three colours as bytes and the emblem's style, and GetGuildTabardFiles'
 -- six files, whose last two are the border (its style is only in them). Nil with no guild, no tabard,
@@ -964,6 +981,15 @@ function Compat.SendChatMessage(text, chatType)
     return (pcall(send, text, chatType))
 end
 
+-- Lets `fn` hide lines of a chat event from every chat frame: retail moved the filter to ChatFrameUtil, and
+-- the global is a deprecation fallback there. False on a client with neither.
+function Compat.AddChatFilter(event, fn)
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if not add then return false end
+    add(event, fn)
+    return true
+end
+
 ----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character
@@ -1433,6 +1459,31 @@ end
 function Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)
     queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1,
             onSent = onSent })
+end
+
+----------------------------------------------------------------------
+-- Created channels. A channel is joined by name and addressed by the number the game gives it; both
+-- calls are the same on retail and WoW: Forever, and neither is trusted to exist or to answer.
+----------------------------------------------------------------------
+
+-- Joins `name`, creating it when nobody has. True when the call went; the number comes from ChannelId.
+function Compat.JoinChannel(name)
+    if not JoinChannelByName then return false end
+    return (pcall(JoinChannelByName, name))
+end
+
+-- The number of the channel `name` as this client has it, 0 when it is not joined (or the game keeps it secret).
+function Compat.ChannelId(name)
+    if not GetChannelName then return 0 end
+    local ok, id = pcall(GetChannelName, name)
+    id = ok and not Compat.IsSecret(id) and tonumber(id) or 0
+    return id
+end
+
+-- Leaves `name`. True when the call went, whether or not the channel was joined.
+function Compat.LeaveChannel(name)
+    if not LeaveChannelByName then return false end
+    return (pcall(LeaveChannelByName, name))
 end
 
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the

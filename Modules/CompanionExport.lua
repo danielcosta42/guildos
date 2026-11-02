@@ -51,8 +51,9 @@ local FMT = "GOSCOMP1"
 -- client wrote it down (issue #205), and each member's `feedOptOut`, true for whoever asked not to be
 -- named on Discord. The founding, the readiness threshold and the tabard join it in the same version.
 -- The character's own pack (BuildSelf) is this same version: `self` is one more absent field, and an
--- export gains nothing by the pack existing.
-local PAYLOAD_VERSION = 12
+-- export gains nothing by the pack existing. 13 adds `joinRequests`, what the guild's client holds of
+-- the people who asked to join (the site's specs/071, issue guildos#245): absent without any.
+local PAYLOAD_VERSION = 13
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -614,11 +615,15 @@ function Companion:BuildPayload()
     payload.guildConfig = not GuildOS.Client.isAnniversary and not retail and GuildOS.Readiness
         and GuildOS.Readiness:MinIlvlKnown()
         and { readyMinIlvl = GuildOS.Readiness:GetMinIlvl(), readyMinIlvlAt = GuildOS.db.settings.readyMinIlvlAt } or nil
+    -- v13 (specs/071, guildos#245): who asked to join and what was decided. Optional: a bug in it must
+    -- never keep the roster, the raids and the loot from going up.
+    payload.joinRequests = GuildOS.JoinRequests
+        and optional("joinRequests", GuildOS.JoinRequests.ForExport, GuildOS.JoinRequests) or nil
     return payload
 end
 
 -- The wire format at the top of this file, in one place, for the export and the pack.
-local function onTheWire(payload)
+local function onTheWire(payload, prefix)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
     if not LibDeflate then return nil, "LibDeflate not available" end
 
@@ -626,7 +631,13 @@ local function onTheWire(payload)
     local compressed = LibDeflate:CompressDeflate(json, { level = 9 })
     if not compressed then return nil, "compression failed" end
 
-    return WIRE_PREFIX .. LibDeflate:EncodeForPrint(compressed)
+    return (prefix or WIRE_PREFIX) .. LibDeflate:EncodeForPrint(compressed)
+end
+
+-- Any other string the site reads with the same wire (GOSOUTB1: the join requests of a character with no
+-- guild): `prefix` with the marker and its colon. Nil and why when it cannot be made.
+function Companion:Pack(prefix, payload)
+    return onTheWire(payload, prefix)
 end
 
 ----------------------------------------------------------------------
@@ -748,5 +759,8 @@ local writer = CreateFrame("Frame")
 writer:RegisterEvent("PLAYER_LOGOUT")
 writer:SetScript("OnEvent", function()
     if not GuildOSDB then return end
+    -- The queue of a character with no guild: its own string, for the companion to take to the site.
+    -- Its own pcall, and first: nothing about it may keep the export from being written.
+    if GuildOS.JoinRequests and GuildOS.JoinRequests.WriteWire then pcall(GuildOS.JoinRequests.WriteWire, GuildOS.JoinRequests) end
     if Companion:IsEnabled() then writeExport() else writePack() end
 end)

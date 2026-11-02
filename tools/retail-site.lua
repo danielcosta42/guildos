@@ -168,7 +168,7 @@ GuildOS.db.raidTracker.sessions[NIGHT] = {
 }
 
 local p = assert(Companion:BuildPayload())
-check(p.v == 12 and p.game == "RETAIL" and p.region == "us", "v12 says the game and the region")
+check(p.v == 13 and p.game == "RETAIL" and p.region == "us", "v13 says the game and the region")
 check(p.journal == nil, "no journal on retail: the guild feed is WoW: Forever's (issue #205)")
 check(p.guildKey == "Jardim Escola-Azralon" and p.realm == "Azralon",
   "guildKey and realm are the guild's home realm, never the exporter's Tol Barad")
