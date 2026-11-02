@@ -488,9 +488,11 @@ end
 -- beacon would use to reach past the zone and the layer that YELL stops at. The probe joins a temporary
 -- channel of its own, sends one message from the command (the Enter behind it is the key press) and one
 -- from a timer, listens for its own text coming back, leaves, and keeps the result in
--- GuildOSDB.probeChannel = { timer, click, heard = { timer, click }, joined, at }: timer and click say the
--- game took the message, heard says it came back through the channel. The channel always ends, whatever
--- went wrong, and nothing is said in any chat but the player's own window.
+-- GuildOSDB.probeChannel = { timer, click, timerSkipped, clickSkipped, heard = { timer, click }, joined, left, at }:
+-- timer and click are true (the game took the message), false (it was tried and the game did not) or nil
+-- (never tried, and <how>Skipped says why: the channel had no number yet), and heard says it came back through
+-- the channel. The channel always ends, whatever went wrong, and nothing is said in any chat but the player's
+-- own window. GuildOSDB.probeChannelOpen holds the running channel's name, so that one a /reload cut short goes.
 ----------------------------------------------------------------------
 local CHANNEL_WAIT = 15        -- seconds until the verdict: long enough to press the command a second time
 Probe.CHANNEL_WAIT = CHANNEL_WAIT   -- the Audit panel reads the result one second after it
