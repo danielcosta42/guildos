@@ -101,6 +101,23 @@ function Compat.Region()
     return REGIONS[id], id
 end
 
+-- The realms a character here can be invited from: its own and the ones connected to it (retail's
+-- GetAutoCompleteRealms; Forever has no realms and answers nothing). A guild on any other realm
+-- cannot invite this character, so the guild finder leaves it out (specs/071). Names as the client
+-- writes them, never nil.
+function Compat.ConnectedRealms()
+    local out = {}
+    local own = GetRealmName and GetRealmName()
+    if type(own) == "string" and own ~= "" and not Compat.IsSecret(own) then out[1] = own end
+    local linked = GetAutoCompleteRealms and GetAutoCompleteRealms()
+    if type(linked) == "table" then
+        for _, name in ipairs(linked) do
+            if type(name) == "string" and name ~= "" and not Compat.IsSecret(name) then out[#out + 1] = name end
+        end
+    end
+    return out
+end
+
 -- The guild's tabard as the game draws it (issue #213; read in game on retail 2026-10-29, Forever's API is
 -- the same): GetGuildLogoInfo's three colours as bytes and the emblem's style, and GetGuildTabardFiles'
 -- six files, whose last two are the border (its style is only in them). Nil with no guild, no tabard,

@@ -236,6 +236,9 @@ read_globals = {
     "C_RestrictedActions",
     "GetNormalizedRealmName",
     "GetCurrentRegion",                      -- the companion payload's region on retail (issue #182)
+    "GetAutoCompleteRealms",                 -- retail: the realms a guild can invite from (guild finder, specs/071)
+    "FACTION_HORDE",                         -- the client's own words for the two factions
+    "FACTION_ALLIANCE",
     "GetGuildLogoInfo",                      -- the guild tabard's colours and emblem (issue #213)
     "GetGuildTabardFiles",                   -- and its six files, where the border's style is (issue #213)
     "C_XMLUtil",

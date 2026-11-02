@@ -304,6 +304,8 @@ local MODULE_START = {
     -- WoW: Forever only (issue #37): the look, read in the barber's chair.
     { "Look" },
     { "RecruitBeacon" },
+    -- WoW: Forever and retail: lights the minimap button on the first guild a character with no guild hears.
+    { "GuildFinder" },
     { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only
     -- Initialize in OFFICER_START handles just the auto-post/welcome flow).
@@ -696,6 +698,17 @@ end
 ----------------------------------------------------------------------
 -- Toggle the Guild OS window
 ----------------------------------------------------------------------
+-- What a character with no guild looks at to find one: the guild finder on WoW: Forever and retail,
+-- the old inbox on Anniversary, and the inbox again if the finder cannot be built (specs/071).
+function GuildOS:OpenGuildFinder()
+    if self.GuildFinder and self.GuildFinder:Available() and self.ShowGuildFinder then
+        local ok, err = pcall(self.ShowGuildFinder, self)
+        if ok then return end
+        self:RecordError("GuildFinder: " .. tostring(err))
+    end
+    if self.ShowRecruitInbox then self:ShowRecruitInbox() end
+end
+
 function GuildOS:ToggleRoster()
     if not self.db then
         self:Print(L["|cff888888Not in a guild \226\128\148 addon inactive.|r"])
@@ -704,7 +717,7 @@ function GuildOS:ToggleRoster()
     if not IsInGuild() then
         -- Guildless: the roster is guild data — open the recruitment finder,
         -- which is exactly what a guildless player is here for.
-        if self.ShowRecruitInbox then self:ShowRecruitInbox() end
+        self:OpenGuildFinder()
         return
     end
     self.Compat.GuildRoster()

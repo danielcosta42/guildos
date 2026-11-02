@@ -84,6 +84,7 @@ Modules\Professions.lua
 Modules\ProfSync.lua
 Modules\Look.lua
 Modules\ProfDirectory.lua
+Modules\GuildFinder.lua
 Modules\RecruitBeacon.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
@@ -145,6 +146,7 @@ UI\RecipesPanel.lua
 UI\ProfessionsPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
+UI\GuildFinder.lua
 UI\CalendarPanel.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua

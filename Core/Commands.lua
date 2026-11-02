@@ -309,8 +309,13 @@ local function handleCommand(msg)
         -- Officer: compose/toggle the guild recruitment beacon.
         if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     elseif msg == "lfg" or msg == "recruiting" then
-        -- Anyone: browse guilds recruiting nearby (heard over the mesh).
-        if GuildOS.ShowRecruitInbox then GuildOS:ShowRecruitInbox() end
+        -- Anyone: browse guilds recruiting nearby. With no guild, on Forever and retail, that is the
+        -- guild finder; otherwise the inbox of what was heard over the mesh.
+        if IsInGuild() then
+            if GuildOS.ShowRecruitInbox then GuildOS:ShowRecruitInbox() end
+        else
+            GuildOS:OpenGuildFinder()
+        end
     elseif msg == "map" or msg == "guildmap" then
         -- Anyone: open the live guild map (world map pins + list overlay).
         if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end

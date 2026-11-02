@@ -32,6 +32,12 @@ local function GetMinimapCfg()
     return cachedCfg
 end
 
+-- The ring's colour: gold, brighter under the cursor; green while a guild is waiting to be looked at.
+local function RingColor(hover)
+    if GuildOS.minimapAlert then return C.ok.r, C.ok.g, C.ok.b, 1 end
+    return C.gold.r, C.gold.g, C.gold.b, hover and 1 or RING_ALPHA
+end
+
 local function UpdatePosition(btn, angle)
     angle = angle or GetMinimapCfg().angle or DEFAULT_ANGLE
     local a = math.rad(angle)
@@ -149,16 +155,19 @@ function GuildOS:CreateMinimapButton()
     end)
 
     btn:SetScript("OnEnter", function(self)
-        ring:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+        ring:SetVertexColor(RingColor(true))
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("|cffFFD700Guild|r |cffD4AC0DOS|r  |cff666666by Chehul|r")
         GameTooltip:AddLine(L["Left-click: open"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Right-click: menu"], 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L["Drag: move button"], 0.5, 0.5, 0.5)
+        if GuildOS.minimapAlert then
+            GameTooltip:AddLine(L["A guild is recruiting nearby: left-click to look"], C.ok.r, C.ok.g, C.ok.b)
+        end
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function()
-        ring:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, RING_ALPHA)
+        ring:SetVertexColor(RingColor(false))
         GameTooltip:Hide()
     end)
 
@@ -177,6 +186,13 @@ function GuildOS:CreateMinimapButton()
     if GuildOS.SetupGuildMapPresence then GuildOS:SetupGuildMapPresence() end
 
     return btn
+end
+
+-- Light the ring (or put it out): the guild finder uses it to say a guild was heard (specs/071).
+function GuildOS:SetMinimapAlert(on)
+    self.minimapAlert = on and true or false
+    local btn = self.minimapButton
+    if btn and btn.ring then btn.ring:SetVertexColor(RingColor(false)) end
 end
 
 -- Show/hide toggle (used by the slash command and settings).
