@@ -664,5 +664,18 @@ GuildOS.joinRequestsFrame.Refresh()
 check(labelled("Decline")[1].shown == false and labelled("Decline")[2].shown == false, "who cannot decide does not")
 check(labelled("Invite")[1].shown == true, "and still has Invite")
 
+-- The card's Whisper is the reserve for a session with no addon whisper. On WoW: Forever "/w Ana Lima " is Ana
+-- with the message "Lima ": the card takes the hyphen, the same as the officer's list.
+GuildOSDB.guildFinder = { locale = false, wantsMe = false }
+only({ ad({ n = "Com Sobrenome", ct = { "Ana Lima" } }) })
+finder.Refresh()
+opened = {}
+labelled("Whisper")[1].scripts.OnClick()
+check(opened[1] == "/w Ana-Lima ", "the card whispers with the hyphen: " .. tostring(opened[1]))
+GuildOS.Client.has.surnames = false
+finder.Refresh()
+opened = {}
+labelled("Whisper")[1].scripts.OnClick()
+check(opened[1] == "/w Ana Lima ", "and with no surnames in the game the name is left as it came")
 
 print(("guild-finder: %d checks passed"):format(checks))

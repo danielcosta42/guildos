@@ -407,7 +407,7 @@ local function BuildFinder()
         local contact = ad.ct and ad.ct[1]
         whisper:SetShown(contact ~= nil)
         whisper:SetScript("OnClick", function()
-            if contact then ChatFrame_OpenChat("/w " .. Ambiguate(contact, "none") .. " ") end
+            if contact then ChatFrame_OpenChat("/w " .. GuildOS:WhisperTarget(contact) .. " ") end
         end)
     end
 

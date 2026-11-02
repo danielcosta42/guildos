@@ -270,6 +270,13 @@ function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
+-- The name as /w takes it: the hyphen where the game spells a surname with a space, or "/w Ana Lima " opens a
+-- whisper to Ana with the message "Lima ".
+function GuildOS:WhisperTarget(name)
+    if self.Client.has.surnames then return (name:gsub(" ", "-")) end
+    return name
+end
+
 -- How a guildmate's key reads on screen: the name alone when they are on this character's realm, the
 -- whole "Name-Realm" when they are not, so connected-realm namesakes never read as one person (#185).
 function GuildOS:DisplayKey(key)

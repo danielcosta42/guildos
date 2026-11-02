@@ -54,12 +54,6 @@ local function Meta(r)
     return table.concat(parts, " \194\183 ")
 end
 
--- The name as /w takes it: the hyphen where the game spells a surname with a space.
-local function WhisperTarget(name)
-    if GuildOS.Client.has.surnames then return (name:gsub(" ", "-")) end
-    return name
-end
-
 local function Build()
     local f = CreateFrame("Frame", "GuildOSJoinRequests", UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, HEIGHT)
@@ -143,7 +137,7 @@ local function Build()
             -- Both are the player's own click: the invite is the game's, started by this very button.
             row.invite:SetScript("OnClick", function() JR():Invite(r.id) end)
             row.decline:SetScript("OnClick", function() JR():Decide(r.id, "declined") end)
-            row.whisper:SetScript("OnClick", function() ChatFrame_OpenChat("/w " .. WhisperTarget(r.character) .. " ") end)
+            row.whisper:SetScript("OnClick", function() ChatFrame_OpenChat("/w " .. GuildOS:WhisperTarget(r.character) .. " ") end)
             row:Show()
         end
         for i = #list + 1, #rows do rows[i]:Hide() end
