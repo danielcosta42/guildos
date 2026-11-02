@@ -738,6 +738,61 @@ handler(crq("dr22222222", "Marta Vilar", { guild = "Another Guild" }), "Marta Vi
 local after = JR:Stats()
 check(after.name == before.name + 1 and after.guild == before.guild + 1, "a name that is not the sender's and a guild that is not mine are counted")
 
+-- B6 fix 1: a request decided while the person was offline does not come back as a new open one.
+reset(); GUILD, officer = "Ashen Vow", true
+local B6_NOTICED = {}
+GuildOS.JoinRequestsHeard = function(_, r) B6_NOTICED[#B6_NOTICED + 1] = r.id end
+openSite(UUID)
+handler(crq("gam7654321", "Davi Rocha"), "Davi Rocha", "WHISPER")
+check(find(UUID).gameId == "gam7654321", "the site's row keeps the game's id")
+JR:Decide(UUID, "declined")
+whispers, guildMsgs, B6_NOTICED = {}, {}, {}
+handler(crq("gam7654321", "Davi Rocha"), "Davi Rocha", "WHISPER")
+check(#JR:List() == 1 and find(UUID).status == "declined" and not find("gam7654321"), "the person comes back under the game's id: still one row, still declined")
+check(#B6_NOTICED == 0 and JR:OpenCount() == 0, "and no officer is told about a new request")
+check(whispers[1] and whispers[1].target == "Davi Rocha" and whispers[1].payload == "CRA|gam7654321|declined|Chehul Costa",
+  "the person is told the decision under the id they know")
+NOW = NOW + JR.REPEAT_SECONDS
+handler(crq("gam7654321", "Davi Rocha"), "Bruno Reis", "GUILD")
+check(guildSaw("CRA|" .. UUID .. "|declined|Chehul Costa") and #JR:List() == 1, "a relayed copy makes the decider say it again")
+check(whispers[#whispers].payload == "CRA|gam7654321|declined|Chehul Costa", "to the person under the game's id")
+-- the id is the game's, the name must still be the row's: an id says nothing about whose it is
+whispers, guildMsgs = {}, {}
+NOW = NOW + JR.REPEAT_SECONDS
+handler(crq("gam7654321", "Somebody Else"), "Somebody Else", "WHISPER")
+check(find(UUID).status == "declined" and JR:OpenCount() == 1 and find("gam7654321"), "the id of another person's row is not a way into it")
+GuildOS.JoinRequestsHeard = nil
+
+-- B6 fix 2: the invite's confirmation names the same person, whole.
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("pre2222222", "Ana Lima"), "Ana Lima", "WHISPER")
+JR:Invite("pre2222222")
+fire("CHAT_MSG_SYSTEM", "You have invited Ana to join your guild.")
+check(find("pre2222222").status == "open", "'Ana' is not 'Ana Lima': nothing closes")
+fire("CHAT_MSG_SYSTEM", "You have invited Ana-Lima to join your guild.")
+check(find("pre2222222").status == "invited", "the hyphen is the same person")
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("pre3333333", "Ana"), "Ana", "WHISPER")
+JR:Invite("pre3333333")
+fire("CHAT_MSG_SYSTEM", "You have invited Ana-Gallywix to join your guild.")
+check(find("pre3333333").status == "open", "a name with something after it is another person")
+fire("CHAT_MSG_SYSTEM", "You have invited ana to join your guild.")
+check(find("pre3333333").status == "invited", "case does not matter")
+GuildOS.Client.isRetail, GuildOS.Client.has.surnames = true, false
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("rt33333333", "Ana-Gallywix"), "Ana-Gallywix", "WHISPER")
+JR:Invite("rt33333333")
+fire("CHAT_MSG_SYSTEM", "You have invited Ana-Normal to join your guild.")
+check(find("rt33333333").status == "open", "retail: the same name on another realm is somebody else")
+fire("CHAT_MSG_SYSTEM", "You have invited Ana-Gallywix to join your guild.")
+check(find("rt33333333").status == "invited", "retail: name and realm both given and the same")
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("rt44444444", "Ana-Normal"), "Ana-Normal", "WHISPER")
+JR:Invite("rt44444444")
+fire("CHAT_MSG_SYSTEM", "You have invited Ana to join your guild.")
+check(find("rt44444444").status == "invited", "retail: the game leaves this realm off, and a side with no realm compares the name")
+GuildOS.Client.isRetail, GuildOS.Client.has.surnames = false, true
+
 -- M12: the recruiting tab hides the section where the module never starts.
 local roster_ui = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
 check(roster_ui:find("isAnniversary", roster_ui:find("Join requests", 1, true), true), "the join requests section of the recruiting tab checks for Anniversary")

@@ -51,9 +51,13 @@ local function validId(id) return type(id) == "string" and id:match("^%w+$") ~= 
 -- The id of a row, which may be the site's (a UUID): the rule Import:SiteJoinRequests applies.
 local function validRowId(id) return type(id) == "string" and #id <= 40 and id:match("^[%w_%-]+$") ~= nil end
 
--- Messages dropped for a reason that would otherwise be silent, for the Audit panel to show.
-local dropped = { name = 0, guild = 0 }
-function JR:Stats() return { name = dropped.name, guild = dropped.guild } end
+-- Messages dropped for a reason that would otherwise be silent, for the Audit panel to show; and how many
+-- invites went and how many times the game's "You have invited X" line came back for one, because no real
+-- client has been seen to say it yet.
+local dropped = { name = 0, guild = 0, invites = 0, confirmed = 0 }
+function JR:Stats()
+    return { name = dropped.name, guild = dropped.guild, invites = dropped.invites, confirmed = dropped.confirmed }
+end
 
 -- A request is relayed (and a closed one announced again) at most this often per row: the player repeats
 -- every REPEAT_SECONDS, and a little less keeps one late timer from skipping a repetition.
@@ -82,6 +86,19 @@ end
 local function sameName(a, b)
     a, b = a:lower():gsub("[%s%-]+", " "), b:lower():gsub("[%s%-]+", " ")
     return a == b or a:sub(1, #b + 1) == b .. " " or b:sub(1, #a + 1) == a .. " "
+end
+
+-- The confirmation of an invite names the person whole: "Ana" is not "Ana Lima" and "Ana" on this realm is
+-- not "Ana-Gallywix". Space and hyphen are one thing, case is none. On retail the realm is compared when
+-- both sides have one: the game leaves out this character's own.
+local function sameInvited(a, b)
+    a, b = a:lower():gsub("[%s%-]+", " "), b:lower():gsub("[%s%-]+", " ")
+    if a == b then return true end
+    if not GuildOS.Client.isRetail then return false end
+    local nameA, realmA = a:match("^(%S+) (.+)$")
+    local nameB, realmB = b:match("^(%S+) (.+)$")
+    if realmA and realmB then return false end   -- both with a realm, and they are not the same
+    return (nameA or a) == (nameB or b)
 end
 
 -- A guild name as the digest spells it, and with no case: the site and the game do not agree on it.
@@ -308,6 +325,14 @@ local function makeRoom()
     return true
 end
 
+-- The row whose request was made in the game under `id`: the site's row keeps it as `gameId`.
+local function byGameId(id, character)
+    for _, r in pairs(store()) do
+        -- An id says nothing about whose it is: the name must still be the row's.
+        if r.gameId == id and sameName(r.character, character) then return r end
+    end
+end
+
 local function openFor(character)
     for _, r in pairs(store()) do
         if r.status == "open" and sameName(r.character, character) then return r end
@@ -393,7 +418,10 @@ function JR:OnCRQ(payload, sender, dist)
     if bans and (bans:IsBanned(character) or (direct and bans:IsBanned(sender))) then return end
 
     local rows = store()
-    local r = rows[f[2]]
+    -- A request the person made on the site and then in the game lives under the site's id, with the game's
+    -- as `gameId`: when it was decided with the person offline, the id that comes back finds the closed row
+    -- here, not an open one made new.
+    local r = rows[f[2]] or byGameId(f[2], character)
     if r then
         if r.status == "open" then r.seen = now() end
     else
@@ -499,6 +527,7 @@ function JR:Invite(id)
     local Import = GuildOS.CompanionImport
     local name = store()[id].character
     pending[id] = now()
+    dropped.invites = dropped.invites + 1
     GuildInvite(Import and Import.PlainName(name) or name)
     return true
 end
@@ -511,12 +540,13 @@ local function onSystem(_, _, msg)
     local args = GuildOS:MatchFormat(msg, ERR_GUILD_INVITE_S)
     local name = args and args[1]
     if not name then return end
+    dropped.confirmed = dropped.confirmed + 1
     local n = now()
     for id, at in pairs(pending) do
         local r = store()[id]
         if n - at > JR.INVITE_WAIT or not r or r.status ~= "open" then
             pending[id] = nil
-        elseif sameName(r.character, name) then
+        elseif sameInvited(r.character, name) then
             pending[id] = nil
             JR:Decide(id, "invited")
         end
