@@ -66,8 +66,15 @@ function GetTime() return 1 end
 date, time = os.date, os.time
 function IsInGuild() return GUILD ~= nil end
 function GetGuildInfo() return GUILD, "Rank", 0 end
-function GetNumGuildMembers() return 0 end
-function GetGuildRosterInfo() end
+local roster = {}
+function GetNumGuildMembers() return #roster end
+function GetGuildRosterInfo(i) local m = roster[i]; if m then return m[1], "Rank", m[2] end end
+ERR_GUILD_INVITE_S = "You have invited %s to join your guild."
+local specRole
+C_SpecializationInfo = {
+  GetSpecialization = function() return specRole and 1 or nil end,
+  GetSpecializationInfo = function() return 73, "Protection", "", "", specRole end,
+}
 function IsInInstance() return false end
 function CanGuildInvite() return canInvite end
 function GuildInvite(name) invites[#invites + 1] = name end
@@ -121,7 +128,9 @@ dofile(ADDON .. "/Modules/GuildFinder.lua")
 dofile(ADDON .. "/Modules/ChehulGossip.lua")
 dofile(ADDON .. "/Modules/RecruitBeacon.lua")
 dofile(ADDON .. "/Modules/JoinRequests.lua")
+local onDb = true
 function GuildOS:IsOfficer() return officer end
+function GuildOS:IsOnGuildDB() return GUILD ~= nil and onDb end
 GuildOS.BanList = { IsBanned = function(_, name) return banned[name] end }
 
 local JR, Gossip, RB, Import, Companion = GuildOS.JoinRequests, GuildOS.ChehulGossip, GuildOS.RecruitBeacon,
@@ -140,6 +149,9 @@ local function reset()
   for k in pairs(S.peers) do S.peers[k] = nil end
   S.whisper = "space"
   GuildOSInbox = nil
+  onDb, specRole = true, nil
+  -- The guild's roster: two officers (rank 0 and 1), a plain member of rank 5.
+  roster = { { "Ana Lima", 0 }, { "Chehul Costa", 1 }, { "Bruno Reis", 5 }, { "Eve Costa", 4 } }
   Import._blockRaw, Import._blockData = nil, nil
 end
 
@@ -185,18 +197,18 @@ check(JR:Status(req.id) == "stored", "with no answer the screen says it is only 
 local tick = ticker300()
 check(tick, "and a timer repeats it every 300 seconds")
 tick.fn()
-check(#whispers == 2 and whispers[2].payload == wirePayload, "the same message again, the same id")
+check(#whispers == 4 and whispers[2].payload == wirePayload, "the same message again, the same id (the peer has not answered: the contact names too)")
 
 -- CRA officer and member: the screen changes, the repetition does not stop.
 handler("CRA|" .. req.id .. "|officer|Ana Lima", "Ana Lima", "WHISPER")
 local state, by = JR:Status(req.id)
 check(state == "officer" and by == "Ana Lima", "CRA officer: delivered to an officer, and who")
 tick.fn()
-check(#whispers == 3, "and it keeps repeating")
+check(#whispers == 5, "and it keeps repeating, to the peer that answered alone")
 handler("CRA|" .. req.id .. "|member|Bruno Reis", "Bruno Reis", "WHISPER")
 check(JR:Status(req.id) == "officer", "a member's CRA after an officer's does not take the officer back")
 tick.fn()
-check(#whispers == 4, "CRA member does not stop it either")
+check(#whispers == 6, "CRA member does not stop it either")
 handler("CRA|ZZZZZZZZZZ|invited|Eve", "Eve", "WHISPER")
 check(JR:Status("ZZZZZZZZZZ") == nil and JR:Status(req.id) == "officer", "a CRA for a request I never made is nothing")
 handler("CRA|" .. req.id .. "|officer|Eve\ncff00ff00" .. string.rep("公", 80), "Eve", "WHISPER")
@@ -205,7 +217,7 @@ check(utf8ok(eveBy) and not eveBy:find("%c") and GuildOS:Utf8Len(eveBy) <= 40, "
 handler("CRA|" .. req.id .. "|invited|Ana Lima", "Ana Lima", "WHISPER")
 check(JR:Status(req.id) == "invited", "CRA invited ends it")
 tick.fn()
-check(#whispers == 4, "and nothing is sent after")
+check(#whispers == 6, "and nothing is sent after")
 handler("CRA|" .. req.id .. "|officer|Ana Lima", "Ana Lima", "WHISPER")
 check(JR:Status(req.id) == "invited", "a late officer does not reopen it")
 
@@ -320,7 +332,7 @@ NOW = NOW + 100
 local before = #guildMsgs
 handler(msg, "Marta Vilar", "WHISPER")
 check(#JR:List() == 1 and find("abc123DEF4").seen == NOW, "the same CRQ again is one row, heard again")
-check(#guildMsgs == before + 1, "(and passed on again: the guild's seen is fresh)")
+check(#guildMsgs == before, "(not relayed again so soon: see the relay gap below)")
 
 -- a copy over GUILD: stored, not answered, not passed on again
 local whispersBefore, guildBefore = #whispers, #guildMsgs
@@ -413,13 +425,16 @@ check(JR:CanInvite("inv1234567") == false and JR:Invite("inv1234567") == false a
 canInvite = true
 guildMsgs = {}
 check(JR:Invite("inv1234567") == true and invites[1] == "Marta Vilar", "Invite hands the game the name as it was given")
-check(find("inv1234567").status == "invited" and guildSaw("CRA|inv1234567|invited|Chehul Costa"), "and the decision is made and told")
+check(find("inv1234567").status == "open" and not guildSaw("CRA|inv1234567|invited|Chehul Costa"),
+  "and the row stays open until the game says the invite went (I3)")
+fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
+check(find("inv1234567").status == "invited" and guildSaw("CRA|inv1234567|invited|Chehul Costa"), "the game's line closes it, and it is told")
 check(JR:Invite("inv1234567") == false and #invites == 1, "once")
 check(JR:CanInvite("nope") == false, "an unknown request is not invitable")
 
 -- bounded
 reset()
-GUILD = "Ashen Vow"
+GUILD, officer = "Ashen Vow", true
 for i = 1, 50 do
   handler(crq(string.format("id%08d", i), "Player " .. i), "Player " .. i, "WHISPER")
   NOW = NOW + 1
@@ -473,6 +488,7 @@ check(JR:ForExport() == nil, "and with nothing to tell the field is absent")
 reset()
 GUILD, officer = "Ashen Vow", true
 GuildOS.Client.isAnniversary = false
+roster = {}   -- the export walks the roster and needs members it has no data for
 handler(crq("exp1234567"), "Marta Vilar", "WHISPER")
 local payload = Companion:BuildPayload()
 check(payload and payload.v == 13, "the payload is v13")
@@ -493,16 +509,16 @@ reset()
 GUILD, officer = "Ashen Vow", true
 handler(crq("sit1234567"), "Marta Vilar", "WHISPER")
 GuildOSInbox = { block({
-  { id = "siteRowAAA1", character = "Davi Rocha", class = "MAGE", level = 14, role = "DPS", note = "Procuro", source = "site", status = "open", at = NOW - 3600 },
+  { id = "550e8400-e29b-41d4-a716-446655440000", character = "Davi Rocha", class = "MAGE", level = 14, role = "DPS", note = "Procuro", source = "site", status = "open", at = NOW - 3600 },
   { id = "sit1234567", character = "Marta Vilar", class = "WARRIOR", level = 9, role = "TANK", source = "addon", status = "declined", at = NOW - 100 },
   { id = "siteOldBBB2", character = "Gone Away", source = "site", status = "declined", at = NOW - 9000 },
   { id = "siteDupCCC3", character = "Davi Rocha", source = "site", status = "open", at = NOW - 50 },
   { id = "siteBadDDD4", character = "|cffff0000Eve", class = "NOTACLASS", level = 14, role = "BARD", source = "site", status = "open", at = NOW - 20 },
 }) }
 local site = Import:SiteJoinRequests()
-check(site and #site == 5 and site[1].id == "siteRowAAA1", "the block's requests are read")
+check(site and #site == 5 and site[1].id == "550e8400-e29b-41d4-a716-446655440000", "the block's requests are read")
 JR:Refresh()
-local davi = find("siteRowAAA1")
+local davi = find("550e8400-e29b-41d4-a716-446655440000")
 check(davi and davi.source == "site" and davi.status == "open" and davi.character == "Davi Rocha" and davi.class == "MAGE" and davi.level == 14, "a request from the site becomes a row")
 check(find("sit1234567").status == "declined" and find("sit1234567").decidedBy == "Discord", "a decision made in Discord closes the row here")
 check(find("siteOldBBB2") == nil, "a closed request this client never had is not added")
@@ -512,12 +528,12 @@ check(eve and not eve.character:find("|", 1, true) and eve.class == nil and eve.
 local n = #JR:List()
 JR:Refresh()
 check(#JR:List() == n, "reading it again adds nothing")
-check(JR:CanInvite("siteRowAAA1") == true, "a site request can always be invited")
+check(JR:CanInvite("550e8400-e29b-41d4-a716-446655440000") == true, "a site request can always be invited")
 NOW = NOW + 3 * DAY
 GuildOSInbox = { block({}) }
 Import._blockRaw = nil
-check(JR:CanInvite("siteRowAAA1") == true, "even when nobody has heard from the player in days")
-check(JR:Decide("siteRowAAA1", "declined") and find("siteRowAAA1").status == "declined", "and decided here")
+check(JR:CanInvite("550e8400-e29b-41d4-a716-446655440000") == true, "even when nobody has heard from the player in days")
+check(JR:Decide("550e8400-e29b-41d4-a716-446655440000", "declined") and find("550e8400-e29b-41d4-a716-446655440000").status == "declined", "and decided here")
 check(JR:ForExport()[1] ~= nil, "decisions about site requests go back up")
 
 -- A screen that listens hears the changes, and one that errors costs the others nothing.
@@ -529,5 +545,201 @@ JR:Listen(function() heardChanges = heardChanges + 1 end)
 handler(crq("lis1234567"), "Marta Vilar", "WHISPER")
 JR:Decide("lis1234567", "declined")
 check(heardChanges == 2, "a screen hears a request come and a request decided, whatever the other screen does")
+
+-- ── Fix round 1 ─────────────────────────────────────────────────────────
+local UUID = "550e8400-e29b-41d4-a716-446655440000"
+local UUID2 = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+local function openSite(id, character)
+  Import._blockRaw = nil
+  GuildOSInbox = { block({ { id = id, character = character or "Davi Rocha", source = "site", status = "open", at = NOW - 60 } }) }
+  JR:Refresh()
+end
+
+-- C1: a guild heard only by an old CR2 has no slug, and can still be asked.
+reset()
+RB:Ingest("CR2|Old Guild|H|||oi|enUS||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|Zed Rocha", "Zed")
+local cr2ad
+for _, a in ipairs(GuildOS.GuildFinder:All()) do if a.n == "Old Guild" then cr2ad = a end end
+check(cr2ad and cr2ad.u == nil, "a card heard only by CR2 has no slug")
+local c1, c1why = JR:Send(cr2ad, "oi")
+check(c1 and c1why == nil, "and can still be asked: " .. tostring(c1why))
+check(JR:Latest(cr2ad) == c1 and select(2, JR:Send(cr2ad)) == "already", "one per guild, by name when there is no slug")
+check(whispers[1] and whispers[1].target == "Zed Rocha", "it goes to the contact the ad names")
+fire("PLAYER_LOGOUT")
+check(GuildOSDB.recruitOutboxWire == nil, "and the wire leaves out what the site cannot name by slug")
+check(JR:Send(nil) == nil and select(2, JR:Send({ u = "x" })) == "no-ad", "an ad with no name is refused, with a reason")
+
+-- C2: a plain member's CRA decides nothing, and so does a plain member's click.
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("for1234567"), "Marta Vilar", "WHISPER")
+handler("CRA|for1234567|declined|Ana Lima", "Eve Costa", "GUILD")
+check(find("for1234567").status == "open" and JR:ForExport()[1].status == "open", "a member's CRA over GUILD decides nothing, and the export does not tell the site it did")
+handler("CRA|for1234567|declined|Ana Lima", "Not On Roster", "GUILD")
+check(find("for1234567").status == "open", "nor does somebody who is not on the roster")
+officer = false
+check(JR:Decide("for1234567", "declined") == false and find("for1234567").status == "open", "a client that is not an officer's cannot decide")
+officer = true
+handler("CRA|for1234567|declined|Ana Lima", "Ana Lima", "GUILD")
+check(find("for1234567").status == "declined", "an officer's CRA does")
+
+-- I1: a site request has a UUID for an id, and its decision crosses GUILD both ways.
+reset(); GUILD, officer = "Ashen Vow", true
+openSite(UUID)
+check(find(UUID) and find(UUID).source == "site", "a request with a UUID id becomes a row")
+handler("CRA|" .. UUID .. "|declined|Ana Lima", "Ana Lima", "GUILD")
+check(find(UUID).status == "declined", "another officer's decision on it closes it here")
+openSite(UUID2, "Marta Vilar")
+guildMsgs = {}
+check(JR:Decide(UUID2, "declined") and guildSaw("CRA|" .. UUID2 .. "|declined|Chehul Costa"), "and a decision made here is told to the guild")
+
+-- I2: a decided request does not come back to life.
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("reo1234567"), "Marta Vilar", "WHISPER")
+JR:Decide("reo1234567", "declined")
+whispers, guildMsgs = {}, {}
+handler(crq("reo1234567"), "Bruno Reis", "GUILD")
+check(guildSaw("CRA|reo1234567|declined|Chehul Costa"), "a relayed CRQ for a closed row makes the decider say so over GUILD")
+check(whispers[1] and whispers[1].target == "Marta Vilar" and whispers[1].payload == "CRA|reo1234567|declined|Chehul Costa", "and tell the person")
+whispers, guildMsgs = {}, {}
+handler(crq("reo1234567"), "Bruno Reis", "GUILD")
+check(#guildMsgs == 0 and #whispers == 0, "at most once per repetition")
+NOW = NOW + JR.REPEAT_SECONDS
+handler(crq("reo1234567"), "Bruno Reis", "GUILD")
+check(guildSaw("CRA|reo1234567|declined|Chehul Costa"), "and again on the next one")
+GuildOS.db.joinRequests = {}   -- a client that was offline when it was decided
+officer = false
+handler(crq("reo1234567"), "Bruno Reis", "GUILD")
+check(find("reo1234567").status == "open", "it makes the row from the relay")
+handler("CRA|reo1234567|declined|Chehul Costa", "Ana Lima", "GUILD")
+check(find("reo1234567").status == "declined", "and the officer's word closes it")
+
+-- I3: Invite closes the row only when the game says the invite went.
+reset(); GUILD, officer = "Ashen Vow", true
+handler(crq("inw1234567"), "Marta Vilar", "WHISPER")
+JR:Invite("inw1234567")
+NOW = NOW + 30
+fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
+check(find("inw1234567").status == "open", "a confirmation that comes late closes nothing")
+check(JR:Invite("inw1234567") == true and #invites == 2, "and the officer can try again")
+fire("CHAT_MSG_SYSTEM", "You have invited Somebody Else to join your guild.")
+check(find("inw1234567").status == "open", "a confirmation for another name closes nothing")
+issecretvalue = function(v) return v == "SECRET" end
+fire("CHAT_MSG_SYSTEM", "SECRET")
+issecretvalue = nil
+check(find("inw1234567").status == "open", "nor does a line the client keeps secret")
+fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
+check(find("inw1234567").status == "invited", "the right line, in time, does")
+reset(); GUILD, officer = "Ashen Vow", true
+openSite(UUID)
+JR:Invite(UUID)
+check(invites[1] == "Davi Rocha" and find(UUID).status == "open", "a request from the site stays open too: the person may be offline")
+
+-- I4: on retail the realm travels with the name, and the invite takes it as the game wants it.
+reset(); GUILD, officer = "Ashen Vow", true
+GuildOS.Client.isRetail, GuildOS.Client.has.surnames = true, false
+check(JR:Me().character:find("^Chehul%-"), "on retail the name asked with carries its realm: " .. JR:Me().character)
+handler(crq("rt11111111", "Ana-Gallywix"), "Ana-Gallywix", "WHISPER")
+handler(crq("rt22222222", "Ana-Normal"), "Ana-Normal", "WHISPER")
+check(find("rt11111111") and find("rt22222222"), "two Anas of different realms are two people")
+JR:Invite("rt11111111"); JR:Invite("rt22222222")
+check(invites[1] == "Ana-Gallywix" and invites[2] == "Ana", "the invite keeps a connected realm and drops this one's")
+GuildOS.Client.isRetail, GuildOS.Client.has.surnames = false, true
+
+-- I5: asked on the site, then in the game.
+reset(); GUILD, officer = "Ashen Vow", true
+openSite(UUID)
+handler(crq("gam1234567", "Davi Rocha"), "Davi Rocha", "WHISPER")
+check(whispers[1] and whispers[1].payload == "CRA|gam1234567|officer|Chehul Costa", "a game request from somebody with a site one open is answered under its own id")
+check(find(UUID).seen == NOW and find(UUID).gameId == "gam1234567" and not find("gam1234567"), "and the site row is the one kept, heard now")
+whispers = {}
+JR:Decide(UUID, "declined")
+check(whispers[1] and whispers[1].payload == "CRA|gam1234567|declined|Chehul Costa", "its decision reaches the person under that id")
+
+-- M1: a peer that never answers does not hold the contact names.
+reset()
+Gossip:Note("Old Addon", "Ashen Vow", true)
+req = JR:Send(ASHEN, "oi")
+check(#whispers == 1 and whispers[1].target == "Old Addon", "first the peer")
+whispers = {}
+ticker300().fn()
+local seenTargets = {}
+for _, w in ipairs(whispers) do seenTargets[#seenTargets + 1] = w.target end
+check(table.concat(seenTargets, ",") == "Old Addon,Bia Reis,Caio Dias", "with no answer the next round tries the contact names too: " .. table.concat(seenTargets, ","))
+handler("CRA|" .. req.id .. "|member|Old Addon", "Old Addon", "WHISPER")
+whispers = {}
+ticker300().fn()
+check(#whispers == 1, "an answer ends the extra tries")
+
+-- M2: guild names compare without case.
+reset(); GUILD = "Ashen Vow"
+handler(crq("cas1234567", "Marta Vilar", { guild = "ASHEN vow" }), "Marta Vilar", "WHISPER")
+check(find("cas1234567"), "a CRQ whose guild name differs in case is still mine")
+reset()
+Gossip:Note("Ana Lima", "ASHEN VOW", true)
+JR:Send(ASHEN)
+check(whispers[1] and whispers[1].target == "Ana Lima", "and so is a peer's guild")
+
+-- M3: the queue does not outlive the asking.
+reset()
+JR:Send(ASHEN)
+GUILD = "Ashen Vow"
+ticker300().fn()
+check(#JR:Outbox() == 0, "a tick in a guild clears the queue, event or not")
+
+-- M4: nothing is written to a db that is not this guild's.
+reset(); GUILD, officer = "Ashen Vow", true
+onDb = false
+handler(crq("ndb1234567"), "Marta Vilar", "WHISPER")
+check(next(GuildOS.db.joinRequests or {}) == nil and #whispers == 0, "off the guild's db a request is nobody's")
+
+-- M5: a corrupt row breaks no screen.
+reset(); GUILD = "Ashen Vow"
+GuildOS.db.joinRequests = { bad = "x", worse = { id = "w", status = "open" } }
+check(pcall(JR.OpenCount, JR) and JR:OpenCount() == 0 and #JR:List() == 0, "a row that is not a row is dropped")
+
+-- M6: the role comes from the spec when nothing was chosen.
+reset(); GuildOS.db.profile = { prefRoles = {} }
+check(JR:Me().role == nil, "no choice and no spec: absent")
+specRole = "TANK"
+check(JR:Me().role == "TANK", "the spec's role fills it in")
+specRole = "DAMAGER"
+check(JR:Me().role == "DPS", "a damage spec is DPS")
+GuildOS.db.profile = { prefRoles = { HEALER = true } }
+check(JR:Me().role == "HEALER", "a chosen role wins")
+
+-- M7: whether the game can whisper is a fact the screen can ask.
+reset()
+check(JR:CanReach() == true, "with a whisper that works the guild can be reached from the game")
+S.whisper = nil
+check(JR:CanReach() == false, "and without one it cannot")
+
+-- M9: a request from the site lights the officer's notice, once.
+reset(); GUILD, officer = "Ashen Vow", true
+local noticed = {}
+GuildOS.JoinRequestsHeard = function(_, r) noticed[#noticed + 1] = r.id end
+openSite(UUID)
+JR:Refresh()
+check(#noticed == 1 and noticed[1] == UUID, "a new site request gives the same notice, once")
+GuildOS.JoinRequestsHeard = nil
+
+-- M10 and M11: a request is relayed once per repetition, and drops are counted.
+reset(); GUILD, officer = "Ashen Vow", false
+handler(crq("rel1234567"), "Marta Vilar", "WHISPER")
+local relayed = #guildMsgs
+NOW = NOW + 100
+handler(crq("rel1234567"), "Marta Vilar", "WHISPER")
+check(#guildMsgs == relayed and find("rel1234567").seen == NOW, "heard again within the gap: seen is fresh, nothing is relayed")
+NOW = NOW + 200
+handler(crq("rel1234567"), "Marta Vilar", "WHISPER")
+check(#guildMsgs == relayed + 1, "and relayed again at the next repetition")
+local before = JR:Stats()
+handler(crq("dr11111111", "Third Party"), "Marta Vilar", "WHISPER")
+handler(crq("dr22222222", "Marta Vilar", { guild = "Another Guild" }), "Marta Vilar", "WHISPER")
+local after = JR:Stats()
+check(after.name == before.name + 1 and after.guild == before.guild + 1, "a name that is not the sender's and a guild that is not mine are counted")
+
+-- M12: the recruiting tab hides the section where the module never starts.
+local roster_ui = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
+check(roster_ui:find("isAnniversary", roster_ui:find("Join requests", 1, true), true), "the join requests section of the recruiting tab checks for Anniversary")
 
 print(("join-requests: %d checks passed"):format(checks))

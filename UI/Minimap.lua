@@ -72,9 +72,14 @@ local function MinimapMenu_Init(_, level)
 
     -- An officer with people waiting: the list is one click away (the mock's tab 3).
     local requests = GuildOS.JoinRequests
-    if requests and GuildOS.ShowJoinRequests and IsInGuild() and GuildOS:IsOfficer() and requests:OpenCount() > 0 then
+    local waiting = 0
+    if requests and GuildOS.ShowJoinRequests and IsInGuild() and GuildOS:IsOfficer() then
+        local ok, n = pcall(requests.OpenCount, requests)
+        waiting = ok and n or 0
+    end
+    if waiting > 0 then
         info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-        info.text = string.format(L["Join requests (%d)"], requests:OpenCount())
+        info.text = string.format(L["Join requests (%d)"], waiting)
         info.func = function() GuildOS:ShowJoinRequests(); CloseDropDownMenus() end
         UIDropDownMenu_AddButton(info, level)
     end

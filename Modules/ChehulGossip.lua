@@ -549,8 +549,9 @@ end
 function Gossip:PeerFor(guild)
     local wanted, best = GuildText(guild), nil
     if not wanted then return nil end
+    wanted = wanted:lower()   -- the site and the game do not agree on the case of a guild's name
     for _, peer in ipairs(self:Peers()) do
-        if peer.guild == wanted and (not best or (peer.officer and not best.officer)) then best = peer end
+        if peer.guild and peer.guild:lower() == wanted and (not best or (peer.officer and not best.officer)) then best = peer end
     end
     if best then return best.name, best.officer end
     return nil
