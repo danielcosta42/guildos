@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-11-02
+
+### Added
+- /gos probe channel com botão na Auditoria, a rota por canal desligada e os contadores do recrutamento (#245)
+- o lado da guilda — aviso, lista de pedidos, convite pelo clique e joinRequests no export v13 (#245)
+- o pedido de quem está sem guilda — formulário, envio repetido, resposta e fila para o companion (#245)
+- o gossip por whisper que leva o anúncio além da zona e do layer de quem grita (#245)
+- a tela de quem está sem guilda para achar uma, com filtros, cartão e horário no relógio dele (#245)
+
+### Fixed
+- a tentativa atrasada do canal antigo não apaga o nome da sonda em andamento, agora com teste (#245)
+- o nome do canal da sonda só sai quando o canal foi visto saindo, com tentativas limitadas (#245)
+- no Forever o officer é reconhecido pelo nome inteiro, nas duas grafias do roster (#245)
+- no retail o gossip não repassa guilda de reino que não pode convidar (#245)
+- um anúncio da lista com o nome da guilda não ganha a exceção da própria guilda (#245)
+- NaN e inf vindos da rede não passam por nenhuma checagem nem chegam a uma tabela salva (#245)
+- o officer é reconhecido com hífen no remetente, e a Auditoria mostra quem foi recusado (#245)
+- cada cliente oferece só o que serve à sua facção e região (#245)
+- a Auditoria atualiza depois do veredito da sonda de canal (#245)
+- cartão sem slug não promete o que o companion não vai levar (#245)
+- o Whisper do cartão usa o hífen, o mesmo da lista do officer (#245)
+- quem convida sem ser officer não vê Recusar e sabe por que a linha fica aberta (#245)
+- o pedido do jogo que vem no bloco continua sendo do jogo (#245)
+- as treze classes do retail cabem no anúncio (#245)
+- o anúncio do officer pausa em instância e em lockdown (#245)
+- o teste de whisper tenta algumas vezes e um eco atrasado ainda vale (#245)
+- o pedido do site avisa o officer quando o rank é conhecido, uma vez por linha nova (#245)
+- o canal que um /reload deixou aberto sai no início, com atraso, e antes da sonda seguinte (#245)
+- o corte do cache solta a versão mais velha e nunca o anúncio da própria guilda (#245)
+- a lista do companion entra no gossip e chega a quem não tem companion (#245)
+- a guilda guarda o próprio anúncio, com o officer por GUILD, e o membro vira alvo do pedido (#245)
+- a tentativa pulada da sonda é um estado próprio, o filtro lê o canal numerado, o canal aberto sai no /reload e o gameId pede o nome inteiro (#245)
+- pedido decidido renasce pelo id do jogo e a confirmação do convite pede o nome inteiro (#245)
+- formulário e aviso do pedido — cartão sem slug, linha para toda recusa, fila do companion, janela do convite, textos do mockup e plurais nas nove línguas (#245)
+- pedido sem slug, decisão só de officer, id do site, pedido decidido que renasce, convite só fechado pela linha do jogo, nome do reino no retail, contato do ct, caixa do nome, db errado e linha corrompida (#245)
+- um par não toma o lugar do anúncio da própria guilda no cache (#245)
+- os tickers do beacon rodam isolados, e um erro do cliente não derruba a rodada (#245)
+- o anúncio novo cruza o cache cheio, e uma lista de nomes não toma as rodadas de quem ouvi (#245)
+- a tela da guilda fiel ao mock, com listas de verdade, uma guilda por mundo e classes validadas (#245)
+
+### Other
+- wip: o anúncio completo com selo, ainda sem revisão (#245)
+
+
 ## [Unreleased]
 
 ### Added
