@@ -34,7 +34,14 @@ local GUILD, officer, canInvite = nil, false, true
 local whispers, guildMsgs, invites, banned = {}, {}, {}, {}
 local frames, tickers = {}, {}
 
-DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+local printed = {}
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, line) printed[#printed + 1] = line end }
+local function said(text)
+  for _, line in ipairs(printed) do
+    if line:find(text, 1, true) then return true end
+  end
+  return false
+end
 -- A frame that remembers the events it asked for and the scripts it was given, so a test can fire them.
 function CreateFrame()
   local f = { events = {}, scripts = {} }
@@ -144,7 +151,7 @@ local function reset()
   GuildOSDB = {}
   GuildOS.db = { settings = { companion = true }, profile = { prefRoles = { HEALER = true } } }
   GUILD, officer, canInvite = nil, false, true
-  whispers, guildMsgs, invites, banned = {}, {}, {}, {}
+  whispers, guildMsgs, invites, banned, printed = {}, {}, {}, {}, {}
   NOW = 1793750400 + 20 * DAY
   for k in pairs(S.peers) do S.peers[k] = nil end
   S.whisper = "space"
@@ -731,6 +738,28 @@ check(find("gam1234567") and find("gam1234567").source == "addon", "the block's 
 check(JR:CanInvite("gam1234567") == false, "nobody has heard from them: Invite waits")
 handler(crq("gam1234567", "Davi Rocha"), "Davi Rocha", "WHISPER")
 check(JR:CanInvite("gam1234567") == true, "and comes alive when they are heard")
+
+-- Who can invite and is no officer: the invite goes, the row stays open, and the game's line says why.
+reset(); GUILD, officer, canInvite = "Ashen Vow", false, true
+handler(crq("rig1234567", "Marta Vilar"), "Marta Vilar", "WHISPER")
+check(JR:CanDecide() == false, "a member decides nothing")
+check(JR:CanInvite("rig1234567") == true and JR:Invite("rig1234567") == true and #invites == 1, "but the game's right to invite is theirs")
+fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
+check(find("rig1234567").status == "open", "the row stays open")
+check(said("Only an officer can close a request: this one stays open."), "and the reason is printed")
+printed = {}
+check(JR:Decide("rig1234567", "declined") == false, "Decline from anywhere is refused")
+check(said("Only an officer can close a request: this one stays open."), "out loud")
+officer = true
+check(JR:CanDecide() == true, "an officer decides")
+printed = {}
+check(JR:Decide("rig1234567", "declined") == true and #printed == 0, "and says nothing when it goes")
+check(JR:Decide("rig1234567", "invited") == false, "the first decision stands")
+check(said("This request is already closed."), "and the second says why")
+printed = {}
+check(JR:Decide("rig1234567", "nonsense") == false and #printed == 0, "what is no decision is nobody's to hear about")
+GUILD = nil
+check(JR:CanDecide() == false, "with no guild nothing is decided")
 
 -- M10 and M11: a request is relayed once per repetition, and drops are counted.
 reset(); GUILD, officer = "Ashen Vow", false

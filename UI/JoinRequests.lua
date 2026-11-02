@@ -137,9 +137,10 @@ local function Build()
             row.note:SetText(r.note and ("\226\128\156" .. r.note .. "\226\128\157") or "")
             row.meta:SetText(Meta(r))
             local isOpen = r.status == "open"
-            row.invite:SetShown(isOpen); row.whisper:SetShown(true); row.decline:SetShown(isOpen)
+            -- Invite is whoever the game lets invite; deciding is an officer's, and Decline would do nothing for anybody else.
+            row.invite:SetShown(isOpen); row.whisper:SetShown(true); row.decline:SetShown(isOpen and JR():CanDecide())
             row.invite:SetEnabled(isOpen and JR():CanInvite(r.id))
-            -- Both are the officer's own click: the invite is the game's, started by this very button.
+            -- Both are the player's own click: the invite is the game's, started by this very button.
             row.invite:SetScript("OnClick", function() JR():Invite(r.id) end)
             row.decline:SetScript("OnClick", function() JR():Decide(r.id, "declined") end)
             row.whisper:SetScript("OnClick", function() ChatFrame_OpenChat("/w " .. WhisperTarget(r.character) .. " ") end)

@@ -655,4 +655,14 @@ opened = {}
 labelled("Whisper")[2].scripts.OnClick()   -- [1] is the finder card's
 check(opened[1] == "/w Chehul-Costa ", "Whisper opens /w with the hyphen the game's chat takes")
 
+-- Who can invite and is no officer sees no Decline: it would do nothing.
+fake.CanDecide = function() return true end
+GuildOS.joinRequestsFrame.Refresh()
+check(labelled("Decline")[1].shown == true, "an officer sees Decline")
+fake.CanDecide = function() return false end
+GuildOS.joinRequestsFrame.Refresh()
+check(labelled("Decline")[1].shown == false and labelled("Decline")[2].shown == false, "who cannot decide does not")
+check(labelled("Invite")[1].shown == true, "and still has Invite")
+
+
 print(("guild-finder: %d checks passed"):format(checks))

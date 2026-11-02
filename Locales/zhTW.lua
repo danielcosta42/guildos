@@ -2195,6 +2195,8 @@ L["1 open"] = "1 個待處理"
 L["There is 1 other guild to look at."] = "還有 1 個公會可以看看。"
 L["You are already in a guild."] = "你已經在一個公會裡了。"
 L["This guild cannot be asked right now."] = "目前無法向這個公會申請。"
+L["Only an officer can close a request: this one stays open."] = "只有幹部才能關閉申請：這份申請仍然開放。"
+L["This request is already closed."] = "這份申請已經關閉。"
 L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."] = "本次遊戲中無法從遊戲內送出任何內容。使用伴侶程式時，離開遊戲後申請會送到 Discord。"
 L["The invite window has closed. Ask an officer to invite you again."] = "邀請視窗已經關閉。請讓幹部重新邀請你。"
 -- /gos probe channel e os números do recrutamento na Auditoria (specs/071-o-recrutamento)

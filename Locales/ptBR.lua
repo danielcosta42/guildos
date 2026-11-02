@@ -2380,6 +2380,8 @@ L["1 open"] = "1 aberto"
 L["There is 1 other guild to look at."] = "Tem outra guilda para olhar."
 L["You are already in a guild."] = "Você já está em uma guilda."
 L["This guild cannot be asked right now."] = "Não dá para pedir a esta guilda agora."
+L["Only an officer can close a request: this one stays open."] = "Só um officer pode fechar um pedido: este continua aberto."
+L["This request is already closed."] = "Este pedido já foi fechado."
 L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."] = "Nada pode ser enviado pelo jogo nesta sessão. Com o companion, o pedido segue pelo Discord quando você sair do jogo."
 L["The invite window has closed. Ask an officer to invite you again."] = "A janela do convite já fechou. Peça a um officer para convidar de novo."
 -- /gos probe channel e os números do recrutamento na Auditoria (specs/071-o-recrutamento)

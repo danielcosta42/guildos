@@ -2195,6 +2195,8 @@ L["1 open"] = "Открыта: 1"
 L["There is 1 other guild to look at."] = "Есть ещё одна гильдия."
 L["You are already in a guild."] = "Вы уже состоите в гильдии."
 L["This guild cannot be asked right now."] = "Сейчас в эту гильдию нельзя подать заявку."
+L["Only an officer can close a request: this one stays open."] = "Закрыть заявку может только офицер: эта остаётся открытой."
+L["This request is already closed."] = "Эта заявка уже закрыта."
 L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."] = "В этой сессии из игры ничего отправить нельзя. С помощником заявка уйдёт в Discord, когда вы выйдете из игры."
 L["The invite window has closed. Ask an officer to invite you again."] = "Окно приглашения закрылось. Попросите офицера пригласить вас снова."
 -- /gos probe channel e os números do recrutamento na Auditoria (specs/071-o-recrutamento)

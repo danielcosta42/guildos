@@ -2195,6 +2195,8 @@ L["1 open"] = "1건 열림"
 L["There is 1 other guild to look at."] = "살펴볼 다른 길드가 1곳 있습니다."
 L["You are already in a guild."] = "이미 길드에 가입해 있습니다."
 L["This guild cannot be asked right now."] = "지금은 이 길드에 신청할 수 없습니다."
+L["Only an officer can close a request: this one stays open."] = "신청은 관리자만 닫을 수 있습니다. 이 신청은 열린 상태로 남습니다."
+L["This request is already closed."] = "이 신청은 이미 닫혔습니다."
 L["Nothing can be sent from the game this session. With the companion, the request goes to Discord when you leave the game."] = "이번 세션에서는 게임에서 아무것도 보낼 수 없습니다. 컴패니언을 쓰면 게임을 종료할 때 신청이 Discord로 갑니다."
 L["The invite window has closed. Ask an officer to invite you again."] = "초대 창이 닫혔습니다. 관리자에게 다시 초대해 달라고 요청하세요."
 -- /gos probe channel e os números do recrutamento na Auditoria (specs/071-o-recrutamento)

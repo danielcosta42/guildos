@@ -505,14 +505,27 @@ function JR:OnCRA(payload, sender, dist)
     end
 end
 
+-- Whether this character may close a request. The game's right to invite can reach below the guild's
+-- officers: that person invites, and closes nothing.
+function JR:CanDecide()
+    return inGuild() and GuildOS:IsOfficer()
+end
+
 -- An officer's decision, once: the first one stands. It is told to the guild, and to the player if heard
--- just now, who would otherwise wait for the next repetition.
+-- just now, who would otherwise wait for the next repetition. A refusal says why: from the click on
+-- Decline or from the game's line after an invite, it would otherwise be nothing happening.
 function JR:Decide(id, status)
     if status ~= "invited" and status ~= "declined" then return false end
-    if not inGuild() or not GuildOS:IsOfficer() then return false end
+    if not self:CanDecide() then
+        GuildOS:Print(L["Only an officer can close a request: this one stays open."])
+        return false
+    end
     expireRows()
     local r = store()[id]
-    if not r or r.status ~= "open" then return false end
+    if not r or r.status ~= "open" then
+        GuildOS:Print(L["This request is already closed."])
+        return false
+    end
     r.status, r.decidedBy, r.decidedAt = status, me(), now()
     toGuild(table.concat({ "CRA", id, status, me() }, "|"))
     local gossip = GuildOS.ChehulGossip
