@@ -107,7 +107,8 @@ end
 local function send(c, prefix, text, dist, target, prio)
   world.log[#world.log + 1] = { from = c.name, op = text:match("^[^|]*"), text = text, dist = dist, target = target,
                                 prio = prio, at = clock, cycle = c.cycle }
-  at(clock + 0.1, function()
+  -- `echoLag`: the test's whisper to oneself takes this long to come back, as on a crowded opening night.
+  at(clock + (text:find("^CRW") and world.echoLag or 0.1), function()
     if dist == "WHISPER" then
       local to = reach(c, target)
       if to then deliver(to, prefix, text, dist, c) else c.system(NOT_FOUND:format(target)) end
@@ -424,8 +425,7 @@ run(30)
 check(not a.Gossip:CanWhisper(), "with no echo there is no whisper")
 run(900)
 tries = ops({ from = a.name, dist = "WHISPER" })
-check(#tries == 2, "the two tries are the only whispers")
-check(tries[1].op == "CRW" and tries[2].op == "CRW", "nothing else goes by whisper")
+for _, try in ipairs(tries) do check(try.op == "CRW", "the tries are the only whispers") end
 check(#a.chat == 0, "and neither failure printed anything")
 check(#ops({ from = a.name, op = "CRB", dist = "GUILD" }) >= 4, "the beacon still goes by GUILD")
 check(#ops({ from = a.name, op = "CRB", dist = "PARTY" }) >= 4, "and by the group")
@@ -435,6 +435,66 @@ a.hear("CRD|", b.name)
 a.hear("CRG|Ordem", b.name)
 run(1)
 check(#ops({ from = a.name, op = "CR3" }) == 0, "a client that cannot whisper does not try to answer")
+
+-- An echo that comes after the last try still counts: with the lag of an opening night a client must not
+-- stay without gossip and without requests until a /reload.
+fresh()
+world.echoLag = 40
+a = client("Chehul Costa")
+run(45)
+check(not a.Gossip:CanWhisper(), "the echo is still on its way, past the last try")
+run(10)
+check(a.Gossip:CanWhisper() and a.Gossip:Stats().whisper == "space", "and when it comes it is a yes")
+
+fresh("hyphen")
+world.echoLag = 40
+a = client("Chehul Costa")
+run(60)
+check(a.Gossip:Stats().whisper == "hyphen" and a.Gossip:WhisperName("Chehul Costa") == "Chehul-Costa", "a late echo keeps the spelling it was sent with")
+
+-- A whisper that only starts working later is found by a later pass.
+fresh("none")
+a = client("Chehul Costa")
+run(60)
+check(not a.Gossip:CanWhisper(), "nothing comes back on the first pass")
+world.spelling = "space"
+run(200)
+check(a.Gossip:CanWhisper() and a.Gossip:Stats().whisper == "space", "and a later pass finds the whisper working")
+local settled = #ops({ op = "CRW" })
+run(1800)
+check(#ops({ op = "CRW" }) == settled, "and the test stops there")
+check(#a.chat == 0, "and no pass printed anything")
+
+-- A few passes and no more, and the token stays good for an echo after the last of them.
+fresh("none")
+a = client("Chehul Costa")
+run(1800)
+tries = ops({ from = a.name, dist = "WHISPER" })
+check(#tries > 2 and #tries <= 10 and #tries % 2 == 0, "a few passes over the two spellings: " .. #tries)
+local gaps = {}
+for i = 3, #tries, 2 do gaps[#gaps + 1] = tries[i].at - tries[i - 2].at end
+for _, gap in ipairs(gaps) do check(gap >= 60 and gap <= 120, "a minute or two between passes: " .. gap) end
+run(3600)
+check(#ops({ from = a.name, dist = "WHISPER" }) == #tries, "and then it stops asking")
+check(#a.chat == 0, "with nothing in the chat")
+local alive = tries[1].text:match("^CRW|([^|]+)")
+a.hear("CRW|bad|1", a.name)
+check(not a.Gossip:CanWhisper(), "a wrong token is still nothing")
+a.hear("CRW|" .. alive .. "|2", a.name)
+check(a.Gossip:Stats().whisper == "hyphen", "and the right one, hours later, still counts")
+
+-- A pass that finds the door shut waits behind it, as a try does.
+fresh("none")
+a = client("Chehul Costa")
+run(30)
+a.inInstance = true
+local shut = #ops({ op = "CRW" })
+run(600)
+check(#ops({ op = "CRW" }) == shut, "inside an instance no pass goes")
+a.inInstance = false
+world.spelling = "space"
+run(30)
+check(a.Gossip:CanWhisper(), "and the next one goes on the way out")
 
 -- A try that raises costs that try: the next one was already on its way.
 fresh("hyphen")

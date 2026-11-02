@@ -43,6 +43,8 @@ local BEACON_KEY    = PREFIX .. ":beacon"   -- Mesh:Realm coalesces on it: only 
 local ROUND_JITTER  = 30      -- seconds added to a round and never taken off, so two rounds never share a ROUND_SECONDS
 local TEST_DELAY    = 10      -- seconds after login before the whisper test
 local TEST_WAIT     = 5       -- seconds an echo gets before the next spelling
+local TEST_AGAIN    = 90      -- seconds between one pass over the spellings and the next
+local TEST_PASSES   = 4       -- passes before it stops asking
 local TRIED_SECONDS = 30      -- seconds the "no such player" line of a name I whispered stays hidden
 local PAYLOAD_MAX   = 2048    -- bytes; a whole CR3 is under it, and a multi-part message can be anything
 local NAME_MAX      = 96      -- bytes of a name: two names of three-byte letters and a realm
@@ -235,10 +237,19 @@ end
 ----------------------------------------------------------------------
 -- The whisper test. Nothing proves that an addon whisper to "First Surname" arrives on WoW: Forever,
 -- so a client tries it on itself: the space the game writes, then the hyphen of the character folders.
--- A name with no surname has nothing to choose. Until one comes back :CanWhisper() is false.
+-- A name with no surname has nothing to choose. Until one comes back :CanWhisper() is false. An opening
+-- night answers late: so the spellings are gone over a few times, and the token stays good for as long as
+-- the session lasts, because one lost echo must not cost a client its gossip and its requests until a /reload.
 ----------------------------------------------------------------------
 local function TryNext(test)
     if S.test ~= test then return end   -- an echo already settled it
+    if test.at >= #test.tries then
+        test.pass = test.pass + 1
+        if test.pass >= TEST_PASSES then return end   -- no more asking, and an echo on its way still counts
+        test.at = 0
+        Compat.After(TEST_AGAIN, function() Guarded(TryNext, test) end)
+        return
+    end
     -- First: a try that raises must not take the next spelling down with it.
     Compat.After(TEST_WAIT, function() Guarded(TryNext, test) end)
     -- A try that finds the door shut waits behind it, a login inside an instance included: otherwise
@@ -246,10 +257,6 @@ local function TryNext(test)
     if Quiet() then return end
     test.at = test.at + 1
     local try = test.tries[test.at]
-    if not try then
-        S.test = nil
-        return
-    end
     S.tried[Whole(try.name)] = GetTime() + TRIED_SECONDS
     Compat.SendAddonMessageNow(PREFIX, "CRW|" .. test.token .. "|" .. test.at, "WHISPER", try.name)
 end
@@ -260,7 +267,7 @@ local function StartTest()
     if GuildOS.Client.has.surnames and me:find(" ", 1, true) then
         tries = { { name = me, spelling = "space" }, { name = (me:gsub(" ", "-")), spelling = "hyphen" } }
     end
-    S.test = { tries = tries, at = 0, token = tostring(math.random(1, 2147483647)) }
+    S.test = { tries = tries, at = 0, pass = 0, token = tostring(math.random(1, 2147483647)) }
     TryNext(S.test)
 end
 
