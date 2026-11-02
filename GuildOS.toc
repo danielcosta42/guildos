@@ -87,6 +87,7 @@ Modules\ProfDirectory.lua
 Modules\ChehulGossip.lua
 Modules\GuildFinder.lua
 Modules\RecruitBeacon.lua
+Modules\JoinRequests.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
 Modules\RaiderRoster.lua

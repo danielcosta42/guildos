@@ -80,6 +80,8 @@ local function text(v, max)
     return s
 end
 
+GF.Text = text   -- the same clean for a request's name and note (Modules/JoinRequests.lua)
+
 local function list(v, ok, max)
     if type(v) ~= "table" then return nil end
     local out, seen = {}, {}

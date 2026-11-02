@@ -618,7 +618,7 @@ function Companion:BuildPayload()
 end
 
 -- The wire format at the top of this file, in one place, for the export and the pack.
-local function onTheWire(payload)
+local function onTheWire(payload, prefix)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
     if not LibDeflate then return nil, "LibDeflate not available" end
 
@@ -626,7 +626,13 @@ local function onTheWire(payload)
     local compressed = LibDeflate:CompressDeflate(json, { level = 9 })
     if not compressed then return nil, "compression failed" end
 
-    return WIRE_PREFIX .. LibDeflate:EncodeForPrint(compressed)
+    return (prefix or WIRE_PREFIX) .. LibDeflate:EncodeForPrint(compressed)
+end
+
+-- Any other string the site reads with the same wire (GOSOUTB1: the join requests of a character with no
+-- guild): `prefix` with the marker and its colon. Nil and why when it cannot be made.
+function Companion:Pack(prefix, payload)
+    return onTheWire(payload, prefix)
 end
 
 ----------------------------------------------------------------------
@@ -748,5 +754,8 @@ local writer = CreateFrame("Frame")
 writer:RegisterEvent("PLAYER_LOGOUT")
 writer:SetScript("OnEvent", function()
     if not GuildOSDB then return end
+    -- The queue of a character with no guild: its own string, for the companion to take to the site.
+    -- Its own pcall, and first: nothing about it may keep the export from being written.
+    if GuildOS.JoinRequests and GuildOS.JoinRequests.WriteWire then pcall(GuildOS.JoinRequests.WriteWire, GuildOS.JoinRequests) end
     if Companion:IsEnabled() then writeExport() else writePack() end
 end)

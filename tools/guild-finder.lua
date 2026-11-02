@@ -317,7 +317,7 @@ RB:Ingest("CR2|Another|H|||x|ptBR||" .. (NOW - 50) .. "|" .. (NOW + 86400) .. "|
 check(lit == 1, "once")
 
 -- ── The screen, pressed like a player would ────────────────────────────
-local texts, buttons = {}, {}
+local texts, buttons, allButtons = {}, {}, {}
 local printed, opened, alert = {}, {}, nil
 UISpecialFrames = {}
 LOCALIZED_CLASS_NAMES_MALE = { PALADIN = "Paladin", WARRIOR = "Warrior" }
@@ -336,7 +336,9 @@ GuildOS.UI = {
   CreateCloseButton = function() return widget() end,
   CreateButton = function(_, _, label)
     local b = widget({ label = widget({ text = label }) })
+    function b:SetEnabled(v) self.enabled = v and true or false end
     buttons[label] = b
+    allButtons[#allButtons + 1] = b
     return b
   end,
   CreateCheckbox = function()
@@ -387,12 +389,12 @@ check(buttons["Whisper"].shown == true, "a contact can be whispered")
 press("Whisper")
 check(opened[1] == "/w Ana-Realm ", "and the whisper opens addressed to them")
 
-local sent
-GuildOS.JoinRequests = { Send = function(_, a) sent = a end }
+local asked
+GuildOS.ShowJoinForm = function(_, a) asked = a end
 press("Ask to join")
-check(sent and sent.n == "Alpha Guild", "Ask to join hands the guild on the card to the request flow")
-GuildOS.JoinRequests = nil
-check(pcall(press, "Ask to join"), "before that flow exists the button does nothing, quietly")
+check(asked and asked.n == "Alpha Guild", "Ask to join opens the request form for the guild on the card")
+GuildOS.ShowJoinForm = nil
+check(pcall(press, "Ask to join"), "without the form the button does nothing, quietly")
 
 -- the language chip: right click goes back one, from Portuguese to any
 press("Any language", "RightButton")
@@ -524,5 +526,56 @@ only({ bare(ad({ n = "Same Name", f = "A", v = 50, heard = true, verified = fals
 check(#GF:All() == 2, "but one of the other faction is another guild")
 only({ bare(ad({ n = "Lonely", f = "H", heard = true, verified = false })) })
 check(#GF:All() == 1, "and a CR2 alone stays")
+
+-- ── The request form and the officer's list (Tasks B4 and B5), drawn over a stand-in for the module ──
+-- The rules are tools/join-requests.lua's; here what is checked is what the screens say and press.
+function GetTime() return 1 end
+function time() return NOW end   -- GuildOS:TimeAgo reads the clock
+GuildOS.UI.CreateScrollFrame = function() return widget(), widget() end
+local listeners, outbox, sentNote = {}, {}, nil
+local stateOf = { state = "stored" }
+local fake = {
+  ONLINE_SECONDS = 360,
+  Listen = function(_, fn) listeners[#listeners + 1] = fn end,
+  Me = function() return { character = "Chehul Costa", class = "PALADIN", level = 12, role = "HEALER" } end,
+  Latest = function(_, a) return outbox[a.u] end,
+  Status = function() return stateOf.state, stateOf.by end,
+  Send = function(_, a, note)
+    if stateOf.refuse then return nil, stateOf.refuse end
+    sentNote = note
+    outbox[a.u] = { id = "abc123DEF4", guild = a.n, status = "open" }
+    return outbox[a.u]
+  end,
+}
+GuildOS.JoinRequests = fake
+dofile(ADDON .. "/UI/GuildFinder.lua")
+GuildOS:ShowJoinForm({ n = "Ordem do Crepusculo", u = "ordem", f = "H", w = "normal:us" })
+local form = GuildOS.joinForm
+check(form:IsShown() and has("Ordem do Crepusculo") and has("Ask to join"), "the form names the guild")
+check(has("Goes to the officers: Chehul Costa, Paladin level 12, Healer"), "and who it goes with: name, class and level, role")
+check(has("Note (optional)") and buttons["Send request"] and buttons["Back"], "a note, Send request and Back")
+stateOf.refuse = "too-many"
+press("Send request")
+check(has("You already have 3 open requests."), "a refusal says why")
+stateOf.refuse = nil
+press("Send request")
+check(sentNote ~= nil and has("Saved here"), "sent: with no answer it says Saved here, never delivered")
+check(has("Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."),
+  "and what happens next, as the site can really do it")
+check(buttons["Send request"].shown == false, "the form is gone once it is sent")
+stateOf.state, stateOf.by = "officer", "Ana Lima"
+for _, fn in ipairs(listeners) do fn() end
+check(has("Delivered to Ana Lima") and has("An officer is online and has already seen your request."), "an officer's answer shows, live")
+stateOf.state, stateOf.by = "member", "Bruno Reis"
+for _, fn in ipairs(listeners) do fn() end
+check(has("Delivered to a guild member")
+  and has("No officer online right now. Bruno Reis kept the request and will pass it to the next officer who logs in."), "a member's answer")
+stateOf.state = "invited"
+for _, fn in ipairs(listeners) do fn() end
+check(has("Invite from Ordem do Crepusculo") and has("Accept in the game window that just opened."), "an invite")
+stateOf.state = "declined"
+for _, fn in ipairs(listeners) do fn() end
+check(has("Ordem do Crepusculo thanked you, but is not opening spots right now"), "a refusal from the guild")
+press("Back")
 
 print(("guild-finder: %d checks passed"):format(checks))

@@ -306,6 +306,8 @@ local MODULE_START = {
     { "RecruitBeacon" },
     -- WoW: Forever and retail: the whisper gossip. After RecruitBeacon, whose handler feeds it.
     { "ChehulGossip" },
+    -- WoW: Forever and retail: the request to join a guild, from both sides. After the gossip, whose prefix it rides.
+    { "JoinRequests" },
     -- WoW: Forever and retail: lights the minimap button on the first guild a character with no guild hears.
     { "GuildFinder" },
     { "RecruitScanner" },

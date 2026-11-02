@@ -241,8 +241,7 @@ local function BuildFinder()
     UI:SetButtonVariant(join, "primary")
     join:SetScript("OnClick", function()
         local ad = f.ads and f.ads[f.index]
-        -- The request flow is the next task's (JoinRequests); until it is loaded this does nothing.
-        if ad and GuildOS.JoinRequests then GuildOS.JoinRequests:Send(ad) end
+        if ad and GuildOS.ShowJoinForm then GuildOS:ShowJoinForm(ad) end
     end)
     local whisper = UI:CreateButton(card, L["Whisper"], 90, 26)
     whisper:SetPoint("LEFT", join, "RIGHT", 8, 0)
@@ -460,6 +459,172 @@ local function BuildFinder()
     end
 
     return f
+end
+
+----------------------------------------------------------------------
+-- The request (the mock's tab 2): the card becomes a form with an optional note, and once sent it says
+-- where the request got to. It never says "delivered" without an answer (Modules/JoinRequests.lua).
+----------------------------------------------------------------------
+local FORM_W, FORM_H = 420, 270
+local TONE = { ok = { 0.49, 0.85, 0.56 }, wait = { 0.72, 0.64, 0.48 }, warn = { 0.91, 0.60, 0.35 } }
+local REFUSAL = {
+    ["too-many"] = L["You already have 3 open requests."],
+    already = L["You already asked this guild."],
+}
+
+local function JR() return GuildOS.JoinRequests end
+
+-- The tone, title and line under it for a request that was sent.
+local function StateOf(e)
+    local state, by = JR():Status(e.id)
+    by = (by and by ~= "") and by or nil
+    if state == "officer" then
+        return "ok", by and string.format(L["Delivered to %s"], by) or L["Delivered to an officer"],
+            L["An officer is online and has already seen your request."]
+    elseif state == "member" then
+        return "wait", L["Delivered to a guild member"],
+            string.format(L["No officer online right now. %s kept the request and will pass it to the next officer who logs in."], by or L["A guild member"])
+    elseif state == "invited" then
+        return "ok", string.format(L["Invite from %s"], e.guild), L["Accept in the game window that just opened."]
+    elseif state == "declined" then
+        local others = math.max(0, #GF():All() - 1)
+        return "wait", string.format(L["%s thanked you, but is not opening spots right now"], e.guild),
+            others > 0 and string.format(L["There are %d other guilds to look at."], others) or ""
+    end
+    return "warn", L["Saved here"],
+        L["Nobody from the guild is online nearby. We deliver as soon as someone shows up. With the companion, the request goes to Discord when you leave the game."]
+end
+
+local function BuildJoinForm()
+    local f = CreateFrame("Frame", "GuildOSJoinForm", UIParent, "BackdropTemplate")
+    f:SetSize(FORM_W, FORM_H)
+    f:SetPoint("CENTER", 0, 40)
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+    UI:StylePopup(f)
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(30)
+    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    table.insert(UISpecialFrames, "GuildOSJoinForm")
+
+    local title = UI:CreateTitle(f, L["Ask to join"], 14)
+    title:SetPoint("TOPLEFT", 14, -12)
+    local close = UI:CreateCloseButton(f)
+    close:SetPoint("TOPRIGHT", -6, -6)
+    close:SetScript("OnClick", function() f:Hide() end)
+
+    local shield = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    shield:SetSize(40, 40)
+    shield:SetPoint("TOPLEFT", 14, -40)
+    shield:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    local shieldText = UI:CreateTitle(shield, "?", 18)
+    shieldText:SetPoint("CENTER")
+    local gname = UI:CreateTitle(f, "", 14)
+    gname:SetPoint("TOPLEFT", shield, "TOPRIGHT", 10, -2)
+    local gworld = UI:CreateText(f, "", 10, C.label.r, C.label.g, C.label.b)
+    gworld:SetPoint("TOPLEFT", gname, "BOTTOMLEFT", 0, -4)
+
+    -- The form: who it goes to, the note, the buttons.
+    local who = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    who:SetPoint("TOPLEFT", 14, -94)
+    who:SetWidth(FORM_W - 28); who:SetJustifyH("LEFT"); who:SetWordWrap(true)
+    local noteLabel = UI:CreateHeaderText(f, L["Note (optional)"], 10)
+    noteLabel:SetPoint("TOPLEFT", 14, -134)
+    local box = CreateFrame("EditBox", nil, f, "BackdropTemplate")
+    box:SetSize(FORM_W - 28, 24)
+    box:SetPoint("TOPLEFT", 14, -152)
+    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    box:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
+    box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
+    GuildOS:ApplyFont(box, 11)
+    box:SetTextInsets(6, 6, 0, 0)
+    box:SetAutoFocus(false)
+    box:SetMaxLetters(120)
+    box:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    box:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
+    local problem = UI:CreateText(f, "", 10, C.danger.r, C.danger.g, C.danger.b)
+    problem:SetPoint("TOPLEFT", 14, -182)
+    problem:SetWidth(FORM_W - 28); problem:SetJustifyH("LEFT")
+    local send = UI:CreateButton(f, L["Send request"], 130, 26)
+    send:SetPoint("BOTTOMLEFT", 14, 14)
+    UI:SetButtonVariant(send, "primary")
+
+    -- What happened to it.
+    local dot = f:CreateTexture(nil, "ARTWORK")
+    dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+    dot:SetSize(10, 10)
+    dot:SetPoint("TOPLEFT", 14, -100)
+    local stateTitle = UI:CreateTitle(f, "", 12)
+    stateTitle:SetPoint("TOPLEFT", 32, -96)
+    stateTitle:SetWidth(FORM_W - 50); stateTitle:SetJustifyH("LEFT")
+    local stateText = UI:CreateText(f, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    stateText:SetPoint("TOPLEFT", stateTitle, "BOTTOMLEFT", 0, -6)
+    stateText:SetWidth(FORM_W - 50); stateText:SetJustifyH("LEFT"); stateText:SetWordWrap(true)
+
+    local back = UI:CreateButton(f, L["Back"], 90, 26)
+    back:SetPoint("LEFT", send, "RIGHT", 8, 0)
+    back:SetScript("OnClick", function() f:Hide() end)
+
+    function f.Refresh()
+        local ad = f.ad
+        if not ad then return end
+        local tint = FACTION_TINT[ad.f] or { 0.25, 0.25, 0.28 }
+        shield:SetBackdropColor(tint[1], tint[2], tint[3], 1)
+        shieldText:SetText(initial(ad.n))
+        gname:SetText(ad.n)
+        gworld:SetText(ad.w and worldName(ad.w) or "")
+
+        local e = JR():Latest(ad)
+        local sent = e ~= nil and e.status ~= "expired"
+        who:SetShown(not sent); noteLabel:SetShown(not sent); box:SetShown(not sent)
+        problem:SetShown(not sent); send:SetShown(not sent)
+        dot:SetShown(sent); stateTitle:SetShown(sent); stateText:SetShown(sent)
+        if sent then
+            local tone, head, line = StateOf(e)
+            dot:SetVertexColor(TONE[tone][1], TONE[tone][2], TONE[tone][3], 1)
+            stateTitle:SetText(head)
+            stateText:SetText(line)
+        else
+            local me = JR():Me()
+            local parts = {}
+            if me.class then
+                local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[me.class]) or me.class
+                parts[#parts + 1] = me.level and (name .. " " .. string.format(L["level %d"], me.level)) or name
+            elseif me.level then
+                parts[#parts + 1] = string.format(L["level %d"], me.level)
+            end
+            if me.role then parts[#parts + 1] = ROLE_NAME[me.role] end
+            local detail = #parts > 0 and (", " .. table.concat(parts, ", ")) or ""
+            who:SetText(string.format(L["Goes to the officers: %s"], me.character .. detail))
+        end
+    end
+
+    send:SetScript("OnClick", function()
+        local ad = f.ad
+        if not ad then return end
+        local e, why = JR():Send(ad, box:GetText())
+        problem:SetText(e and "" or (REFUSAL[why] or ""))
+        if e then box:SetText("") end
+        f.Refresh()
+    end)
+
+    JR():Listen(function()
+        if f:IsShown() then f.Refresh() end
+    end)
+    return f
+end
+
+-- The form for the guild on a card.
+function GuildOS:ShowJoinForm(ad)
+    if not JR() then return end
+    local f = self.joinForm or BuildJoinForm()
+    self.joinForm = f
+    f.ad = ad
+    f.Refresh()
+    f:Show(); f:Raise()
 end
 
 function GuildOS:ShowGuildFinder()
