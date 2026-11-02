@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- o recrutamento: o anúncio sela e cruza zonas por sussurro (gossip), a tela de quem está sem guilda acha uma e pede para entrar, e o officer vê os pedidos, convida pelo clique e decide (#245)
+- o pedido sai do jogo pela fila do companion quando nenhum sussurro chega, e os pedidos da guilda vão no export v13 (#245)
+- `/gos probe channel`, com botão na Auditoria: entra num canal temporário, tenta mandar por timer e por clique, ouve o próprio eco e sai (#245)
+- a Auditoria mostra rodadas, anúncios por origem, pares, descartes, a grafia do teste de sussurro, os pedidos e o resultado do canal (#245)
+
+### Fixed
+- um pedido decidido com a pessoa offline não renasce aberto quando ela volta pelo jogo (#245)
+- a confirmação do convite pede o nome inteiro: "Ana" não fecha o pedido de "Ana Lima" (#245)
+
 ## [1.6.0] - 2026-11-02
 
 ### Added

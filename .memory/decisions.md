@@ -1207,3 +1207,57 @@ know about `/gos web on`, and with the switch off the addon wrote nothing for it
   would take a pack for a one-line roster.
 - (?) Whether `IsInGuild`, `UnitClass`, `UnitLevel` and the rank from `GetGuildInfo` still answer at PLAYER_LOGOUT on
   WoW: Forever is read in game, from 4 November. If one does not, the pack is not written and the export is untouched.
+
+
+## ADR-0029 — Recruitment: ads that cross zones by whisper, a request that is asked in the game, and a probe for what only a client proves (guildos.me #071, #245)
+
+### Context
+A guild's recruiting ad (`CR2`, then the sealed `CR3`) travelled by GUILD, group and YELL, and YELL stops at the zone
+and at the layer. A character with no guild had no way to ask one to take it, and an officer had nowhere to see who
+asked. Nothing in the repository proves that an addon whisper to "First Surname" reaches on WoW: Forever, that a
+created channel carries an addon message from a timer, or what the game says when an invite goes: no client was
+available before 4 November.
+
+### Decision
+- `Modules/ChehulGossip.lua` carries what a client holds past the zone: each client keeps a list of who it heard on the
+  `ChehulRecruit` prefix and, every `ROUND_SECONDS`, trades a digest (`CRD`) with `ROUND_PEERS` of them. What one lacks
+  comes back (`CRG` asks, the ad answers) with a few names (`CRP`). The beacon (`CRB`) is presence plus one ad in turn.
+  Everything is bounded: a round's allowance, `REPLY_MAX` per peer, `SENDER_MAX` heard per sender, a list of names read
+  only from someone I sent a digest. GuildOS's alone: the mesh library ships identical in the sibling addons and does
+  not change.
+- It whispers only after it has proved a whisper of its own comes back (`CRW`, to myself, a few seconds after login,
+  first with the space the game writes, then the hyphen of the character folders). The spelling that came back is the
+  one used; none, and gossip and requests stop whispering and the screen says so (`:CanWhisper()`). The test needs a
+  chat filter that hides the "no such player" line of a name tried; without one there is no test.
+- `Modules/JoinRequests.lua` is the request: `CRQ` repeated while the player is online, `CRA` the answer (officer and
+  member say where it got to, invited and declined end it). The guildless side keeps `GuildOSDB.recruitOutbox`
+  (account-wide) and writes the open ones to `recruitOutboxWire` (a `GOSOUTB1`) on logout for the companion. The
+  guild's side keeps `db.joinRequests` (fifty at most) and tells the site through the export's optional
+  `joinRequests` (v13). Invite is only ever called from a click (`Compat.NeedsClick`) and the row is closed only by the
+  game's own `ERR_GUILD_INVITE_S` line, never by the click.
+- Two repairs from the last review: a request decided while the person was offline comes back under the game's id and
+  finds its row by `gameId` (it used to make a new open row, and the officer got a notice and an Invite button for
+  somebody already declined); and the invite's confirmation names the person whole (`sameInvited`: space and hyphen are
+  one, no prefix, and on retail the realm is compared when both sides have one). `sameName`'s prefix stays for the CRQ on
+  purpose: a person may have asked as "Ana" and be "Ana Lima".
+- `/gos probe channel` (button in Audit > Sync) joins a channel of its own, sends from the command and from a timer,
+  listens for its own text and leaves, always, in `GuildOSDB.probeChannel = { timer, click, heard = { timer, click },
+  joined, left, at }`. `Gossip.CHANNEL = false` ships the route off: with it on, the beacon goes through
+  `GuildOSNet` and not by YELL. Only a new version turns it on, after the probe has run in a real client.
+- The Audit panel (Sync) shows, from `Gossip:Audit()` (a copy is kept in `GuildOSDB.recruitAudit`, nothing goes to
+  the site): rounds, ads in and out, known peers, discards, the whisper spelling or that none came back, requests open
+  / asked / delivered, invites sent and how many times the game's invite line came back, drops by name and by guild,
+  and the channel probe's result. Every source is read in its own `pcall`.
+
+### Consequences
+- (+) A new ad crosses zones in rounds, not in the time one yell takes to reach the next client.
+- (+) A request that nobody sees is still kept and goes to the site through the companion.
+- (+) The opening night leaves in `GuildOSDB` what happened in a real client, with no `/dump`.
+- (−) Everything that uses a whisper depends on a test that waits ten seconds after login and on a filter.
+- (?) Only a real client proves: whether the space or the hyphen is the spelling a whisper arrives with on Forever (and
+  whether either is); whether `JoinChannelByName` gives a channel a number in the same frame or a moment later (the
+  command's message is lost when it does not, and `click = false` says so); whether a timer's message into a channel
+  is dropped on Forever as a timer's GUILD line is; whether the channel's join and leave lines are hidden by
+  `CHAT_MSG_CHANNEL_NOTICE`'s filter (the probe's are; the live route's are not, and it ships off); and whether
+  `ERR_GUILD_INVITE_S` is the line a Forever invite prints, which `confirmed` in the Audit counts. If it never comes
+  back, an invite never closes its row by itself and the site's roster ingest does.

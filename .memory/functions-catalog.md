@@ -1060,3 +1060,22 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 |---|---|
 | `Companion:BuildSelf()` | My own line as a `GOSCOMP1:` string, or nil and why: same wire format and decoder as the export, `members` with one line (the export's own, built by the same local `memberLine`), `self = true`, `count = 1` and an empty `loot` the decoder requires. No sessions, journal, tabard, founding, guildConfig or rosterComplete. Asks `Refused` and `IsOnGuildDB`, never the switch. Nil on a character not read yet. Needs no guild roster. The key comes from `Compat.PlayerName()` |
 | The logout writer | One `GOSCOMP1:` string per file, in `GuildOSDB.__companion`: with the switch on the export, as ever, with it off the pack. Only the export stamps `__companionAt`; `__companionSelf` says the field holds a pack, so a failed export takes a leftover pack away instead of keeping it |
+
+
+## Recruitment (guildos.me #071, #245, ADR-0029)
+
+| Function | Purpose |
+|---|---|
+| `Gossip:Initialize()` / `:Beacon()` / `:Round()` | Starts the whisper gossip (not on Anniversary): the whisper test after login, the beacon every `BEACON_SECONDS`, a round of digests every `ROUND_SECONDS` plus jitter. `:Beacon()` ends on the created channel when `Gossip.CHANNEL` is on, on `mesh:Realm` (YELL) when it is off |
+| `Gossip:Topic(name, spec)` / `:On(op, fn)` / `:Receive(payload, sender, dist)` | A topic says what it holds (`digest`, `want`, `pull`, `push`); `:On` routes a payload's first field; RecruitBeacon's one mesh handler hands everything to `:Receive` |
+| `Gossip:Note(sender, guild, officer)` / `:Peers()` / `:PeerFor(guild)` | Peers heard in the last `PEER_FRESH` seconds; an officer of the guild asked about, else a member |
+| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden |
+| `Gossip:Stats()` | `{ rounds, adsIn, adsOut, dropped, peers, whisper }`; `whisper` is the spelling the test kept, `false` for none |
+| `Gossip:Audit()` | What the Audit panel shows: `{ gossip, requests, channel, at }`, each part read alone in a `pcall`, a copy in `GuildOSDB.recruitAudit`; `channel` is `GuildOSDB.probeChannel` or `false` |
+| `Gossip.CHANNEL` / `Gossip.CHANNEL_NAME` | The beacon's route by a created channel (`false`, `"GuildOSNet"`): only a new version turns it on |
+| `JR:Send(ad, note)` / `:Outbox()` / `:Latest(ad)` / `:Status(id)` / `:Deliver(e)` / `:Tick()` / `:WriteWire()` | The guildless side: ask a guild (three open at most, one per guild), the queue in `GuildOSDB.recruitOutbox`, where a request stands (`stored`, `officer`, `member`, `invited`, `declined`, `expired`), one delivery round, the `GOSOUTB1` on logout |
+| `JR:OnCRQ()` / `:OnCRA()` / `:Decide(id, status)` / `:CanInvite(id)` / `:Invite(id)` | The guild's side: a row per request in `db.joinRequests` (found by id, then by the game's id kept as `gameId`), a decision only an officer makes and only an officer's word over GUILD counts, Invite from a click only, the row closed by the game's `ERR_GUILD_INVITE_S` line |
+| `JR:List()` / `:OpenCount()` / `:Refresh()` / `:ForExport()` / `:Listen(fn)` | The rows, open ones first; the site's block read into them; the export's optional `joinRequests`; a screen asks to hear changes |
+| `JR:Stats()` / `JR:Audit()` | Drops by name and by guild, invites sent and invite lines confirmed; and with them the open rows and this character's asked / delivered |
+| `Compat.JoinChannel(name)` / `Compat.ChannelId(name)` / `Compat.LeaveChannel(name)` | A created channel by name and its number (0 when not joined or secret), each call guarded |
+| `Probe:RunChannel()` / `:FinishChannel(run)` | `/gos probe channel` (button in Audit > Sync): joins `GOSProbe<n>`, sends from the command and from a timer on `GuildOSProbe`, counts its own echo on `CHAT_MSG_ADDON`, leaves after six seconds whatever happened (the verdict is scheduled before anything can raise), `GuildOSDB.probeChannel = { timer, click, heard = { timer, click }, joined, left, at }`. Refuses in combat and while running; hides the channel's own join and leave notices |
