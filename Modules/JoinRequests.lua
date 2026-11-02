@@ -577,7 +577,9 @@ end
 local FROM_SITE = { invited = "invited", joined = "invited", declined = "declined", expired = "expired" }
 
 -- Reads the block's requests into the rows: a new open one becomes a row, a decision made on Discord
--- closes the row it names, a closed one this client never had is not worth keeping.
+-- closes the row it names, a closed one this client never had is not worth keeping. It runs at the start,
+-- when the rank is not known yet, and again from the officers' start, when it is: so a new row waits as
+-- `unheard` until an officer's client reads it, and the officer hears of it once, as of one from the game.
 function JR:Refresh()
     local Import = GuildOS.CompanionImport
     local list = inGuild() and Import and Import.SiteJoinRequests and Import:SiteJoinRequests() or nil
@@ -593,12 +595,18 @@ function JR:Refresh()
         elseif s.status == "open" and not openFor(s.character) and makeRoom() then
             local class, level, role = facts(s.class, s.level, s.role)
             rows[s.id] = { id = s.id, character = s.character, class = class, level = level, role = role, note = s.note,
-                           at = s.at, status = "open", source = "site" }
-            -- The officer hears of a request from the site as of one from the game, once: the row is new.
-            if GuildOS:IsOfficer() then tell(GuildOS.JoinRequestsHeard, GuildOS, rows[s.id]) end
+                           at = s.at, status = "open", source = "site", unheard = true }
         end
     end
     expireRows()
+    if GuildOS:IsOfficer() then
+        for _, r in pairs(rows) do
+            if r.unheard then
+                r.unheard = nil
+                if r.status == "open" then tell(GuildOS.JoinRequestsHeard, GuildOS, r) end
+            end
+        end
+    end
     changed()
 end
 

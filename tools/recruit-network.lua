@@ -545,4 +545,29 @@ for _, e in ipairs(T.digest()) do
 end
 check(seats == 1, "one name, one seat")
 
+-- ── The officer hears of a request from the site once the rank is known ─
+local SITE = { { id = "550e8400-e29b-41d4-a716-446655440000", character = "Davi Rocha", class = "MAGE", level = 14,
+                 role = "DPS", note = "Procuro", source = "site", status = "open", at = EPOCH - 60 } }
+fresh()
+local late = client("Bruno Reis", { guild = "Ordem", rank = 0, rankAt = 12, site = SITE })
+run(4)
+check(late.JR:OpenCount() == 1 and #late.notices == 0, "at login the rank is not known: the row is kept, and nobody was told")
+run(30)
+check(#late.notices == 1 and late.notices[1] == SITE[1].id, "the rank arrives, through the real officer start, and the officer hears of it: " .. #late.notices)
+late.JR:Refresh()
+late.JR:Refresh()
+check(#late.notices == 1, "once")
+
+-- A /reload: the rank is known at once, and the second reading says nothing again.
+fresh()
+late = client("Bruno Reis", { guild = "Ordem", rank = 0, site = SITE })
+run(30)
+check(#late.notices == 1, "with the rank known from the start, still once: " .. #late.notices)
+
+-- A row that was told before does not tell again, and a member hears nothing at all.
+fresh()
+late = client("Ana Lima", { guild = "Ordem", rank = 5, site = SITE })
+run(30)
+check(late.JR:OpenCount() == 1 and #late.notices == 0, "a member keeps the row and is told nothing")
+
 print(("recruit-network: %d checks passed"):format(checks))

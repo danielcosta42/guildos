@@ -335,6 +335,8 @@ local OFFICER_START = {
     { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckExpired" },
     -- What the Discord's cores changed at login, to the other officers (#135).
     { "CoreManager", method = "SendDiscordChanges" },
+    -- The requests from the site: read at the start with no rank known, they reached no officer's notice.
+    { "JoinRequests", method = "Refresh" },
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN
