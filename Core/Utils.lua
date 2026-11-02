@@ -270,6 +270,15 @@ function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
 end
 
+-- A number off the network, or nil. tonumber takes "nan" and "inf" as text and reads "1e999" as inf. NaN answers
+-- false to every comparison, so it passes any check written as a refusal, and inf passes any "> 0"; and neither may
+-- ever reach a saved table, where a NaN is an unknown risk to the whole GuildOSDB file.
+function GuildOS.Finite(v)
+    local n = tonumber(v)
+    if n and n == n and n ~= math.huge and n ~= -math.huge then return n end
+    return nil
+end
+
 -- The name as /w takes it: the hyphen where the game spells a surname with a space, or "/w Ana Lima " opens a
 -- whisper to Ana with the message "Lima ".
 function GuildOS:WhisperTarget(name)

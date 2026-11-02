@@ -311,7 +311,9 @@ function Import:GuildBlock()
             local data = self._blockData
             local mine = GetGuildInfo("player")
             if not data or not mine or type(data.guild) ~= "string" or data.guild:lower() ~= mine:lower() then return nil end
-            if GetServerTime() - (tonumber(data.at) or 0) > BLOCK_MAX_AGE then return nil end
+            -- As what must hold: a date that is NaN or inf is too old to believe, never good for ever.
+            local at = GuildOS.Finite(data.at)
+            if not (at and GetServerTime() - at <= BLOCK_MAX_AGE) then return nil end
             return data
         end
     end
@@ -331,8 +333,9 @@ function Import:RecruitDirectory()
         if type(v) == "string" and v:sub(1, #RECRUIT_PREFIX) == RECRUIT_PREFIX then
             if self._recruit[v] == nil then self._recruit[v] = unwrap(v:sub(#RECRUIT_PREFIX + 1), "GOSRECR1") or false end
             local data = self._recruit[v]
+            local at = data and GuildOS.Finite(data.at)
             if data and type(data.ads) == "table" and data.game == game
-               and GetServerTime() - (tonumber(data.at) or 0) <= RECRUIT_MAX_AGE then
+               and at and GetServerTime() - at <= RECRUIT_MAX_AGE then
                 return data
             end
         end
@@ -364,10 +367,11 @@ function Import:SiteJoinRequests()
     local out = {}
     for _, r in ipairs(raw) do
         local character = type(r) == "table" and GF.Text(r.character, 48)
+        local at = type(r) == "table" and GuildOS.Finite(r.at)
         if character and type(r.id) == "string" and #r.id <= 40 and r.id:match("^[%w_%-]+$")
-           and type(r.status) == "string" and tonumber(r.at) then
+           and type(r.status) == "string" and at then
             out[#out + 1] = { id = r.id, character = character, class = r.class, level = r.level, role = r.role,
-                note = GF.Text(r.note, 120), source = r.source == "addon" and "addon" or "site", status = r.status, at = tonumber(r.at) }
+                note = GF.Text(r.note, 120), source = r.source == "addon" and "addon" or "site", status = r.status, at = at }
         end
     end
     return out

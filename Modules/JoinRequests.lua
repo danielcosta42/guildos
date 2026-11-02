@@ -88,8 +88,8 @@ end
 -- The three facts about a person that are a closed set or a number; anything else is absent.
 local function facts(class, level, role)
     class = classSet()[class] and class or nil
-    level = tonumber(level)
-    if not level or level ~= math.floor(level) or level < 1 or level > 100 then level = nil end
+    level = GuildOS.Finite(level)
+    if not (level and level == math.floor(level) and level >= 1 and level <= 100) then level = nil end
     role = ROLES[role] and role or nil
     return class, level, role
 end

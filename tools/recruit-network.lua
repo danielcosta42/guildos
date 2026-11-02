@@ -753,6 +753,112 @@ check(#asked == 1 and asked[1] == "Bruno-Gallywix", "retail: one question, as th
 check(ana.Gossip:IsOfficerSender("Bruno") == true, "retail: the officer here is the officer")
 check(ana.Gossip:Stats().officerRefused == 1, "retail: and the refusal counts")
 
+-- ── Numbers off the network ─────────────────────────────────────────────
+-- NaN answers false to every comparison, so it passes any check written as a refusal; inf passes any "> 0";
+-- and tonumber takes both, as text. Neither may ever reach a saved table: a NaN in SavedVariables is an unknown
+-- risk to the whole GuildOSDB file.
+local BAD = { "nan", "-nan", "inf", "-inf", "1e999", "-1e999" }
+local function poisoned(t, seen)
+  seen = seen or {}
+  if seen[t] then return nil end
+  seen[t] = true
+  for k, v in pairs(t) do
+    if type(v) == "number" and (v ~= v or v == math.huge or v == -math.huge) then return tostring(k) end
+    if type(v) == "table" then
+      local found = poisoned(v, seen)
+      if found then return tostring(k) .. "." .. found end
+    end
+  end
+  return nil
+end
+
+for _, bad in ipairs(BAD) do
+  fresh()
+  local zed = client("Zed Fora", { zone = "z" })
+  run(11)
+  local topic3 = zed.GuildOS.State.gossip.topics.CR3
+  zed.hear(cr3(zed, { n = "Real", u = "real", v = EPOCH - 3600, x = EPOCH + 3600 }), "Ana Lima", "WHISPER")
+  zed.hear(("CR2|Velha|H||||||%d|%d|Bob"):format(EPOCH - 3600, EPOCH + 3600), "Bob Lima", "YELL")
+
+  -- The held ad stands, whatever comes in its name.
+  for _, forged in ipairs({ { v = bad, x = bad }, { v = bad, x = EPOCH + 3600 }, { v = EPOCH - 10, x = bad } }) do
+    zed.hear(cr3(zed, { n = "Real", u = "real", v = forged.v, x = forged.x, p = "FORJADO" }), "Mal Feitor", "WHISPER")
+    check(zed.RB:Cache3().Real.p == "Raids" and zed.RB:Cache3().Real.v == EPOCH - 3600, bad .. ": a forged number replaces no ad")
+    check(topic3.want("Real", EPOCH + 100) == true, bad .. ": and a newer real version is still wanted")
+  end
+  zed.hear(cr3(zed, { n = "Real", u = "real", v = EPOCH - 3000, x = EPOCH + 3600, p = "Nova" }), "Ana Lima", "WHISPER")
+  check(zed.RB:Cache3().Real.p == "Nova", bad .. ": which lands")
+
+  -- Nothing new comes in under one, and nothing asks for one.
+  zed.hear(cr3(zed, { n = "Praga1", u = "praga1", v = bad, x = EPOCH + 3600 }), "Mal Feitor", "WHISPER")
+  zed.hear(cr3(zed, { n = "Praga2", u = "praga2", v = EPOCH - 5, x = bad }), "Mal Feitor", "WHISPER")
+  check(not zed.RB:Cache3().Praga1 and not zed.RB:Cache3().Praga2, bad .. ": no new ad")
+  check(topic3.want("Praga3", tonumber(bad)) == false, bad .. ": want refuses it")
+
+  -- The other numbers of an ad never get past the door either, and do not take the ad with them.
+  zed.hear(cr3(zed, { n = "Campos", u = "campos", d = { bad, "2" }, s = bad, e = bad, v = EPOCH - 5, x = EPOCH + 3600 }), "Ana Lima", "WHISPER")
+  local fields = zed.RB:Cache3().Campos
+  check(fields and #fields.d == 1 and fields.d[1] == 2 and fields.s == nil and fields.e == nil, bad .. ": d, s and e are dropped, the rest stands")
+
+  -- CR2, whose expiry can delete: a number that is none deletes nothing and adds nothing.
+  for _, payload in ipairs({ ("CR2|Velha|H||||||%s|%d|Bob"):format(bad, EPOCH + 3600), ("CR2|Velha|H||||||%d|%s|Bob"):format(EPOCH, bad),
+                             ("CR2|Outra|H||||||%s|%d|Bob"):format(bad, EPOCH + 3600), ("CR2|Outra2|H||||||%d|%s|Bob"):format(EPOCH, bad) }) do
+    zed.hear(payload, "Mal Feitor", "YELL")
+  end
+  check(zed.RB:Cache().Velha and zed.RB:Cache().Velha.version == EPOCH - 3600, bad .. ": a CR2 held stands")
+  check(not zed.RB:Cache().Outra and not zed.RB:Cache().Outra2, bad .. ": and no new one lands")
+
+  -- Off a beacon and off a digest: not asked for, and the next pair is not lost.
+  zed.hear("CRB|Novo|" .. bad .. "||", "Mal Feitor", "YELL")
+  zed.hear("CRD|Novo2:" .. ("9"):rep(400) .. ",Boa:5", "Mal Feitor")
+  run(1)
+  check(#ops({ from = zed.name, op = "CRG", text = "CRG|Novo" }) == 0, bad .. ": a beacon's bad version asks for nothing")
+  check(#ops({ from = zed.name, op = "CRG", text = "CRG|Novo2" }) == 0, bad .. ": nor a digest's")
+  check(#ops({ from = zed.name, op = "CRG", text = "CRG|Boa" }) == 1, bad .. ": and the good pair beside it is asked for")
+
+  zed.RB:Prune()
+  local where = poisoned(zed.env.GuildOSDB)
+  check(where == nil, bad .. ": nothing of it reaches a saved table: " .. tostring(where))
+  check(#zed.GuildOS.State.errors == 0, bad .. ": and nothing raised: " .. tostring((zed.GuildOS.State.errors[1] or {}).msg))
+end
+
+-- A request's level off the wire, on a guild's client.
+for _, bad in ipairs(BAD) do
+  fresh()
+  ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+  run(1)
+  ana.hear("CRQ|abcdefghij|Zed Fora|MAGE|" .. bad .. "|DPS|Ordem|oi", "Zed Fora", "WHISPER")
+  local row = ana.GuildOS.db.joinRequests.abcdefghij
+  check(row and row.level == nil and row.class == "MAGE", bad .. ": a level that is no number is absent, and the request stands")
+  check(poisoned(ana.env.GuildOSDB) == nil, bad .. ": and the row is clean")
+end
+
+-- It does not spread: the reviewer's second client, in the zone, half an hour on.
+fresh()
+local first = client("Zed Fora", { zone = "z" })
+run(11)
+first.hear(cr3(first, { n = "Praga", u = "praga", v = "nan", x = EPOCH + 3600 }), "Mal Feitor", "WHISPER")
+check(first.GuildOS.State.gossip.topics.CR3.pull("Praga") == nil, "a NaN version is not there to serve on")
+local second = client("Ana Lima", { zone = "z" })
+run(11)
+first.Gossip:Note("Ana Lima")
+second.Gossip:Note("Zed Fora")
+run(1800)
+check(second.RB:Cache3().Praga == nil and poisoned(second.env.GuildOSDB) == nil, "and thirty minutes on the second client holds nothing")
+
+-- A list's bad number does not make an ad of it, and a value a save already holds wrong leaves at the next prune.
+fresh()
+seed = client("Ana Lima", { zone = "city", list = listOf(0, { { n = "Numero", u = "numero", f = "H", w = "normal:us", v = "nan", x = "inf" } }) })
+check(seed.GuildOS.State.gossip.topics.CR3.pull("Numero") == nil, "a list's ad with no real validity is not offered")
+seed.RB:Cache3().Salva = { n = "Salva", key = "Salva", v = 0 / 0, x = EPOCH + 3600 }
+seed.RB:Cache3().Salva2 = { n = "Salva2", key = "Salva2", v = EPOCH, x = 0 / 0 }
+seed.RB:Cache3().Salva3 = { n = "Salva3", key = "Salva3", v = EPOCH, x = 1 / 0 }
+seed.RB:Cache().Salva4 = { guild = "Salva4", version = 1, expiry = 0 / 0 }
+seed.RB:Prune()
+check(not seed.RB:Cache3().Salva and not seed.RB:Cache3().Salva2 and not seed.RB:Cache3().Salva3 and not seed.RB:Cache().Salva4,
+  "a number a save holds wrong is pruned")
+check(poisoned(seed.env.GuildOSDB) == nil, "and the save is clean again")
+
 -- ── An officer's broadcast pauses where the gossip does ─────────────────
 for _, pause in ipairs({ "inInstance", "lockdown" }) do
   fresh()

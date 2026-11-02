@@ -527,6 +527,16 @@ check(#GF:All() == 2, "but one of the other faction is another guild")
 only({ bare(ad({ n = "Lonely", f = "H", heard = true, verified = false })) })
 check(#GF:All() == 1, "and a CR2 alone stays")
 
+-- What the site's list says in numbers goes through the same door as what a peer says.
+for _, bad in ipairs({ "nan", "-nan", "inf", "-inf", "1e999" }) do
+  local n = GF:Normalize({ n = "Numero", v = bad, x = bad, s = bad, e = bad, d = { bad, 2 }, m = { n = bad, nt = bad, a = bad } })
+  check(n.v == 0 and n.x == 0, bad .. ": no version and no validity")
+  check(n.s == nil and n.e == nil and n.m == nil and #n.d == 1, bad .. ": and no night, no number")
+end
+check(GuildOS.Finite("12") == 12 and GuildOS.Finite(1.5) == 1.5 and GuildOS.Finite(0) == 0, "a number is a number")
+check(GuildOS.Finite(nil) == nil and GuildOS.Finite("x") == nil and GuildOS.Finite({}) == nil, "and what is none is nil")
+check(GuildOS.Finite(0 / 0) == nil and GuildOS.Finite(1 / 0) == nil and GuildOS.Finite(-1 / 0) == nil, "NaN and inf are none")
+
 -- Retail has thirteen classes: a guild that wants them all keeps the last, or with "Wants my class" on that
 -- class never sees it.
 local gameClasses = GuildOS.Client.classes

@@ -97,8 +97,8 @@ local function list(v, ok, max)
 end
 
 local function int(v, lo, hi)
-    v = tonumber(v)
-    if not v or v ~= math.floor(v) or v < lo or v > hi then return nil end
+    v = GuildOS.Finite(v)
+    if not (v and v == math.floor(v) and v >= lo and v <= hi) then return nil end
     return v
 end
 
@@ -150,8 +150,8 @@ function GF:Normalize(raw)
         if m.n or m.nt or m.a then ad.m = m end
     end
 
-    ad.v = tonumber(raw.v) or 0
-    ad.x = tonumber(raw.x) or 0
+    ad.v = GuildOS.Finite(raw.v) or 0
+    ad.x = GuildOS.Finite(raw.x) or 0
     ad.heard = raw.heard and true or false
     ad.verified = raw.verified and true or false
     return ad
@@ -546,7 +546,7 @@ function GF:UpdatedAgo()
     local data = Import and Import:RecruitDirectory()
     if not data then return nil end
     local L = GuildOS.L
-    local minutes = math.max(1, math.floor((now() - (tonumber(data.at) or 0)) / 60))
+    local minutes = math.max(1, math.floor((now() - (GuildOS.Finite(data.at) or 0)) / 60))
     local when
     if minutes < 60 then when = string.format(L["%d min"], minutes)
     elseif minutes < 48 * 60 then when = string.format(L["%d h"], math.floor(minutes / 60))

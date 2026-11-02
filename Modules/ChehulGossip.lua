@@ -277,7 +277,7 @@ local function OnTest(payload)
     local test = S.test
     if not test then return end
     local _, token, at = strsplit("|", payload)
-    local try = token == test.token and test.tries[tonumber(at) or 0]
+    local try = token == test.token and test.tries[GuildOS.Finite(at) or 0]
     if try then S.whisper, S.test = try.spelling, nil end
 end
 
@@ -304,7 +304,7 @@ end
 local function OnBeacon(payload, sender)
     local _, key, version, guild, officer = strsplit("|", payload)
     Gossip:Note(sender, guild or "", officer == "1")
-    version = tonumber(version)
+    version = GuildOS.Finite(version)
     if IsName(key) and version and CanAnswer() then Ask(key, version, sender) end
 end
 
@@ -325,9 +325,11 @@ local function OnDigest(payload, sender)
     local listed, order = {}, {}
     for name, version in payload:gmatch("([^,:|]+):(%d+)") do
         if #order >= Gossip.DIGEST_MAX then break end
-        if IsName(name) and not listed[name] then
+        -- Digits alone can still read as inf: a pair with no real version is no pair.
+        version = GuildOS.Finite(version)
+        if version and IsName(name) and not listed[name] then
             order[#order + 1] = name
-            listed[name] = tonumber(version)
+            listed[name] = version
         end
     end
     -- The names go first, because they are what crosses zones: an answer that has spent itself on ads

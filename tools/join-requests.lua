@@ -739,6 +739,31 @@ check(JR:CanInvite("gam1234567") == false, "nobody has heard from them: Invite w
 handler(crq("gam1234567", "Davi Rocha"), "Davi Rocha", "WHISPER")
 check(JR:CanInvite("gam1234567") == true, "and comes alive when they are heard")
 
+-- The block's numbers: text that reads as NaN or inf is no time, and never reaches a row.
+for _, bad in ipairs({ "nan", "-nan", "inf", "-inf", "1e999" }) do
+  reset(); GUILD, officer = "Ashen Vow", true
+  GuildOSInbox = { block({
+    { id = "bad1234567", character = "Davi Rocha", source = "site", status = "open", at = bad },
+    { id = "ok12345678", character = "Marta Vilar", source = "site", status = "open", at = NOW - 60 },
+  }) }
+  local got = Import:SiteJoinRequests()
+  check(#got == 1 and got[1].id == "ok12345678", bad .. ": a request with no real time is left out")
+  JR:Refresh()
+  check(find("bad1234567") == nil and find("ok12345678") ~= nil, bad .. ": and is no row")
+
+  -- A block or a list dated with no real time is too old to believe, not good for ever.
+  local dated = "GOSGILD1:" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(Companion.EncodeJson(
+    { fmt = "GOSGILD1", v = 1, guild = "Ashen Vow", at = bad, joinRequests = {} })))
+  GuildOSInbox = { dated }
+  Import._blockRaw, Import._blockData = nil, nil
+  check(Import:GuildBlock() == nil, bad .. ": a block dated so is not read")
+  local listed = "GOSRECR1:" .. LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(Companion.EncodeJson(
+    { fmt = "GOSRECR1", v = 1, game = "FOREVER", at = bad, ads = {} })))
+  GuildOSInbox = { listed }
+  Import._recruit = nil
+  check(Import:RecruitDirectory() == nil, bad .. ": nor a list")
+end
+
 -- Who can invite and is no officer: the invite goes, the row stays open, and the game's line says why.
 reset(); GUILD, officer, canInvite = "Ashen Vow", false, true
 handler(crq("rig1234567", "Marta Vilar"), "Marta Vilar", "WHISPER")

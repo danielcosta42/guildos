@@ -108,7 +108,8 @@ function RB:Prune()
     self:Prune3()
     local cache, n = self:Cache(), now()
     for g, ad in pairs(cache) do
-        if (ad.expiry or 0) <= n then cache[g] = nil end
+        local expiry = GuildOS.Finite(ad.expiry)
+        if not (expiry and expiry > n and GuildOS.Finite(ad.version or 0)) then cache[g] = nil end
     end
     -- Enforce cap: drop the soonest-to-expire beyond CACHE_CAP.
     local list = {}
@@ -143,7 +144,8 @@ function RB:Prune3()
     local cache, n = self:Cache3(), now()
     local list = {}
     for key, ad in pairs(cache) do
-        if (ad.x or 0) <= n then
+        local x = GuildOS.Finite(ad.x)
+        if not (x and x > n and GuildOS.Finite(ad.v)) then
             cache[key] = nil
         elseif not IsOwnGuild(key) then
             list[#list + 1] = ad
@@ -200,14 +202,12 @@ end
 local function Store(ad)
     local cache = RB:Cache3()
     local cur = cache[ad.key]
-    if cur then
-        if ad.v < cur.v then return false end
-        if ad.v == cur.v then
-            if ad.x <= cur.x then return false end
-            cur.x = ad.x
-            return true
-        end
+    if cur and ad.v == cur.v and ad.x > cur.x then
+        cur.x = ad.x
+        return true
     end
+    local newer = not cur or ad.v > cur.v
+    if not newer then return false end
     cache[ad.key] = ad
     RB:Prune3()
     return true
@@ -215,18 +215,19 @@ end
 
 -- The ad in a CR3 payload, cleaned by GuildFinder (every text inert, one line, cut by character; every
 -- list a closed set), or nil. `x` is cut to 72 hours ahead whatever came; one already past is no ad and
--- deletes nothing; a version from the future is refused.
+-- deletes nothing; a version from the future is refused. The checks are written as what must hold, never as
+-- what refuses: NaN answers false to every comparison, and would pass them all.
 local function ReadCR3(payload)
     local GF = GuildOS.GuildFinder
     if type(payload) ~= "string" or #payload > CR3_MAX or not GF then return nil end
     local f = { strsplit("|", payload) }
     if f[1] ~= RB.PROTO3 or #f < CR3_FIELDS then return nil end
-    local v, x, t = tonumber(f[18]), tonumber(f[19]), now()
-    if not v or not x or v <= 0 or v > t + RB.CLOCK_SKEW or x <= t then return nil end
+    local v, x, t = GuildOS.Finite(f[18]), GuildOS.Finite(f[19]), now()
+    if not (v and x and v > 0 and v <= t + RB.CLOCK_SKEW and x > t) then return nil end
     local days = {}
-    for _, d in ipairs(splitList(f[6], ",")) do days[#days + 1] = tonumber(d) end
+    for _, d in ipairs(splitList(f[6], ",")) do days[#days + 1] = GuildOS.Finite(d) end
     local ad = GF:Normalize({
-        n = f[2], f = f[3], w = f[4], p = f[5], d = days, s = tonumber(f[7]), e = tonumber(f[8]), pc = f[9],
+        n = f[2], f = f[3], w = f[4], p = f[5], d = days, s = GuildOS.Finite(f[7]), e = GuildOS.Finite(f[8]), pc = f[9],
         l = splitList(f[10], "+"), fo = splitList(f[11], "+"), r = splitList(f[12], "+"), c = splitList(f[13], "+"),
         lo = f[14], t = f[15], ct = splitList(f[16], "+"), u = f[17], v = math.floor(v), x = math.min(math.floor(x), t + RB.MAX_AHEAD),
     })
@@ -323,7 +324,7 @@ function RB:Initialize()
                 return out
             end,
             want = function(key, version)
-                if type(version) ~= "number" or version > now() + RB.CLOCK_SKEW then return false end
+                if not (type(version) == "number" and version > 0 and version <= now() + RB.CLOCK_SKEW) then return false end
                 -- Never asked for: it comes by GUILD from an officer, and a guildmate would only refuse what it got.
                 if IsOwnGuild(key) then return false end
                 -- All it has and not only what it offers: an ad kept and not offered, asked for every round,
@@ -463,6 +464,9 @@ function RB:Ingest(payload, sender)
     if proto ~= self.PROTO or not guild or guild == "" then return end
     version = tonumber(version) or 0
     expiry  = tonumber(expiry) or 0
+    -- Text that is no number reads as 0, as it always did. NaN and inf read as nothing at all: this path can
+    -- delete, and it is written down.
+    if not (GuildOS.Finite(version) and GuildOS.Finite(expiry)) then return end
 
     local cache = self:Cache()
     local cur = cache[guild]
