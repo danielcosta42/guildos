@@ -18,6 +18,7 @@ local MAX_PITCH    = 120    -- characters (the site's cap)
 local MAX_NAME     = 24     -- a guild name
 local MAX_CONTACT  = 48
 local MAX_LIST     = 12
+local MAX_CLASSES  = 13     -- retail has thirteen; one short, the last class never sees a guild that wants them all
 local MAX_ADS      = 600    -- the site's list holds 500, and what the network brings comes on top
 
 GF.SITE = "guildos.me"
@@ -133,7 +134,7 @@ function GF:Normalize(raw)
     -- Classes are a closed set too: this game's own tokens, so nothing off the network reaches the screen.
     local classes = {}
     for _, token in ipairs(GuildOS.Client.classes) do classes[token] = true end
-    ad.c  = list(raw.c, classes)
+    ad.c  = list(raw.c, classes, MAX_CLASSES)
     ad.lo = LOOT_SET[raw.lo] and raw.lo or nil
     ad.t  = TRIAL_SET[raw.t] and raw.t or nil
 

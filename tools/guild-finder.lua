@@ -527,6 +527,16 @@ check(#GF:All() == 2, "but one of the other faction is another guild")
 only({ bare(ad({ n = "Lonely", f = "H", heard = true, verified = false })) })
 check(#GF:All() == 1, "and a CR2 alone stays")
 
+-- Retail has thirteen classes: a guild that wants them all keeps the last, or with "Wants my class" on that
+-- class never sees it.
+local gameClasses = GuildOS.Client.classes
+GuildOS.Client.classes = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN", "MAGE", "WARLOCK",
+                           "MONK", "DRUID", "DEMONHUNTER", "EVOKER" }
+local everyClass = GF:Normalize({ n = "Todas", c = GuildOS.Client.classes, v = 1, x = NOW + 3600 })
+check(#everyClass.c == 13 and everyClass.c[13] == "EVOKER", "the thirteen classes survive: " .. #everyClass.c)
+check(GF:Matches(everyClass, { class = "EVOKER" }), "and the last class still sees the guild")
+GuildOS.Client.classes = gameClasses
+
 -- ── The request form (Task B4), over the REAL JoinRequests ──────────────────────────────────────────
 -- A stand-in once hid a form that did nothing for a guild heard only by CR2; the module is the real one.
 -- The officer's list below is drawn over a stand-in: its rules are tools/join-requests.lua's.
