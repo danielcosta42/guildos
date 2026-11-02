@@ -2213,3 +2213,6 @@ L["no spelling came back: gossip and requests do not whisper"] = "돌아온 표�
 L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"] = "신청: 열림 %d  -  보냄 %d, 전달됨 %d  -  초대 %d, 게임이 확인 %d  -  폐기: 이름 %d, 길드 %d"
 L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"] = "채널 점검: 명령어 전송 %s, 타이머 전송 %s  -  돌아옴: 명령어 %s, 타이머 %s"
 L["Channel probe: not run"] = "채널 점검: 실행 안 함"
+L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."] = "채널에 아직 번호가 없습니다. 몇 초 안에 명령어나 버튼을 한 번 더 누르세요. 두 번째로 누른 것이 기준입니다."
+L["not tried: the channel had no number yet"] = "시도 안 함: 채널에 아직 번호가 없었음"
+L["not tried"] = "시도 안 함"

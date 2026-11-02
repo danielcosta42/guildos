@@ -498,23 +498,33 @@ local function RecruitLines()
     if GuildOS.Client.isAnniversary or not (gossip and gossip.Audit) then return nil end
     local ok, a = pcall(gossip.Audit, gossip)
     if not ok or type(a) ~= "table" then return nil end
-    local g, r, ch = a.gossip or {}, a.requests or {}, a.channel
-    local d = r.dropped or {}
-    local function yn(v) return v and L["yes"] or L["no"] end
-    local lines = {
-        string.format(L["rounds %d  -  ads in %d, out %d  -  peers %d  -  dropped %d"],
-            g.rounds or 0, g.adsIn or 0, g.adsOut or 0, g.peers or 0, g.dropped or 0),
-        string.format(L["Whisper test: %s"], g.whisper or L["no spelling came back: gossip and requests do not whisper"]),
-        string.format(L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"],
-            r.open or 0, r.asked or 0, r.delivered or 0, r.invites or 0, r.confirmed or 0, d.name or 0, d.guild or 0),
-    }
-    if type(ch) == "table" then
-        local h = ch.heard or {}
-        lines[#lines + 1] = string.format(L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"],
-            yn(ch.click), yn(ch.timer), yn(h.click), yn(h.timer))
-    else
-        lines[#lines + 1] = L["Channel probe: not run"]
-    end
+    -- A value an old or damaged save holds wrong costs the tab its line, never the tab.
+    local built, lines = pcall(function()
+        local g, r, ch = a.gossip or {}, a.requests or {}, a.channel
+        local d = type(r.dropped) == "table" and r.dropped or {}
+        -- Tried and refused, tried and taken, or never tried (the channel had no number yet): three things.
+        local function sent(v, skipped)
+            if v == nil then return skipped and L["not tried"] or L["no"] end
+            return v and L["yes"] or L["no"]
+        end
+        local function yn(v) return v and L["yes"] or L["no"] end
+        local out = {
+            string.format(L["rounds %d  -  ads in %d, out %d  -  peers %d  -  dropped %d"],
+                g.rounds or 0, g.adsIn or 0, g.adsOut or 0, g.peers or 0, g.dropped or 0),
+            string.format(L["Whisper test: %s"], g.whisper or L["no spelling came back: gossip and requests do not whisper"]),
+            string.format(L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"],
+                r.open or 0, r.asked or 0, r.delivered or 0, r.invites or 0, r.confirmed or 0, d.name or 0, d.guild or 0),
+        }
+        if type(ch) == "table" then
+            local h = type(ch.heard) == "table" and ch.heard or {}
+            out[#out + 1] = string.format(L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"],
+                sent(ch.click, ch.clickSkipped), sent(ch.timer, ch.timerSkipped), yn(h.click), yn(h.timer))
+        else
+            out[#out + 1] = L["Channel probe: not run"]
+        end
+        return out
+    end)
+    if not built then return nil end
     return lines
 end
 

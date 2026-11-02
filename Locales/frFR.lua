@@ -2333,3 +2333,6 @@ L["no spelling came back: gossip and requests do not whisper"] = "aucune graphie
 L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"] = "demandes : %d ouvertes  -  faites %d, remises %d  -  invitations %d, confirmées par le jeu %d  -  rejetées : nom %d, guilde %d"
 L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"] = "Sonde de canal : commande envoyée %s, minuteur envoyé %s  -  revenu : commande %s, minuteur %s"
 L["Channel probe: not run"] = "Sonde de canal : non exécutée"
+L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."] = "Le canal n'a pas encore de numéro : utilisez la commande ou le bouton une seconde fois dans quelques secondes. Le second appui est celui qui compte."
+L["not tried: the channel had no number yet"] = "non tenté : le canal n'avait pas encore de numéro"
+L["not tried"] = "non tenté"

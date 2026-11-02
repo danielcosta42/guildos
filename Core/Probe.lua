@@ -492,13 +492,41 @@ end
 -- game took the message, heard says it came back through the channel. The channel always ends, whatever
 -- went wrong, and nothing is said in any chat but the player's own window.
 ----------------------------------------------------------------------
-local CHANNEL_WAIT = 6         -- seconds until the verdict; the timer's message goes at 2 and an echo is quick
+local CHANNEL_WAIT = 15        -- seconds until the verdict: long enough to press the command a second time
 local CHANNEL_TIMER_AT = 2
 
 -- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
-local function hideChannelNotice(_, _, _, _, _, channel)
-    if GuildOS.Compat.IsSecret(channel) or type(channel) ~= "string" or not Probe._channelName then return false end
-    return channel == Probe._channelName
+-- The client hands the channel as "5. GOSProbe1234" and its base name ninth, so either one names it.
+local function hideChannelNotice(_, _, _, _, _, channel, _, _, _, _, base)
+    local name = Probe._channelName
+    if not name or GuildOS.Compat.IsSecret(channel, base) then return false end
+    if type(base) == "string" and base == name then return true end
+    return type(channel) == "string" and channel:find(name, 1, true) ~= nil
+end
+
+-- A run that a /reload cut short leaves its channel joined: the name was kept in GuildOSDB, and it goes now.
+function Probe:LeaveStaleChannel()
+    local stale = GuildOSDB and GuildOSDB.probeChannelOpen
+    if type(stale) ~= "string" then return end
+    GuildOSDB.probeChannelOpen = nil
+    GuildOS.Compat.LeaveChannel(stale)
+end
+
+-- One attempt to send `how` ("click" or "timer"). A channel with no number yet is not a refusal by the
+-- game: it is an attempt that did not happen, recorded as its own state (`<how>Skipped`) and never as false.
+function Probe:ChannelAttempt(run, how)
+    local Compat = GuildOS.Compat
+    pcall(function()
+        local id = Compat.ChannelId(run.name)
+        if id <= 0 then
+            if not run[how] then run[how .. "Skipped"] = "no channel number" end
+            return
+        end
+        run.joined = true
+        run[how .. "Skipped"] = nil
+        run.sentTry[how] = true
+        Compat.SendAddonMessageNow(PREFIX, run.texts[how], "CHANNEL", id, function() run[how] = true end)
+    end)
 end
 
 function Probe:RunChannel()
@@ -506,15 +534,22 @@ function Probe:RunChannel()
         GuildOS:Print(L["The probe does not run in combat. Try again after the fight."])
         return nil
     end
-    if self._channel then
-        GuildOS:Print(L["The channel probe is already running."])
-        return nil
+    local running = self._channel
+    if running then
+        -- A second press, from a new key press: the click that was skipped for want of a number gets its
+        -- attempt now, and this is the one that counts.
+        if running.click or not running.clickSkipped then
+            GuildOS:Print(L["The channel probe is already running."])
+            return nil
+        end
+        self:ChannelAttempt(running, "click")
+        return running
     end
 
     local Compat = GuildOS.Compat
     local name = "GOSProbe" .. math.random(1000, 9999)
     local run = {
-        name = name, timer = false, click = false, heard = { timer = false, click = false }, joined = false,
+        name = name, heard = { timer = false, click = false }, joined = false, sentTry = {},
         texts = { click = name .. " click", timer = name .. " timer" },
     }
     self._channel, self._channelName = run, name
@@ -532,22 +567,17 @@ function Probe:RunChannel()
         end)
         Compat.RegisterEvent(self._channelFrame, "CHAT_MSG_ADDON")
         pcall(Compat.RegisterAddonPrefix, PREFIX)
+        if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = name end
         Compat.JoinChannel(name)
     end)
 
-    -- One attempt: the game took it when the send reports it went out, which is what onSent says.
-    local function attempt(how)
-        pcall(function()
-            local id = Compat.ChannelId(name)
-            if id <= 0 then return end   -- the game has not given the channel a number yet
-            run.joined = true
-            Compat.SendAddonMessageNow(PREFIX, run.texts[how], "CHANNEL", id, function() run[how] = true end)
-        end)
-    end
     GuildOS:Print(L["Channel probe: a temporary channel is joined and one message goes through it from the command and one from a timer. The verdict follows in a few seconds."])
-    attempt("click")
+    self:ChannelAttempt(run, "click")
+    if run.clickSkipped then
+        GuildOS:Print(L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."])
+    end
     Compat.After(CHANNEL_TIMER_AT, function()
-        if Probe._channel == run then attempt("timer") end   -- never after the verdict
+        if Probe._channel == run then self:ChannelAttempt(run, "timer") end   -- never after the verdict
     end)
     return run
 end
@@ -559,9 +589,18 @@ function Probe:FinishChannel(run)
     pcall(function() self._channelFrame:UnregisterEvent("CHAT_MSG_ADDON") end)
     if Compat.ChannelId(run.name) > 0 then run.joined = true end
     local left = Compat.LeaveChannel(run.name)
+    if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = nil end
     local clockOk, now = pcall(GetServerTime)
-    local result = { timer = run.timer, click = run.click, heard = run.heard, joined = run.joined,
-                     left = left, at = (clockOk and now) or 0 }
+    -- timer and click are true (the game took it), false (it was tried and the game did not) or nil
+    -- (never tried: <how>Skipped says why).
+    local function outcomeOf(how)
+        if run[how] then return true end
+        if run.sentTry[how] then return false end
+        return nil
+    end
+    local result = { timer = outcomeOf("timer"), click = outcomeOf("click"),
+                     timerSkipped = run.timerSkipped, clickSkipped = run.clickSkipped,
+                     heard = run.heard, joined = run.joined, left = left, at = (clockOk and now) or 0 }
     if not GuildOSDB then GuildOSDB = {} end
     GuildOSDB.probeChannel = result
 
@@ -570,7 +609,12 @@ function Probe:FinishChannel(run)
     end
     local labels = { click = L["the message sent from the command"], timer = L["the message sent from a timer"] }
     for _, how in ipairs({ "click", "timer" }) do
-        local outcome = not result[how] and L["not sent"] or result.heard[how] and L["came back"] or L["did not come back"]
+        local outcome
+        if result[how] == nil then
+            outcome = L["not tried: the channel had no number yet"]
+        else
+            outcome = not result[how] and L["not sent"] or result.heard[how] and L["came back"] or L["did not come back"]
+        end
         GuildOS:Print(string.format("  %s: %s", labels[how], outcome))
     end
     GuildOS:Print(L["Saved in GuildOSDB.probeChannel. Type /reload to write it to disk."])

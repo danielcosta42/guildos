@@ -832,6 +832,16 @@ check(Gossip:Audit().requests.asked == 1 and Gossip:Audit().requests.delivered =
 handler("CRA|" .. mine.id .. "|officer|Ana Lima", "Ana Lima", "WHISPER")
 check(Gossip:Audit().requests.asked == 1 and Gossip:Audit().requests.delivered == 1, "an answer that says officer is a delivery")
 
+-- B6 fix round 1: the game's id finds a row by the whole name, not by a prefix of it.
+reset(); GUILD, officer = "Ashen Vow", true
+openSite(UUID, "Ana Lima")
+handler(crq("gam8888888", "Ana Lima"), "Ana Lima", "WHISPER")
+JR:Decide(UUID, "declined")
+whispers = {}
+handler(crq("gam8888888", "Ana"), "Ana", "WHISPER")
+check(find(UUID).status == "declined" and find(UUID).gameId == "gam8888888", "'Ana' holding the id does not touch the row of 'Ana Lima'")
+check(not (whispers[1] and whispers[1].payload:find("declined", 1, true)), "and is not told its decision")
+
 -- M12: the recruiting tab hides the section where the module never starts.
 local roster_ui = io.open(ADDON .. "/UI/RosterFrame.lua", "rb"):read("*a")
 check(roster_ui:find("isAnniversary", roster_ui:find("Join requests", 1, true), true), "the join requests section of the recruiting tab checks for Anniversary")

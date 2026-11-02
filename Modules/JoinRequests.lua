@@ -101,6 +101,11 @@ local function sameName(a, b)
     return a == b or a:sub(1, #b + 1) == b .. " " or b:sub(1, #a + 1) == a .. " "
 end
 
+-- The same name, whole: space and hyphen are one thing and case is none, and nothing else is.
+local function sameWhole(a, b)
+    return a:lower():gsub("[%s%-]+", " ") == b:lower():gsub("[%s%-]+", " ")
+end
+
 -- The confirmation of an invite names the person whole: "Ana" is not "Ana Lima" and "Ana" on this realm is
 -- not "Ana-Gallywix". Space and hyphen are one thing, case is none. On retail the realm is compared when
 -- both sides have one: the game leaves out this character's own.
@@ -342,7 +347,7 @@ end
 local function byGameId(id, character)
     for _, r in pairs(store()) do
         -- An id says nothing about whose it is: the name must still be the row's.
-        if r.gameId == id and sameName(r.character, character) then return r end
+        if r.gameId == id and sameWhole(r.character, character) then return r end
     end
 end
 

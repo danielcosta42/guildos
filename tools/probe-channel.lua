@@ -84,7 +84,7 @@ local function load(o)
       return 0
     end,
   }
-  GuildOSDB = nil
+  GuildOSDB = {}
   GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
   dofile(ADDON .. "/Core/Core.lua")
   dofile(ADDON .. "/Core/Compat.lua")
@@ -135,7 +135,7 @@ advance(clock + 3)
 check(#sent == 2 and not sent[2].hardware and sent[2].channel == "CHANNEL" and sent[1].text ~= sent[2].text,
   "the second goes from a timer, and tells which is which")
 check(GuildOSDB == nil or GuildOSDB.probeChannel == nil, "nothing is saved before the verdict")
-advance(clock + 10)
+advance(clock + 20)
 local r = GuildOSDB.probeChannel
 check(r and r.timer == true and r.click == true and r.heard.timer == true and r.heard.click == true and type(r.at) == "number",
   "timer, click, heard and when are kept in GuildOSDB.probeChannel")
@@ -143,31 +143,65 @@ check(not stillJoined() and #left == 1 and left[1] == run.name, "the channel is 
 check(not listening("CHAT_MSG_ADDON"), "and the probe stops listening")
 check(said("GuildOSDB.probeChannel"), "the verdict says where it was saved")
 check(sent[1].prefix == "GuildOSProbe" and run.name:find("^GOSProbe"), "on the probe's own prefix and a channel of its own")
-check(#filters >= 1 and filters[1].event == "CHAT_MSG_CHANNEL_NOTICE"
-  and filters[1].fn(nil, nil, "x", "y", "z", run.name) == true and not filters[1].fn(nil, nil, "x", "y", "z", "General"),
-  "the join and leave notices of the probe's channel, and only that channel's, are hidden")
+local hide = filters[1] and filters[1].fn
+check(#filters >= 1 and filters[1].event == "CHAT_MSG_CHANNEL_NOTICE", "a filter is on the channel notices")
+-- The client hands arg 4 as "5. Name" and arg 9 as the base name.
+check(hide(nil, nil, "x", "y", "z", "5. " .. run.name, "", 0, 0, 5, run.name) == true, "the notice of the probe's channel, as the client numbers it, is hidden")
+check(hide(nil, nil, "x", "y", "z", "5. " .. run.name) == true, "and by the numbered form alone")
+check(hide(nil, nil, "x", "y", "z", run.name, "", 0, 0, 5, run.name) == true, "and by the bare name")
+check(not hide(nil, nil, "x", "y", "z", "1. General", "", 0, 0, 1, "General") and not hide(nil, nil, "x", "y", "z", "6. GOSProbe0001"),
+  "no other channel's notice is")
+check(not hide(nil, nil, "x", "y", "z", nil), "an absent channel is nobody's")
+check(GuildOSDB.probeChannelOpen == nil, "nothing is kept as running after the verdict")
 
 -- ── 2. Forever drops what a timer sends ─────────────────────────────────
 Probe = load({ blockTimer = true })
 run = fromCommand(Probe)
-advance(clock + 10)
+advance(clock + 20)
 r = GuildOSDB.probeChannel
 check(r.click == true and r.timer == false and r.heard.click == true and r.heard.timer == false,
   "a timer's message that the game drops is recorded as not sent and not heard")
 check(not stillJoined(), "and the channel is left all the same")
 
--- ── 3. A channel with a number only after a moment ──────────────────────
+-- ── 3. A channel with a number only a moment late ──────────────────────
 Probe = load({ slowJoin = true })
 run = fromCommand(Probe)
-advance(clock + 10)
+check(#sent == 0 and run.clickSkipped == "no channel number" and run.click == nil, "the command's message cannot go before the channel has a number: skipped, not refused")
+check(said("press the command or the button again"), "and the player is told plainly that a second press is needed")
+check(GuildOSDB.probeChannelOpen == run.name, "the open channel is kept in GuildOSDB while the probe runs")
+advance(clock + 3)
+check(#sent == 1 and not sent[1].hardware, "the timer's message goes once the channel has a number")
+hardware = true
+check(Probe:RunChannel() == run, "a second press while it runs retries the click")
+hardware = false
+check(#sent == 2 and sent[2].hardware and sent[2].channel == "CHANNEL", "from the new key press, which is the attempt that counts")
+check(Probe:RunChannel() == nil and said("already running"), "a third has nothing to retry")
+advance(clock + 20)
 r = GuildOSDB.probeChannel
-check(r.click == false and r.timer == true and r.heard.timer == true, "the command's message cannot go before the channel has a number, and says so")
+check(r.click == true and r.clickSkipped == nil and r.timer == true and r.heard.click == true and r.heard.timer == true,
+  "the retried click is the result, and nothing is left saying it was skipped")
+check(not stillJoined() and GuildOSDB.probeChannelOpen == nil, "the channel is left")
+
+Probe = load({ slowJoin = true })
+run = fromCommand(Probe)
+advance(clock + 20)
+r = GuildOSDB.probeChannel
+check(r.click == nil and r.clickSkipped == "no channel number" and r.timer == true, "with no second press the click stays unknown, and says why")
+check(said("not tried"), "and the printed line says it was not tried, not that it failed")
 check(not stillJoined(), "and the channel is left")
+
+-- A /reload inside the window loses the leave timer: the next load leaves the channel.
+Probe = load()
+GuildOSDB = { probeChannelOpen = "GOSProbe5555" }
+joined["GOSProbe5555"] = { id = 9, at = 0 }
+Probe:LeaveStaleChannel()
+check(not joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == nil, "a channel left open by a /reload is left on the next load")
+check(pcall(Probe.LeaveStaleChannel, Probe), "and with none open it is nothing")
 
 -- ── 4. Hearing is not believing ─────────────────────────────────────────
 Probe = load({ echo = function() return "somebody else's text" end })
 run = fromCommand(Probe)
-advance(clock + 10)
+advance(clock + 20)
 r = GuildOSDB.probeChannel
 check(r.timer == true and r.click == true and r.heard.timer == false and r.heard.click == false,
   "only the probe's own text counts as an echo")
@@ -175,14 +209,14 @@ check(r.timer == true and r.click == true and r.heard.timer == false and r.heard
 -- ── 5. Errors never keep the channel ────────────────────────────────────
 Probe = load({ joinRaises = true })
 check(pcall(Probe.RunChannel, Probe), "a join that raises does not raise out of the command")
-advance(clock + 10)
+advance(clock + 20)
 r = GuildOSDB.probeChannel
-check(r and r.timer == false and r.click == false and r.joined == false, "and the verdict says nothing went")
+check(r and r.timer == nil and r.click == nil and r.joined == false, "and the verdict says nothing was tried")
 check(#left == 1 and not stillJoined(), "the channel is left even so")
 
 Probe = load({ sendRaises = true })
 check(pcall(Probe.RunChannel, Probe), "a send that raises does not raise out of the command")
-advance(clock + 10)
+advance(clock + 20)
 r = GuildOSDB.probeChannel
 check(r and r.timer == false and r.click == false and not stillJoined(), "the channel is left after a send that failed")
 
@@ -192,11 +226,11 @@ check(Probe:RunChannel() == nil and not stillJoined() and said("combat"), "it do
 Probe = load()
 run = fromCommand(Probe)
 check(Probe:RunChannel() == nil and said("already running"), "it does not run twice at once")
-advance(clock + 10)
+advance(clock + 20)
 check(not stillJoined(), "the first still ends")
 local again = fromCommand(Probe)
 check(again and again ~= run, "and it can run again after the verdict")
-advance(clock + 10)
+advance(clock + 20)
 check(not stillJoined(), "and ends again")
 
 -- ── 7. The command ──────────────────────────────────────────────────────

@@ -2213,3 +2213,6 @@ L["no spelling came back: gossip and requests do not whisper"] = "ни одно 
 L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"] = "заявки: открыто %d  -  подано %d, доставлено %d  -  приглашений %d, подтверждено игрой %d  -  отброшено: имя %d, гильдия %d"
 L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"] = "Проверка канала: команда отправила %s, таймер отправил %s  -  вернулось: команда %s, таймер %s"
 L["Channel probe: not run"] = "Проверка канала: не запускалась"
+L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."] = "У канала ещё нет номера: нажмите команду или кнопку ещё раз в течение нескольких секунд. Засчитывается второе нажатие."
+L["not tried: the channel had no number yet"] = "не пробовали: у канала ещё не было номера"
+L["not tried"] = "не пробовали"

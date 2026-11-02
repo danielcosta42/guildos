@@ -2213,3 +2213,6 @@ L["no spelling came back: gossip and requests do not whisper"] = "沒有任何�
 L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"] = "申請：%d 待處理  -  已提交 %d，已送達 %d  -  邀請 %d，遊戲確認 %d  -  捨棄：名稱 %d，公會 %d"
 L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"] = "頻道探測：指令已送出 %s，計時器已送出 %s  -  已回傳：指令 %s，計時器 %s"
 L["Channel probe: not run"] = "頻道探測：未執行"
+L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."] = "頻道尚無編號：請在幾秒內再次輸入指令或按下按鈕。以第二次為準。"
+L["not tried: the channel had no number yet"] = "未嘗試：頻道當時尚無編號"
+L["not tried"] = "未嘗試"
