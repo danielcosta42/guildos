@@ -222,6 +222,9 @@ end
 -- A CR3 off the network. True when it was kept or renewed something.
 function RB:IngestCR3(payload, _)
     local ad = ReadCR3(payload)
+    -- This guild's own ad comes from its own site block and from nowhere on the network: a peer cannot hold its slot.
+    local mine = GetGuildInfo and GetGuildInfo("player")
+    if ad and mine and ad.key == (mine:gsub("[,:]", " ")) then return false end
     if not ad or not Store(ad) then return false end
     if self.onUpdate then pcall(self.onUpdate) end
     return true
@@ -237,8 +240,9 @@ function RB:SeedOwnAd()
     own.n, own.key = mine, (mine:gsub("[,:]", " "))
     own.dt, own.m = nil, nil
     own.x = math.min(own.x, now() + self.MAX_AHEAD)
-    Store(own)
-    return self:Cache3()[own.key]
+    self:Cache3()[own.key] = own   -- unconditional: whatever sat in the slot, the site's ad is the guild's
+    self:Prune3()
+    return own
 end
 
 ----------------------------------------------------------------------

@@ -319,6 +319,25 @@ check(mine and mine.v == own.v, "and it is in my own cache")
 local again = RB:IngestCR3(oneTopic.pull("Ashen Vow"), "Bob")
 check(again ~= nil, "a pulled ad is a CR3 any client takes")
 
+-- A peer cannot hold the slot of this guild's own ad: not by the network, and not by a cache that already has it.
+check(RB:IngestCR3(wire({ n = "Ashen Vow", p = "FORGED", v = NOW + 300 }), "Mallory") == false, "a CR3 named after my own guild is refused")
+local slot = RB:Cache3()["Ashen Vow"]
+local forgedCopy = {}
+for k, v in pairs(slot) do forgedCopy[k] = v end
+forgedCopy.p, forgedCopy.v = "FORGED", NOW + 300
+RB:Cache3()["Ashen Vow"] = forgedCopy
+sent = {}
+RB:Broadcast()
+local spread = {}
+for _, m in ipairs(sent) do spread[#spread + 1] = m.payload end
+check(#spread >= 2 and not table.concat(spread, " "):find("FORGED", 1, true), "a forged newer ad in the slot is not spread, as a CR3 or a CR2")
+check(RB:Cache3()["Ashen Vow"].p ~= "FORGED", "the site's ad takes its slot back")
+RB:Cache3()["Ashen Vow"] = forgedCopy
+local offered
+for _, e in ipairs(oneTopic.digest()) do if e[1] == "Ashen Vow" then offered = e end end
+check(offered and offered[2] == own.v, "the digest offers the site's version, not the forged one")
+check(not oneTopic.pull("Ashen Vow"):find("FORGED", 1, true), "and pull hands out the site's ad")
+
 reset()
 GUILD, officer = "Ashen Vow", true
 GuildOSInbox = { GUILD_AD }

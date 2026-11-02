@@ -172,6 +172,12 @@ GuildOSInbox = { RECRUIT_RETAIL }
 check(Import:RecruitDirectory() == nil, "a list for the other game is nil: a client folder can hold what another install left")
 GuildOSInbox = { RECRUIT_RETAIL, RECRUIT }
 check(Import:RecruitDirectory() ~= nil and Import:RecruitDirectory().game == "FOREVER", "and this game's list is found beside it")
+GuildOS.Client.isRetail = true
+GuildOSInbox = { RECRUIT }
+check(Import:RecruitDirectory() == nil, "and a Forever list read on retail is nil too")
+GuildOSInbox = { RECRUIT, RECRUIT_RETAIL }
+check(Import:RecruitDirectory() ~= nil and Import:RecruitDirectory().game == "RETAIL", "with retail's own list found beside it")
+GuildOS.Client.isRetail = false
 GuildOSInbox = { "GOSRECR1:notareal(list)" }
 check(Import:RecruitDirectory() == nil, "a damaged one is dropped")
 GuildOSInbox = { FIXTURE }
