@@ -516,12 +516,12 @@ function Gossip:On(op, fn)
 end
 
 -- Registers a topic: `name` is the first field of its payloads. spec = { digest = fn() -> {{key, version}},
--- want = fn(key, version) -> bool, pull = fn(key) -> payload|nil, push = fn(payload, sender) }.
+-- want = fn(key, version) -> bool, pull = fn(key) -> payload|nil, push = fn(payload, sender, dist) }.
 function Gossip:Topic(name, spec)
     S.topics[name] = spec
-    self:On(name, function(payload, sender)
+    self:On(name, function(payload, sender, dist)
         S.stats.adsIn = S.stats.adsIn + 1
-        spec.push(payload, sender)
+        spec.push(payload, sender, dist)
     end)
 end
 

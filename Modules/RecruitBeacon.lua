@@ -219,13 +219,22 @@ local function ReadCR3(payload)
     return ad
 end
 
--- A CR3 off the network. True when it was kept or renewed something.
-function RB:IngestCR3(payload, _)
-    local ad = ReadCR3(payload)
-    -- This guild's own ad comes from its own site block and from nowhere on the network: a peer cannot hold its slot.
+-- Whether `key` names this character's own guild. The site and the game do not agree on the case of a name.
+local function IsOwnGuild(key)
     local mine = GetGuildInfo and GetGuildInfo("player")
-    if ad and mine and ad.key == (mine:gsub("[,:]", " ")) then return false end
-    if not ad or not Store(ad) then return false end
+    return mine ~= nil and mine ~= "" and (mine:gsub("[,:]", " ")):lower() == key:lower()
+end
+
+-- A CR3 off the network. True when it was kept or renewed something. This guild's own ad comes from its
+-- site block, or from an officer over GUILD: that is how a member holds it, says the guild in its beacon and
+-- takes a request. By any other road a peer cannot hold its slot, a whisper in an officer's name least of
+-- all (IsOfficerByName drops the realm). A roster not loaded yet vouches for nobody, and the officer's
+-- next repeat lands.
+function RB:IngestCR3(payload, sender, dist)
+    local ad = ReadCR3(payload)
+    if not ad then return false end
+    if IsOwnGuild(ad.key) and not (dist == "GUILD" and GuildOS:IsOfficerByName(sender)) then return false end
+    if not Store(ad) then return false end
     if self.onUpdate then pcall(self.onUpdate) end
     return true
 end
@@ -274,6 +283,8 @@ function RB:Initialize()
             end,
             want = function(key, version)
                 if type(version) ~= "number" or version > now() + RB.CLOCK_SKEW then return false end
+                -- Never asked for: it comes by GUILD from an officer, and a guildmate would only refuse what it got.
+                if IsOwnGuild(key) then return false end
                 local cur = RB:Cache3()[key]
                 return not cur or cur.v < version
             end,
@@ -282,7 +293,7 @@ function RB:Initialize()
                 local ad = RB:Cache3()[key]
                 if ad and ad.x > now() then return RB:AdToPayload(ad) end
             end,
-            push = function(payload, sender) RB:IngestCR3(payload, sender) end,
+            push = function(payload, sender, dist) RB:IngestCR3(payload, sender, dist) end,
         })
     end
     if C_Timer and C_Timer.NewTicker then

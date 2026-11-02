@@ -1,0 +1,433 @@
+-- The recruitment with its pieces running together (specs/071-o-recrutamento in guildos-web). One sandbox
+-- per client, each with the real Core/Core.lua, Core/Compat.lua, Core/Utils.lua, Libs/LibChehulMesh.lua,
+-- Modules/ChehulGossip.lua, Modules/GuildFinder.lua, Modules/RecruitBeacon.lua and Modules/JoinRequests.lua,
+-- resolved by the real ResolveGuildDB and booted by the real GuildOS:InitModules, on a fake bus under
+-- AceComm and a fake clock. What the companion leaves (the site's list, the guild's block) stands in for
+-- CompanionImport; tools/recruit-beacon.lua reads the same thing out of the site's own strings.
+--
+-- What only shows when they run together:
+--   * A guild keeps its own ad: an officer's CR3 over GUILD lands on every member, nobody asks for it
+--     again, the officer's allowance is left over, and a member holding it says the guild in its beacon,
+--     is found by PeerFor and answers a request as "member". The same name by whisper, or from a member
+--     over GUILD, is still refused.
+--   * The companion's list crosses to who has no companion: a client with only the block seeds the others,
+--     within the ceilings, with the seal nowhere, with a full list.
+--   * The officer hears of a request from the site once the rank is known, once per new row.
+--   * An officer's broadcast pauses inside an instance and in a lockdown, and comes back after.
+--
+--   luajit -e 'ADDON="."' tools/recruit-network.lua
+--
+-- Exits 1 on the first failed check.
+ADDON = ADDON or "."
+
+local checks = 0
+local function check(cond, what)
+  checks = checks + 1
+  if not cond then
+    io.stderr:write("FAIL: " .. what .. "\n")
+    os.exit(1)
+  end
+end
+
+local PREFIX = "ChehulRecruit"
+local EPOCH = 1790000000
+local NOT_FOUND = "No player named '%s' is currently playing."
+
+local function strsplit(delim, s)
+  local out, from = {}, 1
+  while true do
+    local at = s:find(delim, from, true)
+    if not at then out[#out + 1] = s:sub(from); break end
+    out[#out + 1] = s:sub(from, at - 1)
+    from = at + 1
+  end
+  return unpack(out)
+end
+
+-- ── The clock ───────────────────────────────────────────────────────────
+local clock, queue, world = 0, {}, nil
+
+local function at(when, fn)
+  local i = #queue
+  while i > 0 and queue[i].when > when do i = i - 1 end
+  table.insert(queue, i + 1, { when = when, fn = fn })
+end
+
+local function run(seconds)
+  local stop = clock + seconds
+  while queue[1] and queue[1].when <= stop do
+    local item = table.remove(queue, 1)
+    clock = item.when
+    item.fn()
+  end
+  clock = stop
+end
+
+local function fresh()
+  clock, queue, world = 0, {}, { clients = {}, log = {} }
+end
+
+-- ── The bus ─────────────────────────────────────────────────────────────
+local function reach(from, target)
+  for _, c in ipairs(world.clients) do
+    if c.online then
+      if c.game == "forever" then
+        if target == c.name then return c end
+      elseif target == c.name .. "-" .. c.realm or (target == c.name and c.realm == from.realm) then
+        return c
+      end
+    end
+  end
+end
+
+-- What AceComm hands over: Ambiguate(sender, "none"), the realm only when it is not the reader's.
+local function senderSeenBy(from, to)
+  if from.game == "forever" or from.realm == to.realm then return from.name end
+  return from.name .. "-" .. from.realm
+end
+
+local function deliver(to, prefix, text, dist, from)
+  local fn = to.recv[prefix]
+  if fn and to.online then fn(prefix, text, dist, senderSeenBy(from, to)) end
+end
+
+local function send(c, prefix, text, dist, target, prio)
+  if not c.online then return end   -- a logged-off client's timers say nothing to anybody
+  world.log[#world.log + 1] = { from = c.name, op = text:match("^[^|]*"), text = text, dist = dist, target = target,
+                                prio = prio, at = clock, cycle = c.cycle }
+  at(clock + 0.1, function()
+    if dist == "WHISPER" then
+      local to = reach(c, target)
+      if to then deliver(to, prefix, text, dist, c) else c.system(NOT_FOUND:format(target)) end
+      return
+    end
+    for _, to in ipairs(world.clients) do
+      local hears = (dist == "GUILD" and to.guild ~= nil and to.guild == c.guild)
+        or ((dist == "YELL" or dist == "SAY") and to.zone == c.zone)
+      if hears then deliver(to, prefix, text, dist, c) end
+    end
+  end)
+end
+
+--- Every logged message that has these fields.
+local function ops(filter)
+  local out = {}
+  for _, e in ipairs(world.log) do
+    local same = true
+    for k, v in pairs(filter) do
+      if e[k] ~= v then same = false end
+    end
+    if same then out[#out + 1] = e end
+  end
+  return out
+end
+
+-- ── A client ────────────────────────────────────────────────────────────
+local function frame()
+  return setmetatable({}, { __index = function() return function() end end })
+end
+
+local chunks = {}
+local function source(env, path)
+  local chunk = chunks[path]
+  if not chunk then
+    chunk = assert(loadfile(ADDON .. "/" .. path))
+    chunks[path] = chunk
+  end
+  setfenv(chunk, env)
+  chunk()
+end
+
+--- `o.own`: the guild's ad, what the block's recruitAd gives. `o.list`: the site's list, what GOSRECR1 gives.
+--- `o.site`: the block's joinRequests. `o.rankAt`, `o.rosterAt`: when the game answers about each.
+local function client(name, o)
+  o = o or {}
+  local c = { name = name, game = o.game or "forever", realm = o.realm or "Azralon", zone = o.zone or name,
+              guild = o.guild, rank = o.rank or 5, rankAt = o.rankAt or 0, rosterAt = o.rosterAt or 0,
+              inInstance = false, lockdown = false, online = true, chat = {}, filters = {}, recv = {}, cycle = 0,
+              notices = {}, printed = {}, list = o.list }
+  local env = setmetatable({}, { __index = _G })
+  env._G = env
+  env.GuildOSDB = {}
+  env.GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
+  env.DEFAULT_CHAT_FRAME = { AddMessage = function(_, line) c.printed[#c.printed + 1] = line end }
+  env.UIParent, env.RAID_CLASS_COLORS = {}, {}
+  env.CreateFrame = frame
+  env.GetTime = function() return clock end
+  env.time = function() return EPOCH + math.floor(clock) end
+  env.GetServerTime = env.time
+  env.date = os.date
+  env.strsplit = strsplit
+  env.strtrim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+  env.tContains = function(t, v) for _, x in ipairs(t) do if x == v then return true end end return false end
+  env.hooksecurefunc = function() end
+  env.Ambiguate = function(n) return (n:gsub("%-.*$", "")) end
+  env.ERR_CHAT_PLAYER_NOT_FOUND_S = NOT_FOUND
+  env.C_Timer = {
+    After = function(delay, fn) at(clock + delay, fn) end,
+    NewTicker = function(every, fn)
+      local t = {}
+      function t.Cancel() t.off = true end
+      local function tick()
+        if t.off then return end
+        fn()
+        at(clock + every, tick)
+      end
+      at(clock + every, tick)
+      return t
+    end,
+  }
+  env.C_ChatInfo = {
+    InChatMessagingLockdown = function() return c.lockdown end,
+    RegisterAddonMessagePrefix = function() return true end,
+    SendAddonMessage = function(prefix, text, channel, target)
+      send(c, prefix, text, channel, target, "NOW")
+      return true
+    end,
+  }
+  env.ChatThrottleLib = {
+    SendAddonMessage = function(_, prio, prefix, text, channel, target, _, callback)
+      send(c, prefix, text, channel, target, prio)
+      if callback then callback(nil, true) end
+    end,
+  }
+  local comm = {
+    RegisterComm = function(_, prefix, fn) c.recv[prefix] = fn end,
+    SendCommMessage = function(_, prefix, text, dist, target, prio) send(c, prefix, text, dist, target, prio) end,
+  }
+  env.LibStub = function() return comm end
+  env.IsInGuild = function() return c.guild ~= nil end
+  env.GetGuildInfo = function()
+    if c.guild then return c.guild, "Rank", clock >= c.rankAt and c.rank or nil end
+  end
+  local function roster()
+    local out = {}
+    if c.guild and clock >= c.rosterAt then
+      for _, other in ipairs(world.clients) do
+        if other.guild == c.guild then out[#out + 1] = other end
+      end
+    end
+    return out
+  end
+  env.GetNumGuildMembers = function() return #roster() end
+  env.GetGuildRosterInfo = function(i)
+    local m = roster()[i]
+    if m then return m.game == "retail" and (m.name .. "-" .. m.realm) or m.name, "Rank", m.rank end
+  end
+  env.IsInGroup = function() return false end
+  env.IsInRaid = function() return false end
+  env.IsInInstance = function() return c.inInstance, c.inInstance and "raid" or "none" end
+  env.UnitIsGhost = function() return false end
+  env.UnitClass = function() return "Paladin", "PALADIN" end
+  env.UnitLevel = function() return 30 end
+  env.UnitFactionGroup = function() return "Horde" end
+  env.GetLocale = function() return "enUS" end
+  env.GetCurrentRegion = function() return 1 end
+  env.GetRealmName = function() return c.realm end
+  env.GetNormalizedRealmName = function() return c.realm end
+  if c.game == "forever" then
+    local first, surname = name:match("^(%S+) (%S+)$")
+    env.GetBuildInfo = function() return "1.60.1", "70707", "", 16001 end
+    env.WOW_PROJECT_ID, env.WOW_PROJECT_MAINLINE = 1, 1
+    env.C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
+    env.UnitName = function() return first end
+    env.UnitFullName = function() return first, surname end
+    env.ChatFrame_AddMessageEventFilter = function(_, fn) c.filters[#c.filters + 1] = fn end
+  elseif c.game == "retail" then
+    env.GetBuildInfo = function() return "12.1.5", "70448", "", 120105 end
+    env.WOW_PROJECT_ID, env.WOW_PROJECT_MAINLINE = 1, 1
+    env.C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
+    env.UnitName = function() return name end
+    env.UnitFullName = function() return name, c.realm end
+    env.ChatFrameUtil = { AddMessageEventFilter = function(_, fn) c.filters[#c.filters + 1] = fn end }
+  else
+    env.GetBuildInfo = function() return "2.5.6", "60000", "", 20506 end
+    env.WOW_PROJECT_ID, env.WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 5, 5
+    env.UnitName = function() return name end
+    env.UnitFullName = function() return name, c.realm end
+    env.ChatFrame_AddMessageEventFilter = function(_, fn) c.filters[#c.filters + 1] = fn end
+  end
+
+  source(env, "Core/Core.lua")
+  source(env, "Core/Compat.lua")
+  source(env, "Core/Utils.lua")
+  source(env, "Libs/LibChehulMesh.lua")
+  source(env, "Modules/ChehulGossip.lua")
+  source(env, "Modules/GuildFinder.lua")
+  source(env, "Modules/RecruitBeacon.lua")
+  source(env, "Modules/JoinRequests.lua")
+  env.GuildOS.CompanionImport = {
+    OwnRecruitAd = function() return o.own and o.own() or nil end,
+    RecruitDirectory = function() return c.list end,
+    SiteJoinRequests = function() return o.site end,
+  }
+  env.GuildOS.JoinRequestsHeard = function(_, r) c.notices[#c.notices + 1] = r.id end
+  c.env, c.GuildOS = env, env.GuildOS
+  c.Gossip, c.RB, c.GF, c.JR = env.GuildOS.ChehulGossip, env.GuildOS.RecruitBeacon, env.GuildOS.GuildFinder, env.GuildOS.JoinRequests
+
+  function c.system(line)
+    for _, fn in ipairs(c.filters) do
+      if fn({}, "CHAT_MSG_SYSTEM", line) then return end
+    end
+    c.chat[#c.chat + 1] = line
+  end
+  --- A message off the wire, along the same road the bus takes.
+  function c.hear(payload, sender, dist)
+    c.recv[PREFIX](PREFIX, payload, dist or "WHISPER", sender)
+  end
+  local round = c.Gossip.Round
+  c.Gossip.Round = function(self)
+    c.cycle = c.cycle + 1
+    return round(self)
+  end
+
+  world.clients[#world.clients + 1] = c
+  assert(env.GuildOS:ResolveGuildDB(), "the guild's db resolves")
+  env.ChehulMesh.YELL_PERCENT = 100
+  env.GuildOS:InitModules()
+  return c
+end
+
+local function ownAd()
+  return { n = "Ordem", u = "ordem", f = "H", w = "normal:us", p = "Raids", ct = { "Bruno Reis" },
+           v = EPOCH - 3600, x = EPOCH + 60 * 3600, pc = "regular", l = { "pt" } }
+end
+
+--- What the site's list says, `n` guilds, the first the newest.
+local function listOf(n, more)
+  local ads = {}
+  for i = 1, n do
+    ads[i] = { n = ("Guilda %03d"):format(i), u = ("guilda-%03d"):format(i), f = "H", w = "normal:us", p = "Raids",
+               ct = { "Dora Lima" }, v = EPOCH - i * 60, x = EPOCH + 60 * 3600, pc = "regular", l = { "en" } }
+  end
+  for _, ad in ipairs(more or {}) do ads[#ads + 1] = ad end
+  return { fmt = "GOSRECR1", v = 1, at = EPOCH, game = "FOREVER", ads = ads }
+end
+
+local function count(t)
+  local n = 0
+  for _ in pairs(t) do n = n + 1 end
+  return n
+end
+
+--- A CR3 as a client puts it on the wire, with the fields a test wants to say.
+local function cr3(c, o)
+  local ad = ownAd()
+  for k, v in pairs(o or {}) do ad[k] = v end
+  return c.RB:AdToPayload(ad)
+end
+
+math.randomseed(1)
+
+-- ── A guild keeps its own ad: one officer, N members, half an hour ──────
+local function proof(members)
+  fresh()
+  local officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+  local mates = {}
+  for i = 1, members do mates[i] = client(("M%03d Silva"):format(i), { guild = "Ordem", zone = "m" .. i }) end
+  local outsider = client("Zed Fora", { zone = "city" })
+  run(1800)
+  local asked, wasted, holding = 0, 0, 0
+  for _, e in ipairs(ops({ op = "CRG", target = officer.name })) do
+    if e.from ~= outsider.name then asked = asked + 1 end
+  end
+  for _, e in ipairs(ops({ from = officer.name, op = "CR3", dist = "WHISPER" })) do
+    if e.target ~= outsider.name then wasted = wasted + 1 end
+  end
+  for _, m in ipairs(mates) do
+    if m.RB:Cache3().Ordem then holding = holding + 1 end
+  end
+  local said = 0
+  for _, e in ipairs(ops({ op = "CRB", dist = "GUILD" })) do
+    if e.from ~= officer.name and e.text:match("^CRB|[^|]*|[^|]*|Ordem|0$") then said = said + 1 end
+  end
+  local guildCR3 = #ops({ from = officer.name, op = "CR3", dist = "GUILD" })
+  local dropped = officer.Gossip:Stats().dropped
+  print(("members=%d  30min: CRG from guildmates=%d  CR3 whispered to guildmates=%d  CR3 on GUILD=%d  officer dropped=%d  members holding=%d  member beacons naming the guild=%d  outsider has it=%s"):format(
+    members, asked, wasted, guildCR3, dropped, holding, said, tostring(outsider.RB:Cache3().Ordem ~= nil)))
+  check(holding == members, "every member holds the guild's ad: " .. holding .. " of " .. members)
+  check(asked == 0, "no guildmate asks the officer for the guild's own ad: " .. asked)
+  check(wasted == 0, "and the officer whispers it to none of them: " .. wasted)
+  -- A peer whose round falls twice inside the officer's is a discard by design: a handful, never the hundreds
+  -- a guild asking for its own ad cost.
+  check(dropped <= 6, "the officer's limit is left over: dropped " .. dropped)
+  check(said >= members, "a member holding the ad says the guild in its beacon: " .. said)
+  check(outsider.RB:Cache3().Ordem ~= nil, "somebody outside the guild still gets it")
+  check(guildCR3 >= 25, "and the officer goes on repeating it to the guild: " .. guildCR3)
+end
+proof(3)
+proof(40)
+
+-- The door: an officer, over GUILD, and nobody else by any road.
+fresh()
+local officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city" })
+local ana = client("Ana Lima", { guild = "Ordem", zone = "m1" })
+local eve = client("Eva Reis", { guild = "Ordem", zone = "m2" })
+run(1)
+local RB = ana.RB
+check(RB:IngestCR3(cr3(ana, { p = "FORJADO" }), "Eva Reis", "GUILD") == false and not RB:Cache3().Ordem, "a member over GUILD is refused")
+check(RB:IngestCR3(cr3(ana, { p = "FORJADO" }), "Bruno Reis", "WHISPER") == false and not RB:Cache3().Ordem, "the officer's name by whisper is refused")
+check(RB:IngestCR3(cr3(ana, { p = "FORJADO" }), "Bruno Reis", nil) == false and not RB:Cache3().Ordem, "and with no channel said at all")
+check(RB:IngestCR3(cr3(ana, { p = "FORJADO" }), "Zed Fora", "GUILD") == false and not RB:Cache3().Ordem, "somebody who is not on the roster is refused")
+ana.hear(cr3(ana, { p = "FORJADO" }), "Mallory Fora", "WHISPER")
+ana.hear(cr3(ana, { p = "FORJADO" }), "Bruno Reis", "WHISPER")
+check(not RB:Cache3().Ordem, "the real road refuses a whisper in the officer's name too")
+ana.hear(cr3(ana, { p = "O anuncio" }), "Bruno Reis", "GUILD")
+check(RB:Cache3().Ordem and RB:Cache3().Ordem.p == "O anuncio", "and takes the officer's over GUILD")
+ana.hear(cr3(ana, { p = "FORJADO", v = EPOCH }), "Eva Reis", "GUILD")
+check(RB:Cache3().Ordem.p == "O anuncio", "a member cannot replace it")
+local topic = ana.GuildOS.State.gossip.topics.CR3
+check(topic.want("Ordem", EPOCH + 1) == false and topic.want("Ordem", 1) == false, "want refuses the guild's own key whatever the version")
+check(eve.GuildOS.State.gossip.topics.CR3.want("Ordem", EPOCH) == false, "even for who does not hold it yet")
+check(topic.want("Outra", EPOCH) == true, "and only that key")
+check(topic.want("ordem", EPOCH) == false, "the site and the game do not agree on the case of a guild's name")
+
+-- A roster not loaded yet: the officer cannot be vouched for, and the next minute's repeat lands.
+fresh()
+officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+ana = client("Ana Lima", { guild = "Ordem", zone = "m1", rosterAt = 100 })
+run(95)
+check(not ana.RB:Cache3().Ordem and #ops({ from = officer.name, op = "CR3", dist = "GUILD" }) >= 2, "no roster: the ad does not land, and the officer goes on")
+run(65)
+check(ana.RB:Cache3().Ordem ~= nil, "the roster loads: the next repeat lands, with nothing else asked for")
+check(#ops({ from = ana.name, op = "CRG" }) == 0, "no question went out meanwhile")
+
+-- Retail: the same rule by the whole key.
+fresh()
+officer = client("Bruno", { game = "retail", guild = "Ordem", rank = 0, zone = "city", own = function()
+  local ad = ownAd()
+  ad.w = "Azralon:us"
+  return ad
+end })
+ana = client("Ana", { game = "retail", guild = "Ordem", zone = "m1" })
+run(70)
+check(ana.RB:Cache3().Ordem ~= nil, "retail: the officer's ad lands on the member")
+check(ana.RB:IngestCR3(cr3(ana, { p = "FORJADO", v = EPOCH }), "Bruno-Gallywix", "GUILD") == false, "retail: a namesake on another realm is not the officer")
+
+-- A request reaches a member. Every contact is offline, nobody with a rank is around, twenty are online.
+fresh()
+officer = client("Bruno Reis", { guild = "Ordem", rank = 0, zone = "city", own = ownAd })
+local mates = {}
+for i = 1, 20 do mates[i] = client(("M%03d Silva"):format(i), { guild = "Ordem", zone = "m" .. i }) end
+local zed = client("Zed Fora", { zone = "m1" })
+run(90)
+officer.online = false
+run(400)
+local peer, isOfficer = zed.Gossip:PeerFor("Ordem")
+check(peer == "M001 Silva" and not isOfficer, "PeerFor finds the member heard in the zone: " .. tostring(peer))
+local ad = zed.GF:Ads({})[1]
+check(ad and ad.n == "Ordem" and ad.heard == true and ad.verified == false, "and the ad reached who is outside, from a member")
+local req = zed.JR:Send(ad, "oi")
+run(1)
+check(req and zed.JR:Status(req.id) == "member", "the request is answered as delivered to a member: " .. tostring(req and zed.JR:Status(req.id)))
+local _, by = zed.JR:Status(req.id)
+check(by == "M001 Silva", "and by whom")
+check(#ops({ from = "M001 Silva", op = "CRA", target = "Zed Fora" }) == 1, "CRA|member went back to who asked")
+check(ops({ from = "M001 Silva", op = "CRA", target = "Zed Fora" })[1].text == "CRA|" .. req.id .. "|member|M001 Silva", "and says so")
+local kept = 0
+for _, m in ipairs(mates) do
+  if m.GuildOS.db.joinRequests and m.GuildOS.db.joinRequests[req.id] then kept = kept + 1 end
+end
+check(kept == 20, "and the whole guild keeps the request, from the GUILD relay: " .. kept)
+
+print(("recruit-network: %d checks passed"):format(checks))
