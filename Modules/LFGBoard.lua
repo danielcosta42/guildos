@@ -296,18 +296,19 @@ local function myKey()
 end
 
 -- Returns the stored entry so callers print exactly what was published
--- (sanitized note, clamped ttl) instead of what they passed in.
-function LFGBoard:SetAvailable(role, note, ttl)
+-- (sanitized note, clamped ttl) instead of what they passed in. `toGuild` is the board's box: the
+-- slash command never speaks in guild chat, where nobody who typed it agreed to be heard.
+function LFGBoard:SetAvailable(role, note, ttl, toGuild)
     note = GuildOS:SanitizeUserText(note, NOTE_MAX)
     ttl = self:_ClampTtl(ttl or GuildOS.db.lfgPrefs.lastTtl or DEFAULT_TTL)
     role = self:_SanitizeRole(role or GuildOS.db.lfgPrefs.lastRole or "ANY")
     local entry = { role = role, note = note, ts = GetServerTime(), ttl = ttl }
     GuildOS.db.lfgBoard[myKey()] = entry
     GuildOS.db.lfgPrefs.lastRole, GuildOS.db.lfgPrefs.lastNote, GuildOS.db.lfgPrefs.lastTtl = role, note, ttl
-    local inChat = self:_SayInGuild(role, note)
+    if toGuild then self:_SayInGuild(role, note) end
     if GuildOS.CommSystem then
         GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
-            LibSerialize:Serialize({ role = role, note = note, ttl = ttl, chat = inChat or nil }))
+            LibSerialize:Serialize({ role = role, note = note, ttl = ttl }))
     end
     self:Refresh()
     return entry
@@ -370,10 +371,9 @@ function LFGBoard:HandleEntry(sender, data)
         -- does not call tostring in Lua 5.1, so a peer sending a boolean or a
         -- table would raise inside this (unprotected) CHAT_MSG_ADDON handler,
         -- and an oversized note would bypass the cap and flood the chat frame.
-        -- age > 0 means this is a rebroadcast of an older post, not news. p.chat means it is
-        -- already in guild chat, where this reader has just seen it.
+        -- age > 0 means this is a rebroadcast of an older post, not news.
         local prefs = GuildOS.db.lfgPrefs
-        if age == 0 and not wasActive and prefs and prefs.notify and not p.chat and key ~= myKey() then
+        if age == 0 and not wasActive and prefs and prefs.notify and key ~= myKey() then
             GuildOS:Print(string.format(L["%s is available: %s"], short,
                 (entry.note ~= "" and entry.note) or L["(no note)"]))
         end
@@ -401,17 +401,16 @@ local function roleDisplay(role)
 end
 
 -- The post in guild chat, which is what reaches somebody with the board closed, or with no addon
--- at all (#243). True when the line went: the addon's notice would then say it a second time. At
--- most one every five minutes, because taking a post down and putting it back is one click each.
+-- at all (#243). At most one every five minutes, saved so a /reload does not skip it, because taking
+-- a post down and putting it back is one click each. The addon's notice goes out regardless, even if
+-- it says the same thing: a line can be dropped with no error (a rank that may not speak), and not
+-- everybody shows guild chat, so nothing here can know the line reached anyone.
 function LFGBoard:_SayInGuild(role, note)
-    if not GuildOS.db.lfgPrefs.postToGuild or not IsInGuild() then return false end
-    local now = GetServerTime()
-    if self._lastGuildLine and now - self._lastGuildLine < GUILD_LINE_COOLDOWN then return false end
-    local line = string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
+    local prefs, now = GuildOS.db.lfgPrefs, GetServerTime()
+    if not IsInGuild() or now - (prefs.lastGuildLine or 0) < GUILD_LINE_COOLDOWN then return end
+    local line = role == "ANY" and L["[Guild OS] LFG"] or string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
     if note ~= "" then line = line .. ": " .. note end
-    if not GuildOS.Compat.SendChatMessage(line, "GUILD") then return false end
-    self._lastGuildLine = now
-    return true
+    if GuildOS.Compat.SendChatMessage(line, "GUILD") then prefs.lastGuildLine = now end
 end
 
 local function durationDisplay(seconds)
@@ -537,7 +536,8 @@ function LFGBoard:Show()
             if LFGBoard:AmAvailable() then
                 LFGBoard:ClearAvailable()
             else
-                LFGBoard:SetAvailable(roleBtn:GetValue(), noteBox:GetText(), durationBtn:GetValue())
+                LFGBoard:SetAvailable(roleBtn:GetValue(), noteBox:GetText(), durationBtn:GetValue(),
+                    GuildOS.db.lfgPrefs.postToGuild)
             end
         end)
         f.actionBtn = actionBtn
