@@ -722,6 +722,16 @@ JR:Refresh()
 check(#noticed == 1 and noticed[1] == UUID, "a new site request gives the same notice, once")
 GuildOS.JoinRequestsHeard = nil
 
+-- A request from the game that comes back in the block stays one from the game: heard or not is what
+-- says whether the person is there, and the line says where it came from.
+reset(); GUILD, officer = "Ashen Vow", true
+GuildOSInbox = { block({ { id = "gam1234567", character = "Davi Rocha", source = "addon", status = "open", at = NOW - 3600 } }) }
+JR:Refresh()
+check(find("gam1234567") and find("gam1234567").source == "addon", "the block's source is the row's")
+check(JR:CanInvite("gam1234567") == false, "nobody has heard from them: Invite waits")
+handler(crq("gam1234567", "Davi Rocha"), "Davi Rocha", "WHISPER")
+check(JR:CanInvite("gam1234567") == true, "and comes alive when they are heard")
+
 -- M10 and M11: a request is relayed once per repetition, and drops are counted.
 reset(); GUILD, officer = "Ashen Vow", false
 handler(crq("rel1234567"), "Marta Vilar", "WHISPER")

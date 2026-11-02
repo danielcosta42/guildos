@@ -595,7 +595,7 @@ function JR:Refresh()
         elseif s.status == "open" and not openFor(s.character) and makeRoom() then
             local class, level, role = facts(s.class, s.level, s.role)
             rows[s.id] = { id = s.id, character = s.character, class = class, level = level, role = role, note = s.note,
-                           at = s.at, status = "open", source = "site", unheard = true }
+                           at = s.at, status = "open", source = s.source, unheard = true }
         end
     end
     expireRows()
