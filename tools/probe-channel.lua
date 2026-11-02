@@ -67,7 +67,11 @@ local function load(o)
     if not c or (o.slowJoin and clock - c.at < 1) then return 0, "" end
     return c.id, name
   end
-  function LeaveChannelByName(name) left[#left + 1] = name; joined[name] = nil end
+  function LeaveChannelByName(name)
+    left[#left + 1] = name
+    if o.leaveBlocked and not hardware and o.leaveBlocked() then return end   -- the game drops it, with no error
+    joined[name] = nil
+  end
   C_ChatInfo = {
     InChatMessagingLockdown = function() return false end,
     RegisterAddonMessagePrefix = function() return true end,
@@ -195,8 +199,50 @@ Probe = load()
 GuildOSDB = { probeChannelOpen = "GOSProbe5555" }
 joined["GOSProbe5555"] = { id = 9, at = 0 }
 Probe:LeaveStaleChannel()
-check(not joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == nil, "a channel left open by a /reload is left on the next load")
+check(not joined["GOSProbe5555"], "a channel left open by a /reload is left on the next load")
+check(GuildOSDB.probeChannelOpen == "GOSProbe5555", "and its name stays until the game has been seen to let go of it")
+advance(clock + 30)
+check(GuildOSDB.probeChannelOpen == nil, "then it goes")
+check(#left == 1, "and a channel that went is not left twice")
 check(pcall(Probe.LeaveStaleChannel, Probe), "and with none open it is nothing")
+
+-- A leave from a timer that the game drops: the name stays, and it is tried again a bounded number of times.
+Probe = load({ leaveBlocked = function() return true end })
+GuildOSDB = { probeChannelOpen = "GOSProbe5555" }
+joined["GOSProbe5555"] = { id = 9, at = 0 }
+Probe:LeaveStaleChannel()
+advance(clock + 600)
+check(joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == "GOSProbe5555", "a blocked leave forgets nothing")
+local triedLeaving = #left
+check(triedLeaving > 1 and triedLeaving <= 6, "and is tried again, a few times: " .. triedLeaving)
+advance(clock + 3600)
+check(#left == triedLeaving, "and then it stops")
+
+-- It lets go on a later try: confirmed, and the name goes.
+local blockedTries = 2
+Probe = load({ leaveBlocked = function() blockedTries = blockedTries - 1; return blockedTries >= 0 end })
+GuildOSDB = { probeChannelOpen = "GOSProbe5555" }
+joined["GOSProbe5555"] = { id = 9, at = 0 }
+Probe:LeaveStaleChannel()
+advance(clock + 600)
+check(not joined["GOSProbe5555"] and GuildOSDB.probeChannelOpen == nil, "the try that works clears the name")
+
+-- A key press where every timer failed: the next run takes it, and its own name does not lose the old one's tries.
+Probe = load({ leaveBlocked = function() return true end })
+GuildOSDB = { probeChannelOpen = "GOSProbe5555" }
+joined["GOSProbe5555"] = { id = 9, at = 0 }
+run = fromCommand(Probe)
+check(not joined["GOSProbe5555"], "the next run's key press leaves it")
+check(GuildOSDB.probeChannelOpen == run.name, "and the run keeps its own name")
+
+-- The verdict's own leave comes from a timer too.
+Probe = load({ leaveBlocked = function() return true end })
+run = fromCommand(Probe)
+advance(clock + 20)
+check(GuildOSDB.probeChannel and joined[run.name] and GuildOSDB.probeChannelOpen == run.name, "a verdict whose leave was dropped keeps the name for the next login")
+advance(clock + 600)
+triedLeaving = #left
+check(triedLeaving > 1 and triedLeaving <= 6, "and tries again a few times: " .. triedLeaving)
 
 -- The same, by the road a login takes: the real InitModules, and no direct call. The channels are not
 -- joined yet at PLAYER_LOGIN, so nothing happens at once.

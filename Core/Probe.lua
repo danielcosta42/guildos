@@ -498,6 +498,8 @@ local CHANNEL_WAIT = 15        -- seconds until the verdict: long enough to pres
 Probe.CHANNEL_WAIT = CHANNEL_WAIT   -- the Audit panel reads the result one second after it
 local CHANNEL_TIMER_AT = 2
 local STALE_WAIT = 15          -- seconds after login before a channel a /reload left behind can be left
+local STALE_AGAIN = 10         -- seconds until a leave is looked at, and tried again if the channel is still there
+local STALE_TRIES = 5          -- leaves at most, per login or run
 
 -- The join and leave lines of the probe's channel are the player's own business, and none needs reading.
 -- The client hands the channel as "5. GOSProbe1234" and its base name ninth, so either one names it.
@@ -510,11 +512,21 @@ end
 
 -- A run that a /reload cut short leaves its channel joined: the name was kept in GuildOSDB, and it goes now.
 -- The name of the probe that is running is no leftover: the wait below can come due in the middle of a run.
-function Probe:LeaveStaleChannel()
-    local stale = GuildOSDB and GuildOSDB.probeChannelOpen
+-- The game may drop a leave that comes from a timer, and says nothing, so the name is cleared only once the
+-- channel is seen gone, on a later try. STALE_TRIES leaves at most: what is still there then keeps its name
+-- for the next login or the next key press. `stale` and `try` are for the tries after the first.
+function Probe:LeaveStaleChannel(stale, try)
+    stale = stale or (GuildOSDB and GuildOSDB.probeChannelOpen)
+    try = try or 1
     if type(stale) ~= "string" or (self._channel and self._channel.name == stale) then return end
-    GuildOSDB.probeChannelOpen = nil
-    GuildOS.Compat.LeaveChannel(stale)
+    local Compat = GuildOS.Compat
+    if try > 1 and Compat.ChannelId(stale) <= 0 then
+        if GuildOSDB and GuildOSDB.probeChannelOpen == stale then GuildOSDB.probeChannelOpen = nil end
+        return
+    end
+    if try > STALE_TRIES then return end
+    Compat.LeaveChannel(stale)
+    Compat.After(STALE_AGAIN, function() GuildOS:SafeCall(Probe.LeaveStaleChannel, Probe, stale, try + 1) end)
 end
 
 -- Started with the modules. At PLAYER_LOGIN the game has not joined the character's channels yet, and
@@ -602,7 +614,8 @@ function Probe:FinishChannel(run)
     pcall(function() self._channelFrame:UnregisterEvent("CHAT_MSG_ADDON") end)
     if Compat.ChannelId(run.name) > 0 then run.joined = true end
     local left = Compat.LeaveChannel(run.name)
-    if type(GuildOSDB) == "table" then GuildOSDB.probeChannelOpen = nil end
+    -- This leave comes from a timer too: its name goes only once the channel has, and this is its second try.
+    self:LeaveStaleChannel(run.name, 2)
     local clockOk, now = pcall(GetServerTime)
     -- timer and click are true (the game took it), false (it was tried and the game did not) or nil
     -- (never tried: <how>Skipped says why).
