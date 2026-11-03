@@ -1349,3 +1349,75 @@ available before 4 November.
   - Whether `tonumber("nan")` reads as NaN on the client as it does in LuaJIT, and what writing one to SavedVariables does.
   - Everything on a screen. The finder, the form, the notice and the list were only ever drawn on fake widgets: the
     drop-down menus and their arrow and check, layout, line wrap at 700x480, `SetEnabled` on Invite.
+
+
+## ADR-0030 — The guild's trial: a length worked out on every read, and new members by the roster seen (#249)
+
+### Context
+A trial lasted 30 days, hard-coded, each trial stored its own `endDate`, and the first client to notice the end stamped
+it `"expired"`. Trials travel between officers as the whole table (`TR`), the latest activity winning, so a length
+written into each record would be undone by any officer still on the old version, whose copies carry the old end.
+
+### Decision
+- The length is the guild's: `settings.trialDays` (1 to 90 whole days, nil = 30), `settings.trialAuto` (the switch for
+  new members, off by default), each stamped and sent on `guildcfg` like the officer threshold (`trialdays`, `trialauto`;
+  newest wins, a tie keeps the shorter length and the switch off). Neither payload has `max`, which a client before
+  this reads as the threshold.
+- **A trial's end is never read from the record.** It is `startDate` + the guild's length, in `EndOf`, every time. A
+  change moves every running trial both ways, and nothing an old client sends can move it back. `endDate` is still
+  written on a new trial, for the old clients that read it. A stored `"expired"` is a trial nobody decided, like
+  `"trial"`: lengthened, it is running again. Only approved and denied are decisions. Nothing writes a status at login.
+- New members come from the roster alone: an officer's client keeps the roster it has seen (`db.trialBaseline`, keys
+  only), and `ScanRoster` is the only path that starts an automatic trial, for a join a moment ago and for one while
+  no officer's addon watched alike. The join line (RosterLog) only asks the game for a fresh roster: its name is never
+  made into a key, because on WoW: Forever it need not be the roster's spelling ("Chehul-Costa" against "Chehul
+  Costa", a first name alone from `UnitName`), and two strings for one person would be an orphan trial beside the
+  real one.
+- **The baseline is the officer's, and only grows.** `GuildOSDB` is the account's, one table per guild, so a
+  non-officer alt that kept it would take the officer's newcomers in unseen: a non-officer client neither reads nor
+  writes it, and a newly promoted officer with none only records at the first look. Each character's last look is
+  remembered by its own key (`db.trialScannedAsOfficer`): a look made while it was no officer (demoted, or outside a
+  narrowed threshold) forgets it, and the first look as an officer again only records, like a fresh install, so a
+  re-promoted officer never reads a month of members as new. A scan only adds keys; a key
+  leaves only on a leave or kick line (`OnLeave`), so a roster that comes short never reads the rest of the guild as
+  new. Turning the switch on (here or heard, on an officer's client) drops the baseline so the next roster is only
+  taken; heard on a client that may not touch it (an alt of the account), it leaves `db.trialBaselinePending`, and the
+  next officer's look honours it as a look that only records, then clears it. Nothing moves while the roster is not whole or the rank is unknown, and a roster that shares nobody with the
+  one seen is taken, not read as newcomers (the keys changed under it).
+- **A login waits.** `Arm` (MODULE_START, every login and /reload) keeps ScanRoster from comparing or touching the
+  baseline for `SETTLE_SECONDS` (60), the time for the guild's settings and the other officers' trials to arrive,
+  then runs it once by itself, roster event or not.
+- **Two undecided copies of one trial keep the earlier start**, both copies' notes and the longer snapshots: an
+  officer whose catch-up started the same person later (the first officer offline, or its `TR` not yet arrived) neither
+  restarts the trial nor drops what was written. **An automatic trial never reopens a decision:** nobody with a trial
+  record in any state (undecided, approved, denied, left) is auto-trialed, and in `Merge` an automatic copy (sponsor
+  "Guild OS") gives way to an approved or denied one whatever their dates, with both copies' notes; an officer who never
+  saw the approval cannot put that member on trial again. Otherwise, with a decided copy involved, the latest activity
+  still wins, so an officer's own new trial after a decision carries; it keeps the decided one's notes.
+- A whole roster read by an officer marks an undecided trial whose member is missing (`leftAt`, a field, not a status,
+  so old clients carry it), and clears it when they are back. Such a trial is counted nowhere (login line, digest,
+  Agora, suggestions, presets) and the panel lists it with the decided, "left the guild"; it still syncs.
+- A trial started this way is sponsored by "Guild OS", the same on every client, so two officers' copies of one join
+  meet as one trial in `Merge`; nobody on an officer rank and nobody already unresolved is started.
+
+### Consequences
+- (+) The officers choose the length once, and every officer's list agrees, old versions included.
+- (+) A guild that turns the switch on gets every newcomer as a trial without a click, caught up at the next login.
+- (−) An officer on an old version still flips trials to `"expired"` by their own stored end and shows them so; the
+  new version reads that as undecided and works it out again, but the old client's screen is its own.
+- (−) The catch-up starts the trial at the officer's login, not at the join: there is no join date to read.
+- (−) A whole-roster pass on every GUILD_ROSTER_UPDATE, as DropDeparted already does.
+- (−) A trial starts when the roster next answers, not at the join line itself: the request is the game's to throttle.
+- (−) Somebody who left while no officer's addon read the line, and comes back, is still in the baseline: not
+  auto-trialed. Accepted, against a short roster ever putting many members on trial. The same when a leave line spells
+  the name otherwise than the roster (Forever).
+- (−) Restarting an undecided trial by hand does not travel: the other officers keep the earlier start.
+- (−) Somebody who comes back after an approval or a denial is not auto-trialed: an officer puts them on trial again
+  by hand (Mark as Trial), which keeps the old notes.
+- (−) Known limit: a roster that comes short with every row answering reads as whole, so it marks `leftAt` on the
+  undecided trials of everybody it leaves out, and they drop out of every count until the next whole roster clears it.
+- (−) Known limit, erring the safe way: on an account's shared database, an officer character's first look after this
+  update, or after a re-promotion, only records the roster, so newcomers the main officer had not seen yet (one who
+  joined with only a non-officer alt online, or with everyone offline) are not auto-trialed.
+- (−) A login's newcomers wait a minute; with no officer online to answer, the catch-up uses the settings this client
+  had.

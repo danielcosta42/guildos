@@ -95,9 +95,11 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - Notes are synced between officers in real time via addon comms
 
 ### Trial Tracker (Officer Only)
-- Track trial/recruit members with configurable trial periods (default 30 days)
-- Records start date, sponsor, status (trial/approved/denied/expired), and evaluation notes
-- Auto-expires overdue trials and alerts officers
+- Track trial/recruit members; the trial length is the guild's (1 to 90 days, 30 until an officer changes it in the
+  Trials tab), and a new length applies to running trials too
+- Optionally, every new member starts as a trial on its own (off by default; nobody already in the guild is affected)
+- Records start date, sponsor, status (trial/ready to review/approved/denied), and evaluation notes
+- Trials whose time is up show as "ready to review" and officers are told at login
 
 ### Officer Rank Configuration (Officer Only)
 - Configure which guild ranks are considered "officers" directly from the Settings tab

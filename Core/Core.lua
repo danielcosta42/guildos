@@ -326,13 +326,15 @@ local MODULE_START = {
     { "ChatTweaks" },
     { "GuildManager", feature = "guildManager", ui = "management" },
     { "ModPresets" },
+    -- The roster is not compared for new members' trials until the guild's settings have arrived (#249).
+    { "TrialTracker", method = "Arm" },
 }
 
 -- Officer-only modules, started once guild info is available.
 local OFFICER_START = {
     { "Recruitment", feature = "recruitment" },
     { "OfficerNotes", feature = "officerNotes" },
-    { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckExpired" },
+    { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckReady" },
     -- What the Discord's cores changed at login, to the other officers (#135).
     { "CoreManager", method = "SendDiscordChanges" },
     -- The requests from the site: read at the start with no rank known, they reached no officer's notice.
@@ -561,6 +563,8 @@ end
 function GuildOS:OnGuildRosterUpdate()
     if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
     if GuildOS.DropDeparted then GuildOS:DropDeparted() end
+    -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
+    if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
     GuildOS:RefreshRosterUI()
 end
 

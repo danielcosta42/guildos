@@ -239,7 +239,9 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
 {
   version  = 1,
   settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules,
-               readyMinIlvl, readyMinIlvlAt },  -- Forever: the guild's minimum item level for a 60, on guildcfg/readymin (#206)
+               readyMinIlvl, readyMinIlvlAt,   -- Forever: the guild's minimum item level for a 60, on guildcfg/readymin (#206)
+               trialDays, trialDaysAt, trialAuto, trialAutoAt },  -- the guild's trial length (nil = 30) and its
+                                               -- switch for new members, on guildcfg/trialdays and trialauto (#249)
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
                                    mplus, vault,   -- retail: { rating, key = { map, level } },
@@ -247,7 +249,13 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
                                    addonVersion, lastUpdate, lastSync } },
   myData   = {},              -- local player's CollectMyData snapshot
   altLinks = { [altKey] = mainKey },
-  trials   = { [key] = { status, startDate, endDate, notes, snapshots } },
+  trials   = { [key] = { status, startDate, endDate, notes, snapshots, leftAt } },  -- endDate written for clients
+                                               -- before #249, never read: the end is startDate + the guild's length;
+                                               -- leftAt: an undecided trial whose member left (#249)
+  trialBaseline = { [key] = true },            -- the roster an officer's client has seen, for new members' trials
+                                               -- (#249): only grows; a leave or kick line takes a key out
+  trialScannedAsOfficer = { [characterKey] = true },  -- whose last roster look ran as an officer (#249)
+  trialBaselinePending = true,                 -- the switch went on where only a non-officer heard it (#249)
   officerNotes     = { [key] = { notes=[], tags={} } },
   managementLog    = [{ action, target, detail, author, timestamp }],  -- capped ring buffer (200)
   raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions, openSession, openChar, mergedSessions },  -- mergedSessions: local only, never sent (#197)

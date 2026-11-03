@@ -176,7 +176,8 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
 - A recruiting message that comes back on your interval and goes out with one click (Blizzard requires the click).
   Members can help spread it, and officers choose up to which rank
 - Auto-welcome for new members, in your words
-- 30-day trials with a sponsor and notes, flagged when they run over
+- Trials with a sponsor and notes, as long as your guild chooses (30 days until you change it), marked ready to
+  review when the time is up. Optionally every new member starts as a trial on their own
 
 ## 🔐 Officer tools
 

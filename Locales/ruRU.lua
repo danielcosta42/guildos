@@ -2221,3 +2221,13 @@ L["Channel probe: not run"] = "Проверка канала: не запуск�
 L["The channel has no number yet: press the command or the button again within a few seconds. The second press is the one that counts."] = "У канала ещё нет номера: нажмите команду или кнопку ещё раз в течение нескольких секунд. Засчитывается второе нажатие."
 L["not tried: the channel had no number yet"] = "не пробовали: у канала ещё не было номера"
 L["not tried"] = "не пробовали"
+-- O trial da guilda: a duração, os novos membros e o "pronto para avaliar" (issue #249)
+L["Trial length (days)"] = "Испытательный срок (дней)"
+L["Every new member starts as a trial"] = "Каждый новый участник начинает с испытательного срока"
+L["A new length moves the end of every running trial. Nobody already in the guild becomes a trial."] = "Новый срок сдвигает конец каждого идущего испытания. Те, кто уже в гильдии, на испытание не попадут."
+L["Trials now last %d days, the running ones included."] = "Испытательный срок теперь %d дн., включая уже идущие."
+L["Trial length must be a whole number of days from %d to %d."] = "Срок должен быть целым числом дней от %d до %d."
+L["READY TO REVIEW"] = "ЖДЁТ РЕШЕНИЯ"
+L["|cffFF6600%d trial(s) ready to review.|r Approve or deny them in the Trials tab."] = "|cffFF6600Ждут решения: %d.|r Одобрите или отклоните их на вкладке «Испытуемые»."
+L["LEFT THE GUILD"] = "ПОКИНУЛ ГИЛЬДИЮ"
+L["%d trial(s) ready to review"] = "Ждут решения: %d"

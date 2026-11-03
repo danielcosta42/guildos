@@ -40,7 +40,7 @@ SyncService.OFFICER_DOMAINS = {
     audit    = true,   -- guild audit trail (officer-authoritative, id-deduped)
     allyboard = true,  -- alliance bulletin posts this guild authored (ambassadors)
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
-    guildcfg  = true,  -- the guild's officer threshold (issue #81) and, on retail, its loot system (#185)
+    guildcfg  = true,  -- the guild's officer threshold (issue #81), on retail its loot system (#185), its trials (#249)
     founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
 }
 
@@ -85,6 +85,11 @@ function SyncService:Initialize()
         -- threshold with no `max`, which it ignores.
         if env.act == "readymin" then
             if GuildOS.Readiness then GuildOS.Readiness:OnMinIlvlSync(env) end
+            return
+        end
+        -- The guild's trial length and its switch for new members (issue #249); neither carries `max`.
+        if env.act == "trialdays" or env.act == "trialauto" then
+            if GuildOS.TrialTracker then GuildOS.TrialTracker:OnConfigSync(env) end
             return
         end
         GuildOS:OnOfficerMaxRankSync(env)

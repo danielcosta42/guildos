@@ -1341,10 +1341,52 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     local statusText = UI:CreateText(scrollParent, "", 10, C.silver.r, C.silver.g, C.silver.b)
     statusText:SetPoint("TOPRIGHT", 0, -2)
 
+    -- The guild's length and its switch for new members (issue #249): an officer's, for the whole guild.
+    local TT = GuildOS.TrialTracker
+    local daysLabel = UI:CreateText(scrollParent, L["Trial length (days)"], 11, C.white.r, C.white.g, C.white.b)
+    daysLabel:SetPoint("TOPLEFT", 0, -30)
+    local daysBox = CreateFrame("EditBox", nil, scrollParent, "BackdropTemplate")
+    daysBox:SetSize(40, 22)
+    daysBox:SetPoint("LEFT", daysLabel, "RIGHT", 8, 0)
+    daysBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    daysBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
+    daysBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+    GuildOS:ApplyFont(daysBox, 11)
+    daysBox:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    daysBox:SetNumeric(true)
+    daysBox:SetMaxLetters(3)   -- room for a 100 to be refused, not cut to 10
+    daysBox:SetAutoFocus(false)
+    daysBox:SetScript("OnEscapePressed", function(self)
+        self:SetText(tostring(TT and TT:GetDays() or ""))
+        self:ClearFocus()
+    end)
+    UI:AttachSaveButton(daysBox, function(box)
+        local ok, why = TT:SetDays(box:GetText())
+        if ok then
+            GuildOS:Print(string.format(L["Trials now last %d days, the running ones included."], TT:GetDays()))
+        elseif why == "range" then
+            GuildOS:Print(string.format(L["Trial length must be a whole number of days from %d to %d."], TT.MIN_DAYS, TT.MAX_DAYS))
+        end
+        box:SetText(tostring(TT:GetDays()))
+        GuildOS:RefreshTrialsPanel(parent)
+    end)
+
+    local autoCb = UI:CreateCheckbox(scrollParent, L["Every new member starts as a trial"], 18)
+    autoCb:SetPoint("LEFT", daysBox.saveButton, "RIGHT", 16, 0)
+    autoCb.checkbox.onChanged = function(cb, checked)
+        TT:SetAuto(checked)
+        cb:SetChecked(TT:IsAutoOn())
+    end
+
+    local configHint = UI:CreateText(scrollParent,
+        L["A new length moves the end of every running trial. Nobody already in the guild becomes a trial."],
+        9, C.silver.r, C.silver.g, C.silver.b)
+    configHint:SetPoint("TOPLEFT", 0, -54)
+
     -- Column headers
     local colHeader = CreateFrame("Frame", nil, scrollParent)
-    colHeader:SetPoint("TOPLEFT", 0, -28)
-    colHeader:SetPoint("TOPRIGHT", 0, -28)
+    colHeader:SetPoint("TOPLEFT", 0, -70)
+    colHeader:SetPoint("TOPRIGHT", 0, -70)
     colHeader:SetHeight(20)
 
     local hName = UI:CreateHeaderText(colHeader, L["MEMBER"], 10)
@@ -1358,16 +1400,16 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     local hSponsor = UI:CreateHeaderText(colHeader, L["SPONSOR"], 10)
     hSponsor:SetPoint("LEFT", 290, 0)
     local hDays = UI:CreateHeaderText(colHeader, L["REMAINING"], 10)
-    hDays:SetPoint("LEFT", 400, 0)
+    hDays:SetPoint("LEFT", 390, 0)
     local hStatus = UI:CreateHeaderText(colHeader, L["STATUS"], 10)
-    hStatus:SetPoint("LEFT", 500, 0)
+    hStatus:SetPoint("LEFT", 455, 0)
 
     local sep = UI:CreateSeparator(scrollParent)
-    sep:SetPoint("TOPLEFT", 0, -50)
-    sep:SetPoint("TOPRIGHT", 0, -50)
+    sep:SetPoint("TOPLEFT", 0, -92)
+    sep:SetPoint("TOPRIGHT", 0, -92)
 
     local trialScroll = CreateFrame("ScrollFrame", "GuildOSTrialScroll", scrollParent, "UIPanelScrollFrameTemplate")
-    trialScroll:SetPoint("TOPLEFT", 0, -52)
+    trialScroll:SetPoint("TOPLEFT", 0, -94)
     trialScroll:SetPoint("BOTTOMRIGHT", -10, 0)
     UI:SkinScrollBar(trialScroll, "GuildOSTrialScroll")
 
@@ -1379,10 +1421,18 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     parent.trialContent = trialContent
     parent.statusText = statusText
     parent.expandedTrials = {}
+    parent.trialDaysBox = daysBox
+    parent.trialAutoCb = autoCb.checkbox
 
     parent:SetScript("OnShow", function()
         GuildOS:RefreshTrialsPanel(parent)
     end)
+    -- An officer's change or the other officers' trials arriving redraw it while it is open (#249).
+    if TT then
+        TT.uiRefresh = function()
+            if parent:IsShown() then GuildOS:RefreshTrialsPanel(parent) end
+        end
+    end
 end
 
 function GuildOS:RefreshTrialsPanel(parent)
@@ -1392,14 +1442,15 @@ function GuildOS:RefreshTrialsPanel(parent)
 
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
 
-    local trials = GuildOS.TrialTracker:GetAllTrials()
-    local activeCount = 0
-    for _, t in ipairs(trials) do
-        if t.data.status == GuildOS.TrialTracker.STATUS.TRIAL then
-            activeCount = activeCount + 1
-        end
+    -- The guild's settings as this client holds them now: another officer's change may have arrived.
+    if parent.trialDaysBox and not parent.trialDaysBox:HasFocus() then
+        parent.trialDaysBox:SetText(tostring(GuildOS.TrialTracker:GetDays()))
     end
-    statusText:SetText(activeCount .. L[" active trials"])
+    if parent.trialAutoCb then parent.trialAutoCb:SetChecked(GuildOS.TrialTracker:IsAutoOn()) end
+
+    -- Ready to review first (GetAllTrials' order), then running, then decided and left the guild.
+    local trials = GuildOS.TrialTracker:GetAllTrials()
+    statusText:SetText(#GuildOS.TrialTracker:GetActiveTrials() .. L[" active trials"])
 
     local expanded = parent.expandedTrials or {}
     local yOff = 0
@@ -1409,6 +1460,7 @@ function GuildOS:RefreshTrialsPanel(parent)
         local isExpanded = expanded[trial.key]
         local memberData = GuildOS.db.members[trial.key]
         local progress = GuildOS.TrialTracker:GetProgress(trial.key)
+        local state = GuildOS.TrialTracker:GetState(trial.key)
 
         -- Main row
         local row = CreateFrame("Button", nil, content, "BackdropTemplate")
@@ -1418,6 +1470,7 @@ function GuildOS:RefreshTrialsPanel(parent)
 
         local rowIdx = math.floor(yOff / 26) % 2
         local altIdx = (rowIdx == 0) and C.row1 or C.row2
+        if state == "review" then altIdx = C.accentSoft end   -- a gold wash: it waits for a decision
         row:SetBackdropColor(altIdx.r, altIdx.g, altIdx.b, altIdx.a)
 
         -- Expand arrow
@@ -1470,27 +1523,33 @@ function GuildOS:RefreshTrialsPanel(parent)
             daysColor = daysRem > 14 and C.green or (daysRem > 7 and C.gold or C.red)
         end
         local daysText = UI:CreateText(row, daysStr, 10, daysColor.r, daysColor.g, daysColor.b)
-        daysText:SetPoint("LEFT", 400, 0)
+        daysText:SetPoint("LEFT", 390, 0)
 
-        -- Status badge
+        -- Status badge: the state worked out from the start and the guild's length, so a trial an older
+        -- client stored as "expired" reads as running again once the guild lengthens its trials (#249).
         local statusColor = C.silver
-        local statusStr = data.status or "?"
-        if data.status == "trial" then
+        local statusStr = tostring(data.status or "?")
+        if state == "trial" then
             statusColor = C.gold; statusStr = L["TRIAL"]
-        elseif data.status == "approved" then
+        elseif state == "review" then
+            statusColor = C.red; statusStr = L["READY TO REVIEW"]
+        elseif state == "left" then
+            statusColor = C.silver; statusStr = L["LEFT THE GUILD"]
+        elseif state == "approved" then
             statusColor = C.green; statusStr = L["APPROVED"]
-        elseif data.status == "denied" then
+        elseif state == "denied" then
             statusColor = C.red; statusStr = L["DENIED"]
-        elseif data.status == "expired" then
-            statusColor = C.red; statusStr = L["EXPIRED"]
         end
         local sText = UI:CreateText(row, statusStr, 10, statusColor.r, statusColor.g, statusColor.b)
-        sText:SetPoint("LEFT", 500, 0)
+        sText:SetPoint("LEFT", 455, 0)
+        sText:SetWidth(140)
+        sText:SetJustifyH("LEFT")
+        sText:SetWordWrap(false)
 
-        -- Action buttons for active trials
-        if data.status == "trial" then
+        -- Approve / deny for every trial nobody has decided yet, running or ready to review
+        if GuildOS.TrialTracker:IsUnresolved(data) then
             local approveBtn = UI:CreateButton(row, L["OK"], 30, 18)
-            approveBtn:SetPoint("LEFT", 580, 0)
+            approveBtn:SetPoint("LEFT", 600, 0)
             approveBtn:SetScript("OnClick", function()
                 GuildOS.TrialTracker:UpdateStatus(trial.key, GuildOS.TrialTracker.STATUS.APPROVED)
                 GuildOS:RefreshTrialsPanel(parent)

@@ -726,8 +726,12 @@ function PopulateDetail(frame, data)
             yOff = yOff - 10
             local daysRem = GuildOS.TrialTracker:GetDaysRemaining(playerKey)
             local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(playerKey)
-            local trialStr = L["TRIAL STATUS  --  "] .. (trial.status or "?"):upper()
-            if daysRem then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
+            -- The state worked out from the start and the guild's length, not the word stored (#249).
+            local state = GuildOS.TrialTracker:GetState(playerKey)
+            local stateText = ({ trial = L["TRIAL"], review = L["READY TO REVIEW"], left = L["LEFT THE GUILD"],
+                approved = L["APPROVED"], denied = L["DENIED"] })[state] or tostring(trial.status or "?"):upper()
+            local trialStr = L["TRIAL STATUS  --  "] .. stateText
+            if daysRem and state == "trial" then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
             local infoStr = _pFS(child)
