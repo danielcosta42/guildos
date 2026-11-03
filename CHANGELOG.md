@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-11-03
+
+### Added
+- o trial da guilda, com a duração escolhida pelos oficiais e trial automático para quem entra (#249)
+
+
 ## [1.7.1] - 2026-11-03
 
 ### Fixed
