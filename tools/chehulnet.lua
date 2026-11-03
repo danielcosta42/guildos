@@ -84,8 +84,32 @@ on.ChehulNet(hello("Chehul Costa-ClassicBetaPvE2"), "Chehul Costa-ClassicBetaPvE
 check(CN.peers["Chehul Costa"] == nil and #whispers == 0,
   "Forever: its own HELLO, sent as First Surname, is not taken for a peer's, nor answered")
 on.ChehulNet(hello("Ana Lima-ClassicBetaPvE2"), "Ana Lima-ClassicBetaPvE2", "GUILD")
-check(CN.peers["Ana Lima"] ~= nil and #whispers == 1 and whispers[1].target == "Ana Lima-ClassicBetaPvE2",
-  "a guildmate's is, and answered once")
+check(CN.peers["Ana Lima"] ~= nil and #whispers == 0,
+  "a guildmate's is a peer, and not answered: 500 clients would whisper each other after a restart")
+on.ChehulNet(hello("Bia Rocha-ClassicBetaPvE2"), "Bia Rocha-ClassicBetaPvE2", "YELL")
+on.ChehulNet(hello("Caio Nunes-ClassicBetaPvE2"), "Caio Nunes-ClassicBetaPvE2", "SAY")
+check(CN.peers["Bia Rocha"] ~= nil and CN.peers["Caio Nunes"] ~= nil and #whispers == 0,
+  "nor is one heard by yell or say")
+on.ChehulNet(hello("Davi Melo-ClassicBetaPvE2"), "Davi Melo-ClassicBetaPvE2", "PARTY")
+check(CN.peers["Davi Melo"] ~= nil and #whispers == 1 and whispers[1].target == "Davi Melo-ClassicBetaPvE2",
+  "a groupmate's is answered at once: the audience is bounded")
+on.ChehulNet(hello("Davi Melo-ClassicBetaPvE2"), "Davi Melo-ClassicBetaPvE2", "PARTY")
+check(#whispers == 1, "and only the first time")
+on.ChehulNet(hello("Elza Dias-ClassicBetaPvE2"), "Elza Dias-ClassicBetaPvE2", "RAID")
+on.ChehulNet(hello("Fabi Reis-ClassicBetaPvE2"), "Fabi Reis-ClassicBetaPvE2", "INSTANCE_CHAT")
+check(#whispers == 3, "a raid or an instance group too")
+whispers[1], whispers[2], whispers[3] = nil, nil, nil
+on.ChehulNet(hello("Gil Paz-ClassicBetaPvE2"), "Gil Paz-ClassicBetaPvE2", "WHISPER")
+check(CN.peers["Gil Paz"] ~= nil and #whispers == 0, "a whispered HELLO is never answered: no ping-pong")
+
+local function helloLevel(from, level) return "CHN1|H|ls|DRUID|" .. level .. "|v=1.2.0|1453:12", from end
+on.ChehulNet(helloLevel("Hugo Luz", "28"), "Hugo Luz", "GUILD")
+check(CN.peers["Hugo Luz"].level == 28, "a HELLO's level counts")
+for i, bad in ipairs({ "inf", "nan", "-1", "0", "999", "1.5", "lixo", "" }) do
+  local name = "Falso " .. i
+  on.ChehulNet(helloLevel(name, bad), name, "GUILD")
+  check(CN.peers[name] ~= nil and CN.peers[name].level == nil, "a level of '" .. bad .. "' does not, and the peer stays")
+end
 on.ChehulNet(hello("Chehul Druida"), "Chehul Druida", "GUILD")
 check(CN.peers["Chehul Druida"] ~= nil, "another character of the same first name is somebody else")
 
@@ -120,11 +144,18 @@ on.ChehulNet(hello("Chehul-Azralon"), "Chehul-Azralon", "GUILD")
 check(CN.peers["Chehul"] == nil and CN.peers["Chehul Azralon"] == nil and #whispers == 0,
   "retail: its own HELLO is its own, the realm never read as a surname")
 on.ChehulNet(hello("Ana-Azralon"), "Ana-Azralon", "GUILD")
-check(CN.peers["Ana"] ~= nil and #whispers == 1, "a guildmate's is answered")
+check(CN.peers["Ana"] ~= nil and #whispers == 0, "a guildmate's is a peer, unanswered")
 local v8 = function()
   _G.ChehulNet = { version = 8, ALERT_SENDERS = { ["chehul costa"] = true }, peers = {}, providers = {}, alertSeen = {} }
 end
 CN = client("retail", v8)
-check(CN.version == 9, "a v9 loaded after a v8 (an addon not yet updated) takes over")
+check(CN.version == 10, "a v10 loaded after a v8 (an addon not yet updated) takes over")
+local v9 = function()
+  _G.ChehulNet = { version = 9, ALERT_SENDERS = { ["chehul costa"] = true }, peers = {}, providers = {}, alertSeen = {} }
+end
+CN, on, whispers = client("forever", v9)
+check(CN.version == 10, "and after a v9")
+on.ChehulNet(hello("Ana Lima"), "Ana Lima", "GUILD")
+check(CN.peers["Ana Lima"] ~= nil and #whispers == 0, "and its guild HELLOs go unanswered from then on")
 
 print(string.format("chehulnet: %d checks passed", checks))
