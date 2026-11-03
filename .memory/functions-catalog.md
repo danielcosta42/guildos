@@ -536,23 +536,37 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `TrialTracker:Initialize()` | Ensures trials DB table; migrates old records |
-| `TrialTracker:AddTrial(playerKey, sponsor)` | Creates trial entry, takes initial snapshot, broadcasts |
+| `TrialTracker.ValidDays(v)` | A trial length in whole days (1–90, a number or digits typed), else nil: never clamped (#249) |
+| `TrialTracker:GetDays()` / `IsAutoOn()` | The guild's length (`settings.trialDays`, 30 until an officer chooses) and its switch for new members (`settings.trialAuto`, off by default) |
+| `TrialTracker:SetDays(v)` / `SetAuto(on)` | Officer only: stamped (`trialDaysAt` / `trialAutoAt`) and published; SetDays answers `false, "officer"\|"range"`; turning the switch on resets the roster baseline |
+| `TrialTracker:PublishConfig()` / `OnConfigSync(env)` | `guildcfg`/`trialdays` `{ days }` and `trialauto` `{ on }`, re-sent on the officers' regular sync and request answers; newest stamp wins, a tie keeps the shorter length and the switch off; no `max`, so a client before #249 ignores both. A change taken redraws an open Trials panel (`RefreshUI`) |
+| `TrialTracker:RefreshUI()` | Calls `uiRefresh`, which the Trials panel sets when built (redraws only while shown); after OnConfigSync and HandleIncoming |
+| `TrialTracker:IsUnresolved(trial)` | Status `trial`, or `expired` (written only by clients before #249): nobody decided yet |
+| `TrialTracker:HasLeft(trial)` | `leftAt` set: an undecided trial whose member was missing from an officer's last whole roster (a field, not a status, so old clients carry it); cleared when they are back |
+| `TrialTracker:EndOf(trial)` / `IsReady(trial, now)` | The end is `startDate` + the guild's length, worked out on every read (the stored `endDate` is written for old clients, never read); ready to review = unresolved, not left, and past it |
+| `TrialTracker:GetState(playerKey)` / `CountReady()` | `"trial"`, `"review"`, `"left"`, `"approved"`, `"denied"` (or the stored word), nil for nobody; how many are ready to review (nobody who left) |
+| `TrialTracker:AddTrial(playerKey, sponsor)` | Creates trial entry (endDate = start + the guild's length, for old clients; over an older record it keeps that record's notes), takes initial snapshot, broadcasts |
 | `TrialTracker:UpdateStatus(playerKey, newStatus)` | Updates status, records resolvedDate/By |
 | `TrialTracker:AddTrialNote(playerKey, text)` | Appends note to trial, broadcasts |
 | `TrialTracker:GetTrial(playerKey)` | Returns trial data or nil |
-| `TrialTracker:GetAllTrials()` | Returns all trials sorted by startDate desc |
-| `TrialTracker:GetActiveTrials()` | Returns status=trial entries sorted by startDate desc |
-| `TrialTracker:IsTrial(playerKey)` | Returns true if player has active trial status |
-| `TrialTracker:GetDaysRemaining(playerKey)` | Returns floor of (endDate - now) / 86400 |
+| `TrialTracker:GetAllTrials()` | Every trial, ready to review first, then running, then decided and left the guild (each entry's `group` 1/2/3), each by startDate desc |
+| `TrialTracker:GetActiveTrials()` | The unresolved trials of members still here (running and ready to review), by startDate desc |
+| `TrialTracker:IsTrial(playerKey)` | True while the player's trial is unresolved (running, ready to review, or left meanwhile) |
+| `TrialTracker:GetDaysRemaining(playerKey)` | Whole days to the derived end, rounded down, 0 once ready to review; nil for a decided trial and for one whose member left |
 | `TrialTracker:GetDaysSinceStart(playerKey)` | Returns floor of (now - startDate) / 86400 |
-| `TrialTracker:CheckExpired()` | Marks trials past endDate as expired, notifies officers |
+| `TrialTracker:CheckReady()` | At an officer's login (OFFICER_START `after`): one chat line when trials are ready to review; writes no status |
+| `TrialTracker:MayAutoTrial(playerKey, onOfficerRank)` | Whether a newcomer becomes a trial here: switch on, an officer's client with `trialTracker` on and the guild's db, not me, not an officer rank, and no trial record in any state (a rejoiner after a decision is the officers', by hand) |
+| `TrialTracker:OnJoin(name)` | From RosterLog's join line: with the switch on, on an officer's client with the tracker on, only asks for a fresh roster (`Compat.GuildRoster`). The line's name never becomes a key (Forever may spell it otherwise than the roster) |
+| `TrialTracker:Arm()` | Core's MODULE_START, every login and /reload: opens the settle window (`SETTLE_SECONDS`, 60) in which ScanRoster neither compares nor touches the baseline, then runs it once by itself through `Compat.After` |
+| `TrialTracker:ScanRoster()` / `ResetBaseline()` | The only path that starts an automatic trial (sponsor `AUTO_SPONSOR`, "Guild OS"). On every GUILD_ROSTER_UPDATE, an officer's client only (an alt on the same account never reads or writes it): the whole roster against `db.trialBaseline` (keys, kept between sessions, only ever grows); newcomers are added and become trials (one TR for all) once there is a baseline that shares somebody and this character's last look was an officer's (`db.trialScannedAsOfficer`, by character; a look as no officer clears it, and the next look as one only records); undecided trials missing from the roster get `leftAt`, cleared when back; nothing moves in the settle window, until the roster is whole and the rank known. ResetBaseline drops it so the next look only records; on a non-officer client it only sets `db.trialBaselinePending`, which the next officer's look honours as record-only and clears |
+| `TrialTracker:OnLeave(name)` | From RosterLog's leave and kick lines, officer only: the one way a key leaves the baseline, so coming back is joining again |
 | `TrialTracker:RemoveTrial(playerKey)` | Nils trial entry, broadcasts |
 | `TrialTracker:TakeSnapshot(playerKey)` | Records avgIlvl, attunements, professions, level snapshot |
 | `TrialTracker:GetProgress(playerKey)` | Returns delta table (ilvlDelta, attunement deltas, etc.) |
-| `TrialTracker:UpdateSnapshots()` | Auto-snapshots active trials if last snapshot >1 day (officer only) |
+| `TrialTracker:UpdateSnapshots()` | Auto-snapshots unresolved trials if last snapshot >1 day (officer only) |
 | `TrialTracker:BroadcastTrials()` | Serializes and sends "TR" comm message (officer only) |
 | `TrialTracker:HandleIncoming(data)` | Merges incoming trials: missing=accept, same=merge notes, newer=replace |
-| `TrialTracker:Merge(existing, incoming)` | The trial to keep: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
+| `TrialTracker:Merge(existing, incoming)` | The trial to keep. Both undecided: the earlier start, both copies' notes, the longer snapshots (a later officer's catch-up restarts nothing, #249). An automatic undecided copy (sponsor "Guild OS") against an approved or denied one: the decision, whatever the dates, notes merged. Otherwise, a decided copy involved: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
 | `TrialTracker:MergeNotes(existing, incoming)` | Merges notes by author:timestamp, re-sorts |
 
 ---
@@ -707,8 +721,8 @@ Also: `Compat.CanViewOfficerNote()`, `GearAudit:MissingEnchants(gear)` (slot nam
 | `GuildOS:RefreshRaidsPanel(...)` | Rebuilds grouped session list and attendance table |
 | `GuildOS:CreateLootPanel(parent, _mainFrame)` | Creates Loot History tab with column headers + scroll |
 | `GuildOS:RefreshLootPanel(content, countText)` | Rebuilds loot history rows |
-| `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab |
-| `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows |
+| `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab, with the guild's trial length box and the new-members switch on top (#249) |
+| `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows: ready to review first (gold wash, "READY TO REVIEW"), approve/deny on every unresolved trial |
 | `GuildOS:CreateSettingsPanel(parent, _mainFrame)` | Creates Settings tab with scroll content area |
 | `GuildOS:RefreshSettingsPanel(content)` | Populates settings: module toggles, LM options, test functions |
 | `GuildOS:ShowWishlistFrame()` | Creates or shows personal wishlist standalone frame |

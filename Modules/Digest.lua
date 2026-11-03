@@ -165,11 +165,8 @@ function Digest:Build(since)
     -- Officer-only catch-up
     if GuildOS:IsOfficer() then
         if GuildOS.TrialTracker then
-            local due = 0
-            for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials() or {}) do
-                local rem = GuildOS.TrialTracker:GetDaysRemaining(t.key)
-                if rem ~= nil and rem <= 0 then due = due + 1 end
-            end
+            -- Ready to review: their end, from the guild's length, has passed with no decision (#249).
+            local due = GuildOS.TrialTracker:CountReady()
             if due > 0 then
                 lines[#lines + 1] = string.format(L["%d trial(s) ready for decision"], due)
             end

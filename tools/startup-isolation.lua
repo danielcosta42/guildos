@@ -75,7 +75,7 @@ local started, defined = {}, {}
 local function module(name, raises)
   raises = raises or {}
   local mod = {}
-  for _, method in ipairs({ "Initialize", "InitParticipation", "CheckExpired" }) do
+  for _, method in ipairs({ "Initialize", "InitParticipation", "CheckReady", "Arm" }) do
     mod[method] = function()
       if raises[method] then error(name .. ":" .. method .. " exploded") end
       started[name .. ":" .. method] = true
@@ -115,14 +115,14 @@ module("DataCollector")         -- first in the list
 module("Wishlist", RAISE)       -- backs the wishlist window
 module("Points", RAISE)         -- has a Settings toggle and backs the DKP window
 module("RecipeTracker")         -- after both failures
-module("ModPresets")            -- last in the list
-module("TrialTracker")          -- officer-only, with a follow-up step
+module("ModPresets")            -- late in the list
+module("TrialTracker")          -- the last step of the list (Arm), and officer-only with a follow-up step
 boot()
 
 check(started["DataCollector:Initialize"], "the first module started")
 check(started["RecipeTracker:Initialize"], "a module after the failures started")
-check(started["ModPresets:Initialize"], "the last module started")
-check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckExpired"],
+check(started["ModPresets:Initialize"] and started["TrialTracker:Arm"], "the last modules started")
+check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckReady"],
   "officer modules, follow-up step included, started after the failures")
 local startup = GuildOS.State.startup
 check(startup.failed.Wishlist and startup.failed.Wishlist:find("exploded", 1, true),
@@ -205,12 +205,12 @@ check(started["TrialTracker:Initialize"], "an officer module after a failing one
 reset()
 module("TrialTracker", RAISE)
 boot()
-check(not started["TrialTracker:CheckExpired"], "the follow-up step does not run when Initialize failed")
+check(not started["TrialTracker:CheckReady"], "the follow-up step does not run when Initialize failed")
 
 reset()
-module("TrialTracker", { CheckExpired = true })
+module("TrialTracker", { CheckReady = true })
 boot()
-check(GuildOS.State.startup.failed["TrialTracker:CheckExpired"] and not GuildOS.State.startup.failed.TrialTracker,
+check(GuildOS.State.startup.failed["TrialTracker:CheckReady"] and not GuildOS.State.startup.failed.TrialTracker,
   "a failed follow-up step is recorded under its own label")
 
 -- ── 7b. A start-up step whose error handler cannot run still does not abort ──
@@ -260,7 +260,7 @@ check(countPrinted("start-up problem(s)") == 0, "and the login line waits with t
 runTimers()
 check(not started["TrialTracker:Initialize"], "and keep waiting while it is unknown")
 runTimers()
-check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckExpired"], "they start once the rank is known")
+check(started["TrialTracker:Initialize"] and started["TrialTracker:CheckReady"], "they start once the rank is known")
 check(#calendarReads == 1 and calendarReads[1] >= 3, "and go on the calendar once, with the rank known")
 check(inboxReads == 1, "the inbox itself is read once")
 check(#timers == 0, "and nothing is left asking")

@@ -234,11 +234,10 @@ end
 function GuildManager:GetSuggestions()
     local trialsReady, promoteCandidates = {}, {}
 
-    -- Trials whose duration has elapsed → officer should approve / deny.
+    -- Trials ready to review (their end, from the guild's length, has passed) → officer should approve / deny.
     if GuildOS.TrialTracker then
         for _, t in ipairs(GuildOS.TrialTracker:GetActiveTrials()) do
-            local daysRem = GuildOS.TrialTracker:GetDaysRemaining(t.key)
-            if daysRem ~= nil and daysRem <= 0 then
+            if GuildOS.TrialTracker:IsReady(t.data) then
                 local progress = GuildOS.TrialTracker:GetProgress(t.key)
                 local att = GuildOS.RaidTracker and GuildOS.RaidTracker:GetAttendance25ManPercent(t.key) or 0
                 local short = t.key:match("^([^-]+)") or t.key
