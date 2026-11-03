@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.1] - 2026-11-03
+
+### Fixed
+- ChehulNet v10, sem whisper para cada peer novo fora do grupo e nível do HELLO validado (#247)
+
+
 ## [1.7.0] - 2026-11-02
 
 ### Added
