@@ -5,6 +5,7 @@
 ## Version: 1.9.0
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
+## IconTexture: Interface\AddOns\GuildOS\Media\minimap-logo
 ## X-License: MIT
 ## X-Category: Guild
 ## X-Website: https://github.com/danielcosta42/GuildOS
