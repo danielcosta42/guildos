@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-11-04
+
+### Fixed
+- o addon aparece com o escudo na lista de addons (#253)
+
+
 ## [1.9.0] - 2026-11-04
 
 ### Added
