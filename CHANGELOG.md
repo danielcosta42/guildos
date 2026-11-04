@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-11-04
+
+### Added
+- a exportação leva o main de cada alt (#251)
+
+
 ## [1.8.0] - 2026-11-03
 
 ### Added
