@@ -498,12 +498,12 @@ GuildOS.Client.isAnniversary = false
 roster = {}   -- the export walks the roster and needs members it has no data for
 handler(crq("exp1234567"), "Marta Vilar", "WHISPER")
 local payload = Companion:BuildPayload()
-check(payload and payload.v == 13, "the payload is v13")
+check(payload and payload.v >= 13, "the payload that carries joinRequests is v13")
 check(payload.joinRequests and #payload.joinRequests == 1 and payload.joinRequests[1].id == "exp1234567", "joinRequests rides the export")
 local realExport = JR.ForExport
 JR.ForExport = function() error("a bug in the requests") end
 local ok, broken = pcall(Companion.BuildPayload, Companion)
-check(ok and broken and broken.joinRequests == nil and broken.members ~= nil and broken.v == 13, "joinRequests failing is left out and the rest of the export goes")
+check(ok and broken and broken.joinRequests == nil and broken.members ~= nil and broken.v >= 13, "joinRequests failing is left out and the rest of the export goes")
 check(#errors >= 1 and errors[#errors]:find("joinRequests", 1, true), "and the error is recorded")
 JR.ForExport = realExport
 

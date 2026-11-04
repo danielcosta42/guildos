@@ -1072,7 +1072,8 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 
 | Function | Purpose |
 |---|---|
-| `Companion:BuildSelf()` | My own line as a `GOSCOMP1:` string, or nil and why: same wire format and decoder as the export, `members` with one line (the export's own, built by the same local `memberLine`), `self = true`, `count = 1` and an empty `loot` the decoder requires. No sessions, journal, tabard, founding, guildConfig or rosterComplete. Asks `Refused` and `IsOnGuildDB`, never the switch. Nil on a character not read yet. Needs no guild roster. The key comes from `Compat.PlayerName()` |
+| `Companion:BuildSelf()` | My own line as a `GOSCOMP1:` string, or nil and why: same wire format and decoder as the export, `members` with one line (the export's own, built by the same local `memberLine`), `self = true`, `count = 1` and an empty `loot` the decoder requires. No sessions, journal, tabard, founding, guildConfig or rosterComplete, and its line has no `main` (v14). Asks `Refused` and `IsOnGuildDB`, never the switch. Nil on a character not read yet. Needs no guild roster. The key comes from `Compat.PlayerName()` |
+| `CompanionExport` payload v14 | Each member row carries `main` (local `mainOf(key)`): `db.altLinks[key]`, the main's key in the same form as the row's `key`, when it is a non-empty string other than the row's own key; absent otherwise, and always absent in `BuildSelf`'s line (issue #251, guildos.me #392) |
 | The logout writer | One `GOSCOMP1:` string per file, in `GuildOSDB.__companion`: with the switch on the export, as ever, with it off the pack. Only the export stamps `__companionAt`; `__companionSelf` says the field holds a pack, so a failed export takes a leftover pack away instead of keeping it |
 
 

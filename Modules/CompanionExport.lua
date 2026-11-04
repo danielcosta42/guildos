@@ -52,8 +52,11 @@ local FMT = "GOSCOMP1"
 -- named on Discord. The founding, the readiness threshold and the tabard join it in the same version.
 -- The character's own pack (BuildSelf) is this same version: `self` is one more absent field, and an
 -- export gains nothing by the pack existing. 13 adds `joinRequests`, what the guild's client holds of
--- the people who asked to join (the site's specs/071, issue guildos#245): absent without any.
-local PAYLOAD_VERSION = 13
+-- the people who asked to join (the site's specs/071, issue guildos#245): absent without any. 14 adds
+-- each member's `main`, the key of the character an officer linked them to as an alt (`db.altLinks`,
+-- issue #251, the site's #392), in the same form as the member's own `key`: absent for a main and for
+-- anybody nobody linked, and never in the pack, where nobody says whose alt they are.
+local PAYLOAD_VERSION = 14
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -234,6 +237,16 @@ local function craftingFor(key)
     end
     table.sort(out, function(a, b) return a.line < b.line end)
     return out
+end
+
+-- v14: the main an officer linked this character to, as `db.altLinks` holds it ([altKey] = mainKey,
+-- officer-maintained and synced, keyed the way `key` is). Nil -- the key absent -- for a main, for
+-- anybody nobody linked, and for a link to itself or anything that is not a key, which links nobody.
+local function mainOf(key)
+    local links = GuildOS.db.altLinks
+    local main = type(links) == "table" and links[key] or nil
+    if type(main) ~= "string" or main == "" or main == key then return nil end
+    return main
 end
 
 local function professionsFor(data)
@@ -523,6 +536,8 @@ local function memberLine(key, short, classFile, level, rankName, rankIndex)
         feedOptOut = data.feedOptOut == true or nil,
         -- v12, WoW: Forever: when they say they joined, their own claim only (issue #208).
         joinedAt = GuildOS.Founding and GuildOS:IsFeatureEnabled("founding") and GuildOS.Founding:JoinedAtOf(key) or nil,
+        -- v14 (issue #251): whose alt this is, the main's key; absent for everybody else.
+        main = mainOf(key),
     }
 end
 
@@ -698,6 +713,8 @@ function Companion:BuildSelf()
     -- of 0 would overwrite a real one on the site. Absent, both of them keep what is there.
     line.rank, line.rankIndex = rankName, rankIndex
     if line.avgIlvl == 0 then line.avgIlvl = nil end
+    -- Whose alt somebody is, is the officers' to say (altLinks), never a character's about itself.
+    line.main = nil
 
     local payload = envelope(guildName, 1, { line })
     payload.self = true
