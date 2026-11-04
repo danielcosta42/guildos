@@ -66,6 +66,7 @@ local function load(game)
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Utils.lua")
   dofile(ADDON .. "/Modules/CommSystem.lua")
+  dofile(ADDON .. "/Modules/Mesh.lua")
   dofile(ADDON .. "/Modules/DataCollector.lua")
   dofile(ADDON .. "/Modules/PugInspector.lua")
   GuildOS.db = { members = {}, settings = {} }
@@ -95,6 +96,19 @@ local got = GuildOS.db.members[rosterKey("Cherry Arrow")]
 check(got and got.avgIlvl == 18 and got.addonVersion == "0.59.3",
   "forever: her data lands on her roster line, so the roster sees Guild OS and her item level")
 check(GuildOS.db.members["Cherry Arrow-Classic Beta PvE"] == nil, "forever: and not under a key the roster never asks")
+-- A version ahead of this client's is not an outdated one (issue #170).
+function strsplit(_, s) return s:match("^(%d+)%.(%d+)%.(%d+)$") end
+local function flagged(mine)
+  local was = GuildOS.VERSION
+  GuildOS.VERSION = mine
+  local out
+  for _, r in ipairs(GuildOS.CommSystem:GetSyncHealth()) do if r.name == "Cherry Arrow" then out = r.outdated end end
+  GuildOS.VERSION = was
+  return out
+end
+check(flagged("0.59.2") == false, "forever: a member on a newer version than mine is not outdated")
+check(flagged("0.59.3") == false, "forever: nor one on mine")
+check(flagged("0.60.0") == true, "forever: one behind mine is")
 local rows = GuildOS.CommSystem:GetSyncHealth()
 local cherry
 for _, r in ipairs(rows) do if r.name == "Cherry Arrow" then cherry = r end end

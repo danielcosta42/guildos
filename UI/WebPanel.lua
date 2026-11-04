@@ -50,7 +50,7 @@ local function stamp(at)
     if not at or at <= 0 then return L["never"] end
     local dt = (GetServerTime() or time()) - at
     if dt < 120 then return L["just now"] end
-    return date("%d/%m %H:%M", at)
+    return GuildOS:DateText(at, " %H:%M")
 end
 
 local function writtenAgo()
@@ -404,7 +404,8 @@ function GuildOS:CreateWebPanel(parent, _win)
 
             publishNote:SetText(L["Writes and reloads the interface. The companion sends it on from your PC."])
         else
-            countText:SetText(L["Nothing leaves the game while this is off."])
+            -- The guild's: a member's own pack goes out with the switch off, through their own companion.
+            countText:SetText(L["The guild's data stays in the game while this is off."])
             writtenText:SetText("")
             ackText:SetText("")
             publishNote:SetText("")

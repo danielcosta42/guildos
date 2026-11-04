@@ -42,3 +42,4 @@ Texturas geradas por script: TGA 32-bit sem compressão, origem embaixo-esquerda
 | `drop-shadow.tga` | 128x128 | radial preto, alpha `0.55 · (1 − d)^1.5`. Só atrás de popup (elevação 4). |
 | `corner-2.tga` | 8x8 | branco opaco com a quina superior esquerda em raio de 2px, para 9-slice na barra de título e em popup. |
 | `ring-28.tga` | 32x32 | anel branco de 28px de diâmetro e 2px de traço, para avatar de classe. |
+| `renown-<série>-<n>.tga` | 128x128 | insígnias de Renome, `horde` e `alliance`, de 1 a 6. Saem da arte do site, `apps/web/public/renown/` (guildos.me, specs/068). |

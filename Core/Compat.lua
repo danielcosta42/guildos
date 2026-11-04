@@ -84,6 +84,13 @@ function Compat.UnitIdentity(unit)
     return name, realm, classFile
 end
 
+-- Whether a boss fight is going on. The global is a deprecation fallback on all three clients, kept by a
+-- CVar and bound for removal; the addon asks the namespace first and takes no for an answer without either.
+function Compat.IsEncounterInProgress()
+    local ask = C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress or IsEncounterInProgress
+    return ask ~= nil and ask() == true
+end
+
 -- The region this client plays in, as guildos.me writes it, from GetCurrentRegion(): 1 the Americas
 -- ("us"), 2 Korea, 3 Europe, 4 Taiwan. Nil for any other answer (China, a test client), which the site
 -- has no world for, with the number the client gave (issue #182).
@@ -92,6 +99,48 @@ function Compat.Region()
     local id = GetCurrentRegion and GetCurrentRegion()
     if Compat.IsSecret(id) then return nil end
     return REGIONS[id], id
+end
+
+-- The realms a character here can be invited from: its own and the ones connected to it (retail's
+-- GetAutoCompleteRealms; Forever has no realms and answers nothing). A guild on any other realm
+-- cannot invite this character, so the guild finder leaves it out (specs/071). Names as the client
+-- writes them, never nil.
+function Compat.ConnectedRealms()
+    local out = {}
+    local own = GetRealmName and GetRealmName()
+    if type(own) == "string" and own ~= "" and not Compat.IsSecret(own) then out[1] = own end
+    local linked = GetAutoCompleteRealms and GetAutoCompleteRealms()
+    if type(linked) == "table" then
+        for _, name in ipairs(linked) do
+            if type(name) == "string" and name ~= "" and not Compat.IsSecret(name) then out[#out + 1] = name end
+        end
+    end
+    return out
+end
+
+-- The guild's tabard as the game draws it (issue #213; read in game on retail 2026-10-29, Forever's API is
+-- the same): GetGuildLogoInfo's three colours as bytes and the emblem's style, and GetGuildTabardFiles'
+-- six files, whose last two are the border (its style is only in them). Nil with no guild, no tabard,
+-- no such call or anything secret: the site turns this into its own code (specs/060).
+function Compat.GuildTabard()
+    if not (GetGuildLogoInfo and GetGuildTabardFiles) then return nil end
+    local logo = { GetGuildLogoInfo() }
+    local files = { GetGuildTabardFiles() }
+    if #logo < 11 or #files < 6 then return nil end
+    for i = 1, 11 do
+        if i ~= 10 and (Compat.IsSecret(logo[i]) or type(logo[i]) ~= "number") then return nil end
+    end
+    for i = 1, 6 do
+        if Compat.IsSecret(files[i]) or type(files[i]) ~= "number" or files[i] <= 0 then return nil end
+    end
+    local byte = function(v) return math.max(0, math.min(255, math.floor(v + 0.5))) end
+    return {
+        emblemStyle = logo[11],
+        background = { byte(logo[1]), byte(logo[2]), byte(logo[3]) },
+        border = { byte(logo[4]), byte(logo[5]), byte(logo[6]) },
+        emblem = { byte(logo[7]), byte(logo[8]), byte(logo[9]) },
+        files = { files[1], files[2], files[3], files[4], files[5], files[6] },
+    }
 end
 
 -- The client's own count of the seconds to its region's weekly reset; nil where the client has no
@@ -959,6 +1008,15 @@ function Compat.SendChatMessage(text, chatType)
     return (pcall(send, text, chatType))
 end
 
+-- Lets `fn` hide lines of a chat event from every chat frame: retail moved the filter to ChatFrameUtil, and
+-- the global is a deprecation fallback there. False on a client with neither.
+function Compat.AddChatFilter(event, fn)
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if not add then return false end
+    add(event, fn)
+    return true
+end
+
 ----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character
@@ -1428,6 +1486,31 @@ end
 function Compat.SendAddonMessageNow(prefix, text, channel, target, onSent)
     queue({ prefix = prefix, text = text, channel = channel, target = target, prio = "ALERT", now = true, tries = 1,
             onSent = onSent })
+end
+
+----------------------------------------------------------------------
+-- Created channels. A channel is joined by name and addressed by the number the game gives it; both
+-- calls are the same on retail and WoW: Forever, and neither is trusted to exist or to answer.
+----------------------------------------------------------------------
+
+-- Joins `name`, creating it when nobody has. True when the call went; the number comes from ChannelId.
+function Compat.JoinChannel(name)
+    if not JoinChannelByName then return false end
+    return (pcall(JoinChannelByName, name))
+end
+
+-- The number of the channel `name` as this client has it, 0 when it is not joined (or the game keeps it secret).
+function Compat.ChannelId(name)
+    if not GetChannelName then return 0 end
+    local ok, id = pcall(GetChannelName, name)
+    id = ok and not Compat.IsSecret(id) and tonumber(id) or 0
+    return id
+end
+
+-- Leaves `name`. True when the call went, whether or not the channel was joined.
+function Compat.LeaveChannel(name)
+    if not LeaveChannelByName then return false end
+    return (pcall(LeaveChannelByName, name))
 end
 
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the

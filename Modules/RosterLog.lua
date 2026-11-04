@@ -191,6 +191,15 @@ function RosterLog:_SetupDetection()
         if not RosterLog._ready then return end
         local evt = RosterLog:_ParseSystem(msg)
         if evt then RosterLog:Add(evt) end
+        -- With the guild's switch for new members on, an officer's client asks for a fresh roster: the
+        -- trial starts from the roster line, never from this one's name (#249).
+        if evt and evt.action == "join" and GuildOS.TrialTracker then
+            GuildOS:SafeCall(GuildOS.TrialTracker.OnJoin, GuildOS.TrialTracker, evt.target)
+        end
+        -- And whoever leaves or is removed leaves the roster it compares against: back, they are new.
+        if evt and (evt.action == "leave" or evt.action == "kick") and GuildOS.TrialTracker then
+            GuildOS:SafeCall(GuildOS.TrialTracker.OnLeave, GuildOS.TrialTracker, evt.target)
+        end
     end)
 end
 

@@ -90,11 +90,11 @@ check(DC:CollectStats().crit == 25.46, "ranged wins when it beats every school, 
 local sheet = cells(s)
 check(sheet == "HP=500000 AGI=9000 STA=40000 Crit=30.0% Haste=15.5% Mastery=30.3% Vers=6.0%",
   "retail's sheet: HP, the primary stat, stamina and the four ratings in percent (" .. sheet .. ")")
-check(cells({ health = 1, stamina = 2 }) == "HP=1 STA=2 Crit=0.0% Haste=0.0% Mastery=0.0% Vers=0.0%",
-  "a member who sent no primary stat shows none, and missing ratings read 0")
+check(cells({ health = 1, stamina = 2 }) == "HP=1 STA=2 Crit=— Haste=— Mastery=— Vers=—",
+  "a member who sent no primary stat shows none, and missing ratings are not a 0 (issue #170)")
 local ok2, odd = pcall(cells, { primary = "intellect", intellect = "lots", crit = "high", haste = {}, mastery = "12.5" })
-check(ok2 and odd == "HP=0 INT=0 STA=0 Crit=0.0% Haste=0.0% Mastery=12.5% Vers=0.0%",
-  "a guildmate's value that is not a number shows 0 rather than stopping the sheet: " .. tostring(odd))
+check(ok2 and odd == "HP=— INT=— STA=— Crit=— Haste=— Mastery=12.5% Vers=—",
+  "a guildmate's value that is not a number shows a dash rather than stopping the sheet: " .. tostring(odd))
 check(pcall(cells, "nonsense") and cells("nonsense") == "", "and stats that are not a table draw nothing")
 
 GetHaste = function() return SECRET end

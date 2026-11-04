@@ -291,8 +291,9 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
             row.specFS:SetText((spec and spec ~= "") and spec or "—")
 
             -- Note
-            local hasNote = rec.note and rec.note ~= ""
-            row.noteFS:SetText(hasNote and rec.note or (isOfficer and L["+ add note"] or "—"))
+            local note = isOfficer and rec.note or ""
+            local hasNote = note ~= ""
+            row.noteFS:SetText(hasNote and note or (isOfficer and L["+ add note"] or "—"))
             row.noteFS:SetTextColor(hasNote and C.text.r or C.textDim.r,
                                     hasNote and C.text.g or C.textDim.g,
                                     hasNote and C.text.b or C.textDim.b)

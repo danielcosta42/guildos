@@ -39,9 +39,10 @@ Locale data files: `Locales/enUS.lua` (master/stub — English is implicit via m
 |---|---|
 | `GuildOS.Logger.Debug/Info/Warn(msg)` | Structured logger; Debug gated by `GuildOS.Logger.debug` (toggle via `/guildos debug`) |
 | `GuildOS:SafeCall(fn, ...)` | pcall wrapper; captures errors to `GuildOS.State.errors` ring (view via `/guildos errors`) |
-| `GuildOS:PruneStaleData()` | Manual (`/guildos prune`) removal of cached data for members who left the guild |
+| `GuildOS:WholeRoster()` | The guild roster's names, or nil while it is not the whole guild (not loaded, or a row the client did not answer): what acts on "not on the roster" asks here (issue #203) |
+| `GuildOS:DropDeparted()` | On every roster update: drops the member row, first-seen, professions, recipes and wishlist of whoever left the guild (issue #203); history and officer records stay |
 | `GuildOS:ShowOnboarding()` / `:MaybeShowOnboarding()` | First-run welcome wizard (once; `settings.onboarded`) |
-| Slash: `/guildos minimap | debug | errors | prune` | Toggle minimap button / debug / dump errors / prune left members |
+| Slash: `/guildos minimap | debug | errors` | Toggle minimap button / debug / dump errors |
 
 Branding: user-facing text says "Guild OS" and the commands are `/guildos` and `/gos`; the old name, its global alias, saved variable, comm prefix and slash commands are gone (#120).
 
@@ -360,6 +361,9 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `RaidTracker:Is25Man(instanceID)` | Returns true if instanceID is in RAID_25MAN table |
+| `GuildOS:DateText(timestamp, rest)` | Day and month in the order the client's language writes them, then `rest` (" %H:%M", "/%Y"): every date on screen (#170) |
+| `LootMaster:WholeRollerName(roller, name, surname)` | Forever: the whole name when a /roll line and a unit are one person, whichever side has the surname; nil if not (#48). Alone it hands out an item only when exactly one candidate matches |
+| `RaidTracker:ReopenSession()` / `ResumeAtLogin(tries)` / `StartSnapshots()` | The night in progress lives in `raidTracker.openSession`: a /reload or a logout picks it back up within `OPEN_HOLD` on the same character, or ends it at its last snapshot (#170). `CheckZone` waits for this (`resuming`) |
 | `RaidTracker:GetWeekNum(timestamp)` / `WeekStart(weekNum)` / `ResetOrigin()` | The lockout week a timestamp falls in, counted from this client's region's weekly reset; the moment a week starts; that region's origin. `RESET_ORIGIN` is the client's `Cfg_Regions.Raidorigin` (us Tuesday 15:00 UTC, eu Wednesday 04:00, kr and tw Wednesday 23:00), the region `Compat.Region()`'s, the Americas when the client does not say. Lockouts, attendance and the raids panel's week groups all ask it; the site's `resetWeek` is the same table (guildos-web#199) |
 | `RaidTracker:_RegisterTests()` | `/gos selftest`'s `raidtracker.weekly_reset`: the table's next reset against `Compat.SecondsUntilWeeklyReset()`, within a minute; passes where the client has no such call (guildos-web#199) |
 | `RaidTracker:LockoutKey(session)` | A session's lockout: `groupTag|instanceID_week`, plus `_d<difficulty>` on retail (Normal and Heroic in one week are two lockouts), the site's `lockoutKey`. The rebuild and both lockout counts use it (issue #182) |
@@ -533,23 +537,37 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `TrialTracker:Initialize()` | Ensures trials DB table; migrates old records |
-| `TrialTracker:AddTrial(playerKey, sponsor)` | Creates trial entry, takes initial snapshot, broadcasts |
+| `TrialTracker.ValidDays(v)` | A trial length in whole days (1–90, a number or digits typed), else nil: never clamped (#249) |
+| `TrialTracker:GetDays()` / `IsAutoOn()` | The guild's length (`settings.trialDays`, 30 until an officer chooses) and its switch for new members (`settings.trialAuto`, off by default) |
+| `TrialTracker:SetDays(v)` / `SetAuto(on)` | Officer only: stamped (`trialDaysAt` / `trialAutoAt`) and published; SetDays answers `false, "officer"\|"range"`; turning the switch on resets the roster baseline |
+| `TrialTracker:PublishConfig()` / `OnConfigSync(env)` | `guildcfg`/`trialdays` `{ days }` and `trialauto` `{ on }`, re-sent on the officers' regular sync and request answers; newest stamp wins, a tie keeps the shorter length and the switch off; no `max`, so a client before #249 ignores both. A change taken redraws an open Trials panel (`RefreshUI`) |
+| `TrialTracker:RefreshUI()` | Calls `uiRefresh`, which the Trials panel sets when built (redraws only while shown); after OnConfigSync and HandleIncoming |
+| `TrialTracker:IsUnresolved(trial)` | Status `trial`, or `expired` (written only by clients before #249): nobody decided yet |
+| `TrialTracker:HasLeft(trial)` | `leftAt` set: an undecided trial whose member was missing from an officer's last whole roster (a field, not a status, so old clients carry it); cleared when they are back |
+| `TrialTracker:EndOf(trial)` / `IsReady(trial, now)` | The end is `startDate` + the guild's length, worked out on every read (the stored `endDate` is written for old clients, never read); ready to review = unresolved, not left, and past it |
+| `TrialTracker:GetState(playerKey)` / `CountReady()` | `"trial"`, `"review"`, `"left"`, `"approved"`, `"denied"` (or the stored word), nil for nobody; how many are ready to review (nobody who left) |
+| `TrialTracker:AddTrial(playerKey, sponsor)` | Creates trial entry (endDate = start + the guild's length, for old clients; over an older record it keeps that record's notes), takes initial snapshot, broadcasts |
 | `TrialTracker:UpdateStatus(playerKey, newStatus)` | Updates status, records resolvedDate/By |
 | `TrialTracker:AddTrialNote(playerKey, text)` | Appends note to trial, broadcasts |
 | `TrialTracker:GetTrial(playerKey)` | Returns trial data or nil |
-| `TrialTracker:GetAllTrials()` | Returns all trials sorted by startDate desc |
-| `TrialTracker:GetActiveTrials()` | Returns status=trial entries sorted by startDate desc |
-| `TrialTracker:IsTrial(playerKey)` | Returns true if player has active trial status |
-| `TrialTracker:GetDaysRemaining(playerKey)` | Returns floor of (endDate - now) / 86400 |
+| `TrialTracker:GetAllTrials()` | Every trial, ready to review first, then running, then decided and left the guild (each entry's `group` 1/2/3), each by startDate desc |
+| `TrialTracker:GetActiveTrials()` | The unresolved trials of members still here (running and ready to review), by startDate desc |
+| `TrialTracker:IsTrial(playerKey)` | True while the player's trial is unresolved (running, ready to review, or left meanwhile) |
+| `TrialTracker:GetDaysRemaining(playerKey)` | Whole days to the derived end, rounded down, 0 once ready to review; nil for a decided trial and for one whose member left |
 | `TrialTracker:GetDaysSinceStart(playerKey)` | Returns floor of (now - startDate) / 86400 |
-| `TrialTracker:CheckExpired()` | Marks trials past endDate as expired, notifies officers |
+| `TrialTracker:CheckReady()` | At an officer's login (OFFICER_START `after`): one chat line when trials are ready to review; writes no status |
+| `TrialTracker:MayAutoTrial(playerKey, onOfficerRank)` | Whether a newcomer becomes a trial here: switch on, an officer's client with `trialTracker` on and the guild's db, not me, not an officer rank, and no trial record in any state (a rejoiner after a decision is the officers', by hand) |
+| `TrialTracker:OnJoin(name)` | From RosterLog's join line: with the switch on, on an officer's client with the tracker on, only asks for a fresh roster (`Compat.GuildRoster`). The line's name never becomes a key (Forever may spell it otherwise than the roster) |
+| `TrialTracker:Arm()` | Core's MODULE_START, every login and /reload: opens the settle window (`SETTLE_SECONDS`, 60) in which ScanRoster neither compares nor touches the baseline, then runs it once by itself through `Compat.After` |
+| `TrialTracker:ScanRoster()` / `ResetBaseline()` | The only path that starts an automatic trial (sponsor `AUTO_SPONSOR`, "Guild OS"). On every GUILD_ROSTER_UPDATE, an officer's client only (an alt on the same account never reads or writes it): the whole roster against `db.trialBaseline` (keys, kept between sessions, only ever grows); newcomers are added and become trials (one TR for all) once there is a baseline that shares somebody and this character's last look was an officer's (`db.trialScannedAsOfficer`, by character; a look as no officer clears it, and the next look as one only records); undecided trials missing from the roster get `leftAt`, cleared when back; nothing moves in the settle window, until the roster is whole and the rank known. ResetBaseline drops it so the next look only records; on a non-officer client it only sets `db.trialBaselinePending`, which the next officer's look honours as record-only and clears |
+| `TrialTracker:OnLeave(name)` | From RosterLog's leave and kick lines, officer only: the one way a key leaves the baseline, so coming back is joining again |
 | `TrialTracker:RemoveTrial(playerKey)` | Nils trial entry, broadcasts |
 | `TrialTracker:TakeSnapshot(playerKey)` | Records avgIlvl, attunements, professions, level snapshot |
 | `TrialTracker:GetProgress(playerKey)` | Returns delta table (ilvlDelta, attunement deltas, etc.) |
-| `TrialTracker:UpdateSnapshots()` | Auto-snapshots active trials if last snapshot >1 day (officer only) |
+| `TrialTracker:UpdateSnapshots()` | Auto-snapshots unresolved trials if last snapshot >1 day (officer only) |
 | `TrialTracker:BroadcastTrials()` | Serializes and sends "TR" comm message (officer only) |
 | `TrialTracker:HandleIncoming(data)` | Merges incoming trials: missing=accept, same=merge notes, newer=replace |
-| `TrialTracker:Merge(existing, incoming)` | The trial to keep: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
+| `TrialTracker:Merge(existing, incoming)` | The trial to keep. Both undecided: the earlier start, both copies' notes, the longer snapshots (a later officer's catch-up restarts nothing, #249). An automatic undecided copy (sponsor "Guild OS") against an approved or denied one: the decision, whatever the dates, notes merged. Otherwise, a decided copy involved: latest activity (start, last note, resolution) wins, a tie merges notes and keeps more snapshots; used on receipt and by the stored-key migration (issue #97) |
 | `TrialTracker:MergeNotes(existing, incoming)` | Merges notes by author:timestamp, re-sorts |
 
 ---
@@ -704,8 +722,8 @@ Also: `Compat.CanViewOfficerNote()`, `GearAudit:MissingEnchants(gear)` (slot nam
 | `GuildOS:RefreshRaidsPanel(...)` | Rebuilds grouped session list and attendance table |
 | `GuildOS:CreateLootPanel(parent, _mainFrame)` | Creates Loot History tab with column headers + scroll |
 | `GuildOS:RefreshLootPanel(content, countText)` | Rebuilds loot history rows |
-| `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab |
-| `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows |
+| `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab, with the guild's trial length box and the new-members switch on top (#249) |
+| `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows: ready to review first (gold wash, "READY TO REVIEW"), approve/deny on every unresolved trial |
 | `GuildOS:CreateSettingsPanel(parent, _mainFrame)` | Creates Settings tab with scroll content area |
 | `GuildOS:RefreshSettingsPanel(content)` | Populates settings: module toggles, LM options, test functions |
 | `GuildOS:ShowWishlistFrame()` | Creates or shows personal wishlist standalone frame |
@@ -966,3 +984,134 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `TradeCouncil:Complete(o)` / `Charge(o)` | Into the loot history (`RecordTradeAward` at the offer's drop time, the tracked session's raid); the officer named as giver charges the item's cost under DKP with one, only for the award that client gave (`awards[me] == winner`); once. A holder's `D` is believed for an award this client saw given (`awards[by] == winner`), or, under a free roll, the holder's own to a guildmate who answered Need or Greed; the winner still in the guild; also on an offer this client closed a minute early |
 | `GuildOS:ShowTradeCouncil(offerId)` / `RefreshTradeCouncil()` | UI/TradeCouncil.lua: the loot council window (the raid's offers, my tradeable items with Offer, the offer picked with Need/Greed/Pass, the ranked answers with Award, Withdraw); `/gos offer`, Settings' quick access "Loot Council" and every incoming offer open it |
 | `tools/retail-points.lua` / `retail-wishlist.lua` / `retail-loot-council.lua` / `trade-council-ui.lua` | The harnesses of issue #185 |
+
+## v1.1 — Journal (#205, guildos.me #238)
+
+| Function | Purpose |
+|---|---|
+| `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
+| `Journal:Complete(id, bosses)` | The way through finished after the end: my clear becomes a full one, in the entry and in the firsts (#235) |
+| `Readiness:WithSeats(rows)` / `Readiness.Filtered(rows, core, status)` / `Composition(rows, core)` / `Compositions(rows, core)` | The readiness panel on Forever (#220): each row's seats, the filters, and what a core has at the cap, titulars only, against its size's targets |
+| `Journal:Add(type, data)` / `OnLevelUp(level)` | Write down, keep and publish an entry about me (`<myKey>:<seq>`, `GetServerTime()`); `PLAYER_LEVEL_UP` writes `member.level` `{level}` at 10–50 and `member.level60` `{}` at the cap: no name, the roster names people |
+| `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild, kept with only their type's fields and the subject's key localized (`LocalMemberKey`: each Forever client answers its own realm, #95); my last week again at login (30 s); oldest out past 30 days and 1,000 |
+| `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
+| `Journal:IsOptedOut()` / `SetOptedOut(on)` | Not named on Discord: `db.profile.feedOptOut`, mirrored on my member row, always a boolean in the broadcast, `feedOptOut` (true only) in the export; Settings' checkbox |
+| `tools/journal.lua` | The harness of issue #205 |
+
+## v1.1 — Readiness on WoW: Forever (#206, guildos.me #241)
+
+| Function | Purpose |
+|---|---|
+| `Readiness.ForeverStatus(r, minIlvl, cap)` | Pure: below the cap `notready`/`level`; no gear data `ready` by level only; under the guild's minimum `warn`/`ilvl`; an enchant missing `warn`/`enchants`; else `ready`. The cases are guildos.me's too (`tools/readiness-forever.lua`) |
+| `Readiness:GetReport()` | On Forever every row is ruled by `ForeverStatus` and carries `level`, `reason`, `levelOnly`; the attunement path stays for Anniversary |
+| `Readiness.FOREVER_RAIDS` | Barrow Deeps 10, Hyjal Summit 20, Onyxia's Lair 40, `opensAt` 9 Dec 2026 00:00 UTC |
+| `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > officer: "Readiness" |
+| `Readiness.Slices(atCap)` | What the guild can form with who is at the cap (the same as guildos.me's): `{ dungeons, raids = { { size, count } }, short, shortSize }`. Pure. |
+| `Readiness:Countdown(rows, now)` | WoW: Forever, until a week after the raids open (#207): `{ opensAt, open, days, cap, cores = up to 3 { name, size, ready } largest first (titulars at the cap, nobody who left), guild = { ready, enough, short }, me }`. `UI/Dashboard.lua` draws it in the readiness card's place; the readiness panel shows the level and sorts by it within a status |
+
+## v1.2 — The guild's block (#215, guildos.me #259)
+
+| Function | Purpose |
+|---|---|
+| `CompanionImport:GuildBlock()` | The inbox's GOSGILD1, decoded, for this guild, under a week old and with the companion on; nil otherwise. Shown, never run |
+| `CompanionImport:FeedLines()` | The block's feed, with `\|` and line breaks taken out again |
+| `Founding:FromSite()` | The site's founding by the same order as `OnSync`; the GM's client then publishes it, nobody else's does. Runs with `PublishSelf`, after `founding` starts |
+| `Digest:MarkFeedSeen(now)` | What the login digest showed from the site, kept 14 days in `db.digest.feedSeen`. `Build` adds "From guildos.me", five lines at most, and passes `told` so `Milestones` and `Founding` leave out their own line for the same event |
+
+## v1.2 — Achievements and activation (#216, #217, guildos.me #245, #244)
+
+| Function | Purpose |
+|---|---|
+| `Achievements` (Modules/Achievements.lua) | WoW: Forever only. Reads the block's `achievements`: `Data()`, `Renown()`, `Earned()`, `Next()`, `Of(key)`, `Unseen()`/`MarkSeen()` (`db.digest.achievementsSeen`: `at` is the fact's date, not comparable with the last login), `GetDigestLines(told)`, `NextLine()`. Titles come ready; no catalogue, no rule |
+| `Activation` (Modules/Activation.lua) | WoW: Forever only. `Read(now)`: `publish` and `members` the client knows, `bot`, `account` and `run` from the block. `ShouldShow(now)` for the GM and officers, `Hide(now)` for 30 days, `GetDigestLine(now)` every 3 days, `Celebrate()` once. `db.activation` holds only `hiddenUntil`, `remindedAt`, `celebrated` |
+| `CompanionImport.Inert(text)` | Text off the network with `\|` and line breaks out |
+| `GuildOS:CreateAchievementsPanel(parent)` | The tab; `UI/Dashboard.lua` has the setup card |
+
+## v1.1 — Founding (#208, guildos.me #240)
+
+| Function | Purpose |
+|---|---|
+| `Founding` (Modules/Founding.lua) | WoW: Forever only. `db.founding` `{ foundedAt, source, declaredBy, recordedAt, windowDays, manual, revision }`; `db.foundingJoins[key] = { joinedAt, src }`; `db.foundingSuggested`; `db.foundingPrompt` |
+| `Founding.ValidDay(t, now)` / `WindowEnd(foundedAt)` | 00:00 UTC, from the launch (`FIRST_DAY`, 4 Nov 2026) to today; the window ends at the last second of the 14th day after |
+| `Founding:Record(day, source)` / `Suggest(day)` / `Publish()` / `OnSync(env, sender)` | The GM records (revision + 1), an officer suggests; officer domain `founding` (`set` with `rev`, `suggest`); highest revision wins, `declaredBy` localized |
+| `Founding:MyJoinedAt()` / `PublishSelf()` / `OnSelf(env, sender)` / `JoinedAtOf(key)` | My own join date (`firstSeen` until a probe finds the game's, #214), published at login on `foundingSelf` (GUILD only), filed under its sender |
+| `Founding:Founders()` / `IsFounder(key)` / `ForExport()` | Worked out the same everywhere: the GM, today's roster with a join date (claim, else this client's `firstSeen`) inside the window, and manual additions; the export's `founding` (v12) |
+| `Founding:ShouldPrompt(now)` / `Later(now)` / `SuggestedDay(now)` | The letter to the GM while nothing is recorded: three times at most, a day apart; offers an officer's suggestion, else the earliest `firstSeen`, else today |
+| `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > officer: "Record founding" / "Suggest founding date to your GM" |
+| `tools/founding.lua` | The harness of issue #208 |
+| `Founding.BADGE` / `Founding:Forget()` / `Founding.AddMonths(t, n)` / `Founding:GetDigestLines(since, now)` | The founder's scroll by the name in the roster and the member card (with "joined"); the founders are cached 5 s (`Forget` on any change); months in UTC with no time zone; the digest's founders since the last login (3 at most, never me), the window's days left or its closing, and the guild's 1/3/6/12-month anniversaries (#209) |
+
+## v1.1 — Dungeon log (#210, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `GuildOS.ForeverDungeons` (Data/ForeverDungeons.lua) | `forever-dungeons.v1`: by instance id, `{ id, name, final, bosses }` from DB2 1.60.1.70685; `final` provisional (last `OrderIndex`) until the launch build (#214); Half-Pint Tavern missing, Manor Mistmantle with no boss |
+| `DungeonLog:OnZone(now)` / `OnEncounterEnd(encounterID, success)` | WoW: Forever only. A run (`db.dungeonRun`: instance, runId, kills, cleared, leftAt) opens in a catalogued `party` instance, survives 15 min away, ends in another; the final boss's death writes one `dungeon.clear` `{ dungeonId, dungeonName, bosses, fullClear, runId }` into the Journal. Secret or unknown encounters count nothing |
+| `tools/dungeon-log.lua` | The harness of issue #210 |
+
+## v1.1 — The Journal tab (#211, guildos.me #242)
+
+| Function | Purpose |
+|---|---|
+| `Journal:Mine()` / `GuildFirsts()` / `ThisWeek(now)` / `IsFirstClear(entry)` | My entries newest first; each dungeon's first clear with everyone within 120 s; the week's milestones, members who reached one, clears — collective only, no ranking; whether a clear is the first this client knows of |
+| `GuildOS:CreateJournalPanel(parent)` | UI/JournalPanel.lua, the "Journal" tab (Forever: `condition` = the module exists): this week, guild firsts, your journal |
+| `Milestones:Check` on Forever | Also records `level` at every ten levels below the cap (the highest crossed); `GetDigestLines` groups them per level, three names or a count; the ding fallback is the client's cap |
+| DungeonLog's toast | "First clear of X for <guild>!" when `Journal:IsFirstClear` — hopeful and local; guildos.me decides the real first |
+
+## v1.1 — Titular and reserve (#212, guildos.me #243)
+
+| Function | Purpose |
+|---|---|
+| core member `status` | `"bench"` for a reserve, nil for a titular (every older record); from the site's `GOSCORE1` (`status`, guildos-web #249) on the Discord's records, kept by `AddMember`, carried in the officers' `discordList` |
+| `CoreManager:GetComposition` | Titulars only; `bench` counts the reserves |
+| `CoreManager:OpenSlots(coreName)` | Per role, the target for the size less the titulars playing it; `total` = size less titulars. The core panel shows them, reserves dimmed below the titulars |
+| `Achievements:Insignia()` | The renown level's insignia as guildos.me says it: the texture in `Media/renown-<series>-<n>.tga`, in the series of the character's faction, the highest the addon carries past that, and the title, ready in the guild's language |
+| `Compat.IsEncounterInProgress()` | Whether a boss fight is going on: `C_InstanceEncounter` first, then the deprecated global, and no with neither |
+| `Compat.GuildTabard()` | The guild's tabard as the game draws it (#213): `GetGuildLogoInfo`'s colours as bytes and emblem style, `GetGuildTabardFiles`' six files; nil without one or with anything secret. Exported as `tabard` (v12) off TBC Anniversary; guildos.me turns it into its `GT1` code |
+
+## The character's own pack (guildos.me #323, ADR-0028)
+
+| Function | Purpose |
+|---|---|
+| `Companion:BuildSelf()` | My own line as a `GOSCOMP1:` string, or nil and why: same wire format and decoder as the export, `members` with one line (the export's own, built by the same local `memberLine`), `self = true`, `count = 1` and an empty `loot` the decoder requires. No sessions, journal, tabard, founding, guildConfig or rosterComplete, and its line has no `main` (v14). Asks `Refused` and `IsOnGuildDB`, never the switch. Nil on a character not read yet. Needs no guild roster. The key comes from `Compat.PlayerName()` |
+| `CompanionExport` payload v14 | Each member row carries `main` (local `mainOf(key)`): `db.altLinks[key]`, the main's key in the same form as the row's `key`, when it is a non-empty string other than the row's own key; absent otherwise, and always absent in `BuildSelf`'s line (issue #251, guildos.me #392) |
+| The logout writer | One `GOSCOMP1:` string per file, in `GuildOSDB.__companion`: with the switch on the export, as ever, with it off the pack. Only the export stamps `__companionAt`; `__companionSelf` says the field holds a pack, so a failed export takes a leftover pack away instead of keeping it |
+
+
+## Recruitment (guildos.me #071, #245, ADR-0029)
+
+| Function | Purpose |
+|---|---|
+| `Gossip:Initialize()` / `:Beacon()` / `:Round()` | Starts the whisper gossip (not on Anniversary): the whisper test after login, the beacon every `BEACON_SECONDS`, a round of digests every `ROUND_SECONDS` plus jitter. `:Beacon()` ends on the created channel when `Gossip.CHANNEL` is on, on `mesh:Realm` (YELL) when it is off |
+| `Gossip:Topic(name, spec)` / `:On(op, fn)` / `:Receive(payload, sender, dist)` | A topic says what it holds (`digest`, `want`, `pull`, `push(payload, sender, dist)`); `:On` routes a payload's first field; RecruitBeacon's one mesh handler hands everything to `:Receive` |
+| `Gossip:Note(sender, guild, officer)` / `:Peers()` / `:PeerFor(guild)` | Peers heard in the last `PEER_FRESH` seconds; an officer of the guild asked about, else a member |
+| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden |
+| `Gossip:Quiet()` | Inside an instance or in a chat lockdown, where the gossip runs: never on Anniversary. `RB:Broadcast` pauses on it |
+| `Gossip:IsOfficerSender(sender)` | Whether a sender is an officer, for what only an officer may say over GUILD. On WoW: Forever one scan of the roster, whole name against whole name, lower case with hyphens as spaces and this client's own realm off the end; elsewhere `IsOfficerByName`. `RB:IngestCR3` and `JR:OnCRA` ask it |
+| `Gossip:Stats()` | `{ rounds, adsIn, adsOut, dropped, peers, whisper, officerRefused }`; `whisper` is the spelling the test kept, `false` for none; `officerRefused` the senders the officer check refuses right now |
+| `Gossip:Audit()` | What the Audit panel shows: `{ gossip, requests, channel, at }`, each part read alone in a `pcall`, a copy in `GuildOSDB.recruitAudit`; `channel` is `GuildOSDB.probeChannel` or `false` |
+| `Gossip.CHANNEL` / `Gossip.CHANNEL_NAME` | The beacon's route by a created channel (`false`, `"GuildOSNet"`): only a new version turns it on |
+| `JR:Send(ad, note)` / `:Outbox()` / `:Latest(ad)` / `:Status(id)` / `:Deliver(e)` / `:Tick()` / `:WriteWire()` | The guildless side: ask a guild (three open at most, one per guild), the queue in `GuildOSDB.recruitOutbox`, where a request stands (`stored`, `officer`, `member`, `invited`, `declined`, `expired`), one delivery round, the `GOSOUTB1` on logout |
+| `JR:OnCRQ()` / `:OnCRA()` / `:Decide(id, status)` / `:CanDecide()` / `:CanInvite(id)` / `:Invite(id)` | The guild's side: a row per request in `db.joinRequests` (found by id, then by the game's id kept as `gameId`), a decision only an officer makes (`:CanDecide`, and `:Decide` prints why it refused) and only an officer's word over GUILD counts, Invite from a click only and open to whoever the game lets invite, the row closed by the game's `ERR_GUILD_INVITE_S` line |
+| `JR:List()` / `:OpenCount()` / `:Refresh()` / `:ForExport()` / `:Listen(fn)` | The rows, open ones first; the site's block read into them, a new row `unheard` until an officer's client reads it (also run from `OFFICER_START`, when the rank is known); the export's optional `joinRequests`; a screen asks to hear changes |
+| `JR:Stats()` / `JR:Audit()` | Drops by name and by guild, invites sent and invite lines confirmed; and with them the open rows and this character's asked / delivered |
+| `Compat.JoinChannel(name)` / `Compat.ChannelId(name)` / `Compat.LeaveChannel(name)` | A created channel by name and its number (0 when not joined or secret), each call guarded |
+| `Probe:RunChannel()` / `:FinishChannel(run)` | `/gos probe channel` (button in Audit > Sync): joins `GOSProbe<n>`, sends from the command and from a timer on `GuildOSProbe`, counts its own echo on `CHAT_MSG_ADDON`, leaves after `Probe.CHANNEL_WAIT` (15) seconds whatever happened (the verdict is scheduled before anything can raise), `GuildOSDB.probeChannel = { timer, click, timerSkipped, clickSkipped, heard = { timer, click }, joined, left, at }`: true, false, or nil with `<how>Skipped` saying why it was never tried. A second press while it runs retries a skipped click. Refuses in combat; hides the channel's own join and leave notices |
+| `Probe:Initialize()` / `:LeaveStaleChannel(stale, try)` | In `MODULE_START`: `STALE_WAIT` seconds after login leaves the channel a `/reload` left behind, whose name is in `GuildOSDB.probeChannelOpen`, and clears the name only once the channel is seen gone, `STALE_TRIES` leaves at most. `:RunChannel` and `:FinishChannel` go through it too; a running probe's own channel is no leftover |
+| `RB:IngestCR3(payload, sender, dist)` | A CR3 off the network, true when kept or renewed. The guild's own ad only over GUILD from an officer (`Gossip:IsOfficerSender`) |
+| `RB:SeedOwnAd()` | The guild's own ad out of `GOSGILD1` into its slot, whatever sat there |
+| `RB:Cache3()` / `:Prune3()` / `:Heard3()` / `:AdToPayload(ad)` | `db.recruitAds`, keyed by the name; the cap takes the soonest to expire, then the oldest version, and never the guild's own ad; the ads heard minus my guild's, as copies; an ad as a CR3 |
+| `RB:Broadcast()` | An officer, every `BROADCAST_INTERVAL`: the site's ad as CR3 and CR2 over GUILD and CR2 by YELL, or the `/gos beacon` one. Pauses on `Gossip:Quiet()` |
+| `GF:Normalize(raw)` / `:FromCR2(r)` / `.Text(v, max)` | Every source into one ad shape, the site's `GosrecrAd` plus `heard` and `verified`; text inert, one line, cut by character |
+| `GF:AddSource(name, fn)` / `:Directory()` / `.HeardAds()` / `.HeardCR3()` / `:All()` | The sources: the CR2 cache, the site's list (verified, normalized once per decoded list) and the CR3 cache; every live ad, one per guild |
+| `GF:Context()` / `:Saved()` / `:SetFilter(key, value)` / `:Current()` / `:Matches(ad, f, offset)` / `:Rank(items, by)` / `:Ads(filters, offset)` | Where the player is, the filters kept in `GuildOSDB.guildFinder`, one ad against them, the site's order, and every ad this player can act on |
+| `GF:UtcOffset()` / `:LocalTimes(ad, offset)` / `:Touches(ad, offset)` / `:Schedule(ad, offset)` | Raid nights from UTC onto the player's clock, the day and period pairs they touch, and the line a card reads |
+| `GF:ClientLocale()` / `:Available()` / `:Worlds(f)` / `:WorldParts(w)` / `:UpdatedAgo()` / `:Initialize()` | The client's language on the site's nine, whether the finder is for this client (never Anniversary), the worlds on offer, how old the list is, and the minimap's light at the first guild of the session |
+| `GF:Reaches(ad, place)` | Whether an ad is worth passing on from `place` (`GF:Context()`): the player's own faction and region, any ruleset, and on retail a realm that can invite; no faction is a guild with no roster and goes; what cannot be judged does not |
+| `Import:RecruitDirectory()` / `:OwnRecruitAd()` / `:SiteJoinRequests()` | The inbox's `GOSRECR1` (public, read with the companion on or off, three days at most, this client's game); the guild's own ad out of `GOSGILD1`, nil past its `x`; the block's `joinRequests`, cleaned, with their `source` |
+| `Companion:Pack(prefix, payload)` | Any other string the site reads with the export's wire: today the `GOSOUTB1` of a character with no guild |
+| `Compat.AddChatFilter(event, fn)` / `Compat.ConnectedRealms()` | A chat message filter where the client keeps it (`ChatFrameUtil` on retail), false with none; this realm and the ones connected to it, the realms that can invite this character |
+| `GuildOS:WhisperTarget(name)` | The name as `/w` takes it: the hyphen where the game spells a surname with a space. Both screens' Whisper button |
+| `GuildOS.Finite(v)` | A number off the network, or nil: never NaN or inf, which `tonumber` takes as text. Every number on a recruitment network path goes through it |
+| `GuildOS:ShowGuildFinder()` / `:GuildFinderHeard()` / `:ShowJoinForm(ad)` | `UI/GuildFinder.lua`: the screen of a character with no guild, the minimap's light, and the request form with where the request stands |
+| `GuildOS:ShowJoinRequests()` / `:JoinRequestsHeard(r)` / `:JoinRequestsOpenText(n)` / `:SetMinimapAlert(on)` | `UI/JoinRequests.lua`: the officer's list, the notice, its count, and the ring on the minimap button |

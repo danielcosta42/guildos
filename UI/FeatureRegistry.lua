@@ -79,6 +79,7 @@ end
 function UI:IsFeatureAbsent(def)
     local client = GuildOS.Client
     return (def.tbc and not client.isAnniversary)
+        or (def.tbc == false and client.isAnniversary)
         or (def.retail == false and client.isRetail)
         or (def.forever == false and not client.isAnniversary and not client.isRetail) or false
 end

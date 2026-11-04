@@ -10,35 +10,52 @@ local L = GuildOS.L
 -- say them in another order: "%s has been kicked out of the guild by %s." in English,
 -- "%1$s wurde von %2$s aus der Gilde geworfen." in German. Reading "%1$s" as text made "%1" a
 -- back-reference in the Lua pattern: "invalid capture index" on every system message.
+-- The client also fills in a language's grammar, so a message never shows these escapes (#106):
+-- Russian declines a name, |3-3(%s), and it reads declined here: a line in the log, where nothing was
+-- logged before. French picks "de " or "d'" for |2. Korean picks a particle for what comes before it,
+-- |1이;가;, which ends up glued to that argument.
 ----------------------------------------------------------------------
 local MARK = "\001"          -- stands in for a placeholder while the rest is escaped
 local formatCache = {}
 
 local function formatPattern(fmt)
     local hit = formatCache[fmt]
-    if hit then return hit[1], hit[2] end
-    local order, n = {}, 0
-    local marked = fmt:gsub("%%(%d*)%$?([sd])", function(index, kind)
+    if hit then return hit[1], hit[2], hit[3] end
+    local order, tails, n = {}, {}, 0
+    local plain = fmt:gsub("|3%-%d+%((.-)%)", "%1")
+    local marked = plain:gsub("%%(%d*)%$?([sd])()", function(index, kind, after)
         n = n + 1
         order[n] = tonumber(index) or n
+        tails[n] = { plain:match("^|1([^;]*);([^;]*);", after) }
         return MARK .. kind
     end)
+    marked = marked:gsub("|1[^;]*;[^;]*;", MARK .. "g"):gsub("|2 ?", MARK .. "f")
     local pat = marked:gsub("([%%%(%)%.%+%-%*%?%[%]%^%$])", "%%%1")
-    pat = pat:gsub(MARK .. "s", "(.+)"):gsub(MARK .. "d", "(%%d+)")
+    pat = pat:gsub(MARK .. "s", "(.+)"):gsub(MARK .. "d", "(%%d+)"):gsub(MARK .. "g", ".-")
+    pat = pat:gsub(MARK .. "f", "d[e'] ?")
     pat = "^" .. pat .. "$"
-    formatCache[fmt] = { pat, order }
-    return pat, order
+    formatCache[fmt] = { pat, order, tails }
+    return pat, order, tails
 end
 
 -- Pure. The arguments of `msg` as `fmt` numbers them (args[1] is the format's first argument,
 -- wherever the language says it), as strings; nil when `msg` is not that message.
 function GuildOS:MatchFormat(msg, fmt)
     if type(msg) ~= "string" or type(fmt) ~= "string" or fmt == "" then return nil end
-    local pat, order = formatPattern(fmt)
+    local pat, order, tails = formatPattern(fmt)
     local caps = { msg:match(pat) }
     if caps[1] == nil then return nil end
     local args = {}
-    for i, index in ipairs(order) do args[index] = caps[i] end
+    for i, index in ipairs(order) do
+        local arg = caps[i]
+        for _, tail in ipairs(tails[i]) do
+            if tail ~= "" and #arg > #tail and arg:sub(-#tail) == tail then
+                arg = arg:sub(1, -#tail - 1)
+                break
+            end
+        end
+        args[index] = arg
+    end
     return args
 end
 
@@ -251,6 +268,22 @@ end
 -- On retail that is what tells two connected-realm namesakes apart (ADR-0026).
 function GuildOS:KeyOfRosterName(full)
     return self:GetPlayerKey(full:match("^([^-]+)") or full, full:match("^[^-]+%-(.+)$"))
+end
+
+-- A number off the network, or nil. tonumber takes "nan" and "inf" as text and reads "1e999" as inf. NaN answers
+-- false to every comparison, so it passes any check written as a refusal, and inf passes any "> 0"; and neither may
+-- ever reach a saved table, where a NaN is an unknown risk to the whole GuildOSDB file.
+function GuildOS.Finite(v)
+    local n = tonumber(v)
+    if n and n == n and n ~= math.huge and n ~= -math.huge then return n end
+    return nil
+end
+
+-- The name as /w takes it: the hyphen where the game spells a surname with a space, or "/w Ana Lima " opens a
+-- whisper to Ana with the message "Lima ".
+function GuildOS:WhisperTarget(name)
+    if self.Client.has.surnames then return (name:gsub(" ", "-")) end
+    return name
 end
 
 -- How a guildmate's key reads on screen: the name alone when they are on this character's realm, the
@@ -725,6 +758,13 @@ function GuildOS:RegisterUtilTests()
     end)
 end
 
+-- A date with day and month in the order the client's language writes them, then `rest`
+-- (" %H:%M", "/%Y"): the addon read month first in every language (issue #170).
+local MONTH_FIRST = { enUS = true, koKR = true, zhCN = true, zhTW = true }
+function GuildOS:DateText(timestamp, rest)
+    return date((MONTH_FIRST[GetLocale()] and "%m/%d" or "%d/%m") .. (rest or ""), timestamp)
+end
+
 function GuildOS:TimeAgo(timestamp)
     if not timestamp or timestamp == 0 then return L["Never"] end
     local diff = time() - timestamp
@@ -989,6 +1029,12 @@ end
 function GuildOS:RecordFirstSeen()
     if not self.db then return end
     if not self.db.firstSeen then self.db.firstSeen = {} end
+    -- The first look at a guild sees everybody at once, and nobody there just joined: the digest
+    -- counts from it (issue #170). It waits for the whole roster, or the rest would read as new.
+    if not next(self.db.firstSeen) then
+        if not self:WholeRoster() then return end
+        self.db.firstSeenSince = GetServerTime()
+    end
     local now = GetServerTime()
     local n = GetNumGuildMembers() or 0
     for i = 1, n do
@@ -1009,43 +1055,67 @@ function GuildOS:GetFirstSeen(playerKey)
 end
 
 ----------------------------------------------------------------------
--- DB hygiene: drop cached data for members who left the guild.
--- Manual-only (never auto-run) to avoid data loss if the roster is mid-load.
--- Prunes the volatile caches (members gear/spec, firstSeen) but keeps officer
--- records (trials, officer notes) for historical reference.
+-- The guild roster's names, or nil while it is not the whole guild: not loaded yet (it reads as
+-- empty), or with a row the client did not answer, when that member would read as gone. Whatever
+-- acts on "not on the roster" asks here first (issue #203). "Show Offline Members" is not asked:
+-- GetNumGuildMembers counts the whole guild either way, and with it off retail 12.1.5 still
+-- answered all 943 rows of a guild with 10 online; a client that hid them would leave rows empty.
 ----------------------------------------------------------------------
-function GuildOS:PruneStaleData()
-    if not self.db then return 0 end
+function GuildOS:WholeRoster()
     local n = GetNumGuildMembers() or 0
-    if n == 0 then return 0 end  -- roster not loaded yet; refuse to prune
-
-    local roster = {}
+    if n == 0 then return nil end
+    local names = {}
     for i = 1, n do
-        local name = GetGuildRosterInfo(i)
-        if name then
-            local short = name:match("^([^-]+)") or name
-            local realm = name:match("-(.+)$") or GetRealmName()
-            roster[self:GetPlayerKey(short, realm)] = true
-        end
+        local full = GetGuildRosterInfo(i)
+        if not full then return nil end
+        names[i] = full
     end
+    return names
+end
 
-    local removed = 0
-    for key in pairs(self.db.members or {}) do
-        if not roster[key] then
-            self.db.members[key] = nil
-            removed = removed + 1
-        end
+----------------------------------------------------------------------
+-- Whoever leaves the guild goes with it (issue #203): on every roster update, in every client,
+-- with no button to press. What describes them as a member goes: the member row, first-seen,
+-- professions, recipes and wishlist. What happened and what officers wrote stays: attendance,
+-- loot, notes, trials, the ban list, loot priorities, alts. Nothing happens while the roster is
+-- not whole (WholeRoster), nor while the loaded db is another guild's (it is resolved at login
+-- only: a guild changed mid-session would be read against the wrong roster). The player's own
+-- records always stay: were the own key ever to differ from the roster's (a surname the client
+-- did not give), dropping them would wipe what this client publishes.
+-- ponytail: a full pass on every GUILD_ROSTER_UPDATE, like RecordFirstSeen's; throttle it if a big
+-- guild ever shows it in a profile.
+----------------------------------------------------------------------
+function GuildOS:DropDeparted()
+    local roster = self.db and self:IsOnGuildDB() and self:WholeRoster()
+    if not roster then return end
+    local me = self:GetPlayerKey(self.Compat.PlayerName())
+    local present = { [me] = true }
+    -- guildWishlists is keyed by the name lowercased, with its realm on retail only.
+    local names = { [me:lower()] = true, [(self.Compat.PlayerName() or ""):lower()] = true }
+    for _, full in ipairs(roster) do
+        local key = self:KeyOfRosterName(full)
+        present[key] = true
+        names[key:lower()], names[(full:match("^([^-]+)") or full):lower()] = true, true
     end
-    for key in pairs(self.db.firstSeen or {}) do
-        if not roster[key] then
-            self.db.firstSeen[key] = nil
+    -- A members row their own client never published is an inspect (SpecChecker): a pug, or on
+    -- retail a cross-guild core member whose scanned spec picks their role. Not a guildmate's sheet.
+    for key, rec in pairs(self.db.members or {}) do
+        if not present[key] and (tonumber(rec.lastUpdate) or 0) > 0 then self.db.members[key] = nil end
+    end
+    -- A founder who left loses the badge before their date goes (WoW: Forever, issue #209).
+    if self.Founding then self.Founding:Departed(present) end
+    for _, store in ipairs({ "firstSeen", "recipes" }) do
+        for key in pairs(self.db[store] or {}) do
+            if not present[key] then self.db[store][key] = nil end
         end
     end
     for key in pairs(self.db.professions or {}) do
-        if not roster[key] then
+        if not present[key] then
             self.db.professions[key] = nil
             if self.Professions then self.Professions:Changed(key) end
         end
     end
-    return removed
+    for key in pairs(self.db.guildWishlists or {}) do
+        if not names[key] then self.db.guildWishlists[key] = nil end
+    end
 end

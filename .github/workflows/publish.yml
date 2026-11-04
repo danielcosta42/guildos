@@ -28,3 +28,64 @@ jobs:
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+
+  github-release:
+    name: GitHub Release for the companion
+    # What the desktop companion installs from: it reads the latest release of this repository,
+    # checks the hash and unpacks the zip into AddOns (guildos-web's specs/070).
+    #
+    # A job of its own, after the stores and not a step among them, so that nothing here can touch
+    # them: the upload is over before this starts and a failure here fails only here. It also
+    # keeps the write token and the store keys off the same runner, which is why it packages
+    # again, as beta.yml does, rather than sharing the store job's zip.
+    #
+    # Stable tags only. A vX.Y.Z-beta.N is beta.yml's pre-release, and must never become what a
+    # companion takes for the latest. This condition skips it; the step below refuses it again.
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # As in beta.yml: gh gets the token through GH_TOKEN, the packager never does.
+          persist-credentials: false
+
+      - name: Package without uploading anywhere
+        uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
+        with:
+          args: -d
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+          # The packager's one zip, under the name the companion looks for, which is the tag's.
+          zips=(.release/GuildOS-*.zip)
+          [ "${#zips[@]}" -eq 1 ]
+          asset="GuildOS-${GITHUB_REF_NAME}.zip"
+          cp "${zips[0]}" "$asset"
+
+          # GuildOS/ at the root and nothing beside it: the companion refuses anything else, and
+          # by then the release would be out. A here-string, because `unzip | grep -q` can end
+          # the pipe early and answer for the wrong command.
+          entries="$(unzip -Z1 "$asset")"
+          if grep -v '^GuildOS/' <<< "$entries"; then
+            echo "the zip has entries outside GuildOS/" >&2
+            exit 1
+          fi
+          grep -qx 'GuildOS/GuildOS.toc' <<< "$entries"
+
+          # The hash alone, in hex: no file name and no newline.
+          sha256sum "$asset" | cut -d' ' -f1 | tr -d '\n' > "$asset.sha256"
+          grep -qE '^[0-9a-f]{64}$' "$asset.sha256"
+
+          gh release create "$GITHUB_REF_NAME" "$asset" "$asset.sha256" \
+            --verify-tag \
+            --title "GuildOS ${GITHUB_REF_NAME}" \
+            --notes "Stable build, the same version as on CurseForge and Wago. The GuildOS companion installs and updates the addon from this release."

@@ -100,6 +100,8 @@ function GuildOS:CreateDashboardPanel(panel)
     -- The guild's chat (#126), where "Guild activity" repeated the Activity column beside it.
     local cChat     = makeCard(L["GUILD CHAT"],      "guild",       "chat", true)
     local chatRefresh = GuildOS:CreateGuildChatFeed(cChat.body)
+    -- The guild's setup, for its GM and officers (issue #217). WoW: Forever only.
+    local cSetup = GuildOS.Activation and makeCard(L["SET UP GUILD OS FOR YOUR GUILD"]) or nil
 
     ------------------------------------------------------------------
     -- Card fills (each clears its body and rebuilds from live data)
@@ -188,6 +190,67 @@ function GuildOS:CreateDashboardPanel(panel)
         else verdict, vcol = L["Not enough data yet"], C.silver end
         local v = UI:CreateText(body, verdict, 11, vcol.r, vcol.g, vcol.b)
         v:SetPoint("TOPLEFT", 2, -(y + 4))
+    end
+
+    -- WoW: Forever, until a week after the raids open (issue #207): the countdown in the readiness
+    -- card's place. Readiness:Countdown counts; this only draws.
+    local function fillCountdown(card, cd)
+        local body = card.body
+        clearBody(body)
+        local title = cd.open and L["RAIDS ARE OPEN"]
+            or cd.days == 0 and L["RAIDS OPEN IN UNDER A DAY"]
+            or cd.days == 1 and L["RAIDS OPEN IN 1 DAY"]
+            or string.format(L["RAIDS OPEN IN %d DAYS"], cd.days)
+        card.hdr:SetText(title)
+        -- One line, short of the arrow: a long translation cuts, never runs into it (#148).
+        card.hdr:SetWidth(math.max(1, card:GetWidth() - 44)); card.hdr:SetWordWrap(false); card.hdr:SetJustifyH("LEFT")
+        local w = body:GetWidth()
+        local y = 0
+        local function line(label, value, frac)
+            local name = UI:CreateText(body, label, 11, C.text.r, C.text.g, C.text.b)
+            name:SetPoint("TOPLEFT", 2, -y)
+            name:SetWidth(math.floor(w * 0.36)); name:SetWordWrap(false); name:SetJustifyH("LEFT")
+            local val = UI:CreateText(body, value, 10, C.textDim.r, C.textDim.g, C.textDim.b)
+            val:SetPoint("TOPLEFT", math.floor(w * 0.38), -y)
+            local barW = frac and math.max(20, math.floor(w * 0.22)) or 0
+            val:SetWidth(math.max(1, w - math.floor(w * 0.38) - barW - 8)); val:SetWordWrap(false); val:SetJustifyH("LEFT")
+            if frac then
+                local bar = UI:CreateProgressBar(body, barW, 6)
+                bar:SetPoint("TOPRIGHT", -2, -(y + 4))
+                bar:SetProgress(frac)
+            end
+            y = y + 20
+        end
+        for _, c in ipairs(cd.cores) do
+            line(c.name, string.format(L["%d / %d at %d"], c.ready, c.size, cd.cap), c.ready / c.size)
+        end
+        -- The slices, as on guildos.me: on a line of their own, or a long guild would cut them.
+        local g, s = cd.guild, cd.guild.slices
+        if s.short then
+            line(L["Guild"], s.shortSize == GuildOS.Readiness.DUNGEON_GROUP and string.format(L["%d at %d · %d more for a group"], g.ready, cd.cap, s.short)
+                or string.format(L["%d at %d · %d more for a %d"], g.ready, cd.cap, s.short, s.shortSize))
+        else
+            line(L["Guild"], string.format(L["%d at %d"], g.ready, cd.cap))
+        end
+        if s.dungeons > 0 then
+            local parts = { s.dungeons == 1 and L["1 group"] or string.format(L["%d groups"], s.dungeons) }
+            for _, r in ipairs(s.raids) do parts[#parts + 1] = r.count .. "×" .. r.size end
+            line(L["Can form"], table.concat(parts, " · "))
+        end
+        local me = cd.me
+        if me then
+            local mine
+            if (me.level or 0) < cd.cap then
+                mine = string.format(L["Level %d · %d to go"], me.level or 0, cd.cap - (me.level or 0))
+            elseif me.reason == "enchants" then
+                mine = string.format(L["Ready · %d enchants missing"], me.missEnch or 0)
+            elseif me.reason == "ilvl" then
+                mine = L["Ready · under the guild's item level"]
+            else
+                mine = L["Ready"]
+            end
+            line(L["You"], mine)
+        end
     end
 
     local function fillPulse(body, rows)
@@ -287,6 +350,46 @@ function GuildOS:CreateDashboardPanel(panel)
         end
     end
 
+    -- Each step, and the tab that helps with it; the line under them says what the site asks for.
+    local SETUP = {
+        publish = { L["Publish through the companion"], "web" },
+        bot = { L["Add the bot to your Discord"], "web" },
+        account = { L["Confirm a leader's character"], "web" },
+        members = { L["5 members with the addon"], "roster" },
+        run = { L["First group run"] },
+    }
+    local function fillSetup(card, state)
+        local body = card.body
+        clearBody(body)
+        local A = GuildOS.Activation
+        local count = UI:CreateText(body, string.format("%d / %d", state.done, #A.STEPS), 11, C.gold.r, C.gold.g, C.gold.b)
+        count:SetPoint("TOPLEFT", 2, -2)
+        local hide = UI:CreateButton(body, L["Hide"], 56, 18)
+        hide:SetPoint("TOPRIGHT", -18, 0)
+        hide:SetScript("OnClick", function() A:Hide(GetServerTime()); f.Refresh() end)
+        local w = math.floor(body:GetWidth() / 2)
+        for i, id in ipairs(A.STEPS) do
+            local step = SETUP[id]
+            local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+            local text = (state.steps[id] and TICK or CROSS) .. step[1]
+            local fs = UI:CreateText(body, text, 11, C.text.r, C.text.g, C.text.b)
+            fs:SetPoint("TOPLEFT", 2 + col * w, -(22 + row * 18))
+            fs:SetWidth(math.max(1, w - 8)); fs:SetWordWrap(false); fs:SetJustifyH("LEFT")
+            if step[2] and not state.steps[id] then
+                local b = CreateFrame("Button", nil, body)
+                b:SetAllPoints(fs)
+                b:SetScript("OnClick", function() goTab(step[2]) end)
+            end
+        end
+        local how = UI:CreateText(body, L["The bot and the character are set up on guildos.me/start. A group run is a dungeon cleared by 3 members with the addon."], 10, C.silver.r, C.silver.g, C.silver.b)
+        how:SetPoint("TOPLEFT", 2, -76)
+        how:SetWidth(math.max(1, body:GetWidth() - 4)); how:SetWordWrap(false); how:SetJustifyH("LEFT")
+        if state.staleDays then
+            local old = UI:CreateText(body, string.format(L["Verified %d days ago · log out once to update"], state.staleDays), 10, C.silver.r, C.silver.g, C.silver.b)
+            old:SetPoint("LEFT", count, "RIGHT", 10, 0)
+        end
+    end
+
     ------------------------------------------------------------------
     -- Layout (responsive) + fill
     ------------------------------------------------------------------
@@ -296,16 +399,30 @@ function GuildOS:CreateDashboardPanel(panel)
         local M, G = 12, 10
         local innerW = W - 2 * M
 
+        -- The guild's setup, above everything while it is due (issue #217). A failure leaves the
+        -- Dashboard as it was.
+        local top = M
+        if cSetup then
+            local A = GuildOS.Activation
+            local ok, show = GuildOS:SafeCall(A.ShouldShow, A, GetServerTime())
+            cSetup:SetShown(ok and show or false)
+            if ok and show then
+                cSetup:ClearAllPoints(); cSetup:SetPoint("TOPLEFT", M, -M); cSetup:SetSize(innerW, 128)
+                GuildOS:SafeCall(fillSetup, cSetup, A:Read(GetServerTime()))
+                top = M + 128 + G
+            end
+        end
+
         -- Row 1: Next Raid (wider) + Readiness
         local r1h = 126
         local leftW = math.floor((innerW - G) * 0.56)
         local rightW = innerW - G - leftW
-        cNext:ClearAllPoints();  cNext:SetPoint("TOPLEFT", M, -M);                 cNext:SetSize(leftW, r1h)
-        cReady:ClearAllPoints(); cReady:SetPoint("TOPLEFT", M + leftW + G, -M);    cReady:SetSize(rightW, r1h)
+        cNext:ClearAllPoints();  cNext:SetPoint("TOPLEFT", M, -top);                 cNext:SetSize(leftW, r1h)
+        cReady:ClearAllPoints(); cReady:SetPoint("TOPLEFT", M + leftW + G, -top);    cReady:SetSize(rightW, r1h)
 
         -- Row 2: Pulse + Recruitment + Loot. No loot card without the tracker; retail has it since issue #183.
         local hasLoot = GuildOS.LootTracker ~= nil
-        local r2y = M + r1h + G
+        local r2y = top + r1h + G
         local r2h = 120
         local cols = hasLoot and 3 or 2
         local w3 = math.floor((innerW - (cols - 1) * G) / cols)
@@ -327,7 +444,13 @@ function GuildOS:CreateDashboardPanel(panel)
         for _, r in ipairs(rows) do if r.name == myShort then myRow = r break end end
 
         fillNext(cNext.body)
-        fillReady(cReady.body, myRow)
+        -- If the countdown fails, the card it replaced: the rest of the Dashboard still draws (issue #232).
+        local R, ok, countdown = GuildOS.Readiness, false, nil
+        if R and R.Countdown then ok, countdown = GuildOS:SafeCall(R.Countdown, R, rows, GetServerTime()) end
+        if not (ok and countdown and GuildOS:SafeCall(fillCountdown, cReady, countdown)) then
+            cReady.hdr:SetText(L["YOUR READINESS"])
+            fillReady(cReady.body, myRow)
+        end
         fillPulse(cPulse.body, rows)
         fillRecruit(cRecruit.body)
         if hasLoot then fillLoot(cLoot.body) end

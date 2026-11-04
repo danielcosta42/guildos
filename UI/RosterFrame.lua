@@ -584,18 +584,22 @@ function GuildOS:CreateRosterPanel(parent, host)
     local offlineBtn = UI:CreateButton(statsBar, L["Show Offline"], 100, 22)
     offlineBtn:SetPoint("RIGHT", -12, 0)
     offlineBtn.isToggled = true
-    offlineBtn:SetScript("OnClick", function(self)
-        self.isToggled = not self.isToggled
-        GuildOS.db.settings.showOffline = self.isToggled
-        if self.isToggled then
-            self.label:SetText(L["Show Offline"])
-            self:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
+    local function paintOffline(on)
+        offlineBtn.isToggled = on
+        if on then
+            offlineBtn.label:SetText(L["Show Offline"])
+            offlineBtn:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
         else
-            self.label:SetText(L["Online Only"])
-            self:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+            offlineBtn.label:SetText(L["Online Only"])
+            offlineBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
+    end
+    offlineBtn:SetScript("OnClick", function(self)
+        paintOffline(not self.isToggled)
+        GuildOS.db.settings.showOffline = self.isToggled
         host:RefreshRoster()
     end)
+    if not GuildOS.db.settings.showOffline then paintOffline(false) end   -- saved from the last session
     host.offlineBtn = offlineBtn
 
     -- Which columns, in what order (#178). A right click on the header opens the same panel.
@@ -1544,7 +1548,9 @@ function UpdateRosterRow(row, data, rowIndex)
     -- Name (class-colored, grayscale if offline)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     local nr, ng, nb = textColor(cr, cg, cb)
-    row.nameText:SetText(data.name)
+    -- A founding member's scroll (WoW: Forever, issue #209).
+    local founder = GuildOS.Founding and data.key and GuildOS.Founding:IsFounder(data.key)
+    row.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     row.nameText:SetTextColor(nr, ng, nb)
 
     -- Addon data indicator. __hasAddon is remembered so a later layout
@@ -1966,6 +1972,11 @@ function ShowRowTooltip(row)
     GameTooltip:AddLine(data.name, cr, cg, cb)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
+
+    -- What this member earned for the guild (issue #216).
+    for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do
+        GameTooltip:AddLine(title, C.gold.r, C.gold.g, C.gold.b)
+    end
 
     -- First seen by Guild OS (approximate "member since")
     local firstSeen = GuildOS.GetFirstSeen and GuildOS:GetFirstSeen(data.key)
@@ -3292,6 +3303,33 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
 
     ----------------------------------------------------------------
+    -- Join requests: people with no guild who asked this one to take them
+    ----------------------------------------------------------------
+    -- Not where the module never starts (Anniversary): a section with nothing behind it.
+    local UpdateRequestsStatus = function() end
+    if GuildOS.JoinRequests and not GuildOS.Client.isAnniversary then
+        yOff = yOff - 66
+        yOff = SectionHeader(L["Join requests"], yOff)
+        RowLabel(L["Status:"], yOff)
+        local requestsStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
+        requestsStatus:SetPoint("TOPLEFT", 140, yOff)
+        local requestsBtn = UI:CreateButton(parent, L["Open the list"], 130, 22)
+        requestsBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+        requestsBtn:SetScript("OnClick", function()
+            if GuildOS.ShowJoinRequests then GuildOS:ShowJoinRequests() end
+        end)
+        UpdateRequestsStatus = function()
+            -- A damaged row must not take the whole tab down with it.
+            local ok, n = pcall(GuildOS.JoinRequests.OpenCount, GuildOS.JoinRequests)
+            n = ok and n or 0
+            requestsStatus:SetText(n > 0 and GuildOS:JoinRequestsOpenText(n) or L["|cff888888None|r"])
+        end
+        UpdateRequestsStatus()
+        local requestsHint = UI:CreateText(parent, L["Players who asked your guild to take them, from the game or from guildos.me."], 10, 0.6, 0.6, 0.65)
+        requestsHint:SetPoint("TOPLEFT", 30, yOff - 22)
+    end
+
+    ----------------------------------------------------------------
     -- Refresh function for the "Recruiting" sub-tab. Registered into
     -- root.subPanels so selectSub() runs it whenever this sub-tab becomes
     -- active (and root's OnShow below re-runs it every time the officer
@@ -3311,6 +3349,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         UpdateRecruitStatus()
         UpdateWelcomeStatus()
         UpdateBeaconStatus()
+        UpdateRequestsStatus()
     end
     root.subPanels.recruiting = { panel = recruitingSub, refresh = recruitingRefresh }
 

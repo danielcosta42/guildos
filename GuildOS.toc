@@ -2,9 +2,10 @@
 ## Title: |cffFFD700Guild OS|r |cff888888Guild Manager|r
 ## Notes: Guild manager for WoW: Forever and Retail: roster, raid attendance, cores, recruitment and professions
 ## Author: Chehul (danielcosta42)
-## Version: 1.0.1
+## Version: 1.9.1
 ## SavedVariables: GuildOSDB
 ## DefaultState: enabled
+## IconTexture: Interface\AddOns\GuildOS\Media\minimap-logo
 ## X-License: MIT
 ## X-Category: Guild
 ## X-Website: https://github.com/danielcosta42/GuildOS
@@ -84,7 +85,10 @@ Modules\Professions.lua
 Modules\ProfSync.lua
 Modules\Look.lua
 Modules\ProfDirectory.lua
+Modules\ChehulGossip.lua
+Modules\GuildFinder.lua
 Modules\RecruitBeacon.lua
+Modules\JoinRequests.lua
 Modules\RecruitScanner.lua
 Modules\OfficerNotes.lua
 Modules\RaiderRoster.lua
@@ -111,6 +115,12 @@ Modules\CallToArms.lua
 Modules\Polls.lua
 Modules\Calendar.lua
 Modules\Milestones.lua
+Modules\Journal.lua
+Modules\Founding.lua
+Modules\Activation.lua
+Modules\Achievements.lua
+Data\ForeverDungeons.lua
+Modules\DungeonLog.lua
 Modules\Search.lua
 Modules\RaidTools.lua
 Data\ConsumablesRetail.lua
@@ -139,6 +149,8 @@ UI\RecipesPanel.lua
 UI\ProfessionsPanel.lua
 UI\CraftFinder.lua
 UI\RecruitBeacon.lua
+UI\GuildFinder.lua
+UI\JoinRequests.lua
 UI\CalendarPanel.lua
 UI\FeaturePanels.lua
 UI\RosterFrame.lua
@@ -155,5 +167,8 @@ UI\GuildMap.lua
 UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua
+UI\Founding.lua
+UI\JournalPanel.lua
+UI\AchievementsPanel.lua
 UI\RaidHUD.lua
 UI\Features.lua

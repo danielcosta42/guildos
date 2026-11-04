@@ -277,6 +277,14 @@ local MODULE_START = {
     { "Polls" },
     { "Calendar" },
     { "Milestones" },
+    -- WoW: Forever only (issue #205): what happened to me, for the guild's feed on guildos.me.
+    { "Journal", feature = "journal" },
+    -- WoW: Forever only (issue #208): the guild's founding and its founding members.
+    { "Founding", feature = "founding" },
+    -- WoW: Forever only (issue #217): the guild's setup, for its GM and officers.
+    { "Activation" },
+    -- WoW: Forever only (issue #210): a clear of a new dungeon, into my journal.
+    { "DungeonLog", feature = "journal" },
     { "ConsumableChecker", feature = "consumableChecker" },
     { "SpecChecker" },
     -- Retail only (issue #187): my keystone, rating and vault, carried by the member broadcast.
@@ -296,6 +304,14 @@ local MODULE_START = {
     -- WoW: Forever only (issue #37): the look, read in the barber's chair.
     { "Look" },
     { "RecruitBeacon" },
+    -- WoW: Forever and retail: the whisper gossip. After RecruitBeacon, whose handler feeds it.
+    { "ChehulGossip" },
+    -- WoW: Forever and retail: the request to join a guild, from both sides. After the gossip, whose prefix it rides.
+    { "JoinRequests" },
+    -- WoW: Forever and retail: lights the minimap button on the first guild a character with no guild hears.
+    { "GuildFinder" },
+    -- Leaves the channel of a /gos probe channel that a /reload cut short, a moment after login.
+    { "Probe" },
     { "RecruitScanner" },
     -- Recruitment participation runs for EVERY player (the officer-only
     -- Initialize in OFFICER_START handles just the auto-post/welcome flow).
@@ -310,15 +326,19 @@ local MODULE_START = {
     { "ChatTweaks" },
     { "GuildManager", feature = "guildManager", ui = "management" },
     { "ModPresets" },
+    -- The roster is not compared for new members' trials until the guild's settings have arrived (#249).
+    { "TrialTracker", method = "Arm" },
 }
 
 -- Officer-only modules, started once guild info is available.
 local OFFICER_START = {
     { "Recruitment", feature = "recruitment" },
     { "OfficerNotes", feature = "officerNotes" },
-    { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckExpired" },
+    { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckReady" },
     -- What the Discord's cores changed at login, to the other officers (#135).
     { "CoreManager", method = "SendDiscordChanges" },
+    -- The requests from the site: read at the start with no rank known, they reached no officer's notice.
+    { "JoinRequests", method = "Refresh" },
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN
@@ -374,6 +394,10 @@ function GuildOS:InitModules()
     -- First-run welcome (once); delayed so guild info + frames are ready.
     if GuildOS.MaybeShowOnboarding then
         GuildOS.Compat.After(6, function() GuildOS:MaybeShowOnboarding() end)
+    end
+    -- WoW: Forever: the founding letter to a GM whose guild has none yet (issue #208).
+    if GuildOS.MaybeShowFoundingLetter then
+        GuildOS.Compat.After(12, function() GuildOS:MaybeShowFoundingLetter() end)
     end
     -- Login digest: shown a bit later so guild/roster data is ready and it
     -- doesn't collide with the first-run onboarding wizard.
@@ -538,6 +562,9 @@ end
 
 function GuildOS:OnGuildRosterUpdate()
     if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
+    if GuildOS.DropDeparted then GuildOS:DropDeparted() end
+    -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
+    if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
     GuildOS:RefreshRosterUI()
 end
 
@@ -683,6 +710,17 @@ end
 ----------------------------------------------------------------------
 -- Toggle the Guild OS window
 ----------------------------------------------------------------------
+-- What a character with no guild looks at to find one: the guild finder on WoW: Forever and retail,
+-- the old inbox on Anniversary, and the inbox again if the finder cannot be built (specs/071).
+function GuildOS:OpenGuildFinder()
+    if self.GuildFinder and self.GuildFinder:Available() and self.ShowGuildFinder then
+        local ok, err = pcall(self.ShowGuildFinder, self)
+        if ok then return end
+        self:RecordError("GuildFinder: " .. tostring(err))
+    end
+    if self.ShowRecruitInbox then self:ShowRecruitInbox() end
+end
+
 function GuildOS:ToggleRoster()
     if not self.db then
         self:Print(L["|cff888888Not in a guild \226\128\148 addon inactive.|r"])
@@ -691,7 +729,7 @@ function GuildOS:ToggleRoster()
     if not IsInGuild() then
         -- Guildless: the roster is guild data — open the recruitment finder,
         -- which is exactly what a guildless player is here for.
-        if self.ShowRecruitInbox then self:ShowRecruitInbox() end
+        self:OpenGuildFinder()
         return
     end
     self.Compat.GuildRoster()
@@ -891,12 +929,19 @@ end
 -- never be turned off — that is how a user would lock themselves out of
 -- the Settings window that would turn them back on.
 ----------------------------------------------------------------------
+-- Off for whoever has not chosen, until a release takes the name off this list (issue #232): these
+-- publish on the guild's channel or open a window, and they shipped with no client to try them on.
+-- A list and not a default in db.settings.modules: a default is saved into every player's file, and a
+-- later release could not turn it on for them. Somebody who chose keeps their choice either way.
+local OFF_UNTIL_TESTED = { journal = true, founding = true }
+
 function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end
     -- UI loads after Core, so the registry is resolved per call, not per load.
     local def = self.UI and self.UI.GetFeature and self.UI:GetFeature(id)
     if def and def.core then return true end
     local mods = self.db and self.db.settings and self.db.settings.modules
+    if OFF_UNTIL_TESTED[id] and (not mods or mods[id] == nil) then return false end
     if not mods then return true end
     return mods[id] ~= false
 end

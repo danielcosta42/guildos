@@ -102,6 +102,11 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `ConsumableChecker.lua` | Detect flask/elixir/food buffs (TBC's; Midnight's flask, food, rune and my weapon on retail, unknown never missing, #187) | UI |
 | `MythicPlus.lua` | Retail only: my keystone, Mythic+ rating and weekly vault, read through Compat and sent with my member data; formats a member's for the sheet and the roster (#187) | UI, comm internals |
 | `SpecChecker.lua` | Detect talent spec | UI |
+| `Journal.lua` | WoW: Forever only: what happened to my character (level milestones; dungeon clears later), the guild's journal as it arrives on the `journal` sync domain, the export's `journal` and the Discord opt-out (#205) | UI, the guild's feed (guildos.me) |
+| `ChehulGossip.lua` | Forever and retail: the whisper gossip on `ChehulRecruit`, generic by topic: the peers heard, the whisper test, beacons, rounds and their ceilings (ADR-0029) | Recruitment rules, the shared mesh library |
+| `RecruitBeacon.lua` | The ad on the network: `CR2` for old clients, `CR3` in the gossip, the caches, an officer's broadcast, what the client holds (the cache and the site's list) | UI |
+| `GuildFinder.lua` | Every rule of the finder: the ad's one shape, its sources, filters, order, a raid night on the player's clock | UI (UI/GuildFinder.lua), the network |
+| `JoinRequests.lua` | The request, from both sides: the guildless character's queue and `CRQ`, the guild's rows, `CRA`, the decision, the invite, the export's `joinRequests` | UI (UI/JoinRequests.lua) |
 | `UI/Helpers.lua` | ALL UI components + theme (until split) | data logic, comms |
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
 | `UI/MemberDetail.lua` | Per-member detail panel | data writes |
@@ -140,6 +145,16 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | 24 | `UI/MemberDetail.lua` | GuildOS.UI |
 | 24a | `UI/ManagementPanel.lua` | GuildOS.UI, GuildOS.GuildManager |
 | 25 | `UI/RaidHUD.lua` | GuildOS.UI, GuildOS.State.raidCD |
+| 25a | `Core/Probe.lua` | GuildOS, GuildOS.Compat; loads with Core, starts in `MODULE_START` |
+| 25b | `Modules/ChehulGossip.lua` | GuildOS, GuildOS.Compat, `_G.ChehulMesh`; before RecruitBeacon, which registers its topic |
+| 25c | `Modules/GuildFinder.lua` | GuildOS, GuildOS.Compat |
+| 25d | `Modules/RecruitBeacon.lua` | GuildOS, ChehulGossip; reads GuildFinder and CompanionImport when called |
+| 25e | `Modules/JoinRequests.lua` | GuildOS, ChehulGossip, GuildFinder |
+| 25f | `UI/RecruitBeacon.lua`, `UI/GuildFinder.lua`, `UI/JoinRequests.lua` | GuildOS.UI, the modules above |
+
+**Start order** is `MODULE_START` in `Core/Core.lua`, not the TOC's: `RecruitBeacon`, whose one mesh handler feeds the gossip,
+then `ChehulGossip`, `JoinRequests`, `GuildFinder`, `Probe`. `OFFICER_START` runs `JoinRequests:Refresh` once the rank is
+known, because at `MODULE_START` it is not (#79): a request from the site read then reached no officer's notice.
 
 ---
 
@@ -223,7 +238,10 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
 ```lua
 {
   version  = 1,
-  settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules },
+  settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules,
+               readyMinIlvl, readyMinIlvlAt,   -- Forever: the guild's minimum item level for a 60, on guildcfg/readymin (#206)
+               trialDays, trialDaysAt, trialAuto, trialAutoAt },  -- the guild's trial length (nil = 30) and its
+                                               -- switch for new members, on guildcfg/trialdays and trialauto (#249)
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
                                    mplus, vault,   -- retail: { rating, key = { map, level } },
@@ -231,10 +249,16 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
                                    addonVersion, lastUpdate, lastSync } },
   myData   = {},              -- local player's CollectMyData snapshot
   altLinks = { [altKey] = mainKey },
-  trials   = { [key] = { status, startDate, endDate, notes, snapshots } },
+  trials   = { [key] = { status, startDate, endDate, notes, snapshots, leftAt } },  -- endDate written for clients
+                                               -- before #249, never read: the end is startDate + the guild's length;
+                                               -- leftAt: an undecided trial whose member left (#249)
+  trialBaseline = { [key] = true },            -- the roster an officer's client has seen, for new members' trials
+                                               -- (#249): only grows; a leave or kick line takes a key out
+  trialScannedAsOfficer = { [characterKey] = true },  -- whose last roster look ran as an officer (#249)
+  trialBaselinePending = true,                 -- the switch went on where only a non-officer heard it (#249)
   officerNotes     = { [key] = { notes=[], tags={} } },
   managementLog    = [{ action, target, detail, author, timestamp }],  -- capped ring buffer (200)
-  raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions, mergedSessions },  -- mergedSessions: local only, never sent (#197)
+  raidTracker      = { sessions, attendance, currentGroupTag, deletedSessions, openSession, openChar, mergedSessions },  -- mergedSessions: local only, never sent (#197)
   attendancePenalties = { LATE, LEFT_EARLY, NO_CONSUMES },  -- the guild's weights (CoreManager, #55); cores override
   lootHistory      = [{ itemLink, itemName, quality, player, playerKey, count, timestamp, raid, instanceID,
                         fromML }],  -- newest first, 500; retail's personal loot adds itemId, encounterID, no fromML,
@@ -251,7 +275,32 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   consumableChecks = { lastResults },
   recipes          = { [charKey] = { [canonProfName] = [{ name, spellId, itemId }] } },
   recipeScanTimes  = { [profName] = timestamp },
+  journal          = { seq, entries = [{ id, subjectKey, at, type, data }] },  -- Forever: the guild's, 30 days, 1,000 (#205)
+  founding         = { foundedAt, source, declaredBy, recordedAt, windowDays, manual, revision },  -- Forever (#208)
+  foundingJoins    = { [key] = { joinedAt, src } },  -- each member's own claim, filed under its sender (#208)
+  profile          = { prefRoles, feedOptOut },  -- feedOptOut: not named on Discord; also on my own members row (#205)
+  recruitRelay     = { [guild] = cr2 },        -- CR2 ads heard, as sets, capped and expiry-pruned
+  recruitAds       = { [key] = ad },           -- CR3 ads heard, GuildFinder's shape, capped at forty plus the guild's own (ADR-0029)
+  joinRequests     = { [id] = { id, character, class, level, role, note, at, seen, status, source, gameId, relayedBy,
+                                unheard, decidedBy, decidedAt } },  -- who asked this guild, fifty at most
 }
+```
+
+### What sits beside the guilds, at the top of GuildOSDB
+
+The account's, not a guild's, so it is one per SavedVariables file:
+
+```lua
+__companion     = "GOSCOMP1:...",  -- the one string the desktop companion lifts: the export with the guild's
+                                   -- switch on, the character's own pack with it off (ADR-0028)
+__companionAt   = 1791000000,      -- when the addon last wrote the EXPORT: never a pack
+__companionSelf = true,            -- __companion is a pack, absent when it is the export
+recruitOutbox   = { [character] = { [id] = request } },  -- a guildless character's own requests (ADR-0029)
+recruitOutboxWire = "GOSOUTB1:...",   -- the open ones, written on logout for the companion to take to the site
+guildFinder     = { locale, day, period, pace, focus, loot, trial, world, wantsMe },  -- the finder's filters
+recruitAudit    = { gossip, requests, channel, at },   -- the Audit panel's numbers, kept; nothing goes to the site
+probeChannel    = { timer, click, timerSkipped, clickSkipped, heard, joined, left, at },  -- /gos probe channel
+probeChannelOpen = "GOSProbe1234",    -- the running probe's channel: one a /reload cut short is left from it
 ```
 
 ### Field conventions
@@ -306,9 +355,31 @@ GUILD from a current officer (`IsOfficerByName(sender)`); `RX` and `AL` check th
 trust to channel and sender in `Recruitment:ApplyIncoming`. Every legitimate sender of these is
 officer-gated at the source and sends over GUILD. Since #81 `RX`, `AL`, `RR`, every officer
 SyncService domain and the two domains whose handlers check the officer themselves (`alliance`,
-`core.roster`, in `GUILD_ONLY_DOMAINS`) ask for GUILD as well. Who is an officer is the guild's
+`core.roster`, in `GUILD_ONLY_DOMAINS`) ask for GUILD as well. So does `journal` (#205), a member
+domain: its handler keeps an entry only when its subject, localized, is the sender's key. Who is an officer is the guild's
 choice: `officerMaxRank` changes go out stamped on the `guildcfg` domain, and every client keeps
 the newest one an officer sent (#81).
+
+### The recruitment's prefix (ADR-0029, specs/071 in guildos-web)
+
+`ChehulRecruit` on the shared mesh, plain `|`-separated text, and everything arriving goes to `Gossip:Receive` first: what
+nobody routes there (CR2 above all) goes back to `RecruitBeacon`. Forever and retail; Anniversary keeps CR2 alone.
+
+| Message | Goes by | What it is |
+|---|---|---|
+| `CR2\|guild\|faction\|needs\|days\|note\|langs\|focus\|version\|expiry\|author` | GUILD, YELL | The old ad, for clients that predate CR3. Believed as heard, never verified |
+| `CR3\|name\|f\|w\|p\|d\|s\|e\|pc\|l\|fo\|r\|c\|lo\|t\|ct\|u\|v\|x` | WHISPER, GUILD | The full ad, the site's `GosrecrAd`. No removal: it leaves by `x`, cut to 72 hours ahead on the way in. The guild's own only over GUILD from an officer |
+| `CRB\|ad\|version\|guild\|officer` | GUILD, group, YELL | The beacon, every `BEACON_SECONDS`, from every client: presence, one ad in turn, and the sender's guild while it holds that guild's ad |
+| `CRD\|name:v,name:v,...` | WHISPER | A digest, `DIGEST_MAX` pairs: the `DIGEST_NEWEST` newest, then the rest in rotation |
+| `CRG\|name` | WHISPER | Asks for one CR3 |
+| `CRP\|name,name,...` | WHISPER | `PEX_MAX` peers heard lately, read only from who I sent a digest this round |
+| `CRQ\|id\|character\|class\|level\|role\|guild\|note` | WHISPER, GUILD | A request, repeated every 300 seconds while the player is online; over GUILD, a guildmate passing it on |
+| `CRA\|id\|state\|who` | WHISPER, GUILD | The answer: `officer` and `member` say where it got to and do not stop the repetition, `invited` and `declined` end it. Only an officer's word over GUILD closes a row |
+| `CRW\|token\|try` | WHISPER, to myself | The whisper test. The token lives the session, so a late echo still counts |
+
+What a client offers is what it holds of its own faction and region, the guild's own ad in the cache always: the CR3 cache and the
+live ads of the site's list, which is copied into nobody's
+cache. The seal comes from one's own `GOSRECR1` alone, and nothing in a message can turn it on.
 
 ---
 

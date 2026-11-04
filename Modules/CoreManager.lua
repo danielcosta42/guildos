@@ -600,6 +600,8 @@ function CoreManager:AddMember(playerKey, info, coreName)
         role  = info.role  or "rdps",
         note  = info.note  or "",
         src   = info.src or (type(held) == "table" and held.src or nil),
+        -- A reserve stays one through an edit (issue #212); nil is a titular, as every older record.
+        status = info.status or (type(held) == "table" and held.status or nil),
     }
     return true
 end
@@ -687,13 +689,19 @@ function CoreManager:GetComposition(coreName)
     local classPresent = {}
     local total = 0
 
+    -- Titulars only: a reserve is on the core, not in its composition (issue #212).
+    local bench = 0
     for _, m in pairs(members) do
-        total = total + 1
-        local cls = (m.class or "WARRIOR"):upper()
-        classCount[cls] = (classCount[cls] or 0) + 1
-        classPresent[cls] = true
-        local role = m.role or "rdps"
-        if roleCounts[role] ~= nil then roleCounts[role] = roleCounts[role] + 1 end
+        if type(m) == "table" and m.status == "bench" then
+            bench = bench + 1
+        else
+            total = total + 1
+            local cls = (m.class or "WARRIOR"):upper()
+            classCount[cls] = (classCount[cls] or 0) + 1
+            classPresent[cls] = true
+            local role = m.role or "rdps"
+            if roleCounts[role] ~= nil then roleCounts[role] = roleCounts[role] + 1 end
+        end
     end
 
     local coveredBuffs = {}
@@ -722,10 +730,24 @@ function CoreManager:GetComposition(coreName)
 
     return {
         total      = total,
+        bench      = bench,
         classCount = classCount,
         roleCounts = roleCounts,
         buffStatus = buffStatus,
     }
+end
+
+-- The open slots of a core (issue #212): per role, its target for the core's size less the titulars
+-- playing it; the total is what the size still has room for, whatever the roles say.
+function CoreManager:OpenSlots(coreName)
+    local size = self:GetRaidSize(coreName)
+    local T = self:RaidTargets(size)
+    local comp = self:GetComposition(coreName)
+    local out = { total = math.max(0, size - comp.total) }
+    for _, role in ipairs({ "tank", "healer", "mdps", "rdps" }) do
+        out[role] = math.max(0, (T[role] or 0) - (comp.roleCounts[role] or 0))
+    end
+    return out
 end
 
 ----------------------------------------------------------------------
@@ -836,6 +858,7 @@ local function discordRecord(self, key, m)
         role  = self:RoleFor(cls, SITE_ROLES[m.slot] and m.slot or nil, key),
         note  = "",
         src   = "discord",
+        status = m.status == "bench" and "bench" or nil,
     }
 end
 
@@ -918,7 +941,12 @@ local function moveTag(self, coreName, tag, linkAt)
         local old, members = GuildOS.db.cores[from], self:GetMembers(coreName)
         for key, rec in pairs(type(old.members) == "table" and old.members or {}) do
             if type(rec) == "table" and rec.src == "discord" then
-                if type(members[key]) == "table" then members[key].src = "discord" else members[key] = rec end
+                -- Titular or reserve rides with the Discord's record (issue #212).
+                if type(members[key]) == "table" then
+                    members[key].src, members[key].status = "discord", rec.status
+                else
+                    members[key] = rec
+                end
             end
         end
         core.discordWaiting = old.discordWaiting
@@ -929,7 +957,7 @@ local function moveTag(self, coreName, tag, linkAt)
     local list = {}
     for key, rec in pairs(self:GetMembers(coreName)) do
         if type(rec) == "table" and rec.src == "discord" then
-            list[#list + 1] = { key = key, name = rec.name, class = rec.class, slot = rec.role }
+            list[#list + 1] = { key = key, name = rec.name, class = rec.class, slot = rec.role, status = rec.status }
         end
     end
     return list
@@ -971,9 +999,13 @@ function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting)
             if type(rec) ~= "table" then
                 members[key] = discordRecord(self, key, m)
                 added = added + 1
-            elseif rec.src ~= "discord" then
-                rec.src = "discord"
-                adopted = adopted + 1
+            else
+                if rec.src ~= "discord" then
+                    rec.src = "discord"
+                    adopted = adopted + 1
+                end
+                -- Titular or reserve is the Discord's, as who is on the core (issue #212).
+                rec.status = m.status == "bench" and "bench" or nil
             end
         end
     end

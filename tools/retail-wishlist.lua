@@ -195,6 +195,23 @@ for _, e in ipairs(W:GetItemInterest(250001)) do who[e.name] = e.order end
 check(who["Ana-Gallywix"] == 1 and who["Ana-TolBarad"] == 2, "two namesakes wish for the same item apart")
 check(W:ListFor("Ana-Gallywix", "Ana") == gw["ana-gallywix"], "a member's list is found by their key")
 
+-- The last item off a list reaches the guild, and leaves no ghost with 0 items (issue #170).
+W:HandleWishlistBroadcast("Ana-Gallywix", { wishlist = {} }, "GUILD")
+check(gw["ana-gallywix"] == nil, "a guildmate's emptied list is gone from here")
+W:HandleWishlistBroadcast("Ana-Gallywix", { name = "Bob", class = "MAGE", wishlist = { { itemId = 250001, order = 1 } } }, "GUILD")
+local sentBefore = #sent
+W:RemoveFromWishlist(250002)
+check(#sent == sentBefore + 1 and sent[#sent].t == "WL" and #sent[#sent].data.wishlist == 0, "my last item off is told")
+check(gw["chehul-tolbarad"] == nil, "and my own entry goes with it")
+W:BroadcastMyWishlist()
+check(#sent == sentBefore + 1, "an empty list that has been told says nothing again, as at every login")
+W:BroadcastMyWishlist(true)
+check(#sent == sentBefore + 2 and #sent[#sent].data.wishlist == 0, "but the Sync button says it, for whoever was offline")
+gw["old-client"] = { name = "Old-Client", wishlist = {} }
+W:Initialize()
+check(gw["old-client"] == nil, "and an entry with 0 items from an older client goes at the next login")
+W:AddToWishlist(250002, nil, false)
+
 -- ── 3. Delivered: personal loot or an award by trade ──────────────────
 check(not W:IsItemDelivered(250002), "nothing delivered yet")
 GuildOS.db.lootHistory = { { itemId = 250002, playerKey = "Ana-Gallywix", player = "Ana-Gallywix", timestamp = NOW } }

@@ -111,14 +111,10 @@ function Agora:NeedsMe()
 
     if GuildOS:IsOfficer() then
         local tt = GuildOS.TrialTracker
-        if tt and tt.GetActiveTrials and tt.GetDaysRemaining then
-            local n = 0
-            for _, trial in ipairs(tt:GetActiveTrials()) do
-                -- Whole days, rounded down: 0 is less than a day left.
-                local left = tt:GetDaysRemaining(trial.key)
-                if left ~= nil and left <= 0 then n = n + 1 end
-            end
-            if n > 0 then add(urgent, string.format(L["%d trials expiring"], n), "trials") end
+        -- The trials ready to review, the count the login line and the digest give (#249).
+        if tt and tt.CountReady then
+            local n = tt:CountReady()
+            if n > 0 then add(urgent, string.format(L["%d trial(s) ready to review"], n), "trials") end
         end
 
         local gm = GuildOS.GuildManager

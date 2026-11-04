@@ -43,6 +43,10 @@ end
 local L = GuildOS.L
 local WIRE_PREFIX = "GOSROST1:"
 local CORES_PREFIX = "GOSCORE1:"
+local GUILD_PREFIX = "GOSGILD1:"
+local RECRUIT_PREFIX = "GOSRECR1:"
+local RECRUIT_MAX_AGE = 3 * 86400   -- the list is public and asked for every 15 minutes: three days of silence is a companion that stopped
+local BLOCK_MAX_AGE = 7 * 86400   -- the feed is a week long: an older block is a companion that stopped
 
 -- The name somebody from the site is kept, shown and matched by. On retail it is their key,
 -- "Name-Realm" with their own realm: the name alone would invite a namesake on this character's
@@ -290,6 +294,111 @@ function Import:CoresFromInbox()
         end
     end
     return nil
+end
+
+-- The inbox's GOSGILD1 (guildos-web #259): what only the site knows, decoded, or nil when there is
+-- none, it is damaged, it is another guild's or more than a week old, or the companion is off.
+-- It is shown and never run. Forever's: no other game's site sends one.
+function Import:GuildBlock()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #GUILD_PREFIX) == GUILD_PREFIX then
+            -- Decoded once: the window's title asks every few seconds, and the file only changes on a reload.
+            if self._blockRaw ~= v then
+                self._blockRaw, self._blockData = v, unwrap(v:sub(#GUILD_PREFIX + 1), "GOSGILD1")
+            end
+            local data = self._blockData
+            local mine = GetGuildInfo("player")
+            if not data or not mine or type(data.guild) ~= "string" or data.guild:lower() ~= mine:lower() then return nil end
+            -- As what must hold: a date that is NaN or inf is too old to believe, never good for ever.
+            local at = GuildOS.Finite(data.at)
+            if not (at and GetServerTime() - at <= BLOCK_MAX_AGE) then return nil end
+            return data
+        end
+    end
+    return nil
+end
+
+-- The inbox's GOSRECR1 (specs/071 in guildos-web): every guild recruiting in this client's game, public
+-- and written with or without a token, so it is read whether the companion is on in game or not. Decoded
+-- once per string, as the block is. Nil with none, a damaged one, one for the other game (a client folder
+-- can hold the list another install left) or one more than three days old. Raw ads: GuildFinder cleans them.
+function Import:RecruitDirectory()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) ~= "table" then return nil end
+    local game = GuildOS.Client.isRetail and "RETAIL" or "FOREVER"
+    self._recruit = self._recruit or {}
+    for _, v in ipairs(inbox) do
+        if type(v) == "string" and v:sub(1, #RECRUIT_PREFIX) == RECRUIT_PREFIX then
+            if self._recruit[v] == nil then self._recruit[v] = unwrap(v:sub(#RECRUIT_PREFIX + 1), "GOSRECR1") or false end
+            local data = self._recruit[v]
+            local at = data and GuildOS.Finite(data.at)
+            if data and type(data.ads) == "table" and data.game == game
+               and at and GetServerTime() - at <= RECRUIT_MAX_AGE then
+                return data
+            end
+        end
+    end
+    return nil
+end
+
+-- The guild's own recruiting ad out of its GOSGILD1, for the officers' addon to spread: cleaned, and nil
+-- once its own `x` has passed even though the block is good for a week.
+function Import:OwnRecruitAd()
+    local block = self:GuildBlock()
+    local GF = GuildOS.GuildFinder
+    local raw = block and block.recruitAd
+    if type(raw) ~= "table" or not GF then return nil end
+    local ad = GF:Normalize(raw)
+    if not ad or ad.x <= GetServerTime() then return nil end
+    ad.heard, ad.verified = nil, nil
+    return ad
+end
+
+-- The GOSGILD1's joinRequests (specs/071, guildos#245): who asked the guild to take them, on the site or
+-- in the game, and what was decided. The strings are cleaned here; the class, level and role are
+-- checked where they are used. Nil with no block, and an empty list when it holds none.
+function Import:SiteJoinRequests()
+    local block = self:GuildBlock()
+    local GF = GuildOS.GuildFinder
+    local raw = block and block.joinRequests
+    if type(raw) ~= "table" or not GF then return nil end
+    local out = {}
+    for _, r in ipairs(raw) do
+        local character = type(r) == "table" and GF.Text(r.character, 48)
+        local at = type(r) == "table" and GuildOS.Finite(r.at)
+        if character and type(r.id) == "string" and #r.id <= 40 and r.id:match("^[%w_%-]+$")
+           and type(r.status) == "string" and at then
+            out[#out + 1] = { id = r.id, character = character, class = r.class, level = r.level, role = r.role,
+                note = GF.Text(r.note, 120), source = r.source == "addon" and "addon" or "site", status = r.status, at = at }
+        end
+    end
+    return out
+end
+
+-- Text off the network, for a line of ours: nothing in it may open a colour, a link or a texture, and
+-- one line stays one line.
+function Import.Inert(text)
+    return (text:gsub("|", ""):gsub("[\r\n]+", " "))
+end
+
+-- The block's feed, cleaned again.
+function Import:FeedLines()
+    local block = self:GuildBlock()
+    local out = {}
+    for _, item in ipairs(block and type(block.feed) == "table" and block.feed or {}) do
+        if type(item) == "table" and type(item.id) == "string" and type(item.text) == "string" and item.text ~= "" then
+            out[#out + 1] = {
+                id = item.id,
+                type = tostring(item.type),
+                key = type(item.key) == "string" and GuildOS:LocalMemberKey(item.key) or nil,
+                at = tonumber(item.at) or 0,
+                text = Import.Inert(item.text),
+            }
+        end
+    end
+    return out
 end
 
 ----------------------------------------------------------------------

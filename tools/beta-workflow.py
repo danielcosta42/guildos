@@ -6,16 +6,23 @@ bash, on LF copies of GuildOS.toc and Core/Config.lua committed in a temporary g
 repository (what a CI checkout has); its release step runs against a stub gh. The
 README section and .pkgmeta are checked for what testers and the zip rely on.
 
+The stable GitHub Release that the desktop companion installs from (the site's specs/070)
+lives in publish.yml beside the store upload, so it is checked here as well: its step runs
+for real against real zips and the same stub gh, and the store job has to come out of it
+exactly as it went in.
+
     python tools/beta-workflow.py
 
-Needs PyYAML, bash and git. Exits 1 on the first failed check.
+Needs PyYAML, bash, git and unzip. Exits 1 on the first failed check.
 """
+import hashlib
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 import yaml
 
@@ -241,6 +248,123 @@ check(pub_packager[0].get("with", {}).get("args", "") == "" and "-g " not in pub
       "and names no flavour, so the game versions come from the TOC")
 check(pub_steps[0].get("with", {}).get("persist-credentials") is False,
       "and its checkout stores no token in .git/config either")
+
+# ── The stable GitHub Release the companion installs from ───────────────
+# It must not be able to break the stores. So it is a job of its own that starts after them, and the
+# store job, which is what actually ships the addon, is checked to be exactly what it was.
+store = pub["jobs"]["publish"]
+check(list(pub["jobs"]) == ["publish", "github-release"], "publish.yml is the store job and the GitHub Release job")
+check([s.get("name") for s in store["steps"]] == ["Checkout", "Package and publish to CurseForge & Wago"],
+      "the store job is the two steps it always was")
+check(set(store) == {"name", "runs-on", "steps"}, "with no permissions, condition or dependency added to it")
+for s, keys in zip(store["steps"], ({"name", "uses", "with"}, {"name", "uses", "with", "env"})):
+    check(set(s) == keys, "step %r keeps its keys: a continue-on-error would call a failed upload a success" % s.get("name"))
+check(set(pub) == {"name", "on", "jobs"}, "and no token widened over the whole workflow")
+check(pub_packager[0].get("env") == {"CF_API_KEY": "${{ secrets.CF_API_KEY }}",
+                                     "WAGO_API_TOKEN": "${{ secrets.WAGO_API_TOKEN }}"},
+      "its upload is given the store keys it always had")
+
+ghjob = pub["jobs"]["github-release"]
+check(ghjob.get("needs") == "publish", "the GitHub Release starts after the stores, never beside them")
+check(ghjob.get("permissions") == {"contents": "write"}, "and its token can write releases and nothing more")
+check(ghjob.get("if") == "startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')",
+      "and it is skipped for anything but a tag with no pre-release suffix: a beta never becomes the latest release")
+check([s.get("name") for s in ghjob["steps"]] == ["Checkout", "Package without uploading anywhere", "Create the GitHub release"],
+      "it checks out, packages and releases")
+ghtext = yaml.safe_dump(ghjob)
+for key in ("CF_API_KEY", "WAGO_API_TOKEN"):
+    check(key not in ghtext, "the job with the write token never sees %s" % key)
+check(ghjob["steps"][0].get("with", {}).get("persist-credentials") is False,
+      "and keeps it out of .git/config, away from the packager")
+ghpack = step(ghjob, "Package without uploading anywhere")
+check(ghpack.get("uses") == "BigWigsMods/packager@" + PIN and ghpack.get("with") == {"args": "-d"} and "env" not in ghpack,
+      "the same pinned packager, in -d mode, with no store credentials: nothing here can upload to a store")
+ghstep = step(ghjob, "Create the GitHub release")
+check(ghstep.get("env") == {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}, "the release step alone holds the token")
+STABLE_NOTES = ("Stable build, the same version as on CurseForge and Wago. "
+                "The GuildOS companion installs and updates the addon from this release.")
+GOOD_ZIP = {"GuildOS/GuildOS.toc": "## Version: 1.4.0\n", "GuildOS/Core/Core.lua": "-- core\n"}
+
+
+def run_stable(tag, zips, gh_exit=0):
+    """The release step under bash, as on the runner, over `zips`: {file name: entries, or raw bytes}."""
+    work = tempfile.mkdtemp(prefix="guildos-stable-")
+    try:
+        os.makedirs(os.path.join(work, ".release"))
+        os.makedirs(os.path.join(work, "bin"))
+        for name, content in zips.items():
+            path = os.path.join(work, ".release", name)
+            if isinstance(content, bytes):
+                with open(path, "wb") as fh:
+                    fh.write(content)
+            else:
+                with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                    for entry, text in content.items():
+                        z.writestr(entry, text)
+        log = os.path.join(work, "gh.log")
+        with open(os.path.join(work, "bin", "gh"), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write('#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" @@ >> "$GH_LOG"\nexit "${GH_EXIT:-0}"\n')
+        os.chmod(os.path.join(work, "bin", "gh"), 0o755)
+        env = dict(os.environ, GITHUB_REF_NAME=tag, GH_LOG=log, GH_TOKEN="test", GH_EXIT=str(gh_exit))
+        env["PATH"] = os.path.join(work, "bin") + os.pathsep + env.get("PATH", "")
+        ran = subprocess.run([bash, "-e", "-c", ghstep["run"]], cwd=work, env=env, capture_output=True, text=True)
+        calls = []
+        if os.path.exists(log):
+            with open(log, encoding="utf-8") as fh:
+                calls = [c.strip("\n").split("\n") for c in fh.read().split("@@\n") if c.strip("\n")]
+        made = {}
+        for name in os.listdir(work):
+            if name.startswith("GuildOS-"):
+                with open(os.path.join(work, name), "rb") as fh:
+                    made[name] = fh.read()
+        source = None
+        if len(zips) == 1:
+            with open(os.path.join(work, ".release", next(iter(zips))), "rb") as fh:
+                source = fh.read()
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return ran, calls, made, source
+
+
+for tag in ("v1.4.0", "v12.30.7"):
+    ran, calls, made, source = run_stable(tag, {"GuildOS-%s.zip" % tag: GOOD_ZIP})
+    zip_name, sha_name = "GuildOS-%s.zip" % tag, "GuildOS-%s.zip.sha256" % tag
+    check(ran.returncode == 0, "%s: the release step runs cleanly: %s" % (tag, ran.stderr.strip()))
+    check(calls == [["release", "create", tag, zip_name, sha_name, "--verify-tag",
+                     "--title", "GuildOS %s" % tag, "--notes", STABLE_NOTES]],
+          "%s: gh creates one normal release for the tag that exists, with the two assets, named exactly: %r" % (tag, calls))
+    check(set(made) == {zip_name, sha_name}, "%s: the two files are the assets, named by the tag: %r" % (tag, sorted(made)))
+    check(made[zip_name] == source, "%s: the zip is the packager's, byte for byte" % tag)
+    check(made[sha_name] == hashlib.sha256(source).hexdigest().encode("ascii"),
+          "%s: the .sha256 is the zip's hash in hex and nothing else, no name and no newline: %r" % (tag, made[sha_name]))
+    failed, _, _, _ = run_stable(tag, {"GuildOS-%s.zip" % tag: GOOD_ZIP}, gh_exit=1)
+    check(failed.returncode != 0, "%s: a failing gh fails the step, so a missing release shows in the run" % tag)
+
+# Named by the tag, whatever the packager called its file: a flavour suffix in the file name must not
+# reach the asset the companion looks for.
+ran, calls, made, _ = run_stable("v1.4.0", {"GuildOS-v1.4.0-forever.zip": GOOD_ZIP})
+check(ran.returncode == 0 and "GuildOS-v1.4.0.zip" in calls[0] and set(made) == {"GuildOS-v1.4.0.zip", "GuildOS-v1.4.0.zip.sha256"},
+      "the asset is named by the tag, not by the packager")
+
+# Nothing goes out wrong. Each of these reaches gh not at all: the companion would refuse the zip, or a
+# beta would become the latest release.
+outside = dict(GOOD_ZIP, **{"Other/evil.lua": "x"})
+for tag, zips, what in (
+    ("v1.4.0-beta.1", {"GuildOS-v1.4.0-beta.1.zip": GOOD_ZIP}, "a beta tag"),
+    ("v1.4.0-rc.1", {"GuildOS-v1.4.0-rc.1.zip": GOOD_ZIP}, "a release candidate"),
+    ("main", {"GuildOS-main.zip": GOOD_ZIP}, "a branch"),
+    ("v1.4", {"GuildOS-v1.4.zip": GOOD_ZIP}, "a tag that is not X.Y.Z"),
+    ("v1.4.0", {}, "no zip"),
+    ("v1.4.0", {"GuildOS-a.zip": GOOD_ZIP, "GuildOS-b.zip": GOOD_ZIP}, "two zips"),
+    ("v1.4.0", {"GuildOS-v1.4.0.zip": b""}, "an empty file"),
+    ("v1.4.0", {"GuildOS-v1.4.0.zip": b"not a zip"}, "a file that is no zip"),
+    ("v1.4.0", {"GuildOS-v1.4.0.zip": outside}, "an entry outside GuildOS/"),
+    ("v1.4.0", {"GuildOS-v1.4.0.zip": {"GuildOS-extra/x.lua": "x", "GuildOS/GuildOS.toc": "x"}}, "a folder that only starts like GuildOS"),
+    ("v1.4.0", {"GuildOS-v1.4.0.zip": {"GuildOS.toc": "x"}}, "a zip with no GuildOS folder"),
+    ("v1.4.0", {"GuildOS-v1.4.0.zip": {"GuildOS/Core/Core.lua": "x"}}, "a GuildOS folder with no TOC"),
+):
+    ran, calls, _, _ = run_stable(tag, zips)
+    check(ran.returncode != 0 and calls == [], "%s fails the step before gh: rc=%s, calls=%r" % (what, ran.returncode, calls))
 
 # ── The zip and the README ──────────────────────────────────────────────
 pkgmeta = yaml.safe_load(read(".pkgmeta"))

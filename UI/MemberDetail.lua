@@ -35,8 +35,9 @@ if GuildOS.Client.isRetail then
 end
 
 -- The stat cells a member's sheet draws, as { label, text, color }: the primary entry becomes the
--- stat the member sent (left out when they sent none), a rating reads in percent. A value from a
--- guildmate's broadcast that is not a number shows as 0 rather than stopping the sheet (issue #184).
+-- stat the member sent (left out when they sent none), a rating reads in percent. A value the client
+-- hid, or one from a guildmate's broadcast that is not a number, shows as "—": it is not a 0 (issue #170),
+-- and it does not stop the sheet (issue #184).
 function GuildOS:MemberStatCells(stats)
     local out = {}
     if type(stats) ~= "table" then return out end
@@ -44,8 +45,8 @@ function GuildOS:MemberStatCells(stats)
         local label, key = s.label, s.key
         if s.primary then label, key = PRIMARY_LABEL[stats.primary], stats.primary end
         if label then
-            local v = tonumber(stats[key]) or 0
-            out[#out + 1] = { label = label, text = s.pct and string.format("%.1f%%", v) or tostring(v), color = s.color }
+            local v = tonumber(stats[key])
+            out[#out + 1] = { label = label, text = v and (s.pct and string.format("%.1f%%", v) or tostring(v)) or "—", color = s.color }
         end
     end
     return out
@@ -280,7 +281,9 @@ function PopulateDetail(frame, data)
     frame.classIconFrame:SetBackdropBorderColor(cr, cg, cb, 0.9)
 
     -- Name
-    frame.nameText:SetText(data.name)
+    -- A founding member's scroll and since when (WoW: Forever, issue #209).
+    local founder = GuildOS.Founding and data.key and GuildOS.Founding:Founders()[data.key]
+    frame.nameText:SetText(founder and (data.name .. " " .. GuildOS.Founding.BADGE) or data.name)
     frame.nameText:SetTextColor(cr, cg, cb)
 
     -- Info line
@@ -296,6 +299,9 @@ function PopulateDetail(frame, data)
     -- currently broadcasting on the mesh (e.g. "· PartyLens"). Empty if none.
     if GuildOS.Mesh then
         infoLine = infoLine .. GuildOS.Mesh:PresenceSuffix(data.name)
+    end
+    if founder then
+        infoLine = infoLine .. "  |  " .. string.format(L["Founding member · joined %s"], date("!%Y-%m-%d", founder.joinedAt))
     end
     frame.infoText:SetText(infoLine)
 
@@ -665,7 +671,7 @@ function PopulateDetail(frame, data)
             GuildOS:ApplyFont(lastStr, 10)
             lastStr:SetPoint("TOPLEFT", 15, yOff - 5)
             lastStr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            lastStr:SetText(L["Last raid: "] .. date("%m/%d/%Y", att.lastRaid))
+            lastStr:SetText(L["Last raid: "] .. GuildOS:DateText(att.lastRaid, "/%Y"))
             lastStr:Show()
             yOff = yOff - 20
         end
@@ -694,7 +700,7 @@ function PopulateDetail(frame, data)
             -- GetItemInfo accepts itemLink directly, so no need to parse the ID.
             local localItemName = GuildOS.Compat.GetItemInfo(entry.itemLink or entry.itemId or 0)
             local displayName = localItemName or entry.itemName or "?"
-            local dateStr = entry.timestamp and (" |cffAAAAAA" .. date("%m/%d", entry.timestamp) .. "|r") or ""
+            local dateStr = entry.timestamp and (" |cffAAAAAA" .. GuildOS:DateText(entry.timestamp) .. "|r") or ""
             local raidStr = entry.raid and entry.raid ~= "" and (" |cff888888(" .. entry.raid .. ")|r") or ""
             itemStr:SetText(string.format("|cff%02x%02x%02x%s|r%s%s",
                 qColor.r * 255, qColor.g * 255, qColor.b * 255,
@@ -720,8 +726,12 @@ function PopulateDetail(frame, data)
             yOff = yOff - 10
             local daysRem = GuildOS.TrialTracker:GetDaysRemaining(playerKey)
             local daysSince = GuildOS.TrialTracker:GetDaysSinceStart(playerKey)
-            local trialStr = L["TRIAL STATUS  --  "] .. (trial.status or "?"):upper()
-            if daysRem then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
+            -- The state worked out from the start and the guild's length, not the word stored (#249).
+            local state = GuildOS.TrialTracker:GetState(playerKey)
+            local stateText = ({ trial = L["TRIAL"], review = L["READY TO REVIEW"], left = L["LEFT THE GUILD"],
+                approved = L["APPROVED"], denied = L["DENIED"] })[state] or tostring(trial.status or "?"):upper()
+            local trialStr = L["TRIAL STATUS  --  "] .. stateText
+            if daysRem and state == "trial" then trialStr = trialStr .. "  (" .. daysRem .. L[" days left)"] end
             yOff = CreateSectionHeader(child, trialStr, yOff, contentWidth)
 
             local infoStr = _pFS(child)
@@ -777,7 +787,7 @@ function PopulateDetail(frame, data)
                     noteFS:SetWidth(contentWidth - 40)
                     noteFS:SetJustifyH("LEFT")
                     noteFS:SetWordWrap(true)
-                    local dateStr = note.timestamp and date("%m/%d %H:%M", note.timestamp) or ""
+                    local dateStr = note.timestamp and GuildOS:DateText(note.timestamp, " %H:%M") or ""
                     noteFS:SetText(format("|cffAAAAAA[%s %s]|r %s", note.author or "?", dateStr, note.text or ""))
                     noteFS:Show()
                     yOff = yOff - (noteFS:GetStringHeight() + 4)
@@ -869,7 +879,7 @@ function PopulateDetail(frame, data)
             noteStr:SetWidth(contentWidth - 30)
             noteStr:SetJustifyH("LEFT")
             noteStr:SetWordWrap(true)
-            local dateStr = note.timestamp and date("%m/%d", note.timestamp) or ""
+            local dateStr = note.timestamp and GuildOS:DateText(note.timestamp) or ""
             noteStr:SetText("|cffAAAAAA[" .. (note.author or "?") .. " " .. dateStr .. "]|r " .. (note.text or ""))
             noteStr:Show()
             yOff = yOff - (noteStr:GetStringHeight() + 4)

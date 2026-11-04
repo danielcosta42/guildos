@@ -220,7 +220,6 @@ function Professions:ReadNative()
     local now = GetServerTime()
     if now - (self.nativeAt or 0) < NATIVE_EVERY then return end
     self.nativeAt = now
-    self:DropDeparted()
     local cat = catalog()
     -- Protected: the roster's fields can be secret in a chat lockdown.
     local ok, members = pcall(Compat.GuildMemberProfessions)
@@ -250,27 +249,6 @@ function Professions:ReadNative()
                 db[key] = { src = "native", ts = now, profs = profs }
                 self:Changed(key)
             end
-        end
-    end
-end
-
--- Members no longer on the guild roster lose their record, so coverage and crafters count only
--- the guild. Nothing happens while the roster has not loaded (it reads as empty then).
-function Professions:DropDeparted()
-    local n = GetNumGuildMembers() or 0
-    if n == 0 then return end
-    -- The player's own record always stays: were the own key ever to differ from the roster's
-    -- (a surname the client did not give), dropping it would publish an empty summary.
-    local present = { [self.OwnKey()] = true }
-    for i = 1, n do
-        local full = GetGuildRosterInfo(i)
-        local key = full and self.KeyFor(full)
-        if key then present[key] = true end
-    end
-    for key in pairs(GuildOS.db.professions) do
-        if not present[key] then
-            GuildOS.db.professions[key] = nil
-            self:Changed(key)
         end
     end
 end

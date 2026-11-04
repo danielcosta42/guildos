@@ -64,6 +64,10 @@ local function BuildReadySub(panel)
     -- Anniversary and retail (issue #187): where the game has neither, there is nothing to cycle
     -- through or to count (issue #184).
     local hasAttune, hasCons = GuildOS.AttunementTracker ~= nil, GuildOS.ConsumableChecker ~= nil
+    -- WoW: Forever has no attunements: its column is the level, the door to a raid (issue #207).
+    local forever = not GuildOS.Client.isAnniversary and not GuildOS.Client.isRetail
+    panel.statusIdx = 0   -- 0 = every status; 1..N = one of them (issue #220)
+    local STATUSES = { { "ready", L["ready"] }, { "warn", L["check"] }, { "notready", L["not ready"] } }
 
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -4)
@@ -93,6 +97,15 @@ local function BuildReadySub(panel)
         consBtn:SetScript("OnClick", function() GuildOS:ShowConsumablePopup() end)
         leftmost = consBtn
     end
+    -- Forever's filters: a core and a status, each cycled like the target above (issue #220).
+    local coreBtn, statusBtn
+    if forever then
+        statusBtn = UI:CreateButton(panel, L["Status: All"], 120, 20)
+        statusBtn:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -6, 0)
+        coreBtn = UI:CreateButton(panel, L["Core: All"], 130, 20)
+        coreBtn:SetPoint("TOPRIGHT", statusBtn, "TOPLEFT", -6, 0)
+        leftmost = coreBtn
+    end
     -- A narrow window cuts the summary short rather than lay the buttons over it.
     summary:SetPoint("TOPRIGHT", leftmost, "TOPLEFT", -8, -2)
     summary:SetWordWrap(false)
@@ -110,8 +123,17 @@ local function BuildReadySub(panel)
     hcol(L["STATUS"], 160)
     hcol(L["iLVL"], 250)
     if hasAttune then hcol(L["ATTUNE"], 310) end
+    if forever then hcol(L["LEVEL"], 310) end
     hcol(L["ENCHANTS"], 400)
     if hasCons then hcol(L["CONSUMES"], 510) end
+    if forever then
+        hcol(L["CORE"], 470)
+        hcol(L["ROLE"], 580)
+    end
+
+    local foot = UI:CreateText(panel, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    foot:SetPoint("BOTTOMLEFT", 4, 2)
+    foot:SetJustifyH("LEFT")
 
     local listHolder = CreateFrame("Frame", nil, panel)
     listHolder:SetPoint("TOPLEFT", 0, -46)
@@ -132,6 +154,26 @@ local function BuildReadySub(panel)
         summary:SetText(string.format(L["%d ready  |  %d need attention  |  %d not ready"],
             c.ready, c.warn, c.notready))
 
+        if forever then
+            local names = GuildOS.CoreManager and GuildOS.CoreManager:GetSortedNames() or {}
+            if panel.coreIdx > #names then panel.coreIdx = 0 end
+            panel.coreName = names[panel.coreIdx]
+            local status = STATUSES[panel.statusIdx]
+            coreBtn.label:SetText(panel.coreName and (L["Core: "] .. panel.coreName) or L["Core: All"])
+            statusBtn.label:SetText(status and (L["Status: "] .. status[2]) or L["Status: All"])
+
+            GuildOS.Readiness:WithSeats(rows)
+            -- The footer reads the whole guild: a status filter hides rows, not what a core has.
+            local lines = {}
+            for _, x in ipairs(GuildOS.Readiness:Compositions(rows, panel.coreName)) do
+                lines[#lines + 1] = string.format(L["%s: tanks %d/%d  |  healers %d/%d  |  dps %d/%d"],
+                    x.core, x.tanks, x.wantTanks, x.healers, x.wantHealers, x.dps, x.wantDps)
+            end
+            foot:SetText(table.concat(lines, "\n"))
+            listHolder:SetPoint("BOTTOMRIGHT", 0, #lines > 0 and #lines * 14 + 6 or 0)
+            rows = GuildOS.Readiness.Filtered(rows, panel.coreName, status and status[1] or nil)
+        end
+
         local yOff = 0
         for idx, r in ipairs(rows) do
             local row = MakeRow(content, yOff, idx)
@@ -144,6 +186,8 @@ local function BuildReadySub(panel)
             stFS:SetPoint("LEFT", 160, 0)
             if r.status == "ready" then
                 stFS:SetText(ICON_DONE .. " |cff4CFF4C" .. L["ready"] .. "|r")
+            elseif r.status == "notready" and r.reason == "level" then
+                stFS:SetText(ICON_NONE .. " |cffFF5555" .. L["Level"] .. " " .. (r.level or 0) .. "|r")
             elseif r.status == "notready" then
                 stFS:SetText(ICON_NONE .. " |cffFF5555" .. L["not attuned"] .. "|r")
             elseif r.status == "warn" then
@@ -152,10 +196,16 @@ local function BuildReadySub(panel)
                 stFS:SetText("|cff808080\226\128\147|r")
             end
 
-            local ilvlFS = UI:CreateText(row, r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
+            -- A 60 with no addon data is ready by level only, said where its item level would be (#207).
+            local ilvlFS = UI:CreateText(row, r.levelOnly and L["level only"] or r.ilvl > 0 and tostring(r.ilvl) or "\226\128\148",
                 10, C.silver.r, C.silver.g, C.silver.b)
             ilvlFS:SetPoint("LEFT", 250, 0)
+            ilvlFS:SetWidth(56); ilvlFS:SetWordWrap(false); ilvlFS:SetJustifyH("LEFT")
 
+            if forever then
+                local lvlFS = UI:CreateText(row, tostring(r.level or 0), 10, C.silver.r, C.silver.g, C.silver.b)
+                lvlFS:SetPoint("LEFT", 310, 0)
+            end
             if hasAttune then
                 local attColor = (r.attTotal > 0 and r.attDone == r.attTotal) and C.green or C.gold
                 if r.targetOk == false then attColor = C.red elseif r.targetOk == true then attColor = C.green end
@@ -170,6 +220,22 @@ local function BuildReadySub(panel)
             else enchTxt, ec = "OK", C.green end
             local enchFS = UI:CreateText(row, enchTxt, 10, ec.r, ec.g, ec.b)
             enchFS:SetPoint("LEFT", 400, 0)
+
+            if forever then
+                -- The seat in the chosen core, or the first, with how many more.
+                local seat = r.seats[1]
+                for _, s in ipairs(r.seats) do
+                    if s.core == panel.coreName then seat = s end
+                end
+                local more = (#r.seats > 1 and not panel.coreName) and (" +" .. (#r.seats - 1)) or ""
+                local coreFS = UI:CreateText(row, seat and (seat.core .. more) or "\226\128\148", 10, C.silver.r, C.silver.g, C.silver.b)
+                coreFS:SetPoint("LEFT", 470, 0)
+                coreFS:SetWidth(104); coreFS:SetWordWrap(false); coreFS:SetJustifyH("LEFT")
+                local rc = (seat and seat.main) and C.silver or C.textDim
+                local roleName = seat and GuildOS.CoreManager.ROLE_LABELS[seat.role]
+                local roleFS = UI:CreateText(row, roleName or "\226\128\148", 10, rc.r, rc.g, rc.b)
+                roleFS:SetPoint("LEFT", 580, 0)
+            end
 
             if hasCons then
                 local consTxt, cc
@@ -188,6 +254,18 @@ local function BuildReadySub(panel)
             empty:SetPoint("TOPLEFT", 4, -4)
         end
         content:SetHeight(math.max(1, yOff))
+    end
+
+    if forever then
+        panel.coreIdx = 0
+        coreBtn:SetScript("OnClick", function()
+            panel.coreIdx = panel.coreIdx + 1
+            refresh()
+        end)
+        statusBtn:SetScript("OnClick", function()
+            panel.statusIdx = (panel.statusIdx + 1) % (#STATUSES + 1)
+            refresh()
+        end)
     end
 
     if targetBtn then
@@ -411,6 +489,46 @@ end
 ----------------------------------------------------------------------
 -- SYNC sub-panel — addon adoption / version / last sync
 ----------------------------------------------------------------------
+
+-- The recruitment's numbers as lines of text: ChehulGossip:Audit() has them and keeps a copy in
+-- GuildOSDB. Whatever it lacks reads as zero, and one that raises shows nothing: the panel never falls
+-- over a counter.
+local function RecruitLines()
+    local gossip = GuildOS.ChehulGossip
+    if GuildOS.Client.isAnniversary or not (gossip and gossip.Audit) then return nil end
+    local ok, a = pcall(gossip.Audit, gossip)
+    if not ok or type(a) ~= "table" then return nil end
+    -- A value an old or damaged save holds wrong costs the tab its line, never the tab.
+    local built, lines = pcall(function()
+        local g, r, ch = a.gossip or {}, a.requests or {}, a.channel
+        local d = type(r.dropped) == "table" and r.dropped or {}
+        -- Tried and refused, tried and taken, or never tried (the channel had no number yet): three things.
+        local function sent(v, skipped)
+            if v == nil then return skipped and L["not tried"] or L["no"] end
+            return v and L["yes"] or L["no"]
+        end
+        local function yn(v) return v and L["yes"] or L["no"] end
+        local out = {
+            string.format(L["rounds %d  -  ads in %d, out %d  -  peers %d  -  dropped %d"],
+                g.rounds or 0, g.adsIn or 0, g.adsOut or 0, g.peers or 0, g.dropped or 0),
+            string.format(L["Whisper test: %s"], g.whisper or L["no spelling came back: gossip and requests do not whisper"]),
+            string.format(L["requests: %d open  -  asked %d, delivered %d  -  invites %d, confirmed by the game %d  -  dropped: name %d, guild %d"],
+                r.open or 0, r.asked or 0, r.delivered or 0, r.invites or 0, r.confirmed or 0, d.name or 0, d.guild or 0),
+            string.format(L["Senders refused as officers: %d"], g.officerRefused or 0),
+        }
+        if type(ch) == "table" then
+            local h = type(ch.heard) == "table" and ch.heard or {}
+            out[#out + 1] = string.format(L["Channel probe: command sent %s, timer sent %s  -  heard back: command %s, timer %s"],
+                sent(ch.click, ch.clickSkipped), sent(ch.timer, ch.timerSkipped), yn(h.click), yn(h.timer))
+        else
+            out[#out + 1] = L["Channel probe: not run"]
+        end
+        return out
+    end)
+    if not built then return nil end
+    return lines
+end
+
 local function BuildSyncSub(panel)
     local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
     summary:SetPoint("TOPLEFT", 4, -6)
@@ -450,6 +568,16 @@ local function BuildSyncSub(panel)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSAuditSyncScroll")
 
+    -- /gos probe channel (specs/071-o-recrutamento). Made once; the list clears its children and the
+    -- refresh puts it back under the recruitment lines.
+    local probeBtn = UI:CreateButton(content, L["Probe channel"], 140, 20)
+    probeBtn:SetScript("OnClick", function()
+        if not GuildOS.Probe then return end
+        GuildOS.Probe:RunChannel()
+        -- The verdict comes CHANNEL_WAIT seconds in; a second later the counters take it up here.
+        C_Timer.After(GuildOS.Probe.CHANNEL_WAIT + 1, function() if refresh and panel:IsShown() then refresh() end end)
+    end)
+
     refresh = function()
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
@@ -464,6 +592,26 @@ local function BuildSyncSub(panel)
         end
 
         local yOff = 0
+
+        ------------------------------------------------------------------
+        -- The recruitment: the gossip's rounds, the requests, the whisper test and the channel probe.
+        ------------------------------------------------------------------
+        local lines = RecruitLines()
+        probeBtn:Hide()
+        if lines then
+            local head = UI:CreateText(content, L["Recruitment"], 10, C.gold.r, C.gold.g, C.gold.b)
+            head:SetPoint("TOPLEFT", 8, -yOff)
+            yOff = yOff + 15
+            for _, line in ipairs(lines) do
+                local fs = UI:CreateText(content, line, 9, C.silver.r, C.silver.g, C.silver.b)
+                fs:SetPoint("TOPLEFT", 8, -yOff)
+                yOff = yOff + 14
+            end
+            probeBtn:ClearAllPoints()
+            probeBtn:SetPoint("TOPLEFT", 8, -(yOff + 2))
+            probeBtn:Show()
+            yOff = yOff + 32
+        end
 
         ------------------------------------------------------------------
         -- Alliance diagnostics. A cross-guild sync with no instrumentation

@@ -14,9 +14,10 @@ local TTL_MIN     = 1800   -- 30 minutes, the shortest duration the UI offers
 local TTL_MAX     = 7200   -- 120 minutes, the longest duration the UI offers
 local NOTE_MAX    = 60
 local ENTRY_COOLDOWN = 5   -- accept at most one entry per sender per 5s
+local GUILD_LINE_COOLDOWN = 300   -- at most one line in guild chat per 5 minutes
 
-LFGBoard.DEFAULTS = { notify = false, lastRole = "ANY", lastNote = "", lastTtl = DEFAULT_TTL,
-                      allianceScope = false }
+LFGBoard.DEFAULTS = { notify = true, postToGuild = true, lastRole = "ANY", lastNote = "",
+                      lastTtl = DEFAULT_TTL, allianceScope = false }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
 
 function LFGBoard:Initialize()
@@ -24,6 +25,11 @@ function LFGBoard:Initialize()
     GuildOS.db.lfgPrefs = GuildOS.db.lfgPrefs or {}
     for k, v in pairs(self.DEFAULTS) do
         if GuildOS.db.lfgPrefs[k] == nil then GuildOS.db.lfgPrefs[k] = v end
+    end
+    -- Off was the default until #243, and a default is saved, so changing it above reaches nobody
+    -- who has ever logged in. Once, for everybody: off by choice and off by default look the same.
+    if not GuildOS.db.lfgPrefs.notifyMigrated then
+        GuildOS.db.lfgPrefs.notify, GuildOS.db.lfgPrefs.notifyMigrated = true, true
     end
     self._cd = self._cd or {}
     self:Prune()
@@ -290,14 +296,16 @@ local function myKey()
 end
 
 -- Returns the stored entry so callers print exactly what was published
--- (sanitized note, clamped ttl) instead of what they passed in.
-function LFGBoard:SetAvailable(role, note, ttl)
+-- (sanitized note, clamped ttl) instead of what they passed in. `toGuild` is the board's box: the
+-- slash command never speaks in guild chat, where nobody who typed it agreed to be heard.
+function LFGBoard:SetAvailable(role, note, ttl, toGuild)
     note = GuildOS:SanitizeUserText(note, NOTE_MAX)
     ttl = self:_ClampTtl(ttl or GuildOS.db.lfgPrefs.lastTtl or DEFAULT_TTL)
     role = self:_SanitizeRole(role or GuildOS.db.lfgPrefs.lastRole or "ANY")
     local entry = { role = role, note = note, ts = GetServerTime(), ttl = ttl }
     GuildOS.db.lfgBoard[myKey()] = entry
     GuildOS.db.lfgPrefs.lastRole, GuildOS.db.lfgPrefs.lastNote, GuildOS.db.lfgPrefs.lastTtl = role, note, ttl
+    if toGuild then self:_SayInGuild(role, note) end
     if GuildOS.CommSystem then
         GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
             LibSerialize:Serialize({ role = role, note = note, ttl = ttl }))
@@ -390,6 +398,19 @@ local function roleDisplay(role)
     if role == "HEALER" then return L["Healer"] end
     if role == "DPS" then return L["DPS"] end
     return L["Any"]
+end
+
+-- The post in guild chat, which is what reaches somebody with the board closed, or with no addon
+-- at all (#243). At most one every five minutes, saved so a /reload does not skip it, because taking
+-- a post down and putting it back is one click each. The addon's notice goes out regardless, even if
+-- it says the same thing: a line can be dropped with no error (a rank that may not speak), and not
+-- everybody shows guild chat, so nothing here can know the line reached anyone.
+function LFGBoard:_SayInGuild(role, note)
+    local prefs, now = GuildOS.db.lfgPrefs, GetServerTime()
+    if not IsInGuild() or now - (prefs.lastGuildLine or 0) < GUILD_LINE_COOLDOWN then return end
+    local line = role == "ANY" and L["[Guild OS] LFG"] or string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
+    if note ~= "" then line = line .. ": " .. note end
+    if GuildOS.Compat.SendChatMessage(line, "GUILD") then prefs.lastGuildLine = now end
 end
 
 local function durationDisplay(seconds)
@@ -515,7 +536,8 @@ function LFGBoard:Show()
             if LFGBoard:AmAvailable() then
                 LFGBoard:ClearAvailable()
             else
-                LFGBoard:SetAvailable(roleBtn:GetValue(), noteBox:GetText(), durationBtn:GetValue())
+                LFGBoard:SetAvailable(roleBtn:GetValue(), noteBox:GetText(), durationBtn:GetValue(),
+                    GuildOS.db.lfgPrefs.postToGuild)
             end
         end)
         f.actionBtn = actionBtn
@@ -530,6 +552,13 @@ function LFGBoard:Show()
         local countText = UI:CreateText(f, "", 11, C.silver.r, C.silver.g, C.silver.b)
         countText:SetPoint("TOPRIGHT", -16, -114)
         f.countText = countText
+
+        -- On the row of the count, where the longest translation still has the width: beside the
+        -- action button it would run under it.
+        local chatCb = UI:CreateCheckbox(f, L["Also post in guild chat"], 18)
+        chatCb:SetPoint("TOPLEFT", 12, -112)
+        chatCb.checkbox:SetChecked(GuildOS.db.lfgPrefs.postToGuild and true or false)
+        chatCb.checkbox.onChanged = function(_, checked) GuildOS.db.lfgPrefs.postToGuild = checked and true or false end
 
         local hPlayer = UI:CreateText(f, L["PLAYER"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
         hPlayer:SetPoint("TOPLEFT", 16, -132)

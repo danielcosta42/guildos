@@ -488,7 +488,7 @@ local function BuildLogSub(panel)
         for idx, e in ipairs(entries) do
             local row = MakeRow(content, yOff, idx)
 
-            local whenFS = UI:CreateText(row, date("%m/%d %H:%M", e.timestamp or 0), 9, C.textDim.r, C.textDim.g, C.textDim.b)
+            local whenFS = UI:CreateText(row, GuildOS:DateText(e.timestamp or 0, " %H:%M"), 9, C.textDim.r, C.textDim.g, C.textDim.b)
             whenFS:SetPoint("LEFT", 8, 0)
 
             local meta = ACTION_LABELS[e.action] or { txt = e.action or "?", color = "silver" }
@@ -647,7 +647,7 @@ local function BuildBanSub(panel)
                     expTxt = L["(expired)"]
                     nr, ng, nb = C.silver.r, C.silver.g, C.silver.b
                 else
-                    expTxt = date("%m/%d/%y", e.expiry)
+                    expTxt = GuildOS:DateText(e.expiry, "/%y")
                 end
                 cell(e.name or "?", 4, 148, y, nr, ng, nb)
                 cell(e.reason or "", 156, 176, y, C.text.r, C.text.g, C.text.b)

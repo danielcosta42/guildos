@@ -183,6 +183,28 @@ check(GuildOS.db.trials[mine("Cherry Arrow")].status == "active", "forever: an o
 GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 1, roles = {} } }))
 check(GuildOS.db.raiders[mine("Cherry Arrow")] and GuildOS.db.raiders[theirs("Cherry Arrow")] == nil,
   "forever: a raider record is kept under the member's own key")
+-- A note is an officer's: a member's client does not keep it, whatever an old one sends (issue #170).
+local wasOfficer = GuildOS.IsOfficer
+GuildOS.IsOfficer = function() return false end
+GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 2, roles = {}, note = "late" } }))
+check(GuildOS.db.raiders[mine("Cherry Arrow")].updatedAt == 2 and GuildOS.db.raiders[mine("Cherry Arrow")].note == nil,
+  "forever: a member's client takes the record and not the officer's note")
+GuildOS.IsOfficer = function() return true end
+GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 3, roles = {}, note = "late" } }))
+check(GuildOS.db.raiders[mine("Cherry Arrow")].note == "late", "forever: an officer's keeps it")
+-- A copy with no note is a promoted member's: it clears nothing, and "" is what clears one.
+GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 3, roles = {} } }))
+check(GuildOS.db.raiders[mine("Cherry Arrow")].note == "late", "forever: a copy with no note leaves the note where it is")
+GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 4, roles = {}, note = "" } }))
+check(GuildOS.db.raiders[mine("Cherry Arrow")].note == "", "forever: an officer clearing it does clear it")
+-- A rank the client has not loaded yet reads as no officer (#79): no reason to drop a note.
+GuildOS.IsOfficer = function() return false end
+local realGuildInfo = GetGuildInfo
+function GetGuildInfo() return "Guild" end
+GuildOS.RaiderRoster:HandleIncoming("Off Icer", ser({ [theirs("Cherry Arrow")] = { updatedAt = 5, roles = {}, note = "kept" } }))
+check(GuildOS.db.raiders[mine("Cherry Arrow")].note == "kept", "forever: with the rank unknown the note stays")
+GetGuildInfo = realGuildInfo
+GuildOS.IsOfficer = wasOfficer
 
 -- ── 8. Core sign-ups and rosters ────────────────────────────────────────
 GuildOS.CoreManager:InitSync()

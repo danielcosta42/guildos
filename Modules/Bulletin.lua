@@ -179,7 +179,7 @@ function Bulletin:Show()
             textFS:SetJustifyH("LEFT")
             local th = textFS:GetStringHeight() or 14
             local meta = UI:CreateText(child,
-                "|cff888888" .. (m.author or "?") .. " · " .. date("%m/%d %H:%M", m.ts or 0) .. "|r",
+                "|cff888888" .. (m.author or "?") .. " · " .. GuildOS:DateText(m.ts or 0, " %H:%M") .. "|r",
                 9, C.textDim.r, C.textDim.g, C.textDim.b)
             meta:SetPoint("TOPLEFT", 4, -(y + th + 2))
             if isOfficer then

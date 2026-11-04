@@ -7,7 +7,7 @@
 --
 -- Transport is LibChehulMesh (_G.ChehulMesh): presence rides guild + group + SAY
 -- proximity AND the realm-wide dedicated channel, so a HELLO reaches the whole
--- realm/faction, not just your guild. Discovery is two-way (reply on first contact).
+-- realm/faction, not just your guild. A group answers on first contact; the rest meet on the heartbeat.
 --
 -- v3: the HELLO now carries the sender's LAYER (mapID:zoneUID) so the whole mesh is
 -- layer-aware, not just PartyLens users. Addons with real layer detection (PartyLens)
@@ -29,8 +29,12 @@
 -- after a v7 adds them to the list it finds.
 -- v9: retail. There UnitFullName's second slot is the realm, whatever ShouldDisplaySurname says, so
 -- a retail client knows itself by UnitName: v8 could read "Name Realm" as a name and surname.
+-- v10: launch day. A HELLO heard on a wide bus (GUILD, SAY, YELL) is no longer answered by whisper:
+-- 500 clients on a realm would send each other some 125k whispers after a restart, and the peer's
+-- own heartbeat brings the same news within HELLO_INTERVAL. A group's audience is bounded, so a
+-- groupmate is still answered at once. A HELLO's level counts only as a whole number from 1 to 255.
 
-local VERSION = 9
+local VERSION = 10
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -43,6 +47,7 @@ CN.PREFIX         = "ChehulNet"
 CN.PROTO          = "CHN1"
 CN.HELLO_INTERVAL = 180 -- re-announce presence this often (seconds)
 CN.PEER_TTL       = 600 -- forget a peer not heard within this
+CN.REPLY_ON       = { PARTY = true, RAID = true, INSTANCE_CHAT = true } -- buses a new peer is answered on
 
 CN.peers     = CN.peers or {}     -- [shortName] = { addons=set, class, level, caps, mapID, zoneUID, ts }
 CN.providers = CN.providers or {} -- [tag] = { caps=function|nil, onPeer=function|nil }
@@ -169,6 +174,14 @@ function CN:Prune()
     end
 end
 
+-- A level off the network: a whole number in range or nothing (tonumber lets "inf" and "nan" through).
+local function HelloLevel(level)
+    local n = tonumber(level)
+    if n and n >= 1 and n <= 255 and n == math.floor(n) then
+        return n
+    end
+end
+
 -- Inbound HELLO (routed here by LibChehulMesh for our prefix).
 local function OnHello(payload, sender, dist)
     if type(payload) ~= "string" or not sender then
@@ -196,15 +209,15 @@ local function OnHello(payload, sender, dist)
     CN.peers[short] = {
         addons  = set,
         class   = (class ~= "" and class) or nil,
-        level   = tonumber(level),
+        level   = HelloLevel(level),
         caps    = caps or "",
         mapID   = mapID,
         zoneUID = zoneUID,
         ts      = time(),
     }
-    -- Reply once to a newcomer we heard via broadcast (not a whisper), so discovery
-    -- is two-way. Their whispered reply arrives as dist "WHISPER" -> no ping-pong.
-    if isNew and dist ~= "WHISPER" and Mesh then
+    -- Reply once to a newcomer heard in the group, so discovery there is two-way at once. Wider
+    -- buses wait for the heartbeat; a whispered reply arrives as "WHISPER" -> no ping-pong.
+    if isNew and CN.REPLY_ON[dist] and Mesh then
         Mesh:Whisper(CN.PREFIX, CN:BuildHello(), sender)
     end
     for _, p in pairs(CN.providers) do

@@ -92,6 +92,7 @@ GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VER
 
 -- The group: raid1 is readable; raid2's identity is restricted.
 local SECRET_UNIT = "raid2"
+function GetLocale() return "enUS" end
 function GetNumGroupMembers() return 2 end
 function UnitExists(unit) return unit == "raid1" or unit == "raid2" or unit == "player" end
 function UnitIsConnected() return true end
@@ -296,6 +297,116 @@ LootMaster.ProcessSystemRoll = function(_, msg) rolled = msg end
 check(fires(function() LootMaster:OnSystemMessage("Bob rolls 55 (1-100)") end) and rolled == "Bob rolls 55 (1-100)",
       "LootMaster: a readable roll line is still processed")
 LootMaster.ProcessSystemRoll = realProcess
+
+-- A roll that cannot be read is said, once a roll and only during one (issue #48).
+local function told()
+  local n = 0
+  for _, m in ipairs(printed) do if m:find("rolls are not being read", 1, true) then n = n + 1 end end
+  return n
+end
+local before = told()
+LootMaster:StartListeningForRolls()
+LootMaster:OnSystemMessage(secret())
+LootMaster:OnSystemMessage(secret())
+check(told() == before + 1, "LootMaster: the master looter is told when a roll line is hidden, once")
+LootMaster:StopListeningForRolls()
+LootMaster:OnSystemMessage(secret())
+check(told() == before + 1, "LootMaster: and nothing is said with no roll open")
+LootMaster:StartListeningForRolls()
+LootMaster:OnSystemMessage(secret())
+check(told() == before + 2, "LootMaster: the next roll is told again")
+
+-- A word in a language with no spaces around it (issue #106).
+local realLocale = GetLocale
+for _, lang in ipairs({ "zhCN", "zhTW", "koKR" }) do
+  GetLocale = function() return lang end
+  check(GuildOS.Mentions:_Match("철수님 안녕", "철수", {}, true) == "철수", lang .. ": a name with a particle glued to it is a mention")
+  check(GuildOS.Mentions:_Match("大家好小明你好", "小明", {}, true) == "小明", lang .. ": and so is one with no spaces around it")
+  check(GuildOS.Mentions:_Match("안녕 ...", "...", {}, true) == nil, lang .. ": punctuation is still no word")
+  check(GuildOS.Mentions:_Match("planning tonight", "Ann", {}, true) == nil, lang .. ": a Latin name keeps its edges")
+  check(GuildOS.Mentions:_Match("mc - run tonight", "x", { "mc-run" }, false) == "mc-run", lang .. ": and a Latin phrase its spacing")
+end
+GetLocale = function() return "enUS" end
+check(GuildOS.Mentions:_Match("Bobby says hi", "Bob", {}, true) == nil, "enUS: a word is still a whole word")
+GetLocale = realLocale
+
+-- Who rolled, on a client with surnames (issue #48): neither the line's shape nor the unit's is known.
+local W = function(...) return LootMaster:WholeRollerName(...) end
+check(W("Chehul Costa", "Chehul", "Costa") == "Chehul Costa", "a roll: the surname in UnitName's second slot")
+check(W("Chehul Costa", "Chehul Costa") == "Chehul Costa", "a roll: the surname joined")
+check(W("Chehul Costa", "Chehul") == "Chehul Costa", "a roll: UnitName with no surname")
+check(W("Chehul", "Chehul", "Costa") == "Chehul Costa", "a roll: a line with no surname takes the unit's whole name")
+check(W("Chehul", "Chehul Costa") == "Chehul Costa", "a roll: and from a unit with it joined")
+check(W("Chehul Silva", "Chehul", "Costa") == nil, "a roll: two surnames that differ are two people")
+check(W("Ana", "Chehul", "Costa") == nil, "a roll: and so are two first names")
+
+local realRegister, registered = LootMaster.RegisterRoll, nil
+LootMaster.RegisterRoll = function(_, name, kind, roll) registered = { name, kind, roll } end
+local function rollLine(line)
+  registered = nil
+  LootMaster:ProcessSystemRoll(line)
+  return registered
+end
+local realHas, realUnitName = GuildOS.Client.has.surnames, UnitName
+GuildOS.Client.has.surnames = true
+function UnitFullName() return "Ana", "Silva" end
+UnitName = function(unit) if unit == "raid1" then return "Chehul", "Costa" end return realUnitName(unit) end
+local r = rollLine("Chehul Costa rolls 57 (1-100)")
+check(r and r[1] == "Chehul Costa" and r[2] == "MS" and r[3] == 57, "a roll: the whole name counts as somebody in the raid")
+r = rollLine("Chehul rolls 12 (1-99)")
+check(r and r[1] == "Chehul Costa" and r[2] == "OS", "a roll: and a first name is filed under the whole one")
+check(rollLine("Chehul Silva rolls 57 (1-100)") == nil, "a roll: a stranger with the same first name and another surname does not")
+LootMaster.restrictedRollers = { ["chehul costa"] = true }
+check(rollLine("Chehul rolls 40 (1-100)") ~= nil, "a roll: a tie takes the first name of the one who tied")
+LootMaster.restrictedRollers = { ["ana"] = true }
+check(rollLine("Chehul Costa rolls 40 (1-100)") == nil, "a roll: and refuses anybody else")
+LootMaster.restrictedRollers = nil
+GuildOS.Client.has.surnames = realHas
+UnitFullName = nil
+UnitName = function(unit) if unit == "raid1" then return "Bob", "Forever" end return realUnitName(unit) end
+r = rollLine("Bob rolls 57 (1-100)")
+check(r and r[1] == "Bob", "a roll: a client without surnames reads as ever")
+check(rollLine("Bob Forever rolls 57 (1-100)") == nil, "a roll: and takes no second slot for a surname")
+UnitName = realUnitName
+LootMaster.RegisterRoll = realRegister
+
+-- Where the name goes next: the master looter's candidates may not carry the surname (issue #48).
+GuildOS.Client.has.surnames = true
+function UnitFullName() return "Ana", "Silva" end
+local realIsML = LootMaster.IsMasterLooter
+LootMaster.IsMasterLooter = function() return true end
+LootMaster.lootWindowOpen, LootMaster.pendingTrades = true, {}
+LootMaster.activeLoot = { itemId = 1, link = "item:1", slot = 1 }
+local gave
+function GetMasterLootCandidate(_, i) if i == 1 then return "Chehul" end end
+function GiveMasterLoot() gave = true end
+LootMaster:AwardLoot("Chehul Costa", true)
+check(gave and #LootMaster.pendingTrades == 0, "a roll: the whole name finds a candidate with the first one")
+gave = nil
+LootMaster.lootWindowOpen, LootMaster.activeLoot = true, { itemId = 1, link = "item:1", slot = 1 }
+function GetMasterLootCandidate(_, i) if i == 1 then return "Chehul Silva" end end
+LootMaster:AwardLoot("Chehul Costa", true)
+check(not gave and #LootMaster.pendingTrades == 1, "a roll: and not somebody else's with the same first name")
+-- An item does not come back: a first name alone gives it only when it can be nobody else's.
+local function awardTo(winner, list)
+  gave = nil
+  LootMaster.lootWindowOpen, LootMaster.activeLoot, LootMaster.pendingTrades = true, { itemId = 1, link = "item:1", slot = 1 }, {}
+  function GetMasterLootCandidate(_, i) return list[i] end
+  function GiveMasterLoot(_, i) gave = i end
+  LootMaster:AwardLoot(winner, true)
+  return gave, #LootMaster.pendingTrades
+end
+local slot, queued = awardTo("Ana Souza", { "Ana", "Bob", "Ana" })
+check(slot == nil and queued == 1, "a roll: two candidates with the winner's first name go to the trade")
+slot, queued = awardTo("Ana", { "Ana Silva", "Ana Souza" })
+check(slot == nil and queued == 1, "a roll: and so does a winner read by first name among two")
+slot, queued = awardTo("Ana Souza", { "Ana", "Ana Souza" })
+check(slot == 2 and queued == 0, "a roll: the exact name wins over a first name before it")
+GetMasterLootCandidate, GiveMasterLoot, UnitFullName = nil, nil, nil
+LootMaster.pendingTrades, LootMaster.lootWindowOpen = {}, nil
+LootMaster.IsMasterLooter = realIsML
+LootMaster.activeLoot = { itemId = 1 }
+GuildOS.Client.has.surnames = realHas
 
 -- ── 5. Group units: the unreadable member is skipped, the rest kept ─────
 local RaidTracker = GuildOS.RaidTracker

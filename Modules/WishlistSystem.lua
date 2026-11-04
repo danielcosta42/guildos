@@ -34,6 +34,10 @@ function Wishlist:Initialize()
     if not GuildOS.db.wishlists then
         GuildOS.db.wishlists = {}
     end
+    -- An emptied list reached a client older than 1.3.1 as an entry with 0 items, and its owner says it once.
+    for key, entry in pairs(GuildOS.db.guildWishlists or {}) do
+        if #(entry.wishlist or {}) == 0 then GuildOS.db.guildWishlists[key] = nil end
+    end
     -- One-time migration: move flat myWishlist to per-char slot
     if GuildOS.db.myWishlist and #GuildOS.db.myWishlist > 0 then
         local charKey = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName() or "Unknown")
@@ -374,12 +378,9 @@ end
 ----------------------------------------------------------------------
 -- Guild broadcast — serialize and send this character's wishlist
 ----------------------------------------------------------------------
-function Wishlist:BroadcastMyWishlist()
+function Wishlist:BroadcastMyWishlist(force)
     if not GuildOS.db then return end
     local list = self:GetMyList()
-    -- Do not broadcast (or store) an empty list — would create a ghost entry in every
-    -- guildie's panel showing the character with 0 items.
-    if #list == 0 then return end
 
     local myName  = GuildOS.Compat.PlayerName()
     local myClass = select(2, UnitClass("player")) or ""
@@ -391,11 +392,15 @@ function Wishlist:BroadcastMyWishlist()
         GuildOS.db.guildWishlists = {}
     end
     local myKey = strlower(myName or "")
-    GuildOS.db.guildWishlists[myKey] = {
+    -- An empty list is stored as no entry, which would be a ghost with 0 items in every guildmate's
+    -- panel. It is said when the last item goes, or that item stays with them (issue #170), and
+    -- again by the Sync button (`force`), for whoever was offline then. A login stays quiet.
+    if #list == 0 and not force and not GuildOS.db.guildWishlists[myKey] then return end
+    GuildOS.db.guildWishlists[myKey] = #list > 0 and {
         name     = myName,
         class    = myClass,
         wishlist = list,
-    }
+    } or nil
     self:RebuildItemIndex()
 
     -- Broadcast to guild
@@ -440,11 +445,11 @@ function Wishlist:HandleWishlistBroadcast(sender, data, channel)
         GuildOS.db.guildWishlists = {}
     end
     local key = strlower(name)
-    GuildOS.db.guildWishlists[key] = {
+    GuildOS.db.guildWishlists[key] = #wishlist > 0 and {
         name     = name,
         class    = class,
         wishlist = wishlist,
-    }
+    } or nil
     self:RebuildItemIndex()
 end
 

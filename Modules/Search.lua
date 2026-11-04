@@ -172,7 +172,7 @@ function Search:Show(initial)
         if #res.loot > 0 then
             header(L["LOOT"])
             for _, e in ipairs(res.loot) do
-                line(string.format("%s  |cff888888→ %s · %s|r", e.item, e.player, date("%m/%d", e.ts)))
+                line(string.format("%s  |cff888888→ %s · %s|r", e.item, e.player, GuildOS:DateText(e.ts)))
             end
             y = y + 6
         end

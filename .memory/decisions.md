@@ -1167,3 +1167,257 @@ Tuesday-night raid in Europe the same; on all three games (guildos-web#199).
 - (−) If Blizzard moves a region's reset, the table has to follow; the self-test says when it disagrees.
 - (?) Whether `GetCurrentRegion` and `C_DateAndTime.GetSecondsUntilWeeklyReset` exist on WoW: Forever and TBC
   Anniversary, and agree with the table, is read in game (`/guildos probe`, `/gos selftest`).
+
+---
+
+## ADR-0028 — A character's own pack, outside the switch, in the export's one field
+
+### Context
+`Companion:IsEnabled()` is off by default because the export carries the whole guild. guildos.me's companion became
+an app for any member (the site's specs/070): somebody who installs it and signs in with Discord has no reason to
+know about `/gos web on`, and with the switch off the addon wrote nothing for it to send.
+
+### Decision
+- With the switch off the logout writer stores a pack: the export's wire format and decoder, `members` with the
+  player's one line, `self = true`, and none of what only an officer's upload may say.
+- It sits outside the switch on purpose. The switch exists for the guild's data, and this is one line in a file on
+  the player's own PC, which only leaves it when somebody is logged into the companion.
+- **One `GOSCOMP1:` string per file.** The app lifts the first regex match, so an export and a pack side by side
+  could send an officer's upload the pack. Both live in `GuildOSDB.__companion`, so neither the app nor `payloadRe`
+  changes. Switch on: the export and no pack, and a failed build removes a leftover pack (`__companionSelf` says what
+  the field holds) while it keeps a good export, as it always has. Switch off: the pack and no export.
+- `loot` is an empty list, not absent: `packages/goscomp`'s `assertPayload` refuses a payload without one. Every
+  other guild field is absent.
+- The pack never stamps `__companionAt`: the Web panel's "last written" and Activation's publish step read that as
+  the guild publishing.
+- It asks `IsOnGuildDB`, not only `GetGuildInfo`. A db that never resolved reads the switch as off whatever the guild
+  chose, and a pack there would replace that officer's export.
+- The line comes from one `memberLine`, so the two cannot drift, and the guild's rank and the unit APIs feed it: a
+  quick relog has no roster loaded. What a roster fills in as a default (a rank nobody gave, an average of 0) is
+  absent here: the site writes what it is given.
+
+### Consequences
+- (+) A member's own gear reaches the site with no setting, no window and no officer.
+- (+) The export is byte for byte what it was: `tools/companion-payload.lua`'s output did not change.
+- (−) The string is the account's and the switch is the guild's. An officer who logs out on an alt in another guild
+  leaves that alt's pack in the field, and a pending export waits for the next logout on the main. Exports are whole
+  snapshots, so that is a delay and nothing is lost.
+- (−) A token-holding companion with the switch off now sends the pack to `/api/ingest`, which answers 200 and writes
+  nothing (`self: true`, guildos-web#323). The site has to be deployed before this release, or an older `/api/ingest`
+  would take a pack for a one-line roster.
+- (?) Whether `IsInGuild`, `UnitClass`, `UnitLevel` and the rank from `GetGuildInfo` still answer at PLAYER_LOGOUT on
+  WoW: Forever is read in game, from 4 November. If one does not, the pack is not written and the export is untouched.
+
+
+## ADR-0029 — Recruitment: ads that cross zones by whisper, a request that is asked in the game, and a probe for what only a client proves (guildos.me #071, #245)
+
+### Context
+A guild's recruiting ad (`CR2`, then the sealed `CR3`) travelled by GUILD, group and YELL, and YELL stops at the zone
+and at the layer. A character with no guild had no way to ask one to take it, and an officer had nowhere to see who
+asked. Nothing in the repository proves that an addon whisper to "First Surname" reaches on WoW: Forever, that a
+created channel carries an addon message from a timer, or what the game says when an invite goes: no client was
+available before 4 November.
+
+### Decision
+- `Modules/ChehulGossip.lua` carries what a client holds past the zone: each client keeps a list of who it heard on the
+  `ChehulRecruit` prefix and, every `ROUND_SECONDS`, trades a digest (`CRD`) with `ROUND_PEERS` of them. What one lacks
+  comes back (`CRG` asks, the ad answers) with a few names (`CRP`). The beacon (`CRB`) is presence plus one ad in turn.
+  Everything is bounded: a round's allowance, `REPLY_MAX` per peer, `SENDER_MAX` heard per sender, a list of names read
+  only from someone I sent a digest. GuildOS's alone: the mesh library ships identical in the sibling addons and does
+  not change.
+- It whispers only after it has proved a whisper of its own comes back (`CRW`, to myself, a few seconds after login,
+  first with the space the game writes, then the hyphen of the character folders). The spelling that came back is the
+  one used; none, and gossip and requests stop whispering and the screen says so (`:CanWhisper()`). The test needs a
+  chat filter that hides the "no such player" line of a name tried; without one there is no test.
+- `Modules/JoinRequests.lua` is the request: `CRQ` repeated while the player is online, `CRA` the answer (officer and
+  member say where it got to, invited and declined end it). The guildless side keeps `GuildOSDB.recruitOutbox`
+  (account-wide) and writes the open ones to `recruitOutboxWire` (a `GOSOUTB1`) on logout for the companion. The
+  guild's side keeps `db.joinRequests` (fifty at most) and tells the site through the export's optional
+  `joinRequests` (v13). Invite is only ever called from a click (`Compat.NeedsClick`) and the row is closed only by the
+  game's own `ERR_GUILD_INVITE_S` line, never by the click.
+- Two repairs from the last review: a request decided while the person was offline comes back under the game's id and
+  finds its row by `gameId` (it used to make a new open row, and the officer got a notice and an Invite button for
+  somebody already declined); and the invite's confirmation names the person whole (`sameInvited`: space and hyphen are
+  one, no prefix, and on retail the realm is compared when both sides have one). `sameName`'s prefix stays for the CRQ on
+  purpose: a person may have asked as "Ana" and be "Ana Lima".
+- `/gos probe channel` (button in Audit > Sync) joins a channel of its own, sends from the command and from a timer,
+  listens for its own text and leaves, always. The result is `GuildOSDB.probeChannel = { timer, click, timerSkipped,
+  clickSkipped, heard = { timer, click }, joined, left, at }`: `timer` and `click` are true (the game took it), false
+  (tried, and it did not) or nil (never tried, and `<how>Skipped` says why: the channel had no number yet). A second
+  press while it runs retries a skipped click. `GuildOSDB.probeChannelOpen` holds the running channel's name, so one
+  that a `/reload` cut short is left: by `Probe:Initialize` a moment after login, or by the next run before it writes
+  its own. `Gossip.CHANNEL = false` ships the route off: with it on, the beacon goes through
+  `GuildOSNet` and not by YELL. Only a new version turns it on, after the probe has run in a real client.
+- The Audit panel (Sync) shows, from `Gossip:Audit()` (a copy is kept in `GuildOSDB.recruitAudit`, nothing goes to
+  the site): rounds, ads in and out, known peers, discards, the whisper spelling or that none came back, requests open
+  / asked / delivered, invites sent and how many times the game's invite line came back, drops by name and by guild,
+  and the channel probe's result. Every source is read in its own `pcall`.
+- What the last whole-branch review changed, each of them something the pieces only showed running together:
+  - A guild keeps its own ad. `RB:IngestCR3` takes it only over GUILD and from who `Gossip:IsOfficerSender` calls an officer: a
+    whisper in that name (the check drops the realm) or a member is refused, and `want` never asks for it, at any
+    version. That is how a member holds the ad, says the guild in `CRB`, is found by `:PeerFor` and answers a request as
+    `member`. A roster not loaded yet vouches for nobody and the officer's next repeat lands: no mechanism of its own.
+    `:Prune3` never cuts that ad, and among ads of one validity cuts the oldest version: an export gives a whole list
+    one `x`, and the night with more guilds than seats is when a member most needs its own.
+  - The companion's list goes on the gossip (the owner's call in spec 071, "o ChehulNet repassa a quem não tem
+    companion"). `digest` and `pull` read `Held`: the cache and the live ads of the list, one per name, the
+    newer version and at the same version the list's. The list is copied into nobody's cache, the ceilings and the
+    digest's order are the gossip's, the seal still comes from one's own `GOSRECR1` alone, and `x` goes out as it is and
+    is cut to 72 hours on the way in.
+  - A client offers only what somebody it can reach can use: its own faction and region (`GF:Reaches`), any ruleset,
+    because the addon cannot read one. An ad with no faction is a guild with no roster yet, and goes. What it cannot
+    judge it does not offer, rather than everything: a client that does not know its faction passes on the faction-less
+    alone, one that does not know its region nothing, and an ad with no world is not offered. The filter comes before
+    the choice of one ad per name, so a namesake elsewhere hides nobody. `want` reads all the client has and not only
+    what it offers: an ad kept and not offered, asked for every round, would be the loop a guild once ran on its own ad.
+    The guild's own ad in the cache always goes: it needs no judging, and without it the beacon says no guild. A list
+    entry is only spelled like this guild and goes through `Reaches` like any other, or a member would serve another
+    guild of that name and claim it. On retail `Reaches` also asks for a realm that can invite this character. A namesake
+    of the same faction and region on another ruleset still passes: it comes from `ad.key` being the name alone, which
+    stays, and the addon cannot read a ruleset anyway.
+  - Who is an officer, for what only an officer may say over GUILD, is `Gossip:IsOfficerSender`, the one door of both
+    the guild's ad and a decision. `IsOfficerByName` compares the part before the hyphen, so a roster with `Bruno Reis`
+    and a sender spelled `Bruno-Reis` would refuse the officer: no member holds the ad, no decision crosses the guild,
+    on launch night with nothing to see. It stays as it is, because other modules rely on it. On WoW: Forever the door
+    reads the roster itself, both sides lower case with hyphens as spaces, the whole name against the whole name, never
+    by prefix and never `IsOfficerByName`, whose first question gave the false positives: with hyphens on the roster or an
+    officer with no surname it took `Bruno-Melo` for Bruno. Only this client's own realm comes off the end, by
+    `Import.PlainName`, so a roster with a realm keeps working.
+    Elsewhere a hyphen means a realm, and `IsOfficerByName` is right. `officerRefused` in `Gossip:Stats()`, on
+    the Audit panel, is the senders refused right now: one vouched for later leaves it, so a roster that came late is
+    no noise on every login, and what stays is the failure this exists to show.
+  - A number off the network goes through `GuildOS.Finite`, and every check on one says what must hold, never what
+    refuses. NaN answers false to every comparison, so a whisper `CR3|Ordem|...|nan|nan` once replaced a held ad, `want`
+    then refused the real newer version, and a second client held the forgery within half an hour; inf passes any
+    `> 0`; and `tonumber` takes both as text. A NaN or inf reaches no saved table: a NaN in SavedVariables is an unknown
+    risk to the whole `GuildOSDB` file. That covers CR3, CR2 (where it would also have deleted), the beacon, the digest,
+    a request's level and the `at` of `GOSRECR1` and `GOSGILD1`, which `SiteJoinRequests` wrote onto a saved row; a date
+    that is no number is too old to believe, never good for ever. `RB:Prune` drops what a save already holds wrong.
+  - `probeChannelOpen` is cleared only once the channel is seen gone. A leave from a timer may be dropped with no
+    error, so `Probe:LeaveStaleChannel` looks again `STALE_AGAIN` seconds later and leaves at most `STALE_TRIES` times, and
+    what is still there keeps its name for the next login or key press. `FinishChannel`'s leave is one of those tries.
+  - The whisper test goes over the spellings `TEST_PASSES` times, `TEST_AGAIN` seconds apart, and its token lives the
+    session: an echo that comes after the last try still counts. With one pass, a lagged opening night left a client
+    with no gossip and no requests until a `/reload`.
+  - An officer's `Broadcast` pauses where the gossip does (`Gossip:Quiet()`), and on Anniversary, where the gossip does
+    not run, it goes on as it always did.
+  - A request from the site is told once the rank is known: the row is born `unheard`, `:Refresh` runs from
+    `OFFICER_START` as well, and the first reading where `IsOfficer()` holds tells it, once. A block's request keeps its
+    `source`, so one made in the game can be invited only when its person is heard.
+  - Deciding is an officer's and inviting is the game's. Who can invite below `officerMaxRank` sees no Decline, the row
+    stays open after their invite, and `:Decide` prints why it refused. A card with no slug promises no companion:
+    `WriteWire` passes over it, because the site could not tell whose guild it is.
+  - Left as it is, on purpose: `ad.key` is the name alone, so two guilds of one name in two worlds share a slot (changing
+    it changes the contract).
+
+### Consequences
+- (+) A new ad crosses zones in rounds, not in the time one yell takes to reach the next client.
+- (+) A request that nobody sees is still kept and goes to the site through the companion.
+- (+) The opening night leaves in `GuildOSDB` what happened in a real client, with no `/dump`.
+- (−) Everything that uses a whisper depends on a test that waits ten seconds after login and on a filter, and a client
+  whose echoes come very late stays off the gossip until one does.
+- (−) With a list longer than the cache, a client at the cap keeps asking for older ads it cannot keep: the traffic sits
+  at the ceiling, and never over it.
+- (−) A member with nothing saved who logs in with no officer online has no ad until one comes: a guildmate's whisper of
+  it is refused, and costs that guildmate one answer of its round.
+- (?) Only a real client proves: whether the space or the hyphen is the spelling a whisper arrives with on Forever (and
+  whether either is); whether `JoinChannelByName` gives a channel a number in the same frame or a moment later (the
+  command's message is not tried when it does not: `click` stays nil, `clickSkipped` says why and a second press
+  retries it); whether a timer's message into a channel
+  is dropped on Forever as a timer's GUILD line is; whether the channel's join and leave lines are hidden by
+  `CHAT_MSG_CHANNEL_NOTICE`'s filter (the probe's are; the live route's are not, and it ships off); and whether
+  `ERR_GUILD_INVITE_S` is the line a Forever invite prints, which `confirmed` in the Audit counts. If it never comes
+  back, an invite never closes its row by itself and the site's roster ingest does.
+- (?) And, from the last review, what no harness can reach:
+  - **The first three reads on 4 November**, before anything else: `/dump GetGuildRosterInfo(1)` on Forever, which says
+    the roster's format and which the officer check, the invite and the keys all rest on; the Audit panel's
+    `officerRefused` at 0 with an officer online, which says the guild's ad and decisions are crossing GUILD; and which
+    whisper spelling came back, in the same panel.
+  - Whether a sender's name reads as the roster's. `Gossip:IsOfficerSender` covers a space or a hyphen on either side and
+    this client's own realm on the end. A sender that carries any other realm is refused: the whole name is what is
+    compared, and a Forever client's realm string is not known to be the same for two people. `officerRefused` shows it.
+    `sameName` has the same exposure: a sender spelled differently drops a real `CRQ`, silently.
+  - Whether the text of the "no such player" line is `ERR_CHAT_PLAYER_NOT_FOUND_S`, and whether AceComm echoes a whisper
+    to oneself on a client where it splits a message.
+  - Whether a `CR3` of a real list, by whisper and by GUILD, stays under the chat limit on an opening night: the ceilings
+    are counted in messages, and nothing here measures what the game calls too much.
+  - Whether `/w Chehul-Costa` opens the right whisper, and `GuildInvite("Chehul Costa")`, with the space the game gave,
+    reaches who was meant. It is the Alt-click's pattern, and that one is proven only for a name off a whisper.
+  - Whether `GetRealmName()` says the ruleset on Forever: until then the World filter offers the ones in the list.
+  - Whether `STALE_WAIT` is long enough for the game to have joined a character's channels, on a login and on a `/reload`.
+  - Whether the game drops `LeaveChannelByName` from a timer at all, and how long a leave takes to show in `GetChannelName`.
+  - Whether `tonumber("nan")` reads as NaN on the client as it does in LuaJIT, and what writing one to SavedVariables does.
+  - Everything on a screen. The finder, the form, the notice and the list were only ever drawn on fake widgets: the
+    drop-down menus and their arrow and check, layout, line wrap at 700x480, `SetEnabled` on Invite.
+
+
+## ADR-0030 — The guild's trial: a length worked out on every read, and new members by the roster seen (#249)
+
+### Context
+A trial lasted 30 days, hard-coded, each trial stored its own `endDate`, and the first client to notice the end stamped
+it `"expired"`. Trials travel between officers as the whole table (`TR`), the latest activity winning, so a length
+written into each record would be undone by any officer still on the old version, whose copies carry the old end.
+
+### Decision
+- The length is the guild's: `settings.trialDays` (1 to 90 whole days, nil = 30), `settings.trialAuto` (the switch for
+  new members, off by default), each stamped and sent on `guildcfg` like the officer threshold (`trialdays`, `trialauto`;
+  newest wins, a tie keeps the shorter length and the switch off). Neither payload has `max`, which a client before
+  this reads as the threshold.
+- **A trial's end is never read from the record.** It is `startDate` + the guild's length, in `EndOf`, every time. A
+  change moves every running trial both ways, and nothing an old client sends can move it back. `endDate` is still
+  written on a new trial, for the old clients that read it. A stored `"expired"` is a trial nobody decided, like
+  `"trial"`: lengthened, it is running again. Only approved and denied are decisions. Nothing writes a status at login.
+- New members come from the roster alone: an officer's client keeps the roster it has seen (`db.trialBaseline`, keys
+  only), and `ScanRoster` is the only path that starts an automatic trial, for a join a moment ago and for one while
+  no officer's addon watched alike. The join line (RosterLog) only asks the game for a fresh roster: its name is never
+  made into a key, because on WoW: Forever it need not be the roster's spelling ("Chehul-Costa" against "Chehul
+  Costa", a first name alone from `UnitName`), and two strings for one person would be an orphan trial beside the
+  real one.
+- **The baseline is the officer's, and only grows.** `GuildOSDB` is the account's, one table per guild, so a
+  non-officer alt that kept it would take the officer's newcomers in unseen: a non-officer client neither reads nor
+  writes it, and a newly promoted officer with none only records at the first look. Each character's last look is
+  remembered by its own key (`db.trialScannedAsOfficer`): a look made while it was no officer (demoted, or outside a
+  narrowed threshold) forgets it, and the first look as an officer again only records, like a fresh install, so a
+  re-promoted officer never reads a month of members as new. A scan only adds keys; a key
+  leaves only on a leave or kick line (`OnLeave`), so a roster that comes short never reads the rest of the guild as
+  new. Turning the switch on (here or heard, on an officer's client) drops the baseline so the next roster is only
+  taken; heard on a client that may not touch it (an alt of the account), it leaves `db.trialBaselinePending`, and the
+  next officer's look honours it as a look that only records, then clears it. Nothing moves while the roster is not whole or the rank is unknown, and a roster that shares nobody with the
+  one seen is taken, not read as newcomers (the keys changed under it).
+- **A login waits.** `Arm` (MODULE_START, every login and /reload) keeps ScanRoster from comparing or touching the
+  baseline for `SETTLE_SECONDS` (60), the time for the guild's settings and the other officers' trials to arrive,
+  then runs it once by itself, roster event or not.
+- **Two undecided copies of one trial keep the earlier start**, both copies' notes and the longer snapshots: an
+  officer whose catch-up started the same person later (the first officer offline, or its `TR` not yet arrived) neither
+  restarts the trial nor drops what was written. **An automatic trial never reopens a decision:** nobody with a trial
+  record in any state (undecided, approved, denied, left) is auto-trialed, and in `Merge` an automatic copy (sponsor
+  "Guild OS") gives way to an approved or denied one whatever their dates, with both copies' notes; an officer who never
+  saw the approval cannot put that member on trial again. Otherwise, with a decided copy involved, the latest activity
+  still wins, so an officer's own new trial after a decision carries; it keeps the decided one's notes.
+- A whole roster read by an officer marks an undecided trial whose member is missing (`leftAt`, a field, not a status,
+  so old clients carry it), and clears it when they are back. Such a trial is counted nowhere (login line, digest,
+  Agora, suggestions, presets) and the panel lists it with the decided, "left the guild"; it still syncs.
+- A trial started this way is sponsored by "Guild OS", the same on every client, so two officers' copies of one join
+  meet as one trial in `Merge`; nobody on an officer rank and nobody already unresolved is started.
+
+### Consequences
+- (+) The officers choose the length once, and every officer's list agrees, old versions included.
+- (+) A guild that turns the switch on gets every newcomer as a trial without a click, caught up at the next login.
+- (−) An officer on an old version still flips trials to `"expired"` by their own stored end and shows them so; the
+  new version reads that as undecided and works it out again, but the old client's screen is its own.
+- (−) The catch-up starts the trial at the officer's login, not at the join: there is no join date to read.
+- (−) A whole-roster pass on every GUILD_ROSTER_UPDATE, as DropDeparted already does.
+- (−) A trial starts when the roster next answers, not at the join line itself: the request is the game's to throttle.
+- (−) Somebody who left while no officer's addon read the line, and comes back, is still in the baseline: not
+  auto-trialed. Accepted, against a short roster ever putting many members on trial. The same when a leave line spells
+  the name otherwise than the roster (Forever).
+- (−) Restarting an undecided trial by hand does not travel: the other officers keep the earlier start.
+- (−) Somebody who comes back after an approval or a denial is not auto-trialed: an officer puts them on trial again
+  by hand (Mark as Trial), which keeps the old notes.
+- (−) Known limit: a roster that comes short with every row answering reads as whole, so it marks `leftAt` on the
+  undecided trials of everybody it leaves out, and they drop out of every count until the next whole roster clears it.
+- (−) Known limit, erring the safe way: on an account's shared database, an officer character's first look after this
+  update, or after a re-promotion, only records the roster, so newcomers the main officer had not seen yet (one who
+  joined with only a non-officer alt online, or with everyone offline) are not auto-trialed.
+- (−) A login's newcomers wait a minute; with no officer online to answer, the catch-up uses the settings this client
+  had.

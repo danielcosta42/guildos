@@ -2,6 +2,196 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-11-04
+
+### Fixed
+- o addon aparece com o escudo na lista de addons (#253)
+
+
+## [1.9.0] - 2026-11-04
+
+### Added
+- a exportação leva o main de cada alt (#251)
+
+
+## [1.8.0] - 2026-11-03
+
+### Added
+- o trial da guilda, com a duração escolhida pelos oficiais e trial automático para quem entra (#249)
+
+
+## [1.7.1] - 2026-11-03
+
+### Fixed
+- ChehulNet v10, sem whisper para cada peer novo fora do grupo e nível do HELLO validado (#247)
+
+
+## [1.7.0] - 2026-11-02
+
+### Added
+- /gos probe channel com botão na Auditoria, a rota por canal desligada e os contadores do recrutamento (#245)
+- o lado da guilda — aviso, lista de pedidos, convite pelo clique e joinRequests no export v13 (#245)
+- o pedido de quem está sem guilda — formulário, envio repetido, resposta e fila para o companion (#245)
+- o gossip por whisper que leva o anúncio além da zona e do layer de quem grita (#245)
+- a tela de quem está sem guilda para achar uma, com filtros, cartão e horário no relógio dele (#245)
+
+### Fixed
+- a tentativa atrasada do canal antigo não apaga o nome da sonda em andamento, agora com teste (#245)
+- o nome do canal da sonda só sai quando o canal foi visto saindo, com tentativas limitadas (#245)
+- no Forever o officer é reconhecido pelo nome inteiro, nas duas grafias do roster (#245)
+- no retail o gossip não repassa guilda de reino que não pode convidar (#245)
+- um anúncio da lista com o nome da guilda não ganha a exceção da própria guilda (#245)
+- NaN e inf vindos da rede não passam por nenhuma checagem nem chegam a uma tabela salva (#245)
+- o officer é reconhecido com hífen no remetente, e a Auditoria mostra quem foi recusado (#245)
+- cada cliente oferece só o que serve à sua facção e região (#245)
+- a Auditoria atualiza depois do veredito da sonda de canal (#245)
+- cartão sem slug não promete o que o companion não vai levar (#245)
+- o Whisper do cartão usa o hífen, o mesmo da lista do officer (#245)
+- quem convida sem ser officer não vê Recusar e sabe por que a linha fica aberta (#245)
+- o pedido do jogo que vem no bloco continua sendo do jogo (#245)
+- as treze classes do retail cabem no anúncio (#245)
+- o anúncio do officer pausa em instância e em lockdown (#245)
+- o teste de whisper tenta algumas vezes e um eco atrasado ainda vale (#245)
+- o pedido do site avisa o officer quando o rank é conhecido, uma vez por linha nova (#245)
+- o canal que um /reload deixou aberto sai no início, com atraso, e antes da sonda seguinte (#245)
+- o corte do cache solta a versão mais velha e nunca o anúncio da própria guilda (#245)
+- a lista do companion entra no gossip e chega a quem não tem companion (#245)
+- a guilda guarda o próprio anúncio, com o officer por GUILD, e o membro vira alvo do pedido (#245)
+- a tentativa pulada da sonda é um estado próprio, o filtro lê o canal numerado, o canal aberto sai no /reload e o gameId pede o nome inteiro (#245)
+- pedido decidido renasce pelo id do jogo e a confirmação do convite pede o nome inteiro (#245)
+- formulário e aviso do pedido — cartão sem slug, linha para toda recusa, fila do companion, janela do convite, textos do mockup e plurais nas nove línguas (#245)
+- pedido sem slug, decisão só de officer, id do site, pedido decidido que renasce, convite só fechado pela linha do jogo, nome do reino no retail, contato do ct, caixa do nome, db errado e linha corrompida (#245)
+- um par não toma o lugar do anúncio da própria guilda no cache (#245)
+- os tickers do beacon rodam isolados, e um erro do cliente não derruba a rodada (#245)
+- o anúncio novo cruza o cache cheio, e uma lista de nomes não toma as rodadas de quem ouvi (#245)
+- a tela da guilda fiel ao mock, com listas de verdade, uma guilda por mundo e classes validadas (#245)
+
+### Other
+- wip: o anúncio completo com selo, ainda sem revisão (#245)
+
+
+## [Unreleased]
+
+### Added
+- o recrutamento: o anúncio sela e cruza zonas por sussurro (gossip), a tela de quem está sem guilda acha uma e pede para entrar, e o officer vê os pedidos, convida pelo clique e decide (#245)
+- o pedido sai do jogo pela fila do companion quando nenhum sussurro chega, e os pedidos da guilda vão no export v13 (#245)
+- `/gos probe channel`, com botão na Auditoria: entra num canal temporário, tenta mandar por timer e por clique, ouve o próprio eco e sai (#245)
+- a Auditoria mostra rodadas, anúncios por origem, pares, descartes, a grafia do teste de sussurro, os pedidos e o resultado do canal (#245)
+
+### Fixed
+- um pedido decidido com a pessoa offline não renasce aberto quando ela volta pelo jogo (#245)
+- a confirmação do convite pede o nome inteiro: "Ana" não fecha o pedido de "Ana Lima" (#245)
+
+## [1.6.0] - 2026-11-02
+
+### Added
+- o mural de LFG é visto por quem não está com ele aberto: aviso ligado e anúncio no chat da guilda (#243)
+
+### Fixed
+- da revisão: o aviso não depende do chat, a linha só sai do botão do mural e a pausa sobrevive ao /reload (#243)
+
+
+## [1.5.0] - 2026-11-01
+
+### Added
+- o pacote do próprio personagem para o companion
+
+### Fixed
+- o painel Web não promete que nada sai do jogo
+
+
+## [1.4.0] - 2026-11-01
+
+### Added
+- duas séries de insígnias, pela facção do personagem (guildos-web#309)
+- a insígnia de Renome no jogo (guildos-web#309)
+
+### Fixed
+- a facção secreta não é lida (guildos-web#309)
+
+
+## [1.3.1] - 2026-10-31
+
+### Fixed
+- o que protege quem instala no dia 4 — a noite sobrevive ao /reload, a rolagem lê o nome inteiro, o coreano é lido (#169, #118, #106, #48, #170, #171)
+
+
+## [1.3.0] - 2026-10-31
+
+### Added
+- o painel de prontidão com núcleo, função, filtros e composição (#220)
+
+
+## [1.2.2] - 2026-10-31
+
+### Fixed
+- uma corrida de cinco é uma masmorra na semana do Diário (#297)
+
+
+## [1.2.1] - 2026-10-31
+
+### Fixed
+- da revisão do addon — o subtítulo sem 0–0 e o que o cabeçalho promete (#235)
+- da revisão do addon — o último chefe depois do fim ainda completa a corrida (#235)
+- o fim de cada masmorra é o chefe que o jogo conta (#235)
+
+
+## [1.2.0] - 2026-10-31
+
+### Added
+- as conquistas e a preparação da guilda no jogo (#216, #217)
+- o GOSGILD1 no jogo — a fundação do site e as linhas do guildos.me no resumo (#215)
+
+### Fixed
+- da revisão do addon — o que já foi dito não repete, a guilda ativada fica ativada, o resumo cresce e o cartão diz o que fazer (#215, #216, #217)
+- o site manda quem foi adicionado à mão, nunca o motivo (#215)
+
+
+## [1.1.0] - 2026-10-30
+
+### Added
+- Diário e Fundação desligados até o teste de 4/11, e nada novo derruba o upload (#232)
+- fatias no Dashboard — quantos grupos e raides dá para formar com quem está no 60 (#230)
+- o tabardo da guilda lido do jogo vai no export (#213)
+- titular e reserva no núcleo, a composição só com titulares e as vagas abertas (#212)
+- a aba Diário, os marcos de 10 em 10 no resumo e o aviso de primeira masmorra (#211)
+- as masmorras novas do Forever no diário — DungeonLog e o catálogo (#210)
+- o selo de fundador no roster e no membro, e a fundação no resumo do login (#209)
+- a carta de fundação — o GM registra o dia em que a guilda nasceu e os fundadores saem dele (#208)
+- a contagem até as raides no Dashboard e o nível no painel de prontidão (#207)
+- o diário — cada personagem escreve o que aconteceu com ele, a guilda guarda e o export leva (payload v12) (#205)
+
+### Fixed
+- da revisão das chaves — ligar sem /reload não quebra o roster, e desligada a fundação não publica (#232)
+- da revisão do núcleo — o link leva a reserva, o oficial marca titular e reserva no núcleo do jogo, e a lista e as vagas contam direito (#212)
+- da revisão do Diário — as primeiras da guilda guardadas à parte e sem quem pediu para não ser nomeado, o resumo lido do diário com as masmorras, e a aba ausente fora do Forever (#211)
+- da revisão do registro de masmorras — a run acaba ao sair depois do clear, no logout e em outra instância, e é de um personagem só (#210)
+- da revisão do selo — quem sai perde o selo e não recupera sozinho, e o aniversário diz completou (#209)
+- da revisão da fundação — só o GM decide e o mais novo vence, repete no sync, nada fora do banco da guilda (#208)
+- da revisão da contagem — dias inteiros como o site, o card sem vazar texto e o só-nível na coluna do item level (#207)
+- da revisão da prontidão — o carimbo do mínimo vai no export e zero também apaga (#206)
+- no Forever a prontidão começa no nível 60, e o oficial define o item level mínimo da guilda (#206)
+- da revisão do diário — a chave de quem escreveu no formato deste cliente, só os campos do tipo, e o opt-out na linha de cada personagem (#205)
+
+### Other
+- merge: a main (1.0.3) na pilha do roteiro
+
+
+## [1.0.3] - 2026-10-30
+
+### Fixed
+- as opções de Loot Rules não ficam mais uma em cima da outra (#228)
+
+
+## [1.0.2] - 2026-10-29
+
+### Fixed
+- a opção de mostrar offline não é o roster (#203)
+- um inspect não é a ficha de um guildmate (#203)
+- só o roster inteiro diz quem saiu (#203)
+- quem sai da guilda some de tudo sozinho, sem botão de prune (#203)
+
+
 ## [1.0.1] - 2026-10-28
 
 ### Fixed

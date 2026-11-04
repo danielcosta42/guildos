@@ -859,9 +859,8 @@ check(A:OnlineCount() == 2 and not A:RosterLoading(), "online counts the roster"
 check(A:LastSync() == nil, "no sync, no time")
 
 GuildOS.TrialTracker = {
-  GetActiveTrials = function() return { { key = "t1" }, { key = "t2" }, { key = "t3" } } end,
-  -- Whole days, rounded down, like TrialTracker:GetDaysRemaining.
-  GetDaysRemaining = function(_, k) return ({ t1 = 0, t2 = 1, t3 = 5 })[k] end,
+  -- The trials ready to review, as TrialTracker:CountReady counts them (#249).
+  CountReady = function() return 1 end,
 }
 GuildOS.GuildManager = {
   DEFAULT_INACTIVE_DAYS = 30,
@@ -872,8 +871,8 @@ GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
 do
   local needs = A:NeedsMe()
   check(#needs == 5, "an officer's five kinds of work")
-  check(needs[1].text == "1 trials expiring" and needs[1].urgent and needs[1].id == "trials",
-    "urgent first: a trial with under a day left, not one with a whole day")
+  check(needs[1].text == "1 trial(s) ready to review" and needs[1].urgent and needs[1].id == "trials",
+    "urgent first: the trials ready to review")
   check(needs[2].text == "You have not answered: Karazhan" and not needs[2].urgent and needs[2].id == "guild"
     and needs[2].sub == "calendar" and needs[2].filter == KARAZHAN, "an unanswered raid this week opens the calendar on its day")
   check(needs[3].text == "4 inactive over 30d" and needs[3].id == "management" and needs[3].sub == "inactive",
@@ -1015,7 +1014,7 @@ check(now.openCalendar.shown and now.openCalendar.variant == "primary", "and a p
 local needRows, feedRows = now.needsList.rows, now.feedList.rows
 check(visible(now.needsList) == 5 and now.needsList.h == 2 + 5 * 26 and needRows[1].h == 26, "five 26px rows of what needs me")
 check(needRows[1].mark.shown and needRows[1].mark.w == 6 and needRows[1].mark.h == 6
-  and needRows[1].mark.color[1] == C.danger.r and needRows[1].text.text == "1 trials expiring",
+  and needRows[1].mark.color[1] == C.danger.r and needRows[1].text.text == "1 trial(s) ready to review",
   "urgent rows carry the 6px danger mark")
 check(needRows[2].mark.color[1] == C.gold.r and needRows[2].mark.color[2] == C.gold.g, "the others the gold one")
 check(point(needRows[1]) == "TOPLEFT,1,-1" and point(needRows[2]) == "TOPLEFT,1,-27",

@@ -258,9 +258,15 @@ function RaidTracker:Initialize()
             frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
         end
     end)
+
+    -- Here and not on PLAYER_ENTERING_WORLD: a cold login that waits for the guild's name gets here
+    -- after that event. Nothing starts a session until this is done, or it would replace the open one.
+    self.resuming = true
+    C_Timer.After(1, function() RaidTracker:ResumeAtLogin(15) end)
 end
 
 function RaidTracker:CheckZone()
+    if self.resuming then return end   -- ResumeAtLogin asks when it is done
     local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
     if instanceType == "raid" and self:IsTracked(instanceID, difficultyID) then
         -- We're inside a raid instance. On retail the same raid on another difficulty is another
@@ -374,6 +380,9 @@ function RaidTracker:StartSession(instanceID)
         encounters = {},
         players = {},
     }
+    if rtDB then   -- this very table: whatever a /reload finds is the session as it stood (issue #170)
+        rtDB.openSession, rtDB.openChar = self.currentRaid, GuildOS.Compat.PlayerName()
+    end
     -- On Forever the size is what decides whether the night counts, so it is said (issue #90).
     local said = raidName
     -- Midnight may keep the name secret, and a secret is never compared or joined (issue #177).
@@ -386,13 +395,73 @@ function RaidTracker:StartSession(instanceID)
     GuildOS:Print(L["Raid tracking started: |cffFFD700"] .. said .. "|r")
     if kept then self:SayPicked() end
     self:TakeSnapshot("session_start")
+    self:StartSnapshots()
+end
 
-    -- Periodic snapshots every 5 minutes
+-- Periodic snapshots every 5 minutes
+function RaidTracker:StartSnapshots()
     self.snapshotTimer = C_Timer.NewTicker(300, function()
         if self.trackingActive then
             self:TakeSnapshot("periodic")
         end
     end)
+end
+
+-- How long a night in progress can be picked back up after its last snapshot: the grace period
+-- plus the five minutes that snapshot can be old.
+local OPEN_HOLD = 1500
+
+-- A session used to be saved only when it ended, so a /reload or a logout lost all it had noted
+-- (issue #170). It now sits in the saved table while it runs. Back in time, on the same character,
+-- it goes on, and CheckZone gives it its grace if this is outside the raid. Otherwise it ends where
+-- its last snapshot left it: another raid, a later day or an alt are no part of that night.
+function RaidTracker:ReopenSession()
+    local rtDB = GuildOS.db.raidTracker
+    local open = rtDB and rtDB.openSession
+    if type(open) ~= "table" or self.currentRaid then return end
+    self.currentRaid, self.trackingActive = open, true
+    local last = open.snapshots[#open.snapshots]
+    local lastAt = last and last.time or open.startTime
+    -- A boss pulled before the /reload and still going keeps its row for ENCOUNTER_END; any other is
+    -- over, or the next pull of that boss would read as the same fight.
+    if not GuildOS.Compat.IsEncounterInProgress() then
+        for _, enc in ipairs(open.encounters) do enc.endTime = enc.endTime or lastAt end
+    end
+    local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+    local elsewhere = instanceType == "raid" and (instanceID ~= open.instanceID
+        or (open.difficulty ~= nil and tonumber(difficultyID) ~= open.difficulty))
+    if elsewhere or rtDB.openChar ~= GuildOS.Compat.PlayerName() or GetServerTime() - lastAt > OPEN_HOLD then
+        local pick = rtDB.corePick   -- StartSession judges it, as after any /reload (#99, #177)
+        self:EndSession(true, lastAt)
+        rtDB.corePick = pick
+        return
+    end
+    self.coreSettled = rtDB.corePick ~= nil or #open.encounters > 0 or nil
+    -- A core picked on the run-back was this session's only in memory (gracePick).
+    local active = self:GetCurrentGroup()
+    if active ~= (open.groupTag or "") then
+        if instanceType == "raid" then
+            self:PickCore(active)
+            self:SayPicked()
+        else
+            self.gracePick = active
+        end
+    end
+    self:StartSnapshots()
+    GuildOS:Print(L["|cffFFAA00Raid resumed — session continuing.|r"])
+    if instanceType == "raid" then self:TakeSnapshot("raid_resumed") end
+end
+
+-- Whether a session that ends here was a guild's asks who is in the guild, and a second after a
+-- login the roster may not be here yet: an open session waits for it, two seconds at a time.
+function RaidTracker:ResumeAtLogin(tries)
+    if GuildOS.db.raidTracker.openSession and tries > 0 and not GuildOS:WholeRoster() then
+        C_Timer.After(2, function() RaidTracker:ResumeAtLogin(tries - 1) end)
+        return
+    end
+    self.resuming = nil
+    self:ReopenSession()
+    self:CheckZone()
 end
 
 function RaidTracker:IsGuildRaid(session)
@@ -434,15 +503,18 @@ function RaidTracker:IsGuildRaid(session)
 end
 
 -- End the current session and save it. `away` (retail, ElsewhereInGrace when the grace ran out or another
--- raid began): the group this client stands in is not the session's, so no last snapshot of it (issue #183).
-function RaidTracker:EndSession(away)
+-- raid began; ReopenSession): the group this client stands in is not the session's, so no last snapshot of
+-- it (issue #183). `at`: when it ended, if that was not now.
+function RaidTracker:EndSession(away, at)
     if not self.currentRaid then return end
     -- An officer's pick is its session's: the next raid is asked afresh (issue #99).
     self.gracePick = nil
-    if GuildOS.db.raidTracker then GuildOS.db.raidTracker.corePick = nil end
+    if GuildOS.db.raidTracker then
+        GuildOS.db.raidTracker.corePick, GuildOS.db.raidTracker.openSession = nil, nil
+    end
 
     if not away then self:TakeSnapshot("session_end") end
-    local endTime = GetServerTime()
+    local endTime = at or GetServerTime()
     self.currentRaid.endTime = endTime
     self.currentRaid.duration = endTime - (self.currentRaid.startTime or endTime)
     self.trackingActive = false
