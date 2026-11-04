@@ -345,7 +345,7 @@ GuildOS.Client.isAnniversary = true
 
 -- v10 (issue #182) is retail's: the region, the guild's home realm and each session's difficulty
 -- (tools/retail-site.lua). The other games send what they sent at v9: no region, no difficulty.
-assert(anniversary.v == 13, "the payload is v13")
+assert(anniversary.v >= 13, "the payload that carries joinRequests is v13")
 -- v13 (guildos#245): what the guild holds of the people who asked to join; absent without any (tools/join-requests.lua
 -- runs the rest of it), and a bug in it is left out of the export alone.
 assert(anniversary.joinRequests == nil, "no joinRequests without the module, and none without requests")
@@ -355,8 +355,38 @@ GuildOS.JoinRequests = { ForExport = function() error("boom") end }
 GuildOS.RecordError = function() end
 local survived = GuildOS.Companion:BuildPayload()
 GuildOS.RecordError = nil
-assert(survived.joinRequests == nil and survived.members and survived.v == 13, "a failing joinRequests is left out and the rest goes")
+assert(survived.joinRequests == nil and survived.members and survived.v == 14, "a failing joinRequests is left out and the rest goes")
 GuildOS.JoinRequests = nil
+
+-- v14 (issue #251, the site's #392): a linked alt carries `main`, its main's key exactly as altLinks holds it, the
+-- same form as its own `key`. A main and anybody nobody linked carry no `main` key at all: not false, not "".
+assert(anniversary.v == 14, "the payload is v14")
+do
+  local function lines()
+    local by, json = {}, {}
+    for _, m in ipairs(GuildOS.Companion:BuildPayload().members) do
+      by[m.key], json[m.key] = m, GuildOS.Companion.EncodeJson(m)
+    end
+    return by, json
+  end
+  local function noMain(by, json, key) return by[key].main == nil and not json[key]:find('"main"', 1, true) end
+
+  local by, json = lines()
+  for key in pairs(by) do assert(noMain(by, json, key), "no altLinks at all: no main for " .. key) end
+
+  GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
+  by, json = lines()
+  assert(by["Fulano-Firemaw"].main == "Chehul-Firemaw", "a linked alt carries its main's key")
+  assert(json["Fulano-Firemaw"]:find('"main":"Chehul-Firemaw"', 1, true), "as a plain string on the wire")
+  assert(noMain(by, json, "Chehul-Firemaw"), "the main itself carries no main")
+  assert(noMain(by, json, "Semdados-Firemaw"), "a member who is nobody's alt carries no main")
+
+  -- What links nobody: a link to itself, an empty one, one that is not a key.
+  GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Fulano-Firemaw", ["Semdados-Firemaw"] = "", ["Chehul-Firemaw"] = 7 }
+  by, json = lines()
+  for key in pairs(by) do assert(noMain(by, json, key), "a link that links nobody sends no main for " .. key) end
+  GuildOS.db.altLinks = nil
+end
 -- v12 (issue #205) starts the WoW: Forever guild feed: no journal outside Forever (tools/journal.lua).
 assert(anniversary.journal == nil, "no journal on TBC Anniversary")
 
@@ -423,7 +453,7 @@ do
   assert(#files == 1 and files[1] == GuildOSDB.__companion, "switch off: one string, in __companion: " .. #files)
   assert(files[1] == files[1]:match("^GOSCOMP1:[a-zA-Z0-9()]+$"), "the app's regex lifts the whole string")
   local pack, json = opened(files[1])
-  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 13 and pack.count == 1, "it says it is the pack")
+  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 14 and pack.count == 1, "it says it is the pack")
   assert(pack.guildKey == "Raid Guild-Firemaw" and pack.guildName == "Raid Guild" and pack.realm == "Firemaw"
     and pack.game == "ANNIVERSARY", "it names the guild and the game, as the site's upload picks by them")
   assert(pack.exportedBy == PLAYER and pack.exportedAt == NOW and pack.addonVersion == GuildOS.VERSION, "and who, when, which addon")
@@ -445,6 +475,19 @@ do
     if m.key == PLAYER then line = Companion.EncodeJson(m) end
   end
   assert(line and json:find(line, 1, true), "the pack's line is the export's line")
+
+  -- v14: whose alt somebody is stays the officers' to say. The export says it of me, my own pack never does.
+  GuildOS.db.altLinks = { [PLAYER] = "Fulano-Firemaw" }
+  local exported
+  for _, m in ipairs(Companion:BuildPayload().members) do
+    if m.key == PLAYER then exported = m end
+  end
+  assert(exported and exported.main == "Fulano-Firemaw", "the export says whose alt I am")
+  logout()
+  local packed, packJson = opened(GuildOSDB.__companion)
+  assert(packed.self == true and packed.members[1].key == PLAYER, "the pack is mine")
+  assert(packed.members[1].main == nil and not packJson:find('"main"', 1, true), "and it carries no main")
+  GuildOS.db.altLinks = nil
 
   -- The guild roster need not be loaded: a quick relog has none, and it is the person's own client.
   local rosterSize = GetNumGuildMembers
@@ -565,6 +608,8 @@ do
   GuildOSDB = nil
 end
 
+-- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.
+GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
 local text, countOrErr = GuildOS.Companion:Build()
 if not text then
   io.stderr:write("BUILD FAILED: " .. tostring(countOrErr) .. "\n")

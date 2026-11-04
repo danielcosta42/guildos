@@ -168,7 +168,7 @@ GuildOS.db.raidTracker.sessions[NIGHT] = {
 }
 
 local p = assert(Companion:BuildPayload())
-check(p.v == 13 and p.game == "RETAIL" and p.region == "us", "v13 says the game and the region")
+check(p.v == 14 and p.game == "RETAIL" and p.region == "us", "v14 says the game and the region")
 check(p.journal == nil, "no journal on retail: the guild feed is WoW: Forever's (issue #205)")
 check(p.guildKey == "Jardim Escola-Azralon" and p.realm == "Azralon",
   "guildKey and realm are the guild's home realm, never the exporter's Tol Barad")
@@ -195,6 +195,16 @@ check(table.concat(keys, ",") == "Ana-Gallywix,Chehul-TolBarad", "a session's pe
 check(p.sessions[1].players[1].chits == 1 and p.sessions[1].players[2].chits == 1,
   "a frame whose consumables were not read counts for the player")
 check(#p.loot == 0, "no loot recorded, none sent")
+
+-- v14 (issue #251): an alt's `main` is its main's key as altLinks holds it, realm and all, so a namesake on a
+-- connected realm is never taken for the main.
+GuildOS.db.altLinks = { ["Ana-Gallywix"] = "Chehul-TolBarad" }
+local linked = {}
+for _, m in ipairs(assert(Companion:BuildPayload()).members) do linked[m.key] = m end
+check(linked["Ana-Gallywix"].main == "Chehul-TolBarad", "a linked alt carries its main's key with the main's realm")
+check(linked["Ana-Azralon"].main == nil and linked["Chehul-TolBarad"].main == nil and linked["Fulano-Azralon"].main == nil,
+  "the namesake, the main and the unlinked carry no main")
+GuildOS.db.altLinks = {}
 
 -- Personal loot goes out in today's row format (issue #183): the real tracker, in a session.
 dofile(ADDON .. "/Modules/LootTracker.lua")
