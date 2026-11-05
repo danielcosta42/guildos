@@ -668,12 +668,10 @@ local function labelled(label)
   for _, w in ipairs(allButtons) do if w.label.text == label then list[#list + 1] = w end end
   return list
 end
+-- The game lets no addon invite off Anniversary (#256), and these requests are Forever's and retail's.
 local invites = labelled("Invite")
-check(#invites == 3, "an Invite on each open request")
-check(invites[1].enabled == true and invites[2].enabled == true, "live for the one heard now and the one from the site")
-check(invites[3].enabled == false, "and dimmed for the one nobody has heard from")
-invites[1].scripts.OnClick()
-check(invited[1] == "r1", "Invite asks the module, from the click")
+check(#invites == 3 and not invites[1].shown and not invites[2].shown and not invites[3].shown,
+  "no Invite on any request: whoever invites types /ginvite")
 labelled("Decline")[2].scripts.OnClick()
 check(decided[1] == "r2:declined", "Decline decides that request")
 opened = {}
@@ -687,7 +685,6 @@ check(labelled("Decline")[1].shown == true, "an officer sees Decline")
 fake.CanDecide = function() return false end
 GuildOS.joinRequestsFrame.Refresh()
 check(labelled("Decline")[1].shown == false and labelled("Decline")[2].shown == false, "who cannot decide does not")
-check(labelled("Invite")[1].shown == true, "and still has Invite")
 
 -- The card's Whisper is the reserve for a session with no addon whisper. On WoW: Forever "/w Ana Lima " is Ana
 -- with the message "Lima ": the card takes the hyphen, the same as the officer's list.

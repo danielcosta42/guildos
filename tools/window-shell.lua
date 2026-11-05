@@ -659,6 +659,15 @@ end
 
 do
   local function footShown(key) return f.footItems[key].shown end
+  -- Off Anniversary the game lets no addon invite (#256): no invite field, the rest as ever. What the
+  -- field does is Anniversary's, read below with the client switched to it.
+  local wasAnniversary = GuildOS.Client.isAnniversary
+  GuildOS.Client.isAnniversary = false
+  f:LayoutFooter(1000)
+  check(not footShown("invite") and footShown("search") and footShown("sync") and footShown("cores") and footShown("blizzard"),
+    "off Anniversary the footer has no invite field")
+  GuildOS.Client.isAnniversary = true
+  f:LayoutFooter(1000)
   check(footShown("search") and footShown("sync") and footShown("invite") and footShown("cores") and footShown("blizzard"),
     "at 1000px the footer holds every action and the invite field")
   check(point(f.footItems.search) == "LEFT,10,0", "starting 10px in")
@@ -698,6 +707,7 @@ do
   f:LayoutFooter(420)
   check(not footShown("cores") and footShown("search") and footShown("sync") and footShown("invite"),
     "then Core Sign-up; search, sync and invite stay longest")
+  GuildOS.Client.isAnniversary = wasAnniversary
   f:LayoutFooter(1000)
 end
 

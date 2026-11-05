@@ -863,3 +863,5 @@ L["|cffFF6600%d trial(s) ready to review.|r Approve or deny them in the Trials t
 L["LEFT THE GUILD"] = "LEFT THE GUILD"
 L["%d trial(s) ready to review"] = "%d trial(s) ready to review"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "You became an officer after logging in. Type /reload to manage recruiting."
+L["Type /ginvite %s to invite them."] = "Type /ginvite %s to invite them."
+L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."] = "This game does not let an addon invite: the auto-invite works on TBC Anniversary only."

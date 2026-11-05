@@ -197,9 +197,6 @@ R:_HandleKeywordWhisper("Zed", "Zed-Gallywix")
 check(#invited == 0, "a keyword whisper from Zed-Gallywix, banned, invites nobody")
 R:_HandleKeywordWhisper("Zed", "Zed")
 check(#invited == 1 and invited[1] == "Zed", "this realm's Zed, who shares the name, is invited")
-R._pendingInvites = { { name = "Zed", full = "Zed-TolBarad" } }
-R:InviteNext()
-check(#invited == 1, "the popup's click does not invite a Zed banned on another realm")
 local S = GuildOS.RecruitScanner
 local banned = function(n) return B:IsBanned(n) end
 check(not S:_CandidateOK({ name = "Zed", full = "Zed-Gallywix" }, {}, banned)

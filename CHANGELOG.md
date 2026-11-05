@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.3] - 2026-11-05
+
+### Fixed
+- fora do Anniversary o addon não oferece mais convite para a guilda: o Forever recusa a chamada, a macro e a linha no chat (#256)
+- no Forever o convite vai para a caixa do chat como /ginvite, e o Enter do jogador envia: a macro de botão seguro também é bloqueada (#256)
+- convidar para a guilda pelo /ginvite de um botão seguro, que o Forever ainda deixa (#256)
+
+
 ## [1.9.2] - 2026-11-05
 
 ### Fixed

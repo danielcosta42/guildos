@@ -781,13 +781,12 @@ end
 ----------------------------------------------------------------------
 function GuildOS:HookChatInvite()
     hooksecurefunc("SetItemRef", function(link, _, button)
-        if not CanGuildInvite() then return end
+        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
         if button ~= "LeftButton" or not IsAltKeyDown() then return end
         if not link then return end
 
         local name = link:match("^player:([^:]+)")
-        if name and name ~= "" then
-            GuildInvite(name)
+        if name and name ~= "" and GuildOS.Compat.GuildInvite(name) then
             GuildOS:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
         end
     end)
