@@ -95,7 +95,7 @@ function Frame:GetStringHeight() return 12 end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
 for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop", "SetBackdropColor",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
-  "SetShadowColor", "SetJustifyH", "SetJustifyV", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters",
+  "SetShadowColor", "SetJustifyH", "SetJustifyV", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "SetNumeric",
   "ClearFocus", "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetVertexColor", "SetDesaturated",
   "SetFrameStrata", "EnableMouse", "SetMovable", "RegisterForDrag", "SetColorTexture", "SetAtlas", "SetScale",
   "SetHorizTile", "SetVertTile", "SetResizeBounds", "SetClipsChildren", "SetScrollChild", "RegisterEvent",
@@ -403,5 +403,25 @@ check(GuildOSDB.rosterColumns == nil and headers() == DEFAULT, "Restore defaults
 -- ── The panel goes with the window ──────────────────────────────────────
 parent:Hide()
 check(not GuildOSColumnsPanel:IsShown(), "closing the roster closes the panel")
+
+-- ── Recruitment: an officer whose recruitment never started (#255) ──────
+-- Joined, founded or promoted after login: the officer modules ran before, so no db.recruitment
+-- until a /reload. The member's view, saying so; never the officer's panel over a missing table.
+do
+  local isOfficer = GuildOS.IsOfficer
+  function GuildOS:IsOfficer() return true end
+  GuildOS.db.recruitment = nil
+  local panel = CreateFrame("Frame", nil, UIParent)
+  local ok, err = pcall(GuildOS.CreateRecruitmentPanel, GuildOS, panel, panel)
+  check(ok, "a late officer's recruitment tab builds: " .. tostring(err))
+  fire(panel, "OnShow")
+  local function says(f, s)
+    if type(f.text) == "string" and f.text:find(s, 1, true) then return true end
+    for _, c in ipairs(f.children) do if says(c, s) then return true end end
+    return false
+  end
+  check(says(panel, "/reload"), "and tells them to /reload")
+  GuildOS.IsOfficer = isOfficer
+end
 
 print(("roster-table: %d checks passed"):format(checks))

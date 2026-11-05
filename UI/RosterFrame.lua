@@ -2631,9 +2631,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local uid = recruitInstances > 1 and tostring(recruitInstances) or ""
 
     ----------------------------------------------------------------
-    -- Member view (non-officer): read-only recruitment status
+    -- Member view (non-officer): read-only recruitment status. Also an officer whose recruitment
+    -- never started: the db and the officer modules are settled at login, so somebody who joined,
+    -- founded or was promoted after it has no db.recruitment until a /reload (#255).
     ----------------------------------------------------------------
-    if not GuildOS:IsOfficer() then
+    local lateOfficer = GuildOS:IsOfficer() and not GuildOS.db.recruitment
+    if lateOfficer or not GuildOS:IsOfficer() then
         -- Status badge
         local statusLabel = UI:CreateTitle(parent, "", 15)
         statusLabel:SetPoint("TOPLEFT", 20, -15)
@@ -2711,7 +2714,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             end
 
             if not info or info.enabled == nil then
-                statusLabel:SetText("|cff888888" .. L["No recruitment data received yet."] .. "|r")
+                statusLabel:SetText("|cff888888" .. (lateOfficer and L["You became an officer after logging in. Type /reload to manage recruiting."]
+                    or L["No recruitment data received yet."]) .. "|r")
                 updatedLabel:SetText("")
                 discordText:SetText("—")
                 msgText:SetText("")

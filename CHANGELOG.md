@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-11-05
+
+### Fixed
+- a aba de Recrutamento de quem virou oficial depois de logar abre como a de membro e pede /reload (#255)
+
+
 ## [1.9.1] - 2026-11-04
 
 ### Fixed
