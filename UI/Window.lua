@@ -201,11 +201,11 @@ local function inviteField(parent)
             GuildOS:Print(L["Enter a player name to invite."])
             return
         end
-        GuildInvite(target)
+        if not GuildOS.Compat.GuildInvite(target) then return end
         GuildOS:Print(string.format(L["Guild invite sent to %s."], target))
         box:SetText("")
     end
-    btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
+    GuildOS.Compat.InviteButton(btn, function() invite(); box:ClearFocus() end)
     box:SetScript("OnEnterPressed", function(self) invite(); self:ClearFocus() end)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 

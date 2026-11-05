@@ -680,12 +680,18 @@ do
   for _, c in ipairs(holder.children) do
     if c.kind == "Button" and c.label and c.label.text == "Invite" then inviteBtn = c end
   end
+  -- Off Anniversary the game lets no addon invite: the click is the button's secure cover, which
+  -- hands /ginvite the name its handler gave (#256).
+  local function click()
+    if GuildOS.Client.isAnniversary then return fire(inviteBtn, "OnClick") end
+    invitedName = GuildOS.Compat.InviteLine(inviteBtn.gosInvite, inviteBtn):match("^/ginvite (.+)$") or invitedName
+  end
   printed = {}
   holder.box:SetText("")
-  fire(inviteBtn, "OnClick")
+  click()
   check(invitedName == nil and said("Enter a player name to invite."), "an empty invite asks for a name")
   holder.box:SetText("  Nova  ")
-  fire(inviteBtn, "OnClick")
+  click()
   check(invitedName == "Nova" and said("Guild invite sent to Nova.") and holder.box.text == "",
     "the invite field invites the name typed, then clears")
   GuildInvite = realInvite

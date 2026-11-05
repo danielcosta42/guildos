@@ -135,7 +135,7 @@ local function Build()
             row.invite:SetShown(isOpen); row.whisper:SetShown(true); row.decline:SetShown(isOpen and JR():CanDecide())
             row.invite:SetEnabled(isOpen and JR():CanInvite(r.id))
             -- Both are the player's own click: the invite is the game's, started by this very button.
-            row.invite:SetScript("OnClick", function() JR():Invite(r.id) end)
+            GuildOS.Compat.InviteButton(row.invite, function() JR():Invite(r.id) end)
             row.decline:SetScript("OnClick", function() JR():Decide(r.id, "declined") end)
             row.whisper:SetScript("OnClick", function() ChatFrame_OpenChat("/w " .. GuildOS:WhisperTarget(r.character) .. " ") end)
             row:Show()

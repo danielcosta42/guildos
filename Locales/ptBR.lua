@@ -2417,3 +2417,4 @@ L["|cffFF6600%d trial(s) ready to review.|r Approve or deny them in the Trials t
 L["LEFT THE GUILD"] = "SAIU DA GUILDA"
 L["%d trial(s) ready to review"] = "%d trial(s) pronto(s) para avaliar"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "Você virou oficial depois de entrar no jogo. Digite /reload para cuidar do recrutamento."
+L["Type /ginvite %s to invite them."] = "Digite /ginvite %s para convidar."

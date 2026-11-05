@@ -2232,3 +2232,4 @@ L["|cffFF6600%d trial(s) ready to review.|r Approve or deny them in the Trials t
 L["LEFT THE GUILD"] = "已離開公會"
 L["%d trial(s) ready to review"] = "%d 位試用成員待審核"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "你在登入後成為了幹部。輸入 /reload 以管理招募。"
+L["Type /ginvite %s to invite them."] = "輸入 /ginvite %s 進行邀請。"

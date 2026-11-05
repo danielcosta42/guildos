@@ -2232,3 +2232,4 @@ L["|cffFF6600%d trial(s) ready to review.|r Approve or deny them in the Trials t
 L["LEFT THE GUILD"] = "길드 탈퇴"
 L["%d trial(s) ready to review"] = "검토할 수습 %d명"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "접속한 뒤에 관리자가 되었습니다. 모집을 관리하려면 /reload를 입력하세요."
+L["Type /ginvite %s to invite them."] = "초대하려면 /ginvite %s 를 입력하세요."

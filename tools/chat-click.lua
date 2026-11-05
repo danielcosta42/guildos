@@ -131,9 +131,12 @@ check(#env.invited == 0, "Forever: nobody is invited from the whisper, where the
 check(env.invitePopup >= 1 and #R._pendingInvites == 1 and R._pendingInvites[1].name == "Raikken Shadowmaster",
       "the asker waits in the popup, once, with no /who it could not run")
 env.whisper("ginv", "Bran Stone-Realm")
-check(R:InviteNext() == 1 and env.invited[1] == "Raikken Shadowmaster-Realm",
-      "the click invites the first, by the name the whisper carried, as an Alt-click's link does")
-check(R:SkipNext() == 0 and #env.invited == 1, "Skip invites nobody")
+-- The game lets no addon invite (#256): the popup's secure button hands the name to /ginvite.
+local left
+check(B.Compat.InviteLine(function() left = R:InviteNext() end) == "/ginvite Raikken Shadowmaster-Realm"
+      and left == 1 and #env.invited == 0,
+      "the click names the first to /ginvite, by the name the whisper carried, as an Alt-click's link does")
+check(R:SkipNext() == 0 and #env.invited == 0, "Skip invites nobody")
 env.whisper("ginv", "Bran Stone-Realm")
 check(#R._pendingInvites == 0, "and a skipped asker is not asked about again inside the cooldown")
 local bans = {}
@@ -142,7 +145,8 @@ B.BanList = { IsBanned = function(_, n) return bans[n:match("^([^-]+)") or n] en
 env.whisper("ginv", "Evil Guy-Realm")
 bans["Evil Guy"] = true                 -- a ban that arrives while the name waits
 env.whisper("ginv", "Unseen Person-Realm")
-check(R:InviteNext() == 1 and #env.invited == 1, "a name banned since it was queued is not invited")
+check(B.Compat.InviteLine(function() left = R:InviteNext() end) == "" and left == 1 and #env.invited == 0,
+      "a name banned since it was queued is not invited")
 check(#R._pendingInvites == 1 and R._pendingInvites[1].name == "Unseen Person",
       "and the click does not move on to someone the popup never showed")
 

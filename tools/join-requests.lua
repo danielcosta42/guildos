@@ -142,6 +142,15 @@ GuildOS.BanList = { IsBanned = function(_, name) return banned[name] end }
 
 local JR, Gossip, RB, Import, Companion = GuildOS.JoinRequests, GuildOS.ChehulGossip, GuildOS.RecruitBeacon,
   GuildOS.CompanionImport, GuildOS.Companion
+
+-- On WoW: Forever the game lets no addon invite: the invite button's secure cover runs Invite and hands
+-- /ginvite the name (#256). This is that click; `invites` holds what /ginvite was given.
+local function inviteVia(id)
+  local ok
+  local name = GuildOS.Compat.InviteLine(function() ok = JR:Invite(id) end):match("^/ginvite (.+)$")
+  if name then invites[#invites + 1] = name end
+  return ok
+end
 local S = GuildOS.State.gossip
 local errors = {}
 GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
@@ -428,15 +437,18 @@ NOW = NOW + 2
 check(JR:CanInvite("inv1234567") == false, "not after 360: whoever is online repeats it, so silence is offline")
 NOW = NOW - 2
 canInvite = false
-check(JR:CanInvite("inv1234567") == false and JR:Invite("inv1234567") == false and #invites == 0, "without the right to invite nothing is invited")
+check(JR:CanInvite("inv1234567") == false and inviteVia("inv1234567") == false and #invites == 0, "without the right to invite nothing is invited")
 canInvite = true
 guildMsgs = {}
-check(JR:Invite("inv1234567") == true and invites[1] == "Marta Vilar", "Invite hands the game the name as it was given")
+check(inviteVia("inv1234567") == true and invites[1] == "Marta Vilar", "Invite hands the game the name as it was given")
 check(find("inv1234567").status == "open" and not guildSaw("CRA|inv1234567|invited|Chehul Costa"),
   "and the row stays open until the game says the invite went (I3)")
 fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
 check(find("inv1234567").status == "invited" and guildSaw("CRA|inv1234567|invited|Chehul Costa"), "the game's line closes it, and it is told")
-check(JR:Invite("inv1234567") == false and #invites == 1, "once")
+check(inviteVia("inv1234567") == false and #invites == 1, "once")
+printed = {}
+check(GuildOS.Compat.GuildInvite("Marta Vilar") == false and #invites == 1 and said("Type /ginvite Marta Vilar to invite them."),
+  "without the button's cover the game would forbid it: nobody is invited, and the /ginvite line is said")
 check(JR:CanInvite("nope") == false, "an unknown request is not invitable")
 
 -- bounded
@@ -623,11 +635,11 @@ check(find("reo1234567").status == "declined", "and the officer's word closes it
 -- I3: Invite closes the row only when the game says the invite went.
 reset(); GUILD, officer = "Ashen Vow", true
 handler(crq("inw1234567"), "Marta Vilar", "WHISPER")
-JR:Invite("inw1234567")
+inviteVia("inw1234567")
 NOW = NOW + 30
 fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
 check(find("inw1234567").status == "open", "a confirmation that comes late closes nothing")
-check(JR:Invite("inw1234567") == true and #invites == 2, "and the officer can try again")
+check(inviteVia("inw1234567") == true and #invites == 2, "and the officer can try again")
 fire("CHAT_MSG_SYSTEM", "You have invited Somebody Else to join your guild.")
 check(find("inw1234567").status == "open", "a confirmation for another name closes nothing")
 issecretvalue = function(v) return v == "SECRET" end
@@ -638,7 +650,7 @@ fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
 check(find("inw1234567").status == "invited", "the right line, in time, does")
 reset(); GUILD, officer = "Ashen Vow", true
 openSite(UUID)
-JR:Invite(UUID)
+inviteVia(UUID)
 check(invites[1] == "Davi Rocha" and find(UUID).status == "open", "a request from the site stays open too: the person may be offline")
 
 -- I4: on retail the realm travels with the name, and the invite takes it as the game wants it.
@@ -648,7 +660,7 @@ check(JR:Me().character:find("^Chehul%-"), "on retail the name asked with carrie
 handler(crq("rt11111111", "Ana-Gallywix"), "Ana-Gallywix", "WHISPER")
 handler(crq("rt22222222", "Ana-Normal"), "Ana-Normal", "WHISPER")
 check(find("rt11111111") and find("rt22222222"), "two Anas of different realms are two people")
-JR:Invite("rt11111111"); JR:Invite("rt22222222")
+inviteVia("rt11111111"); inviteVia("rt22222222")
 check(invites[1] == "Ana-Gallywix" and invites[2] == "Ana", "the invite keeps a connected realm and drops this one's")
 GuildOS.Client.isRetail, GuildOS.Client.has.surnames = false, true
 
@@ -768,7 +780,7 @@ end
 reset(); GUILD, officer, canInvite = "Ashen Vow", false, true
 handler(crq("rig1234567", "Marta Vilar"), "Marta Vilar", "WHISPER")
 check(JR:CanDecide() == false, "a member decides nothing")
-check(JR:CanInvite("rig1234567") == true and JR:Invite("rig1234567") == true and #invites == 1, "but the game's right to invite is theirs")
+check(JR:CanInvite("rig1234567") == true and inviteVia("rig1234567") == true and #invites == 1, "but the game's right to invite is theirs")
 fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
 check(find("rig1234567").status == "open", "the row stays open")
 check(said("Only an officer can close a request: this one stays open."), "and the reason is printed")
@@ -830,14 +842,14 @@ GuildOS.JoinRequestsHeard = nil
 -- B6 fix 2: the invite's confirmation names the same person, whole.
 reset(); GUILD, officer = "Ashen Vow", true
 handler(crq("pre2222222", "Ana Lima"), "Ana Lima", "WHISPER")
-JR:Invite("pre2222222")
+inviteVia("pre2222222")
 fire("CHAT_MSG_SYSTEM", "You have invited Ana to join your guild.")
 check(find("pre2222222").status == "open", "'Ana' is not 'Ana Lima': nothing closes")
 fire("CHAT_MSG_SYSTEM", "You have invited Ana-Lima to join your guild.")
 check(find("pre2222222").status == "invited", "the hyphen is the same person")
 reset(); GUILD, officer = "Ashen Vow", true
 handler(crq("pre3333333", "Ana"), "Ana", "WHISPER")
-JR:Invite("pre3333333")
+inviteVia("pre3333333")
 fire("CHAT_MSG_SYSTEM", "You have invited Ana-Gallywix to join your guild.")
 check(find("pre3333333").status == "open", "a name with something after it is another person")
 fire("CHAT_MSG_SYSTEM", "You have invited ana to join your guild.")
@@ -845,14 +857,14 @@ check(find("pre3333333").status == "invited", "case does not matter")
 GuildOS.Client.isRetail, GuildOS.Client.has.surnames = true, false
 reset(); GUILD, officer = "Ashen Vow", true
 handler(crq("rt33333333", "Ana-Gallywix"), "Ana-Gallywix", "WHISPER")
-JR:Invite("rt33333333")
+inviteVia("rt33333333")
 fire("CHAT_MSG_SYSTEM", "You have invited Ana-Normal to join your guild.")
 check(find("rt33333333").status == "open", "retail: the same name on another realm is somebody else")
 fire("CHAT_MSG_SYSTEM", "You have invited Ana-Gallywix to join your guild.")
 check(find("rt33333333").status == "invited", "retail: name and realm both given and the same")
 reset(); GUILD, officer = "Ashen Vow", true
 handler(crq("rt44444444", "Ana-Normal"), "Ana-Normal", "WHISPER")
-JR:Invite("rt44444444")
+inviteVia("rt44444444")
 fire("CHAT_MSG_SYSTEM", "You have invited Ana to join your guild.")
 check(find("rt44444444").status == "invited", "retail: the game leaves this realm off, and a side with no realm compares the name")
 GuildOS.Client.isRetail, GuildOS.Client.has.surnames = false, true
@@ -861,7 +873,7 @@ GuildOS.Client.isRetail, GuildOS.Client.has.surnames = false, true
 reset(); GUILD, officer = "Ashen Vow", true
 local beforeAudit = Gossip:Audit().requests
 handler(crq("aud1111111", "Marta Vilar"), "Marta Vilar", "WHISPER")
-JR:Invite("aud1111111")
+inviteVia("aud1111111")
 fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
 local audit = Gossip:Audit()
 check(audit.requests.confirmed == beforeAudit.confirmed + 1 and audit.requests.invites == beforeAudit.invites + 1,

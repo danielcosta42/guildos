@@ -382,7 +382,7 @@ end
 
 function Recruitment:_InviteNow(name, full)
     local cfg = GuildOS.db.recruitment.autoInvite
-    GuildInvite(full or name)
+    if not GuildOS.Compat.GuildInvite(full or name) then return end
     if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(name) end
     self:_MarkInvited(name, GetServerTime(), cfg.cooldownSec)
     GuildOS:Print(string.format(L["Auto-invited |cffFFFFFF%s|r to the guild."], name))
@@ -1204,7 +1204,7 @@ function Recruitment:ShowInvitePopup()
     local f = self.invitePopup
     if not f then
         f = ActionPopup(L["Auto-Invite"], -300, L["Invite"], L["Skip"])
-        f.okBtn:SetScript("OnClick", function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
+        GuildOS.Compat.InviteButton(f.okBtn, function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
         f.laterBtn:SetScript("OnClick", function() Recruitment:SkipNext(); Recruitment:ShowInvitePopup() end)
         self.invitePopup = f
     end
@@ -1473,9 +1473,10 @@ function Recruitment:HandleCommand(args)
                 GuildOS:Print(L["|cffFF4444You don't have permission to invite.|r"])
                 return
             end
-            GuildInvite(target)
-            if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
-            GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            if GuildOS.Compat.GuildInvite(target) then
+                if GuildOS.RecruitEngagement then GuildOS.RecruitEngagement:RecordInvite(target) end
+                GuildOS:Print(L["Guild invite sent to |cffFFFFFF"] .. target .. "|r.")
+            end
         else
             GuildOS:Print(L["Usage: /guildos recruit invite <PlayerName>"])
         end

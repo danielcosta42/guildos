@@ -786,8 +786,7 @@ function GuildOS:HookChatInvite()
         if not link then return end
 
         local name = link:match("^player:([^:]+)")
-        if name and name ~= "" then
-            GuildInvite(name)
+        if name and name ~= "" and GuildOS.Compat.GuildInvite(name) then
             GuildOS:Print(L["Guild invite sent to "] .. name .. L[". (Alt+Click)"])
         end
     end)
