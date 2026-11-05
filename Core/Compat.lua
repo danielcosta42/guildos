@@ -587,9 +587,10 @@ function Compat.Transmog(slotId)
         slotID = slotId, type = E.TransmogType.Appearance, modification = E.TransmogModification.Main,
     })
     if not ok or type(info) ~= "table" then return nil end
-    if info.isHideVisual == true then return true end
-    local applied, base = info.appliedSourceID, info.baseSourceID
-    if Compat.IsSecret(applied) or Compat.IsSecret(base) then return nil end
+    local hidden, applied, base = info.isHideVisual, info.appliedSourceID, info.baseSourceID
+    -- Before any comparison: a secret value raises on `==`, and in an instance the client may keep these secret.
+    if Compat.IsSecret(hidden, applied, base) then return nil end
+    if hidden == true then return true end
     applied = tonumber(applied)
     -- 0 is Constants.Transmog.NoTransmogID: the item's own look.
     if not applied or applied <= 0 or applied == tonumber(base) then return nil end
