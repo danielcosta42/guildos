@@ -132,7 +132,8 @@ local function Build()
             row.meta:SetText(Meta(r))
             local isOpen = r.status == "open"
             -- Invite is whoever the game lets invite; deciding is an officer's, and Decline would do nothing for anybody else.
-            row.invite:SetShown(isOpen); row.whisper:SetShown(true); row.decline:SetShown(isOpen and JR():CanDecide())
+            -- The game lets no addon invite off Anniversary (#256), and these requests are Forever's and retail's.
+            row.invite:SetShown(isOpen and GuildOS.Compat.AddonMayInvite()); row.whisper:SetShown(true); row.decline:SetShown(isOpen and JR():CanDecide())
             row.invite:SetEnabled(isOpen and JR():CanInvite(r.id))
             -- Both are the player's own click: the invite is the game's, started by this very button.
             row.invite:SetScript("OnClick", function() JR():Invite(r.id) end)

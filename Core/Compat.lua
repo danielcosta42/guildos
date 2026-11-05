@@ -1433,6 +1433,23 @@ function Compat.NeedsClick()
     return not GuildOS.Client.isAnniversary
 end
 
+-- A guild invite (#256). Only TBC Anniversary lets an addon invite to the guild. WoW: Forever
+-- 1.60.1.70790 refused all three ways one has, in game on 2026-11-04: GuildInvite itself, which is only
+-- C_GuildInfo.Invite there (ADDON_ACTION_FORBIDDEN, from a click too); a secure button running a
+-- /ginvite the addon wrote (MACRO_ACTION_BLOCKED); and that line left in the chat box for the player's
+-- Enter (blocked, and the box stayed tainted until a /reload). Retail runs the same API. So off
+-- Anniversary nothing offers an invite, and what still asks for one is told the /ginvite line to type.
+function Compat.AddonMayInvite()
+    return GuildOS.Client.isAnniversary == true and CanGuildInvite() == true
+end
+
+function Compat.GuildInvite(name)
+    if type(name) ~= "string" or name == "" then return false end
+    if GuildOS.Client.isAnniversary then GuildInvite(name); return true end
+    GuildOS:Print(string.format(GuildOS.L["Type /ginvite %s to invite them."], name))
+    return false
+end
+
 -- Does the server show this channel without raid icons? It is the ChatChannels table's
 -- DisableRaidIcons flag, which the chat event hands the client as suppressRaidIcons. On WoW:
 -- Forever (1.60.1.70170) that is General 1, Trade 2, LocalDefense 22, Services 42 and

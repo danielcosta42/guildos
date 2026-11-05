@@ -142,6 +142,10 @@ GuildOS.BanList = { IsBanned = function(_, name) return banned[name] end }
 
 local JR, Gossip, RB, Import, Companion = GuildOS.JoinRequests, GuildOS.ChehulGossip, GuildOS.RecruitBeacon,
   GuildOS.CompanionImport, GuildOS.Companion
+-- The module's invite, on a client that lets an addon invite. None that runs it does today (#256): its
+-- button is hidden there (tools/guild-finder.lua), and what it would say instead is checked below.
+local sayInvite = GuildOS.Compat.GuildInvite
+GuildOS.Compat.GuildInvite = function(name) GuildInvite(name); return true end
 local S = GuildOS.State.gossip
 local errors = {}
 GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
@@ -438,6 +442,9 @@ fire("CHAT_MSG_SYSTEM", "You have invited Marta Vilar to join your guild.")
 check(find("inv1234567").status == "invited" and guildSaw("CRA|inv1234567|invited|Chehul Costa"), "the game's line closes it, and it is told")
 check(JR:Invite("inv1234567") == false and #invites == 1, "once")
 check(JR:CanInvite("nope") == false, "an unknown request is not invitable")
+printed = {}
+check(sayInvite("Marta Vilar") == false and #invites == 1 and said("Type /ginvite Marta Vilar to invite them."),
+  "off Anniversary nothing is invited: the /ginvite line is said instead (#256)")
 
 -- bounded
 reset()

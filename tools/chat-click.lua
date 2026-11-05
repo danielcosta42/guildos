@@ -59,7 +59,11 @@ local function load(game)
   local sent = {}
   function SendChatMessage(msg, chan, _, target) sent[#sent + 1] = { msg = msg, chan = chan, target = target } end
   local invited = {}
-  function GuildInvite(name) invited[#invited + 1] = name end
+  -- Off Anniversary the game forbids the call (#256).
+  function GuildInvite(name)
+    if not GuildOS.Client.isAnniversary then error("ADDON_ACTION_FORBIDDEN: WoW: Forever lets no addon invite (#256)") end
+    invited[#invited + 1] = name
+  end
   local registry = {}
   LibStub = setmetatable({ NewLibrary = function(_, n) registry[n] = registry[n] or {}; return registry[n] end,
     GetLibrary = function(_, n) return registry[n] end },
@@ -75,8 +79,7 @@ local function load(game)
                 recruitScanner = { template = "Hi [player]", batchMax = 10, cooldownSec = 1800 } }
   GuildOS.CommSystem = { MSG_TYPES = { WELCOME_INTENT = "WI", WELCOME_CLAIM = "WC" }, SendMessage = function() end }
   function GuildOS:IsOfficer() return true end
-  local env = { handlers = handlers, timers = timers, sent = sent, invited = invited, shown = 0, invitePopup = 0 }
-  GuildOS.Recruitment.ShowInvitePopup = function() env.invitePopup = env.invitePopup + 1 end
+  local env = { handlers = handlers, timers = timers, sent = sent, invited = invited, shown = 0 }
   -- The popup is the UI's; here it only has to be asked for.
   GuildOS.Recruitment.ShowWelcomePopup = function() env.shown = env.shown + 1 end
   function env.runTimers(upTo)
@@ -122,29 +125,12 @@ R:QueueWelcome("Mata Ratos")
 R:DismissPendingWelcome()
 check(#R._pendingWelcomes == 0 and R:SendPendingWelcome() == false, "Not now drops who was waiting")
 
--- ── Forever: an auto-invite waits for a click ───────────────────────────
+-- ── Forever: the game lets no addon invite (#256) ────────────────────────
 local ai = B.db.recruitment.autoInvite
-ai.enabled, ai.minLevel, ai.classes = true, 55, { MAGE = true }   -- filters set: Forever cannot /who them
+ai.enabled = true
 env.whisper("ginv", "Raikken Shadowmaster-Realm")
-env.whisper("ginv please", "Raikken Shadowmaster-Realm")
-check(#env.invited == 0, "Forever: nobody is invited from the whisper, where the game would drop it")
-check(env.invitePopup >= 1 and #R._pendingInvites == 1 and R._pendingInvites[1].name == "Raikken Shadowmaster",
-      "the asker waits in the popup, once, with no /who it could not run")
-env.whisper("ginv", "Bran Stone-Realm")
-check(R:InviteNext() == 1 and env.invited[1] == "Raikken Shadowmaster-Realm",
-      "the click invites the first, by the name the whisper carried, as an Alt-click's link does")
-check(R:SkipNext() == 0 and #env.invited == 1, "Skip invites nobody")
-env.whisper("ginv", "Bran Stone-Realm")
-check(#R._pendingInvites == 0, "and a skipped asker is not asked about again inside the cooldown")
-local bans = {}
--- By the name alone, as BanList keys a ban off retail: a caller may hand it the whole name (#184).
-B.BanList = { IsBanned = function(_, n) return bans[n:match("^([^-]+)") or n] end }
-env.whisper("ginv", "Evil Guy-Realm")
-bans["Evil Guy"] = true                 -- a ban that arrives while the name waits
-env.whisper("ginv", "Unseen Person-Realm")
-check(R:InviteNext() == 1 and #env.invited == 1, "a name banned since it was queued is not invited")
-check(#R._pendingInvites == 1 and R._pendingInvites[1].name == "Unseen Person",
-      "and the click does not move on to someone the popup never showed")
+check(#env.invited == 0 and R._pendingInvites == nil and R.QueueInvite == nil,
+      "Forever: a keyword whisper invites nobody, and no popup holds it for a click")
 
 -- ── Forever: whispers go out one per click ──────────────────────────────
 S._results = { { name = "Ana", level = 60 }, { name = "Bob", level = 60 }, { name = "Cid", level = 60 } }
@@ -187,6 +173,6 @@ check(#env.sent == 3, "and both go out")
 local aiA = B.db.recruitment.autoInvite
 aiA.enabled = true
 env.whisper("ginv", "Grefer-Realm")
-check(env.invited[1] == "Grefer" and env.invitePopup == 0, "Anniversary: the auto-invite goes out on its own")
+check(env.invited[1] == "Grefer", "Anniversary: the auto-invite goes out on its own")
 
 print(("chat-click: %d checks passed"):format(checks))

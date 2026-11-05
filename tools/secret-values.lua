@@ -282,10 +282,14 @@ check(fires(welcome, nil, "CHAT_MSG_SYSTEM", "Bob has joined the guild.") and jo
 local autoInvite = handlerOf(function() GuildOS.Recruitment:RegisterAutoInviteEvent() end)
 check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", secret(), secret()), "Recruitment auto-invite: a secret whisper does not raise")
 local invited
+-- Read as on Anniversary, the one client that lets an addon invite (#256): the point here is the secret.
+local mayInvite = GuildOS.Compat.AddonMayInvite
+GuildOS.Compat.AddonMayInvite = function() return true end
 GuildOS.Recruitment._MatchKeyword = function() return true end
 GuildOS.Recruitment._HandleKeywordWhisper = function(_, who) invited = who end
 check(fires(autoInvite, nil, "CHAT_MSG_WHISPER", "inv pls", "Bob-Forever") and invited == "Bob",
       "Recruitment auto-invite: a readable whisper still invites")
+GuildOS.Compat.AddonMayInvite = mayInvite
 
 local LootMaster = GuildOS.LootMaster
 LootMaster.listeningForRolls, LootMaster.activeLoot = true, { itemId = 1 }

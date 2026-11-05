@@ -201,8 +201,7 @@ local function inviteField(parent)
             GuildOS:Print(L["Enter a player name to invite."])
             return
         end
-        GuildInvite(target)
-        GuildOS:Print(string.format(L["Guild invite sent to %s."], target))
+        if GuildOS.Compat.GuildInvite(target) then GuildOS:Print(string.format(L["Guild invite sent to %s."], target)) end
         box:SetText("")
     end
     btn:SetScript("OnClick", function() invite(); box:ClearFocus() end)
@@ -504,7 +503,7 @@ local function createWindow()
         for _, item in ipairs(FOOTER) do
             local frame = self.footItems[item.key]
             frame:Hide()
-            if item.key ~= "invite" or CanGuildInvite() then
+            if item.key ~= "invite" or GuildOS.Compat.AddonMayInvite() then   -- Anniversary only (#256)
                 spec[#spec + 1] = { key = item.key, min = frame:GetWidth(), weight = 0, priority = item.priority }
             end
         end
