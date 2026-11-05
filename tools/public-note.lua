@@ -94,9 +94,19 @@ local TWO_BOBS = {
   { name = "Bob-RealmB", guid = "Player-2-000B", note = "b" },
 }
 
+-- ── 0. Off TBC Anniversary nothing is written (#259) ─────────────────────
+-- WoW: Forever forbids C_GuildInfo.SetNote to addons: no Add note, no !note, and the write never calls it.
+GuildOS.Client.isAnniversary = false
+client({ roster = ANA, setNote = true, global = true })
+check(Compat.CanEditPublicNote() == false, "off Anniversary Guild OS may not write a public note")
+local ok, why = Compat.SetGuildPublicNote("Ana", "LFG Kara", "Firemaw")
+check(ok == false and why == "no-permission" and #writes == 0, "and the write never reaches the game")
+-- What follows is the write itself, which only Anniversary has.
+GuildOS.Client.isAnniversary = true
+
 -- ── 1. The three API states ─────────────────────────────────────────────
 client({ roster = ANA, setNote = true, global = true })
-local ok, why = Compat.SetGuildPublicNote("Ana", "LFG Kara", "Firemaw")
+ok, why = Compat.SetGuildPublicNote("Ana", "LFG Kara", "Firemaw")
 check(ok == true and why == nil and #writes == 1, "with C_GuildInfo.SetNote the note is written once")
 check(writes[1][1] == "SetNote" and writes[1][2] == "Player-4395-0A1B2C3D" and writes[1][3] == "LFG Kara" and writes[1][4] == true,
   "C_GuildInfo.SetNote gets the member's GUID, the note and isPublic = true")

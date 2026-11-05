@@ -349,7 +349,11 @@ function Compat.OpenWorldMap()
 end
 
 -- Whether this client may edit guild public notes
+-- Whether Guild OS may write a member's public note. Only TBC Anniversary lets an addon: WoW: Forever
+-- 1.60.1.70790 forbids C_GuildInfo.SetNote to addons (ADDON_ACTION_FORBIDDEN on the roster's Add note,
+-- 2026-11-05), as it forbids GuildInvite (#256), and retail runs the same API (#259).
 function Compat.CanEditPublicNote()
+    if not GuildOS.Client.isAnniversary then return false end
     if CanEditPublicNote then return CanEditPublicNote() and true or false end
     return false
 end
@@ -408,7 +412,7 @@ end
 -- 2.5.6 documents C_GuildInfo.SetNote(guid, note, isPublic) and not the old
 -- GuildRosterSetPublicNote(index, note), which stays as the fallback (issue #5).
 function Compat.SetGuildPublicNote(name, text, realm)
-    if not (CanEditPublicNote and CanEditPublicNote()) then return false, "no-permission" end
+    if not Compat.CanEditPublicNote() then return false, "no-permission" end
     local idx, why = Compat.FindGuildRosterIndex(name, realm)
     if not idx then return false, why end
     -- Member-authored text: strip UI escapes and cap without splitting a
