@@ -586,6 +586,9 @@ function GuildOS:HookGuildFrame()
         self._guildHookInstalled = true
         hooksecurefunc("ToggleGuildFrame", function()
             if self._suppressGuildHijack then return end
+            -- In combat the game will not let an addon hide Blizzard's guild frame, which holds protected
+            -- pieces: hijacking then left both windows open side by side (#261). The key opens Blizzard's.
+            if InCombatLockdown() then return end
             if not (IsInGuild() and self:IsGuildButtonHijacked()) then return end
             local blizShown = (GuildFrame and GuildFrame:IsShown())
                 or (CommunitiesFrame and CommunitiesFrame:IsShown())
