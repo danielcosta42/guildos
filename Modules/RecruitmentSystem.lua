@@ -359,7 +359,7 @@ function Recruitment:RegisterAutoInviteEvent()
         if GuildOS.Compat.IsSecret(msg, author) then return end  -- chat in lockdown: nothing readable
         local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
         if not cfg or not cfg.enabled then return end
-        if not CanGuildInvite() then return end
+        if not GuildOS.Compat.AddonMayInvite() then return end   -- Anniversary only (#256)
         if not Recruitment:_MatchKeyword(msg, cfg.keyword) then return end
         local sender = author and (author:match("^([^-]+)") or author)
         if sender and sender ~= "" then
@@ -368,15 +368,9 @@ function Recruitment:RegisterAutoInviteEvent()
     end)
 end
 
--- An invite the whisper earned. On WoW: Forever the game only invites from a click, so the
--- name waits in the auto-invite popup for the officer (issue #61); elsewhere it goes now.
--- `full` is the name exactly as the whisper carried it, which is what an Alt-click's link
--- invites with; Forever invites with it.
-function Recruitment:_DoInvite(name, full)
-    if GuildOS.Compat.NeedsClick() then
-        self:QueueInvite(name, full)
-        return
-    end
+-- An invite the whisper earned. Only TBC Anniversary gets here (#256): the popup that held it for a
+-- click on WoW: Forever (#61) went with the invite the game took away from addons there.
+function Recruitment:_DoInvite(name)
     self:_InviteNow(name)
 end
 
@@ -406,8 +400,8 @@ function Recruitment:_HandleKeywordWhisper(sender, author)
 end
 
 ----------------------------------------------------------------------
--- What waits for a click on WoW: Forever (issue #61): the welcome for whoever joined, and the
--- invites whispers asked for. A queue each, so a burst of joins or whispers is one popup.
+-- What waits for a click on WoW: Forever (issue #61): the welcome for whoever joined. A queue, so a
+-- burst of joins is one popup.
 ----------------------------------------------------------------------
 local function addOnce(list, name, entry)
     for _, n in ipairs(list) do
@@ -451,40 +445,6 @@ end
 
 function Recruitment:DismissPendingWelcome()
     self._pendingWelcomes = {}
-end
-
-function Recruitment:QueueInvite(name, full)
-    self._pendingInvites = self._pendingInvites or {}
-    if addOnce(self._pendingInvites, name, { name = name, full = full }) then
-        GuildOS:Print(string.format(L["|cffFFFFFF%s|r whispered the keyword: invite them from the popup."], name))
-    end
-    self:ShowInvitePopup()
-end
-
--- The click: invite the one the popup shows, and only that one: on Forever the click is the
--- only check there is. If they were banned since they were queued (a ban can arrive from
--- another officer meanwhile) or already invited, they are dropped and the next waits for its
--- own click. Returns how many are left.
-function Recruitment:InviteNext()
-    local list = self._pendingInvites or {}
-    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
-    local e = table.remove(list, 1)
-    if not (e and cfg) then return #list end
-    if GuildOS.BanList and GuildOS.BanList:IsBanned(e.full or e.name) then   -- realm and all (#184)
-        GuildOS:Print(string.format(L["|cffFFFFFF%s|r is banned: not invited."], e.name))
-    elseif not self:_OnInviteCooldown(e.name, GetServerTime()) then
-        self:_InviteNow(e.name, e.full)
-    end
-    return #list
-end
-
--- Skipped: not invited, and not asked about again until the cooldown runs out.
-function Recruitment:SkipNext()
-    local list = self._pendingInvites or {}
-    local e = table.remove(list, 1)
-    local cfg = GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite
-    if e and cfg then self:_MarkInvited(e.name, GetServerTime(), cfg.cooldownSec) end
-    return #list
 end
 
 -- Async /who lookup, one query at a time. Fail-safe: on timeout / no result,
@@ -1195,35 +1155,6 @@ function Recruitment:ShowWelcomePopup()
     f.line:SetText(string.format(L["|cffFFFFFF%s|r joined the guild."], table.concat(list, ", ")))
     f.note:SetText((GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage) or "")
     f:Fit()
-    f:Show()
-    -- An invite popup already up moves under this one instead of being covered by it.
-    if self.invitePopup and self.invitePopup:IsShown() then self:ShowInvitePopup() end
-end
-
-function Recruitment:ShowInvitePopup()
-    local f = self.invitePopup
-    if not f then
-        f = ActionPopup(L["Auto-Invite"], -300, L["Invite"], L["Skip"])
-        f.okBtn:SetScript("OnClick", function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
-        f.laterBtn:SetScript("OnClick", function() Recruitment:SkipNext(); Recruitment:ShowInvitePopup() end)
-        self.invitePopup = f
-    end
-    local list = self._pendingInvites or {}
-    if #list == 0 then f:Hide() return end
-    local line = string.format(L["|cffFFFFFF%s|r whispered the keyword."], list[1].name)
-    if #list > 1 then line = line .. " " .. string.format(L["(+%d waiting)"], #list - 1) end
-    f.line:SetText(line)
-    f.note:SetText(L["On WoW: Forever the game only invites from a click, and level and class are not checked."])
-    f:Fit()
-    if not f.moved then
-        f:ClearAllPoints()
-        local w = self.welcomePopup
-        if w and w:IsShown() then
-            f:SetPoint("TOP", w, "BOTTOM", 0, -8)
-        else
-            f:SetPoint("TOP", UIParent, "TOP", 0, -300)
-        end
-    end
     f:Show()
 end
 

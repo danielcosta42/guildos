@@ -503,7 +503,7 @@ local function createWindow()
         for _, item in ipairs(FOOTER) do
             local frame = self.footItems[item.key]
             frame:Hide()
-            if item.key ~= "invite" or CanGuildInvite() then
+            if item.key ~= "invite" or GuildOS.Compat.AddonMayInvite() then   -- Anniversary only (#256)
                 spec[#spec + 1] = { key = item.key, min = frame:GetWidth(), weight = 0, priority = item.priority }
             end
         end

@@ -659,6 +659,15 @@ end
 
 do
   local function footShown(key) return f.footItems[key].shown end
+  -- Off Anniversary the game lets no addon invite (#256): no invite field, the rest as ever. What the
+  -- field does is Anniversary's, read below with the client switched to it.
+  local wasAnniversary = GuildOS.Client.isAnniversary
+  GuildOS.Client.isAnniversary = false
+  f:LayoutFooter(1000)
+  check(not footShown("invite") and footShown("search") and footShown("sync") and footShown("cores") and footShown("blizzard"),
+    "off Anniversary the footer has no invite field")
+  GuildOS.Client.isAnniversary = true
+  f:LayoutFooter(1000)
   check(footShown("search") and footShown("sync") and footShown("invite") and footShown("cores") and footShown("blizzard"),
     "at 1000px the footer holds every action and the invite field")
   check(point(f.footItems.search) == "LEFT,10,0", "starting 10px in")
@@ -673,13 +682,9 @@ do
   for _, key in ipairs({ "search", "sync", "cores", "blizzard" }) do fire(f.footItems[key], "OnClick") end
   check(ran.search and ran.sync and ran.cores and ran.blizzard, "each footer action runs what it names")
   GuildOS.Search, GuildOS.CommSystem, GuildOS.ShowCoreSignupFrame, GuildOS.OpenBlizzardGuildUI = real[1], real[2], real[3], real[4]
-  -- Off Anniversary the game forbids GuildInvite to addons (#256): the /ginvite line goes into the chat
-  -- box for the player's Enter.
   local invitedName
-  local realInvite, realOpenChat = GuildInvite, ChatFrame_OpenChat
-  local direct = GuildOS.Client.isAnniversary
-  GuildInvite = function(name) check(direct, "GuildInvite only where the game allows it"); invitedName = name end
-  ChatFrame_OpenChat = function(text) check(not direct, "the chat box only where it must"); invitedName = text:match("^/ginvite (.+)$") end
+  local realInvite = GuildInvite
+  GuildInvite = function(name) invitedName = name end
   local holder, inviteBtn = f.footItems.invite, nil
   for _, c in ipairs(holder.children) do
     if c.kind == "Button" and c.label and c.label.text == "Invite" then inviteBtn = c end
@@ -690,9 +695,9 @@ do
   check(invitedName == nil and said("Enter a player name to invite."), "an empty invite asks for a name")
   holder.box:SetText("  Nova  ")
   fire(inviteBtn, "OnClick")
-  check(invitedName == "Nova" and said(direct and "Guild invite sent to Nova." or "Press Enter to invite Nova.")
-    and holder.box.text == "", "the invite field invites the name typed, then clears")
-  GuildInvite, ChatFrame_OpenChat = realInvite, realOpenChat
+  check(invitedName == "Nova" and said("Guild invite sent to Nova.") and holder.box.text == "",
+    "the invite field invites the name typed, then clears")
+  GuildInvite = realInvite
   canInvite = false
   f:LayoutFooter(1000)
   check(not footShown("invite") and footShown("blizzard"), "no invite field for who cannot invite")
@@ -702,6 +707,7 @@ do
   f:LayoutFooter(420)
   check(not footShown("cores") and footShown("search") and footShown("sync") and footShown("invite"),
     "then Core Sign-up; search, sync and invite stay longest")
+  GuildOS.Client.isAnniversary = wasAnniversary
   f:LayoutFooter(1000)
 end
 
