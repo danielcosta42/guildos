@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.4] - 2026-11-05
+
+### Fixed
+- fora do Anniversary o addon não escreve mais a nota pública: o Forever bloqueia C_GuildInfo.SetNote (#259)
+
+
 ## [1.9.3] - 2026-11-05
 
 ### Fixed
