@@ -232,6 +232,7 @@ function GuildInvite() end
 GuildFrame = newFrame("Frame", UIParent)
 GuildFrame:Hide()
 function ToggleGuildFrame() end
+function InCombatLockdown() return false end
 function HideUIPanel(frame) frame:Hide() end
 Minimap = newFrame("Frame", UIParent)
 Minimap.w, Minimap.h = 140, 140
@@ -432,6 +433,14 @@ pressJ()
 check(f:IsShown(), "and the one after opens it again")
 pressJ()
 check(not f:IsShown(), "and closes it again")
+-- In combat the game will not let an addon hide Blizzard's frame: the key opens that one alone (#261).
+local inCombat = InCombatLockdown
+InCombatLockdown = function() return true end
+pressJ()
+check(GuildFrame:IsShown() and not f:IsShown(), "in combat the guild key opens Blizzard's frame alone, never both")
+pressJ()
+check(not GuildFrame:IsShown() and not f:IsShown(), "and the next press closes it")
+InCombatLockdown = inCombat
 local native
 for _, c in ipairs(GuildFrame.children) do if c.kind == "Button" and c.text == "Guild OS" then native = c end end
 check(native ~= nil, "Blizzard's guild frame carries a Guild OS button")
