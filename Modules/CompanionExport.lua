@@ -55,8 +55,11 @@ local FMT = "GOSCOMP1"
 -- the people who asked to join (the site's specs/071, issue guildos#245): absent without any. 14 adds
 -- each member's `main`, the key of the character an officer linked them to as an alt (`db.altLinks`,
 -- issue #251, the site's #392), in the same form as the member's own `key`: absent for a main and for
--- anybody nobody linked, and never in the pack, where nobody says whose alt they are.
-local PAYLOAD_VERSION = 14
+-- anybody nobody linked, and never in the pack, where nobody says whose alt they are. 15 adds the
+-- transmog to a gear entry: `appearance`, the source id the slot shows instead of the item's own look,
+-- or `hidden` (issue #201, the site's #227). Both absent with no transmog, on TBC Anniversary and from
+-- a member whose addon predates it.
+local PAYLOAD_VERSION = 15
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -185,6 +188,13 @@ local function gearFor(data)
                     if id and id > 0 then gems[#gems + 1] = id end
                 end
                 if #gems > 0 then entry.gems = gems end
+            end
+            -- What the slot shows, when it is not the item (issue #201): the site draws this one.
+            local transmog = item.transmog
+            if transmog == true then
+                entry.hidden = true
+            elseif tonumber(transmog) and tonumber(transmog) > 0 then
+                entry.appearance = tonumber(transmog)
             end
             out[#out + 1] = entry
         end
