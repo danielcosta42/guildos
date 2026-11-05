@@ -550,18 +550,18 @@ end
 local pending = {}   -- [id] = when the invite was sent: waiting for the game to say it went
 
 -- The game's guild invite, with the name as the game gave it (retail: cut to the plain one on this
--- character's realm). Only ever called from the invite button (Compat.InviteButton): on WoW: Forever the
--- game lets no addon invite, so the button's own secure cover does it (#256), and there is no path here
--- that invites by itself. The row
+-- character's realm). Only ever called from a button's OnClick, and there is no path here that invites by
+-- itself. On WoW: Forever the game lets no addon invite: the /ginvite line waits in the chat box for the
+-- player's Enter (Compat.GuildInvite, #256). The row
 -- is not closed here: the game's own line does that (see onSystem), so a person who is offline, or a
 -- name the game refused, leaves it open for another try.
 function JR:Invite(id)
     if not self:CanInvite(id) then return false end
     local Import = GuildOS.CompanionImport
     local name = store()[id].character
-    if not GuildOS.Compat.GuildInvite(Import and Import.PlainName(name) or name) then return false end
     pending[id] = now()
     dropped.invites = dropped.invites + 1
+    GuildOS.Compat.GuildInvite(Import and Import.PlainName(name) or name)
     return true
 end
 

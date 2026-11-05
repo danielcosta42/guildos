@@ -1204,7 +1204,7 @@ function Recruitment:ShowInvitePopup()
     local f = self.invitePopup
     if not f then
         f = ActionPopup(L["Auto-Invite"], -300, L["Invite"], L["Skip"])
-        GuildOS.Compat.InviteButton(f.okBtn, function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
+        f.okBtn:SetScript("OnClick", function() Recruitment:InviteNext(); Recruitment:ShowInvitePopup() end)
         f.laterBtn:SetScript("OnClick", function() Recruitment:SkipNext(); Recruitment:ShowInvitePopup() end)
         self.invitePopup = f
     end

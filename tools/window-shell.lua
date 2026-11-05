@@ -673,28 +673,26 @@ do
   for _, key in ipairs({ "search", "sync", "cores", "blizzard" }) do fire(f.footItems[key], "OnClick") end
   check(ran.search and ran.sync and ran.cores and ran.blizzard, "each footer action runs what it names")
   GuildOS.Search, GuildOS.CommSystem, GuildOS.ShowCoreSignupFrame, GuildOS.OpenBlizzardGuildUI = real[1], real[2], real[3], real[4]
+  -- Off Anniversary the game forbids GuildInvite to addons (#256): the /ginvite line goes into the chat
+  -- box for the player's Enter.
   local invitedName
-  local realInvite = GuildInvite
-  GuildInvite = function(name) invitedName = name end
+  local realInvite, realOpenChat = GuildInvite, ChatFrame_OpenChat
+  local direct = GuildOS.Client.isAnniversary
+  GuildInvite = function(name) check(direct, "GuildInvite only where the game allows it"); invitedName = name end
+  ChatFrame_OpenChat = function(text) check(not direct, "the chat box only where it must"); invitedName = text:match("^/ginvite (.+)$") end
   local holder, inviteBtn = f.footItems.invite, nil
   for _, c in ipairs(holder.children) do
     if c.kind == "Button" and c.label and c.label.text == "Invite" then inviteBtn = c end
   end
-  -- Off Anniversary the game lets no addon invite: the click is the button's secure cover, which
-  -- hands /ginvite the name its handler gave (#256).
-  local function click()
-    if GuildOS.Client.isAnniversary then return fire(inviteBtn, "OnClick") end
-    invitedName = GuildOS.Compat.InviteLine(inviteBtn.gosInvite, inviteBtn):match("^/ginvite (.+)$") or invitedName
-  end
   printed = {}
   holder.box:SetText("")
-  click()
+  fire(inviteBtn, "OnClick")
   check(invitedName == nil and said("Enter a player name to invite."), "an empty invite asks for a name")
   holder.box:SetText("  Nova  ")
-  click()
-  check(invitedName == "Nova" and said("Guild invite sent to Nova.") and holder.box.text == "",
-    "the invite field invites the name typed, then clears")
-  GuildInvite = realInvite
+  fire(inviteBtn, "OnClick")
+  check(invitedName == "Nova" and said(direct and "Guild invite sent to Nova." or "Press Enter to invite Nova.")
+    and holder.box.text == "", "the invite field invites the name typed, then clears")
+  GuildInvite, ChatFrame_OpenChat = realInvite, realOpenChat
   canInvite = false
   f:LayoutFooter(1000)
   check(not footShown("invite") and footShown("blizzard"), "no invite field for who cannot invite")

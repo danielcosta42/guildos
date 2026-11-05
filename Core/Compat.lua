@@ -1433,97 +1433,17 @@ function Compat.NeedsClick()
     return not GuildOS.Client.isAnniversary
 end
 
--- A guild invite (#256). WoW: Forever 1.60.1.70790 forbids GuildInvite to addons, from a click too
--- (ADDON_ACTION_FORBIDDEN); GuildInvite is only C_GuildInfo.Invite there, and Blizzard's /ginvite
--- calls it from the game's own code. So an invite button gets a secure button laid over it while
--- the mouse is on it: its click runs the button's handler first, which names the person through
--- Compat.GuildInvite, then the game runs `/ginvite <name>` as a macro. Anything without a button
--- (a chat Alt-click, a slash command, the cover itself in combat, where no attribute may change)
--- is told the /ginvite line to type. Anniversary invites from the addon, as it always did.
-local inviting, invitee   -- the cover's click is running a handler, and whom that handler named
-
+-- A guild invite (#256). WoW: Forever 1.60.1.70790 lets neither an addon call C_GuildInfo.Invite,
+-- which is all GuildInvite is there (ADDON_ACTION_FORBIDDEN, even from a click), nor a macro an addon
+-- wrote (a secure button's /ginvite: MACRO_ACTION_BLOCKED, in game on 2026-11-04). Blizzard's /ginvite,
+-- sent by the player, still invites: the line goes into the chat box and the player's Enter sends it.
+-- True only when the invite went; Anniversary invites from the addon, as it always did.
 function Compat.GuildInvite(name)
     if type(name) ~= "string" or name == "" then return false end
-    if inviting then invitee = name; return true end
     if GuildOS.Client.isAnniversary then GuildInvite(name); return true end
-    GuildOS:Print(string.format(GuildOS.L["Type /ginvite %s to invite them."], name))
+    ChatFrame_OpenChat("/ginvite " .. name)
+    GuildOS:Print(string.format(GuildOS.L["Press Enter to invite %s."], name))
     return false
-end
-
--- The cover's click without the frame: runs a button's handler and answers the macro it wrote,
--- "/ginvite <name>", or "" when the handler named nobody. The harnesses drive it directly.
-function Compat.InviteLine(fn, ...)
-    inviting, invitee = true, nil
-    local ok, err = pcall(fn, ...)
-    inviting = false
-    local name = invitee
-    invitee = nil
-    if not ok then GuildOS:RecordError("Invite: " .. tostring(err)) end
-    return name and ("/ginvite " .. name) or ""
-end
-
-local cover
-local function inviteCover()
-    if cover then return cover end
-    cover = CreateFrame("Button", "GuildOSInviteCover", UIParent, "SecureActionButtonTemplate")
-    cover:RegisterForClicks("LeftButtonUp")
-    -- On release only: the template acts on the press when ActionButtonUseKeyDown is on, and the
-    -- handler below has to run once per click, not twice.
-    cover:SetAttribute("useOnKeyDown", false)
-    cover:SetAttribute("type", "macro")
-    cover:SetAttribute("macrotext", "")
-    cover:Hide()
-    cover:SetScript("PreClick", function(self)
-        local owner = self.owner
-        if not (owner and owner:IsVisible() and owner:IsEnabled() and owner.gosInvite) then return end
-        -- In combat the macro cannot be written: the handler runs as a plain click, which says the line.
-        if InCombatLockdown() then return pcall(owner.gosInvite, owner) end
-        self:SetAttribute("macrotext", Compat.InviteLine(owner.gosInvite, owner))
-    end)
-    -- Emptied after every click: a click in combat, which cannot write it, then invites nobody,
-    -- never the last name again.
-    cover:SetScript("PostClick", function(self)
-        if InCombatLockdown() then return end
-        self:SetAttribute("macrotext", "")
-        local owner = self.owner
-        if not (owner and owner:IsVisible() and owner:IsEnabled()) then self:Hide() end
-    end)
-    -- The button keeps its hover look while the cover has the mouse.
-    cover:SetScript("OnEnter", function(self)
-        local enter = self.owner and self.owner:GetScript("OnEnter")
-        if enter then enter(self.owner) end
-    end)
-    cover:SetScript("OnLeave", function(self)
-        local leave = self.owner and self.owner:GetScript("OnLeave")
-        if leave then leave(self.owner) end
-        if not InCombatLockdown() then self:Hide() end
-    end)
-    return cover
-end
-
--- Never parented or anchored to `owner`: a frame a protected one hangs from is locked in combat
--- with it, and the whole window would stop opening and closing in a fight.
-local function coverInvite(owner)
-    if InCombatLockdown() or not owner:IsEnabled() then return end
-    local c = inviteCover()
-    local s = owner:GetEffectiveScale() / UIParent:GetEffectiveScale()
-    c.owner = owner
-    c:SetFrameStrata(owner:GetFrameStrata())
-    c:SetFrameLevel(owner:GetFrameLevel() + 10)
-    c:ClearAllPoints()
-    c:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (owner:GetLeft() or 0) * s, (owner:GetBottom() or 0) * s)
-    c:SetSize(owner:GetWidth() * s, owner:GetHeight() * s)
-    c:Show()
-end
-
--- `onClick` is the button's whole job, inviting through Compat.GuildInvite. It stays the button's
--- own OnClick too: on Anniversary that is the invite, elsewhere the line to type.
-function Compat.InviteButton(button, onClick)
-    button:SetScript("OnClick", onClick)
-    button.gosInvite = onClick
-    if GuildOS.Client.isAnniversary or button.gosInviteHooked then return end
-    button.gosInviteHooked = true
-    button:HookScript("OnEnter", coverInvite)
 end
 
 -- Does the server show this channel without raid icons? It is the ChatChannels table's
