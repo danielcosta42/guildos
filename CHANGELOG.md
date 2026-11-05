@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.5] - 2026-11-05
+
+### Fixed
+- em combate o atalho da guilda abre só a janela da Blizzard, nunca as duas (#261)
+
+
 ## [1.9.4] - 2026-11-05
 
 ### Fixed
