@@ -238,6 +238,16 @@ Cal:SetGameEvent(putIn.id, { title = "Renamed", at = putIn.when })
 local out = published[#published].data.event
 check(out.game and out.game.title == "Renamed" and out.gameAt == NOW, "putting it in the game goes out with the event")
 check(Import:InboxInfo().ids["r-full"] and Import:InboxInfo().count == 1, "the inbox's raids, by id, and how many")
+check(Import:InboxInfo().at == NOW, "and when the site gave them, held to now (the ack here runs a day ahead)")
+local keptAck = GuildOSInboxAck
+GuildOSInboxAck = { at = NOW - 2 * 86400, members = 0 }
+check(Import:InboxInfo() == nil, "an inbox two days old is a companion that stopped: nothing is inferred from it (final review C1)")
+GuildOSInboxAck = nil
+check(Import:InboxInfo() == nil, "nor from one with no date")
+GuildOSInboxAck = keptAck
+GuildOS.db.settings.companion = false
+check(Import:InboxInfo() == nil, "nor with the companion switched off")
+GuildOS.db.settings.companion = true
 -- A client from before this republishes the event without the field: what it was put there as stays.
 Cal:OnSync({ act = "update", rev = 900, data = { event = {
   id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", signups = {}, signupsAt = 0,

@@ -632,15 +632,24 @@ function Import:CalendarFromInbox()
     end
 end
 
---- The site raids the inbox holds, by id, and how many: { ids = { [raidId] = true }, count = n }, or nil
---- when no inbox with a raid was read this session. The game's calendar infers "no longer on the
---- website" from it, and only below the site's cap (guildos-web specs/075, #263).
+local INBOX_TRUST = 86400   -- the companion rewrites the inbox every hour: a day older is one that stopped
+
+--- The site raids the inbox holds, by id, how many, and when the site gave them (its ack, held to now):
+--- { ids = { [raidId] = true }, count = n, at = epoch }. Nil when no inbox with a raid was read this
+--- session, the companion is off, or the inbox is a day old: the game's calendar infers "no longer on the
+--- website" from it, and a stopped companion's leftover must never offer to take a live raid out of the
+--- game (guildos-web specs/075, #263).
 function Import:InboxInfo()
     local raids = self._webRaids
-    if type(raids) ~= "table" then return nil end
+    if type(raids) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    local at = self:Ack()
+    if not at then return nil end
+    local now = GetServerTime()
+    at = math.min(at, now)
+    if now - at > INBOX_TRUST then return nil end
     local ids = {}
     for _, roster in ipairs(raids) do
         if roster.raidId ~= nil then ids[tostring(roster.raidId)] = true end
     end
-    return { ids = ids, count = #raids }
+    return { ids = ids, count = #raids, at = at }
 end

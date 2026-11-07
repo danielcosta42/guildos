@@ -29,8 +29,10 @@ function GetTime() return 1000 end
 function GetBuildInfo() return "1.60.1", "70790", "", 16001 end
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE, WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 1, 1, 5
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+local allFrames = {}
 function CreateFrame()
   local f = { scripts = {}, events = {} }
+  allFrames[#allFrames + 1] = f
   function f:RegisterEvent(e) self.events[e] = true end
   function f:UnregisterEvent(e) self.events[e] = nil end
   function f:SetScript(k, fn) self.scripts[k] = fn end
@@ -87,6 +89,11 @@ end
 
 dofile(ADDON .. "/Core/Compat.lua")
 local Compat = GuildOS.Compat
+local function fireAll(ev, ...)
+  for _, f in ipairs(allFrames) do
+    if f.events[ev] and f.scripts.OnEvent then f.scripts.OnEvent(f, ev, ...) end
+  end
+end
 
 -- ── 1. The realm's clock ──────────────────────────────────────────────
 check(Compat.RealmOffset() == -3 * 3600, "the realm runs three hours behind UTC")
@@ -108,8 +115,19 @@ dayEvents[at(2026, 11, 8)] = {
 dayEvents[at(2026, 12, 2)] = {
   { title = "Gruul", calendarType = "GUILD_EVENT", startTime = { year = 2026, month = 12, monthDay = 2, hour = 20, minute = 30 } },
 }
+check(Compat.CalendarGuildEvents(NOW, NOW + 28 * 86400) == nil,
+  "before the game has read its calendar, its events are unknown, never none (final review I5)")
+calls = {}
+Compat.CalendarRequest()
+Compat.CalendarRequest()
+local opens = 0
+for _, c in ipairs(calls) do if c.name == "OpenCalendar" then opens = opens + 1 end end
+check(opens == 1, "the calendar is asked for once, not at every look (M6)")
+fireAll("CALENDAR_UPDATE_EVENT_LIST")
+calls = {}
 local evs = Compat.CalendarGuildEvents(NOW, NOW + 28 * 86400)
 check(#evs == 2, "two guild events, the holiday left out")
+check(not find("OpenCalendar"), "reading never asks the game again: no request loop off its own answer")
 check(evs[1].title == "Karazhan" and evs[1].startsAt == NOW + 2 * 86400 and evs[1].day == 8 and evs[1].index == 2,
   "a guild event's start in UTC, and where it sits")
 check(evs[2].title == "Gruul" and evs[2].offset == 1, "next month's event, one month on from the one shown")
@@ -143,6 +161,16 @@ check(Compat.CalendarOpenEvent({ offset = 0, day = 8, index = 2 }) == true and f
 calls = {}
 check(Compat.CalendarApplyEdit({ title = "Kara", description = "y", startsAt = NOW + 86400 }) == true, "edited")
 check(find("EventSetTitle").args[1] == "Kara" and find("UpdateEvent") and calls[#calls].name == "CloseEvent", "renamed, saved, closed")
+calls = {}
+check(Compat.CalendarApplyEdit({ title = "Kara", startsAt = NOW + 86400 }) == true and not find("EventSetDescription"),
+  "no description given, the one in the game is left as people wrote it (final review I6)")
+C_Calendar.GetEventInfo = function()
+  return { title = "Karazhan", time = { year = 2026, month = 11, monthDay = 8, hour = 18, minute = 0 } }
+end
+local open = Compat.CalendarOpenedEvent()
+check(open and open.title == "Karazhan" and open.startsAt == NOW + 2 * 86400, "the event the game has open, in UTC (I2)")
+C_Calendar.GetEventInfo = function() return nil end
+check(Compat.CalendarOpenedEvent() == nil, "none open: nil")
 calls = {}
 check(Compat.CalendarRemove({ offset = 0, day = 8, index = 2 }) == true, "removed")
 check(find("ContextMenuSelectEvent").args[2] == 8 and find("ContextMenuEventRemove"), "selected, then removed")

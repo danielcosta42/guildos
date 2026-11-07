@@ -1576,14 +1576,43 @@ function Compat.EpochOfRealm(t)
 end
 
 local GUILD_KINDS = { GUILD_EVENT = true, GUILD_ANNOUNCEMENT = true }
+local CALENDAR_REQUEST_EVERY = 60   -- seconds between two requests for the calendar's events
+
+-- The game hands its calendar over only after OpenCalendar, and answers with CALENDAR_UPDATE_EVENT_LIST.
+-- Until that first answer the events are unknown, never none: an empty read would show every raid as
+-- missing from the game and invite a second event. Asking is kept apart from reading, so reading inside
+-- that event's own handler never asks again (a request loop).
+local calendarRead, lastCalendarRequest = false, nil
+Compat._calendarListeners = {}
+local calendarWatch = CreateFrame("Frame")
+Compat.RegisterEvent(calendarWatch, "CALENDAR_UPDATE_EVENT_LIST")
+calendarWatch:SetScript("OnEvent", function()
+    calendarRead = true
+    for _, fn in ipairs(Compat._calendarListeners) do pcall(fn) end
+end)
+
+--- Asks the game for its calendar's events, at most once a CALENDAR_REQUEST_EVERY seconds.
+function Compat.CalendarRequest()
+    if not Compat.CalendarAvailable() then return end
+    local now = GetTime()
+    if lastCalendarRequest and now - lastCalendarRequest < CALENDAR_REQUEST_EVERY then return end
+    lastCalendarRequest = now
+    pcall(C_Calendar.OpenCalendar)
+end
+
+--- Calls `fn` each time the game's calendar answers with its events.
+function Compat.OnCalendarUpdate(fn)
+    Compat._calendarListeners[#Compat._calendarListeners + 1] = fn
+end
 
 --- The guild's events between two UTC instants, holidays and personal events left out:
---- { offset, day, index, title, calendarType, startsAt }. The calendar reads months relative to the one
---- its window shows, so the offsets are worked out from that month, never assumed to start at today's.
+--- { offset, day, index, title, calendarType, startsAt }; nil while the game has not read its calendar
+--- yet (Compat.CalendarRequest asks). The calendar reads months relative to the one its window shows, so
+--- the offsets are worked out from that month, never assumed to start at today's.
 function Compat.CalendarGuildEvents(fromEpoch, toEpoch)
     local out = {}
     if not Compat.CalendarAvailable() then return out end
-    pcall(C_Calendar.OpenCalendar)
+    if not calendarRead then return nil end
     local okShown, shown = pcall(C_Calendar.GetMonthInfo, 0)
     if not okShown or type(shown) ~= "table" then return out end
     local base = shown.year * 12 + shown.month - 1
@@ -1642,12 +1671,24 @@ function Compat.CalendarOpenEvent(where)
     return res ~= false
 end
 
---- Saves { title, description, startsAt } onto the open event, from a click, and closes it.
+--- The event the game has open for editing, as { title, startsAt }, or nil.
+function Compat.CalendarOpenedEvent()
+    if not Compat.CalendarAvailable() or not C_Calendar.GetEventInfo then return nil end
+    local ok, info = pcall(C_Calendar.GetEventInfo)
+    if not ok or type(info) ~= "table" or type(info.title) ~= "string" or Compat.IsSecret(info.title) then return nil end
+    local t = info.time
+    if type(t) ~= "table" then return nil end
+    return { title = info.title,
+             startsAt = Compat.EpochOfRealm({ year = t.year, month = t.month, day = t.monthDay, hour = t.hour, minute = t.minute }) }
+end
+
+--- Saves { title, startsAt, description } onto the open event, from a click, and closes it. With no
+--- description the one in the game stays as people wrote it.
 function Compat.CalendarApplyEdit(spec)
     if not Compat.CalendarAvailable() then return false, "unavailable" end
     local ok, err = pcall(function()
         C_Calendar.EventSetTitle(spec.title)
-        C_Calendar.EventSetDescription(spec.description or "")
+        if spec.description ~= nil then C_Calendar.EventSetDescription(spec.description) end
         setEventWhen(spec.startsAt)
         C_Calendar.UpdateEvent()
     end)

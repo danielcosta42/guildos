@@ -62,21 +62,47 @@ check(G.Match(raid("rc", "Gruul", NOW), native) == nil, "a raid not in the game 
 local moved = raid("ra", "Karazhan", NOW + 5400)
 moved.game = { title = "Karazhan", at = NOW + 3600 }
 check(G.Match(moved, native).index == 1, "an event put in the game is found by what it was put there as")
+-- What this client knows it was put there as is out of date (another officer updated it while this one
+-- was away): the event as the site has it now is still the raid's (final review I3).
+local outdated = raid("rb", "Karazhan", NOW + 7200)
+outdated.game = { title = "Karazhan", at = NOW + 9000 }
+check(G.Match(outdated, native) and G.Match(outdated, native).index == 2, "an out-of-date identity falls back to the site's")
+-- The realm's clock moved an hour (summer time) since it was put there: still found, so it reads out of
+-- date and an update fixes it, rather than reading absent and inviting a second event (I4).
+local shifted = raid("rs", "Gruul", NOW + 86400)
+shifted.game = { title = "Gruul", at = NOW + 86400 }
+local shiftedNative = { { title = "Gruul", startsAt = NOW + 86400 + 3600, offset = 0, day = 7, index = 1 } }
+check(G.Match(shifted, shiftedNative) ~= nil, "an hour off what it was put there as is still the same event")
+check(G.StateOf(shifted, shiftedNative, nil) == "stale", "and reads out of date")
+local twoHoursOff = { { title = "Gruul", startsAt = NOW + 86400 + 7200, offset = 0, day = 7, index = 1 } }
+check(G.Match(shifted, twoHoursOff) == nil, "two hours off is not")
+local exactFirst = raid("ra", "Karazhan", NOW + 3600)
+exactFirst.game = { title = "Karazhan", at = NOW + 7200 }
+check(G.Match(exactFirst, native).index == 2, "the exact hour wins over an hour's tolerance")
 
 -- ── 4. The state the addon's calendar shows ───────────────────────────
-local inbox = { ids = { ra = true, rb = true, rc = true }, count = 3 }
+local inbox = { ids = { ra = true, rb = true, rc = true }, count = 3, at = NOW - 600 }
 check(G.StateOf(early, native, inbox) == "present", "in the game, as the site has it")
 check(G.StateOf(moved, native, inbox) == "stale", "in the game, but the site moved it")
 check(G.StateOf(raid("rc", "Gruul", NOW + 86400), native, inbox) == "absent", "not in the game yet")
 local gone = raid("rz", "Karazhan", NOW + 3600)
 gone.game = { title = "Karazhan", at = NOW + 3600 }
-check(G.StateOf(gone, native, { ids = {}, count = 9 }) == "gone", "out of an inbox under its cap: no longer on the website")
-check(G.StateOf(gone, native, { ids = {}, count = 10 }) ~= "gone", "out of a full inbox it may just be past the cap")
-check(G.StateOf(raid("rz", "Far", NOW + 40 * 86400), native, { ids = {}, count = 2 }) ~= "gone",
+gone.signupsAt = NOW - 3600   -- what we know of it came from an inbox older than the one read now
+local INBOX = function(count) return { ids = {}, count = count, at = NOW - 600 } end
+check(G.StateOf(gone, native, INBOX(9)) == "gone", "out of an inbox under its cap: no longer on the website")
+check(G.StateOf(gone, native, INBOX(10)) ~= "gone", "out of a full inbox it may just be past the cap")
+check(G.StateOf(raid("rz", "Far", NOW + 40 * 86400), native, INBOX(2)) ~= "gone",
   "beyond the four weeks the inbox covers, missing proves nothing")
-check(G.StateOf(raid("rz", "Started", NOW - 4 * 3600), native, { ids = {}, count = 2 }) ~= "gone",
+check(G.StateOf(raid("rz", "Started", NOW - 4 * 3600), native, INBOX(2)) ~= "gone",
   "nor once the three hours after its start are over")
 check(G.StateOf(gone, native, nil) ~= "gone", "with no inbox read, nothing is gone")
+-- Final review C1: a raid another officer's newer inbox brought in, after the one this client read.
+local synced = raid("rn", "Karazhan", NOW + 3600)
+synced.signupsAt = NOW - 60
+check(G.StateOf(synced, native, INBOX(2)) ~= "gone", "a raid newer than the inbox read is not gone")
+local unknown = raid("ru", "Karazhan", NOW + 3600)
+check(G.StateOf(unknown, native, INBOX(2)) ~= "gone", "nor one with no date of its own")
+check(G.StateOf(gone, native, { ids = {}, count = 2 }) ~= "gone", "nor against an inbox with no date")
 
 -- ── 5. The clicks: put, update, remove ────────────────────────────────
 -- The game answers later (a new event, a refreshed list, or CALENDAR_UPDATE_ERROR), so each action
@@ -98,12 +124,14 @@ function GuildOS:IsOfficer() return officer end
 CALENDAR_ERROR_PERMISSIONS = "You do not have permission to do that."   -- the game's own sentence
 
 local inGame, created, edited, removed = {}, {}, {}, {}
+local loaded, openedNow = true, nil   -- whether the game has read its calendar yet; the event it has open
 GuildOS.Compat = {
   After = function(_, fn) timers[#timers + 1] = fn end,
   CalendarAvailable = function() return true end,
-  CalendarGuildEvents = function() return inGame end,
+  CalendarGuildEvents = function() if loaded then return inGame end end,
   CalendarCreateGuildEvent = function(spec) created[#created + 1] = spec; return true end,
-  CalendarOpenEvent = function() return true end,
+  CalendarOpenEvent = function(where) openedNow = where; return true end,
+  CalendarOpenedEvent = function() return openedNow and { title = openedNow.title, startsAt = openedNow.startsAt } end,
   CalendarApplyEdit = function(spec) edited[#edited + 1] = spec; return true end,
   CalendarRemove = function(where) removed[#removed + 1] = where; return true end,
 }
@@ -135,6 +163,27 @@ events["web:rm"] = raid("rm", "Gruul", NOW + 86400)
 check(G:Put("web:rm", function() end) == false and #created == 1, "a member's click does nothing")
 officer = true
 
+-- Final review I1: a second click before the game answers is not a second event.
+events["web:rd"] = raid("rd", "Gruul", NOW + 3 * 86400)
+check(G:Put("web:rd", function() end) == true, "the first click starts it")
+local second, secondWhy = G:Put("web:rd", function() end)
+check(second == false and secondWhy == "Waiting for the game's answer." and #created == 2, "a second click while it waits does nothing")
+timeout()   -- the game never answered: free to try again
+-- I3: a guild event of that name near that hour that is no raid's (moved or retitled by hand in the game)
+-- makes Put refuse, rather than make a second one.
+inGame[#inGame + 1] = { title = "Gruul", startsAt = NOW + 3 * 86400 + 7200, offset = 0, day = 9, index = 2 }
+local doubled, doubledWhy = G:Put("web:rd", function() end)
+check(doubled == false and #created == 2 and doubledWhy ==
+  "The game's calendar already has a guild event with this name around that time. Update or remove it there first.",
+  "a same-named event near that hour is never doubled")
+table.remove(inGame)
+-- I5: the calendar not read yet is unknown, never empty: no Put.
+loaded = false
+local notYet, notYetWhy = G:Put("web:rd", function() end)
+check(notYet == false and notYetWhy == "The game's calendar is still loading. Try again in a moment." and #created == 2,
+  "no Put before the game has read its calendar")
+loaded = true
+
 local refused, refusedDone = answer()
 G:Put("web:rm", refusedDone)
 fire("CALENDAR_UPDATE_ERROR", "CALENDAR_ERROR_PERMISSIONS")
@@ -157,6 +206,19 @@ inGame[1].startsAt = NOW + 86400 + 1800
 fire("CALENDAR_UPDATE_EVENT_LIST")
 check(upd.ok == true and stored["web:rp"].at == NOW + 86400 + 1800 and not G:IsOpenFor("web:rp"),
   "what is in the game now is kept")
+check(edited[1].description == nil, "an update leaves the description people may have edited in the game alone (I6)")
+-- I2: the second click checks that the event still open is this raid's.
+events["web:rp"].when = NOW + 86400 + 3600
+check(G:Refresh("web:rp", function() end) == "opened", "open it again")
+openedNow = { title = "Quest da Sleeping Bag", startsAt = NOW }   -- the officer opened another event meanwhile
+check(G:Refresh("web:rp", function() end) == "opened" and #edited == 1, "another event open: nothing saved, the raid's opened again")
+check(G:Refresh("web:rp", function() end) == true and #edited == 2, "the raid's open: saved")
+timeout()
+events["web:rp"].when = NOW + 86400 + 1800   -- back to what the game has
+check(G:Refresh("web:rp", function() end) == "opened", "opened")
+G:Put("web:rm", function() end)
+check(not G:IsOpenFor("web:rp"), "another action forgets what was open")
+timeout()
 
 -- Removing: the server may refuse it, as it refused a guild event to a timer.
 local take, takeDone = answer()
@@ -167,6 +229,10 @@ check(take.ok == false and take.msg == "The game refused to remove it. Delete it
 check(stored["web:rp"] and stored["web:rp"].at == NOW + 86400 + 1800, "and keeps what is still there")
 local take2, take2Done = answer()
 G:Take("web:rp", take2Done)
+loaded = false
+fire("CALENDAR_UPDATE_EVENT_LIST")
+check(take2.n == nil, "a calendar not read yet is never taken for the event being gone (I5)")
+loaded = true
 table.remove(inGame, 1)
 fire("CALENDAR_UPDATE_EVENT_LIST")
 check(take2.ok == true and stored["web:rp"] == false, "gone from the game: nothing kept")
@@ -176,6 +242,10 @@ local v = G.ViewOf("absent", false, true, false)
 check(v.text == "Not in the game's calendar yet." and v.action == "put" and v.label == "Put in the game's calendar",
   "not in the game: an officer gets the button that puts it there")
 check(G.ViewOf("absent", false, false, false).action == nil, "a member reads the state and gets no button")
+local waiting = G.ViewOf("absent", false, true, false, true)
+check(waiting.text == "Waiting for the game's answer..." and waiting.action == nil, "while the game answers: no button (I1)")
+local reading = G:ViewFor(raid("rv", "Hyjal", NOW + 86400), nil, nil)
+check(reading.text == "Reading the game's calendar..." and reading.action == nil, "the calendar not read yet: no button (I5)")
 check(G.ViewOf("present", true, true, false).text == "In the game's calendar." and G.ViewOf("present", true, true, false).action == nil,
   "in the game as the site has it: nothing to do")
 local st = G.ViewOf("stale", true, true, false)

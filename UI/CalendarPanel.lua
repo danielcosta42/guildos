@@ -424,8 +424,10 @@ function GuildOS:CreateCalendarSub(panel)
         -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
         -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
         local GC = GuildOS.GameCalendar
-        local gameEvents, inbox
-        if GC and GuildOS.Compat.CalendarAvailable() then
+        local gameOn = GC ~= nil and GuildOS.Compat.CalendarAvailable()
+        local gameEvents, inbox   -- gameEvents stays nil until the game has read its calendar
+        if gameOn then
+            GuildOS.Compat.CalendarRequest()
             local now = GetServerTime()
             gameEvents = GuildOS.Compat.CalendarGuildEvents(now - GC.GRACE - 86400, now + (GC.WINDOW_DAYS + 1) * 86400)
             inbox = GuildOS.CompanionImport and GuildOS.CompanionImport:InboxInfo()
@@ -486,7 +488,7 @@ function GuildOS:CreateCalendarSub(panel)
                 whereFS:SetPoint("TOPLEFT", 6, -yy)
                 yy = yy + 16
                 -- Whether it is in the game's own calendar, and for an officer the click that changes it.
-                if gameEvents then
+                if gameOn then
                     local view = GC:ViewFor(e, gameEvents, inbox)
                     if view.text then
                         local stateFS = UI:CreateText(child, view.text, 10, C.gold.r, C.gold.g, C.gold.b)
