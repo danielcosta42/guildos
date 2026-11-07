@@ -1639,9 +1639,11 @@ function Compat.CalendarGuildEvents(fromEpoch, toEpoch)
     return out
 end
 
--- The event being edited, onto the realm's date and time.
-local function setEventWhen(startsAt)
-    local t = Compat.RealmClock(startsAt)
+-- The event being edited, onto the calendar's date and time: the raid's clock as it was created when
+-- the site gave one (guildos-web #411: the guild reads the game's calendar as its Discord's time, so the
+-- numbers typed there go in as they are), else the instant on the realm's clock.
+local function setEventWhen(spec)
+    local t = type(spec.clock) == "table" and spec.clock or Compat.RealmClock(spec.startsAt)
     C_Calendar.EventSetDate(t.month, t.day, t.year)
     C_Calendar.EventSetTime(t.hour, t.minute)
 end
@@ -1654,7 +1656,7 @@ function Compat.CalendarCreateGuildEvent(spec)
         C_Calendar.CreateGuildSignUpEvent()
         C_Calendar.EventSetTitle(spec.title)
         C_Calendar.EventSetDescription(spec.description or "")
-        setEventWhen(spec.startsAt)
+        setEventWhen(spec)
         local raid = Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid
         if raid and C_Calendar.EventSetType then C_Calendar.EventSetType(raid) end
         C_Calendar.AddEvent()
@@ -1689,7 +1691,7 @@ function Compat.CalendarApplyEdit(spec)
     local ok, err = pcall(function()
         C_Calendar.EventSetTitle(spec.title)
         if spec.description ~= nil then C_Calendar.EventSetDescription(spec.description) end
-        setEventWhen(spec.startsAt)
+        setEventWhen(spec)
         C_Calendar.UpdateEvent()
     end)
     pcall(C_Calendar.CloseEvent)

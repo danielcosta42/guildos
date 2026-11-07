@@ -162,6 +162,16 @@ calls = {}
 check(Compat.CalendarApplyEdit({ title = "Kara", description = "y", startsAt = NOW + 86400 }) == true, "edited")
 check(find("EventSetTitle").args[1] == "Kara" and find("UpdateEvent") and calls[#calls].name == "CloseEvent", "renamed, saved, closed")
 calls = {}
+calls = {}
+local CLOCK = { year = 2026, month = 11, day = 8, hour = 1, minute = 4 }
+check(Compat.CalendarCreateGuildEvent({ title = "teste", description = "", startsAt = NOW, clock = CLOCK }) == true, "created with a clock")
+local cd, ct = find("EventSetDate"), find("EventSetTime")
+check(cd.args[1] == 11 and cd.args[2] == 8 and cd.args[3] == 2026 and ct.args[1] == 1 and ct.args[2] == 4,
+  "with the raid's clock, the event takes exactly those numbers, not the realm's hour (#411)")
+calls = {}
+Compat.CalendarApplyEdit({ title = "teste", startsAt = NOW, clock = CLOCK })
+check(find("EventSetTime").args[1] == 1 and find("EventSetTime").args[2] == 4, "and so does an update")
+calls = {}
 check(Compat.CalendarApplyEdit({ title = "Kara", startsAt = NOW + 86400 }) == true and not find("EventSetDescription"),
   "no description given, the one in the game is left as people wrote it (final review I6)")
 C_Calendar.GetEventInfo = function()

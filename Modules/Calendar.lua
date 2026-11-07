@@ -368,8 +368,23 @@ local function wireOf(e)
         id = e.id, title = e.title, when = e.when, size = e.size,
         note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
         shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
-        game = e.game, gameAt = e.gameAt,
+        game = e.game, gameAt = e.gameAt, clock = e.clock,
     }
+end
+
+-- The raid's time on the clock it was created on (guildos-web #411): { year, month, day, hour, minute },
+-- a real date and time, else nil. The game's calendar shows the raid as these numbers.
+local function cleanClock(c)
+    if type(c) ~= "table" then return nil end
+    local y, m, d, h, mi = tonumber(c.year), tonumber(c.month), tonumber(c.day), tonumber(c.hour), tonumber(c.minute)
+    local whole = function(v, lo, hi) return v and v == math.floor(v) and v >= lo and v <= hi end
+    if not (whole(y, 2000, 2200) and whole(m, 1, 12) and whole(d, 1, 31) and whole(h, 0, 23) and whole(mi, 0, 59)) then return nil end
+    return { year = y, month = m, day = d, hour = h, minute = mi }
+end
+
+local function sameClock(a, b)
+    if a == nil or b == nil then return a == b end
+    return a.year == b.year and a.month == b.month and a.day == b.day and a.hour == b.hour and a.minute == b.minute
 end
 
 -- What a site raid was put in the game's calendar as, cleaned like anything off the guild channel:
@@ -400,6 +415,7 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
 
     local when = tonumber(roster.startsAt) or 0
     if when <= 0 then return nil end
+    local clock = cleanClock(roster.clock)
 
     local title = strtrim(roster.title or "")
     if title == "" then title = roster.instance or L["Raid"] end
@@ -417,7 +433,7 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
 
     -- Nothing moved: republishing would only churn the guild channel and bump
     -- a revision for a change nobody made.
-    if e and not e.canceled and e.title == title and e.when == when and e.size == size
+    if e and not e.canceled and e.title == title and e.when == when and e.size == size and sameClock(e.clock, clock)
         and signupsKey(self:WebSignups(e)) == signupsKey(signups) then
         -- The same answers, said again later: the time moves here and nothing goes out. The
         -- companion rewrites its inbox every hour whether or not anybody answered.
@@ -440,6 +456,7 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
     e.canceled = false
     e.title = title
     e.when  = when
+    e.clock = clock
     e.size  = size
     e.kind  = "RAID"
     e.note  = L["Planned on the website."]
@@ -581,9 +598,10 @@ function Calendar:OnSync(env, sender)
                 else
                     e.game, e.gameAt = existing and existing.game, existing and existing.gameAt
                 end
+                e.clock = cleanClock(e.clock)
             else
                 e.signups, e.signupsAt = nil, nil
-                e.game, e.gameAt = nil, nil
+                e.game, e.gameAt, e.clock = nil, nil, nil
             end
             self:GetEvents()[e.id] = e
             GuildOS.SyncService:SetRevision("event", e.id, env.rev)

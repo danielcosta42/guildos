@@ -61,7 +61,11 @@ function GameCalendar.SpecFor(webEvent)
     -- The line people read may be cut; the mark at the end never is.
     local room = GameCalendar.DESC_MAX - letters(mark) - 1
     local text = firstLetters(L["Sign up here, in Discord or on guildos.me."], math.max(room, 0))
-    return { title = title, description = text .. "\n" .. mark, startsAt = tonumber(webEvent.when) or 0 }
+    -- The raid's clock as it was created goes in as its numbers (guildos-web #411); its instant is then
+    -- what the game holds for those numbers on the realm's calendar, which is what matching compares.
+    local clock = type(webEvent.clock) == "table" and webEvent.clock or nil
+    local startsAt = clock and GuildOS.Compat.EpochOfRealm(clock) or tonumber(webEvent.when) or 0
+    return { title = title, description = text .. "\n" .. mark, startsAt = startsAt, clock = clock }
 end
 
 -- An hour either way of what an event was put there as is still that event: the realm's clock moving
@@ -288,7 +292,7 @@ function GameCalendar:Refresh(eventId, done)
     end
     self._open = nil
     local spec = GameCalendar.SpecFor(e)
-    local ok, err = GuildOS.Compat.CalendarApplyEdit({ title = spec.title, startsAt = spec.startsAt })
+    local ok, err = GuildOS.Compat.CalendarApplyEdit({ title = spec.title, startsAt = spec.startsAt, clock = spec.clock })
     if not ok then return false, err end
     self:_Await(eventId, function()
         local now = nativeAround(e)

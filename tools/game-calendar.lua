@@ -132,6 +132,8 @@ GuildOS.Compat = {
   CalendarCreateGuildEvent = function(spec) created[#created + 1] = spec; return true end,
   CalendarOpenEvent = function(where) openedNow = where; return true end,
   CalendarOpenedEvent = function() return openedNow and { title = openedNow.title, startsAt = openedNow.startsAt } end,
+  -- A realm six hours behind UTC: what the game will hold for a date and time on its calendar.
+  EpochOfRealm = function(t) return 1793750400 + ((t.day - 1) * 24 + t.hour + 6) * 3600 + t.minute * 60 end,
   CalendarApplyEdit = function(spec) edited[#edited + 1] = spec; return true end,
   CalendarRemove = function(where) removed[#removed + 1] = where; return true end,
 }
@@ -236,6 +238,20 @@ loaded = true
 table.remove(inGame, 1)
 fire("CALENDAR_UPDATE_EVENT_LIST")
 check(take2.ok == true and stored["web:rp"] == false, "gone from the game: nothing kept")
+
+-- #411: the raid's clock as it was created goes to the game exactly.
+local typed = raid("rt", "teste", NOW + 86400)
+typed.clock = { year = 2026, month = 11, day = 8, hour = 1, minute = 4 }
+local tspec = G.SpecFor(typed)
+check(tspec.clock == typed.clock and tspec.startsAt == GuildOS.Compat.EpochOfRealm(typed.clock),
+  "with a clock, the event is those numbers on the game's calendar, and its instant is what the game holds for them")
+events["web:rt"] = typed
+G:Put("web:rt", function() end)
+check(created[#created].clock == typed.clock, "and Put hands the clock to the game")
+inGame[#inGame + 1] = { title = "teste", startsAt = tspec.startsAt, offset = 0, day = 8, index = 9 }
+fire("CALENDAR_NEW_EVENT")
+check(G.StateOf(typed, inGame, nil) == "present", "and then reads as in the game, as the site has it")
+table.remove(inGame)
 
 -- ── 6. What the addon's calendar shows, and what a click there does ───
 local v = G.ViewOf("absent", false, true, false)

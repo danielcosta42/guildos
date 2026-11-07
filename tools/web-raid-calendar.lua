@@ -277,6 +277,25 @@ Cal:UpsertWebRaid(renamed, NOW)
 check(published[#published].data.event.game and published[#published].data.event.game.title == "Renamed",
   "the inbox's republish keeps what it was put there as")
 
+-- ── 5c. The raid's clock as it was created rides with the event (#411) ──
+local clocked = raid("r-clock", {}, NOW + 7200)
+clocked.clock = { year = 2026, month = 11, day = 8, hour = 1, minute = 4 }
+local parsed = Import:Parse(wire(clocked))
+check(parsed.clock and parsed.clock.hour == 1 and parsed.clock.minute == 4, "the inbox keeps the raid's clock")
+Cal:UpsertWebRaid(parsed, NOW)
+check(events["web:r-clock"].clock and events["web:r-clock"].clock.day == 8, "the event keeps it")
+check(published[#published].data.event.clock and published[#published].data.event.clock.hour == 1, "and sends it to the guild")
+local moved2 = Import:Parse(wire(clocked))
+moved2.clock = { year = 2026, month = 11, day = 8, hour = 2, minute = 0 }
+local before = #published
+Cal:UpsertWebRaid(moved2, NOW)
+check(#published == before + 1 and events["web:r-clock"].clock.hour == 2, "a new clock is a change, sent again")
+Cal:OnSync({ act = "update", rev = 950, data = { event = {
+  id = "web:r-clock", title = "x", when = NOW + 7200, size = 10, kind = "RAID",
+  clock = { year = 2026, month = 13, day = 40, hour = 25, minute = 99 },
+} } }, "Odd-Firemaw")
+check(events["web:r-clock"].clock == nil, "a clock that is no date is dropped off the guild channel")
+
 -- ── 6. A member's client imports nothing onto the calendar ───────────
 officer = false
 Import._lastInbox = nil

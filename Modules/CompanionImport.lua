@@ -150,6 +150,8 @@ function Import:Parse(raw)
         -- v3, retail: 14 Normal, 15 Heroic, 16 Mythic; nil elsewhere and from an older site (issue #182).
         difficulty = tonumber(data.difficulty),
         startsAt = tonumber(data.startsAt) or 0,
+        -- The raid's time on the clock it was created on (guildos-web #411), checked where it is kept.
+        clock = type(data.clock) == "table" and data.clock or nil,
         members = members,
         signups = signups,
     }
