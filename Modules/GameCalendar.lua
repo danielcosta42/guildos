@@ -224,3 +224,61 @@ function GameCalendar:Take(eventId, done)
         L["The game refused to remove it. Delete it by hand in the game's calendar."])
     return true
 end
+
+----------------------------------------------------------------------
+-- What the addon's calendar shows for a site raid, and what its button does. Decided here, so the
+-- panel only draws (Rule 10).
+----------------------------------------------------------------------
+local STATE_TEXT = {
+    present = L["In the game's calendar."],
+    stale = L["In the game's calendar, out of date."],
+    absent = L["Not in the game's calendar yet."],
+    gone = L["No longer on the website."],
+}
+local DONE_TEXT = {
+    put = L["It is in the game's calendar now."],
+    refresh = L["The game's calendar is up to date."],
+    take = L["Taken out of the game's calendar."],
+}
+
+--- { text, action, label }: the state line, and for whoever may act the button's action
+--- ("put", "refresh", "take") and label. Nothing to do: no action.
+function GameCalendar.ViewOf(state, hasNative, canAct, isOpen)
+    local view = { text = STATE_TEXT[state] }
+    if not canAct then return view end
+    if state == "absent" then
+        view.action, view.label = "put", L["Put in the game's calendar"]
+    elseif state == "stale" then
+        view.action, view.label = "refresh", isOpen and L["Confirm"] or L["Update in the game's calendar"]
+    elseif state == "gone" and hasNative then
+        view.action, view.label = "take", L["Remove from the game's calendar"]
+    end
+    return view
+end
+
+--- The view of one raid, from the game's events and the inbox read once for the whole panel.
+function GameCalendar:ViewFor(webEvent, nativeEvents, inbox)
+    local state = GameCalendar.StateOf(webEvent, nativeEvents, inbox)
+    local native = GameCalendar.Match(webEvent, nativeEvents)
+    return GameCalendar.ViewOf(state, native ~= nil, self:CanAct(), self:IsOpenFor(webEvent.id))
+end
+
+local function redraw()
+    if GuildOS.Calendar and GuildOS.Calendar.Refresh then GuildOS.Calendar:Refresh() end
+end
+
+--- The panel's button: runs the action and says, in the chat window, what came of it.
+function GameCalendar:Act(eventId, action)
+    local run = ({ put = self.Put, refresh = self.Refresh, take = self.Take })[action]
+    if not run then return end
+    local started, why = run(self, eventId, function(ok, msg)
+        if ok then GuildOS:Print(DONE_TEXT[action]) elseif msg then GuildOS:Print(msg) end
+        redraw()
+    end)
+    if started == "opened" then
+        GuildOS:Print(L["Opened in the game's calendar: click Confirm to save it."])
+    elseif not started and why then
+        GuildOS:Print(why)
+    end
+    redraw()
+end

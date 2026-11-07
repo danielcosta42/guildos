@@ -171,4 +171,31 @@ table.remove(inGame, 1)
 fire("CALENDAR_UPDATE_EVENT_LIST")
 check(take2.ok == true and stored["web:rp"] == false, "gone from the game: nothing kept")
 
+-- ── 6. What the addon's calendar shows, and what a click there does ───
+local v = G.ViewOf("absent", false, true, false)
+check(v.text == "Not in the game's calendar yet." and v.action == "put" and v.label == "Put in the game's calendar",
+  "not in the game: an officer gets the button that puts it there")
+check(G.ViewOf("absent", false, false, false).action == nil, "a member reads the state and gets no button")
+check(G.ViewOf("present", true, true, false).text == "In the game's calendar." and G.ViewOf("present", true, true, false).action == nil,
+  "in the game as the site has it: nothing to do")
+local st = G.ViewOf("stale", true, true, false)
+check(st.text == "In the game's calendar, out of date." and st.action == "refresh" and st.label == "Update in the game's calendar",
+  "out of date: the button that updates it")
+check(G.ViewOf("stale", true, true, true).label == "Confirm", "once opened, the second click confirms")
+local gv = G.ViewOf("gone", true, true, false)
+check(gv.text == "No longer on the website." and gv.action == "take" and gv.label == "Remove from the game's calendar",
+  "no longer on the site, still in the game: the button that takes it out")
+check(G.ViewOf("gone", false, true, false).action == nil, "no longer on the site and not in the game: nothing to take out")
+
+local printed, redrawn = {}, 0
+function GuildOS:Print(m) printed[#printed + 1] = m end
+GuildOS.Calendar.Refresh = function() redrawn = redrawn + 1 end
+events["web:rq"] = raid("rq", "Magtheridon", NOW + 2 * 86400)
+G:Act("web:rq", "put")
+inGame[#inGame + 1] = { title = "Magtheridon", startsAt = NOW + 2 * 86400, offset = 0, day = 8, index = 1 }
+fire("CALENDAR_NEW_EVENT")
+check(printed[#printed] == "It is in the game's calendar now." and redrawn >= 1, "a click says what happened and redraws")
+G:Act("web:rq", "put")
+check(printed[#printed] == "It is already in the game's calendar.", "and says why when it could not start")
+
 io.write(string.format("game-calendar: %d checks passed\n", checks))

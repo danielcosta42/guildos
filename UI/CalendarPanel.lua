@@ -421,6 +421,15 @@ function GuildOS:CreateCalendarSub(panel)
 
         local evs = (sel and byDay and byDay[sel]) or {}
         local yy = 0
+        -- The game's own calendar (guildos-web specs/075, #263), read once for the day's raids from the
+        -- site: its guild events over the inbox's window, and the inbox. WoW: Forever only.
+        local GC = GuildOS.GameCalendar
+        local gameEvents, inbox
+        if GC and GuildOS.Compat.CalendarAvailable() then
+            local now = GetServerTime()
+            gameEvents = GuildOS.Compat.CalendarGuildEvents(now - GC.GRACE - 86400, now + (GC.WINDOW_DAYS + 1) * 86400)
+            inbox = GuildOS.CompanionImport and GuildOS.CompanionImport:InboxInfo()
+        end
         -- Per-day render is wrapped so a single malformed event can't blank the
         -- whole list; any failure is surfaced inline instead.
         local okAll, errAll = pcall(function()
@@ -476,6 +485,21 @@ function GuildOS:CreateCalendarSub(panel)
                 local whereFS = UI:CreateText(child, where, 10, C.silver.r, C.silver.g, C.silver.b)
                 whereFS:SetPoint("TOPLEFT", 6, -yy)
                 yy = yy + 16
+                -- Whether it is in the game's own calendar, and for an officer the click that changes it.
+                if gameEvents then
+                    local view = GC:ViewFor(e, gameEvents, inbox)
+                    if view.text then
+                        local stateFS = UI:CreateText(child, view.text, 10, C.gold.r, C.gold.g, C.gold.b)
+                        stateFS:SetPoint("TOPLEFT", 6, -yy)
+                        if view.action then
+                            local evId, action = e.id, view.action
+                            local gameBtn = UI:CreateButton(child, view.label, 200, 18)
+                            gameBtn:SetPoint("TOPRIGHT", -4, -yy)
+                            gameBtn:SetScript("OnClick", function() GC:Act(evId, action) end)
+                        end
+                        yy = yy + 20
+                    end
+                end
                 -- An allied seat is approved in the game, and goes with the ones coming.
                 local answers = CAL():WebSignups(e)
                 for _, r in pairs(e.rsvps or {}) do
