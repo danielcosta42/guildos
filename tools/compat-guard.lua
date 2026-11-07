@@ -39,7 +39,7 @@ local COMPAT_SOURCES = { ["GuildOS.Compat"] = true, ["GuildOS.Compat"] = true, [
 local NAMESPACES = { "C_Item", "C_Spell", "C_UnitAuras", "C_Container", "C_TradeSkillUI", "C_Club", "ChatThrottleLib",
                      "TooltipUtil", "TooltipDataProcessor", "C_ClassTalents", "C_Traits",
                      -- Retail's Mythic+ and Great Vault (issue #187).
-                     "C_MythicPlus", "C_ChallengeMode", "C_WeeklyRewards" }
+                     "C_MythicPlus", "C_ChallengeMode", "C_WeeklyRewards", "C_Calendar" }
 
 -- Blank comments and strings, keeping every newline so line numbers stay true.
 local function blank(src)

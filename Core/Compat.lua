@@ -1507,6 +1507,167 @@ function Compat.LeaveChannel(name)
     return (pcall(LeaveChannelByName, name))
 end
 
+----------------------------------------------------------------------
+-- The game's own calendar (guildos-web specs/075, guildos#263). Measured on WoW: Forever 1.60.1.70790:
+-- reading is free; creating and editing need a hardware event (from a timer the game raises
+-- ADDON_ACTION_BLOCKED); a guild event with sign-up is the only guild kind there is (no announcements,
+-- not even for the GM). The calendar keeps the realm's clock; the site and the rest of the addon keep
+-- UTC epochs. TBC Anniversary and retail were not measured, so nothing is offered there.
+----------------------------------------------------------------------
+local QUARTER_HOUR = 900
+local DAY = 86400
+
+-- Days since 1970-01-01 for a civil date, and back (H. Hinnant's algorithm): plain arithmetic, so the
+-- PC's own time zone never enters a calendar sum.
+local function daysFromCivil(y, m, d)
+    if m <= 2 then y = y - 1 end
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local doy = math.floor((153 * ((m + 9) % 12) + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
+
+local function civilFromDays(z)
+    z = z + 719468
+    local era = math.floor(z / 146097)
+    local doe = z - era * 146097
+    local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
+    local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+    local mp = math.floor((5 * doy + 2) / 153)
+    local d = doy - math.floor((153 * mp + 2) / 5) + 1
+    local m = mp < 10 and mp + 3 or mp - 9
+    local y = yoe + era * 400
+    if m <= 2 then y = y + 1 end
+    return y, m, d
+end
+
+local function fieldsAsEpoch(y, m, d, h, mi)
+    return daysFromCivil(y, m, d) * DAY + (h or 0) * 3600 + (mi or 0) * 60
+end
+
+function Compat.CalendarAvailable()
+    local client = GuildOS.Client or {}
+    return not client.isAnniversary and not client.isRetail
+        and type(C_Calendar) == "table" and type(C_Calendar.AddEvent) == "function"
+end
+
+-- How far the realm's clock is from UTC, in seconds, to the quarter hour (the two clocks are read a
+-- moment apart).
+function Compat.RealmOffset()
+    local now = C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime and C_DateAndTime.GetCurrentCalendarTime()
+    if type(now) ~= "table" then return 0 end
+    local diff = fieldsAsEpoch(now.year, now.month, now.monthDay, now.hour, now.minute) - GetServerTime()
+    return math.floor(diff / QUARTER_HOUR + 0.5) * QUARTER_HOUR
+end
+
+--- The date and the time a UTC instant has on the realm's calendar.
+function Compat.RealmClock(epochUtc)
+    local realm = epochUtc + Compat.RealmOffset()
+    local days = math.floor(realm / DAY)
+    local rest = realm - days * DAY
+    local y, m, d = civilFromDays(days)
+    return { year = y, month = m, day = d, hour = math.floor(rest / 3600), minute = math.floor((rest % 3600) / 60) }
+end
+
+--- The UTC instant of a date and time on the realm's calendar.
+function Compat.EpochOfRealm(t)
+    return fieldsAsEpoch(t.year, t.month, t.day, t.hour, t.minute) - Compat.RealmOffset()
+end
+
+local GUILD_KINDS = { GUILD_EVENT = true, GUILD_ANNOUNCEMENT = true }
+
+--- The guild's events between two UTC instants, holidays and personal events left out:
+--- { offset, day, index, title, calendarType, startsAt }. The calendar reads months relative to the one
+--- its window shows, so the offsets are worked out from that month, never assumed to start at today's.
+function Compat.CalendarGuildEvents(fromEpoch, toEpoch)
+    local out = {}
+    if not Compat.CalendarAvailable() then return out end
+    pcall(C_Calendar.OpenCalendar)
+    local okShown, shown = pcall(C_Calendar.GetMonthInfo, 0)
+    if not okShown or type(shown) ~= "table" then return out end
+    local base = shown.year * 12 + shown.month - 1
+    local first, last = Compat.RealmClock(fromEpoch), Compat.RealmClock(toEpoch)
+    for idx = first.year * 12 + first.month - 1, last.year * 12 + last.month - 1 do
+        local offset = idx - base
+        local okInfo, info = pcall(C_Calendar.GetMonthInfo, offset)
+        for day = 1, (okInfo and type(info) == "table" and info.numDays or 0) do
+            local okN, n = pcall(C_Calendar.GetNumDayEvents, offset, day)
+            for index = 1, (okN and tonumber(n) or 0) do
+                local okE, e = pcall(C_Calendar.GetDayEvent, offset, day, index)
+                if okE and type(e) == "table" and GUILD_KINDS[e.calendarType] and type(e.startTime) == "table"
+                    and not Compat.IsSecret(e.title) then
+                    local s = e.startTime
+                    local startsAt = Compat.EpochOfRealm({ year = s.year, month = s.month, day = s.monthDay, hour = s.hour, minute = s.minute })
+                    if startsAt >= fromEpoch and startsAt <= toEpoch then
+                        out[#out + 1] = { offset = offset, day = day, index = index, title = tostring(e.title),
+                                          calendarType = e.calendarType, startsAt = startsAt }
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- The event being edited, onto the realm's date and time.
+local function setEventWhen(startsAt)
+    local t = Compat.RealmClock(startsAt)
+    C_Calendar.EventSetDate(t.month, t.day, t.year)
+    C_Calendar.EventSetTime(t.hour, t.minute)
+end
+
+--- A guild event with sign-up: { title, description, startsAt }. Only from a click; true, or false
+--- and why. The answer from the server comes later, as CALENDAR_UPDATE_ERROR or a new event.
+function Compat.CalendarCreateGuildEvent(spec)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, err = pcall(function()
+        C_Calendar.CreateGuildSignUpEvent()
+        C_Calendar.EventSetTitle(spec.title)
+        C_Calendar.EventSetDescription(spec.description or "")
+        setEventWhen(spec.startsAt)
+        local raid = Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid
+        if raid and C_Calendar.EventSetType then C_Calendar.EventSetType(raid) end
+        C_Calendar.AddEvent()
+    end)
+    if not ok then return false, tostring(err) end
+    return true
+end
+
+--- Opens the event at `where` ({ offset, day, index }) for editing; the game answers CALENDAR_OPEN_EVENT.
+function Compat.CalendarOpenEvent(where)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, res = pcall(C_Calendar.OpenEvent, where.offset, where.day, where.index)
+    if not ok then return false, tostring(res) end
+    return res ~= false
+end
+
+--- Saves { title, description, startsAt } onto the open event, from a click, and closes it.
+function Compat.CalendarApplyEdit(spec)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, err = pcall(function()
+        C_Calendar.EventSetTitle(spec.title)
+        C_Calendar.EventSetDescription(spec.description or "")
+        setEventWhen(spec.startsAt)
+        C_Calendar.UpdateEvent()
+    end)
+    pcall(C_Calendar.CloseEvent)
+    if not ok then return false, tostring(err) end
+    return true
+end
+
+--- Removes the event at `where`. The server may still refuse it (CALENDAR_ERROR_PERMISSIONS, measured
+--- for a guild event removed from a timer).
+function Compat.CalendarRemove(where)
+    if not Compat.CalendarAvailable() then return false, "unavailable" end
+    local ok, err = pcall(function()
+        C_Calendar.ContextMenuSelectEvent(where.offset, where.day, where.index)
+        C_Calendar.ContextMenuEventRemove()
+    end)
+    if not ok then return false, tostring(err) end
+    return true
+end
+
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the
 -- rest still go. While the lockdown lasts, send() holds each one again.
 function Compat.FlushHeldMessages()

@@ -77,6 +77,7 @@ read_globals = {
     "C_ChallengeMode",
     "C_WeeklyRewards",
     "C_DateAndTime",                         -- also the seconds to the reset, a self-test's (guildos-web#199)
+    "C_Calendar",                            -- the game's own calendar, in Compat only (guildos-web specs/075, #263)
     "GetWeaponEnchantInfo",                  -- my weapon's temporary enchant (the consumable check, #187)
 
     -- WoW API: Unit functions
