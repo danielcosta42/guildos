@@ -150,6 +150,8 @@ function Import:Parse(raw)
         -- v3, retail: 14 Normal, 15 Heroic, 16 Mythic; nil elsewhere and from an older site (issue #182).
         difficulty = tonumber(data.difficulty),
         startsAt = tonumber(data.startsAt) or 0,
+        -- The raid's time on the clock it was created on (guildos-web #411), checked where it is kept.
+        clock = type(data.clock) == "table" and data.clock or nil,
         members = members,
         signups = signups,
     }
@@ -630,4 +632,26 @@ function Import:CalendarFromInbox()
     for _, roster in ipairs(raids) do
         GuildOS:SafeCall(function() GuildOS.Calendar:UpsertWebRaid(roster, answeredAt) end)
     end
+end
+
+local INBOX_TRUST = 86400   -- the companion rewrites the inbox every hour: a day older is one that stopped
+
+--- The site raids the inbox holds, by id, how many, and when the site gave them (its ack, held to now):
+--- { ids = { [raidId] = true }, count = n, at = epoch }. Nil when no inbox with a raid was read this
+--- session, the companion is off, or the inbox is a day old: the game's calendar infers "no longer on the
+--- website" from it, and a stopped companion's leftover must never offer to take a live raid out of the
+--- game (guildos-web specs/075, #263).
+function Import:InboxInfo()
+    local raids = self._webRaids
+    if type(raids) ~= "table" or not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then return nil end
+    local at = self:Ack()
+    if not at then return nil end
+    local now = GetServerTime()
+    at = math.min(at, now)
+    if now - at > INBOX_TRUST then return nil end
+    local ids = {}
+    for _, roster in ipairs(raids) do
+        if roster.raidId ~= nil then ids[tostring(roster.raidId)] = true end
+    end
+    return { ids = ids, count = #raids, at = at }
 end

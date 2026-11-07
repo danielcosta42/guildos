@@ -360,6 +360,41 @@ local function signupsKey(list)
     return table.concat(t, ",")
 end
 
+-- An event as it goes out on the guild channel: everything a create or an update replaces on every
+-- client. Left out, a field goes: the site's list once did, and what the raid was put in the game's
+-- calendar as would (#263).
+local function wireOf(e)
+    return {
+        id = e.id, title = e.title, when = e.when, size = e.size,
+        note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
+        shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
+        game = e.game, gameAt = e.gameAt, clock = e.clock,
+    }
+end
+
+-- The raid's time on the clock it was created on (guildos-web #411): { year, month, day, hour, minute },
+-- a real date and time, else nil. The game's calendar shows the raid as these numbers.
+local function cleanClock(c)
+    if type(c) ~= "table" then return nil end
+    local y, m, d, h, mi = tonumber(c.year), tonumber(c.month), tonumber(c.day), tonumber(c.hour), tonumber(c.minute)
+    local whole = function(v, lo, hi) return v and v == math.floor(v) and v >= lo and v <= hi end
+    if not (whole(y, 2000, 2200) and whole(m, 1, 12) and whole(d, 1, 31) and whole(h, 0, 23) and whole(mi, 0, 59)) then return nil end
+    return { year = y, month = m, day = d, hour = h, minute = mi }
+end
+
+local function sameClock(a, b)
+    if a == nil or b == nil then return a == b end
+    return a.year == b.year and a.month == b.month and a.day == b.day and a.hour == b.hour and a.minute == b.minute
+end
+
+-- What a site raid was put in the game's calendar as, cleaned like anything off the guild channel:
+-- { title, at }, false once taken out of it, nil when unknown.
+local function cleanGame(g)
+    if g == false then return false end
+    if type(g) ~= "table" or type(g.title) ~= "string" or not tonumber(g.at) then return nil end
+    return { title = GuildOS:SanitizeUserText(g.title, 64), at = tonumber(g.at) }
+end
+
 function Calendar:WebEventId(roster)
     if not roster or roster.raidId == nil or roster.raidId == "" then return nil end
     return WEB_ID_PREFIX .. tostring(roster.raidId)
@@ -380,6 +415,7 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
 
     local when = tonumber(roster.startsAt) or 0
     if when <= 0 then return nil end
+    local clock = cleanClock(roster.clock)
 
     local title = strtrim(roster.title or "")
     if title == "" then title = roster.instance or L["Raid"] end
@@ -397,7 +433,7 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
 
     -- Nothing moved: republishing would only churn the guild channel and bump
     -- a revision for a change nobody made.
-    if e and not e.canceled and e.title == title and e.when == when and e.size == size
+    if e and not e.canceled and e.title == title and e.when == when and e.size == size and sameClock(e.clock, clock)
         and signupsKey(self:WebSignups(e)) == signupsKey(signups) then
         -- The same answers, said again later: the time moves here and nothing goes out. The
         -- companion rewrites its inbox every hour whether or not anybody answered.
@@ -420,6 +456,7 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
     e.canceled = false
     e.title = title
     e.when  = when
+    e.clock = clock
     e.size  = size
     e.kind  = "RAID"
     e.note  = L["Planned on the website."]
@@ -428,14 +465,25 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
 
     if GuildOS.SyncService then
         local rev = GuildOS.SyncService:NextRevision("event", id)
-        GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = {
-            id = e.id, title = e.title, when = e.when, size = e.size,
-            note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
-            shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
-        } }, { rev = rev })
+        GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = wireOf(e) }, { rev = rev })
     end
     self:Refresh()
     return e
+end
+
+--- What a site raid was put in the game's calendar as ({ title, at }), or false once taken out of it,
+--- shared with the other officers (#263). Stamped with the time, so on another client the newer
+--- answer wins and an update from a client before this, which carries none, takes nothing back.
+function Calendar:SetGameEvent(id, game)
+    local e = self:GetEvents()[id]
+    if not e or not self:IsWebEvent(e) then return end
+    e.game = game or false
+    e.gameAt = GetServerTime()
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", "update", { event = wireOf(e) }, { rev = rev })
+    end
+    self:Refresh()
 end
 
 function Calendar:Cancel(id)
@@ -477,12 +525,8 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     end
     if GuildOS.SyncService then
         local rev = GuildOS.SyncService:NextRevision("event", id)
-        GuildOS.SyncService:Publish("event", "update", { event = {
-            id = e.id, title = e.title, when = e.when, size = e.size,
-            note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
-            -- An edit replaces the event on every client: left out, the site's list would go.
-            shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
-        } }, { rev = rev })
+        -- An edit replaces the event on every client: wireOf leaves nothing behind.
+        GuildOS.SyncService:Publish("event", "update", { event = wireOf(e) }, { rev = rev })
     end
     self:Refresh()
     return e
@@ -545,8 +589,19 @@ function Calendar:OnSync(env, sender)
                 else
                     e.signups, e.signupsAt = cleanWebSignups(e.signups), at
                 end
+                -- What it was put in the game's calendar as (#263): the newer answer wins, held to now
+                -- like the list, and an update that carries none (a client before this) takes nothing back.
+                local gameAt = tonumber(e.gameAt)
+                if gameAt then gameAt = math.min(gameAt, GetServerTime()) end
+                if gameAt and (not existing or (tonumber(existing.gameAt) or 0) <= gameAt) then
+                    e.game, e.gameAt = cleanGame(e.game), gameAt
+                else
+                    e.game, e.gameAt = existing and existing.game, existing and existing.gameAt
+                end
+                e.clock = cleanClock(e.clock)
             else
                 e.signups, e.signupsAt = nil, nil
+                e.game, e.gameAt, e.clock = nil, nil, nil
             end
             self:GetEvents()[e.id] = e
             GuildOS.SyncService:SetRevision("event", e.id, env.rev)

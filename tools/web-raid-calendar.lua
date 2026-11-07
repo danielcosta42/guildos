@@ -232,6 +232,70 @@ local edited = events["web:r-full"]
 Cal:Update(edited.id, "Renamed", edited.when, edited.size, edited.note, edited.kind)
 check(published[#published].data.event.signups ~= nil and published[#published].data.event.signupsAt ~= nil, "an edit sends the list and its time")
 
+-- ── 5b. What the raid was put in the game's calendar as rides with the event (#263) ──
+local putIn = events["web:r-full"]
+Cal:SetGameEvent(putIn.id, { title = "Renamed", at = putIn.when })
+local out = published[#published].data.event
+check(out.game and out.game.title == "Renamed" and out.gameAt == NOW, "putting it in the game goes out with the event")
+check(Import:InboxInfo().ids["r-full"] and Import:InboxInfo().count == 1, "the inbox's raids, by id, and how many")
+check(Import:InboxInfo().at == NOW, "and when the site gave them, held to now (the ack here runs a day ahead)")
+local keptAck = GuildOSInboxAck
+GuildOSInboxAck = { at = NOW - 2 * 86400, members = 0 }
+check(Import:InboxInfo() == nil, "an inbox two days old is a companion that stopped: nothing is inferred from it (final review C1)")
+GuildOSInboxAck = nil
+check(Import:InboxInfo() == nil, "nor from one with no date")
+GuildOSInboxAck = keptAck
+GuildOS.db.settings.companion = false
+check(Import:InboxInfo() == nil, "nor with the companion switched off")
+GuildOS.db.settings.companion = true
+-- A client from before this republishes the event without the field: what it was put there as stays.
+Cal:OnSync({ act = "update", rev = 900, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", signups = {}, signupsAt = 0,
+} } }, "Old-Firemaw")
+check(events[putIn.id].game and events[putIn.id].game.title == "Renamed", "an old client's update keeps it")
+-- An older answer does not take back a newer one; a newer one does.
+Cal:OnSync({ act = "update", rev = 901, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", game = false, gameAt = NOW - 60,
+} } }, "Slow-Firemaw")
+check(events[putIn.id].game and events[putIn.id].gameAt == NOW, "a staler answer does not take it back")
+NOW = NOW + 120   -- two minutes on, an officer took it out of the game
+Cal:OnSync({ act = "update", rev = 902, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", game = false, gameAt = NOW - 30,
+} } }, "Fresh-Firemaw")
+check(not events[putIn.id].game and events[putIn.id].gameAt == NOW - 30, "a fresher one, taken out of the game, does")
+Cal:OnSync({ act = "update", rev = 903, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID",
+  game = { title = "Ahead", at = putIn.when }, gameAt = NOW + 3600,
+} } }, "Ahead-Firemaw")
+check(events[putIn.id].gameAt == NOW, "a clock running ahead is held to now")
+NOW = NOW - 120
+Cal:SetGameEvent(putIn.id, { title = "Renamed", at = putIn.when })
+-- The inbox republishing the raid keeps it in what goes out.
+local renamed = raid("r-full", FULL)
+renamed.title = "Karazhan again"
+Cal:UpsertWebRaid(renamed, NOW)
+check(published[#published].data.event.game and published[#published].data.event.game.title == "Renamed",
+  "the inbox's republish keeps what it was put there as")
+
+-- ── 5c. The raid's clock as it was created rides with the event (#411) ──
+local clocked = raid("r-clock", {}, NOW + 7200)
+clocked.clock = { year = 2026, month = 11, day = 8, hour = 1, minute = 4 }
+local parsed = Import:Parse(wire(clocked))
+check(parsed.clock and parsed.clock.hour == 1 and parsed.clock.minute == 4, "the inbox keeps the raid's clock")
+Cal:UpsertWebRaid(parsed, NOW)
+check(events["web:r-clock"].clock and events["web:r-clock"].clock.day == 8, "the event keeps it")
+check(published[#published].data.event.clock and published[#published].data.event.clock.hour == 1, "and sends it to the guild")
+local moved2 = Import:Parse(wire(clocked))
+moved2.clock = { year = 2026, month = 11, day = 8, hour = 2, minute = 0 }
+local before = #published
+Cal:UpsertWebRaid(moved2, NOW)
+check(#published == before + 1 and events["web:r-clock"].clock.hour == 2, "a new clock is a change, sent again")
+Cal:OnSync({ act = "update", rev = 950, data = { event = {
+  id = "web:r-clock", title = "x", when = NOW + 7200, size = 10, kind = "RAID",
+  clock = { year = 2026, month = 13, day = 40, hour = 25, minute = 99 },
+} } }, "Odd-Firemaw")
+check(events["web:r-clock"].clock == nil, "a clock that is no date is dropped off the guild channel")
+
 -- ── 6. A member's client imports nothing onto the calendar ───────────
 officer = false
 Import._lastInbox = nil
