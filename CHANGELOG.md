@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-11-07
+
+### Added
+- o evento do jogo leva a raide no horário com que foi criada (#263)
+- o estado da raide no calendário do jogo, no calendário do addon (#263)
+- pôr, atualizar e tirar a raide do calendário do jogo (#263)
+- a marca e o estado da raide no calendário do jogo (#263)
+- o calendário do jogo no Compat (#263)
+
+### Fixed
+- o addon não oferece tirar a raide do calendário do jogo, que recusa (#263)
+- da revisão final do calendário do jogo (#263)
+
+
 ## [1.9.5] - 2026-11-05
 
 ### Fixed
