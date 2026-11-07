@@ -40,6 +40,10 @@ function Calendar:Initialize()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("event", function(env, sender) Calendar:OnSync(env, sender) end)
     end
+    -- Repeating events (#267): an officer's client fills the next weeks in, once the rank is known.
+    if GuildOS.Compat and GuildOS.Compat.After then
+        GuildOS.Compat.After(20, function() GuildOS:SafeCall(function() Calendar:TopUpSeries() end) end)
+    end
 
     -- Alliance wiring. Both are no-ops until this guild joins a pact.
     if GuildOS.Alliance then
@@ -249,18 +253,8 @@ end
 ----------------------------------------------------------------------
 -- Mutations (officer: create/cancel · member: rsvp)
 ----------------------------------------------------------------------
-function Calendar:Create(title, when, size, note, kind, shareAlliance)
-    if not GuildOS:IsOfficer() then
-        GuildOS:Print(L["|cffFF4444Officers only.|r"])
-        return
-    end
-    title = strtrim(title or "")
-    when = tonumber(when)
-    if title == "" or not when then
-        GuildOS:Print(L["An event needs a title and a date/time."])
-        return
-    end
-    local e = {
+local function newEvent(title, when, size, note, kind, shareAlliance)
+    return {
         id = newId(), title = title, when = when, size = tonumber(size) or GuildOS.Client.defaultRaidSize,
         note = note or "", kind = normalizeKind(kind),
         author = GuildOS.Compat.PlayerName(), createdAt = GetServerTime(),
@@ -270,17 +264,217 @@ function Calendar:Create(title, when, size, note, kind, shareAlliance)
         -- before this feature stays inside the guild.
         shareAlliance = shareAlliance and true or false,
     }
+end
+
+-- Stores a new event and tells the guild.
+function Calendar:_Add(e)
     self:GetEvents()[e.id] = e
     if GuildOS.SyncService then
         local rev = GuildOS.SyncService:NextRevision("event", e.id)
         GuildOS.SyncService:Publish("event", "create", { event = {
             id = e.id, title = e.title, when = e.when, size = e.size,
             note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
-            shareAlliance = e.shareAlliance,
+            shareAlliance = e.shareAlliance, series = e.series,
         } }, { rev = rev })
     end
+end
+
+-- The officer and the fields every new event needs; nil, with the reason said, when one is missing.
+local function validNew(title, when)
+    if not GuildOS:IsOfficer() then
+        GuildOS:Print(L["|cffFF4444Officers only.|r"])
+        return nil
+    end
+    title = strtrim(title or "")
+    when = tonumber(when)
+    if title == "" or not when then
+        GuildOS:Print(L["An event needs a title and a date/time."])
+        return nil
+    end
+    return title, when
+end
+
+function Calendar:Create(title, when, size, note, kind, shareAlliance)
+    title, when = validNew(title, when)
+    if not title then return end
+    local e = newEvent(title, when, size, note, kind, shareAlliance)
+    self:_Add(e)
     self:Refresh()
     return e
+end
+
+----------------------------------------------------------------------
+-- Events that repeat (#267). A series is plain events, one per date, each carrying the rule in
+-- `series` = { id, rep, first, hour, min, untilT? }: a client from before this sees ordinary events,
+-- every date keeps its own answers, and the id is the series' plus the date, so two officers filling
+-- the same series in reach the same events. The calendar holds SERIES_DAYS ahead, and an officer's
+-- client fills the rest in as days pass (TopUpSeries). A date deleted by hand leaves a tombstone, which
+-- outlives the window, so it is not brought back.
+----------------------------------------------------------------------
+Calendar.REPEATS = { "none", "weekly", "biweekly", "daily", "everyother", "monthnth", "monthday" }
+local SERIES_DAYS = 28    -- under TOMBSTONE_TTL
+local SERIES_CAP = 16     -- dates per fill, whatever the rule
+local STEP_DAYS = { weekly = 7, biweekly = 14, daily = 1, everyother = 2 }
+local MONTHLY = { monthnth = true, monthday = true }
+
+local function noonOf(y, m, d) return time({ year = y, month = m, day = d, hour = 12 }) end
+local function daysIn(y, m) return date("*t", noonOf(y, m + 1, 0)).day end
+
+-- What a repeat reads off its first date: the weekday, which one of the month it is, the day.
+function Calendar.RepeatOf(rep, first)
+    local t = date("*t", first)
+    return { rep = rep, nth = math.floor((t.day - 1) / 7) + 1, wday = t.wday, day = t.day }
+end
+
+-- Pure: the dates of `rule` from `first`, within [fromT, toT], at most `cap`. On the wall clock: the
+-- hour stays the hour across a summer-time change. A month without the day is skipped, never moved.
+function Calendar._Occurrences(rule, first, fromT, toT, cap)
+    local base = date("*t", first)
+    local hour, min = rule.hour or base.hour, rule.min or base.min
+    local out = {}
+    local function keep(ts)
+        if ts >= first and ts >= fromT and ts <= toT and #out < cap then out[#out + 1] = ts end
+    end
+    local step = STEP_DAYS[rule.rep]
+    if step then
+        -- One step early: a summer-time change can move a date an hour across fromT.
+        local k = math.max(0, math.floor((fromT - first) / (step * 86400)) - 1)
+        while #out < cap do
+            local ts = time({ year = base.year, month = base.month, day = base.day + k * step, hour = hour, min = min })
+            if ts > toT then break end
+            keep(ts)
+            k = k + 1
+        end
+    elseif MONTHLY[rule.rep] then
+        local r = Calendar.RepeatOf(rule.rep, first)
+        for k = 0, 600 do
+            local m1 = date("*t", noonOf(base.year, base.month + k, 1))
+            local day = rule.rep == "monthday" and r.day or (1 + (r.wday - m1.wday) % 7 + (r.nth - 1) * 7)
+            if day <= daysIn(m1.year, m1.month) then
+                local ts = time({ year = m1.year, month = m1.month, day = day, hour = hour, min = min })
+                if ts > toT or #out >= cap then break end
+                keep(ts)
+            end
+        end
+    else
+        keep(first)
+    end
+    return out
+end
+
+local function occurrenceId(sid, ts) return sid .. ":" .. date("%Y%m%d", ts) end
+
+-- A series' rule, cleaned like anything off the guild channel, or nil.
+local function cleanSeries(s)
+    if type(s) ~= "table" or type(s.id) ~= "string" or not tonumber(s.first) then return nil end
+    if not (STEP_DAYS[s.rep] or MONTHLY[s.rep]) then return nil end
+    local function n(v, lo, hi) v = tonumber(v); return (v and v >= lo and v <= hi) and math.floor(v) or nil end
+    return { id = s.id:sub(1, 40), rep = s.rep, first = tonumber(s.first), hour = n(s.hour, 0, 23),
+             min = n(s.min, 0, 59), untilT = tonumber(s.untilT) }
+end
+
+-- Creates the dates of `template`'s series from now (or its first date) to SERIES_DAYS on, the ones
+-- not there yet and never deleted. Returns how many.
+function Calendar:_FillSeries(template, now)
+    local s = template.series
+    local from = math.max(now, s.first)
+    local to = from + SERIES_DAYS * 86400 - 1   -- four weeks, the fifth week's date not yet
+    if s.untilT then to = math.min(to, s.untilT) end
+    local n = 0
+    for _, ts in ipairs(Calendar._Occurrences(s, s.first, from, to, SERIES_CAP)) do
+        local id = occurrenceId(s.id, ts)
+        if not self:GetEvents()[id] and not self:IsDeleted(id) then
+            local e = newEvent(template.title, ts, template.size, template.note, template.kind, template.shareAlliance)
+            e.id = id
+            e.series = cleanSeries(s)
+            self:_Add(e)
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- An officer's event that repeats: `rep` one of REPEATS. "none" is an ordinary event. Returns how
+-- many dates were created, nil when nothing could be.
+function Calendar:CreateSeries(title, when, size, note, kind, shareAlliance, rep)
+    if not (STEP_DAYS[rep] or MONTHLY[rep]) then
+        return self:Create(title, when, size, note, kind, shareAlliance) and 1 or nil
+    end
+    title, when = validNew(title, when)
+    if not title then return nil end
+    local t = date("*t", when)
+    local template = newEvent(title, when, size, note, kind, shareAlliance)
+    template.series = { id = newId(), rep = rep, first = when, hour = t.hour, min = t.min }
+    local n = self:_FillSeries(template, GetServerTime())
+    self:Refresh()
+    return n
+end
+
+-- An officer's client fills every series in up to SERIES_DAYS ahead, from its latest date (whose
+-- title, hour and the rest the new ones copy). An ended series stops where it ended. Returns how many.
+function Calendar:TopUpSeries()
+    if not GuildOS:IsOfficer() then return 0 end
+    local latest, ended = {}, {}
+    for _, e in pairs(self:GetEvents()) do
+        local s = cleanSeries(e.series)
+        if s then
+            if s.untilT then ended[s.id] = math.min(ended[s.id] or s.untilT, s.untilT) end
+            if not latest[s.id] or (e.when or 0) > (latest[s.id].when or 0) then latest[s.id] = e end
+        end
+    end
+    local n = 0
+    for sid, e in pairs(latest) do
+        local template = { title = e.title, size = e.size, note = e.note, kind = e.kind,
+                           shareAlliance = e.shareAlliance, series = cleanSeries(e.series) }
+        template.series.untilT = ended[sid]
+        n = n + self:_FillSeries(template, GetServerTime())
+    end
+    if n > 0 then self:Refresh() end
+    return n
+end
+
+local function sameSeries(e, sid) return type(e.series) == "table" and e.series.id == sid end
+
+-- An officer's edit of one date and every later one of its series: each keeps its own day and takes
+-- the new hour, title and the rest. Earlier dates stay; answers survive. Not a series: Update.
+function Calendar:UpdateSeries(id, title, when, size, note, kind, shareAlliance)
+    local e = self:GetEvents()[id]
+    if not e or type(e.series) ~= "table" or not GuildOS:IsOfficer() then
+        return self:Update(id, title, when, size, note, kind, shareAlliance)
+    end
+    when = tonumber(when) or e.when
+    local t = date("*t", when)
+    local sid, from = e.series.id, e.when
+    local later = {}
+    for oid, o in pairs(self:GetEvents()) do
+        if sameSeries(o, sid) and (o.when or 0) >= from and not o.canceled then later[#later + 1] = oid end
+    end
+    for _, oid in ipairs(later) do
+        local o = self:GetEvents()[oid]
+        local d = date("*t", o.when)
+        local at = oid == id and when or time({ year = d.year, month = d.month, day = d.day, hour = t.hour, min = t.min })
+        o.series.hour, o.series.min = t.hour, t.min
+        self:Update(oid, title, at, size, note, kind, shareAlliance)
+    end
+end
+
+-- An officer ends a series from one date on: that date and every later one go, and the earlier ones
+-- say where it ended, so no client fills it in again. Not a series: Delete.
+function Calendar:EndSeries(id)
+    local e = self:GetEvents()[id]
+    if not e or type(e.series) ~= "table" or not GuildOS:IsOfficer() then return self:Delete(id) end
+    local sid, cut = e.series.id, e.when
+    local drop, keep = {}, {}
+    for oid, o in pairs(self:GetEvents()) do
+        if sameSeries(o, sid) then
+            if (o.when or 0) >= cut then drop[#drop + 1] = oid else keep[#keep + 1] = o end
+        end
+    end
+    for _, oid in ipairs(drop) do self:Delete(oid) end
+    for _, o in ipairs(keep) do
+        o.series.untilT = cut - 1
+        if not o.canceled then self:Update(o.id, o.title, o.when, o.size, o.note, o.kind, o.shareAlliance) end
+    end
 end
 
 ----------------------------------------------------------------------
@@ -368,7 +562,7 @@ local function wireOf(e)
         id = e.id, title = e.title, when = e.when, size = e.size,
         note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
         shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
-        game = e.game, gameAt = e.gameAt, clock = e.clock,
+        game = e.game, gameAt = e.gameAt, clock = e.clock, series = e.series,
     }
 end
 
@@ -603,6 +797,7 @@ function Calendar:OnSync(env, sender)
                 e.signups, e.signupsAt = nil, nil
                 e.game, e.gameAt, e.clock = nil, nil, nil
             end
+            e.series = cleanSeries(e.series)   -- #267: the rule of a repeating event, checked
             self:GetEvents()[e.id] = e
             GuildOS.SyncService:SetRevision("event", e.id, env.rev)
             self:Refresh()

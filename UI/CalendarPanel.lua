@@ -164,15 +164,50 @@ local function buildEditor()
     local titleBox = fieldBox(14, -128, 332, L["Title"], false, 60)
     local descBox  = fieldBox(14, -178, 332, L["Description (optional)"], true, 500)
 
+    -- Repeating (#267). A new event cycles through the repeats its date allows; an event of a series
+    -- offers to change every later date instead.
+    local repLbl = UI:CreateText(f, L["Repeat"], 10, C.silver.r, C.silver.g, C.silver.b)
+    repLbl:SetPoint("TOPLEFT", 14, -284)
+    local repBtn = UI:CreateButton(f, "", 260, 22)
+    repBtn:SetPoint("TOPLEFT", 70, -280)
+    local laterCb = UI:CreateCheckbox(f, L["Change every later date in this series"], 18)
+    laterCb:SetPoint("TOPLEFT", 14, -282)
+    local REPEATS = (CAL() and CAL().REPEATS) or { "none" }
+    f.rep = "none"
+    local function repDate()
+        local y, m, d = parseDate(dateBox:GetText())
+        return y and noon(y, m, d) or nil
+    end
+    local function repLabel(rep)
+        local ts = repDate()
+        local r = (ts and CAL() and CAL().RepeatOf) and CAL().RepeatOf(rep, ts) or { wday = 1, nth = 1, day = 1 }
+        if rep == "weekly" then return string.format(L["Every week on %s"], WEEKDAYS[r.wday]) end
+        if rep == "biweekly" then return string.format(L["Every 2 weeks on %s"], WEEKDAYS[r.wday]) end
+        if rep == "daily" then return L["Every day"] end
+        if rep == "everyother" then return L["Every other day"] end
+        if rep == "monthnth" then return string.format(L["Every month, %s"], WEEKDAYS[r.wday] .. " #" .. r.nth) end
+        if rep == "monthday" then return string.format(L["Every month on day %d"], r.day) end
+        return L["Does not repeat"]
+    end
+    local function refreshRep() repBtn.label:SetText(repLabel(f.rep)) end
+    repBtn:SetScript("OnClick", function()
+        local idx = 1
+        for i, v in ipairs(REPEATS) do if v == f.rep then idx = i break end end
+        f.rep = REPEATS[(idx % #REPEATS) + 1]
+        refreshRep()
+    end)
+    dateBox:HookScript("OnTextChanged", refreshRep)
+    local REP_ROW = 32   -- the room the repeat row takes
+
     -- Alliance sharing. The whole block only exists while this guild is in a
     -- pact: with no alliance there is nothing to share with, and an unexplained
     -- checkbox is worse than no checkbox.
     local shareCb = UI:CreateCheckbox(f, L["Share with the alliance"], 18)
-    shareCb:SetPoint("TOPLEFT", 14, -276)
+    shareCb:SetPoint("TOPLEFT", 14, -276 - REP_ROW)
     local shareHint = UI:CreateText(f,
         L["Allied guilds see this event and can request a slot. Unchecked, it stays in the guild."],
         9, C.textDim.r, C.textDim.g, C.textDim.b)
-    shareHint:SetPoint("TOPLEFT", 34, -296)
+    shareHint:SetPoint("TOPLEFT", 34, -296 - REP_ROW)
     shareHint:SetWidth(310)
     shareHint:SetJustifyH("LEFT")
     shareHint:SetWordWrap(true)
@@ -193,9 +228,14 @@ local function buildEditor()
         local when = time({ year = y, month = m, day = d, hour = hh, min = mm })
         local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         local share = inAlliance and shareCb.checkbox:GetChecked() or nil
-        if f.editId then
+        if f.editId and f.inSeries and laterCb.checkbox:GetChecked() then
+            CAL():UpdateSeries(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "", f.kind, share)
+        elseif f.editId then
             CAL():Update(f.editId, title, when, sizeBtn.sizeVal, descBox:GetText() or "",
                 f.kind, share)
+        elseif f.rep ~= "none" then
+            CAL():CreateSeries(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
+                f.kind, share and true or false, f.rep)
         else
             CAL():Create(title, when, sizeBtn.sizeVal, descBox:GetText() or "",
                 f.kind, share and true or false)
@@ -225,10 +265,18 @@ local function buildEditor()
         local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         shareCb:SetShown(inAlliance)
         shareHint:SetShown(inAlliance)
-        f:SetHeight(inAlliance and 392 or 336)
+        f:SetHeight((inAlliance and 392 or 336) + REP_ROW)
+        -- New: pick a repeat. An event of a series: change only it, or every later date too.
+        f.inSeries = event and type(event.series) == "table" or false
+        f.rep = "none"
+        repLbl:SetShown(not event)
+        repBtn:SetShown(not event)
+        laterCb:SetShown(f.inSeries)
+        laterCb.checkbox:SetChecked(false)
         shareCb.checkbox:SetChecked((event and event.shareAlliance) and true or false)
 
         dateBox:SetText(string.format("%04d-%02d-%02d", y, m, d))
+        refreshRep()
         timeBox:SetText(string.format("%02d:%02d", hh, mm))
         sizeBtn.sizeVal = size; sizeBtn.label:SetText(tostring(size))
         titleBox:SetText(title)
@@ -260,6 +308,23 @@ StaticPopupDialogs["GUILDOS_CALENDAR_DELETE"] = {
 local function confirmDelete(e)
     local dlg = StaticPopup_Show("GUILDOS_CALENDAR_DELETE", e.title or "?", nil, e.id)
     if dlg then dlg.data = e.id end   -- some clients pass data via dialog.data
+end
+
+-- Ending a series from one date on (#267): the earlier dates stay.
+StaticPopupDialogs["GUILDOS_CALENDAR_END_SERIES"] = {
+    text = L["End \"%s\" from this date on? Earlier dates stay."],
+    button1 = YES, button2 = NO,
+    OnAccept = function(self, data)
+        local id = data
+        if id == nil and self then id = self.data end
+        if id then CAL():EndSeries(id) end
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,
+    preferredIndex = 3,
+}
+local function confirmEndSeries(e)
+    local dlg = StaticPopup_Show("GUILDOS_CALENDAR_END_SERIES", e.title or "?", nil, e.id)
+    if dlg then dlg.data = e.id end
 end
 
 ----------------------------------------------------------------------
@@ -447,7 +512,9 @@ function GuildOS:CreateCalendarSub(panel)
             -- A gold [A] rather than a globe glyph: the skin fonts have no symbol
             -- coverage and unicode marks render as a box in these fonts.
             local shareMark = e.shareAlliance and "  |cffEDCC7B[A]|r" or ""
-            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or DEFAULT_SIZE) .. ")|r" .. shareMark,
+            local inSeries = type(e.series) == "table"
+            local repMark = inSeries and ("  |cff888888" .. L["(repeats)"] .. "|r") or ""
+            local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or DEFAULT_SIZE) .. ")|r" .. shareMark .. repMark,
                 12, C.gold.r, C.gold.g, C.gold.b)
             head:SetPoint("TOPLEFT", 4, -yy)
             if isOfficer then
@@ -458,6 +525,12 @@ function GuildOS:CreateCalendarSub(panel)
                 local editBtn = UI:CreateButton(child, L["Edit"], 48, 18)
                 editBtn:SetPoint("RIGHT", delBtn, "LEFT", -6, 0)
                 editBtn:SetScript("OnClick", function() openEditor(nil, ev) end)
+                if inSeries then
+                    -- This date and every later one of the series go (#267).
+                    local endBtn = UI:CreateButton(child, L["End series"], 80, 18)
+                    endBtn:SetPoint("RIGHT", editBtn, "LEFT", -6, 0)
+                    endBtn:SetScript("OnClick", function() confirmEndSeries(ev) end)
+                end
             end
             yy = yy + 20
 
