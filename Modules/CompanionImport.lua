@@ -631,3 +631,16 @@ function Import:CalendarFromInbox()
         GuildOS:SafeCall(function() GuildOS.Calendar:UpsertWebRaid(roster, answeredAt) end)
     end
 end
+
+--- The site raids the inbox holds, by id, and how many: { ids = { [raidId] = true }, count = n }, or nil
+--- when no inbox with a raid was read this session. The game's calendar infers "no longer on the
+--- website" from it, and only below the site's cap (guildos-web specs/075, #263).
+function Import:InboxInfo()
+    local raids = self._webRaids
+    if type(raids) ~= "table" then return nil end
+    local ids = {}
+    for _, roster in ipairs(raids) do
+        if roster.raidId ~= nil then ids[tostring(roster.raidId)] = true end
+    end
+    return { ids = ids, count = #raids }
+end

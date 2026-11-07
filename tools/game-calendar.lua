@@ -78,4 +78,97 @@ check(G.StateOf(raid("rz", "Started", NOW - 4 * 3600), native, { ids = {}, count
   "nor once the three hours after its start are over")
 check(G.StateOf(gone, native, nil) ~= "gone", "with no inbox read, nothing is gone")
 
+-- ── 5. The clicks: put, update, remove ────────────────────────────────
+-- The game answers later (a new event, a refreshed list, or CALENDAR_UPDATE_ERROR), so each action
+-- reports through `done` once, and what was put there is kept only once the game took it.
+local frames, timers = {}, {}
+function CreateFrame()
+  local f = { events = {} }
+  function f:RegisterEvent(e) self.events[e] = true end
+  function f:UnregisterEvent(e) self.events[e] = nil end
+  function f:SetScript(_, fn) self.fn = fn end
+  frames[#frames + 1] = f
+  return f
+end
+local function fire(ev, ...) for _, f in ipairs(frames) do if f.events[ev] and f.fn then f.fn(f, ev, ...) end end end
+C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+local function timeout() local t = timers; timers = {}; for _, fn in ipairs(t) do fn() end end
+local officer = true
+function GuildOS:IsOfficer() return officer end
+CALENDAR_ERROR_PERMISSIONS = "You do not have permission to do that."   -- the game's own sentence
+
+local inGame, created, edited, removed = {}, {}, {}, {}
+GuildOS.Compat = {
+  After = function(_, fn) timers[#timers + 1] = fn end,
+  CalendarAvailable = function() return true end,
+  CalendarGuildEvents = function() return inGame end,
+  CalendarCreateGuildEvent = function(spec) created[#created + 1] = spec; return true end,
+  CalendarOpenEvent = function() return true end,
+  CalendarApplyEdit = function(spec) edited[#edited + 1] = spec; return true end,
+  CalendarRemove = function(where) removed[#removed + 1] = where; return true end,
+}
+local events, stored = {}, {}
+GuildOS.Calendar = {
+  GetEvents = function() return events end,
+  SetGameEvent = function(_, id, g) stored[id] = g; events[id].game = g or nil end,
+}
+local function answer() local out = {}; return out, function(ok, msg) out.ok, out.msg, out.n = ok, msg, (out.n or 0) + 1 end end
+
+events["web:rp"] = raid("rp", "Karazhan", NOW + 86400)
+local put, putDone = answer()
+check(G:Put("web:rp", putDone) == true, "an officer's click starts it")
+check(#created == 1 and created[1].title == "Karazhan" and created[1].startsAt == NOW + 86400
+  and created[1].description:find("guildos:rp", 1, true), "the event the raid becomes")
+check(put.n == nil and stored["web:rp"] == nil, "nothing is kept before the game answers")
+inGame[#inGame + 1] = { title = "Karazhan", startsAt = NOW + 86400, offset = 0, day = 7, index = 1 }
+fire("CALENDAR_NEW_EVENT")
+check(put.ok == true and put.n == 1, "the game took it, said once")
+check(stored["web:rp"] and stored["web:rp"].title == "Karazhan" and stored["web:rp"].at == NOW + 86400,
+  "what was put there is kept")
+fire("CALENDAR_UPDATE_EVENT_LIST")
+check(put.n == 1, "and never said twice")
+local again = select(2, G:Put("web:rp", function() end))
+check(#created == 1 and type(again) == "string", "a raid already in the game is not put there twice")
+
+officer = false
+events["web:rm"] = raid("rm", "Gruul", NOW + 86400)
+check(G:Put("web:rm", function() end) == false and #created == 1, "a member's click does nothing")
+officer = true
+
+local refused, refusedDone = answer()
+G:Put("web:rm", refusedDone)
+fire("CALENDAR_UPDATE_ERROR", "CALENDAR_ERROR_PERMISSIONS")
+check(refused.ok == false and refused.msg:find("permission", 1, true), "the game's refusal, in its own words")
+check(stored["web:rm"] == nil, "and nothing kept")
+
+local silent, silentDone = answer()
+G:Put("web:rm", silentDone)
+timeout()
+check(silent.ok == false and silent.msg == "The game did not answer. Check its calendar.", "no answer is said too")
+
+-- The site moved the raid: open it with one click, save it with the next.
+events["web:rp"].when = NOW + 86400 + 1800
+local upd, updDone = answer()
+check(G:Refresh("web:rp", updDone) == "opened" and G:IsOpenFor("web:rp"), "the first click opens it")
+check(#edited == 0, "and saves nothing")
+check(G:Refresh("web:rp", updDone) == true and #edited == 1 and edited[1].startsAt == NOW + 86400 + 1800,
+  "the second saves the site's hour")
+inGame[1].startsAt = NOW + 86400 + 1800
+fire("CALENDAR_UPDATE_EVENT_LIST")
+check(upd.ok == true and stored["web:rp"].at == NOW + 86400 + 1800 and not G:IsOpenFor("web:rp"),
+  "what is in the game now is kept")
+
+-- Removing: the server may refuse it, as it refused a guild event to a timer.
+local take, takeDone = answer()
+check(G:Take("web:rp", takeDone) == true and removed[1].index == 1, "removed where it sits")
+fire("CALENDAR_UPDATE_ERROR", "CALENDAR_ERROR_PERMISSIONS")
+check(take.ok == false and take.msg == "The game refused to remove it. Delete it by hand in the game's calendar.",
+  "a refusal says to delete it by hand")
+check(stored["web:rp"] and stored["web:rp"].at == NOW + 86400 + 1800, "and keeps what is still there")
+local take2, take2Done = answer()
+G:Take("web:rp", take2Done)
+table.remove(inGame, 1)
+fire("CALENDAR_UPDATE_EVENT_LIST")
+check(take2.ok == true and stored["web:rp"] == false, "gone from the game: nothing kept")
+
 io.write(string.format("game-calendar: %d checks passed\n", checks))

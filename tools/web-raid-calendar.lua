@@ -232,6 +232,41 @@ local edited = events["web:r-full"]
 Cal:Update(edited.id, "Renamed", edited.when, edited.size, edited.note, edited.kind)
 check(published[#published].data.event.signups ~= nil and published[#published].data.event.signupsAt ~= nil, "an edit sends the list and its time")
 
+-- ── 5b. What the raid was put in the game's calendar as rides with the event (#263) ──
+local putIn = events["web:r-full"]
+Cal:SetGameEvent(putIn.id, { title = "Renamed", at = putIn.when })
+local out = published[#published].data.event
+check(out.game and out.game.title == "Renamed" and out.gameAt == NOW, "putting it in the game goes out with the event")
+check(Import:InboxInfo().ids["r-full"] and Import:InboxInfo().count == 1, "the inbox's raids, by id, and how many")
+-- A client from before this republishes the event without the field: what it was put there as stays.
+Cal:OnSync({ act = "update", rev = 900, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", signups = {}, signupsAt = 0,
+} } }, "Old-Firemaw")
+check(events[putIn.id].game and events[putIn.id].game.title == "Renamed", "an old client's update keeps it")
+-- An older answer does not take back a newer one; a newer one does.
+Cal:OnSync({ act = "update", rev = 901, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", game = false, gameAt = NOW - 60,
+} } }, "Slow-Firemaw")
+check(events[putIn.id].game and events[putIn.id].gameAt == NOW, "a staler answer does not take it back")
+NOW = NOW + 120   -- two minutes on, an officer took it out of the game
+Cal:OnSync({ act = "update", rev = 902, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID", game = false, gameAt = NOW - 30,
+} } }, "Fresh-Firemaw")
+check(not events[putIn.id].game and events[putIn.id].gameAt == NOW - 30, "a fresher one, taken out of the game, does")
+Cal:OnSync({ act = "update", rev = 903, data = { event = {
+  id = putIn.id, title = putIn.title, when = putIn.when, size = putIn.size, kind = "RAID",
+  game = { title = "Ahead", at = putIn.when }, gameAt = NOW + 3600,
+} } }, "Ahead-Firemaw")
+check(events[putIn.id].gameAt == NOW, "a clock running ahead is held to now")
+NOW = NOW - 120
+Cal:SetGameEvent(putIn.id, { title = "Renamed", at = putIn.when })
+-- The inbox republishing the raid keeps it in what goes out.
+local renamed = raid("r-full", FULL)
+renamed.title = "Karazhan again"
+Cal:UpsertWebRaid(renamed, NOW)
+check(published[#published].data.event.game and published[#published].data.event.game.title == "Renamed",
+  "the inbox's republish keeps what it was put there as")
+
 -- ── 6. A member's client imports nothing onto the calendar ───────────
 officer = false
 Import._lastInbox = nil

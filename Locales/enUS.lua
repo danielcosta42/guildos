@@ -654,6 +654,11 @@ L["The Discord cores in the inbox are for %s, not this guild."] = "The Discord c
 L["Waiting for a confirmed character on the site: %s"] = "Waiting for a confirmed character on the site: %s"
 L["Discord core:"] = "Discord core:"
 L["Planned on the website."] = "Planned on the website."
+L["Only an officer can do this, on WoW: Forever."] = "Only an officer can do this, on WoW: Forever."
+L["It is already in the game's calendar."] = "It is already in the game's calendar."
+L["It is not in the game's calendar."] = "It is not in the game's calendar."
+L["The game did not answer. Check its calendar."] = "The game did not answer. Check its calendar."
+L["The game refused to remove it. Delete it by hand in the game's calendar."] = "The game refused to remove it. Delete it by hand in the game's calendar."
 L["Sign up here, in Discord or on guildos.me."] = "Sign up here, in Discord or on guildos.me."
 
 -- Core/Core.lua, UI/Window.lua (start-up isolation)

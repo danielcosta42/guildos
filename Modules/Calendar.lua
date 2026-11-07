@@ -360,6 +360,26 @@ local function signupsKey(list)
     return table.concat(t, ",")
 end
 
+-- An event as it goes out on the guild channel: everything a create or an update replaces on every
+-- client. Left out, a field goes: the site's list once did, and what the raid was put in the game's
+-- calendar as would (#263).
+local function wireOf(e)
+    return {
+        id = e.id, title = e.title, when = e.when, size = e.size,
+        note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
+        shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
+        game = e.game, gameAt = e.gameAt,
+    }
+end
+
+-- What a site raid was put in the game's calendar as, cleaned like anything off the guild channel:
+-- { title, at }, false once taken out of it, nil when unknown.
+local function cleanGame(g)
+    if g == false then return false end
+    if type(g) ~= "table" or type(g.title) ~= "string" or not tonumber(g.at) then return nil end
+    return { title = GuildOS:SanitizeUserText(g.title, 64), at = tonumber(g.at) }
+end
+
 function Calendar:WebEventId(roster)
     if not roster or roster.raidId == nil or roster.raidId == "" then return nil end
     return WEB_ID_PREFIX .. tostring(roster.raidId)
@@ -428,14 +448,25 @@ function Calendar:UpsertWebRaid(roster, answeredAt)
 
     if GuildOS.SyncService then
         local rev = GuildOS.SyncService:NextRevision("event", id)
-        GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = {
-            id = e.id, title = e.title, when = e.when, size = e.size,
-            note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
-            shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
-        } }, { rev = rev })
+        GuildOS.SyncService:Publish("event", isNew and "create" or "update", { event = wireOf(e) }, { rev = rev })
     end
     self:Refresh()
     return e
+end
+
+--- What a site raid was put in the game's calendar as ({ title, at }), or false once taken out of it,
+--- shared with the other officers (#263). Stamped with the time, so on another client the newer
+--- answer wins and an update from a client before this, which carries none, takes nothing back.
+function Calendar:SetGameEvent(id, game)
+    local e = self:GetEvents()[id]
+    if not e or not self:IsWebEvent(e) then return end
+    e.game = game or false
+    e.gameAt = GetServerTime()
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", id)
+        GuildOS.SyncService:Publish("event", "update", { event = wireOf(e) }, { rev = rev })
+    end
+    self:Refresh()
 end
 
 function Calendar:Cancel(id)
@@ -477,12 +508,8 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     end
     if GuildOS.SyncService then
         local rev = GuildOS.SyncService:NextRevision("event", id)
-        GuildOS.SyncService:Publish("event", "update", { event = {
-            id = e.id, title = e.title, when = e.when, size = e.size,
-            note = e.note, kind = e.kind, author = e.author, createdAt = e.createdAt,
-            -- An edit replaces the event on every client: left out, the site's list would go.
-            shareAlliance = e.shareAlliance, signups = e.signups, signupsAt = e.signupsAt,
-        } }, { rev = rev })
+        -- An edit replaces the event on every client: wireOf leaves nothing behind.
+        GuildOS.SyncService:Publish("event", "update", { event = wireOf(e) }, { rev = rev })
     end
     self:Refresh()
     return e
@@ -545,8 +572,18 @@ function Calendar:OnSync(env, sender)
                 else
                     e.signups, e.signupsAt = cleanWebSignups(e.signups), at
                 end
+                -- What it was put in the game's calendar as (#263): the newer answer wins, held to now
+                -- like the list, and an update that carries none (a client before this) takes nothing back.
+                local gameAt = tonumber(e.gameAt)
+                if gameAt then gameAt = math.min(gameAt, GetServerTime()) end
+                if gameAt and (not existing or (tonumber(existing.gameAt) or 0) <= gameAt) then
+                    e.game, e.gameAt = cleanGame(e.game), gameAt
+                else
+                    e.game, e.gameAt = existing and existing.game, existing and existing.gameAt
+                end
             else
                 e.signups, e.signupsAt = nil, nil
+                e.game, e.gameAt = nil, nil
             end
             self:GetEvents()[e.id] = e
             GuildOS.SyncService:SetRevision("event", e.id, env.rev)
