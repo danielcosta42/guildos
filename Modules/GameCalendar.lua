@@ -194,9 +194,9 @@ function GameCalendar:_Listen()
 end
 
 -- Waits for the game's answer about `eventId`: `shows()` is true once the game shows what was asked. A
--- refusal ends it with `refusal`, or the game's own sentence for its reason; silence, with ours. While
--- it waits, nothing else is started on that raid.
-function GameCalendar:_Await(eventId, shows, onTaken, done, refusal)
+-- refusal ends it with the game's own sentence for its reason; silence, with ours. While it waits,
+-- nothing else is started on that raid.
+function GameCalendar:_Await(eventId, shows, onTaken, done)
     self._waits, self._pending = self._waits or {}, self._pending or {}
     self._pending[eventId] = true
     local wait = {}
@@ -208,7 +208,7 @@ function GameCalendar:_Await(eventId, shows, onTaken, done, refusal)
         if ok and onTaken then onTaken() end
         if done then done(ok, msg) end
     end
-    wait.shows, wait.finish, wait.refusal = shows, finish, refusal
+    wait.shows, wait.finish = shows, finish
     self._waits[#self._waits + 1] = wait
     self:_Listen()
     GuildOS.Compat.After(ANSWER_WAIT, function() finish(false, L["The game did not answer. Check its calendar."]) end)
@@ -222,7 +222,7 @@ function GameCalendar:_OnAnswer(event, reason)
     for _, w in ipairs({ unpack(self._waits or {}) }) do
         if event == "CALENDAR_UPDATE_ERROR" then
             local said = type(reason) == "string" and type(_G[reason]) == "string" and _G[reason] or tostring(reason)
-            w.finish(false, w.refusal or said)
+            w.finish(false, said)
         elseif w.shows() then
             w.finish(true)
         end
@@ -301,29 +301,6 @@ function GameCalendar:Refresh(eventId, done)
     return true
 end
 
---- Takes a raid's event out of the game's calendar. The server may refuse it (it refused a guild event
---- to a timer, measured): the officer is then told to delete it by hand, and what is there stays known.
-function GameCalendar:Take(eventId, done)
-    local refused, why = self:_Refuse(eventId)
-    if refused == false then return refused, why end
-    local e = eventOf(eventId)
-    if not e then return false end
-    local list = nativeAround(e)
-    if not list then return false, L["The game's calendar is still loading. Try again in a moment."] end
-    local native = GameCalendar.Match(e, list)
-    if not native then return false, L["It is not in the game's calendar."] end
-    self._open = nil
-    local ok, err = GuildOS.Compat.CalendarRemove(native)
-    if not ok then return false, err end
-    local title, at = native.title, native.startsAt
-    self:_Await(eventId, function()
-        local now = nativeAround(e)
-        return now ~= nil and not has(now, title, at)
-    end, function() GuildOS.Calendar:SetGameEvent(eventId, false) end, done,
-        L["The game refused to remove it. Delete it by hand in the game's calendar."])
-    return true
-end
-
 ----------------------------------------------------------------------
 -- What the addon's calendar shows for a site raid, and what its button does. Decided here, so the
 -- panel only draws (Rule 10).
@@ -337,22 +314,22 @@ local STATE_TEXT = {
 local DONE_TEXT = {
     put = L["It is in the game's calendar now."],
     refresh = L["The game's calendar is up to date."],
-    take = L["Taken out of the game's calendar."],
 }
 
 --- { text, action, label }: the state line, and for whoever may act the button's action
---- ("put", "refresh", "take") and label. Nothing to do, or an answer from the game still awaited
+--- ("put", "refresh") and label. Nothing to do, or an answer from the game still awaited
 --- (`waiting`): no action.
 function GameCalendar.ViewOf(state, hasNative, canAct, isOpen, waiting)
     if waiting then return { text = L["Waiting for the game's answer..."] } end
+    -- The game refuses an addon removing a guild event, from a timer, one click or two (measured on 7/11):
+    -- a raid gone from the site but still in the game says how to do it by hand, to whoever reads it.
+    if state == "gone" and hasNative then return { text = L["No longer on the website. Delete it by hand in the game's calendar."] } end
     local view = { text = STATE_TEXT[state] }
     if not canAct then return view end
     if state == "absent" then
         view.action, view.label = "put", L["Put in the game's calendar"]
     elseif state == "stale" then
         view.action, view.label = "refresh", isOpen and L["Confirm"] or L["Update in the game's calendar"]
-    elseif state == "gone" and hasNative then
-        view.action, view.label = "take", L["Remove from the game's calendar"]
     end
     return view
 end
@@ -375,7 +352,7 @@ if GuildOS.Compat and GuildOS.Compat.OnCalendarUpdate then GuildOS.Compat.OnCale
 
 --- The panel's button: runs the action and says, in the chat window, what came of it.
 function GameCalendar:Act(eventId, action)
-    local run = ({ put = self.Put, refresh = self.Refresh, take = self.Take })[action]
+    local run = ({ put = self.Put, refresh = self.Refresh })[action]
     if not run then return end
     local started, why = run(self, eventId, function(ok, msg)
         if ok then GuildOS:Print(DONE_TEXT[action]) elseif msg then GuildOS:Print(msg) end

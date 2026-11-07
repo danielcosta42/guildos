@@ -1699,18 +1699,6 @@ function Compat.CalendarApplyEdit(spec)
     return true
 end
 
---- Removes the event at `where`. The server may still refuse it (CALENDAR_ERROR_PERMISSIONS, measured
---- for a guild event removed from a timer).
-function Compat.CalendarRemove(where)
-    if not Compat.CalendarAvailable() then return false, "unavailable" end
-    local ok, err = pcall(function()
-        C_Calendar.ContextMenuSelectEvent(where.offset, where.day, where.index)
-        C_Calendar.ContextMenuEventRemove()
-    end)
-    if not ok then return false, tostring(err) end
-    return true
-end
-
 -- Sends what a lockdown held, in order, one at a time: a message that raises is recorded and the
 -- rest still go. While the lockdown lasts, send() holds each one again.
 function Compat.FlushHeldMessages()

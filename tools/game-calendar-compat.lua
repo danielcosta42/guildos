@@ -80,8 +80,6 @@ C_Calendar = {
   OpenEvent = function(o, d, i) rec("OpenEvent", o, d, i); return true end,
   UpdateEvent = function() rec("UpdateEvent") end,
   CloseEvent = function() rec("CloseEvent") end,
-  ContextMenuSelectEvent = function(o, d, i) rec("ContextMenuSelectEvent", o, d, i) end,
-  ContextMenuEventRemove = function() rec("ContextMenuEventRemove") end,
 }
 local function find(name)
   for _, c in ipairs(calls) do if c.name == name then return c end end
@@ -181,9 +179,6 @@ local open = Compat.CalendarOpenedEvent()
 check(open and open.title == "Karazhan" and open.startsAt == NOW + 2 * 86400, "the event the game has open, in UTC (I2)")
 C_Calendar.GetEventInfo = function() return nil end
 check(Compat.CalendarOpenedEvent() == nil, "none open: nil")
-calls = {}
-check(Compat.CalendarRemove({ offset = 0, day = 8, index = 2 }) == true, "removed")
-check(find("ContextMenuSelectEvent").args[2] == 8 and find("ContextMenuEventRemove"), "selected, then removed")
 
 -- ── 5. Only on WoW: Forever ───────────────────────────────────────────
 check(Compat.CalendarAvailable() == true, "on WoW: Forever the calendar is offered")

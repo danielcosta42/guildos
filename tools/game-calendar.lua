@@ -135,7 +135,6 @@ GuildOS.Compat = {
   -- A realm six hours behind UTC: what the game will hold for a date and time on its calendar.
   EpochOfRealm = function(t) return 1793750400 + ((t.day - 1) * 24 + t.hour + 6) * 3600 + t.minute * 60 end,
   CalendarApplyEdit = function(spec) edited[#edited + 1] = spec; return true end,
-  CalendarRemove = function(where) removed[#removed + 1] = where; return true end,
 }
 local events, stored = {}, {}
 GuildOS.Calendar = {
@@ -222,23 +221,6 @@ G:Put("web:rm", function() end)
 check(not G:IsOpenFor("web:rp"), "another action forgets what was open")
 timeout()
 
--- Removing: the server may refuse it, as it refused a guild event to a timer.
-local take, takeDone = answer()
-check(G:Take("web:rp", takeDone) == true and removed[1].index == 1, "removed where it sits")
-fire("CALENDAR_UPDATE_ERROR", "CALENDAR_ERROR_PERMISSIONS")
-check(take.ok == false and take.msg == "The game refused to remove it. Delete it by hand in the game's calendar.",
-  "a refusal says to delete it by hand")
-check(stored["web:rp"] and stored["web:rp"].at == NOW + 86400 + 1800, "and keeps what is still there")
-local take2, take2Done = answer()
-G:Take("web:rp", take2Done)
-loaded = false
-fire("CALENDAR_UPDATE_EVENT_LIST")
-check(take2.n == nil, "a calendar not read yet is never taken for the event being gone (I5)")
-loaded = true
-table.remove(inGame, 1)
-fire("CALENDAR_UPDATE_EVENT_LIST")
-check(take2.ok == true and stored["web:rp"] == false, "gone from the game: nothing kept")
-
 -- #411: the raid's clock as it was created goes to the game exactly.
 local typed = raid("rt", "teste", NOW + 86400)
 typed.clock = { year = 2026, month = 11, day = 8, hour = 1, minute = 4 }
@@ -268,10 +250,14 @@ local st = G.ViewOf("stale", true, true, false)
 check(st.text == "In the game's calendar, out of date." and st.action == "refresh" and st.label == "Update in the game's calendar",
   "out of date: the button that updates it")
 check(G.ViewOf("stale", true, true, true).label == "Confirm", "once opened, the second click confirms")
+-- The game refuses an addon removing a guild event, from a timer, one click or two (measured on 7/11):
+-- there is no button that can only fail, only the way to do it by hand.
 local gv = G.ViewOf("gone", true, true, false)
-check(gv.text == "No longer on the website." and gv.action == "take" and gv.label == "Remove from the game's calendar",
-  "no longer on the site, still in the game: the button that takes it out")
-check(G.ViewOf("gone", false, true, false).action == nil, "no longer on the site and not in the game: nothing to take out")
+check(gv.text == "No longer on the website. Delete it by hand in the game's calendar." and gv.action == nil,
+  "no longer on the site, still in the game: delete it by hand, no button")
+check(G.ViewOf("gone", true, false, false).text == gv.text, "said to whoever reads it, officer or not")
+check(G.ViewOf("gone", false, true, false).text == "No longer on the website." and G.ViewOf("gone", false, true, false).action == nil,
+  "no longer on the site and not in the game: nothing to do")
 
 local printed, redrawn = {}, 0
 function GuildOS:Print(m) printed[#printed + 1] = m end
