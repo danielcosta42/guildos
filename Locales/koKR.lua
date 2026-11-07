@@ -1020,6 +1020,7 @@ L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."] = "데�
 L["Pick a profession on the left."] = "왼쪽에서 전문 기술을 고르세요."
 L["Pick an alliance event first."] = "먼저 연합 일정을 고르세요."
 L["Planned on the website."] = "웹사이트에서 계획됨."
+L["Sign up here, in Discord or on guildos.me."] = "여기, 디스코드 또는 guildos.me에서 신청하세요."
 L["Sign up in Discord or on the website."] = "신청은 Discord 또는 웹사이트에서 합니다."
 L["Tentative: "] = "미정: "
 L["Standby: "] = "대기: "

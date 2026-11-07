@@ -1020,6 +1020,7 @@ L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."] = "选�
 L["Pick a profession on the left."] = "请在左侧选择一个专业。"
 L["Pick an alliance event first."] = "请先选择一个同盟活动。"
 L["Planned on the website."] = "已在网站上计划。"
+L["Sign up here, in Discord or on guildos.me."] = "在这里、Discord 或 guildos.me 报名。"
 L["Sign up in Discord or on the website."] = "请在 Discord 或网站上报名。"
 L["Tentative: "] = "待定： "
 L["Standby: "] = "候补： "

@@ -1755,6 +1755,7 @@ L["The Discord cores in the inbox are for %s, not this guild."] = "Os cores do D
 L["Waiting for a confirmed character on the site: %s"] = "Esperando personagem confirmado no site: %s"
 L["Discord core:"] = "Core do Discord:"
 L["Planned on the website."] = "Planejada no site."
+L["Sign up here, in Discord or on guildos.me."] = "Inscreva-se aqui, no Discord ou em guildos.me."
 L["Sign up in Discord or on the website."] = "A inscrição é pelo Discord ou pelo site."
 L["Tentative: "] = "Talvez: "
 L["Standby: "] = "Na espera: "

@@ -654,6 +654,7 @@ L["The Discord cores in the inbox are for %s, not this guild."] = "The Discord c
 L["Waiting for a confirmed character on the site: %s"] = "Waiting for a confirmed character on the site: %s"
 L["Discord core:"] = "Discord core:"
 L["Planned on the website."] = "Planned on the website."
+L["Sign up here, in Discord or on guildos.me."] = "Sign up here, in Discord or on guildos.me."
 
 -- Core/Core.lua, UI/Window.lua (start-up isolation)
 L["%d start-up problem(s) on this client. Type /guildos errors for details."] = "%d start-up problem(s) on this client. Type /guildos errors for details."

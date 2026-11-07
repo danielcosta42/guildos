@@ -1020,6 +1020,7 @@ L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."] = "Вы�
 L["Pick a profession on the left."] = "Выберите профессию слева."
 L["Pick an alliance event first."] = "Сначала выберите событие союза."
 L["Planned on the website."] = "Запланировано на сайте."
+L["Sign up here, in Discord or on guildos.me."] = "Записывайтесь здесь, в Discord или на guildos.me."
 L["Sign up in Discord or on the website."] = "Запись — в Discord или на сайте."
 L["Tentative: "] = "Возможно: "
 L["Standby: "] = "В резерве: "

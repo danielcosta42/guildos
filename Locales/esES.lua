@@ -1661,6 +1661,7 @@ L["Pick a dataset and format. CSV = spreadsheets, Discord = pastebox."] = "Elige
 L["Pick a profession on the left."] = "Elige una profesión a la izquierda."
 L["Pick an alliance event first."] = "Elige primero un evento de la alianza."
 L["Planned on the website."] = "Planificada en la web."
+L["Sign up here, in Discord or on guildos.me."] = "Apúntate aquí, en Discord o en guildos.me."
 L["Sign up in Discord or on the website."] = "La inscripción es en Discord o en la web."
 L["Tentative: "] = "Quizás: "
 L["Standby: "] = "En espera: "
