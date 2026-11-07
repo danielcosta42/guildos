@@ -19,8 +19,9 @@ ignore:
   - tools
   - "*.md"
 
+# This release alone, in English (#272); CHANGELOG.md keeps the whole history.
 manual-changelog:
-  filename: CHANGELOG.md
+  filename: RELEASE_NOTES.md
   markup-type: markdown
 
 enable-nolib-creation: no

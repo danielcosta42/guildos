@@ -289,6 +289,19 @@ function GuildMap:SetShareExact(on)
     self:Broadcast(true)
 end
 
+-- The guildmates-in-your-zone dots on the minimap (#271): on unless the player turned them off.
+function GuildMap:IsMinimapDots()
+    local prefs = GuildOS.db and GuildOS.db.guildMapPrefs
+    return not (prefs and prefs.minimapDots == false)
+end
+
+-- Turns them on or off, and redraws at once.
+function GuildMap:SetMinimapDots(on)
+    GuildOS.db.guildMapPrefs = GuildOS.db.guildMapPrefs or {}
+    GuildOS.db.guildMapPrefs.minimapDots = on and true or false
+    if self.uiRefresh then self.uiRefresh() end
+end
+
 ----------------------------------------------------------------------
 -- Init
 ----------------------------------------------------------------------

@@ -114,49 +114,14 @@ jobs:
       - name: Generate changelog entry
         run: |
           VERSION="${{ steps.version.outputs.next }}"
-          DATE=$(date +%Y-%m-%d)
           LATEST=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
 
-          # Collect commits since last tag, grouped by type
-          if [ -n "$LATEST" ]; then
-            COMMITS=$(git log "$LATEST"..HEAD --pretty=format:"%s" 2>/dev/null)
-          else
-            COMMITS=$(git log --pretty=format:"%s")
-          fi
+          # The entry in English (#272): each commit's `Changelog:` trailer, else its subject.
+          # tools/changelog_entry.py, tested by tools/changelog_entry_test.py.
+          ENTRY=$(python3 tools/changelog_entry.py "$VERSION" "$LATEST")
 
-          ADDED=""
-          FIXED=""
-          CHANGED=""
-          OTHER=""
-
-          while IFS= read -r msg; do
-            [ -z "$msg" ] && continue
-            # Skip CI commits
-            echo "$msg" | grep -qE "^\s*(chore: bump version|Merge)" && continue
-
-            # Categorise by conventional commit prefix
-            if echo "$msg" | grep -qiE "^feat(\(.+\))?[!]?:"; then
-              line=$(echo "$msg" | sed -E 's/^[Ff]eat(\([^)]*\))?[!]?:\s*//')
-              ADDED="${ADDED}\n- ${line}"
-            elif echo "$msg" | grep -qiE "^fix(\(.+\))?:"; then
-              line=$(echo "$msg" | sed -E 's/^[Ff]ix(\([^)]*\))?:\s*//')
-              FIXED="${FIXED}\n- ${line}"
-            elif echo "$msg" | grep -qiE "^(refactor|perf|style)(\(.+\))?:"; then
-              line=$(echo "$msg" | sed -E 's/^[A-Za-z]+(\([^)]*\))?:\s*//')
-              CHANGED="${CHANGED}\n- ${line}"
-            else
-              # Include non-chore/ci/docs commits as other changes
-              echo "$msg" | grep -qiE "^(chore|ci|docs|test)(\(.+\))?:" && continue
-              OTHER="${OTHER}\n- ${msg}"
-            fi
-          done <<< "$COMMITS"
-
-          # Build the entry
-          ENTRY="## [${VERSION}] - ${DATE}"
-          [ -n "$ADDED" ]   && ENTRY="${ENTRY}\n\n### Added${ADDED}"
-          [ -n "$FIXED" ]   && ENTRY="${ENTRY}\n\n### Fixed${FIXED}"
-          [ -n "$CHANGED" ] && ENTRY="${ENTRY}\n\n### Changed${CHANGED}"
-          [ -n "$OTHER" ]   && ENTRY="${ENTRY}\n\n### Other${OTHER}"
+          # What CurseForge and Wago show (.pkgmeta's manual-changelog): this release alone.
+          printf "%s\n" "$ENTRY" > RELEASE_NOTES.md
 
           # Prepend to CHANGELOG.md (after the header line)
           if [ -f CHANGELOG.md ]; then
@@ -175,7 +140,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add GuildOS.toc Core/Config.lua CHANGELOG.md
+          git add GuildOS.toc Core/Config.lua CHANGELOG.md RELEASE_NOTES.md
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "chore: bump version to ${{ steps.version.outputs.next }} [skip ci]"
           git push origin main

@@ -2224,6 +2224,15 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
+    -- The guildmates-in-your-zone dots under the minimap (#271).
+    if GuildOS.GuildMap then
+        local dotsCb = UI:CreateCheckbox(content, L["Show guildmates in your zone on the minimap"], 18)
+        dotsCb:SetPoint("TOPLEFT", 8, -yOff)
+        dotsCb.checkbox:SetChecked(GuildOS.GuildMap:IsMinimapDots())
+        dotsCb.checkbox.onChanged = function(_, checked) GuildOS.GuildMap:SetMinimapDots(checked) end
+        yOff = yOff + 30
+    end
+
     -- Guild button takeover — off = the guild micro button / "J" opens Blizzard's own
     -- guild UI instead of Guild OS (use the minimap button, or the "Guild OS" button we
     -- add to the native frame, to open Guild OS). Lets players use both.
@@ -2347,6 +2356,17 @@ function GuildOS:RefreshSettingsPanel(content, category)
             GuildOS.db.chatTweaks.altTag = checked and true or false
         end
     end
+    yOff = yOff + 22
+
+    -- Guild Roster Manager's tag (#269).
+    local altShortCb = UI:CreateCheckbox(content, L["Short tag: [M] on a main, [Main] on an alt"], 16)
+    altShortCb:SetPoint("TOPLEFT", 48, -yOff)
+    altShortCb.checkbox:SetChecked(GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.altShort or false)
+    altShortCb.checkbox.onChanged = function(_, checked)
+        if GuildOS.db.chatTweaks then
+            GuildOS.db.chatTweaks.altShort = checked and true or false
+        end
+    end
     yOff = yOff + 26
 
     --------------------------------------------------------------------
@@ -2370,6 +2390,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
         MentionCheck(L["My own name"], "ownName", 28, 16)
         MentionCheck(L["Guild chat"], "guild", 28, 16)
         MentionCheck(L["Officer chat"], "officer", 28, 16)
+        MentionCheck(L["When somebody calls the officers in guild chat (officers only)"], "officerCall", 28, 16)
         MentionCheck(L["Play a sound"], "sound", 28, 16)
         yOff = yOff + 4
 

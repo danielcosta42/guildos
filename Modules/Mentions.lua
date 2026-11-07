@@ -17,7 +17,11 @@ Mentions.DEFAULTS = {
     sound     = true,
     guild     = true,
     officer   = true,
+    officerCall = true,   -- someone writes "officer" in guild chat: whoever has an officer rank hears it (#266)
 }
+
+-- Heard in every client, next to the client's own words: a guild speaks English as often as not.
+local OFFICER_WORDS_EN = { "officer", "officers" }
 
 function Mentions:Initialize()
     GuildOS.db.mentions = GuildOS.db.mentions or {}
@@ -95,6 +99,28 @@ function Mentions:_Match(msg, ownName, watchWords, watchOwn)
     return nil
 end
 
+-- The words that call the officers (#266): English, then the client's own, comma-separated in one
+-- locale line, without repeats.
+function Mentions:_OfficerWords()
+    local out, seen = {}, {}
+    local function add(w)
+        w = strtrim(tostring(w or "")):lower()
+        if w ~= "" and not seen[w] then seen[w] = true; out[#out + 1] = w end
+    end
+    for _, w in ipairs(OFFICER_WORDS_EN) do add(w) end
+    for w in tostring(L["officer, officers"]):gmatch("[^,]+") do add(w) end
+    return out
+end
+
+-- Pure: the first of `words` that `msg` says as a whole word, or nil.
+function Mentions:_OfficerCall(msg, words)
+    if not msg then return nil end
+    for _, w in ipairs(words or {}) do
+        if hasWord(msg, w) then return w end
+    end
+    return nil
+end
+
 function Mentions:_Record(term, sender, msg)
     local log = GuildOS.db.mentions.log
     table.insert(log, 1, { term = term, sender = sender, msg = msg, ts = GetServerTime() })
@@ -116,6 +142,10 @@ function Mentions:_SetupHook()
         if sender == me then return end     -- don't alert on your own messages
         -- Chat calls me by my first name; on WoW: Forever `me` also carries the surname (issue #26).
         local term = Mentions:_Match(msg, me:match("^%S+") or me, cfg.watchWords, cfg.ownName)
+        -- A call for the officers (#266), in guild chat only: officer chat is read by officers already.
+        if not term and event == "CHAT_MSG_GUILD" and cfg.officerCall and GuildOS:IsOfficer() then
+            term = Mentions:_OfficerCall(msg, Mentions:_OfficerWords())
+        end
         if not term then return end
         -- per (sender+term) cooldown so one burst doesn't spam
         local key = (sender or "?") .. "|" .. term

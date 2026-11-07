@@ -14,6 +14,7 @@ ChatTweaks.DEFAULTS = {
     classIcon = true,
     level     = true,
     altTag    = true,
+    altShort  = false,   -- "[Floyd]" / "[M]" instead of "(alt of Floyd)" (#269)
 }
 
 local CLASS_TEX = "Interface\\WorldStateFrame\\Icons-Classes"
@@ -67,7 +68,9 @@ function ChatTweaks:_BuildPrefix(info, cfg)
     if cfg.level and info.level and info.level > 0 then
         parts[#parts + 1] = "[" .. info.level .. "]"
     end
-    if cfg.altTag and info.altTag then
+    if cfg.altTag and cfg.altShort then
+        if info.shortTag then parts[#parts + 1] = "|cff888888" .. info.shortTag .. "|r" end
+    elseif cfg.altTag and info.altTag then
         parts[#parts + 1] = "|cff888888(" .. info.altTag .. ")|r"
     end
     return table.concat(parts, " ")
@@ -87,6 +90,7 @@ function ChatTweaks:_MakeFilter()
             classFile = cached.classFile,
             level     = cached.level,
             altTag    = (GuildOS.GetAltTag and cached.fullKey) and GuildOS:GetAltTag(cached.fullKey) or nil,
+            shortTag  = (cfg.altShort and GuildOS.AltRoster and cached.fullKey) and GuildOS.AltRoster:ShortTag(cached.fullKey) or nil,
         }
         local prefix = ChatTweaks:_BuildPrefix(info, cfg)
         if prefix == "" then return false end
