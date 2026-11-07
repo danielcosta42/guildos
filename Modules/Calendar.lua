@@ -40,10 +40,8 @@ function Calendar:Initialize()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("event", function(env, sender) Calendar:OnSync(env, sender) end)
     end
-    -- Repeating events (#267): an officer's client fills the next weeks in, once the rank is known.
-    if GuildOS.Compat and GuildOS.Compat.After then
-        GuildOS.Compat.After(20, function() GuildOS:SafeCall(function() Calendar:TopUpSeries() end) end)
-    end
+    -- Repeating events (#267): an officer's client fills the next weeks in from OFFICER_START
+    -- (Core/Core.lua), which waits for the rank as long as it takes.
 
     -- Alliance wiring. Both are no-ops until this guild joins a pact.
     if GuildOS.Alliance then
@@ -176,10 +174,23 @@ function Calendar:GetEvents() return GuildOS.db.calendar.events end
 local TOMBSTONE_TTL = 30 * 86400
 function Calendar:Tombstones() return GuildOS.db.calendar.deleted end
 function Calendar:IsDeleted(id) return self:Tombstones()[id] ~= nil end
+
+-- Series ended (#267): series id -> when. Kept far longer than a tombstone, since a series can be
+-- ended weeks before a stale officer's client tries to fill it in again.
+local ENDED_TTL = 365 * 86400
+function Calendar:EndedSeries()
+    GuildOS.db.calendar.ended = GuildOS.db.calendar.ended or {}
+    return GuildOS.db.calendar.ended
+end
+function Calendar:IsSeriesEnded(sid) return sid ~= nil and self:EndedSeries()[sid] ~= nil end
+
 function Calendar:PruneTombstones()
-    local cutoff = GetServerTime() - TOMBSTONE_TTL
+    local now = GetServerTime()
     for id, ts in pairs(self:Tombstones()) do
-        if (ts or 0) < cutoff then self:Tombstones()[id] = nil end
+        if (ts or 0) < now - TOMBSTONE_TTL then self:Tombstones()[id] = nil end
+    end
+    for sid, ts in pairs(self:EndedSeries()) do
+        if (ts or 0) < now - ENDED_TTL then self:EndedSeries()[sid] = nil end
     end
 end
 
@@ -411,23 +422,31 @@ function Calendar:CreateSeries(title, when, size, note, kind, shareAlliance, rep
 end
 
 -- An officer's client fills every series in up to SERIES_DAYS ahead, from its latest date (whose
--- title, hour and the rest the new ones copy). An ended series stops where it ended. Returns how many.
+-- title, hour and the rest the new ones copy). An ended series is never filled in, and one that
+-- stops at a date stops there. Only a client on the series' own clock fills it in: the hour is a wall
+-- clock, and an officer in another time zone would put the dates at their own 20:00 and name them
+-- after their own calendar day. A date of the series that reads its hour here proves the clock.
+-- Returns how many.
 function Calendar:TopUpSeries()
     if not GuildOS:IsOfficer() then return 0 end
-    local latest, ended = {}, {}
+    local latest, untilT, sameClock = {}, {}, {}
     for _, e in pairs(self:GetEvents()) do
         local s = cleanSeries(e.series)
-        if s then
-            if s.untilT then ended[s.id] = math.min(ended[s.id] or s.untilT, s.untilT) end
+        if s and not self:IsSeriesEnded(s.id) then
+            if s.untilT then untilT[s.id] = math.min(untilT[s.id] or s.untilT, s.untilT) end
             if not latest[s.id] or (e.when or 0) > (latest[s.id].when or 0) then latest[s.id] = e end
+            local t = date("*t", e.when or 0)
+            if s.hour == nil or (t.hour == s.hour and t.min == (s.min or 0)) then sameClock[s.id] = true end
         end
     end
     local n = 0
     for sid, e in pairs(latest) do
-        local template = { title = e.title, size = e.size, note = e.note, kind = e.kind,
-                           shareAlliance = e.shareAlliance, series = cleanSeries(e.series) }
-        template.series.untilT = ended[sid]
-        n = n + self:_FillSeries(template, GetServerTime())
+        if sameClock[sid] then
+            local template = { title = e.title, size = e.size, note = e.note, kind = e.kind,
+                               shareAlliance = e.shareAlliance, series = cleanSeries(e.series) }
+            template.series.untilT = untilT[sid]
+            n = n + self:_FillSeries(template, GetServerTime())
+        end
     end
     if n > 0 then self:Refresh() end
     return n
@@ -458,22 +477,32 @@ function Calendar:UpdateSeries(id, title, when, size, note, kind, shareAlliance)
     end
 end
 
--- An officer ends a series from one date on: that date and every later one go, and the earlier ones
--- say where it ended, so no client fills it in again. Not a series: Delete.
+-- An officer ends a series from one date on: that date and every later one go, and the series is
+-- marked ended for every client, a `delete` of the series' own id (a client before this keeps it as a
+-- harmless tombstone). The latest date before the end also says where it ended. Not a series: Delete.
 function Calendar:EndSeries(id)
     local e = self:GetEvents()[id]
     if not e or type(e.series) ~= "table" or not GuildOS:IsOfficer() then return self:Delete(id) end
     local sid, cut = e.series.id, e.when
-    local drop, keep = {}, {}
+    local drop, last = {}, nil
     for oid, o in pairs(self:GetEvents()) do
         if sameSeries(o, sid) then
-            if (o.when or 0) >= cut then drop[#drop + 1] = oid else keep[#keep + 1] = o end
+            if (o.when or 0) >= cut then
+                drop[#drop + 1] = oid
+            elseif not o.canceled and (not last or (o.when or 0) > (last.when or 0)) then
+                last = o
+            end
         end
     end
     for _, oid in ipairs(drop) do self:Delete(oid) end
-    for _, o in ipairs(keep) do
-        o.series.untilT = cut - 1
-        if not o.canceled then self:Update(o.id, o.title, o.when, o.size, o.note, o.kind, o.shareAlliance) end
+    self:EndedSeries()[sid] = GetServerTime()
+    if GuildOS.SyncService then
+        local rev = GuildOS.SyncService:NextRevision("event", sid)
+        GuildOS.SyncService:Publish("event", "delete", { id = sid, series = true }, { rev = rev })
+    end
+    if last then
+        last.series.untilT = cut - 1
+        self:Update(last.id, last.title, last.when, last.size, last.note, last.kind, last.shareAlliance)
     end
 end
 
@@ -769,8 +798,16 @@ function Calendar:OnSync(env, sender)
     local d = env.data
     if (env.act == "create" or env.act == "update") and d and d.event then
         local e = d.event
-        if not self:IsDeleted(e.id) and GuildOS.SyncService:ShouldApply("event", e.id, env.rev) then
-            local existing = self:GetEvents()[e.id]
+        local existing = self:GetEvents()[e.id]
+        -- #267: a client before this edits a date without its rule: the date keeps the rule it had.
+        local had = existing and cleanSeries(existing.series)
+        if e.series == nil and had and type(e.id) == "string" and e.id:sub(1, #had.id + 1) == had.id .. ":" then
+            e.series = existing.series
+        end
+        local series = cleanSeries(e.series)
+        -- A new date of a series this client knows is ended: a stale officer filled it in. Dropped.
+        local ended = series and not existing and self:IsSeriesEnded(series.id)
+        if not ended and not self:IsDeleted(e.id) and GuildOS.SyncService:ShouldApply("event", e.id, env.rev) then
             e.rsvps    = (existing and existing.rsvps) or {}
             e.canceled = (existing and existing.canceled) or false
             e.shareAlliance = e.shareAlliance and true or false
@@ -804,6 +841,8 @@ function Calendar:OnSync(env, sender)
         end
     elseif env.act == "delete" and d and d.id then
         if GuildOS.SyncService:ShouldApply("event", d.id, env.rev) then
+            -- #267: the end of a whole series, kept so no date of it is filled in or taken in again.
+            if d.series then self:EndedSeries()[d.id] = GetServerTime() end
             self:GetEvents()[d.id] = nil
             self:Tombstones()[d.id] = GetServerTime()
             GuildOS.SyncService:SetRevision("event", d.id, env.rev)

@@ -142,10 +142,67 @@ check(Cal:TopUpSeries() == 0, "and nothing comes back, weeks later")
 check(E[sid .. ":20261201"].series.untilT and E[sid .. ":20261201"].series.untilT < at(2026, 12, 8, 21, 30),
   "the dates that stay say where it ended, for every client")
 
+-- ── Ending writes one update and one end mark, not the whole history (review) ──
+NOW = at(2026, 11, 3, 12)
+local n2 = Cal:CreateSeries("Daily", at(2026, 11, 3, 18), 10, "", "OTHER", false, "daily")
+check(n2 == 16, "a daily series holds what the cap allows")
+local d2 = {}
+for id, ev in pairs(Cal:GetEvents()) do if ev.title == "Daily" then d2[#d2 + 1] = id end end
+table.sort(d2)
+local sid2 = Cal:GetEvents()[d2[1]].series.id
+local before = #published
+Cal:EndSeries(d2[10])
+local updates, ends = 0, 0
+for i = before + 1, #published do
+  local p = published[i]
+  if p.act == "update" then updates = updates + 1 end
+  if p.act == "delete" and p.data.id == sid2 and p.data.series then ends = ends + 1 end
+end
+check(updates == 1, "only the latest date before the end says where it ended")
+check(ends == 1 and Cal:IsSeriesEnded(sid2), "and the series itself is marked ended, for every client")
+
+-- An officer who missed the end still has a date with no mark. It is not filled in from, and what
+-- that officer creates is dropped by everyone who knows the series ended.
+for _, id in ipairs(d2) do
+  local ev = Cal:GetEvents()[id]
+  if ev then ev.series.untilT = nil end
+end
+NOW = at(2026, 11, 20, 12)
+check(Cal:TopUpSeries() == 0, "an ended series is never filled in again")
+Cal:OnSync({ act = "create", rev = 5, data = { event = { id = sid2 .. ":20261125", title = "Daily", when = at(2026, 11, 25, 18),
+  series = { id = sid2, rep = "daily", first = at(2026, 11, 3, 18), hour = 18, min = 0 } } } }, "Stale-Firemaw")
+check(not Cal:GetEvents()[sid2 .. ":20261125"], "a date a stale officer creates for it is dropped")
+Cal:OnSync({ act = "delete", rev = 9, data = { id = "S9", series = true } }, "Other-Firemaw")
+check(Cal:IsSeriesEnded("S9"), "an end another officer sends is kept")
+
+-- ── An officer on another clock fills nothing in (review) ────────────
+NOW = at(2026, 11, 3, 12)
+local off = Cal:CreateSeries("Late", at(2026, 11, 4, 20), 10, "", "RAID", false, "weekly")
+check(off == 4, "a series to read on another clock")
+local lateSid
+for _, ev in pairs(Cal:GetEvents()) do if ev.title == "Late" then lateSid = ev.series.id; ev.series.hour = 23 end end
+NOW = at(2026, 11, 20, 12)
+local lateBefore = 0
+for _, ev in pairs(Cal:GetEvents()) do if ev.title == "Late" then lateBefore = lateBefore + 1 end end
+Cal:TopUpSeries()
+local lateAfter = 0
+for _, ev in pairs(Cal:GetEvents()) do if ev.title == "Late" then lateAfter = lateAfter + 1 end end
+check(lateSid and lateAfter == lateBefore,
+  "dates that read another hour here than the series says: this client is on another clock, and fills nothing in")
+
+-- ── A client before this edits a date: the date keeps its rule (review) ──
+NOW = at(2026, 11, 3, 12)
+Cal:CreateSeries("Keep", at(2026, 11, 5, 20), 10, "", "RAID", false, "weekly")
+local keepId
+for id, ev in pairs(Cal:GetEvents()) do if ev.title == "Keep" and id:sub(-8) == "20261112" then keepId = id end end
+Cal:OnSync({ act = "update", rev = 50, data = { event = { id = keepId, title = "Keep edited", when = at(2026, 11, 12, 20) } } }, "Old-Firemaw")
+check(Cal:GetEvents()[keepId].title == "Keep edited" and Cal:GetEvents()[keepId].series, "the edit lands and the rule stays")
+
 -- ── A client before this sees plain events ───────────────────────────
 local wire
 for i = #published, 1, -1 do
-  if published[i].act == "update" then wire = published[i].data.event break end
+  local ev = published[i].data.event
+  if published[i].act == "update" and ev and ev.id:sub(1, #sid + 1) == sid .. ":" then wire = ev break end
 end
 check(wire and wire.series and wire.series.untilT, "an update carries the rule, ended")
 

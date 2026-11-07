@@ -128,12 +128,12 @@ jobs:
             # Insert after the first two lines (title + blank line)
             head -n 3 CHANGELOG.md > CHANGELOG.tmp
             echo "" >> CHANGELOG.tmp
-            echo -e "$ENTRY" >> CHANGELOG.tmp
+            printf '%s\n' "$ENTRY" >> CHANGELOG.tmp
             echo "" >> CHANGELOG.tmp
             tail -n +4 CHANGELOG.md >> CHANGELOG.tmp
             mv CHANGELOG.tmp CHANGELOG.md
           else
-            echo -e "# Guild OS Changelog\n\nAll notable changes to this project will be documented in this file.\n\n${ENTRY}" > CHANGELOG.md
+            printf '# Guild OS Changelog\n\nAll notable changes to this project will be documented in this file.\n\n%s\n' "$ENTRY" > CHANGELOG.md
           fi
 
       - name: Commit version bump

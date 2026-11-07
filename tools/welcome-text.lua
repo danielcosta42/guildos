@@ -85,4 +85,23 @@ local ok, res = pcall(R.SendPendingWelcome, R)
 check(ok, "a send the game raises on does not raise out of the click")
 check(res == false and printed[#printed]:find("Invalid escape code", 1, true) ~= nil, "it says the game's own reason")
 
+-- ── The welcome sent on its own (Anniversary, no click), and the ad's command (review) ──
+printed = {}
+local raised = 0
+function SendChatMessage() raised = raised + 1; error("Invalid escape code in chat message") end
+local ok3, res3 = pcall(R.SendWelcomeText, R, "Welcome! | have fun", "Ragged Angel")
+check(ok3 and res3 == false and raised == 0, "the timed welcome checks the text before the game sees it")
+check(printed[#printed] and printed[#printed]:find("not sent", 1, true), "and says it was not sent")
+local ok4, res4 = pcall(R.SendWelcomeText, R, "Welcome to the guild!", "Ragged Angel")
+check(ok4 and res4 == false and raised == 1, "a send that raises does not raise out of the timer")
+function SendChatMessage(msg, chan) sent[#sent + 1] = { msg = msg, chan = chan } end
+local before = #sent
+check(R:SendWelcomeText("Welcome to the guild!", "Ragged Angel") == true and #sent == before + 1, "a good text goes")
+
+GuildOS.db.recruitment.message = "Recruiting!"
+R:HandleCommand({ "msg", "Join", "us", "|", "now" })
+check(GuildOS.db.recruitment.message == "Recruiting!", "/gos recruit msg keeps the old ad when the new one would be refused")
+R:HandleCommand({ "msg", "Join", "us", "now" })
+check(GuildOS.db.recruitment.message == "Join us now", "and takes a good one")
+
 print("welcome-text: " .. checks .. " checks passed")

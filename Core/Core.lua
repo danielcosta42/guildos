@@ -339,6 +339,8 @@ local OFFICER_START = {
     { "CoreManager", method = "SendDiscordChanges" },
     -- The requests from the site: read at the start with no rank known, they reached no officer's notice.
     { "JoinRequests", method = "Refresh" },
+    -- Repeating events: the next weeks of every series, filled in by an officer's client (#267).
+    { "Calendar", method = "TopUpSeries" },
 }
 
 local OFFICER_START_DELAY = 5  -- seconds; the guild rank is not known at PLAYER_LOGIN

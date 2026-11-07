@@ -113,4 +113,23 @@ check(main:find("[M]", 1, true), "a main shows [M] with the short tag")
 check(CT:_BuildPrefix({ shortTag = "[M]" }, { altTag = true, altShort = false }) == "", "and nothing with the long one, as before")
 check(CT:_BuildPrefix({ shortTag = "[M]" }, { altTag = false, altShort = true }) == "", "the alt tag switched off hides both")
 
+-- ── The words the shipped languages add (review) ─────────────────────
+-- In Portuguese, Spanish and Italian the word for officer is also "official": "o site oficial" would
+-- ring every officer of the guild. Those languages listen for the English words only.
+for _, lang in ipairs({ "ptBR", "esES", "itIT", "deDE", "frFR", "ruRU" }) do
+  local raw = {}
+  GuildOS.L = setmetatable({}, { __newindex = function(_, k, v) raw[k] = v end, __index = function(_, k) return raw[k] or k end })
+  function GetLocale() return lang end
+  dofile(ADDON .. "/Locales/" .. lang .. ".lua")
+  L = GuildOS.L
+  local ws = {}
+  for w in tostring(raw["officer, officers"] or ""):gmatch("[^,]+") do ws[#ws + 1] = strtrim(w):lower() end
+  for _, w in ipairs(ws) do
+    check(not ({ oficial = true, oficiais = true, oficiales = true, ufficiale = true, ufficiali = true })[w],
+      lang .. ": no word that also means official (" .. w .. ")")
+  end
+  check(#ws > 0, lang .. ": the line is there")
+end
+function GetLocale() return "enUS" end
+
 print("officer-call-alt-tag: " .. checks .. " checks passed")

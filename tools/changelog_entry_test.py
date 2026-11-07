@@ -63,12 +63,31 @@ class EntryTest(unittest.TestCase):
         out = ce.build_entry("1.11.0", "2026-11-08", [commit("fix: várias coisas", body)])
         self.assertIn("### Fixed\n- First change\n- Second change", out)
 
+    def test_changelog_none_leaves_the_commit_out(self):
+        # A fix to code not released yet (a review's) has nothing to tell the players.
+        out = ce.build_entry("1.11.0", "2026-11-08", [
+            commit("fix: da revisão", "Changelog: none"),
+            commit("feat: a", "Changelog: A"),
+        ])
+        self.assertNotIn("revisão", out)
+        self.assertNotIn("none", out)
+        self.assertNotIn("### Fixed", out)
+        self.assertIn("### Added\n- A", out)
+
     def test_a_trailer_inside_a_sentence_is_not_one(self):
         self.assertEqual(ce.english_lines("fix: x", "the Changelog: line is new"), ["x"])
 
     def test_breaking_feature_is_still_added(self):
         out = ce.build_entry("2.0.0", "2026-11-08", [commit("feat!: muda tudo", "Changelog: Everything changes")])
         self.assertIn("### Added\n- Everything changes", out)
+
+    def test_run_with_no_arguments_says_how_and_does_not_fail(self):
+        # CI's lint runs every tools/*.py with no arguments: a failure there stops the release.
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        r = subprocess.run([sys.executable, os.path.join(here, "changelog_entry.py")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("usage", r.stdout.lower())
 
     def test_parse_git_log_records(self):
         raw = "feat: a\x1fbody one\nChangelog: A\x1e\nfix: b\x1f\x1e\n"

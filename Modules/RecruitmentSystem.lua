@@ -428,12 +428,9 @@ function Recruitment.ChatTextProblem(msg)
     return nil
 end
 
--- The click: one welcome in guild chat for everyone waiting. False when nobody is, or when the
--- game would not take the text: whoever waits keeps waiting for the fixed one.
-function Recruitment:SendPendingWelcome()
-    local list = self._pendingWelcomes
-    local msg = GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage
-    if not list or #list == 0 or not msg or msg == "" then return false end
+-- The one way a welcome reaches guild chat, clicked (Forever) or on its own (Anniversary): the text
+-- is checked first and a send the game raises on is said, never lost (#270). True when it went.
+function Recruitment:SendWelcomeText(msg, who)
     local problem = Recruitment.ChatTextProblem(msg)
     if problem then
         GuildOS:Print(string.format(L["The welcome was not sent: %s"], problem))
@@ -444,6 +441,17 @@ function Recruitment:SendPendingWelcome()
         GuildOS:Print(string.format(L["The welcome was not sent: %s"], tostring(err)))
         return false
     end
+    if who then GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. who .. L["|r in guild chat."]) end
+    return true
+end
+
+-- The click: one welcome in guild chat for everyone waiting. False when nobody is, or when the
+-- game would not take the text: whoever waits keeps waiting for the fixed one.
+function Recruitment:SendPendingWelcome()
+    local list = self._pendingWelcomes
+    local msg = GuildOS.db.recruitment and GuildOS.db.recruitment.welcomeMessage
+    if not list or #list == 0 or not msg or msg == "" then return false end
+    if not self:SendWelcomeText(msg) then return false end
     GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. table.concat(list, ", ") .. L["|r in guild chat."])
     self._pendingWelcomes = {}
     return true
@@ -1330,7 +1338,10 @@ function Recruitment:HandleCommand(args)
     elseif cmd == "msg" or cmd == "message" then
         table.remove(args, 1)
         local newMsg = table.concat(args, " ")
-        if newMsg and newMsg ~= "" then
+        local problem = newMsg ~= "" and Recruitment.ChatTextProblem(newMsg)
+        if problem then
+            GuildOS:Print(problem)
+        elseif newMsg and newMsg ~= "" then
             GuildOS.db.recruitment.message = newMsg
             GuildOS:Print(L["Recruitment message set to: |cffFFFFFF"] .. newMsg .. "|r")
         else
@@ -1629,8 +1640,7 @@ function Recruitment:RegisterWelcomeEvent()
                     -- popup stays up until this officer sends or dismisses it.
                     Recruitment:QueueWelcome(newMember)
                 else
-                    SendChatMessage(welcomeMsg, "GUILD")
-                    GuildOS:Print(L["Welcome message sent for |cffFFFFFF"] .. newMember .. L["|r in guild chat."])
+                    Recruitment:SendWelcomeText(welcomeMsg, newMember)
                 end
             end
         end)

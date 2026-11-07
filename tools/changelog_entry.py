@@ -25,12 +25,17 @@ SECTIONS = [("Added", {"feat"}), ("Fixed", {"fix"}), ("Changed", {"refactor", "p
 def english_lines(subject, body):
     """Every `Changelog:` trailer's text, one line each (a commit may close several issues), else
     the subject without its type."""
-    lines = []
+    lines, said = [], False
     for row in (body or "").splitlines():
         m = TRAILER.match(row.strip())
         if m:
-            lines.append(m.group(1))
-    return lines or [TYPE.sub("", subject, count=1)]
+            said = True
+            # `Changelog: none`: nothing for the players, e.g. a fix to code not released yet.
+            if m.group(1).lower() not in ("none", "-"):
+                lines.append(m.group(1))
+    if said:
+        return lines
+    return [TYPE.sub("", subject, count=1)]
 
 
 def build_entry(version, date, commits):
@@ -72,6 +77,10 @@ def parse_log(raw):
 
 
 def main(argv):
+    # CI's lint runs every tools/*.py with no arguments, and a failure there stops the release.
+    if len(argv) < 2:
+        print("usage: python3 tools/changelog_entry.py <version> [<since tag>]")
+        return
     version = argv[1]
     since = argv[2] if len(argv) > 2 and argv[2] else None
     rng = ["%s..HEAD" % since] if since else []
