@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.2] - 2026-11-08
+
+### Fixed
+- a malha passa da guilda no Forever: o diretório do canal ChehulNet leva o realm por whisper (#276)
+
+
 ## [1.10.1] - 2026-11-08
 
 ### Fixed
