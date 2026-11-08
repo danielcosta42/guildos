@@ -741,10 +741,35 @@ local function BuildEngageSub(panel)
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtEngageScroll")
 
+    -- One row per member, made once and reused. Every member's self-report repaints this tab, and a
+    -- repaint used to make a new row per member and only hide the old ones: a big guild grew the list
+    -- to thousands of frames, until `{ content:GetChildren() }` blew the stack (1426x, 7/11).
+    local rowPool, emptyFS = {}, nil
+    local function rowAt(idx)
+        local row = rowPool[idx]
+        if row then return row end
+        row = MakeRow(content, 0, idx)
+        row.nameFS = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
+        row.nameFS:SetPoint("LEFT", COLS.name, 0)
+        row.statusFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.statusFS:SetPoint("LEFT", COLS.status, 0)
+        row.postsFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.postsFS:SetPoint("LEFT", COLS.posts, 0)
+        row.invitesFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.invitesFS:SetPoint("LEFT", COLS.invites, 0)
+        row.joinsFS = UI:CreateText(row, "", 10, C.text.r, C.text.g, C.text.b)
+        row.joinsFS:SetPoint("LEFT", COLS.joined, 0)
+        row.lastFS = UI:CreateText(row, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+        row.lastFS:SetPoint("LEFT", COLS.last, 0)
+        rowPool[idx] = row
+        return row
+    end
+
     local refresh
     refresh = function()
+        -- Off screen nothing is drawn: showing the tab repaints it (selectSub), with what came meanwhile.
+        if not panel:IsVisible() then return end
         content:SetWidth(listHolder:GetWidth() - 12)
-        ClearContent(content)
 
         local agg = (GuildOS.RecruitEngagement and GuildOS.RecruitEngagement:GetAggregate())
             or { rows = {}, totals = { posts7 = 0, invites7 = 0, joins7 = 0, conv = 0,
@@ -774,35 +799,36 @@ local function BuildEngageSub(panel)
 
         local yOff = 0
         for idx, r in ipairs(agg.rows) do
-            local row = MakeRow(content, yOff, idx)
-            local nameColor = r.stale and C.textDim or C.text
+            local row = rowAt(idx)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, -yOff)
+            row:SetWidth(content:GetWidth() - 4)
 
-            local nameFS = UI:CreateText(row, r.name, 11, nameColor.r, nameColor.g, nameColor.b)
-            nameFS:SetPoint("LEFT", COLS.name, 0)
+            local nameColor = r.stale and C.textDim or C.text
+            row.nameFS:SetText(r.name)
+            row.nameFS:SetTextColor(nameColor.r, nameColor.g, nameColor.b)
 
             local sText, sColor = statusOf(r, now)
-            local statusFS = UI:CreateText(row, sText, 10, sColor.r, sColor.g, sColor.b)
-            statusFS:SetPoint("LEFT", COLS.status, 0)
+            row.statusFS:SetText(sText)
+            row.statusFS:SetTextColor(sColor.r, sColor.g, sColor.b)
 
-            local function numFS(val, x, color)
-                local fs = UI:CreateText(row, tostring(val), 10, color.r, color.g, color.b)
-                fs:SetPoint("LEFT", x, 0)
-            end
-            numFS(r.posts7, COLS.posts, C.text)
-            numFS(r.invites7, COLS.invites, C.text)
-            numFS(r.joins7, COLS.joined, r.joins7 > 0 and C.green or C.textDim)
+            row.postsFS:SetText(tostring(r.posts7))
+            row.invitesFS:SetText(tostring(r.invites7))
+            local jc = r.joins7 > 0 and C.green or C.textDim
+            row.joinsFS:SetText(tostring(r.joins7))
+            row.joinsFS:SetTextColor(jc.r, jc.g, jc.b)
+            row.lastFS:SetText(GuildOS:TimeAgo(r.last))
 
-            local lastFS = UI:CreateText(row, GuildOS:TimeAgo(r.last), 10, C.textDim.r, C.textDim.g, C.textDim.b)
-            lastFS:SetPoint("LEFT", COLS.last, 0)
-
+            row:Show()
             yOff = yOff + ROW_H + 2
         end
+        for idx = #agg.rows + 1, #rowPool do rowPool[idx]:Hide() end
 
-        if #agg.rows == 0 then
-            local empty = UI:CreateText(content, L["No recruitment activity yet."],
-                11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+        if not emptyFS then
+            emptyFS = UI:CreateText(content, L["No recruitment activity yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+            emptyFS:SetPoint("TOPLEFT", 4, -4)
         end
+        emptyFS:SetShown(#agg.rows == 0)
         content:SetHeight(math.max(1, yOff))
     end
 
