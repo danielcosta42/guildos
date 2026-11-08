@@ -62,6 +62,12 @@ SyncService.MEMBER_ACTIONS = {
     cta   = { going = true },   -- "On my way" to an officer's call to arms (issue #108)
 }
 
+-- Actions inside an officer domain that whoever the guild lets do them may send over GUILD (issue #283).
+-- The domain's handler holds the rest of the rule: a creator who is not an officer writes only their own events.
+SyncService.RANKED_ACTIONS = {
+    event = { create = true, update = true, cancel = true, delete = true },
+}
+
 SyncService.handlers    = {}   -- [domain] = function(env, sender)
 SyncService.seenIds     = {}   -- messageId dedup set
 SyncService.seenCount   = 0
@@ -90,6 +96,11 @@ function SyncService:Initialize()
         -- The guild's trial length and its switch for new members (issue #249); neither carries `max`.
         if env.act == "trialdays" or env.act == "trialauto" then
             if GuildOS.TrialTracker then GuildOS.TrialTracker:OnConfigSync(env) end
+            return
+        end
+        -- Who creates calendar events (issue #283).
+        if env.act == "events" then
+            GuildOS:OnEventMaxRankSync(env)
             return
         end
         GuildOS:OnOfficerMaxRankSync(env)
@@ -222,7 +233,11 @@ function SyncService:Validate(env, sender, channel)
     if self.OFFICER_DOMAINS[env.dom] then
         if channel ~= "GUILD" then return false end
         local member = self.MEMBER_ACTIONS[env.dom]
-        if not (member and member[env.act]) and not GuildOS:IsOfficerByName(sender) then return false end
+        local ranked = self.RANKED_ACTIONS[env.dom]
+        if not (member and member[env.act]) and not GuildOS:IsOfficerByName(sender)
+            and not (ranked and ranked[env.act] and GuildOS:MayCreateEventsByName(sender)) then
+            return false
+        end
     end
     return true
 end

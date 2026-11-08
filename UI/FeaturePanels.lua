@@ -3287,6 +3287,29 @@ function GuildOS:RefreshSettingsPanel(content, category)
         end
     end
 
+    -- Who creates calendar events (issue #283): the officers, or every rank down to one. The guild's, as
+    -- the threshold above; each click moves one rank further, then back to the officers.
+    yOff = yOff + 6
+    local evLabel = UI:CreateText(content, L["Who creates events:"], 11, C.silver.r, C.silver.g, C.silver.b)
+    evLabel:SetPoint("TOPLEFT", 8, -yOff)
+    local evBtn = UI:CreateButton(content, "", 180, 22)
+    evBtn:SetPoint("LEFT", evLabel, "RIGHT", 10, 0)
+    local function evText()
+        local max = GuildOS:EventMaxRank()
+        if max <= (GuildOS.db.settings.officerMaxRank or 1) then return L["Officers"] end
+        local name = GuildControlGetRankName and GuildControlGetRankName(max + 1)
+        return string.format(L["Up to %s"], (name and name ~= "") and name or tostring(max))
+    end
+    evBtn.label:SetText(evText())
+    evBtn:SetScript("OnClick", function()
+        local officers = GuildOS.db.settings.officerMaxRank or 1
+        local last = (GuildControlGetNumRanks and GuildControlGetNumRanks() or 10) - 1
+        local nextMax = GuildOS:EventMaxRank() + 1
+        if nextMax > last then nextMax = officers end
+        if GuildOS:SetEventMaxRank(nextMax) then evBtn.label:SetText(evText()) end
+    end)
+    yOff = yOff + 30
+
     yOff = yOff + 4
     local rankNote = UI:CreateText(content,
         L["Change takes effect immediately. Reload UI required to reload officer modules."],

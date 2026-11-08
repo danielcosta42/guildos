@@ -13,6 +13,44 @@ local L = GuildOS.L
 Calendar.STATUS = { YES = "yes", TENTATIVE = "tentative", NO = "no" }
 Calendar.ROLES  = { "TANK", "HEALER", "DPS" }
 
+-- The sizes an event of a kind offers (issue #283): a dungeon is a party of five, every other kind the
+-- game's raid sizes.
+function Calendar.SizesFor(kind, raidSizes)
+    if kind == "DUNGEON" then return { 5 } end
+    return raidSizes
+end
+
+-- The same character, whether or not a realm is written: on retail the whole key, as IsOfficerByName.
+local function sameName(a, b)
+    if type(a) ~= "string" or type(b) ~= "string" then return false end
+    if GuildOS.Client and GuildOS.Client.isRetail and GuildOS.KeyOfRosterName then
+        return GuildOS:KeyOfRosterName(a) == GuildOS:KeyOfRosterName(b)
+    end
+    return (a:match("^([^-]+)") or a) == (b:match("^([^-]+)") or b)
+end
+
+-- Whether a write from `sender` may touch an event (issue #283): an officer any; a creator who is not
+-- one only an event under their own name, never a raid from the site. `existing` is the stored event
+-- (nil for a new one), `incoming` what the write carries.
+function Calendar.MayWriteRemote(existing, incoming, sender, officer)
+    if officer then return true end
+    -- Each one on its own: ipairs over { existing, incoming } stops at a nil existing, and a new event
+    -- under somebody else's name went through unread.
+    local function theirs(e)
+        if type(e) ~= "table" then return true end
+        if type(e.id) == "string" and e.id:sub(1, 4) == "web:" then return false end
+        return sameName(e.author, sender)
+    end
+    return (existing ~= nil or incoming ~= nil) and theirs(existing) and theirs(incoming)
+end
+
+-- Whether this client may change or delete an event: an officer any, a creator their own (issue #283).
+function Calendar:MayManage(e)
+    if GuildOS:IsOfficer() then return true end
+    return type(e) == "table" and not self:IsWebEvent(e) and GuildOS:MayCreateEvents()
+        and sameName(e.author, GuildOS.Compat.PlayerName())
+end
+
 -- Event categories. Order drives the picker; RAID is the default so legacy
 -- events (created before kinds existed) read back as raids.
 Calendar.KINDS = { "RAID", "DUNGEON", "PVP", "FARM", "SOCIAL", "OTHER" }
@@ -292,8 +330,8 @@ end
 
 -- The officer and the fields every new event needs; nil, with the reason said, when one is missing.
 local function validNew(title, when)
-    if not GuildOS:IsOfficer() then
-        GuildOS:Print(L["|cffFF4444Officers only.|r"])
+    if not GuildOS:MayCreateEvents() then
+        GuildOS:Print(L["|cffFF4444Your rank cannot create events.|r"])
         return nil
     end
     title = strtrim(title or "")
@@ -458,7 +496,7 @@ local function sameSeries(e, sid) return type(e.series) == "table" and e.series.
 -- the new hour, title and the rest. Earlier dates stay; answers survive. Not a series: Update.
 function Calendar:UpdateSeries(id, title, when, size, note, kind, shareAlliance)
     local e = self:GetEvents()[id]
-    if not e or type(e.series) ~= "table" or not GuildOS:IsOfficer() then
+    if not e or type(e.series) ~= "table" or not self:MayManage(e) then
         return self:Update(id, title, when, size, note, kind, shareAlliance)
     end
     when = tonumber(when) or e.when
@@ -482,7 +520,7 @@ end
 -- harmless tombstone). The latest date before the end also says where it ended. Not a series: Delete.
 function Calendar:EndSeries(id)
     local e = self:GetEvents()[id]
-    if not e or type(e.series) ~= "table" or not GuildOS:IsOfficer() then return self:Delete(id) end
+    if not e or type(e.series) ~= "table" or not self:MayManage(e) then return self:Delete(id) end
     local sid, cut = e.series.id, e.when
     local drop, last = {}, nil
     for oid, o in pairs(self:GetEvents()) do
@@ -710,8 +748,8 @@ function Calendar:SetGameEvent(id, game)
 end
 
 function Calendar:Cancel(id)
-    if not GuildOS:IsOfficer() then return end
     local e = self:GetEvents()[id]
+    if not self:MayManage(e) then return end
     if not e then return end
     e.canceled = true
     if GuildOS.SyncService then
@@ -724,7 +762,7 @@ end
 -- Officer edit of an existing event (title / date+time / size / description).
 -- RSVPs are preserved; a fresh revision makes the change win on every client.
 function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
-    if not GuildOS:IsOfficer() then
+    if not self:MayManage(self:GetEvents()[id]) then
         GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
     end
@@ -759,8 +797,8 @@ end
 -- the record and records a tombstone so it cannot be resurrected by a create/
 -- update that is still propagating on the guild channel.
 function Calendar:Delete(id)
-    if not GuildOS:IsOfficer() then return end
     local e = self:GetEvents()[id]
+    if not self:MayManage(e) then return end
     if not e then return end
     self:GetEvents()[id] = nil
     self:Tombstones()[id] = GetServerTime()
@@ -794,8 +832,28 @@ end
 ----------------------------------------------------------------------
 -- Sync
 ----------------------------------------------------------------------
+-- The event writes a creator who is not an officer may send (SyncService.RANKED_ACTIONS).
+local function rankedAct(act)
+    local ranked = GuildOS.SyncService and GuildOS.SyncService.RANKED_ACTIONS
+    return ranked ~= nil and ranked.event ~= nil and ranked.event[act] == true
+end
+
+-- An event of the series `sid`, for a write that names the series rather than a date.
+function Calendar:AnyOfSeries(sid)
+    for _, e in pairs(self:GetEvents()) do
+        if type(e.series) == "table" and e.series.id == sid then return e end
+    end
+end
+
 function Calendar:OnSync(env, sender)
     local d = env.data
+    -- A creator who is not an officer passed the wire for their own events only (issue #283).
+    if rankedAct(env.act) and not GuildOS:IsOfficerByName(sender) then
+        local id = type(d) == "table" and (d.id or (type(d.event) == "table" and d.event.id))
+        local existing = id and (self:GetEvents()[id] or (d.series and self:AnyOfSeries(id))) or nil
+        local incoming = type(d) == "table" and d.event or nil
+        if not Calendar.MayWriteRemote(existing, incoming, sender, false) then return end
+    end
     if (env.act == "create" or env.act == "update") and d and d.event then
         local e = d.event
         local existing = self:GetEvents()[e.id]

@@ -44,6 +44,8 @@ function GuildOS:Print() end
 function GuildOS:GetPlayerKey(n, r) return n .. "-" .. r end
 local officer = true
 function GuildOS:IsOfficer() return officer end
+-- Who creates events (#283): here the officer, as before the guild could open it to more ranks.
+function GuildOS:MayCreateEvents() return officer end
 local published = {}
 GuildOS.SyncService = {
   NextRevision = function() return #published + 1 end,

@@ -2269,3 +2269,7 @@ L["%d trial(s) ready to review"] = "검토할 수습 %d명"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "접속한 뒤에 관리자가 되었습니다. 모집을 관리하려면 /reload를 입력하세요."
 L["Type /ginvite %s to invite them."] = "초대하려면 /ginvite %s 를 입력하세요."
 L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."] = "이 게임은 애드온의 초대를 허용하지 않습니다. 자동 초대는 TBC Anniversary에서만 작동합니다."
+
+-- Who creates calendar events (issue #283)
+L["Who creates events:"] = "일정을 만드는 사람:"
+L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444현재 등급으로는 일정을 만들 수 없습니다.|r"
