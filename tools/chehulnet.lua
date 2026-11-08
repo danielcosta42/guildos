@@ -118,8 +118,10 @@ check(#shown == 1 and shown[1].text == "Lodestar 2.3 is out", "the operator's no
 on.ChehulAlert("ALERT|n2|from the druid", "Chehul Druida")
 on.ChehulAlert("ALERT|n3|from the shaman", "Chehul Shammy")
 check(#shown == 3, "and from his other characters")
+on.ChehulAlert("ALERT|n6|from Forever", "Chehul Lightdrizzle-ClassicBetaPvE2")
+check(#shown == 4, "and from Chehul Lightdrizzle, his WoW: Forever character (v11, issue #276)")
 on.ChehulAlert("ALERT|n4|free gold", "Chehul Impostor")
-check(#shown == 3, "a stranger who took the first name Chehul shows nothing")
+check(#shown == 4, "a stranger who took the first name Chehul shows nothing")
 
 -- A v7 copy loaded first (an addon not yet updated) still ends up allowing the new names.
 local v7 = function()
@@ -149,13 +151,33 @@ local v8 = function()
   _G.ChehulNet = { version = 8, ALERT_SENDERS = { ["chehul costa"] = true }, peers = {}, providers = {}, alertSeen = {} }
 end
 CN = client("retail", v8)
-check(CN.version == 10, "a v10 loaded after a v8 (an addon not yet updated) takes over")
+check(CN.version == 11, "a v11 loaded after a v8 (an addon not yet updated) takes over")
 local v9 = function()
   _G.ChehulNet = { version = 9, ALERT_SENDERS = { ["chehul costa"] = true }, peers = {}, providers = {}, alertSeen = {} }
 end
 CN, on, whispers = client("forever", v9)
-check(CN.version == 10, "and after a v9")
+check(CN.version == 11, "and after a v9")
 on.ChehulNet(hello("Ana Lima"), "Ana Lima", "GUILD")
 check(CN.peers["Ana Lima"] ~= nil and #whispers == 0, "and its guild HELLOs go unanswered from then on")
+
+-- ── DIAG (v11, issue #276): the backoffice asks a node for its health ───
+CN, on, whispers = client("forever")
+CN:RegisterDiag("gos", function() return "wsp=space;rounds=3" end)
+_G.ChehulMesh.stats = { ok = 9, fail = 1, refused = 4, dirSent = 6 }
+_G.ChehulMesh.dead, _G.ChehulMesh.dir = { YELL = "InvalidChatType", SAY = "InvalidChatType" }, { count = 17 }
+on.ChehulPing("DIAG|d1|0", "Ana Lima", "WHISPER")
+check(#whispers == 0, "a stranger's DIAG is not answered")
+on.ChehulPing("DIAG|d1|0", "Chehul Costa-ClassicBetaPvE2", "WHISPER")
+local diag = whispers[1] and whispers[1].msg or ""
+check(#whispers == 1 and whispers[1].prefix == "ChehulPing" and diag:find("^DIAGR|d1|WHISPER|"),
+  "the operator's DIAG is answered by whisper, with the bus it came on")
+check(diag:find("cn=11;", 1, true) and diag:find("fail=1;", 1, true) and diag:find("gos.wsp=space;gos.rounds=3", 1, true),
+  "the answer carries the lib version, the mesh's counters and what the host registered")
+check(diag:find("dir=17", 1, true) and diag:find("dead=SAY+YELL", 1, true) and diag:find("refused=4", 1, true),
+  "and the directory, the buses the game refuses and how many sends it refused (LibChehulMesh v5)")
+on.ChehulPing("DIAG|d1|0", "Chehul Costa-ClassicBetaPvE2", "GUILD")
+check(#whispers == 1, "one id is answered once, however many buses it came on")
+on.ChehulPing("PING|p1|12.5", "Ana Lima", "GUILD")
+check(#whispers == 2 and whispers[2].msg == "PONG|p1|12.5|GUILD", "PING still answers anybody")
 
 print(string.format("chehulnet: %d checks passed", checks))

@@ -33,8 +33,14 @@
 -- 500 clients on a realm would send each other some 125k whispers after a restart, and the peer's
 -- own heartbeat brings the same news within HELLO_INTERVAL. A group's audience is bounded, so a
 -- groupmate is still answered at once. A HELLO's level counts only as a whole number from 1 to 255.
+-- v11: DIAG, for the backoffice (the CehulNet addon). "DIAG|<id>|<sent>" on ChehulPing is answered by
+-- whisper "DIAGR|<id>|<arrivalDist>|k=v;k=v": the lib versions this client runs, the mesh's counters,
+-- its layer, instance and chat lockdown, plus what each host adds through CN:RegisterDiag(tag, fn).
+-- Only the operator's characters (ALERT_SENDERS) are answered, each id once; one heard on a wide bus
+-- waits a random 0-DIAG_JITTER seconds, so a census never lands as one burst. ALERT_SENDERS gains
+-- "Chehul Lightdrizzle", the operator's character on WoW: Forever.
 
-local VERSION = 10
+local VERSION = 11
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -287,6 +293,59 @@ end
 -- <arrivalDist> so you can SEE which bus reached this peer.
 -- ---------------------------------------------------------------------------
 CN.PING_PREFIX = "ChehulPing"
+CN.DIAG_JITTER = 4                  -- seconds a DIAG heard on a wide bus may wait before its answer
+CN.diag        = CN.diag or {}      -- [tag] = fn() -> "k=v;k=v" (host-specific health, v11)
+CN.diagSeen    = CN.diagSeen or {}  -- [id] = true: each DIAG id is answered once
+CN._t0         = CN._t0 or (GetTime and GetTime()) or 0
+
+-- A host adds its own health to the DIAG answer (keys go out prefixed with the tag).
+function CN:RegisterDiag(tag, fn)
+    if type(tag) == "string" and tag ~= "" and type(fn) == "function" then
+        CN.diag[tag] = fn
+    end
+end
+
+function CN:BuildDiag()
+    local s = (Mesh and Mesh.stats) or {}
+    local ace = LibStub and LibStub("AceComm-3.0", true)
+    local ctl = _G.ChatThrottleLib
+    local mapID, zoneUID = CN:MyLayer()
+    local build = GetBuildInfo and select(2, GetBuildInfo())
+    local lock = C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()
+    local map = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local peers = 0
+    for _ in pairs(CN.peers) do
+        peers = peers + 1
+    end
+    local parts = {
+        "cn=" .. CN.version, "mesh=" .. ((Mesh and Mesh.version) or 0), "ace=" .. (ace and 1 or 0),
+        "ctl=" .. ((ctl and ctl.version) or 0), "ctlq=" .. ((ctl and ctl.bQueueing) and 1 or 0),
+        "tags=" .. LocalTags(), "ok=" .. (s.ok or 0), "fail=" .. (s.fail or 0), "recv=" .. (s.recv or 0),
+        "yell=" .. (s.yell or 0), "rq=" .. (s.realmQueued or 0), "rs=" .. (s.realmSent or 0),
+        "rd=" .. (s.realmDropped or 0), "qn=" .. ((Mesh and Mesh._realmQueueCount) or 0), "peers=" .. peers,
+        "layer=" .. (mapID or 0) .. ":" .. (zoneUID or 0), "map=" .. (tonumber(map) or 0),
+        "inst=" .. ((IsInInstance and IsInInstance()) and 1 or 0), "lock=" .. (lock and 1 or 0),
+        "up=" .. math.floor(((GetTime and GetTime()) or 0) - CN._t0), "build=" .. tostring(build or "?"),
+        "refused=" .. (s.refused or 0), "dirSent=" .. (s.dirSent or 0),
+        "dir=" .. ((Mesh and Mesh.dir and Mesh.dir.count) or 0),
+    }
+    local dead = {}
+    for dist in pairs((Mesh and Mesh.dead) or {}) do
+        dead[#dead + 1] = dist
+    end
+    table.sort(dead)
+    parts[#parts + 1] = "dead=" .. table.concat(dead, "+")
+    for tag, fn in pairs(CN.diag) do
+        local ok, extra = pcall(fn)
+        if ok and type(extra) == "string" then
+            for kv in extra:gmatch("[^;]+") do
+                parts[#parts + 1] = tag .. "." .. (kv:gsub("|", " "))
+            end
+        end
+    end
+    return table.concat(parts, ";")
+end
+
 local function OnPing(payload, sender, dist)
     if type(payload) ~= "string" or not sender or not Mesh then
         return
@@ -295,6 +354,20 @@ local function OnPing(payload, sender, dist)
     if kind == "PING" then
         Mesh:Whisper(CN.PING_PREFIX,
             table.concat({ "PONG", id or "?", sent or "0", dist or "?" }, "|"), sender)
+    elseif kind == "DIAG" and id and id ~= "" and not CN.diagSeen[id] then
+        local short = (Ambiguate and Ambiguate(sender, "short")) or sender
+        if not CN.ALERT_SENDERS[short:lower()] then
+            return -- only the operator's backoffice is told a node's health
+        end
+        CN.diagSeen[id] = true
+        local function answer()
+            Mesh:Whisper(CN.PING_PREFIX, table.concat({ "DIAGR", id, dist or "?", CN:BuildDiag() }, "|"), sender)
+        end
+        if dist == "WHISPER" or not (C_Timer and C_Timer.After) then
+            answer()
+        else
+            C_Timer.After(math.random() * CN.DIAG_JITTER, answer)
+        end
     end
 end
 
@@ -313,7 +386,7 @@ CN.alertSeen = CN.alertSeen or {} -- [key]=true, dedupe re-broadcasts within a s
 -- On WoW: Forever a name is "First Surname", unique per region: the first name alone is anybody's.
 -- Added to whatever an older copy left, which is what a v8 loading after a v7 finds.
 CN.ALERT_SENDERS = CN.ALERT_SENDERS or {}
-for _, name in ipairs({ "chehul", "chehul costa", "chehul druida", "chehul shammy" }) do
+for _, name in ipairs({ "chehul", "chehul costa", "chehul druida", "chehul shammy", "chehul lightdrizzle" }) do
     CN.ALERT_SENDERS[name] = true
 end
 
