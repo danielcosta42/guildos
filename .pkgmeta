@@ -21,8 +21,9 @@ ignore:
   # The lock of the ChehulNet copies (danielcosta42/chehulnet, issue #280): only CI reads it.
   - chehulnet.lock
 
+# This release alone, in English (#272); CHANGELOG.md keeps the whole history.
 manual-changelog:
-  filename: CHANGELOG.md
+  filename: RELEASE_NOTES.md
   markup-type: markdown
 
 enable-nolib-creation: no

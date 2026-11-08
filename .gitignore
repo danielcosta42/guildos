@@ -29,3 +29,5 @@ Cache/
 # AI agent instructions (local only)
 .github/copilot-instructions.md
 .cursorrules
+
+__pycache__/

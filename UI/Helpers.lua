@@ -365,6 +365,30 @@ end
 -- This also rewires the box's OnEnterPressed to the same callback so the
 -- two stay in sync. Returns the button.
 ----------------------------------------------------------------------
+-- Pure: where the controls of a labelled form start (#265). Past the widest label (its left inset
+-- plus `gap`), never before `floor`, the column the form always had. A form with fixed x's put a
+-- long translation ("Membres qui aident :") over its own control.
+function Helpers.LabelColumn(widths, left, gap, floor)
+    local widest = 0
+    for _, w in ipairs(widths) do
+        if w > widest then widest = w end
+    end
+    return math.max(floor, math.ceil(left + widest + gap))
+end
+
+-- The room a box keeps on its right for the Save button attached to it (#265): the button's own
+-- width, which follows its label ("Enregistrer" is wider than "Save"), plus `gap`.
+function Helpers.ReserveFor(button, gap)
+    return (button and button:GetWidth() or 0) + gap
+end
+
+-- The height a run of chips takes (#265): as many rows as are shown and the 4 px under them, none
+-- for none, so a form with no chips keeps no gap where they would be.
+function Helpers.ChipRowsHeight(shown, perRow, rowH)
+    local rows = math.ceil((shown or 0) / perRow)
+    return rows * rowH + (rows > 0 and 4 or 0)
+end
+
 function Helpers:AttachSaveButton(editBox, onSave, opts)
     opts = opts or {}
     local parent = opts.parent or editBox:GetParent()

@@ -391,7 +391,7 @@ RefreshMinimapDots = function()
         dotsFrame.moreBg:Hide()
     end
     dotsFrame.here = here
-    dotsFrame:SetShown(n > 0)
+    dotsFrame:SetShown(n > 0 and (not GuildOS.GuildMap or GuildOS.GuildMap:IsMinimapDots()))
 end
 
 ----------------------------------------------------------------------

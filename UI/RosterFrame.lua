@@ -2833,8 +2833,25 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- right (an attached Save button, say).
     local flex = {}
     local function flexWidth(widget, left, reserve)
-        flex[#flex + 1] = { widget = widget, left = left, reserve = reserve or 0 }
+        local entry = { widget = widget, left = left, reserve = reserve or 0 }
+        flex[#flex + 1] = entry
+        return entry
     end
+
+    -- The controls start after the widest row label in this client's language, never before x = 140
+    -- where they always were (#265): a fixed column put "Membres qui aident :" over its own button.
+    local measure = UI:CreateText(parent, "", 11, 1, 1, 1)
+    local labelWidths = {}
+    for _, text in ipairs({ L["Status:"], L["Interval (sec):"], L["Members who help:"], L["Channels:"],
+        L["Other channel:"], L["Keyword:"], L["Min level:"], L["Classes:"], L["Not confirmed:"],
+        L["Auto-Welcome:"], L["Discord:"] }) do
+        measure:SetText(text)
+        labelWidths[#labelWidths + 1] = measure:GetStringWidth() or 0
+    end
+    measure:Hide()
+    local COL = UI.LabelColumn(labelWidths, 30, 12, 140)
+    local GRID = COL - 12   -- the button grids sat 12 px left of the column
+    local SIDE = COL + 160  -- a button beside a status line
 
     local yOff = -15
 
@@ -2869,10 +2886,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Status + toggle
     RowLabel(L["Status:"], yOff)
     local statusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    statusText:SetPoint("TOPLEFT", 140, yOff)
+    statusText:SetPoint("TOPLEFT", COL, yOff)
 
     local toggleBtn = UI:CreateButton(parent, L["Enable"], 80, 22)
-    toggleBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+    toggleBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
 
     -- Manual send button
     local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, 22)
@@ -2908,7 +2925,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     RowLabel(L["Interval (sec):"], yOff)
     local intervalBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     intervalBox:SetSize(80, 22)
-    intervalBox:SetPoint("TOPLEFT", 140, yOff)
+    intervalBox:SetPoint("TOPLEFT", COL, yOff)
     intervalBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     intervalBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     intervalBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
@@ -2935,7 +2952,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- member past it is never asked (#150). Each click moves one member rank down, then back to every rank.
     RowLabel(L["Members who help:"], yOff)
     local rankBtn = UI:CreateButton(parent, "", 160, 22)
-    rankBtn:SetPoint("TOPLEFT", 140, yOff + 3)
+    rankBtn:SetPoint("TOPLEFT", COL, yOff + 3)
     local function rankText()
         local limit = GuildOS.db.recruitment.postMaxRank
         if limit == nil then return L["Any rank"] end
@@ -2969,7 +2986,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         local col = (i - 1) % CHAN_PER_ROW
         local row = math.floor((i - 1) / CHAN_PER_ROW)
         local btn = UI:CreateButton(parent, ch, 130, 22)
-        btn:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        btn:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
         btn._ch = ch
         btn:SetScript("OnClick", function()
             local chs = GuildOS.db.recruitment.channels
@@ -3000,13 +3017,17 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Channels beyond the three presets (issue #59): one box adds, a chip per channel removes.
     RowLabel(L["Other channel:"], yOff)
     local chanBox = MakeBox(130, false, 31)
-    chanBox:SetPoint("TOPLEFT", 140, yOff)
+    chanBox:SetPoint("TOPLEFT", COL, yOff)
     local CUSTOM_MAX, CUSTOM_PER_ROW = 6, 3
     local customBtns = {}
     local customMore = UI:CreateText(parent, "", 10, 0.6, 0.6, 0.65)
     local function isPreset(name)
         return GuildOS.Recruitment:HasChannel(CHAN_LIST, name)
     end
+    -- Everything below the custom channels hangs from `below` (set up after the chips), which sits
+    -- under the chip rows actually shown (#265).
+    local below, belowY, yEnd, chanHint
+    local placeBelow = function() end
     local function refreshCustomChans()
         local shown = 0
         for _, ch in ipairs(GuildOS.db.recruitment.channels) do
@@ -3024,6 +3045,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             if not isPreset(ch) then custom = custom + 1 end
         end
         customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
+        -- "Click a channel below" only with a channel below (#265).
+        if chanHint then chanHint:SetShown(shown > 0) end
+        placeBelow(shown, custom > CUSTOM_MAX)
     end
     UI:AttachSaveButton(chanBox, function(box)
         if GuildOS.Recruitment:AddChannel(GuildOS.db.recruitment.channels, box:GetText()) then
@@ -3034,14 +3058,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
         end
     end, { text = L["Add"] })
-    local chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint:Hide()
     chanHint:SetPoint("LEFT", chanBox.saveButton, "RIGHT", 8, 0)
     yOff = yOff - 28
     for i = 1, CUSTOM_MAX do
         local col = (i - 1) % CUSTOM_PER_ROW
         local row = math.floor((i - 1) / CUSTOM_PER_ROW)
         local b = UI:CreateButton(parent, "", 130, 22)
-        b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        b:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
         b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         b:SetScript("OnClick", function(self)
             GuildOS.Recruitment:RemoveChannel(GuildOS.db.recruitment.channels, self._ch)
@@ -3051,15 +3076,29 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         b:Hide()
         customBtns[i] = b
     end
-    yOff = yOff - 4 - math.ceil(CUSTOM_MAX / CUSTOM_PER_ROW) * 26
-    customMore:SetPoint("TOPLEFT", 128, yOff + 4)
-    yOff = yOff - 12
+    local chipsTop = yOff
+    below = CreateFrame("Frame", nil, recruitContent)
+    below:SetHeight(1)
+    placeBelow = function(shown, more)
+        local bottom = chipsTop - UI.ChipRowsHeight(shown, CUSTOM_PER_ROW, 26)
+        customMore:ClearAllPoints()
+        customMore:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", GRID, bottom + 4)
+        belowY = bottom - (more and 10 or 0)
+        below:ClearAllPoints()
+        below:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", 0, belowY)
+        below:SetPoint("TOPRIGHT", recruitContent, "TOPRIGHT", 0, belowY)
+        if yEnd then recruitContent:SetHeight(math.max(1, -(belowY + yEnd) + 60)) end
+    end
+    placeBelow(0, false)
+    -- From here on the stack builds into `below`, its y measured from there.
+    parent = below
+    yOff = -12
 
     -- Message
     RowLabel(L["Message:"], yOff)
     local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     msgBox:SetHeight(40)
-    flexWidth(msgBox, 30, 66)   -- 66 = the attached Save button
+    local msgFlex = flexWidth(msgBox, 30, 66)
     msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
     msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3073,12 +3112,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitMsg(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
+            -- Same as the welcome's (#270): the game refuses the text, the ad never goes out.
+            local problem = GuildOS.Recruitment.ChatTextProblem(txt)
+            if problem then return GuildOS:Print(problem) end
             GuildOS.db.recruitment.message = txt
             GuildOS:Print(L["Recruitment message updated."])
         end
     end
     msgBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(msgBox, commitMsg)
+    msgFlex.reserve = UI.ReserveFor(msgBox.saveButton, 6)   -- "Enregistrer" is wider than "Save" (#265)
     yOff = yOff - 68
 
     -- Broadcast button
@@ -3107,7 +3150,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     RowLabel(L["Keyword:"], yOff)
     local kwBox = MakeBox(120, false, R.KEYWORD_MAX)
-    kwBox:SetPoint("TOPLEFT", 140, yOff)
+    kwBox:SetPoint("TOPLEFT", COL, yOff)
     UI:AttachSaveButton(kwBox, function(box)
         local cfg = aiCfg()
         if not cfg then return end
@@ -3119,7 +3162,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     RowLabel(L["Min level:"], yOff)
     local lvlBox = MakeBox(50, true, 2)
-    lvlBox:SetPoint("TOPLEFT", 140, yOff)
+    lvlBox:SetPoint("TOPLEFT", COL, yOff)
     UI:AttachSaveButton(lvlBox, function(box)
         local cfg = aiCfg()
         if not cfg then return end
@@ -3149,7 +3192,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         local row = math.floor((i - 1) / CLASS_PER_ROW)
         local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
         local b = UI:CreateButton(parent, name, 130, 22)
-        b:SetPoint("TOPLEFT", 128 + col * 136, yOff + 2 - row * 26)
+        b:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
         b._class = class
         b:SetScript("OnClick", function(self)
             local cfg = aiCfg()
@@ -3161,12 +3204,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     local classRows = math.ceil(#R.CLASSES / CLASS_PER_ROW)
     local classHint = UI:CreateText(parent, L["None selected = any class."], 10, 0.6, 0.6, 0.65)
-    classHint:SetPoint("TOPLEFT", 128, yOff - classRows * 26)
+    classHint:SetPoint("TOPLEFT", GRID, yOff - classRows * 26)
     yOff = yOff - classRows * 26 - 22
 
     RowLabel(L["Not confirmed:"], yOff)
     local fbBtn = UI:CreateButton(parent, "", 120, 22)
-    fbBtn:SetPoint("TOPLEFT", 140, yOff + 3)
+    fbBtn:SetPoint("TOPLEFT", COL, yOff + 3)
     local function refreshFallback()
         local cfg = aiCfg()
         fbBtn.label:SetText((cfg and cfg.whoFallback == "invite") and L["Invite them"] or L["Skip them"])
@@ -3205,10 +3248,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Welcome status + toggle
     RowLabel(L["Auto-Welcome:"], yOff)
     local welcomeStatusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    welcomeStatusText:SetPoint("TOPLEFT", 140, yOff)
+    welcomeStatusText:SetPoint("TOPLEFT", COL, yOff)
 
     local welcomeToggle = UI:CreateButton(parent, L["Enable"], 80, 22)
-    welcomeToggle:SetPoint("TOPLEFT", 300, yOff + 3)
+    welcomeToggle:SetPoint("TOPLEFT", SIDE, yOff + 3)
 
     local function UpdateWelcomeStatus()
         local s = GuildOS.db.recruitment
@@ -3235,8 +3278,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     RowLabel(L["Discord:"], yOff)
     local discordBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     discordBox:SetHeight(22)
-    flexWidth(discordBox, 140, 66)
-    discordBox:SetPoint("TOPLEFT", 140, yOff)
+    local discordFlex = flexWidth(discordBox, COL, 66)
+    discordBox:SetPoint("TOPLEFT", COL, yOff)
     discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
@@ -3254,13 +3297,14 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
     discordBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(discordBox, commitDiscord)
+    discordFlex.reserve = UI.ReserveFor(discordBox.saveButton, 6)
     yOff = yOff - 28
 
     -- Welcome message
     RowLabel(L["Welcome Msg:"], yOff)
     local welcomeBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     welcomeBox:SetHeight(40)
-    flexWidth(welcomeBox, 30, 66)
+    local welcomeFlex = flexWidth(welcomeBox, 30, 66)
     welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
     welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
@@ -3274,12 +3318,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local function commitWelcome(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
+            -- A text the game would refuse is not kept: the welcome would just never come (#270).
+            local problem = GuildOS.Recruitment.ChatTextProblem(txt)
+            if problem then return GuildOS:Print(problem) end
             GuildOS.db.recruitment.welcomeMessage = txt
             GuildOS:Print(L["Welcome message updated."])
         end
     end
     welcomeBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(welcomeBox, commitWelcome)
+    welcomeFlex.reserve = UI.ReserveFor(welcomeBox.saveButton, 6)
 
     ----------------------------------------------------------------
     -- Recruitment Beacon (Chehul mesh) — realm/city-wide ad, officer-only
@@ -3288,9 +3336,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     yOff = SectionHeader(L["Recruitment Beacon (mesh)"], yOff)
     RowLabel(L["Status:"], yOff)
     local beaconStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    beaconStatus:SetPoint("TOPLEFT", 140, yOff)
+    beaconStatus:SetPoint("TOPLEFT", COL, yOff)
     local editBeaconBtn = UI:CreateButton(parent, L["Edit Beacon"], 130, 22)
-    editBeaconBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+    editBeaconBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
     editBeaconBtn:SetScript("OnClick", function()
         if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     end)
@@ -3316,9 +3364,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         yOff = SectionHeader(L["Join requests"], yOff)
         RowLabel(L["Status:"], yOff)
         local requestsStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-        requestsStatus:SetPoint("TOPLEFT", 140, yOff)
+        requestsStatus:SetPoint("TOPLEFT", COL, yOff)
         local requestsBtn = UI:CreateButton(parent, L["Open the list"], 130, 22)
-        requestsBtn:SetPoint("TOPLEFT", 300, yOff + 3)
+        requestsBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
         requestsBtn:SetScript("OnClick", function()
             if GuildOS.ShowJoinRequests then GuildOS:ShowJoinRequests() end
         end)
@@ -3366,22 +3414,25 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- the scroll content's width. The stack's own height is fixed by how
     -- far yOff walked, which is what gives the scroll frame its range.
     ----------------------------------------------------------------
-    local stackHeight = math.max(1, -yOff + 60)
+    yEnd = yOff
+    local function stackHeight() return math.max(1, -((belowY or 0) + yOff) + 60) end
     UI:MakeResponsive(root, function(_, w, _)
         bar:SetWidth(math.max(180, w - 20))
         UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = 28 })
 
         local contentW = math.max(200, w - 24)
-        recruitContent:SetSize(contentW, stackHeight)
+        recruitContent:SetSize(contentW, stackHeight())
         for _, f in ipairs(flex) do
             f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
         end
         -- The tab's OnShow fills every box while recruitContent is still 1x1 and the flexible
         -- ones have no width, and an edit box filled before it is laid out shows nothing until
         -- its cursor moves (#158).
-        for _, child in ipairs({ recruitContent:GetChildren() }) do
-            if child:GetObjectType() == "EditBox" and not child:HasFocus() then
-                child:SetCursorPosition(0)
+        for _, holder in ipairs({ recruitContent, below }) do
+            for _, child in ipairs({ holder:GetChildren() }) do
+                if child:GetObjectType() == "EditBox" and not child:HasFocus() then
+                    child:SetCursorPosition(0)
+                end
             end
         end
     end)

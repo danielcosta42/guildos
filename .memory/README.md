@@ -60,5 +60,5 @@ PHASE 3 — WRITE (implementar e validar)
 | Compatibilidade | `GuildOS.Compat.*` — nunca chamar `C_ChatInfo`, `C_Timer` etc. diretamente |
 | Logger | `GuildOS.Logger.Debug/Info/Warn` — sem `print()` direto |
 | luacheck | `C:\Users\danie\bin\luacheck.exe . --config .luacheckrc` |
-| Commit format | Conventional Commits: `feat:`, `fix:`, `refactor:`, `chore:`, etc. |
+| Commit format | Conventional Commits: `feat:`, `fix:`, `refactor:`, `chore:`, etc. Body ends with `Changelog: <one line in English>` for the stores' changelog (#272, see dev-workflow.md) |
 | CurseForge | Projeto ID 1549177, BCC client |

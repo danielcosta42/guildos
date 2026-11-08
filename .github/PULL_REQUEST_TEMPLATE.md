@@ -16,4 +16,4 @@
 - [ ] Code works in TBC Anniversary client (Interface 20504)
 - [ ] No Lua errors in-game
 - [ ] Luacheck passes with no new warnings
-- [ ] Updated CHANGELOG.md if applicable
+- [ ] Each feat/fix commit ends with a `Changelog:` line in English (the release builds CHANGELOG.md and RELEASE_NOTES.md from it)
