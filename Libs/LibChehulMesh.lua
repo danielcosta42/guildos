@@ -39,8 +39,13 @@
 --     server). :Realm then flushes each item by whisper to REALM_FANOUT random members of it; callers that relay
 --     (beacons, race digests, the HELLO) spread it on from there. Nothing goes from inside an instance or a
 --     chat lockdown: a whisper there counts against the prefix throttle, and a lockdown holds it anyway.
+-- v6: a member who logs off stays on the directory until the next read, and the realm flush's whisper to them
+-- printed "No player named X is currently playing" in every v5 client's chat (launch peak, 2026-11-08). Now
+-- that line is hidden for a name the directory whispered in the last TRIED_SECONDS, the name leaves the list at
+-- once and stays out for BAD_SECONDS, and a name the roster gave with a realm is tried once in that spelling
+-- before it goes. The list is read every 120 s instead of 300.
 
-local VERSION = 5
+local VERSION = 6
 if _G.ChehulMesh and (_G.ChehulMesh.version or 0) >= VERSION then
     return
 end
@@ -95,7 +100,12 @@ M.REALM_FANOUT    = 3   -- directory members a realm item goes to, by whisper, o
 M.DIR_PREFIX      = "ChehulNet" -- the directory channel: this plus the faction's initial (A/H)
 -- ponytail: the password ships in every copy, so it keeps chat clients out, not a griefer who reads it.
 M.DIR_PASSWORD    = "chehulmesh"
-M.DIR_REFRESH     = 300 -- seconds between member-list reads; the server sends the list only on a selection
+M.DIR_REFRESH     = 120 -- seconds between member-list reads; the server sends the list only on a selection
+M.TRIED_SECONDS   = 30  -- seconds a "No player named" line for a name the directory whispered stays hidden
+M.BAD_SECONDS     = 600 -- seconds a name that answered "No player named" stays off the directory
+M.dir.tried = M.dir.tried or {} -- [whisper target] = GetTime() until which its not-found line is ours
+M.dir.bad   = M.dir.bad or {}   -- [whisper target] = time() until which it is not picked
+M.dir.raw   = M.dir.raw or {}   -- [spelling we whisper] = the roster's own spelling, when they differ
 
 -- ---------------------------------------------------------------------------
 -- AceComm transport
@@ -266,7 +276,9 @@ local function EmitNextYell(sent)
         M.stats.yell = M.stats.yell + 1
         M.stats.realmSent = M.stats.realmSent + 1
     elseif CanWhisperWide() then -- the yell just found the bus dead, or it was already
+        local tried = (GetTime and GetTime() or 0) + M.TRIED_SECONDS
         for _, name in ipairs(Pick(M.REALM_FANOUT)) do
+            M.dir.tried[name] = tried -- so its "No player named" line, if one comes, is hidden and acted on
             if Send(item.prefix, item.payload, "WHISPER", name) then M.stats.dirSent = M.stats.dirSent + 1 end
         end
         M.stats.realmSent = M.stats.realmSent + 1
@@ -337,6 +349,11 @@ local function RequestRoster()
     pcall(SetSelectedDisplayChannel, mine)
 end
 
+local function Usable(name)
+    local till = M.dir.bad[name]
+    return not till or time() > till
+end
+
 local function OnRoster(displayIndex, count)
     if displayIndex ~= M.dir.index or not (C_ChatInfo and C_ChatInfo.GetChannelRosterInfo) then return end
     local me = UnitGUID and UnitGUID("player")
@@ -344,10 +361,56 @@ local function OnRoster(displayIndex, count)
     for i = 1, tonumber(count) or 0 do
         local ok, name, _, _, guid = pcall(C_ChatInfo.GetChannelRosterInfo, displayIndex, i)
         if ok and type(name) == "string" and not Secret(name) and not Secret(guid) and guid ~= me then
-            names[#names + 1] = WhisperName(name)
+            local spelled = WhisperName(name)
+            if spelled ~= name then M.dir.raw[spelled] = name end
+            local raw = M.dir.raw[spelled]
+            if Usable(spelled) then
+                names[#names + 1] = spelled
+            elseif raw and Usable(raw) then -- the plain spelling found nobody: the roster's own one, while it lasts
+                names[#names + 1] = raw
+            end
         end
     end
     M.dir.names, M.dir.count, M.dir.at = names, #names, time()
+end
+
+-- A name the directory whispered answered "No player named": it leaves the list now and is not picked for
+-- BAD_SECONDS. A plain "First Surname" the roster gave with a realm gets one try in the roster's spelling.
+local function Unreachable(name)
+    local till = M.dir.bad[name]
+    if till and time() <= till then return end -- every chat window runs the filter: act once
+    M.dir.bad[name] = time() + M.BAD_SECONDS
+    local names, kept = M.dir.names, {}
+    for _, n in ipairs(names) do
+        if n ~= name then kept[#kept + 1] = n end
+    end
+    local raw = M.dir.raw[name]
+    if raw and raw ~= name and Usable(raw) then kept[#kept + 1] = raw end
+    M.dir.names, M.dir.count = kept, #kept
+end
+
+local notFound -- ERR_CHAT_PLAYER_NOT_FOUND_S as a pattern; false when the client has no such string
+local function NotFoundName(msg)
+    if notFound == nil then
+        local fmt = ERR_CHAT_PLAYER_NOT_FOUND_S
+        notFound = false
+        if type(fmt) == "string" and fmt:find("%s", 1, true) then
+            local p = fmt:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+            notFound = "^" .. p:gsub("%%%%s", "(.+)") .. "$"
+        end
+    end
+    return notFound and msg:match(notFound) or nil
+end
+
+-- The client's "No player named X" line, for X the directory whispered a moment ago: nobody's business in a
+-- chat window. Anyone else's line passes untouched.
+local function HideNotFound(_, _, msg)
+    if Secret(msg) or type(msg) ~= "string" or not next(M.dir.tried) then return false end
+    local name = NotFoundName(msg)
+    local till = name and M.dir.tried[name]
+    if not till or (GetTime and GetTime() or 0) > till then return false end
+    Unreachable(name)
+    return true
 end
 
 -- The join and leave lines of the directory are nobody's business in a chat window.
@@ -367,6 +430,7 @@ StartDirectory = function()
             "CHAT_MSG_CHANNEL_LEAVE" }) do
             pcall(add, event, HideNotice)
         end
+        pcall(add, "CHAT_MSG_SYSTEM", HideNotFound)
     end
     JoinDirectory()
     if C_Timer and C_Timer.After then C_Timer.After(15, RequestRoster) end
@@ -389,6 +453,10 @@ if M._dirTicker and M._dirTicker.Cancel then pcall(function() M._dirTicker:Cance
 if C_Timer and C_Timer.NewTicker then
     M._dirTicker = C_Timer.NewTicker(M.DIR_REFRESH, function()
         if not M.dir.on then return end
+        local now = GetTime and GetTime() or 0
+        for name, till in pairs(M.dir.tried) do
+            if now > till then M.dir.tried[name] = nil end
+        end
         JoinDirectory()
         RequestRoster()
     end)
