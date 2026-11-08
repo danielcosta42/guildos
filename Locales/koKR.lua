@@ -2273,3 +2273,12 @@ L["This game does not let an addon invite: the auto-invite works on TBC Annivers
 -- Who creates calendar events (issue #283)
 L["Who creates events:"] = "일정을 만드는 사람:"
 L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444현재 등급으로는 일정을 만들 수 없습니다.|r"
+
+-- The memory probe (issue #285)
+L["Probe memory"] = "메모리 측정"
+L["The memory probe is already running."] = "메모리 측정이 이미 진행 중입니다."
+L["Measuring memory for %d seconds. Keep playing; the result comes in chat."] = "%d초 동안 메모리를 측정합니다. 계속 플레이하세요. 결과는 채팅에 나옵니다."
+L["Memory probe, %d s: the addon allocated %.1f MB (%.1f MB a minute)."] = "메모리 측정, %d초: 애드온이 %.1f MB를 할당했습니다(분당 %.1f MB)."
+L["The game kept collecting while it measured: the numbers are lower bounds."] = "측정하는 동안 게임이 계속 메모리를 정리했습니다. 수치는 최솟값입니다."
+L["Saved in GuildOSDB.probeMem. Type /reload to write it to disk."] = "GuildOSDB.probeMem에 저장했습니다. 디스크에 기록하려면 /reload를 입력하세요."
+L["Measure for two minutes where the addon's memory goes"] = "애드온의 메모리가 어디에 쓰이는지 2분 동안 측정"

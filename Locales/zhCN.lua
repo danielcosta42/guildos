@@ -2273,3 +2273,12 @@ L["This game does not let an addon invite: the auto-invite works on TBC Annivers
 -- Who creates calendar events (issue #283)
 L["Who creates events:"] = "谁可以创建活动："
 L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444你的会阶不能创建活动。|r"
+
+-- The memory probe (issue #285)
+L["Probe memory"] = "检测内存"
+L["The memory probe is already running."] = "内存检测已在运行。"
+L["Measuring memory for %d seconds. Keep playing; the result comes in chat."] = "正在检测内存 %d 秒。继续游戏即可，结果会显示在聊天中。"
+L["Memory probe, %d s: the addon allocated %.1f MB (%.1f MB a minute)."] = "内存检测，%d 秒：插件分配了 %.1f MB（每分钟 %.1f MB）。"
+L["The game kept collecting while it measured: the numbers are lower bounds."] = "检测期间游戏仍在回收内存：这些数字是下限。"
+L["Saved in GuildOSDB.probeMem. Type /reload to write it to disk."] = "已保存到 GuildOSDB.probeMem。输入 /reload 写入磁盘。"
+L["Measure for two minutes where the addon's memory goes"] = "用两分钟检测插件的内存用在哪里"

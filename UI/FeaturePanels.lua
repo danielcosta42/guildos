@@ -3404,6 +3404,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
             StaticPopup_Show("GUILDOS_PROBE_CHAT")
         end },
         { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
+        -- /gos probe mem (issue #285): two minutes, then the result in chat.
+        { L["Probe memory"], function() if GuildOS.Probe then GuildOS.Probe:RunMem() end end },
     }
     local prevDiag
     for i, d in ipairs(diag) do

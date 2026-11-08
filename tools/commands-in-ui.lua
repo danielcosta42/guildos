@@ -57,6 +57,7 @@ local IN_UI = {
   probe       = { { "UI/FeaturePanels.lua", "GuildOS.Probe:Run()" } },
   ["probe chat"] = { { "UI/FeaturePanels.lua", "GuildOS.Probe:RunChat()" } },
   ["probe channel"] = { { "UI/AuditPanel.lua", "GuildOS.Probe:RunChannel()" } },
+  ["probe mem"] = { { "UI/FeaturePanels.lua", "GuildOS.Probe:RunMem()" } },
   reset       = { { "UI/FeaturePanels.lua", "GuildOS:EraseGuildData()" } },
   recruit     = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },
   autoinvite  = { { "UI/RosterFrame.lua", 'L["Invite players who whisper the keyword"]' } },

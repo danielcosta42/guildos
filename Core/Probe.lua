@@ -647,3 +647,137 @@ function Probe:FinishChannel(run)
     end
     GuildOS:Print(L["Saved in GuildOSDB.probeChannel. Type /reload to write it to disk."])
 end
+
+----------------------------------------------------------------------
+-- /gos probe mem (issue #285)
+-- Where the memory goes while the addon runs. On 2026-11-08 it held 16 MB after a collection and
+-- allocated 77 MB a minute standing still. For MEM_SECONDS every function of every GuildOS module, of
+-- GuildOS itself and of the shared ChehulMesh is wrapped to count what it allocates and how long it
+-- takes. Every call adds to "incl"; only a call with no wrapped call around it adds to "top", so the top
+-- list adds up to what the addon allocated through anything wrapped, nested calls counted once. The
+-- collector is asked to stop meanwhile: then the counts are exact; where the client refuses, a
+-- collection step inside a call hides part of it, and they are lower bounds.
+-- GuildOSDB.probeMem = { at, seconds, gcStopped, version, wrapped, addonKb, luaKb, top, incl, slow }.
+----------------------------------------------------------------------
+Probe.MEM_SECONDS = 120
+local MEM_KEEP = 25    -- rows of each list kept
+local MEM_SHOWN = 8    -- rows of the top list printed
+-- Data, not code: nothing in them is wrapped, and the probe does not wrap itself.
+local MEM_SKIP = { db = true, State = true, L = true, Client = true, Probe = true }
+local mem              -- the run in progress
+
+-- What the game counts for this addon, in KB; nil where it will not say.
+local function addonKb()
+    local update = UpdateAddOnMemoryUsage or (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage)
+    local get = GetAddOnMemoryUsage or (C_AddOns and C_AddOns.GetAddOnMemoryUsage)
+    if not (update and get) or not pcall(update) then return nil end
+    local ok, kb = pcall(get, "GuildOS")
+    return ok and tonumber(kb) or nil
+end
+
+-- Every function to watch: GuildOS's own, each plain module table's, and the mesh's. A table with a
+-- metatable is data or somebody else's class, and is left alone.
+local function memTargets()
+    local out, seen = {}, { [Probe] = true }
+    local function add(owner, label)
+        if seen[owner] then return end
+        seen[owner] = true
+        for key, fn in pairs(owner) do
+            if type(fn) == "function" then out[#out + 1] = { owner = owner, key = key, name = label .. tostring(key), fn = fn } end
+        end
+    end
+    for name, value in pairs(GuildOS) do
+        if type(value) == "table" and not MEM_SKIP[name] and getmetatable(value) == nil then add(value, name .. ":") end
+    end
+    add(GuildOS, "GuildOS:")
+    if type(_G.ChehulMesh) == "table" then add(_G.ChehulMesh, "ChehulMesh:") end
+    return out
+end
+
+-- The wrapper changes nothing it measures: same arguments, all the returns, the same error.
+local function memWrap(t, run)
+    local stat = { name = t.name, kb = 0, calls = 0, ms = 0, topKb = 0, topCalls = 0, topMs = 0 }
+    local fn = t.fn
+    local function done(top, m0, t0, ok, ...)
+        local kb = collectgarbage("count") - m0
+        if kb < 0 then kb = 0 end
+        local ms = debugprofilestop() - t0
+        stat.kb, stat.calls, stat.ms = stat.kb + kb, stat.calls + 1, stat.ms + ms
+        if top then stat.topKb, stat.topCalls, stat.topMs = stat.topKb + kb, stat.topCalls + 1, stat.topMs + ms end
+        run.depth = run.depth - 1
+        if not ok then error((...), 0) end
+        return ...
+    end
+    t.stat = stat
+    t.wrapper = function(...)
+        -- A wrapper somebody kept (a timer made during the run) passes straight through afterwards.
+        if mem ~= run then return fn(...) end
+        local top = run.depth == 0
+        run.depth = run.depth + 1
+        return done(top, collectgarbage("count"), debugprofilestop(), pcall(fn, ...))
+    end
+    t.owner[t.key] = t.wrapper
+end
+
+function Probe:RunMem()
+    if mem then
+        GuildOS:Print(L["The memory probe is already running."])
+        return nil
+    end
+    local run = { depth = 0, targets = memTargets(), started = debugprofilestop() }
+    run.gcStopped = pcall(collectgarbage, "stop")
+    run.lua0, run.addon0 = collectgarbage("count"), addonKb()
+    for _, t in ipairs(run.targets) do memWrap(t, run) end
+    mem = run
+    C_Timer.After(self.MEM_SECONDS, function() Probe:FinishMem() end)
+    GuildOS:Print(string.format(L["Measuring memory for %d seconds. Keep playing; the result comes in chat."], self.MEM_SECONDS))
+    return run
+end
+
+local function memList(run, kb, calls, ms, by)
+    local rows = {}
+    for _, t in ipairs(run.targets) do
+        local s = t.stat
+        if s and s[calls] > 0 then
+            rows[#rows + 1] = { name = s.name, kb = math.floor(s[kb] * 10 + 0.5) / 10, calls = s[calls],
+                                ms = math.floor(s[ms] * 10 + 0.5) / 10 }
+        end
+    end
+    table.sort(rows, function(a, b) return a[by] > b[by] end)
+    for i = #rows, MEM_KEEP + 1, -1 do rows[i] = nil end
+    return rows
+end
+
+function Probe:FinishMem()
+    local run = mem
+    if not run then return end
+    mem = nil
+    -- Back as it was first, and the collector running again, before anything here can fail.
+    for _, t in ipairs(run.targets) do
+        if t.owner[t.key] == t.wrapper then t.owner[t.key] = t.fn end
+    end
+    local luaKb, addon1 = collectgarbage("count") - run.lua0, addonKb()
+    if run.gcStopped then pcall(collectgarbage, "restart") end
+
+    local seconds = (debugprofilestop() - run.started) / 1000
+    local result = {
+        at = time(), seconds = math.floor(seconds + 0.5), gcStopped = run.gcStopped, version = GuildOS.VERSION,
+        wrapped = #run.targets, luaKb = math.floor(luaKb + 0.5),
+        addonKb = (addon1 and run.addon0) and math.floor(addon1 - run.addon0 + 0.5) or nil,
+        top = memList(run, "topKb", "topCalls", "topMs", "kb"),
+        incl = memList(run, "kb", "calls", "ms", "kb"),
+        slow = memList(run, "topKb", "topCalls", "topMs", "ms"),
+    }
+    if not GuildOSDB then GuildOSDB = {} end
+    GuildOSDB.probeMem = result
+
+    local total = (result.addonKb or result.luaKb) / 1024
+    GuildOS:Print(string.format(L["Memory probe, %d s: the addon allocated %.1f MB (%.1f MB a minute)."],
+        result.seconds, total, seconds > 0 and total * 60 / seconds or 0))
+    if not run.gcStopped then GuildOS:Print(L["The game kept collecting while it measured: the numbers are lower bounds."]) end
+    for i = 1, math.min(MEM_SHOWN, #result.top) do
+        local x = result.top[i]
+        GuildOS:Print(string.format("  %s: %.1f MB, %d calls, %.0f ms", x.name, x.kb / 1024, x.calls, x.ms))
+    end
+    GuildOS:Print(L["Saved in GuildOSDB.probeMem. Type /reload to write it to disk."])
+end

@@ -2393,3 +2393,12 @@ L["This game does not let an addon invite: the auto-invite works on TBC Annivers
 -- Who creates calendar events (issue #283)
 L["Who creates events:"] = "Qui crée des événements :"
 L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444Votre rang ne peut pas créer d'événements.|r"
+
+-- The memory probe (issue #285)
+L["Probe memory"] = "Sonder la mémoire"
+L["The memory probe is already running."] = "La sonde de mémoire tourne déjà."
+L["Measuring memory for %d seconds. Keep playing; the result comes in chat."] = "Mesure de la mémoire pendant %d secondes. Continuez à jouer ; le résultat arrive dans le chat."
+L["Memory probe, %d s: the addon allocated %.1f MB (%.1f MB a minute)."] = "Sonde de mémoire, %d s : l'addon a alloué %.1f Mo (%.1f Mo par minute)."
+L["The game kept collecting while it measured: the numbers are lower bounds."] = "Le jeu a continué à libérer la mémoire pendant la mesure : les chiffres sont des minimums."
+L["Saved in GuildOSDB.probeMem. Type /reload to write it to disk."] = "Enregistré dans GuildOSDB.probeMem. Tapez /reload pour l'écrire sur le disque."
+L["Measure for two minutes where the addon's memory goes"] = "Mesurer pendant deux minutes où va la mémoire de l'addon"

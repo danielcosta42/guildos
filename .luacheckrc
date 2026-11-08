@@ -250,6 +250,11 @@ read_globals = {
     "Minimap",
     "GetCursorPosition",
     "GetTime",
+    -- The memory probe (issue #285): a millisecond clock and the game's count per addon.
+    "debugprofilestop",
+    "UpdateAddOnMemoryUsage",
+    "GetAddOnMemoryUsage",
+    "C_AddOns",
     "GetServerTime",
     "ReloadUI",
     "InCombatLockdown",
