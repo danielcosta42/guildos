@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.0] - 2026-11-08
+
+### Added
+- a lib ChehulNet vem de um repo só, com lock no CI; ChehulNet v12 estima a rede (#280)
+
+
 ## [1.10.3] - 2026-11-08
 
 ### Fixed
