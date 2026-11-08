@@ -382,6 +382,13 @@ function Helpers.ReserveFor(button, gap)
     return (button and button:GetWidth() or 0) + gap
 end
 
+-- The height a run of chips takes (#265): as many rows as are shown and the 4 px under them, none
+-- for none, so a form with no chips keeps no gap where they would be.
+function Helpers.ChipRowsHeight(shown, perRow, rowH)
+    local rows = math.ceil((shown or 0) / perRow)
+    return rows * rowH + (rows > 0 and 4 or 0)
+end
+
 function Helpers:AttachSaveButton(editBox, onSave, opts)
     opts = opts or {}
     local parent = opts.parent or editBox:GetParent()

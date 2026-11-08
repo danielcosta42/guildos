@@ -3024,6 +3024,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local function isPreset(name)
         return GuildOS.Recruitment:HasChannel(CHAN_LIST, name)
     end
+    -- Everything below the custom channels hangs from `below` (set up after the chips), which sits
+    -- under the chip rows actually shown (#265).
+    local below, belowY, yEnd, chanHint
+    local placeBelow = function() end
     local function refreshCustomChans()
         local shown = 0
         for _, ch in ipairs(GuildOS.db.recruitment.channels) do
@@ -3041,6 +3045,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             if not isPreset(ch) then custom = custom + 1 end
         end
         customMore:SetText(custom > CUSTOM_MAX and string.format(L["+%d more (/gos recruit channel list)"], custom - CUSTOM_MAX) or "")
+        -- "Click a channel below" only with a channel below (#265).
+        if chanHint then chanHint:SetShown(shown > 0) end
+        placeBelow(shown, custom > CUSTOM_MAX)
     end
     UI:AttachSaveButton(chanBox, function(box)
         if GuildOS.Recruitment:AddChannel(GuildOS.db.recruitment.channels, box:GetText()) then
@@ -3051,7 +3058,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
         end
     end, { text = L["Add"] })
-    local chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    chanHint:Hide()
     chanHint:SetPoint("LEFT", chanBox.saveButton, "RIGHT", 8, 0)
     yOff = yOff - 28
     for i = 1, CUSTOM_MAX do
@@ -3068,9 +3076,23 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         b:Hide()
         customBtns[i] = b
     end
-    yOff = yOff - 4 - math.ceil(CUSTOM_MAX / CUSTOM_PER_ROW) * 26
-    customMore:SetPoint("TOPLEFT", GRID, yOff + 4)
-    yOff = yOff - 12
+    local chipsTop = yOff
+    below = CreateFrame("Frame", nil, recruitContent)
+    below:SetHeight(1)
+    placeBelow = function(shown, more)
+        local bottom = chipsTop - UI.ChipRowsHeight(shown, CUSTOM_PER_ROW, 26)
+        customMore:ClearAllPoints()
+        customMore:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", GRID, bottom + 4)
+        belowY = bottom - (more and 10 or 0)
+        below:ClearAllPoints()
+        below:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", 0, belowY)
+        below:SetPoint("TOPRIGHT", recruitContent, "TOPRIGHT", 0, belowY)
+        if yEnd then recruitContent:SetHeight(math.max(1, -(belowY + yEnd) + 60)) end
+    end
+    placeBelow(0, false)
+    -- From here on the stack builds into `below`, its y measured from there.
+    parent = below
+    yOff = -12
 
     -- Message
     RowLabel(L["Message:"], yOff)
@@ -3392,22 +3414,25 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- the scroll content's width. The stack's own height is fixed by how
     -- far yOff walked, which is what gives the scroll frame its range.
     ----------------------------------------------------------------
-    local stackHeight = math.max(1, -yOff + 60)
+    yEnd = yOff
+    local function stackHeight() return math.max(1, -((belowY or 0) + yOff) + 60) end
     UI:MakeResponsive(root, function(_, w, _)
         bar:SetWidth(math.max(180, w - 20))
         UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = 28 })
 
         local contentW = math.max(200, w - 24)
-        recruitContent:SetSize(contentW, stackHeight)
+        recruitContent:SetSize(contentW, stackHeight())
         for _, f in ipairs(flex) do
             f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
         end
         -- The tab's OnShow fills every box while recruitContent is still 1x1 and the flexible
         -- ones have no width, and an edit box filled before it is laid out shows nothing until
         -- its cursor moves (#158).
-        for _, child in ipairs({ recruitContent:GetChildren() }) do
-            if child:GetObjectType() == "EditBox" and not child:HasFocus() then
-                child:SetCursorPosition(0)
+        for _, holder in ipairs({ recruitContent, below }) do
+            for _, child in ipairs({ holder:GetChildren() }) do
+                if child:GetObjectType() == "EditBox" and not child:HasFocus() then
+                    child:SetCursorPosition(0)
+                end
             end
         end
     end)
