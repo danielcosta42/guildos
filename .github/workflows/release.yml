@@ -42,6 +42,12 @@ jobs:
         # Core/Compat.lua.
         run: lua5.1 tools/compat-guard.lua
 
+      - name: ChehulNet copies match chehulnet.lock
+        # Libs/LibChehulMesh.lua and Modules/ChehulNet.lua come from danielcosta42/chehulnet through its
+        # tools/sync.sh and ship identical in every Chehul addon (issue #280): a copy edited by hand here is
+        # lost at the next sync and never reaches the others. Their tests live in that repository.
+        run: bash tools/chehulnet-lock.sh
+
       - name: The harnesses
         # Each tools/*.lua runs the real addon code under a stubbed client and exits 1 on the
         # first failed check. Until now nothing ran them: tools/roster-import.lua had been red

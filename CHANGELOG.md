@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.0] - 2026-11-08
+
+### Added
+- a lib ChehulNet vem de um repo só, com lock no CI; ChehulNet v12 estima a rede (#280)
+
+
+## [1.10.3] - 2026-11-08
+
+### Fixed
+- o whisper do diretório não imprime mais 'No player named' no chat de todos (#278)
+
+
+## [1.10.2] - 2026-11-08
+
+### Fixed
+- a malha passa da guilda no Forever: o diretório do canal ChehulNet leva o realm por whisper (#276)
+
+
 ## [1.10.1] - 2026-11-08
 
 ### Fixed
