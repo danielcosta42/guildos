@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.1] - 2026-11-08
+
+### Fixed
+- a aba Engajamento não estoura mais a pilha numa guilda grande (#274)
+
+
 ## [1.10.0] - 2026-11-07
 
 ### Added
