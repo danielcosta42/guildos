@@ -107,7 +107,7 @@ end
 
 -- ── WoW: Forever ────────────────────────────────────────────────────────
 local M, w = client("forever")
-check(M.version == 5, "the library is v5")
+check(M.version >= 5, "the library is v5 or later")
 check(M:Proximity("ChehulNet", "hello") == false and M.dead.SAY == "InvalidChatType",
   "the first SAY goes raw, and the game's InvalidChatType marks the bus dead")
 check(#w.raw == 1 and w.raw[1].dist == "SAY" and #w.comm == 0, "it went raw, not through AceComm, which reads no result")
@@ -167,6 +167,51 @@ check(M:HealthLine():find("dead SAY,YELL", 1, true) and M:HealthLine():find("dir
 
 advance(M.DIR_REFRESH)
 check(#w.selected >= 4, "the list is read again every DIR_REFRESH seconds")
+check(M.DIR_REFRESH <= 120, "and often enough that a member who logged off does not linger (v6, issue #278)")
+
+-- ── v6 (issue #278): a member who logged off answers "No player named" ──
+ERR_CHAT_PLAYER_NOT_FOUND_S = "No player named '%s' is currently playing."
+local notFound = w.filters.CHAT_MSG_SYSTEM
+check(notFound ~= nil, "the directory watches the system lines for its own whispers' not-found answers")
+w.fire("CHANNEL_ROSTER_UPDATE", 3, 4)
+for _ = 1, 3 do M:Realm("LSRace", "R1|R|again", "LSRace:R"); M.FlushRealm() end -- every member gets tried
+check(notFound(nil, "CHAT_MSG_SYSTEM", "No player named 'Bia Rocha' is currently playing.") == true,
+  "the line for a member the directory whispered is hidden from the chat windows")
+check(notFound(nil, "CHAT_MSG_SYSTEM", "No player named 'Bia Rocha' is currently playing.") == true,
+  "in every window that runs the filter, not just the first")
+local left = {}
+for _, n in ipairs(M.dir.names) do left[n] = true end
+check(not left["Bia Rocha"] and M.dir.count == 2, "and the member leaves the list at once")
+check(notFound(nil, "CHAT_MSG_SYSTEM", "No player named 'Zeca Strange' is currently playing.") == false,
+  "a line for a name the directory never whispered passes untouched")
+before = #w.comm
+for _ = 1, 6 do M:Realm("LSRace", "R1|R|more " .. _, "LSRace:R" .. _); M.FlushRealm() end
+local toBia = 0
+for i = before + 1, #w.comm do if w.comm[i].target == "Bia Rocha" then toBia = toBia + 1 end end
+check(toBia == 0, "nor is whispered again")
+w.fire("CHANNEL_ROSTER_UPDATE", 3, 4)
+left = {}
+for _, n in ipairs(M.dir.names) do left[n] = true end
+check(not left["Bia Rocha"] and left["Caio Nunes"], "a fresh read keeps it out while BAD_SECONDS last")
+-- Ana came as "Ana Lima-Realm8PvP": the plain spelling failing earns one try in the roster's own.
+check(notFound(nil, "CHAT_MSG_SYSTEM", "No player named 'Ana Lima' is currently playing.") == true,
+  "the plain spelling's not-found line is hidden too")
+notFound(nil, "CHAT_MSG_SYSTEM", "No player named 'Ana Lima' is currently playing.") -- a second chat window
+local tries = 0
+for _, n in ipairs(M.dir.names) do
+  left[n] = true
+  if n == "Ana Lima-Realm8PvP" then tries = tries + 1 end
+end
+check(tries == 1, "a plain spelling that found nobody gets one try in the roster's spelling, once per window set")
+w.fire("CHANNEL_ROSTER_UPDATE", 3, 4)
+left = {}
+for _, n in ipairs(M.dir.names) do left[n] = true end
+check(left["Ana Lima-Realm8PvP"] and not left["Ana Lima"], "and a fresh read keeps that spelling")
+now = now + M.BAD_SECONDS + 1
+w.fire("CHANNEL_ROSTER_UPDATE", 3, 4)
+left = {}
+for _, n in ipairs(M.dir.names) do left[n] = true end
+check(left["Bia Rocha"] and left["Ana Lima"], "after BAD_SECONDS a name is tried again")
 
 -- ── TBC Anniversary: YELL lives ─────────────────────────────────────────
 M, w = client("anniversary")
@@ -184,7 +229,7 @@ M, w = client("forever", function()
   _G.ChehulMesh = { version = 4, handlers = { ChehulNet = function() handled = true end }, _realmQueue = {},
     stats = { ok = 3, fail = 0, recv = 1, yell = 0, realmQueued = 0, realmSent = 0, realmDropped = 0 } }
 end)
-check(M.version == 5 and M.handlers.ChehulNet and M.stats.ok == 3 and M.stats.refused == 0,
-  "a v5 loaded after a v4 takes over with the handlers and counters it found")
+check(M.version >= 5 and M.handlers.ChehulNet and M.stats.ok == 3 and M.stats.refused == 0,
+  "a v5+ loaded after a v4 takes over with the handlers and counters it found")
 
 print(string.format("chehulmesh: %d checks passed", checks))
