@@ -35,10 +35,10 @@ CommSystem.MSG_TYPES = {
 -- Throttle settings
 CommSystem.THROTTLE_INTERVAL = 5  -- seconds between broadcasts
 CommSystem.lastBroadcast = 0
--- Answers to the guild's asks (issue #285): somebody asking for the first time this session is answered at
--- once; an ask from somebody already answered is the periodic pull, answered at most once per interval.
+-- Answers to the guild's asks (issue #285). The ask says what it is: "NEW" a login, "ALL" the periodic pull
+-- (and every ask of a client older than this), "FULL" /gos sync. See HandleRequest.
 CommSystem.ANSWER_INTERVAL = 300
-CommSystem.answered = {}          -- [asker] = true once answered this session
+CommSystem.answered = {}          -- [asker] = GetTime() of the last answer to their login
 CommSystem.lastAnswer = -math.huge
 
 function CommSystem:Initialize()
@@ -119,7 +119,7 @@ function CommSystem:Initialize()
     -- request is dropped or peers are still loading when it goes out.
     for _, delay in ipairs({ 8, 25, 60 }) do
         C_Timer.After(delay, function()
-            if IsInGuild() then CommSystem:RequestAllData() end
+            if IsInGuild() then CommSystem:RequestAllData("NEW") end   -- a login: answered at once (#285)
         end)
     end
 end
@@ -416,11 +416,11 @@ end
 ----------------------------------------------------------------------
 -- Request data from all online guildies
 ----------------------------------------------------------------------
--- `byHand` is /gos sync: "FULL", which a client answers even inside its interval (issue #285). Any older
--- client answers either word, as it always did.
-function CommSystem:RequestAllData(byHand)
+-- `kind` is what the ask is (issue #285): "NEW" a login, "FULL" /gos sync, nothing the periodic pull ("ALL").
+-- A client older than this answers every word, as it always did.
+function CommSystem:RequestAllData(kind)
     if not IsInGuild() then return end
-    self:SendMessage(self.MSG_TYPES.REQUEST, byHand and "FULL" or "ALL")
+    self:SendMessage(self.MSG_TYPES.REQUEST, kind or "ALL")
 end
 
 ----------------------------------------------------------------------
@@ -429,13 +429,19 @@ end
 function CommSystem:HandleRequest(sender, data)
     -- Every client asks every ten minutes, and each ask used to be answered by every other client with
     -- all it holds: in a guild of fifty that was the guild's traffic growing with the square of its
-    -- size, and 35 MB of garbage in two minutes on each client (issue #285). A login is answered at
-    -- once; somebody already answered asks again only to heal what they missed, and the periodic push
-    -- (every five minutes) already keeps their copy fresh, so that waits out the interval. An ask by hand
-    -- (/gos sync, "FULL") is always answered.
+    -- size, and 35 MB of garbage in two minutes on each client (issue #285). Now:
+    --   "FULL" (/gos sync) is always answered;
+    --   "NEW" (a login) is answered once per asker per interval: a login asks three times in case one is lost;
+    --   anything else is the periodic pull, from this version or an older one, answered at most once per
+    --   interval whoever sends it. Each pull still meets the few clients whose interval has run out, and
+    --   the periodic push (every five minutes) keeps everybody's copy of everybody fresh.
     local now = GetTime()
-    if data ~= "FULL" and self.answered[sender] and now - self.lastAnswer < self.ANSWER_INTERVAL then return end
-    self.answered[sender] = true
+    if data == "NEW" then
+        if now - (self.answered[sender] or -math.huge) < self.ANSWER_INTERVAL then return end
+    elseif data ~= "FULL" and now - self.lastAnswer < self.ANSWER_INTERVAL then
+        return
+    end
+    self.answered[sender] = now
     self.lastAnswer = now
 
     -- Respond with a broadcast to the GUILD channel instead of a direct
@@ -604,7 +610,7 @@ function CommSystem:FullSync()
     self:BroadcastMyData()
 
     -- Request fresh data from all online guild members, by hand: answered at once (issue #285)
-    self:RequestAllData(true)
+    self:RequestAllData("FULL")
 
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["Syncing data with guild..."])

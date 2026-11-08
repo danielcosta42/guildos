@@ -137,8 +137,13 @@ check(select2 == "done", "a wrapper somebody kept passes through after the run")
 local r = GuildOSDB and GuildOSDB.probeMem
 check(type(r) == "table", "the result is saved in GuildOSDB.probeMem")
 check(r.gcStopped == true, "it says the collector was stopped")
-check(r.addonKb == 2048, "the addon's own growth is what the game counted for it")
+check(r.addonKb == 2048, "the game's own count for the addon is kept, as a reference")
 check(type(r.wrapped) == "number" and r.wrapped >= 5, "it says how many functions it watched")
+local sum = 0
+for _, x in ipairs(r.top) do sum = sum + x.kb end
+check(r.topKb and math.abs(r.topKb - sum) <= #r.top, "the headline is the sum of the outermost calls")
+check(not said("2.0 MB (") and said(string.format("%.1f MB (", r.topKb / 1024)),
+  "the chat says that sum, not the game's count, which the field showed negative")
 
 local function row(list, name)
   for _, x in ipairs(list) do if x.name == name then return x end end

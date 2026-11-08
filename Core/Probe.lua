@@ -657,7 +657,9 @@ end
 -- list adds up to what the addon allocated through anything wrapped, nested calls counted once. The
 -- collector is asked to stop meanwhile: then the counts are exact; where the client refuses, a
 -- collection step inside a call hides part of it, and they are lower bounds.
--- GuildOSDB.probeMem = { at, seconds, gcStopped, version, wrapped, addonKb, luaKb, top, incl, slow }.
+-- The headline is topKb, the sum of every outermost call: the game's own count for the addon (addonKb) came
+-- out negative in the field with the collector asked to stop, and is kept only as a reference.
+-- GuildOSDB.probeMem = { at, seconds, gcStopped, version, wrapped, topKb, addonKb, luaKb, top, incl, slow }.
 ----------------------------------------------------------------------
 Probe.MEM_SECONDS = 120
 local MEM_KEEP = 25    -- rows of each list kept
@@ -760,9 +762,11 @@ function Probe:FinishMem()
     if run.gcStopped then pcall(collectgarbage, "restart") end
 
     local seconds = (debugprofilestop() - run.started) / 1000
+    local topKb = 0
+    for _, t in ipairs(run.targets) do topKb = topKb + (t.stat and t.stat.topKb or 0) end
     local result = {
         at = time(), seconds = math.floor(seconds + 0.5), gcStopped = run.gcStopped, version = GuildOS.VERSION,
-        wrapped = #run.targets, luaKb = math.floor(luaKb + 0.5),
+        wrapped = #run.targets, topKb = math.floor(topKb + 0.5), luaKb = math.floor(luaKb + 0.5),
         addonKb = (addon1 and run.addon0) and math.floor(addon1 - run.addon0 + 0.5) or nil,
         top = memList(run, "topKb", "topCalls", "topMs", "kb"),
         incl = memList(run, "kb", "calls", "ms", "kb"),
@@ -771,7 +775,7 @@ function Probe:FinishMem()
     if not GuildOSDB then GuildOSDB = {} end
     GuildOSDB.probeMem = result
 
-    local total = (result.addonKb or result.luaKb) / 1024
+    local total = topKb / 1024
     GuildOS:Print(string.format(L["Memory probe, %d s: the addon allocated %.1f MB (%.1f MB a minute)."],
         result.seconds, total, seconds > 0 and total * 60 / seconds or 0))
     if not run.gcStopped then GuildOS:Print(L["The game kept collecting while it measured: the numbers are lower bounds."]) end

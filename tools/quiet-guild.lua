@@ -109,31 +109,42 @@ check(runs == 4, "each key keeps its own gap")
 local CS = GuildOS.CommSystem
 local answers = 0
 function CS:BroadcastMyData() answers = answers + 1 end
-local function ask(sender)
-  CS:HandleRequest(sender, "ALL")
+local function ask(sender, word)
+  CS:HandleRequest(sender, word)
   advance(clock + 10)
 end
-ask("Cherry Arrow")
-check(answers == 1, "somebody asking for the first time this session is answered")
-ask("Cherry Arrow")
-check(answers == 1, "their next ask inside the interval is the periodic pull: not answered again")
-ask("Vex Morrow")
-check(answers == 2, "somebody new is answered even inside the interval: a login gets the guild's data")
-ask("Cherry Arrow")
-check(answers == 2, "a known asker inside the interval is still not answered")
-CS:HandleRequest("Cherry Arrow", "FULL")
-advance(clock + 10)
+ask("Cherry Arrow", "NEW")
+check(answers == 1, "a login's ask is answered")
+ask("Cherry Arrow", "NEW")
+check(answers == 1, "the same login's retry, a few seconds later, is not answered again")
+ask("Vex Morrow", "NEW")
+check(answers == 2, "somebody else's login is answered even right after an answer")
+ask("Old Client", "ALL")
+check(answers == 2, "a periodic pull inside the interval is not answered, whoever sends it")
+ask("Fresh Asker", "ALL")
+check(answers == 2, "not even from somebody never answered: after a /reload every pull would look new")
+ask("Cherry Arrow", "FULL")
 check(answers == 3, "an ask by hand (/gos sync) is answered even inside the interval")
-local asked
-function CS:SendMessage(_, data) asked = data end
-CS:RequestAllData(true)
-check(asked == "FULL", "/gos sync asks by hand")
-CS:RequestAllData()
-check(asked == "ALL", "the periodic pull asks as before, which every version answers")
 advance(clock + CS.ANSWER_INTERVAL)
-ask("Cherry Arrow")
-check(answers == 4, "past the interval, a known asker is answered again: the self-healing pull still heals")
+ask("Old Client", "ALL")
+check(answers == 4, "past the interval a periodic pull is answered: the self-healing pull still heals")
+ask("Someone", "ALL")
+check(answers == 4, "and the next one waits out the interval again")
+ask("Cherry Arrow", "NEW")
+check(answers == 5, "a login past the interval is answered again")
 check(CS.ANSWER_INTERVAL >= 300, "the interval is at least the five minutes of the periodic push")
+
+local asked = {}
+function CS:SendMessage(kind, data) if kind == CS.MSG_TYPES.REQUEST then asked[#asked + 1] = data end end
+CS:RequestAllData("FULL")
+check(asked[1] == "FULL", "/gos sync asks by hand")
+CS:RequestAllData()
+check(asked[2] == "ALL", "the periodic pull asks with the word every version answers")
+asked = {}
+CS:Initialize()
+advance(clock + 61)
+check(#asked == 3, "a login asks three times, in case one is lost")
+check(asked[1] == "NEW" and asked[2] == "NEW" and asked[3] == "NEW", "and says each time it is a login")
 
 -- ── the roster's scans ─────────────────────────────────────────────────
 
