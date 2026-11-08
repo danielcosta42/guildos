@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.3] - 2026-11-08
+
+### Fixed
+- o whisper do diretório não imprime mais 'No player named' no chat de todos (#278)
+
+
 ## [1.10.2] - 2026-11-08
 
 ### Fixed
