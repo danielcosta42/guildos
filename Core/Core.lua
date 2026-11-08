@@ -871,11 +871,67 @@ function GuildOS:OnOfficerMaxRankSync(env)
     s.officerMaxRank, s.officerMaxRankAt = max, at
 end
 
+-- Who creates calendar events (issue #283): ranks 0 to this. The guild's, stamped and published as the
+-- officer threshold is, and never fewer ranks than the officers: unset, the officers alone.
+function GuildOS:EventMaxRank()
+    local s = self.db and self.db.settings
+    local officers = (s and s.officerMaxRank) or 1
+    return math.max(officers, (s and s.eventMaxRank) or officers)
+end
+
+function GuildOS:MayCreateEvents()
+    if not IsInGuild() then return false end
+    local _, _, rankIndex = GetGuildInfo("player")
+    return rankIndex ~= nil and rankIndex <= self:EventMaxRank()
+end
+
+-- A named player whose rank lets them create events, read off the roster as IsOfficerByName reads it.
+function GuildOS:MayCreateEventsByName(fullName)
+    return self:HasRankUpToByName(fullName, self:EventMaxRank())
+end
+
+-- Only an officer changes it, as the officer threshold; the stamp only moves forward.
+function GuildOS:SetEventMaxRank(maxRank)
+    if not self:IsOfficer() then return false end
+    if type(maxRank) ~= "number" or maxRank < 0 or maxRank > MAX_RANK_INDEX or maxRank ~= math.floor(maxRank) then return false end
+    local s = self.db.settings
+    s.eventMaxRank = maxRank
+    s.eventMaxRankAt = math.max(GetServerTime(), (s.eventMaxRankAt or 0) + 1)
+    self:PublishEventMaxRank(true)
+    return true
+end
+
+function GuildOS:PublishEventMaxRank(justChanged)
+    local s = self.db and self.db.settings
+    if not (s and s.eventMaxRankAt and self.SyncService and (justChanged or self:IsOfficer())) then return end
+    self.SyncService:Publish("guildcfg", "events", { max = s.eventMaxRank }, { rev = s.eventMaxRankAt })
+end
+
+-- Newest wins, as OnOfficerMaxRankSync; two changes in the same second settle on the fewer ranks.
+function GuildOS:OnEventMaxRankSync(env)
+    local data = env and env.data
+    local at = env and tonumber(env.rev)
+    local max = type(data) == "table" and type(data.max) == "number" and data.max
+    if not (at and at > 0 and at < math.huge and max) then return end
+    if max < 0 or max > MAX_RANK_INDEX or max ~= math.floor(max) then return end
+    at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
+    local s = self.db.settings
+    local held = s.eventMaxRankAt
+    if held and (at < held or (at == held and max >= (s.eventMaxRank or 0))) then return end
+    s.eventMaxRank, s.eventMaxRankAt = max, at
+end
+
 -- Check whether a named player (may include realm, e.g. "Name-Realm") is an officer
 -- by scanning the guild roster. Used to validate incoming officer-only messages.
 function GuildOS:IsOfficerByName(fullName)
-    if not IsInGuild() or not fullName then return false end
     local maxRank = (self.db and self.db.settings and self.db.settings.officerMaxRank) or 1
+    return self:HasRankUpToByName(fullName, maxRank)
+end
+
+-- Whether a named player's guild rank is 0 to `maxRank`, by the roster: the officer check, with its
+-- threshold as a parameter (issue #283).
+function GuildOS:HasRankUpToByName(fullName, maxRank)
+    if not IsInGuild() or not fullName then return false end
     -- Retail: connected realms put namesakes in one guild, so only the whole key is trusted: an
     -- officer's name on another realm carries no rank (ADR-0026). No realm means this client's.
     if GuildOS.Client and GuildOS.Client.isRetail then

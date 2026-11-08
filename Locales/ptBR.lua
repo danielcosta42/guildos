@@ -2454,3 +2454,7 @@ L["%d trial(s) ready to review"] = "%d trial(s) pronto(s) para avaliar"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "Você virou oficial depois de entrar no jogo. Digite /reload para cuidar do recrutamento."
 L["Type /ginvite %s to invite them."] = "Digite /ginvite %s para convidar."
 L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."] = "Este jogo não deixa addon convidar: o auto-convite só funciona no TBC Anniversary."
+
+-- Who creates calendar events (issue #283)
+L["Who creates events:"] = "Quem cria eventos:"
+L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444Seu rank não cria eventos.|r"

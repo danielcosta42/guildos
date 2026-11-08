@@ -121,8 +121,9 @@ local function buildEditor()
     sizeBtn.sizeVal = DEFAULT_SIZE
     sizeBtn:SetScript("OnClick", function()
         local idx = 1
-        for i, v in ipairs(SIZES) do if v == sizeBtn.sizeVal then idx = i break end end
-        sizeBtn.sizeVal = SIZES[(idx % #SIZES) + 1]
+        local sizes = CAL().SizesFor(f.kind, SIZES)   -- a dungeon is five (issue #283)
+        for i, v in ipairs(sizes) do if v == sizeBtn.sizeVal then idx = i break end end
+        sizeBtn.sizeVal = sizes[(idx % #sizes) + 1]
         sizeBtn.label:SetText(tostring(sizeBtn.sizeVal))
     end)
 
@@ -155,7 +156,17 @@ local function buildEditor()
             GuildOS:ApplyFont(fs, 10)
             fs:SetPoint("CENTER"); fs:SetText(kindLabel(k))
             p.fs = fs; p.kind = k
-            p:SetScript("OnClick", function() f.kind = k; refreshKinds() end)
+            p:SetScript("OnClick", function()
+                f.kind = k; refreshKinds()
+                -- A size the new kind does not offer moves to one it does: a dungeon's five, or back to the raid default.
+                local sizes = CAL().SizesFor(k, SIZES)
+                local fits = false
+                for _, v in ipairs(sizes) do if v == sizeBtn.sizeVal then fits = true end end
+                if not fits then
+                    sizeBtn.sizeVal = (k == "DUNGEON") and sizes[1] or DEFAULT_SIZE
+                    sizeBtn.label:SetText(tostring(sizeBtn.sizeVal))
+                end
+            end)
             kindPills[#kindPills + 1] = p
         end
     end
@@ -470,6 +481,7 @@ function GuildOS:CreateCalendarSub(panel)
     ------------------------------------------------------------------
     function f.RenderDetail(byDay)
         local isOfficer = GuildOS:IsOfficer()
+        local canCreate = GuildOS:MayCreateEvents()   -- the guild's ranks (issue #283)
         local sel = f.selectedKey
         if sel then
             local y = math.floor(sel / 10000); local m = math.floor((sel % 10000) / 100); local d = sel % 100
@@ -477,7 +489,7 @@ function GuildOS:CreateCalendarSub(panel)
         else
             detailLabel:SetText(L["Select a day"])
         end
-        f.newBtn:SetShown(isOfficer and sel ~= nil)
+        f.newBtn:SetShown(canCreate and sel ~= nil)
 
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
@@ -517,7 +529,7 @@ function GuildOS:CreateCalendarSub(panel)
             local head = UI:CreateText(child, date("%H:%M ", e.when) .. tag .. "|cffFFFFFF" .. (e.title or "") .. "|r  |cff888888(" .. (e.size or DEFAULT_SIZE) .. ")|r" .. shareMark .. repMark,
                 12, C.gold.r, C.gold.g, C.gold.b)
             head:SetPoint("TOPLEFT", 4, -yy)
-            if isOfficer then
+            if CAL():MayManage(e) then
                 local ev = e
                 local delBtn = UI:CreateButton(child, L["Delete"], 58, 18)
                 delBtn:SetPoint("TOPRIGHT", -4, -yy)
@@ -682,7 +694,7 @@ function GuildOS:CreateCalendarSub(panel)
         end
 
         if sel and #evs == 0 then
-            local none = UI:CreateText(child, isOfficer and L["No events. Use New Event to add one."] or L["No events this day."],
+            local none = UI:CreateText(child, canCreate and L["No events. Use New Event to add one."] or L["No events this day."],
                 10, C.silver.r, C.silver.g, C.silver.b)
             none:SetPoint("TOPLEFT", 4, -4)
         end

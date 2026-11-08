@@ -2269,3 +2269,7 @@ L["%d trial(s) ready to review"] = "%d 名试用成员待审核"
 L["You became an officer after logging in. Type /reload to manage recruiting."] = "你在登录后成为了官员。输入 /reload 以管理招募。"
 L["Type /ginvite %s to invite them."] = "输入 /ginvite %s 进行邀请。"
 L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."] = "此游戏不允许插件发出邀请：自动邀请仅在 TBC Anniversary 中有效。"
+
+-- Who creates calendar events (issue #283)
+L["Who creates events:"] = "谁可以创建活动："
+L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444你的会阶不能创建活动。|r"
