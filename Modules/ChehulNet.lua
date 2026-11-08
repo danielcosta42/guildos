@@ -39,8 +39,13 @@
 -- Only the operator's characters (ALERT_SENDERS) are answered, each id once; one heard on a wide bus
 -- waits a random 0-DIAG_JITTER seconds, so a census never lands as one burst. ALERT_SENDERS gains
 -- "Chehul Lightdrizzle", the operator's character on WoW: Forever.
+-- v12: the DIAG also says the client's guild, how many peers it heard on GUILD within PEER_TTL (gpeers) and how
+-- many of those are in the mesh's directory (gdir). The directory lists only clients with LibChehulMesh v5+, and a
+-- guild is where an older client is still heard; so the backoffice can estimate the whole network from the
+-- directory and the share each guild has updated. A peer remembers when it was last heard on GUILD (gts), since a
+-- HELLO whispered through the directory comes in later and would otherwise hide that.
 
-local VERSION = 11
+local VERSION = 12
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -211,7 +216,8 @@ local function OnHello(payload, sender, dist)
         local m, z = strsplit(":", layer)
         mapID, zoneUID = tonumber(m) or 0, tonumber(z) or 0
     end
-    local isNew = CN.peers[short] == nil
+    local old = CN.peers[short]
+    local isNew = old == nil
     CN.peers[short] = {
         addons  = set,
         class   = (class ~= "" and class) or nil,
@@ -220,6 +226,7 @@ local function OnHello(payload, sender, dist)
         mapID   = mapID,
         zoneUID = zoneUID,
         ts      = time(),
+        gts     = (dist == "GUILD") and time() or (old and old.gts) or nil, -- last heard on GUILD (v12)
     }
     -- Reply once to a newcomer heard in the group, so discovery there is two-way at once. Wider
     -- buses wait for the heartbeat; a whispered reply arrives as "WHISPER" -> no ping-pong.
@@ -335,6 +342,24 @@ function CN:BuildDiag()
     end
     table.sort(dead)
     parts[#parts + 1] = "dead=" .. table.concat(dead, "+")
+    -- v12: the guild, its peers heard on GUILD, and how many of them are in the directory.
+    local guild = IsInGuild and IsInGuild() and GetGuildInfo and GetGuildInfo("player")
+    local inDir = {}
+    for _, name in ipairs((Mesh and Mesh.dir and Mesh.dir.names) or {}) do
+        inDir[(Ambiguate and Ambiguate(name, "short")) or name] = true
+    end
+    local gpeers, gdir, cutoff = 0, 0, time() - CN.PEER_TTL
+    for name, p in pairs(CN.peers) do
+        if (p.gts or 0) >= cutoff then
+            gpeers = gpeers + 1
+            if inDir[name] then
+                gdir = gdir + 1
+            end
+        end
+    end
+    parts[#parts + 1] = "guild=" .. ((type(guild) == "string" and guild:gsub("[|;=]", " ")) or "")
+    parts[#parts + 1] = "gpeers=" .. gpeers
+    parts[#parts + 1] = "gdir=" .. gdir
     for tag, fn in pairs(CN.diag) do
         local ok, extra = pcall(fn)
         if ok and type(extra) == "string" then

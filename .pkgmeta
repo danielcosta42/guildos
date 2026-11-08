@@ -18,6 +18,8 @@ ignore:
   # friends inside the addon folder.
   - tools
   - "*.md"
+  # The lock of the ChehulNet copies (danielcosta42/chehulnet, issue #280): only CI reads it.
+  - chehulnet.lock
 
 manual-changelog:
   filename: CHANGELOG.md
