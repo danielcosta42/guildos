@@ -35,6 +35,11 @@ CommSystem.MSG_TYPES = {
 -- Throttle settings
 CommSystem.THROTTLE_INTERVAL = 5  -- seconds between broadcasts
 CommSystem.lastBroadcast = 0
+-- Answers to the guild's asks (issue #285): somebody asking for the first time this session is answered at
+-- once; an ask from somebody already answered is the periodic pull, answered at most once per interval.
+CommSystem.ANSWER_INTERVAL = 300
+CommSystem.answered = {}          -- [asker] = true once answered this session
+CommSystem.lastAnswer = -math.huge
 
 function CommSystem:Initialize()
     -- Addon messages on Guild OS's prefix.
@@ -411,15 +416,28 @@ end
 ----------------------------------------------------------------------
 -- Request data from all online guildies
 ----------------------------------------------------------------------
-function CommSystem:RequestAllData()
+-- `byHand` is /gos sync: "FULL", which a client answers even inside its interval (issue #285). Any older
+-- client answers either word, as it always did.
+function CommSystem:RequestAllData(byHand)
     if not IsInGuild() then return end
-    self:SendMessage(self.MSG_TYPES.REQUEST, "ALL")
+    self:SendMessage(self.MSG_TYPES.REQUEST, byHand and "FULL" or "ALL")
 end
 
 ----------------------------------------------------------------------
 -- Handle data request
 ----------------------------------------------------------------------
-function CommSystem:HandleRequest(_sender, _data)
+function CommSystem:HandleRequest(sender, data)
+    -- Every client asks every ten minutes, and each ask used to be answered by every other client with
+    -- all it holds: in a guild of fifty that was the guild's traffic growing with the square of its
+    -- size, and 35 MB of garbage in two minutes on each client (issue #285). A login is answered at
+    -- once; somebody already answered asks again only to heal what they missed, and the periodic push
+    -- (every five minutes) already keeps their copy fresh, so that waits out the interval. An ask by hand
+    -- (/gos sync, "FULL") is always answered.
+    local now = GetTime()
+    if data ~= "FULL" and self.answered[sender] and now - self.lastAnswer < self.ANSWER_INTERVAL then return end
+    self.answered[sender] = true
+    self.lastAnswer = now
+
     -- Respond with a broadcast to the GUILD channel instead of a direct
     -- WHISPER to the sender.  Using WHISPER caused "No player named X"
     -- spam whenever the requester logged off between their REQUEST and our
@@ -585,8 +603,8 @@ function CommSystem:FullSync()
     -- Broadcast own member data (gear, professions, attunements, recipes)
     self:BroadcastMyData()
 
-    -- Request fresh data from all online guild members
-    self:RequestAllData()
+    -- Request fresh data from all online guild members, by hand: answered at once (issue #285)
+    self:RequestAllData(true)
 
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["Syncing data with guild..."])

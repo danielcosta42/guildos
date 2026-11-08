@@ -28,7 +28,12 @@ function ChatTweaks:Initialize()
 
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
-    f:SetScript("OnEvent", function() ChatTweaks:_RefreshCache() end)
+    -- Only while the tweaks are on (they are off by default), and once per gap: GUILD_ROSTER_UPDATE comes
+    -- every few seconds in a big guild, and this walks the whole roster (issue #285).
+    f:SetScript("OnEvent", function()
+        if not (GuildOS.db and GuildOS.db.chatTweaks and GuildOS.db.chatTweaks.enabled) then return end
+        GuildOS:Throttle("chatTweaksCache", GuildOS.ROSTER_SCAN_GAP or 15, function() ChatTweaks:_RefreshCache() end)
+    end)
 
     self:_RegisterFilters()
     self:_RegisterTests()

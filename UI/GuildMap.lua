@@ -455,9 +455,12 @@ function GuildOS:SetupGuildMapPresence()
 
     if Minimap then dotsFrame = BuildDotsFrame() end
 
-    -- Incoming positions (GuildMap:HandlePosition) repaint everything live.
+    -- Incoming positions (GuildMap:HandlePosition) repaint everything, at most every two seconds: a whole
+    -- guild answering an ask sends its positions together, and each repaint walks the roster (issue #285).
     if GuildOS.GuildMap then
-        GuildOS.GuildMap.uiRefresh = function() GuildOS:SafeCall(RefreshData) end
+        GuildOS.GuildMap.uiRefresh = function()
+            GuildOS:Throttle("guildMapRepaint", 2, function() GuildOS:SafeCall(RefreshData) end)
+        end
     end
 
     -- Our own zone change alters who counts as "in your zone".

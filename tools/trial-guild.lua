@@ -51,7 +51,8 @@ function GetRealmName() return "Realm" end
 local T0 = 1794139200
 local now = T0
 function GetServerTime() return now end
-function GetTime() return 1 end
+local mono = 1                                    -- the game clock: a roster update comes later than the last one
+function GetTime() return mono end
 local afters, tickers = {}, {}
 local requests = 0                                -- roster requests the addon made (Compat.GuildRoster)
 function GuildRoster() requests = requests + 1 end
@@ -168,7 +169,7 @@ end
 local function join(name) fire("CHAT_MSG_SYSTEM", name .. " has joined the guild.") end
 local function left(name) fire("CHAT_MSG_SYSTEM", name .. " has left the guild.") end
 local function kicked(name, by) fire("CHAT_MSG_SYSTEM", name .. " has been kicked out of the guild by " .. by .. ".") end
-local function rosterUpdate() fire("GUILD_ROSTER_UPDATE") end
+local function rosterUpdate() mono = mono + 60; fire("GUILD_ROSTER_UPDATE") end
 local function trials(db)
   local c = 0
   for _ in pairs(db.trials) do c = c + 1 end

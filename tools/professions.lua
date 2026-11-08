@@ -51,12 +51,17 @@ function CreateFrame()
   frames[#frames + 1] = f
   return f
 end
+-- The game's own clock (GetTime), apart from the server's: each roster update here comes a minute after
+-- the last, so the roster's scans, one per gap (#285), run on every one of them.
+local MONO = 0
 local function fire(event, ...)
+  if event == "GUILD_ROSTER_UPDATE" then MONO = MONO + 60 end
   for _, f in ipairs(frames) do
     if f.events[event] and f.onEvent then f.onEvent(f, event, ...) end
   end
 end
 function GetServerTime() return NOW end
+function GetTime() return MONO end
 function time() return NOW end
 function IsInGuild() return true end
 function hooksecurefunc() end

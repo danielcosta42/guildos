@@ -562,12 +562,20 @@ function GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)
     end)
 end
 
+-- Seconds between two scans of the whole roster. GUILD_ROSTER_UPDATE came 34 times in two minutes in a
+-- guild of fifty, and each scan walks the roster several times (issue #285).
+GuildOS.ROSTER_SCAN_GAP = 15
+
 function GuildOS:OnGuildRosterUpdate()
-    if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
-    if GuildOS.DropDeparted then GuildOS:DropDeparted() end
-    -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
-    if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+    -- An open roster window follows every update; the scans behind it, one per gap.
     GuildOS:RefreshRosterUI()
+    GuildOS:Throttle("rosterScan", GuildOS.ROSTER_SCAN_GAP, function()
+        if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
+        if GuildOS.DropDeparted then GuildOS:DropDeparted() end
+        -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
+        if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+        GuildOS:RefreshRosterUI()
+    end)
 end
 
 ----------------------------------------------------------------------

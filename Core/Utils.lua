@@ -1118,3 +1118,28 @@ function GuildOS:DropDeparted()
         if not names[key] then self.db.guildWishlists[key] = nil end
     end
 end
+
+----------------------------------------------------------------------
+-- At most one run per `gap` seconds under `key` (issue #285). The first call runs at once; calls inside
+-- the gap become one run when it ends, so a burst costs one run and the last call is never lost. For
+-- work that reads the current state rather than its arguments: the roster's scans, a cache, a repaint.
+----------------------------------------------------------------------
+local throttled = {}
+function GuildOS:Throttle(key, gap, fn)
+    local t = throttled[key]
+    if not t then
+        t = {}
+        throttled[key] = t
+    end
+    if t.queued then return end
+    local wait = (t.at or -math.huge) + gap - GetTime()
+    if wait <= 0 then
+        t.at = GetTime()
+        return fn()
+    end
+    t.queued = true
+    C_Timer.After(wait, function()
+        t.queued, t.at = nil, GetTime()
+        fn()
+    end)
+end
