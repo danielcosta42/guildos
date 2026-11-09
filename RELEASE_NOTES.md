@@ -1,4 +1,4 @@
-## [1.16.0] - 2026-11-09
+## [1.17.0] - 2026-11-09
 
 ### Added
-- A core that comes from guildos.me can no longer be deleted or renamed in game; the core panel says where those are changed. A core created in game says it exists only on this client.
+- "Fit to plan" (Web panel and /gos roster trim) removes from the raid whoever is not in the roster planned on guildos.me, after asking and naming them; the leader and the bench stay.
