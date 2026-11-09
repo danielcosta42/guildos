@@ -1,5 +1,4 @@
-## [1.13.0] - 2026-11-08
+## [1.13.1] - 2026-11-09
 
-### Added
-- Dungeon events in the calendar now offer a 5-player size.
-- Officers can let more ranks create calendar events ("Who creates events", next to the officer ranks); a creator who is not an officer changes only their own events. Members need this version to see events created by non-officers.
+### Fixed
+- The network reaches other guilds again: the server began refusing the hidden channel the addons used to find each other, and they now find each other through the players they already hear. Nothing shows in chat.
