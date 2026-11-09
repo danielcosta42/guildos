@@ -1,4 +1,4 @@
-## [1.13.1] - 2026-11-09
+## [1.13.2] - 2026-11-09
 
 ### Fixed
-- The network reaches other guilds again: the server began refusing the hidden channel the addons used to find each other, and they now find each other through the players they already hear. Nothing shows in chat.
+- The founding letter and the journal are now on by default on WoW: Forever, so the guild's founding and its dungeons reach guildos.me and its founding achievements can be earned. Whoever switched them off keeps them off.
