@@ -579,7 +579,7 @@ end
 --- on the site, somebody on its waitlist. Never the leader, and never somebody the site has on the
 --- bench (`why = "bench"`): the raid leader benched them on purpose and may want them standing by in
 --- the raid — taking them out is the raid leader's own hand, not this button's. Returns names, the
---- way the group shows them.
+--- way the group shows them, and beside them the unit each one is, which is what removal asks for.
 function Import:OutsideThePlan()
     local roster = self:Current()
     if not roster then return {} end
@@ -590,16 +590,17 @@ function Import:OutsideThePlan()
         if s.why == "bench" then keep[presence(s.name)] = true end
     end
     keep[presence(GuildOS.Compat.PlayerName())] = true
-    local out = {}
+    local out, units = {}, {}
     for i = 1, (GetNumGroupMembers() or 0) do
         local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
         local n, realm = GuildOS.Compat.UnitIdentity(unit)
         if n and not keep[presence(n, realm)] then
-            out[#out + 1] = (realm and realm ~= "") and (n .. "-" .. realm) or n
+            out[#out + 1] = n
+            units[n] = unit
         end
     end
     table.sort(out)
-    return out
+    return out, units
 end
 
 --- Ask, naming them, then take out of the group whoever is outside the plan (issue #292): what the Web
@@ -627,8 +628,9 @@ end
 function Import:TrimToPlan()
     local allowed, reason = self:CanTrim()
     if not allowed then return nil, reason end
-    local out = self:OutsideThePlan()
-    for _, name in ipairs(out) do GuildOS.Compat.UninviteUnit(inviteName(name)) end
+    -- By unit, as the group knows them: a name would need its realm put back together by hand.
+    local out, units = self:OutsideThePlan()
+    for _, name in ipairs(out) do GuildOS.Compat.UninviteUnit(units[name]) end
     return #out, nil
 end
 

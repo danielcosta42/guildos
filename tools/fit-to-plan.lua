@@ -79,7 +79,7 @@ check(shown and shown.which == "GUILDOS_TRIM_PLAN" and shown.text:find("Pug", 1,
 check(#removed == 0, "and nobody removed before the answer")
 
 StaticPopupDialogs.GUILDOS_TRIM_PLAN.OnAccept()
-check(#removed == 2 and removed[1] == "Pug" and removed[2] == "SaidNo", "on yes, removed through Compat: never the leader, the planned or the bench")
+check(#removed == 2 and removed[1] == "raid5" and removed[2] == "raid6", "on yes, removed through Compat by unit: never the leader, the planned or the bench")
 
 leader = false
 local n, why = I:TrimToPlan()
