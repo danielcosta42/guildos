@@ -47,7 +47,6 @@ local IN_UI = {
                   { "UI/ProfessionsPanel.lua", "GuildOS:ShowCraftFinder()" } },
   scout       = { { "UI/RosterFrame.lua", "GuildOS.RecruitScanner:BuildInto(" } },
   beacon      = { { "UI/RosterFrame.lua", 'L["Edit Beacon"]' } },
-  map         = { { "UI/Minimap.lua", "GuildOS:ToggleGuildMap()" } },
   pug         = { { "UI/Minimap.lua", "GuildOS:TogglePugInspector()" } },
   minimap     = { { "UI/FeaturePanels.lua", 'L["Show minimap button"]' } },
   guildbutton = { { "UI/FeaturePanels.lua", "hijackGuildButton" } },
@@ -91,7 +90,7 @@ local IN_UI = {
 local ALIAS = {
   points = { "dkp" }, equity = { "lootequity" }, bulletin = { "board" }, polls = { "poll" },
   calendar = { "cal", "events" }, analytics = { "stats" }, find = { "search" }, scout = { "recruitscan" },
-  beacon = { "recruitbeacon" }, map = { "guildmap" }, recruit = { "recruiting" }, autoinvite = { "ai" },
+  beacon = { "recruitbeacon" }, recruit = { "recruiting" }, autoinvite = { "ai" },
   cons = { "consumables" }, lm = { "lootmaster" }, web = { "companion" }, exportatt = { "exportattendance" },
   attune = { "attunements" }, signup = { "unsignup" }, ban = { "tempban", "unban", "banlist" },
   ally = { "alliance" },

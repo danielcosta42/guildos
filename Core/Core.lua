@@ -294,7 +294,6 @@ local MODULE_START = {
     { "NoteCommand" },
     { "LevelQuery" },
     { "LFGBoard" },
-    { "GuildMap" },
     { "PugInspector" },
     { "RecipeTracker", ui = "recipes" },
     { "CraftNet" },

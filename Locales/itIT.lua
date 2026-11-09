@@ -14,7 +14,6 @@ L["Open Guild OS"] = "Apri Guild OS"
 L["Open a tab (roster, raids, loot, guild...)"] = "Apri una scheda (roster, raids, loot, guild...)"
 L["Search members by name, class, level or note"] = "Cerca membri per nome, classe, livello o nota"
 L["Guild analytics and activity stats"] = "Statistiche e attività della gilda"
-L["Open the live guild map"] = "Apri la mappa della gilda in tempo reale"
 L["List the interface styles, or switch to one"] = "Elenca gli stili dell'interfaccia o passa a uno di essi"
 L["Check who you're grouped with"] = "Controlla con chi sei in gruppo"
 L["Guild calendar and events"] = "Calendario ed eventi della gilda"
@@ -316,7 +315,6 @@ L["officer, officers"] = "officer, officers"  -- here the word for officer also 
 L["[M]"] = "[M]"
 L["When somebody calls the officers in guild chat (officers only)"] = "Quando qualcuno chiama gli ufficiali nella chat di gilda (solo ufficiali)"
 L["Short tag: [M] on a main, [Main] on an alt"] = "Etichetta breve: [M] sul main, [Main] su un alt"
-L["Show guildmates in your zone on the minimap"] = "Mostra sulla minimappa i compagni di gilda nella tua zona"
 L["Nothing to send."] = "Niente da inviare."
 L["The game refuses the || character in a chat message. Use / or - instead."] = "Il gioco rifiuta il carattere || in un messaggio di chat. Usa / o - al suo posto."
 L["A chat message has one line."] = "Un messaggio di chat ha una sola riga."
@@ -1649,15 +1647,7 @@ L["Private notes on guild members (officer)"] = "Note private sui membri di gild
 L["Comm System"] = "Sistema di comunicazione"
 L["Sync member data between addon users"] = "Sincronizza i dati dei membri tra gli utenti dell'addon"
 
--- UI/GuildMap.lua
-L["Unknown zone"] = "Zona sconosciuta"
 L["Lv "] = "Liv. "
-L["Somewhere in this zone"] = "Da qualche parte in questa zona"
-L["Guild Map"] = "Mappa della gilda"
-L["Share my live position"] = "Condividi la mia posizione in tempo reale"
-L["Click a name to jump to their zone."] = "Clicca su un nome per andare alla sua zona."
-L["%d guildmate(s) on the map"] = "%d compagno/i di gilda sulla mappa"
-L["Guildmates in your zone"] = "Compagni di gilda nella tua zona"
 
 -- UI/ManagementPanel.lua
 L["Inactivity"] = "Inattività"

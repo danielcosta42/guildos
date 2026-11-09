@@ -133,7 +133,6 @@ Modules\Mentions.lua
 Modules\NoteCommand.lua
 Modules\LevelQuery.lua
 Modules\LFGBoard.lua
-Modules\GuildMap.lua
 Modules\PugInspector.lua
 
 # UI
@@ -164,7 +163,6 @@ UI\TradeCouncil.lua
 UI\CommunityPanel.lua
 UI\AlliancePanel.lua
 UI\RaidToolsPanel.lua
-UI\GuildMap.lua
 UI\Minimap.lua
 UI\PugInspector.lua
 UI\Onboarding.lua

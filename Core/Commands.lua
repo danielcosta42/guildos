@@ -36,7 +36,6 @@ local function printHelp()
     helpLine("/gos open <feature>", L["Open a tab (roster, raids, loot, guild...)"])
     helpLine("/gos find <text>", L["Search members by name, class, level or note"])
     helpLine("/gos analytics",   L["Guild analytics and activity stats"])
-    helpLine("/gos map",         L["Open the live guild map"])
     helpLine("/gos style [name]", L["List the interface styles, or switch to one"])
     helpLine("/gos pug",         L["Check who you're grouped with"])
     helpLine("/gos calendar",    L["Guild calendar and events"])
@@ -318,9 +317,6 @@ local function handleCommand(msg)
         else
             GuildOS:OpenGuildFinder()
         end
-    elseif msg == "map" or msg == "guildmap" then
-        -- Anyone: open the live guild map (world map pins + list overlay).
-        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
     elseif msg == "pug" then
         -- Anyone: classify the current party/raid against what GuildOS knows.
         if GuildOS.TogglePugInspector then GuildOS:TogglePugInspector() end

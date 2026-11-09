@@ -1146,15 +1146,6 @@ L["Open the loot wishlist"] = "Abre la lista de deseos de botín"
 L["Scan for unguilded recruits"] = "Busca reclutas sin hermandad"
 L["Unknown command. Type %s for the list."] = "Comando desconocido. Escribe %s para ver la lista."
 
--- UI/GuildMap.lua + Core/Commands.lua + UI/Minimap.lua (mapa de hermandad en vivo)
-L["Open the live guild map"] = "Abre el mapa de hermandad en vivo"
-L["Guild Map"] = "Mapa de hermandad"
-L["Share my live position"] = "Compartir mi posición en vivo"
-L["Click a name to jump to their zone."] = "Haz clic en un nombre para ir a su zona."
-L["%d guildmate(s) on the map"] = "%d miembro(s) en el mapa"
-L["Somewhere in this zone"] = "En algún lugar de esta zona"
-L["Unknown zone"] = "Zona desconocida"
-L["Guildmates in your zone"] = "Miembros de la hermandad en tu zona"
 L["Hide minimap button"] = "Ocultar botón del minimapa"
 L["Right-click: menu"] = "Clic derecho: menú"
 
@@ -1677,7 +1668,6 @@ L["officer, officers"] = "officer, officers"  -- here the word for officer also 
 L["[M]"] = "[M]"
 L["When somebody calls the officers in guild chat (officers only)"] = "Cuando alguien llama a los oficiales en el chat de hermandad (solo oficiales)"
 L["Short tag: [M] on a main, [Main] on an alt"] = "Etiqueta corta: [M] en el principal, [Principal] en un alter"
-L["Show guildmates in your zone on the minimap"] = "Mostrar en el minimapa a los compañeros de hermandad de tu zona"
 L["Nothing to send."] = "Nada que enviar."
 L["The game refuses the || character in a chat message. Use / or - instead."] = "El juego rechaza el carácter || en un mensaje de chat. Usa / o - en su lugar."
 L["A chat message has one line."] = "Un mensaje de chat tiene una sola línea."

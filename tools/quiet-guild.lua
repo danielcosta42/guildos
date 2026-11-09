@@ -63,6 +63,9 @@ local registry = {}
 LibStub = setmetatable({ NewLibrary = function(_, n) registry[n] = registry[n] or {}; return registry[n] end,
   GetLibrary = function(_, n) return registry[n] end },
   { __call = function(_, n) registry[n] = registry[n] or {}; return registry[n] end })
+-- Messages read as they are sent: what is tested here is what happens after the wire.
+LibStub("LibDeflate").DecodeForWoWAddonChannel = function(_, s) return s end
+LibStub("LibDeflate").DecompressDeflate = function(_, s) return s end
 
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
 dofile(ADDON .. "/Core/Core.lua")
@@ -176,5 +179,29 @@ for _ = 1, 10 do fire("GUILD_ROSTER_UPDATE") end
 check(rosterReads == 0, "a burst of roster updates inside the gap does not rebuild it at once")
 advance(clock + 15)
 check(rosterReads > 0, "the burst ends in one rebuild")
+
+-- ── the guild map is gone (issue #286) ─────────────────────────────────
+-- The guild uses another addon for it, which does it better: ours only doubled the screen and the traffic.
+
+local function read(path)
+  local f = io.open(ADDON .. "/" .. path, "rb")
+  if not f then return nil end
+  local s = f:read("*a")
+  f:close()
+  return s
+end
+local toc = read("GuildOS.toc")
+check(toc and not toc:find("GuildMap", 1, true), "the TOC loads no guild map")
+check(read("Modules/GuildMap.lua") == nil and read("UI/GuildMap.lua") == nil, "its files are gone")
+for path in toc:gmatch("[^\r\n]+") do
+  if not path:find("^#") and path:find("%.lua$") then
+    local src = read((path:gsub("\\", "/")))
+    check(src and not src:find("GuildMap", 1, true) and not src:find("MAP_POS", 1, true),
+      path .. " no longer reaches for the guild map")
+  end
+end
+check(CS.MSG_TYPES.MAP_POS == nil, "there is no position message any more")
+local ok = pcall(CS.OnMessageReceived, CS, "S:MP:" .. "{}", "GUILD", "Old Client")
+check(ok, "an old client's position message is ignored, without an error")
 
 io.write(string.format("quiet-guild: %d checks ok\n", checks))

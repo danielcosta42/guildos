@@ -2224,15 +2224,6 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
-    -- The guildmates-in-your-zone dots under the minimap (#271).
-    if GuildOS.GuildMap then
-        local dotsCb = UI:CreateCheckbox(content, L["Show guildmates in your zone on the minimap"], 18)
-        dotsCb:SetPoint("TOPLEFT", 8, -yOff)
-        dotsCb.checkbox:SetChecked(GuildOS.GuildMap:IsMinimapDots())
-        dotsCb.checkbox.onChanged = function(_, checked) GuildOS.GuildMap:SetMinimapDots(checked) end
-        yOff = yOff + 30
-    end
-
     -- Guild button takeover — off = the guild micro button / "J" opens Blizzard's own
     -- guild UI instead of Guild OS (use the minimap button, or the "Guild OS" button we
     -- add to the native frame, to open Guild OS). Lets players use both.

@@ -1434,15 +1434,6 @@ L["Open the loot wishlist"] = "Abre a wishlist de loot"
 L["Scan for unguilded recruits"] = "Procura recrutas sem guilda"
 L["Unknown command. Type %s for the list."] = "Comando desconhecido. Digite %s para ver a lista."
 
--- UI/GuildMap.lua + Core/Commands.lua + UI/Minimap.lua (mapa da guilda ao vivo)
-L["Open the live guild map"] = "Abre o mapa da guilda ao vivo"
-L["Guild Map"] = "Mapa da Guilda"
-L["Share my live position"] = "Compartilhar minha posição ao vivo"
-L["Click a name to jump to their zone."] = "Clique em um nome para ir até a zona dele."
-L["%d guildmate(s) on the map"] = "%d membro(s) no mapa"
-L["Somewhere in this zone"] = "Em algum lugar desta zona"
-L["Unknown zone"] = "Zona desconhecida"
-L["Guildmates in your zone"] = "Membros da guilda na sua zona"
 L["Hide minimap button"] = "Ocultar botão do minimapa"
 L["Right-click: menu"] = "Botão direito: menu"
 
@@ -1771,7 +1762,6 @@ L["officer, officers"] = "officer, officers"  -- here the word for officer also 
 L["[M]"] = "[M]"
 L["When somebody calls the officers in guild chat (officers only)"] = "Quando alguém chama os oficiais no chat da guilda (só oficiais)"
 L["Short tag: [M] on a main, [Main] on an alt"] = "Marca curta: [M] no main, [Main] no alt"
-L["Show guildmates in your zone on the minimap"] = "Mostrar no minimapa os colegas de guilda na sua zona"
 L["Nothing to send."] = "Nada para enviar."
 L["The game refuses the || character in a chat message. Use / or - instead."] = "O jogo recusa o caractere || numa mensagem de chat. Use / ou - no lugar."
 L["A chat message has one line."] = "Uma mensagem de chat tem uma linha só."

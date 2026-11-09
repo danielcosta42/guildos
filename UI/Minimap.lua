@@ -91,13 +91,6 @@ local function MinimapMenu_Init(_, level)
         UIDropDownMenu_AddButton(info, level)
     end
 
-    info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
-    info.text = L["Guild Map"]
-    info.func = function()
-        if GuildOS.ToggleGuildMap then GuildOS:ToggleGuildMap() end
-        CloseDropDownMenus()
-    end
-    UIDropDownMenu_AddButton(info, level)
 
     info = UIDropDownMenu_CreateInfo(); info.notCheckable = true
     info.text = L["Do I know this pug?"]
@@ -196,10 +189,6 @@ function GuildOS:CreateMinimapButton()
     GuildOS.Compat.After(1, function() UpdatePosition(btn) end)
 
     self.minimapButton = btn
-
-    -- Wire the live guild map presence layer (minimap zone dots + refresh hook)
-    -- now that the minimap definitely exists. Safe to call once.
-    if GuildOS.SetupGuildMapPresence then GuildOS:SetupGuildMapPresence() end
 
     return btn
 end
