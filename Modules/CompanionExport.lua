@@ -575,6 +575,7 @@ end
 --   lootBook = {
 --     points    = { complete = true,  pools = { { core, tag?, mode, at, standings = { {key,name,class,current,earned,spent} } } } },
 --     wishlists = { complete = false, lists = { { key, name, class, items = { {itemId, order, offspec?} } } } },
+--                   (this account's own characters' lists even when emptied, so a clear reaches the site)
 --     prios     = { complete = true,  items = { { itemId, order = { name, ... } } } },
 --     reserves  = { complete = true,  source, listId, at, items = { {itemId, name, class?, note?, plusOnes, hard?} } },
 --     tmb       = { complete = true,  pools = { { core, tag?, entries = { {player, item, priority} } } } },
@@ -654,16 +655,20 @@ function Companion:BookWishlists()
             if key then byKey[key] = { key = key, name = entry.name, class = entry.class or "", items = wishItems(entry.wishlist) } end
         end
     end
+    -- My own go up even emptied: that is how the site hears a list was cleared. Heard ones only with items.
     for key, list in pairs(GuildOS.db.wishlists or {}) do
         local member = GuildOS.db.members and GuildOS.db.members[key]
         byKey[key] = {
             key = key, name = member and member.name or key,
-            class = member and member.class or "", items = wishItems(list),
+            class = member and member.class or "", items = wishItems(list), own = true,
         }
     end
     local lists = {}
     for _, l in pairs(byKey) do
-        if #l.items > 0 then lists[#lists + 1] = l end
+        if #l.items > 0 or l.own then
+            l.own = nil
+            lists[#lists + 1] = l
+        end
     end
     table.sort(lists, function(a, b) return a.key < b.key end)
     while #lists > BOOK_MAX.lists do lists[#lists] = nil end

@@ -693,6 +693,10 @@ do
   io.stderr:write(("loot book, a guild of 60 full: %d chars on the wire\n"):format(#bigText))
   assert(#bigText < 1024 * 1024, "a full guild's book stays far under the 4 MB the site takes")
   GuildOS.db.points, GuildOS.db.cores, GuildOS.db.wishlists, GuildOS.db.guildWishlists, GuildOS.db.lootPrios, GuildOS.db.softRes = unpack(saved)
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = {} }
+  local emptied = GuildOS.Companion:BookWishlists().lists
+  assert(emptied[1].key == "Chehul-Firemaw" and #emptied[1].items == 0, "my own emptied list goes up empty, so the site clears it")
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = { { itemId = 28830, order = 1 } } }
   GuildOS.RecordError = nil
   -- Kept on for the string below, so the site's fixture decodes a real book.
 end
