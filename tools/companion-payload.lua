@@ -355,12 +355,12 @@ GuildOS.JoinRequests = { ForExport = function() error("boom") end }
 GuildOS.RecordError = function() end
 local survived = GuildOS.Companion:BuildPayload()
 GuildOS.RecordError = nil
-assert(survived.joinRequests == nil and survived.members and survived.v == 14, "a failing joinRequests is left out and the rest goes")
+assert(survived.joinRequests == nil and survived.members and survived.v == 15, "a failing joinRequests is left out and the rest goes")
 GuildOS.JoinRequests = nil
 
 -- v14 (issue #251, the site's #392): a linked alt carries `main`, its main's key exactly as altLinks holds it, the
 -- same form as its own `key`. A main and anybody nobody linked carry no `main` key at all: not false, not "".
-assert(anniversary.v == 14, "the payload is v14")
+assert(anniversary.v == 15, "the payload is v15")
 do
   local function lines()
     local by, json = {}, {}
@@ -453,7 +453,7 @@ do
   assert(#files == 1 and files[1] == GuildOSDB.__companion, "switch off: one string, in __companion: " .. #files)
   assert(files[1] == files[1]:match("^GOSCOMP1:[a-zA-Z0-9()]+$"), "the app's regex lifts the whole string")
   local pack, json = opened(files[1])
-  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 14 and pack.count == 1, "it says it is the pack")
+  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 15 and pack.count == 1, "it says it is the pack")
   assert(pack.guildKey == "Raid Guild-Firemaw" and pack.guildName == "Raid Guild" and pack.realm == "Firemaw"
     and pack.game == "ANNIVERSARY", "it names the guild and the game, as the site's upload picks by them")
   assert(pack.exportedBy == PLAYER and pack.exportedAt == NOW and pack.addonVersion == GuildOS.VERSION, "and who, when, which addon")
@@ -606,6 +606,99 @@ do
   packText = assert(Companion:BuildSelf())
   switch(saved)
   GuildOSDB = nil
+end
+
+-- v15 (issue #295): the loot book, each set behind its module and its own pcall.
+do
+  local on = {}
+  local recorded = {}
+  GuildOS.IsFeatureEnabled = function(_, id) return on[id] == true end
+  GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+  assert(GuildOS.Companion:BuildPayload().lootBook == nil, "every loot module off: no book at all")
+  on = { dkp = true, wishlist = true, loot = true }
+
+  GuildOS.Points = { KeyOf = function(_, name) return GuildOS:GetPlayerKey(name, GetRealmName()) end }
+  GuildOS.Wishlist, GuildOS.SoftRes = {}, {}
+  GuildOS.db.points = { mode = "dkp", standings = {
+    ["Fulano-Firemaw"] = { name = "Fulano", class = "PRIEST", current = 40, earned = 90, spent = 50 },
+  }, log = { { ts = 1754300000 }, { ts = 1754390000 } } }
+  GuildOS.db.cores = {
+    ["Core 2"] = { name = "Core 2", discordTag = "site-core-2", points = { mode = "epgp", standings = {
+      ["Chehul-Firemaw"] = { name = "Chehul", class = "HUNTER", current = 12, earned = 12, spent = 0 } }, log = {} },
+      lootMaster = { tmbList = { { player = "Chehul", item = "Dragonspine Trophy", priority = 1 } } } },
+  }
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = { { itemId = 28830, order = 2 }, { itemId = 29434, order = 1, isOffspec = true } } }
+  GuildOS.db.guildWishlists = {
+    fulano = { name = "Fulano", class = "PRIEST", wishlist = { { itemId = 28823, order = 1 } } },
+    -- heard of me from another client: my own list wins
+    chehul = { name = "Chehul", class = "HUNTER", wishlist = { { itemId = 1, order = 1 } } },
+  }
+  GuildOS.db.lootPrios = { [28830] = { { name = "Fulano", order = 2 }, { name = "Chehul", order = 1 } } }
+  GuildOS.db.softRes = { items = { [28830] = { { name = "Fulano", class = "PRIEST", note = "", plusOnes = 1 } },
+    [29434] = { { name = "Chehul", class = "", note = "bis", plusOnes = 0, hard = true } } },
+    meta = { importedAt = 1754395000, source = "gargul", listId = "abc" } }
+
+  local book = GuildOS.Companion:BuildPayload().lootBook
+  assert(book.points.complete == true and #book.points.pools == 2, "points: the guild's pool and each core's")
+  local guild, core2 = book.points.pools[1], book.points.pools[2]
+  assert(guild.core == "" and guild.tag == nil and guild.at == 1754390000, "the guild's pool, stamped with its newest entry")
+  assert(guild.standings[1].key == "Fulano-Firemaw" and guild.standings[1].current == 40 and guild.standings[1].spent == 50, "standings travel whole")
+  assert(core2.core == "Core 2" and core2.tag == "site-core-2" and core2.mode == "epgp" and core2.at == 0, "a site core carries its tag; no entries, no stamp")
+  assert(book.wishlists.complete == false, "wishlists: only what this client heard, never complete")
+  assert(#book.wishlists.lists == 2, "one list per character")
+  local mine = book.wishlists.lists[1]
+  assert(mine.key == "Chehul-Firemaw" and #mine.items == 2 and mine.items[1].itemId == 29434 and mine.items[1].offspec == true,
+    "my own list over the one I heard of me, in its order")
+  assert(book.wishlists.lists[2].key == "Fulano-Firemaw" and book.wishlists.lists[2].items[1].itemId == 28823, "a guildmate's, by key")
+  assert(book.prios.complete and book.prios.items[1].itemId == 28830 and book.prios.items[1].order[1] == "Chehul", "priorities in their order")
+  assert(book.reserves.complete and book.reserves.at == 1754395000 and book.reserves.source == "gargul" and #book.reserves.items == 2, "the reserve import, stamped")
+  assert(book.reserves.items[2].hard == true and book.reserves.items[2].note == "bis" and book.reserves.items[1].note == nil, "hard reserves and notes; empty notes absent")
+  assert(book.tmb.pools[1].core == "Core 2" and book.tmb.pools[1].entries[1].item == "Dragonspine Trophy", "TMB lists, by core")
+
+  -- A module off: its set is absent, not empty. One that fails: absent, recorded, and the rest goes up.
+  on.wishlist = false
+  book = GuildOS.Companion:BuildPayload().lootBook
+  assert(book.wishlists == nil and book.prios == nil and book.points ~= nil, "wishlist off: no wishlists, no priorities")
+  on.wishlist = true
+  local reserves = GuildOS.Companion.BookReserves
+  GuildOS.Companion.BookReserves = function() error("boom") end
+  local p = GuildOS.Companion:BuildPayload()
+  assert(p.lootBook.reserves == nil and p.lootBook.points and #p.members > 0, "a set that fails costs only itself")
+  assert(recorded[#recorded]:find("lootBook.reserves", 1, true), "and goes to /guildos errors")
+  GuildOS.Companion.BookReserves = reserves
+  GuildOS.db.softRes = { items = {}, meta = {} }
+  assert(#GuildOS.Companion:BuildPayload().lootBook.reserves.items == 0, "an emptied reserve list is empty, and complete")
+  GuildOS.db.softRes.items[29434] = { { name = "Chehul", class = "", note = "bis", plusOnes = 0, hard = true } }
+  -- The size a guild of 60 makes, every set full: well inside the 4 MB the site takes.
+  local saved = { GuildOS.db.points, GuildOS.db.cores, GuildOS.db.wishlists, GuildOS.db.guildWishlists, GuildOS.db.lootPrios, GuildOS.db.softRes }
+  local big = { mode = "dkp", standings = {}, log = {} }
+  GuildOS.db.cores, GuildOS.db.guildWishlists, GuildOS.db.lootPrios = {}, {}, {}
+  GuildOS.db.softRes = { items = {}, meta = { importedAt = 1754395000, source = "gargul", listId = "x" } }
+  for i = 1, 60 do
+    local name = "Raider" .. i
+    big.standings[name .. "-Firemaw"] = { name = name, class = "WARRIOR", current = i * 7, earned = i * 9, spent = i * 2 }
+    local wl = {}
+    for j = 1, 50 do wl[j] = { itemId = 28000 + i * 50 + j, order = j } end
+    GuildOS.db.guildWishlists[name:lower()] = { name = name, class = "WARRIOR", wishlist = wl }
+    GuildOS.db.softRes.items[30000 + i] = { { name = name, class = "WARRIOR", note = "", plusOnes = 0 } }
+  end
+  for c = 1, 3 do
+    local tmb = {}
+    for j = 1, 300 do tmb[j] = { player = "Raider" .. (j % 60 + 1), item = "Item number " .. j, priority = j % 5 + 1 } end
+    GuildOS.db.cores["Core " .. c] = { name = "Core " .. c, points = big, lootMaster = { tmbList = tmb } }
+  end
+  for j = 1, 400 do GuildOS.db.lootPrios[29000 + j] = { { name = "Raider1", order = 1 }, { name = "Raider2", order = 2 } } end
+  GuildOS.db.points = big
+  local bigText = assert(GuildOS.Companion:Build())
+  io.stderr:write(("loot book, a guild of 60 full: %d chars on the wire\n"):format(#bigText))
+  assert(#bigText < 1024 * 1024, "a full guild's book stays far under the 4 MB the site takes")
+  GuildOS.db.points, GuildOS.db.cores, GuildOS.db.wishlists, GuildOS.db.guildWishlists, GuildOS.db.lootPrios, GuildOS.db.softRes = unpack(saved)
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = {} }
+  local emptied = GuildOS.Companion:BookWishlists().lists
+  assert(emptied[1].key == "Chehul-Firemaw" and #emptied[1].items == 0, "my own emptied list goes up empty, so the site clears it")
+  GuildOS.db.wishlists = { ["Chehul-Firemaw"] = { { itemId = 28830, order = 1 } } }
+  GuildOS.RecordError = nil
+  -- Kept on for the string below, so the site's fixture decodes a real book.
 end
 
 -- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.
