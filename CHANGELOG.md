@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.15.0] - 2026-11-09
+
+### Added
+- lib ChehulNet v1.2.0, repasse com deduplicação e alcance medido (#299)
+
+
 ## [1.14.1] - 2026-11-09
 
 ### Fixed
