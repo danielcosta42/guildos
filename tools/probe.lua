@@ -28,12 +28,14 @@ end
 -- stubbed client lacks raise the way the real ones do.
 local printed, frames, calls, strict = {}, {}, {}, false
 local KNOWN_EVENTS, KNOWN_TEMPLATES = {}, {}
+local attempted = {}   -- every event anything tried to register
 function CreateFrame(_, _, _, template)
   if strict and template and not KNOWN_TEMPLATES[template] then
     error('Couldn\'t find inherited node "' .. template .. '"')
   end
   local f = { registered = {}, template = template }
   function f:RegisterEvent(e)
+    attempted[e] = true
     if strict and not KNOWN_EVENTS[e] then error('Attempt to register unknown event "' .. e .. '"') end
     self.registered[e] = true
   end
@@ -217,8 +219,16 @@ end
 check(templateFrames == #Probe.TEMPLATES - missingTemplates, "without C_XMLUtil, one frame per template the client has")
 check(r.apis["GameTooltip:OnTooltipSetItem"] == true and r.apis["GameTooltip:OnTooltipSetUnit"] == false,
   "tooltip scripts are recorded as the tooltip reports them")
+-- The combat log is forbidden off TBC Anniversary (the retail interface took it from addons): registering
+-- it there raises ADDON_ACTION_FORBIDDEN even inside a pcall, so the probe never tries (field, 2026-11-08).
+local CLEU = "COMBAT_LOG_EVENT_UNFILTERED"
+check(not GuildOS.Client.isAnniversary, "this run is a client other than TBC Anniversary")
+check(not attempted[CLEU], "off Anniversary the probe never registers the combat log")
+check(r.events[CLEU] == "forbidden", "it records the combat log as forbidden, not as missing")
 for _, e in ipairs(Probe.EVENTS) do
-  check(r.events[e] == KNOWN_EVENTS[e], e .. " is recorded " .. (KNOWN_EVENTS[e] and "present" or "missing"))
+  if e ~= CLEU then
+    check(r.events[e] == KNOWN_EVENTS[e], e .. " is recorded " .. (KNOWN_EVENTS[e] and "present" or "missing"))
+  end
 end
 check(#r.missingApis == missing + missingTemplates + 2,  -- 2: OnTooltipSetSpell and OnTooltipSetUnit
   "the missing list holds every missing API, template and tooltip script")
@@ -244,7 +254,7 @@ end
 expectedApis[#expectedApis + 1] = "GameTooltip:OnTooltipSetSpell"
 expectedApis[#expectedApis + 1] = "GameTooltip:OnTooltipSetUnit"
 for _, e in ipairs(Probe.EVENTS) do
-  if not KNOWN_EVENTS[e] then expectedEvents[#expectedEvents + 1] = e end
+  if e ~= CLEU and not KNOWN_EVENTS[e] then expectedEvents[#expectedEvents + 1] = e end
 end
 local function sameList(a, b)
   if #a ~= #b then return false end
@@ -364,8 +374,8 @@ local realCreateFrame = CreateFrame
 CreateFrame = function() error("no frames today", 0) end
 local ok3, r3 = pcall(Probe.Run, Probe)
 CreateFrame = realCreateFrame
-check(ok3 and #r3.missingEvents == #Probe.EVENTS and r3.apis.BackdropTemplate == false,
-  "a client that cannot build frames records every event and template missing, without raising")
+check(ok3 and #r3.missingEvents == #Probe.EVENTS - 1 and r3.events[CLEU] == "forbidden" and r3.apis.BackdropTemplate == false,
+  "a client that cannot build frames records every event (but the forbidden combat log) and template missing, without raising")
 
 -- The unlikely rest: CreateFrame returning nothing, no clock at all, a namespace that raises on lookup.
 local realTime = time
@@ -373,7 +383,7 @@ CreateFrame, time = function() return nil end, nil
 C_GameRules = setmetatable({}, { __index = function() error("rules lookup exploded") end })
 local ok4, r4 = pcall(Probe.Run, Probe)
 CreateFrame, time, C_GameRules = realCreateFrame, realTime, nil
-check(ok4 and r4.at == 0 and r4.gameMode.missing and #r4.missingEvents == #Probe.EVENTS and r4.apis.BackdropTemplate == false,
+check(ok4 and r4.at == 0 and r4.gameMode.missing and #r4.missingEvents == #Probe.EVENTS - 1 and r4.apis.BackdropTemplate == false,
   "no frame, no clock and a raising namespace still leave a record and never raise")
 
 print(("probe: %d checks passed"):format(checks))

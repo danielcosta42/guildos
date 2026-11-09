@@ -265,10 +265,17 @@ function Probe:Run()
     local frameOk, frame = pcall(CreateFrame, "Frame")
     frameOk = frameOk and type(frame) == "table"
     for _, event in ipairs(self.EVENTS) do
-        local ok = frameOk and pcall(frame.RegisterEvent, frame, event) or false
-        if ok then pcall(frame.UnregisterEvent, frame, event) end
-        r.events[event] = ok
-        if not ok then r.missingEvents[#r.missingEvents + 1] = event end
+        if event == "COMBAT_LOG_EVENT_UNFILTERED" and not GuildOS.Client.isAnniversary then
+            -- The retail interface took the combat log from addons: registering it raises
+            -- ADDON_ACTION_FORBIDDEN even inside a pcall (WoW: Forever, 2026-11-08). The addon itself only
+            -- reads it on Anniversary (RaidHUD), so the probe does not try it anywhere else.
+            r.events[event] = "forbidden"
+        else
+            local ok = frameOk and pcall(frame.RegisterEvent, frame, event) or false
+            if ok then pcall(frame.UnregisterEvent, frame, event) end
+            r.events[event] = ok
+            if not ok then r.missingEvents[#r.missingEvents + 1] = event end
+        end
     end
 
     if not GuildOSDB then GuildOSDB = {} end
