@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.14.0] - 2026-11-09
+
+### Added
+- On WoW: Forever, an Onyxia's Lair night is now linked to the raid planned on guildos.me, and no Forever night is ever mistaken for TBC's Hyjal Summit.
+
+
 ## [1.13.2] - 2026-11-09
 
 ### Fixed

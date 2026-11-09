@@ -1,4 +1,4 @@
-## [1.13.2] - 2026-11-09
+## [1.14.0] - 2026-11-09
 
-### Fixed
-- The founding letter and the journal are now on by default on WoW: Forever, so the guild's founding and its dungeons reach guildos.me and its founding achievements can be earned. Whoever switched them off keeps them off.
+### Added
+- On WoW: Forever, an Onyxia's Lair night is now linked to the raid planned on guildos.me, and no Forever night is ever mistaken for TBC's Hyjal Summit.
