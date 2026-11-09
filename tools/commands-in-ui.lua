@@ -67,6 +67,8 @@ local IN_UI = {
   trial       = { { "UI/RosterFrame.lua", "GuildOS.TrialTracker:AddTrial(key)" } },
   note        = { { "UI/RosterFrame.lua", "GuildOS.OfficerNotes:AddNote(" } },
   lm          = { { "UI/FeaturePanels.lua", "GuildOS:LootMasterStatus()" } },
+  -- The Master Loot window's own button (issue #294).
+  ["lm undo"] = { { "Modules/LootMaster.lua", "LootMaster:UndoLastAward()" } },
   -- Retail's loot council (issue #185): an Offer button by each tradeable item and on my own loot
   -- history rows, and the council in Settings' quick access.
   offer       = { { "UI/TradeCouncil.lua", "GuildOS.TradeCouncil:Offer(" }, { "UI/FeaturePanels.lua", "GuildOS.TradeCouncil:Offer(entry.itemLink)" },

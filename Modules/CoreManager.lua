@@ -541,6 +541,12 @@ function CoreManager:GetPointsDB(coreName)
     local p = core.points
     if not p.mode         then p.mode         = "dkp"  end
     if not p.config       then p.config        = {}     end
+    -- A core's points start from the guild's own settings, never from nothing: a new core used to
+    -- award 0 per boss (issue #294). Only what the core never set; what it set stays its own.
+    local guildCfg = (GuildOS.db.points and GuildOS.db.points.config) or {}
+    for k, v in pairs(guildCfg) do
+        if p.config[k] == nil then p.config[k] = v end
+    end
     if not p.standings    then p.standings     = {}     end
     if not p.log          then p.log           = {}     end
     if not p.appliedOps   then p.appliedOps    = {}     end

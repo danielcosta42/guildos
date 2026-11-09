@@ -982,6 +982,14 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
             self:ShowRollPopup(link, duration, itemId)
         end
 
+    elseif cmd == "UNDO" then
+        -- An officer took an award back (issue #294): forget it here too.
+        local who, id, at = rest:match("^([^|]+)|(%d+)|(%d+)$")
+        local senderName = sender and sender:match("^([^-]+)") or ""
+        if who and senderName ~= GuildOS.Compat.PlayerName() and GuildOS:IsOfficerByName(senderName) then
+            LootMaster.ForgetAward(who, tonumber(id), tonumber(at))
+        end
+
     elseif cmd == "AWARD" then
         -- ML awarded item.
         -- Extended format: playerName|itemId|quality|raidName|itemLink
@@ -1157,10 +1165,18 @@ function LootMaster:EndRolling(byClick)
         end
     end
 
+    -- In DKP the winner is who the ML window puts on top: highest DKP among MS, then the roll
+    -- (issue #294). The announcement used to ignore DKP and name somebody else.
+    local dkpMode = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) == "dkp"
     table.sort(sorted, function(a, b)
         -- MS beats OS
         if a.rollType ~= b.rollType then
             return a.rollType == "MS"
+        end
+        if dkpMode then
+            local ad, bd = a.dkp or 0, b.dkp or 0
+            if ad ~= bd then return ad > bd end
+            return a.roll > b.roll
         end
         -- Officer prio: lower index wins (no prio = 999)
         local aPrio = a.prioOrder or 999
@@ -1287,15 +1303,17 @@ function LootMaster:AwardLoot(playerName, silent)
     end
 
     -- Save to LootMaster's own award log (for undo / ML reference)
+    local awardedAt = GetServerTime()
     local awardHistory = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory()
                          or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
-    table.insert(awardHistory, 1, {
+    local award = {
         link = itemLink,
         itemId = itemId,
         player = playerName,
-        timestamp = GetServerTime(),
+        timestamp = awardedAt,
         received = awarded,
-    })
+    }
+    table.insert(awardHistory, 1, award)
     while #awardHistory > 200 do
         table.remove(awardHistory)
     end
@@ -1310,7 +1328,7 @@ function LootMaster:AwardLoot(playerName, silent)
             player     = playerName,
             playerKey  = GuildOS:GetPlayerKey(playerName),
             count      = 1,
-            timestamp  = GetServerTime(),
+            timestamp  = awardedAt,
             raid       = raidName,
             instanceID = instanceID,
             fromML     = true,
@@ -1325,6 +1343,8 @@ function LootMaster:AwardLoot(playerName, silent)
         if cost > 0 then
             local pKey = GuildOS:GetPlayerKey(playerName)
             GuildOS.Points:Charge(pKey, cost, GuildOS.Compat.GetItemInfo(itemLink) or itemLink)
+            -- What an undo gives back (issue #294).
+            award.charged, award.chargedKey = cost, pKey
             self:SafeSendChat(string.format(L["[DKP] %s charged %d points for %s"],
                 playerName, cost, itemLink), "RAID")
         end
@@ -1339,6 +1359,60 @@ function LootMaster:AwardLoot(playerName, silent)
     if self.activeLoot then self.activeLoot.delivered = true end
     self.activeLoot = nil
     self.rolls = {}
+end
+
+----------------------------------------------------------------------
+-- Undo (issue #294): the last award, taken back. The item is no longer anybody's in the loot
+-- history (here and, by the UNDO message, on the other officers' clients), the points it cost go
+-- back, and a trade not yet made is dropped. Officer only; one award at a time, newest first.
+----------------------------------------------------------------------
+local UNDO_MATCH_WINDOW = 600   -- seconds: a peer recorded the award on its own clock
+
+-- Forget a recorded award: the newest entry for this player and item within the window.
+local function forgetAward(player, itemId, at)
+    local history = GuildOS.db.lootHistory or {}
+    for i, e in ipairs(history) do
+        local id = tonumber(e.itemLink and e.itemLink:match("item:(%d+)")) or tonumber(e.itemId)
+        if e.fromML and e.player == player and id == itemId
+            and math.abs((tonumber(e.timestamp) or 0) - at) <= UNDO_MATCH_WINDOW then
+            table.remove(history, i)
+            return true
+        end
+    end
+    return false
+end
+LootMaster.ForgetAward = forgetAward
+
+-- The newest award not undone yet, and its place in the log.
+function LootMaster:LastAward()
+    local history = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory()
+                    or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
+    for _, a in ipairs(history) do
+        if not a.undone then return a end
+    end
+    return nil
+end
+
+-- Returns the award taken back, or nil and why.
+function LootMaster:UndoLastAward()
+    if not GuildOS:IsOfficer() then return nil, L["Only an officer can undo an award."] end
+    local award = self:LastAward()
+    if not award then return nil, L["No award to undo."] end
+    award.undone = true
+    forgetAward(award.player, award.itemId, award.timestamp)
+    if award.charged and award.charged > 0 and award.chargedKey and GuildOS.Points then
+        GuildOS.Points:Award(award.chargedKey, award.charged, L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link))
+    end
+    for i = #(self.pendingTrades or {}), 1, -1 do
+        local t = self.pendingTrades[i]
+        if t.player == award.player and t.itemId == award.itemId then
+            table.remove(self.pendingTrades, i)
+            break
+        end
+    end
+    self:SafeSendAddon(LootMaster.PREFIX, string.format("UNDO|%s|%d|%d", award.player, award.itemId, award.timestamp), "RAID")
+    self:SafeSendChat(string.format(L["[Loot] Award of %s to %s undone"], award.link, award.player), "RAID")
+    return award
 end
 
 ----------------------------------------------------------------------
@@ -2256,6 +2330,14 @@ function LootMaster:ShowLootFrame(items)
     -- Send to disenchanter (for items nobody wants)
     local deLootBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
     deLootBtn:SetPoint("RIGHT", openRollBtn, "LEFT", -6, 0)
+
+    -- Take the last award back (issue #294): the item, its points and a trade not yet made.
+    local undoBtn = UI:CreateButton(f, L["Undo last award"], 130, 26)
+    undoBtn:SetPoint("RIGHT", deLootBtn, "LEFT", -6, 0)
+    undoBtn:SetScript("OnClick", function()
+        local award, why = LootMaster:UndoLastAward()
+        statusText:SetText(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or ("|cffFF4444" .. why .. "|r"))
+    end)
     deLootBtn:SetScript("OnClick", function()
         if not selectedItem then
             statusText:SetText(L["|cffFF4444Select an item first.|r"])

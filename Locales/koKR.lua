@@ -2273,3 +2273,11 @@ L["This game does not let an addon invite: the auto-invite works on TBC Annivers
 -- Who creates calendar events (issue #283)
 L["Who creates events:"] = "일정을 만드는 사람:"
 L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444현재 등급으로는 일정을 만들 수 없습니다.|r"
+
+-- Undo the last award (issue #294)
+L["Only an officer can undo an award."] = "관리자만 분배를 취소할 수 있습니다."
+L["No award to undo."] = "취소할 분배가 없습니다."
+L["Undo: "] = "취소: "
+L["[Loot] Award of %s to %s undone"] = "[전리품] %s의 %s 분배 취소됨"
+L["Undo last award"] = "마지막 분배 취소"
+L["|cffFFD700Undone:|r %s"] = "|cffFFD700취소됨:|r %s"
