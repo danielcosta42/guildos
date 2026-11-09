@@ -58,8 +58,26 @@
 --     directory still works. Hosts may pass a SavedVariables table (Mesh:PeerStore) so the next login starts the
 --     exchange with names it knew; those get no realm item until they answer.
 --   * every prefix an older copy registered is pointed at this version's receive route, so its senders count.
+-- v8 (chehulnet#3): a realm item reached 3 peers and stopped there; the guild of whoever got it never heard it; the
+-- flush still drew YELL's 34% share; the fan-out took names nobody confirmed; a new peer waited up to a minute for
+-- an exchange; and the mesh did not know which addons a peer runs. Now:
+--   * RELAY: :Realm(prefix, payload, key, true) marks an item for relaying. It goes to peers that run v8 in an
+--     envelope on ChehulRelay ("RL1|id|hops|origin|prefix|payload"), raw to the others as before. A v8 client
+--     takes each origin/id once, hands it to the host as dist "RELAY" with the origin as sender (claimed, not
+--     verified) only for prefixes the host declared with :Relayable, and passes it on while hops remain to
+--     RELAY_FANOUT v8 peers outside its guild, never back to who sent it. Hosts trust dist "GUILD" (GuildOS's
+--     officer ads, Lodestar's guild boards), so a relayed item is never handed over as GUILD or WHISPER, and the
+--     control prefixes (alerts, ping, peers, probe, relay) are never relayed.
+--   * GUILD RELAY: who gets an envelope by whisper says it once on GUILD after 0.5-3 s, unless the same item comes
+--     on GUILD first: one whisper into a guild reaches all of it. Who gets it on GUILD passes nothing on.
+--   * a budget per minute for relay whispers and guild relays; nothing from an instance or a chat lockdown.
+--   * the flush draws YELL_PERCENT only while YELL lives: a whisper outside an instance has no prefix throttle.
+--   * the fan-out draws heard peers first (they answered); named ones only fill what is missing.
+--   * a peer outside the guild heard for the first time gets an exchange within seconds (PEX_EAGER a minute).
+--   * :Seed(name) takes a name a host knows runs Chehul (an author of its data); :Tag(name, tags, version) keeps
+--     the addons and mesh version a peer's HELLO gave, and :Peers(tag) lists the fresh ones running that addon.
 
-local VERSION = 7
+local VERSION = 8
 if _G.ChehulMesh and (_G.ChehulMesh.version or 0) >= VERSION then
     return
 end
@@ -98,6 +116,7 @@ do
     s.yell = s.yell or 0; s.realmQueued = s.realmQueued or 0; s.realmSent = s.realmSent or 0
     s.realmDropped = s.realmDropped or 0
     s.refused = s.refused or 0; s.dirSent = s.dirSent or 0
+    s.rlIn = s.rlIn or 0; s.rlOut = s.rlOut or 0; s.rlFwd = s.rlFwd or 0; s.rlGuild = s.rlGuild or 0; s.rlDup = s.rlDup or 0
 end
 M.dead   = M.dead or {}   -- [dist] = "InvalidChatType": a bus the game refused this session (v5)
 M.probed = M.probed or {} -- [dist] = true: the game took a raw send on it once, so it lives
@@ -133,6 +152,35 @@ M.HEARD_TTL     = 900    -- a peer heard within this is fresh
 M.NAMED_TTL     = 600    -- a name a peer passed on is fresh this long
 M.STORE_TTL     = 259200 -- saved names older than three days are dropped
 M.VIEW_MAX      = 300
+
+-- v8: the relay.
+M.relay     = M.relay or {}
+M.relay.seen    = M.relay.seen or {}    -- [origin/id] = { at, guild }: each item taken once
+M.relay.seq     = M.relay.seq or 0
+M.relay.budget  = M.relay.budget or { window = 0, used = 0 }
+M.relay.gbudget = M.relay.gbudget or { window = 0, used = 0 }
+M.relay.origins = M.relay.origins or { window = 0, count = {} } -- [origin] = items passed on this minute
+M.relay.senders = M.relay.senders or { window = 0, count = {} } -- [whisperer] = items passed on this minute
+M.relayable = M.relayable or {}   -- [prefix] = true: a host takes relayed items of it (dist "RELAY")
+M.pex.eager = M.pex.eager or { window = 0, used = 0 }
+M.RELAY_PREFIX       = "ChehulRelay"
+M.RELAY_HOPS         = 3    -- hops an item may still make after the first whisper
+M.RELAY_FANOUT       = 2    -- peers each relay passes an item on to
+M.RELAY_BUDGET       = 30   -- relay whispers a minute at most
+M.GUILD_RELAY_BUDGET = 6    -- guild relays a minute at most
+M.GUILD_RELAY_DELAY  = 3    -- a guild relay waits 0.5..this seconds, and drops when the guild already said it
+M.SEEN_TTL           = 900
+M.SEEN_MAX           = 400
+M.RELAY_MAX          = 2000 -- bytes of relayed payload at most
+M.PEX_EAGER          = 3    -- exchanges a minute with peers heard for the first time
+M.RELAY_PER_ORIGIN   = 5    -- items of one claimed origin a client passes on a minute
+M.RELAY_PER_SENDER   = 10   -- items one whisperer (the real sender, not the claimed origin) gets passed on a minute
+-- What the family relays even where no host takes it (the opaque hop): GuildOS craft and recruitment, Lodestar quests
+-- and races, PartyLens's board, ChehulNet's trace. A host adds its own with :Relayable.
+M.FAMILY = { ChehulCraft = true, ChehulRecruit = true, ChehulQuest = true, LSRace = true, PartyLens = true,
+    ChehulTrace = true }
+-- Never relayed nor handed over relayed: what these carry rests on who sent it.
+M.CONTROL = { ChehulAlert = true, ChehulPing = true, ChehulPeers = true, ChehulProbe = true, ChehulRelay = true }
 
 -- ---------------------------------------------------------------------------
 -- Peers (v7)
@@ -187,22 +235,69 @@ local function Learn(name, how, dist)
         v.named = now
         return
     end
+    local new = not v.heard or now - v.heard > M.HEARD_TTL
     v.heard = now
     M.dir.bad[name] = nil -- it is online: an old "No player named" no longer counts
     if dist == "GUILD" then v.guild = true end
+    if new and not v.guild and M._eagerPex then M._eagerPex(name) end
     for _, fn in ipairs(M.stores) do
         local ok, t = pcall(fn)
         if ok and type(t) == "table" then t[name] = now end
     end
 end
 
--- The fresh peers outside my guild: who a realm item may go to.
-function M:Peers()
+-- The fresh peers outside my guild: who a realm item may go to. With `tag`, only those whose HELLO named it (v8).
+function M:Peers(tag)
     local now, out = time(), {}
     for name, v in pairs(M.view) do
-        if not v.guild and Fresh(v, name, now) then out[#out + 1] = name end
+        if not v.guild and Fresh(v, name, now) and (not tag or (v.tags and v.tags[tag])) then out[#out + 1] = name end
     end
     return out
+end
+
+-- v8: heard (confirmed) fresh peers outside the guild, and the fresh peers known to take the relay.
+function M:LinkCount()
+    local now, n = time(), 0
+    for name, v in pairs(M.view) do
+        if not v.guild and v.heard and now - v.heard <= M.HEARD_TTL and Usable(name) then n = n + 1 end
+    end
+    return n
+end
+
+function M:V8Count()
+    local now, n = time(), 0
+    for name, v in pairs(M.view) do
+        if v.v8 and Fresh(v, name, now) then n = n + 1 end
+    end
+    return n
+end
+
+-- v8: a name a host knows runs Chehul (the author of something it got), taken as named.
+function M:Seed(name)
+    Learn(name, "named")
+end
+
+-- v8: what a peer's HELLO said: its addon tags (a set or "a+b") and its mesh version.
+function M:Tag(name, tags, version)
+    if type(name) ~= "string" or Secret(name) then return end
+    local v = M.view[WhisperName(name)]
+    if not v then return end
+    if type(tags) == "string" and not Secret(tags) then
+        local set = {}
+        for t in tags:gmatch("[^+]+") do set[t] = true end
+        tags = set
+    end
+    if type(tags) == "table" then v.tags = tags end
+    version = tonumber(version)
+    if version then
+        v.mv = version
+        if version >= 8 then v.v8 = true end
+    end
+end
+
+-- v8: a host takes relayed items of `prefix` (handed over as dist "RELAY", the origin as a claimed sender).
+function M:Relayable(prefix)
+    if type(prefix) == "string" and prefix ~= "" and not M.CONTROL[prefix] then M.relayable[prefix] = true end
 end
 
 function M:PeerCount()
@@ -339,8 +434,9 @@ function M:Whisper(prefix, payload, target)
 end
 
 -- Realm-wide (zone-wide via YELL): queue coalesced by key; flushed paced + capped.
-function M:Realm(prefix, payload, coalesceKey)
+function M:Realm(prefix, payload, coalesceKey, relay)
     if type(prefix) ~= "string" or type(payload) ~= "string" then return end
+    relay = relay and not M.CONTROL[prefix] and #payload <= M.RELAY_MAX or nil
     Ensure(prefix)
     local key = prefix .. "\t" .. (coalesceKey or payload)
     -- Bound the queue. An unbounded queue + a burst flush is exactly what let a chatty
@@ -354,7 +450,7 @@ function M:Realm(prefix, payload, coalesceKey)
         end
         M._realmQueueCount = M._realmQueueCount + 1
     end
-    M._realmQueue[key] = { prefix = prefix, payload = payload }
+    M._realmQueue[key] = { prefix = prefix, payload = payload, relay = relay }
     M.stats.realmQueued = M.stats.realmQueued + 1
 end
 
@@ -372,16 +468,25 @@ local function CanWhisperWide()
     return #M.dir.names > 0 or #M:Peers() > 0
 end
 
--- `k` distinct names at random among directory members and fresh peers outside the guild.
-local function Pick(k)
-    local pool, seen, out = {}, {}, {}
-    for _, list in ipairs({ M.dir.names, M:Peers() }) do
-        for _, name in ipairs(list) do
-            if not seen[name] then seen[name], pool[#pool + 1] = true, name end
-        end
+-- `k` distinct names at random among directory members and fresh peers outside the guild: heard peers and the
+-- directory first (v8), names only passed on fill what is missing. `want(name)` narrows the choice.
+local function Pick(k, want, except)
+    local now, seen, sure, named, out = time(), {}, {}, {}, {}
+    if except then for _, n in ipairs(except) do seen[n] = true end end
+    local function add(name, list)
+        if not seen[name] and (not want or want(name)) then seen[name], list[#list + 1] = true, name end
     end
-    while #pool > 0 and #out < k do
-        out[#out + 1] = table.remove(pool, math.random(1, #pool))
+    for _, name in ipairs(M.dir.names) do
+        if not (M.view[name] and M.view[name].guild) then add(name, sure) end -- the guild gets it on GUILD
+    end
+    for _, name in ipairs(M:Peers()) do
+        local v = M.view[name]
+        add(name, (v.heard and now - v.heard <= M.HEARD_TTL) and sure or named)
+    end
+    for _, pool in ipairs({ sure, named }) do
+        while #pool > 0 and #out < k do
+            out[#out + 1] = table.remove(pool, math.random(1, #pool))
+        end
     end
     return out
 end
@@ -390,6 +495,138 @@ end
 local function WhisperTried(prefix, payload, name)
     M.dir.tried[name] = (GetTime and GetTime() or 0) + M.TRIED_SECONDS
     return Send(prefix, payload, "WHISPER", name)
+end
+
+-- ---------------------------------------------------------------------------
+-- Relay (v8)
+-- ---------------------------------------------------------------------------
+-- My name as whispers spell it: "First Surname" on WoW: Forever, the plain name elsewhere.
+local function MyName()
+    if not UnitFullName then return nil end
+    local first, second = UnitFullName("player")
+    if type(first) ~= "string" or Secret(first) or Secret(second) then return nil end
+    local surname = C_PlayerInfo and C_PlayerInfo.ShouldDisplaySurname and C_PlayerInfo.ShouldDisplaySurname()
+    if surname and type(second) == "string" and second ~= "" then return first .. " " .. second end
+    return first
+end
+
+local function Spend(b, limit)
+    local now = time()
+    if now - b.window >= 60 then b.window, b.used = now, 0 end
+    if b.used >= limit then return false end
+    b.used = b.used + 1
+    return true
+end
+
+local function Envelope(id, hops, origin, prefix, payload)
+    return table.concat({ "RL1", id, tostring(hops), origin, prefix, payload }, "|")
+end
+
+-- Remember an item; drop the oldest past SEEN_MAX and anything past SEEN_TTL.
+local function See(key, guild)
+    local seen, now = M.relay.seen, time()
+    local e = seen[key]
+    if e then
+        if guild then e.guild = true end
+        return false
+    end
+    local n, oldest, oldestAt = 0, nil, nil
+    for k, v in pairs(seen) do
+        if now - v.at > M.SEEN_TTL then
+            seen[k] = nil
+        else
+            n = n + 1
+            if not oldestAt or v.at < oldestAt then oldest, oldestAt = k, v.at end
+        end
+    end
+    if n >= M.SEEN_MAX and oldest then seen[oldest] = nil end
+    seen[key] = { at = now, guild = guild or nil }
+    return true
+end
+
+local function IsV8(name)
+    local v = M.view[name]
+    return v and v.v8 or false
+end
+
+-- A new realm item of mine to be relayed: its envelope (or nil when I cannot say who I am).
+local function NewEnvelope(item)
+    local me = MyName()
+    if not me or me:find("[,|]") then return nil end
+    M.relay.seq = (M.relay.seq + 1) % 65536
+    -- the random part keeps a forger from guessing my next id and taking its place in everyone's seen list
+    local id = string.format("%x%04x%04x", time(), M.relay.seq, math.random(0, 0xffff))
+    See(me .. "/" .. id)
+    return Envelope(id, M.RELAY_HOPS, me, item.prefix, item.payload)
+end
+
+-- A claimed origin may fill RELAY_PER_ORIGIN of the passes a minute, and the real whisperer RELAY_PER_SENDER: an
+-- origin is only claimed, so a spammer changing it on every item is still capped by who it is.
+local function Used(o, who)
+    local now = time()
+    if now - o.window >= 60 then o.window, o.count = now, {} end
+    return o.count[who] or 0
+end
+
+local function OriginRoom(origin, via)
+    local s, o = M.relay.senders, M.relay.origins
+    if Used(s, via) >= M.RELAY_PER_SENDER or Used(o, origin) >= M.RELAY_PER_ORIGIN then return false end
+    s.count[via], o.count[origin] = Used(s, via) + 1, Used(o, origin) + 1 -- both counted only when both have room
+    return true
+end
+
+local function SaidInGuild(key)
+    local e = M.relay.seen[key]
+    return e and e.guild
+end
+
+local function OnRelay(payload, sender, dist)
+    if type(payload) ~= "string" or Secret(payload) or type(sender) ~= "string" or Secret(sender) then return end
+    -- Where YELL lives (Anniversary) nothing is relayed. Before the session's first YELL tells which game this is,
+    -- an envelope is handed to the host (on Forever that probe may be minutes away) but passed on nowhere.
+    if M.probed.YELL then return end
+    local id, hops, origin, prefix, inner = payload:match("^RL1|(%x+)|(%d)|([^|]+)|([%w_]+)|(.*)$")
+    hops = tonumber(hops)
+    if not id or #id > 16 or hops > M.RELAY_HOPS or #prefix > 16 or #inner > M.RELAY_MAX or M.CONTROL[prefix] then
+        return
+    end
+    if origin:find(",", 1, true) or #origin > 48 then return end
+    local via = WhisperName(sender)
+    if IsMe(via) then return end -- my own guild relay, echoed back by the game
+    if M.view[via] then M.view[via].v8 = true end
+    origin = WhisperName(origin)
+    if IsMe(origin) then return end
+    local key = origin .. "/" .. id
+    local fromGuild = dist == "GUILD"
+    if not See(key, fromGuild) then
+        M.stats.rlDup = M.stats.rlDup + 1
+        return
+    end
+    M.stats.rlIn = M.stats.rlIn + 1
+    Learn(origin, "named")
+    local h = M.relayable[prefix] and M.handlers[prefix]
+    if h then pcall(h, inner, origin, "RELAY", via, hops) end
+    if dist ~= "WHISPER" or not M.dead.YELL or Quiet() then return end
+    if not (M.FAMILY[prefix] or M.relayable[prefix]) or not OriginRoom(origin, via) then return end
+    -- Into my guild, once, unless a guild mate says it first. An item from a guild mate: the guild has it already.
+    local fromMate = M.view[origin] and M.view[origin].guild
+    if not fromMate and IsInGuild and IsInGuild() and C_Timer and C_Timer.After then
+        C_Timer.After(0.5 + math.random() * (M.GUILD_RELAY_DELAY - 0.5), function()
+            if SaidInGuild(key) or Quiet() or not Spend(M.relay.gbudget, M.GUILD_RELAY_BUDGET) then return end
+            local e = M.relay.seen[key] -- it may have left the list meanwhile (SEEN_MAX)
+            if e then e.guild = true end
+            if Send(M.RELAY_PREFIX, Envelope(id, 0, origin, prefix, inner), "GUILD") then
+                M.stats.rlGuild = M.stats.rlGuild + 1
+            end
+        end)
+    end
+    if hops < 1 then return end
+    for _, name in ipairs(Pick(M.RELAY_FANOUT, IsV8, { via, origin })) do
+        if not Spend(M.relay.budget, M.RELAY_BUDGET) then break end
+        if WhisperTried(M.RELAY_PREFIX, Envelope(id, hops - 1, origin, prefix, inner), name) then
+            M.stats.rlFwd = M.stats.rlFwd + 1
+        end
+    end
 end
 
 -- Emit ONE queued realm item as YELL, then reschedule the next after YELL_GAP — one at a
@@ -414,8 +651,13 @@ local function EmitNextYell(sent)
         M.stats.yell = M.stats.yell + 1
         M.stats.realmSent = M.stats.realmSent + 1
     elseif CanWhisperWide() then -- the yell just found the bus dead, or it was already
+        local envelope = item.relay and NewEnvelope(item)
         for _, name in ipairs(Pick(M.REALM_FANOUT)) do
-            if WhisperTried(item.prefix, item.payload, name) then M.stats.dirSent = M.stats.dirSent + 1 end
+            local wrapped = envelope and IsV8(name)
+            if WhisperTried(wrapped and M.RELAY_PREFIX or item.prefix, wrapped and envelope or item.payload, name) then
+                M.stats.dirSent = M.stats.dirSent + 1
+                if wrapped then M.stats.rlOut = M.stats.rlOut + 1 end
+            end
         end
         M.stats.realmSent = M.stats.realmSent + 1
     end
@@ -433,7 +675,8 @@ local function FlushRealm()
     -- re-queues over cycles, so everything still radiates out zone-wide over time.
     -- The same share carries the directory's whispers: a realm item goes REALM_FANOUT whispers wide per client.
     -- A YELL not yet probed counts as alive: the first flush is what finds it dead.
-    if not ((CanYell() or CanWhisperWide()) and math.random(1, 100) <= M.YELL_PERCENT) then
+    -- The share keeps YELL under the public chat limit; a whisper outside an instance has no such limit (v8).
+    if not (CanYell() and math.random(1, 100) <= M.YELL_PERCENT) and not CanWhisperWide() then
         return
     end
     M._draining = true
@@ -725,6 +968,7 @@ local function OnPex(payload, sender, dist)
     end
     if kind ~= "q" or Quiet() then return end
     local now, asker, pex = time(), WhisperName(sender), M.pex
+    if M.view[asker] then M.view[asker].asked = now end -- my answer is our exchange: no eager one on top (v8)
     if now - (pex.replied[asker] or 0) < M.PEX_REPLY_GAP then return end
     if now - pex.window >= 60 then pex.window, pex.answers = now, 0 end
     if pex.answers >= M.PEX_BUDGET then return end
@@ -732,6 +976,21 @@ local function OnPex(payload, sender, dist)
     WhisperTried(M.PEX_PREFIX, "PX1|a|" .. Sample(asker), asker) -- it may log off before the answer leaves
 end
 M:Register(M.PEX_PREFIX, OnPex)
+M:Register(M.RELAY_PREFIX, OnRelay)
+
+-- v8: a peer outside the guild heard for the first time gets my sample within seconds, not at its turn.
+M._eagerPex = function(name)
+    if not M.dead.YELL or not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(3 + math.random() * 5, function()
+        local v = M.view[name]
+        local now = time()
+        if not v or v.guild or Quiet() or (v.asked and now - v.asked < M.PEX_INTERVAL) then return end
+        if not Spend(M.pex.eager, M.PEX_EAGER) then return end
+        LoadStores()
+        v.asked = now
+        WhisperTried(M.PEX_PREFIX, "PX1|q|" .. Sample(name), name)
+    end)
+end
 
 if M._pexTicker and M._pexTicker.Cancel then pcall(function() M._pexTicker:Cancel() end) end
 if C_Timer and C_Timer.NewTicker then

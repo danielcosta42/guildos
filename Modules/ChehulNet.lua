@@ -47,8 +47,14 @@
 -- v13 (chehulnet#1): the Forever server refused the directory's channel, and LibChehulMesh v7 reaches outside the
 -- guild through peers it heard instead. The DIAG says how many fresh peers the mesh knows (view) and why the
 -- directory is refused (dirx, empty when it is not).
+-- v14 (chehulnet#3): LibChehulMesh v8 relays realm items and needs to know which peers take the relay. The HELLO's
+-- caps carry the mesh version (mv=), and a HELLO heard tells the mesh the peer's addons and version (Mesh:Tag), so
+-- a host can ask the mesh for the peers running it (Mesh:Peers(tag)). The DIAG says how many confirmed links the
+-- mesh holds (links), how many peers take the relay (v8), what the relay did (rl=in/out/fwd/guild/dup) and the
+-- last traces (trace=id:seconds:hops,..., newest first). CN:Trace() sends a trace by the relay; the backoffice reads
+-- its reach in the DIAGs.
 
-local VERSION = 13
+local VERSION = 14
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -102,6 +108,9 @@ end
 
 local function MergedCaps()
     local parts = {}
+    if Mesh and tonumber(Mesh.version) then
+        parts[1] = "mv=" .. Mesh.version -- v14: the relay goes in an envelope only to peers whose mesh takes it
+    end
     for _, p in pairs(CN.providers) do
         if p.caps then
             local ok, c = pcall(p.caps)
@@ -218,6 +227,9 @@ local function OnHello(payload, sender, dist)
     if layer and layer ~= "" then
         local m, z = strsplit(":", layer)
         mapID, zoneUID = tonumber(m) or 0, tonumber(z) or 0
+    end
+    if Mesh and Mesh.Tag then
+        pcall(Mesh.Tag, Mesh, sender, set, caps and ("," .. caps):match(",mv=(%d+)")) -- v14
     end
     local old = CN.peers[short]
     local isNew = old == nil
@@ -340,6 +352,14 @@ function CN:BuildDiag()
         "dir=" .. ((Mesh and Mesh.dir and Mesh.dir.count) or 0),
         "view=" .. ((Mesh and Mesh.PeerCount and Mesh:PeerCount()) or 0),
         "dirx=" .. (tostring((Mesh and Mesh.dir and Mesh.dir.refused) or ""):gsub("[|;=]", " ")),
+        "links=" .. ((Mesh and Mesh.LinkCount and Mesh:LinkCount()) or 0),
+        "v8=" .. ((Mesh and Mesh.V8Count and Mesh:V8Count()) or 0),
+        "rl=" .. table.concat({ s.rlIn or 0, s.rlOut or 0, s.rlFwd or 0, s.rlGuild or 0, s.rlDup or 0 }, "/"),
+        "trace=" .. (function()
+            local out = {}
+            for i, t in ipairs(CN.traces) do out[i] = table.concat({ t.id, t.secs, t.hops }, ":") end
+            return table.concat(out, ",")
+        end)(),
     }
     local dead = {}
     for dist in pairs((Mesh and Mesh.dead) or {}) do
@@ -528,6 +548,45 @@ local function OnAlert(payload, sender)
 end
 
 -- ---------------------------------------------------------------------------
+-- Trace (v14): the operator sends one item by the relay; each client keeps the last one it took (id, seconds on the
+-- way, hops left), and the backoffice's DIAG census reads the reach. A relayed trace's origin is claimed, so a
+-- forged one cannot be told from the operator's: the DIAG keeps the last TRACE_KEEP fresh ones (TRACE_AGE) and the
+-- backoffice looks for the id it sent. One whispered or said on GUILD (an authentic sender) is kept only from the operator. Server time on
+-- both ends, so the seconds are the way and not two clocks apart.
+-- ---------------------------------------------------------------------------
+CN.TRACE_PREFIX = "ChehulTrace"
+CN.TRACE_KEEP   = 5
+CN.TRACE_AGE    = 600 -- a trace sent longer ago than this is stale: a forger cannot replay old ones
+CN.traces       = CN.traces or {}
+
+local function Now()
+    return (GetServerTime and GetServerTime()) or time()
+end
+
+function CN:Trace()
+    if not (Mesh and Mesh.Realm) then return nil end
+    local id = string.format("%x", math.random(0, 0x7fffffff))
+    local payload = table.concat({ "TR1", id, tostring(Now()) }, "|")
+    Mesh:Guild(CN.TRACE_PREFIX, payload)
+    Mesh:Realm(CN.TRACE_PREFIX, payload, CN.TRACE_PREFIX, true)
+    return id
+end
+
+local function OnTrace(payload, sender, dist, _, hops)
+    if type(payload) ~= "string" or type(sender) ~= "string" then return end
+    if issecretvalue and (issecretvalue(payload) or issecretvalue(sender)) then return end
+    local id, sent = payload:match("^TR1|(%x+)|(%d+)$")
+    local short = (Ambiguate and Ambiguate(sender, "short")) or sender
+    if not id or #id > 8 or (dist ~= "RELAY" and not CN.ALERT_SENDERS[short:lower()]) then return end
+    if math.abs(Now() - tonumber(sent)) > CN.TRACE_AGE then return end
+    for _, t in ipairs(CN.traces) do
+        if t.id == id then return end -- the first copy is the one that counts
+    end
+    table.insert(CN.traces, 1, { id = id, secs = math.max(0, Now() - tonumber(sent)), hops = tonumber(hops) or "-" })
+    CN.traces[CN.TRACE_KEEP + 1] = nil
+end
+
+-- ---------------------------------------------------------------------------
 -- Bootstrap: register our receive handler with the mesh + start on login. Also drive
 -- the built-in layer detector off target/mouseover (a no-op when a provider is set).
 -- ---------------------------------------------------------------------------
@@ -535,6 +594,8 @@ if Mesh then
     Mesh:Register(CN.PREFIX, OnHello)
     Mesh:Register(CN.PING_PREFIX, OnPing)
     Mesh:Register(CN.ALERT_PREFIX, OnAlert)
+    Mesh:Register(CN.TRACE_PREFIX, OnTrace)
+    if Mesh.Relayable then Mesh:Relayable(CN.TRACE_PREFIX) end
 end
 
 CN.frame = CN.frame or CreateFrame("Frame")
