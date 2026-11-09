@@ -442,6 +442,12 @@ local function handleCommand(msg)
         else
             GuildOS.TradeCouncil:Offer(link)
         end
+    elseif msg == "lm undo" then
+        -- /guildos lm undo - take the last award back (issue #294), as the Master Loot window's button
+        if GuildOS.LootMaster then
+            local award, why = GuildOS.LootMaster:UndoLastAward()
+            GuildOS:Print(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or why)
+        end
     elseif msg == "lm" or msg == "lootmaster" then
         local status = GuildOS:LootMasterStatus()
         if status then GuildOS:Print(status) end

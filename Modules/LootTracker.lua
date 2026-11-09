@@ -30,6 +30,8 @@ function LootTracker:Initialize()
 end
 
 local function remember(entry)
+    -- Switched off in Settings, the history records nothing (issue #294): the switch used to do nothing.
+    if GuildOS.IsFeatureEnabled and not GuildOS:IsFeatureEnabled("lootTracker") then return end
     if not GuildOS.db.lootHistory then
         GuildOS.db.lootHistory = {}
     end

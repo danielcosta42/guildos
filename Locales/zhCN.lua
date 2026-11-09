@@ -2273,3 +2273,11 @@ L["This game does not let an addon invite: the auto-invite works on TBC Annivers
 -- Who creates calendar events (issue #283)
 L["Who creates events:"] = "谁可以创建活动："
 L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444你的会阶不能创建活动。|r"
+
+-- Undo the last award (issue #294)
+L["Only an officer can undo an award."] = "只有官员可以撤销分配。"
+L["No award to undo."] = "没有可撤销的分配。"
+L["Undo: "] = "撤销： "
+L["[Loot] Award of %s to %s undone"] = "[拾取] 已撤销 %s 分配给 %s"
+L["Undo last award"] = "撤销上一次分配"
+L["|cffFFD700Undone:|r %s"] = "|cffFFD700已撤销：|r %s"

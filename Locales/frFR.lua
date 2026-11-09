@@ -2393,3 +2393,11 @@ L["This game does not let an addon invite: the auto-invite works on TBC Annivers
 -- Who creates calendar events (issue #283)
 L["Who creates events:"] = "Qui crée des événements :"
 L["|cffFF4444Your rank cannot create events.|r"] = "|cffFF4444Votre rang ne peut pas créer d'événements.|r"
+
+-- Undo the last award (issue #294)
+L["Only an officer can undo an award."] = "Seul un officier peut annuler une attribution."
+L["No award to undo."] = "Aucune attribution à annuler."
+L["Undo: "] = "Annulé : "
+L["[Loot] Award of %s to %s undone"] = "[Butin] Attribution de %s à %s annulée"
+L["Undo last award"] = "Annuler la dernière attribution"
+L["|cffFFD700Undone:|r %s"] = "|cffFFD700Annulé :|r %s"
