@@ -2282,6 +2282,12 @@ L["[Loot] Award of %s to %s undone"] = "[전리품] %s의 %s 분배 취소됨"
 L["Undo last award"] = "마지막 분배 취소"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700취소됨:|r %s"
 
+-- Fit the group to the plan (issue #292)
+L["Only the raid leader can remove people from the raid."] = "공격대장만 공격대에서 사람을 내보낼 수 있습니다."
+L["Everyone in the group is in the plan."] = "그룹의 모두가 계획에 있습니다."
+L["Removed %d from the group."] = "그룹에서 %d명 내보냄."
+L["Fit to plan"] = "계획에 맞추기"
+L["Remove %d who are not in the plan?\n%s"] = "계획에 없는 %d명을 내보낼까요?\n%s"
 -- The site's cores in the game (issue #293)
 L["This core is managed on guildos.me and its Discord: rename it there."] = "이 코어는 guildos.me와 해당 Discord에서 관리됩니다. 이름은 그곳에서 바꾸세요."
 L["This core is managed on guildos.me and its Discord: close it there."] = "이 코어는 guildos.me와 해당 Discord에서 관리됩니다. 닫기는 그곳에서 하세요."

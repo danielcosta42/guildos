@@ -465,7 +465,7 @@ local function handleCommand(msg)
             GuildOS:ShowWebString()
         end
     elseif msg:match("^roster") then
-        -- /guildos roster [invite|groups] — the roster the website planned.
+        -- /guildos roster [invite|groups|trim] — the roster the website planned.
         local I = GuildOS.CompanionImport
         local sub = I and msg:match("^roster%s+(%S+)")
         if not I then
@@ -478,6 +478,9 @@ local function handleCommand(msg)
             local moved, err = I:OrganizeGroups()
             if err then GuildOS:Print(err)
             else GuildOS:Print(string.format(L["Moved %d into their groups."], moved)) end
+        elseif sub == "trim" then
+            -- Out of the group whoever is not in the plan, after asking (issue #292).
+            I:AskTrim()
         else
             GuildOS:ShowImportPopup()
         end

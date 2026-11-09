@@ -1024,6 +1024,13 @@ function Compat.InviteUnit(name)
     if InviteByName then return InviteByName(name) end
 end
 
+-- Remove somebody from the group: C_PartyInfo's where the client has it, the old global otherwise
+-- (issue #292, as InviteUnit above).
+function Compat.UninviteUnit(name)
+    if C_PartyInfo and C_PartyInfo.UninviteUnit then return C_PartyInfo.UninviteUnit(name) end
+    if UninviteUnit then return UninviteUnit(name) end
+end
+
 -- r, g, b, hex for an item quality: C_Item's, or the old global's, or white (issue #43).
 function Compat.GetItemQualityColor(quality)
     if C_Item and C_Item.GetItemQualityColor then return C_Item.GetItemQualityColor(quality) end

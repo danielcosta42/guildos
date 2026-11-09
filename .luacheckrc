@@ -154,6 +154,7 @@ read_globals = {
     -- WoW API: Social & Group
     "InviteUnit",
     "InviteByName",
+    "UninviteUnit",
     "TargetUnit",
     "InspectUnit",
     "NotifyInspect",
