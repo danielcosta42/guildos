@@ -2281,3 +2281,10 @@ L["Undo: "] = "Отмена: "
 L["[Loot] Award of %s to %s undone"] = "[Добыча] Выдача %s игроку %s отменена"
 L["Undo last award"] = "Отменить последнюю выдачу"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Отменено:|r %s"
+
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "Этим кором управляют на guildos.me и в его Discord: переименуйте его там."
+L["This core is managed on guildos.me and its Discord: close it there."] = "Этим кором управляют на guildos.me и в его Discord: закройте его там."
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "Управляется на guildos.me и в Discord: имя, участники и закрытие меняются там."
+L["Only on this client."] = "Только в этом клиенте."
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "Кор \"%s\" создан, только в этом клиенте. Созовите его в Discord через /core, чтобы он был у guildos.me и всех офицеров."

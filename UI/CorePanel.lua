@@ -265,14 +265,20 @@ function GuildOS:CreateCoresPanel(panel)
         local renameBtn = not fromDiscord and track(UI:CreateButton(rightContent, L["Rename"], 70, 20))
         if renameBtn then renameBtn:SetPoint("LEFT", setActiveBtn, "RIGHT", 8, 0) end
 
-        local deleteBtn = track(UI:CreateButton(rightContent, L["Delete"], 70, 20))
-        deleteBtn:SetPoint("LEFT", renameBtn or setActiveBtn, "RIGHT", renameBtn and 6 or 8, 0)
-        deleteBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
+        -- The site's core is closed on the site, not deleted here (issue #293).
+        local deleteBtn = not fromDiscord and track(UI:CreateButton(rightContent, L["Delete"], 70, 20))
+        if deleteBtn then
+            deleteBtn:SetPoint("LEFT", renameBtn or setActiveBtn, "RIGHT", renameBtn and 6 or 8, 0)
+            deleteBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
+        end
 
         if fromDiscord then
-            local managed = track(MakeLabel(rightContent, L["Managed on Discord."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
-            managed:SetPoint("LEFT", deleteBtn, "RIGHT", 10, 0)
+            local managed = track(MakeLabel(rightContent, L["Managed on guildos.me and Discord: name, members and closing are changed there."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
+            managed:SetPoint("LEFT", setActiveBtn, "RIGHT", 10, 0)
         else
+            -- A core only this client has (issue #293): the others officers and the site never see it.
+            local onlyHere = track(MakeLabel(rightContent, L["Only on this client."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
+            onlyHere:SetPoint("TOPLEFT", setActiveBtn, "BOTTOMLEFT", 0, -4)
             local renameInput = track(MakeInput(rightContent, 130, false, L["New name"]))
             renameInput:SetPoint("LEFT", deleteBtn, "RIGHT", 10, 0)
             renameBtn:SetScript("OnClick", function()
@@ -290,11 +296,14 @@ function GuildOS:CreateCoresPanel(panel)
                 end
             end)
         end
-        deleteBtn:SetScript("OnClick", function()
-            CM:Delete(coreName)
-            selectedCore = nil
-            SetStatus(string.format(L["Core \"%s\" deleted."], coreName), C.red)
-        end)
+        if deleteBtn then
+            deleteBtn:SetScript("OnClick", function()
+                local ok, err = CM:Delete(coreName)
+                if not ok then SetStatus(err or L["Core not found."], C.red); return end
+                selectedCore = nil
+                SetStatus(string.format(L["Core \"%s\" deleted."], coreName), C.red)
+            end)
+        end
 
         -- Right-column sub-tab bar: Roster | Sign-ups | Config (officers only)
         local isOfficer = GuildOS:IsOfficer()
@@ -1394,7 +1403,8 @@ function GuildOS:CreateCoresPanel(panel)
         else
             newInput:SetText("")
             selectedCore = name
-            SetStatus(string.format(L["Core \"%s\" created."], name), C.online)
+            -- Only here until it is called on Discord: the site and the other officers never see it (#293).
+            SetStatus(string.format(L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."], name), C.online)
             RebuildList()
             BuildSettings(name)
         end

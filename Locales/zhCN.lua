@@ -2281,3 +2281,10 @@ L["Undo: "] = "撤销： "
 L["[Loot] Award of %s to %s undone"] = "[拾取] 已撤销 %s 分配给 %s"
 L["Undo last award"] = "撤销上一次分配"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700已撤销：|r %s"
+
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "此核心团在 guildos.me 及其 Discord 上管理：请在那里改名。"
+L["This core is managed on guildos.me and its Discord: close it there."] = "此核心团在 guildos.me 及其 Discord 上管理：请在那里关闭。"
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "在 guildos.me 和 Discord 上管理：名称、成员和关闭都在那里更改。"
+L["Only on this client."] = "仅在此客户端。"
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "核心团 \"%s\" 已创建，仅在此客户端。请在 Discord 用 /core 召集，让 guildos.me 和所有官员都能看到。"

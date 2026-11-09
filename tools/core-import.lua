@@ -150,6 +150,15 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:GetRaidSize("alfa-2") == 10, G("and the 10's size"))
   check(CM:IsFromDiscord("Nucleo Alfa") and CM:IsFromDiscord("alfa-2"), G("both are the Discord's now"))
 
+  -- The site's core is the site's (issue #293): neither renamed nor deleted here, and it says where.
+  local okR, whyR = CM:Rename("alfa-2", "Outro nome")
+  check(not okR and whyR and GuildOS.db.cores["alfa-2"] and GuildOS.db.cores["Outro nome"] == nil, G("a site core is not renamed here"))
+  local okD, whyD = CM:Delete("alfa-2")
+  check(not okD and whyD and GuildOS.db.cores["alfa-2"] ~= nil, G("nor deleted here"))
+  -- A core only this client has still is, both ways.
+  check(CM:Create("So Aqui") and CM:Rename("So Aqui", "So Aqui 2") and CM:Delete("So Aqui 2") and GuildOS.db.cores["So Aqui 2"] == nil,
+    G("a local core is renamed and deleted as before"))
+
   local line = said("Cores from Discord:")
   check(line and line:find("Nucleo Alfa +1 -1", 1, true) and line:find("alfa-2 +1 -0", 1, true)
     and line:find("2 on Discord with no confirmed character on the site.", 1, true), G("one line says what changed: " .. tostring(line)))

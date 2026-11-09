@@ -2281,3 +2281,10 @@ L["Undo: "] = "취소: "
 L["[Loot] Award of %s to %s undone"] = "[전리품] %s의 %s 분배 취소됨"
 L["Undo last award"] = "마지막 분배 취소"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700취소됨:|r %s"
+
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "이 코어는 guildos.me와 해당 Discord에서 관리됩니다. 이름은 그곳에서 바꾸세요."
+L["This core is managed on guildos.me and its Discord: close it there."] = "이 코어는 guildos.me와 해당 Discord에서 관리됩니다. 닫기는 그곳에서 하세요."
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "guildos.me와 Discord에서 관리: 이름, 멤버, 닫기는 그곳에서 변경합니다."
+L["Only on this client."] = "이 클라이언트에만 있음."
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "코어 \"%s\" 생성됨 (이 클라이언트에만). guildos.me와 모든 관리자가 볼 수 있도록 Discord에서 /core로 모집하세요."

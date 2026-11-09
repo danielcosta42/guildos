@@ -240,6 +240,11 @@ function CoreManager:Rename(oldName, newName)
     if not oldName or not GuildOS.db.cores[oldName] then
         return false, L["Core not found."]
     end
+    -- A core from the site and its Discord is the site's (issue #293): its name is changed there, or
+    -- the next import would make it again under the old one, beside the renamed copy.
+    if self:IsFromDiscord(oldName) then
+        return false, L["This core is managed on guildos.me and its Discord: rename it there."]
+    end
     if not newName or newName == "" then
         return false, L["Name cannot be empty."]
     end
@@ -286,6 +291,11 @@ end
 -- Removes the core config entry (does NOT delete sessions or attendance data).
 function CoreManager:Delete(name)
     if not name or name == "" then return false end
+    -- The site's own core is closed on the site (issue #293): deleted here, the next import would
+    -- make it again, empty of what officers set here.
+    if self:IsFromDiscord(name) then
+        return false, L["This core is managed on guildos.me and its Discord: close it there."]
+    end
     GuildOS.db.cores[name] = nil
     -- The active core deleted is no longer active, nor the raid's, nor an officer's pick: left set,
     -- the next read of it, or a /reload inside the raid, would make it again, empty (#138).
