@@ -189,6 +189,8 @@ function GuildOS:CreateWebPanel(parent, _win)
     local bringBtn  = UI:CreateButton(panel, L["Bring roster"], 110, BTN_H)
     local inviteBtn = UI:CreateButton(panel, L["Invite"], 90, BTN_H)
     local groupsBtn = UI:CreateButton(panel, L["Groups"], 90, BTN_H)
+    -- Out of the group whoever is not in the plan, after a confirmation naming them (issue #292).
+    local trimBtn   = UI:CreateButton(panel, L["Fit to plan"], 100, BTN_H)
     local raidWhy   = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
     raidWhy:SetJustifyH("LEFT")
     raidWhy:SetWordWrap(true)
@@ -306,6 +308,12 @@ function GuildOS:CreateWebPanel(parent, _win)
         else
             GuildOS:Print(string.format(L["Invited %d, already here %d."], n, skipped))
         end
+        panel:Refresh()
+    end)
+
+    trimBtn:SetScript("OnClick", function()
+        local I = GuildOS.CompanionImport
+        if I then I:AskTrim() end
         panel:Refresh()
     end)
 
@@ -475,13 +483,16 @@ function GuildOS:CreateWebPanel(parent, _win)
         -- when clicked is the exact failure this panel exists to remove.
         local invOk, invWhy = false, L["Import a roster first."]
         local grpOk, grpWhy = false, L["Import a roster first."]
+        local trimOk = false
         if I then
             invOk, invWhy = I:CanInvite()
             grpOk, grpWhy = I:CanOrganize()
+            trimOk = I:CanTrim()
         end
         setEnabled(bringBtn, on)
         setEnabled(inviteBtn, invOk and true or false)
         setEnabled(groupsBtn, grpOk and true or false)
+        setEnabled(trimBtn, trimOk and true or false)
 
         -- One reason line, not three: show the first thing standing in the
         -- way, so the officer gets one instruction instead of a wall.
@@ -598,6 +609,8 @@ function GuildOS:CreateWebPanel(parent, _win)
         inviteBtn:SetPoint("LEFT", bringBtn, "RIGHT", 6, 0)
         groupsBtn:ClearAllPoints()
         groupsBtn:SetPoint("LEFT", inviteBtn, "RIGHT", 6, 0)
+        trimBtn:ClearAllPoints()
+        trimBtn:SetPoint("LEFT", groupsBtn, "RIGHT", 6, 0)
         y = y + BTN_H + 2
         place(raidWhy); raidWhy:SetWidth(inner)
         y = y + ROW_H

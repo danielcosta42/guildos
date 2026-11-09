@@ -1,4 +1,4 @@
-## [1.15.0] - 2026-11-09
+## [1.17.0] - 2026-11-09
 
 ### Added
-- lib ChehulNet v1.2.0, repasse com deduplicação e alcance medido (#299)
+- "Fit to plan" (Web panel and /gos roster trim) removes from the raid whoever is not in the roster planned on guildos.me, after asking and naming them; the leader and the bench stay.

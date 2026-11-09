@@ -2402,6 +2402,12 @@ L["[Loot] Award of %s to %s undone"] = "[Butin] Attribution de %s à %s annulée
 L["Undo last award"] = "Annuler la dernière attribution"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Annulé :|r %s"
 
+-- Fit the group to the plan (issue #292)
+L["Only the raid leader can remove people from the raid."] = "Seul le chef de raid peut retirer des gens du raid."
+L["Everyone in the group is in the plan."] = "Tout le monde dans le groupe est dans le plan."
+L["Removed %d from the group."] = "%d retiré(s) du groupe."
+L["Fit to plan"] = "Ajuster au plan"
+L["Remove %d who are not in the plan?\n%s"] = "Retirer %d qui ne sont pas dans le plan ?\n%s"
 -- The site's cores in the game (issue #293)
 L["This core is managed on guildos.me and its Discord: rename it there."] = "Ce core est géré sur guildos.me et son Discord : renommez-le là-bas."
 L["This core is managed on guildos.me and its Discord: close it there."] = "Ce core est géré sur guildos.me et son Discord : fermez-le là-bas."

@@ -2282,6 +2282,12 @@ L["[Loot] Award of %s to %s undone"] = "[拾取] 已撤销 %s 分配给 %s"
 L["Undo last award"] = "撤销上一次分配"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700已撤销：|r %s"
 
+-- Fit the group to the plan (issue #292)
+L["Only the raid leader can remove people from the raid."] = "只有团长可以把人移出团队。"
+L["Everyone in the group is in the plan."] = "队伍里所有人都在计划中。"
+L["Removed %d from the group."] = "已从队伍移出 %d 人。"
+L["Fit to plan"] = "按计划调整"
+L["Remove %d who are not in the plan?\n%s"] = "移出不在计划中的 %d 人？\n%s"
 -- The site's cores in the game (issue #293)
 L["This core is managed on guildos.me and its Discord: rename it there."] = "此核心团在 guildos.me 及其 Discord 上管理：请在那里改名。"
 L["This core is managed on guildos.me and its Discord: close it there."] = "此核心团在 guildos.me 及其 Discord 上管理：请在那里关闭。"
