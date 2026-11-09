@@ -2466,3 +2466,10 @@ L["Undo: "] = "Desfeito: "
 L["[Loot] Award of %s to %s undone"] = "[Loot] Entrega de %s para %s desfeita"
 L["Undo last award"] = "Desfazer última entrega"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Desfeito:|r %s"
+
+-- Fit the group to the plan (issue #292)
+L["Only the raid leader can remove people from the raid."] = "Só o líder da raide tira gente da raide."
+L["Everyone in the group is in the plan."] = "Todos no grupo estão no plano."
+L["Removed %d from the group."] = "%d tirado(s) do grupo."
+L["Fit to plan"] = "Ajustar ao plano"
+L["Remove %d who are not in the plan?\n%s"] = "Tirar %d que não estão no plano?\n%s"

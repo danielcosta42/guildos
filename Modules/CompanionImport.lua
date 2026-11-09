@@ -459,6 +459,15 @@ function Import:CanInvite()
     return true
 end
 
+-- Taking people out of the raid is the raid leader's alone: an assistant can invite and move,
+-- the game lets only the leader remove (issue #292).
+function Import:CanTrim()
+    if not self:Current() then return false, L["Import a roster first."] end
+    if not IsInRaid() and (GetNumGroupMembers() or 0) == 0 then return false, L["You are not in a group."] end
+    if not UnitIsGroupLeader("player") then return false, L["Only the raid leader can remove people from the raid."] end
+    return true
+end
+
 function Import:CanOrganize()
     if not self:Current() then return false, L["Import a roster first."] end
     if not IsInRaid() then return false, L["You need to be in a raid to organise groups."] end
@@ -564,6 +573,63 @@ function Import:InviteAll()
     for _, m in ipairs(roster.members) do send(m.name) end
     for _, name in pairs(self:Rescued(roster)) do send(name) end
     return invited, skipped, nil
+end
+
+--- Who is in the group and not in the plan (issue #292): a pug who joined, somebody who left the raid
+--- on the site, somebody on its waitlist. Never the leader, and never somebody the site has on the
+--- bench (`why = "bench"`): the raid leader benched them on purpose and may want them standing by in
+--- the raid — taking them out is the raid leader's own hand, not this button's. Returns names, the
+--- way the group shows them.
+function Import:OutsideThePlan()
+    local roster = self:Current()
+    if not roster then return {} end
+    local keep = {}
+    for _, m in ipairs(roster.members) do keep[presence(m.name)] = true end
+    for _, name in pairs(self:Rescued(roster)) do keep[presence(name)] = true end
+    for _, s in ipairs(roster.signups or {}) do
+        if s.why == "bench" then keep[presence(s.name)] = true end
+    end
+    keep[presence(GuildOS.Compat.PlayerName())] = true
+    local out = {}
+    for i = 1, (GetNumGroupMembers() or 0) do
+        local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
+        local n, realm = GuildOS.Compat.UnitIdentity(unit)
+        if n and not keep[presence(n, realm)] then
+            out[#out + 1] = (realm and realm ~= "") and (n .. "-" .. realm) or n
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+--- Ask, naming them, then take out of the group whoever is outside the plan (issue #292): what the Web
+--- panel's button and `/gos roster trim` both call. Nothing to take out, or nobody allowed to, is said.
+function Import:AskTrim()
+    local allowed, reason = self:CanTrim()
+    if not allowed then return GuildOS:Print(reason) end
+    local out = self:OutsideThePlan()
+    if #out == 0 then return GuildOS:Print(L["Everyone in the group is in the plan."]) end
+    if not StaticPopupDialogs["GUILDOS_TRIM_PLAN"] then
+        StaticPopupDialogs["GUILDOS_TRIM_PLAN"] = {
+            text = "%s", button1 = L["Remove"], button2 = L["Cancel"],
+            OnAccept = function()
+                local n, err = Import:TrimToPlan()
+                GuildOS:Print(err or string.format(L["Removed %d from the group."], n))
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+        }
+    end
+    StaticPopup_Show("GUILDOS_TRIM_PLAN", string.format(L["Remove %d who are not in the plan?\n%s"], #out, table.concat(out, ", ")))
+end
+
+--- Take out of the group whoever is outside the plan. The panel asks first, naming them; this only
+--- does it. Returns (removed, err).
+function Import:TrimToPlan()
+    local allowed, reason = self:CanTrim()
+    if not allowed then return nil, reason end
+    local out = self:OutsideThePlan()
+    for _, name in ipairs(out) do GuildOS.Compat.UninviteUnit(inviteName(name)) end
+    return #out, nil
 end
 
 ----------------------------------------------------------------------

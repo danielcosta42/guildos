@@ -2281,3 +2281,10 @@ L["Undo: "] = "Отмена: "
 L["[Loot] Award of %s to %s undone"] = "[Добыча] Выдача %s игроку %s отменена"
 L["Undo last award"] = "Отменить последнюю выдачу"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Отменено:|r %s"
+
+-- Fit the group to the plan (issue #292)
+L["Only the raid leader can remove people from the raid."] = "Только лидер рейда может убирать людей из рейда."
+L["Everyone in the group is in the plan."] = "Все в группе есть в плане."
+L["Removed %d from the group."] = "Убрано из группы: %d."
+L["Fit to plan"] = "Подогнать под план"
+L["Remove %d who are not in the plan?\n%s"] = "Убрать %d, которых нет в плане?\n%s"

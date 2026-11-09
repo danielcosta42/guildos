@@ -2425,3 +2425,10 @@ L["Undo: "] = "Annullato: "
 L["[Loot] Award of %s to %s undone"] = "[Bottino] Assegnazione di %s a %s annullata"
 L["Undo last award"] = "Annulla ultima assegnazione"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Annullato:|r %s"
+
+-- Fit the group to the plan (issue #292)
+L["Only the raid leader can remove people from the raid."] = "Solo il capo incursione può togliere persone dall'incursione."
+L["Everyone in the group is in the plan."] = "Tutti nel gruppo sono nel piano."
+L["Removed %d from the group."] = "%d tolto/i dal gruppo."
+L["Fit to plan"] = "Adatta al piano"
+L["Remove %d who are not in the plan?\n%s"] = "Togliere %d che non sono nel piano?\n%s"
