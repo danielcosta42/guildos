@@ -23,6 +23,17 @@ if CN.EnableAlerts then
     })
 end
 
+-- LibChehulMesh v7: the Chehul clients the mesh heard outlive a /reload and start the next login's peer exchange
+-- (GuildOSDB.meshPeers, name -> time()).
+local Mesh = _G.ChehulMesh
+if Mesh and Mesh.PeerStore then
+    Mesh:PeerStore(function()
+        GuildOSDB = GuildOSDB or {}
+        GuildOSDB.meshPeers = GuildOSDB.meshPeers or {}
+        return GuildOSDB.meshPeers
+    end)
+end
+
 CN:Register("gos",
     -- caps: advertise our version (tiny + non-sensitive; it rides a public post).
     function()
