@@ -1,4 +1,5 @@
-## [1.17.0] - 2026-11-09
+## [1.18.0] - 2026-11-09
 
 ### Added
-- "Fit to plan" (Web panel and /gos roster trim) removes from the raid whoever is not in the roster planned on guildos.me, after asking and naming them; the leader and the bench stay.
+- The companion export now carries points, wishlists, loot priorities, soft reserves and TMB lists to guildos.me.
+- An emptied wishlist now reaches guildos.me as cleared.
