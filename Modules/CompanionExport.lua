@@ -55,8 +55,10 @@ local FMT = "GOSCOMP1"
 -- the people who asked to join (the site's specs/071, issue guildos#245): absent without any. 14 adds
 -- each member's `main`, the key of the character an officer linked them to as an alt (`db.altLinks`,
 -- issue #251, the site's #392), in the same form as the member's own `key`: absent for a main and for
--- anybody nobody linked, and never in the pack, where nobody says whose alt they are.
-local PAYLOAD_VERSION = 14
+-- anybody nobody linked, and never in the pack, where nobody says whose alt they are. 15 adds
+-- `lootBook`, what the guild's loot runs on beyond the history (issue #295, the site's #460): see
+-- lootBook() below. Absent with every loot module off.
+local PAYLOAD_VERSION = 15
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -567,6 +569,187 @@ local function envelope(guildName, count, members)
     }
 end
 
+----------------------------------------------------------------------
+-- The loot book (v15, issue #295, the site's #460): what the guild's loot runs on, beyond the history.
+--
+--   lootBook = {
+--     points    = { complete = true,  pools = { { core, tag?, mode, at, standings = { {key,name,class,current,earned,spent} } } } },
+--     wishlists = { complete = false, lists = { { key, name, class, items = { {itemId, order, offspec?} } } } },
+--     prios     = { complete = true,  items = { { itemId, order = { name, ... } } } },
+--     reserves  = { complete = true,  source, listId, at, items = { {itemId, name, class?, note?, plusOnes, hard?} } },
+--     tmb       = { complete = true,  pools = { { core, tag?, entries = { {player, item, priority} } } } },
+--   }
+--
+-- Each set is its own optional(): one that fails is left out and the rest goes up (#232). A set whose
+-- module is off is absent, never empty: absent tells the site nothing, empty tells it the set was
+-- cleared. `complete` says whether what is missing from the set may be read as gone: this client holds
+-- every pool, the officers' whole priority list and the whole reserve import, but only the wishlists it
+-- has heard. `core` is "" for the guild's own pool, `tag` the site's core when the game core is one.
+-- `at` is the record's own time where the game keeps one (the newest points entry, the reserve
+-- import); the site takes the export's time for the rest.
+----------------------------------------------------------------------
+local BOOK_MAX = { standings = 1000, lists = 300, items = 60, prios = 600, reserves = 1500, tmb = 1500 }
+
+local function keyOf(name)
+    if GuildOS.Points then return GuildOS.Points:KeyOf(name) end
+    return GuildOS:GetPlayerKey(name, GetRealmName())
+end
+
+local function clip(s, n) return tostring(s or ""):sub(1, n) end
+
+local function pointsPool(core, tag, pool)
+    local at, standings = 0, {}
+    for _, e in ipairs(pool.log or {}) do
+        local ts = tonumber(e.ts) or 0
+        if ts > at then at = ts end
+    end
+    for key, s in pairs(pool.standings or {}) do
+        if #standings >= BOOK_MAX.standings then break end
+        standings[#standings + 1] = {
+            key = key, name = s.name or key, class = s.class or "",
+            current = tonumber(s.current) or 0, earned = tonumber(s.earned) or 0, spent = tonumber(s.spent) or 0,
+        }
+    end
+    table.sort(standings, function(a, b) return a.key < b.key end)
+    return { core = core, tag = tag, mode = pool.mode or "dkp", at = math.floor(at), standings = standings }
+end
+
+local function corePools(each)
+    local names = {}
+    for name in pairs(GuildOS.db.cores or {}) do names[#names + 1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+        local core = GuildOS.db.cores[name]
+        if type(core) == "table" then each(name, core.discordTag, core) end
+    end
+end
+
+function Companion:BookPoints()
+    local pools = {}
+    if GuildOS.db.points then pools[1] = pointsPool("", nil, GuildOS.db.points) end
+    corePools(function(name, tag, core)
+        if type(core.points) == "table" then pools[#pools + 1] = pointsPool(name, tag, core.points) end
+    end)
+    return { complete = true, pools = pools }
+end
+
+local function wishItems(list)
+    local items = {}
+    for _, e in ipairs(list or {}) do
+        local id = tonumber(e.itemId)
+        if id and id > 0 and #items < BOOK_MAX.items then
+            items[#items + 1] = { itemId = id, order = tonumber(e.order) or (#items + 1), offspec = e.isOffspec and true or nil }
+        end
+    end
+    table.sort(items, function(a, b) return a.order < b.order end)
+    return items
+end
+
+function Companion:BookWishlists()
+    local byKey = {}
+    -- What this client heard from the guild, then this account's own characters over it.
+    for _, entry in pairs(GuildOS.db.guildWishlists or {}) do
+        if type(entry) == "table" and type(entry.name) == "string" and entry.name ~= "" then
+            local key = keyOf(entry.name)
+            if key then byKey[key] = { key = key, name = entry.name, class = entry.class or "", items = wishItems(entry.wishlist) } end
+        end
+    end
+    for key, list in pairs(GuildOS.db.wishlists or {}) do
+        local member = GuildOS.db.members and GuildOS.db.members[key]
+        byKey[key] = {
+            key = key, name = member and member.name or key,
+            class = member and member.class or "", items = wishItems(list),
+        }
+    end
+    local lists = {}
+    for _, l in pairs(byKey) do
+        if #l.items > 0 then lists[#lists + 1] = l end
+    end
+    table.sort(lists, function(a, b) return a.key < b.key end)
+    while #lists > BOOK_MAX.lists do lists[#lists] = nil end
+    return { complete = false, lists = lists }
+end
+
+function Companion:BookPrios()
+    local items = {}
+    for itemId, list in pairs(GuildOS.db.lootPrios or {}) do
+        local id = tonumber(itemId)
+        if id and id > 0 and type(list) == "table" then
+            local ranked = {}
+            for _, e in ipairs(list) do
+                if type(e) == "table" and type(e.name) == "string" and e.name ~= "" then ranked[#ranked + 1] = e end
+            end
+            table.sort(ranked, function(a, b) return (tonumber(a.order) or 99) < (tonumber(b.order) or 99) end)
+            local order = {}
+            for i, e in ipairs(ranked) do order[i] = clip(e.name, 64) end
+            if #order > 0 then items[#items + 1] = { itemId = id, order = order } end
+        end
+    end
+    table.sort(items, function(a, b) return a.itemId < b.itemId end)
+    while #items > BOOK_MAX.prios do items[#items] = nil end
+    return { complete = true, items = items }
+end
+
+function Companion:BookReserves()
+    local sr = GuildOS.db.softRes or {}
+    local meta = sr.meta or {}
+    local items = {}
+    local ids = {}
+    for itemId in pairs(sr.items or {}) do
+        if tonumber(itemId) then ids[#ids + 1] = tonumber(itemId) end
+    end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        for _, e in ipairs(sr.items[id] or sr.items[tostring(id)] or {}) do
+            if #items < BOOK_MAX.reserves and type(e.name) == "string" and e.name ~= "" then
+                items[#items + 1] = {
+                    itemId = id, name = clip(e.name, 64), class = e.class ~= "" and e.class or nil,
+                    note = e.note ~= "" and e.note and clip(e.note, 200) or nil,
+                    plusOnes = tonumber(e.plusOnes) or 0, hard = e.hard and true or nil,
+                }
+            end
+        end
+    end
+    return {
+        complete = true, source = meta.source or "", listId = clip(meta.listId, 100),
+        at = math.floor(tonumber(meta.importedAt) or 0), items = items,
+    }
+end
+
+function Companion:BookTMB()
+    local pools, total = {}, 0
+    corePools(function(name, tag, core)
+        local list = core.lootMaster and core.lootMaster.tmbList
+        if type(list) ~= "table" then return end
+        local entries = {}
+        for _, e in ipairs(list) do
+            if total < BOOK_MAX.tmb and type(e) == "table" and e.player and e.item then
+                total = total + 1
+                entries[#entries + 1] = { player = clip(e.player, 64), item = clip(e.item, 120), priority = tonumber(e.priority) or 1 }
+            end
+        end
+        pools[#pools + 1] = { core = name, tag = tag, entries = entries }
+    end)
+    return { complete = true, pools = pools }
+end
+
+-- The loot book, each set behind its module's switch; nil when this client has none of them on.
+local function lootBook()
+    local book, any = {}, false
+    local function enabled(id) return GuildOS.IsFeatureEnabled ~= nil and GuildOS:IsFeatureEnabled(id) end
+    local function put(field, on, fn)
+        if not on then return end
+        local v = optional("lootBook." .. field, fn, Companion)
+        if v then book[field] = v; any = true end
+    end
+    put("points", GuildOS.Points and enabled("dkp"), Companion.BookPoints)
+    put("wishlists", GuildOS.Wishlist and enabled("wishlist"), Companion.BookWishlists)
+    put("prios", GuildOS.Wishlist and enabled("wishlist"), Companion.BookPrios)
+    put("reserves", GuildOS.SoftRes and enabled("loot"), Companion.BookReserves)
+    put("tmb", GuildOS.CoreManager and enabled("loot"), Companion.BookTMB)
+    return any and book or nil
+end
+
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
@@ -634,6 +817,8 @@ function Companion:BuildPayload()
     -- never keep the roster, the raids and the loot from going up.
     payload.joinRequests = GuildOS.JoinRequests
         and optional("joinRequests", GuildOS.JoinRequests.ForExport, GuildOS.JoinRequests) or nil
+    -- v15 (#295): points, wishlists, priorities, reserves and TMB lists. Never in the pack.
+    payload.lootBook = lootBook()
     return payload
 end
 
