@@ -1,4 +1,6 @@
-## [1.14.0] - 2026-11-09
+## [1.14.1] - 2026-11-09
 
-### Added
-- On WoW: Forever, an Onyxia's Lair night is now linked to the raid planned on guildos.me, and no Forever night is ever mistaken for TBC's Hyjal Summit.
+### Fixed
+- In DKP, the winner announced is now the one with the most DKP, as the Master Loot window shows.
+- The last loot award can be undone, from the Master Loot window or with /gos lm undo: the item leaves the loot history and the points it cost are given back.
+- A new core's points start from the guild's settings, and switching the Loot Tracker off now stops recording loot.
