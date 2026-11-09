@@ -105,6 +105,7 @@ Modules\Resistances.lua
 Modules\ExportImport.lua
 Modules\CompanionExport.lua
 Modules\CompanionImport.lua
+Modules\RaidPlan.lua
 Modules\Points.lua
 Modules\TradeCouncil.lua
 Modules\LootEquity.lua
@@ -141,6 +142,7 @@ UI\Helpers.lua
 UI\StylePreview.lua
 UI\Layout.lua
 UI\WebPanel.lua
+UI\RaidPlanPanel.lua
 UI\FeatureRegistry.lua
 UI\Window.lua
 UI\Agora.lua

@@ -191,6 +191,8 @@ function GuildOS:CreateWebPanel(parent, _win)
     local groupsBtn = UI:CreateButton(panel, L["Groups"], 90, BTN_H)
     -- Out of the group whoever is not in the plan, after a confirmation naming them (issue #292).
     local trimBtn   = UI:CreateButton(panel, L["Fit to plan"], 100, BTN_H)
+    -- The night's plan from the site: notes, tasks and loot rules (issue #296).
+    local planBtn   = UI:CreateButton(panel, L["Raid plan"], 90, BTN_H)
     local raidWhy   = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
     raidWhy:SetJustifyH("LEFT")
     raidWhy:SetWordWrap(true)
@@ -310,6 +312,8 @@ function GuildOS:CreateWebPanel(parent, _win)
         end
         panel:Refresh()
     end)
+
+    planBtn:SetScript("OnClick", function() GuildOS.RaidPlan:Show() end)
 
     trimBtn:SetScript("OnClick", function()
         local I = GuildOS.CompanionImport
@@ -611,6 +615,8 @@ function GuildOS:CreateWebPanel(parent, _win)
         groupsBtn:SetPoint("LEFT", inviteBtn, "RIGHT", 6, 0)
         trimBtn:ClearAllPoints()
         trimBtn:SetPoint("LEFT", groupsBtn, "RIGHT", 6, 0)
+        planBtn:ClearAllPoints()
+        planBtn:SetPoint("LEFT", trimBtn, "RIGHT", 6, 0)
         y = y + BTN_H + 2
         place(raidWhy); raidWhy:SetWidth(inner)
         y = y + ROW_H

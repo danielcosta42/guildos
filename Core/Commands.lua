@@ -481,6 +481,9 @@ local function handleCommand(msg)
         elseif sub == "trim" then
             -- Out of the group whoever is not in the plan, after asking (issue #292).
             I:AskTrim()
+        elseif sub == "plan" and GuildOS.RaidPlan then
+            -- The night's notes, tasks and loot rules from the site (issue #296).
+            GuildOS.RaidPlan:Show()
         else
             GuildOS:ShowImportPopup()
         end
