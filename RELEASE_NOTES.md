@@ -1,4 +1,4 @@
-## [1.15.0] - 2026-11-09
+## [1.16.0] - 2026-11-09
 
 ### Added
-- lib ChehulNet v1.2.0, repasse com deduplicação e alcance medido (#299)
+- A core that comes from guildos.me can no longer be deleted or renamed in game; the core panel says where those are changed. A core created in game says it exists only on this client.
