@@ -2401,3 +2401,10 @@ L["Undo: "] = "Annulé : "
 L["[Loot] Award of %s to %s undone"] = "[Butin] Attribution de %s à %s annulée"
 L["Undo last award"] = "Annuler la dernière attribution"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Annulé :|r %s"
+
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "Ce core est géré sur guildos.me et son Discord : renommez-le là-bas."
+L["This core is managed on guildos.me and its Discord: close it there."] = "Ce core est géré sur guildos.me et son Discord : fermez-le là-bas."
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "Géré sur guildos.me et Discord : le nom, les membres et la fermeture se changent là-bas."
+L["Only on this client."] = "Seulement sur ce client."
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "Core \"%s\" créé, seulement sur ce client. Appelez-le sur Discord avec /core pour que guildos.me et chaque officier l'aient."
