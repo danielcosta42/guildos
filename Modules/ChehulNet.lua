@@ -44,8 +44,11 @@
 -- guild is where an older client is still heard; so the backoffice can estimate the whole network from the
 -- directory and the share each guild has updated. A peer remembers when it was last heard on GUILD (gts), since a
 -- HELLO whispered through the directory comes in later and would otherwise hide that.
+-- v13 (chehulnet#1): the Forever server refused the directory's channel, and LibChehulMesh v7 reaches outside the
+-- guild through peers it heard instead. The DIAG says how many fresh peers the mesh knows (view) and why the
+-- directory is refused (dirx, empty when it is not).
 
-local VERSION = 12
+local VERSION = 13
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -335,6 +338,8 @@ function CN:BuildDiag()
         "up=" .. math.floor(((GetTime and GetTime()) or 0) - CN._t0), "build=" .. tostring(build or "?"),
         "refused=" .. (s.refused or 0), "dirSent=" .. (s.dirSent or 0),
         "dir=" .. ((Mesh and Mesh.dir and Mesh.dir.count) or 0),
+        "view=" .. ((Mesh and Mesh.PeerCount and Mesh:PeerCount()) or 0),
+        "dirx=" .. (tostring((Mesh and Mesh.dir and Mesh.dir.refused) or ""):gsub("[|;=]", " ")),
     }
     local dead = {}
     for dist in pairs((Mesh and Mesh.dead) or {}) do
