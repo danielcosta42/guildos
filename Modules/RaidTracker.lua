@@ -61,6 +61,24 @@ RaidTracker.RAID_KEYS = {
     [3004] = "midnight-abyss",      -- The Venomous Abyss
 }
 
+-- WoW: Forever's raids, by map id and the site's key (packages/wow, forever.ts), apart from the table
+-- above: Forever reuses Classic's map ids, and 534 there must never be stamped as TBC's Hyjal (issue
+-- #291). Onyxia's Lair is the only map the client has yet; Barrow Deeps and Forever's Hyjal Summit get
+-- theirs when they open on 9 December, and until then their nights go up with no raidId, which the
+-- site matches by the instance's name as it always has.
+RaidTracker.FOREVER_RAID_KEYS = {
+    [249] = "forever-onyxia",
+}
+
+-- The site's key for the instance the game put this character in, in this game's own table.
+function RaidTracker:RaidKeyOf(instanceID)
+    local client = GuildOS.Client
+    if client and not client.isAnniversary and not client.isRetail then
+        return self.FOREVER_RAID_KEYS[instanceID]
+    end
+    return self.RAID_KEYS[instanceID]
+end
+
 -- Raids that count for attendance (25-man progression)
 RaidTracker.RAID_25MAN = {
     [544] = true,  -- Magtheridon's Lair
@@ -344,7 +362,7 @@ function RaidTracker:StartSession(instanceID)
     -- an instance name and a clock. It is a hint, not a claim — the site verifies the raid
     -- belongs to this guild before believing any of it.
     local raidId
-    local key = self.RAID_KEYS[instanceID]
+    local key = self:RaidKeyOf(instanceID)
     if key and GuildOS.CompanionImport then
         GuildOS:SafeCall(function()
             -- On retail a raid planned on another difficulty is another night (issue #182).
