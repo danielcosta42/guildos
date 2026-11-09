@@ -81,6 +81,42 @@ local function unwrap(body, fmt)
     return nil
 end
 
+-- The plan as the site sends it (GOSROST1 v4, the site's specs/009): every field checked and cut
+-- again here, since the inbox is untrusted input whatever wrote it. nil when the block says nothing
+-- of it, which is every block from a site before v4 (issue #296).
+local PLAN_MAX = { tasks = 150, taskNote = 120, note = 500, notes = 40, rules = 500 }
+local function clipped(v, max)
+    if type(v) ~= "string" or v == "" then return nil end
+    return #v > max and v:sub(1, max) or v
+end
+function Import.ReadPlan(data)
+    local plan, any = { assignments = {}, notes = {} }, false
+    for _, a in ipairs(type(data.assignments) == "table" and data.assignments or {}) do
+        if #plan.assignments >= PLAN_MAX.tasks then break end
+        local boss, name = type(a) == "table" and clipped(a.boss, 100), type(a) == "table" and clipped(a.name, 64)
+        if boss and name then
+            plan.assignments[#plan.assignments + 1] = {
+                boss = boss, key = clipped(a.key, 100), name = name,
+                kind = clipped(a.kind, 20) or "other", target = clipped(a.target, 40), note = clipped(a.note, PLAN_MAX.taskNote) or "",
+            }
+            any = true
+        end
+    end
+    for _, n in ipairs(type(data.notes) == "table" and data.notes or {}) do
+        if #plan.notes >= PLAN_MAX.notes then break end
+        local boss, body = type(n) == "table" and clipped(n.boss, 100), type(n) == "table" and clipped(n.text, PLAN_MAX.note)
+        if boss and body then
+            plan.notes[#plan.notes + 1] = { boss = boss, text = body }
+            any = true
+        end
+    end
+    if type(data.loot) == "table" and (clipped(data.loot.system, 20) or clipped(data.loot.rules, PLAN_MAX.rules)) then
+        plan.loot = { system = clipped(data.loot.system, 20), rules = clipped(data.loot.rules, PLAN_MAX.rules), version = tonumber(data.loot.version) or 1 }
+        any = true
+    end
+    return any and plan or nil
+end
+
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
 function Import:Parse(raw)
     if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
@@ -143,6 +179,8 @@ function Import:Parse(raw)
 
     return {
         raidId = data.raidId,
+        -- v4 (the site's #463): the night's plan, nil from an older site (issue #296).
+        plan = Import.ReadPlan(data),
         title = data.title or "",
         instance = data.instance,
         instanceKey = type(data.instanceKey) == "string" and data.instanceKey or nil,
