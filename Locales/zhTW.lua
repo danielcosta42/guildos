@@ -2288,3 +2288,9 @@ L["Everyone in the group is in the plan."] = "隊伍裡所有人都在計畫中�
 L["Removed %d from the group."] = "已從隊伍移出 %d 人。"
 L["Fit to plan"] = "按計畫調整"
 L["Remove %d who are not in the plan?\n%s"] = "移出不在計畫中的 %d 人？\n%s"
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "此核心團在 guildos.me 及其 Discord 上管理：請在那裡改名。"
+L["This core is managed on guildos.me and its Discord: close it there."] = "此核心團在 guildos.me 及其 Discord 上管理：請在那裡關閉。"
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "在 guildos.me 和 Discord 上管理：名稱、成員和關閉都在那裡更改。"
+L["Only on this client."] = "僅在此用戶端。"
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "核心團 \"%s\" 已建立，僅在此用戶端。請在 Discord 用 /core 召集，讓 guildos.me 和所有幹部都能看到。"

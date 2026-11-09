@@ -2288,3 +2288,9 @@ L["Everyone in the group is in the plan."] = "그룹의 모두가 계획에 있�
 L["Removed %d from the group."] = "그룹에서 %d명 내보냄."
 L["Fit to plan"] = "계획에 맞추기"
 L["Remove %d who are not in the plan?\n%s"] = "계획에 없는 %d명을 내보낼까요?\n%s"
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "이 코어는 guildos.me와 해당 Discord에서 관리됩니다. 이름은 그곳에서 바꾸세요."
+L["This core is managed on guildos.me and its Discord: close it there."] = "이 코어는 guildos.me와 해당 Discord에서 관리됩니다. 닫기는 그곳에서 하세요."
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "guildos.me와 Discord에서 관리: 이름, 멤버, 닫기는 그곳에서 변경합니다."
+L["Only on this client."] = "이 클라이언트에만 있음."
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "코어 \"%s\" 생성됨 (이 클라이언트에만). guildos.me와 모든 관리자가 볼 수 있도록 Discord에서 /core로 모집하세요."

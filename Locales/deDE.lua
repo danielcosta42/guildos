@@ -2408,3 +2408,9 @@ L["Everyone in the group is in the plan."] = "Alle in der Gruppe stehen im Plan.
 L["Removed %d from the group."] = "%d aus der Gruppe entfernt."
 L["Fit to plan"] = "An Plan anpassen"
 L["Remove %d who are not in the plan?\n%s"] = "%d entfernen, die nicht im Plan stehen?\n%s"
+-- The site's cores in the game (issue #293)
+L["This core is managed on guildos.me and its Discord: rename it there."] = "Dieser Core wird auf guildos.me und in seinem Discord verwaltet: Benenne ihn dort um."
+L["This core is managed on guildos.me and its Discord: close it there."] = "Dieser Core wird auf guildos.me und in seinem Discord verwaltet: Schließe ihn dort."
+L["Managed on guildos.me and Discord: name, members and closing are changed there."] = "Auf guildos.me und im Discord verwaltet: Name, Mitglieder und Schließen werden dort geändert."
+L["Only on this client."] = "Nur in diesem Client."
+L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."] = "Core \"%s\" erstellt, nur in diesem Client. Ruf ihn im Discord mit /core aus, damit guildos.me und alle Offiziere ihn haben."
