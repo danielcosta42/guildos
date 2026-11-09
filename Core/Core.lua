@@ -994,7 +994,9 @@ end
 -- publish on the guild's channel or open a window, and they shipped with no client to try them on.
 -- A list and not a default in db.settings.modules: a default is saved into every player's file, and a
 -- later release could not turn it on for them. Somebody who chose keeps their choice either way.
-local OFF_UNTIL_TESTED = { journal = true, founding = true }
+-- Empty since the journal and the founding were tried on the live game (issue #289): left off, no
+-- founding reached guildos.me and the site's founding achievements were never earned.
+local OFF_UNTIL_TESTED = {}
 
 function GuildOS:IsFeatureEnabled(id)
     if type(id) ~= "string" then return false end

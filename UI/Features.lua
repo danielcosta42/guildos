@@ -129,5 +129,5 @@ background("raidHUD",           L["Raid CD Tracker"],    L["Floating tracker for
 background("trialTracker",      L["Trial Tracker"],      L["Track trial member progress (officer)"], true)
 background("officerNotes",      L["Officer Notes"],      L["Private notes on guild members (officer)"], true)
 background("commSystem",        L["Comm System"],        L["Sync member data between addon users"])
--- WoW: Forever only: off until the release that takes it off OFF_UNTIL_TESTED (issue #232).
+-- WoW: Forever only: on by default since issue #289 (was off until tested, #232).
 background("founding",          L["Founding"],           L["The guild's founding and its founding members"], nil, false, false)
