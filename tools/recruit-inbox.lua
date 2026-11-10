@@ -116,7 +116,7 @@ node = function(name)
     end,
     __call = function(_, obj, a, b)
       if name == "SetScript" then rawget(obj, "_scripts")[a] = b; return end
-      if name == "IsShown" then return true end
+      if name == "IsShown" or name == "IsVisible" then return true end
       if name == "GetText" then return "" end
       if name == "GetChildren" or name == "GetRegions" then return end
       if name and name:find("^Get") then return 100 end

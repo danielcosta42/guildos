@@ -594,13 +594,13 @@ local function BuildSyncSub(panel)
         local yOff = 0
 
         ------------------------------------------------------------------
-        -- Member data this session (issue #312): what the guildmates' broadcasts became, so a
+        -- Guild OS messages this session (issue #312): what the guildmates' broadcasts became, so a
         -- sync that stores nothing shows where it was lost.
         ------------------------------------------------------------------
         local cs = GuildOS.CommSystem
         if cs.SyncCounters then
             local n = cs:SyncCounters()
-            local line = string.format(L["Member data this session: received %d  -  stored %d  -  dropped %d"],
+            local line = string.format(L["Guild OS messages this session: received %d  -  stored %d  -  dropped %d"],
                 n.received, n.stored, n.dropped)
             if n.topReason then
                 line = line .. "  -  " .. string.format(L["top drop reason: %s"],

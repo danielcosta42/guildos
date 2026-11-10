@@ -2499,7 +2499,7 @@ L["Your task"] = "Sua tarefa"
 -- The sync says what it got (issue #312)
 L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "Sincronização: chegaram dados de %d membro(s); %d membro(s) têm o Guild OS."
 L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "Nenhum dado de membro chegou. Confira se há membros da guilda online com o Guild OS e digite /guildos errors para ver o que falhou."
-L["Member data this session: received %d  -  stored %d  -  dropped %d"] = "Dados de membros nesta sessão: recebidos %d  -  guardados %d  -  descartados %d"
+L["Guild OS messages this session: received %d  -  stored %d  -  dropped %d"] = "Mensagens do Guild OS nesta sessão: recebidos %d  -  guardados %d  -  descartados %d"
 L["top drop reason: %s"] = "principal motivo de descarte: %s"
 L["could not decode"] = "falha ao decodificar"
 L["could not decompress"] = "falha ao descompactar"

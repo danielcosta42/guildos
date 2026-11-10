@@ -558,7 +558,9 @@ function RecruitScanner:BuildInto(container)
         for _, hdr in ipairs(f.colHeader) do hdr:SetShown(isResults) end
         f.clearBtn:SetShown(not isResults)
         -- Seeing the inbox is reading it: the Now tab stops counting these replies (issue #311).
-        if not isResults then RecruitScanner:MarkInboxRead() end
+        -- Only on screen: the view is shared by both containers, and building the hidden one
+        -- would otherwise mark replies read that nobody saw.
+        if not isResults and f:IsVisible() then RecruitScanner:MarkInboxRead() end
 
         if isResults then
             local allSelected = #results > 0

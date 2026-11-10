@@ -2314,7 +2314,7 @@ L["Your task"] = "Ваша задача"
 -- The sync says what it got (issue #312)
 L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "Синхронизация: получены данные от участников: %d; Guild OS есть у участников: %d."
 L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "Данные участников не получены. Проверьте, что в сети есть согильдийцы с Guild OS, и введите /guildos errors, чтобы увидеть ошибки."
-L["Member data this session: received %d  -  stored %d  -  dropped %d"] = "Данные участников за сессию: получено %d  -  сохранено %d  -  отброшено %d"
+L["Guild OS messages this session: received %d  -  stored %d  -  dropped %d"] = "Сообщения Guild OS за сессию: получено %d  -  сохранено %d  -  отброшено %d"
 L["top drop reason: %s"] = "основная причина отказа: %s"
 L["could not decode"] = "не удалось декодировать"
 L["could not decompress"] = "не удалось распаковать"

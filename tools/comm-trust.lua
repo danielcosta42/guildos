@@ -205,12 +205,12 @@ runTimers(30)
 check(CS:SyncCounters().senders[MEMBER].reasons.chunks == 1, "a message whose chunks all came is not a loss")
 
 -- Ten seconds after the sync, one line says what came in.
-runTimers(10)
+runTimers(CS.SYNC_REPORT_DELAY)
 check(printedHas("Sync: data from 1 member(s) arrived; 1 member(s) have Guild OS."), "the sync reports what arrived")
 check(not printedHas("No member data arrived."), "with data in, no hint")
 printed = {}
 CS:FullSync()
-runTimers(10)
+runTimers(CS.SYNC_REPORT_DELAY)
 check(printedHas("Sync: data from 0 member(s) arrived; 1 member(s) have Guild OS.")
   and printedHas("/guildos errors"), "a sync nothing answered says so, and points at /guildos errors")
 

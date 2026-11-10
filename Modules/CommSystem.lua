@@ -128,7 +128,7 @@ CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, receive
 -- db.members was silent, so "sync does nothing" could not be told apart from "nobody sent".
 -- Per sender, this session only: what arrived, what was stored, what was dropped and why.
 -- A message lost before its type is known (it would not decode, decompress or reassemble)
--- counts as a dropped broadcast: that is the message the player is missing.
+-- counts as dropped too, whatever it carried, so the Audit line says "messages", not member data.
 ----------------------------------------------------------------------
 CommSystem.MAX_STAT_SENDERS = 200   -- a busy guild's worth; past it only the totals grow
 CommSystem.syncStats = { senders = {}, nSenders = 0, received = 0, stored = 0, dropped = 0, reasons = {} }
@@ -682,8 +682,9 @@ function CommSystem:FullSync()
 end
 
 -- A sync that only ever said "Syncing..." left the player guessing (issue #312): once the guild
--- has had time to answer, say how many members' data came in and how many have the addon.
-CommSystem.SYNC_REPORT_DELAY = 10
+-- has had time to answer, say how many members' data came in and how many have the addon. 20 s:
+-- peers wait up to 3 s to answer and a big guild's chunked replies are throttled after that.
+CommSystem.SYNC_REPORT_DELAY = 20
 
 function CommSystem:_ReportSyncLater()
     self._syncWindow = {}

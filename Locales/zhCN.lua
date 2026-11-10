@@ -2314,7 +2314,7 @@ L["Your task"] = "你的任务"
 -- The sync says what it got (issue #312)
 L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "同步：收到 %d 名成员的数据；%d 名成员装有 Guild OS。"
 L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "没有收到成员数据。请确认装有 Guild OS 的公会成员在线，然后输入 /guildos errors 查看失败原因。"
-L["Member data this session: received %d  -  stored %d  -  dropped %d"] = "本次会话成员数据：收到 %d  -  保存 %d  -  丢弃 %d"
+L["Guild OS messages this session: received %d  -  stored %d  -  dropped %d"] = "本次会话 Guild OS 消息：收到 %d  -  保存 %d  -  丢弃 %d"
 L["top drop reason: %s"] = "主要丢弃原因：%s"
 L["could not decode"] = "无法解码"
 L["could not decompress"] = "无法解压"
