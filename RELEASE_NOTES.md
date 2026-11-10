@@ -1,4 +1,4 @@
-## [1.19.0] - 2026-11-09
+## [1.20.0] - 2026-11-10
 
 ### Added
-- The raid plan from guildos.me (boss notes, your tasks and the loot rules) now shows in game, and a raid leader can say a boss's note in raid chat with one click.
+- lib ChehulNet v1.3.0, menos chance de bloqueio do diretório (#305)
