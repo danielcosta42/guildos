@@ -2310,3 +2310,14 @@ L["Said the note for %s in raid chat."] = "已在团队频道说出 %s 的备注
 L["No plan for this raid yet: it comes from guildos.me with the roster."] = "这个团队还没有计划：它会随名单从 guildos.me 发来。"
 L["Loot rules"] = "拾取规则"
 L["Your task"] = "你的任务"
+
+-- The sync says what it got (issue #312)
+L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "同步：收到 %d 名成员的数据；%d 名成员装有 Guild OS。"
+L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "没有收到成员数据。请确认装有 Guild OS 的公会成员在线，然后输入 /guildos errors 查看失败原因。"
+L["Guild OS messages this session: received %d  -  stored %d  -  dropped %d"] = "本次会话 Guild OS 消息：收到 %d  -  保存 %d  -  丢弃 %d"
+L["top drop reason: %s"] = "主要丢弃原因：%s"
+L["could not decode"] = "无法解码"
+L["could not decompress"] = "无法解压"
+L["chunks lost"] = "分片丢失"
+L["missing name or class"] = "缺少名字或职业"
+L["older than stored"] = "比已保存的旧"

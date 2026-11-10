@@ -124,6 +124,59 @@ CommSystem.CHUNK_SIZE = 230  -- Leave room for chunk header + "M:xxxx:nn:nn:"
 CommSystem.pendingMessages = {}  -- [sender] = { chunks = {}, total = 0, received = 0 }
 
 ----------------------------------------------------------------------
+-- Member-data counters (issue #312). Every drop on the way from a guildmate's broadcast to
+-- db.members was silent, so "sync does nothing" could not be told apart from "nobody sent".
+-- Per sender, this session only: what arrived, what was stored, what was dropped and why.
+-- A message lost before its type is known (it would not decode, decompress or reassemble)
+-- counts as dropped too, whatever it carried, so the Audit line says "messages", not member data.
+----------------------------------------------------------------------
+CommSystem.MAX_STAT_SENDERS = 200   -- a busy guild's worth; past it only the totals grow
+CommSystem.syncStats = { senders = {}, nSenders = 0, received = 0, stored = 0, dropped = 0, reasons = {} }
+
+function CommSystem:_CountPayload(sender, outcome, reason)
+    local st = self.syncStats
+    local s = st.senders[sender or "?"]
+    if not s and st.nSenders < self.MAX_STAT_SENDERS then
+        s = { received = 0, stored = 0, dropped = 0, reasons = {} }
+        st.senders[sender or "?"] = s
+        st.nSenders = st.nSenders + 1
+    end
+    st.received = st.received + 1
+    if s then s.received = s.received + 1 end
+    if outcome == "stored" then
+        st.stored = st.stored + 1
+        if s then s.stored = s.stored + 1 end
+        -- The sync the player asked for counts members, not messages.
+        if self._syncWindow and sender then self._syncWindow[sender] = true end
+    else
+        reason = reason or "rejected"
+        st.dropped = st.dropped + 1
+        st.reasons[reason] = (st.reasons[reason] or 0) + 1
+        if s then
+            s.dropped = s.dropped + 1
+            s.reasons[reason] = (s.reasons[reason] or 0) + 1
+        end
+    end
+end
+
+-- The session's counters: totals, the reason most drops had (or nil), and the per-sender table.
+function CommSystem:SyncCounters()
+    local st = self.syncStats
+    local top, topN = nil, 0
+    for r, n in pairs(st.reasons) do
+        if n > topN or (n == topN and top and r < top) then top, topN = r, n end
+    end
+    return { received = st.received, stored = st.stored, dropped = st.dropped,
+             topReason = top, topCount = topN, senders = st.senders }
+end
+
+-- How a drop reason reads to the player (Audit > Sync).
+CommSystem.DROP_REASON_TEXT = {
+    decode = L["could not decode"], decompress = L["could not decompress"], chunks = L["chunks lost"],
+    rejected = L["missing name or class"], stale = L["older than stored"],
+}
+
+----------------------------------------------------------------------
 -- Send a message to guild (with chunking for large payloads)
 ----------------------------------------------------------------------
 function CommSystem:SendMessage(msgType, data, target, priority)
@@ -193,10 +246,15 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
 
         local key = sender .. ":" .. msgId
         if not self.pendingMessages[key] then
-            self.pendingMessages[key] = { chunks = {}, total = total, received = 0 }
-            -- Timeout: clean up after 30s
+            local started = { chunks = {}, total = total, received = 0 }
+            self.pendingMessages[key] = started
+            -- Timeout: clean up after 30s. Still waiting then, a chunk was lost: counted, not
+            -- silent (issue #312). A finished message has left the table already.
             C_Timer.After(30, function()
-                self.pendingMessages[key] = nil
+                if self.pendingMessages[key] == started then
+                    self.pendingMessages[key] = nil
+                    self:_CountPayload(sender, "dropped", "chunks")
+                end
             end)
         end
 
@@ -223,11 +281,12 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     end
 
     -- Decode and decompress
+    -- A message that fails here is lost with its type unknown: counted (issue #312).
     local decoded = LibDeflate:DecodeForWoWAddonChannel(encoded)
-    if not decoded then return end
+    if not decoded then self:_CountPayload(sender, "dropped", "decode"); return end
 
     local decompressed = LibDeflate:DecompressDeflate(decoded)
-    if not decompressed then return end
+    if not decompressed then self:_CountPayload(sender, "dropped", "decompress"); return end
 
     -- Parse message type
     local msgType, data = decompressed:match("^(%w+):(.*)$")
@@ -391,7 +450,7 @@ end
 ----------------------------------------------------------------------
 function CommSystem:HandleBroadcast(sender, data)
     local ok, playerData = LibSerialize:Deserialize(data)
-    if not ok or type(playerData) ~= "table" then return end
+    if not ok or type(playerData) ~= "table" then self:_CountPayload(sender, "dropped", "decode"); return end
 
     -- Build player key: the payload's realm, else the client's, as in 0.53.0. Only a client with no
     -- realm at all takes the sender's own suffix, so it agrees with a roster that suffixes names (issue #8).
@@ -404,8 +463,9 @@ function CommSystem:HandleBroadcast(sender, data)
     playerData.name = name
     local key = GuildOS:GetPlayerKey(name, realm)
 
-    -- Store the data
-    GuildOS.DataCollector:StoreReceivedData(key, playerData)
+    -- Store the data, and count what became of it (issue #312).
+    local stored, why = GuildOS.DataCollector:StoreReceivedData(key, playerData)
+    self:_CountPayload(sender, stored and "stored" or "dropped", why)
 end
 
 ----------------------------------------------------------------------
@@ -590,11 +650,13 @@ function CommSystem:FullSync()
 
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["Syncing data with guild..."])
+        self:_ReportSyncLater()
         return
     end
 
     -- Officer-only staggered broadcasts
     GuildOS:Print(L["Syncing all guild data (officer mode)..."])
+    self:_ReportSyncLater()
 
     C_Timer.After(1, function()
         self:BroadcastAltLinks()
@@ -617,6 +679,34 @@ function CommSystem:FullSync()
             GuildOS.OfficerNotes:BroadcastAllNotes()
         end
     end)
+end
+
+-- A sync that only ever said "Syncing..." left the player guessing (issue #312): once the guild
+-- has had time to answer, say how many members' data came in and how many have the addon. 20 s:
+-- peers wait up to 3 s to answer and a big guild's chunked replies are throttled after that.
+CommSystem.SYNC_REPORT_DELAY = 20
+
+function CommSystem:_ReportSyncLater()
+    self._syncWindow = {}
+    local window = self._syncWindow
+    GuildOS.Compat.After(self.SYNC_REPORT_DELAY, function()
+        -- A later sync started meanwhile has its own window and reports instead.
+        if self._syncWindow ~= window then return end
+        self._syncWindow = nil
+        self:ReportSync(window)
+    end)
+end
+
+function CommSystem:ReportSync(window)
+    local arrived = 0
+    for _ in pairs(window or {}) do arrived = arrived + 1 end
+    local _, withAddon = self:GetSyncHealth()
+    GuildOS:Print(string.format(L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."],
+        arrived, withAddon or 0))
+    if arrived == 0 then
+        GuildOS:Print(L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."])
+    end
+    return arrived, withAddon
 end
 
 ----------------------------------------------------------------------

@@ -886,7 +886,13 @@ GuildOS.GuildManager = {
   GetInactiveMembers = function() return { 1, 2, 3, 4 } end,
   GetSuggestions = function() return { trialsReady = { 1 }, promoteCandidates = { 1, 2 } } end,
 }
-GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+-- The scanner's reply inbox: n replies that arrived at NOW (issue #311).
+local function replies(n)
+  local list = {}
+  for i = 1, n do list[i] = { name = "R" .. i, msg = "hi", ts = NOW } end
+  return { GetInbox = function() return list end }
+end
+GuildOS.RecruitScanner = replies(2)
 do
   local needs = A:NeedsMe()
   check(#needs == 5, "an officer's five kinds of work")
@@ -900,6 +906,21 @@ do
     "suggestions open on suggestions and count promotions: a ready trial is already the trials row")
   check(needs[5].text == "2 applicants waiting" and needs[5].id == "recruitment" and needs[5].sub == "scanner",
     "applicants open the scanner")
+end
+-- Opening the inbox reads it: what was there stops waiting, a reply after it waits (issue #311).
+do
+  GuildOS.db.recruitScanner = { inboxReadAt = NOW }
+  check(#A:NeedsMe() == 4, "replies the officer has seen are not applicants waiting")
+  local seen = replies(2)
+  local list = seen.GetInbox()
+  list[#list + 1] = { name = "Late", msg = "still recruiting?", ts = NOW + 5 }
+  GuildOS.RecruitScanner = seen
+  local needs = A:NeedsMe()
+  check(needs[5] and needs[5].text == "1 applicants waiting", "only a reply after the last look is waiting")
+  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+  GuildOS.db.recruitScanner = nil
+  check(#A:NeedsMe() == 4, "an entry with no time is not an applicant")
+  GuildOS.RecruitScanner = replies(2)
 end
 events[3].mine = { status = "yes" }
 check(#A:NeedsMe() == 4, "an answered raid needs nothing")
@@ -1083,7 +1104,7 @@ do
 end
 
 do
-  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3 } end }
+  GuildOS.RecruitScanner = replies(3)
   for _ = 1, 9 do nowTicker.fn() end
   check(needRows[5].text.text == "2 applicants waiting", "between refreshes the lists stay as they were")
   nowTicker.fn()
@@ -1093,7 +1114,7 @@ do
   check(now.clock.text == "4:11:38", "every tick moves the clock")
   NOW = NOW - 60
   check(now.events.GUILD_ROSTER_UPDATE, "Now listens for roster updates")
-  GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+  GuildOS.RecruitScanner = replies(2)
   fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
   check(needRows[5].text.text == "2 applicants waiting", "and refreshes on one")
 end
@@ -1102,10 +1123,10 @@ fire(needRows[3], "OnClick")
 check(f.activeTab == "management" and selected[#selected] == "CreateManagementPanel:inactive",
   "a row opens its screen on its sub-tab")
 check(nowTicker.cancelled, "leaving Now stops its clock")
-GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2, c = 3, d = 4 } end }
+GuildOS.RecruitScanner = replies(4)
 fire(now, "OnEvent", "GUILD_ROSTER_UPDATE")
 check(needRows[5].text.text == "2 applicants waiting", "off screen, a roster update does not refresh Now")
-GuildOS.RecruitScanner = { GetInbox = function() return { a = 1, b = 2 } end }
+GuildOS.RecruitScanner = replies(2)
 UI:OpenWindow("home")
 fire(needRows[2], "OnClick")
 check(f.activeTab == "guild" and selected[#selected] == "CreateGuildHub:calendar:" .. KARAZHAN,

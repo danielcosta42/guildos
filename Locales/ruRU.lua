@@ -2310,3 +2310,14 @@ L["Said the note for %s in raid chat."] = "Заметка по %s сказана
 L["No plan for this raid yet: it comes from guildos.me with the roster."] = "Плана для этого рейда пока нет: он придёт с guildos.me вместе с составом."
 L["Loot rules"] = "Правила добычи"
 L["Your task"] = "Ваша задача"
+
+-- The sync says what it got (issue #312)
+L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "Синхронизация: получены данные от участников: %d; Guild OS есть у участников: %d."
+L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "Данные участников не получены. Проверьте, что в сети есть согильдийцы с Guild OS, и введите /guildos errors, чтобы увидеть ошибки."
+L["Guild OS messages this session: received %d  -  stored %d  -  dropped %d"] = "Сообщения Guild OS за сессию: получено %d  -  сохранено %d  -  отброшено %d"
+L["top drop reason: %s"] = "основная причина отказа: %s"
+L["could not decode"] = "не удалось декодировать"
+L["could not decompress"] = "не удалось распаковать"
+L["chunks lost"] = "потеряны части"
+L["missing name or class"] = "нет имени или класса"
+L["older than stored"] = "старше сохранённых"

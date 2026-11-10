@@ -57,8 +57,10 @@ local FMT = "GOSCOMP1"
 -- issue #251, the site's #392), in the same form as the member's own `key`: absent for a main and for
 -- anybody nobody linked, and never in the pack, where nobody says whose alt they are. 15 adds
 -- `lootBook`, what the guild's loot runs on beyond the history (issue #295, the site's #460): see
--- lootBook() below. Absent with every loot module off.
-local PAYLOAD_VERSION = 15
+-- lootBook() below. Absent with every loot module off. 16 adds `officerRanks`, the guild's officer
+-- threshold as the officers set it ({ max, at }, issue #313, the site's #495): ranks 0..max are
+-- officers. Absent until somebody in the guild chose one, so the site keeps its default.
+local PAYLOAD_VERSION = 16
 
 ----------------------------------------------------------------------
 -- JSON encoding
@@ -738,6 +740,18 @@ function Companion:BookTMB()
     return { complete = true, pools = pools }
 end
 
+-- v16 (issue #313): which ranks are officers, as the guild chose it. Only with its stamp: a client that
+-- never heard the guild's choice holds its own default, and saying it would overwrite a real choice on
+-- the site with a guess. The stamp is the officers' own, so the site keeps the newest whichever
+-- officer's upload lands last, as the clients do between themselves (Core's OnOfficerMaxRankSync).
+local function officerRanks()
+    local s = GuildOS.db and GuildOS.db.settings
+    local max, at = s and s.officerMaxRank, s and tonumber(s.officerMaxRankAt)
+    if type(max) ~= "number" or max ~= math.floor(max) or max < 0 or max > 9 then return nil end
+    if not (at and at > 0 and at < math.huge) then return nil end
+    return { max = max, at = math.floor(at) }
+end
+
 -- The loot book, each set behind its module's switch; nil when this client has none of them on.
 local function lootBook()
     local book, any = {}, false
@@ -824,6 +838,7 @@ function Companion:BuildPayload()
         and optional("joinRequests", GuildOS.JoinRequests.ForExport, GuildOS.JoinRequests) or nil
     -- v15 (#295): points, wishlists, priorities, reserves and TMB lists. Never in the pack.
     payload.lootBook = lootBook()
+    payload.officerRanks = officerRanks()
     return payload
 end
 

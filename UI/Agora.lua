@@ -132,8 +132,14 @@ function Agora:NeedsMe()
 
         local rs = GuildOS.RecruitScanner
         if rs and rs.GetInbox then
+            -- Only replies newer than the last look at the inbox are waiting: counting every one
+            -- ever stored, the row never went away (issue #311).
+            local readAt = tonumber(GuildOS.db and GuildOS.db.recruitScanner
+                and GuildOS.db.recruitScanner.inboxReadAt) or 0
             local n = 0
-            for _ in pairs(rs:GetInbox()) do n = n + 1 end
+            for _, e in ipairs(rs:GetInbox()) do
+                if type(e) == "table" and (tonumber(e.ts) or 0) > readAt then n = n + 1 end
+            end
             if n > 0 then add(normal, string.format(L["%d applicants waiting"], n), "recruitment", "scanner") end
         end
     end

@@ -610,14 +610,16 @@ end
 ----------------------------------------------------------------------
 -- Store data received from another player
 ----------------------------------------------------------------------
+-- Returns true once stored, else false and why ("rejected", "stale"): CommSystem counts both
+-- (issue #312).
 function DataCollector:StoreReceivedData(playerKey, data)
-    if not data or type(data) ~= "table" then return end
-    if not data.name or not data.class then return end
+    if not data or type(data) ~= "table" then return false, "rejected" end
+    if not data.name or not data.class then return false, "rejected" end
 
     -- Timestamp check: skip if incoming data is older than what we have
     local existing = GuildOS.db.members[playerKey] or {}
     if existing.lastUpdate and data.lastUpdate and data.lastUpdate < existing.lastUpdate then
-        return
+        return false, "stale"
     end
 
     -- Snapshot prior state for milestone detection BEFORE the merge mutates
@@ -686,6 +688,7 @@ function DataCollector:StoreReceivedData(playerKey, data)
     -- activated at least once, and RefreshRosterUI nil-guards for that and
     -- also covers the floating roster window.
     GuildOS:RefreshRosterUI()
+    return true
 end
 
 ----------------------------------------------------------------------
