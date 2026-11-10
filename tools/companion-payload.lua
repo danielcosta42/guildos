@@ -355,12 +355,29 @@ GuildOS.JoinRequests = { ForExport = function() error("boom") end }
 GuildOS.RecordError = function() end
 local survived = GuildOS.Companion:BuildPayload()
 GuildOS.RecordError = nil
-assert(survived.joinRequests == nil and survived.members and survived.v == 15, "a failing joinRequests is left out and the rest goes")
+assert(survived.joinRequests == nil and survived.members and survived.v == 16, "a failing joinRequests is left out and the rest goes")
 GuildOS.JoinRequests = nil
 
 -- v14 (issue #251, the site's #392): a linked alt carries `main`, its main's key exactly as altLinks holds it, the
 -- same form as its own `key`. A main and anybody nobody linked carry no `main` key at all: not false, not "".
-assert(anniversary.v == 15, "the payload is v15")
+assert(anniversary.v == 16, "the payload is v16")
+
+-- v16 (issue #313, the site's #495): the guild's officer threshold rides the export with the officers' stamp,
+-- and only once somebody in the guild chose it. Without the stamp the client holds its own default, and
+-- saying it would put a guess over a real choice on the site.
+do
+  local s = GuildOS.db.settings
+  local max, at, NOW = s.officerMaxRank, s.officerMaxRankAt, GetServerTime()
+  s.officerMaxRank, s.officerMaxRankAt = 2, nil
+  assert(GuildOS.Companion:BuildPayload().officerRanks == nil, "no stamp, no officerRanks: the site keeps its default")
+  s.officerMaxRankAt = NOW - 60
+  local r = GuildOS.Companion:BuildPayload().officerRanks
+  assert(r and r.max == 2 and r.at == NOW - 60, "the chosen threshold goes with its stamp")
+  assert(GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload()):find('"officerRanks":{', 1, true), "and reaches the wire")
+  s.officerMaxRank = 12
+  assert(GuildOS.Companion:BuildPayload().officerRanks == nil, "a rank the game has not (0..9) is never sent")
+  s.officerMaxRank, s.officerMaxRankAt = max, at
+end
 do
   local function lines()
     local by, json = {}, {}
@@ -453,14 +470,14 @@ do
   assert(#files == 1 and files[1] == GuildOSDB.__companion, "switch off: one string, in __companion: " .. #files)
   assert(files[1] == files[1]:match("^GOSCOMP1:[a-zA-Z0-9()]+$"), "the app's regex lifts the whole string")
   local pack, json = opened(files[1])
-  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 15 and pack.count == 1, "it says it is the pack")
+  assert(pack.self == true and pack.fmt == "GOSCOMP1" and pack.v == 16 and pack.count == 1, "it says it is the pack")
   assert(pack.guildKey == "Raid Guild-Firemaw" and pack.guildName == "Raid Guild" and pack.realm == "Firemaw"
     and pack.game == "ANNIVERSARY", "it names the guild and the game, as the site's upload picks by them")
   assert(pack.exportedBy == PLAYER and pack.exportedAt == NOW and pack.addonVersion == GuildOS.VERSION, "and who, when, which addon")
   assert(#pack.members == 1 and pack.members[1].key == PLAYER and pack.members[1].lastUpdate == mine.lastUpdate,
     "one line, mine, with the stamp the site's guard reads")
   for _, field in ipairs({ "sessions", "deletedSessions", "attendanceRules", "journal", "tabard", "founding",
-                           "guildConfig", "rosterComplete", "region" }) do
+                           "guildConfig", "rosterComplete", "region", "officerRanks" }) do
     assert(pack[field] == nil and not json:find('"' .. field .. '"', 1, true), "the pack carries no " .. field)
   end
   -- `loot` is the one key it cannot leave out: the decoder (packages/goscomp's assertPayload) refuses a

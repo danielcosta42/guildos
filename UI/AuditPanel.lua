@@ -594,6 +594,24 @@ local function BuildSyncSub(panel)
         local yOff = 0
 
         ------------------------------------------------------------------
+        -- Member data this session (issue #312): what the guildmates' broadcasts became, so a
+        -- sync that stores nothing shows where it was lost.
+        ------------------------------------------------------------------
+        local cs = GuildOS.CommSystem
+        if cs.SyncCounters then
+            local n = cs:SyncCounters()
+            local line = string.format(L["Member data this session: received %d  -  stored %d  -  dropped %d"],
+                n.received, n.stored, n.dropped)
+            if n.topReason then
+                line = line .. "  -  " .. string.format(L["top drop reason: %s"],
+                    (cs.DROP_REASON_TEXT or {})[n.topReason] or n.topReason)
+            end
+            local fs = UI:CreateText(content, line, 9, C.silver.r, C.silver.g, C.silver.b)
+            fs:SetPoint("TOPLEFT", 8, -yOff)
+            yOff = yOff + 18
+        end
+
+        ------------------------------------------------------------------
         -- The recruitment: the gossip's rounds, the requests, the whisper test and the channel probe.
         ------------------------------------------------------------------
         local lines = RecruitLines()

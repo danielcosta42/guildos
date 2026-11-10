@@ -2431,3 +2431,14 @@ L["Said the note for %s in raid chat."] = "Nota de %s dicha en el chat de banda.
 L["No plan for this raid yet: it comes from guildos.me with the roster."] = "Aún no hay plan para esta banda: llega desde guildos.me con el roster."
 L["Loot rules"] = "Reglas de botín"
 L["Your task"] = "Tu tarea"
+
+-- The sync says what it got (issue #312)
+L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "Sincronización: llegaron datos de %d miembro(s); %d miembro(s) tienen Guild OS."
+L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "No llegaron datos de miembros. Comprueba que haya miembros de la hermandad conectados con Guild OS y escribe /guildos errors para ver qué falló."
+L["Member data this session: received %d  -  stored %d  -  dropped %d"] = "Datos de miembros en esta sesión: recibidos %d  -  guardados %d  -  descartados %d"
+L["top drop reason: %s"] = "motivo principal de descarte: %s"
+L["could not decode"] = "no se pudo decodificar"
+L["could not decompress"] = "no se pudo descomprimir"
+L["chunks lost"] = "fragmentos perdidos"
+L["missing name or class"] = "sin nombre o clase"
+L["older than stored"] = "más antiguo que lo guardado"

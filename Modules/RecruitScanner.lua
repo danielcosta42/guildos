@@ -24,6 +24,7 @@ function RecruitScanner:Initialize()
         end
     end
     GuildOS.db.recruitScanner.inbox = GuildOS.db.recruitScanner.inbox or {}
+    self:_ExpireInbox()     -- replies from weeks ago are not applicants waiting (issue #311)
     self._results = {}
     self._contactCd = {}
     self._RegisterEvents = self._RegisterEvents or function() end
@@ -200,7 +201,39 @@ function RecruitScanner:_RegisterEvents()
     end)
 end
 
-function RecruitScanner:GetInbox() return (GuildOS.db.recruitScanner and GuildOS.db.recruitScanner.inbox) or {} end
+-- A reply stays in the inbox two weeks: kept forever, the Now tab's "applicants waiting" counted
+-- every whisper ever received and never went away (issue #311).
+RecruitScanner.INBOX_KEEP_SEC = 14 * 86400
+
+function RecruitScanner:_ExpireInbox()
+    local cfg = GuildOS.db and GuildOS.db.recruitScanner
+    local inbox = cfg and cfg.inbox
+    if type(inbox) ~= "table" then return end
+    local cutoff = GetServerTime() - self.INBOX_KEEP_SEC
+    for i = #inbox, 1, -1 do
+        local e = inbox[i]
+        if type(e) ~= "table" or (tonumber(e.ts) or 0) < cutoff then table.remove(inbox, i) end
+    end
+end
+
+function RecruitScanner:GetInbox()
+    self:_ExpireInbox()
+    return (GuildOS.db.recruitScanner and GuildOS.db.recruitScanner.inbox) or {}
+end
+
+-- Opening the inbox view reads it: only replies newer than this count as waiting (issue #311).
+function RecruitScanner:MarkInboxRead()
+    local cfg = GuildOS.db and GuildOS.db.recruitScanner
+    if cfg then cfg.inboxReadAt = GetServerTime() end
+end
+
+-- The inbox view's Clear button (issue #311).
+function RecruitScanner:ClearInbox()
+    local cfg = GuildOS.db and GuildOS.db.recruitScanner
+    if not cfg then return end
+    cfg.inbox = {}
+    cfg.inboxReadAt = GetServerTime()
+end
 
 ----------------------------------------------------------------------
 -- Whisper-selected confirmation (standard Blizzard popup; avoids an
@@ -385,6 +418,15 @@ function RecruitScanner:BuildInto(container)
         end)
         f.tabs = { results = resultsTab, inbox = inboxTab }
 
+        -- Inbox view only: empties it, so old replies stop reading as applicants (issue #311).
+        local clearBtn = UI:CreateButton(f, L["Clear"], 70, 20)
+        clearBtn:SetPoint("LEFT", inboxTab, "RIGHT", 12, 0)
+        clearBtn:SetScript("OnClick", function()
+            RecruitScanner:ClearInbox()
+            GuildOS:SafeCall(refresh)
+        end)
+        f.clearBtn = clearBtn
+
         local selectedText = UI:CreateText(f, string.format(L["%d selected"], 0), 11,
             C.textDim.r, C.textDim.g, C.textDim.b)
         selectedText:SetPoint("TOPRIGHT", -16, -60)
@@ -514,6 +556,9 @@ function RecruitScanner:BuildInto(container)
 
         local isResults = (self._view == "results")
         for _, hdr in ipairs(f.colHeader) do hdr:SetShown(isResults) end
+        f.clearBtn:SetShown(not isResults)
+        -- Seeing the inbox is reading it: the Now tab stops counting these replies (issue #311).
+        if not isResults then RecruitScanner:MarkInboxRead() end
 
         if isResults then
             local allSelected = #results > 0

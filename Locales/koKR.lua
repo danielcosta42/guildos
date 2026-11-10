@@ -2310,3 +2310,14 @@ L["Said the note for %s in raid chat."] = "%s 메모를 공격대 대화에 말�
 L["No plan for this raid yet: it comes from guildos.me with the roster."] = "아직 이 공격대의 계획이 없습니다. 명단과 함께 guildos.me에서 옵니다."
 L["Loot rules"] = "전리품 규칙"
 L["Your task"] = "내 임무"
+
+-- The sync says what it got (issue #312)
+L["Sync: data from %d member(s) arrived; %d member(s) have Guild OS."] = "동기화: 멤버 %d명의 데이터 수신; Guild OS 사용 멤버 %d명."
+L["No member data arrived. Check that guildmates with Guild OS are online, then type /guildos errors to see what failed."] = "받은 멤버 데이터가 없습니다. Guild OS를 사용하는 길드원이 접속 중인지 확인하고 /guildos errors 를 입력해 실패 원인을 확인하세요."
+L["Member data this session: received %d  -  stored %d  -  dropped %d"] = "이번 세션 멤버 데이터: 수신 %d  -  저장 %d  -  버림 %d"
+L["top drop reason: %s"] = "주요 버림 원인: %s"
+L["could not decode"] = "디코딩 실패"
+L["could not decompress"] = "압축 해제 실패"
+L["chunks lost"] = "조각 유실"
+L["missing name or class"] = "이름 또는 직업 없음"
+L["older than stored"] = "저장된 것보다 오래됨"
