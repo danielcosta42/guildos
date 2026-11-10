@@ -53,8 +53,11 @@
 -- mesh holds (links), how many peers take the relay (v8), what the relay did (rl=in/out/fwd/guild/dup) and the
 -- last traces (trace=id:seconds:hops,..., newest first). CN:Trace() sends a trace by the relay; the backoffice reads
 -- its reach in the DIAGs.
+-- v15 (chehulnet#5): LibChehulMesh v9 brakes when its whispers keep finding nobody and keeps one directory per
+-- ruleset. The DIAG says how many "No player named" the mesh got within its window (nf), whether the brake is on
+-- (trip), which channel the directory uses (dirch) and how old its list is in seconds (dirage, empty before a read).
 
-local VERSION = 14
+local VERSION = 15
 if _G.ChehulNet and (_G.ChehulNet.version or 0) >= VERSION then
     return
 end
@@ -353,6 +356,10 @@ function CN:BuildDiag()
         "view=" .. ((Mesh and Mesh.PeerCount and Mesh:PeerCount()) or 0),
         "dirx=" .. (tostring((Mesh and Mesh.dir and Mesh.dir.refused) or ""):gsub("[|;=]", " ")),
         "links=" .. ((Mesh and Mesh.LinkCount and Mesh:LinkCount()) or 0),
+        "nf=" .. ((Mesh and Mesh.NotFoundCount and Mesh:NotFoundCount()) or 0),
+        "trip=" .. ((Mesh and Mesh.Tripped and Mesh:Tripped()) and 1 or 0),
+        "dirch=" .. (tostring((Mesh and Mesh.dir and Mesh.dir.channel) or ""):gsub("[|;=]", " ")),
+        "dirage=" .. ((Mesh and Mesh.dir and tonumber(Mesh.dir.at)) and (time() - Mesh.dir.at) or ""),
         "v8=" .. ((Mesh and Mesh.V8Count and Mesh:V8Count()) or 0),
         "rl=" .. table.concat({ s.rlIn or 0, s.rlOut or 0, s.rlFwd or 0, s.rlGuild or 0, s.rlDup or 0 }, "/"),
         "trace=" .. (function()

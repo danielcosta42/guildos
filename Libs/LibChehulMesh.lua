@@ -76,8 +76,22 @@
 --   * a peer outside the guild heard for the first time gets an exchange within seconds (PEX_EAGER a minute).
 --   * :Seed(name) takes a name a host knows runs Chehul (an author of its data); :Tag(name, tags, version) keeps
 --     the addons and mesh version a peer's HELLO gave, and :Peers(tag) lists the fresh ones running that addon.
+-- v9 (chehulnet#5): on 2026-11-10 the server took ChehulNetH again, with no new build and no hotfix about chat: the
+-- INVALID_NAME of 11-08 looks like a block on that one name after the launch's peak of "No player named". What
+-- weighs on the server is ours, so:
+--   * ONE CHANNEL PER RULESET where the game has regional unique names (Forever): ChehulNet + faction + HC, RPPvP,
+--     RP, PvP or PvE (C_GameRules). A whisper does not cross rulesets, and the faction-wide list sent every realm
+--     item drawn from another ruleset to a "No player named". A client the game put back in the old faction channel
+--     leaves it once. Without regional unique names (Anniversary, retail) the name is the one it was.
+--   * THE LIST IS READ RARELY: on joining, then after DIR_READ plus a jitter fixed per client, and only while the
+--     client has fewer than DIR_ENOUGH confirmed links (it was every client, every 120 s, the whole list).
+--   * THE DIRECTORY ONLY FILLS: realm items draw heard peers first, members of a list read within DIR_FRESH after.
+--   * A BRAKE: NF_LIMIT "No player named" for names the mesh whispered within NF_WINDOW and the realm bus and the
+--     peer exchange use heard peers only, until the count drops.
+--   * WRONG_PASSWORD or BANNED (someone took the channel and locked it) lead to the same name with a number (…2, up
+--     to DIR_MAX_NUM), one step per refusal. INVALID_NAME still ends the directory for the session, no other name.
 
-local VERSION = 8
+local VERSION = 9
 if _G.ChehulMesh and (_G.ChehulMesh.version or 0) >= VERSION then
     return
 end
@@ -116,6 +130,7 @@ do
     s.yell = s.yell or 0; s.realmQueued = s.realmQueued or 0; s.realmSent = s.realmSent or 0
     s.realmDropped = s.realmDropped or 0
     s.refused = s.refused or 0; s.dirSent = s.dirSent or 0
+    s.nf = s.nf or 0
     s.rlIn = s.rlIn or 0; s.rlOut = s.rlOut or 0; s.rlFwd = s.rlFwd or 0; s.rlGuild = s.rlGuild or 0; s.rlDup = s.rlDup or 0
 end
 M.dead   = M.dead or {}   -- [dist] = "InvalidChatType": a bus the game refused this session (v5)
@@ -133,13 +148,24 @@ M.REALM_FANOUT    = 3   -- directory members a realm item goes to, by whisper, o
 M.DIR_PREFIX      = "ChehulNet" -- the directory channel: this plus the faction's initial (A/H)
 -- ponytail: the password ships in every copy, so it keeps chat clients out, not a griefer who reads it.
 M.DIR_PASSWORD    = "chehulmesh"
-M.DIR_REFRESH     = 120 -- seconds between member-list reads; the server sends the list only on a selection
+M.DIR_REFRESH     = 120 -- seconds between directory checks (join state, stale whispers); v9 reads the list rarely
+M.DIR_READ        = 600 -- v9: a list read after this long (plus the client's jitter), while links are few
+M.DIR_JITTER      = 180 -- v9: up to this many seconds added to DIR_READ, fixed per client so reads spread out
+M.DIR_ENOUGH      = 6   -- v9: with this many confirmed links the list is not read at all
+M.DIR_FRESH       = 960 -- v9: members of a list older than this are not whispered (longer than a read's cycle:
+                        -- DIR_READ + DIR_JITTER + one DIR_REFRESH tick, so a client that reads is never left without)
+M.DIR_FIRST_TRIES = 3   -- v9: list reads asked before the first one arrives, then at the DIR_READ pace
+M.DIR_MAX_NUM     = 5   -- v9: …2..…5 after a WRONG_PASSWORD or BANNED
+M.NF_WINDOW       = 600 -- v9: the brake's window, in seconds
+M.NF_LIMIT        = 20  -- v9: "No player named" in the window that put the brake on
 M.TRIED_SECONDS   = 30  -- seconds a "No player named" line for a name the directory whispered stays hidden
 M.BAD_SECONDS     = 600 -- seconds a name that answered "No player named" stays off the directory
 M.dir.tried = M.dir.tried or {} -- [whisper target] = GetTime() until which its not-found line is ours
 M.dir.bad   = M.dir.bad or {}   -- [whisper target] = time() until which it is not picked
 M.dir.raw   = M.dir.raw or {}   -- [spelling we whisper] = the roster's own spelling, when they differ
+M.dir.past  = M.dir.past or {}  -- v9: channel names this session moved away from (their notices stay out of chat)
 
+M.nf     = M.nf or {}     -- v9: time() of each "No player named" for a name the mesh whispered, within NF_WINDOW
 M.view   = M.view or {}   -- [name] = { heard, named, guild, asked, stored } (v7): the Chehul clients this one knows
 M.stores = M.stores or {} -- functions from :PeerStore, each returning a SavedVariables table of name -> time()
 M.pex    = M.pex or { replied = {}, window = 0, answers = 0 }
@@ -209,6 +235,29 @@ local function Usable(name)
     return not till or time() > till
 end
 
+-- v9: the brake. "No player named" answers within NF_WINDOW; NF_LIMIT of them and only heard peers are whispered.
+local function NotFoundCount()
+    local now, kept = time(), {}
+    for _, at in ipairs(M.nf) do
+        if now - at < M.NF_WINDOW then kept[#kept + 1] = at end
+    end
+    M.nf = kept
+    return #kept
+end
+
+local function Tripped()
+    return NotFoundCount() >= M.NF_LIMIT
+end
+
+local function Heard(v, now)
+    return v.heard ~= nil and now - v.heard <= M.HEARD_TTL
+end
+
+-- v9: members of a list read within DIR_FRESH may be whispered; an older list only tells who joined.
+local function DirFresh()
+    return M.dir.at ~= nil and time() - M.dir.at <= M.DIR_FRESH and #M.dir.names > 0
+end
+
 local function Fresh(v, name, now)
     if not Usable(name) then return false end
     return (v.heard and now - v.heard <= M.HEARD_TTL) or (v.named and now - v.named <= M.NAMED_TTL) or false
@@ -256,6 +305,9 @@ function M:Peers(tag)
 end
 
 -- v8: heard (confirmed) fresh peers outside the guild, and the fresh peers known to take the relay.
+function M:NotFoundCount() return NotFoundCount() end
+function M:Tripped() return Tripped() end
+
 function M:LinkCount()
     local now, n = time(), 0
     for name, v in pairs(M.view) do
@@ -465,23 +517,31 @@ end
 -- is known outside the guild (v7), and nothing holds whispers back.
 local function CanWhisperWide()
     if not M.dead.YELL or Quiet() then return false end
-    return #M.dir.names > 0 or #M:Peers() > 0
+    local now, braked = time(), Tripped()
+    for _, name in ipairs(M:Peers()) do
+        if not braked or Heard(M.view[name], now) then return true end
+    end
+    return not braked and DirFresh()
 end
 
 -- `k` distinct names at random among directory members and fresh peers outside the guild: heard peers and the
 -- directory first (v8), names only passed on fill what is missing. `want(name)` narrows the choice.
+-- v9: the directory only fills, from a list read within DIR_FRESH; with the brake on, heard peers only.
 local function Pick(k, want, except)
     local now, seen, sure, named, out = time(), {}, {}, {}, {}
+    local braked = Tripped()
     if except then for _, n in ipairs(except) do seen[n] = true end end
     local function add(name, list)
         if not seen[name] and (not want or want(name)) then seen[name], list[#list + 1] = true, name end
     end
-    for _, name in ipairs(M.dir.names) do
-        if not (M.view[name] and M.view[name].guild) then add(name, sure) end -- the guild gets it on GUILD
-    end
     for _, name in ipairs(M:Peers()) do
         local v = M.view[name]
-        add(name, (v.heard and now - v.heard <= M.HEARD_TTL) and sure or named)
+        if Heard(v, now) then add(name, sure) elseif not braked then add(name, named) end
+    end
+    if not braked and DirFresh() then
+        for _, name in ipairs(M.dir.names) do
+            if not (M.view[name] and M.view[name].guild) then add(name, named) end -- the guild gets it on GUILD
+        end
     end
     for _, pool in ipairs({ sure, named }) do
         while #pool > 0 and #out < k do
@@ -687,9 +747,39 @@ M.FlushRealm = FlushRealm
 -- ---------------------------------------------------------------------------
 -- Directory (v5): the member list of one hidden channel per faction. Nobody talks in it.
 -- ---------------------------------------------------------------------------
-local function ChannelName()
+-- v9: a list dropped (another channel now): the next check reads the new one, as on joining.
+local function DropList()
+    M.dir.names, M.dir.count, M.dir.index, M.dir.at, M.dir.asks, M.dir.askedAt = {}, 0, nil, nil, nil, nil
+end
+
+-- v9: the ruleset, where the game has regional unique names (Forever); nil elsewhere (Anniversary, retail).
+local function Ruleset()
+    local unique = RegionalUniqueNamesEnabled
+    if type(unique) ~= "function" then return nil end
+    local ok, on = pcall(unique)
+    local rules, active = Enum and Enum.GameRule, C_GameRules and C_GameRules.IsGameRuleActive
+    if not ok or on ~= true or type(rules) ~= "table" or type(active) ~= "function" then return nil end
+    -- these names are not in the client's generated docs: if any is missing, keep the faction's name rather than
+    -- put every ruleset in "PvE" without a word (the DIAG's dirch shows which name a client uses)
+    if rules.HardcoreRuleset == nil or rules.RPRuleset == nil or rules.PvPRuleset == nil then return nil end
+    local function is(rule)
+        local done, yes = pcall(active, rules[rule])
+        return done and yes == true
+    end
+    if is("HardcoreRuleset") then return "HC" end
+    local rp, pvp = is("RPRuleset"), is("PvPRuleset")
+    return (rp and pvp and "RPPvP") or (rp and "RP") or (pvp and "PvP") or "PvE"
+end
+
+-- The faction's channel of v5–v8, and (v9) the one in use: plus the ruleset, plus a number after a lock.
+local function FactionName()
     local faction = UnitFactionGroup and UnitFactionGroup("player")
     return M.DIR_PREFIX .. ((type(faction) == "string" and faction ~= "") and faction:sub(1, 1) or "N")
+end
+
+local function ChannelName()
+    local num = M.dir.num or 1
+    return FactionName() .. (Ruleset() or "") .. (num > 1 and tostring(num) or "")
 end
 
 -- v7: a channel the server refused can stay in the client's list, disabled (GetChannelList: id, name, disabled...).
@@ -705,7 +795,31 @@ end
 
 local function JoinDirectory()
     if not M.dir.on or M.dir.refused or not JoinTemporaryChannel or (IsInInstance and IsInInstance()) then return end
-    M.dir.channel = ChannelName()
+    -- v9: the name may come out otherwise once the game knows the rules (a ruleset read before it did): the old
+    -- channel is left and its list dropped, at most twice a session
+    local want, justLeft = ChannelName(), nil
+    if not M.dir.channel then
+        M.dir.channel = want
+    elseif M.dir.channel ~= want and (M.dir.renames or 0) < 2 then -- past the limit the channel stays as it is
+        local old = M.dir.channel
+        M.dir.renames, M.dir.past[old] = (M.dir.renames or 0) + 1, true
+        justLeft = old -- left here: not again below in the same frame (a leave takes a moment to show)
+        local inOld, oldId = pcall(GetChannelName, old)
+        if inOld and tonumber(oldId) and tonumber(oldId) > 0 and LeaveChannelByName then pcall(LeaveChannelByName, old) end
+        DropList()
+        M.dir.retried, M.dir.rejoinAt, M.dir.channel = nil, nil, want
+    end
+    -- v9: the faction-wide channel of v5–v8 spans every ruleset; the game may put this client back in it at any
+    -- point of the login, so it is looked for on every check and left once it shows up
+    local legacy = FactionName()
+    if M.dir.channel ~= legacy and not M.dir.legacyLeft and justLeft ~= legacy then
+        M.dir.legacy = legacy
+        local inOld, oldId = pcall(GetChannelName, legacy)
+        if inOld and tonumber(oldId) and tonumber(oldId) > 0 and LeaveChannelByName then
+            M.dir.legacyLeft = true
+            pcall(LeaveChannelByName, legacy)
+        end
+    end
     local ok, id = pcall(GetChannelName, M.dir.channel)
     if ok and tonumber(id) and tonumber(id) > 0 then
         if not Disabled(M.dir.channel) or M.dir.retried then return end
@@ -725,14 +839,23 @@ end
 
 -- v7: the server's refusal of the directory's channel ends it for the session.
 local REFUSED = { INVALID_NAME = true, WRONG_PASSWORD = true, BANNED = true }
+local LOCKED = { WRONG_PASSWORD = true, BANNED = true } -- v9: someone else holds the channel; the name is fine
 local function OnNotice(kind, channel, base)
     local name = M.dir.channel
     if not name or M.dir.refused or Secret(kind) or Secret(channel) or Secret(base) or not REFUSED[kind] then return end
     if base ~= name and not (type(channel) == "string" and channel:find(name, 1, true)) then return end
-    M.dir.refused = kind
-    M.dir.names, M.dir.count, M.dir.index = {}, 0, nil
+    DropList()
     local ok, id = pcall(GetChannelName, name)
     if ok and tonumber(id) and tonumber(id) > 0 and LeaveChannelByName then pcall(LeaveChannelByName, name) end
+    if LOCKED[kind] and (M.dir.num or 1) < M.DIR_MAX_NUM then
+        M.dir.past[name] = true
+        M.dir.num = (M.dir.num or 1) + 1
+        M.dir.channel, M.dir.retried, M.dir.rejoinAt = ChannelName(), nil, time() + 3
+        M.stats.dirMoves = (M.stats.dirMoves or 0) + 1
+        if C_Timer and C_Timer.After then C_Timer.After(3, JoinDirectory) end
+        return
+    end
+    M.dir.refused = kind
 end
 
 -- The server sends a channel's list only when it is selected, and selecting another one first makes it send it
@@ -748,7 +871,7 @@ local function RequestRoster()
         end
     end
     if not mine then return end
-    M.dir.index = mine
+    M.dir.index, M.dir.asks, M.dir.askedAt = mine, (M.dir.asks or 0) + 1, time() -- v9
     if other then pcall(SetSelectedDisplayChannel, other) end
     pcall(SetSelectedDisplayChannel, mine)
 end
@@ -782,6 +905,8 @@ local function Unreachable(name)
     local till = M.dir.bad[name]
     if till and time() <= till then return end -- every chat window runs the filter: act once
     M.dir.bad[name] = time() + M.BAD_SECONDS
+    M.nf[#M.nf + 1] = time() -- v9: the brake counts it
+    M.stats.nf = M.stats.nf + 1
     local names, kept = M.dir.names, {}
     for _, n in ipairs(names) do
         if n ~= name then kept[#kept + 1] = n end
@@ -817,9 +942,14 @@ end
 
 -- The join and leave lines of the directory are nobody's business in a chat window.
 local function HideNotice(_, _, _, _, _, channel, _, _, _, _, base)
-    local name = M.dir.channel
-    if not name or Secret(channel) or Secret(base) then return false end
-    return base == name or (type(channel) == "string" and channel:find(name, 1, true) ~= nil)
+    if Secret(channel) or Secret(base) then return false end
+    if type(base) == "string" and M.dir.past[base] then return true end -- v9: a channel this session left
+    for _, name in ipairs({ M.dir.channel or false, M.dir.legacy or false }) do -- v9: the old faction channel too
+        if name and (base == name or (type(channel) == "string" and channel:find(name, 1, true) ~= nil)) then
+            return true
+        end
+    end
+    return false
 end
 
 local function InstallFilters()
@@ -877,8 +1007,18 @@ if C_Timer and C_Timer.NewTicker then
             if now > till then M.dir.tried[name] = nil end
         end
         JoinDirectory()
-        RequestRoster()
+        -- v9: the whole list, from the server, only when it is old and links are few
+        M.dir.jitter = M.dir.jitter or math.random(0, M.DIR_JITTER)
+        local last = M.dir.at or ((M.dir.asks or 0) >= M.DIR_FIRST_TRIES and M.dir.askedAt) or nil
+        if not last or (time() - last >= M.DIR_READ + M.dir.jitter and M:LinkCount() < M.DIR_ENOUGH) then
+            RequestRoster()
+        end
     end)
+end
+
+-- v9: a list an older copy read belongs to the faction-wide channel: not this version's directory
+if M.dir.channel and M.dir.channel ~= ChannelName() then
+    DropList()
 end
 
 function M:Directory()
@@ -931,11 +1071,14 @@ end
 -- asked yet this session.
 local function PexTarget()
     local now, best, bestAt, pool = time(), nil, nil, {}
+    local braked = Tripped() -- v9: with the brake on, heard peers only
     for name, v in pairs(M.view) do
-        if Fresh(v, name, now) then
-            if not bestAt or (v.asked or 0) < bestAt then best, bestAt = name, v.asked or 0 end
-        elseif v.stored and not v.asked and Usable(name) then
-            pool[#pool + 1] = name
+        if not braked or (Heard(v, now) and Usable(name)) then
+            if Fresh(v, name, now) then
+                if not bestAt or (v.asked or 0) < bestAt then best, bestAt = name, v.asked or 0 end
+            elseif v.stored and not v.asked and Usable(name) then
+                pool[#pool + 1] = name
+            end
         end
     end
     return best or (#pool > 0 and pool[math.random(1, #pool)]) or nil
