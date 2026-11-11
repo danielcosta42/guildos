@@ -38,7 +38,7 @@ Probe.APIS = {
     "IsQuestFlaggedCompleted", "IsShiftKeyDown", "JoinChannelByName", "LeaveChannelByName", "NotifyInspect",
     "PlaySound", "RaidNotice_AddMessage", "RandomRoll", "ReloadUI", "SendChatMessage", "SendWho",
     "SetChannelOwner", "SetGuildInfoText", "SetGuildTabardTextures", "SetRaidSubgroup", "SetWhoToUI",
-    "ShowUIPanel", "StaticPopup_Show", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
+    "ShowUIPanel", "TargetUnit", "ToggleDropDownMenu", "ToggleGuildFrame", "ToggleWorldMap",
     "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "UIDropDownMenu_Initialize", "UIFrameFadeIn",
     "UnitBuff", "UnitClass", "UnitExists", "UnitFactionGroup", "UnitFullName", "UnitGUID", "UnitHealthMax", "UnitIsConnected",
     "UnitIsGroupAssistant", "UnitIsGroupLeader", "UnitIsPlayer", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPlayerControlled",
@@ -61,7 +61,7 @@ Probe.APIS = {
     -- Frames, tables and constants
     "UIParent", "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "Minimap",
     "WorldMapFrame", "GuildFrame", "CommunitiesFrame", "DEFAULT_CHAT_FRAME", "RaidWarningFrame",
-    "TradeFrameRecipientNameText", "UISpecialFrames", "StaticPopupDialogs", "SlashCmdList", "ChatTypeInfo",
+    "TradeFrameRecipientNameText", "UISpecialFrames", "SlashCmdList", "ChatTypeInfo",
     "GameFontNormalSmall", "STANDARD_TEXT_FONT", "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS",
     "LOCALIZED_CLASS_NAMES_MALE", "SOUNDKIT", "RANDOM_ROLL_RESULT", "RESISTANCE2_NAME", "RESISTANCE3_NAME",
     "RESISTANCE4_NAME", "RESISTANCE5_NAME", "RESISTANCE6_NAME",

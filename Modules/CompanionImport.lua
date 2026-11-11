@@ -648,8 +648,8 @@ function Import:AskTrim()
     if not allowed then return GuildOS:Print(reason) end
     local out = self:OutsideThePlan()
     if #out == 0 then return GuildOS:Print(L["Everyone in the group is in the plan."]) end
-    if not StaticPopupDialogs["GUILDOS_TRIM_PLAN"] then
-        StaticPopupDialogs["GUILDOS_TRIM_PLAN"] = {
+    if not GuildOS.Dialogs["GUILDOS_TRIM_PLAN"] then
+        GuildOS.Dialogs["GUILDOS_TRIM_PLAN"] = {
             text = "%s", button1 = L["Remove"], button2 = L["Cancel"],
             OnAccept = function()
                 local n, err = Import:TrimToPlan()
@@ -658,7 +658,7 @@ function Import:AskTrim()
             timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
         }
     end
-    StaticPopup_Show("GUILDOS_TRIM_PLAN", string.format(L["Remove %d who are not in the plan?\n%s"], #out, table.concat(out, ", ")))
+    GuildOS:ShowDialog("GUILDOS_TRIM_PLAN", string.format(L["Remove %d who are not in the plan?\n%s"], #out, table.concat(out, ", ")))
 end
 
 --- Take out of the group whoever is outside the plan. The panel asks first, naming them; this only

@@ -170,13 +170,11 @@ function Style:Resolve()
     return id
 end
 
-if StaticPopupDialogs then
-    StaticPopupDialogs["GUILDOS_STYLE_RELOAD"] = {
-        text = "%s", button1 = L["Reload"], button2 = L["Later"],
-        OnAccept = function() ReloadUI() end,
-        timeout = 0, whileDead = true, hideOnEscape = true,
-    }
-end
+GuildOS.Dialogs["GUILDOS_STYLE_RELOAD"] = {
+    text = "%s", button1 = L["Reload"], button2 = L["Later"],
+    OnAccept = function() ReloadUI() end,
+    timeout = 0, whileDead = true, hideOnEscape = true,
+}
 
 -- The picker's and /gos style's verb: save, then offer the reload.
 function Style:Apply(id)
@@ -189,7 +187,7 @@ function Style:Apply(id)
         end
         return false
     end
-    StaticPopup_Show("GUILDOS_STYLE_RELOAD", string.format(L["Reload the interface now to use the %s style?"], self:Name(id)))
+    GuildOS:ShowDialog("GUILDOS_STYLE_RELOAD", string.format(L["Reload the interface now to use the %s style?"], self:Name(id)))
     return true
 end
 
