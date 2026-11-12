@@ -203,6 +203,9 @@ local function settle(first, second)
 end
 check(settle({ "FARM" }, { "SOCIAL" }) == "FARM" and settle({ "SOCIAL" }, { "FARM" }) == "FARM",
   "as many in the same second: the same one on every client, whatever the order")
+-- The rule is the text, not the KINDS order (where RAID comes first): DUNGEON sorts before RAID.
+check(settle({ "RAID" }, { "DUNGEON" }) == "DUNGEON" and settle({ "DUNGEON" }, { "RAID" }) == "DUNGEON",
+  "the list that sorts first as text wins")
 client("Alt")
 Cal:OnMemberKindsSync(kindsEnv({ "PVP", "NEWKIND" }, 4000))
 check(same(s().eventKinds, { "PVP" }), "a kind this client does not know is left out")

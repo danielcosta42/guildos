@@ -150,7 +150,8 @@ function Calendar:PublishMemberKinds()
 end
 
 -- From an officer over GUILD (SyncService checked both). Two changes in the same second settle on the
--- fewer kinds, then on the first in KINDS order: the same answer on every client whatever the order.
+-- fewer kinds, then on the list that, written in KINDS order and joined by commas, sorts first as text
+-- ("DUNGEON" before "RAID"): the same answer on every client whatever the order.
 function Calendar:OnMemberKindsSync(env)
     local data = type(env) == "table" and env.data
     local s = settings()

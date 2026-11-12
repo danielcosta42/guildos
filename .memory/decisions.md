@@ -1460,8 +1460,9 @@ run could set up a raid.
   officer's choice published on `guildcfg` as its own action, `eventkinds`, with `{ kinds }` and no `max`: a client
   before this reads an unknown guildcfg action as the officer threshold, and one without `max` it ignores. Not folded
   into `events`' payload, whose `max` every #283 client already reads, so neither setting can undo the other.
-- Newest stamp wins; two in one second settle on the fewer kinds, then on the first in `KINDS` order, so every client
-  agrees whatever the order. Re-sent with the ranks on the officers' sync and request answer.
+- Newest stamp wins; two in one second settle on the fewer kinds, then on the list that, written in `KINDS` order and
+  joined by commas, sorts first as text (`DUNGEON` before `RAID`), so every client agrees whatever the order. Re-sent
+  with the ranks on the officers' sync and request answer.
 - An officer creates every kind. Held on send (`Create`, `CreateSeries`, `Update`) and on receipt (`OnSync` drops a
   non-officer's `create`/`update` of a kind not open to them); cancelling or deleting their own event stays theirs.
 - A Dungeon event offers the game's dungeons (`Calendar:DungeonChoices`: WoW: Forever's own with a boss, then the classic
