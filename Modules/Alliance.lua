@@ -606,9 +606,11 @@ function Alliance:MemberInfo(name)
 end
 
 -- A player of `guildName` we have positive evidence is online RIGHT NOW, so a
--- whisper does not print "No player named X is currently playing" to the user.
--- Evidence comes from the realm-wide presence mesh, where Guild OS clients in an
--- alliance advertise their guild (see Mesh:BuildCaps).
+-- whisper is not spent on somebody gone. Evidence comes from the realm-wide
+-- presence mesh, where Guild OS clients in an alliance advertise their guild
+-- (see Mesh:BuildCaps). It is up to ChehulNet.PEER_TTL old: whoever logged
+-- off since still gets the whisper, and Alliance:Send hides the "No player
+-- named" line that answers it.
 function Alliance:PeerTarget(guildName)
     if not guildName or guildName == "" then
         return nil
@@ -629,7 +631,9 @@ function Alliance:PeerTarget(guildName)
 end
 
 ----------------------------------------------------------------------
--- Sending
+-- Sending. Every op of the alliance leaves here, so here is where its target is
+-- noted: somebody who logged off a moment ago, which presence cannot rule out,
+-- costs the user no "No player named" line in the chat (issue #326).
 ----------------------------------------------------------------------
 function Alliance:Send(op, tbl, target)
     local mesh = _G.ChehulMesh
@@ -640,6 +644,7 @@ function Alliance:Send(op, tbl, target)
     if not blob then
         return false
     end
+    GuildOS:NoteWhisper(target)
     return mesh:Whisper(self.PREFIX, self.PROTO .. "|" .. op .. "|" .. blob, target) and true or false
 end
 
@@ -968,7 +973,7 @@ function Alliance:_OnInvite(raw, sender)
         return
     end
 
-    StaticPopup_Show("GUILDOS_ALLY_INVITE",
+    GuildOS:ShowDialog("GUILDOS_ALLY_INVITE",
         string.format(L["%s of %s invites your guild into the alliance %s."],
             short, theirGuild, pact.name or pact.tag),
         nil, { pact = pact, sender = sender })
@@ -1664,7 +1669,7 @@ function Alliance:_OnJoinRequest(data, sender)
         return
     end
     self._reqPrompts[shortName(sender):lower()] = now
-    StaticPopup_Show("GUILDOS_ALLY_REQUEST",
+    GuildOS:ShowDialog("GUILDOS_ALLY_REQUEST",
         string.format(L["%s of %s asks to join the alliance. Invite them?"],
             shortName(sender), guild),
         nil, { sender = sender })
@@ -2013,10 +2018,10 @@ end
 -- Lifecycle
 ----------------------------------------------------------------------
 local function registerPopups()
-    if StaticPopupDialogs["GUILDOS_ALLY_INVITE"] then
+    if GuildOS.Dialogs["GUILDOS_ALLY_INVITE"] then
         return
     end
-    StaticPopupDialogs["GUILDOS_ALLY_INVITE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_INVITE"] = {
         text = "%s",
         button1 = L["Accept"],
         button2 = L["Decline"],
@@ -2031,7 +2036,7 @@ local function registerPopups()
         hideOnEscape = true,
         preferredIndex = 3,
     }
-    StaticPopupDialogs["GUILDOS_ALLY_REQUEST"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_REQUEST"] = {
         text = "%s",
         button1 = L["Invite"],
         button2 = L["Decline"],

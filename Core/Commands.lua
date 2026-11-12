@@ -74,6 +74,7 @@ local function printHelp()
     helpLine("/gos sync",     L["Force a full data sync"])
     helpLine("/gos selftest", L["Run the built-in self test"])
     helpLine("/gos errors",   L["Show recent errors"])
+    helpLine("/gos perf [reset]", L["Where Guild OS spends its time since login, or zero the counters"])
     helpLine("/gos probe",    L["Record this client's facts for support"])
     helpLine("/gos probe chat", L["Post two test lines in guild chat to see whether an addon may post on its own"])
     helpLine("/gos probe channel", L["Join a temporary channel to see whether an addon message may go through one"])
@@ -208,6 +209,11 @@ local function handleCommand(msg)
         if GuildOS.CommSystem then
             GuildOS.CommSystem:FullSync()
         end
+    elseif msg == "perf" then
+        GuildOS.Perf:Print()
+    elseif msg == "perf reset" then
+        GuildOS.Perf:Reset()
+        GuildOS:Print(L["Performance counters zeroed."])
     elseif msg == "points" or msg == "dkp" then
         if GuildOS.ShowPointsFrame then
             GuildOS:ShowPointsFrame()

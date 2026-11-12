@@ -862,3 +862,127 @@ function Helpers:StyleSubTabBar(bar)
     bar.bg = bg
     return bar
 end
+
+----------------------------------------------------------------------
+-- Dialogs (#315)
+-- GuildOS's own confirmation box, read from GuildOS.Dialogs. Never Blizzard's StaticPopup: its
+-- frames are a pool the game's own dialogs share, and one opened from addon code leaves them
+-- tainted. WoW: Forever's gamepad UI reads a field written there (`gamepadShown`) and has its
+-- protected calls blocked from then on. A definition keeps StaticPopup's names: text, button1,
+-- button2, OnAccept, OnCancel, OnShow, OnHide, hasEditBox, maxLetters, EditBoxOnEnterPressed,
+-- EditBoxOnEscapePressed, timeout. Closing any way but button1 is a cancel.
+----------------------------------------------------------------------
+local DIALOG_WIDTH = 360
+local dialogFrames = {}
+
+local function acceptDialog(f)
+    local def = f.def
+    if not def then return end
+    f.answered = true
+    if def.OnAccept then GuildOS:SafeCall(def.OnAccept, f, f.data, f.data2) end
+    f:Hide()
+end
+
+local function newDialog(i)
+    local name = "GuildOSDialog" .. i
+    local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
+    f:SetWidth(DIALOG_WIDTH)
+    f:SetPoint("TOP", UIParent, "TOP", 0, -120 - (i - 1) * 150)
+    -- Above the windows that ask: the event editor, the ally card and the member detail are DIALOG.
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:EnableMouse(true)
+    Helpers:StylePopup(f)
+    f:Hide()
+
+    f.text = Helpers:CreateText(f, "", 12)
+    f.text:SetPoint("TOP", 0, -18)
+    f.text:SetWidth(DIALOG_WIDTH - 40)
+
+    -- `editBox` is where Compat.PopupEditBox looks, and its parent is the dialog, as the
+    -- definitions' EditBox handlers expect.
+    local box = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    box:SetSize(240, 22)
+    box:SetPoint("BOTTOM", 0, 48)
+    box:SetAutoFocus(false)
+    box:SetScript("OnEnterPressed", function(self)
+        local def = f.def
+        if def and def.EditBoxOnEnterPressed then
+            GuildOS:SafeCall(def.EditBoxOnEnterPressed, self, f.data)
+        else
+            acceptDialog(f)
+        end
+    end)
+    box:SetScript("OnEscapePressed", function(self)
+        local def = f.def
+        if def and def.EditBoxOnEscapePressed then
+            GuildOS:SafeCall(def.EditBoxOnEscapePressed, self, f.data)
+        else
+            f:Hide()
+        end
+    end)
+    f.editBox = box
+
+    f.button1 = Helpers:CreateButton(f, "", 130, 24)
+    f.button1:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -6, 14)
+    f.button1:SetScript("OnClick", function() acceptDialog(f) end)
+    f.button2 = Helpers:CreateButton(f, "", 130, 24)
+    f.button2:SetPoint("BOTTOMLEFT", f, "BOTTOM", 6, 14)
+    f.button2:SetScript("OnClick", function() f:Hide() end)
+
+    f:SetScript("OnHide", function(self)
+        -- Still shown: it went with the whole interface (Alt-Z), and comes back with it.
+        if self:IsShown() then return end
+        local def, data = self.def, self.data
+        self.def, self.data, self.data2 = nil, nil, nil
+        if not def then return end
+        if not self.answered and def.OnCancel then GuildOS:SafeCall(def.OnCancel, self, data, "clicked") end
+        if def.OnHide then GuildOS:SafeCall(def.OnHide, self, data) end
+    end)
+
+    table.insert(UISpecialFrames, name)   -- ESC closes it
+    dialogFrames[i] = f
+    return f
+end
+
+-- Shows GuildOS.Dialogs[which], its text formatted with the two arguments, and returns the
+-- frame (`data`, `data2` and `editBox` on it, as on a StaticPopup). Nil for an unknown name.
+function GuildOS:ShowDialog(which, textArg1, textArg2, data)
+    local def = self.Dialogs[which]
+    if not def then return nil end
+
+    -- The same question asked again takes its frame over; otherwise the first one free.
+    local f
+    for _, frame in ipairs(dialogFrames) do
+        if frame:IsShown() and frame.which == which then f = frame; break end
+    end
+    if f then
+        f.def = nil   -- replaced, not cancelled
+        f:Hide()
+    else
+        for _, frame in ipairs(dialogFrames) do
+            if not frame:IsShown() then f = frame; break end
+        end
+    end
+    f = f or newDialog(#dialogFrames + 1)
+
+    f.which, f.def, f.data, f.data2, f.answered = which, def, data, nil, false
+    f.showing = (f.showing or 0) + 1
+    local showing = f.showing
+    f.text:SetText(string.format(def.text or "%s", textArg1 or "", textArg2 or ""))
+    f.button1.label:SetText(def.button1)
+    f.button2.label:SetText(def.button2 or CANCEL)
+    f.editBox:SetShown(def.hasEditBox and true or false)
+    f.editBox:SetMaxLetters(def.maxLetters or 0)
+    f.editBox:SetText("")
+    f:SetHeight(f.text:GetStringHeight() + (def.hasEditBox and 104 or 72))
+    f:Show()
+    if def.hasEditBox then f.editBox:SetFocus() end
+    if def.OnShow then self:SafeCall(def.OnShow, f, data) end
+
+    if (def.timeout or 0) > 0 then
+        C_Timer.After(def.timeout, function()
+            if f.showing == showing and f:IsShown() then f:Hide() end
+        end)
+    end
+    return f
+end

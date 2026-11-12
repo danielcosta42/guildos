@@ -66,6 +66,7 @@ read_globals = {
     "C_Texture",        -- atlas lookups for the interface styles (#122)
     "C_ChatInfo",
     "C_GuildInfo",
+    "C_AddOnProfiler",  -- the game's addon CPU meter, read by Compat.AddOnCPU (#324)
     "C_Map",
     "C_QuestLog",
     "C_Item",        -- Compat wrappers, preferred over the old globals (issue #10)
@@ -251,6 +252,7 @@ read_globals = {
     "Minimap",
     "GetCursorPosition",
     "GetTime",
+    "debugprofilestop", -- the client's milliseconds, for GuildOS.Perf (#324)
     "GetServerTime",
     "ReloadUI",
     "InCombatLockdown",

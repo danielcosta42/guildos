@@ -28,7 +28,13 @@ GuildOS.State = {
     -- (GuildOS:RecordMissing). Feeds /guildos errors and the login line.
     startup     = { failed = {}, failedFeatures = {}, stacks = {} },
     missing     = {},
+    perf        = { rows = {} },              -- GuildOS.Perf: calls and ms per label (issue #324)
+    coalesce    = { at = {}, waiting = {} },  -- GuildOS:Coalesce: last run and the call held, per name
 }
+
+-- Confirmation dialogs, by name, in StaticPopup's own field names. Shown by GuildOS:ShowDialog
+-- (UI/Helpers.lua) in GuildOS's own frame, never by StaticPopup (#315).
+GuildOS.Dialogs = {}
 
 ----------------------------------------------------------------------
 -- Database defaults
@@ -564,12 +570,26 @@ function GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)
     end)
 end
 
-function GuildOS:OnGuildRosterUpdate()
+-- The passes over the whole roster, each a loop over every member (issue #324: on a 700-member guild the
+-- event comes in bursts, and four passes ran on every one of them).
+local function rosterPass()
+    local t = GuildOS.Perf:Start()
     if GuildOS.RecordFirstSeen then GuildOS:RecordFirstSeen() end
     if GuildOS.DropDeparted then GuildOS:DropDeparted() end
     -- Who joined since this client last saw the whole roster: a trial each, with the guild's switch on (#249).
     if GuildOS.TrialTracker then GuildOS:SafeCall(GuildOS.TrialTracker.ScanRoster, GuildOS.TrialTracker) end
+    GuildOS.Perf:Stop("roster pass", t)
+    t = GuildOS.Perf:Start()
     GuildOS:RefreshRosterUI()
+    GuildOS.Perf:Stop("roster window", t)
+end
+
+-- At most one pass every ROSTER_GAP seconds: the first of a burst at once, the rest as one at its end.
+GuildOS.ROSTER_GAP = 5
+
+function GuildOS:OnGuildRosterUpdate()
+    self.Perf:Count("roster event")
+    self:Coalesce("roster", self.ROSTER_GAP, rosterPass)
 end
 
 ----------------------------------------------------------------------
@@ -812,6 +832,111 @@ function GuildOS:SafeCall(fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then GuildOS:RecordError(err) end
     return ok, err
+end
+
+----------------------------------------------------------------------
+-- Coalesce (issue #324): runs `fn` now, or, when `name` ran less than `gap` seconds ago, once at the
+-- end of that window, with the last `fn` it was handed. A burst of calls costs two runs and the last
+-- call is never lost. True when it ran now.
+----------------------------------------------------------------------
+function GuildOS:Coalesce(name, gap, fn)
+    local st = self.State.coalesce
+    local now, last = GetTime(), st.at[name]
+    if not last or now - last >= gap then
+        st.at[name], st.waiting[name] = now, nil
+        fn()
+        return true
+    end
+    local held = st.waiting[name] ~= nil
+    st.waiting[name] = fn
+    if not held then
+        self.Compat.After(last + gap - now, function()
+            local w = st.waiting[name]
+            if not w then return end
+            st.at[name], st.waiting[name] = GetTime(), nil
+            w()
+        end)
+    end
+    return false
+end
+
+----------------------------------------------------------------------
+-- Where the time goes (issue #324): calls, milliseconds and bytes per label since login or the last
+-- reset, for /gos perf and Audit > Sync. A report of high CPU came with no logs, and nothing kept
+-- how often the guild's traffic or the roster events arrive. Session only; two clock reads a call.
+----------------------------------------------------------------------
+local Perf = {}
+GuildOS.Perf = Perf
+local clock = debugprofilestop   -- the client's milliseconds; absent off the game, and only counts then
+
+function Perf:Start() return clock and clock() or nil end
+
+local function perfRow(label)
+    local st = GuildOS.State.perf
+    st.since = st.since or GetTime()
+    local row = st.rows[label]
+    if not row then
+        row = { n = 0, ms = 0, max = 0, bytes = 0 }
+        st.rows[label] = row
+    end
+    return row
+end
+
+function Perf:Count(label)
+    local row = perfRow(label)
+    row.n = row.n + 1
+end
+
+function Perf:Stop(label, t0, bytes)
+    local row = perfRow(label)
+    row.n = row.n + 1
+    if t0 and clock then
+        local ms = clock() - t0
+        row.ms = row.ms + ms
+        if ms > row.max then row.max = ms end
+    end
+    if bytes then row.bytes = row.bytes + bytes end
+end
+
+function Perf:Reset()
+    GuildOS.State.perf = { rows = {}, since = GetTime() }
+end
+
+-- What /gos perf says: the game's own profiler when this client has one, then every label by time spent.
+function Perf:Lines()
+    local st = GuildOS.State.perf
+    local mins = math.max(1, math.floor((GetTime() - (st.since or GetTime())) / 60 + 0.5))
+    local lines = { string.format(L["Guild OS performance, last %d min:"], mins) }
+    local cpu = GuildOS.Compat.AddOnCPU("GuildOS")
+    if cpu then
+        lines[#lines + 1] = string.format(L["Game profiler: Guild OS %.2f ms a frame now, %.2f this session, peak %.1f ms; every addon %.2f ms a frame."],
+            cpu.recent or 0, cpu.session or 0, cpu.peak or 0, cpu.all or 0)
+    else
+        lines[#lines + 1] = L["This client has no addon profiler; the times below are Guild OS's own."]
+    end
+    local rows = {}
+    for label, row in pairs(st.rows) do rows[#rows + 1] = { label = label, row = row } end
+    if #rows == 0 then
+        lines[#lines + 1] = L["Nothing measured yet."]
+        return lines
+    end
+    table.sort(rows, function(a, b)
+        if a.row.ms ~= b.row.ms then return a.row.ms > b.row.ms end
+        if a.row.n ~= b.row.n then return a.row.n > b.row.n end
+        return a.label < b.label
+    end)
+    for _, r in ipairs(rows) do
+        local row = r.row
+        local line = string.format("%s: %d (%.1f/min)", r.label, row.n, row.n / mins)
+        if row.ms > 0 then line = line .. string.format(", %.0f ms, max %.1f", row.ms, row.max) end
+        if row.bytes > 0 then line = line .. string.format(", %.1f KB", row.bytes / 1024) end
+        lines[#lines + 1] = line
+    end
+    return lines
+end
+
+function Perf:Print()
+    for _, line in ipairs(self:Lines()) do GuildOS:Print(line) end
 end
 
 ----------------------------------------------------------------------

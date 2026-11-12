@@ -35,8 +35,8 @@ end
 local NAME_X, ROLE_X, GEAR_X, ILVL_X, SPEC_X, NOTE_X = 6, 160, 276, 360, 414, 524
 local ROW_H = 26
 
--- Officer note editor (shared StaticPopup; data = playerKey).
-StaticPopupDialogs["GUILDOS_RAIDER_NOTE"] = {
+-- Officer note editor (data = playerKey).
+GuildOS.Dialogs["GUILDOS_RAIDER_NOTE"] = {
     text = L["Officer note for %s"],
     button1 = L["Save"], button2 = CANCEL,
     hasEditBox = true, maxLetters = 120,
@@ -302,7 +302,7 @@ function GuildOS:CreateRaiderPanel(panel, _mainFrame)
                 row.noteBtn:EnableMouse(true)
                 row.noteBtn:SetScript("OnClick", function()
                     -- 4th arg → dialog.data, delivered to OnShow/OnAccept.
-                    local dlg = StaticPopup_Show("GUILDOS_RAIDER_NOTE", nm, nil, key)
+                    local dlg = GuildOS:ShowDialog("GUILDOS_RAIDER_NOTE", nm, nil, key)
                     if dlg then dlg.data = key end
                 end)
             else

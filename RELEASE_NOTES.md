@@ -1,4 +1,4 @@
-## [1.21.0] - 2026-11-12
+## [1.21.3] - 2026-11-12
 
-### Added
-- lib ChehulNet v1.4.0, o GuildOS repassa os acampamentos do Warmth (#316)
+### Fixed
+- Guild OS no longer fills the chat with "No player named ... is currently playing" when an allied guild's member it was syncing with has just logged off (#326)

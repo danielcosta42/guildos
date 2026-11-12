@@ -220,8 +220,8 @@ end
 -- the signature and is re-offered).
 ----------------------------------------------------------------------
 function AltAutoDetect:_RegisterPopup()
-    if StaticPopupDialogs["GUILDOS_ALT_AUTODETECT"] then return end
-    StaticPopupDialogs["GUILDOS_ALT_AUTODETECT"] = {
+    if GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"] then return end
+    GuildOS.Dialogs["GUILDOS_ALT_AUTODETECT"] = {
         text = L["Found %d of your characters in this guild. Link them as alts of %s?"],
         button1 = L["Link"],
         button2 = L["Not now"],
@@ -243,12 +243,12 @@ function AltAutoDetect:_RegisterPopup()
 end
 
 -- Shows the confirm popup for a detected group `r` ({ group = {keys...}, main = key }).
--- `r` is passed through StaticPopup_Show's text/data args rather than captured
+-- `r` is passed through the dialog's text/data args rather than captured
 -- by closure, so a stale `r` from an earlier scan can never be shown/applied.
 function AltAutoDetect:_ShowPrompt(r)
     self:_RegisterPopup()
     local short = r.main:match("^([^-]+)") or r.main
-    local dlg = StaticPopup_Show("GUILDOS_ALT_AUTODETECT", #r.group - 1, short, r)
+    local dlg = GuildOS:ShowDialog("GUILDOS_ALT_AUTODETECT", #r.group - 1, short, r)
     if dlg then dlg.data = r end
     self._prompted = true
 end
