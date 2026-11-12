@@ -1,4 +1,4 @@
-## [1.21.2] - 2026-11-12
+## [1.21.3] - 2026-11-12
 
 ### Fixed
-- Fixed "action blocked" errors in Blizzard's gamepad mode on WoW: Forever: Guild OS confirmation dialogs no longer use the game's shared popup frames
+- Guild OS no longer fills the chat with "No player named ... is currently playing" when an allied guild's member it was syncing with has just logged off (#326)
