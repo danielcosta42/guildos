@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.21.2] - 2026-11-12
+
+### Fixed
+- Fixed "action blocked" errors in Blizzard's gamepad mode on WoW: Forever: Guild OS confirmation dialogs no longer use the game's shared popup frames
+
+
 ## [1.21.1] - 2026-11-12
 
 ### Fixed
