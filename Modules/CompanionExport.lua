@@ -397,8 +397,8 @@ local function raidSessions()
                 -- for a night nobody planned, which is most of them.
                 raidId = type(s.raidId) == "string" and s.raidId ~= "" and s.raidId or nil,
                 instanceID = tonumber(s.instanceID) or 0,
-                -- The raid's size as the game gave it on the way in: on WoW: Forever, 20 and up
-                -- is what counts for attendance (issue #90). Absent for a night recorded before.
+                -- The raid's size as the game gave it on the way in: on WoW: Forever, 10 and up
+                -- is what counts for attendance (issues #90, #321). Absent for a night recorded before.
                 size = tonumber(s.size),
                 -- Retail's difficulty, 14, 15 or 16: Normal and Heroic the same week are two
                 -- lockouts (issue #182). Absent everywhere else, where a session never has one.
