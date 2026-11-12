@@ -218,6 +218,7 @@ end
 
 function CommSystem:SendRaw(msg, target, priority)
     if target then
+        GuildOS:NoteWhisper(target) -- a guildmate gone since they asked answers "No player named" (issue #326)
         GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "WHISPER", target, "NORMAL")
     else
         GuildOS.Compat.SendAddonMessage(GuildOS.PREFIX, msg, "GUILD", nil, priority or "BULK")
