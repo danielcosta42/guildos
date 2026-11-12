@@ -888,12 +888,14 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
         GuildOS:Print(L["|cffFF4444Officers only.|r"])
         return
     end
-    if not self:MayCreateKind(kind) then   -- an event becomes only a kind its creator may create (#308)
+    local e = self:GetEvents()[id]
+    if not e or e.canceled then return end
+    -- An event becomes only a kind its creator may create (#308). Kept as it is, it stays theirs to edit,
+    -- reschedule and end, whatever the officers closed since.
+    if normalizeKind(kind) ~= normalizeKind(e.kind) and not self:MayCreateKind(kind) then
         GuildOS:Print(L["|cffFF4444Your rank cannot create this type of event.|r"])
         return
     end
-    local e = self:GetEvents()[id]
-    if not e or e.canceled then return end
     title = strtrim(title or "")
     when = tonumber(when)
     if title == "" or not when then
@@ -979,8 +981,11 @@ function Calendar:OnSync(env, sender)
         local existing = id and (self:GetEvents()[id] or (d.series and self:AnyOfSeries(id))) or nil
         local incoming = type(d) == "table" and d.event or nil
         if not Calendar.MayWriteRemote(existing, incoming, sender, false) then return end
-        -- And only of a kind the officers opened to them (#308); cancelling or deleting their own stays theirs.
-        if type(incoming) == "table" and not self:KindOpenToMembers(incoming.kind) then return end
+        -- And only a kind the officers opened to them (#308), unless the event is one this client holds
+        -- already and keeps its kind: editing, rescheduling, ending, cancelling or deleting it stays theirs.
+        local keeps = type(existing) == "table" and type(incoming) == "table"
+            and normalizeKind(existing.kind) == normalizeKind(incoming.kind)
+        if type(incoming) == "table" and not keeps and not self:KindOpenToMembers(incoming.kind) then return end
     end
     if (env.act == "create" or env.act == "update") and d and d.event then
         local e = d.event

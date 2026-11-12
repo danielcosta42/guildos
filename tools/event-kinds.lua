@@ -48,6 +48,7 @@ C_Timer = { After = function() end, NewTicker = function() return { Cancel = fun
 Enum = { SendAddonMessageResult = {} }
 StaticPopupDialogs = {}
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+date, time = os.date, os.time
 function UnitClass() return "Mage", "MAGE" end
 
 -- The guild: two officers, an Alt rank and a Member rank. Who "I" am changes between sender and receiver.
@@ -147,6 +148,29 @@ check(Cal:Update(run.id, "Kara", run.when, 10, "", "RAID") == nil and #sent == 0
   "and cannot be made a raid afterwards")
 check(Cal:Update(run.id, "Ruins", run.when, 5, "", "DUNGEON") and #sent == 1, "it changes as a dungeon")
 
+-- What a member made before the officers closed its kind stays theirs: edited, rescheduled, its series
+-- ended, with nothing refused. Only a new event, or a switch, of a closed kind is.
+client("Mem")
+local own = Cal:Create("Karazhan", now + 3600, 10, "", "RAID")
+check(Cal:CreateSeries("Gruul", now + 7200, 10, "", "RAID", false, "weekly") >= 3, "a member's weekly raid, before the choice")
+deliver(change, "Off")
+sent, printed = {}, {}
+check(Cal:Update(own.id, "Karazhan late", own.when + 3600, 10, "", "RAID") and #sent == 1 and #printed == 0,
+  "after it, their raid is edited and rescheduled as a raid")
+local dates = {}
+for _, e in pairs(Cal:GetEvents()) do if e.series then dates[#dates + 1] = e end end
+table.sort(dates, function(a, b) return a.when < b.when end)
+sent = {}
+Cal:UpdateSeries(dates[1].id, "Gruul late", dates[1].when + 1800, 10, "", "RAID")
+check(#sent == #dates and #printed == 0 and Cal:GetEvents()[dates[#dates].id].title == "Gruul late",
+  "their series takes the new hour on every date, nothing refused")
+sent = {}
+Cal:EndSeries(dates[2].id)
+local last = envOf(sent[#sent])
+check(#printed == 0 and last.act == "update" and last.data.event.id == dates[1].id and last.data.event.series.untilT,
+  "and ends, the date before it saying where, sent")
+local ownUpdateMsg = sent[#sent]
+
 -- ── 4. Held on receipt ────────────────────────────────────────────────────
 -- A member's raid, from a client that never heard the choice (one before #308 sends the same).
 client("Mem")
@@ -170,19 +194,29 @@ check(Cal:GetEvents()[run.id] ~= nil and Cal:GetEvents()[run.id].kind == "DUNGEO
 deliver(bwlMsg, "Off")
 check(Cal:GetEvents()[bwl.id] ~= nil, "an officer's raid is taken whatever is ticked")
 
--- Their own event of a kind now closed: cancelled and deleted as before, never changed into another.
+-- Their own event of a kind now closed, held here already: edited, cancelled and deleted as before,
+-- never switched to a closed kind.
 client("Alt")
 deliver(raidMsg, "Mem")
+deliver(runMsg, "Mem")
 deliver(change, "Off")
 me = "Mem"
 SS:Publish("event", "update", { event = { id = raid.id, title = "Kara 2", when = raid.when, size = 10, kind = "RAID", author = "Mem" } }, { rev = 50 })
+SS:Publish("event", "update", { event = { id = run.id, title = "Kara 3", when = run.when, size = 10, kind = "RAID", author = "Mem" } }, { rev = 52 })
 SS:Publish("event", "cancel", { id = raid.id }, { rev = 51 })
 me = "Alt"
-local upd, cancel = sent[#sent - 1], sent[#sent]
+local upd, switch, cancel = sent[#sent - 2], sent[#sent - 1], sent[#sent]
 deliver(upd, "Mem")
-check(Cal:GetEvents()[raid.id].title == "Karazhan", "a member's edit of their own raid, now closed to them, is dropped")
+check(Cal:GetEvents()[raid.id].title == "Kara 2", "a member's edit of their own raid, held here and kept a raid, is taken")
+deliver(switch, "Mem")
+check(Cal:GetEvents()[run.id].kind == "DUNGEON" and Cal:GetEvents()[run.id].title == "Ruins of Lordaeron",
+  "their dungeon switched into a raid is dropped")
 deliver(cancel, "Mem")
-check(Cal:GetEvents()[raid.id].canceled == true, "and cancelling it is still theirs")
+check(Cal:GetEvents()[raid.id].canceled == true, "and cancelling the raid is still theirs")
+client("Alt")
+deliver(change, "Off")
+deliver(ownUpdateMsg, "Mem")
+check(Cal:GetEvents()[dates[1].id] == nil, "an update of a raid this client never held is no way to bring one in")
 
 -- ── 5. Newest wins; two in one second settle on the fewer kinds ─────────────
 local function kindsEnv(kinds, rev) return { v = 2, id = "k" .. tostring(rev), dom = "guildcfg", act = "eventkinds", data = { kinds = kinds }, rev = rev } end

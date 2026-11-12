@@ -1463,8 +1463,11 @@ run could set up a raid.
 - Newest stamp wins; two in one second settle on the fewer kinds, then on the list that, written in `KINDS` order and
   joined by commas, sorts first as text (`DUNGEON` before `RAID`), so every client agrees whatever the order. Re-sent
   with the ranks on the officers' sync and request answer.
-- An officer creates every kind. Held on send (`Create`, `CreateSeries`, `Update`) and on receipt (`OnSync` drops a
-  non-officer's `create`/`update` of a kind not open to them); cancelling or deleting their own event stays theirs.
+- An officer creates every kind. A kind is held only when an event is created or its kind changes: `Create` and
+  `CreateSeries` refuse a closed kind, `Update` refuses a switch to one. An event a member already made stays theirs
+  whatever the officers close later: edited, rescheduled, its series changed or ended, cancelled, deleted. On receipt
+  `OnSync` drops a non-officer's `create`/`update` of a closed kind unless this client already holds that event with
+  the same kind.
 - A Dungeon event offers the game's dungeons (`Calendar:DungeonChoices`: WoW: Forever's own with a boss, then the classic
   ones guildos.me books, `ForeverDungeons.classic`) beside the title; the pick is the title, so nothing new travels.
 
@@ -1472,3 +1475,7 @@ run could set up a raid.
 - (+) An old client is unchanged: it never hears the choice and takes every kind, and an old officer never resets it.
 - (−) A member on an old client can still send a closed kind; clients on this version drop it, old ones keep it.
 - (−) A list names the kinds of its day: a kind added later is closed to members until an officer ticks it.
+- (−) An officer on a client before this tops up a member's series that this version dropped: its new dates come from
+  an officer, so they are taken.
+- (−) A kind this version does not know (one a later version adds) is read as RAID on receipt (`normalizeKind`), so a
+  member's event of it stands or falls with raids being open.
