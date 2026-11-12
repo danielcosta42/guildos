@@ -1,4 +1,4 @@
-## [1.21.0] - 2026-11-12
+## [1.21.2] - 2026-11-12
 
-### Added
-- lib ChehulNet v1.4.0, o GuildOS repassa os acampamentos do Warmth (#316)
+### Fixed
+- Fixed "action blocked" errors in Blizzard's gamepad mode on WoW: Forever: Guild OS confirmation dialogs no longer use the game's shared popup frames

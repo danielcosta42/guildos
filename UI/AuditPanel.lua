@@ -578,6 +578,15 @@ local function BuildSyncSub(panel)
         C_Timer.After(GuildOS.Probe.CHANNEL_WAIT + 1, function() if refresh and panel:IsShown() then refresh() end end)
     end)
 
+    -- /gos perf and /gos perf reset (issue #324), made once like the probe's button.
+    local perfPrintBtn = UI:CreateButton(content, L["Print to chat"], 110, 20)
+    perfPrintBtn:SetScript("OnClick", function() GuildOS.Perf:Print() end)
+    local perfResetBtn = UI:CreateButton(content, L["Zero the counters"], 130, 20)
+    perfResetBtn:SetScript("OnClick", function()
+        GuildOS.Perf:Reset()
+        if refresh then refresh() end
+    end)
+
     refresh = function()
         content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
@@ -610,6 +619,25 @@ local function BuildSyncSub(panel)
             fs:SetPoint("TOPLEFT", 8, -yOff)
             yOff = yOff + 18
         end
+
+        ------------------------------------------------------------------
+        -- Where the time goes (issue #324): what /gos perf prints.
+        ------------------------------------------------------------------
+        local perfHead = UI:CreateText(content, L["Performance"], 10, C.gold.r, C.gold.g, C.gold.b)
+        perfHead:SetPoint("TOPLEFT", 8, -yOff)
+        yOff = yOff + 15
+        for _, line in ipairs(GuildOS.Perf:Lines()) do
+            local fs = UI:CreateText(content, line, 9, C.silver.r, C.silver.g, C.silver.b)
+            fs:SetPoint("TOPLEFT", 8, -yOff)
+            yOff = yOff + 14
+        end
+        perfPrintBtn:ClearAllPoints()
+        perfPrintBtn:SetPoint("TOPLEFT", 8, -(yOff + 2))
+        perfPrintBtn:Show()
+        perfResetBtn:ClearAllPoints()
+        perfResetBtn:SetPoint("LEFT", perfPrintBtn, "RIGHT", 6, 0)
+        perfResetBtn:Show()
+        yOff = yOff + 32
 
         ------------------------------------------------------------------
         -- The recruitment: the gossip's rounds, the requests, the whisper test and the channel probe.

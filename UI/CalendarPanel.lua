@@ -305,7 +305,7 @@ local function openEditor(dk, event)
 end
 
 -- Delete confirmation (standard Blizzard popup; avoids accidental loss).
-StaticPopupDialogs["GUILDOS_CALENDAR_DELETE"] = {
+GuildOS.Dialogs["GUILDOS_CALENDAR_DELETE"] = {
     text = L["Remove \"%s\" from the calendar? This cannot be undone."],
     button1 = YES, button2 = NO,
     OnAccept = function(self, data)
@@ -317,12 +317,12 @@ StaticPopupDialogs["GUILDOS_CALENDAR_DELETE"] = {
     preferredIndex = 3,
 }
 local function confirmDelete(e)
-    local dlg = StaticPopup_Show("GUILDOS_CALENDAR_DELETE", e.title or "?", nil, e.id)
+    local dlg = GuildOS:ShowDialog("GUILDOS_CALENDAR_DELETE", e.title or "?", nil, e.id)
     if dlg then dlg.data = e.id end   -- some clients pass data via dialog.data
 end
 
 -- Ending a series from one date on (#267): the earlier dates stay.
-StaticPopupDialogs["GUILDOS_CALENDAR_END_SERIES"] = {
+GuildOS.Dialogs["GUILDOS_CALENDAR_END_SERIES"] = {
     text = L["End \"%s\" from this date on? Earlier dates stay."],
     button1 = YES, button2 = NO,
     OnAccept = function(self, data)
@@ -334,7 +334,7 @@ StaticPopupDialogs["GUILDOS_CALENDAR_END_SERIES"] = {
     preferredIndex = 3,
 }
 local function confirmEndSeries(e)
-    local dlg = StaticPopup_Show("GUILDOS_CALENDAR_END_SERIES", e.title or "?", nil, e.id)
+    local dlg = GuildOS:ShowDialog("GUILDOS_CALENDAR_END_SERIES", e.title or "?", nil, e.id)
     if dlg then dlg.data = e.id end
 end
 

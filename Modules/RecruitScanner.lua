@@ -240,8 +240,8 @@ end
 -- accidental mass-whisper). Registered once at file load — same pattern
 -- as UI/CalendarPanel.lua's GUILDOS_CALENDAR_DELETE.
 ----------------------------------------------------------------------
-if not StaticPopupDialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] then
-    StaticPopupDialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] = {
+if not GuildOS.Dialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] then
+    GuildOS.Dialogs["GUILDOS_SCOUT_WHISPER_CONFIRM"] = {
         text = L["Whisper %d players?"],
         button1 = YES, button2 = NO,
         OnAccept = function(dlg, data, data2)
@@ -504,7 +504,7 @@ function RecruitScanner:BuildInto(container)
             local names = {}
             for name in pairs(self._selected) do names[#names + 1] = name end
             if #names == 0 then return end
-            local dlg = StaticPopup_Show("GUILDOS_SCOUT_WHISPER_CONFIRM", #names, nil, names)
+            local dlg = GuildOS:ShowDialog("GUILDOS_SCOUT_WHISPER_CONFIRM", #names, nil, names)
             if dlg then dlg.data, dlg.data2 = names, refresh end
         end)
         f.whisperBtn = whisperBtn

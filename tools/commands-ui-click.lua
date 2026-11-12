@@ -53,14 +53,13 @@ date = os.date
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 local reloaded = 0
 function ReloadUI() reloaded = reloaded + 1 end
-StaticPopupDialogs = {}
 local popped, poppedData
-function StaticPopup_Show(name, _, _, data) popped, poppedData = name, data end
 SlashCmdList = {}
 C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end }
 Enum = { SendAddonMessageResult = {} }
 GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
 dofile(ADDON .. "/Core/Core.lua")
+function GuildOS:ShowDialog(name, _, _, data) popped, poppedData = name, data end
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Commands.lua")
@@ -121,11 +120,11 @@ button("Self-test").onClick(); button("Probe the client").onClick(); button("Sty
 check(did.selftest and did.probe and did.preview, "the diagnostics run what their commands run")
 button("Probe chat").onClick()
 check(popped == "GUILDOS_PROBE_CHAT" and not did.probeChat, "the chat probe posts in guild chat: it asks first")
-StaticPopupDialogs.GUILDOS_PROBE_CHAT.OnAccept()
+GuildOS.Dialogs.GUILDOS_PROBE_CHAT.OnAccept()
 check(did.probeChat, "and runs once confirmed")
 button("Erase guild data").onClick()
 check(popped == "GUILDOS_ERASE_GUILD" and reloaded == 0 and GuildOSDB["Guild-Realm"], "erasing asks first, and nothing is gone yet")
-StaticPopupDialogs.GUILDOS_ERASE_GUILD.OnAccept()
+GuildOS.Dialogs.GUILDOS_ERASE_GUILD.OnAccept()
 check(GuildOSDB["Guild-Realm"] == nil and GuildOSDB["Other-Realm"] and reloaded == 1, "confirmed: this guild's data only, then a reload")
 
 -- ── Settings → General: the mentions log and clearing the words ─────────
@@ -137,7 +136,7 @@ button("Clear watch-words").onClick()
 check(popped == "GUILDOS_CLEAR_WORDS" and #GuildOS.db.mentions.watchWords == 2, "clearing every word asks first")
 local redrawn = false
 poppedData.after = function() redrawn = true end
-StaticPopupDialogs.GUILDOS_CLEAR_WORDS.OnAccept({ data = poppedData })
+GuildOS.Dialogs.GUILDOS_CLEAR_WORDS.OnAccept({ data = poppedData })
 check(#GuildOS.db.mentions.watchWords == 0 and redrawn, "confirmed: emptied, as /gos mentions clearwords, and the chips redrawn")
 
 -- ── The commands still do the same, through the same functions ──────────
