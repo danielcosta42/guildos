@@ -1424,7 +1424,7 @@ written into each record would be undone by any officer still on the old version
 
 ---
 
-## ADR-0031 — Weekdays and months come from the translations, and a date's layout is translatable (#307)
+## ADR-0033 — Weekdays and months come from the translations, and a date's layout is translatable (#307)
 
 ### Context
 The game's `date()` writes `%a %A %b %B` in English on every client: a frFR calendar said "Monday, 09 Nov 2026"
@@ -1449,7 +1449,7 @@ alliance screens, the guild chat and the Web panel.
 
 ---
 
-## ADR-0032 — The kinds of event below the officers: the guild's, a separate guildcfg action, held both ways (#308)
+## ADR-0034 — The kinds of event below the officers: the guild's, a separate guildcfg action, held both ways (#308)
 
 ### Context
 Since #283 the guild chooses which ranks create calendar events, but not which kinds: whoever could set up a dungeon
