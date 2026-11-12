@@ -204,8 +204,9 @@ for _, n in ipairs({ { R, "Quarta" }, { R + 5 * DAY + HOUR, "Segunda" }, { R + 5
 end
 
 -- WoW: Forever: the same nights in raids nobody listed, told apart by the size the game gave.
--- Gruul's place is a 20, Magtheridon's a 40 and Karazhan's a 10, so the size decides exactly as
--- TBC's ids did; and one more 20, recorded with no size, counts for nothing (issue #90).
+-- Gruul's place is a 20, Magtheridon's a 40 and Karazhan's a 10, which counts on Forever as every raid
+-- does (#321) where TBC's Karazhan did not; and one more 20, recorded with no size, counts for
+-- nothing (issue #90).
 if FOREVER then
   GuildOS.Client = { isAnniversary = false }
   local MOVED = { [565] = { 9001, 20 }, [544] = { 9002, 40 }, [532] = { 9010, 10 } }

@@ -6,7 +6,7 @@ local UI = GuildOS.UI
 local C = GuildOS.Colors
 local L = GuildOS.L
 
--- A "25-man" label as this game says it ("20+" on WoW: Forever, issue #90).
+-- A "25-man" label as this game says it ("10+" on WoW: Forever, issues #90, #321).
 local function Prog(text)
     return GuildOS.RaidTracker and GuildOS.RaidTracker:ProgLabel(text) or text
 end

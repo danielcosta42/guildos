@@ -97,9 +97,10 @@ local WEEK = 7 * 86400
 -- ── WoW: Forever ─────────────────────────────────────────────────────────
 local RT = load("forever")
 check(RT:IsTracked(9001) and RT:IsTracked(409), "forever: every raid is tracked, ids nobody has listed included")
-check(RT:Is25Man(9001, 20) and RT:Is25Man(9002, 40) and RT:Is25Man(9003, 25), "forever: a raid of 20 or more counts")
-check(not RT:Is25Man(9004, 10) and not RT:Is25Man(565, nil) and not RT:Is25Man(565, "x"),
-  "forever: a 10 does not, nor a night with no size, whatever its id")
+check(RT:Is25Man(9004, 10) and RT:Is25Man(9001, 20) and RT:Is25Man(9002, 40) and RT:Is25Man(9003, 25),
+  "forever: every raid counts, the 10 of Barrow Deeps included (#321)")
+check(not RT:Is25Man(9005, 5) and not RT:Is25Man(565, nil) and not RT:Is25Man(565, "x"),
+  "forever: a group of 5 does not, nor a night with no size, whatever its id")
 
 INSTANCE = { "Hyjal Summit", "raid", 14, "", 20, 0, false, 9001 }
 RT:CheckZone()
@@ -135,7 +136,7 @@ INSTANCE = { "Deadmines", "party", 1, "", 5, 0, false, 36 }
 RT:CheckZone()
 check(RT.currentRaid == nil, "forever: a dungeon is not a raid")
 
--- Attendance: the 20 counts, the 10 does not.
+-- Attendance: the 10 counts like the 20 and the 40 (#321).
 RT = load("forever")
 night(RT, NOW, 9001, 20, { "Ann", "Bob" })
 night(RT, NOW + WEEK, 9001, 20, { "Ann" })
@@ -144,12 +145,12 @@ night(RT, NOW + 3 * WEEK, 9040, 40, { "Ann", "Bob" })
 RT:RebuildAttendanceFromSessions()
 local att = GuildOS.db.raidTracker.attendance[""]
 local ann, bob = att[GuildOS:GetPlayerKey("Ann")], att[GuildOS:GetPlayerKey("Bob")]
-check(RT:GetTotal25ManSessions() == 3, "forever: the 20s and the 40 are the progression nights, the 10 is not")
-check(ann.raids25 == 3 and bob.raids25 == 2 and bob.raids == 3, "forever: everybody's progression count leaves the 10 out")
-check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Ann")) == 100 and RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Bob")) == 67,
+check(RT:GetTotal25ManSessions() == 4, "forever: the 20s, the 10 and the 40 are all progression nights")
+check(ann.raids25 == 3 and bob.raids25 == 3 and bob.raids == 3, "forever: everybody's progression count takes the 10")
+check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Ann")) == 75 and RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Bob")) == 75,
   "forever: and so does the percentage")
 local recent = RT:GetRecentSessions(10, true)
-check(#recent == 3, "forever: the progression filter shows the 20s and the 40")
+check(#recent == 4, "forever: the progression filter shows the 20s, the 10 and the 40")
 
 -- The size travels to the other officers, and a merge keeps it.
 RT:BroadcastRaidData()
@@ -212,15 +213,15 @@ RT:RebuildAttendanceFromSessions()
 check(GuildOS.db.raidTracker.attendance[""][GuildOS:GetPlayerKey("Ann")].raids25 == 1,
   "forever: a lockout counts when any of its recordings has the size, whichever came last")
 
--- The screens say 20+.
-check(RT:ProgLabel("Member Attendance — 25-man only") == "Member Attendance — 20+ man only", "forever: the English label says 20+")
-check(RT:ProgLabel("Presença de Membros — apenas 25 jogadores") == "Presença de Membros — apenas 20+ jogadores",
+-- The screens say 10+.
+check(RT:ProgLabel("Member Attendance — 25-man only") == "Member Attendance — 10+ man only", "forever: the English label says 10+")
+check(RT:ProgLabel("Presença de Membros — apenas 25 jogadores") == "Presença de Membros — apenas 10+ jogadores",
   "forever: and so does a translated one")
 check(string.format(RT:ProgLabel("RAID ATTENDANCE%s  --  %d%%  (%d/%d raids, 25-man)"), "", 50, 1, 2)
-  == "RAID ATTENDANCE  --  50%  (1/2 raids, 20+ man)", "forever: a format string still formats")
+  == "RAID ATTENDANCE  --  50%  (1/2 raids, 10+ man)", "forever: a format string still formats")
 check(RT:ProgLabel(nil) == nil, "forever: nothing to label is left alone")
 local _, why = RT:ExportForTMB("Main")
-check(why and why:find("20+", 1, true), "forever: the TMB export's message says 20+")
+check(why and why:find("10+", 1, true), "forever: the TMB export's message says 10+")
 
 -- ── Anniversary: unchanged ───────────────────────────────────────────────
 RT = load("anniversary")
