@@ -217,6 +217,29 @@ function Compat.NewTicker(interval, fn, iterations)
     return nil
 end
 
+--- The game's own meter of an addon's CPU (C_AddOnProfiler, retail 11.0.2 on), in ms a frame:
+--- { recent, session, peak, all } (`all` is every addon together), or nil where the client has none
+--- or answers with nothing (issue #324). Each value may be nil on its own.
+function Compat.AddOnCPU(addon)
+    local P = C_AddOnProfiler
+    local M = Enum and Enum.AddOnProfilerMetric
+    if type(P) ~= "table" or type(M) ~= "table" or type(P.GetAddOnMetric) ~= "function" then return nil end
+    -- A metric this client lacks reaches the API as nil, which raises: pcall makes that a nil too.
+    local function read(fn, ...)
+        if type(fn) ~= "function" then return nil end
+        local ok, v = pcall(fn, ...)
+        return ok and tonumber(v) or nil
+    end
+    local out = {
+        recent  = read(P.GetAddOnMetric, addon, M.RecentAverageTime),
+        session = read(P.GetAddOnMetric, addon, M.SessionAverageTime),
+        peak    = read(P.GetAddOnMetric, addon, M.PeakTime),
+        all     = read(P.GetOverallMetric, M.RecentAverageTime),
+    }
+    if not (out.recent or out.session) then return nil end
+    return out
+end
+
 -- Send a /who query (C_FriendList on BCC/modern; legacy global fallback)
 function Compat.SendWho(filter)
     if C_FriendList and C_FriendList.SendWho then
