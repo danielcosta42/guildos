@@ -2461,7 +2461,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
         local clearBtn = UI:CreateButton(content, L["Clear watch-words"], 150, 22)
         clearBtn:SetPoint("LEFT", logBtn, "RIGHT", 8, 0)
         clearBtn:SetScript("OnClick", function()
-            StaticPopupDialogs["GUILDOS_CLEAR_WORDS"] = StaticPopupDialogs["GUILDOS_CLEAR_WORDS"] or {
+            GuildOS.Dialogs["GUILDOS_CLEAR_WORDS"] = GuildOS.Dialogs["GUILDOS_CLEAR_WORDS"] or {
                 text = L["Clear every watch-word?"], button1 = L["Clear watch-words"], button2 = L["Cancel"],
                 OnAccept = function(self)
                     GuildOS.Mentions:HandleCommand({ "clearwords" })
@@ -2469,7 +2469,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
                 end,
                 timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
             }
-            StaticPopup_Show("GUILDOS_CLEAR_WORDS", nil, nil, { after = refreshWords })
+            GuildOS:ShowDialog("GUILDOS_CLEAR_WORDS", nil, nil, { after = refreshWords })
         end)
         yOff = yOff + 28
     end
@@ -3430,13 +3430,13 @@ function GuildOS:RefreshSettingsPanel(content, category)
         { L["Probe the client"], function() if GuildOS.Probe then GuildOS.Probe:Run() end end },
         { L["Probe chat"], function()
             -- It posts two lines in guild chat: asked first.
-            StaticPopupDialogs["GUILDOS_PROBE_CHAT"] = StaticPopupDialogs["GUILDOS_PROBE_CHAT"] or {
+            GuildOS.Dialogs["GUILDOS_PROBE_CHAT"] = GuildOS.Dialogs["GUILDOS_PROBE_CHAT"] or {
                 text = L["Post two test lines in guild chat?"],
                 button1 = L["Probe chat"], button2 = L["Cancel"],
                 OnAccept = function() if GuildOS.Probe then GuildOS.Probe:RunChat() end end,
                 timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
             }
-            StaticPopup_Show("GUILDOS_PROBE_CHAT")
+            GuildOS:ShowDialog("GUILDOS_PROBE_CHAT")
         end },
         { L["Style preview"], function() if GuildOS.Style then GuildOS.Style:ShowPreview() end end },
     }
@@ -3454,13 +3454,13 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local eraseBtn = UI:CreateButton(content, L["Erase guild data"], 170, 22)
     eraseBtn:SetPoint("TOPLEFT", 8, -yOff)
     eraseBtn:SetScript("OnClick", function()
-        StaticPopupDialogs["GUILDOS_ERASE_GUILD"] = StaticPopupDialogs["GUILDOS_ERASE_GUILD"] or {
+        GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] = GuildOS.Dialogs["GUILDOS_ERASE_GUILD"] or {
             text = L["Erase all Guild OS data for this guild and reload the interface? This cannot be undone."],
             button1 = L["Erase guild data"], button2 = L["Cancel"],
             OnAccept = function() GuildOS:EraseGuildData() end,
             timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
         }
-        StaticPopup_Show("GUILDOS_ERASE_GUILD")
+        GuildOS:ShowDialog("GUILDOS_ERASE_GUILD")
     end)
     local eraseNote = UI:CreateText(content, L["Removes every Guild OS record of this guild on this PC, then reloads."], 9,
         C.silver.r, C.silver.g, C.silver.b)

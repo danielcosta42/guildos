@@ -461,7 +461,7 @@ function GuildOS:ShowAllyCard(name, guild, anchor)
     setShown(f.ban, canModerate)
     if canModerate then
         f.ban:SetScript("OnClick", function()
-            StaticPopup_Show("GUILDOS_ALLY_BAN",
+            GuildOS:ShowDialog("GUILDOS_ALLY_BAN",
                 string.format(L["Ban %s from the alliance channel? They cannot rejoin until unbanned."], name),
                 nil, { name = name })
         end)
@@ -1305,7 +1305,7 @@ local function BuildManage(panel)
 
     removeBtn:SetScript("OnClick", function()
         local guild = removeBox:GetText()
-        StaticPopup_Show("GUILDOS_ALLY_REMOVE",
+        GuildOS:ShowDialog("GUILDOS_ALLY_REMOVE",
             string.format(L["Remove %s from the alliance?"], guild), nil,
             { guild = guild, after = function() removeBox:SetText(""); refresh() end })
     end)
@@ -1318,7 +1318,7 @@ local function BuildManage(panel)
     end)
 
     leaveBtn:SetScript("OnClick", function()
-        StaticPopup_Show("GUILDOS_ALLY_LEAVE",
+        GuildOS:ShowDialog("GUILDOS_ALLY_LEAVE",
             L["Leave the alliance? Your guild stops sharing and stops receiving."], nil,
             { after = function() refresh() end })
     end)
@@ -1431,9 +1431,9 @@ end
 -- Confirmations
 ----------------------------------------------------------------------
 local function registerPopups()
-    if StaticPopupDialogs["GUILDOS_ALLY_REMOVE"] then return end
+    if GuildOS.Dialogs["GUILDOS_ALLY_REMOVE"] then return end
 
-    StaticPopupDialogs["GUILDOS_ALLY_REMOVE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_REMOVE"] = {
         text = "%s", button1 = L["Remove"], button2 = L["Cancel"],
         OnAccept = function(self)
             local d = self and self.data
@@ -1445,7 +1445,7 @@ local function registerPopups()
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
-    StaticPopupDialogs["GUILDOS_ALLY_BAN"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_BAN"] = {
         text = "%s", button1 = L["Ban"], button2 = L["Cancel"],
         OnAccept = function(self)
             local d = self and self.data
@@ -1456,7 +1456,7 @@ local function registerPopups()
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
-    StaticPopupDialogs["GUILDOS_ALLY_LEAVE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_LEAVE"] = {
         text = "%s", button1 = L["Leave"], button2 = L["Cancel"],
         OnAccept = function(self)
             local ok, err = GuildOS.Alliance:Leave()

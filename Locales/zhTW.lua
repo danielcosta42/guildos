@@ -2321,6 +2321,16 @@ L["could not decompress"] = "無法解壓縮"
 L["chunks lost"] = "分片遺失"
 L["missing name or class"] = "缺少名字或職業"
 L["older than stored"] = "比已儲存的舊"
+-- /gos perf (issue #324)
+L["Guild OS performance, last %d min:"] = "Guild OS 效能，最近 %d 分鐘："
+L["Game profiler: Guild OS %.2f ms a frame now, %.2f this session, peak %.1f ms; every addon %.2f ms a frame."] = "遊戲效能分析器：Guild OS 目前每幀 %.2f 毫秒，本次工作階段 %.2f，峰值 %.1f 毫秒；所有插件每幀 %.2f 毫秒。"
+L["This client has no addon profiler; the times below are Guild OS's own."] = "此用戶端沒有插件效能分析器；以下時間由 Guild OS 自行測量。"
+L["Nothing measured yet."] = "尚未測量到任何內容。"
+L["Where Guild OS spends its time since login, or zero the counters"] = "自登入以來 Guild OS 把時間花在哪裡，或將計數器歸零"
+L["Performance counters zeroed."] = "效能計數器已歸零。"
+L["Print to chat"] = "輸出到聊天"
+L["Zero the counters"] = "計數器歸零"
+L["Performance"] = "效能"
 
 -- Weekdays and months in the client's language (issue #307): Core/Core.lua's LocalDate.
 -- "May" is the month's one key, short and full alike. A layout may reorder, put the year first or name

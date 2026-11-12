@@ -2465,6 +2465,16 @@ L["could not decompress"] = "decompressione non riuscita"
 L["chunks lost"] = "frammenti persi"
 L["missing name or class"] = "nome o classe mancante"
 L["older than stored"] = "più vecchio di quello salvato"
+-- /gos perf (issue #324)
+L["Guild OS performance, last %d min:"] = "Prestazioni di Guild OS, ultimi %d min:"
+L["Game profiler: Guild OS %.2f ms a frame now, %.2f this session, peak %.1f ms; every addon %.2f ms a frame."] = "Profiler del gioco: Guild OS %.2f ms per frame ora, %.2f in questa sessione, picco %.1f ms; tutti gli addon %.2f ms per frame."
+L["This client has no addon profiler; the times below are Guild OS's own."] = "Questo client non ha un profiler degli addon; i tempi qui sotto li misura Guild OS stesso."
+L["Nothing measured yet."] = "Ancora niente di misurato."
+L["Where Guild OS spends its time since login, or zero the counters"] = "Dove Guild OS spende il suo tempo dall'accesso, o azzera i contatori"
+L["Performance counters zeroed."] = "Contatori delle prestazioni azzerati."
+L["Print to chat"] = "Stampa in chat"
+L["Zero the counters"] = "Azzera i contatori"
+L["Performance"] = "Prestazioni"
 
 -- Weekdays and months in the client's language (issue #307): Core/Core.lua's LocalDate.
 -- "May" is the month's one key, short and full alike. A layout may reorder, put the year first or name

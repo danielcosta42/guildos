@@ -1,4 +1,4 @@
-## [1.21.0] - 2026-11-12
+## [1.21.4] - 2026-11-12
 
-### Added
-- lib ChehulNet v1.4.0, o GuildOS repassa os acampamentos do Warmth (#316)
+### Fixed
+- Dungeon clears and level milestones now reach the guild's Journal and guildos.me even when the moment they happened was missed (#327)

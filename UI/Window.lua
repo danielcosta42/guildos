@@ -658,9 +658,13 @@ local function createWindow()
     GuildOS.Compat.RegisterEvent(f, "RAID_ROSTER_UPDATE")
     GuildOS.Compat.RegisterEvent(f, "PARTY_LOOT_METHOD_CHANGED")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    -- The title counts who is online over the whole roster: at most once every ROSTER_GAP (issue #324).
+    local function shownTitle()
+        if f:IsShown() then f:RefreshTitle() end
+    end
     f:SetScript("OnEvent", function(self, event)
         if event == "GUILD_ROSTER_UPDATE" then
-            if self:IsShown() then self:RefreshTitle() end
+            GuildOS:Coalesce("windowTitle", GuildOS.ROSTER_GAP, shownTitle)
         else
             self:UpdateTabVisibility()
         end

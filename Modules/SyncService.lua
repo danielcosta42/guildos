@@ -159,7 +159,8 @@ function SyncService:Publish(domain, action, data, opts)
     if not ok or type(serialized) ~= "string" then return nil end
     if not GuildOS.CommSystem then return nil end
 
-    GuildOS.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, serialized, opts.target, opts.priority)
+    GuildOS.CommSystem:SendMessage(self.ENVELOPE_MSGTYPE, serialized, opts.target, opts.priority,
+        self.ENVELOPE_MSGTYPE .. " " .. tostring(domain))   -- /gos perf counts it by domain (issue #324)
 
     if env.ack then
         self.pendingAcks[env.id] = {
@@ -201,6 +202,7 @@ end
 function SyncService:OnEnvelope(sender, raw, channel)
     local ok, env = LibSerialize:Deserialize(raw)
     if not ok or type(env) ~= "table" then return end
+    if GuildOS.State.comm then GuildOS.State.comm.recvKind = self.ENVELOPE_MSGTYPE .. " " .. tostring(env.dom) end
 
     -- ACK frames clear a pending entry and never dispatch.
     if env.dom == "ack" then

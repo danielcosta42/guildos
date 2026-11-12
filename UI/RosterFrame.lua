@@ -17,7 +17,7 @@ local function SaveOfficerNote(data, text)
     end
 end
 
-StaticPopupDialogs["GUILDOS_OFFICER_NOTE"] = {
+GuildOS.Dialogs["GUILDOS_OFFICER_NOTE"] = {
     text = L["Officer note for %s"],
     button1 = L["Save"], button2 = CANCEL,
     hasEditBox = true, maxLetters = 200,
@@ -47,7 +47,7 @@ local function SavePublicNote(data, text)
     GuildOS.NoteCommand:Set(data.name, data.realm, strtrim(text))
 end
 
-StaticPopupDialogs["GUILDOS_PUBLIC_NOTE"] = {
+GuildOS.Dialogs["GUILDOS_PUBLIC_NOTE"] = {
     text = L["Note for %s, which everyone in the guild sees"],
     button1 = L["Save"], button2 = CANCEL,
     -- The game's cap on a public note. Letters here; the bytes are capped when it opens, below.
@@ -73,7 +73,7 @@ StaticPopupDialogs["GUILDOS_PUBLIC_NOTE"] = {
 -- Opens the public note's box with the note as it reads now, filled in after the popup is up: when
 -- `data` reaches OnShow differs between clients, and the box should never open empty over a note.
 local function ShowPublicNote(data)
-    local dialog = StaticPopup_Show("GUILDOS_PUBLIC_NOTE", data.name, nil, { name = data.name, realm = data.realm })
+    local dialog = GuildOS:ShowDialog("GUILDOS_PUBLIC_NOTE", data.name, nil, { name = data.name, realm = data.realm })
     local box = dialog and GuildOS.Compat.PopupEditBox(dialog)
     if box then
         -- The write cuts at 31 bytes; a box that takes 31 letters would let an accented or Cyrillic
@@ -1939,7 +1939,7 @@ local function MemberDropdown_Initialize(self, level, menuList)
             info.func = function()
                 -- A box to type it in (issue #49): only printing the slash command left a Forever
                 -- officer with a command that read "Lethaniel" for "Lethaniel Blightwood".
-                StaticPopup_Show("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
+                GuildOS:ShowDialog("GUILDOS_OFFICER_NOTE", data.name, nil, { key = data.key, name = data.name })
             end
             UIDropDownMenu_AddButton(info, level)
         end

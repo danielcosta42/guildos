@@ -217,6 +217,10 @@ end
 
 local NOW = 1757800000
 function GetServerTime() return NOW end
+-- Each read is a minute after the last, so no roster update here is held as part of a burst
+-- (GuildOS:Coalesce, issue #324; tools/coalesce.lua tests the holding).
+local clock = 0
+function GetTime() clock = clock + 60; return clock end
 time = function(t) if t then return os.time(t) end return NOW end
 date = os.date
 function GetBuildInfo() return "2.5.6", "1", "", 20506 end

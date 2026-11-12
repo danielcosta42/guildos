@@ -134,7 +134,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
 | `Compat.InviteUnit(name)` | Group invite: `C_PartyInfo.InviteUnit`, else `InviteUnit`, else `InviteByName`; nothing on a client with none (issue #43) |
 | `Compat.GetItemQualityColor(quality)` / `Compat.GetItemCount(item, includeBank)` | `C_Item`'s, else the old global's; white / 0 with neither (issue #43) |
-| `Compat.PopupEditBox(dialog)` | A StaticPopup's edit box: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
+| `Compat.PopupEditBox(dialog)` | A dialog's edit box (`editBox` on GuildOS's own, #315); on a game popup: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
 | `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
 | `Compat.SpecOf(unit)` | Retail: a unit's spec as `specID, name, role` (`"TANK"`, `"HEALER"`, `"DAMAGER"`), localized by the client; `"player"` read directly, any other unit from its inspect. Nil before there is one or when the client keeps it secret (ADR-0026) |
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
@@ -193,7 +193,10 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:ReportStartup()` | One localized chat line when start-up had failures or misses; silent otherwise |
 | `GuildOS:RecordError(msg)` | Pushes a message into the `/guildos errors` ring (shared by SafeCall and start-up) |
 | `GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)` | Collects/broadcasts data on initial login or reload only |
-| `GuildOS:OnGuildRosterUpdate()` | Refreshes roster frame on GUILD_ROSTER_UPDATE / PLAYER_GUILD_UPDATE |
+| `GuildOS:OnGuildRosterUpdate()` | GUILD_ROSTER_UPDATE / PLAYER_GUILD_UPDATE: through `Coalesce("roster", ROSTER_GAP)` (5 s), the passes over the whole roster (RecordFirstSeen, DropDeparted, TrialTracker:ScanRoster) and the roster frame; counted and timed in `GuildOS.Perf` (issue #324) |
+| `GuildOS:Coalesce(name, gap, fn)` | Runs `fn` now, or when `name` ran under `gap` s ago holds it and runs the last `fn` handed once at the window's end; nothing then if nothing came. True when it ran now. Session state in `State.coalesce` (ADR-0031) |
+| `GuildOS.Perf:Start()` / `:Stop(label, t0, bytes)` / `:Count(label)` | Calls, ms (from `debugprofilestop`, absent off the game: then only counts), worst ms and bytes per label in `State.perf` since login or the last reset (issue #324) |
+| `GuildOS.Perf:Lines()` / `:Print()` / `:Reset()` | What `/gos perf` and Audit > Sync show: the game's profiler (`Compat.AddOnCPU`) or a line saying the client has none, then every label by time spent; `/gos perf reset` and the Audit button zero it |
 | `GuildOS:HookGuildFrame()` | `hooksecurefunc` on ToggleGuildFrame (never replaced: replacing taints the social frame). After Blizzard's toggle: its frame came up and Guild OS is closed → hide it (HideUIPanel) and open Guild OS; came up while Guild OS is open → hide it and close Guild OS (the key's second press, issue #66); went down → close Guild OS too. `_suppressGuildHijack` (OpenBlizzardGuildUI) skips it |
 | `GuildOS:ToggleRoster()` | Opens or closes the Guild OS window (`UI:ToggleMain`); guildless, opens the recruitment finder instead |
 | `GuildOS:IsFrontDoorShown()` / `GuildOS:HideFrontDoor()` | Whether the window is on screen / closes it; the guild-frame hook mirrors Blizzard's open and close onto them |
@@ -221,6 +224,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:CheckAndDismissProfessionReminder()` | Fades-out reminder when all profs are fresh |
 | `GuildOS:DismissProfessionReminder()` | Immediately hides and clears the profession reminder banner |
 | `GuildOS:ShowExportPopup(titleStr, text)` | Creates copyable text export popup |
+| `GuildOS.Dialogs[name]` / `GuildOS:ShowDialog(name, textArg1, textArg2, data)` | Every confirmation and note box. Definitions keep StaticPopup's field names; the frame is GuildOS's own (`UI/Helpers.lua`) and returns with `data`, `data2`, `editBox`. **Never `StaticPopup_Show` / `StaticPopupDialogs`:** the game's popup frames are shared, an addon's dialog taints them, and WoW: Forever's gamepad UI is blocked from then on (#315; `tools/dialog.lua` fails on either name) |
 | `GuildOS:GetSetting(key)` | Config accessor — reads `GuildOS.db.settings[key]` (Rule 8) |
 | `GuildOS:SetSetting(key, value)` | Config mutator — writes `GuildOS.db.settings[key]` (Rule 8) |
 | `GuildOS:ShowsItemTooltipInfo(tooltip)` | Gate for the guild lines on item tooltips (crafters, wishlist, soft res): setting `itemTooltip` = `"always"` / `"shift"` / `"off"`; a clicked chat link (`ItemRefTooltip`) passes in shift mode |
@@ -232,6 +236,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS.Compat.IsQuestComplete(questId)` | Guards `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted` fallback (Rule 4) |
 | `GuildOS.Compat.After(delay, fn)` | Guards `C_Timer.After` (Rule 4) |
 | `GuildOS.Compat.NewTicker(interval, fn, iterations)` | Guards `C_Timer.NewTicker` (Rule 4) |
+| `GuildOS.Compat.AddOnCPU(addon)` | The game's addon CPU meter (`C_AddOnProfiler`, retail 11.0.2 on): `{ recent, session, peak, all }` ms a frame, each possibly nil, or nil without the API or when it answers nothing; `C_AddOnProfiler` is a Compat-only namespace in `tools/compat-guard.lua` (issue #324) |
 | `GuildOS.Compat.RegisterEvent(frame, event, expected)` | `RegisterEvent` that tolerates an event the client does not know; records the miss (`GuildOS:RecordMissing`) and returns false. `expected` marks an event only some clients ever had: recorded, but not a start-up problem (ADR-0012, ADR-0020) |
 | `GuildOS.Compat.HookTooltip(tooltip, script, fn)` | `HookScript` where the tooltip has `script`, else one `TooltipDataProcessor.AddTooltipPostCall` per script and function, answering only for the tooltips that asked and never for a forbidden one; `fn(tooltip, data)` on both. Nil tooltip skipped silently, a client with neither path recorded (ADR-0012, ADR-0020) |
 | `GuildOS.Compat.TooltipItem(tooltip)` / `TooltipSpell` / `TooltipUnit` | What the tooltip is showing: the frame's own `GetItem`/`GetSpell`/`GetUnit` first, then `TooltipUtil.GetDisplayed*`. Name and link, name and spell id, name and unit; the retail client adds a third return (ADR-0020) |
@@ -289,13 +294,14 @@ Removed: `Compat.NewTimer`.
 | Function | Description |
 |---|---|
 | `CommSystem:Initialize()` | Registers CHAT_MSG_ADDON, starts 5-min sync ticker |
-| `CommSystem:SendMessage(msgType, data, target, priority)` | Compress, encode, chunk, send |
-| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019) |
+| `CommSystem:SendMessage(msgType, data, target, priority, kind)` | Compress, encode, chunk, send; the compression timed in `GuildOS.Perf` as `guild sync out <kind or msgType>` (SyncService passes `SV <domain>`) |
+| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019), its target noted first (`GuildOS:NoteWhisper`, issue #326) |
 | `CommSystem:OnMessageReceived(msg, _, sender)` | Reassembles chunks, decompresses, routes by MSG_TYPE |
 | `CommSystem:BroadcastMyData()` | Throttled (5s) broadcast of local player data |
 | `CommSystem:HandleBroadcast(sender, data)` | Deserializes and stores received player data |
-| `CommSystem:RequestAllData()` | Sends REQUEST "ALL" to guild |
-| `CommSystem:HandleRequest(_sender, _data)` | Responds with BroadcastMyData (staggered) |
+| `CommSystem:RequestAllData(now)` | Sends REQUEST "ALL" to guild, "NOW" from a /gos sync (`FullSync`) |
+| `CommSystem:HandleRequest(_sender, data)` | One answer per window: at once when the last was `ANSWER_GAP` (120 s) ago, `NOW_GAP` (15 s) for a NOW; else held and answered once at the window's end, a NOW bringing it forward (`State.comm.answeredAt` / `answerDue`, ADR-0031, issue #324) |
+| `CommSystem:_Answer()` | The answer itself (staggered 0-3 s): own data, and an officer's alt links, trials, raid data, guild settings, raider roster and backfills; members also their recruitment relay, LFG, engagement and map position |
 | `CommSystem:HandleResponse(sender, data)` | Delegates to HandleBroadcast |
 | `CommSystem:HandlePing(sender)` | Responds with PONG + version |
 | `CommSystem:HandleVersionCheck(_sender, data)` | Prints notice on version mismatch |
@@ -988,14 +994,15 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 
 | Function | Purpose |
 |---|---|
-| `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
+| `Journal` (Modules/Journal.lua) | WoW: Forever only. What happened to this character, by its own client: `GuildOS.db.journal.entries` (whole guild, 30 days, 1,000), `seq`. Domain `journal` (GUILD only, sent at ChatThrottleLib's NORMAL priority, ahead of member data, #327): `add` `{entry}`, `snap` `{entries}`; taken only from its subject (the sender's key, built as CoreManager files a sign-up) and only in range |
 | `Journal:Complete(id, bosses)` | The way through finished after the end: my clear becomes a full one, in the entry and in the firsts (#235) |
 | `Readiness:WithSeats(rows)` / `Readiness.Filtered(rows, core, status)` / `Composition(rows, core)` / `Compositions(rows, core)` | The readiness panel on Forever (#220): each row's seats, the filters, and what a core has at the cap, titulars only, against its size's targets |
 | `Journal:Add(type, data)` / `OnLevelUp(level)` | Write down, keep and publish an entry about me (`<myKey>:<seq>`, `GetServerTime()`); `PLAYER_LEVEL_UP` writes `member.level` `{level}` at 10–50 and `member.level60` `{}` at the cap: no name, the roster names people |
-| `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild, kept with only their type's fields and the subject's key localized (`LocalMemberKey`: each Forever client answers its own realm, #95); my last week again at login (30 s); oldest out past 30 days and 1,000 |
+| `Journal:OnSync(env, sender)` / `Snap()` / `Prune(now)` | Entries from the guild, kept with only their type's fields and the subject's key localized (`LocalMemberKey`: each Forever client answers its own realm, #95); my last week again at login (30 s) and every 10 minutes while online (#327); oldest out past 30 days and 1,000 |
 | `Journal:GetSince(ts)` / `ForExport()` | Entries after `ts`; the export's `journal` (payload v12) |
 | `Journal:IsOptedOut()` / `SetOptedOut(on)` | Not named on Discord: `db.profile.feedOptOut`, mirrored on my member row, always a boolean in the broadcast, `feedOptOut` (true only) in the export; Settings' checkbox |
 | `tools/journal.lua` | The harness of issue #205 |
+| `tools/journal-delivery.lua` | The harness of issue #327: the real ChatThrottleLib on a turned clock; a clear leaves ahead of a member-data queue, and reaches an officer who logs in after it |
 
 ## v1.1 — Readiness on WoW: Forever (#206, guildos.me #241)
 
@@ -1084,7 +1091,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Gossip:Initialize()` / `:Beacon()` / `:Round()` | Starts the whisper gossip (not on Anniversary): the whisper test after login, the beacon every `BEACON_SECONDS`, a round of digests every `ROUND_SECONDS` plus jitter. `:Beacon()` ends on the created channel when `Gossip.CHANNEL` is on, on `mesh:Realm` (YELL) when it is off |
 | `Gossip:Topic(name, spec)` / `:On(op, fn)` / `:Receive(payload, sender, dist)` | A topic says what it holds (`digest`, `want`, `pull`, `push(payload, sender, dist)`); `:On` routes a payload's first field; RecruitBeacon's one mesh handler hands everything to `:Receive` |
 | `Gossip:Note(sender, guild, officer)` / `:Peers()` / `:PeerFor(guild)` | Peers heard in the last `PEER_FRESH` seconds; an officer of the guild asked about, else a member |
-| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden |
+| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden (`GuildOS:NoteWhisper`, issue #326) |
 | `Gossip:Quiet()` | Inside an instance or in a chat lockdown, where the gossip runs: never on Anniversary. `RB:Broadcast` pauses on it |
 | `Gossip:IsOfficerSender(sender)` | Whether a sender is an officer, for what only an officer may say over GUILD. On WoW: Forever one scan of the roster, whole name against whole name, lower case with hyphens as spaces and this client's own realm off the end; elsewhere `IsOfficerByName`. `RB:IngestCR3` and `JR:OnCRA` ask it |
 | `Gossip:Stats()` | `{ rounds, adsIn, adsOut, dropped, peers, whisper, officerRefused }`; `whisper` is the spelling the test kept, `false` for none; `officerRefused` the senders the officer check refuses right now |
@@ -1111,6 +1118,8 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Companion:Pack(prefix, payload)` | Any other string the site reads with the export's wire: today the `GOSOUTB1` of a character with no guild |
 | `Compat.AddChatFilter(event, fn)` / `Compat.ConnectedRealms()` | A chat message filter where the client keeps it (`ChatFrameUtil` on retail), false with none; this realm and the ones connected to it, the realms that can invite this character |
 | `GuildOS:WhisperTarget(name)` | The name as `/w` takes it: the hyphen where the game spells a surname with a space. Both screens' Whisper button |
+| `GuildOS:NoteWhisper(name)` | Core/Utils.lua, issue #326: every addon whisper of GuildOS calls it right before it sends (`Alliance:Send`, `CraftNet`'s answer, `CommSystem:SendRaw` with a target, `Gossip:Whisper` and the whisper test). The client's `ERR_CHAT_PLAYER_NOT_FOUND_S` line for that name is hidden for 30 s, each line hidden renewing it (a long message answers once per part); names compare with no case, hyphens as spaces, and also without what follows the last hyphen. True when a filter is there. `tools/whisper-not-found.lua` fails on an addon whisper that does not call it |
+| `GuildOS:HideWhisperErrors()` / `GuildOS:OnWhisperNotFound(fn)` | The one `CHAT_MSG_SYSTEM` filter for those lines, put in once (true when the client has a chat filter; the gossip whispers only then); `fn(name)` for each line hidden, as the game spelled the name, maybe once per chat frame: the gossip drops that peer. A secret line is left alone, a filter that breaks lets the line through and is recorded once. State in `GuildOS.State.whispers` |
 | `GuildOS.Finite(v)` | A number off the network, or nil: never NaN or inf, which `tonumber` takes as text. Every number on a recruitment network path goes through it |
 | `GuildOS:ShowGuildFinder()` / `:GuildFinderHeard()` / `:ShowJoinForm(ad)` | `UI/GuildFinder.lua`: the screen of a character with no guild, the minimap's light, and the request form with where the request stands |
 | `GuildOS:ShowJoinRequests()` / `:JoinRequestsHeard(r)` / `:JoinRequestsOpenText(n)` / `:SetMinimapAlert(on)` | `UI/JoinRequests.lua`: the officer's list, the notice, its count, and the ring on the minimap button |

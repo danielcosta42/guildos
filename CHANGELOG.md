@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.21.4] - 2026-11-12
+
+### Fixed
+- Dungeon clears and level milestones now reach the guild's Journal and guildos.me even when the moment they happened was missed (#327)
+
+
+## [1.21.3] - 2026-11-12
+
+### Fixed
+- Guild OS no longer fills the chat with "No player named ... is currently playing" when an allied guild's member it was syncing with has just logged off (#326)
+
+
+## [1.21.2] - 2026-11-12
+
+### Fixed
+- Fixed "action blocked" errors in Blizzard's gamepad mode on WoW: Forever: Guild OS confirmation dialogs no longer use the game's shared popup frames
+
+
+## [1.21.1] - 2026-11-12
+
+### Fixed
+- Each client now answers the guild's data requests at most once every two minutes (a /gos sync within 15 seconds) instead of every officer re-sending everything on every request, the heaviest traffic Guild OS made in a big guild.
+- A burst of guild roster updates now costs one pass every five seconds instead of four passes per update.
+- New /gos perf (also Audit > Sync) shows where Guild OS spends its time since login, with the game's own addon CPU meter where the client has one; /gos perf reset zeroes it.
+
+
 ## [1.21.0] - 2026-11-12
 
 ### Added

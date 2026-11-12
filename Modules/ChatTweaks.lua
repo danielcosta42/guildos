@@ -28,10 +28,19 @@ function ChatTweaks:Initialize()
 
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
-    f:SetScript("OnEvent", function() ChatTweaks:_RefreshCache() end)
+    -- A pass over the whole roster: at most one every ROSTER_GAP seconds (issue #324).
+    f:SetScript("OnEvent", function()
+        GuildOS:Coalesce("chatTweaks", GuildOS.ROSTER_GAP, ChatTweaks.TimedRefresh)
+    end)
 
     self:_RegisterFilters()
     self:_RegisterTests()
+end
+
+function ChatTweaks.TimedRefresh()
+    local t = GuildOS.Perf:Start()
+    ChatTweaks:_RefreshCache()
+    GuildOS.Perf:Stop("roster chat cache", t)
 end
 
 function ChatTweaks:_RefreshCache()

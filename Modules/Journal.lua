@@ -23,6 +23,10 @@ local MAX = 1000                  -- entries kept, the whole guild's
 local KEEP = 30 * 86400           -- and for this long
 local SNAP = 7 * 86400            -- my own, republished at login for whoever was offline
 local SNAP_DELAY = 30             -- seconds after login: the guild channel is up by then
+local SNAP_EVERY = 600            -- and again while online, as often as member data is asked for (#327)
+-- Ahead of member data in ChatThrottleLib: GuildOS's BULK pipe can run minutes behind, and what is
+-- queued at a logout or a /reload never goes (#327). An entry is a message or two, a few a day.
+local SEND = { priority = "NORMAL" }
 local SKEW = 600                  -- a sender's clock a little ahead is a clock, not a lie
 local BOSSES_MAX = 20
 local MILESTONES = { [10] = true, [20] = true, [30] = true, [40] = true, [50] = true }
@@ -109,6 +113,8 @@ function Journal:Initialize()
         self.frame:SetScript("OnEvent", function(_, _, level) Journal:OnLevelUp(level) end)
     end
     Compat.After(SNAP_DELAY, function() Journal:Snap() end)
+    -- An add that went to nobody who uploads, or was lost on the way, is not lost for good (#327).
+    if not self.ticker then self.ticker = Compat.NewTicker(SNAP_EVERY, function() Journal:Snap() end) end
 end
 
 -- Oldest out first: past 30 days, then past 1,000.
@@ -135,7 +141,7 @@ function Journal:Add(etype, data)
     table.insert(GuildOS.db.journal.entries, e)
     noteFirst(e)
     self:Prune(now)
-    if GuildOS.SyncService then GuildOS.SyncService:Publish("journal", "add", { entry = e }) end
+    if GuildOS.SyncService then GuildOS.SyncService:Publish("journal", "add", { entry = e }, SEND) end
     return e
 end
 
@@ -185,13 +191,17 @@ function Journal:OnSync(env, sender)
     if added then self:Prune(now) end
 end
 
--- My own entries of the last week, again, for whoever was offline when they happened.
+-- My own entries of the last week, again, for whoever was offline when they happened or missed them:
+-- at login and every ten minutes after. Each receiver keeps an entry once, by its id.
 function Journal:Snap()
+    -- The ticker outlives the login: a guild joined, left or changed since then, or the journal switched
+    -- off, says nothing to anyone (#150).
+    if not GuildOS:IsOnGuildDB() or not GuildOS:IsFeatureEnabled("journal") then return end
     local key, since, mine = myKey(), GetServerTime() - SNAP, {}
     for _, e in ipairs(entries()) do
         if GuildOS:LocalMemberKey(e.subjectKey) == key and e.at >= since then mine[#mine + 1] = e end
     end
-    if #mine > 0 and GuildOS.SyncService then GuildOS.SyncService:Publish("journal", "snap", { entries = mine }) end
+    if #mine > 0 and GuildOS.SyncService then GuildOS.SyncService:Publish("journal", "snap", { entries = mine }, SEND) end
 end
 
 function Journal:OnLevelUp(level)

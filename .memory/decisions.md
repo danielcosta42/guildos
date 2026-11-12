@@ -1422,6 +1422,72 @@ written into each record would be undone by any officer still on the old version
 - (−) A login's newcomers wait a minute; with no officer online to answer, the catch-up uses the settings this client
   had.
 
+## ADR-0031 — One answer a window, one roster pass a window, and a meter that stays (#324)
+
+### Context
+An officer of a 700-member guild on WoW: Forever reported high CPU one morning, with no logs. Every REQUEST from any
+guildmate made every online client answer on GUILD at once: a member with its own data and three small messages, an
+officer with ~36 (25 roster-log events, alt links, eight guild settings, its own data: 41 chunks, 5.8 KB, ~6 ms of
+compression in LuaJIT without the JIT). A login sends three requests and every client one every ten minutes; the
+whole guild decodes every answer, and ChatThrottleLib's 800 B/s, shared by every addon of the client, takes ~7 s to
+send one officer answer, so a login wave kept the queue from ever draining. Every GUILD_ROSTER_UPDATE ran four
+passes over the whole roster and redrew the open window. Nothing kept how often either arrived.
+
+### Decision
+- `CommSystem:HandleRequest` answers at most once per `ANSWER_GAP` (120 s). A request inside the window is held, and
+  the window's end answers once for all of them: nothing asked goes unanswered, it waits two minutes at most. A
+  `/gos sync` asks with `NOW`, answered within `NOW_GAP` (15 s), so its 20-second report still counts who answered;
+  a NOW inside an ALL's window brings the held answer forward. A client before #324 reads NOW as ALL.
+- `GuildOS:Coalesce(name, gap, fn)` runs a call at once, holds what comes inside `gap`, and runs the last one at the
+  window's end. The roster passes, the chat class cache, the window title and the Now tab go through it with
+  `ROSTER_GAP` (5 s).
+- `GuildOS.Perf` counts and times, per label, the guild sync in and out by type and SyncService domain, the requests
+  answered and held, the roster events and passes and the window's redraws, and `/gos perf` (Audit > Sync) shows them
+  with the game's own addon meter when the client has one. It ships on, since a report of high CPU never comes with
+  a profile.
+
+### Consequences
+- (+) An officer answers once every two minutes whatever the guild's size, and the guild decodes one answer per
+  client per window instead of one per request.
+- (+) A burst of roster events costs two passes.
+- (+) The next report comes with numbers: `/gos perf` names where the time went.
+- (−) A guildmate who logs in right after somebody else's request waits up to two minutes for the data of those who
+  just answered; their own data still goes out every five minutes.
+- (−) Every officer still answers the same window; one answering for all would need them to agree, left out.
+- (−) A roster change shows on the open window up to five seconds late in a burst.
+- (−) Two clock reads per timed call, always on.
+
+## ADR-0032 — A journal entry is said again while its author is online, ahead of member data (#327)
+
+### Context
+Each client writes down its own clears and milestones and tells the guild once (`add`), then once more at its next
+login (`snap`, its last week). Member data is pushed every 5 minutes and pulled every 10, so a lost broadcast heals;
+nothing healed a journal entry. Filhos da Horda's officer file (2026-11-12) shows the cost: Chuleta Maximus's clear of
+Excavation Site was written by his client at 01:57 UTC, and the officer was online then (its own roster stamps at 01:51
+and 01:59) and stored his member data at 02:51 and again at 15:05 in a later session, without the clear; it arrived
+only after 16:57, fifteen hours and three of his sessions later. A groupmate's clear took a later session too. The same
+file shows why it could be lost while both were online: those clients' member data arrived 5 to 49 minutes after it
+was collected, where nearly the whole guild's arrives inside 5 seconds. GuildOS sends everything through one BULK pipe
+in ChatThrottleLib, first in, first out; an entry written at the end of a run waited behind that queue, and what is
+queued at a logout or a `/reload` never goes.
+
+### Decision
+- `journal` messages go at ChatThrottleLib's NORMAL priority. ChatThrottleLib shares its bandwidth between the
+  priorities that have something queued, so an entry (one or two messages, a few a day) leaves within a second however
+  deep the BULK pipe is.
+- `Journal:Snap()` runs every 10 minutes while online, as well as 30 seconds after login: an entry that went to nobody
+  who uploads, or was lost on the way, reaches every client that is online with its author for 10 minutes in that week.
+  Receivers already keep an entry once, by its id.
+- Still only from its subject: nobody relays another member's entries, so an officer who never shares 10 online minutes
+  with somebody in a week still misses that person's week.
+
+### Consequences
+- (+) A clear reaches the officers online with its author within 10 minutes, and the companion's upload with them.
+- (+) A priority and a ticker; no new message, and an old client reads the snapshots as it always did.
+- (−) Every member with an entry in the last week sends one small snapshot every 10 minutes (27 members had one in
+  Filhos da Horda's file; one to three messages each), next to member broadcasts of about ten messages every 5 minutes.
+- (−) The BULK backlog itself is not addressed: member data from those clients still arrives minutes late.
+
 ---
 
 ## ADR-0033 — Weekdays and months come from the translations, and a date's layout is translatable (#307)
