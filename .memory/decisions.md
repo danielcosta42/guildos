@@ -1421,3 +1421,28 @@ written into each record would be undone by any officer still on the old version
   joined with only a non-officer alt online, or with everyone offline) are not auto-trialed.
 - (−) A login's newcomers wait a minute; with no officer online to answer, the catch-up uses the settings this client
   had.
+
+---
+
+## ADR-0031 — Weekdays and months come from the translations, and a date's layout is translatable (#307)
+
+### Context
+The game's `date()` writes `%a %A %b %B` in English on every client: a frFR calendar said "Monday, 09 Nov 2026"
+under a grid whose weekdays were French (`L["Mon"]`). Twelve calls did it, in the calendar, the Dashboard, Now, the
+alliance screens, the guild chat and the Web panel.
+
+### Decision
+- `GuildOS:LocalDate(fmt, timestamp)` takes `date()`'s own format and fills those four conversions from `L` before
+  `date()` sees it. It lives in Core/Core.lua, so every harness that draws a date already has it.
+- A whole date's layout is an L key holding a `date()` format (`L["%A, %d %b %Y"]`): a language reorders it, puts the
+  year first (koKR, zhCN, zhTW) or names the month in full (`%B`, the month headers). Only `%a %A %b %B %d %H %M %Y
+  %m %y %%` are allowed in a translation, since an unknown conversion can raise inside `date()`.
+- `"May"` is one key, the short and the full month alike, so every language gives the full name, short enough for both.
+- `tools/date-names.lua` scans every file the TOC loads for a `date(` call whose string literals (an L key included)
+  name a day or a month, and fails naming the file and line.
+
+### Consequences
+- (+) English is exactly what `date()` wrote; every other language reads its own names and order.
+- (+) A new raw `date("%a")` fails in CI, not in a support channel.
+- (−) The scan follows literals inside the call only: a format kept in a variable first is not seen.
+- (−) Names are nominative: a language that declines a month after a day (ruRU) uses the short form, which does not.

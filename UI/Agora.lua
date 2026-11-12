@@ -264,7 +264,7 @@ end
 
 local function stamp(ts)
     if now() - ts < 86400 then return date("%H:%M", ts) end
-    return date("%a", ts)
+    return GuildOS:LocalDate("%a", ts)
 end
 
 local function acquireRow(list, i)
@@ -412,7 +412,7 @@ function GuildOS:CreateNowPanel(panel, win)
     local function paint()
         if raid then
             local comp = GuildOS.Calendar:GetComposition(raid)
-            raidMeta:SetText((raid.title or "?") .. DOT .. date("%a %H:%M", raid.when)
+            raidMeta:SetText((raid.title or "?") .. DOT .. GuildOS:LocalDate("%a %H:%M", raid.when)
                 .. DOT .. string.format(L["%d going"], comp.yes))
         else
             raidMeta:SetText(L["No raid scheduled."])

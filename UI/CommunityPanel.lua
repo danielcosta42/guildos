@@ -608,7 +608,7 @@ function GuildOS:CreateGuildChatFeed(panel)
             b.nameFS:SetTextColor(GuildOS:GetClassColor(class))
             -- The log outlives the session: a line from another day says which day.
             local t = tonumber(g.t)
-            b.timeFS:SetText(t and date(date("%Y%m%d", t) == today and "%H:%M" or "%a %H:%M", t) or "")
+            b.timeFS:SetText(t and GuildOS:LocalDate(date("%Y%m%d", t) == today and "%H:%M" or "%a %H:%M", t) or "")
             b.bodyFS:SetWidth(width - 44)
             b.bodyFS:SetText(table.concat(g.lines, "\n"))
             local h = math.max(34, (b.bodyFS:GetStringHeight() or 12) + 28)

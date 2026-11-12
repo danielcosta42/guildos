@@ -617,7 +617,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     :SetPoint("LEFT", 4, 0)
 
                 -- Date + time
-                local dateStr = date("%a %d/%m  %H:%M", sd.startTime or 0)
+                local dateStr = GuildOS:LocalDate("%a ", sd.startTime or 0) .. GuildOS:DateText(sd.startTime or 0, "  %H:%M")
                 UI:CreateText(row, dateStr, 9, C.silver.r, C.silver.g, C.silver.b)
                     :SetPoint("LEFT", 16, 0)
 

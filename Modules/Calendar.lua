@@ -294,7 +294,7 @@ function Calendar:GetDigestLines()
     local nowT = GetServerTime()
     local dt = (e.when or 0) - nowT
     if dt > 0 and dt < 24 * 3600 then
-        return { string.format(L["%s soon: %s at %s"], self:KindLabel(e.kind), e.title, date("%a %H:%M", e.when)) }
+        return { string.format(L["%s soon: %s at %s"], self:KindLabel(e.kind), e.title, GuildOS:LocalDate("%a %H:%M", e.when)) }
     end
     return nil
 end

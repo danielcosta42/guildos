@@ -411,7 +411,7 @@ function GuildOS:CreateCalendarSub(panel)
         if not W or W < 120 then W = 1000 end
         local cellW = math.floor((W - GRID_X - 12) / COLS)
 
-        monthLabel:SetText(date("%b %Y", noon(f.viewYear, f.viewMonth, 1)))
+        monthLabel:SetText(GuildOS:LocalDate(L["%b %Y"], noon(f.viewYear, f.viewMonth, 1)))
 
         for i = 1, COLS do
             f.wdFS[i]:ClearAllPoints()
@@ -485,7 +485,7 @@ function GuildOS:CreateCalendarSub(panel)
         local sel = f.selectedKey
         if sel then
             local y = math.floor(sel / 10000); local m = math.floor((sel % 10000) / 100); local d = sel % 100
-            detailLabel:SetText(date("%A, %d %b %Y", noon(y, m, d)))
+            detailLabel:SetText(GuildOS:LocalDate(L["%A, %d %b %Y"], noon(y, m, d)))
         else
             detailLabel:SetText(L["Select a day"])
         end
@@ -567,7 +567,7 @@ function GuildOS:CreateCalendarSub(panel)
                 -- last one they got.
                 local where = L["Sign up in Discord or on the website."]
                 if (tonumber(e.signupsAt) or 0) > 0 then
-                    where = where .. " " .. string.format(L["(as of %s)"], date("%a %H:%M", e.signupsAt))
+                    where = where .. " " .. string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", e.signupsAt))
                 end
                 local whereFS = UI:CreateText(child, where, 10, C.silver.r, C.silver.g, C.silver.b)
                 whereFS:SetPoint("TOPLEFT", 6, -yy)
