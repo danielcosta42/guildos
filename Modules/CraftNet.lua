@@ -94,7 +94,10 @@ function CraftNet:OnMessage(payload, sender, dist)
         if prof then
             local reply = table.concat({ self.PROTO, "A", itemId, qid, prof }, "|")
             local mesh = _G.ChehulMesh
-            if mesh then mesh:Whisper(self.PREFIX, reply, sender) end
+            if mesh then
+                GuildOS:NoteWhisper(sender) -- the asker may log off before the answer leaves (issue #326)
+                mesh:Whisper(self.PREFIX, reply, sender)
+            end
         end
 
     elseif op == "A" then

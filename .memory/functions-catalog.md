@@ -290,7 +290,7 @@ Removed: `Compat.NewTimer`.
 |---|---|
 | `CommSystem:Initialize()` | Registers CHAT_MSG_ADDON, starts 5-min sync ticker |
 | `CommSystem:SendMessage(msgType, data, target, priority)` | Compress, encode, chunk, send |
-| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019) |
+| `CommSystem:SendRaw(msg, target, priority)` | Sends one sync message through `Compat.SendAddonMessage`: guild at BULK or the given priority, whisper at NORMAL (ADR-0019), its target noted first (`GuildOS:NoteWhisper`, issue #326) |
 | `CommSystem:OnMessageReceived(msg, _, sender)` | Reassembles chunks, decompresses, routes by MSG_TYPE |
 | `CommSystem:BroadcastMyData()` | Throttled (5s) broadcast of local player data |
 | `CommSystem:HandleBroadcast(sender, data)` | Deserializes and stores received player data |
@@ -1084,7 +1084,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Gossip:Initialize()` / `:Beacon()` / `:Round()` | Starts the whisper gossip (not on Anniversary): the whisper test after login, the beacon every `BEACON_SECONDS`, a round of digests every `ROUND_SECONDS` plus jitter. `:Beacon()` ends on the created channel when `Gossip.CHANNEL` is on, on `mesh:Realm` (YELL) when it is off |
 | `Gossip:Topic(name, spec)` / `:On(op, fn)` / `:Receive(payload, sender, dist)` | A topic says what it holds (`digest`, `want`, `pull`, `push(payload, sender, dist)`); `:On` routes a payload's first field; RecruitBeacon's one mesh handler hands everything to `:Receive` |
 | `Gossip:Note(sender, guild, officer)` / `:Peers()` / `:PeerFor(guild)` | Peers heard in the last `PEER_FRESH` seconds; an officer of the guild asked about, else a member |
-| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden |
+| `Gossip:CanWhisper()` / `:WhisperName(name)` / `:Whisper(name, payload)` | A whisper of ours has come back this session; the name in the spelling that did; the send, with the error line of a name tried hidden (`GuildOS:NoteWhisper`, issue #326) |
 | `Gossip:Quiet()` | Inside an instance or in a chat lockdown, where the gossip runs: never on Anniversary. `RB:Broadcast` pauses on it |
 | `Gossip:IsOfficerSender(sender)` | Whether a sender is an officer, for what only an officer may say over GUILD. On WoW: Forever one scan of the roster, whole name against whole name, lower case with hyphens as spaces and this client's own realm off the end; elsewhere `IsOfficerByName`. `RB:IngestCR3` and `JR:OnCRA` ask it |
 | `Gossip:Stats()` | `{ rounds, adsIn, adsOut, dropped, peers, whisper, officerRefused }`; `whisper` is the spelling the test kept, `false` for none; `officerRefused` the senders the officer check refuses right now |
@@ -1111,6 +1111,8 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Companion:Pack(prefix, payload)` | Any other string the site reads with the export's wire: today the `GOSOUTB1` of a character with no guild |
 | `Compat.AddChatFilter(event, fn)` / `Compat.ConnectedRealms()` | A chat message filter where the client keeps it (`ChatFrameUtil` on retail), false with none; this realm and the ones connected to it, the realms that can invite this character |
 | `GuildOS:WhisperTarget(name)` | The name as `/w` takes it: the hyphen where the game spells a surname with a space. Both screens' Whisper button |
+| `GuildOS:NoteWhisper(name)` | Core/Utils.lua, issue #326: every addon whisper of GuildOS calls it right before it sends (`Alliance:Send`, `CraftNet`'s answer, `CommSystem:SendRaw` with a target, `Gossip:Whisper` and the whisper test). The client's `ERR_CHAT_PLAYER_NOT_FOUND_S` line for that name is hidden for 30 s, each line hidden renewing it (a long message answers once per part); names compare with no case, hyphens as spaces, and also without what follows the last hyphen. True when a filter is there. `tools/whisper-not-found.lua` fails on an addon whisper that does not call it |
+| `GuildOS:HideWhisperErrors()` / `GuildOS:OnWhisperNotFound(fn)` | The one `CHAT_MSG_SYSTEM` filter for those lines, put in once (true when the client has a chat filter; the gossip whispers only then); `fn(name)` for each line hidden, as the game spelled the name, maybe once per chat frame: the gossip drops that peer. A secret line is left alone, a filter that breaks lets the line through and is recorded once. State in `GuildOS.State.whispers` |
 | `GuildOS.Finite(v)` | A number off the network, or nil: never NaN or inf, which `tonumber` takes as text. Every number on a recruitment network path goes through it |
 | `GuildOS:ShowGuildFinder()` / `:GuildFinderHeard()` / `:ShowJoinForm(ad)` | `UI/GuildFinder.lua`: the screen of a character with no guild, the minimap's light, and the request form with where the request stands |
 | `GuildOS:ShowJoinRequests()` / `:JoinRequestsHeard(r)` / `:JoinRequestsOpenText(n)` / `:SetMinimapAlert(on)` | `UI/JoinRequests.lua`: the officer's list, the notice, its count, and the ring on the minimap button |

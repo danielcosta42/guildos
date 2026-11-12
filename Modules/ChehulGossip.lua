@@ -45,7 +45,6 @@ local TEST_DELAY    = 10      -- seconds after login before the whisper test
 local TEST_WAIT     = 5       -- seconds an echo gets before the next spelling
 local TEST_AGAIN    = 90      -- seconds between one pass over the spellings and the next
 local TEST_PASSES   = 4       -- passes before it stops asking
-local TRIED_SECONDS = 30      -- seconds the "no such player" line of a name I whispered stays hidden
 local PAYLOAD_MAX   = 2048    -- bytes; a whole CR3 is under it, and a multi-part message can be anything
 local NAME_MAX      = 96      -- bytes of a name: two names of three-byte letters and a realm
 local GUILD_CHARS   = 24      -- the game's own limit
@@ -54,7 +53,6 @@ GuildOS.State.gossip = {
     peers     = {},   -- [whole name] = { name, at, guild, officer, heardOf, since, count, answered, served }
     topics    = {},   -- [name] = { digest, want, pull, push }
     routes    = {},   -- [first field] = fn(payload, sender, dist)
-    tried     = {},   -- [whole name] = when the error line stops being hidden
     asked     = {},   -- [key] = version asked for this round
     asks      = 0,    -- questions asked this round
     dialed    = {},   -- [whole name] = true: a digest went there this round, and one list of names may come back
@@ -258,7 +256,7 @@ local function TryNext(test)
     if Quiet() then return end
     test.at = test.at + 1
     local try = test.tries[test.at]
-    S.tried[Whole(try.name)] = GetTime() + TRIED_SECONDS
+    GuildOS:NoteWhisper(try.name)
     Compat.SendAddonMessageNow(PREFIX, "CRW|" .. test.token .. "|" .. test.at, "WHISPER", try.name)
 end
 
@@ -281,21 +279,11 @@ local function OnTest(payload)
     if try then S.whisper, S.test = try.spelling, nil end
 end
 
--- The client's "no such player" line, for a name I tried and nobody else's. A peer that answers this
--- way has logged off, and is not worth another round. Chat in lockdown is secret, and a chat frame
--- is no place to raise.
-local function IsTried(msg)
-    if Compat.IsSecret(msg) or not next(S.tried) then return false end
-    local args = GuildOS:MatchFormat(msg, ERR_CHAT_PLAYER_NOT_FOUND_S)
-    local name = args and Whole(args[1])
-    local till = name and S.tried[name]
-    if not till or GetTime() > till then return false end
-    S.peers[name] = nil
-    return true
-end
-
-local function HideNotFound(_, _, msg)
-    return Guarded(IsTried, msg)
+-- The client's "no such player" line, for a name we whispered, is hidden by GuildOS:NoteWhisper's filter, the
+-- one every addon whisper of GuildOS shares (issue #326). A peer it was about has logged off, and is not worth
+-- another round.
+local function Gone(name)
+    S.peers[Whole(name)] = nil
 end
 
 ----------------------------------------------------------------------
@@ -461,10 +449,6 @@ end
 -- still goes: that is how a newcomer says it holds nothing.
 function Gossip:Round()
     S.allowance, S.asks, S.asked, S.dialed = Allowance(), 0, {}, {}
-    local now = GetTime()
-    for name, till in pairs(S.tried) do
-        if now > till then S.tried[name] = nil end
-    end
     local peers = self:Peers()   -- asked before anything can stop the round: this is what prunes the list
     for _, peer in ipairs(peers) do peer.answered, peer.served = nil, nil end
     if not CanAnswer() then return end
@@ -500,7 +484,8 @@ function Gossip:Initialize()
     if S.started or GuildOS.Client.isAnniversary then return end
     S.started = true
     -- A try at an offline name prints a line, and none may: with no filter there is no test, so no whisper.
-    local filtered = Guarded(Compat.AddChatFilter, "CHAT_MSG_SYSTEM", HideNotFound)
+    local filtered = GuildOS:HideWhisperErrors()
+    GuildOS:OnWhisperNotFound(Gone)
     if self.CHANNEL then Guarded(Compat.JoinChannel, self.CHANNEL_NAME) end
     Compat.After(TEST_DELAY, function()
         if filtered then Guarded(StartTest) end
@@ -674,6 +659,6 @@ function Gossip:Whisper(name, payload)
     local mesh = _G.ChehulMesh
     if not (mesh and self:CanWhisper()) or Quiet() then return false end
     local target = self:WhisperName(name)
-    S.tried[Whole(target)] = GetTime() + TRIED_SECONDS
+    GuildOS:NoteWhisper(target)
     return mesh:Whisper(PREFIX, payload, target)
 end

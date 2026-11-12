@@ -286,6 +286,112 @@ function GuildOS:WhisperTarget(name)
     return name
 end
 
+----------------------------------------------------------------------
+-- The "No player named" line of our own addon whispers (issue #326).
+-- An addon whisper to somebody who has just logged off makes the client print ERR_CHAT_PLAYER_NOT_FOUND_S in every
+-- chat frame: a yellow line about a message the player never sent. Every addon whisper of GuildOS notes its target
+-- first (GuildOS:NoteWhisper), and the line for a name noted within WHISPER_TRIED_SECONDS is hidden. Each line hidden
+-- renews the name's window: a long message leaves in many parts, and each part to somebody gone prints its own line
+-- for as long as the parts take to go. Anybody else's line passes.
+-- The vendored mesh hides the lines of the whispers it picks itself, not ours: its WhisperTried is local, Mesh:Whisper
+-- notes nothing, and its filter is only in once its directory started, which on Anniversary it never does.
+-- Session state, in GuildOS.State.whispers; made on first use, after Core.lua made GuildOS.State.
+----------------------------------------------------------------------
+local WHISPER_TRIED_SECONDS = 30 -- seconds the line of a name we whispered stays hidden, renewed by each line hidden
+
+local function whispers()
+    local s = GuildOS.State.whispers
+    if not s then
+        s = { tried = {}, gone = {}, failed = {} } -- [key] = GetTime() it is ours until; fn(name) listeners; errors
+        GuildOS.State.whispers = s
+    end
+    return s
+end
+
+-- A name as a whisper target and a "No player named" line can both spell it: no case, hyphens as spaces.
+local function whisperKey(name)
+    return (name:lower():gsub("[%s%-]+", " "))
+end
+
+-- The keys a name answers to: whole, and without what follows its last hyphen. WoW: Forever echoes "First Surname"
+-- to a whisper to "First-Surname" or "First Surname-Realm"; elsewhere a realm may come back on a name or not.
+local function whisperKeys(name)
+    local short = name:match("^(.+)%-[^%-]+$")
+    return whisperKey(name), short and whisperKey(short) or nil
+end
+
+local function renew(tried, key, now)
+    local till = key and tried[key]
+    if not till or now > till then return false end
+    tried[key] = now + WHISPER_TRIED_SECONDS
+    return true
+end
+
+local function whisperFail(err)
+    local s, msg = whispers(), "Whispers: " .. tostring(err)
+    if s.failed[msg] then return end
+    s.failed[msg] = true
+    GuildOS:RecordError(msg)
+end
+
+-- The line for a name we whispered a moment ago. Chat in lockdown is secret: left alone, unread. Every chat frame
+-- runs the filter, so what it does more than once for one line must not matter.
+local function ourNotFound(msg)
+    local s = whispers()
+    if GuildOS.Compat.IsSecret(msg) or type(msg) ~= "string" or not next(s.tried) then return false end
+    local args = GuildOS:MatchFormat(msg, ERR_CHAT_PLAYER_NOT_FOUND_S)
+    local name = args and args[1]
+    if not name then return false end
+    local now, whole, short = GetTime(), whisperKeys(name)
+    local hit = renew(s.tried, whole, now)
+    hit = renew(s.tried, short, now) or hit
+    if not hit then return false end
+    for _, fn in ipairs(s.gone) do
+        local ok, err = pcall(fn, name)
+        if not ok then whisperFail(err) end
+    end
+    return true
+end
+
+-- A chat frame is no place to raise: a filter that breaks lets the line through and is recorded once.
+local function hideNotFound(_, _, msg)
+    local ok, hide = pcall(ourNotFound, msg)
+    if ok then return hide end
+    whisperFail(hide)
+    return false
+end
+
+-- Puts in the filter that hides those lines, once. True when the client has a chat filter, false when not.
+function GuildOS:HideWhisperErrors()
+    local s = whispers()
+    if s.filtered == nil then
+        local ok, added = pcall(GuildOS.Compat.AddChatFilter, "CHAT_MSG_SYSTEM", hideNotFound)
+        if not ok then whisperFail(added) end
+        s.filtered = (ok and added) and true or false
+    end
+    return s.filtered
+end
+
+-- Notes an addon whisper about to go to `name`: its "No player named" line is hidden for WHISPER_TRIED_SECONDS.
+-- Every addon whisper of ours calls it right before it sends. Returns whether a filter is there to hide the line.
+function GuildOS:NoteWhisper(name)
+    if self.Compat.IsSecret(name) or type(name) ~= "string" or name == "" then return false end
+    local s, now = whispers(), GetTime()
+    for key, till in pairs(s.tried) do
+        if now > till then s.tried[key] = nil end
+    end
+    local whole, short = whisperKeys(name)
+    s.tried[whole] = now + WHISPER_TRIED_SECONDS
+    if short then s.tried[short] = now + WHISPER_TRIED_SECONDS end
+    return self:HideWhisperErrors()
+end
+
+-- `fn(name)` runs for each of those lines hidden, `name` as the line spells it, maybe more than once for one line.
+function GuildOS:OnWhisperNotFound(fn)
+    local gone = whispers().gone
+    gone[#gone + 1] = fn
+end
+
 -- How a guildmate's key reads on screen: the name alone when they are on this character's realm, the
 -- whole "Name-Realm" when they are not, so connected-realm namesakes never read as one person (#185).
 function GuildOS:DisplayKey(key)
