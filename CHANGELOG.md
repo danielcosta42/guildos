@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.21.0] - 2026-11-12
+
+### Added
+- lib ChehulNet v1.4.0, o GuildOS repassa os acampamentos do Warmth (#316)
+
+
 ## [1.20.1] - 2026-11-10
 
 ### Fixed
