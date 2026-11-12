@@ -1421,3 +1421,34 @@ written into each record would be undone by any officer still on the old version
   joined with only a non-officer alt online, or with everyone offline) are not auto-trialed.
 - (−) A login's newcomers wait a minute; with no officer online to answer, the catch-up uses the settings this client
   had.
+
+## ADR-0031 — A journal entry is said again while its author is online, ahead of member data (#327)
+
+### Context
+Each client writes down its own clears and milestones and tells the guild once (`add`), then once more at its next
+login (`snap`, its last week). Member data is pushed every 5 minutes and pulled every 10, so a lost broadcast heals;
+nothing healed a journal entry. Filhos da Horda's officer file (2026-11-12) shows the cost: Chuleta Maximus's clear of
+Excavation Site was written by his client at 01:57 UTC, and the officer was online then (its own roster stamps at 01:51
+and 01:59) and stored his member data at 02:51 and again at 15:05 in a later session, without the clear; it arrived
+only after 16:57, fifteen hours and three of his sessions later. A groupmate's clear took a later session too. The same
+file shows why it could be lost while both were online: those clients' member data arrived 5 to 49 minutes after it
+was collected, where nearly the whole guild's arrives inside 5 seconds. GuildOS sends everything through one BULK pipe
+in ChatThrottleLib, first in, first out; an entry written at the end of a run waited behind that queue, and what is
+queued at a logout or a `/reload` never goes.
+
+### Decision
+- `journal` messages go at ChatThrottleLib's NORMAL priority. ChatThrottleLib shares its bandwidth between the
+  priorities that have something queued, so an entry (one or two messages, a few a day) leaves within a second however
+  deep the BULK pipe is.
+- `Journal:Snap()` runs every 10 minutes while online, as well as 30 seconds after login: an entry that went to nobody
+  who uploads, or was lost on the way, reaches every client that is online with its author for 10 minutes in that week.
+  Receivers already keep an entry once, by its id.
+- Still only from its subject: nobody relays another member's entries, so an officer who never shares 10 online minutes
+  with somebody in a week still misses that person's week.
+
+### Consequences
+- (+) A clear reaches the officers online with its author within 10 minutes, and the companion's upload with them.
+- (+) A priority and a ticker; no new message, and an old client reads the snapshots as it always did.
+- (−) Every member with an entry in the last week sends one small snapshot every 10 minutes (27 members had one in
+  Filhos da Horda's file; one to three messages each), next to member broadcasts of about ten messages every 5 minutes.
+- (−) The BULK backlog itself is not addressed: member data from those clients still arrives minutes late.
