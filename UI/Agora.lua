@@ -445,6 +445,7 @@ function GuildOS:CreateNowPanel(panel, win)
     end
 
     local function refresh()
+        local t = GuildOS.Perf:Start()
         GuildOS:SafeCall(function()
             raid = Agora:NextRaid()
             loading = Agora:RosterLoading()
@@ -452,6 +453,7 @@ function GuildOS:CreateNowPanel(panel, win)
             feed = Agora:Activity(MAX_FEED)
             paint()
         end)
+        GuildOS.Perf:Stop("window now tab", t)
     end
     panel.Refresh = refresh
 
@@ -486,5 +488,9 @@ function GuildOS:CreateNowPanel(panel, win)
         end
     end)
     GuildOS.Compat.RegisterEvent(panel, "GUILD_ROSTER_UPDATE")
-    panel:SetScript("OnEvent", function() if panel:IsVisible() then refresh() end end)
+    -- At most once every ROSTER_GAP seconds on a roster update (issue #324).
+    local function visibleRefresh()
+        if panel:IsVisible() then refresh() end
+    end
+    panel:SetScript("OnEvent", function() GuildOS:Coalesce("agora", GuildOS.ROSTER_GAP, visibleRefresh) end)
 end

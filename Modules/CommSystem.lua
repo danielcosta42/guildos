@@ -42,7 +42,11 @@ function CommSystem:Initialize()
     GuildOS.Compat.RegisterEvent(frame, "CHAT_MSG_ADDON")
     frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
         if prefix == GuildOS.PREFIX then
+            -- Timed by the type it carried (issue #324); a chunk still waiting for the rest says "chunk".
+            local st, t = GuildOS.State.comm, GuildOS.Perf:Start()
+            st.recvKind = nil
             CommSystem:OnMessageReceived(msg, channel, sender)
+            GuildOS.Perf:Stop("guild sync in " .. (st.recvKind or "chunk"), t, #msg)
         end
     end)
 
@@ -85,8 +89,9 @@ function CommSystem:Initialize()
     -- The 300s ticker above only broadcasts our own data; without this a client
     -- that missed a peer's one broadcast would never re-pull it within the
     -- session. Kept on a separate 10-min timer; the 0-15s jitter spreads the
-    -- guild-wide REQUEST fan-out across clients (each peer's response is itself
-    -- throttled to once per THROTTLE_INTERVAL, so this cannot storm the channel).
+    -- guild-wide REQUEST fan-out across clients. Only a peer's own data was throttled
+    -- (THROTTLE_INTERVAL), and an officer's backfills went out on every request until
+    -- each peer answered once per ANSWER_GAP (issue #324).
     C_Timer.NewTicker(600, function()
         if IsInGuild() then
             C_Timer.After(math.random() * 15, function()
@@ -179,12 +184,15 @@ CommSystem.DROP_REASON_TEXT = {
 ----------------------------------------------------------------------
 -- Send a message to guild (with chunking for large payloads)
 ----------------------------------------------------------------------
-function CommSystem:SendMessage(msgType, data, target, priority)
+-- `kind`, optional, names it in /gos perf (SyncService passes its domain); else the type does.
+function CommSystem:SendMessage(msgType, data, target, priority, kind)
     local payload = msgType .. ":" .. (data or "")
 
     -- Compress
+    local t = GuildOS.Perf:Start()
     local compressed = LibDeflate:CompressDeflate(payload)
     local encoded = LibDeflate:EncodeForWoWAddonChannel(compressed)
+    GuildOS.Perf:Stop("guild sync out " .. (kind or msgType), t, #encoded)
 
     local len = #encoded
     if len <= 250 then
@@ -291,6 +299,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     -- Parse message type
     local msgType, data = decompressed:match("^(%w+):(.*)$")
     if not msgType then return end
+    GuildOS.State.comm.recvKind = msgType   -- for /gos perf; SyncService narrows SV to its domain
 
     if msgType == CommSystem.MSG_TYPES.BROADCAST then
         self:HandleBroadcast(sender, data)
@@ -471,15 +480,47 @@ end
 ----------------------------------------------------------------------
 -- Request data from all online guildies
 ----------------------------------------------------------------------
-function CommSystem:RequestAllData()
+-- `now` (a /gos sync) asks to be answered within NOW_GAP rather than ANSWER_GAP.
+function CommSystem:RequestAllData(now)
     if not IsInGuild() then return end
-    self:SendMessage(self.MSG_TYPES.REQUEST, "ALL")
+    self:SendMessage(self.MSG_TYPES.REQUEST, now and "NOW" or "ALL")
 end
 
 ----------------------------------------------------------------------
 -- Handle data request
 ----------------------------------------------------------------------
-function CommSystem:HandleRequest(_sender, _data)
+-- How often this client answers (issue #324). Every client answered every request and every officer
+-- re-sent its ~36 backfills each time, with three requests a login and one a client every ten minutes,
+-- all decoded by the whole guild, and an officer of a 700-member guild reported high CPU. A request inside
+-- the window gets one answer at its end, so nothing asked goes unanswered. A /gos sync (NOW) waits
+-- NOW_GAP at most, so its report still counts who answered. A client before #324 sends ALL for
+-- everything, and answers NOW as it answers ALL.
+CommSystem.ANSWER_GAP = 120
+CommSystem.NOW_GAP = 15
+
+local function answer(self)
+    local st = GuildOS.State.comm
+    st.answeredAt, st.answerDue = GetTime(), nil
+    GuildOS.Perf:Count("guild sync request answered")
+    self:_Answer()
+end
+
+function CommSystem:HandleRequest(_sender, data)
+    local st = GuildOS.State.comm
+    GuildOS.Perf:Count("guild sync request")
+    local now = GetTime()
+    local gap = data == "NOW" and self.NOW_GAP or self.ANSWER_GAP
+    if not st.answeredAt or now - st.answeredAt >= gap then return answer(self) end
+    GuildOS.Perf:Count("guild sync request held")
+    local at = st.answeredAt + gap
+    if st.answerDue and st.answerDue <= at then return end   -- an answer comes by then already
+    st.answerDue = at
+    GuildOS.Compat.After(at - now, function()
+        if st.answerDue == at then answer(self) end   -- else answered meanwhile, or brought forward
+    end)
+end
+
+function CommSystem:_Answer()
     -- Respond with a broadcast to the GUILD channel instead of a direct
     -- WHISPER to the sender.  Using WHISPER caused "No player named X"
     -- spam whenever the requester logged off between their REQUEST and our
@@ -645,8 +686,8 @@ function CommSystem:FullSync()
     -- Broadcast own member data (gear, professions, attunements, recipes)
     self:BroadcastMyData()
 
-    -- Request fresh data from all online guild members
-    self:RequestAllData()
+    -- Request fresh data from all online guild members, answered within NOW_GAP (issue #324)
+    self:RequestAllData(true)
 
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["Syncing data with guild..."])
