@@ -156,9 +156,12 @@ function Frame:GetRegions()
   for _, c in ipairs(self.children) do if isRegion(c) then out[#out + 1] = c end end
   return unpack(out)
 end
-function Frame:IsEnabled() return true end
+function Frame:IsEnabled() return self.disabled ~= true end
+function Frame:Enable() self.disabled = nil end
+function Frame:Disable() self.disabled = true end
+function Frame:SetFocus() self.focused = true end
 function Frame:IsMouseOver() return false end
-for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "SetBackdrop",
+for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise", "SetBackdrop",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
   "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
@@ -297,6 +300,7 @@ GuildOS.Calendar = {
   GetComposition = function(_, e) return { yes = e.yes or 0 } end,
   MyRsvp = function(_, e) return e.mine end,
   GetEvents = function() return {} end,
+  CreatableKinds = function() return { "RAID" } end,   -- the kinds this rank creates (#308)
 }
 
 -- Panel builders record what they built and, where the real one does, expose
@@ -1255,6 +1259,50 @@ do
     "and drawn: that month's name and the day's heading")
   UI:OpenWindow("guild", "calendar")
   check(cal.selectedKey == 20260115, "opening the calendar without a day leaves the selection alone")
+
+  -- The event editor (#308): only the kinds this rank creates, and a dungeon from the game's list.
+  -- Calendar's own rules are tools/event-kinds.lua's.
+  local Cal = GuildOS.Calendar
+  Cal.KINDS, Cal.REPEATS = { "RAID", "DUNGEON", "PVP", "FARM", "SOCIAL", "OTHER" }, { "none" }
+  Cal.SizesFor = function(k, sizes) return k == "DUNGEON" and { 5 } or sizes end
+  Cal.KindLabel = function(_, k) return k end
+  Cal.MayCreateKind = function(_, k) return k == "DUNGEON" or k == "SOCIAL" end
+  Cal.CreatableKinds = function() return { "DUNGEON", "SOCIAL" } end
+  Cal.DungeonChoices = function() return { "Ruins of Lordaeron", "Scholomance" } end
+  tinsert = tinsert or table.insert
+  fire(cal.newBtn, "OnClick")
+  local ed = _G.GuildOSEventEditor
+  check(ed and ed.shown, "New Event opens the editor")
+  local pills, picker, titleBox = {}, nil, nil
+  local isKind = {}
+  for _, k in ipairs(Cal.KINDS) do isKind[k] = true end
+  for _, c in ipairs(ed.children) do
+    if c.fs and isKind[c.kind] then pills[c.kind] = c end   -- a pill keeps its kind where the stub keeps its type
+    if c.label and c.label.text == "Pick a dungeon" then picker = c end
+    if c.kind == "EditBox" and (c.w == 332 or c.w == 222) then titleBox = titleBox or c end   -- the title, first
+  end
+  check(pills.RAID and pills.RAID.disabled and pills.DUNGEON and not pills.DUNGEON.disabled,
+    "a kind this rank does not create is there, and cannot be picked")
+  check(picker and picker.shown and titleBox and titleBox.w == 222,
+    "it starts on the first kind it creates, a dungeon, with the list beside the title")
+  fire(picker, "OnClick")
+  local list
+  for _, c in ipairs(ed.children) do
+    if c ~= picker and c.children and #c.children == 3 and c.strata == "DIALOG" then list = c end
+  end
+  check(list and list.shown, "the list opens beside the editor")
+  local rows = {}
+  for _, b in ipairs(list.children) do if b.label then rows[#rows + 1] = b end end
+  check(#rows == 3 and rows[1].label.text == "Ruins of Lordaeron" and rows[3].label.text == "Other (type a name)",
+    "the game's dungeons, then Other")
+  fire(rows[2], "OnClick")
+  check(titleBox.text == "Scholomance" and not list.shown, "a pick is the title")
+  fire(picker, "OnClick")
+  fire(rows[3], "OnClick")
+  check(titleBox.text == "" and titleBox.focused, "Other clears a picked name and asks for one")
+  fire(pills.SOCIAL, "OnClick")
+  check(not picker.shown and titleBox.w == 332, "another kind has no list")
+  ed:Hide()
   win:Hide()
 end
 

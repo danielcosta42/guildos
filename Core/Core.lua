@@ -1111,6 +1111,40 @@ function GuildOS:ShowsItemTooltipInfo(tooltip)
 end
 
 ----------------------------------------------------------------------
+-- Dates in the client's language (issue #307)
+----------------------------------------------------------------------
+-- The game's date() names the weekday and the month (%a %A %b %B) in English on every client, so a
+-- frFR calendar said "Monday, 09 Nov 2026". LocalDate takes date()'s own format and fills those four
+-- from the translations; the rest (%d %H %M %Y, %%) is date()'s. A whole date's layout is the
+-- translation's too: callers pass it as L["%A, %d %b %Y"], which a language may reorder, put the year
+-- first or name the month in full (%B). tools/date-names.lua fails on a date() whose format names one.
+-- "May" is the month's one key for both: every language's full name, short enough for either.
+local dateNames   -- built at the first call, once every Locales file has filled L
+local function namesOfDates()
+    dateNames = dateNames or {
+        a = { L["Sun"], L["Mon"], L["Tue"], L["Wed"], L["Thu"], L["Fri"], L["Sat"] },
+        A = { L["Sunday"], L["Monday"], L["Tuesday"], L["Wednesday"], L["Thursday"], L["Friday"], L["Saturday"] },
+        b = { L["Jan"], L["Feb"], L["Mar"], L["Apr"], L["May"], L["Jun"],
+              L["Jul"], L["Aug"], L["Sep"], L["Oct"], L["Nov"], L["Dec"] },
+        B = { L["January"], L["February"], L["March"], L["April"], L["May"], L["June"],
+              L["July"], L["August"], L["September"], L["October"], L["November"], L["December"] },
+    }
+    return dateNames
+end
+
+function GuildOS:LocalDate(fmt, timestamp)
+    local t = date("*t", timestamp)
+    local names = namesOfDates()
+    local localized = tostring(fmt or ""):gsub("%%(.)", function(c)
+        local list = names[c]
+        if not list then return "%" .. c end   -- date()'s own, %% included
+        local name = list[(c == "a" or c == "A") and t.wday or t.month] or ""
+        return (name:gsub("%%", "%%%%"))       -- a name is text to date(), never a format
+    end)
+    return date(localized, timestamp)
+end
+
+----------------------------------------------------------------------
 -- Feature toggles (Rule 8 — never read db.settings.modules directly).
 -- Keys are the feature ids from UI/FeatureRegistry.lua. Default is ON:
 -- an absent key means "never touched", not "off". `core` features can

@@ -70,6 +70,123 @@ function Calendar:KindLabel(k)
     return map[k] or k
 end
 
+----------------------------------------------------------------------
+-- The kinds a creator who is not an officer may create (issue #308)
+----------------------------------------------------------------------
+-- The guild's, as the ranks that create events are: an officer's choice, stamped and published on
+-- guildcfg (`eventkinds`, newest wins, two in one second settle on the fewer kinds) and re-sent with
+-- the ranks. Unset, every kind, as before #308; an officer always creates every kind. Held when an
+-- event is created or changed here and again when one arrives (OnSync). The payload carries no `max`:
+-- a client before this reads an unknown guildcfg action as the officer threshold, and one with no
+-- `max` it ignores, so it goes on taking every kind from a member, as it always did.
+local KINDS_FUTURE_SLACK = 300   -- seconds a stamp may run ahead of this client's clock, as the ranks'
+
+-- Known kinds only, once each, in KINDS order; nil when `list` is no list.
+function Calendar.CleanKinds(list)
+    if type(list) ~= "table" then return nil end
+    local want = {}
+    for _, k in pairs(list) do
+        if type(k) == "string" and KIND_SET[k] then want[k] = true end
+    end
+    local out = {}
+    for _, k in ipairs(Calendar.KINDS) do
+        if want[k] then out[#out + 1] = k end
+    end
+    return out
+end
+
+local function settings() return GuildOS.db and GuildOS.db.settings end
+
+-- The kinds open to members, as a set; nil when the guild never chose (every kind).
+function Calendar:MemberKinds()
+    local s = settings()
+    local list = s and Calendar.CleanKinds(s.eventKinds)
+    if not list then return nil end
+    local set = {}
+    for _, k in ipairs(list) do set[k] = true end
+    return set
+end
+
+function Calendar:KindOpenToMembers(kind)
+    local set = self:MemberKinds()
+    return set == nil or set[normalizeKind(kind)] == true
+end
+
+-- Whether this client creates an event of `kind`: an officer every kind, a rank that creates events
+-- only a kind open to members.
+function Calendar:MayCreateKind(kind)
+    if GuildOS:IsOfficer() then return true end
+    return GuildOS:MayCreateEvents() and self:KindOpenToMembers(kind)
+end
+
+-- The kinds this client creates, in KINDS order: the editor's pills.
+function Calendar:CreatableKinds()
+    local out = {}
+    for _, k in ipairs(self.KINDS) do
+        if self:MayCreateKind(k) then out[#out + 1] = k end
+    end
+    return out
+end
+
+-- Only an officer changes it; the stamp only moves forward. Whether it was taken.
+function Calendar:SetMemberKinds(list)
+    if not GuildOS:IsOfficer() then return false end
+    local kinds = Calendar.CleanKinds(list)
+    local s = settings()
+    if not (kinds and s) then return false end
+    s.eventKinds = kinds
+    s.eventKindsAt = math.max(GetServerTime(), (s.eventKindsAt or 0) + 1)
+    self:PublishMemberKinds()
+    return true
+end
+
+-- To the guild when it changes, and on the officers' regular sync and their answer to a request. Only
+-- a choice somebody made: a guild that never chose sends nothing.
+function Calendar:PublishMemberKinds()
+    local s = settings()
+    local kinds = s and s.eventKindsAt and Calendar.CleanKinds(s.eventKinds)
+    if not (kinds and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    GuildOS.SyncService:Publish("guildcfg", "eventkinds", { kinds = kinds }, { rev = s.eventKindsAt })
+end
+
+-- From an officer over GUILD (SyncService checked both). Two changes in the same second settle on the
+-- fewer kinds, then on the list that, written in KINDS order and joined by commas, sorts first as text
+-- ("DUNGEON" before "RAID"): the same answer on every client whatever the order.
+function Calendar:OnMemberKindsSync(env)
+    local data = type(env) == "table" and env.data
+    local s = settings()
+    if type(data) ~= "table" or not s then return end
+    local kinds = Calendar.CleanKinds(data.kinds)
+    local at = tonumber(env.rev)
+    -- `at > 0` also turns away NaN, which compares false to everything.
+    if not (kinds and at and at > 0 and at < math.huge) then return end
+    at = math.min(at, GetServerTime() + KINDS_FUTURE_SLACK)
+    local held, heldKinds = s.eventKindsAt, Calendar.CleanKinds(s.eventKinds)
+    if held and at < held then return end
+    if held and at == held and heldKinds then
+        if #kinds > #heldKinds then return end
+        if #kinds == #heldKinds and table.concat(kinds, ",") >= table.concat(heldKinds, ",") then return end
+    end
+    s.eventKinds, s.eventKindsAt = kinds, at
+    self:Refresh()
+end
+
+-- The dungeons the editor offers for a Dungeon event (issue #308), as guildos.me offers them to book
+-- (#491): the game's own that have a boss to clear, by name, then the classic ones guilds book most.
+-- Names only: a pick becomes the title, and "Other" leaves the title to be typed. Empty where the game
+-- has no catalogue (Anniversary, retail), where the title is typed as before.
+function Calendar:DungeonChoices()
+    local cat = GuildOS.ForeverDungeons
+    if not cat then return {} end
+    local out = {}
+    for _, d in pairs(cat.byInstance or {}) do
+        if type(d.name) == "string" and type(d.bosses) == "table" and #d.bosses > 0 then out[#out + 1] = d.name end
+    end
+    table.sort(out)
+    for _, name in ipairs(cat.classic or {}) do out[#out + 1] = name end
+    return out
+end
+
 function Calendar:Initialize()
     GuildOS.db.calendar = GuildOS.db.calendar or { events = {} }
     GuildOS.db.calendar.events = GuildOS.db.calendar.events or {}
@@ -294,7 +411,7 @@ function Calendar:GetDigestLines()
     local nowT = GetServerTime()
     local dt = (e.when or 0) - nowT
     if dt > 0 and dt < 24 * 3600 then
-        return { string.format(L["%s soon: %s at %s"], self:KindLabel(e.kind), e.title, date("%a %H:%M", e.when)) }
+        return { string.format(L["%s soon: %s at %s"], self:KindLabel(e.kind), e.title, GuildOS:LocalDate("%a %H:%M", e.when)) }
     end
     return nil
 end
@@ -328,10 +445,15 @@ function Calendar:_Add(e)
     end
 end
 
--- The officer and the fields every new event needs; nil, with the reason said, when one is missing.
-local function validNew(title, when)
+-- The rank, the kind (issue #308) and the fields every new event needs; nil, with the reason said, when
+-- one is missing.
+local function validNew(title, when, kind)
     if not GuildOS:MayCreateEvents() then
         GuildOS:Print(L["|cffFF4444Your rank cannot create events.|r"])
+        return nil
+    end
+    if not Calendar:MayCreateKind(kind) then
+        GuildOS:Print(L["|cffFF4444Your rank cannot create this type of event.|r"])
         return nil
     end
     title = strtrim(title or "")
@@ -344,7 +466,7 @@ local function validNew(title, when)
 end
 
 function Calendar:Create(title, when, size, note, kind, shareAlliance)
-    title, when = validNew(title, when)
+    title, when = validNew(title, when, kind)
     if not title then return end
     local e = newEvent(title, when, size, note, kind, shareAlliance)
     self:_Add(e)
@@ -449,7 +571,7 @@ function Calendar:CreateSeries(title, when, size, note, kind, shareAlliance, rep
     if not (STEP_DAYS[rep] or MONTHLY[rep]) then
         return self:Create(title, when, size, note, kind, shareAlliance) and 1 or nil
     end
-    title, when = validNew(title, when)
+    title, when = validNew(title, when, kind)
     if not title then return nil end
     local t = date("*t", when)
     local template = newEvent(title, when, size, note, kind, shareAlliance)
@@ -768,6 +890,12 @@ function Calendar:Update(id, title, when, size, note, kind, shareAlliance)
     end
     local e = self:GetEvents()[id]
     if not e or e.canceled then return end
+    -- An event becomes only a kind its creator may create (#308). Kept as it is, it stays theirs to edit,
+    -- reschedule and end, whatever the officers closed since.
+    if normalizeKind(kind) ~= normalizeKind(e.kind) and not self:MayCreateKind(kind) then
+        GuildOS:Print(L["|cffFF4444Your rank cannot create this type of event.|r"])
+        return
+    end
     title = strtrim(title or "")
     when = tonumber(when)
     if title == "" or not when then
@@ -853,6 +981,11 @@ function Calendar:OnSync(env, sender)
         local existing = id and (self:GetEvents()[id] or (d.series and self:AnyOfSeries(id))) or nil
         local incoming = type(d) == "table" and d.event or nil
         if not Calendar.MayWriteRemote(existing, incoming, sender, false) then return end
+        -- And only a kind the officers opened to them (#308), unless the event is one this client holds
+        -- already and keeps its kind: editing, rescheduling, ending, cancelling or deleting it stays theirs.
+        local keeps = type(existing) == "table" and type(incoming) == "table"
+            and normalizeKind(existing.kind) == normalizeKind(incoming.kind)
+        if type(incoming) == "table" and not keeps and not self:KindOpenToMembers(incoming.kind) then return end
     end
     if (env.act == "create" or env.act == "update") and d and d.event then
         local e = d.event

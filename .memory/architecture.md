@@ -240,8 +240,11 @@ Never read/write `GuildOS.db.settings.*` directly from UI files.
   version  = 1,
   settings = { sortBy, sortAsc, showOffline, minimap, officerMaxRank, officerMaxRankAt, modules,
                readyMinIlvl, readyMinIlvlAt,   -- Forever: the guild's minimum item level for a 60, on guildcfg/readymin (#206)
-               trialDays, trialDaysAt, trialAuto, trialAutoAt },  -- the guild's trial length (nil = 30) and its
+               trialDays, trialDaysAt, trialAuto, trialAutoAt,  -- the guild's trial length (nil = 30) and its
                                                -- switch for new members, on guildcfg/trialdays and trialauto (#249)
+               eventMaxRank, eventMaxRankAt,   -- the ranks that create events, on guildcfg/events (#283)
+               eventKinds, eventKindsAt },     -- the kinds those below the officers create (nil = every kind),
+                                               -- on guildcfg/eventkinds (#308)
   members  = { ["Name-Realm"] = { name, realm, class, level, race, avgIlvl,
                                    gear, professions, attunements, stats, spec,
                                    mplus, vault,   -- retail: { rating, key = { map, level } },

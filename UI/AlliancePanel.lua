@@ -140,7 +140,7 @@ local function BuildOverview(panel)
                     or string.format(L["%dmin apart"], mins)
                 local head = UI:CreateText(content, string.format(
                     "%s  %s  |cff888888x|r  %s  |cff8888aa%s|r  |cff666666%s|r",
-                    date("%a %H:%M", c.mine.when), c.mine.title or "?",
+                    GuildOS:LocalDate("%a %H:%M", c.mine.when), c.mine.title or "?",
                     c.theirs.title or "?", c.theirs.guild or "?", gapText),
                     11, C.text.r, C.text.g, C.text.b)
                 head:SetPoint("TOPLEFT", 10, -y)
@@ -261,7 +261,7 @@ local function BuildOverview(panel)
                 local ev = events[i]
                 local size = tonumber(ev.size) or GuildOS.Client.defaultRaidSize   -- from another guild
                 local full = (ev.yes or 0) >= size
-                local when = date("%a %H:%M", ev.when)
+                local when = GuildOS:LocalDate("%a %H:%M", ev.when)
                 local fs = UI:CreateText(content, string.format("%s  %s  |cff888888%s  %d/%d|r",
                     when, ev.title or "?", ev.guild or "?", ev.yes or 0, size),
                     11, C.text.r, C.text.g, C.text.b)

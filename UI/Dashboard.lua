@@ -118,7 +118,7 @@ function GuildOS:CreateDashboardPanel(panel)
         local title = UI:CreateText(body, "|cffFFFFFF" .. truncate(e.title or "?", 34) .. "|r", 14, C.gold.r, C.gold.g, C.gold.b)
         title:SetPoint("TOPLEFT", 2, -2)
         local sub = UI:CreateText(body, string.format("%s  ·  %s  ·  |cff9AA0AA%s|r",
-            date("%a %d %b, %H:%M", e.when), fmtCountdown((e.when or 0) - nowT()), kindTxt),
+            GuildOS:LocalDate(L["%a %d %b, %H:%M"], e.when), fmtCountdown((e.when or 0) - nowT()), kindTxt),
             10, C.silver.r, C.silver.g, C.silver.b)
         sub:SetPoint("TOPLEFT", 2, -24)
 

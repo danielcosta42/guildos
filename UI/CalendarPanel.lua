@@ -131,19 +131,28 @@ local function buildEditor()
     local kindLbl = UI:CreateText(f, L["Type"], 10, C.silver.r, C.silver.g, C.silver.b)
     kindLbl:SetPoint("TOPLEFT", 14, -84)
     local kindPills = {}
+    local refreshDungeon   -- the dungeon picker beside the title (#308), built with the title below
     local function refreshKinds()
         for _, p in ipairs(kindPills) do
             local col = kindColor(p.kind)
+            -- A kind this rank may not create (#308) stays in its place, dimmed and not clickable.
+            local mayPick = CAL():MayCreateKind(p.kind)
+            if mayPick then p:Enable() else p:Disable() end
             if p.kind == f.kind then
                 p:SetBackdropColor(col.r * 0.34, col.g * 0.34, col.b * 0.34, 0.95)
                 p:SetBackdropBorderColor(col.r, col.g, col.b, 0.9)
                 p.fs:SetTextColor(col.r, col.g, col.b)
+            elseif not mayPick then
+                p:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.4)
+                p:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.15)
+                p.fs:SetTextColor(C.disabled.r, C.disabled.g, C.disabled.b)
             else
                 p:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.9)
                 p:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
                 p.fs:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
             end
         end
+        if refreshDungeon then refreshDungeon() end
     end
     do
         local kinds = (CAL() and CAL().KINDS) or { "RAID", "DUNGEON", "PVP", "FARM", "SOCIAL", "OTHER" }
@@ -173,6 +182,57 @@ local function buildEditor()
     refreshKinds()
 
     local titleBox = fieldBox(14, -128, 332, L["Title"], false, 60)
+
+    -- A Dungeon event picks its dungeon from the game's list (#308), the one guildos.me offers, or
+    -- "Other" and types it: the pick is the title. The list opens beside the editor.
+    local dungeonBtn = UI:CreateButton(f, L["Pick a dungeon"], 104, 22)
+    dungeonBtn:SetPoint("TOPLEFT", 242, -142)
+    local dungeonList
+    local function hideDungeonList() if dungeonList then dungeonList:Hide() end end
+    local function pickDungeon(name)
+        if name then
+            titleBox:SetText(name)
+        else
+            -- Other: a name the list put there gives way to the one typed.
+            for _, n in ipairs(CAL():DungeonChoices()) do
+                if strtrim(titleBox:GetText() or "") == n then titleBox:SetText("") end
+            end
+            titleBox:SetFocus()
+        end
+        hideDungeonList()
+    end
+    local function buildDungeonList()
+        local list = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        list:SetFrameStrata("DIALOG")
+        list:SetFrameLevel(f:GetFrameLevel() + 10)
+        list:SetPoint("TOPLEFT", f, "TOPRIGHT", 4, 0)
+        list:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        list:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
+        list:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
+        local choices = CAL():DungeonChoices()
+        for i, name in ipairs(choices) do
+            local b = UI:CreateButton(list, name, 196, 20)
+            b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 22)
+            b:SetScript("OnClick", function() pickDungeon(name) end)
+        end
+        local other = UI:CreateButton(list, L["Other (type a name)"], 196, 20)
+        other:SetPoint("TOPLEFT", 6, -6 - #choices * 22)
+        other:SetScript("OnClick", function() pickDungeon(nil) end)
+        list:SetSize(208, 12 + (#choices + 1) * 22)
+        list:Hide()
+        return list
+    end
+    dungeonBtn:SetScript("OnClick", function()
+        dungeonList = dungeonList or buildDungeonList()
+        dungeonList:SetShown(not dungeonList:IsShown())
+    end)
+    -- Only for a dungeon, and only where the game has a list (WoW: Forever); the title makes room.
+    refreshDungeon = function()
+        local show = f.kind == "DUNGEON" and #CAL():DungeonChoices() > 0
+        dungeonBtn:SetShown(show)
+        titleBox:SetWidth(show and 222 or 332)
+        if not show then hideDungeonList() end
+    end
     local descBox  = fieldBox(14, -178, 332, L["Description (optional)"], true, 500)
 
     -- Repeating (#267). A new event cycles through the repeats its date allows; an event of a series
@@ -262,7 +322,10 @@ local function buildEditor()
         f.editId = event and event.id or nil
         titleFS:SetText(event and L["Edit Event"] or L["New Event"])
         saveBtn.label:SetText(event and L["Save"] or L["Create"])
-        f.kind = (event and event.kind and KIND_COLOR[event.kind]) and event.kind or "RAID"
+        -- A new event starts on a kind this rank creates (#308): a raid, else the first one open.
+        local first = CAL():MayCreateKind("RAID") and "RAID" or CAL():CreatableKinds()[1] or "RAID"
+        f.kind = (event and event.kind and KIND_COLOR[event.kind]) and event.kind or first
+        hideDungeonList()
         refreshKinds()
         local y, m, d, hh, mm, size, title, note
         if event then
@@ -271,7 +334,7 @@ local function buildEditor()
             size, title, note = event.size or DEFAULT_SIZE, event.title or "", event.note or ""
         else
             y = math.floor(dk / 10000); m = math.floor((dk % 10000) / 100); d = dk % 100
-            hh, mm, size, title, note = 20, 0, DEFAULT_SIZE, "", ""
+            hh, mm, size, title, note = 20, 0, CAL().SizesFor(f.kind, { DEFAULT_SIZE })[1], "", ""
         end
         local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         shareCb:SetShown(inAlliance)
@@ -411,7 +474,7 @@ function GuildOS:CreateCalendarSub(panel)
         if not W or W < 120 then W = 1000 end
         local cellW = math.floor((W - GRID_X - 12) / COLS)
 
-        monthLabel:SetText(date("%b %Y", noon(f.viewYear, f.viewMonth, 1)))
+        monthLabel:SetText(GuildOS:LocalDate(L["%b %Y"], noon(f.viewYear, f.viewMonth, 1)))
 
         for i = 1, COLS do
             f.wdFS[i]:ClearAllPoints()
@@ -481,11 +544,12 @@ function GuildOS:CreateCalendarSub(panel)
     ------------------------------------------------------------------
     function f.RenderDetail(byDay)
         local isOfficer = GuildOS:IsOfficer()
-        local canCreate = GuildOS:MayCreateEvents()   -- the guild's ranks (issue #283)
+        -- The guild's ranks (issue #283), and a kind left open to this one (#308).
+        local canCreate = GuildOS:MayCreateEvents() and #CAL():CreatableKinds() > 0
         local sel = f.selectedKey
         if sel then
             local y = math.floor(sel / 10000); local m = math.floor((sel % 10000) / 100); local d = sel % 100
-            detailLabel:SetText(date("%A, %d %b %Y", noon(y, m, d)))
+            detailLabel:SetText(GuildOS:LocalDate(L["%A, %d %b %Y"], noon(y, m, d)))
         else
             detailLabel:SetText(L["Select a day"])
         end
@@ -567,7 +631,7 @@ function GuildOS:CreateCalendarSub(panel)
                 -- last one they got.
                 local where = L["Sign up in Discord or on the website."]
                 if (tonumber(e.signupsAt) or 0) > 0 then
-                    where = where .. " " .. string.format(L["(as of %s)"], date("%a %H:%M", e.signupsAt))
+                    where = where .. " " .. string.format(L["(as of %s)"], GuildOS:LocalDate("%a %H:%M", e.signupsAt))
                 end
                 local whereFS = UI:CreateText(child, where, 10, C.silver.r, C.silver.g, C.silver.b)
                 whereFS:SetPoint("TOPLEFT", 6, -yy)

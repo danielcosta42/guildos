@@ -436,7 +436,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             raidTitle:SetText(title)
             local when = tonumber(roster.startsAt) or 0
             if when > 0 then
-                raidWhen:SetText(string.format("%s · %s", date("%a %H:%M", when),
+                raidWhen:SetText(string.format("%s · %s", GuildOS:LocalDate("%a %H:%M", when),
                     fmtCountdown(when - (GetServerTime() or time()))))
             else
                 raidWhen:SetText("")

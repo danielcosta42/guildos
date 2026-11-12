@@ -617,7 +617,7 @@ function GuildOS:RefreshRaidsPanel(sessionContent, attContent, statusText)
                     :SetPoint("LEFT", 4, 0)
 
                 -- Date + time
-                local dateStr = date("%a %d/%m  %H:%M", sd.startTime or 0)
+                local dateStr = GuildOS:LocalDate("%a ", sd.startTime or 0) .. GuildOS:DateText(sd.startTime or 0, "  %H:%M")
                 UI:CreateText(row, dateStr, 9, C.silver.r, C.silver.g, C.silver.b)
                     :SetPoint("LEFT", 16, 0)
 
@@ -3309,6 +3309,41 @@ function GuildOS:RefreshSettingsPanel(content, category)
         if GuildOS:SetEventMaxRank(nextMax) then evBtn.label:SetText(evText()) end
     end)
     yOff = yOff + 30
+
+    -- And which kinds of event those ranks create (issue #308), the guild's as the ranks are. The officers
+    -- create every kind whatever is ticked; nothing ticked by anybody yet means every kind.
+    local Cal = GuildOS.Calendar
+    if Cal and Cal.KINDS then
+        local kindsLabel = UI:CreateText(content, L["Event types non-officers may create:"], 11, C.silver.r, C.silver.g, C.silver.b)
+        kindsLabel:SetPoint("TOPLEFT", 8, -yOff)
+        yOff = yOff + 20
+        local open = Cal:MemberKinds()
+        local kindBoxes = {}
+        local function ticked()
+            local list = {}
+            for _, b in ipairs(kindBoxes) do
+                if b.checkbox:GetChecked() then list[#list + 1] = b.kind end
+            end
+            return list
+        end
+        for i, k in ipairs(Cal.KINDS) do
+            local kb = UI:CreateCheckbox(content, Cal:KindLabel(k), 18)
+            kb:SetSize(118, 18)
+            kb:SetPoint("TOPLEFT", 8 + ((i - 1) % 3) * 122, -(yOff + math.floor((i - 1) / 3) * 22))
+            kb.kind = k
+            kb.checkbox:SetChecked(open == nil or open[k] == true)
+            kb.checkbox.onChanged = function(box)
+                -- No longer an officer (a change from elsewhere, the panel still open): the tick goes back.
+                if not Cal:SetMemberKinds(ticked()) then box:SetChecked(not box:GetChecked()) end
+            end
+            kindBoxes[#kindBoxes + 1] = kb
+        end
+        yOff = yOff + math.ceil(#Cal.KINDS / 3) * 22 + 2
+        local kindsHint = UI:CreateText(content, L["Officers can always create every type."], 9,
+            C.textDim.r, C.textDim.g, C.textDim.b)
+        kindsHint:SetPoint("TOPLEFT", 8, -yOff)
+        yOff = yOff + 18
+    end
 
     yOff = yOff + 4
     local rankNote = UI:CreateText(content,
