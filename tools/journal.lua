@@ -75,6 +75,7 @@ local function load(game)
   GuildOS.CommSystem = { SendMessage = function(_, _, payload) sent[#sent + 1] = store[tonumber(payload)] end,
     BroadcastMyData = function() end }
   GuildOS.db = { members = {}, settings = {}, profile = {}, myData = { name = "Chehul Costa", level = 40 } }
+  GuildOS.IsOnGuildDB = function() return GuildOS._onGuildDB ~= false end
   GuildOS.SyncService:Initialize()
   if GuildOS.Journal then GuildOS.Journal:Initialize() end
   return GuildOS
@@ -166,6 +167,13 @@ G.db.journal.entries[#G.db.journal.entries + 1] = entry(MIRA, MIRA .. ":20")
 sent = {}
 J:Snap()
 check(#sent == 1 and sent[1].act == "snap" and #sent[1].data.entries == 1, "a snapshot carries only my own")
+sent, G._onGuildDB = {}, false
+J:Snap()
+check(#sent == 0, "a snapshot from another guild's db, after a guild change mid-session, says nothing")
+G._onGuildDB, G.db.settings.modules = nil, { journal = false }
+J:Snap()
+check(#sent == 0, "a snapshot with the journal switched off says nothing")
+G.db.settings.modules = nil
 local out = J:ForExport()
 check(#out == 2 and out[1].type and out[1].subjectKey and out[1].id and out[1].at and out[1].data, "the export carries the whole journal")
 

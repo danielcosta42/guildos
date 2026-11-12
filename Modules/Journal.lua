@@ -194,6 +194,9 @@ end
 -- My own entries of the last week, again, for whoever was offline when they happened or missed them:
 -- at login and every ten minutes after. Each receiver keeps an entry once, by its id.
 function Journal:Snap()
+    -- The ticker outlives the login: a guild joined, left or changed since then, or the journal switched
+    -- off, says nothing to anyone (#150).
+    if not GuildOS:IsOnGuildDB() or not GuildOS:IsFeatureEnabled("journal") then return end
     local key, since, mine = myKey(), GetServerTime() - SNAP, {}
     for _, e in ipairs(entries()) do
         if GuildOS:LocalMemberKey(e.subjectKey) == key and e.at >= since then mine[#mine + 1] = e end

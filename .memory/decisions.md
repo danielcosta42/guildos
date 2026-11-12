@@ -1422,7 +1422,7 @@ written into each record would be undone by any officer still on the old version
 - (−) A login's newcomers wait a minute; with no officer online to answer, the catch-up uses the settings this client
   had.
 
-## ADR-0031 — A journal entry is said again while its author is online, ahead of member data (#327)
+## ADR-0032 — A journal entry is said again while its author is online, ahead of member data (#327)
 
 ### Context
 Each client writes down its own clears and milestones and tells the guild once (`add`), then once more at its next

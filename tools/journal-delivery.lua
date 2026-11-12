@@ -101,6 +101,7 @@ dofile(ADDON .. "/Modules/Journal.lua")
 dofile(ADDON .. "/Data/ForeverDungeons.lua")
 dofile(ADDON .. "/Modules/DungeonLog.lua")
 local G, CTL = GuildOS, ChatThrottleLib
+G.IsOnGuildDB = function() return true end
 local LD, LS = LibStub("LibDeflate"), LibStub("GuildOS-LibSerialize")
 
 -- Turns the clock: the timers due, in the order they were set, then ChatThrottleLib's OnUpdate.
