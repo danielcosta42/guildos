@@ -777,6 +777,13 @@ function CommSystem:_Answer()
                 self:_BackfillMarks()
             end)
         end
+
+        -- And the site's cores, which an officer's own login sends only once (issue #318).
+        if GuildOS:IsOfficer() and GuildOS.CoreManager then
+            C_Timer.After(6.5, function()
+                GuildOS.CoreManager:BackfillDiscord()
+            end)
+        end
     end)
 end
 
