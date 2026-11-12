@@ -168,7 +168,12 @@ end
 local function join(name) fire("CHAT_MSG_SYSTEM", name .. " has joined the guild.") end
 local function left(name) fire("CHAT_MSG_SYSTEM", name .. " has left the guild.") end
 local function kicked(name, by) fire("CHAT_MSG_SYSTEM", name .. " has been kicked out of the guild by " .. by .. ".") end
-local function rosterUpdate() fire("GUILD_ROSTER_UPDATE") end
+-- Each roster here is its own burst: the clock stands still, and GuildOS:Coalesce would hold every
+-- update after the first (issue #324; tools/coalesce.lua tests the holding).
+local function rosterUpdate()
+  GuildOS.State.coalesce.at.roster = nil
+  fire("GUILD_ROSTER_UPDATE")
+end
 local function trials(db)
   local c = 0
   for _ in pairs(db.trials) do c = c + 1 end
