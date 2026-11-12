@@ -199,6 +199,18 @@ local function RefreshCoreSignupFrame()
             actBtn:SetBackdropBorderColor(0.2, 0.7, 0.3, 0.4)
             actLbl:SetTextColor(0.25, 0.85, 0.35)
             actLbl:SetText(L["In Roster"])
+        elseif CM:IsFromDiscord(coreName) then
+            -- A core from the site is joined on Discord (issues #293, #318): a sign-up here would reach
+            -- officers who cannot take it.
+            noteInp:Hide()
+            actBtn:Hide()
+            local how = content:CreateFontString(nil, "OVERLAY")
+            GuildOS:ApplyFont(how, 9)
+            how:SetPoint("TOPRIGHT", -4, y - 4)
+            how:SetWidth(NOTE_W + BTN_W + 6)
+            how:SetJustifyH("RIGHT")
+            how:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            how:SetText(L["Join it on Discord with /core apply."])
         elseif isPending then
             noteInp:Hide()
             actBtn:SetBackdropColor(C.accent.r*0.18, C.accent.g*0.18, C.accent.b*0.18, 0.9)
