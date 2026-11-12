@@ -974,3 +974,10 @@ L["December"] = "December"
 L["%b %Y"] = "%b %Y"
 L["%A, %d %b %Y"] = "%A, %d %b %Y"
 L["%a %d %b, %H:%M"] = "%a %d %b, %H:%M"
+
+-- The kinds of event below the officers, and the dungeon's list (issue #308)
+L["Event types non-officers may create:"] = "Event types non-officers may create:"
+L["Officers can always create every type."] = "Officers can always create every type."
+L["|cffFF4444Your rank cannot create this type of event.|r"] = "|cffFF4444Your rank cannot create this type of event.|r"
+L["Pick a dungeon"] = "Pick a dungeon"
+L["Other (type a name)"] = "Other (type a name)"

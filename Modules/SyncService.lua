@@ -103,6 +103,11 @@ function SyncService:Initialize()
             GuildOS:OnEventMaxRankSync(env)
             return
         end
+        -- And which kinds of event the ranks below the officers create (issue #308); it carries no `max`.
+        if env.act == "eventkinds" then
+            if GuildOS.Calendar then GuildOS.Calendar:OnMemberKindsSync(env) end
+            return
+        end
         GuildOS:OnOfficerMaxRankSync(env)
     end)
 end

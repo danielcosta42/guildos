@@ -1446,3 +1446,28 @@ alliance screens, the guild chat and the Web panel.
 - (+) A new raw `date("%a")` fails in CI, not in a support channel.
 - (−) The scan follows literals inside the call only: a format kept in a variable first is not seen.
 - (−) Names are nominative: a language that declines a month after a day (ruRU) uses the short form, which does not.
+
+---
+
+## ADR-0032 — The kinds of event below the officers: the guild's, a separate guildcfg action, held both ways (#308)
+
+### Context
+Since #283 the guild chooses which ranks create calendar events, but not which kinds: whoever could set up a dungeon
+run could set up a raid.
+
+### Decision
+- `settings.eventKinds` (a list of `Calendar.KINDS`; nil = every kind, as before) and `settings.eventKindsAt`, an
+  officer's choice published on `guildcfg` as its own action, `eventkinds`, with `{ kinds }` and no `max`: a client
+  before this reads an unknown guildcfg action as the officer threshold, and one without `max` it ignores. Not folded
+  into `events`' payload, whose `max` every #283 client already reads, so neither setting can undo the other.
+- Newest stamp wins; two in one second settle on the fewer kinds, then on the first in `KINDS` order, so every client
+  agrees whatever the order. Re-sent with the ranks on the officers' sync and request answer.
+- An officer creates every kind. Held on send (`Create`, `CreateSeries`, `Update`) and on receipt (`OnSync` drops a
+  non-officer's `create`/`update` of a kind not open to them); cancelling or deleting their own event stays theirs.
+- A Dungeon event offers the game's dungeons (`Calendar:DungeonChoices`: WoW: Forever's own with a boss, then the classic
+  ones guildos.me books, `ForeverDungeons.classic`) beside the title; the pick is the title, so nothing new travels.
+
+### Consequences
+- (+) An old client is unchanged: it never hears the choice and takes every kind, and an old officer never resets it.
+- (−) A member on an old client can still send a closed kind; clients on this version drop it, old ones keep it.
+- (−) A list names the kinds of its day: a kind added later is closed to members until an officer ticks it.

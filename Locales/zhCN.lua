@@ -2358,3 +2358,10 @@ L["December"] = "12月"
 L["%b %Y"] = "%Y年%B"
 L["%A, %d %b %Y"] = "%Y年%b%d日 %A"
 L["%a %d %b, %H:%M"] = "%b%d日 %a %H:%M"
+
+-- The kinds of event below the officers, and the dungeon's list (issue #308)
+L["Event types non-officers may create:"] = "非官员可创建的活动类型："
+L["Officers can always create every type."] = "官员始终可以创建所有类型的活动。"
+L["|cffFF4444Your rank cannot create this type of event.|r"] = "|cffFF4444你的会阶不能创建此类活动。|r"
+L["Pick a dungeon"] = "选择地下城"
+L["Other (type a name)"] = "其他（输入名称）"
