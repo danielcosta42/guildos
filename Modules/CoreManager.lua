@@ -945,6 +945,17 @@ local function release(name, moved)
     end
 end
 
+-- Who is the Discord's on a core here, as the site would send them.
+local function discordPeople(self, coreName)
+    local list = {}
+    for key, rec in pairs(self:GetMembers(coreName)) do
+        if type(rec) == "table" and rec.src == "discord" then
+            list[#list + 1] = { key = key, name = rec.name, class = rec.class, slot = rec.role, status = rec.status }
+        end
+    end
+    return list
+end
+
 -- An officer's link (#138), made here or heard from another officer: the tag moves to `coreName` with
 -- the Discord's people as they are, role and note, from the core holding it here; `linkAt` (the realm's
 -- clock) says which link is the newest. Returns who is the Discord's on the core now, as the site would
@@ -970,13 +981,7 @@ local function moveTag(self, coreName, tag, linkAt)
         release(from, true)
     end
     core.discordTag, core.linkAt = tag, linkAt
-    local list = {}
-    for key, rec in pairs(self:GetMembers(coreName)) do
-        if type(rec) == "table" and rec.src == "discord" then
-            list[#list + 1] = { key = key, name = rec.name, class = rec.class, slot = rec.role, status = rec.status }
-        end
-    end
-    return list
+    return discordPeople(self, coreName)
 end
 
 -- Another officer's link, when newer than the one this client has for the tag: the tag moves to the
@@ -1200,6 +1205,43 @@ function CoreManager:SendDiscordChanges()
             GuildOS.SyncService:Publish("core.roster", "discordList", {
                 coreName = c.name, list = c.list, size = c.size, tag = c.tag, waiting = c.waiting, at = c.at,
                 linkAt = c.linkAt,
+            })
+        end
+    end
+end
+
+-- The site's cores again, for a member who logged in after this officer's login sent them (#318): each
+-- Discord core's whole list, at the mark it was imported with (`GuildOS.db.discordAt`), never a newer one,
+-- so a client already at that mark applies it to the same result and one with a newer import drops it
+-- (isStale). Cores made in the game stay on the client that made them (#293). Answered from
+-- CommSystem:HandleRequest, at most once every BACKFILL_GAP seconds: the lists go to the whole guild, so
+-- one answer serves every member online, and a request inside the gap gets one more at its end. Releases
+-- are not sent again.
+CoreManager.BACKFILL_GAP = 120
+function CoreManager:BackfillDiscord()
+    -- no mark (an import from before the site dated its packages): sent without one, so only a client that
+    -- has no mark either takes it
+    local at = GuildOS.db.discordAt
+    if not (GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    local now, last = GetServerTime(), GuildOS.State.coreBackfillAt
+    if last and now - last < self.BACKFILL_GAP then
+        -- asked again inside the gap: one more answer when it ends, for whoever logged in since
+        if not GuildOS.State.coreBackfillDue then
+            GuildOS.State.coreBackfillDue = true
+            GuildOS.Compat.After(self.BACKFILL_GAP - (now - last), function()
+                GuildOS.State.coreBackfillDue = nil
+                self:BackfillDiscord()
+            end)
+        end
+        return
+    end
+    GuildOS.State.coreBackfillAt = now
+    for _, name in ipairs(self:GetSortedNames()) do
+        local core = GuildOS.db.cores[name]
+        if core.discordTag then
+            GuildOS.SyncService:Publish("core.roster", "discordList", {
+                coreName = name, list = discordPeople(self, name), size = self:GetRaidSize(name), tag = core.discordTag,
+                waiting = core.discordWaiting, at = at, linkAt = core.linkAt,
             })
         end
     end

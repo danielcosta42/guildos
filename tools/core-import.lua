@@ -549,6 +549,53 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     check(key and GuildOS.db.cores["alfa"].members[key] and GuildOS.db.cores["alfa"].members[key].role == "healer",
       G("a first name and surname is the member this client keys by that name"))
   end
+
+  -- ── #318: a member who logs in after the officer's login sees the site's cores ──
+  CM = load(game)
+  GuildOSInbox, GuildOSInboxAck = { FIXTURE }, { at = 1789000000 }   -- the companion's time for the inbox
+  CM:Initialize()
+  GuildOSInboxAck = nil
+  CM:SendDiscordChanges()
+  sent = {}
+  GuildOS.IsOfficer = function() return true end
+  CM:BackfillDiscord()   -- what CommSystem:HandleRequest runs when a member's login asks
+  table.sort(sent, function(a, b) return a.data.coreName < b.data.coreName end)
+  local mark = GuildOS.db.discordAt
+  check(#sent == 2 and sent[1].act == "discordList" and sent[1].data.coreName == "Núcleo Alfa" and sent[2].data.coreName == "alfa-2"
+    and sent[1].data.tag == "nucleo-alfa" and sent[1].data.at == mark and mark == 1789000000,
+    G("an officer answers a login with every site core, at the mark it was imported with, never a newer one"))
+  check(#sent[1].data.list == 2 and table.concat(sent[1].data.waiting or {}, ",") == "Rias,Rozzi (Connor)"
+    and sent[1].data.members == nil, G("as the Discord's whole list for it and who waits, never under `members`"))
+  local backfill = sent
+  local due = {}
+  C_Timer.After = function(delay, fn) due[#due + 1] = { delay = delay, fn = fn } end
+  sent = {}
+  CM:BackfillDiscord()
+  CM:BackfillDiscord()
+  check(#sent == 0 and #due == 1 and due[1].delay == CM.BACKFILL_GAP,
+    G("asked again inside BACKFILL_GAP: nothing now, one answer when it ends, however many ask"))
+  GuildOS.State.coreBackfillAt = GetServerTime() - CM.BACKFILL_GAP
+  due[1].fn()
+  check(#sent == 2 and not GuildOS.State.coreBackfillDue, G("and that answer goes out"))
+  C_Timer.After = function() end
+  -- The member's client: no inbox, no core.
+  CM = load(game)
+  GuildOSInbox = nil
+  CM:Initialize()
+  GuildOS.IsOfficer = function() return false end
+  for _, s in ipairs(backfill) do handlers["core.roster"]({ act = s.act, data = s.data }, "Officer-Firemaw") end
+  local got = GuildOS.db.cores["Núcleo Alfa"]
+  check(got and CM:IsFromDiscord("Núcleo Alfa") and got.members[K("Ana")] and got.members[K("Bruno")]
+    and got.members[K("Bruno")].status == "bench" and CM:IsFromDiscord("alfa-2"),
+    G("a member with no core gets them, people, reserves and all, as the site's"))
+  sent = {}
+  CM:BackfillDiscord()
+  check(#sent == 0, G("a member answers nothing"))
+  CM = load(game)
+  GuildOS.IsOfficer = function() return true end
+  CM:Create("So Aqui")
+  CM:BackfillDiscord()
+  check(#sent == 0, G("an officer with no site import has nothing to send, its own cores included"))
 end
 
 print(("core-import: %d checks passed"):format(checks))
