@@ -32,6 +32,10 @@ GuildOS.State = {
     coalesce    = { at = {}, waiting = {} },  -- GuildOS:Coalesce: last run and the call held, per name
 }
 
+-- Confirmation dialogs, by name, in StaticPopup's own field names. Shown by GuildOS:ShowDialog
+-- (UI/Helpers.lua) in GuildOS's own frame, never by StaticPopup (#315).
+GuildOS.Dialogs = {}
+
 ----------------------------------------------------------------------
 -- Database defaults
 ----------------------------------------------------------------------

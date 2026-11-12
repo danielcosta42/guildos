@@ -115,8 +115,7 @@ local function load(opts)
   STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
   C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end }
   Enum = { SendAddonMessageResult = {} }
-  StaticPopupDialogs, UISpecialFrames, SlashCmdList = {}, {}, {}
-  function StaticPopup_Show(which, text) popups[#popups + 1] = { which = which, text = text } end
+  UISpecialFrames, SlashCmdList = {}, {}
   function ReloadUI() popups.reloaded = true end
   local without = opts.without or {}
   C_Texture = opts.noArt and {} or { GetAtlasInfo = function(name)
@@ -137,6 +136,7 @@ local function load(opts)
   GuildOS.RecordError = function(_, msg) errors[#errors + 1] = msg end
   GuildOS.db = { settings = {} }
   dofile(ADDON .. "/UI/Helpers.lua")
+  function GuildOS:ShowDialog(which, text) popups[#popups + 1] = { which = which, text = text } end
   dofile(ADDON .. "/UI/StylePreview.lua")
   return GuildOS.Style
 end

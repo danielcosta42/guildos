@@ -968,7 +968,7 @@ function Alliance:_OnInvite(raw, sender)
         return
     end
 
-    StaticPopup_Show("GUILDOS_ALLY_INVITE",
+    GuildOS:ShowDialog("GUILDOS_ALLY_INVITE",
         string.format(L["%s of %s invites your guild into the alliance %s."],
             short, theirGuild, pact.name or pact.tag),
         nil, { pact = pact, sender = sender })
@@ -1664,7 +1664,7 @@ function Alliance:_OnJoinRequest(data, sender)
         return
     end
     self._reqPrompts[shortName(sender):lower()] = now
-    StaticPopup_Show("GUILDOS_ALLY_REQUEST",
+    GuildOS:ShowDialog("GUILDOS_ALLY_REQUEST",
         string.format(L["%s of %s asks to join the alliance. Invite them?"],
             shortName(sender), guild),
         nil, { sender = sender })
@@ -2013,10 +2013,10 @@ end
 -- Lifecycle
 ----------------------------------------------------------------------
 local function registerPopups()
-    if StaticPopupDialogs["GUILDOS_ALLY_INVITE"] then
+    if GuildOS.Dialogs["GUILDOS_ALLY_INVITE"] then
         return
     end
-    StaticPopupDialogs["GUILDOS_ALLY_INVITE"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_INVITE"] = {
         text = "%s",
         button1 = L["Accept"],
         button2 = L["Decline"],
@@ -2031,7 +2031,7 @@ local function registerPopups()
         hideOnEscape = true,
         preferredIndex = 3,
     }
-    StaticPopupDialogs["GUILDOS_ALLY_REQUEST"] = {
+    GuildOS.Dialogs["GUILDOS_ALLY_REQUEST"] = {
         text = "%s",
         button1 = L["Invite"],
         button2 = L["Decline"],

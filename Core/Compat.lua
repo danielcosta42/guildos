@@ -1068,7 +1068,8 @@ function Compat.GetItemCount(item, includeBank)
     return 0
 end
 
--- A StaticPopup's edit box. Anniversary keeps it at `editBox`; WoW: Forever's popup (the
+-- A dialog's edit box. GuildOS's own dialog (GuildOS:ShowDialog, #315) keeps it at `editBox`, as
+-- Anniversary's StaticPopup did; WoW: Forever's popup (the
 -- retail one) at `EditBox`, behind `GetEditBox()`, with `editBox` nil (issue #49).
 function Compat.PopupEditBox(dialog)
     if not dialog then return nil end

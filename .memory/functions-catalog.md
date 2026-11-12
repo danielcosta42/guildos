@@ -134,7 +134,7 @@ join, `"%s-%s"` format or literal realm fallback fails the test.
 | `Compat.GetNumTalentTabs(isInspect)` / `GetNumTalents` / `GetTalentInfo` | The talent globals; the counts return `nil, "no-api"` when the client has none |
 | `Compat.InviteUnit(name)` | Group invite: `C_PartyInfo.InviteUnit`, else `InviteUnit`, else `InviteByName`; nothing on a client with none (issue #43) |
 | `Compat.GetItemQualityColor(quality)` / `Compat.GetItemCount(item, includeBank)` | `C_Item`'s, else the old global's; white / 0 with neither (issue #43) |
-| `Compat.PopupEditBox(dialog)` | A StaticPopup's edit box: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
+| `Compat.PopupEditBox(dialog)` | A dialog's edit box (`editBox` on GuildOS's own, #315); on a game popup: `GetEditBox()` / `EditBox` on WoW: Forever, `editBox` on Anniversary (issue #49) |
 | `Compat.TraitTreeNodes()` | WoW: Forever's talent tree: `{ {x = posX, points = ranksPurchased}, ... }` for the active config; `nil, "no-api"` with no trait API, `nil, "no-config"` before talents load (issue #41) |
 | `Compat.SpecOf(unit)` | Retail: a unit's spec as `specID, name, role` (`"TANK"`, `"HEALER"`, `"DAMAGER"`), localized by the client; `"player"` read directly, any other unit from its inspect. Nil before there is one or when the client keeps it secret (ADR-0026) |
 | `Compat.ItemLevel(link, base)` | An item's level as worn: `C_Item.GetDetailedItemLevelInfo` on retail, `base` (GetItemInfo's) everywhere else (ADR-0026) |
@@ -224,6 +224,7 @@ Removed: `Compat.NewTimer`.
 | `GuildOS:CheckAndDismissProfessionReminder()` | Fades-out reminder when all profs are fresh |
 | `GuildOS:DismissProfessionReminder()` | Immediately hides and clears the profession reminder banner |
 | `GuildOS:ShowExportPopup(titleStr, text)` | Creates copyable text export popup |
+| `GuildOS.Dialogs[name]` / `GuildOS:ShowDialog(name, textArg1, textArg2, data)` | Every confirmation and note box. Definitions keep StaticPopup's field names; the frame is GuildOS's own (`UI/Helpers.lua`) and returns with `data`, `data2`, `editBox`. **Never `StaticPopup_Show` / `StaticPopupDialogs`:** the game's popup frames are shared, an addon's dialog taints them, and WoW: Forever's gamepad UI is blocked from then on (#315; `tools/dialog.lua` fails on either name) |
 | `GuildOS:GetSetting(key)` | Config accessor — reads `GuildOS.db.settings[key]` (Rule 8) |
 | `GuildOS:SetSetting(key, value)` | Config mutator — writes `GuildOS.db.settings[key]` (Rule 8) |
 | `GuildOS:ShowsItemTooltipInfo(tooltip)` | Gate for the guild lines on item tooltips (crafters, wishlist, soft res): setting `itemTooltip` = `"always"` / `"shift"` / `"off"`; a clicked chat link (`ItemRefTooltip`) passes in shift mode |

@@ -32,7 +32,7 @@ local TAB_PAD = 20      -- label padding inside a sub-tab
 -- on exactly the members captured when Apply was clicked. Rank/kick handoffs
 -- inside ApplyPreset open Blizzard's native panel (ADR-0010) — no protected
 -- call is made from this insecure OnAccept.
-StaticPopupDialogs["GUILDOS_MODPRESET_APPLY"] = {
+GuildOS.Dialogs["GUILDOS_MODPRESET_APPLY"] = {
     text = "%s",
     button1 = L["Apply"],
     button2 = L["Cancel"],
@@ -1016,7 +1016,7 @@ local function BuildPresetsSub(panel)
                 if not GuildOS:IsOfficer() then GuildOS:Print(L["Officers only."]) return end
                 local live = MP:GetMatches(preset)
                 if #live == 0 then GuildOS:Print(L["No members match this preset."]) return end
-                StaticPopup_Show("GUILDOS_MODPRESET_APPLY", presetApplyText(preset, live), nil,
+                GuildOS:ShowDialog("GUILDOS_MODPRESET_APPLY", presetApplyText(preset, live), nil,
                     { preset = preset, matches = live })
             end)
 
