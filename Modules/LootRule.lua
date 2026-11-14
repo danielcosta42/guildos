@@ -7,7 +7,8 @@
 -- and, since issue #334, `responses` (the buttons a raider answers with: a roll, a bid or neither, what
 -- each one costs and whether it counts for the +1), the bids' own rules, the counter accounts and the
 -- effects an award has on them; the other blocks keep the behaviour of the module that owns them until
--- their own issue.
+-- their own issue. Since issue #337 the rare systems too: a queue account (Suicide Kings), a bonus account
+-- added to a roll (karma, SR+), a summed score, and what was paid shared among the raid (zero-sum).
 --
 -- `order` is a list of criteria. Two candidates are compared by the first; a tie goes to the next.
 -- Every loot system the guild could pick before this (rolls, tmb, wishlist, dkp) is a ready-made rule
@@ -55,12 +56,16 @@ local DECIDERS = { auto = true, ml = true, holder = true }
 local ROUNDS = { up = true, down = true, near = true }
 local AUTOS = { boss = true, ontime = true, late = true, stayed = true, leftearly = true, raid = true }
 local COUNTER_AUTOS = { boss = true, raid = true }   -- what feeds a counter by itself (Points:EarnCounters)
+local NEWCOMERS = { bottom = true, random = true }   -- where a queue puts somebody it never saw
+local QUEUE_END = 99999       -- the place of somebody a queue does not hold: after everyone it does
+local LIST_POINTS = 10        -- what the first place of a list is worth in a score; each place after, one less
+local SCORE_PARTS_MAX = 6     -- parts one score adds up
+local WEIGHT_MAX = 100        -- the most a part of a score is multiplied by
 
 -- The pieces of the contract (v1) this client does not apply yet. A rule that uses one is refused whole,
 -- with "unsupported: <piece>" for a reason, so whoever sees the refusal is told what is missing.
 local UNSUPPORTED = {
-    council = true, queue = true, bonus = true, score = true, split = true, bottom = true, upgrade = true,
-    balance = true, counter = true, earn = true,
+    council = true, upgrade = true, balance = true, counter = true, earn = true,
 }
 local function unsupported(piece) return "unsupported: " .. piece end
 
@@ -101,11 +106,58 @@ local function held(c, acct, rule)
         end
         return (c.gp or 0) + base
     end
-    return (c.accts and c.accts[acct]) or 0
+    local has = c.accts and c.accts[acct]
+    if has then return has end
+    -- A queue reads the place in it (issue #337): whoever it does not hold is after everyone it does.
+    for _, a in ipairs(rule and rule.accounts or {}) do
+        if a.key == acct and a.type == "queue" then return QUEUE_END end
+    end
+    return 0
 end
 
 local function accountOf(c, rule, entry)
     return held(c, entry.acct, rule)
+end
+
+-- The roll, and with it what the candidate holds on a bonus account when the criterion names one and
+-- the answer is one that counts (`plus`, issue #337): karma's "roll with karma", SR+'s main spec. An
+-- answer with no roll drawn has no bonus either.
+local function bonusOf(c, rule, acct)
+    if not (acct and c.roll and c.rollType ~= "PASS") then return 0 end
+    for _, r in ipairs(rule and rule.responses or DEFAULT_RESPONSES) do
+        if r.key == c.rollType then return r.plus and math.max(0, held(c, acct, rule)) or 0 end
+    end
+    return 0
+end
+
+local function rollOf(c, rule, entry)
+    return (c.roll or -1) + bonusOf(c, rule, entry and entry.bonus)
+end
+
+-- A place on a list as points for a score: the first is worth ten, each place after one less, and
+-- past the tenth, or on no list at all, nothing.
+local function listPoints(place)
+    if not place then return 0 end
+    return math.max(0, LIST_POINTS + 1 - place)
+end
+
+-- What each part of a score reads off a candidate, the larger the better.
+local SCORE_PARTS = {
+    wishlist   = function(c) return listPoints(c.wishlist and c.wishlist.order) end,
+    prio       = function(c) return listPoints(c.prioOrder) end,
+    attendance = function(c) return c.att25 or 0 end,
+    received   = function(c) return c.recvCount or 0 end,
+    account    = function(c, rule, part) return held(c, part.acct, rule) end,
+}
+
+-- A summed score (issue #337): each part times its weight, added up. No formula is written anywhere:
+-- the parts are picked from a list and each has a number for a weight.
+local function scoreOf(c, rule, entry)
+    local total = 0
+    for _, part in ipairs(entry.parts) do
+        total = total + SCORE_PARTS[part.k](c, rule, part) * part.w
+    end
+    return total
 end
 
 -- One account over another (EP over GP): the divisor is never under 1, so a new raider divides by
@@ -124,14 +176,16 @@ LootRule.CRITERIA = {
     attendance = { raw = function(c) return c.att25 or 0 end, high = true },
     points     = { raw = function(c) return c.dkp or 0 end, high = true },
     pr         = { raw = function(c) return c.pr or 0 end, high = true },
-    roll       = { raw = function(c) return c.roll or -1 end, high = true },
+    roll       = { raw = rollOf, high = true },
     bid        = { raw = function(c) return c.bid or 0 end, high = true },
     account    = { raw = accountOf, high = true },   -- `dir = "low"` on the entry turns it round
     ratio      = { raw = ratioOf, high = true },
+    score      = { raw = scoreOf, high = true },
 }
 -- The fields an entry of `order` may carry beside `k` and `band`, by criterion.
 local CRITERION_FIELDS = {
     account = { acct = true, dir = true }, ratio = { num = true, den = true },
+    roll = { bonus = true }, score = { parts = true },
 }
 
 -- The order criteria are offered in, and their names. Names are looked up when shown, never at load.
@@ -152,6 +206,7 @@ local LABELS = {
     bid        = "the bid",
     account    = "the counter",
     ratio      = "the ratio",
+    score      = "the score",
 }
 function LootRule:Label(key)
     local label = LABELS[key]
@@ -219,7 +274,7 @@ local RESPONSE_KEYS = { key = true, label = true, ask = true, plus = true, cost 
 local FILTER_KEYS = { k = true, act = true, min = true, max = true, acct = true, from = true, to = true }
 local EFFECT_KEYS = { k = true, acct = true, price = true, value = true, refund = true }
 local ACCOUNT_KEYS = { key = true, type = true, name = true, start = true, cap = true, floor = true,
-    decay = true, reset = true, earn = true }
+    decay = true, reset = true, earn = true, frozen = true, newcomer = true }
 local EARN_KEYS = { key = true, auto = true, name = true, value = true, weekly = true }
 
 -- How to ask (issue #334): up to ten answers, each a button.
@@ -245,7 +300,11 @@ end
 --   * "balance": only the points' own, "dkp", "ep" and "gp". What the rule says of how they fill
 --     between items (earn, decay, cap) is read and left to the pool's own settings in the game; the GP
 --     account's `start` is the base GP the rule's ratio divides by;
---   * "queue" and "bonus" wait for their own issue (#337).
+--   * "bonus" (issue #337): a counter added to a roll (karma, SR+). It starts at nothing, may have a
+--     cap it never grows past, and is fed like a counter;
+--   * "queue" (issue #337): an ordered list of players (Suicide Kings), read by the place in it.
+--     `frozen`: when the winner drops, only who is in the raid moves up and whoever is absent keeps
+--     their slot; `newcomer`: somebody it never saw joins at the "bottom" or at a "random" place.
 local function validAccounts(list)
     local known = { dkp = { key = "dkp", type = "balance" }, ep = { key = "ep", type = "balance" },
         gp = { key = "gp", type = "balance" } }
@@ -256,8 +315,11 @@ local function validAccounts(list)
         if type(a) ~= "table" or not onlyKeys(a, ACCOUNT_KEYS) then return nil, "accounts" end
         if not isKey(a.key, "a-z0-9") or seen[a.key] then return nil, "accounts" end
         seen[a.key] = true
-        if a.type == "queue" or a.type == "bonus" then return nil, unsupported(a.type) end
-        if a.type ~= "counter" and a.type ~= "balance" then return nil, "accounts" end
+        if a.type ~= "counter" and a.type ~= "balance" and a.type ~= "queue" and a.type ~= "bonus" then
+            return nil, "accounts"
+        end
+        if not flagOrNil(a.frozen) or (a.newcomer ~= nil and not NEWCOMERS[a.newcomer]) then return nil, "accounts" end
+        if a.type ~= "queue" and (a.frozen ~= nil or a.newcomer ~= nil) then return nil, "accounts" end
         if a.name ~= nil and not isLabel(a.name, NAME_MAX) then return nil, "accounts" end
         if a.reset ~= nil and not RESETS[a.reset] then return nil, "accounts" end
         for _, f in ipairs({ "start", "cap", "floor" }) do
@@ -282,7 +344,22 @@ local function validAccounts(list)
                 if e.weekly ~= nil and not (numberIn(e.weekly, 0, AMOUNT_MAX) and e.weekly > 0) then return nil, "accounts" end
             end
         end
-        if a.type == "counter" then
+        if a.type == "queue" then
+            -- A queue is an order and nothing else: no figure to start at, to cap, to decay or to earn.
+            if POINTS_ACCOUNTS[a.key] or a.start ~= nil or a.cap ~= nil or a.floor ~= nil or a.decay ~= nil
+                or a.reset ~= nil or earn ~= nil then
+                return nil, "accounts"
+            end
+        elseif a.type == "bonus" then
+            if POINTS_ACCOUNTS[a.key] then return nil, "accounts" end
+            if (a.start or 0) ~= 0 or (a.floor or 0) ~= 0 or a.decay ~= nil then return nil, unsupported("counter") end
+            if a.cap ~= nil and not wholeIn(a.cap, 1, AMOUNT_MAX) then return nil, "accounts" end
+            for _, e in ipairs(earn or {}) do
+                if not (COUNTER_AUTOS[e.auto] and wholeIn(e.value, 1, 100) and e.weekly == nil) then
+                    return nil, unsupported("earn")
+                end
+            end
+        elseif a.type == "counter" then
             if POINTS_ACCOUNTS[a.key] then return nil, "accounts" end
             -- A counter starts at nothing and holds what the awards made of it.
             if (a.start or 0) ~= 0 or a.cap ~= nil or a.floor ~= nil or a.decay ~= nil then
@@ -344,9 +421,8 @@ local function validOrder(order, accounts)
     local seen = {}
     for _, entry in ipairs(order) do
         if type(entry) ~= "table" then return false, "unknown criterion" end
-        if entry.k == "score" or entry.k == "upgrade" then return false, unsupported(entry.k) end
+        if entry.k == "upgrade" then return false, unsupported(entry.k) end
         if not LootRule.CRITERIA[entry.k] then return false, "unknown criterion" end
-        if entry.k == "roll" and entry.bonus ~= nil then return false, unsupported("bonus") end
         local own = CRITERION_FIELDS[entry.k] or {}
         for field in pairs(entry) do
             if field ~= "k" and field ~= "band" and not own[field] then return false, "unknown criterion" end
@@ -360,6 +436,29 @@ local function validOrder(order, accounts)
             if not (type(entry.num) == "string" and accounts[entry.num] and type(entry.den) == "string"
                 and accounts[entry.den]) or entry.num == entry.den then
                 return false, "unknown account"
+            end
+        elseif entry.k == "roll" and entry.bonus ~= nil then
+            -- The roll with a bonus (issue #337): only an account of that kind is added to one.
+            local bonus = type(entry.bonus) == "string" and accounts[entry.bonus]
+            if not (bonus and bonus.type == "bonus") then return false, "unknown account" end
+        elseif entry.k == "score" then
+            -- A summed score (issue #337): up to six parts, each one of a list, with its weight.
+            local parts = entry.parts
+            if not isList(parts, SCORE_PARTS_MAX) or #parts == 0 then return false, "score" end
+            local partSeen = {}
+            for _, part in ipairs(parts) do
+                if type(part) ~= "table" or not onlyKeys(part, { k = true, w = true, acct = true }) then return false, "score" end
+                if not SCORE_PARTS[part.k] then return false, "score" end
+                if not numberIn(part.w, -WEIGHT_MAX, WEIGHT_MAX) or part.w == 0 then return false, "score" end
+                local partId = part.k
+                if part.k == "account" then
+                    if not (type(part.acct) == "string" and accounts[part.acct]) then return false, "unknown account" end
+                    partId = "account:" .. part.acct
+                elseif part.acct ~= nil then
+                    return false, "score"
+                end
+                if partSeen[partId] then return false, "score" end
+                partSeen[partId] = true
             end
         end
         if seen[id] then return false, "criterion twice" end
@@ -390,16 +489,29 @@ end
 --       whoever lost gets the share `refund` of it back (issue #309, now said by the rule).
 --   add { acct, value }    adds to the winner's counter, when the winning answer counts (`plus`).
 --   reset { acct }         empties the winner's counter.
--- "bottom" (a queue) and "split" (zero-sum) wait for their own issue (#337).
+--   bottom { acct }        the winner goes to the end of a queue, when the winning answer counts (`plus`).
+--   split { acct = "dkp" } what the winner was charged for the item is shared equally among whoever is
+--       in the raid (zero-sum DKP), the remainder dropped.
+-- A bonus account (issue #337) takes what a counter takes: "add", "reset" and "charge".
 local function validEffects(list, accounts)
     if not isList(list, LootRule.MAX_EFFECTS) then return false, "effects" end
-    local charged, pointsCharged, entered = {}, false, false
+    local charged, pointsCharged, entered, split = {}, false, false, false
     for _, e in ipairs(list) do
         if type(e) ~= "table" or not onlyKeys(e, EFFECT_KEYS) then return false, "effects" end
-        if e.k == "bottom" or e.k == "split" then return false, unsupported(e.k) end
         local acct = accounts[e.acct]
-        local counter = acct and acct.type == "counter"
-        if e.k == "add" then
+        local counter = acct and (acct.type == "counter" or acct.type == "bonus")
+        if e.k == "bottom" then
+            if not (acct and acct.type == "queue") or charged["q:" .. e.acct] or e.value ~= nil or e.price ~= nil
+                or e.refund ~= nil then
+                return false, "effects"
+            end
+            charged["q:" .. e.acct] = true
+        elseif e.k == "split" then
+            if split or (e.acct ~= nil and e.acct ~= "dkp") or e.value ~= nil or e.price ~= nil or e.refund ~= nil then
+                return false, "effects"
+            end
+            split = true
+        elseif e.k == "add" then
             if not (counter and wholeIn(e.value, 1, 100)) or e.price ~= nil or e.refund ~= nil then return false, "effects" end
         elseif e.k == "reset" then
             if not counter or e.value ~= nil or e.price ~= nil or e.refund ~= nil then return false, "effects" end
@@ -539,11 +651,6 @@ end
 -- Each one by its own literal key, so every language file finds it.
 function LootRule:UnsupportedText(piece)
     if piece == "council" then return L["a loot council's vote"] end
-    if piece == "queue" then return L["a queue account (Suicide Kings)"] end
-    if piece == "bonus" then return L["a roll bonus account"] end
-    if piece == "score" then return L["a summed score"] end
-    if piece == "split" then return L["sharing what was paid among the raid"] end
-    if piece == "bottom" then return L["moving the winner to the end of a queue"] end
     if piece == "upgrade" then return L["ordering by the size of the upgrade"] end
     if piece == "balance" then return L["a points account other than DKP, EP and GP"] end
     if piece == "counter" then return L["a counter with a start, a cap, a floor or a decay"] end
@@ -693,12 +800,101 @@ end
 
 -- The counter accounts a rule keeps: { { key, type, name, reset, earn }, ... }. The points' own
 -- accounts a rule from the site declares are not counters.
+-- A bonus account (issue #337) is kept as a counter is, and is one of them here.
 function LootRule:Counters(rule)
     local out = {}
     for _, a in ipairs((rule or self:Active()).accounts or {}) do
-        if a.type == "counter" then out[#out + 1] = a end
+        if a.type == "counter" or a.type == "bonus" then out[#out + 1] = a end
     end
     return out
+end
+
+-- The queue accounts a rule keeps (issue #337): { { key, type, name, frozen, newcomer }, ... }.
+function LootRule:Queues(rule)
+    local out = {}
+    for _, a in ipairs((rule or self:Active()).accounts or {}) do
+        if a.type == "queue" then out[#out + 1] = a end
+    end
+    return out
+end
+
+-- The queue `key` names in the rule, or nil.
+function LootRule:Queue(key, rule)
+    for _, a in ipairs(self:Queues(rule)) do
+        if a.key == key then return a end
+    end
+    return nil
+end
+
+-- The accounts of the rule a person looks at beside the points (issue #337): its queues, its bonus
+-- accounts and its counters, in the rule's order.
+function LootRule:OwnAccounts(rule)
+    local out = {}
+    for _, a in ipairs((rule or self:Active()).accounts or {}) do
+        if a.type ~= "balance" then out[#out + 1] = a end
+    end
+    return out
+end
+
+-- Whether the rule keeps a queue or a bonus account: what the points window is offered for even
+-- where the loot system spends no points.
+function LootRule:ShowsAccounts(rule)
+    for _, a in ipairs((rule or self:Active()).accounts or {}) do
+        if a.type == "queue" or a.type == "bonus" then return true end
+    end
+    return false
+end
+
+-- The bonus account the rule's roll adds, or nil.
+function LootRule:RollBonus(rule)
+    for _, entry in ipairs((rule or self:Active()).order or {}) do
+        if entry.k == "roll" and entry.bonus then return entry.bonus end
+    end
+    return nil
+end
+
+-- What the roll of a candidate is added by: nothing unless the rule's roll names a bonus account and
+-- the candidate's answer is one that counts.
+function LootRule:BonusOf(c, rule)
+    rule = rule or self:Active()
+    return bonusOf(c, rule, self:RollBonus(rule))
+end
+
+-- The rule's summed score of a candidate (issue #337), or nil when it orders by none: the total and
+-- its parts, { { k, acct, w, value, points }, ... }, for the window that shows them.
+function LootRule:ScoreOf(c, rule)
+    rule = rule or self:Active()
+    for _, entry in ipairs(rule.order or {}) do
+        if entry.k == "score" then
+            local parts = {}
+            for i, part in ipairs(entry.parts) do
+                local value = SCORE_PARTS[part.k](c, rule, part)
+                parts[i] = { k = part.k, acct = part.acct, w = part.w, value = value, points = value * part.w }
+            end
+            return scoreOf(c, rule, entry), parts
+        end
+    end
+    return nil
+end
+
+-- A part of a score in words. Each one by its own literal key.
+function LootRule:PartLabel(part, rule)
+    if part.k == "wishlist" then return L["wishlist place"] end
+    if part.k == "prio" then return L["officer priority"] end
+    if part.k == "attendance" then return L["attendance"] end
+    if part.k == "received" then return L["items received"] end
+    for _, a in ipairs((rule or self:Active()).accounts or {}) do
+        if a.key == part.acct then return a.name or a.key end
+    end
+    return tostring(part.acct or part.k):upper()
+end
+
+-- Whether the rule shares what the winner paid among the raid (zero-sum DKP, issue #337).
+function LootRule:Splits(rule)
+    for _, e in ipairs((rule or self:Active()).effects or {}) do
+        if e.k == "split" then return true end
+    end
+    return false
 end
 
 -- The counter `key` names in the rule, or nil.
@@ -887,6 +1083,29 @@ function LootRule:FromLegacy(system, cfg)
         rule.accounts = { { key = "plus1", type = "counter", name = "+1", reset = "night" } }
         rule.order = { { k = "response" }, { k = "account", acct = "plus1", dir = "low" }, { k = "roll" } }
         rule.effects = { { k = "add", acct = "plus1", value = 1 } }
+        return rule
+    end
+    -- Suicide Kings (issue #337): main spec goes to whoever is highest on the list, with no roll, and
+    -- the winner drops to the end; off spec is a free roll that moves nobody. The classic rule: whoever
+    -- is not in the raid keeps their slot.
+    if system == "sk" then
+        rule.responses = {
+            { key = "MS", label = "MS", ask = "none", plus = true, cost = 1 },
+            { key = "OS", label = "OS", ask = "roll", plus = false, cost = 0 },
+        }
+        rule.accounts = { { key = "sk", type = "queue", name = "Suicide Kings", frozen = true, newcomer = "bottom" } }
+        rule.order = { { k = "response" }, { k = "account", acct = "sk", dir = "low" }, { k = "roll" } }
+        rule.effects = { { k = "bottom", acct = "sk" } }
+        return rule
+    end
+    -- Karma (issue #337): five karma a raid attended, up to a hundred. Main spec rolls with it added
+    -- and the winner loses half; off spec rolls without it and costs nothing.
+    if system == "karma" then
+        rule.responses[2].cost = 0
+        rule.accounts = { { key = "karma", type = "bonus", name = "Karma", cap = 100,
+            earn = { { key = "raid", auto = "raid", value = 5 } } } }
+        rule.order = { { k = "response" }, { k = "roll", bonus = "karma" } }
+        rule.effects = { { k = "charge", acct = "karma", price = "fraction", value = 0.5 } }
         return rule
     end
     -- DKP by bids (issue #334): main spec before off spec, then the highest bid, then who holds more
@@ -1336,6 +1555,17 @@ function LootRule:SetCounterReset(acct, reset, coreName)
     local rule = self:Draft(coreName)
     for _, a in ipairs(rule.accounts or {}) do
         if a.key == acct then a.reset = reset end
+    end
+    return self:Set(rule, coreName)
+end
+
+-- A queue's own options (issue #337): `field` is "frozen" (whoever is absent keeps their slot) or
+-- "newcomer" ("bottom" or "random").
+function LootRule:SetQueueField(acct, field, value, coreName)
+    if not (field == "frozen" or field == "newcomer") then return false, "accounts" end
+    local rule = self:Draft(coreName)
+    for _, a in ipairs(rule.accounts or {}) do
+        if a.key == acct and a.type == "queue" then a[field] = value end
     end
     return self:Set(rule, coreName)
 end

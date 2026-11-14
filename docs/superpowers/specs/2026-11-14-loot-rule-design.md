@@ -129,6 +129,7 @@ Chaves curtas porque a regra viaja pelo `GOSROST1` e pela sincronização da gui
       ] }
   ]
   // type: "balance" | "counter" | "queue" | "bonus". key: 1 a 8 de [a-z0-9].
+  // Numa conta "queue": "frozen": true (quem está ausente guarda a posição) e "newcomer": "bottom" | "random".
 }
 ```
 
@@ -173,12 +174,14 @@ recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:
   os itens da noite (desde o início da sessão de raide). Um pass não é barrado por filtro nenhum. Uma
   resposta rebaixada ainda passa pelos filtros seguintes.
 - **`order`**: `response`, `hardres`, `softres`, `prio`, `wishlist`, `received`, `attendance`, `points`,
-  `bid`, `roll`, `account` (qualquer conta, `dir` `high` ou `low`), `ratio` (`num` / `den`, o divisor
-  nunca abaixo de 1) e o `pr` do addon (a prioridade do pool, EPGP de antes).
+  `bid`, `roll` (com `bonus`, a conta de bônus somada), `account` (qualquer conta, `dir` `high` ou `low`;
+  numa fila, a posição), `ratio` (`num` / `den`, o divisor nunca abaixo de 1), `score` (soma de partes)
+  e o `pr` do addon (a prioridade do pool, EPGP de antes).
 - **`accounts`**:
   - `counter`: `key`, `name`, `reset`, `start` (só 0) e `earn` com `auto` `raid` (uma vez por raide
     para quem esteve nela, dita uma vez por mais oficiais que a encerrem) ou `boss` (a cada chefe, pelo
     cliente do líder da raide). Teto, piso, decaimento, ganho manual ou por outro `auto`: recusados.
+  - `bonus` e `queue` (#337): ver "As contas raras" abaixo.
   - `balance`: só `dkp` (o saldo do pool de pontos), `ep` (o que foi ganho) e `gp` (o que foi gasto).
     As três chaves valem mesmo sem declaração. O que a regra diz de como elas enchem entre um item e
     outro (`earn`, `decay`, `cap`, `start`, `floor`) é lido e **não aplicado**: continua valendo o que
@@ -196,17 +199,63 @@ recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:
     de volta. Sem ele vale o custo de entrada configurado nos pontos, como antes.
   - `add` num contador, quando a resposta vencedora tem `plus = true`; `reset` zera o contador do
     vencedor, qualquer que seja a resposta. O Desfazer devolve os dois.
-- **Recusado, com motivo próprio:** `decide.by = "council"` (`council`), contas `queue` e `bonus`,
-  `roll` com `bonus`, `score`, `upgrade` (a linha do candidato não tem o dado), `bottom`, `split`,
-  conta `balance` fora das três (`balance`).
+  - `bottom` numa fila e `split` nos pontos (#337): ver "As contas raras" abaixo.
+- **Recusado, com motivo próprio:** `decide.by = "council"` (`council`), `upgrade` (a linha do
+  candidato não tem o dado), conta `balance` fora das três (`balance`), contador com início, teto, piso
+  ou decaimento (`counter`) e ganho que um contador não recebe (`earn`).
 - **`exceptions`** (#335): ver "As exceções por item" abaixo.
-- Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid` e `dkpsealed` (fora do retail,
-  que não tem master looter). Escolher um sistema de loot volta à regra pronta dele.
+- Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid`, `dkpsealed` e, desde a #337,
+  `sk` (Suicide Kings) e `karma` (fora do retail, que não tem master looter). Escolher um sistema de
+  loot volta à regra pronta dele.
 
 Dos 14 modelos do site com as respostas padrão (`tools/data/loot-rule-models.json`,
-`tools/loot-contract.lua`): 9 são lidos e jogados (`rolls`, `plus1`, `softres`, `hardres`, `wishlist`,
-`dkp`, `dkpbid`, `epgp`, `ranked`) e 5 são recusados inteiros (`srplus` e `karma` por `bonus`,
-`council` por `council`, `zerosum` por `split`, `sk` por `queue`).
+`tools/loot-contract.lua`): 13 são lidos e jogados (`rolls`, `plus1`, `softres`, `srplus`, `hardres`,
+`wishlist`, `dkp`, `dkpbid`, `zerosum`, `epgp`, `sk`, `karma`, `ranked`) e 1 é recusado inteiro
+(`council`, por `council`, até a #336).
+
+### As contas raras (#337)
+
+- **Qual resposta "conta".** O contrato não tem um campo que diga qual resposta usa o bônus ou desce
+  na fila. Os modelos do site marcam a resposta principal com `plus = true` e a secundária com
+  `plus = false` (e `cost = 0` no karma e no SK). O addon lê `plus` como "esta resposta conta": é ela
+  que soma o bônus à rolagem, que paga a `charge` de uma conta de bônus, que leva o `add` e que manda
+  o vencedor ao fim da fila (`bottom`). `reset` segue valendo para qualquer resposta.
+- **Conta de bônus** (`type = "bonus"`): guardada como um contador (`pool.accounts`, ação `cdelta`).
+  Começa em 0 (`start` e `floor` só 0), aceita `cap` inteiro (o ganho por `auto` `raid` ou `boss` e o
+  `add` de um prêmio somam só o que cabe sob o teto) e `reset`. `{ k = "roll", bonus = "<conta>" }`
+  soma o saldo à rolagem de quem respondeu com uma resposta que conta e tem rolagem; a janela do
+  master looter mostra `rolagem +bônus = total` e a linha do vencedor diz os dois. `charge` nela
+  (`fixed`, `fraction`, `all`, vezes o `cost` da resposta) só é cobrada quando a resposta vencedora
+  conta (karma: perde metade). O `srplus` do site é jogado como ele emite: +10 por raide até 50,
+  bônus na rolagem de MS, `reset` do vencedor. O site não emite "cresce para quem reservou e não
+  levou", então o addon não faz isso.
+- **Conta de fila** (`type = "queue"`): uma lista ordenada por pool (`pool.queues[conta] = { seq, op,
+  list }`). O critério `account` nela lê a posição (`dir = "low"`: o primeiro da fila vem primeiro;
+  quem não está na fila vem depois de todos). Só aceita `key`, `name`, `frozen` e `newcomer`.
+  - `bottom`: o vencedor vai ao fim, quando a resposta conta. Sem `frozen`, todos abaixo sobem uma
+    posição. Com `frozen = true` (a regra clássica do Suicide Kings), só quem está na raide sobe:
+    ausentes guardam a posição absoluta e o vencedor fica na posição do último presente abaixo dele.
+  - `newcomer`: quem a fila nunca viu entra no fim (`"bottom"`, o padrão; vários de uma vez, por
+    nome) ou numa posição sorteada (`"random"`). A raide inteira entra quando um item é anunciado;
+    quem responde sem posição entra na hora.
+  - Sincronização: cada mudança é uma entrada no log dos pontos, ação própria `qset` (cliente de
+    antes ignora), com a ordem inteira e o número de sequência seguinte. Sequência maior substitui a
+    ordem, menor chega atrasada e não muda nada, igual decide pelo `op`: todos terminam na mesma ordem
+    em qualquer ordem de chegada. O snapshot leva `queues` e vale a mesma comparação. Até 200 nomes.
+  - Desfazer: o prêmio guarda o movimento (`from`/`to`, ou as posições que participaram quando há
+    ausentes no meio) e o desfaz exatamente; se a fila mudou no meio, só o vencedor volta à posição.
+- **`score`** `{ k = "score", parts = [{ k, w, acct? }] }`: soma de até 6 partes, cada uma vezes o seu
+  peso (`w` de -100 a 100, nunca 0), maior primeiro. Partes: `wishlist` e `prio` (posição virada em
+  pontos: 1º lugar 10, cada lugar seguinte um a menos, do 11º em diante ou fora da lista 0),
+  `attendance` (0 a 100), `received` (itens da noite) e `account` (o que a conta guarda). Sem fórmula
+  escrita. A janela mostra o total e, no tooltip da linha, cada parte (`LootRule:ScoreOf`).
+- **`split`** `{ k = "split", acct = "dkp" }`: o que o vencedor pagou pelo item (a `charge` nos pontos,
+  não o custo de entrada) é dividido em partes iguais entre quem está na raide no momento, o vencedor
+  inclusive (soma zero), resto descartado. Cada parte é uma entrada do log (`kind = "split"`), sem
+  teto. O Desfazer tira as partes de volta. Só o cliente de um oficial divide.
+- **Telas:** a janela de pontos ganha um botão que troca a lista entre os pontos e cada conta da regra
+  em vigor (fila por posição, bônus e contador por saldo) e é oferecida também quando a regra tem fila
+  ou bônus; o editor da regra mostra as duas opções da fila.
 
 ### As exceções por item (#335)
 

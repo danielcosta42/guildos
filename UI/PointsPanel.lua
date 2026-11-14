@@ -76,6 +76,25 @@ function GuildOS:ShowPointsFrame()
     close:SetPoint("TOPRIGHT", -8, -8)
     close:SetScript("OnClick", function() f:Hide() end)
 
+    -- Which account the list on the left shows (issue #337): the points, or one of the accounts the
+    -- loot rule in force keeps (a queue, a bonus account, a counter). A click goes to the next one;
+    -- hidden while the rule keeps none.
+    local shownAcct = nil
+    local acctBtn = UI:CreateButton(f, "", 170, 20)
+    acctBtn:SetPoint("TOPRIGHT", -40, -10)
+    local function ownAccounts()
+        local LR = GuildOS.LootRule
+        return LR and LR:OwnAccounts() or {}
+    end
+    acctBtn:SetScript("OnClick", function()
+        local list, at = ownAccounts(), 0
+        for i, a in ipairs(list) do
+            if a.key == shownAcct then at = i end
+        end
+        shownAcct = list[at + 1] and list[at + 1].key or nil
+        GuildOS.Points:Refresh()
+    end)
+
     local isOfficer = GuildOS:IsOfficer()
     local listTop = -52
 
@@ -220,11 +239,45 @@ function GuildOS:ShowPointsFrame()
         hSpent:SetText(epgp and "GP" or L["SPENT"])
         if f.showReason then f.showReason() end
 
+        -- The account picked, when the rule in force still keeps it; else the points.
+        local account
+        local accounts = ownAccounts()
+        for _, a in ipairs(accounts) do
+            if a.key == shownAcct then account = a end
+        end
+        if not account then shownAcct = nil end
+        if #accounts > 0 then acctBtn:Show() else acctBtn:Hide() end
+        acctBtn.label:SetText(string.format(L["Account: %s"], account and (account.name or account.key) or L["Points"]))
+
         -- Standings
         standChild:SetWidth(standHolder:GetWidth() - 12)
         clear(standChild)
-        local list = GuildOS.Points:GetStandings()
         local y = 0
+        if account then
+            -- A queue by the place in it, first in line first; a counter or a bonus account by what
+            -- each one holds.
+            local queue = account.type == "queue"
+            hCur:SetText(queue and L["PLACE"] or L["CURRENT"])
+            hEarn:SetText("")
+            hSpent:SetText("")
+            local rows = queue and GuildOS.Points:QueueStandings(account.key) or GuildOS.Points:CounterStandings(account.key)
+            for idx, s in ipairs(rows) do
+                local row = CreateFrame("Frame", nil, standChild)
+                row:SetSize(standChild:GetWidth(), 22)
+                row:SetPoint("TOPLEFT", 0, -y)
+                local cr, cg, cb = GuildOS:GetClassColor(s.class)
+                local nameFS = UI:CreateText(row, idx .. ". " .. s.name, 11, cr, cg, cb)
+                nameFS:SetPoint("LEFT", 4, 0)
+                local curFS = UI:CreateText(row, queue and ("#" .. s.value) or tostring(s.value), 11, C.gold.r, C.gold.g, C.gold.b)
+                curFS:SetPoint("LEFT", 250, 0)
+                y = y + 23
+            end
+            if #rows == 0 then
+                local empty = UI:CreateText(standChild, L["Nobody on this account yet."], 11, C.silver.r, C.silver.g, C.silver.b)
+                empty:SetPoint("TOPLEFT", 4, -4)
+            end
+        end
+        local list = account and {} or GuildOS.Points:GetStandings()
         for idx, s in ipairs(list) do
             local row = CreateFrame("Frame", nil, standChild)
             row:SetSize(standChild:GetWidth(), 22)
@@ -242,7 +295,7 @@ function GuildOS:ShowPointsFrame()
             spentFS:SetPoint("LEFT", 410, 0)
             y = y + 23
         end
-        if #list == 0 then
+        if #list == 0 and not account then
             local empty = UI:CreateText(standChild, L["No points recorded yet."], 11, C.silver.r, C.silver.g, C.silver.b)
             empty:SetPoint("TOPLEFT", 4, -4)
         end

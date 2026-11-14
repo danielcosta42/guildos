@@ -2178,6 +2178,26 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)
         yOff = yOff + 28
     end
 
+    -- The queues the rule keeps (Suicide Kings, issue #337): who moves up when the winner drops, and
+    -- where somebody the list never saw joins it.
+    for _, q in ipairs(LR:Queues(rule)) do
+        local acct = q.key
+        local moveLbl = UI:CreateText(content, string.format(L["Queue %s, when the winner drops:"], q.name or q.key),
+            11, C.white.r, C.white.g, C.white.b)
+        moveLbl:SetPoint("TOPLEFT", 16, -yOff)
+        choices(300, {
+            { k = false, n = L["Everyone below moves up"] }, { k = true, n = L["Only who is in the raid moves up"] },
+        }, q.frozen == true, function(k) changed(LR:SetQueueField(acct, "frozen", k, coreName)) end)
+        yOff = yOff + 28
+        local newLbl = UI:CreateText(content, string.format(L["Queue %s, a newcomer joins:"], q.name or q.key),
+            11, C.white.r, C.white.g, C.white.b)
+        newLbl:SetPoint("TOPLEFT", 16, -yOff)
+        choices(300, {
+            { k = "bottom", n = L["At the end"] }, { k = "random", n = L["At a random place"] },
+        }, q.newcomer or "bottom", function(k) changed(LR:SetQueueField(acct, "newcomer", k, coreName)) end)
+        yOff = yOff + 28
+    end
+
     -- Exceptions (issue #335): the items that follow another rule. One line each, and a row to add one:
     -- which items, and either where they go with no roll or the order that decides them.
     local excTitle = UI:CreateText(content, L["Exceptions:"], 11, C.white.r, C.white.g, C.white.b)

@@ -678,7 +678,11 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     if exception and exception.to then
         self:SendToDestination(exception, itemLink, lootSlot, itemId)
         return
-    elseif exception then
+    end
+    -- A rule that keeps a queue (Suicide Kings, issue #337): whoever of the raid it never saw joins it
+    -- before anybody answers, so every place is known when the answers come.
+    self:JoinQueues(played)
+    if exception then
         self.activeLoot.rule, self.activeLoot.exception = played, exception
         self.activeLoot.endTime = GetServerTime() + (played.time or self.ROLL_DURATION or 30)
         self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
@@ -830,6 +834,16 @@ function LootMaster:AnnounceLine(itemLink, duration)
         parts[#parts + 1] = L["other answers in the GuildOS window, or tell the loot master"]
     end
     return format(L["[ROLL] %s  -  %s  -  %ds"], itemLink, table.concat(parts, "  -  "), duration)
+end
+
+-- Whoever of the raid a queue of `rule` does not hold joins it, where the account says newcomers go.
+function LootMaster:JoinQueues(rule)
+    local P = GuildOS.Points
+    if not (P and P.GetDB and P:GetDB()) then return end
+    local queues = GuildOS.LootRule:Queues(rule)
+    if #queues == 0 then return end
+    local keys = P:RaidKeys()
+    for _, q in ipairs(queues) do P:QueueJoin(q.key, keys, q.newcomer) end
 end
 
 -- A short name for the roll being opened: an answer names it, so one that comes late for the item
@@ -1257,12 +1271,18 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
         ep, gp, pr = P:EP(pKey), P:GP(pKey) - gpBase, P:PR(pKey)
     end
 
-    -- The counters the rule compares by (the +1, issue #334), as they stand now.
+    -- The counters the rule compares by (the +1, issue #334), as they stand now, a bonus account among
+    -- them; and the place in each queue it keeps (issue #337), which whoever it never saw joins first.
     local accts
     if pointsReady then
         for _, a in ipairs(GuildOS.LootRule:Counters(rule)) do
             accts = accts or {}
             accts[a.key] = P:Counter(a.key, key)
+        end
+        for _, q in ipairs(GuildOS.LootRule:Queues(rule)) do
+            accts = accts or {}
+            if rollType ~= "PASS" and not P:QueuePos(q.key, key) then P:QueueJoin(q.key, { key }, q.newcomer) end
+            accts[q.key] = P:QueuePos(q.key, key)
         end
     end
 
@@ -1677,6 +1697,10 @@ function LootMaster:EndRolling(byClick)
         if winner.bid then
             say(self, string.format(L["[WINNER] %s - %s (bid %d)%s - %s"],
                 winner.name, label, winner.bid, wishStr, self.activeLoot.link), "RAID_WARNING")
+        elseif winner.roll and GuildOS.LootRule:BonusOf(winner, rule) > 0 then
+            -- The roll and what the bonus account added to it, each by itself (issue #337).
+            say(self, string.format(L["[WINNER] %s - %s (%d + %d)%s - %s"], winner.name, label, winner.roll,
+                GuildOS.LootRule:BonusOf(winner, rule), wishStr, self.activeLoot.link), "RAID_WARNING")
         elseif winner.roll then
             say(self, string.format(L["[WINNER] %s - %s (%d)%s - %s"],
                 winner.name, label, winner.roll, wishStr, self.activeLoot.link), "RAID_WARNING")
@@ -1850,6 +1874,17 @@ function LootMaster:AwardLoot(playerName, silent, free)
             award.charged, award.chargedKey = cost, pKey
             self:SafeSendChat(string.format(L["[DKP] %s charged %d points for %s"],
                 playerName, cost, itemLink), "RAID")
+            -- Zero-sum (issue #337): what was charged goes back to whoever is in the raid, in equal
+            -- shares, the winner's own among them. What each got is kept for an undo.
+            if LR:Splits(rule) then
+                local shares = GuildOS.Points:Split(GuildOS.Points:RaidKeys(), cost,
+                    string.format(L["Share of %s"], GuildOS.Compat.GetItemInfo(itemLink) or itemLink))
+                if #shares > 0 then
+                    award.split = shares
+                    self:SafeSendChat(string.format(L["[DKP] %d points each to %d raiders for %s"],
+                        shares[1].amount, #shares, itemLink), "RAID")
+                end
+            end
         end
     end
 
@@ -1875,12 +1910,28 @@ function LootMaster:AwardLoot(playerName, silent, free)
         end
         for _, effect in ipairs(rule.effects or {}) do
             local counter = LR:Counter(effect.acct, rule)
+            local bonus = counter and counter.type == "bonus"
             if effect.k == "add" and response.plus then
-                move(effect.acct, effect.value)
+                -- An account with a cap (a bonus, issue #337) never grows past it.
+                local value = effect.value
+                if counter and counter.cap then
+                    value = math.min(value, math.max(0, counter.cap - GuildOS.Points:Counter(effect.acct, pKey)))
+                end
+                move(effect.acct, value)
             elseif effect.k == "reset" and counter then
                 move(effect.acct, -GuildOS.Points:Counter(effect.acct, pKey))
-            elseif effect.k == "charge" and counter then
+            elseif effect.k == "charge" and counter and (response.plus or not bonus) then
+                -- A bonus account is charged only when the winning answer used it (karma: lose half).
                 move(effect.acct, -LR:CounterCharge(effect, GuildOS.Points:Counter(effect.acct, pKey), response))
+            elseif effect.k == "bottom" and response.plus then
+                -- The winner drops to the end of the queue (Suicide Kings, issue #337), when the answer
+                -- is one that counts: an off spec roll moves nobody.
+                local queue = LR:Queue(effect.acct, rule)
+                local moved = queue and GuildOS.Points:QueueBottom(effect.acct, pKey, GuildOS.Points:RaidKeys(), queue.frozen)
+                if moved then
+                    award.queue = award.queue or {}
+                    award.queue[#award.queue + 1] = moved
+                end
             end
         end
     end
@@ -1948,6 +1999,11 @@ function LootMaster:UndoLastAward()
     -- And the +1 it counted (issue #334), off the night it was added in.
     for _, plus in ipairs(GuildOS.Points and award.plus or {}) do
         GuildOS.Points:AddCounter(plus.acct, plus.key, -plus.value, plus.reset, plus.per)
+    end
+    -- And what it shared among the raid (zero-sum) and the place it took in a queue (issue #337).
+    if GuildOS.Points and award.split then GuildOS.Points:UndoSplit(award.split, undoLabel) end
+    for i = #(GuildOS.Points and award.queue or {}), 1, -1 do
+        GuildOS.Points:QueueUndo(award.queue[i])
     end
     for i = #(self.pendingTrades or {}), 1, -1 do
         local t = self.pendingTrades[i]
@@ -3712,7 +3768,6 @@ function LootMaster:RefreshRollFrame()
     -- the roll's end announces.
     local rule = self:Rule()
     GuildOS.LootRule:Sort(sorted, rule)
-    local counters = GuildOS.LootRule:Counters(rule)
     local sealed = GuildOS.LootRule:BidRules(rule)
     local usesPoints = GuildOS.LootSystemUsesPoints and GuildOS:LootSystemUsesPoints(lootSystem)
 
@@ -3762,17 +3817,14 @@ function LootMaster:RefreshRollFrame()
             local ended = self.activeLoot and self.activeLoot.ended
             rollText:SetText((sealed and not ended) and L["sealed"] or string.format(L["bid %d"], r.bid))
         else
-            rollText:SetText(r.roll and tostring(r.roll) or "-")
+            rollText:SetText(self:RollText(r, rule))
         end
 
         -- Prio / Wishlist info, after the +1 counter when the rule keeps one (issue #334).
         local tmbText = row:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(tmbText, 10)
         tmbText:SetPoint("LEFT", 250, 0)
-        local plus = ""
-        for _, a in ipairs(counters) do
-            plus = plus .. string.format("|cffFF9900+%d|r ", (r.accts and r.accts[a.key]) or 0)
-        end
+        local plus = self:AccountsText(r, rule)
         if lootSystem == "epgp" then
             -- The rule's own ratio when it orders by one (a rule from the site), else the pool's priority.
             local ratio = GuildOS.LootRule:RatioOf(r, rule)
@@ -3790,12 +3842,13 @@ function LootMaster:RefreshRollFrame()
             tmbText:SetText("-")
         end
 
-        -- The note an answer came with, on the row's tooltip.
-        if r.note then
-            local note = r.note
+        -- The note an answer came with, and the parts of its score (issue #337), on the row's tooltip.
+        local tip = self:RowTip(r, rule)
+        if #tip > 0 then
             row:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetText(note, 1, 1, 1)
+                GameTooltip:SetText(tip[1], 1, 1, 1)
+                for i = 2, #tip do GameTooltip:AddLine(tip[i], 0.8, 0.8, 0.8) end
                 GameTooltip:Show()
             end)
             row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -3862,6 +3915,54 @@ function LootMaster:RefreshRollFrame()
         yOff = yOff + 24
     end
     content:SetHeight(math.max(1, yOff))
+end
+
+----------------------------------------------------------------------
+-- What a row of the roll frame says of a candidate, in words (issue #337). Text only: every figure
+-- is the loot rule's.
+----------------------------------------------------------------------
+-- The roll, and beside it what a bonus account added and what the two come to.
+function LootMaster:RollText(r, rule)
+    if not r.roll then return "-" end
+    local bonus = GuildOS.LootRule:BonusOf(r, rule)
+    if bonus > 0 then return string.format("%d |cffFF9900+%d|r = %d", r.roll, bonus, r.roll + bonus) end
+    return tostring(r.roll)
+end
+
+-- The accounts the rule keeps, as the candidate stands on each: a counter as "+1", a bonus account by
+-- its name, a queue as the place in it; and the rule's summed score, when it orders by one.
+function LootMaster:AccountsText(r, rule)
+    local LR = GuildOS.LootRule
+    local text = ""
+    for _, a in ipairs(LR:OwnAccounts(rule)) do
+        local has = r.accts and r.accts[a.key]
+        if a.type == "queue" then
+            text = text .. (has and string.format("|cffFF9900#%d|r ", has) or "|cff888888#-|r ")
+        elseif a.type == "bonus" then
+            text = text .. string.format("|cffFF9900%s %d|r ", a.name or a.key, has or 0)
+        else
+            text = text .. string.format("|cffFF9900+%d|r ", has or 0)
+        end
+    end
+    local score = LR:ScoreOf(r, rule)
+    if score then text = text .. string.format(L["|cff4CB8FFscore %s|r "], string.format("%.1f", score)) end
+    return text
+end
+
+-- The lines of a row's tooltip: the note the answer came with, then each part of its score.
+function LootMaster:RowTip(r, rule)
+    local LR = GuildOS.LootRule
+    local lines = {}
+    if r.note then lines[#lines + 1] = r.note end
+    local score, parts = LR:ScoreOf(r, rule)
+    if score then
+        lines[#lines + 1] = string.format(L["Score: %s"], string.format("%.1f", score))
+        for _, part in ipairs(parts) do
+            lines[#lines + 1] = string.format("%s: %s x %s = %s", LR:PartLabel(part, rule),
+                string.format("%.4g", part.value), string.format("%.4g", part.w), string.format("%.1f", part.points))
+        end
+    end
+    return lines
 end
 
 ----------------------------------------------------------------------

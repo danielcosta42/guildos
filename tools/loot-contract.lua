@@ -4,7 +4,9 @@
 -- Modules/RaidPlan.lua, with the rules the site's fourteen ready-made models emit at their default
 -- answers (tools/data/loot-rule-models.json, written from apps/web/lib/loot-rule-models.ts):
 --   * every model either reads whole and a small roll ends in the order the model documents, or is
---     refused whole with the piece of the contract this client does not apply yet;
+--     refused whole with the piece of the contract this client does not apply yet. Since issue #337 the
+--     rare systems play too (SR+, karma, Suicide Kings, zero-sum, a summed score), each with the effects
+--     its model documents;
 --   * the pieces behind them: who may ask (an account's least, a reserve, the night's limit, block or
 --     downgrade), the order (any account high or low, a ratio, a hard reserve) and what an award
 --     changes (a share of the balance, the price to enter, a counter emptied or charged);
@@ -378,12 +380,104 @@ check(published[1] and published[1].act == "cdelta" and #published[1].data.entri
 P:OnRaidEnd(session)
 check(P:Counter("wait", K("Ana")) == 4, "ranked: the same raid ended twice counts once")
 
-isRefused("srplus", "bonus")
+-- srplus (issue #337): a reserve, the answer, then the roll with the SR+ account added to a main spec
+-- roll. The account grows by ten a raid attended, up to fifty, and the winner's goes back to nothing.
+plays("srplus")
+check(LR:RollBonus() == "srplus" and LR:Counter("srplus").type == "bonus", "srplus: the roll adds the SR+ account")
+P:AddCounter("srplus", K("Ana"), 30, "never")
+P:AddCounter("srplus", K("Dee"), 45, "never")
+reserves = { { name = "Ana" }, { name = "Bo" } }
+announce()
+LM:RegisterRoll("Ana", "MS", 40)
+LM:RegisterRoll("Bo", "MS", 60)
+LM:RegisterRoll("Cy", "MS", 100)
+LM:RegisterRoll("Dee", "OS", 99)
+check(order() == "Ana,Bo,Cy,Dee", "srplus: among who reserved, 40 + 30 beats 60; no reserve after them; off spec last: " .. order())
+check(LR:BonusOf(LM.activeLoot.sortedResults[1], LM:Rule()) == 30 and LR:BonusOf(LM.activeLoot.sortedResults[4], LM:Rule()) == 0,
+  "srplus: the bonus is a main spec roll's, never an off spec one's")
+check(LM.activeLoot.decidedBy == "roll" and all(said):find("Ana - MS (40 + 30)", 1, true), "srplus: the winner line says the roll and the bonus apart: " .. all(said))
+LM:AwardLoot("Ana")
+check(P:Counter("srplus", K("Ana")) == 0 and P:Counter("srplus", K("Dee")) == 45, "srplus: the winner's SR+ goes back to nothing, nobody else's moves")
+check(LM:UndoLastAward() and P:Counter("srplus", K("Ana")) == 30, "srplus: and an undo gives it back")
+session = { startTime = NOW - 7200, endTime = NOW, snapshots = { { members = { [K("Ana")] = true, [K("Dee")] = true, [K("Bo")] = true } } } }
+P:OnRaidEnd(session)
+check(P:Counter("srplus", K("Ana")) == 40 and P:Counter("srplus", K("Bo")) == 10 and P:Counter("srplus", K("Dee")) == 50,
+  "srplus: a raid attended adds ten, never past the cap of fifty")
+
 isRefused("council", "council")
-isRefused("zerosum", "split")
-isRefused("sk", "queue")
-isRefused("karma", "bonus")
-check(#supported == 9 and #refused == 5, string.format("nine models play and five wait: %d and %d", #supported, #refused))
+
+-- zerosum (issue #337): the answer, the points, the roll; a fixed price of ten, off spec for half, and
+-- what was paid goes back to whoever is in the raid in equal shares, the remainder dropped.
+plays("zerosum")
+P:Award(K("Ana"), 50, "seed")
+P:Award(K("Bo"), 80, "seed")
+announce()
+LM:RegisterRoll("Ana", "MS", 99)
+LM:RegisterRoll("Bo", "MS", 1)
+check(order() == "Bo,Ana", "zerosum: more points first: " .. order())
+quiet()
+LM:AwardLoot("Bo")
+check(P:Get(K("Bo")) == 72 and P:Get(K("Ana")) == 52 and P:Get(K("Lead")) == 2 and P:Get(K("Cy")) == 2 and P:Get(K("Dee")) == 2,
+  "zerosum: the winner pays ten and each of the five in the raid gets two")
+local total = 0
+for _, name in ipairs(raid) do total = total + P:Get(K(name)) end
+check(total == 130, "zerosum: the raid's points add up to what they were: " .. total)
+check(#published == 2 and #published[2].data.entries == 5 and published[2].data.entries[1].kind == "split",
+  "zerosum: each share is an entry of the log, told to the officers")
+check(LM:UndoLastAward() and P:Get(K("Bo")) == 80 and P:Get(K("Ana")) == 50 and P:Get(K("Cy")) == 0, "zerosum: an undo takes every share back")
+announce()
+LM:RegisterRoll("Ana", "OS", 5)
+LM:EndRolling(true)
+LM:AwardLoot("Ana")
+check(P:Get(K("Ana")) == 46 and P:Get(K("Cy")) == 1, "zerosum: off spec pays five, one each")
+
+-- sk (issue #337): main spec goes to whoever is highest on the list, with no roll, and the winner
+-- drops to the end; off spec is a free roll, and moves nobody.
+plays("sk")
+check(LR:Queue("sk") and not LR:Queue("sk").frozen, "sk: a queue account, as the site emits it")
+announce()
+check(table.concat(P:Queue("sk"), ",") == table.concat({ K("Ana"), K("Bo"), K("Cy"), K("Dee"), K("Lead") }, ","),
+  "sk: the raid joins the list when the first item is announced: " .. table.concat(P:Queue("sk"), ","))
+check(LM:TakeAnswer("Cy", "MS") and LM:TakeAnswer("Bo", "MS") and LM:TakeAnswer("Dee", "OS"), "sk: answers are in")
+check(LM.rolls[K("Cy")].roll == nil and LM.rolls[K("Dee")].roll ~= nil, "sk: main spec asks for no roll, off spec for one")
+check(order() == "Bo,Cy,Dee", "sk: higher on the list first, main spec before off spec: " .. order())
+check(LM.activeLoot.decidedBy == "account", "sk: and the list is what decided")
+LM:AwardLoot("Bo")
+check(table.concat(P:Queue("sk"), ",") == table.concat({ K("Ana"), K("Cy"), K("Dee"), K("Lead"), K("Bo") }, ","),
+  "sk: the winner drops to the end and everyone below moves up: " .. table.concat(P:Queue("sk"), ","))
+announce()
+LM:TakeAnswer("Dee", "OS")
+LM:EndRolling(true)
+LM:AwardLoot("Dee")
+check(P:QueuePos("sk", K("Dee")) == 3, "sk: an off spec win moves nobody")
+check(LM:UndoLastAward() and LM:UndoLastAward() and table.concat(P:Queue("sk"), ",") == table.concat({ K("Ana"), K("Bo"), K("Cy"), K("Dee"), K("Lead") }, ","),
+  "sk: an undo gives back the exact order")
+
+-- karma (issue #337): the answer, then the roll with the karma added to a main spec roll. The winner
+-- with karma loses half of it; an off spec win costs nothing.
+plays("karma")
+P:AddCounter("karma", K("Ana"), 41, "never")
+P:AddCounter("karma", K("Bo"), 10, "never")
+announce()
+LM:RegisterRoll("Ana", "MS", 30)
+LM:RegisterRoll("Bo", "MS", 60)
+LM:RegisterRoll("Cy", "OS", 100)
+check(order() == "Ana,Bo,Cy", "karma: 30 + 41 beats 60 + 10: " .. order())
+LM:AwardLoot("Ana")
+check(P:Counter("karma", K("Ana")) == 20 and P:Counter("karma", K("Bo")) == 10, "karma: the winner loses half, rounded: " .. P:Counter("karma", K("Ana")))
+announce()
+LM:RegisterRoll("Bo", "OS", 50)
+LM:EndRolling(true)
+LM:AwardLoot("Bo")
+check(P:Counter("karma", K("Bo")) == 10, "karma: an off spec win, rolled without karma, costs none")
+check(LM:UndoLastAward() and LM:UndoLastAward() and P:Counter("karma", K("Ana")) == 41, "karma: an undo gives it back")
+session = { startTime = NOW - 3600, endTime = NOW, snapshots = { { members = { [K("Ana")] = true } } } }
+P:AddCounter("karma", K("Ana"), 57, "never")
+P:OnRaidEnd(session)
+check(P:Counter("karma", K("Ana")) == 100, "karma: five a raid attended, never past the cap of a hundred: " .. P:Counter("karma", K("Ana")))
+
+local modelsPlayed, modelsRefused = #supported, #refused
+check(modelsPlayed == 13 and modelsRefused == 1, string.format("thirteen models play and one waits: %d and %d", modelsPlayed, modelsRefused))
 for _, name in ipairs(MODELS) do
   local found = false
   for _, n in ipairs(supported) do found = found or n == name end
@@ -437,9 +531,42 @@ LM:EndRolling(true)
 LM:AwardLoot("Ana")
 check(P:GP(K("Ana")) == 25, "a fixed GP price, and off spec for half of it")
 
-isRefused("karma:all", "bonus")
-isRefused("ranked:score", "score")
-isRefused("zerosum:bid", "split")
+-- karma, losing all of it.
+plays("karma:all")
+P:AddCounter("karma", K("Ana"), 41, "never")
+announce()
+LM:RegisterRoll("Ana", "MS", 30)
+LM:EndRolling(true)
+LM:AwardLoot("Ana")
+check(P:Counter("karma", K("Ana")) == 0, "karma, all of it: the winner's karma is gone")
+
+-- ranked by a summed score: officer priority (first place ten points), a tenth of the attendance, and
+-- the raids waited.
+plays("ranked:score")
+prios[1] = { name = "Bo" }
+att = { Ana = 80, Bo = 50, Cy = 100 }
+P:AddCounter("wait", K("Ana"), 3, "never")
+announce()
+LM:RegisterRoll("Ana", "MS", 1)
+LM:RegisterRoll("Bo", "MS", 2)
+LM:RegisterRoll("Cy", "MS", 99)
+check(order() == "Bo,Ana,Cy", "score: 10 + 5 + 0 before 0 + 8 + 3 before 0 + 10 + 0: " .. order())
+local score, parts = LR:ScoreOf(LM.rolls[K("Ana")], LM:Rule())
+check(score == 11 and #parts == 3 and parts[2].k == "attendance" and parts[2].points == 8 and parts[3].points == 3,
+  "score: the total and its parts are there for the window to show")
+check(LM.activeLoot.decidedBy == "score", "score: and the score is what decided")
+LM:CancelRolling()
+
+-- zero-sum by bids: the winner pays the bid, shared among the raid, the remainder dropped.
+plays("zerosum:bid")
+P:Award(K("Ana"), 100, "seed")
+P:Award(K("Bo"), 60, "seed")
+announce()
+LM:TakeAnswer("Bo", "MS", 50)
+LM:TakeAnswer("Ana", "MS", 73)
+LM:EndRolling(true)
+LM:AwardLoot("Ana")
+check(P:Get(K("Ana")) == 41 and P:Get(K("Bo")) == 74 and P:Get(K("Cy")) == 14, "zero-sum by bids: 73 paid, 14 to each of five, 3 dropped")
 
 -- ── 3. The pieces, one at a time ────────────────────────────────────
 local function rule(more)
@@ -484,9 +611,16 @@ reads(rule({ order = { { k = "account", acct = "dkp", dir = "low" }, { k = "acco
 reads(rule({ accounts = { wait }, order = { { k = "ratio", num = "ep", den = "wait" } } }), "a ratio of any two accounts")
 no(rule({ order = { { k = "ratio", num = "ep", den = "ep" } } }), "unknown account", "an account over itself")
 no(rule({ order = { { k = "ratio", num = "ep" } } }), "unknown account", "a ratio with no divisor")
-no(rule({ order = { { k = "roll", bonus = "karma" } } }), "unsupported: bonus", "a roll with a bonus")
+no(rule({ order = { { k = "roll", bonus = "karma" } } }), "unknown account", "a roll with a bonus nobody declared")
+no(rule({ accounts = { wait }, order = { { k = "roll", bonus = "wait" } } }), "unknown account", "a roll with a counter for a bonus")
+reads(rule({ accounts = { { key = "karma", type = "bonus", cap = 100 } }, order = { { k = "roll", bonus = "karma" } } }), "a roll with a bonus account")
 no(rule({ order = { { k = "upgrade" } } }), "unsupported: upgrade", "the size of the upgrade, which no candidate row carries")
-no(rule({ order = { { k = "score", parts = {} } } }), "unsupported: score", "a summed score")
+no(rule({ order = { { k = "score", parts = {} } } }), "score", "a score of no parts")
+no(rule({ order = { { k = "score", parts = { { k = "roll", w = 1 } } } } }), "score", "a score of a part it does not offer")
+no(rule({ order = { { k = "score", parts = { { k = "attendance", w = 0 } } } } }), "score", "a part that weighs nothing")
+no(rule({ order = { { k = "score", parts = { { k = "attendance", w = 1, formula = "x*2" } } } } }), "score", "a part with a formula")
+reads(rule({ accounts = { wait }, order = { { k = "score", parts = { { k = "wishlist", w = 1 }, { k = "attendance", w = 0.1 }, { k = "account", acct = "wait", w = 1 } } } } }),
+  "a summed score, as the contract writes it")
 no(rule({ order = { { k = "roll", acct = "dkp" } } }), "unknown criterion", "a field that is another criterion's")
 local list = LR:Sort({
   { name = "A", dkp = 10, ep = 100, gp = 0 }, { name = "B", dkp = 5, ep = 100, gp = 100 }, { name = "C", dkp = 7, ep = 500, gp = 50 },
@@ -531,8 +665,14 @@ no(rule({ effects = { { k = "reset", acct = "dkp" } } }), "effects", "the points
 no(rule({ accounts = { wait }, effects = { { k = "charge", acct = "wait", price = "bid" } } }), "effects", "a bid paid in a counter")
 no(rule({ effects = { { k = "charge", acct = "dkp", price = "all" }, { k = "charge", acct = "gp", price = "table" } } }), "effects",
   "two prices in points")
-no(rule({ effects = { { k = "split", acct = "dkp" } } }), "unsupported: split", "what was paid shared among the raid")
-no(rule({ accounts = { wait }, effects = { { k = "bottom", acct = "wait" } } }), "unsupported: bottom", "the end of a queue")
+reads(rule({ effects = { { k = "split", acct = "dkp" } } }), "what was paid shared among the raid")
+no(rule({ effects = { { k = "split", acct = "gp" } } }), "effects", "a share of anything but the points")
+no(rule({ accounts = { wait }, effects = { { k = "bottom", acct = "wait" } } }), "effects", "the end of a counter")
+reads(rule({ accounts = { { key = "sk", type = "queue", frozen = true, newcomer = "random" } }, effects = { { k = "bottom", acct = "sk" } } }),
+  "the end of a queue")
+no(rule({ accounts = { { key = "sk", type = "queue", newcomer = "top" } } }), "accounts", "a place for newcomers it does not know")
+no(rule({ accounts = { { key = "sk", type = "queue", cap = 5 } } }), "accounts", "a queue with a cap")
+no(rule({ accounts = { { key = "wait", type = "counter", frozen = true } } }), "accounts", "a counter that is frozen")
 
 -- Played: a share of the balance, the price to enter, a counter charged.
 local function nightOf(r)
@@ -711,4 +851,4 @@ check(LR:Active().model == "rolls" and LM:Rule() == announced and LM:System() ==
 NOW = NOW - 9 * 3600
 LM:CancelRolling()
 
-print(("loot-contract: %d checks passed (%d models play, %d wait)"):format(checks, 9, 5))
+print(("loot-contract: %d checks passed (%d models play, %d wait)"):format(checks, modelsPlayed, modelsRefused))

@@ -1192,7 +1192,9 @@ end
 -- `retail = false`: not offered on retail. That's My BiS is Classic only (issue #185).
 -- "plus1", "dkpbid" and "dkpsealed" (issue #334) are ready-made loot rules of the loot master
 -- (LootRule:FromLegacy), which retail does not have: the +1 counter, and DKP won by an open bid or by
--- a sealed one that pays the second price.
+-- a sealed one that pays the second price. "sk" and "karma" (issue #337) are two more: Suicide Kings,
+-- a list whose winner drops to the end, and karma, a bonus added to the roll of which the winner
+-- loses half.
 GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
     { key = "plus1",    label = "MS > OS +1", retail = false },
@@ -1202,6 +1204,8 @@ GuildOS.LOOT_SYSTEMS = {
     { key = "dkpbid",   label = "DKP bidding", retail = false },
     { key = "dkpsealed", label = "DKP sealed second-price", retail = false },
     { key = "epgp",     label = "EPGP" },
+    { key = "sk",       label = "Suicide Kings", retail = false },
+    { key = "karma",    label = "Karma", retail = false },
     { key = "external", label = "External / Off" },
 }
 
@@ -1252,6 +1256,8 @@ function GuildOS:LootSystemLabel(sys)
     if sys.key == "rolls" and self.Client.isRetail then return L["Free roll"] end
     if sys.key == "dkpbid" then return L["DKP bidding"] end
     if sys.key == "dkpsealed" then return L["DKP sealed second-price"] end
+    if sys.key == "sk" then return L["Suicide Kings"] end
+    if sys.key == "karma" then return L["Karma"] end
     return sys.label
 end
 
@@ -1355,9 +1361,13 @@ function GuildOS:LootSystemUsesPoints(sys)
     return s == "dkp" or s == "epgp" or s == "dkpbid" or s == "dkpsealed"
 end
 
+-- And where the rule in force keeps a queue or a bonus account (Suicide Kings, karma, issue #337): the
+-- points window is where each one is looked at.
 function GuildOS:LootSystemShowsDKP()
     if not self.Points then return false end
-    return self:LootSystemUsesPoints()
+    if self:LootSystemUsesPoints() then return true end
+    local LR = self.LootRule
+    return (LR and LR.ShowsAccounts and self.db and self:LootSystemActive() and LR:ShowsAccounts()) and true or false
 end
 
 ----------------------------------------------------------------------

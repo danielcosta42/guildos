@@ -213,7 +213,7 @@ check(LR:Validate(with({ { key = "MS" } }, { time = 300 })), "five minutes are a
 refused(with({ { key = "MS" } }, { bid = { min = -1 } }), "a least bid below nothing")
 refused(with({ { key = "MS" } }, { bid = { step = 0 } }), "a bid step of nothing")
 refused(with({ { key = "MS" } }, { bid = { sealed = "yes" } }), "sealed that is not yes or no")
-refused(with({ { key = "MS" } }, { accounts = { { key = "plus1", type = "queue" } } }), "an account of a kind not built yet")
+refused(with({ { key = "MS" } }, { accounts = { { key = "plus1", type = "ledger" } } }), "an account of a kind it does not know")
 refused(with({ { key = "MS" } }, { accounts = { { key = "dkp", type = "counter" } } }), "a counter under the points' own key")
 refused(with({ { key = "MS" } }, { accounts = { { key = "plus1", type = "counter", reset = "weekly" } } }), "a reset it does not know")
 refused(with({ { key = "MS" } }, { effects = { { k = "add", acct = "plus1", value = 1 } } }), "adding to an account the rule does not keep")

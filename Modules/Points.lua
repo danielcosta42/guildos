@@ -27,6 +27,13 @@
 -- never (the "+1" of MS > OS +1). They live in the pool, travel in the same op log under their own
 -- action ("cdelta": a client from before reads no counter as points) and in the snapshot.
 --
+-- Since issue #337 the rare accounts too:
+--   * a bonus account is a counter whose figure is added to a roll, and may have a cap (karma, SR+);
+--   * a queue account is an ordered list of players (Suicide Kings). Its whole order travels in the same
+--     op log under its own action ("qset") with a sequence number, so the newest order wins on every
+--     client in whatever order the entries reach it, and in the snapshot;
+--   * what was charged for an item can be shared among the raid (zero-sum DKP), each share an entry.
+--
 -- On retail too since issue #185: boss-kill EP, awards, decay and standings as anywhere else. With no
 -- Master Loot there, an item is charged when an award by trade is recorded (TradeCouncil).
 ----------------------------------------------------------------------
@@ -55,6 +62,8 @@ local GP_ILVL_STEP = 26           -- item levels in which an item's GP doubles
 local NIGHT = 43200               -- seconds: two counter entries closer than this are the same raid night
 local COUNTER_MAX = 100           -- the most one entry moves a counter by
 local COUNTER_RESETS = { never = true, night = true, lockout = true }
+local QUEUE_MAX = 200             -- players one queue holds
+local QUEUE_KEY_MAX = 64          -- bytes of a player's key in a queue
 
 ----------------------------------------------------------------------
 -- Active pool resolver
@@ -689,7 +698,10 @@ function Points:EarnCounters(auto, keys, tag)
         for _, earn in ipairs(a.earn or {}) do
             if earn.auto == auto then
                 for _, key in ipairs(keys) do
-                    local e = self:MakeEntry(key, earn.value, "", "counter")
+                    -- An account with a cap (a bonus, issue #337) never grows past it.
+                    local value = earn.value
+                    if a.cap then value = math.min(value, math.max(0, a.cap - self:Counter(a.key, key, pool))) end
+                    local e = self:MakeEntry(key, value, "", "counter")
                     e.acct, e.rs = a.key, COUNTER_RESETS[a.reset] and a.reset or "never"
                     e.per = self:CounterPeriod(e.rs)
                     if tag then e.op = string.format("C%s-%s-%s-%s", tag, a.key, earn.key, key) end
@@ -706,6 +718,261 @@ function Points:EarnCounters(auto, keys, tag)
         self:Refresh()
     end
     return #entries
+end
+
+-- Everyone on a counter or a bonus account with something on it: { { key, name, class, value }, ... },
+-- the most first. For the points window.
+function Points:CounterStandings(acct, pool)
+    pool = pool or self:GetDB()
+    local a = pool.accounts and pool.accounts[acct]
+    local list = {}
+    for key in pairs(a and a.v or {}) do
+        local value = self:Counter(acct, key, pool)
+        if value > 0 then
+            local m = GuildOS.db.members and GuildOS.db.members[key]
+            list[#list + 1] = { key = key, name = key:match("^([^-]+)") or key, class = (m and m.class) or "", value = value }
+        end
+    end
+    table.sort(list, function(x, y)
+        if x.value ~= y.value then return x.value > y.value end
+        return x.name:lower() < y.name:lower()
+    end)
+    return list
+end
+
+----------------------------------------------------------------------
+-- Who is in the raid now, by key: who a zero-sum share goes to, and who moves up a queue.
+----------------------------------------------------------------------
+function Points:RaidKeys()
+    local keys, seen = {}, {}
+    if not IsInRaid() then return keys end
+    for i = 1, GetNumGroupMembers() do
+        local unit = "raid" .. i
+        local nm, realm
+        if UnitExists(unit) then nm, realm = GuildOS.Compat.UnitIdentity(unit) end
+        local key = nm and GuildOS:GetPlayerKey(nm, (realm and realm ~= "") and realm or GetRealmName())
+        if key and not seen[key] then
+            seen[key] = true
+            keys[#keys + 1] = key
+        end
+    end
+    return keys
+end
+
+----------------------------------------------------------------------
+-- Zero-sum (issue #337): what the winner was charged for an item, shared equally among `keys` (whoever
+-- is in the raid, the winner too), the remainder dropped. Each share is an entry of the log, never held
+-- to a cap. Returns what each got, { { key, amount }, ... }, for an undo to take back.
+----------------------------------------------------------------------
+function Points:Split(keys, total, reason)
+    local shares = {}
+    total = math.floor(tonumber(total) or 0)
+    if not GuildOS:IsOfficer() or #keys == 0 or total <= 0 then return shares end
+    local share = math.floor(total / #keys)
+    if share <= 0 then return shares end
+    local entries = {}
+    local epgp = self:GetMode() == "epgp"
+    for _, key in ipairs(keys) do
+        local e = self:MakeEntry(key, share, reason, "split")
+        if epgp then e.acct = "ep" end
+        self:ApplyEntry(e); self:MarkApplied(e.op)
+        entries[#entries + 1] = e
+        shares[#shares + 1] = { key = key, amount = share }
+    end
+    publishDelta(entries)
+    self:Refresh()
+    return shares
+end
+
+-- The shares of a split taken back, as they were given.
+function Points:UndoSplit(shares, reason)
+    if not GuildOS:IsOfficer() then return 0 end
+    local entries = {}
+    local epgp = self:GetMode() == "epgp"
+    for _, s in ipairs(shares or {}) do
+        local e = self:MakeEntry(s.key, -s.amount, reason, "undo")
+        if epgp then e.acct = "ep" end
+        self:ApplyEntry(e); self:MarkApplied(e.op)
+        entries[#entries + 1] = e
+    end
+    if #entries > 0 then publishDelta(entries) end
+    self:Refresh()
+    return #entries
+end
+
+----------------------------------------------------------------------
+-- Queue accounts (issue #337)
+-- pool.queues[acct] = { seq = n, op = <the entry that set it>, list = { key, ... } }, the first of the
+-- list first in line. Every change is an entry that carries the whole order and the queue's next
+-- sequence number: an entry with a higher number replaces the order, one with a lower number is late and
+-- changes nothing, and two with the same number settle by their op, so every client ends on the same
+-- order in whatever order the entries reach it.
+----------------------------------------------------------------------
+-- The order of the queue `acct`, first in line first. Not a copy: never changed by a caller.
+function Points:Queue(acct, pool)
+    pool = pool or self:GetDB()
+    local q = pool.queues and pool.queues[acct]
+    return q and q.list or {}
+end
+
+-- The place of `key` in the queue, or nil.
+function Points:QueuePos(acct, key, pool)
+    for i, k in ipairs(self:Queue(acct, pool)) do
+        if k == key then return i end
+    end
+    return nil
+end
+
+-- Whether `e` is a queue entry this client can apply: a peer's are read as carefully as its own.
+local function queueEntry(e)
+    if not (type(e) == "table" and type(e.op) == "string" and type(e.acct) == "string" and #e.acct <= 8
+        and e.acct:find("^[a-z0-9]+$") and type(e.seq) == "number" and e.seq == math.floor(e.seq)
+        and e.seq >= 1 and e.seq < 2 ^ 31 and type(e.list) == "table") then
+        return false
+    end
+    local n, seen = 0, {}
+    for _ in pairs(e.list) do n = n + 1 end
+    if n ~= #e.list or n > QUEUE_MAX then return false end
+    for _, key in ipairs(e.list) do
+        if type(key) ~= "string" or key == "" or #key > QUEUE_KEY_MAX or key:find("%c") or seen[key] then return false end
+        seen[key] = true
+    end
+    return true
+end
+
+function Points:ApplyQueueEntry(e, pool)
+    if not queueEntry(e) then return false end
+    pool = pool or self:GetDB()
+    pool.queues = pool.queues or {}
+    local q = pool.queues[e.acct]
+    if q and (e.seq < q.seq or (e.seq == q.seq and e.op <= q.op)) then return false end
+    local list = {}
+    for i, key in ipairs(e.list) do list[i] = key end
+    pool.queues[e.acct] = { seq = e.seq, op = e.op, list = list }
+    return true
+end
+
+-- The queue's order becomes `list`. Kept here whoever awards, and told to the guild when an officer
+-- does, as a counter's entry is. Returns the entry, or nil.
+function Points:SetQueue(acct, list)
+    local pool = self:GetDB()
+    local q = pool.queues and pool.queues[acct]
+    local e = {
+        op = newOp(), acct = acct, seq = (q and q.seq or 0) + 1, list = list,
+        author = GuildOS.Compat.PlayerName(), ts = GetServerTime(),
+        core = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or "",
+    }
+    if not self:ApplyQueueEntry(e, pool) then return nil end
+    self:MarkApplied(e.op, pool)
+    if GuildOS:IsOfficer() and GuildOS.SyncService then
+        GuildOS.SyncService:Publish("points", "qset", { entries = { e } })
+    end
+    self:Refresh()
+    return e
+end
+
+-- Whoever of `keys` the queue does not hold joins it: at the end, in the order of their names (so two
+-- clients that add the same raid end on the same order), or each at a random place when `newcomer` is
+-- "random". Returns how many joined.
+function Points:QueueJoin(acct, keys, newcomer)
+    local list, held, fresh = {}, {}, {}
+    for i, key in ipairs(self:Queue(acct)) do list[i], held[key] = key, true end
+    for _, key in ipairs(keys) do
+        if not held[key] and #list + #fresh < QUEUE_MAX then
+            held[key] = true
+            fresh[#fresh + 1] = key
+        end
+    end
+    if #fresh == 0 then return 0 end
+    table.sort(fresh, function(a, b) return a:lower() < b:lower() end)
+    for _, key in ipairs(fresh) do
+        if newcomer == "random" then
+            table.insert(list, math.random(1, #list + 1), key)
+        else
+            list[#list + 1] = key
+        end
+    end
+    return self:SetQueue(acct, list) and #fresh or 0
+end
+
+-- The winner goes to the end of the queue. `frozen` is the classic Suicide Kings rule: only whoever
+-- is in the raid (`present`, a list of keys) moves up, and whoever is absent keeps their slot, so the
+-- winner lands in the slot of the last raider below them. Without it everyone below moves up and the
+-- winner is last of all. Returns the move, { acct, key, slots }, for an undo; nil when nothing moved.
+function Points:QueueBottom(acct, key, present, frozen)
+    local old = self:Queue(acct)
+    local from = self:QueuePos(acct, key)
+    if not from then return nil end
+    local here = {}
+    for _, k in ipairs(present or {}) do here[k] = true end
+    -- The slots that take part: the winner's, and every one below it (held by a raider, when frozen).
+    local slots = { from }
+    for i = from + 1, #old do
+        if not frozen or here[old[i]] then slots[#slots + 1] = i end
+    end
+    if #slots < 2 then return nil end
+    local list = {}
+    for i, k in ipairs(old) do list[i] = k end
+    for n = 1, #slots - 1 do list[slots[n]] = old[slots[n + 1]] end
+    list[slots[#slots]] = key
+    if not self:SetQueue(acct, list) then return nil end
+    -- Slots in a row (nobody absent between them) are kept as their first and last alone.
+    if slots[#slots] - slots[1] == #slots - 1 then return { acct = acct, key = key, from = slots[1], to = slots[#slots] } end
+    return { acct = acct, key = key, slots = slots }
+end
+
+-- A move of `QueueBottom` taken back: everyone it moved goes back to the slot they had. When the
+-- queue changed in between so that the winner is no longer where the move left them, the winner alone
+-- goes back to their slot.
+function Points:QueueUndo(move)
+    if type(move) ~= "table" or not move.acct then return false end
+    local old = self:Queue(move.acct)
+    local slots = move.slots
+    if not slots then
+        slots = {}
+        for i = move.from, move.to do slots[#slots + 1] = i end
+    end
+    local list = {}
+    for i, k in ipairs(old) do list[i] = k end
+    if old[slots[#slots]] == move.key then
+        for n = #slots, 2, -1 do list[slots[n]] = old[slots[n - 1]] end
+        list[slots[1]] = move.key
+    else
+        local at = self:QueuePos(move.acct, move.key)
+        if not at then return false end
+        table.remove(list, at)
+        table.insert(list, math.min(slots[1], #list + 1), move.key)
+    end
+    return self:SetQueue(move.acct, list) ~= nil
+end
+
+-- The queue for the points window: { { key, name, class, value = <place> }, ... }, first in line first.
+function Points:QueueStandings(acct, pool)
+    local list = {}
+    for i, key in ipairs(self:Queue(acct, pool)) do
+        local m = GuildOS.db.members and GuildOS.db.members[key]
+        list[i] = { key = key, name = key:match("^([^-]+)") or key, class = (m and m.class) or "", value = i }
+    end
+    return list
+end
+
+-- The queues of a snapshot, as this client keeps them: each read as an entry is.
+local function localQueues(queues)
+    local out = {}
+    for acct, q in pairs(queues) do
+        if type(q) == "table" and type(q.list) == "table" then
+            local list, seen = {}, {}
+            for _, key in ipairs(q.list) do
+                if type(key) == "string" then
+                    key = GuildOS:LocalMemberKey(key)
+                    if not seen[key] then seen[key] = true; list[#list + 1] = key end
+                end
+            end
+            local e = { op = q.op, acct = acct, seq = q.seq, list = list }
+            if queueEntry(e) then out[acct] = e end
+        end
+    end
+    return out
 end
 
 -- The accounts of a snapshot, as this client keeps them: every figure checked, every key its own.
@@ -761,6 +1028,26 @@ function Points:OnSync(env)
             end
         end
         if applied then self:Refresh() end
+    elseif env.act == "qset" and type(d) == "table" and type(d.entries) == "table" then
+        -- The queues' own entries (issue #337), each applied once; the newest order wins.
+        local applied = false
+        for _, e in ipairs(d.entries) do
+            if type(e) == "table" and type(e.op) == "string" and type(e.list) == "table" then
+                local pool = self:GetDBForCore(e.core)
+                if not pool.appliedOps[e.op] then
+                    local list, seen = {}, {}
+                    for _, key in ipairs(e.list) do
+                        if type(key) == "string" then
+                            key = GuildOS:LocalMemberKey(key)
+                            if not seen[key] then seen[key] = true; list[#list + 1] = key end
+                        end
+                    end
+                    applied = self:ApplyQueueEntry({ op = e.op, acct = e.acct, seq = e.seq, list = list }, pool) or applied
+                    self:MarkApplied(e.op, pool)
+                end
+            end
+        end
+        if applied then self:Refresh() end
     elseif env.act == "snapshot" and d then
         local pool = self:GetDBForCore(d.core)
         -- Use a composite revision key so per-core snapshots don't
@@ -782,6 +1069,10 @@ function Points:OnSync(env)
             -- The counters, when the officer's client keeps them (issue #334); one from before says
             -- nothing of them, and they stay as they are here.
             if type(d.accounts) == "table" then pool.accounts = localAccounts(d.accounts) end
+            -- The queues (issue #337): each one's newest order wins, as with its entries.
+            if type(d.queues) == "table" then
+                for _, e in pairs(localQueues(d.queues)) do self:ApplyQueueEntry(e, pool) end
+            end
             GuildOS.SyncService:SetRevision(domain, "standings", env.rev)
             self:Refresh()
         end
@@ -803,6 +1094,7 @@ function Points:BroadcastSnapshot(coreName)
         config   = pool.config,
         standings = pool.standings,
         accounts = pool.accounts,
+        queues   = pool.queues,
     }, { rev = rev })
 end
 
