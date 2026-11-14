@@ -823,7 +823,18 @@ answer("Dee", sid, "OS", 30)
 check(row("Dee").bid == 30, "an off spec bid is its own run of bids")
 LM:ProcessSystemRoll("Cy rolls 100 (1-100)")
 check(row("Cy") == nil, "a /roll is no bid")
+-- An open bid stands. Bo could push Ana up and then pass, leaving Ana to pay a price nobody was
+-- bidding against any more.
+answer("Bo", sid, "PASS")
+check(row("Bo").bid == 55 and row("Bo").rollType == "MS" and sent[#sent] == "NO|" .. sid .. "|Bo|held|0",
+  "whoever holds an open bid cannot pass: " .. sent[#sent])
+answer("Bo", sid, "OS", 60)
+check(row("Bo").bid == 55 and row("Bo").rollType == "MS" and sent[#sent] == "NO|" .. sid .. "|Bo|held|0", "nor move it to another answer")
+check(LM:WhyNot("held"):find("never withdrawn", 1, true), "and is told why")
+answer("Cy", sid, "PASS")
+check(row("Cy").rollType == "PASS", "whoever holds none passes as always")
 answer("Ana", sid, "MS", 70)
+check(row("Ana").bid == 70, "and a bid is still raised on its own answer")
 LM:EndRolling(true)
 res = LM.activeLoot.sortedResults
 check(res[1].name == "Ana" and res[2].name == "Bo" and res[3].name == "Dee", "the highest main spec bid wins, off spec after")

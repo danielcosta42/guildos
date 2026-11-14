@@ -1585,6 +1585,7 @@ function LootMaster:WhyNot(why, n)
     if why == "bid" then return string.format(L["A bid must be a whole number of at least %d."], n or 0) end
     if why == "balance" then return L["That bid is more than the points you hold."] end
     if why == "low" then return string.format(L["That bid is too low: at least %d now."], n or 0) end
+    if why == "held" then return L["Your bid stands: an open bid can be raised, never withdrawn or changed."] end
     if why == "raid" then return L["Only a raid member can answer."] end
     if why == "ml" then return L["You are not the Master Looter."] end
     return L["Not in this roll."]
@@ -1610,6 +1611,15 @@ function LootMaster:TakeAnswerNow(name, key, bid, note)
     local rule = self:Rule()
     local rkey = GuildOS:GetPlayerKey(name)
     note = cleanNote(note)
+
+    -- An open bid stands, as in any open auction: whoever holds one may raise it on the same answer,
+    -- and nothing else. A bidder used to push the price up and then pass, leaving the next one to pay
+    -- a price nobody was bidding against any more. Sealed bids, which nobody sees, change freely.
+    local held = self.rolls[rkey]
+    if held and held.bid and held.rollType ~= "PASS" and key ~= held.rollType
+        and GuildOS.LootRule:HasBids(self:Rule()) and not GuildOS.LootRule:BidRules(self:Rule()) then
+        return nil, "held"
+    end
 
     if key == "PASS" then
         -- Out of the roll, bid and all; the roll already read or drawn stays the player's (KeepRoll)
