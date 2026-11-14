@@ -68,6 +68,9 @@ Chaves curtas porque a regra viaja pelo `GOSROST1` e pela sincronização da gui
   // key: 1 a 8 de [A-Z0-9]. ask: "roll" | "bid" | "none". plus: conta para o contador +1.
   // cost: multiplicador do preço (0 = não paga). note: true exige uma nota.
 
+  // Os lances, quando alguma resposta pede "bid": fechados ou abertos, o lance mínimo e o passo.
+  "bid": { "sealed": false, "min": 10, "step": 1 },
+
   // Quem pode: até 10 filtros. act "block" tira da disputa; "downgrade" troca a resposta from -> to.
   "filters": [
     { "k": "attendance", "min": 50, "act": "downgrade", "from": "MS", "to": "OS" },
@@ -128,3 +131,45 @@ Chaves curtas porque a regra viaja pelo `GOSROST1` e pela sincronização da gui
   // type: "balance" | "counter" | "queue" | "bonus". key: 1 a 8 de [a-z0-9].
 }
 ```
+
+## O que o addon lê do contrato (#334)
+
+`LootRule:Validate` aceita só o que este cliente aplica; o resto do contrato entra com a sua fatia.
+
+- **`responses`** em objeto, `time` e `bid`. `label` tem até 24 bytes, sem `|`, `;` nem caractere de
+  controle (viaja no anúncio e vira texto de botão). `cost` vai de 0 a 10. Campo ausente: `ask = "roll"`,
+  `plus = false`, `cost = 1`, `label = key`.
+- **`order`**: os critérios de antes, `bid` e `account` (com `acct` de uma conta declarada e `dir`).
+- **`accounts`**: só `type = "counter"` (`key`, `name`, `reset`). As chaves `dkp`, `ep` e `gp` são dos
+  pontos e não se declaram.
+- **`effects`**: `add` numa conta contador, aplicado quando a resposta vencedora tem `plus = true`, e
+  no máximo um `charge` com `price` `table` (o preço do item, o padrão), `fixed`, `bid` ou `second`.
+  `second` é o maior lance vencido na mesma resposta mais um passo (`bid.step`), nunca acima do lance
+  do vencedor; sozinho na resposta, o lance mínimo. Todo preço é multiplicado pelo `cost` da resposta.
+- Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid` e `dkpsealed` (fora do retail,
+  que não tem master looter). Escolher um sistema de loot volta à regra pronta dele.
+
+### A resposta pelo addon
+
+Tudo sob o prefixo do LootMaster. Quem respondeu é sempre o remetente que o jogo informa.
+
+| Mensagem | De quem | O quê |
+| --- | --- | --- |
+| `ASK\|sid\|<tempo>,<o\|s\|->,<mín>,<passo>;KEY=<a>Rótulo;...` | master looter, RAID | Os botões, logo antes do anúncio. `<a>`: `r` rolagem, `b` lance, `n` nenhum; maiúscula exige nota |
+| `ANNOUNCE\|link\|segundos\|itemId\|0ou1` | master looter, RAID | O anúncio de sempre, sem mudança |
+| `ANS\|sid\|KEY\|lance\|nota` | raider | RAID; WHISPER ao master looter quando o lance é fechado |
+| `ROLL\|sid\|nome\|KEY\|rolagem` | master looter, RAID | A rolagem que o cliente dele sorteou |
+| `BID\|sid\|nome\|KEY\|lance` | master looter, RAID | Um lance aberto aceito |
+| `ACK\|sid\|nome\|KEY` | master looter, RAID | Resposta recebida (lance fechado, sem rolagem, pass) |
+| `NO\|sid\|nome\|motivo\|número` | master looter, RAID | Resposta recusada |
+
+Versões misturadas: um cliente de antes ignora `ASK` e mostra o popup MS / OS do `ANNOUNCE`, cujo
+`/roll` o master looter novo ainda lê do chat (1-100 é a primeira resposta da regra, 1-99 a segunda);
+um cliente novo que ouve só o `ANNOUNCE` (master looter de antes) mostra o popup de antes, por `/roll`.
+
+### O contador (+1)
+
+Mora no pool de pontos (`pool.accounts[conta] = { rs, per, v }`) e viaja no mesmo log de operações, sob
+a ação própria `cdelta` (um cliente de antes não a lê como pontos), e no snapshot. Cada lançamento diz
+o período em que foi feito: a sessão de raide (noite), a semana do lockout, ou nenhum. Um lançamento de
+período mais novo zera a conta antes de somar; um de período mais velho chega atrasado e não soma.
