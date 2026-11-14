@@ -290,15 +290,35 @@ check(frozen and frozen.model == "dkp" and LM.activeLoot.system == "dkp", "an an
 activate("Beta")
 check(LR:Active().model == "plus1" and LM:Rule() == frozen and LM:System() == "dkp",
   "another core becomes the raid's: the roll in progress keeps the rule it was announced with")
-LM.rolls = {
-  [K("Ana")] = { name = "Ana", rollType = "MS", roll = 99, dkp = 50, accts = { plus1 = 0 } },
-  [K("Bo")] = { name = "Bo", rollType = "MS", roll = 3, dkp = 60, accts = { plus1 = 1 } },
-}
+-- The item is Alpha's to the end: answers read Alpha's balances after the switch, and the award charges
+-- Alpha's pool, moves no counter of Beta's and is kept in Alpha's award log. (This check used to end the
+-- roll over rows written by hand and awarded nothing: the charge went to whichever core was active.)
+check(LM.activeLoot.core == "Alpha", "an announced item holds the core it was announced under")
+LM:RegisterRoll("Ana", "MS", 99)
+LM:RegisterRoll("Bo", "MS", 3)
+check(row("Ana").dkp == 50 and row("Bo").dkp == 60 and P:Get(K("Bo")) == 0, "an answer after the switch reads Alpha's points, not Beta's")
 LM:EndRolling(true)
 check(LM.activeLoot.sortedResults[1].name == "Bo", "and ends by it: points decide, not Beta's +1")
 check(LM:AnswerLabel("MS") == "MS" and LM:RollTime() == 30, "its answers and its time are that rule's")
 check(LR:Set({ v = 1, order = { { k = "roll" } } }, "Alpha") == true and LM:Rule() == frozen,
   "nor does an officer saving another rule change it")
+local betaLog, alphaLog = #CM:GetAwardHistory("Beta"), #CM:GetAwardHistory("Alpha")
+quiet()
+LM:AwardLoot("Bo")
+check(alphaPool.standings[K("Bo")].current == 40 and betaPool.standings[K("Bo")] == nil,
+  "the award charges Alpha's price on Alpha's pool, with Beta the raid's core by then")
+check(betaPool.accounts.plus1.v[K("Bo")] == 1 and alphaPool.accounts == nil, "and moves no +1 of Beta's")
+check(#CM:GetAwardHistory("Alpha") == alphaLog + 1 and #CM:GetAwardHistory("Beta") == betaLog
+  and CM:GetAwardHistory("Alpha")[1].core == "Alpha", "the award is kept in Alpha's award log")
+local toAlpha = false
+for _, pub in ipairs(published) do
+  for _, e in ipairs(pub.act == "delta" and pub.data.entries or {}) do toAlpha = toAlpha or (e.core == "Alpha" and e.delta == -20) end
+end
+check(toAlpha, "and the other officers hear the charge as Alpha's")
+local undone = LM:UndoLastAward()
+check(undone and undone.player == "Bo" and undone.core == "Alpha" and alphaPool.standings[K("Bo")].current == 60
+  and betaPool.standings[K("Bo")] == nil and betaPool.accounts.plus1.v[K("Bo")] == 1,
+  "an undo right after it, with Beta still the raid's, takes that award back from Alpha's pool")
 LR:Set(nil, "Alpha")
 LM:CancelRolling()
 announce()

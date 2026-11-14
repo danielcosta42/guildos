@@ -147,6 +147,22 @@ function LootMaster:System()
     return (loot and loot.system) or (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
 end
 
+-- The core whose points, counters, queues and award log an item belongs to: the raid's when the item
+-- was announced, kept on it like its rule (issue #338). The raid's core changing while a roll is open
+-- used to send the charge, the +1 and the award log to the new core, with the rule and the balances
+-- the order was read from still the old one's.
+function LootMaster:ActiveCore()
+    return GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
+end
+
+-- Runs `fn(...)` on the accounts of the item being given (Points:InCore). With no item, or one that
+-- names no core, on the active core's.
+function LootMaster:InLootCore(fn, ...)
+    local P, loot = GuildOS.Points, self.activeLoot
+    if not (P and P.InCore and loot and loot.core ~= nil) then return fn(...) end
+    return P:InCore(loot.core, fn, ...)
+end
+
 ----------------------------------------------------------------------
 -- Whether the Loot Master module is currently enabled.
 -- Read live from settings so the Settings toggle takes effect at runtime
@@ -298,7 +314,7 @@ function LootMaster:GetPlayerContext(playerName)
     local RT = GuildOS.RaidTracker
     if RT then
         local pKey = GuildOS:GetPlayerKey(playerName, GetRealmName())
-        local core = RT.GetCurrentGroup and RT:GetCurrentGroup()
+        local core = (self.activeLoot and self.activeLoot.core) or (RT.GetCurrentGroup and RT:GetCurrentGroup())
         if core == "" or (core and RT:GetTotal25ManSessions(core) == 0) then core = nil end
         ctx.att25 = RT:GetAttendance25ManPercent(pKey, core) or 0
     end
@@ -748,6 +764,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         sid       = self:NewSessionId(),
         rule      = rule,
         system    = system,
+        core      = self:ActiveCore(),          -- whose accounts and award log this item is given in
         ruleAt    = GuildOS.LootRule:Stamp(),   -- for the award's record (issue #336)
     }
 
@@ -1321,6 +1338,10 @@ end
 ----------------------------------------------------------------------
 function LootMaster:RegisterRoll(name, rollType, roll, extra)
     if not self.activeLoot then return end
+    return self:InLootCore(self.RegisterRollNow, self, name, rollType, roll, extra)
+end
+
+function LootMaster:RegisterRollNow(name, rollType, roll, extra)
     extra = extra or {}
 
     local key = GuildOS:GetPlayerKey(name)
@@ -1532,6 +1553,10 @@ end
 function LootMaster:TakeAnswer(name, key, bid, note)
     local loot = self.activeLoot
     if not loot or loot.ended or loot.delivered then return nil, "closed" end
+    return self:InLootCore(self.TakeAnswerNow, self, name, key, bid, note)
+end
+
+function LootMaster:TakeAnswerNow(name, key, bid, note)
     local LR = GuildOS.LootRule
     local rule = self:Rule()
     local rkey = GuildOS:GetPlayerKey(name)
@@ -1853,6 +1878,11 @@ function LootMaster:AwardLoot(playerName, silent, free)
         GuildOS:Print(L["You are not the Master Looter."])
         return
     end
+    -- Everything the award reads and writes is the core's the item was announced under.
+    return self:InLootCore(self.AwardLootNow, self, playerName, silent, free)
+end
+
+function LootMaster:AwardLootNow(playerName, silent, free)
 
     local itemLink = self.activeLoot.link
     -- The winner's answer, when the item was rolled for: what it costs and whether it counts for the
@@ -1923,9 +1953,11 @@ function LootMaster:AwardLoot(playerName, silent, free)
 
     -- Save to LootMaster's own award log (for undo / ML reference)
     local awardedAt = GetServerTime()
-    local awardHistory = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory()
+    local lootCore = self.activeLoot.core
+    local awardHistory = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory(lootCore)
                          or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
     local award = {
+        core = lootCore,   -- an undo gives back into the accounts the award took from
         link = itemLink,
         itemId = itemId,
         player = playerName,
@@ -1933,6 +1965,7 @@ function LootMaster:AwardLoot(playerName, silent, free)
         received = awarded,
     }
     table.insert(awardHistory, 1, award)
+    self.lastAwardCore = lootCore
     while #awardHistory > 200 do
         table.remove(awardHistory)
     end
@@ -2122,13 +2155,22 @@ end
 LootMaster.ForgetAward = forgetAward
 
 -- The newest award not undone yet, and its place in the log.
+-- Looked for in the active core's log and in the log of the core this client last awarded in: an item
+-- given in the core it was announced under, after another became the raid's, is still the last award.
 function LootMaster:LastAward()
-    local history = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory()
-                    or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
-    for _, a in ipairs(history) do
-        if not a.undone then return a end
+    local CM = GuildOS.CoreManager
+    local best
+    local function look(history)
+        for _, a in ipairs(history or {}) do
+            if not a.undone then
+                if not best or (a.timestamp or 0) > (best.timestamp or 0) then best = a end
+                return
+            end
+        end
     end
-    return nil
+    if CM and self.lastAwardCore ~= nil then look(CM:GetAwardHistory(self.lastAwardCore)) end
+    look(CM and CM:GetAwardHistory() or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory))
+    return best
 end
 
 -- Returns the award taken back, or nil and why.
@@ -2138,24 +2180,28 @@ function LootMaster:UndoLastAward()
     if not award then return nil, L["No award to undo."] end
     award.undone = true
     forgetAward(award.player, award.itemId, award.timestamp)
-    -- Given back as it was taken: never held to a cap, and off the GP in EPGP (issues #309, #319).
-    local undoLabel = L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link)
-    if award.charged and award.charged > 0 and award.chargedKey and GuildOS.Points then
-        GuildOS.Points:Refund(award.chargedKey, award.charged, undoLabel)
+    -- Into the accounts of the core the award was made in (issue #338), whatever core is the raid's now.
+    local function giveBack()
+        -- Given back as it was taken: never held to a cap, and off the GP in EPGP (issues #309, #319).
+        local undoLabel = L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link)
+        if award.charged and award.charged > 0 and award.chargedKey and GuildOS.Points then
+            GuildOS.Points:Refund(award.chargedKey, award.charged, undoLabel)
+        end
+        -- And what each roller paid to enter the roll.
+        for _, paid in ipairs(GuildOS.Points and award.paid or {}) do
+            GuildOS.Points:Refund(paid.key, paid.amount, undoLabel)
+        end
+        -- And the +1 it counted (issue #334), off the night it was added in.
+        for _, plus in ipairs(GuildOS.Points and award.plus or {}) do
+            GuildOS.Points:AddCounter(plus.acct, plus.key, -plus.value, plus.reset, plus.per)
+        end
+        -- And what it shared among the raid (zero-sum) and the place it took in a queue (issue #337).
+        if GuildOS.Points and award.split then GuildOS.Points:UndoSplit(award.split, undoLabel) end
+        for i = #(GuildOS.Points and award.queue or {}), 1, -1 do
+            GuildOS.Points:QueueUndo(award.queue[i])
+        end
     end
-    -- And what each roller paid to enter the roll.
-    for _, paid in ipairs(GuildOS.Points and award.paid or {}) do
-        GuildOS.Points:Refund(paid.key, paid.amount, undoLabel)
-    end
-    -- And the +1 it counted (issue #334), off the night it was added in.
-    for _, plus in ipairs(GuildOS.Points and award.plus or {}) do
-        GuildOS.Points:AddCounter(plus.acct, plus.key, -plus.value, plus.reset, plus.per)
-    end
-    -- And what it shared among the raid (zero-sum) and the place it took in a queue (issue #337).
-    if GuildOS.Points and award.split then GuildOS.Points:UndoSplit(award.split, undoLabel) end
-    for i = #(GuildOS.Points and award.queue or {}), 1, -1 do
-        GuildOS.Points:QueueUndo(award.queue[i])
-    end
+    if GuildOS.Points and GuildOS.Points.InCore then GuildOS.Points:InCore(award.core, giveBack) else giveBack() end
     for i = #(self.pendingTrades or {}), 1, -1 do
         local t = self.pendingTrades[i]
         if t.player == award.player and t.itemId == award.itemId then
@@ -2882,6 +2928,7 @@ end
 ----------------------------------------------------------------------
 function LootMaster:SetActiveLoot(link, slot, itemId)
     self.activeLoot = {
+        core      = self:ActiveCore(),
         link      = link,
         slot      = slot,
         itemId    = itemId,

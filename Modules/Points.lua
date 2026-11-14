@@ -72,9 +72,30 @@ local QUEUE_KEY_MAX = 64          -- bytes of a player's key in a queue
 ----------------------------------------------------------------------
 function Points:GetDB()
     if GuildOS.CoreManager then
-        return GuildOS.CoreManager:GetPointsDB()
+        return GuildOS.CoreManager:GetPointsDB(self.scope)
     end
     return GuildOS.db.points
+end
+
+-- The core whose pool is being read and written: the raid's active one, or the one `InCore` names.
+function Points:ActiveCore()
+    if self.scope ~= nil then return self.scope end
+    return GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
+end
+
+-- Runs `fn(...)` with the pool of the core `coreName` ("" is the guild's own) as the one every read,
+-- charge, counter and queue of this module works on, whatever core is the raid's by then; entries are
+-- tagged with it, so the other officers' clients route them to the same pool. An item is announced
+-- under one core and is given, paid for and undone in that core's accounts (LootMaster, issue #338).
+-- nil runs `fn` on the active core, as everything outside a roll does.
+function Points:InCore(coreName, fn, ...)
+    if coreName == nil then return fn(...) end
+    local was = self.scope
+    self.scope = coreName
+    local ok, a, b, c = pcall(fn, ...)
+    self.scope = was
+    if not ok then error(a, 0) end
+    return a, b, c
 end
 
 -- Returns the points DB for a specific core (used during sync routing).
@@ -193,7 +214,7 @@ function Points:MakeEntry(key, delta, reason, kind)
     local short = GuildOS.Client.isRetail and key or (key:match("^([^-]+)") or key)
     local class = (GuildOS.db.members[key] and GuildOS.db.members[key].class) or ""
     -- Tag with the active core so receivers can route to the right pool
-    local coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
+    local coreName = self:ActiveCore()
     return {
         op = newOp(), key = key, name = short, class = class,
         delta = delta, reason = reason or "", kind = kind or "adjust",
@@ -896,7 +917,7 @@ function Points:SetQueue(acct, list)
     local e = {
         op = newOp(), acct = acct, seq = (q and q.seq or 0) + 1, list = list,
         author = GuildOS.Compat.PlayerName(), ts = GetServerTime(),
-        core = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or "",
+        core = self:ActiveCore(),
     }
     if not self:ApplyQueueEntry(e, pool) then return nil end
     self:MarkApplied(e.op, pool)
@@ -1120,7 +1141,7 @@ end
 function Points:BroadcastSnapshot(coreName)
     if not GuildOS:IsOfficer() then return end
     if not GuildOS.SyncService then return end
-    if coreName == nil then coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or "" end
+    if coreName == nil then coreName = self:ActiveCore() end
     local pool  = poolOf(coreName)
     local domain = (coreName ~= "") and ("points:" .. coreName) or "points"
     local rev = GuildOS.SyncService:NextRevision(domain, "standings")
