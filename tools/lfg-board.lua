@@ -78,28 +78,10 @@ GuildOS.Print = function(_, msg) printed[#printed + 1] = msg end
 local locked = false
 GuildOS.Compat.InChatLockdown = function() return locked end
 
--- The widgets the board builds, by label.
-local boxes, buttons = {}, {}
-GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
-GuildOS.UI = {
-  StylePopup = function() end,
-  CreateTitle = function() return widget() end,
-  CreateCloseButton = function() return widget() end,
-  CreateText = function() return widget() end,
-  CreateSeparator = function() return widget() end,
-  CreateScrollFrame = function() return widget(), widget() end,
-  CreateButton = function(_, _, label)
-    local b = widget({ label = widget() })
-    buttons[label] = b
-    return b
-  end,
-  CreateCheckbox = function(_, _, label)
-    local cb = widget()
-    function cb:SetChecked(v) self.checked = v end
-    boxes[label] = widget({ checkbox = cb })
-    return boxes[label]
-  end,
-}
+-- The board is drawn by the Groups tab (issue #341): what is left of the interface here is its opener.
+local opened
+GuildOS.UI = { OpenWindow = function(_, id, sub) opened = id .. "/" .. tostring(sub); return true end }
+dofile(ADDON .. "/Data/GroupActivities.lua")
 
 local Board = GuildOS.LFGBoard
 local function fresh(prefs)
@@ -211,20 +193,56 @@ check(#said == 1, "the line went")
 Board:HandleEntry("Bea-Realm", wire[1])
 check(#printed == 1, "and the notice is told all the same")
 
--- The click: the real board, its real button and box
+-- The roles and the activities of a listing (issue #341)
 fresh(nil)
-Board:Show()
-local box, action = boxes["Also post in guild chat"].checkbox, buttons["I'm available"]
-check(box.checked == true, "the box opens ticked")
-action.scripts.OnClick(action)
-check(#said == 1, "a click with the box ticked speaks")
-action.scripts.OnClick(action)
-check(not onTheBoard(), "the second click takes the post down")
-box:onChanged(nil)   -- what GetChecked gives on TBC when it is off
-check(GuildOS.db.lfgPrefs.postToGuild == false, "unticking is remembered")
-NOW = NOW + 300
-action.scripts.OnClick(action)
-check(onTheBoard(), "a click with the box unticked still posts")
-check(#said == 1, "and says nothing in chat")
+Board:SetAvailable(nil, "run", 3600, true, "DT", { "karazhan", "karazhan", "BAD ID", 7, "steamvault" })
+local mine = Board:Mine()
+check(mine.roles == "TD", "the roles are a set, written in one order: " .. mine.roles)
+check(mine.role == "ANY", "two roles are no single role for a client before #341")
+check(#mine.acts == 2 and mine.acts[1] == "karazhan" and mine.acts[2] == "steamvault",
+  "the activities are known ids, each once")
+check(wire[#wire].role == "ANY" and wire[#wire].roles == "TD" and #wire[#wire].acts == 2,
+  "both go out beside what an older client reads")
+check(said[1].msg == "[Guild OS] LFG: Karazhan, The Steamvault: run", "and the line in chat names them: " .. said[1].msg)
+check(GuildOS.db.lfgPrefs.roles == "TD", "the roles are remembered")
+
+fresh(nil)
+Board:SetAvailable(nil, "", 3600, true, "H", { "karazhan" })
+check(Board:Mine().role == "HEALER", "one role is the role an older client shows")
+check(said[1].msg == "[Guild OS] LFG as Healer: Karazhan", "no note, no dangling colon: " .. said[1].msg)
+
+fresh(nil)
+Board:SetAvailable(nil, "x", 3600, false, "", {})
+check(Board:Mine().roles == "" and Board:Mine().role == "ANY", "no role is any role")
+
+-- The other end
+fresh(nil)
+Board:HandleEntry("Bea-Realm", { role = "HEALER", note = "x", ttl = 3600 })
+local bea = GuildOS.db.lfgBoard[GuildOS:GetPlayerKey("Bea", "Realm")]
+check(bea.roles == "H" and #bea.acts == 0, "a listing from before #341 has the one role it named")
+Board:HandleEntry("Cid-Realm", { role = "TANK", roles = "|cffD|rHX", note = "x", ttl = 3600,
+  acts = { "karazhan", "|cffEVIL", "UPPER", string.rep("a", 40), "a", "b", "c", "d", "e", "f", "g" } })
+local cid = GuildOS.db.lfgBoard[GuildOS:GetPlayerKey("Cid", "Realm")]
+check(cid.roles == "HD", "forged roles keep only the letters that are roles: " .. cid.roles)
+check(#cid.acts == 6 and cid.acts[1] == "karazhan" and cid.acts[2] == "a", "forged activities are dropped and capped at six")
+Board:HandleEntry("Dan-Realm", { role = "DPS", roles = 7, acts = "karazhan", note = "x", ttl = 3600 })
+local dan = GuildOS.db.lfgBoard[GuildOS:GetPlayerKey("Dan", "Realm")]
+check(dan.roles == "D" and #dan.acts == 0, "junk in the new fields falls back to the old ones")
+local rows = Board:ActiveList(GuildOS.db.lfgBoard, NOW)
+check(#rows == 3 and rows[1].roles ~= nil and rows[1].acts ~= nil, "a row carries its roles and activities")
+check(Board:Describe({ acts = { "karazhan", "from-a-newer-version" }, note = "" }) == "Karazhan, Another activity",
+  "an id only a newer version has is some other activity")
+
+-- The few choices kept between sessions
+fresh(nil)
+check(Board:SetPref("postToGuild", false) and Board:Pref("postToGuild") == false, "the box is remembered")
+check(not Board:SetPref("postToGuild", "yes") and not Board:SetPref("notify", false) and not Board:SetPref("lastGuildLine", 0),
+  "only the panel's own choices, and only of their type")
+check(Board:SetPref("roles", "DxT") and Board:Pref("roles") == "TD", "the roles are sanitised on the way in")
+
+-- /gos avail opens the tab
+fresh(nil)
+Board:HandleCommand({}, "")
+check(opened == "groups/active", "the board is the Groups tab's Active view: " .. tostring(opened))
 
 print(checks .. " checks ok")

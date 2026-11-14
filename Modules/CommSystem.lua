@@ -27,6 +27,8 @@ CommSystem.MSG_TYPES = {
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
     RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
     LFG       = "LG",    -- member self-declared LFG availability (sender bound)
+    LFG_GROUP = "LP",    -- a group being formed (sender bound; GUILD only; issue #341)
+    LFG_JOIN  = "LJ",    -- a request for a spot and its answer (WHISPER only; issue #341)
     RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
                          -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
     MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD-only; clamped)
@@ -362,6 +364,10 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
         if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:HandleSelfClaim(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.LFG then
         if GuildOS.LFGBoard then GuildOS.LFGBoard:HandleEntry(sender, data) end
+    elseif msgType == CommSystem.MSG_TYPES.LFG_GROUP then
+        if GuildOS.Groups then GuildOS.Groups:HandleGroup(sender, data, channel) end
+    elseif msgType == CommSystem.MSG_TYPES.LFG_JOIN then
+        if GuildOS.Groups then GuildOS.Groups:HandleJoin(sender, data, channel) end
     elseif msgType == CommSystem.MSG_TYPES.RAID_DATA then
         if GuildOS:IsOfficer() and channel == "GUILD" and GuildOS:IsOfficerByName(sender) and GuildOS.RaidTracker then
             GuildOS.RaidTracker:HandleIncoming(data)
@@ -593,6 +599,12 @@ function CommSystem:_Answer()
         if GuildOS.LFGBoard and GuildOS.LFGBoard:AmAvailable() then
             C_Timer.After(3.5, function()
                 GuildOS.LFGBoard:Rebroadcast()
+            end)
+        end
+        -- And a leader with the group they are forming (issue #341), for the same reason.
+        if GuildOS.Groups and GuildOS.Groups:Mine() then
+            C_Timer.After(4, function()
+                GuildOS.Groups:Rebroadcast()
             end)
         end
 

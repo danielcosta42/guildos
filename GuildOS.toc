@@ -134,6 +134,8 @@ Modules\Mentions.lua
 Modules\NoteCommand.lua
 Modules\LevelQuery.lua
 Modules\LFGBoard.lua
+Data\GroupActivities.lua
+Modules\Groups.lua
 Modules\GuildMap.lua
 Modules\PugInspector.lua
 
@@ -173,5 +175,6 @@ UI\Onboarding.lua
 UI\Founding.lua
 UI\JournalPanel.lua
 UI\AchievementsPanel.lua
+UI\GroupsPanel.lua
 UI\RaidHUD.lua
 UI\Features.lua

@@ -171,6 +171,12 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
   gets a popup with a sound and can answer *On my way*, and a guild chat line goes out for the rest
 - **Alliances**: link allied guilds for a shared chat, bulletin and crafter directory
 
+## 🧭 Groups: your guild's own group finder
+
+- The game's dungeons and raids as tiles, with how many groups and players each one has right now
+- List yourself as looking, for one or several activities and the roles you play
+- Form a group with its open spots by role; guildmates ask for a spot and the leader invites from the queue
+
 ## 📣 Guild recruitment and trials
 
 - A recruiting message that comes back on your interval and goes out with one click (Blizzard requires the click).

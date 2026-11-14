@@ -1047,6 +1047,63 @@ function Compat.InviteUnit(name)
     if InviteByName then return InviteByName(name) end
 end
 
+-- An instance's name in the player's own language, by its map id, or nil where the client does not
+-- know the instance (issue #341). Never a secret value: it is shown and compared.
+function Compat.InstanceName(mapID)
+    if not GetRealZoneText or type(mapID) ~= "number" then return nil end
+    local ok, name = pcall(GetRealZoneText, mapID)
+    if ok and type(name) == "string" and name ~= "" and not Compat.IsSecret(name) then return name end
+    return nil
+end
+
+-- Whether the client has this texture file. A path it does not have draws a green square, so art
+-- that is only a guess at the client's files is drawn when this answers true and never otherwise:
+-- with no way to ask, the answer is no (issue #341).
+function Compat.TextureExists(path)
+    if not GetFileIDFromPath or type(path) ~= "string" then return false end
+    local ok, id = pcall(GetFileIDFromPath, path)
+    return ok and type(id) == "number" and id > 0
+end
+
+-- Who is in my party or raid besides me, as a set of player keys, and how many of us there are (1
+-- alone). A member whose name the client will not tell yet is counted and not named. On WoW: Forever
+-- nobody has seen whether a unit's name carries the surname, joined or in the realm's slot (issue
+-- #48), so each member is also there under "~" and their first name, for Compat.InGroup (issue #341).
+function Compat.GroupRoster()
+    local members, count = {}, 1
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then return members, count end
+    local raid = IsInRaid and IsInRaid()
+    local surnames = GuildOS.Client.has.surnames
+    local me = Compat.PlayerName()
+    count = n
+    for i = 1, raid and n or (n - 1) do
+        local name, second = Compat.UnitIdentity((raid and "raid" or "party") .. i)
+        if type(name) == "string" and name ~= "" then
+            if type(second) ~= "string" or second == "" then second = nil end
+            local whole, realm = name, second
+            if surnames then
+                whole, realm = (second and not name:find(" ", 1, true)) and (name .. " " .. second) or name, nil
+            end
+            if whole ~= me then
+                local key = GuildOS:GetPlayerKey(whole, realm or GetRealmName())
+                if key then members[key] = true end
+                if surnames then members["~" .. (whole:match("^%S+") or whole)] = true end
+            end
+        end
+    end
+    return members, count
+end
+
+-- Whether the player of this key is in a roster Compat.GroupRoster gave. On WoW: Forever the first
+-- name decides when the whole name does not match: a guildmate who shares it would read as there,
+-- and a spot left open by mistake is worse than one closed a moment early.
+function Compat.InGroup(members, key)
+    if members[key] then return true end
+    if not GuildOS.Client.has.surnames then return false end
+    return members["~" .. (key:match("^([^%s%-]+)") or key)] == true
+end
+
 -- Remove somebody from the group: C_PartyInfo's where the client has it, the old global otherwise
 -- (issue #292, as InviteUnit above).
 function Compat.UninviteUnit(name)
