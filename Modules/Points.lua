@@ -22,6 +22,11 @@
 --   * EPGP: EP is what was earned, GP what was spent, priority is EP / (GP + base GP), an item's GP
 --     comes from its slot and item level or from the guild's own table, and decay takes both.
 --
+-- Counter accounts (issue #334): a second kind of account beside the points, a small whole number per
+-- character that an award adds to and that goes back to nothing each raid night, each lockout or
+-- never (the "+1" of MS > OS +1). They live in the pool, travel in the same op log under their own
+-- action ("cdelta": a client from before reads no counter as points) and in the snapshot.
+--
 -- On retail too since issue #185: boss-kill EP, awards, decay and standings as anywhere else. With no
 -- Master Loot there, an item is charged when an award by trade is recorded (TradeCouncil).
 ----------------------------------------------------------------------
@@ -47,6 +52,9 @@ local SLOT_GP = {
     INVTYPE_WEAPON = 1.5, INVTYPE_WEAPONMAINHAND = 1.5, INVTYPE_WEAPONOFFHAND = 0.5,
 }
 local GP_ILVL_STEP = 26           -- item levels in which an item's GP doubles
+local NIGHT = 43200               -- seconds: two counter entries closer than this are the same raid night
+local COUNTER_MAX = 100           -- the most one entry moves a counter by
+local COUNTER_RESETS = { never = true, night = true, lockout = true }
 
 ----------------------------------------------------------------------
 -- Active pool resolver
@@ -560,6 +568,105 @@ function Points:ChargeEntry(asked, winnerKey, itemName)
 end
 
 ----------------------------------------------------------------------
+-- Counter accounts (issue #334)
+-- pool.accounts[acct] = { rs = "night"|"lockout"|"never", per = <period>, v = { [key] = n } }
+-- Every entry names the period it was made in. An entry of a newer period empties the account before
+-- it adds; one of an older period is late and adds nothing, so every client ends on the same figures
+-- in whatever order the entries reach it.
+----------------------------------------------------------------------
+-- The period `now` falls in: the raid session's start for a night (or the moment itself with no
+-- session on), the lockout week, and one period for ever.
+function Points:CounterPeriod(reset, now)
+    now = now or GetServerTime()
+    if reset == "lockout" then
+        local RT = GuildOS.RaidTracker
+        return (RT and RT.GetWeekNum) and RT:GetWeekNum(now) or math.floor(now / WEEK)
+    elseif reset == "night" then
+        local raid = GuildOS.RaidTracker and GuildOS.RaidTracker.currentRaid
+        return (raid and tonumber(raid.startTime)) or now
+    end
+    return 0
+end
+
+local function samePeriod(reset, a, b)
+    if reset == "night" then return math.abs(a - b) < NIGHT end
+    return a == b
+end
+
+-- What `key` holds on the counter `acct`: nothing once its period is over.
+function Points:Counter(acct, key, pool)
+    pool = pool or self:GetDB()
+    local a = pool.accounts and pool.accounts[acct]
+    if not a then return 0 end
+    local now = self:CounterPeriod(a.rs)
+    if now > a.per and not samePeriod(a.rs, now, a.per) then return 0 end
+    return a.v[key] or 0
+end
+
+-- Whether `e` is a counter entry this client can apply: a peer's are read as carefully as its own.
+local function counterEntry(e)
+    return type(e) == "table" and type(e.key) == "string" and e.key ~= ""
+        and type(e.acct) == "string" and #e.acct <= 8 and e.acct:find("^[a-z0-9]+$") ~= nil
+        and COUNTER_RESETS[e.rs] == true
+        and type(e.per) == "number" and e.per >= 0 and e.per < math.huge
+        and type(e.delta) == "number" and e.delta == math.floor(e.delta)
+        and e.delta ~= 0 and math.abs(e.delta) <= COUNTER_MAX
+end
+
+function Points:ApplyCounterEntry(e, pool)
+    if not counterEntry(e) then return false end
+    pool = pool or self:GetDB()
+    pool.accounts = pool.accounts or {}
+    local a = pool.accounts[e.acct]
+    if not a or a.rs ~= e.rs then
+        -- A new account, or one whose rule now resets another way: it starts over.
+        a = { rs = e.rs, per = e.per, v = {} }
+        pool.accounts[e.acct] = a
+    elseif not samePeriod(a.rs, e.per, a.per) then
+        if e.per < a.per then return false end
+        a.per, a.v = e.per, {}
+    end
+    local n = (a.v[e.key] or 0) + e.delta
+    a.v[e.key] = n > 0 and n or nil
+    return true
+end
+
+-- Add `delta` (negative to give back) to `key` on the counter `acct`, which resets the way `reset`
+-- says. `per` is the period of the entry being undone; nil is now. Kept here whoever awards, and told
+-- to the guild when an officer does. Returns the entry, for an undo.
+function Points:AddCounter(acct, key, delta, reset, per)
+    local e = self:MakeEntry(key, delta, "", "counter")
+    e.acct, e.rs = acct, COUNTER_RESETS[reset] and reset or "never"
+    e.per = per or self:CounterPeriod(e.rs)
+    if not self:ApplyCounterEntry(e) then return nil end
+    self:MarkApplied(e.op)
+    if GuildOS:IsOfficer() and GuildOS.SyncService then
+        GuildOS.SyncService:Publish("points", "cdelta", { entries = { e } })
+    end
+    self:Refresh()
+    return e
+end
+
+-- The accounts of a snapshot, as this client keeps them: every figure checked, every key its own.
+local function localAccounts(accounts)
+    local out = {}
+    for acct, a in pairs(accounts) do
+        if type(acct) == "string" and acct:find("^[a-z0-9]+$") and #acct <= 8 and type(a) == "table"
+            and COUNTER_RESETS[a.rs] and type(a.per) == "number" and type(a.v) == "table" then
+            local v = {}
+            for key, n in pairs(a.v) do
+                if type(key) == "string" and type(n) == "number" and n > 0 and n < math.huge then
+                    key = GuildOS:LocalMemberKey(key)
+                    v[key] = (v[key] or 0) + math.floor(n)
+                end
+            end
+            out[acct] = { rs = a.rs, per = a.per, v = v }
+        end
+    end
+    return out
+end
+
+----------------------------------------------------------------------
 -- Sync (domain "points")
 -- Delta entries carry a `core` field so receivers route them to the
 -- right pool. Snapshots carry `core` in the payload.
@@ -576,6 +683,20 @@ function Points:OnSync(env)
                 self:ApplyEntry(e, pool)
                 self:MarkApplied(e.op, pool)
                 applied = true
+            end
+        end
+        if applied then self:Refresh() end
+    elseif env.act == "cdelta" and type(d) == "table" and type(d.entries) == "table" then
+        -- The counters' own entries (issue #334), each applied once like the points'.
+        local applied = false
+        for _, e in ipairs(d.entries) do
+            if type(e) == "table" and type(e.key) == "string" and type(e.op) == "string" then
+                e.key = GuildOS:LocalMemberKey(e.key)
+                local pool = self:GetDBForCore(e.core)
+                if not pool.appliedOps[e.op] then
+                    applied = self:ApplyCounterEntry(e, pool) or applied
+                    self:MarkApplied(e.op, pool)
+                end
             end
         end
         if applied then self:Refresh() end
@@ -597,6 +718,9 @@ function Points:OnSync(env)
                     return a
                 end)
             end
+            -- The counters, when the officer's client keeps them (issue #334); one from before says
+            -- nothing of them, and they stay as they are here.
+            if type(d.accounts) == "table" then pool.accounts = localAccounts(d.accounts) end
             GuildOS.SyncService:SetRevision(domain, "standings", env.rev)
             self:Refresh()
         end
@@ -617,6 +741,7 @@ function Points:BroadcastSnapshot()
         mode     = pool.mode,
         config   = pool.config,
         standings = pool.standings,
+        accounts = pool.accounts,
     }, { rev = rev })
 end
 

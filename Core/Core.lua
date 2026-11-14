@@ -1190,11 +1190,17 @@ end
 -- lists, "dkp" = the Points economy.
 ----------------------------------------------------------------------
 -- `retail = false`: not offered on retail. That's My BiS is Classic only (issue #185).
+-- "plus1", "dkpbid" and "dkpsealed" (issue #334) are ready-made loot rules of the loot master
+-- (LootRule:FromLegacy), which retail does not have: the +1 counter, and DKP won by an open bid or by
+-- a sealed one that pays the second price.
 GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
+    { key = "plus1",    label = "MS > OS +1", retail = false },
     { key = "tmb",      label = "TMB", retail = false },
     { key = "wishlist", label = "Wishlist" },
     { key = "dkp",      label = "DKP / Points" },
+    { key = "dkpbid",   label = "DKP bidding", retail = false },
+    { key = "dkpsealed", label = "DKP sealed second-price", retail = false },
     { key = "epgp",     label = "EPGP" },
     { key = "external", label = "External / Off" },
 }
@@ -1216,6 +1222,8 @@ end
 -- received a tradeable item awards it to the raid's best answer (TradeCouncil, issue #185).
 function GuildOS:LootSystemLabel(sys)
     if sys.key == "rolls" and self.Client.isRetail then return L["Free roll"] end
+    if sys.key == "dkpbid" then return L["DKP bidding"] end
+    if sys.key == "dkpsealed" then return L["DKP sealed second-price"] end
     return sys.label
 end
 
@@ -1240,7 +1248,14 @@ function GuildOS:SetLootSystem(sys)
     if self.Points and self.Points.GetMode and self.db and self.db.points and self:IsOfficer() then
         local mode = self.Points:GetMode()
         if sys == "epgp" and mode ~= "epgp" then self.Points:SetMode("epgp")
-        elseif sys == "dkp" and mode == "epgp" then self.Points:SetMode("dkp") end
+        elseif (sys == "dkp" or sys == "dkpbid" or sys == "dkpsealed") and mode == "epgp" then
+            self.Points:SetMode("dkp")
+        end
+    end
+    -- A loot system is a ready-made loot rule: choosing one puts its rule in force again, over the
+    -- changes an officer had made to the one before (issue #334).
+    if self.LootRule and self.db and self.db.settings and self.db.settings.lootRule ~= nil and self:IsOfficer() then
+        self.LootRule:Set(nil)
     end
     -- On retail the system decides who may award an offered item, on every member's client: an
     -- officer's choice is stamped and published, as the officer threshold is (issue #185).
@@ -1296,9 +1311,10 @@ function GuildOS:LootSystemShowsWishlist()
 end
 
 -- Whether the guild's loot system runs on the points economy: DKP, or EPGP (issue #319).
+-- And DKP by bids (issue #334), which spends the same points.
 function GuildOS:LootSystemUsesPoints()
     local s = self:GetLootSystem()
-    return s == "dkp" or s == "epgp"
+    return s == "dkp" or s == "epgp" or s == "dkpbid" or s == "dkpsealed"
 end
 
 function GuildOS:LootSystemShowsDKP()

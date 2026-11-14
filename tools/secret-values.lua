@@ -121,7 +121,7 @@ end
 dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
-for _, m in ipairs({ "DataCollector", "SpecChecker", "LootMaster", "Mentions", "NoteCommand", "RosterLog",
+for _, m in ipairs({ "DataCollector", "SpecChecker", "LootRule", "LootMaster", "Mentions", "NoteCommand", "RosterLog",
                      "RecruitScanner", "BanList", "RecruitmentSystem", "RaidTracker", "SoftResSystem", "GuildChat" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
