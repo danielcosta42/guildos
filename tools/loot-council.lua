@@ -227,6 +227,29 @@ GuildOS.db.settings.officerMaxRank = 0
 check(not LC:IsMember("Bo", {}) and LC:IsMember("Lead", {}), "wherever the guild put that threshold")
 GuildOS.db.settings.officerMaxRank = nil
 check(not LC:IsMember("", { ranks = { 0 } }) and not LC:IsMember(nil, { ranks = { 0 } }) and not LC:IsMember("Ana", nil), "nobody is nobody's member")
+-- WoW: Forever: every character is "Name Surname". A council member is named whole, with the space;
+-- a first name alone is a member's only while one raider has it, and never two people's.
+check(LR:Validate(councilRule({ names = { "Ana Lima", "Fay" } })), "a member named by first name and surname is a rule this client reads")
+for _, bad in ipairs({ "Ana  Lima", " Ana", "Ana ", "Ana,Lima", "Ana\tLima", "" }) do
+  check(not LR:Validate(councilRule({ names = { bad } })), "refused: a member named [" .. bad .. "]")
+end
+GuildOS.Client.has.surnames = true
+raid = { "Lead", "Ana Lima", "Ana Costa", "Cy Prado", "Dee", "Fay" }
+check(LC:IsMember("Ana Lima", { names = { "Ana Lima" } }) and LC:IsMember("ana lima", { names = { "Ana Lima" } }), "Forever: a member by whole name")
+check(not LC:IsMember("Ana Costa", { names = { "Ana Lima" } }), "Forever: another raider with the same first name is not that member")
+check(not LC:IsMember("Ana Lima", { names = { "Ana" } }) and not LC:IsMember("Ana Costa", { names = { "Ana" } }),
+  "Forever: a first name two raiders share names neither")
+check(LC:IsMember("Cy Prado", { names = { "Cy" } }) and LC:IsMember("Cy", { names = { "Cy Prado" } }),
+  "Forever: a first name only one raider has is theirs, whichever side holds it alone")
+LR:Set(councilRule({ ranks = { 0 } }))
+check(LR:SetCouncilField("names", "Ana Lima,  Cy   Prado ,Ana Lima") == true and LR:Active().decide.council.names[1] == "Ana Lima"
+  and LR:Active().decide.council.names[2] == "Cy Prado" and #LR:Active().decide.council.names == 2,
+  "Forever: the names an officer types are split at commas, each kept whole")
+GuildOS.Client.has.surnames = false
+check(LR:SetCouncilField("names", "Ana Bo, Cy") == true and #LR:Active().decide.council.names == 3,
+  "elsewhere a space still tells two names apart, as it always did")
+LR:Set(nil)
+raid = { "Lead", "Ana", "Bo", "Cy", "Dee", "Fay" }
 
 -- ── 2. A vote, start to finish ──────────────────────────────────────
 night(councilRule({ ranks = { 0, 1 }, quorum = 2 }))

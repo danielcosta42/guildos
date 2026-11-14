@@ -72,13 +72,31 @@ local function myName()
     return GuildOS.Compat.PlayerName() or ""
 end
 
+-- How many raiders have `first` as their first name.
+local function raidersNamed(first)
+    local n = 0
+    first = strlower(first)
+    for i = 1, GetNumGroupMembers() or 0 do
+        local name = GuildOS.Compat.UnitIdentity("raid" .. i)
+        local theirs = name and name:match("^%S+")
+        if theirs and strlower(theirs) == first then n = n + 1 end
+    end
+    return n
+end
+
 -- Whether two names are the same player's. On a client with surnames one side may hold the first
--- name alone (issue #48).
+-- name alone (issue #48): the first name then decides, but only when it can be nobody else's. Two whole
+-- names that differ are two players, and a first name two raiders share is neither's: "Ana Lima" on a
+-- council never made "Ana Costa" a member, a candidate or the owner of her vote.
 local function sameName(a, b)
     if a == b then return true end
     if not (a and b) then return false end
     if strlower(a) == strlower(b) then return true end
-    return GuildOS.Client.has.surnames and a:match("^%S+") == b:match("^%S+") or false
+    if not GuildOS.Client.has.surnames then return false end
+    if a:find(" ", 1, true) and b:find(" ", 1, true) then return false end
+    local firstA, firstB = a:match("^%S+"), b:match("^%S+")
+    if not (firstA and firstB) or strlower(firstA) ~= strlower(firstB) then return false end
+    return raidersNamed(firstA) <= 1
 end
 
 ----------------------------------------------------------------------

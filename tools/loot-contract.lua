@@ -688,7 +688,12 @@ reads(rule({ decide = { by = "council" } }), "a council (the guild's officers, w
 reads(rule({ decide = { by = "auto", council = { ranks = { 0, 1 }, names = {}, anon = false, self = false, note = false, quorum = 2 } } }),
   "a council's settings beside another decider, as the contract writes them")
 no(rule({ decide = { by = "council", council = { ranks = { 10 } } } }), "decide", "a rank no guild has")
-no(rule({ decide = { by = "council", council = { names = { "Ana Bo" } } } }), "decide", "a name that is two")
+-- (This check used to refuse any name with a space, "a name that is two": on WoW: Forever every
+-- character is a first name and a surname, and no member could be named.)
+reads(rule({ decide = { by = "council", council = { names = { "Ana Lima" } } } }), "a member named by first name and surname")
+no(rule({ decide = { by = "council", council = { names = { "Ana,Bo" } } } }), "decide", "a name that is two")
+no(rule({ decide = { by = "council", council = { names = { "Ana  Lima" } } } }), "decide", "a name with two spaces in a row")
+no(rule({ decide = { by = "council", council = { names = { " Ana" } } } }), "decide", "a name that starts with a space")
 no(rule({ decide = { by = "council", council = { quorum = 41 } } }), "decide", "a quorum past any raid")
 no(rule({ decide = { by = "council", council = { secret = true } } }), "decide", "a council field it never heard of")
 reads(rule({ decide = { by = "auto" } }), "the order decides")

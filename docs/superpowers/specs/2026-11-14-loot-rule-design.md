@@ -190,7 +190,7 @@ recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:
 - **`decide`**: `auto`, `ml` e `holder` são lidos e terminam igual: a ordem diz o vencedor e o clique
   do master looter entrega o item, que não volta. `council` (#336) abre uma votação quando as respostas
   fecham: ver "O conselho" abaixo. `decide.council` é validado campo a campo com qualquer `by`:
-  `ranks` (até 10 índices de 0 a 9), `names` (até 20 nomes, sem espaço nem vírgula), `anon`, `self`,
+  `ranks` (até 10 índices de 0 a 9), `names` (até 20 nomes; sem vírgula, sem espaço nas pontas nem dois seguidos: um espaço no meio é o do "Nome Sobrenome" do WoW: Forever), `anon`, `self`,
   `note` e `quorum` (1 a 40); um campo que o cliente não conhece recusa a regra.
 - **`effects`**, aplicados na ordem:
   - `charge` nos pontos (`dkp` ou `gp`; no máximo um): `table` (o preço do item, o padrão), `fixed`,

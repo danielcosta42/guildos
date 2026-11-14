@@ -505,7 +505,13 @@ local function validDecide(decide)
     if council.names ~= nil then
         if not isList(council.names, COUNCIL_NAMES_MAX) then return false, "decide" end
         for _, name in ipairs(council.names) do
-            if not isLabel(name, MEMBER_MAX) or name:find("[%s,]") then return false, "decide" end
+            -- A character's name as the game writes it: on WoW: Forever that is a first name and a
+            -- surname with one space between them, so a space inside a name is part of it. Never a
+            -- comma (the names travel in a list), nor a space at either end or two in a row.
+            if not isLabel(name, MEMBER_MAX) or name:find(",", 1, true) or name:find("^%s") or name:find("%s$")
+                or name:find("%s%s") or name:find("[^ %S]") then
+                return false, "decide"
+            end
         end
     end
     if not (flagOrNil(council.anon) and flagOrNil(council.self) and flagOrNil(council.note)) then return false, "decide" end
@@ -1793,7 +1799,8 @@ function LootRule:SetDecide(by, coreName)
 end
 
 -- One thing about the council: `field` is "anon", "self" or "note" (yes or no), "quorum" (a number;
--- nothing for none), "names" (the members named one by one, as typed: split at commas and spaces) or
+-- nothing for none), "names" (the members named one by one, as typed: split at commas, and at spaces
+-- too where a name has no surname) or
 -- "rank" (`value` is a guild rank index, which joins the council or leaves it).
 function LootRule:SetCouncilField(field, value, coreName)
     local rule = self:Draft(coreName)
@@ -1806,9 +1813,13 @@ function LootRule:SetCouncilField(field, value, coreName)
     elseif field == "quorum" then
         council.quorum = tonumber(value)
     elseif field == "names" then
+        -- Where a name is a first name and a surname (WoW: Forever) the space belongs to the name, so
+        -- only a comma tells two members apart; elsewhere a space does too, as it always did.
         local names, seen = {}, {}
-        for name in tostring(value or ""):gmatch("[^%s,]+") do
-            if not seen[name:lower()] then
+        local surnames = GuildOS.Client and GuildOS.Client.has and GuildOS.Client.has.surnames
+        for name in tostring(value or ""):gmatch(surnames and "[^,]+" or "[^%s,]+") do
+            name = strtrim(name):gsub("%s+", " ")
+            if name ~= "" and not seen[name:lower()] then
                 seen[name:lower()] = true
                 names[#names + 1] = name
             end
