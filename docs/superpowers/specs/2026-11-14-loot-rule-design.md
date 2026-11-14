@@ -400,7 +400,8 @@ mensagem `AWARD` (só o cliente de quem entregou tem o registro) e loot pessoal 
   "decidedBy": "softres",       // chave do critério | "council" | "ml" | "only" (candidato único)
   "exception": "Thunderfury",   // nome da exceção que valeu; ausente sem exceção
   "candidates": [               // na ordem da regra, vencedor primeiro; no máximo 10
-    { "name": "Chehul", "answer": "MS", "roll": 41, "bid": 0, "values": { "softres": 1, "account:plus1": 0, "attendance": 96 } }
+    { "name": "Chehul", "answer": "MS", "roll": 41, "bid": 0, "values": { "softres": 1, "account:plus1": 0, "attendance": 96 } },
+    { "name": "Rias", "answer": "OS", "asked": "MS", "roll": 12, "bid": 0 }   // "asked": só quando um filtro trocou a resposta
   ],
   "votes": { "anon": false, "quorum": 2, "cast": [ { "by": "Kawa", "for": "Chehul" } ], "tally": { "Chehul": 2, "Rias": 1 } }   // ausente sem conselho
 }
@@ -422,6 +423,12 @@ Com `anon`, `cast` é omitido e só o `tally` vai.
   primeiro. `answer` é a chave da resposta, `""` quando o vencedor não respondeu (item entregue sem
   disputa: ele é então o único candidato). `roll` e `bid` vão sempre, 0 quando não houve. `name` é o
   nome curto do personagem; no retail é a chave `Nome-Reino`.
+- **`asked`** (opcional, string, até 48 bytes como `answer`): a chave da resposta que o candidato
+  clicou, antes de um filtro da regra lê-la como outra (presença abaixo do mínimo: MS vira OS).
+  `answer` é sempre a resposta depois dos filtros, a que a ordem comparou. O campo só é escrito quando
+  as duas diferem; ausente, `asked` = `answer`. É o que o simulador do site usa para refazer o prêmio
+  sob outra regra a partir do que foi pedido. Quem um filtro deixou fora da rolagem não é candidato
+  e não aparece.
 - **`values`:** o que cada critério da ordem comparou além da resposta, da rolagem e do lance, que têm
   campo próprio. Chave = a do critério; `account:<conta>` para uma conta (para a conta de bônus da
   rolagem, o que ela somou). `softres` e `hardres`: 1 ou 0. `prio` e `wishlist`: a posição, ausente

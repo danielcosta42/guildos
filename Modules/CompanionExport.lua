@@ -807,6 +807,8 @@ local function lootWhy(why)
     for _, c in ipairs(type(why.candidates) == "table" and why.candidates or {}) do
         if type(c) == "table" and #out.candidates < WHY_CANDIDATES then
             local cand = { name = whyText(c.name), answer = whyText(c.answer), roll = whyNumber(c.roll), bid = whyNumber(c.bid) }
+            -- What the candidate clicked, when a filter read it as another answer: only then.
+            if type(c.asked) == "string" and c.asked ~= "" and c.asked ~= c.answer then cand.asked = whyText(c.asked) end
             local values, kept = nil, 0
             for k, v in pairs(type(c.values) == "table" and c.values or {}) do
                 if type(k) == "string" and GuildOS.Finite(v) and kept < WHY_VALUES then

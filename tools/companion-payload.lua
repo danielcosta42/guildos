@@ -737,7 +737,8 @@ do
       v = 1, rule = "softres", ruleAt = 1791000000, decidedBy = "council", exception = "Thunderfury",
       candidates = {
         { name = "Chehul", answer = "MS", roll = 41, bid = 0, values = { softres = 1, ["account:plus1"] = 0, attendance = 96 } },
-        { name = "Rias", answer = "MS", roll = 12, bid = 0 },
+        { name = "Rias", answer = "MS", roll = 12, bid = 0, asked = "MS" },
+        { name = "Kawa", answer = "OS", asked = "MS", roll = 7, bid = 0 },
       },
       votes = { anon = false, quorum = 2, cast = { { by = "Kawa", ["for"] = "Chehul" } }, tally = { Chehul = 2, Rias = 1 } },
       debug = { "never sent" },
@@ -749,11 +750,17 @@ do
   local why = payload.loot[1].why
   assert(payload.v == 16, "additive: the payload's version does not move")
   assert(GuildOS.Companion.EncodeJson(why) == '{"candidates":[{"answer":"MS","bid":0,"name":"Chehul","roll":41,'
-    .. '"values":{"account:plus1":0,"attendance":96,"softres":1}},{"answer":"MS","bid":0,"name":"Rias","roll":12}],'
+    .. '"values":{"account:plus1":0,"attendance":96,"softres":1}},{"answer":"MS","bid":0,"name":"Rias","roll":12},'
+    .. '{"answer":"OS","asked":"MS","bid":0,"name":"Kawa","roll":7}],'
     .. '"decidedBy":"council","exception":"Thunderfury","rule":"softres","ruleAt":1791000000,"v":1,'
     .. '"votes":{"anon":false,"cast":[{"by":"Kawa","for":"Chehul"}],"quorum":2,"tally":{"Chehul":2,"Rias":1}}}',
     "the entry carries `why` in the documented shape: " .. GuildOS.Companion.EncodeJson(why))
   assert(why.debug == nil, "and nothing the shape does not name")
+  assert(why.candidates[2].asked == nil and why.candidates[3].asked == "MS",
+    "`asked` goes out only where it differs from `answer`")
+  local long = GuildOS.Companion.LootWhy({ v = 1, rule = "custom", decidedBy = "ml", candidates = {
+    { name = "Kawa", answer = "OS", asked = string.rep("a", 300) }, { name = "Rias", answer = "OS", asked = 7 } } })
+  assert(#long.candidates[1].asked == 48 and long.candidates[2].asked == nil, "cut to the 48 bytes of a key, and only when it is text")
   for i = 2, #payload.loot do assert(payload.loot[i].why == nil, "an entry with no record carries none") end
   -- A reader from before never looks at `why`: without it the list is the one it always got.
   payload.loot[1].why = nil

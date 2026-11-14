@@ -1527,9 +1527,13 @@ local function comparedOf(c, rule)
     return any and values or nil
 end
 
+-- `asked`: the answer the candidate clicked, when a filter of the rule read it as another (`answer`
+-- is the one the order compared). Absent when the two are the same, which is nearly always.
 local function whyCandidate(c, rule)
+    local answer = c.rollType or ""
     return {
-        name = tostring(c.name or c.key or ""), answer = c.rollType or "",
+        name = tostring(c.name or c.key or ""), answer = answer,
+        asked = (type(c.asked) == "string" and c.asked ~= "" and c.asked ~= answer) and c.asked or nil,
         roll = tonumber(c.roll) or 0, bid = tonumber(c.bid) or 0, values = comparedOf(c, rule),
     }
 end

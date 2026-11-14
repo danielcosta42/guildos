@@ -619,6 +619,27 @@ why = GuildOS.db.lootHistory[1].why
 check(why.decidedBy == "ml" and why.rule == "custom" and why.candidates[1].values.roll == nil
   and why.candidates[1].values.softres == 0 and why.candidates[1].values.received == 0,
   "a tie on every criterion is the master looter's to settle; the roll has its own field, and the values are what the row knows beside it")
+-- What a candidate clicked, when a filter of the rule read it as another answer: `asked`, written for
+-- that candidate alone. `answer` stays the one the order compared.
+LR:Set({ v = 1, model = "custom", order = { { k = "response" }, { k = "roll" } },
+  filters = { { k = "attendance", min = 90, act = "downgrade", from = "MS", to = "OS" } } })
+att = { Cy = 100, Dee = 60 }
+announce()
+LM:RegisterRoll("Cy", "MS", 10)
+LM:RegisterRoll("Dee", "MS", 90)
+LM:RegisterRoll("Fay", "OS", 95)
+check(LM.rolls[K("Dee")].rollType == "OS" and LM.rolls[K("Dee")].asked == "MS" and LM.rolls[K("Cy")].asked == nil
+  and LM.rolls[K("Fay")].asked == nil, "the row keeps what was clicked only where the filter changed it")
+LM:EndRolling(true)
+LM:AwardLoot("Cy")
+why = GuildOS.db.lootHistory[1].why
+check(same(why.candidates, {
+  { name = "Cy", answer = "MS", roll = 10, bid = 0, values = why.candidates[1].values },
+  { name = "Fay", answer = "OS", roll = 95, bid = 0, values = why.candidates[2].values },
+  { name = "Dee", answer = "OS", asked = "MS", roll = 90, bid = 0, values = why.candidates[3].values },
+}), "the record carries `asked` for the candidate whose answer a filter changed, and for nobody else: " .. json(why.candidates))
+att = {}
+LR:Set({ v = 1, model = "custom", order = { { k = "response" }, { k = "roll" } } })
 -- Before the roll ended, and with no roll at all.
 announce()
 LM:RegisterRoll("Cy", "MS", 10)

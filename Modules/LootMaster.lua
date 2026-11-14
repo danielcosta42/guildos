@@ -1468,6 +1468,7 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
         att25 = ctx.att25, recvCount = ctx.recvThisLockout, dkp = ctx.dkp, ep = ep, gp = gp, gpBase = gpBase,
         softRes = srInfo, accts = accts,
     }
+    local asked = rollType   -- what was clicked, before a filter reads it as another answer
     local answer, filter = GuildOS.LootRule:AnswerFor(cand, rollType, rule)
     if filter and not answer then
         self:SafeSendChatAuto(self:BlockedLine(name, filter, cand, rule), "RAID")
@@ -1512,6 +1513,7 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
         name       = name,
         class      = class,
         rollType   = rollType,
+        asked      = asked ~= rollType and asked or nil,   -- for the award's record (LootRule:Why)
         roll       = roll,
         rolled     = roll ~= nil and rollType ~= "PASS" or (extra.drawn and true) or nil,
         drawn      = extra.drawn or nil,
