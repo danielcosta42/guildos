@@ -209,7 +209,10 @@ end
 local function send(payload, target)
     if not GuildOS.CommSystem then return end
     local types = GuildOS.CommSystem.MSG_TYPES
-    GuildOS.CommSystem:SendMessage(target and types.LFG_JOIN or types.LFG_GROUP, LibSerialize:Serialize(payload), target)
+    -- A listing goes out at NORMAL, not the guild channel's default BULK: behind a queue of bulk sync
+    -- two of them would leave back to back, and a receiver's cooldown would drop the second.
+    GuildOS.CommSystem:SendMessage(target and types.LFG_JOIN or types.LFG_GROUP, LibSerialize:Serialize(payload),
+        target, "NORMAL")
 end
 
 local function payloadOf(g, now)
@@ -480,6 +483,12 @@ function Groups:OnGroupRoster(members, count)
     local function here(key) return GuildOS.Compat.InGroup(members, key) end
 
     local g = self:Mine()
+    -- A leader who passed the lead can invite nobody: the listing would promise what it cannot do.
+    if g and not GuildOS.Compat.CanInvite() then
+        self:Disband()
+        GuildOS:Print(L["Only the group's leader can list it."])
+        g = nil
+    end
     if g then
         for key, r in pairs(s.requests) do
             if here(key) then

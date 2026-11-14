@@ -72,7 +72,9 @@ local TYPES = { LFG = "LG", LFG_GROUP = "GF", LFG_JOIN = "GJ" }
 local wire = {}
 GuildOS.CommSystem = {
   MSG_TYPES = TYPES,
-  SendMessage = function(_, kind, payload, target) wire[#wire + 1] = { kind = kind, p = payload, to = target } end,
+  SendMessage = function(_, kind, payload, target, priority)
+    wire[#wire + 1] = { kind = kind, p = payload, to = target, priority = priority }
+  end,
 }
 local printed = {}
 GuildOS.Print = function(_, msg) printed[#printed + 1] = msg end
@@ -140,6 +142,7 @@ check(not Board:AmAvailable(), "whoever forms a group is no longer listed as loo
 local out = last(TYPES.LFG_GROUP)
 check(out and out.to == nil and out.p.act == "steamvault" and out.p.age == 0 and out.p.max == 5,
   "it goes to the guild, with its age and never a timestamp")
+check(out.priority == "NORMAL", "ahead of the bulk sync, so two listings never leave back to back")
 check(#said == 1 and said[1].chan == "GUILD"
   and said[1].msg == "[Guild OS] Group for The Steamvault, looking for 1 Tank, 1 Healer, 2 DPS: ab",
   "and one line in guild chat: " .. tostring(said[1] and said[1].msg))
@@ -357,6 +360,11 @@ g, why = Groups:Create("steamvault", { D = 1 }, "", 3600, false)
 check(g == nil and why == "Only the group's leader can list it." and #wire == 0, "a member of somebody else's party lists nothing")
 leader = true
 check(Groups:Create("steamvault", { D = 1 }, "", 3600, false) ~= nil, "its leader does")
+leader = false
+Groups:OnGroupRoster()
+check(Groups:Mine() == nil and printed[#printed] == "Only the group's leader can list it.",
+  "and a leader who passed the lead no longer lists it")
+leader = true
 
 -- A full queue
 fresh()
