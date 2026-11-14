@@ -501,6 +501,29 @@ sid = announce()
 answer("Ana", sid, "MS")
 check(row("Ana").roll == 96 and drawn == 3, "the next item is a new roll")
 LM:CancelRolling()
+
+-- One raider's client cannot make the master looter's flood the raid. Three hundred answers from a
+-- raider the rule keeps out used to be three hundred lines in the raid's chat and three hundred addon
+-- messages, from a client the game disconnects for less.
+check(LR:Set(with({ { key = "MS" }, { key = "OS" } }, { filters = { { k = "points", min = 99999, act = "block" } } })) == true,
+  "a rule nobody has the points to enter")
+sid = announce()
+quiet()
+for _ = 1, 300 do answer("Cy", sid, "MS") end
+check(#said == 1 and said[1]:find("Cy: not in this roll", 1, true), "an answer repeated 300 times is one line in the raid's chat: " .. #said)
+check(#sent == 1 and sent[1] == "NO|" .. sid .. "|Cy|out|0", "and one reply by addon message: " .. #sent)
+CLOCK = CLOCK + 10
+answer("Cy", sid, "MS")
+check(#sent == 2 and #said == 1, "asked again later, the raider is answered again, and the raid's chat is not told twice")
+for _ = 1, 100 do answer("Cy", sid, "OS"); answer("Cy", sid, "MS") end
+check(#sent == 30 and #said == 1, "past thirty answers for one item, a raider's client is no longer read: " .. #sent)
+answer("Bo", sid, "MS")
+check(#sent == 31 and #said == 2, "the budget is each raider's own")
+sid = announce()
+quiet()
+answer("Cy", sid, "MS")
+check(#sent == 1 and #said == 1, "and each item's")
+LM:CancelRolling()
 check(LR:Set(nil) == true, "back to the loot system's rule")
 
 -- ── 6. Answers of the guild's own ───────────────────────────────────

@@ -66,6 +66,8 @@ local ASK_WINDOW = 5          -- seconds an ASK waits for the ANNOUNCE it came w
 local NOTE_MAX = 60           -- bytes of a note an answer carries
 local ROLL_TOP, ROLL_TOP_SECOND = 100, 99   -- /roll 1-100 is the first answer, /roll 1-99 the second
 local ROLLS_LINE_MAX = 200    -- bytes of the line that tells the raid the rolls drawn for it
+local ANSWER_BUDGET = 30      -- answers one raider's client may send for one item; the rest are not read
+local ANSWER_REPEAT = 5       -- seconds within which the same answer sent again is dropped unanswered
 
 -- Config defaults
 LootMaster.ROLL_DURATION = 30     -- seconds to wait for rolls
@@ -1468,20 +1470,33 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
         att25 = ctx.att25, recvCount = ctx.recvThisLockout, dkp = ctx.dkp, ep = ep, gp = gp, gpBase = gpBase,
         softRes = srInfo, accts = accts,
     }
+    -- The raid's chat hears each thing about a player and an item once: an answer repeated, by a
+    -- click or by a client sending it three hundred times, says nothing new, and a master looter's
+    -- client that answered every one in chat could be disconnected for flooding in the middle of the loot.
+    local told = self.activeLoot.told or {}
+    self.activeLoot.told = told
+    local function sayOnce(what, line)
+        local id = key .. "|" .. what
+        if told[id] then return end
+        told[id] = true
+        self:SafeSendChatAuto(line, "RAID")
+    end
+
     local asked = rollType   -- what was clicked, before a filter reads it as another answer
     local answer, filter = GuildOS.LootRule:AnswerFor(cand, rollType, rule)
     if filter and not answer then
-        self:SafeSendChatAuto(self:BlockedLine(name, filter, cand, rule), "RAID")
+        sayOnce("out|" .. filter.k .. "|" .. tostring(filter.acct or ""), self:BlockedLine(name, filter, cand, rule))
         return
     end
     if filter then
+        local what = "read|" .. filter.k .. "|" .. tostring(filter.from) .. "|" .. tostring(filter.to)
         if filter.k == "attendance" and filter.from == "MS" and filter.to == "OS" then
-            self:SafeSendChatAuto(string.format(
+            sayOnce(what, string.format(
                 L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
-                name, ctx.att25, filter.min), "RAID")
+                name, ctx.att25, filter.min))
         else
-            self:SafeSendChatAuto(string.format(L["[Loot] %s: %s read as %s (%s)"], name,
-                self:AnswerLabel(filter.from), self:AnswerLabel(filter.to), self:FilterReason(filter, cand, rule)), "RAID")
+            sayOnce(what, string.format(L["[Loot] %s: %s read as %s (%s)"], name,
+                self:AnswerLabel(filter.from), self:AnswerLabel(filter.to), self:FilterReason(filter, cand, rule)))
         end
         rollType = answer
     end
@@ -1534,11 +1549,11 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
 
     -- Announce prio or wishlist position to raid
     if prioOrder and not extra.quiet then
-        self:SafeSendChatAuto(string.format(L["[Loot] %s: %s (Official Prio #%d)"],
-            name, rollType, prioOrder), "RAID")
+        sayOnce("prio|" .. rollType, string.format(L["[Loot] %s: %s (Official Prio #%d)"],
+            name, rollType, prioOrder))
     elseif wishInfo and not extra.quiet then
-        self:SafeSendChatAuto(string.format(L["[Loot] %s: %s (Wishlist #%d)"],
-            name, rollType, wishInfo.order), "RAID")
+        sayOnce("wish|" .. rollType, string.format(L["[Loot] %s: %s (Wishlist #%d)"],
+            name, rollType, wishInfo.order))
     end
 
     -- Refresh ML roll frame
@@ -1681,6 +1696,19 @@ function LootMaster:OnAnswerMessage(rest, sender)
     if not name then return end
     if self.restrictedRollers and not self.restrictedRollers[strlower(name)] then return end
 
+    -- One raider's client cannot make this one talk without end. The answer it just sent, sent again
+    -- within a few seconds, is dropped with no reply (the first one was answered; a raider who clicks
+    -- again later, with more points by then, is read again); and past a budget no answer of that
+    -- raider's for this item is read at all. Nothing is said either way: a reply is what a flood wants.
+    loot.heardFrom = loot.heardFrom or {}
+    local from = loot.heardFrom[name] or { n = 0 }
+    loot.heardFrom[name] = from
+    local said, now = key .. "|" .. bid .. "|" .. note, GetTime()
+    if from.last == said and now - (from.at or 0) < ANSWER_REPEAT then return end
+    from.n = from.n + 1
+    if from.n > ANSWER_BUDGET then return end
+    from.last, from.at = said, now
+
     local row, why, n = self:TakeAnswer(name, key, tonumber(bid), note)
     self:EchoAnswer(name, row, why, n)
 end
@@ -1749,6 +1777,9 @@ function LootMaster:EnterAnswer(typed, key, bid, note)
         if not name and self.testMode then name = typed end
     end
     if not name then return nil, "raid" end
+    -- What the raider's own client sent last is no longer what stands: the same answer from it counts again.
+    local heardFrom = self.activeLoot and self.activeLoot.heardFrom and self.activeLoot.heardFrom[name]
+    if heardFrom then heardFrom.last = nil end
     local row, why, n = self:TakeAnswer(name, key, bid, note)
     self:EchoAnswer(name, row, why, n, true)
     if row and self.rollFrame and self.rollFrame:IsShown() then self:RefreshRollFrame() end
