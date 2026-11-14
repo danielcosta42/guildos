@@ -252,10 +252,12 @@ function Points:ApplyEntry(e, pool)
     end
     -- What a reason has given this week, for its weekly cap (issue #309).
     if e.rk and e.delta > 0 then
-        local week = math.floor((e.ts or 0) / WEEK)
+        local week = self:Week(e.ts)
         pool.weekly = pool.weekly or {}
+        -- This week's and last week's are kept; anything else (a week counted another way before
+        -- among it) goes.
         for w in pairs(pool.weekly) do
-            if w < week - 1 then pool.weekly[w] = nil end
+            if w ~= week and w ~= week - 1 then pool.weekly[w] = nil end
         end
         local t = pool.weekly[week] or {}
         pool.weekly[week] = t
@@ -333,11 +335,41 @@ function Points:SetReason(rk, name, value, weekly)
     return true
 end
 
+-- The week a reason's cap counts in: the game's own, from one weekly reset of the region to the next
+-- (RaidTracker:GetWeekNum, the lockout week). It used to be a week of the calendar from Thursday 00:00
+-- UTC, in the middle of the raid week: the cap paid on Wednesday night and again on Thursday morning.
+function Points:Week(ts)
+    ts = tonumber(ts) or GetServerTime()
+    local RT = GuildOS.RaidTracker
+    if RT and RT.GetWeekNum then return RT:GetWeekNum(ts) end
+    return math.floor(ts / WEEK)
+end
+
 -- What `rk` has given `key` in the week of `ts`.
 function Points:WeeklyEarned(key, rk, ts, pool)
     pool = pool or self:GetDB()
-    local t = pool.weekly and pool.weekly[math.floor((ts or GetServerTime()) / WEEK)]
+    local t = pool.weekly and pool.weekly[self:Week(ts)]
     return (t and t[key .. "|" .. rk]) or 0
+end
+
+-- This week's figures of a snapshot into this client's: the higher of each. An officer who missed the
+-- entries of a named reason, and only got the snapshot, used to pay its weekly cap again.
+function Points:MergeWeekly(pool, weekly)
+    if type(weekly) ~= "table" or type(weekly.v) ~= "table" then return end
+    local week = self:Week()
+    if weekly.w ~= week then return end
+    pool.weekly = pool.weekly or {}
+    local t = pool.weekly[week] or {}
+    pool.weekly[week] = t
+    for wk, n in pairs(weekly.v) do
+        if type(wk) == "string" and #wk <= 160 and type(n) == "number" and n > 0 and n < math.huge then
+            local key, rk = wk:match("^(.+)|([a-z0-9]+)$")
+            if key then
+                wk = GuildOS:LocalMemberKey(key) .. "|" .. rk
+                t[wk] = math.max(t[wk] or 0, math.floor(n))
+            end
+        end
+    end
 end
 
 -- How much of `amount` `key` may still earn, and what held the rest back ("weekly", "cap" or nil).
@@ -1186,6 +1218,8 @@ function Points:OnSync(env)
             -- nothing of them, and they stay as they are here.
             -- Merged, never replaced: a snapshot older than tonight leaves tonight's figures alone.
             if type(d.accounts) == "table" then self:MergeAccounts(pool, d.accounts) end
+            -- What each named reason has given this week, for its cap: the higher figure of each.
+            self:MergeWeekly(pool, d.weekly)
             -- The queues (issue #337): each one's newest order wins, as with its entries.
             if type(d.queues) == "table" then
                 for _, e in pairs(localQueues(d.queues)) do self:ApplyQueueEntry(e, pool) end
@@ -1212,6 +1246,8 @@ function Points:BroadcastSnapshot(coreName)
         standings = pool.standings,
         accounts = pool.accounts,
         queues   = pool.queues,
+        -- This week's figures of the named reasons' caps; a client from before reads none of it.
+        weekly   = { w = self:Week(), v = (pool.weekly and pool.weekly[self:Week()]) or {} },
     }, { rev = rev })
 end
 

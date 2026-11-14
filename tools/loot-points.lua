@@ -127,6 +127,46 @@ function GetServerTime() return realNow() + 7 * 86400 end
 P:AwardReason(K("Cy"), "material", 1)
 check(P:Get(K("Cy")) == before + 7, "a week later the reason gives again")
 GetServerTime = realNow
+-- The week is the game's reset week, not a calendar week from Thursday 00:00 UTC, which fell in the
+-- middle of the raid week: the cap paid on Wednesday at 23:00 and again on Thursday at 01:00.
+GuildOS.RaidTracker = { GetCurrentGroup = function() return "" end,
+  GetWeekNum = function(_, ts) return math.floor((ts - 1127228400) / 604800) end }   -- the Americas' reset
+local thursday = math.floor(realNow() / 604800) * 604800 + 5 * 604800   -- a Thursday, 00:00 UTC
+local clock = thursday - 3600
+function GetServerTime() return clock end
+before = P:Get(K("Bo"))
+P:AwardReason(K("Bo"), "material", 5)
+clock = thursday + 3600
+P:AwardReason(K("Bo"), "material", 5)
+check(P:Get(K("Bo")) == before + 5 and top().reason:find("weekly cap reached: 0 of 5", 1, true),
+  "Wednesday 23:00 and Thursday 01:00 UTC are one reset week: the cap pays once")
+-- The snapshot carries the week's figures: an officer who only got the snapshot does not pay again.
+local sentSnap
+GuildOS.SyncService = { NextRevision = function() return 1 end, ShouldApply = function() return true end,
+  SetRevision = function() end, Publish = function(_, _, act, data) if act == "snapshot" then sentSnap = data end end }
+P:BroadcastSnapshot()
+check(sentSnap.weekly and sentSnap.weekly.v[K("Bo") .. "|material"] == 5, "the snapshot carries what each reason gave this week")
+local home, away = GuildOS.db.points, { mode = "dkp", config = cfg, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+GuildOS.db.points = away
+P:OnSync({ act = "snapshot", rev = 1, data = { core = "", mode = "dkp", config = cfg, standings = { [K("Bo")] = { current = before + 5, earned = 5, spent = 0 } },
+  weekly = { w = sentSnap.weekly.w, v = { [K("Bo") .. "|material"] = 5, [K("Cy") .. "|material"] = "many", [7] = 1 } } } })
+P:AwardReason(K("Bo"), "material", 1)
+check(P:Get(K("Bo")) == before + 5 and top().reason:find("weekly cap reached: 0 of 1", 1, true),
+  "an officer who got the snapshot alone holds the cap too: " .. tostring(top() and top().reason))
+P:AwardReason(K("Cy"), "material", 1)
+check(top().delta == 1, "and takes from it only what is a figure")
+P:OnSync({ act = "snapshot", rev = 2, data = { core = "", mode = "dkp", config = cfg,
+  weekly = { w = sentSnap.weekly.w - 1, v = { [K("Dee") .. "|material"] = 5 } } } })
+P:AwardReason(K("Dee"), "material", 1)
+check(top().delta == 1, "another week's figures are not this week's")
+GuildOS.db.points = home
+GuildOS.SyncService = nil
+-- Across the reset (Tuesday 15:00 UTC for the Americas) the reason gives again.
+clock = 1127228400 + math.floor((thursday - 1127228400) / 604800 + 1) * 604800 + 3600
+P:AwardReason(K("Bo"), "material", 2)
+check(P:Get(K("Bo")) == before + 7, "after the weekly reset the reason gives again")
+GetServerTime = realNow
+GuildOS.RaidTracker = nil
 check(P:AwardReason(K("Cy"), "nothing") == nil, "a reason the guild never set gives nothing")
 check(P:SetReason("gold") and #P:GetReasons() == 1, "a reason with no value is removed")
 
