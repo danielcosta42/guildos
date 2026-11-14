@@ -206,8 +206,13 @@ local function raidOf(start, leader, late)
   } }
 end
 local session = raidOf(1790990000, LEAD, true)
-check(P:OnRaidEnd(session) == 0, "with the auto-award off, a raid's end gives nothing")
+check(P:OnRaidEnd(session) == 0, "with nothing switched on, a raid's end gives nothing")
+-- The boss auto-award, on for years, is not the raid-end awards' switch: a figure typed long ago in
+-- "on time", which nothing read before, pays nothing until an officer switches the raid's end on.
 cfg.autoAward = true
+check(P:OnRaidEnd(session) == 0 and P:Get(K("Ana")) == 0, "the boss auto-award alone pays nothing at a raid's end")
+cfg.autoAward = false
+cfg.raidEndAwards = true
 client("Off", poolOff)
 check(P:OnRaidEnd(raidOf(1790990037, LEAD, true)) == 0 and P:Get(K("Ana")) == 0,
   "the client of an officer who does not lead the raid pays nothing")
@@ -241,7 +246,7 @@ check(P:OnRaidEnd(pugRaid(1791080000)) == 9 and P:Get(K("Ana")) == 9, "and the f
 GuildOS.IsOfficerByName = isOfficerByName
 GuildOS.SyncService = nil
 client("Lead", poolLead)
-cfg.autoAward = false
+cfg.raidEndAwards = nil
 cfg.onTimeAward, cfg.lateAward, cfg.stayedAward, cfg.leftEarlyAward, cfg.raidAward = 0, 0, 0, 0, 0
 
 -- ── A roll that costs to enter ──────────────────────────────────────
@@ -295,6 +300,16 @@ cfg.gpRefIlvl = 0
 P:SetItemPrice(16914, 77)
 check(P:PriceOf(LINK) == 77, "the guild's own price for an item comes before any of it")
 P:SetItemPrice(16914, 0)
+-- A guild on another loot system whose points were already in the EPGP mode of before, changing
+-- nothing: the one price per item, as it always paid. (Its ring was suddenly charged half.)
+GuildOS.db.settings.lootSystem = "dkp"
+check(P:GetMode() == "epgp" and GuildOS:GetLootSystem() == "dkp" and P:PriceOf(LINK) == 100,
+  "points in the EPGP mode under another loot system: a ring costs the one price per item, as before")
+check(P:PriceOf(LINK, "epgp") == 50, "the price is the system's the item is given under")
+cfg.gpRefIlvl = 76
+check(P:PriceOf(LINK) == 50, "and a guild that sets a reference item level has asked for the price by slot and level")
+cfg.gpRefIlvl = 0
+GuildOS.db.settings.lootSystem = "epgp"
 function GetItemInfo() return "Netherwind Crown", LINK, 4, 76, 60, "Armor", "Cloth", 1, "INVTYPE_HEAD" end
 
 check(LR:Active().order[2].k == "pr", "the EPGP rule reads priority after the answer")

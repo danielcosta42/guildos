@@ -2102,7 +2102,7 @@ function LootMaster:AwardLootNow(playerName, silent, free)
         local others = {}
         for _, r in pairs(self.rolls) do others[#others + 1] = r end
         -- A price that is a share of what the winner holds ("fraction", "all") reads the balance now.
-        local cost = LR:PriceFor(row, others, GuildOS.Points:PriceOf(itemLink), rule, GuildOS.Points:Get(pKey))
+        local cost = LR:PriceFor(row, others, GuildOS.Points:PriceOf(itemLink, self:System()), rule, GuildOS.Points:Get(pKey))
         if cost > 0 then
             local reason = GuildOS.Compat.GetItemInfo(itemLink) or itemLink
             if row and row.bid then

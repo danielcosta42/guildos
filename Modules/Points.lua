@@ -585,7 +585,10 @@ function Points:OnRaidEnd(session)
     -- The counters the loot rule feeds per raid attended, whatever the points' own switch says; the
     -- raid night names each entry.
     self:EarnCounters("raid", everyone, night)
-    if not (pool and pool.config and pool.config.autoAward) then return 0 end
+    -- Only once an officer has switched them on (`raidEndAwards`, off until then). `onTimeAward` sat in
+    -- the settings for years with nothing reading it: a guild that typed a figure there long ago, and
+    -- has the boss auto-award on, would have started paying it at every raid's end without being asked.
+    if not (pool and pool.config and pool.config.raidEndAwards == true) then return 0 end
     local c = pool.config
     local entries = {}
     -- `tag` is what the award is of: arriving (on time or late) and leaving (to the end or early) are
@@ -636,16 +639,21 @@ end
 
 -- What an item costs the winner: the guild's own price for that item, else in EPGP its GP by slot and
 -- item level against the price of a chest piece, else the one price per item.
-function Points:PriceOf(itemLink)
+-- `system` is the loot system the item is given under (nil: the one in force). The price is worked out
+-- by slot and item level only under the EPGP loot system, or once the guild has set a reference item
+-- level: a guild on another loot system whose points were in the EPGP mode of before paid the one price
+-- per item, and still does (a ring is not suddenly half price).
+function Points:PriceOf(itemLink, system)
     local c = cfg()
     local base = tonumber(c.itemCost) or 0
     local itemId = itemLink and tonumber(tostring(itemLink):match("item:(%d+)"))
     local own = itemId and type(c.itemPrices) == "table" and tonumber(c.itemPrices[itemId])
     if own then return own end
-    if self:GetMode() ~= "epgp" or base <= 0 or not itemLink then return base end
+    local ref = tonumber(c.gpRefIlvl) or 0
+    system = system or (GuildOS.GetLootSystem and GuildOS:GetLootSystem())
+    if not (system == "epgp" or ref > 0) or base <= 0 or not itemLink then return base end
     local _, _, _, ilvl, _, _, _, _, equipLoc = GuildOS.Compat.GetItemInfo(itemLink)
     local gp = base * (SLOT_GP[equipLoc or ""] or 1)
-    local ref = tonumber(c.gpRefIlvl) or 0
     if ref > 0 and tonumber(ilvl) then gp = gp * 2 ^ ((ilvl - ref) / GP_ILVL_STEP) end
     return math.max(1, math.floor(gp + 0.5))
 end

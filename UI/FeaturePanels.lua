@@ -3074,8 +3074,16 @@ function GuildOS:RefreshSettingsPanel(content, category)
         yOff = yOff + 30
 
         numRow(L["Points per boss:"], "bossAward", L["Awarded to raiders on each boss kill"])
-        -- What a raid night gives beyond its bosses (issue #309). Given when the raid ends, with the
-        -- auto-award below on.
+        -- What a raid night gives beyond its bosses (issue #309). Given when the raid ends, once an
+        -- officer has switched them on here: off until then, whatever figures the rows hold.
+        local endCb = UI:CreateCheckbox(content, L["Pay the raid-end awards below (the raid leader's client pays)"], 18)
+        endCb:SetPoint("TOPLEFT", 12, -yOff)
+        endCb.checkbox:SetChecked(pcfg.raidEndAwards == true)
+        endCb.checkbox.onChanged = function(_, checked)
+            pcfg.raidEndAwards = checked and true or false
+            GuildOS.Points:BroadcastSnapshot()
+        end
+        yOff = yOff + 28
         numRow(L["Points per raid:"], "raidAward", L["Given to everyone in the raid when it ends"])
         numRow(L["On time:"], "onTimeAward", L["In the raid when it started"])
         numRow(L["Late:"], "lateAward", L["Arrived after the raid started"])
