@@ -96,6 +96,8 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `RecipeTracker.lua` | Recipe scanning + sync | UI |
 | `OfficerNotes.lua` | Officer note storage + sync | UI |
 | `TrialTracker.lua` | Trial lifecycle + sync | UI |
+| `LFGBoard.lua` | Who is looking for a group: my listing (roles, activities, note, TTL), everybody else's, the line in guild chat (#243, #341) | UI (UI/GroupsPanel.lua) |
+| `Groups.lua` | The groups being formed: my listing and its open spots, the requests for a spot from both ends, the party watcher that closes a spot (#341) | UI (UI/GroupsPanel.lua), who is looking (LFGBoard) |
 | `GuildManager.lua` | Rank changes, kicks, MOTD/Info, inactivity, suggestions, action log | UI, comm |
 | `GearAudit.lua` | Guild-wide enchant audit from synced gear | UI |
 | `RaidTools.lua` | Composition + buff/cooldown coverage of group/online roster | UI |

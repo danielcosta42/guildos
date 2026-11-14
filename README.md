@@ -120,12 +120,20 @@ Also tracks Heroic dungeon key reputation requirements (Honor Hold/Thrallmar, Ce
 - **Guild invite** via `/guildos recruit invite <Player>`
 - Full configuration UI in the Recruitment tab: message, interval, channels, welcome text, Discord link
 
+### Groups (the guild's own group finder)
+- **Activities as tiles**: this client's dungeons and raids, plus quests, world bosses, PvP and farming, each with its level range and how many groups and players it has right now
+- **I am looking**: list yourself for one or several activities, with the roles you play (tank, healer, damage), a note and for how long
+- **Form a group**: publish a group with its open spots by role; guildmates ask for a spot with one click, and only the leader hears it
+- **The queue**: the leader invites or declines from the group's card; the spot closes when the player joins, and with no spot left the listing comes down by itself
+- No server: it all travels on the guild's addon channel, expires on its own and reaches whoever logs in later. `/gos avail` opens it
+
 ### Tab System
 | Tab | Access |
 |---|---|
 | Roster | All members |
 | TMB Loot | All members |
 | Raids | All members |
+| Groups | All members |
 | Loot | All members |
 | Trials | Officers only |
 | Recruitment | Officers only |
@@ -142,6 +150,7 @@ Pressing **J** (or however you open the guild frame) opens Guild OS instead of t
 | `/guildos` or `/gos` | Toggle the roster window |
 | `/guildos scan` | Re-collect your local character data |
 | `/guildos sync` | Broadcast your data to the guild |
+| `/guildos avail` | Open the Groups tab; `/guildos avail tank <text>` lists you, `/guildos avail off` delists you |
 | `/guildos reset` | Wipe saved data and reload |
 
 

@@ -269,6 +269,8 @@ read_globals = {
     "GetZoneText",       -- Call to Arms: where the caller is (#108)
     "GetSubZoneText",
     "GetNumGroupMembers",
+    "GetRealZoneText",     -- an instance's name by map id (issue #341)
+    "GetFileIDFromPath",   -- whether the client has a texture file (issue #341)
     "IsInGroup",
     "IsInRaid",
     "C_InstanceEncounter",
