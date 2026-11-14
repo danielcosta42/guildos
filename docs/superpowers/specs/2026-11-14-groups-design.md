@@ -50,15 +50,19 @@ older client shows the listing as it always did.
 
 | Message | Channel | Payload | Rule |
 |---|---|---|---|
-| `LP` | GUILD | `{ act, note, need = { T, H, D }, n, max, ttl, age }` or `{ clear }` | keyed by the sender, one a leader |
-| `LJ` | WHISPER | `{ role, lvl, class }`, `{ cancel }` to the leader; `{ decline }` from the leader | the sender is on the guild roster; a request is kept only by somebody leading a group |
+| `GF` | GUILD | `{ act, note, need = { T, H, D }, n, max, ttl, age }` or `{ clear }` | keyed by the sender, one a leader |
+| `GJ` | WHISPER | `{ role, lvl, class }`, `{ cancel }` to the leader; `{ decline }` from the leader | the sender is on the guild roster; a request is kept only by somebody leading a group |
+
+`LP` was the natural code and is taken: it is the wishlist's loot prio.
 
 A listing carries its age, never a timestamp, so answering a login's request cannot stretch it
 (as `LG` since #243). Requests live for the session only (`GuildOS.State.groups`): a leader who
 reloads asks nobody twice, and a request with no answer costs the asker nothing.
 
-When a player the leader invited from the queue shows up in the party, their role's spot closes
-and the listing goes out again; with no spot left it comes down.
+When a player from the queue shows up in the leader's party, their role's spot closes and the
+listing goes out again; with no spot left it comes down. A seat taken by somebody invited by hand
+caps the open spots at the seats left. A request never outlives its listing: another activity, or
+an expiry, empties the queue and forgets what was asked. Only whoever can invite lists a group.
 
 **Panel** (`UI/GroupsPanel.lua`): one scroll area repainted from pooled frames (a repaint that
 creates frames leaks them, WoW never frees one), and one composer popup with two modes.

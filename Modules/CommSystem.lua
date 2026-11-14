@@ -27,8 +27,9 @@ CommSystem.MSG_TYPES = {
     SYNC_V2   = "SV",    -- SyncService v2 versioned envelope (points/events/bank/polls)
     RECRUIT_INFO = "RI", -- Recruitment status broadcast (officer → all members)
     LFG       = "LG",    -- member self-declared LFG availability (sender bound)
-    LFG_GROUP = "LP",    -- a group being formed (sender bound; GUILD only; issue #341)
-    LFG_JOIN  = "LJ",    -- a request for a spot and its answer (WHISPER only; issue #341)
+    -- NOT "LP": that code is the wishlist's loot prio, matched by its literal further down.
+    LFG_GROUP = "GF",    -- a group being formed (sender bound; GUILD only; issue #341)
+    LFG_JOIN  = "GJ",    -- a request for a spot and its answer (WHISPER only; issue #341)
     RECRUIT_STATS = "RE",-- self-reported recruitment engagement (sender bound; officers aggregate).
                          -- NOT "RS": that code is already RESPONSE above; "RE" is the free code.
     MAP_POS   = "MP",    -- live guild-map position (sender bound; GUILD-only; clamped)
@@ -363,7 +364,7 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
         if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:HandleSelfClaim(sender, data) end
     elseif msgType == CommSystem.MSG_TYPES.LFG then
-        if GuildOS.LFGBoard then GuildOS.LFGBoard:HandleEntry(sender, data) end
+        if GuildOS.LFGBoard then GuildOS.LFGBoard:HandleEntry(sender, data, channel) end
     elseif msgType == CommSystem.MSG_TYPES.LFG_GROUP then
         if GuildOS.Groups then GuildOS.Groups:HandleGroup(sender, data, channel) end
     elseif msgType == CommSystem.MSG_TYPES.LFG_JOIN then

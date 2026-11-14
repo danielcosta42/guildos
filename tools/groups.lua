@@ -68,7 +68,7 @@ LibStub = function() return passThrough end
 dofile(ADDON .. "/Modules/LFGBoard.lua")
 dofile(ADDON .. "/Modules/Groups.lua")
 
-local TYPES = { LFG = "LG", LFG_GROUP = "LP", LFG_JOIN = "LJ" }
+local TYPES = { LFG = "LG", LFG_GROUP = "GF", LFG_JOIN = "GJ" }
 local wire = {}
 GuildOS.CommSystem = {
   MSG_TYPES = TYPES,
@@ -89,7 +89,13 @@ end
 
 -- The guild: who a whispered request may come from.
 local guild = { Bea = true, Cid = true, Dan = true, Eva = true }
-GuildOS.RosterKey = function(_, name) return guild[name] and name or nil end
+GuildOS.RosterKey = function(_, name)
+  local short, realm = name:match("^([^-]+)"), name:match("-(.+)$")
+  if guild[short] and (realm == nil or realm == "Realm") then return GuildOS:GetPlayerKey(short, "Realm") end
+end
+local leader = true
+function UnitIsGroupLeader() return leader end
+function UnitIsGroupAssistant() return false end
 
 local Board, Groups = GuildOS.LFGBoard, GuildOS.Groups
 local function key(name) return GuildOS:GetPlayerKey(name, "Realm") end
@@ -186,8 +192,13 @@ check(bea.max == 40 and bea.n == 40, "size and count are clamped")
 check(bea.need.T == 2 and bea.need.H == 0 and bea.need.D == 0 and bea.need.X == nil, "the spots are whole numbers by role")
 check(not bea.note:find("|", 1, true), "no escape reaches a row")
 check(#printed == 1 and printed[1]:find("Bea", 1, true) and printed[1]:find("Karazhan", 1, true), "a new group is told")
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgGroups[key("Bea")].act == "karazhan", "a second listing inside five seconds is dropped")
 Groups:HandleGroup("Bea-Realm", { clear = true }, "GUILD")
-check(GuildOS.db.lfgGroups[key("Bea")] ~= nil, "a second message inside five seconds is dropped")
+check(GuildOS.db.lfgGroups[key("Bea")] == nil, "but taking it down is heard whatever the cooldown says")
+Groups:HandleGroup("Bea-Realm", { clear = true }, "GUILD")
+runTimers()
+Groups:HandleGroup("Bea-Realm", { act = "karazhan", need = { T = 2 }, ttl = 3600, age = 1 }, "GUILD")
 runTimers()
 Groups:HandleGroup("Cid-Realm", { clear = true }, "GUILD")
 check(GuildOS.db.lfgGroups[key("Bea")] ~= nil, "nobody takes down somebody else's group")
@@ -248,6 +259,39 @@ runTimers()
 Groups:HandleGroup("Bea-Realm", { clear = true }, "GUILD")
 check(Groups:Asked(key("Bea")) == nil, "and a listing that came down takes the request with it")
 
+-- What I asked, I asked of the group that was listed
+fresh()
+Groups:HandleGroup("Bea-Realm", { act = "karazhan", need = { T = 1 }, ttl = 1800 }, "GUILD")
+Groups:RequestSpot(key("Bea"), "T")
+Groups:HandleJoin("Bea-Realm", { decline = true }, "WHISPER")
+runTimers()
+Groups:HandleGroup("Bea-Realm", { act = "karazhan", need = { T = 1 }, ttl = 1800, age = 30 }, "GUILD")
+check(Groups:Asked(key("Bea")).state == "declined", "the same group said again keeps its answer")
+runTimers()
+Groups:HandleGroup("Bea-Realm", { act = "steamvault", need = { T = 1 }, ttl = 1800 }, "GUILD")
+check(Groups:Asked(key("Bea")) == nil, "another activity is another group: its roles are offered again")
+Groups:RequestSpot(key("Bea"), "T")
+NOW = NOW + 1801
+Groups:Prune()
+check(Groups:Asked(key("Bea")) == nil, "and a request does not outlive a listing that expired")
+
+-- An asker never sends two requests inside the leader's cooldown
+fresh()
+Groups:HandleGroup("Bea-Realm", { act = "karazhan", need = { T = 1, H = 1 }, ttl = 3600 }, "GUILD")
+Groups:RequestSpot(key("Bea"), "T")
+Groups:CancelRequest(key("Bea"))
+Groups:RequestSpot(key("Bea"), "H")
+check(count(TYPES.LFG_JOIN) == 2 and wire[2].p.cancel == true, "asking again a moment later waits")
+check(Groups:Asked(key("Bea")).role == "H", "while the card already says what I ask")
+CLOCK = CLOCK + 5
+runTimers()
+check(count(TYPES.LFG_JOIN) == 3 and last(TYPES.LFG_JOIN).p.role == "H", "and goes out once the leader would hear it")
+Groups:RequestSpot(key("Bea"), "T")
+Groups:CancelRequest(key("Bea"))
+CLOCK = CLOCK + 5
+runTimers()
+check(last(TYPES.LFG_JOIN).p.cancel == true, "a request taken back while it waited is never sent")
+
 -- ── The leader's queue ──────────────────────────────────────────────────
 fresh()
 Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
@@ -259,6 +303,8 @@ Groups:HandleJoin("Bea-Realm", { role = "T" }, "GUILD")
 check(#Groups:Requests() == 0, "a request is only ever heard by whisper")
 Groups:HandleJoin("Zed-Realm", { role = "T" }, "WHISPER")
 check(#Groups:Requests() == 0 and #wire == 0, "and only from somebody on the guild roster")
+Groups:HandleJoin("Bea-Otherrealm", { role = "T" }, "WHISPER")
+check(#Groups:Requests() == 0 and #wire == 0, "a namesake on another realm is not the guildmate")
 Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
 local queue = Groups:Requests()
 check(#queue == 1 and queue[1].key == key("Bea") and queue[1].role == "T" and queue[1].state == "pending", "a guildmate's request is queued")
@@ -273,9 +319,9 @@ Groups:HandleJoin("Dan-Realm", { role = "|cffT" }, "WHISPER")
 check(#Groups:Requests() == 1, "and so is a role that is none")
 Groups:HandleJoin("Eva-Realm", { role = "T" }, "WHISPER")
 check(#Groups:Requests() == 2 and Groups:Requests()[1].key == key("Bea"), "the queue is oldest first")
-runTimers()
 Groups:HandleJoin("Eva-Realm", { cancel = true }, "WHISPER")
-check(#Groups:Requests() == 1, "a request taken back leaves the queue")
+check(#Groups:Requests() == 1, "a request taken back leaves the queue, inside the cooldown too")
+runTimers()
 
 check(Groups:Invite(key("Bea")) and invited[1] == "Bea-Realm" and Groups:Requests()[1].state == "invited",
   "inviting calls the game's invite and marks the row")
@@ -285,6 +331,32 @@ Groups:HandleJoin("Eva-Realm", { role = "T" }, "WHISPER")
 wire = {}
 check(Groups:Decline(key("Eva")) and wire[1].to == "Eva-Realm" and wire[1].p.decline == true and #Groups:Requests() == 1,
   "declining tells the asker and clears the row")
+
+-- The queue is the listed group's
+fresh()
+Groups:Create("steamvault", { T = 1, D = 1 }, "", 1800, false)
+Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
+CLOCK = CLOCK + 10
+Groups:Create("steamvault", { T = 1, D = 2 }, "", 1800, false)
+check(#Groups:Requests() == 1, "changing the spots keeps who asked")
+wire = {}
+Groups:Create("karazhan", { T = 1 }, "", 1800, false)
+check(#Groups:Requests() == 0 and wire[1].to == "Bea-Realm" and wire[1].p.closed == true,
+  "another activity is another group: who asked hears the first one closed")
+runTimers()
+Groups:HandleJoin("Bea-Realm", { role = "T" }, "WHISPER")
+NOW = NOW + 1801
+Groups:Prune()
+check(Groups:Mine() == nil and #Groups:Requests() == 0, "and a queue does not outlive a listing that expired")
+
+-- Only whoever can invite lists the group
+fresh()
+PARTY = { "Bea" }
+leader = false
+g, why = Groups:Create("steamvault", { D = 1 }, "", 3600, false)
+check(g == nil and why == "Only the group's leader can list it." and #wire == 0, "a member of somebody else's party lists nothing")
+leader = true
+check(Groups:Create("steamvault", { D = 1 }, "", 3600, false) ~= nil, "its leader does")
 
 -- A full queue
 fresh()
@@ -318,6 +390,29 @@ check(count(TYPES.LFG_GROUP) == 1, "a roster event that changes nothing sends no
 PARTY = { "Bea", "Stranger" }
 Groups:OnGroupRoster()
 check(Groups:Mine().n == 3 and Groups:Mine().need.T == 1, "somebody invited by hand counts as a member and closes no spot")
+check(last(TYPES.LFG_GROUP).p.n == 2, "(said once the publish window allows)")
+
+-- The spots never pass the seats left
+do
+  local saved = { wire = wire, printed = printed }
+  fresh()
+  Groups:Create("steamvault", { T = 1, H = 1, D = 2 }, "", 3600, false)
+  PARTY = { "W", "X", "Y" }
+  Groups:OnGroupRoster()
+  local left = Groups:Mine()
+  check(left and left.n == 4 and Groups:OpenSpots(left.need) == 1 and left.need.T == 1,
+    "three joined by hand: one seat left is one spot open, the first role's")
+  fresh()
+  Groups:Create("steamvault", { T = 1, H = 1 }, "", 3600, false)
+  runTimers()
+  Groups:HandleJoin("Bea-Realm", { role = "H" }, "WHISPER")
+  Groups:HandleJoin("Cid-Realm", { role = "T" }, "WHISPER")
+  Groups:Invite(key("Bea"))
+  CLOCK = CLOCK + 10
+  wire, printed = saved.wire, saved.printed
+  PARTY = { "Bea", "Stranger" }
+  Groups:OnGroupRoster()
+end
 
 PARTY = { "Bea", "Stranger", "Cid" }
 Groups:OnGroupRoster()
@@ -355,6 +450,31 @@ Groups:OnGroupRoster()
 check(Groups:Asked(key("Bea")) == nil and Groups:Asked(key("Cid")) == nil, "in the group of a leader I asked, I ask nobody else")
 check(last(TYPES.LFG_JOIN).to == "Cid-Realm" and last(TYPES.LFG_JOIN).p.cancel == true, "the other leader hears I took it back")
 check(not Board:AmAvailable(), "and I am no longer listed as looking")
+
+-- Who is looking is heard on the guild channel alone
+fresh()
+Board:HandleEntry("Zed-Realm", { role = "TANK", note = "x", ttl = 3600 }, "WHISPER")
+check(next(GuildOS.db.lfgBoard) == nil and #printed == 0, "a whispered listing is nobody's")
+Board:HandleEntry("Bea-Realm", { role = "TANK", note = "x", ttl = 3600 }, "GUILD")
+check(GuildOS.db.lfgBoard[key("Bea")] ~= nil, "the guild channel's is a guildmate's")
+
+-- The codes on the wire are nobody else's
+do
+  local fh = assert(io.open(ADDON .. "/Modules/CommSystem.lua", "rb"))
+  local src = fh:read("*a")
+  fh:close()
+  local seen = {}
+  for name, code in src:gmatch('\n%s+([%u_]+)%s*=%s*"(%w%w)",') do
+    check(not seen[code], "message code " .. code .. " is " .. name .. "'s alone (also " .. tostring(seen[code]) .. ")")
+    seen[code] = name
+  end
+  check(seen.GF == "LFG_GROUP" and seen.GJ == "LFG_JOIN", "the two new messages are in the table")
+  for code in src:gmatch('msgType == "(%w%w)"') do
+    check(code ~= "GF" and code ~= "GJ", "no older branch already takes " .. code)
+  end
+  local other = assert(io.open(ADDON .. "/Modules/WishlistSystem.lua", "rb")):read("*a")
+  check(other:find('SendMessage("LP"', 1, true) and not seen.LP, "LP stays the wishlist's loot prio")
+end
 
 -- WoW: Forever: a unit may give the first name alone, or the surname in the realm's slot
 do

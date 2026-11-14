@@ -137,12 +137,12 @@ dofile(ADDON .. "/UI/GroupsPanel.lua")
 
 local wire = {}
 GuildOS.CommSystem = {
-  MSG_TYPES = { LFG = "LG", LFG_GROUP = "LP", LFG_JOIN = "LJ" },
+  MSG_TYPES = { LFG = "LG", LFG_GROUP = "GF", LFG_JOIN = "GJ" },
   SendMessage = function(_, kind, payload, target) wire[#wire + 1] = { kind = kind, p = payload, to = target } end,
 }
 GuildOS.Print = function() end
 GuildOS.Compat.After = function() end
-GuildOS.RosterKey = function(_, name) return name end
+GuildOS.RosterKey = function(_, name) return GuildOS:GetPlayerKey(name:match("^([^-]+)"), "Realm") end
 GuildOS.SafeCall = function(_, fn, ...) return fn(...) end   -- an error in a paint fails the test, loudly
 
 GuildOS.db = {}
@@ -304,7 +304,7 @@ check(tells[1] == "Cid", "Whisper opens a whisper to the leader")
 click(panel, "Invite")
 check(invited[#invited] == "Dan", "Invite on a player looking invites them")
 click(panel, "Tank")
-check(wire[#wire].kind == "LJ" and wire[#wire].to == "Cid-Realm" and wire[#wire].p.role == "T", "a role button asks the leader for that spot")
+check(wire[#wire].kind == "GJ" and wire[#wire].to == "Cid-Realm" and wire[#wire].p.role == "T", "a role button asks the leader for that spot")
 check(shows(panel, "asked as Tank") and #buttons(panel, "Tank") == 0, "and the card then says what I asked")
 click(panel, "Take it back")
 check(Groups:Asked(key("Cid")) == nil and #buttons(panel, "Tank") == 1, "taking it back offers the roles again")

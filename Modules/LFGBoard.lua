@@ -175,6 +175,7 @@ function LFGBoard:AllianceList(now)
                             key   = nil,
                             name  = row.n,
                             role  = row.r or "ANY",
+                            roles = LETTER_OF[row.r or "ANY"] or "",
                             note  = "|cff8888aa[" .. guildName .. "]|r " .. (row.t or ""),
                             ts    = row.ts,
                             ttl   = row.ttl,
@@ -424,8 +425,10 @@ function LFGBoard:Rebroadcast()
 end
 
 -- Incoming: the key ALWAYS comes from the envelope sender, never the payload.
-function LFGBoard:HandleEntry(sender, data)
-    if not sender then return end
+-- Only over GUILD, where the sender is a guildmate by the channel itself: a whisper can come from
+-- anybody (issue #341; `channel` is nil only from a harness that passes none).
+function LFGBoard:HandleEntry(sender, data, channel)
+    if not sender or (channel ~= nil and channel ~= "GUILD") then return end
     -- Cooldown first, before the deserialize and before any repaint, so a
     -- flooding peer costs us nothing. Keyed on the short name so "Bob" and
     -- "Bob-Realm" share one bucket.

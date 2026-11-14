@@ -18,6 +18,7 @@ local SIZE_DEFAULT   = 5
 local REQUESTS_MAX   = 20    -- requests a leader keeps; the rest are declined
 local GROUP_COOLDOWN = 5     -- accept at most one listing per sender per 5s
 local JOIN_COOLDOWN  = 2     -- and one request per sender per 2s
+local ASK_EVERY      = 3     -- so an asker never sends two requests inside the cooldown above
 local PUBLISH_EVERY  = 6     -- so a leader never sends two inside the cooldown above
 local LETTERS = { "T", "H", "D" }
 local ROLE_OF = { T = "TANK", H = "HEALER", D = "DPS" }
@@ -31,7 +32,7 @@ local function myKey() return board():MyKey() end
 local function state()
     local s = GuildOS.State.groups
     if not s then
-        s = { requests = {}, asked = {}, groupCd = {}, joinCd = {}, lastPublish = 0 }
+        s = { requests = {}, asked = {}, askedAt = {}, askPending = {}, groupCd = {}, joinCd = {}, lastPublish = 0 }
         GuildOS.State.groups = s
     end
     return s
@@ -119,6 +120,17 @@ function Groups:Prune(now, store)
     local removed = 0
     for k, g in pairs(store) do
         if not board():_IsActive(g, now) then store[k] = nil; removed = removed + 1 end
+    end
+    -- A request never outlives the listing it was for: an expiry sends no word, so both ends drop
+    -- theirs here (only for the saved store, which is the one they were made against).
+    if store == (GuildOS.db and GuildOS.db.lfgGroups) then
+        local s = state()
+        for key in pairs(s.asked) do
+            if not store[key] then s.asked[key] = nil end
+        end
+        if not store[myKey()] then
+            for key in pairs(s.requests) do s.requests[key] = nil end
+        end
     end
     return removed
 end
@@ -235,6 +247,7 @@ function Groups:Create(act, need, note, ttl, toGuild)
     local B = board()
     act = B:_SanitizeAct(act)
     if not act then return nil, L["Pick what the group is for."] end
+    if not GuildOS.Compat.CanInvite() then return nil, L["Only the group's leader can list it."] end
     local _, count = GuildOS.Compat.GroupRoster()
     local max = math.max(self:SizeOf(act), math.min(count, SIZE_MAX))
     need = self:_SanitizeNeed(need, max - count)
@@ -244,6 +257,9 @@ function Groups:Create(act, need, note, ttl, toGuild)
         act = act, note = GuildOS:SanitizeUserText(note, NOTE_MAX), need = need,
         n = count, max = max, ts = GetServerTime(), ttl = ttl,
     }
+    -- Whoever asked for a spot asked for the group that was listed: another activity is another group.
+    local was = self:Mine()
+    if not was or was.act ~= act then self:_CloseQueue() end
     GuildOS.db.lfgGroups[myKey()] = g
     GuildOS.db.lfgPrefs.lastTtl = ttl
     -- Whoever forms a group is not looking for one, nor waiting on somebody else's.
@@ -262,16 +278,21 @@ function Groups:Create(act, need, note, ttl, toGuild)
     return g
 end
 
--- Take my listing down. Whoever was waiting is told it closed, which is not a refusal.
-function Groups:Disband()
-    local store = GuildOS.db.lfgGroups
-    if not store[myKey()] then return false end
-    store[myKey()] = nil
+-- Empty my queue. Whoever was waiting is told the group closed, which is not a refusal.
+function Groups:_CloseQueue()
     local s = state()
     for key, r in pairs(s.requests) do
         send({ decline = true, closed = true }, r.from)
         s.requests[key] = nil
     end
+end
+
+-- Take my listing down.
+function Groups:Disband()
+    local store = GuildOS.db.lfgGroups
+    if not store[myKey()] then return false end
+    store[myKey()] = nil
+    self:_CloseQueue()
     self:_Publish()
     board():Refresh()
     return true
@@ -288,20 +309,26 @@ end
 function Groups:HandleGroup(sender, data, channel)
     if not sender or channel ~= "GUILD" then return end
     local key, short = keyOf(sender)
-    if rateLimited(state().groupCd, short, GROUP_COOLDOWN) then return end
     local ok, p = LibSerialize:Deserialize(data)
     if not ok or type(p) ~= "table" then return end
     local store = GuildOS.db.lfgGroups
     local now = GetServerTime()
     if p.clear then
+        -- Taking down a listing we hold is heard whatever the cooldown says: it happens once a
+        -- listing, and the one dropped would leave a dead group up for as long as its leader plays.
+        if not store[key] then return end
         store[key] = nil
         state().asked[key] = nil
     else
-        local wasActive = board():_IsActive(store[key], now)
+        if rateLimited(state().groupCd, short, GROUP_COOLDOWN) then return end
+        local was = store[key]
+        local wasActive = board():_IsActive(was, now)
         local g, age = self:_BuildGroup(p, now)
         if not g then return end
         g.from = sender
         store[key] = g
+        -- What I asked, I asked of the group that was listed.
+        if not wasActive or was.act ~= g.act then state().asked[key] = nil end
         local prefs = GuildOS.db.lfgPrefs
         if age == 0 and not wasActive and prefs and prefs.notify and key ~= myKey() then
             GuildOS:Print(string.format(L["%s is forming a group for %s."], short, board():ActivityName(g.act)))
@@ -321,8 +348,30 @@ function Groups:RequestSpot(leaderKey, role)
     if not board():_IsActive(g, GetServerTime()) or leaderKey == myKey() then return false end
     if not ROLE_OF[role] or (g.need[role] or 0) < 1 or not g.from then return false end
     state().asked[leaderKey] = { role = role, state = "pending" }
-    send({ role = role }, g.from)
+    self:_SendAsk(leaderKey)
     board():Refresh()
+    return true
+end
+
+-- Tell a leader what I ask of them now. A leader takes one request a sender every JOIN_COOLDOWN
+-- seconds, so a second one inside ASK_EVERY waits and goes out once, if I am still asking by then.
+function Groups:_SendAsk(leaderKey)
+    local s = state()
+    local wait = ASK_EVERY - (GetTime() - (s.askedAt[leaderKey] or -ASK_EVERY))
+    if wait > 0 then
+        if not s.askPending[leaderKey] then
+            s.askPending[leaderKey] = true
+            GuildOS.Compat.After(wait, function()
+                s.askPending[leaderKey] = nil
+                Groups:_SendAsk(leaderKey)
+            end)
+        end
+        return false
+    end
+    local mine, g = s.asked[leaderKey], GuildOS.db.lfgGroups[leaderKey]
+    if not mine or mine.state ~= "pending" or not g or not g.from then return false end
+    s.askedAt[leaderKey] = GetTime()
+    send({ role = mine.role }, g.from)
     return true
 end
 
@@ -373,12 +422,12 @@ end
 -- A whisper about a spot. Three things arrive here: a leader's answer to what I asked, an asker
 -- taking a request back, and a request for a spot in my group. Never over GUILD (a request is the
 -- leader's alone), and a request only from somebody on the guild roster: a whisper can come from
--- anybody.
+-- anybody. An answer and a take-back change something only when there is a matching entry, once, so
+-- neither is held to the cooldown: the one dropped would leave a row that is no longer true.
 function Groups:HandleJoin(sender, data, channel)
     if not sender or channel ~= "WHISPER" then return end
     local key, short = keyOf(sender)
     local s = state()
-    if rateLimited(s.joinCd, short, JOIN_COOLDOWN) then return end
     local ok, p = LibSerialize:Deserialize(data)
     if not ok or type(p) ~= "table" then return end
 
@@ -395,8 +444,11 @@ function Groups:HandleJoin(sender, data, channel)
         if not s.requests[key] then return end
         s.requests[key] = nil
     else
+        -- The whole name, not the short one: a namesake on another realm is not the guildmate (as
+        -- issue #78). Then the cooldown, by that key, so nobody else can use up a guildmate's.
         local g = self:Mine()
-        if not g or not GuildOS:RosterKey(short) then return end
+        if not g or GuildOS:RosterKey(sender) ~= key then return end
+        if rateLimited(s.joinCd, key, JOIN_COOLDOWN) then return end
         local role = ROLE_OF[p.role] and p.role or nil
         local known = s.requests[key]
         local count = 0
@@ -437,7 +489,11 @@ function Groups:OnGroupRoster(members, count)
             end
         end
         local n = math.min(count, g.max)
-        if g.n ~= n then g.n, changed = n, true end
+        if g.n ~= n then
+            g.n, changed = n, true
+            -- Somebody invited by hand took a seat: the spots never pass the seats left.
+            g.need = self:_SanitizeNeed(g.need, g.max - n)
+        end
         if self:OpenSpots(g.need) == 0 or count >= g.max then
             self:Disband()
             GuildOS:Print(L["Your group is complete: the listing came down."])
@@ -458,7 +514,7 @@ function Groups:OnGroupRoster(members, count)
         end
         for _, key in ipairs(others) do self:CancelRequest(key) end
         if board():AmAvailable() then board():ClearAvailable() end
-        changed = false
+        changed = true
     end
     if changed then board():Refresh() end
 end

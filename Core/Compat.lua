@@ -1095,6 +1095,14 @@ function Compat.GroupRoster()
     return members, count
 end
 
+-- Whether I may invite somebody: alone, the group's leader, or a raid's assistant (issue #341).
+function Compat.CanInvite()
+    local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if n <= 1 then return true end
+    if UnitIsGroupLeader and UnitIsGroupLeader("player") then return true end
+    return (UnitIsGroupAssistant and UnitIsGroupAssistant("player")) and true or false
+end
+
 -- Whether the player of this key is in a roster Compat.GroupRoster gave. On WoW: Forever the first
 -- name decides when the whole name does not match: a guildmate who shares it would read as there,
 -- and a spot left open by mistake is worse than one closed a moment early.
