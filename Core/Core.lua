@@ -1225,7 +1225,19 @@ function GuildOS:IsLootSystemHere(key) return lootSystemHere(key) end
 
 -- The loot system in force (issue #338): the one the raid's active core chose for itself, else the
 -- guild's. `coreName` asks for another core; "" is the guild's own, whatever core is active.
+-- With the raid night's own rule in force (the site's, guildos-web#516), the loot system of before
+-- that rule reads closest to, so the announce and the screens follow the rule being played.
 function GuildOS:GetLootSystem(coreName)
+    if coreName == nil then
+        local LR = self.LootRule
+        local night = LR and LR.Night and self.db and LR:Night()
+        if night then return LR:SystemOf(night) end
+    end
+    return self:BaseLootSystem(coreName)
+end
+
+-- The same without the night's rule: what the core, or the guild, chose.
+function GuildOS:BaseLootSystem(coreName)
     local CM = self.CoreManager
     if coreName ~= "" and CM and CM.GetLootSystem and self.db and self.db.cores then
         local own = CM:GetLootSystem(coreName)

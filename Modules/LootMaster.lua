@@ -670,6 +670,14 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     -- The guild's chosen loot system (Settings) decides the default flow:
     -- "wishlist"/"tmb" force wishlist auto-council; "dkp"/"rolls" open a roll
     -- (DKP just changes how the roll frame ranks and what award charges).
+    -- The raid night's own rule (the site's, guildos-web#516) says the whole order: it opens its roll
+    -- for everyone, with none of the shortcuts the loot systems of before take by the wishlist.
+    if GuildOS.LootRule.Night and GuildOS.LootRule:Night() == rule then
+        self.activeLoot.night = true
+        self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
+        return
+    end
+
     local lootSystem = system
     local wishlistOnly = self.WISHLIST_ONLY_MODE or lootSystem == "wishlist" or lootSystem == "tmb"
 
@@ -1174,25 +1182,8 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
     extra = extra or {}
 
     local key = GuildOS:GetPlayerKey(name)
-
-    -- Who may ask (the loot rule's filters, issue #333): below the attendance the guild asks for, a
-    -- main spec answer is read as off spec.
+    local rule = self:Rule()
     local ctx = self:GetPlayerContext(name)
-    ctx.dkp = (GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
-        and GuildOS.Points:Get(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0
-    local answer, filter = GuildOS.LootRule:AnswerFor(ctx, rollType, self:Rule())
-    if filter and not answer then
-        -- A roll that costs more to enter than the roller holds (issue #309): no roll, and told why.
-        self:SafeSendChatAuto(string.format(
-            L["[Loot] %s: not in this roll (%d points, %d needed to enter)"], name, ctx.dkp, filter.min), "RAID")
-        return
-    end
-    if filter then
-        rollType = answer
-        self:SafeSendChatAuto(string.format(
-            L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
-            name, ctx.att25, filter.min), "RAID")
-    end
 
     -- Wishlist lookup
     local wishInfo = nil
@@ -1233,6 +1224,51 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
         end
     end
 
+    -- The points as they stand now: the balance, and the two sides of EPGP with the pool's base GP,
+    -- which a rule orders and filters by under the accounts "dkp", "ep" and "gp".
+    local P = GuildOS.Points
+    local pointsReady = P and P.GetDB and P:GetDB()
+    local pKey = GuildOS:GetPlayerKey(name, GetRealmName())
+    local ep, gp, gpBase, pr = 0, 0, 0, 0
+    ctx.dkp = pointsReady and P:Get(pKey) or 0
+    if pointsReady then
+        gpBase = tonumber(pointsReady.config and pointsReady.config.baseGP) or 0
+        ep, gp, pr = P:EP(pKey), P:GP(pKey) - gpBase, P:PR(pKey)
+    end
+
+    -- The counters the rule compares by (the +1, issue #334), as they stand now.
+    local accts
+    if pointsReady then
+        for _, a in ipairs(GuildOS.LootRule:Counters(rule)) do
+            accts = accts or {}
+            accts[a.key] = P:Counter(a.key, key)
+        end
+    end
+
+    -- Who may ask (the loot rule's filters, issue #333): below the attendance the guild asks for, a
+    -- main spec answer is read as off spec; without the points to enter, a reserve on the item or room
+    -- under the night's limit, no roll at all.
+    local cand = {
+        att25 = ctx.att25, recvCount = ctx.recvThisLockout, dkp = ctx.dkp, ep = ep, gp = gp, gpBase = gpBase,
+        softRes = srInfo, accts = accts,
+    }
+    local answer, filter = GuildOS.LootRule:AnswerFor(cand, rollType, rule)
+    if filter and not answer then
+        self:SafeSendChatAuto(self:BlockedLine(name, filter, cand, rule), "RAID")
+        return
+    end
+    if filter then
+        if filter.k == "attendance" and filter.from == "MS" and filter.to == "OS" then
+            self:SafeSendChatAuto(string.format(
+                L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
+                name, ctx.att25, filter.min), "RAID")
+        else
+            self:SafeSendChatAuto(string.format(L["[Loot] %s: %s read as %s (%s)"], name,
+                self:AnswerLabel(filter.from), self:AnswerLabel(filter.to), self:FilterReason(filter, cand, rule)), "RAID")
+        end
+        rollType = answer
+    end
+
     -- Class from raid unit or stored member data
     local class = "UNKNOWN"
     local numMembers = GetNumGroupMembers() or 0
@@ -1248,22 +1284,11 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
         end
     end
     if class == "UNKNOWN" then
-        local pKey = GuildOS:GetPlayerKey(name, GetRealmName())
         local memberData = GuildOS.db.members and GuildOS.db.members[pKey]
         if memberData and memberData.class then
             class = memberData.class
         elseif name == GuildOS.Compat.PlayerName() then
             class = select(2, UnitClass("player")) or "UNKNOWN"
-        end
-    end
-
-    -- The counters the rule compares by (the +1, issue #334), as they stand now.
-    local accts
-    local P = GuildOS.Points
-    if P and P.GetDB and P:GetDB() then
-        for _, a in ipairs(GuildOS.LootRule:Counters(self:Rule())) do
-            accts = accts or {}
-            accts[a.key] = P:Counter(a.key, key)
         end
     end
 
@@ -1283,8 +1308,10 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
         att25      = ctx.att25,
         recvCount  = ctx.recvThisLockout,
         dkp        = ctx.dkp,
-        pr         = (GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
-                      and GuildOS.Points:PR(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0,
+        pr         = pr,
+        ep         = ep,
+        gp         = gp,
+        gpBase     = gpBase,
     }
 
     -- Announce prio or wishlist position to raid
@@ -1301,6 +1328,31 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
         self:RefreshRollFrame()
     end
     return self.rolls[key]
+end
+
+-- Why a filter of the rule failed a candidate, in words. Each one by its own literal key.
+function LootMaster:FilterReason(f, c, rule)
+    if f.k == "attendance" then
+        return string.format(L["attendance %d%% below minimum %d%%"], c.att25 or 0, f.min)
+    elseif f.k == "reserved" then
+        return L["the item was not reserved"]
+    elseif f.k == "received" then
+        return string.format(L["%d items received tonight, the limit is %d"], c.recvCount or 0, f.max)
+    end
+    local acct = f.k == "points" and "dkp" or f.acct
+    local has = GuildOS.LootRule:Held(c, acct, rule)
+    if acct == "dkp" then return string.format(L["%d points, %d needed"], has, f.min) end
+    local counter = GuildOS.LootRule:Counter(acct, rule)
+    return string.format(L["%s: %d, %d needed"], (counter and counter.name) or acct:upper(), has, f.min)
+end
+
+-- The line the raid reads when a filter keeps somebody out of the roll. The points' own, a roll that
+-- costs more to enter than the roller holds (issue #309), is the line of before.
+function LootMaster:BlockedLine(name, f, c, rule)
+    if f.k == "points" or (f.k == "account" and f.acct == "dkp") then
+        return string.format(L["[Loot] %s: not in this roll (%d points, %d needed to enter)"], name, c.dkp or 0, f.min)
+    end
+    return string.format(L["[Loot] %s: not in this roll (%s)"], name, self:FilterReason(f, c, rule))
 end
 
 ----------------------------------------------------------------------
@@ -1735,7 +1787,9 @@ function LootMaster:AwardLoot(playerName, silent)
     -- per-item cost is configured (cost 0 = informational standings only).
     -- A rule that names what the winner pays (their bid, issue #334) charges whatever the loot system.
     local pointsReady = GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
-    if pointsReady and (GuildOS:LootSystemUsesPoints(self:System()) or LR:ChargeEffect(rule)) and GuildOS:IsOfficer() then
+    local entryEffect = LR:EntryEffect(rule)
+    if pointsReady and (GuildOS:LootSystemUsesPoints(self:System()) or LR:ChargeEffect(rule) or entryEffect)
+        and GuildOS:IsOfficer() then
         local pKey = GuildOS:GetPlayerKey(playerName)
         -- The price to enter the roll (issue #309): everyone who asked pays it, and whoever lost gets
         -- part of it back. Only for the item that was rolled, and what each paid is kept for an undo.
@@ -1743,7 +1797,9 @@ function LootMaster:AwardLoot(playerName, silent)
         if rolled then
             local asked = {}
             for _, r in ipairs(rolled) do asked[#asked + 1] = GuildOS:GetPlayerKey(r.name) end
-            local paid = GuildOS.Points:ChargeEntry(asked, pKey, GuildOS.Compat.GetItemInfo(itemLink) or itemLink)
+            -- The rule's own price and refund when it names them ("entry"), else the points' settings.
+            local paid = GuildOS.Points:ChargeEntry(asked, pKey, GuildOS.Compat.GetItemInfo(itemLink) or itemLink,
+                entryEffect and entryEffect.value, entryEffect and (entryEffect.refund or 0) * 100)
             if #paid > 0 then award.paid = paid end
         end
         -- The item's price: the guild's own for it, its GP in EPGP, else the one cost per item (#319).
@@ -1752,7 +1808,8 @@ function LootMaster:AwardLoot(playerName, silent)
         -- The points history keeps both the bid and what was charged.
         local others = {}
         for _, r in pairs(self.rolls) do others[#others + 1] = r end
-        local cost = LR:PriceFor(row, others, GuildOS.Points:PriceOf(itemLink), rule)
+        -- A price that is a share of what the winner holds ("fraction", "all") reads the balance now.
+        local cost = LR:PriceFor(row, others, GuildOS.Points:PriceOf(itemLink), rule, GuildOS.Points:Get(pKey))
         if cost > 0 then
             local reason = GuildOS.Compat.GetItemInfo(itemLink) or itemLink
             if row and row.bid then
@@ -1766,21 +1823,34 @@ function LootMaster:AwardLoot(playerName, silent)
         end
     end
 
-    -- The +1 (issue #334): an answer that counts adds to the winner's counter, whoever the loot master
-    -- is; what was added is kept for an undo.
-    if pointsReady and response and response.plus then
+    -- What the award changes on the rule's counters, in the rule's order; each move is kept for an undo.
+    --   * "add" (the +1, issue #334): an answer that counts adds to the winner's counter;
+    --   * "reset": the winner's counter goes back to nothing (a wait that ends with the item);
+    --   * "charge" on a counter: a fixed figure or a share of it comes off, by the answer's cost.
+    -- Whoever the loot master is. An item given with no answer (straight from the loot window) moves none.
+    if pointsReady and response then
         local pKey = GuildOS:GetPlayerKey(playerName)
+        -- One entry moves a counter by a hundred at most (Points): a larger move takes several.
+        local function move(acct, delta)
+            local counter = LR:Counter(acct, rule)
+            local reset = counter and counter.reset or "never"
+            while delta ~= 0 do
+                local step = math.max(-100, math.min(100, delta))
+                local e = GuildOS.Points:AddCounter(acct, pKey, step, reset)
+                if not e then return end
+                award.plus = award.plus or {}
+                award.plus[#award.plus + 1] = { acct = e.acct, key = pKey, value = step, reset = e.rs, per = e.per }
+                delta = delta - step
+            end
+        end
         for _, effect in ipairs(rule.effects or {}) do
-            if effect.k == "add" then
-                local reset = "never"
-                for _, a in ipairs(LR:Counters(rule)) do
-                    if a.key == effect.acct then reset = a.reset or "never" end
-                end
-                local e = GuildOS.Points:AddCounter(effect.acct, pKey, effect.value, reset)
-                if e then
-                    award.plus = award.plus or {}
-                    award.plus[#award.plus + 1] = { acct = e.acct, key = pKey, value = effect.value, reset = e.rs, per = e.per }
-                end
+            local counter = LR:Counter(effect.acct, rule)
+            if effect.k == "add" and response.plus then
+                move(effect.acct, effect.value)
+            elseif effect.k == "reset" and counter then
+                move(effect.acct, -GuildOS.Points:Counter(effect.acct, pKey))
+            elseif effect.k == "charge" and counter then
+                move(effect.acct, -LR:CounterCharge(effect, GuildOS.Points:Counter(effect.acct, pKey), response))
             end
         end
     end
@@ -3674,7 +3744,9 @@ function LootMaster:RefreshRollFrame()
             plus = plus .. string.format("|cffFF9900+%d|r ", (r.accts and r.accts[a.key]) or 0)
         end
         if lootSystem == "epgp" then
-            tmbText:SetText(plus .. string.format(L["|cffFFD700%.2f PR|r"], math.max(0, r.pr or 0)))
+            -- The rule's own ratio when it orders by one (a rule from the site), else the pool's priority.
+            local ratio = GuildOS.LootRule:RatioOf(r, rule)
+            tmbText:SetText(plus .. string.format(L["|cffFFD700%.2f PR|r"], math.max(0, ratio or r.pr or 0)))
         elseif usesPoints then
             tmbText:SetText(plus .. string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
         elseif r.prioOrder then

@@ -251,6 +251,8 @@ GuildOS.Points = {
   Charge = function(_, key) charged[#charged + 1] = key end,
   Get = function() return 0 end,
   PR = function() return 0 end,
+  EP = function() return 0 end,
+  GP = function() return 0 end,
   PriceOf = function() return 5 end,
   ChargeEntry = function() return {} end,
 }

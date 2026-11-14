@@ -450,6 +450,17 @@ end
 -- Called by RaidTracker on a successful boss kill (raid-leader gated so
 -- exactly one client awards). No-op unless auto-award is enabled.
 function Points:OnBossKill(encounterName)
+    -- The counters the loot rule feeds per boss, whatever the points' own switch says.
+    if UnitIsGroupLeader and UnitIsGroupLeader("player") and IsInRaid() then
+        local keys = {}
+        for i = 1, GetNumGroupMembers() do
+            local unit = "raid" .. i
+            local nm, realm
+            if UnitExists(unit) then nm, realm = GuildOS.Compat.UnitIdentity(unit) end
+            if nm then keys[#keys + 1] = GuildOS:GetPlayerKey(nm, (realm and realm ~= "") and realm or GetRealmName()) end
+        end
+        self:EarnCounters("boss", keys)
+    end
     -- A pool not set up yet (the module switched off in Settings, so never initialized) awards nothing.
     local pool = self:GetDB()
     if not (pool and pool.config and pool.config.autoAward) then return end
@@ -465,15 +476,21 @@ end
 -- so two officers' clients ending the same raid give it once.
 function Points:OnRaidEnd(session)
     local pool = self:GetDB()
-    if not (pool and pool.config and pool.config.autoAward) then return 0 end
     if not GuildOS:IsOfficer() or type(session) ~= "table" then return 0 end
-    local c, snaps = pool.config, session.snapshots or {}
+    local snaps = session.snapshots or {}
     local first, last = snaps[1], snaps[#snaps]
     if not (first and first.members) then return 0 end
-    local seen = {}
+    local seen, everyone = {}, {}
     for _, snap in ipairs(snaps) do
-        for key in pairs(snap.members or {}) do seen[key] = true end
+        for key in pairs(snap.members or {}) do
+            if not seen[key] then seen[key] = true; everyone[#everyone + 1] = key end
+        end
     end
+    -- The counters the loot rule feeds per raid attended, whatever the points' own switch says; the
+    -- session names each entry, so two officers' clients ending the same raid give it once.
+    self:EarnCounters("raid", everyone, string.format("%X", session.startTime or 0))
+    if not (pool and pool.config and pool.config.autoAward) then return 0 end
+    local c = pool.config
     local entries = {}
     local function give(key, amount, label, tag)
         amount = tonumber(amount) or 0
@@ -549,11 +566,14 @@ end
 -- The price to enter a roll (issue #309): everyone who asked pays it, and whoever lost gets part of it
 -- back. `asked` is the list of keys; returns what each paid in the end, { { key, amount }, ... }, for
 -- an undo to give back.
-function Points:ChargeEntry(asked, winnerKey, itemName)
+-- `entry` and `refundPct` are the loot rule's own when it names them (its "entry" effect); without
+-- them, the pool's settings as before.
+function Points:ChargeEntry(asked, winnerKey, itemName, entry, refundPct)
     local c = cfg()
-    local entry = tonumber(c.entryCost) or 0
+    entry = tonumber(entry) or tonumber(c.entryCost) or 0
     if entry <= 0 or not GuildOS:IsOfficer() then return {} end
-    local back = math.floor(entry * math.min(100, math.max(0, tonumber(c.refundPct) or 0)) / 100)
+    refundPct = tonumber(refundPct) or tonumber(c.refundPct) or 0
+    local back = math.floor(entry * math.min(100, math.max(0, refundPct)) / 100)
     local paid, entries = {}, {}
     for _, key in ipairs(asked) do
         local e
@@ -653,6 +673,39 @@ function Points:AddCounter(acct, key, delta, reset, per)
     end
     self:Refresh()
     return e
+end
+
+-- What the loot rule in force gives a counter by itself (its accounts' `earn`, with `auto` "raid" or
+-- "boss"): `auto` happened for everyone in `keys`. `tag` makes each entry's name the event's own, so
+-- every officer's client that saw the event gives it once; without one the caller is the only client
+-- that gives it (the raid leader's, on a boss kill). Returns how many entries were made.
+function Points:EarnCounters(auto, keys, tag)
+    local LR = GuildOS.LootRule
+    if not (LR and LR.Active and GuildOS:IsOfficer()) then return 0 end
+    local pool = self:GetDB()
+    if not (pool and pool.appliedOps) then return 0 end
+    local entries = {}
+    for _, a in ipairs(LR:Counters()) do
+        for _, earn in ipairs(a.earn or {}) do
+            if earn.auto == auto then
+                for _, key in ipairs(keys) do
+                    local e = self:MakeEntry(key, earn.value, "", "counter")
+                    e.acct, e.rs = a.key, COUNTER_RESETS[a.reset] and a.reset or "never"
+                    e.per = self:CounterPeriod(e.rs)
+                    if tag then e.op = string.format("C%s-%s-%s-%s", tag, a.key, earn.key, key) end
+                    if not pool.appliedOps[e.op] and self:ApplyCounterEntry(e, pool) then
+                        self:MarkApplied(e.op, pool)
+                        entries[#entries + 1] = e
+                    end
+                end
+            end
+        end
+    end
+    if #entries > 0 then
+        if GuildOS.SyncService then GuildOS.SyncService:Publish("points", "cdelta", { entries = entries }) end
+        self:Refresh()
+    end
+    return #entries
 end
 
 -- The accounts of a snapshot, as this client keeps them: every figure checked, every key its own.

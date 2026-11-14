@@ -38,6 +38,28 @@ function Plan:Current()
     return roster and roster.plan or nil, roster
 end
 
+--- What the plan window says of the loot rule the raid plays by (the site's #516), or nil when the
+--- roster carries none: the line to show and whether it is a warning. A rule this client cannot read
+--- is not applied in part, and the window says so in one line.
+function Plan:LootRuleLine()
+    local LR = GuildOS.LootRule
+    if not (LR and LR.NightStatus) then return nil end
+    local state, rule, piece = LR:NightStatus()
+    if not state then return nil end
+    if state == "refused" then
+        local what = piece and LR:UnsupportedText(piece)
+        if what then
+            return string.format(L["This raid's loot rule needs a newer GuildOS (%s). The guild's own rule stays in force."], what), true
+        end
+        return L["This raid's loot rule needs a newer GuildOS. The guild's own rule stays in force."], true
+    end
+    local name = LR:ModelName(rule)
+    if state == "active" then
+        return string.format(L["Loot rule: %s (in force for this raid)"], name), false
+    end
+    return string.format(L["Loot rule: %s (in force once the raid is on)"], name), false
+end
+
 --- The plan's bosses: those with a note in the site's order (the catalogue's), then any boss only a
 --- task names, in the order the tasks came.
 function Plan:Bosses()

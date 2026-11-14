@@ -158,22 +158,73 @@ core por último; sem ele, mexem na regra da guilda.
 - **Contas:** o contador mora no pool de pontos, que já é por core; cada lançamento leva o core.
 - **Tela:** o que o sistema mostra (janela de pontos, acesso à wishlist) segue o core ativo.
 
-## O que o addon lê do contrato (#334)
+## O que o addon lê do contrato (#334, guildos-web#516)
 
-`LootRule:Validate` aceita só o que este cliente aplica; o resto do contrato entra com a sua fatia.
+`LootRule:Validate` aceita só o que este cliente aplica. Uma regra com um campo que ele não conhece, em
+qualquer nível, é recusada inteira. Uma regra do contrato que pede uma peça ainda não aplicada é
+recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:UnsupportedText`).
 
 - **`responses`** em objeto, `time` e `bid`. `label` tem até 24 bytes, sem `|`, `;` nem caractere de
   controle (viaja no anúncio e vira texto de botão). `cost` vai de 0 a 10. Campo ausente: `ask = "roll"`,
-  `plus = false`, `cost = 1`, `label = key`.
-- **`order`**: os critérios de antes, `bid` e `account` (com `acct` de uma conta declarada e `dir`).
-- **`accounts`**: só `type = "counter"` (`key`, `name`, `reset`). As chaves `dkp`, `ep` e `gp` são dos
-  pontos e não se declaram.
-- **`effects`**: `add` numa conta contador, aplicado quando a resposta vencedora tem `plus = true`, e
-  no máximo um `charge` com `price` `table` (o preço do item, o padrão), `fixed`, `bid` ou `second`.
-  `second` é o maior lance vencido na mesma resposta mais um passo (`bid.step`), nunca acima do lance
-  do vencedor; sozinho na resposta, o lance mínimo. Todo preço é multiplicado pelo `cost` da resposta.
+  `plus = false`, `cost = 1`, `label = key`. O bloco `bid` é do addon; o site não o emite.
+- **`filters`**: `attendance { min }`, `account { acct, min }`, `reserved`, `received { max }` e o
+  `points { min }` que este cliente escrevia antes do contrato (igual a `account` em `dkp`). Todo
+  filtro aceita `act = "block"` (fora da disputa) ou `"downgrade"` (`from` vira `to`). `received` conta
+  os itens da noite (desde o início da sessão de raide). Um pass não é barrado por filtro nenhum. Uma
+  resposta rebaixada ainda passa pelos filtros seguintes.
+- **`order`**: `response`, `hardres`, `softres`, `prio`, `wishlist`, `received`, `attendance`, `points`,
+  `bid`, `roll`, `account` (qualquer conta, `dir` `high` ou `low`), `ratio` (`num` / `den`, o divisor
+  nunca abaixo de 1) e o `pr` do addon (a prioridade do pool, EPGP de antes).
+- **`accounts`**:
+  - `counter`: `key`, `name`, `reset`, `start` (só 0) e `earn` com `auto` `raid` (uma vez por raide
+    para quem esteve nela, dita uma vez por mais oficiais que a encerrem) ou `boss` (a cada chefe, pelo
+    cliente do líder da raide). Teto, piso, decaimento, ganho manual ou por outro `auto`: recusados.
+  - `balance`: só `dkp` (o saldo do pool de pontos), `ep` (o que foi ganho) e `gp` (o que foi gasto).
+    As três chaves valem mesmo sem declaração. O que a regra diz de como elas enchem entre um item e
+    outro (`earn`, `decay`, `cap`, `start`, `floor`) é lido e **não aplicado**: continua valendo o que
+    os pontos têm configurado no jogo. A exceção é `gp.start`, o GP base pelo qual o `ratio` da regra
+    divide.
+- **`decide`**: `auto`, `ml` e `holder` são lidos e terminam igual: a ordem diz o vencedor e o clique
+  do master looter entrega o item, que não volta.
+- **`effects`**, aplicados na ordem:
+  - `charge` nos pontos (`dkp` ou `gp`; no máximo um): `table` (o preço do item, o padrão), `fixed`,
+    `bid`, `second` (o maior lance vencido na mesma resposta mais um passo, nunca acima do lance do
+    vencedor; sozinho, o lance mínimo), `fraction` (a fração `value` do saldo do vencedor) e `all`.
+    Num contador: `fixed`, `fraction` ou `all`, nunca mais do que ele tem. Todo preço é multiplicado
+    pelo `cost` da resposta.
+  - `entry { acct = "dkp", value, refund }`: todos pagam para disputar e quem perde recebe a fração
+    de volta. Sem ele vale o custo de entrada configurado nos pontos, como antes.
+  - `add` num contador, quando a resposta vencedora tem `plus = true`; `reset` zera o contador do
+    vencedor, qualquer que seja a resposta. O Desfazer devolve os dois.
+- **Recusado, com motivo próprio:** `decide.by = "council"` (`council`), contas `queue` e `bonus`,
+  `roll` com `bonus`, `score`, `upgrade` (a linha do candidato não tem o dado), `bottom`, `split`,
+  conta `balance` fora das três (`balance`), `exceptions` (até a fatia #335).
 - Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid` e `dkpsealed` (fora do retail,
   que não tem master looter). Escolher um sistema de loot volta à regra pronta dele.
+
+Dos 14 modelos do site com as respostas padrão (`tools/data/loot-rule-models.json`,
+`tools/loot-contract.lua`): 9 são lidos e jogados (`rolls`, `plus1`, `softres`, `hardres`, `wishlist`,
+`dkp`, `dkpbid`, `epgp`, `ranked`) e 5 são recusados inteiros (`srplus` e `karma` por `bonus`,
+`council` por `council`, `zerosum` por `split`, `sk` por `queue`).
+
+### A regra da noite (GOSROST1 v5)
+
+O site manda a regra da raide em `lootRule`, junto do roster. `CompanionImport.ReadLootRule` guarda uma
+cópia limitada em profundidade, número de campos e tamanho de texto (a caixa de entrada é entrada não
+confiável); o que não é regra nenhuma fica como recusado.
+
+- Vale acima da regra do core e da guilda (`LootRule:Night`, lido por `LootRule:Active`), quando o
+  cliente está numa raide e o roster em mãos é o de agora: de 2 horas antes do início a 8 horas depois.
+- Tomada, fica congelada pela noite (`db.lootNight`, uma cópia): o mesmo roster importado de novo com
+  outra regra não muda nada. Acaba quando a janela termina ou quando o roster em mãos é o de outra
+  raide de agora.
+- Com a regra da noite em vigor, `GuildOS:GetLootSystem()` responde o sistema de antes de que ela mais
+  se aproxima (`LootRule:SystemOf`), para o anúncio e para o que as telas mostram, e o item é anunciado
+  direto na disputa aberta, sem os atalhos de wishlist dos sistemas de antes.
+- Regra inválida ou com peça que este cliente não aplica: recusada inteira, a da guilda segue valendo,
+  e a janela do plano diz em uma linha que a regra de loot desta raide precisa de um GuildOS mais novo
+  (com a peça, quando conhecida). Lida, a janela mostra o nome do modelo e se já está em vigor.
+- Guilda ou core em "external" não toma regra do site.
 
 ### A resposta pelo addon
 

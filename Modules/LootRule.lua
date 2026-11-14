@@ -43,8 +43,25 @@ local LABEL_MAX = 24          -- bytes of a button's label
 local COST_MAX = 10           -- a response never multiplies a price by more
 local ASKS = { roll = true, bid = true, none = true }
 local RESETS = { never = true, night = true, lockout = true }
-local PRICES = { table = true, fixed = true, bid = true, second = true }
-local RESERVED_ACCOUNTS = { dkp = true, ep = true, gp = true }   -- the points' own (Points.lua)
+local PRICES = { table = true, fixed = true, bid = true, second = true, fraction = true, all = true }
+-- The points' own accounts (Points.lua): "dkp" is the pool's balance, "ep" and "gp" the two sides of
+-- EPGP. Every rule may name them; a rule from the site also declares them (type "balance").
+local POINTS_ACCOUNTS = { dkp = true, ep = true, gp = true }
+local NAME_MAX = 64           -- bytes of an account's or an exception's name
+local EARN_MAX = 12           -- reasons to earn one account declares
+local AMOUNT_MAX = 1000000    -- the most an account's figure is set to
+local DECIDERS = { auto = true, ml = true, holder = true }
+local ROUNDS = { up = true, down = true, near = true }
+local AUTOS = { boss = true, ontime = true, late = true, stayed = true, leftearly = true, raid = true }
+local COUNTER_AUTOS = { boss = true, raid = true }   -- what feeds a counter by itself (Points:EarnCounters)
+
+-- The pieces of the contract (v1) this client does not apply yet. A rule that uses one is refused whole,
+-- with "unsupported: <piece>" for a reason, so whoever sees the refusal is told what is missing.
+local UNSUPPORTED = {
+    council = true, queue = true, bonus = true, score = true, split = true, bottom = true, upgrade = true,
+    balance = true, counter = true, earn = true, exceptions = true,
+}
+local function unsupported(piece) return "unsupported: " .. piece end
 
 -- The answers when the rule names none: main spec, then off spec, each by a roll, at the item's price,
 -- and only main spec counting for the +1. What every guild had before issue #334.
@@ -69,10 +86,31 @@ local function responseRank(c, rule)
     return UNRANKED
 end
 
--- A counter account's figure on a candidate (the +1, issue #334): LootMaster reads it off the Points
--- when the answer comes in.
-local function accountOf(c, _, entry)
-    return (c.accts and c.accts[entry.acct]) or 0
+-- What a candidate holds on an account: the points' own ("dkp" the balance, "ep" what was earned, "gp"
+-- what was spent over the base GP) or a counter (the +1, issue #334). LootMaster reads them off the
+-- Points when the answer comes in. The base GP is the rule's own when it declares the account (`start`),
+-- else the pool's.
+local function held(c, acct, rule)
+    if acct == "dkp" then return c.dkp or 0 end
+    if acct == "ep" then return c.ep or 0 end
+    if acct == "gp" then
+        local base = c.gpBase or 0
+        for _, a in ipairs(rule and rule.accounts or {}) do
+            if a.key == "gp" and a.start then base = a.start end
+        end
+        return (c.gp or 0) + base
+    end
+    return (c.accts and c.accts[acct]) or 0
+end
+
+local function accountOf(c, rule, entry)
+    return held(c, entry.acct, rule)
+end
+
+-- One account over another (EP over GP): the divisor is never under 1, so a new raider divides by
+-- something.
+local function ratioOf(c, rule, entry)
+    return held(c, entry.num, rule) / math.max(1, held(c, entry.den, rule))
 end
 
 LootRule.CRITERIA = {
@@ -88,6 +126,11 @@ LootRule.CRITERIA = {
     roll       = { raw = function(c) return c.roll or -1 end, high = true },
     bid        = { raw = function(c) return c.bid or 0 end, high = true },
     account    = { raw = accountOf, high = true },   -- `dir = "low"` on the entry turns it round
+    ratio      = { raw = ratioOf, high = true },
+}
+-- The fields an entry of `order` may carry beside `k` and `band`, by criterion.
+local CRITERION_FIELDS = {
+    account = { acct = true, dir = true }, ratio = { num = true, den = true },
 }
 
 -- The order criteria are offered in, and their names. Names are looked up when shown, never at load.
@@ -107,6 +150,7 @@ local LABELS = {
     roll       = "the roll",
     bid        = "the bid",
     account    = "the counter",
+    ratio      = "the ratio",
 }
 function LootRule:Label(key)
     local label = LABELS[key]
@@ -140,58 +184,151 @@ end
 
 -- A name a button or a column shows: short, and with nothing a chat line or an addon message reads as
 -- its own (a colour code's pipe, the separator of the announce message, a control character).
-local function isLabel(text)
-    return type(text) == "string" and #text >= 1 and #text <= LABEL_MAX and not text:find("[|;%c]")
+local function isLabel(text, max)
+    return type(text) == "string" and #text >= 1 and #text <= (max or LABEL_MAX) and not text:find("[|;%c]")
 end
 
 local function flagOrNil(v) return v == nil or type(v) == "boolean" end
 
--- How to ask (issue #334): up to ten answers, each a button.
-local function validResponses(list)
-    if type(list) ~= "table" or #list == 0 or #list > LootRule.MAX_RESPONSES then return false end
-    local seen = {}
-    for _, r in ipairs(list) do
-        if type(r) ~= "table" or not isKey(r.key, "A-Z0-9") or r.key == "PASS" or seen[r.key] then return false end
-        seen[r.key] = true
-        if r.label ~= nil and not isLabel(r.label) then return false end
-        if r.ask ~= nil and not ASKS[r.ask] then return false end
-        if not (flagOrNil(r.plus) and flagOrNil(r.note)) then return false end
-        if r.cost ~= nil and not (type(r.cost) == "number" and r.cost >= 0 and r.cost <= COST_MAX) then
-            return false
-        end
+-- A number of at least `min` and at most `max` (never NaN).
+local function numberIn(n, min, max)
+    return type(n) == "number" and n == n and n >= min and n <= max
+end
+
+-- Whether every key of `t` is one of `allowed`: a field this client never heard of is a rule it cannot
+-- read whole.
+local function onlyKeys(t, allowed)
+    for k in pairs(t) do
+        if not allowed[k] then return false end
     end
     return true
 end
 
--- The counter accounts a rule keeps (the +1). The other kinds of account wait for their own issue, and
--- the points' own keys are never a counter's.
+-- A list: a table of at most `max` entries and nothing beside them.
+local function isList(t, max)
+    if type(t) ~= "table" then return false end
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n == #t and n <= max
+end
+
+local RULE_KEYS = { v = true, model = true, time = true, responses = true, bid = true, filters = true,
+    order = true, decide = true, effects = true, exceptions = true, accounts = true }
+local RESPONSE_KEYS = { key = true, label = true, ask = true, plus = true, cost = true, note = true }
+local FILTER_KEYS = { k = true, act = true, min = true, max = true, acct = true, from = true, to = true }
+local EFFECT_KEYS = { k = true, acct = true, price = true, value = true, refund = true }
+local ACCOUNT_KEYS = { key = true, type = true, name = true, start = true, cap = true, floor = true,
+    decay = true, reset = true, earn = true }
+local EARN_KEYS = { key = true, auto = true, name = true, value = true, weekly = true }
+
+-- How to ask (issue #334): up to ten answers, each a button.
+local function validResponses(list)
+    if not isList(list, LootRule.MAX_RESPONSES) or #list == 0 then return false end
+    local seen = {}
+    for _, r in ipairs(list) do
+        if type(r) ~= "table" or not onlyKeys(r, RESPONSE_KEYS) then return false end
+        if not isKey(r.key, "A-Z0-9") or r.key == "PASS" or seen[r.key] then return false end
+        seen[r.key] = true
+        if r.label ~= nil and not isLabel(r.label) then return false end
+        if r.ask ~= nil and not ASKS[r.ask] then return false end
+        if not (flagOrNil(r.plus) and flagOrNil(r.note)) then return false end
+        if r.cost ~= nil and not numberIn(r.cost, 0, COST_MAX) then return false end
+    end
+    return true
+end
+
+-- The accounts a rule keeps or names. Returns them by key (the points' own are always known, declared
+-- or not), or nil and why.
+--   * "counter": a small whole number per character (the +1, a wait), which an award adds to, takes
+--     from or empties, and which a raid attended or a boss killed can feed by itself;
+--   * "balance": only the points' own, "dkp", "ep" and "gp". What the rule says of how they fill
+--     between items (earn, decay, cap) is read and left to the pool's own settings in the game; the GP
+--     account's `start` is the base GP the rule's ratio divides by;
+--   * "queue" and "bonus" wait for their own issue (#337).
 local function validAccounts(list)
-    if type(list) ~= "table" or #list > LootRule.MAX_ACCOUNTS then return nil end
-    local known = {}
+    local known = { dkp = { key = "dkp", type = "balance" }, ep = { key = "ep", type = "balance" },
+        gp = { key = "gp", type = "balance" } }
+    if list == nil then return known end
+    if not isList(list, LootRule.MAX_ACCOUNTS) then return nil, "accounts" end
+    local seen = {}
     for _, a in ipairs(list) do
-        if type(a) ~= "table" or not isKey(a.key, "a-z0-9") or RESERVED_ACCOUNTS[a.key] or known[a.key] then
-            return nil
+        if type(a) ~= "table" or not onlyKeys(a, ACCOUNT_KEYS) then return nil, "accounts" end
+        if not isKey(a.key, "a-z0-9") or seen[a.key] then return nil, "accounts" end
+        seen[a.key] = true
+        if a.type == "queue" or a.type == "bonus" then return nil, unsupported(a.type) end
+        if a.type ~= "counter" and a.type ~= "balance" then return nil, "accounts" end
+        if a.name ~= nil and not isLabel(a.name, NAME_MAX) then return nil, "accounts" end
+        if a.reset ~= nil and not RESETS[a.reset] then return nil, "accounts" end
+        for _, f in ipairs({ "start", "cap", "floor" }) do
+            if a[f] ~= nil and not numberIn(a[f], -AMOUNT_MAX, AMOUNT_MAX) then return nil, "accounts" end
         end
-        if a.type ~= "counter" then return nil end
-        if a.name ~= nil and not isLabel(a.name) then return nil end
-        if a.reset ~= nil and not RESETS[a.reset] then return nil end
-        known[a.key] = true
+        local decay = a.decay
+        if decay ~= nil then
+            if type(decay) ~= "table" or not onlyKeys(decay, { pct = true, round = true }) then return nil, "accounts" end
+            if not (numberIn(decay.pct, 0, 100) and decay.pct > 0) then return nil, "accounts" end
+            if decay.round ~= nil and not ROUNDS[decay.round] then return nil, "accounts" end
+        end
+        local earn, earnKeys = a.earn, {}
+        if earn ~= nil then
+            if not isList(earn, EARN_MAX) then return nil, "accounts" end
+            for _, e in ipairs(earn) do
+                if type(e) ~= "table" or not onlyKeys(e, EARN_KEYS) then return nil, "accounts" end
+                if not isKey(e.key, "a-z0-9") or earnKeys[e.key] then return nil, "accounts" end
+                earnKeys[e.key] = true
+                if e.auto ~= nil and not AUTOS[e.auto] then return nil, "accounts" end
+                if e.name ~= nil and not isLabel(e.name, NAME_MAX) then return nil, "accounts" end
+                if not numberIn(e.value, -AMOUNT_MAX, AMOUNT_MAX) then return nil, "accounts" end
+                if e.weekly ~= nil and not (numberIn(e.weekly, 0, AMOUNT_MAX) and e.weekly > 0) then return nil, "accounts" end
+            end
+        end
+        if a.type == "counter" then
+            if POINTS_ACCOUNTS[a.key] then return nil, "accounts" end
+            -- A counter starts at nothing and holds what the awards made of it.
+            if (a.start or 0) ~= 0 or a.cap ~= nil or a.floor ~= nil or a.decay ~= nil then
+                return nil, unsupported("counter")
+            end
+            for _, e in ipairs(earn or {}) do
+                if not (COUNTER_AUTOS[e.auto] and wholeIn(e.value, 1, 100) and e.weekly == nil) then
+                    return nil, unsupported("earn")
+                end
+            end
+        elseif not POINTS_ACCOUNTS[a.key] then
+            return nil, unsupported("balance")
+        end
+        known[a.key] = a
     end
     return known
 end
 
--- What an award changes: one price at most, and what it adds to a counter.
-local function validEffects(list, accounts)
-    if type(list) ~= "table" or #list > LootRule.MAX_EFFECTS then return false end
-    local charged = false
-    for _, e in ipairs(list) do
-        if type(e) ~= "table" then return false end
-        if e.k == "add" then
-            if not (accounts[e.acct] and wholeIn(e.value, 1, 100)) then return false end
-        elseif e.k == "charge" then
-            if charged or not PRICES[e.price] or (e.acct ~= nil and e.acct ~= "dkp") then return false end
-            if e.price == "fixed" and not wholeIn(e.value, 0, LootRule.MAX_BID) then return false end
-            charged = true
+-- Who may ask: up to ten filters. Each one names what it looks at and what it does to whoever fails
+-- it: "block" keeps them out of the roll, "downgrade" reads one answer as another.
+--   attendance { min }   below the attendance the guild asks for
+--   account { acct, min } holding less than `min` on an account
+--   points { min }       the same on the points, as this client wrote it before the contract
+--   reserved             without a reserve on the item
+--   received { max }     with `max` items or more received tonight
+local function validFilters(list, accounts)
+    if not isList(list, LootRule.MAX_FILTERS) then return false end
+    for _, f in ipairs(list) do
+        if type(f) ~= "table" or not onlyKeys(f, FILTER_KEYS) then return false end
+        if f.k == "attendance" then
+            if not numberIn(f.min, 0, 100) or f.max ~= nil or f.acct ~= nil then return false end
+        elseif f.k == "account" then
+            if not (type(f.acct) == "string" and accounts[f.acct]) then return false end
+            if not numberIn(f.min, -AMOUNT_MAX, AMOUNT_MAX) or f.max ~= nil then return false end
+        elseif f.k == "points" then
+            if not numberIn(f.min, -AMOUNT_MAX, AMOUNT_MAX) or f.max ~= nil or f.acct ~= nil then return false end
+        elseif f.k == "reserved" then
+            if f.min ~= nil or f.max ~= nil or f.acct ~= nil then return false end
+        elseif f.k == "received" then
+            if not wholeIn(f.max, 0, 100) or f.min ~= nil or f.acct ~= nil then return false end
+        else
+            return false
+        end
+        if f.act == "downgrade" then
+            if not (isKey(f.from, "A-Z0-9") and isKey(f.to, "A-Z0-9")) or f.from == f.to then return false end
+        elseif f.act == "block" then
+            if f.from ~= nil or f.to ~= nil then return false end
         else
             return false
         end
@@ -199,46 +336,135 @@ local function validEffects(list, accounts)
     return true
 end
 
-function LootRule:Validate(rule)
-    if type(rule) ~= "table" then return false, "not a table" end
-    if rule.v ~= self.VERSION then return false, "version" end
-    local accounts = {}
-    if rule.accounts ~= nil then
-        accounts = validAccounts(rule.accounts)
-        if not accounts then return false, "accounts" end
-    end
-    local order = rule.order
-    if type(order) ~= "table" or #order == 0 then return false, "no order" end
-    if #order > self.MAX_CRITERIA then return false, "too many criteria" end
+-- The order: up to ten criteria, each once (an account's and a ratio's once per account).
+local function validOrder(order, accounts)
+    if not isList(order, math.huge) or #order == 0 then return false, "no order" end
+    if #order > LootRule.MAX_CRITERIA then return false, "too many criteria" end
     local seen = {}
     for _, entry in ipairs(order) do
-        if type(entry) ~= "table" or not self.CRITERIA[entry.k] then return false, "unknown criterion" end
-        -- Each criterion once, except an account's: once per account.
+        if type(entry) ~= "table" then return false, "unknown criterion" end
+        if entry.k == "score" or entry.k == "upgrade" then return false, unsupported(entry.k) end
+        if not LootRule.CRITERIA[entry.k] then return false, "unknown criterion" end
+        if entry.k == "roll" and entry.bonus ~= nil then return false, unsupported("bonus") end
+        local own = CRITERION_FIELDS[entry.k] or {}
+        for field in pairs(entry) do
+            if field ~= "k" and field ~= "band" and not own[field] then return false, "unknown criterion" end
+        end
         local id = entry.k
         if entry.k == "account" then
-            if not accounts[entry.acct] then return false, "unknown account" end
+            if not (type(entry.acct) == "string" and accounts[entry.acct]) then return false, "unknown account" end
             if entry.dir ~= nil and entry.dir ~= "high" and entry.dir ~= "low" then return false, "dir" end
             id = "account:" .. entry.acct
-        elseif entry.dir ~= nil or entry.acct ~= nil then
-            return false, "unknown criterion"
+        elseif entry.k == "ratio" then
+            if not (type(entry.num) == "string" and accounts[entry.num] and type(entry.den) == "string"
+                and accounts[entry.den]) or entry.num == entry.den then
+                return false, "unknown account"
+            end
         end
         if seen[id] then return false, "criterion twice" end
         seen[id] = true
-        if entry.band ~= nil and (type(entry.band) ~= "number" or entry.band <= 0) then
+        if entry.band ~= nil and not (numberIn(entry.band, 0, math.huge) and entry.band > 0) then
             return false, "band"
         end
     end
-    local filters = rule.filters
-    if filters ~= nil then
-        if type(filters) ~= "table" or #filters > self.MAX_FILTERS then return false, "filters" end
-        for _, f in ipairs(filters) do
-            local known = type(f) == "table" and type(f.min) == "number" and (
-                (f.k == "attendance" and f.act == "downgrade" and type(f.from) == "string" and type(f.to) == "string")
-                or (f.k == "points" and f.act == "block"))
-            if not known then return false, "unknown filter" end
+    return true
+end
+
+-- Who decides. "auto" (the order decides), "ml" (the master looter) and "holder" (whoever holds the
+-- item) all end the way this client always did: the order names the winner and the master looter's
+-- click gives the item, which does not come back. A council's vote waits for its own issue (#336).
+local function validDecide(decide)
+    if type(decide) ~= "table" or not onlyKeys(decide, { by = true, council = true }) then return false, "decide" end
+    if decide.by == "council" then return false, unsupported("council") end
+    if not DECIDERS[decide.by] then return false, "decide" end
+    if decide.council ~= nil and type(decide.council) ~= "table" then return false, "decide" end
+    return true
+end
+
+-- What an award changes, applied in order:
+--   charge { acct, price, value }  what the winner pays. On the points ("dkp", "gp"; one at most): the
+--       item's price ("table"), a fixed one, their bid, the second bid, or a share of what they hold
+--       ("fraction" with `value` up to 1, "all"). On a counter: "fixed", "fraction" or "all" of it.
+--   entry { acct = "dkp", value, refund }  everyone who asked pays `value` to be in the roll, and
+--       whoever lost gets the share `refund` of it back (issue #309, now said by the rule).
+--   add { acct, value }    adds to the winner's counter, when the winning answer counts (`plus`).
+--   reset { acct }         empties the winner's counter.
+-- "bottom" (a queue) and "split" (zero-sum) wait for their own issue (#337).
+local function validEffects(list, accounts)
+    if not isList(list, LootRule.MAX_EFFECTS) then return false, "effects" end
+    local charged, pointsCharged, entered = {}, false, false
+    for _, e in ipairs(list) do
+        if type(e) ~= "table" or not onlyKeys(e, EFFECT_KEYS) then return false, "effects" end
+        if e.k == "bottom" or e.k == "split" then return false, unsupported(e.k) end
+        local acct = accounts[e.acct]
+        local counter = acct and acct.type == "counter"
+        if e.k == "add" then
+            if not (counter and wholeIn(e.value, 1, 100)) or e.price ~= nil or e.refund ~= nil then return false, "effects" end
+        elseif e.k == "reset" then
+            if not counter or e.value ~= nil or e.price ~= nil or e.refund ~= nil then return false, "effects" end
+        elseif e.k == "entry" then
+            if entered or e.acct ~= "dkp" or e.price ~= nil or not wholeIn(e.value, 0, LootRule.MAX_BID) then
+                return false, "effects"
+            end
+            if e.refund ~= nil and not numberIn(e.refund, 0, 1) then return false, "effects" end
+            entered = true
+        elseif e.k == "charge" then
+            local key = e.acct or "dkp"
+            if not PRICES[e.price] or e.refund ~= nil or charged[key] then return false, "effects" end
+            if counter then
+                if not (e.price == "fixed" or e.price == "fraction" or e.price == "all") then return false, "effects" end
+            elseif key == "dkp" or key == "gp" then
+                if pointsCharged then return false, "effects" end
+                pointsCharged = true
+            else
+                return false, "effects"
+            end
+            if e.price == "fixed" then
+                if not wholeIn(e.value, 0, LootRule.MAX_BID) then return false, "effects" end
+            elseif e.price == "fraction" then
+                if not (numberIn(e.value, 0, 1) and e.value > 0) then return false, "effects" end
+            elseif e.value ~= nil then
+                return false, "effects"
+            end
+            charged[key] = true
+        else
+            return false, "effects"
         end
     end
+    return true
+end
+
+-- The blocks an exception may swap are checked by the same functions as the rule's own.
+local function validBlocks(rule, accounts)
+    local ok, why = validOrder(rule.order, accounts)
+    if not ok then return false, why end
+    if rule.filters ~= nil and not validFilters(rule.filters, accounts) then return false, "unknown filter" end
     if rule.responses ~= nil and not validResponses(rule.responses) then return false, "responses" end
+    if rule.decide ~= nil then
+        ok, why = validDecide(rule.decide)
+        if not ok then return false, why end
+    end
+    if rule.effects ~= nil then
+        ok, why = validEffects(rule.effects, accounts)
+        if not ok then return false, why end
+    end
+    return true
+end
+
+-- Whether this client reads `rule` whole. A rule that is not one says why; a rule of the contract
+-- that asks for a piece this client does not apply yet says "unsupported: <piece>" (`Unsupported`).
+function LootRule:Validate(rule)
+    if type(rule) ~= "table" then return false, "not a table" end
+    if rule.v ~= self.VERSION then return false, "version" end
+    if not onlyKeys(rule, RULE_KEYS) then return false, "unknown field" end
+    if rule.model ~= nil and not (type(rule.model) == "string" and #rule.model <= 16 and rule.model:find("^[a-z0-9]+$")) then
+        return false, "model"
+    end
+    local accounts, why = validAccounts(rule.accounts)
+    if not accounts then return false, why end
+    local ok
+    ok, why = validBlocks(rule, accounts)
+    if not ok then return false, why end
     if rule.time ~= nil and not wholeIn(rule.time, self.TIME_MIN, self.TIME_MAX) then return false, "time" end
     -- The bids' own rules: open or sealed, the least one may bid and by how much a bid goes up.
     local bid = rule.bid
@@ -247,8 +473,34 @@ function LootRule:Validate(rule)
         if bid.min ~= nil and not wholeIn(bid.min, 0, self.MAX_BID) then return false, "bid" end
         if bid.step ~= nil and not wholeIn(bid.step, 1, self.MAX_BID) then return false, "bid" end
     end
-    if rule.effects ~= nil and not validEffects(rule.effects, accounts) then return false, "effects" end
+    if rule.exceptions ~= nil then
+        if type(rule.exceptions) ~= "table" then return false, "exceptions" end
+        if next(rule.exceptions) ~= nil then return false, unsupported("exceptions") end
+    end
     return true
+end
+
+-- The piece of the contract a refusal was about ("council", "queue", ...), or nil when the rule was
+-- simply not one. And that piece in words, for whoever is told.
+function LootRule:Unsupported(why)
+    local piece = type(why) == "string" and why:match("^unsupported: (%a+)$")
+    return UNSUPPORTED[piece] and piece or nil
+end
+
+-- Each one by its own literal key, so every language file finds it.
+function LootRule:UnsupportedText(piece)
+    if piece == "council" then return L["a loot council's vote"] end
+    if piece == "queue" then return L["a queue account (Suicide Kings)"] end
+    if piece == "bonus" then return L["a roll bonus account"] end
+    if piece == "score" then return L["a summed score"] end
+    if piece == "split" then return L["sharing what was paid among the raid"] end
+    if piece == "bottom" then return L["moving the winner to the end of a queue"] end
+    if piece == "upgrade" then return L["ordering by the size of the upgrade"] end
+    if piece == "balance" then return L["a points account other than DKP, EP and GP"] end
+    if piece == "counter" then return L["a counter with a start, a cap, a floor or a decay"] end
+    if piece == "earn" then return L["an earning a counter cannot take"] end
+    if piece == "exceptions" then return L["exceptions per item"] end
+    return nil
 end
 
 ----------------------------------------------------------------------
@@ -287,17 +539,77 @@ function LootRule:BidRules(rule)
     return bid.sealed == true, bid.min or 0, bid.step or 1
 end
 
--- The counter accounts a rule keeps: { { key, type, name, reset }, ... }.
+-- The counter accounts a rule keeps: { { key, type, name, reset, earn }, ... }. The points' own
+-- accounts a rule from the site declares are not counters.
 function LootRule:Counters(rule)
-    return (rule or self:Active()).accounts or {}
+    local out = {}
+    for _, a in ipairs((rule or self:Active()).accounts or {}) do
+        if a.type == "counter" then out[#out + 1] = a end
+    end
+    return out
 end
 
--- The effect that says what the winner pays, or nil: the item's price, as before.
-function LootRule:ChargeEffect(rule)
-    for _, e in ipairs((rule or self:Active()).effects or {}) do
-        if e.k == "charge" then return e end
+-- The counter `key` names in the rule, or nil.
+function LootRule:Counter(key, rule)
+    for _, a in ipairs(self:Counters(rule)) do
+        if a.key == key then return a end
     end
     return nil
+end
+
+-- The effect that says what the winner pays in points, or nil: the item's price, as before.
+function LootRule:ChargeEffect(rule)
+    rule = rule or self:Active()
+    for _, e in ipairs(rule.effects or {}) do
+        if e.k == "charge" and not self:Counter(e.acct, rule) then return e end
+    end
+    return nil
+end
+
+-- The effect that says what it costs to be in the roll, or nil: the points' own setting, as before.
+function LootRule:EntryEffect(rule)
+    for _, e in ipairs((rule or self:Active()).effects or {}) do
+        if e.k == "entry" then return e end
+    end
+    return nil
+end
+
+-- What a charge on a counter takes from a winner who holds `has` on it and won with `response`.
+function LootRule:CounterCharge(effect, has, response)
+    local amount = effect.value or 0
+    if effect.price == "fraction" then amount = has * amount
+    elseif effect.price == "all" then amount = has end
+    local cost = response and response.cost or 1
+    return math.max(0, math.min(has, math.floor(amount * cost + 0.5)))
+end
+
+-- Whether the rule reads or moves the points: what the loot master's window and the points' own
+-- screens are shown for.
+function LootRule:UsesPoints(rule)
+    rule = rule or self:Active()
+    for _, e in ipairs(rule.order or {}) do
+        if e.k == "points" or e.k == "pr" or e.k == "bid" or POINTS_ACCOUNTS[e.acct or ""]
+            or POINTS_ACCOUNTS[e.num or ""] or POINTS_ACCOUNTS[e.den or ""] then
+            return true
+        end
+    end
+    for _, e in ipairs(rule.effects or {}) do
+        if (e.k == "charge" or e.k == "entry") and not self:Counter(e.acct, rule) then return true end
+    end
+    return false
+end
+
+-- The loot system of before a rule from the site reads closest to, for the announce line and for what
+-- the loot system shows: EPGP when it orders by a ratio, DKP when it reads or moves the points, the
+-- wishlist when it orders by one, else the free roll.
+function LootRule:SystemOf(rule)
+    local wish = false
+    for _, e in ipairs(rule.order or {}) do
+        if e.k == "ratio" or e.k == "pr" then return "epgp" end
+        wish = wish or e.k == "wishlist" or e.k == "prio"
+    end
+    if self:UsesPoints(rule) then return "dkp" end
+    return wish and "wishlist" or "rolls"
 end
 
 -- What `winner` pays for an item whose price on the guild's table is `tablePrice`, and how that was
@@ -305,8 +617,9 @@ end
 --   * "bid": the winner's own bid;
 --   * "second": the best bid the winner beat among those who gave the same answer, plus one step, and
 --     never more than the winner's own; with nobody to beat, the least one may bid;
+--   * "fraction" and "all": that share of the points the winner holds (`balance`);
 --   * every price is then multiplied by the answer's `cost` (off spec for half, a free answer for 0).
-function LootRule:PriceFor(winner, others, tablePrice, rule)
+function LootRule:PriceFor(winner, others, tablePrice, rule, balance)
     rule = rule or self:Active()
     local effect = self:ChargeEffect(rule)
     local how = effect and effect.price or "table"
@@ -324,6 +637,9 @@ function LootRule:PriceFor(winner, others, tablePrice, rule)
             end
         end
         price = math.min(own, best and (best + step) or min)
+    elseif how == "fraction" or how == "all" then
+        local has = math.max(0, balance or (winner and winner.dkp) or 0)
+        price = how == "all" and has or has * (effect.value or 0)
     end
     local r = winner and self:Response(winner.rollType, rule)
     local cost = r and r.cost or 1
@@ -498,10 +814,116 @@ function LootRule:For(coreName)
     return self:FromLegacy(GuildOS.GetLootSystem and GuildOS:GetLootSystem("") or "rolls", legacySettings(coreName))
 end
 
--- The rule in force: the one of the raid's active core, and with no core active the guild's.
+-- The rule in force: the raid night's own when the site sent one with the night's roster (`Night`),
+-- else the one of the raid's active core, and with no core active the guild's.
 function LootRule:Active()
+    local night = self:Night()
+    if night then return night end
     local CM = GuildOS.CoreManager
     return self:For(CM and CM.GetActiveName and CM:GetActiveName() or "")
+end
+
+----------------------------------------------------------------------
+-- The raid night's rule (guildos-web#516): the site sends the rule a raid plays by with its roster
+-- (GOSROST1 v5, `lootRule`), and for that night it comes before the core's and the guild's.
+--   * It is taken when this client is in a raid, the roster in hand is for now (from two hours before
+--     its start to eight after, the window that matches a night to its planned raid) and the rule
+--     reads whole. A rule this client cannot read is refused whole (`NightStatus` says why) and the
+--     core's or the guild's stays in force.
+--   * Once taken it is frozen for the night (db.lootNight, a copy): a roster imported again with
+--     another rule changes nothing until the night is over or the roster in hand is another raid's.
+--   * A guild or a core that hands its loot to another addon ("external") takes none.
+----------------------------------------------------------------------
+local NIGHT_EARLY = 2 * 3600
+local NIGHT_LATE = 8 * 3600
+
+local function copyOf(v)
+    if type(v) ~= "table" then return v end
+    local out = {}
+    for k, x in pairs(v) do out[k] = copyOf(x) end
+    return out
+end
+
+local function inWindow(startsAt, now)
+    startsAt = tonumber(startsAt) or 0
+    return startsAt > 0 and now >= startsAt - NIGHT_EARLY and now <= startsAt + NIGHT_LATE
+end
+
+-- What the roster in hand says of its rule: the roster, whether it carries one, and whether this client
+-- reads it (checked once per roster and kept, as the screens ask often).
+local function rosterRule(self)
+    local roster = GuildOS.db and GuildOS.db.companionRoster
+    if type(roster) ~= "table" or roster.lootRule == nil then return roster, nil end
+    local seen = self.nightSeen
+    if not (seen and seen.roster == roster and seen.rule == roster.lootRule) then
+        local ok, why = false, "not a table"
+        if type(roster.lootRule) == "table" then ok, why = self:Validate(roster.lootRule) end
+        seen = { roster = roster, rule = roster.lootRule, ok = ok, why = why }
+        self.nightSeen = seen
+    end
+    return roster, seen
+end
+
+function LootRule:Night()
+    local db = GuildOS.db
+    if not db then return nil end
+    local now = GetServerTime()
+    local roster, seen = rosterRule(self)
+    local kept = db.lootNight
+    if type(kept) ~= "table" or type(kept.rule) ~= "table" then kept = nil end
+    -- Over, or the roster in hand is now another raid's night.
+    if kept and (not inWindow(kept.startsAt, now)
+        or (roster and roster.raidId ~= kept.raidId and inWindow(roster.startsAt, now))) then
+        kept = nil
+    end
+    -- A kept rule is read again once per session: this client may be an older one than kept it.
+    if kept and self.nightKept ~= kept then
+        if self:Validate(kept.rule) then self.nightKept = kept else kept = nil end
+    end
+    if not kept and seen and seen.ok and inWindow(roster.startsAt, now) and IsInRaid() then
+        kept = { raidId = roster.raidId, startsAt = roster.startsAt, rule = copyOf(roster.lootRule) }
+        self.nightKept = kept
+    end
+    db.lootNight = kept
+    if not kept then return nil end
+    if GuildOS.BaseLootSystem and GuildOS:BaseLootSystem() == "external" then return nil end
+    return kept.rule
+end
+
+-- What to say of the rule the roster in hand carries, for the plan window:
+--   nil                        the roster carries none
+--   "active", rule             it is the rule in force
+--   "waiting", rule            it reads whole, and is taken once the raid is on
+--   "refused", nil, piece      this client cannot read it; `piece` names what is missing, when known
+function LootRule:NightStatus()
+    local roster, seen = rosterRule(self)
+    if not seen then return nil end
+    if not seen.ok then return "refused", nil, self:Unsupported(seen.why) end
+    local kept = GuildOS.db and GuildOS.db.lootNight
+    if self:Night() and kept and kept.raidId == roster.raidId then return "active", kept.rule end
+    return "waiting", roster.lootRule
+end
+
+-- A rule's name for a person: the ready-made model it was born from. Each one by its own literal key.
+function LootRule:ModelName(rule)
+    local model = type(rule) == "table" and rule.model or "custom"
+    if model == "rolls" then return L["Rolls (MS > OS)"] end
+    if model == "plus1" then return L["MS > OS +1"] end
+    if model == "softres" then return L["Soft reserve"] end
+    if model == "srplus" then return L["Soft reserve +"] end
+    if model == "hardres" then return L["Hard reserve"] end
+    if model == "wishlist" then return L["Wishlist"] end
+    if model == "council" then return L["Loot council"] end
+    if model == "dkp" then return L["DKP (fixed price)"] end
+    if model == "dkpbid" then return L["DKP bidding"] end
+    if model == "dkpsealed" then return L["DKP sealed second-price"] end
+    if model == "zerosum" then return L["Zero-sum DKP"] end
+    if model == "epgp" then return L["EPGP"] end
+    if model == "sk" then return L["Suicide Kings"] end
+    if model == "karma" then return L["Karma"] end
+    if model == "ranked" then return L["Ranked list"] end
+    if model == "tmb" then return L["TMB"] end
+    return L["Custom rule"]
 end
 
 ----------------------------------------------------------------------
@@ -512,17 +934,45 @@ end
 ----------------------------------------------------------------------
 function LootRule:AnswerFor(c, response, rule)
     rule = rule or self:Active()
+    local changed
     for _, f in ipairs(rule.filters or {}) do
-        if f.k == "attendance" and f.act == "downgrade" and response == f.from
-            and (c.att25 or 0) < f.min then
-            return f.to, f
+        local fails
+        if response == "PASS" then
+            fails = false   -- a pass is nobody's to refuse
+        elseif f.k == "attendance" then
+            fails = (c.att25 or 0) < f.min
+        elseif f.k == "points" then
+            fails = (c.dkp or 0) < f.min
+        elseif f.k == "account" then
+            fails = held(c, f.acct, rule) < f.min
+        elseif f.k == "reserved" then
+            fails = not c.softRes
+        elseif f.k == "received" then
+            fails = (c.recvCount or 0) >= f.max
         end
-        -- Out of the roll: nil for an answer.
-        if f.k == "points" and f.act == "block" and response ~= "PASS" and (c.dkp or 0) < f.min then
-            return nil, f
+        if fails and f.act == "block" then
+            return nil, f   -- out of the roll: nil for an answer
+        elseif fails and response == f.from then
+            -- Read as another answer, which the filters after this one still judge.
+            response, changed = f.to, f
         end
     end
-    return response
+    return response, changed
+end
+
+-- The figure the rule's ratio criterion reads off a candidate (EP over GP), or nil when it has none:
+-- what the loot master's window shows as priority.
+function LootRule:RatioOf(c, rule)
+    rule = rule or self:Active()
+    for _, entry in ipairs(rule.order or {}) do
+        if entry.k == "ratio" then return ratioOf(c, rule, entry) end
+    end
+    return nil
+end
+
+-- What a candidate holds on the account a filter looks at, for the line that says why they are out.
+function LootRule:Held(c, acct, rule)
+    return held(c, acct, rule or self:Active())
 end
 
 ----------------------------------------------------------------------
@@ -623,13 +1073,6 @@ end
 -- Every one takes a last `coreName` (issue #338): the core whose rule is being changed, from its
 -- Config tab; nil or "" is the guild's.
 ----------------------------------------------------------------------
-local function copyOf(v)
-    if type(v) ~= "table" then return v end
-    local out = {}
-    for k, x in pairs(v) do out[k] = copyOf(x) end
-    return out
-end
-
 -- Whether the guild (or the core) keeps a rule of its own, over its loot system's.
 function LootRule:IsCustom(coreName)
     coreName = coreOrNil(coreName)

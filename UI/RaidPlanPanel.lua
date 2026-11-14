@@ -104,6 +104,12 @@ function Plan:Show()
         n = n + 1
         y = line(f, n, y, text, size, color)
     end
+    -- The rule the raid plays by, or why this client does not play by it (the site's #516).
+    local ruleLine, ruleWarning = self:LootRuleLine()
+    if ruleLine then
+        add(ruleLine, 12, ruleWarning and C.red or C.gold)
+        y = y + 4
+    end
     if not plan then
         add(L["No plan for this raid yet: it comes from guildos.me with the roster."], 11, C.silver)
     else
