@@ -87,6 +87,11 @@ function SyncService:Initialize()
     -- loot system (issue #185). A client before #185 reads a loot system as a threshold with no `max`.
     self:On("guildcfg", function(env)
         if env.act == "lootsys" then return GuildOS:OnLootSystemSync(env) end
+        -- The guild's own loot rule (issue #333); a client before it reads a threshold with no `max`.
+        if env.act == "lootrule" then
+            if GuildOS.LootRule then GuildOS.LootRule:OnSync(env) end
+            return
+        end
         -- WoW: Forever's minimum item level for a 60 (issue #206); a client before it reads a
         -- threshold with no `max`, which it ignores.
         if env.act == "readymin" then

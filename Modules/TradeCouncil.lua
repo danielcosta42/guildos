@@ -35,7 +35,6 @@ TradeCouncil.OFFER_TTL = OFFER_TTL
 local EXPIRY_SLACK = 60        -- seconds: a trade time is read in whole minutes, so up to one more may be left
 local ROLL_MAX = 100
 local ROLL_WAIT = 10           -- seconds after an answer in which its player's next /roll 1-100 is its roll
-local NO_ROLL = -1             -- ranks an answer whose roll was not seen after every one whose roll was
 local BAGS_LAST = 4            -- backpack 0 and four bags; the reagent bag holds no gear
 local MIN_QUALITY = 3          -- Rare: what the loot history keeps
 local NO_WISH = 999            -- the wishlist place of somebody who has not wished for the item
@@ -230,7 +229,6 @@ end
 function TradeCouncil:Ranked(o)
     local rows = {}
     if not o then return rows end
-    local sys = GuildOS:GetLootSystem()
     local P = GuildOS.Points
     for key, a in pairs(o.answers) do
         rows[#rows + 1] = {
@@ -238,17 +236,13 @@ function TradeCouncil:Ranked(o)
             wish = self:WishOrder(o.itemId, key), points = P and P.GetDB and P:GetDB() and P:Get(key) or nil,
         }
     end
-    local C = self.CHOICES
-    table.sort(rows, function(a, b)
-        if C[a.choice] ~= C[b.choice] then return C[a.choice] < C[b.choice] end
-        if sys == "dkp" and (a.points or 0) ~= (b.points or 0) then return (a.points or 0) > (b.points or 0) end
-        if sys == "wishlist" and (a.wish or NO_WISH) ~= (b.wish or NO_WISH) then
-            return (a.wish or NO_WISH) < (b.wish or NO_WISH)
-        end
-        local ar, br = a.roll or NO_ROLL, b.roll or NO_ROLL
-        if ar ~= br then return ar > br end
-        return a.key < b.key
-    end)
+    -- The guild's loot rule (issue #333), which on retail reads the answer, the points or the wishlist
+    -- place its loot system names, then the server's roll.
+    local LR = GuildOS.LootRule
+    local cands = {}
+    for i, row in ipairs(rows) do cands[i] = LR:FromAnswer(row) end
+    LR:Sort(cands)
+    for i, c in ipairs(cands) do rows[i] = c.row end
     return rows
 end
 

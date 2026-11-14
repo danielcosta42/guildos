@@ -422,6 +422,7 @@ function CoreManager:GetLootConfig(coreName)
         disenchanter     = lmField(core, "disenchanter"),
         dkpMinBid        = lmField(core, "dkpMinBid"),
         dkpBidTime       = lmField(core, "dkpBidTime"),
+        rule             = lmField(core, "rule"),
     }
 end
 

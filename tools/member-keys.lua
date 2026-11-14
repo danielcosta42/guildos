@@ -89,7 +89,7 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Core/Commands.lua")
-for _, m in ipairs({ "CommSystem", "RaidTracker", "LootMaster", "WishlistSystem", "ConsumableChecker",
+for _, m in ipairs({ "CommSystem", "RaidTracker", "LootRule", "LootMaster", "WishlistSystem", "ConsumableChecker",
                      "PugInspector", "CompanionExport", "CompanionImport" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end

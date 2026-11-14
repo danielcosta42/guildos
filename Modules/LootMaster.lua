@@ -1039,14 +1039,15 @@ function LootMaster:RegisterRoll(name, rollType, roll)
 
     local key = GuildOS:GetPlayerKey(name)
 
-    -- Attendance gate: auto-downgrade MS → OS if below minimum threshold
+    -- Who may ask (the loot rule's filters, issue #333): below the attendance the guild asks for, a
+    -- main spec answer is read as off spec.
     local ctx = self:GetPlayerContext(name)
-    local minAtt = self:GetCfg().minAttendancePct or 0
-    if rollType == "MS" and minAtt > 0 and ctx.att25 < minAtt then
-        rollType = "OS"
+    local answer, filter = GuildOS.LootRule:AnswerFor(ctx, rollType)
+    if filter then
+        rollType = answer
         self:SafeSendChatAuto(string.format(
             L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
-            name, ctx.att25, minAtt), "RAID")
+            name, ctx.att25, filter.min), "RAID")
     end
 
     -- Wishlist lookup
@@ -1167,43 +1168,9 @@ function LootMaster:EndRolling(byClick)
 
     -- In DKP the winner is who the ML window puts on top: highest DKP among MS, then the roll
     -- (issue #294). The announcement used to ignore DKP and name somebody else.
-    local dkpMode = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) == "dkp"
-    table.sort(sorted, function(a, b)
-        -- MS beats OS
-        if a.rollType ~= b.rollType then
-            return a.rollType == "MS"
-        end
-        if dkpMode then
-            local ad, bd = a.dkp or 0, b.dkp or 0
-            if ad ~= bd then return ad > bd end
-            return a.roll > b.roll
-        end
-        -- Officer prio: lower index wins (no prio = 999)
-        local aPrio = a.prioOrder or 999
-        local bPrio = b.prioOrder or 999
-        if aPrio ~= bPrio then return aPrio < bPrio end
-        -- Soft reserve: SR holder beats non-SR (below officer prio, above wishlist)
-        local aSR = a.softRes and 1 or 2
-        local bSR = b.softRes and 1 or 2
-        if aSR ~= bSR then return aSR < bSR end
-        -- Wishlist priority: lower order number wins; no wishlist entry ranks last
-        local aOrder = a.wishlist and a.wishlist.order or 999
-        local bOrder = b.wishlist and b.wishlist.order or 999
-        if aOrder ~= bOrder then return aOrder < bOrder end
-        -- Received tiebreaker: fewer items received this lockout wins (when enabled)
-        local _cfg = LootMaster:GetCfg()
-        if _cfg.recvPenalty ~= false then
-            local aRecv = a.recvCount or 0
-            local bRecv = b.recvCount or 0
-            if aRecv ~= bRecv then return aRecv < bRecv end
-        end
-        -- Attendance tiebreaker: higher 25-man attendance wins
-        if _cfg.attTiebreaker and (a.att25 or 0) ~= (b.att25 or 0) then
-            return (a.att25 or 0) > (b.att25 or 0)
-        end
-        -- Final tiebreaker: higher roll
-        return a.roll > b.roll
-    end)
+    -- The loot rule's order (issue #333): the same one the Master Loot window shows.
+    local rule = GuildOS.LootRule:Active()
+    GuildOS.LootRule:Sort(sorted, rule)
 
     self.activeLoot.sortedResults = sorted
     self.activeLoot.ended = true
@@ -1218,6 +1185,12 @@ function LootMaster:EndRolling(byClick)
             wishStr = winner.softRes.hard and L[" [Hard Reserve]"] or L[" [Soft Reserve]"]
         elseif winner.wishlist then
             wishStr = string.format(L[" [Wishlist #%d]"], winner.wishlist.order)
+        end
+        -- What put the winner ahead of the next candidate, when it was not the roll itself.
+        local decided = GuildOS.LootRule:DecidedBy(winner, sorted[2], rule)
+        self.activeLoot.decidedBy = decided
+        if decided and decided ~= "roll" and wishStr == "" then
+            wishStr = string.format(L[" [by %s]"], GuildOS.LootRule:Label(decided))
         end
         say(self, string.format(L["[WINNER] %s - %s (%d)%s - %s"],
             winner.name, winner.rollType, winner.roll, wishStr, self.activeLoot.link), "RAID_WARNING")
@@ -2991,23 +2964,9 @@ function LootMaster:RefreshRollFrame()
     for _, r in pairs(self.rolls) do
         table.insert(sorted, r)
     end
-    -- Sort: MS first, then (DKP mode) highest DKP / (else) prio order, then roll
-    table.sort(sorted, function(a, b)
-        if a.rollType ~= b.rollType then
-            if a.rollType == "PASS" then return false end
-            if b.rollType == "PASS" then return true end
-            return a.rollType == "MS"
-        end
-        if lootSystem == "dkp" then
-            local ad, bd = a.dkp or 0, b.dkp or 0
-            if ad ~= bd then return ad > bd end
-        else
-            local aPrio = a.prioOrder or 999
-            local bPrio = b.prioOrder or 999
-            if aPrio ~= bPrio then return aPrio < bPrio end
-        end
-        return a.roll > b.roll
-    end)
+    -- The loot rule's order (issue #333), a pass after every answer: the row on top is the winner
+    -- the roll's end announces.
+    GuildOS.LootRule:Sort(sorted)
 
     local CLASS_COLORS = RAID_CLASS_COLORS
     local yOff = 0

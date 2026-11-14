@@ -163,6 +163,7 @@ local function load(retail)
   dofile(ADDON .. "/Modules/LootTracker.lua")
   dofile(ADDON .. "/Modules/Points.lua")
   dofile(ADDON .. "/Modules/WishlistSystem.lua")
+  dofile(ADDON .. "/Modules/LootRule.lua")
   dofile(ADDON .. "/Modules/TradeCouncil.lua")
   dofile(ADDON .. "/Core/Commands.lua")
 end

@@ -540,6 +540,7 @@ end
 
 -- ── The loot rules really are re-read ───────────────────────────────────
 local RT, CM = load("forever")
+dofile(ADDON .. "/Modules/LootRule.lua")
 dofile(ADDON .. "/Modules/LootMaster.lua")
 local LM = GuildOS.LootMaster
 CM:Create("Alpha"); CM:Create("Bravo")

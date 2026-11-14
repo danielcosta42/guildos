@@ -165,6 +165,7 @@ GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Utils.lua")
 GuildOS.db = { settings = { modules = {} }, members = { ["Ana-Gallywix"] = { class = "MAGE" } }, lootHistory = {} }
 dofile(ADDON .. "/UI/Helpers.lua")
+dofile(ADDON .. "/Modules/LootRule.lua")
 dofile(ADDON .. "/Modules/TradeCouncil.lua")
 dofile(ADDON .. "/UI/TradeCouncil.lua")
 local TC = GuildOS.TradeCouncil
