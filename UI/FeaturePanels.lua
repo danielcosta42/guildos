@@ -2178,6 +2178,126 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)
         yOff = yOff + 28
     end
 
+    -- Exceptions (issue #335): the items that follow another rule. One line each, and a row to add one:
+    -- which items, and either where they go with no roll or the order that decides them.
+    local excTitle = UI:CreateText(content, L["Exceptions:"], 11, C.white.r, C.white.g, C.white.b)
+    excTitle:SetPoint("TOPLEFT", 16, -yOff)
+    yOff = yOff + 18
+    local excDesc = UI:CreateText(content, L["Items that follow another rule: sent to the bank or to the disenchanter with no roll, or decided by an order of their own. The most specific wins: an item, then a boss, then a category, then a raid."], 9, C.silver.r, C.silver.g, C.silver.b)
+    excDesc:SetPoint("TOPLEFT", 28, -yOff)
+    excDesc:SetWidth(content:GetWidth() - 40)
+    excDesc:SetJustifyH("LEFT")
+    yOff = yOff + 30
+    local exceptions = rule.exceptions or {}
+    for i, x in ipairs(exceptions) do
+        local what
+        if x.to == "bank" then
+            what = L["to the bank"]
+        elseif x.to == "de" then
+            what = L["to the disenchanter"]
+        elseif x.set and x.set.order and not (x.set.filters or x.set.responses or x.set.decide or x.set.effects) then
+            local names = {}
+            for n, entry in ipairs(x.set.order) do names[n] = LR:Label(entry.k) end
+            what = string.format(L["decided by: %s"], table.concat(names, ", "))
+        else
+            what = L["a rule of its own"]
+        end
+        local excText = UI:CreateText(content, LR:ExceptionLabel(x) .. "  -  " .. what, 11, C.gold.r, C.gold.g, C.gold.b)
+        excText:SetPoint("TOPLEFT", 28, -yOff)
+        excText:SetWidth(content:GetWidth() - 140)
+        excText:SetJustifyH("LEFT")
+        local excDel = UI:CreateButton(content, L["Remove"], 70, 22)
+        excDel:SetPoint("TOPRIGHT", -12, -yOff + 2)
+        excDel:SetScript("OnClick", function() changed(LR:RemoveException(i, coreName)) end)
+        yOff = yOff + 26
+    end
+    if #exceptions < LR.MAX_EXCEPTIONS then
+        -- What is being added, kept on the host between drawings: a click on one of its buttons draws again.
+        local pick = content.__lootException or { kind = "cat", cat = "recipe", to = "bank", order = {} }
+        content.__lootException = pick
+        local KINDS = { "cat", "items", "boss", "raid" }
+        local KIND_NAME = { cat = L["Category"], items = L["Item ids"], boss = L["Boss (encounter id)"], raid = L["Raid (instance id)"] }
+        local TOS = { "bank", "de", "order" }
+        local TO_NAME = { bank = L["To the bank"], de = L["To the disenchanter"], order = L["Another order"] }
+        local function nextOf(list, cur)
+            for n, v in ipairs(list) do
+                if v == cur then return list[n % #list + 1] end
+            end
+            return list[1]
+        end
+        local x = 28
+        local kindBtn = UI:CreateButton(content, KIND_NAME[pick.kind], 130, 22)
+        kindBtn:SetPoint("TOPLEFT", x, -yOff + 2)
+        kindBtn:SetScript("OnClick", function() pick.kind = nextOf(KINDS, pick.kind); redraw() end)
+        x = x + kindBtn:GetWidth() + 4
+        local valueBox
+        if pick.kind == "cat" then
+            local catBtn = UI:CreateButton(content, LR:CategoryLabel(pick.cat), 150, 22)
+            catBtn:SetPoint("TOPLEFT", x, -yOff + 2)
+            catBtn:SetScript("OnClick", function() pick.cat = nextOf(LR.CATEGORY_ORDER, pick.cat); redraw() end)
+            x = x + catBtn:GetWidth() + 4
+        else
+            valueBox = ruleBox(150, false, 120, x, pick.value or "")
+            valueBox:SetScript("OnTextChanged", function(self) pick.value = self:GetText() end)
+            x = x + 150 + 4
+        end
+        local toBtn = UI:CreateButton(content, TO_NAME[pick.to], 140, 22)
+        toBtn:SetPoint("TOPLEFT", x, -yOff + 2)
+        toBtn:SetScript("OnClick", function() pick.to = nextOf(TOS, pick.to); redraw() end)
+        x = x + toBtn:GetWidth() + 4
+        local addExc = UI:CreateButton(content, L["Add exception"], 110, 22)
+        addExc:SetPoint("TOPLEFT", x, -yOff + 2)
+        addExc:SetScript("OnClick", function()
+            local spec = { kind = pick.kind, value = pick.kind == "cat" and pick.cat or (valueBox and valueBox:GetText()) }
+            if pick.to == "order" then spec.order = pick.order else spec.to = pick.to end
+            local ok = LR:AddException(spec, coreName)
+            if ok then pick.order, pick.value = {}, nil end
+            changed(ok)
+        end)
+        yOff = yOff + 28
+        if pick.to == "order" then
+            -- The order of its own: each click on a criterion puts it next.
+            local names = {}
+            for n, k in ipairs(pick.order) do names[n] = LR:Label(k) end
+            local orderText = UI:CreateText(content, string.format(L["Order: %s"],
+                #names > 0 and table.concat(names, ", ") or L["click the criteria below, first to last"]),
+                10, C.silver.r, C.silver.g, C.silver.b)
+            orderText:SetPoint("TOPLEFT", 28, -yOff)
+            orderText:SetWidth(content:GetWidth() - 40)
+            orderText:SetJustifyH("LEFT")
+            yOff = yOff + 18
+            local cx = 28
+            local function criterion(k)
+                local used = false
+                for _, have in ipairs(pick.order) do used = used or have == k end
+                if used then return end
+                local cb = UI:CreateButton(content, LR:Label(k), 100, 20)
+                if cx > 28 and cx + cb:GetWidth() > content:GetWidth() - 20 then
+                    cx = 28
+                    yOff = yOff + 24
+                end
+                cb:SetPoint("TOPLEFT", cx, -yOff + 2)
+                cb:SetScript("OnClick", function()
+                    if #pick.order < LR.MAX_CRITERIA then pick.order[#pick.order + 1] = k end
+                    redraw()
+                end)
+                cx = cx + cb:GetWidth() + 4
+            end
+            for _, k in ipairs(LR.CRITERIA_ORDER) do criterion(k) end
+            criterion("bid")
+            if #pick.order > 0 then
+                local clear = UI:CreateButton(content, L["Clear order"], 100, 20)
+                if cx + clear:GetWidth() > content:GetWidth() - 20 then
+                    cx = 28
+                    yOff = yOff + 24
+                end
+                clear:SetPoint("TOPLEFT", cx, -yOff + 2)
+                clear:SetScript("OnClick", function() pick.order = {}; redraw() end)
+            end
+            yOff = yOff + 28
+        end
+    end
+
     -- A rule an officer changed stays the guild's (or the core's) until a loot system is picked again.
     if LR:IsCustom(coreName) then
         local backBtn = UI:CreateButton(content, L["Back to the loot system's rule"], 220, 22)
@@ -3146,6 +3266,35 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local deHint = UI:CreateText(content, L["Name of the player who receives items for DE"], 9, C.silver.r, C.silver.g, C.silver.b)
     deHint:SetPoint("LEFT", deBox.saveButton, "RIGHT", 8, 0)
     deHint:SetWidth(180)
+    yOff = yOff + 30
+
+    -- Bank character (issue #335): who receives what a loot rule's exception sends to the bank.
+    local bankLabel = UI:CreateText(content, L["Bank character:"], 11, C.white.r, C.white.g, C.white.b)
+    bankLabel:SetPoint("TOPLEFT", 8, -yOff)
+    local bankBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+    bankBox:SetSize(160, 22)
+    bankBox:SetPoint("LEFT", bankLabel, "RIGHT", 10, 0)
+    bankBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    bankBox:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    bankBox:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
+    GuildOS:ApplyFont(bankBox, 11)
+    bankBox:SetTextColor(C.text.r, C.text.g, C.text.b)
+    bankBox:SetMaxLetters(64)
+    bankBox:SetAutoFocus(false)
+    bankBox:SetText((GuildOS.LootMaster and GuildOS.LootMaster:GetBank()) or "")
+    bankBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    UI:AttachSaveButton(bankBox, function(box)
+        local name = strtrim(box:GetText())
+        if GuildOS.LootMaster then GuildOS.LootMaster:SetBank(name) end
+        if name ~= "" then
+            GuildOS:Print(L["Bank character set: "] .. "|cff00ff00" .. name .. "|r")
+        else
+            GuildOS:Print(L["Bank character removed."])
+        end
+    end)
+    local bankHint = UI:CreateText(content, L["Receives the items a loot rule's exception sends to the bank"], 9, C.silver.r, C.silver.g, C.silver.b)
+    bankHint:SetPoint("LEFT", bankBox.saveButton, "RIGHT", 8, 0)
+    bankHint:SetWidth(180)
     yOff = yOff + 30
 
     -- Rarity threshold: which item quality opens the ML loot window.

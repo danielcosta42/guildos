@@ -30,6 +30,7 @@ LootRule.MAX_FILTERS = 10
 LootRule.MAX_RESPONSES = 10
 LootRule.MAX_ACCOUNTS = 6
 LootRule.MAX_EFFECTS = 10
+LootRule.MAX_EXCEPTIONS = 20
 LootRule.TIME_MIN, LootRule.TIME_MAX = 5, 300   -- seconds a roll may stay open
 LootRule.MAX_BID = 1000000
 LootRule.WIRE_MAX = 240       -- bytes of an encoded "how to ask" an addon message has room for
@@ -59,7 +60,7 @@ local COUNTER_AUTOS = { boss = true, raid = true }   -- what feeds a counter by 
 -- with "unsupported: <piece>" for a reason, so whoever sees the refusal is told what is missing.
 local UNSUPPORTED = {
     council = true, queue = true, bonus = true, score = true, split = true, bottom = true, upgrade = true,
-    balance = true, counter = true, earn = true, exceptions = true,
+    balance = true, counter = true, earn = true,
 }
 local function unsupported(piece) return "unsupported: " .. piece end
 
@@ -434,10 +435,14 @@ local function validEffects(list, accounts)
     return true
 end
 
--- The blocks an exception may swap are checked by the same functions as the rule's own.
-local function validBlocks(rule, accounts)
-    local ok, why = validOrder(rule.order, accounts)
-    if not ok then return false, why end
+-- The blocks an exception may swap are checked by the same functions as the rule's own. A rule always
+-- has an order; an exception's `set` (`partial`) names only the blocks it swaps.
+local function validBlocks(rule, accounts, partial)
+    local ok, why
+    if rule.order ~= nil or not partial then
+        ok, why = validOrder(rule.order, accounts)
+        if not ok then return false, why end
+    end
     if rule.filters ~= nil and not validFilters(rule.filters, accounts) then return false, "unknown filter" end
     if rule.responses ~= nil and not validResponses(rule.responses) then return false, "responses" end
     if rule.decide ~= nil then
@@ -447,6 +452,50 @@ local function validBlocks(rule, accounts)
     if rule.effects ~= nil then
         ok, why = validEffects(rule.effects, accounts)
         if not ok then return false, why end
+    end
+    return true
+end
+
+-- The items that follow another rule (issue #335): up to twenty exceptions. `on` says which items
+-- (ids, a boss's encounter, a category, a raid's instance; with more than one, all of them), and either
+-- `to` gives them a fixed destination with no roll or `set` swaps the blocks it names.
+local CATEGORIES = { tier = true, legendary = true, mount = true, recipe = true, boe = true, trash = true,
+    unclaimed = true }
+local DESTINATIONS = { bank = true, de = true }
+local ITEMS_MAX = 40
+local ID_MAX = 9999999
+local SET_KEYS = { filters = true, responses = true, order = true, decide = true, effects = true }
+local function validExceptions(list, accounts)
+    if not isList(list, LootRule.MAX_EXCEPTIONS) then return false, "exceptions" end
+    for _, x in ipairs(list) do
+        if type(x) ~= "table" or not onlyKeys(x, { on = true, name = true, set = true, to = true }) then
+            return false, "exceptions"
+        end
+        if x.name ~= nil and not isLabel(x.name, NAME_MAX) then return false, "exceptions" end
+        local on = x.on
+        if type(on) ~= "table" or next(on) == nil
+            or not onlyKeys(on, { items = true, boss = true, cat = true, raid = true }) then
+            return false, "exceptions"
+        end
+        if on.items ~= nil then
+            if not isList(on.items, ITEMS_MAX) or #on.items == 0 then return false, "exceptions" end
+            for _, id in ipairs(on.items) do
+                if not wholeIn(id, 1, ID_MAX) then return false, "exceptions" end
+            end
+        end
+        if on.boss ~= nil and not wholeIn(on.boss, 1, ID_MAX) then return false, "exceptions" end
+        if on.raid ~= nil and not wholeIn(on.raid, 1, ID_MAX) then return false, "exceptions" end
+        if on.cat ~= nil and not CATEGORIES[on.cat] then return false, "exceptions" end
+        -- One or the other: an item either swaps blocks or has a fixed destination.
+        if (x.set == nil) == (x.to == nil) then return false, "exceptions" end
+        if x.to ~= nil and not DESTINATIONS[x.to] then return false, "exceptions" end
+        if x.set ~= nil then
+            if type(x.set) ~= "table" or next(x.set) == nil or not onlyKeys(x.set, SET_KEYS) then
+                return false, "exceptions"
+            end
+            local ok, why = validBlocks(x.set, accounts, true)
+            if not ok then return false, why end
+        end
     end
     return true
 end
@@ -474,8 +523,8 @@ function LootRule:Validate(rule)
         if bid.step ~= nil and not wholeIn(bid.step, 1, self.MAX_BID) then return false, "bid" end
     end
     if rule.exceptions ~= nil then
-        if type(rule.exceptions) ~= "table" then return false, "exceptions" end
-        if next(rule.exceptions) ~= nil then return false, unsupported("exceptions") end
+        ok, why = validExceptions(rule.exceptions, accounts)
+        if not ok then return false, why end
     end
     return true
 end
@@ -499,8 +548,111 @@ function LootRule:UnsupportedText(piece)
     if piece == "balance" then return L["a points account other than DKP, EP and GP"] end
     if piece == "counter" then return L["a counter with a start, a cap, a floor or a decay"] end
     if piece == "earn" then return L["an earning a counter cannot take"] end
-    if piece == "exceptions" then return L["exceptions per item"] end
     return nil
+end
+
+----------------------------------------------------------------------
+-- Exceptions per item (issue #335)
+--
+-- An item is what LootMaster knows of it when it is announced:
+--   { id, quality, classID, subclassID, bindType, threshold, boss, raid }
+-- `boss` is the encounter it dropped from and `raid` the instance, when the client can say.
+-- The categories the client recognises with no table typed by the guild:
+--   recipe     the item's class is Recipe
+--   mount      the item's class is Miscellaneous, subclass Mount
+--   boe        it binds when equipped
+--   legendary  its quality is legendary
+--   trash      its quality is below the loot threshold of the loot settings
+--   tier       it is on this game's list of tier pieces and tokens (TIER_ITEMS)
+--   unclaimed  nobody asked for it: read at the roll's end, never when it is announced
+-- "Not from a boss" is not part of "trash": the client does not tell a boss's loot from another's with
+-- the certainty an item given away asks for.
+----------------------------------------------------------------------
+local CLASS_RECIPE, CLASS_MISC, SUBCLASS_MOUNT = 9, 15, 5
+local BIND_ON_EQUIP, QUALITY_LEGENDARY = 2, 5
+
+-- The tier pieces and tokens of each game, by item id. Only ids checked against the game go in here:
+-- the lists start empty, and until one is filled the "tier" category matches nothing on that game.
+LootRule.TIER_ITEMS = { ANNIVERSARY = {}, FOREVER = {}, RETAIL = {} }
+
+function LootRule:Categories(item)
+    local cats = {}
+    if type(item) ~= "table" then return cats end
+    if item.classID == CLASS_RECIPE then cats.recipe = true end
+    if item.classID == CLASS_MISC and item.subclassID == SUBCLASS_MOUNT then cats.mount = true end
+    if item.bindType == BIND_ON_EQUIP then cats.boe = true end
+    if item.quality == QUALITY_LEGENDARY then cats.legendary = true end
+    if item.quality and item.threshold and item.quality < item.threshold then cats.trash = true end
+    local tier = self.TIER_ITEMS[GuildOS.Client and GuildOS.Client.game or ""]
+    if tier and item.id and tier[item.id] then cats.tier = true end
+    return cats
+end
+
+-- How specific an exception is: an item's own id before a boss, a boss before a category, a category
+-- before a whole raid. One that names several is as specific as the most specific of them.
+local function specificity(on)
+    return (on.items and 1) or (on.boss and 2) or (on.cat and 3) or 4
+end
+
+-- The exception of `rule` an item follows, or nil: the most specific that matches, and among equals
+-- the first. `unclaimed` asks at the roll's end for the one for an item nobody asked for; every other
+-- is asked for when the item is announced.
+function LootRule:ExceptionFor(rule, item, unclaimed)
+    if type(item) ~= "table" then return nil end
+    local cats = self:Categories(item)
+    local best, bestRank
+    for _, x in ipairs(rule and rule.exceptions or {}) do
+        local on = x.on
+        local matches = (on.cat == "unclaimed") == (unclaimed == true)
+        if matches and on.items then
+            matches = false
+            for _, id in ipairs(on.items) do matches = matches or id == item.id end
+        end
+        if matches and on.boss then matches = on.boss == item.boss end
+        if matches and on.raid then matches = on.raid == item.raid end
+        if matches and on.cat and on.cat ~= "unclaimed" then matches = cats[on.cat] == true end
+        local rank = specificity(on)
+        if matches and (not bestRank or rank < bestRank) then best, bestRank = x, rank end
+    end
+    return best
+end
+
+-- The rule an item is played by, and the exception that says so (nil for none). An exception with a
+-- fixed destination leaves the rule as it is: there is no roll to play. One that swaps blocks gives the
+-- rule with those blocks swapped and every other as it was.
+function LootRule:ForItem(rule, item)
+    local x = self:ExceptionFor(rule, item, false)
+    if not x or x.to then return rule, x end
+    local played = {}
+    for k, v in pairs(rule) do played[k] = v end
+    for k, v in pairs(x.set) do played[k] = v end
+    return played, x
+end
+
+-- A category's name. Each one by its own literal key, so every language file finds it.
+function LootRule:CategoryLabel(cat)
+    if cat == "tier" then return L["tier pieces"] end
+    if cat == "legendary" then return L["legendaries"] end
+    if cat == "mount" then return L["mounts"] end
+    if cat == "recipe" then return L["recipes"] end
+    if cat == "boe" then return L["bind on equip"] end
+    if cat == "trash" then return L["below the loot threshold"] end
+    if cat == "unclaimed" then return L["nobody asked"] end
+    return tostring(cat)
+end
+
+-- An exception's name for the announce line and the editor: its own, else what it is on.
+function LootRule:ExceptionLabel(x)
+    if x.name then return x.name end
+    local on = x.on
+    if on.items then
+        local ids = {}
+        for i, id in ipairs(on.items) do ids[i] = tostring(id) end
+        return string.format(L["item %s"], table.concat(ids, ", "))
+    end
+    if on.boss then return string.format(L["boss %d"], on.boss) end
+    if on.cat then return self:CategoryLabel(on.cat) end
+    return string.format(L["raid %d"], on.raid or 0)
 end
 
 ----------------------------------------------------------------------
@@ -1197,3 +1349,48 @@ function LootRule:SetBidField(field, value, coreName)
     rule.bid[field] = value
     return self:Set(rule, coreName)
 end
+
+----------------------------------------------------------------------
+-- An officer's exceptions (issue #335), for the rule editor. `spec` says which items and what happens:
+--   { kind = "items" | "boss" | "cat" | "raid", value = <ids as text, an id, or a category>,
+--     to = "bank" | "de"            -- a fixed destination, or
+--     order = { "wishlist", ... } } -- another order: the criteria, first to last
+-- Returns what `Set` returns.
+----------------------------------------------------------------------
+function LootRule:AddException(spec, coreName)
+    if type(spec) ~= "table" then return false, "exceptions" end
+    local rule = self:Draft(coreName)
+    local on = {}
+    if spec.kind == "items" then
+        on.items = {}
+        for id in tostring(spec.value or ""):gmatch("%d+") do on.items[#on.items + 1] = tonumber(id) end
+    elseif spec.kind == "boss" or spec.kind == "raid" then
+        on[spec.kind] = tonumber(spec.value)
+    elseif spec.kind == "cat" then
+        on.cat = spec.value
+    else
+        return false, "exceptions"
+    end
+    local x = { on = on }
+    if spec.to then
+        x.to = spec.to
+    else
+        local order = {}
+        for i, k in ipairs(type(spec.order) == "table" and spec.order or {}) do order[i] = { k = k } end
+        x.set = { order = order }
+    end
+    rule.exceptions = rule.exceptions or {}
+    rule.exceptions[#rule.exceptions + 1] = x
+    return self:Set(rule, coreName)
+end
+
+function LootRule:RemoveException(index, coreName)
+    local rule = self:Draft(coreName)
+    if not (rule.exceptions and rule.exceptions[index]) then return false, "exceptions" end
+    table.remove(rule.exceptions, index)
+    if #rule.exceptions == 0 then rule.exceptions = nil end
+    return self:Set(rule, coreName)
+end
+
+-- The categories an exception may be on, in the order the editor offers them.
+LootRule.CATEGORY_ORDER = { "recipe", "boe", "mount", "legendary", "tier", "trash", "unclaimed" }

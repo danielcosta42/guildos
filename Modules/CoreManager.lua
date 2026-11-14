@@ -183,6 +183,7 @@ local DEFAULT_LOOT = {
     recvPenalty      = true,
     lootThreshold    = 3,
     disenchanter     = "",
+    bank             = "",       -- the character an exception sends items "to the bank" (issue #335)
     dkpMinBid        = 0,
     dkpBidTime       = 30,
 }
@@ -418,6 +419,7 @@ function CoreManager:GetLootConfig(coreName)
         recvPenalty      = lmField(core, "recvPenalty"),
         lootThreshold    = lmField(core, "lootThreshold"),
         disenchanter     = lmField(core, "disenchanter"),
+        bank             = lmField(core, "bank"),
         dkpMinBid        = lmField(core, "dkpMinBid"),
         dkpBidTime       = lmField(core, "dkpBidTime"),
         -- The core's own choice (issue #338), never the guild's: nil follows the guild.

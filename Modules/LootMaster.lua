@@ -670,6 +670,21 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     -- The guild's chosen loot system (Settings) decides the default flow:
     -- "wishlist"/"tmb" force wishlist auto-council; "dkp"/"rolls" open a roll
     -- (DKP just changes how the roll frame ranks and what award charges).
+    -- An item that follows another rule (issue #335): a fixed destination has no roll at all, and an
+    -- exception that swaps blocks is the rule this item is announced and decided by.
+    local item = self:ItemFacts(itemLink, lootSlot)
+    local played, exception = GuildOS.LootRule:ForItem(rule, item)
+    self.activeLoot.item, self.activeLoot.baseRule = item, rule
+    if exception and exception.to then
+        self:SendToDestination(exception, itemLink, lootSlot, itemId)
+        return
+    elseif exception then
+        self.activeLoot.rule, self.activeLoot.exception = played, exception
+        self.activeLoot.endTime = GetServerTime() + (played.time or self.ROLL_DURATION or 30)
+        self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
+        return
+    end
+
     -- The raid night's own rule (the site's, guildos-web#516) says the whole order: it opens its roll
     -- for everyone, with none of the shortcuts the loot systems of before take by the wishlist.
     if GuildOS.LootRule.Night and GuildOS.LootRule:Night() == rule then
@@ -742,7 +757,13 @@ end
 function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prioEntry)
     local duration = self:RollTime()
     -- Main announce (DKP mode rolls register interest; the ML awards by standings)
-    self:SafeSendChat(self:AnnounceLine(itemLink, duration), "RAID_WARNING")
+    local announceLine = self:AnnounceLine(itemLink, duration)
+    -- An item that follows an exception says which one (issue #335).
+    local exception = self.activeLoot and self.activeLoot.exception
+    if exception then
+        announceLine = announceLine .. string.format(L["  -  exception: %s"], GuildOS.LootRule:ExceptionLabel(exception))
+    end
+    self:SafeSendChat(announceLine, "RAID_WARNING")
 
     -- Post priority info note
     if prioEntry then
@@ -1665,6 +1686,13 @@ function LootMaster:EndRolling(byClick)
         end
     else
         say(self, L["[Roll] No roll received for "] .. self.activeLoot.link, "RAID_WARNING")
+        -- Nobody asked (issue #335): a rule with an exception for that sends the item where it says.
+        -- With none, the loot master's Send to Disenchant button, as always.
+        local loot = self.activeLoot
+        local unclaimed = loot.item and GuildOS.LootRule:ExceptionFor(loot.baseRule or rule, loot.item, true)
+        if unclaimed and unclaimed.to and self:IsMasterLooter() then
+            self:SendToDestination(unclaimed, loot.link, loot.slot, loot.itemId, "norolls")
+        end
     end
 
     -- Refresh UI
@@ -1676,7 +1704,9 @@ end
 ----------------------------------------------------------------------
 -- Award loot to a player (Gargul-style two-path distribution)
 ----------------------------------------------------------------------
-function LootMaster:AwardLoot(playerName, silent)
+-- `free`: the item goes to a fixed destination (the bank, the disenchanter of an exception, issue
+-- #335) and costs nobody anything.
+function LootMaster:AwardLoot(playerName, silent, free)
     if not self.activeLoot then return end
     if not self:IsMasterLooter() then
         GuildOS:Print(L["You are not the Master Looter."])
@@ -1788,7 +1818,7 @@ function LootMaster:AwardLoot(playerName, silent)
     -- A rule that names what the winner pays (their bid, issue #334) charges whatever the loot system.
     local pointsReady = GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
     local entryEffect = LR:EntryEffect(rule)
-    if pointsReady and (GuildOS:LootSystemUsesPoints(self:System()) or LR:ChargeEffect(rule) or entryEffect)
+    if pointsReady and not free and (GuildOS:LootSystemUsesPoints(self:System()) or LR:ChargeEffect(rule) or entryEffect)
         and GuildOS:IsOfficer() then
         local pKey = GuildOS:GetPlayerKey(playerName)
         -- The price to enter the roll (issue #309): everyone who asked pays it, and whoever lost gets
@@ -3893,6 +3923,71 @@ function LootMaster:SetLootThreshold(q)
     if q < 2 then q = 2 elseif q > 5 then q = 5 end
     self.LOOT_THRESHOLD = q
     self:SaveCfgKey("lootThreshold", q)
+end
+
+-- The bank character (issue #335): who receives an item an exception sends "to the bank". Kept with
+-- the loot settings, beside the disenchanter.
+function LootMaster:GetBank()
+    return self:GetCfg().bank or ""
+end
+
+function LootMaster:SetBank(name)
+    self:SaveCfgKey("bank", strtrim(tostring(name or "")))
+end
+
+-- What the client knows of an item when it is announced, for the rule's exceptions: its id, quality,
+-- class and how it binds, the loot threshold of the loot settings, the raid it is in and, while the
+-- item is in the open loot window of a boss killed a short while ago, that boss.
+local BOSS_LOOT_WINDOW = 600   -- seconds after a kill its loot window still names the boss
+function LootMaster:ItemFacts(itemLink, lootSlot)
+    local id = tonumber(tostring(itemLink):match("item:(%d+)"))
+    local _, _, quality, _, _, _, _, _, _, _, _, classID, subclassID, bindType = GuildOS.Compat.GetItemInfo(itemLink)
+    local facts = {
+        id = id, quality = quality, classID = classID, subclassID = subclassID, bindType = bindType,
+        threshold = self:GetLootThreshold(),
+    }
+    local _, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceType == "raid" then facts.raid = instanceID end
+    local raid = GuildOS.RaidTracker and GuildOS.RaidTracker.currentRaid
+    if self.lootWindowOpen and lootSlot and raid and type(raid.encounters) == "table" then
+        local last = raid.encounters[#raid.encounters]
+        if last and last.success and last.endTime and GetServerTime() - last.endTime <= BOSS_LOOT_WINDOW then
+            facts.boss = last.id
+        end
+    end
+    return facts
+end
+
+-- An exception's fixed destination (issue #335): the item goes to the bank character or to the
+-- disenchanter with no roll, the raid is told which exception said so, and nobody is charged.
+-- `reason` "norolls": nobody asked for it. With no character set for the destination the loot master
+-- is told, and nothing is given.
+function LootMaster:SendToDestination(exception, itemLink, lootSlot, itemId, reason)
+    local toBank = exception.to == "bank"
+    local name = toBank and self:GetBank() or self:GetDisenchanter()
+    if not name or name == "" then
+        GuildOS:Print("|cffFF4444" .. (toBank and L["No bank character set."] or L["No disenchanter set."]) .. "|r "
+            .. L["Configure it in the Loot Master options."])
+        if not reason then self.activeLoot = nil end
+        return false
+    end
+    if self.rollTimer then
+        self.rollTimer:Cancel()
+        self.rollTimer = nil
+    end
+    if not self.activeLoot then self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0) end
+    local label = GuildOS.LootRule:ExceptionLabel(exception)
+    local msg
+    if toBank then
+        msg = string.format(L["[Loot] %s goes to the guild bank (%s) - exception: %s"], itemLink or L["item"], name, label)
+    elseif reason == "norolls" then
+        msg = string.format(L["[Loot] %s - nobody rolled. Sending to Disenchant: %s"], itemLink or L["item"], name)
+    else
+        msg = string.format(L["[Loot] %s goes to Disenchant (%s) - exception: %s"], itemLink or L["item"], name, label)
+    end
+    self:SafeSendChat(msg, "RAID")
+    self:AwardLoot(name, true, true)   -- silent: the line above said it; free: nobody pays for it
+    return true
 end
 
 -- Award the active item (or the provided item) to the disenchanter.

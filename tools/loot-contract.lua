@@ -514,7 +514,7 @@ no(rule({ decide = { by = "vote" } }), "decide", "a decider it does not know")
 no(rule({ decide = { by = "council" } }), "unsupported: council", "a council")
 reads(rule({ decide = { by = "auto" } }), "the order decides")
 reads(rule({ decide = { by = "holder" } }), "whoever holds the item decides")
-no(rule({ exceptions = { { on = { cat = "recipe" }, to = "bank" } } }), "unsupported: exceptions", "exceptions, until their own slice")
+reads(rule({ exceptions = { { on = { cat = "recipe" }, to = "bank" } } }), "an exception (tools/loot-exceptions.lua)")
 reads(rule({ exceptions = {} }), "no exception at all")
 
 -- What an award changes.

@@ -572,6 +572,18 @@ function GuildOS:CreateCoresPanel(panel)
                 lmSave("disenchanter", strtrim(self:GetText() or ""))
                 self:ClearFocus()
             end)
+            y = y - 28
+
+            -- The bank character (issue #335): who receives what a loot rule's exception sends to the bank.
+            local bkLbl = track(MakeLabel(rightContent, L["Bank character:"], 10))
+            bkLbl:SetPoint("TOPLEFT", 4, y)
+            local bkInp = track(MakeInput(rightContent, 110, false, L["Player name"]))
+            bkInp:SetPoint("LEFT", bkLbl, "RIGHT", 6, 1)
+            bkInp:SetText(lootCfg.bank or "")
+            bkInp:SetScript("OnEnterPressed", function(self)
+                lmSave("bank", strtrim(self:GetText() or ""))
+                self:ClearFocus()
+            end)
             y = y - 30
         end
 

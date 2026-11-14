@@ -198,7 +198,8 @@ recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:
     vencedor, qualquer que seja a resposta. O Desfazer devolve os dois.
 - **Recusado, com motivo próprio:** `decide.by = "council"` (`council`), contas `queue` e `bonus`,
   `roll` com `bonus`, `score`, `upgrade` (a linha do candidato não tem o dado), `bottom`, `split`,
-  conta `balance` fora das três (`balance`), `exceptions` (até a fatia #335).
+  conta `balance` fora das três (`balance`).
+- **`exceptions`** (#335): ver "As exceções por item" abaixo.
 - Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid` e `dkpsealed` (fora do retail,
   que não tem master looter). Escolher um sistema de loot volta à regra pronta dele.
 
@@ -206,6 +207,36 @@ Dos 14 modelos do site com as respostas padrão (`tools/data/loot-rule-models.js
 `tools/loot-contract.lua`): 9 são lidos e jogados (`rolls`, `plus1`, `softres`, `hardres`, `wishlist`,
 `dkp`, `dkpbid`, `epgp`, `ranked`) e 5 são recusados inteiros (`srplus` e `karma` por `bonus`,
 `council` por `council`, `zerosum` por `split`, `sk` por `queue`).
+
+### As exceções por item (#335)
+
+Até 20. `on` diz quais itens: `items` (até 40 ids), `boss` (id do encontro), `cat` ou `raid` (id da
+instância); com mais de um campo, o item precisa ser todos. Ou `to = "bank" | "de"` (destino fixo, sem
+disputa) ou `set` com os blocos que troca (`order`, `decide`, `responses`, `effects`, `filters`),
+validados pelas mesmas funções da regra. A mais específica vence (item, chefe, categoria, raide); entre
+iguais, a primeira da lista (`LootRule:ExceptionFor`, `LootRule:ForItem`).
+
+- **Categorias que o cliente reconhece sem tabela digitada:** `recipe` (classe do item), `mount`
+  (classe Diversos, subclasse Montaria), `boe` (vincula ao equipar), `legendary` (qualidade), `trash`
+  (qualidade abaixo do limiar de loot dos ajustes) e `tier` (lista de ids por versão do jogo,
+  `LootRule.TIER_ITEMS`, que nasce **vazia**: só entra id conferido no jogo). `unclaimed` (ninguém
+  pediu) só é lida no fim da rolagem. "Não veio de chefe" não faz parte de `trash`: o cliente não
+  distingue isso com a certeza que um item entregue exige.
+- **O item:** `LootMaster:ItemFacts` lê id, qualidade, classe, subclasse e vínculo do item, o limiar
+  de loot, a instância da raide e, só enquanto o item está na janela de loot aberta até 10 minutos
+  depois de um chefe morto, o encontro. Item rolado da bolsa não tem chefe.
+- **Destino fixo:** o item vai ao personagem do banco (ajuste novo, ao lado do desencantador, por
+  core como ele) ou ao desencantador, sem abrir disputa, com uma linha na raide que diz qual exceção
+  valeu, e ninguém é cobrado. Sem personagem definido, o master looter é avisado e nada é entregue.
+- **Blocos trocados:** o item é anunciado e decidido pela regra com aqueles blocos trocados, em
+  disputa aberta a todos, e a linha do anúncio diz qual exceção valeu. O item guarda essa regra até
+  ser entregue.
+- **Ninguém pediu:** com uma exceção `unclaimed`, o cliente do master looter manda o item ao destino
+  no fim da rolagem. Sem ela nada muda: a raide é avisada e o botão "Send to Disenchant" segue como
+  era, com o desencantador e o limiar de sempre.
+- **Editor:** lista compacta no editor da regra (guilda e core): alvo (categoria, ids de item, id do
+  chefe, id da raide), destino (banco, desencantador, outra ordem) e, para outra ordem, os critérios
+  escolhidos em sequência (`LootRule:AddException`, `LootRule:RemoveException`).
 
 ### A regra da noite (GOSROST1 v5)
 
