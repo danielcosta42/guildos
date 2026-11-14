@@ -30,7 +30,8 @@
 --                                               out, "x" cancelled; i the candidate proposed, 0 none
 --
 -- Untrusted input. Only the raid's master looter opens or closes a session, and a client reads those
--- messages from nobody else. A vote is its sender's, as the game names them, who has to be in the
+-- messages from nobody else (LootMaster:IsFromMasterLooter: where the game names no master looter, the
+-- raid's leader or an assistant). A vote is its sender's, as the game names them, who has to be in the
 -- raid and a member of the council by this client's own guild roster (a rank) or by the rule's list
 -- of names; what a message says of who sent it is never read. One vote a member and an item: a new
 -- one replaces the old. The session's id is the roll's, so a vote for the item before is not one for

@@ -18,7 +18,11 @@
 --   BID|sid|name|KEY|bid                 loot master -> raid: an open bid it took
 --   ACK|sid|name|KEY                     loot master -> raid: an answer with nothing else to show
 --   NO|sid|name|why|number               loot master -> raid: an answer it refused
--- Who answered is always the sender the game names, never a name inside the message.
+-- Who answered is always the sender the game names, never a name inside the message. Who each message
+-- is read from:
+--   ASK, ANNOUNCE, ROLL, BID, ACK, NO   the raid's master looter (IsFromMasterLooter), by a raider's client
+--   ANS                                 a raid member (the tied, in a roll for a tie), by the master looter's
+--   AWARD, UNDO                         as before: an officer of the guild, for what is recorded or forgotten
 --
 -- Since issue #336 every award keeps a record of why the winner got the item (AwardWhy, LootRule:Why),
 -- and a rule whose items a council decides opens a vote when the answers close: its messages (COPEN,
@@ -379,11 +383,17 @@ function LootMaster:IsMasterLooter()
 end
 
 ----------------------------------------------------------------------
--- Whether `sender`, as the game names an addon message's, is this raid's master looter (issue #336): a
--- council's vote is opened and closed by nobody else. The game says who the master looter is by their
--- place in the raid; where it does not say (no master loot, or a client that names none), nobody is.
+-- Who may open a roll, as a raider's client reads it. Everything a master looter's client tells the
+-- raid (ASK, ANNOUNCE, ROLL, BID, ACK, NO and the council's COPEN, CMEM, CCAND, CTALLY, CWHO, CNO,
+-- CCLOSE) is read from the raid's master looter and from nobody else: a raider who replayed an ASK
+-- used to have every answer, sealed bids among them, sent to them in place of the master looter.
+--
+-- The game says who the master looter is by their place in the raid. Where it names none (group loot,
+-- or a client with no master loot to ask about) the raid's leader and its assistants stand in: they
+-- are who the raid already trusts with its marks and invites, and nobody else is read.
 ----------------------------------------------------------------------
-function LootMaster:MasterLooterName()
+-- The master looter's place in the raid, or nil when the game names none.
+function LootMaster:MasterLooterIndex()
     local raidID
     if GetLootMethod then
         local method, _, id = GetLootMethod()
@@ -395,16 +405,47 @@ function LootMaster:MasterLooterName()
         if method == master then raidID = id end
     end
     if not (raidID and IsInRaid()) then return nil end
+    return raidID
+end
+
+function LootMaster:MasterLooterName()
+    local raidID = self:MasterLooterIndex()
+    if not raidID then return nil end
     return (GuildOS.Compat.UnitIdentity("raid" .. raidID))
 end
 
-function LootMaster:IsFromMasterLooter(sender)
-    if GuildOS.Compat.IsSecret(sender) or type(sender) ~= "string" or sender == "" then return false end
-    local ml = self:MasterLooterName()
-    if not ml then return false end
+-- The place in the raid of `sender`, as the game names an addon message's or a /roll line's, or nil
+-- for somebody outside it. The whole name decides. On a client with surnames one side may hold the
+-- first name alone (issue #48): it then decides only when a single raider has that first name, so two
+-- raiders who share one are never taken for each other.
+function LootMaster:SenderRaidIndex(sender)
+    if GuildOS.Compat.IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
     local name = sender:match("^([^%-]+)") or sender
-    return name == ml or sender == ml
-        or (GuildOS.Client.has.surnames and self:WholeRollerName(name, ml) ~= nil) or false
+    local loose, matches = nil, 0
+    for i = 1, GetNumGroupMembers() or 0 do
+        local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
+        if uName then
+            if uName == name or uName == sender then return i end
+            if GuildOS.Client.has.surnames then
+                local whole = (uSecond and uSecond ~= "") and (uName .. " " .. uSecond) or uName
+                if whole == name or whole == sender then return i end
+                if self:WholeRollerName(name, uName, uSecond) then loose, matches = i, matches + 1 end
+            end
+        end
+    end
+    return matches == 1 and loose or nil
+end
+
+-- Whether `sender` is who this raid's rolls and votes are read from: its master looter, or, where the
+-- game names none, its leader or one of its assistants.
+function LootMaster:IsFromMasterLooter(sender)
+    local index = self:SenderRaidIndex(sender)
+    if not index then return false end
+    local ml = self:MasterLooterIndex()
+    if ml then return index == ml end
+    local unit = "raid" .. index
+    return (UnitIsGroupLeader and UnitIsGroupLeader(unit) and true)
+        or (UnitIsGroupAssistant and UnitIsGroupAssistant(unit) and true) or false
 end
 
 ----------------------------------------------------------------------
@@ -1155,7 +1196,9 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
     if cmd == "ASK" then
         -- The buttons of the roll a loot master is about to announce (issue #334). Kept only until
         -- the ANNOUNCE that follows it, and only when every part of it is read.
-        if not self:IsMasterLooter() then
+        -- Read from the raid's master looter alone: anybody else's would send this client's answers,
+        -- a sealed bid among them, to whoever asked.
+        if not self:IsMasterLooter() and self:IsFromMasterLooter(sender) then
             local sid, encoded = rest:match("^(%x+)|(.+)$")
             local spec = sid and #sid <= 8 and GuildOS.LootRule:Decode(encoded)
             self.pendingAsk = spec and { sender = sender, sid = sid, spec = spec, at = GetTime() } or nil
@@ -1177,8 +1220,9 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
         if GuildOS.LootCouncil then GuildOS.LootCouncil:OnMessage(cmd, rest, sender) end
 
     elseif cmd == "ANNOUNCE" then
-        -- Another ML announced an item - show roll popup if we're not ML
-        if not self:IsMasterLooter() then
+        -- The master looter announced an item - show roll popup if we're not ML. From anybody else it
+        -- is not an announce: no popup, and the roll being answered stays the master looter's.
+        if not self:IsMasterLooter() and self:IsFromMasterLooter(sender) then
             -- The buttons that came with it, from the same loot master a moment ago. With none (a
             -- loot master on a version from before) the popup is the MS / OS one, by /roll.
             local ask = self.pendingAsk
@@ -1647,7 +1691,7 @@ end
 -- roll this client is answering; it shows, and changes nothing a roll is decided by.
 function LootMaster:OnAnswerEcho(cmd, rest, sender)
     local heard = self.heard
-    if not heard or sender ~= heard.sender then return end
+    if not heard or sender ~= heard.sender or not self:IsFromMasterLooter(sender) then return end
     local sid, name, key, number = rest:match("^(%x+)|([^|]+)|(%w+)|?(%d*)$")
     if sid ~= heard.sid or #name > 64 or #key > 8 or #number > 7 then return end
     number = tonumber(number) or 0

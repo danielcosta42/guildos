@@ -73,8 +73,12 @@ function GetNumGuildMembers() return 0 end
 function IsInRaid() return true end
 function IsInGroup() return true end
 function SendChatMessage() end
-function GetLootMethod() return "master", 0 end
+-- The raid's first is its master looter, as the game names one: by their place in the raid.
+local lootMethod = { "master", nil, 1 }
+function GetLootMethod() return lootMethod[1], lootMethod[2], lootMethod[3] end
 local raid = { "Lead", "Ana", "Bo", "Cy", "Dee" }
+function UnitIsGroupLeader(unit) return unit == "raid1" or unit == "player" end
+function UnitIsGroupAssistant(unit) return unit == "raid2" end
 function GetNumGroupMembers() return #raid end
 function UnitClass() return "Mage", "MAGE" end
 function UnitName(unit)
@@ -309,6 +313,50 @@ check(popups[5].ask == nil, "and buttons this client cannot read whole leave the
 LM:OnAddonMessage(LM.PREFIX, "ASK|A5|30,-,0,1;MS=r;OS=r", "WHISPER", "Lead-Realm")
 hear("ANNOUNCE|" .. LINK .. "|30|28770|0")
 check(popups[6].ask == nil, "buttons never come by whisper")
+
+-- Only the raid's master looter opens a roll. A raider who replays the buttons and the announce used
+-- to become who every answer went to, sealed bids among them, and the master looter got none.
+hear("ASK|D1|30,s,10,1;MS=bMS;OS=bOS")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0")
+local shown = #popups
+check(LM.heard and LM.heard.sender == "Lead-Realm" and LM.heard.sid == "D1", "the master looter's sealed roll is the one being answered")
+hear("ASK|D1|30,s,10,1;MS=bMS;OS=bOS", "Bo-Realm")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Bo-Realm")
+check(#popups == shown and LM.heard and LM.heard.sender == "Lead-Realm" and LM.heard.sid == "D1",
+  "a raider who replays the buttons and the announce opens nothing and takes nobody's answers")
+hear("ASK|FFFF|30,s,10,1;MS=bMS;OS=bOS", "Bo-Realm")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Bo-Realm")
+check(#popups == shown and LM.heard.sid == "D1", "nor does a raider's made-up roll replace the one that is open")
+quiet()
+LM:SendAnswer("MS", 500, "")
+check(#whispered == 1 and whispered[1].target == "Lead-Realm" and whispered[1].text == "ANS|D1|MS|500" and #sent == 0,
+  "so the sealed bid still goes to the master looter and to nobody else")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Zed-Realm")
+check(#popups == shown, "an announce from outside the raid is nothing")
+-- Where the game names no master looter, the raid's leader and its assistants are read, nobody else.
+lootMethod = { "group" }
+hear("ASK|D2|30,-,0,1;MS=r;OS=r", "Bo-Realm")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Bo-Realm")
+check(#popups == shown and LM.heard.sid == "D1", "with no master looter named, a raider's announce is still nothing")
+hear("ASK|D3|30,-,0,1;MS=r;OS=r", "Ana-Realm")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Ana-Realm")
+check(#popups == shown + 1 and LM.heard.sid == "D3" and LM.heard.sender == "Ana-Realm", "an assistant's is read")
+hear("ASK|D4|30,-,0,1;MS=r;OS=r")
+hear("ANNOUNCE|" .. LINK .. "|30|28770|0")
+check(#popups == shown + 2 and LM.heard.sid == "D4", "and the leader's")
+lootMethod = { "master", nil, 1 }
+hear("ROLL|D4|Lead|MS|100", "Ana-Realm")
+-- On a client with surnames a first name alone names the master looter only when one raider has it.
+GuildOS.Client.has.surnames = true
+raid[1], raid[2] = "Lead Silva", "Lead Costa"
+check(LM:IsFromMasterLooter("Lead Silva") == true and LM:IsFromMasterLooter("Lead Costa") == false,
+  "with surnames, the whole name says who the master looter is")
+check(LM:IsFromMasterLooter("Lead") == false, "and a first name two raiders share is nobody's")
+raid[2] = "Ana Costa"
+check(LM:IsFromMasterLooter("Lead") == true and LM:IsFromMasterLooter("Ana") == false,
+  "a first name only one raider has is theirs")
+raid[1], raid[2] = "Lead", "Ana"
+GuildOS.Client.has.surnames = false
 
 -- The button clicked: the answer goes to the loot master, a sealed bid by whisper only.
 hear("ASK|B1|30,-,0,1;MS=r;OS=r")
