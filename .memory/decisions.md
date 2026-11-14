@@ -1545,3 +1545,45 @@ run could set up a raid.
   an officer, so they are taken.
 - (−) A kind this version does not know (one a later version adds) is read as RAID on receipt (`normalizeKind`), so a
   member's event of it stands or falls with raids being open.
+
+## ADR-0035 — Groups: a listing is the leader's on the guild channel, a request is a whisper, and looking stays `LG` (#341)
+
+### Context
+Members asked for a group finder inside the guild. The addon had the availability board (#243): a role, a note and a
+duration on `LG`, drawn by a popup. It could not name an activity, and there was no group with open spots to ask into.
+
+### Decision
+- **Looking stays `LG`**, with two fields an older client never reads: `roles` (a subset of `THD`) and `acts` (up to six
+  activity ids). `role` still goes out, the single role or `ANY`, so a client before this shows the listing as it did.
+- **A group is a new message, `GF`**, on GUILD only, keyed by the sender, one a leader: `{ act, note, need, n, max, ttl,
+  age }` or `{ clear }`. Not folded into `LG`: an older client would list a group as one more player available. Not
+  `LP` either: that is the wishlist's loot prio, matched by its literal in `OnMessageReceived` (`tools/groups.lua`
+  holds that no code is used twice).
+- **A request for a spot is a whisper, `GJ`**, and is accepted only from somebody on the guild roster by their whole
+  name (a namesake on another realm is nobody, as #78), only by somebody leading a group, only for a role with a spot
+  open. `LG` is likewise heard on GUILD alone now. Its answer (`decline`, with `closed` when the group came down) is
+  a whisper back. Requests live for the session (`GuildOS.State.groups`), listings are saved.
+- **The spot closes by the party, not by a click**: when a queued player is in the leader's group their role's spot
+  closes; no spot left, or a full group, takes the listing down. The game's roles are not read: Classic has none.
+- **Activities are ids from a per-client catalogue** (`Data/GroupActivities.lua`). An id this client does not know is
+  kept and shown as "another activity". Names are the client's own by map id where it knows the instance.
+- **The game's art is drawn only when the client says it has the file** (`Compat.TextureExists`): the paths are the
+  LFG frame's backgrounds as Classic names them, unverified on WoW: Forever, and a missing path draws a green square.
+- The leader publishes at most once every 6 s and receivers take one listing a sender every 5 s; an asker sends one
+  request a leader every 3 s against the leader's 2 s. What only removes a matching entry (a `clear`, a `cancel`, a
+  `decline`) is never held to a cooldown: it happens once an entry, and the one dropped would leave a row that is no
+  longer true.
+- A request belongs to the listing it was made for: another activity or an expiry empties the leader's queue and the
+  asker's memory of it. Only whoever can invite (alone, leader, raid assistant) lists a group.
+- The window's tab label padding went from 20 to 18 px: with the Groups tab an officer's sixteen tabs no longer fit
+  the rule at 1000 px, which `tools/window-shell.lua` holds.
+
+### Consequences
+- (+) An older client is unchanged: it keeps the board it had and drops `GF` and `GJ` as unknown types.
+- (+) Nobody publishes, changes or takes down somebody else's listing, and nothing off the wire reaches a row unsanitised.
+- (−) A request needs the leader online, which a listing already does (a leader who logged off is not listed).
+- (−) A member invited by hand closes no role's spot: the open spots are only capped at the seats left, cut from the
+  last role back, until the leader says which.
+- (−) On WoW: Forever a queued player is matched by first name when the unit's name carries no surname (#48): a
+  guildmate who shares it would close the spot early.
+- (−) Groups do not cross to allied guilds; the alliance keeps seeing who is looking, without the activities.

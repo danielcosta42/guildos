@@ -61,6 +61,14 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 
+-- The guild's own group finder (issue #341): what is being formed, who is looking, and the game's
+-- activities as tiles. /gos avail opens it.
+UI:RegisterFeature({
+    id = "groups", label = L["Groups"], order = 52,
+    subs = { "active", "dungeon", "raid", "other" },
+    build = function(c, win) GuildOS:CreateGroupsPanel(c, win) end,
+})
+
 -- WoW: Forever only (issue #211): the guild's journal, where the module exists.
 UI:RegisterFeature({
     id = "journal", label = L["Journal"], order = 55, tbc = false, retail = false, restart = true,

@@ -1,8 +1,10 @@
 ----------------------------------------------------------------------
 -- Guild OS - LFG Board
--- Members mark themselves available for a group (role + note + TTL).
+-- Members mark themselves available for a group (roles + activities + note + TTL).
 -- Everyone sees a live board. An entry is always keyed by the comm
 -- envelope sender, so nobody can publish availability for someone else.
+-- The board is drawn by the Groups tab (UI/GroupsPanel.lua, issue #341); the groups being
+-- formed are Modules/Groups.lua.
 ----------------------------------------------------------------------
 local LFGBoard = {}
 GuildOS.LFGBoard = LFGBoard
@@ -13,12 +15,20 @@ local DEFAULT_TTL = 5400   -- 90 minutes
 local TTL_MIN     = 1800   -- 30 minutes, the shortest duration the UI offers
 local TTL_MAX     = 7200   -- 120 minutes, the longest duration the UI offers
 local NOTE_MAX    = 60
+local ACTS_MAX    = 6      -- activities one listing names
+local ACT_ID_MAX  = 32     -- bytes of an activity id
 local ENTRY_COOLDOWN = 5   -- accept at most one entry per sender per 5s
 local GUILD_LINE_COOLDOWN = 300   -- at most one line in guild chat per 5 minutes
 
 LFGBoard.DEFAULTS = { notify = true, postToGuild = true, lastRole = "ANY", lastNote = "",
-                      lastTtl = DEFAULT_TTL, allianceScope = false }
+                      lastTtl = DEFAULT_TTL, allianceScope = false, roles = "", lastMode = "seek" }
 LFGBoard.ROLES    = { "ANY", "TANK", "HEALER", "DPS" }
+-- The roles of a listing since issue #341: a subset of these letters, in this order. `role` above
+-- still goes out beside it, which is all a client before #341 reads.
+LFGBoard.ROLE_LETTERS = { "T", "H", "D" }
+LFGBoard.DURATIONS = { TTL_MIN, 3600, DEFAULT_TTL, TTL_MAX }
+local LETTER_OF = { TANK = "T", HEALER = "H", DPS = "D" }
+local ROLE_OF   = { T = "TANK", H = "HEALER", D = "DPS" }
 
 function LFGBoard:Initialize()
     GuildOS.db.lfgBoard = GuildOS.db.lfgBoard or {}
@@ -90,6 +100,7 @@ function LFGBoard:ActiveList(store, now, onlineSet)
             out[#out + 1] = {
                 key = key, name = key:match("^([^-]+)") or key,
                 role = e.role or "ANY", note = e.note or "", ts = e.ts, ttl = e.ttl,
+                roles = e.roles or LETTER_OF[e.role or "ANY"] or "", acts = e.acts or {},
             }
         end
     end
@@ -164,6 +175,7 @@ function LFGBoard:AllianceList(now)
                             key   = nil,
                             name  = row.n,
                             role  = row.r or "ANY",
+                            roles = LETTER_OF[row.r or "ANY"] or "",
                             note  = "|cff8888aa[" .. guildName .. "]|r " .. (row.t or ""),
                             ts    = row.ts,
                             ttl   = row.ttl,
@@ -201,6 +213,45 @@ function LFGBoard:_SanitizeRole(role)
     return (type(role) == "string" and tContains(self.ROLES, role) and role) or "ANY"
 end
 
+-- The roles of a listing: the letters of ROLE_LETTERS it names, each once and in that order, so two
+-- clients write the same set the same way. Anything else (a number, a table, a colour escape) is no
+-- role at all, which reads as "any".
+function LFGBoard:_SanitizeRoles(roles)
+    if type(roles) ~= "string" then return "" end
+    local out = ""
+    for _, letter in ipairs(self.ROLE_LETTERS) do
+        if roles:find(letter, 1, true) then out = out .. letter end
+    end
+    return out
+end
+
+-- One activity id off the wire, or nil: lowercase letters, digits and hyphens, as the catalogue
+-- writes them. An id this client's catalogue does not have is kept (a newer version's), and shown
+-- as some other activity.
+function LFGBoard:_SanitizeAct(id)
+    if type(id) ~= "string" or #id == 0 or #id > ACT_ID_MAX or id:find("[^%l%d%-]") then return nil end
+    return id
+end
+
+-- The activities of a listing: up to ACTS_MAX ids, each once, in the order they came.
+function LFGBoard:_SanitizeActs(acts)
+    local out, seen = {}, {}
+    if type(acts) ~= "table" then return out end
+    for i = 1, ACTS_MAX * 2 do
+        local id = self:_SanitizeAct(acts[i])
+        if id and not seen[id] and #out < ACTS_MAX then
+            seen[id] = true
+            out[#out + 1] = id
+        end
+    end
+    return out
+end
+
+-- The one role a client before #341 shows for these roles: the only one, or any.
+function LFGBoard:_LegacyRole(roles)
+    return ROLE_OF[roles or ""] or "ANY"
+end
+
 -- Clamp a lifetime to the range the UI actually offers (30m to 120m). An
 -- unclamped ttl is a permanent entry: ttl = 1e12 keeps _IsActive true forever,
 -- so Prune can never drop it and it survives in SavedVariables long after the
@@ -230,8 +281,14 @@ function LFGBoard:_BuildEntry(p, now)
     local age = tonumber(p and p.age) or 0
     if age ~= age or age < 0 then age = 0 end
     if age > ttl then age = ttl end
+    -- A listing from before #341 has only `role`: its roles are that one.
+    local role = self:_SanitizeRole(p and p.role)
+    local roles = self:_SanitizeRoles(p and p.roles)
+    if roles == "" then roles = LETTER_OF[role] or "" end
     return {
-        role = self:_SanitizeRole(p and p.role),
+        role = role,
+        roles = roles,
+        acts = self:_SanitizeActs(p and p.acts),
         note = GuildOS:SanitizeUserText(p and p.note, NOTE_MAX),
         ts = now - age,
         ttl = ttl,
@@ -298,21 +355,40 @@ end
 -- Returns the stored entry so callers print exactly what was published
 -- (sanitized note, clamped ttl) instead of what they passed in. `toGuild` is the board's box: the
 -- slash command never speaks in guild chat, where nobody who typed it agreed to be heard.
-function LFGBoard:SetAvailable(role, note, ttl, toGuild)
+-- `roles` and `acts` are the Groups tab's (issue #341): given roles decide `role`, the one a client
+-- before #341 reads.
+function LFGBoard:SetAvailable(role, note, ttl, toGuild, roles, acts)
     note = GuildOS:SanitizeUserText(note, NOTE_MAX)
     ttl = self:_ClampTtl(ttl or GuildOS.db.lfgPrefs.lastTtl or DEFAULT_TTL)
-    role = self:_SanitizeRole(role or GuildOS.db.lfgPrefs.lastRole or "ANY")
-    local entry = { role = role, note = note, ts = GetServerTime(), ttl = ttl }
+    if roles ~= nil then
+        roles = self:_SanitizeRoles(roles)
+        role = self:_LegacyRole(roles)
+    else
+        role = self:_SanitizeRole(role or GuildOS.db.lfgPrefs.lastRole or "ANY")
+        roles = LETTER_OF[role] or ""
+    end
+    acts = self:_SanitizeActs(acts)
+    local entry = { role = role, roles = roles, acts = acts, note = note, ts = GetServerTime(), ttl = ttl }
     GuildOS.db.lfgBoard[myKey()] = entry
-    GuildOS.db.lfgPrefs.lastRole, GuildOS.db.lfgPrefs.lastNote, GuildOS.db.lfgPrefs.lastTtl = role, note, ttl
-    if toGuild then self:_SayInGuild(role, note) end
+    local prefs = GuildOS.db.lfgPrefs
+    prefs.lastRole, prefs.lastNote, prefs.lastTtl, prefs.roles = role, note, ttl, roles
+    if toGuild then self:_SayInGuild(role, note, acts) end
     if GuildOS.CommSystem then
         GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
-            LibSerialize:Serialize({ role = role, note = note, ttl = ttl }))
+            LibSerialize:Serialize({ role = role, roles = roles, acts = acts, note = note, ttl = ttl }))
     end
     self:Refresh()
     return entry
 end
+
+-- My own live listing, or nil.
+function LFGBoard:Mine()
+    local store = GuildOS.db and GuildOS.db.lfgBoard
+    local entry = store and store[myKey()]
+    return self:_IsActive(entry, GetServerTime()) and entry or nil
+end
+
+function LFGBoard:MyKey() return myKey() end
 
 function LFGBoard:ClearAvailable()
     GuildOS.db.lfgBoard[myKey()] = nil
@@ -343,13 +419,16 @@ function LFGBoard:Rebroadcast()
     local age = now - entry.ts
     if age < 0 then age = 0 end
     GuildOS.CommSystem:SendMessage(GuildOS.CommSystem.MSG_TYPES.LFG,
-        LibSerialize:Serialize({ role = entry.role, note = entry.note, ttl = entry.ttl, age = age }))
+        LibSerialize:Serialize({ role = entry.role, roles = entry.roles, acts = entry.acts, note = entry.note,
+            ttl = entry.ttl, age = age }))
     return true
 end
 
 -- Incoming: the key ALWAYS comes from the envelope sender, never the payload.
-function LFGBoard:HandleEntry(sender, data)
-    if not sender then return end
+-- Only over GUILD, where the sender is a guildmate by the channel itself: a whisper can come from
+-- anybody (issue #341; `channel` is nil only from a harness that passes none).
+function LFGBoard:HandleEntry(sender, data, channel)
+    if not sender or (channel ~= nil and channel ~= "GUILD") then return end
     -- Cooldown first, before the deserialize and before any repaint, so a
     -- flooding peer costs us nothing. Keyed on the short name so "Bob" and
     -- "Bob-Realm" share one bucket.
@@ -374,8 +453,8 @@ function LFGBoard:HandleEntry(sender, data)
         -- age > 0 means this is a rebroadcast of an older post, not news.
         local prefs = GuildOS.db.lfgPrefs
         if age == 0 and not wasActive and prefs and prefs.notify and key ~= myKey() then
-            GuildOS:Print(string.format(L["%s is available: %s"], short,
-                (entry.note ~= "" and entry.note) or L["(no note)"]))
+            local what = self:Describe(entry)
+            GuildOS:Print(string.format(L["%s is available: %s"], short, what ~= "" and what or L["(no note)"]))
         end
     end
     self:Refresh()
@@ -386,36 +465,56 @@ function LFGBoard:Refresh()
 end
 
 ----------------------------------------------------------------------
--- UI (self-contained popup -- mirrors Modules/GuildAnalytics.lua:Show())
+-- What the Groups tab and the chat lines read
 ----------------------------------------------------------------------
-local ROW_HEIGHT = 22
--- 30m / 60m / 90m / 120m. The ends are the same constants _ClampTtl enforces,
--- so the offered range and the accepted range cannot drift apart.
-local DURATIONS  = { TTL_MIN, 3600, DEFAULT_TTL, TTL_MAX }
-
 local function roleDisplay(role)
     if role == "TANK" then return L["Tank"] end
     if role == "HEALER" then return L["Healer"] end
     if role == "DPS" then return L["DPS"] end
     return L["Any"]
 end
+function LFGBoard:RoleName(role) return roleDisplay(role) end
+
+-- An activity's name: the game's own for an instance this client knows, the catalogue's otherwise,
+-- and "another activity" for an id only a newer version has.
+function LFGBoard:ActivityName(id)
+    local cat = GuildOS.GroupActivities
+    local it = cat and cat.byId[id]
+    if not it then return L["Another activity"] end
+    local own = it.map and GuildOS.Compat.InstanceName(it.map)
+    return own or it.name
+end
+
+-- The activities of a listing and its note, as one line: "Deadmines, Gnomeregan: until 23h".
+function LFGBoard:Describe(entry)
+    local names = {}
+    for _, id in ipairs(entry.acts or {}) do names[#names + 1] = self:ActivityName(id) end
+    local what, note = table.concat(names, ", "), entry.note or ""
+    if what ~= "" and note ~= "" then return what .. ": " .. note end
+    return what ~= "" and what or note
+end
 
 -- The post in guild chat, which is what reaches somebody with the board closed, or with no addon
 -- at all (#243). At most one every five minutes, saved so a /reload does not skip it, because taking
 -- a post down and putting it back is one click each. The addon's notice goes out regardless, even if
 -- it says the same thing: a line can be dropped with no error (a rank that may not speak), and not
--- everybody shows guild chat, so nothing here can know the line reached anyone.
-function LFGBoard:_SayInGuild(role, note)
+-- everybody shows guild chat, so nothing here can know the line reached anyone. `line` is the whole
+-- line when Modules/Groups.lua speaks for a group: one cooldown for both, so a leader cannot say two.
+function LFGBoard:_SayInGuild(role, note, acts, line)
     local prefs, now = GuildOS.db.lfgPrefs, GetServerTime()
     if not IsInGuild() or now - (prefs.lastGuildLine or 0) < GUILD_LINE_COOLDOWN then return end
-    local line = role == "ANY" and L["[Guild OS] LFG"] or string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
-    if note ~= "" then line = line .. ": " .. note end
+    if not line then
+        line = role == "ANY" and L["[Guild OS] LFG"] or string.format(L["[Guild OS] LFG as %s"], roleDisplay(role))
+        local what = self:Describe({ acts = acts, note = note })
+        if what ~= "" then line = line .. ": " .. what end
+    end
     if GuildOS.Compat.SendChatMessage(line, "GUILD") then prefs.lastGuildLine = now end
 end
 
 local function durationDisplay(seconds)
     return string.format(L["%dm"], math.floor((seconds or 0) / 60))
 end
+function LFGBoard:DurationName(seconds) return durationDisplay(seconds) end
 
 -- Online guild roster snapshot for the board's online-only filter: an
 -- { [key] = true } set plus a { [key] = classFile } lookup for row colors.
@@ -437,266 +536,25 @@ function LFGBoard:_BuildOnlineRoster()
     return onlineSet, classByKey
 end
 
--- A small button that cycles through `values` on click, painting itself
--- via labelFn(value). Starts on initValue (falls back to the first entry
--- when initValue isn't found, e.g. a stale pref).
-local function makeCycleButton(parent, width, values, labelFn, initValue)
-    local btn = GuildOS.UI:CreateButton(parent, "", width, 22)
-    local idx = 1
-    for i, v in ipairs(values) do if v == initValue then idx = i end end
-    local function paint() btn.label:SetText(labelFn(values[idx])) end
-    paint()
-    btn:SetScript("OnClick", function()
-        idx = (idx % #values) + 1
-        paint()
-    end)
-    function btn:GetValue() return values[idx] end
-    return btn
+-- The few choices the Groups tab keeps between sessions. The panel asks and tells through these two:
+-- it never writes the saved table itself.
+local PREFS = { postToGuild = "boolean", allianceScope = "boolean", roles = "string", lastMode = "string" }
+function LFGBoard:Pref(key)
+    local prefs = GuildOS.db and GuildOS.db.lfgPrefs
+    return prefs and PREFS[key] and prefs[key]
+end
+function LFGBoard:SetPref(key, value)
+    local prefs = GuildOS.db and GuildOS.db.lfgPrefs
+    if not prefs or type(value) ~= PREFS[key] then return false end
+    if key == "roles" then value = self:_SanitizeRoles(value) end
+    prefs[key] = value
+    return true
 end
 
+-- The board is the Groups tab's Active view since issue #341. With the tab switched off in Settings
+-- the opener says so itself.
 function LFGBoard:Show()
-    local UI = GuildOS.UI
-    local C = GuildOS.Colors
-
-    local f = self.frame
-    if not f then
-        f = CreateFrame("Frame", "GuildOSLFGBoardFrame", UIParent, "BackdropTemplate")
-        f:SetSize(560, 460)
-        f:SetPoint("CENTER")
-        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
-        f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-        UI:StylePopup(f)
-        f:SetFrameStrata("HIGH")
-        f:SetMovable(true)
-        f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", function(s) s:StartMoving() end)
-        f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
-
-        local title = UI:CreateTitle(f, L["LFG Board"], 15)
-        title:SetPoint("TOPLEFT", 16, -14)
-        local close = UI:CreateCloseButton(f)
-        close:SetPoint("TOPRIGHT", -8, -8)
-        close:SetScript("OnClick", function() f:Hide() end)
-
-        -- Guild / Alliance scope. Hidden entirely when there is no pact, so
-        -- guilds that never federate see no new control at all.
-        local scopeBtn = UI:CreateButton(f, L["Scope: Guild"], 130, 20)
-        scopeBtn:SetPoint("TOPRIGHT", -36, -12)
-        scopeBtn:Hide()
-        scopeBtn:SetScript("OnClick", function()
-            GuildOS.db.lfgPrefs.allianceScope = not GuildOS.db.lfgPrefs.allianceScope
-            LFGBoard:Refresh()
-        end)
-        f.scopeBtn = scopeBtn
-
-        ------------------------------------------------------------
-        -- Row 1: You: Role [ Any ]   Looking for [ .............. ]
-        -- All row anchors are fixed pixel offsets straight off `f`
-        -- (not chained sibling-to-sibling), so row 1 and row 2 line
-        -- up under each other regardless of localized label widths.
-        ------------------------------------------------------------
-        local youLbl = UI:CreateText(f, L["You:"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-        youLbl:SetPoint("TOPLEFT", 16, -47)
-
-        local roleLbl = UI:CreateText(f, L["Role"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-        roleLbl:SetPoint("TOPLEFT", 60, -47)
-
-        local roleBtn = makeCycleButton(f, 90, LFGBoard.ROLES, roleDisplay, self:_DefaultRole())
-        roleBtn:SetPoint("TOPLEFT", 94, -45)
-        f.roleBtn = roleBtn
-
-        local noteLbl = UI:CreateText(f, L["Looking for"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-        noteLbl:SetPoint("TOPLEFT", 196, -47)
-
-        local noteBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-        noteBox:SetHeight(20)
-        noteBox:SetPoint("TOPLEFT", 272, -46)
-        noteBox:SetPoint("TOPRIGHT", -16, -46)
-        noteBox:SetAutoFocus(false)
-        noteBox:SetMaxLetters(NOTE_MAX)
-        noteBox:SetText(GuildOS.db.lfgPrefs.lastNote or "")
-        noteBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-        f.noteBox = noteBox
-
-        ------------------------------------------------------------
-        -- Row 2: Duration [ 90m ]                 [ I'm available ]
-        ------------------------------------------------------------
-        local durLbl = UI:CreateText(f, L["Duration"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-        durLbl:SetPoint("TOPLEFT", 60, -79)
-
-        local durationBtn = makeCycleButton(f, 90, DURATIONS, durationDisplay, GuildOS.db.lfgPrefs.lastTtl)
-        durationBtn:SetPoint("TOPLEFT", 94, -77)
-        f.durationBtn = durationBtn
-
-        local actionBtn = UI:CreateButton(f, L["I'm available"], 150, 24)
-        actionBtn:SetPoint("TOPRIGHT", -16, -77)
-        actionBtn:SetScript("OnClick", function()
-            if LFGBoard:AmAvailable() then
-                LFGBoard:ClearAvailable()
-            else
-                LFGBoard:SetAvailable(roleBtn:GetValue(), noteBox:GetText(), durationBtn:GetValue(),
-                    GuildOS.db.lfgPrefs.postToGuild)
-            end
-        end)
-        f.actionBtn = actionBtn
-
-        ------------------------------------------------------------
-        -- Separator, right-aligned count, column header.
-        ------------------------------------------------------------
-        local sep = UI:CreateSeparator(f)
-        sep:SetPoint("TOPLEFT", 12, -106)
-        sep:SetPoint("TOPRIGHT", -12, -106)
-
-        local countText = UI:CreateText(f, "", 11, C.silver.r, C.silver.g, C.silver.b)
-        countText:SetPoint("TOPRIGHT", -16, -114)
-        f.countText = countText
-
-        -- On the row of the count, where the longest translation still has the width: beside the
-        -- action button it would run under it.
-        local chatCb = UI:CreateCheckbox(f, L["Also post in guild chat"], 18)
-        chatCb:SetPoint("TOPLEFT", 12, -112)
-        chatCb.checkbox:SetChecked(GuildOS.db.lfgPrefs.postToGuild and true or false)
-        chatCb.checkbox.onChanged = function(_, checked) GuildOS.db.lfgPrefs.postToGuild = checked and true or false end
-
-        local hPlayer = UI:CreateText(f, L["PLAYER"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hPlayer:SetPoint("TOPLEFT", 16, -132)
-        local hRole = UI:CreateText(f, L["ROLE"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hRole:SetPoint("TOPLEFT", 180, -132)
-        local hFor = UI:CreateText(f, L["FOR"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hFor:SetPoint("TOPLEFT", 250, -132)
-        local hNote = UI:CreateText(f, L["LOOKING FOR"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-        hNote:SetPoint("TOPLEFT", 310, -132)
-
-        ------------------------------------------------------------
-        -- Scroll list -- fills all remaining space below the column
-        -- header. ScrollFrame gotcha: CreateScrollFrame does NOT
-        -- anchor the scroll frame itself -- SetAllPoints() here, or
-        -- content is clipped to 0x0. Holder starts at -150, well
-        -- clear of the column header text painted at -132 (10pt,
-        -- ~13px tall -> bottom edge around -145).
-        ------------------------------------------------------------
-        local holder = CreateFrame("Frame", nil, f)
-        holder:SetPoint("TOPLEFT", 12, -150)
-        holder:SetPoint("BOTTOMRIGHT", -12, 14)
-        local scroll, child = UI:CreateScrollFrame(holder, "GuildOSLFGBoardScroll")
-        scroll:SetAllPoints()
-        f.child = child
-        f.holder = holder
-        self.frame = f
-    end
-
-    local function refresh()
-        if not f:IsShown() then return end
-        self:Prune()
-
-        local amAvailable = self:AmAvailable()
-        f.actionBtn.label:SetText(amAvailable and L["Stop"] or L["I'm available"])
-        if amAvailable then
-            f.actionBtn:SetBaseColor(C.red.r * 0.30, C.red.g * 0.16, C.red.b * 0.16, 0.92)
-        else
-            f.actionBtn:SetBaseColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.92)
-        end
-
-        local onlineSet, classByKey = self:_BuildOnlineRoster()
-        local now = GetServerTime()
-        local list = self:ActiveList(GuildOS.db.lfgBoard, now, onlineSet)
-
-        -- Alliance scope: append the allied pool. Allied entries carry a guild
-        -- and no local key, so the row renderer treats them as read-only.
-        local ally = GuildOS.Alliance
-        local inAlliance = ally and ally:Get() ~= nil
-        if f.scopeBtn then
-            if inAlliance then f.scopeBtn:Show() else f.scopeBtn:Hide() end
-            f.scopeBtn.label:SetText(GuildOS.db.lfgPrefs.allianceScope
-                and L["Scope: Alliance"] or L["Scope: Guild"])
-        end
-        if inAlliance and GuildOS.db.lfgPrefs.allianceScope then
-            for _, row in ipairs(self:AllianceList(now)) do
-                list[#list + 1] = row
-            end
-        end
-
-        f.countText:SetText(string.format(L["%d available"], #list))
-
-        -- Reset ALL row state before repaint (children and regions),
-        -- the pattern every list in this addon uses.
-        local child = f.child
-        for _, c in pairs({ child:GetChildren() }) do c:Hide() end
-        for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
-
-        local myKeyVal = myKey()
-        local y = 0
-        for _, entry in ipairs(list) do
-            local isMe = (entry.key == myKeyVal)
-            local classFile = classByKey[entry.key]
-            local cc = (classFile and RAID_CLASS_COLORS[classFile]) or C.text
-
-            local nameBtn = CreateFrame("Button", nil, child)
-            nameBtn:SetPoint("TOPLEFT", 4, -(y + 2))
-            nameBtn:SetSize(158, ROW_HEIGHT - 4)
-            local nameFS = UI:CreateText(nameBtn, entry.name, 11, cc.r, cc.g, cc.b)
-            nameFS:SetPoint("LEFT", 0, 0)
-            nameFS:SetWidth(150)
-            nameFS:SetJustifyH("LEFT")
-            nameFS:SetWordWrap(false)
-            if not isMe then
-                nameBtn:EnableMouse(true)
-                nameBtn:SetScript("OnClick", function() ChatFrame_SendTell(entry.name) end)
-                nameBtn:SetScript("OnEnter", function() nameFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b) end)
-                nameBtn:SetScript("OnLeave", function() nameFS:SetTextColor(cc.r, cc.g, cc.b) end)
-            end
-
-            local roleFS = UI:CreateText(child, roleDisplay(entry.role), 11, C.text.r, C.text.g, C.text.b)
-            roleFS:SetPoint("TOPLEFT", 168, -(y + 4))
-            roleFS:SetWidth(64)
-            roleFS:SetJustifyH("LEFT")
-            roleFS:SetWordWrap(false)
-
-            local forFS = UI:CreateText(child, string.format(L["%dm"], self:_Remaining(entry, now)), 11,
-                C.textDim.r, C.textDim.g, C.textDim.b)
-            forFS:SetPoint("TOPLEFT", 238, -(y + 4))
-            forFS:SetWidth(54)
-            forFS:SetJustifyH("LEFT")
-            forFS:SetWordWrap(false)
-
-            -- The note stops short of the invite button, which its label may have grown (issue #28).
-            local noteReserve = 66
-            if isMe then
-                local youFS = UI:CreateText(child, L["(you)"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-                youFS:SetPoint("TOPRIGHT", -8, -(y + 4))
-            else
-                local inviteBtn = UI:CreateButton(child, L["Invite"], 56, 18)
-                inviteBtn:SetPoint("TOPRIGHT", -4, -(y + 2))
-                noteReserve = math.max(noteReserve, inviteBtn:GetWidth() + 10)
-                inviteBtn:SetScript("OnClick", function() GuildOS.Compat.InviteUnit(entry.name) end)
-            end
-
-            local noteFS = UI:CreateText(child, entry.note or "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
-            noteFS:SetPoint("TOPLEFT", 298, -(y + 4))
-            noteFS:SetWidth(math.max(10, child:GetWidth() - 298 - noteReserve))
-            noteFS:SetJustifyH("LEFT")
-            noteFS:SetWordWrap(false)
-
-            y = y + ROW_HEIGHT
-        end
-
-        if #list == 0 then
-            local empty = UI:CreateText(child, L["Nobody is available right now. Be the first!"], 11,
-                C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
-            y = 20
-        end
-
-        child:SetHeight(math.max(1, y))
-    end
-
-    self.uiRefresh = refresh
-    f:SetScript("OnShow", refresh)
-    f:Show()
-    refresh()
+    return GuildOS.UI:OpenWindow("groups", "active")
 end
 
 ----------------------------------------------------------------------

@@ -302,6 +302,8 @@ local MODULE_START = {
     { "NoteCommand" },
     { "LevelQuery" },
     { "LFGBoard" },
+    -- The groups being formed (issue #341). After the board, whose listings and cooldown line it shares.
+    { "Groups" },
     { "GuildMap" },
     { "PugInspector" },
     { "RecipeTracker", ui = "recipes" },
