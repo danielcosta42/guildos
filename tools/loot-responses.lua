@@ -456,8 +456,10 @@ check(row("Cy").roll == 99 and drawn == 3, "and outside one, anybody in the raid
 LM.rollFormat = "%s rolls %d (%d-%d)"
 LM:ProcessSystemRoll("Dee rolls 88 (1-100)")
 check(row("Dee").rollType == "MS" and row("Dee").roll == 88 and not row("Dee").drawn, "/roll 1-100 from a client from before is the first answer")
+-- This check used to read a second /roll as a new number (31): a roll again by another range. The
+-- range still says the answer; the number is the first one read.
 LM:ProcessSystemRoll("Dee rolls 31 (1-99)")
-check(row("Dee").rollType == "OS" and row("Dee").roll == 31, "/roll 1-99 the second, as before")
+check(row("Dee").rollType == "OS" and row("Dee").roll == 88, "/roll 1-99 is the second answer, and the first number read stays")
 LM:ProcessSystemRoll("Zed rolls 100 (1-100)")
 check(row("Zed") == nil, "and still only from the raid")
 LM:ProcessSystemRoll("Ana rolls 100 (1-100)")
@@ -470,6 +472,36 @@ check(LM.activeLoot.sortedResults[1].name == "Cy" and said[2]:find("[WINNER] Cy 
 answer("Bo", sid, "MS")
 check(row("Bo").rollType == "OS", "and an answer after the end changes nothing")
 LM:CancelRolling()
+
+-- One roll a player and an item, whatever is answered in between. An answer that asks for no roll
+-- (or a pass, or a bid) used to empty the row, and the next roll answer drew again: 7, 31, 96...
+check(LR:Set(with({ { key = "MS" }, { key = "OS" }, { key = "WAIT", ask = "none" } })) == true, "a rule with an answer that asks for no roll")
+sid = announce()
+draws, drawn = { 7, 31, 96, 64 }, 0
+answer("Ana", sid, "OS")
+answer("Ana", sid, "WAIT")
+check(row("Ana").rollType == "WAIT" and row("Ana").roll == nil, "an answer with no roll shows none")
+answer("Ana", sid, "OS")
+check(row("Ana").roll == 7 and drawn == 1, "and going back to a roll brings the first one back, with no new draw")
+answer("Ana", sid, "WAIT"); answer("Ana", sid, "MS"); answer("Ana", sid, "PASS"); answer("Ana", sid, "OS")
+check(row("Ana").roll == 7 and drawn == 1, "however many times the answer alternates")
+LM:ProcessSystemRoll("Ana rolls 100 (1-100)")
+check(row("Ana").roll == 7 and row("Ana").rollType == "MS" and row("Ana").drawn, "a /roll after a button never replaces the roll drawn")
+LM:ProcessSystemRoll("Dee rolls 3 (1-100)")
+answer("Dee", sid, "PASS"); answer("Dee", sid, "MS")
+check(row("Dee").roll == 3 and drawn == 1 and not row("Dee").drawn, "a button after a /roll and a pass keeps the /roll read")
+LM:ProcessSystemRoll("Dee rolls 95 (1-100)")
+check(row("Dee").roll == 3, "and a second /roll is not a second chance")
+check(LM:EnterAnswer("cy", "MS") ~= nil and row("Cy").roll == 31 and drawn == 2, "a roll the loot master enters for a raider is drawn once")
+LM:EnterAnswer("cy", "WAIT")
+answer("Cy", sid, "MS")
+check(row("Cy").roll == 31 and drawn == 2, "and is the raider's own from then on, whoever answers")
+LM:CancelRolling()
+sid = announce()
+answer("Ana", sid, "MS")
+check(row("Ana").roll == 96 and drawn == 3, "the next item is a new roll")
+LM:CancelRolling()
+check(LR:Set(nil) == true, "back to the loot system's rule")
 
 -- ── 6. Answers of the guild's own ───────────────────────────────────
 check(LR:Set(with({ { key = "BIS", label = "Best in slot" }, { key = "UPG", label = "Upgrade", cost = 0.5 },

@@ -525,14 +525,26 @@ function LootMaster:ProcessSystemRoll(message)
         return
     end
 
-    -- A roll this client already drew for the roller's button stands: a /roll after it changes the
+    -- One roll a player and an item: the first one read or drawn stands. A /roll after it changes the
     -- answer, never the number.
-    local held = self.rolls[GuildOS:GetPlayerKey(cleanName)]
-    if held and held.drawn then
-        self:RegisterRoll(cleanName, response.key, held.roll, { drawn = true })
-        return
-    end
-    self:RegisterRoll(cleanName, response.key, roll)
+    local kept = self:KeepRoll(cleanName, roll, false)
+    self:RegisterRoll(cleanName, response.key, kept.roll, { drawn = kept.drawn or nil })
+end
+
+----------------------------------------------------------------------
+-- The one roll `name` has for the item being rolled for. The first number read from a /roll line or
+-- drawn here for a button is kept apart from the row, which every new answer rewrites: a pass, a bid or
+-- an answer that asks for no roll in between never buys another draw. `roll` is the number to keep
+-- when the player has none yet (nil: only look), `drawn` whether this client drew it.
+-- Returns { roll, drawn }, or nil.
+----------------------------------------------------------------------
+function LootMaster:KeepRoll(name, roll, drawn)
+    local loot = self.activeLoot
+    if not loot then return nil end
+    loot.kept = loot.kept or {}
+    local key = GuildOS:GetPlayerKey(name)
+    if not loot.kept[key] and roll then loot.kept[key] = { roll = roll, drawn = drawn and true or false } end
+    return loot.kept[key]
 end
 
 ----------------------------------------------------------------------
@@ -1523,13 +1535,14 @@ function LootMaster:TakeAnswer(name, key, bid, note)
     local LR = GuildOS.LootRule
     local rule = self:Rule()
     local rkey = GuildOS:GetPlayerKey(name)
-    local held = self.rolls[rkey]
     note = cleanNote(note)
 
     if key == "PASS" then
-        -- Out of the roll, bid and all; a roll already drawn is kept in case the answer changes again.
-        local passed = self:RegisterRoll(name, "PASS", held and held.roll or 0,
-            { drawn = held and held.drawn, quiet = true })
+        -- Out of the roll, bid and all; the roll already read or drawn stays the player's (KeepRoll)
+        -- in case the answer changes again.
+        local kept = self:KeepRoll(name)
+        local passed = self:RegisterRoll(name, "PASS", kept and kept.roll or 0,
+            { drawn = kept and kept.drawn or nil, quiet = true })
         if not passed then return nil, "out" end
         return passed
     end
@@ -1559,12 +1572,11 @@ function LootMaster:TakeAnswer(name, key, bid, note)
         end
         row = self:RegisterRoll(name, key, nil, { bid = bid, note = note })
     elseif ask == "roll" then
-        -- One roll a player and an item: answering again keeps the number.
-        local roll, drawn = held and held.rolled and held.roll, held and held.drawn
-        if not roll then
-            roll, drawn = math.random(1, place == 2 and ROLL_TOP_SECOND or ROLL_TOP), true
-        end
-        row = self:RegisterRoll(name, key, roll, { drawn = drawn, note = note })
+        -- One roll a player and an item: answering again keeps the number, whatever was answered
+        -- in between and whoever entered it.
+        local kept = self:KeepRoll(name)
+            or self:KeepRoll(name, math.random(1, place == 2 and ROLL_TOP_SECOND or ROLL_TOP), true)
+        row = self:RegisterRoll(name, key, kept.roll, { drawn = kept.drawn or nil, note = note })
     else
         row = self:RegisterRoll(name, key, nil, { note = note })
     end
