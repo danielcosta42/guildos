@@ -480,9 +480,41 @@ function Points:OnBossKill(encounterName)
     self:AwardRaidGroup(amount, encounterName or L["Boss kill"])
 end
 
+-- The raid night a session belongs to, the same on every client that was in the raid: the instance (on
+-- retail its difficulty too), the lockout week and the day of the week the raid began, counted from the
+-- region's reset hour, which is no raid's hour. A session's own start is each client's zone-in time: two
+-- officers who walked in half a minute apart held two "sessions", and each paid the raid's end.
+function Points:RaidNight(session)
+    local RT = GuildOS.RaidTracker
+    local start = tonumber(session.startTime) or 0
+    local origin = (RT and RT.ResetOrigin and RT:ResetOrigin()) or 0
+    local day = math.floor((start - origin) / 86400)
+    local week = (RT and RT.GetWeekNum) and RT:GetWeekNum(start) or math.floor(day / 7)
+    local night = string.format("%d.%d.%d", tonumber(session.instanceID) or 0, week, day - week * 7)
+    local difficulty = tonumber(session.difficulty)
+    return difficulty and (night .. "d" .. difficulty) or night
+end
+
+-- The one client that pays a raid's end, by the key of its player: the raid's leader as the session
+-- last saw one (RaidTracker keeps it; by the time a session closes the raid is often disbanded), as a
+-- boss kill is paid by the leader's client. When the leader is no officer, or the session never saw one,
+-- the officer the session saw whose key sorts first: every client works out the same one. An officer
+-- chosen this way who does not run GuildOS pays nothing, and the awards are then an officer's to give
+-- by hand; paying from two clients is the worse mistake.
+function Points:RaidEndPayer(session, everyone)
+    local leader = session.leader
+    if type(leader) == "string" and GuildOS:IsOfficerByName(leader) then return leader end
+    local first
+    for _, key in ipairs(everyone) do
+        if (not first or key < first) and GuildOS:IsOfficerByName(key) then first = key end
+    end
+    return first
+end
+
 -- Called by RaidTracker when a guild raid's session is saved (issue #309): on time or late, stayed or
--- left early, and the raid itself, for everyone the session saw. Each award's op is the session's own,
--- so two officers' clients ending the same raid give it once.
+-- left early, and the raid itself, for everyone the session saw. One client pays (RaidEndPayer), and
+-- each award's op is the raid night's own (RaidNight), so a second client that ends the same raid, or
+-- the same client ending it again after a /reload, gives nothing twice.
 function Points:OnRaidEnd(session)
     local pool = self:GetDB()
     if not GuildOS:IsOfficer() or type(session) ~= "table" then return 0 end
@@ -495,16 +527,20 @@ function Points:OnRaidEnd(session)
             if not seen[key] then seen[key] = true; everyone[#everyone + 1] = key end
         end
     end
+    if self:RaidEndPayer(session, everyone) ~= GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) then return 0 end
+    local night = self:RaidNight(session)
     -- The counters the loot rule feeds per raid attended, whatever the points' own switch says; the
-    -- session names each entry, so two officers' clients ending the same raid give it once.
-    self:EarnCounters("raid", everyone, string.format("%X", session.startTime or 0))
+    -- raid night names each entry.
+    self:EarnCounters("raid", everyone, night)
     if not (pool and pool.config and pool.config.autoAward) then return 0 end
     local c = pool.config
     local entries = {}
+    -- `tag` is what the award is of: arriving (on time or late) and leaving (to the end or early) are
+    -- one award each, whichever of the two a client saw.
     local function give(key, amount, label, tag)
         amount = tonumber(amount) or 0
         if amount <= 0 then return end
-        local op = string.format("S%X-%s-%s", session.startTime or 0, tag, key)
+        local op = string.format("S%s-%s-%s", night, tag, key)
         if pool.appliedOps[op] then return end
         local e = self:EarnEntry(key, amount, label, "raid")
         e.op, e.ts = op, session.endTime or e.ts
@@ -512,10 +548,10 @@ function Points:OnRaidEnd(session)
         entries[#entries + 1] = e
     end
     for key in pairs(seen) do
-        if first.members[key] then give(key, c.onTimeAward, L["On time"], "ot")
-        else give(key, c.lateAward, L["Late"], "lt") end
-        if last.members[key] then give(key, c.stayedAward, L["Stayed until the end"], "st")
-        else give(key, c.leftEarlyAward, L["Left early"], "le") end
+        if first.members[key] then give(key, c.onTimeAward, L["On time"], "in")
+        else give(key, c.lateAward, L["Late"], "in") end
+        if last.members[key] then give(key, c.stayedAward, L["Stayed until the end"], "out")
+        else give(key, c.leftEarlyAward, L["Left early"], "out") end
         give(key, c.raidAward, L["Raid attended"], "rd")
     end
     if #entries > 0 then publishDelta(entries) end

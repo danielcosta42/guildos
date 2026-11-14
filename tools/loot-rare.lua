@@ -412,12 +412,15 @@ check(P:Counter("karma", K("Ana")) == 0, "all of it")
 night(karmaRule("fraction", 0.5, { effects = { { k = "add", acct = "karma", value = 10 } } }))
 P:AddCounter("karma", K("Ana"), 98, "never")
 P:AddCounter("karma", K("Bo"), 50, "never")
-local session = { startTime = 1790990000, endTime = 1791000000, snapshots = { { members = { [K("Ana")] = true, [K("Bo")] = true, [K("Cy")] = true } } } }
+local session = { leader = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()), startTime = 1790990000, endTime = 1791000000, snapshots = { { members = { [K("Ana")] = true, [K("Bo")] = true, [K("Cy")] = true } } } }
 P:OnRaidEnd(session)
 check(P:Counter("karma", K("Ana")) == 100 and P:Counter("karma", K("Bo")) == 55 and P:Counter("karma", K("Cy")) == 5,
   "a raid attended adds five, and only what fits under the cap")
 P:OnRaidEnd(session)
 check(P:Counter("karma", K("Bo")) == 55, "the same raid ended twice counts once")
+session.startTime = session.startTime + 37
+P:OnRaidEnd(session)
+check(P:Counter("karma", K("Bo")) == 55, "and so does another client's session of the same raid, begun 37 seconds apart")
 announce()
 LM:RegisterRoll("Ana", "MS", 1)
 LM:EndRolling(true)

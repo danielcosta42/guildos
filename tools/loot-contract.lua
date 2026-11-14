@@ -117,6 +117,9 @@ local LM, LR, P, CM, RT = GuildOS.LootMaster, GuildOS.LootRule, GuildOS.Points, 
 local officer = true
 GuildOS.IsOfficer = function() return officer end
 local officers = { ["Off-Realm"] = true }
+-- This client's player is an officer and leads the raid: its client pays what a raid's end gives.
+local ME = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
+officers[ME] = true
 GuildOS.IsOfficerByName = function(_, name) return officers[name] == true end
 function GuildOS:ApplyFont() end
 -- What the officers' sync carries, and the handlers it would call.
@@ -377,7 +380,7 @@ LM:AwardLoot("Ana")
 check(P:Counter("wait", K("Ana")) == 0 and P:Counter("wait", K("Bo")) == 1, "ranked: the winner's wait ends with the item")
 check(LM:UndoLastAward() and P:Counter("wait", K("Ana")) == 3, "ranked: and an undo gives the wait back")
 -- The wait is fed by each raid attended, once whoever ends it.
-local session = { startTime = NOW - 7200, endTime = NOW, snapshots = { { members = { [K("Ana")] = true, [K("Cy")] = true } } } }
+local session = { leader = ME, startTime = NOW - 7200, endTime = NOW, snapshots = { { members = { [K("Ana")] = true, [K("Cy")] = true } } } }
 quiet()
 check(P:OnRaidEnd(session) == 0, "ranked: with the points' own awards off, the raid's end gives no points")
 check(P:Counter("wait", K("Ana")) == 4 and P:Counter("wait", K("Cy")) == 1 and P:Counter("wait", K("Bo")) == 1,
@@ -405,7 +408,7 @@ check(LM.activeLoot.decidedBy == "roll" and all(said):find("Ana - MS (40 + 30)",
 LM:AwardLoot("Ana")
 check(P:Counter("srplus", K("Ana")) == 0 and P:Counter("srplus", K("Dee")) == 45, "srplus: the winner's SR+ goes back to nothing, nobody else's moves")
 check(LM:UndoLastAward() and P:Counter("srplus", K("Ana")) == 30, "srplus: and an undo gives it back")
-session = { startTime = NOW - 7200, endTime = NOW, snapshots = { { members = { [K("Ana")] = true, [K("Dee")] = true, [K("Bo")] = true } } } }
+session = { leader = ME, startTime = NOW - 7200, endTime = NOW, snapshots = { { members = { [K("Ana")] = true, [K("Dee")] = true, [K("Bo")] = true } } } }
 P:OnRaidEnd(session)
 check(P:Counter("srplus", K("Ana")) == 40 and P:Counter("srplus", K("Bo")) == 10 and P:Counter("srplus", K("Dee")) == 50,
   "srplus: a raid attended adds ten, never past the cap of fifty")
@@ -507,7 +510,7 @@ LM:EndRolling(true)
 LM:AwardLoot("Bo")
 check(P:Counter("karma", K("Bo")) == 10, "karma: an off spec win, rolled without karma, costs none")
 check(LM:UndoLastAward() and LM:UndoLastAward() and P:Counter("karma", K("Ana")) == 41, "karma: an undo gives it back")
-session = { startTime = NOW - 3600, endTime = NOW, snapshots = { { members = { [K("Ana")] = true } } } }
+session = { leader = ME, startTime = NOW - 3600, endTime = NOW, snapshots = { { members = { [K("Ana")] = true } } } }
 P:AddCounter("karma", K("Ana"), 57, "never")
 P:OnRaidEnd(session)
 check(P:Counter("karma", K("Ana")) == 100, "karma: five a raid attended, never past the cap of a hundred: " .. P:Counter("karma", K("Ana")))

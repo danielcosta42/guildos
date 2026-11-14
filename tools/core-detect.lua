@@ -124,6 +124,18 @@ for _, game in ipairs({ "forever", "anniversary" }) do
     G("the start line comes first, then which core"))
   RT:TakeSnapshot("roster_change")
   check(lines("Raid core:") == 1, G("the same answer is not said again at every snapshot"))
+  -- Who leads the raid is kept with the session: that client pays what the raid's end gives (Points).
+  check(RT.currentRaid.leader == nil, G("a client that names no leader keeps none"))
+  UnitIsGroupLeader = function(unit) return unit == "raid2" end
+  RT:TakeSnapshot("roster_change")
+  check(RT.currentRaid.leader == GuildOS:GetPlayerKey("Fay"), G("the session keeps who leads the raid: " .. tostring(RT.currentRaid.leader)))
+  UnitIsGroupLeader = function() return false end
+  RT:TakeSnapshot("roster_change")
+  check(RT.currentRaid.leader == GuildOS:GetPlayerKey("Fay"), G("and the last leader seen stays when the raid has none left"))
+  UnitIsGroupLeader = function(unit) return unit == "player" end
+  RT:TakeSnapshot("roster_change")
+  check(RT.currentRaid.leader == GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()), G("me, when I lead"))
+  UnitIsGroupLeader = nil
 
   -- ── Before the first pull the raid follows who showed up; the pull settles it ──
   RT, CM = load(game)

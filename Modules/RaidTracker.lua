@@ -618,6 +618,24 @@ function RaidTracker:TakeSnapshot(reason)
     -- Include self
     local myName = GuildOS.Compat.PlayerName()
     local myKey = GuildOS:GetPlayerKey(myName)
+    -- Who leads the raid now: whose client pays what the raid's end gives (Points:RaidEndPayer). Kept
+    -- from the last snapshot that saw one, since the raid is often disbanded before the session closes.
+    if isRaid and UnitIsGroupLeader then
+        local mine = UnitIsGroupLeader("player")
+        if not GuildOS.Compat.IsSecret(mine) and mine then
+            self.currentRaid.leader = myKey
+        else
+            for i = 1, numMembers do
+                local unit = "raid" .. i
+                local leads = UnitExists(unit) and UnitIsGroupLeader(unit)
+                if not GuildOS.Compat.IsSecret(leads) and leads and not GuildOS.Compat.IsPlayer(unit) then
+                    local name, realm = GuildOS.Compat.UnitIdentity(unit)
+                    if name then self.currentRaid.leader = GuildOS:GetPlayerKey(name, realm) end
+                    break
+                end
+            end
+        end
+    end
     members[myKey] = {
         name = myName,
         class = select(2, UnitClass("player")),

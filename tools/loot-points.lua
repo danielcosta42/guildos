@@ -32,7 +32,8 @@ function CreateFrame() return setmetatable({}, { __index = function() return fun
 function hooksecurefunc() end
 function GetBuildInfo() return "1.60.1", "70205", "", 16001 end
 WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 99
-function UnitFullName() return "Lead", "Er" end
+local player = "Lead"   -- whose client this is: the raid's end is run from two officers' clients
+function UnitFullName() return player, "Er" end
 C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
 function GetInstanceInfo() return "Onyxia's Lair", "raid", 9, "", 40, 0, false, 249 end
 function GetRealmName() return "Realm" end
@@ -48,7 +49,7 @@ function SendChatMessage() end
 function GetLootMethod() return "master", 0 end
 function GetNumGroupMembers() return 0 end
 function UnitClass() return "Mage", "MAGE" end
-function UnitName() return "Lead" end
+function UnitName() return player end
 C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end,
   NewTimer = function() return { Cancel = function() end } end }
 Enum = { SendAddonMessageResult = {} }
@@ -143,20 +144,63 @@ check(decayOf(0, "up") == 0, "and nothing decays from nothing")
 cfg.decayRound = nil
 
 -- ── The raid's end ──────────────────────────────────────────────────
+-- Two officers' clients, each with its own copy of the pool and its own session of the same raid: Lead,
+-- who leads it, zoned in first and Off thirty-seven seconds later, so the two sessions start apart.
+-- (This check used to end one session object twice on one client, which could not fail: the awards
+-- were named after the session's start, each client's own, and two clients paid the raid twice.)
 GuildOS.db.points.standings = {}
 cfg.onTimeAward, cfg.lateAward, cfg.stayedAward, cfg.leftEarlyAward, cfg.raidAward = 2, 1, 2, 1, 5
-local session = { startTime = 1790990000, endTime = 1791000000, snapshots = {
-  { time = 1, members = { [K("Ana")] = true, [K("Bo")] = true } },
-  { time = 2, members = { [K("Ana")] = true, [K("Bo")] = true, [K("Cy")] = true } },
-  { time = 3, members = { [K("Ana")] = true, [K("Cy")] = true } },
-} }
+local poolLead = GuildOS.db.points
+local function emptyPool() return { mode = "dkp", config = cfg, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 } end
+local poolOff = emptyPool()
+local wire = {}
+GuildOS.SyncService = { Publish = function(_, _, act, data) wire[#wire + 1] = { act = act, data = data } end }
+local function client(name, pool) player = name; GuildOS.db.points = pool end
+local function hears() for _, env in ipairs(wire) do P:OnSync(env) end end
+local LEAD, OFF = K("Lead Er"), K("Off Er")
+local function raidOf(start, leader, late)
+  return { instanceID = 249, leader = leader, startTime = start, endTime = 1791000000, snapshots = {
+    { time = 1, members = { [K("Ana")] = true, [K("Bo")] = true, [K("Cy")] = (not late) or nil } },
+    { time = 2, members = { [K("Ana")] = true, [K("Bo")] = true, [K("Cy")] = true } },
+    { time = 3, members = { [K("Ana")] = true, [K("Cy")] = true } },
+  } }
+end
+local session = raidOf(1790990000, LEAD, true)
 check(P:OnRaidEnd(session) == 0, "with the auto-award off, a raid's end gives nothing")
 cfg.autoAward = true
-check(P:OnRaidEnd(session) == 9, "on, it gives three awards to each of the three")
+client("Off", poolOff)
+check(P:OnRaidEnd(raidOf(1790990037, LEAD, true)) == 0 and P:Get(K("Ana")) == 0,
+  "the client of an officer who does not lead the raid pays nothing")
+client("Lead", poolLead)
+check(P:OnRaidEnd(session) == 9, "the leader's client gives three awards to each of the three")
 check(P:Get(K("Ana")) == 9, "there from the start to the end: 2 + 2 + 5")
 check(P:Get(K("Bo")) == 8, "left early: 2 + 1 + 5")
 check(P:Get(K("Cy")) == 8, "arrived late: 1 + 2 + 5")
-check(P:OnRaidEnd(session) == 0 and P:Get(K("Ana")) == 9, "ended again, or by another officer's client: nothing twice")
+check(P:OnRaidEnd(session) == 0 and P:Get(K("Ana")) == 9, "ended again on the same client: nothing twice")
+client("Off", poolOff)
+hears()
+check(P:Get(K("Ana")) == 9 and P:Get(K("Cy")) == 8, "the other officer's client hears the awards once")
+-- The lead passes to Off before Off's session closes, and Off's client saw Cy there from the start.
+check(P:OnRaidEnd(raidOf(1790990037, OFF, false)) == 0 and P:Get(K("Ana")) == 9 and P:Get(K("Cy")) == 8,
+  "a second client that ends the same raid, its session begun 37 seconds apart, pays nothing again")
+hears()
+check(P:Get(K("Ana")) == 9, "and hearing the same awards again changes nothing")
+check(P:RaidNight(raidOf(1790990000)) == P:RaidNight(raidOf(1790990037))
+  and P:RaidNight(raidOf(1790990000)) ~= P:RaidNight(raidOf(1790990000 + 86400)), "the raid night is the same on both, and another the day after")
+-- A leader who is no officer: the officer the session saw whose key sorts first pays, on every client.
+local isOfficerByName = GuildOS.IsOfficerByName
+GuildOS.IsOfficerByName = function(_, name) return name == LEAD or name == OFF end
+local function pugRaid(start)
+  return { instanceID = 249, leader = K("Pug"), startTime = start, endTime = 1791090000, snapshots = {
+    { time = 1, members = { [K("Ana")] = true, [LEAD] = true, [OFF] = true } } } }
+end
+client("Off", emptyPool())
+check(P:OnRaidEnd(pugRaid(1791080037)) == 0, "with a leader who is no officer, the officer second by name pays nothing")
+client("Lead", emptyPool())
+check(P:OnRaidEnd(pugRaid(1791080000)) == 9 and P:Get(K("Ana")) == 9, "and the first by name pays, alone")
+GuildOS.IsOfficerByName = isOfficerByName
+GuildOS.SyncService = nil
+client("Lead", poolLead)
 cfg.autoAward = false
 cfg.onTimeAward, cfg.lateAward, cfg.stayedAward, cfg.leftEarlyAward, cfg.raidAward = 0, 0, 0, 0, 0
 
