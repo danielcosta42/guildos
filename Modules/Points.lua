@@ -692,7 +692,8 @@ function Points:ChargeEntry(asked, winnerKey, itemName, entry, refundPct)
     entry = tonumber(entry) or tonumber(c.entryCost) or 0
     if entry <= 0 or not GuildOS:IsOfficer() then return {} end
     refundPct = tonumber(refundPct) or tonumber(c.refundPct) or 0
-    local back = math.floor(entry * math.min(100, math.max(0, refundPct)) / 100)
+    -- To the nearest: 29% of 100 is 29, which a floor (and 0.29 * 100 being a hair under 29) made 28.
+    local back = math.floor(entry * math.min(100, math.max(0, refundPct)) / 100 + 0.5)
     local paid, entries = {}, {}
     for _, key in ipairs(asked) do
         local e

@@ -4467,7 +4467,10 @@ function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
     end
     self:SafeSendChat(msg, "RAID")
 
-    self:AwardLoot(deName, true)  -- silent: message already sent above
+    -- silent: the line above said it; free: an item nobody keeps costs nobody anything. The button
+    -- pressed after a roll with a price to enter used to charge every asker "Lost the roll", and the
+    -- disenchanter the item's price.
+    self:AwardLoot(deName, true, true)
 end
 
 ----------------------------------------------------------------------

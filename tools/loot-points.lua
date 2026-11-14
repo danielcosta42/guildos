@@ -299,6 +299,29 @@ local award = LM:LastAward()
 check(award and award.paid and #award.paid == 2, "the award keeps what each paid")
 LM:UndoLastAward()
 check(P:Get(K("Bo")) == 10 and P:Get(K("Ana")) == 10, "and an undo gives every one of them back what they paid")
+-- What comes back is rounded to the nearest: 29% of 100 is 29 (it was 28, by a floor).
+P:Award(K("Ana"), 200, "x"); P:Award(K("Bo"), 200, "x")
+local entryPaid = P:ChargeEntry({ K("Ana"), K("Bo") }, K("Ana"), "Item", 100, 0.29 * 100)
+check(entryPaid[1].amount == 100 and entryPaid[2].amount == 71, "100 to enter with 29% back: whoever lost pays 71, not 72")
+check(P:ChargeEntry({ K("Ana"), K("Bo") }, K("Ana"), "Item", 3, 50)[2].amount == 1, "half of 3 back is 2, to the nearest")
+-- An item sent to the disenchanter after a roll charges nobody: not who asked, not the disenchanter.
+cfg.itemCost = 7
+LM:SetDisenchanter("Dee")
+local had = { Ana = P:Get(K("Ana")), Bo = P:Get(K("Bo")), Dee = P:Get(K("Dee")) }
+said = {}
+LM.activeLoot = { link = LINK, itemId = 16914 }
+LM.rolls = {}
+LM:RegisterRoll("Ana", "MS", 50)
+LM:RegisterRoll("Bo", "OS", 90)
+LM:EndRolling(true)
+local lines = #GuildOS.db.points.log
+LM:SendToDisenchanter(LINK, nil, 16914)
+check(P:Get(K("Ana")) == had.Ana and P:Get(K("Bo")) == had.Bo and P:Get(K("Dee")) == had.Dee and #GuildOS.db.points.log == lines,
+  "the Send to DE button after a roll with a price to enter charges nobody and gives nothing back")
+check(LM:LastAward().player == "Dee" and LM:LastAward().paid == nil and LM:LastAward().charged == nil, "the award is the disenchanter's, with nothing to undo in points")
+LM:UndoLastAward()
+LM.pendingTrades = {}
+cfg.itemCost = 0
 cfg.entryCost, cfg.refundPct = 0, 0
 check(#LR:Active().filters == 0, "with no cost to enter, the roll is open again")
 
