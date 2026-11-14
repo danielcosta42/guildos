@@ -831,6 +831,14 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     local item = self:ItemFacts(itemLink, lootSlot)
     local played, exception = GuildOS.LootRule:ForItem(rule, item)
     self.activeLoot.item, self.activeLoot.baseRule = item, rule
+    -- An item the client has not read yet (GetItemInfo answers nothing until the server does) has no
+    -- quality, class or binding to tell its category by. A rule with an exception for a category then
+    -- cannot say whether this item is one: it is played by the general rule, and both the loot master
+    -- and the raid are told so. Never guessed: an item is not sent to the bank on a maybe.
+    if not exception and item.quality == nil and GuildOS.LootRule:NeedsItemInfo(rule) then
+        self.activeLoot.unread = true
+        GuildOS:Print("|cffFFAA00" .. itemLink .. L["  -  item details not loaded yet: the general rule applies"] .. "|r")
+    end
     if exception and exception.to then
         self:SendToDestination(exception, itemLink, lootSlot, itemId)
         return
@@ -928,6 +936,9 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
     local exception = self.activeLoot and self.activeLoot.exception
     if exception then
         announceLine = announceLine .. string.format(L["  -  exception: %s"], GuildOS.LootRule:ExceptionLabel(exception))
+    end
+    if self.activeLoot and self.activeLoot.unread then
+        announceLine = announceLine .. L["  -  item details not loaded yet: the general rule applies"]
     end
     self:SafeSendChat(announceLine, "RAID_WARNING")
 
@@ -1528,6 +1539,7 @@ function LootMaster:RegisterRollNow(name, rollType, roll, extra)
         name       = name,
         class      = class,
         rollType   = rollType,
+        live       = true,   -- read from the accounts here: read again when the roll ends (RereadAccounts)
         asked      = asked ~= rollType and asked or nil,   -- for the award's record (LootRule:Why)
         roll       = roll,
         rolled     = roll ~= nil and rollType ~= "PASS" or (extra.drawn and true) or nil,
@@ -1851,6 +1863,26 @@ function LootMaster:OnAnswerEcho(cmd, rest, sender)
 end
 
 ----------------------------------------------------------------------
+-- The counters and the places in a queue each row holds, read again as they stand now. A row keeps
+-- what its player held when they answered; an award undone, or another officer's entry, in the
+-- seconds the roll stays open moves a queue or a counter, and the roll ended by places nobody held any
+-- more. Only rows this client read from the accounts (`live`).
+----------------------------------------------------------------------
+function LootMaster:RereadAccounts(rule)
+    local P, LR = GuildOS.Points, GuildOS.LootRule
+    if not (P and P.GetDB and P:GetDB()) then return end
+    local counters, queues = LR:Counters(rule), LR:Queues(rule)
+    if #counters == 0 and #queues == 0 then return end
+    for key, r in pairs(self.rolls) do
+        if r.live then
+            r.accts = r.accts or {}
+            for _, a in ipairs(counters) do r.accts[a.key] = P:Counter(a.key, key) end
+            for _, q in ipairs(queues) do r.accts[q.key] = P:QueuePos(q.key, key) end
+        end
+    end
+end
+
+----------------------------------------------------------------------
 -- End rolling and display results
 ----------------------------------------------------------------------
 -- `byClick`: the End Rolling button. The roll timer ends it without one, and on WoW: Forever
@@ -1876,6 +1908,7 @@ function LootMaster:EndRolling(byClick)
     -- (issue #294). The announcement used to ignore DKP and name somebody else.
     -- The loot rule's order (issue #333): the same one the Master Loot window shows.
     local rule = self:Rule()
+    self:InLootCore(self.RereadAccounts, self, rule)
     GuildOS.LootRule:Sort(sorted, rule)
 
     self.activeLoot.sortedResults = sorted
@@ -2342,6 +2375,11 @@ function LootMaster:UndoLastAward()
         if GuildOS.Points and award.split then GuildOS.Points:UndoSplit(award.split, undoLabel) end
         for i = #(GuildOS.Points and award.queue or {}), 1, -1 do
             GuildOS.Points:QueueUndo(award.queue[i])
+        end
+        -- A client from before EPGP's two sides reads what an undo gives back as EP earned, where it
+        -- comes off the GP: the snapshot sets it right there, as it does after a decay.
+        if GuildOS.Points and GuildOS.Points:GetMode() == "epgp" and (award.charged or award.paid or award.split) then
+            GuildOS.Points:BroadcastSnapshot()
         end
     end
     if GuildOS.Points and GuildOS.Points.InCore then GuildOS.Points:InCore(award.core, giveBack) else giveBack() end

@@ -226,6 +226,17 @@ check(LM:UndoLastAward() and LM:UndoLastAward() and names(P:Queue("sk")) == "Ana
 LM:SetActiveLoot(LINK, nil, ITEM)
 LM:AwardLoot("Cy")
 check(P:QueuePos("sk", K("Cy")) == 3, "an item given with no answer moves nobody")
+-- The queue moves while a roll is open (an award undone, another officer's entry): the roll ends by
+-- the places as they stand then, not by the ones each row held when its player answered.
+announce()
+LM:TakeAnswer("Bo", "MS")
+LM:TakeAnswer("Cy", "MS")
+check(LM.rolls[K("Bo")].accts.sk == 2 and LM.rolls[K("Cy")].accts.sk == 3, "each answer reads its place: Bo second, Cy third")
+P:SetQueue("sk", keys("Ana", "Cy", "Dee", "Lead", "Eve", "Bo"))
+check(order() == "Cy,Bo" and LM.rolls[K("Bo")].accts.sk == 6 and LM.rolls[K("Cy")].accts.sk == 2,
+  "with Bo sent to the end meanwhile, the roll ends by the queue as it is: " .. order())
+LM:CancelRolling()
+P:SetQueue("sk", keys("Ana", "Bo", "Cy", "Dee", "Lead", "Eve"))
 
 -- The classic rule: only who is in the raid moves up, whoever is absent keeps their slot.
 night(skRule(true))

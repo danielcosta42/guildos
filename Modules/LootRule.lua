@@ -732,6 +732,17 @@ function LootRule:Categories(item)
     return cats
 end
 
+-- Whether `rule` has an exception for a category that is told by what the client reads of the item
+-- (GetItemInfo): its class, how it binds, its quality. "tier" is told by the id alone, and "unclaimed"
+-- is no fact of the item.
+local CATS_BY_INFO = { recipe = true, mount = true, boe = true, legendary = true, trash = true }
+function LootRule:NeedsItemInfo(rule)
+    for _, x in ipairs(rule and rule.exceptions or {}) do
+        if x.on and CATS_BY_INFO[x.on.cat] then return true end
+    end
+    return false
+end
+
 -- How specific an exception is: an item's own id before a boss, a boss before a category, a category
 -- before a whole raid. One that names several is as specific as the most specific of them.
 local function specificity(on)

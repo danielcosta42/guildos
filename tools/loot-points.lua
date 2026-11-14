@@ -367,8 +367,15 @@ check(LM.activeLoot.sortedResults[1].name == "Ana" and LM.activeLoot.decidedBy =
   "the highest priority wins over the highest roll")
 LM:AwardLoot("Ana", true)
 check(P:GP(K("Ana")) == 150 and P:EP(K("Ana")) == 300 and P:PR(K("Ana")) == 2, "the award adds the item's GP, and EP stays")
+-- A client from before EPGP's two sides reads the refund as EP earned (EP 600 and GP 100 where this one
+-- holds 500 and 0): the undo is followed by a snapshot, which sets it right there, as after a decay.
+local undoSnaps = 0
+GuildOS.SyncService = { NextRevision = function() return 1 end,
+  Publish = function(_, _, act) if act == "snapshot" then undoSnaps = undoSnaps + 1 end end }
 LM:UndoLastAward()
+GuildOS.SyncService = nil
 check(P:GP(K("Ana")) == 50 and P:EP(K("Ana")) == 300, "an undo takes the GP back off, and adds no EP")
+check(undoSnaps == 1, "and is followed by one snapshot, for the officers' clients from before")
 
 cfg.minEP = 200
 check(P:PR(K("Cy")) < P:PR(K("Bo")), "under the minimum EP comes after everyone who has it")

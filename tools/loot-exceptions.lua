@@ -369,6 +369,34 @@ local timerC = timers[#timers]
 LM:RegisterRoll("Ana", "MS", 50)
 LM:AwardLoot("Ana")
 check(timerC.cancelled == true and LM.activeLoot == nil, "an award before the time runs out cancels the roll's timer")
+-- An item the client has not read yet (GetItemInfo answers nothing): a category cannot be told, so
+-- the item is played by the general rule and everyone is told so. It used to be rolled for as if the
+-- rule had no exception at all, without a word.
+LR:Set(base({ { on = { cat = "boe" }, to = "bank" }, { on = { items = { 30001 } }, to = "de" } }))
+announce(30002)
+check(lastAward().player == "Banker" and LM.activeLoot == nil, "a bind-on-equip item the client has read goes to the bank")
+local realItemInfo = GetItemInfo
+GetItemInfo = function() return nil end
+local unread = "|cffa335ee|Hitem:30002::::::::70:::::|h[World Drop Belt]|h|r"
+local banked = #GuildOS.db.lootMaster.awardHistory
+quiet()
+LM.lootWindowOpen = false
+LM:AnnounceItem(unread, nil)
+check(LM.activeLoot and LM.activeLoot.exception == nil and #GuildOS.db.lootMaster.awardHistory == banked,
+  "the same item not read yet is not sent anywhere on a guess")
+check(said[1]:find("[ROLL]", 1, true) and said[1]:find("item details not loaded yet: the general rule applies", 1, true),
+  "it is rolled for by the general rule, and the raid is told why: " .. tostring(said[1]))
+check(all(printed):find("item details not loaded yet", 1, true), "and so is the loot master")
+LM:CancelRolling()
+quiet()
+LM:AnnounceItem("|cffa335ee|Hitem:30001::::::::70:::::|h[Reins]|h|r", nil)
+check(lastAward().player == "Dis" and not all(said):find("not loaded", 1, true), "an exception by item id needs nothing read, and still applies")
+LR:Set(base({ { on = { items = { 30001 } }, to = "de" } }))
+quiet()
+LM:AnnounceItem(unread, nil)
+check(not said[1]:find("not loaded", 1, true), "and a rule with no category exception says nothing of it")
+LM:CancelRolling()
+GetItemInfo = realItemInfo
 
 -- ── 6. An exception's own order ─────────────────────────────────────
 local thunder = { on = { items = { 28770 } }, name = "Mindblade", set = { order = { { k = "wishlist" }, { k = "roll" } }, decide = { by = "ml" } } }

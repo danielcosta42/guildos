@@ -673,6 +673,19 @@ P:OnSync({ act = "snapshot", rev = 3, data = { core = "", mode = "dkp", config =
 check(theirs.accounts.plus1.v[K("Ana")] == 1, "a snapshot from an officer on a version from before leaves the counters alone")
 GuildOS.db.points = mine
 
+-- A counter moves while a roll is open (another officer's entry, an undo): the roll ends by the
+-- counters as they stand then.
+sid = announce()
+LM:RegisterRoll("Ana", "MS", 10)
+LM:RegisterRoll("Cy", "MS", 90)
+check(row("Ana").accts.plus1 == 1 and row("Cy").accts.plus1 == 0, "each answer reads its counter")
+P:AddCounter("plus1", K("Cy"), 2, "night")
+LM:EndRolling(true)
+check(LM.activeLoot.sortedResults[1].name == "Ana" and row("Cy").accts.plus1 == 2,
+  "a +1 that arrived while the roll was open counts when it ends")
+P:AddCounter("plus1", K("Cy"), -2, "night")
+LM:CancelRolling()
+
 -- A snapshot is merged into the counters, never taken whole. An officer's snapshot from before tonight
 -- (sent by saving a points setting, at home) used to replace tonight's +1, and the next item went to
 -- whoever had already won one.
