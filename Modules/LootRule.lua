@@ -52,7 +52,12 @@ local POINTS_ACCOUNTS = { dkp = true, ep = true, gp = true }
 local NAME_MAX = 64           -- bytes of an account's or an exception's name
 local EARN_MAX = 12           -- reasons to earn one account declares
 local AMOUNT_MAX = 1000000    -- the most an account's figure is set to
-local DECIDERS = { auto = true, ml = true, holder = true }
+local DECIDERS = { auto = true, ml = true, holder = true, council = true }
+local COUNCIL_KEYS = { ranks = true, names = true, anon = true, self = true, note = true, quorum = true }
+local RANK_MAX = 9            -- a guild has ranks 0 to 9
+local COUNCIL_NAMES_MAX = 20  -- council members a rule names one by one
+local MEMBER_MAX = 48         -- bytes of a council member's name
+local QUORUM_MAX = 40         -- nobody asks for more votes than a raid has players
 local ROUNDS = { up = true, down = true, near = true }
 local AUTOS = { boss = true, ontime = true, late = true, stayed = true, leftearly = true, raid = true }
 local COUNTER_AUTOS = { boss = true, raid = true }   -- what feeds a counter by itself (Points:EarnCounters)
@@ -65,7 +70,7 @@ local WEIGHT_MAX = 100        -- the most a part of a score is multiplied by
 -- The pieces of the contract (v1) this client does not apply yet. A rule that uses one is refused whole,
 -- with "unsupported: <piece>" for a reason, so whoever sees the refusal is told what is missing.
 local UNSUPPORTED = {
-    council = true, upgrade = true, balance = true, counter = true, earn = true,
+    upgrade = true, balance = true, counter = true, earn = true,
 }
 local function unsupported(piece) return "unsupported: " .. piece end
 
@@ -472,12 +477,32 @@ end
 
 -- Who decides. "auto" (the order decides), "ml" (the master looter) and "holder" (whoever holds the
 -- item) all end the way this client always did: the order names the winner and the master looter's
--- click gives the item, which does not come back. A council's vote waits for its own issue (#336).
+-- click gives the item, which does not come back. "council" (issue #336): when the answers close, the
+-- council votes among the candidates and the master looter confirms who it proposes (LootCouncil).
+--   council { ranks, names, anon, self, note, quorum }: who votes (guild rank indexes, and players by
+--   name; with neither, the guild's officers), whether who voted for whom is hidden, whether a member
+--   who is a candidate votes on that item, whether every answer needs a note, and how many votes
+--   close the vote.
 local function validDecide(decide)
     if type(decide) ~= "table" or not onlyKeys(decide, { by = true, council = true }) then return false, "decide" end
-    if decide.by == "council" then return false, unsupported("council") end
     if not DECIDERS[decide.by] then return false, "decide" end
-    if decide.council ~= nil and type(decide.council) ~= "table" then return false, "decide" end
+    local council = decide.council
+    if council == nil then return true end
+    if type(council) ~= "table" or not onlyKeys(council, COUNCIL_KEYS) then return false, "decide" end
+    if council.ranks ~= nil then
+        if not isList(council.ranks, RANK_MAX + 1) then return false, "decide" end
+        for _, rank in ipairs(council.ranks) do
+            if not wholeIn(rank, 0, RANK_MAX) then return false, "decide" end
+        end
+    end
+    if council.names ~= nil then
+        if not isList(council.names, COUNCIL_NAMES_MAX) then return false, "decide" end
+        for _, name in ipairs(council.names) do
+            if not isLabel(name, MEMBER_MAX) or name:find("[%s,]") then return false, "decide" end
+        end
+    end
+    if not (flagOrNil(council.anon) and flagOrNil(council.self) and flagOrNil(council.note)) then return false, "decide" end
+    if council.quorum ~= nil and not wholeIn(council.quorum, 1, QUORUM_MAX) then return false, "decide" end
     return true
 end
 
@@ -650,7 +675,6 @@ end
 
 -- Each one by its own literal key, so every language file finds it.
 function LootRule:UnsupportedText(piece)
-    if piece == "council" then return L["a loot council's vote"] end
     if piece == "upgrade" then return L["ordering by the size of the upgrade"] end
     if piece == "balance" then return L["a points account other than DKP, EP and GP"] end
     if piece == "counter" then return L["a counter with a start, a cap, a floor or a decay"] end
@@ -782,6 +806,33 @@ end
 -- What a button of `r` says.
 function LootRule:ResponseLabel(r)
     return r.label or r.key
+end
+
+-- The council that decides the rule's items (issue #336), or nil when something else does: its
+-- settings as the rule wrote them, { ranks, names, anon, self, note, quorum }.
+function LootRule:Council(rule)
+    local decide = (rule or self:Active()).decide
+    if not (decide and decide.by == "council") then return nil end
+    return decide.council or {}
+end
+
+-- Whether an answer has to come with a note: its own flag, or the council's, which reads every note.
+function LootRule:NeedsNote(response, rule)
+    if response and response.note then return true end
+    local council = self:Council(rule)
+    return (council and council.note) and true or false
+end
+
+-- Whether the rule is played whole, with none of the shortcuts the loot systems of before take by
+-- the wishlist (a roll closed to whoever is tied on it, an item given straight to its first place): a
+-- council that votes, a queue, a bonus account or a summed score reads every candidate.
+function LootRule:PlaysWhole(rule)
+    rule = rule or self:Active()
+    if self:Council(rule) or self:ShowsAccounts(rule) then return true end
+    for _, entry in ipairs(rule.order or {}) do
+        if entry.k == "score" then return true end
+    end
+    return false
 end
 
 -- Whether any answer of the rule asks for a bid.
@@ -1016,7 +1067,7 @@ function LootRule:Encode(rule, time)
         local parts = { head }
         for i, r in ipairs(list) do
             local code = ASK_CODE[r.ask or "roll"]
-            if r.note then code = code:upper() end
+            if self:NeedsNote(r, rule) then code = code:upper() end
             local label = (i <= labelled and r.label and r.label ~= r.key) and r.label or ""
             parts[#parts + 1] = r.key .. "=" .. code .. label
         end
@@ -1108,6 +1159,22 @@ function LootRule:FromLegacy(system, cfg)
         rule.effects = { { k = "charge", acct = "karma", price = "fraction", value = 0.5 } }
         return rule
     end
+    -- Loot council (issue #336): nobody rolls. The candidates are listed by the answer, the wishlist,
+    -- fewer items received and attendance in steps of ten, and the guild's officers vote; two votes
+    -- close it. A minute to answer, as a council reads more than a roll does.
+    if system == "council" then
+        local top = math.max(0, math.min(RANK_MAX, math.floor(tonumber(cfg.officerMaxRank) or 1)))
+        local ranks = {}
+        for rank = 0, top do ranks[#ranks + 1] = rank end
+        rule.responses = {
+            { key = "MS", label = "MS", ask = "none", plus = true, cost = 1 },
+            { key = "OS", label = "OS", ask = "none", plus = false, cost = 0.5 },
+        }
+        rule.time = 60
+        rule.order = { { k = "response" }, { k = "wishlist" }, { k = "received" }, { k = "attendance", band = 10 } }
+        rule.decide = { by = "council", council = { ranks = ranks, anon = false, self = false, note = false, quorum = 2 } }
+        return rule
+    end
     -- DKP by bids (issue #334): main spec before off spec, then the highest bid, then who holds more
     -- points. Open, the winner pays what they bid; sealed, one step over the bid they beat. The least
     -- bid and the time to bid are the ones the core's loot settings always had.
@@ -1164,6 +1231,8 @@ local function legacySettings(coreName)
     local P = GuildOS.Points
     local pool = P and P.GetDBForCore and GuildOS.db and GuildOS.db.points and P:GetDBForCore(coreName or "")
     legacy.entryCost = pool and pool.config and pool.config.entryCost
+    -- The guild's officer threshold: who a ready-made loot council is made of (issue #336).
+    legacy.officerMaxRank = GuildOS.db and GuildOS.db.settings and GuildOS.db.settings.officerMaxRank
     return legacy
 end
 
@@ -1378,6 +1447,120 @@ function LootRule:DecidedBy(first, second, rule)
     return key
 end
 
+----------------------------------------------------------------------
+-- The record of an award (issue #336): why the winner got the item, small enough to keep with the
+-- loot history and to send to the site (`why` on a loot entry, CompanionExport).
+--   { v = 1, rule = <model, or "custom">, ruleAt = <stamp of the rule in force, 0 for a loot system's>,
+--     decidedBy = <criterion key> | "council" | "ml" | "only", exception = <name, when one applied>,
+--     candidates = { { name, answer, roll, bid, values = { [criterion] = figure } }, ... },
+--     votes = { anon, quorum, cast = { { by, for }, ... }, tally = { [name] = n } } }
+-- `candidates` are in the rule's order with the winner first, ten at most. `values` holds what each
+-- criterion of the order compared beside the answer, the roll and the bid, which have their own
+-- fields: a reserve as 1 or 0, a place on a list (absent with none), a figure, "account:<key>" for an
+-- account (a bonus account: what it added to the roll). `votes` is there only when a council voted;
+-- with an anonymous council `cast` is left out.
+----------------------------------------------------------------------
+LootRule.WHY_VERSION = 1
+LootRule.WHY_CANDIDATES = 10
+
+local function round2(n) return math.floor(n * 100 + 0.5) / 100 end
+
+-- What each criterion of the rule's order compared for a candidate, as figures a person reads.
+local function comparedOf(c, rule)
+    local values, any = {}, false
+    for _, entry in ipairs(rule.order or {}) do
+        local k, v = entry.k, nil
+        local reserve = c.softRes
+        if k == "hardres" then
+            v = (type(reserve) == "table" and reserve.hard) and 1 or 0
+        elseif k == "softres" then
+            v = reserve and 1 or 0
+        elseif k == "prio" then
+            v = c.prioOrder
+        elseif k == "wishlist" then
+            v = c.wishlist and c.wishlist.order
+        elseif k == "received" then
+            v = c.recvCount or 0
+        elseif k == "attendance" then
+            v = c.att25 or 0
+        elseif k == "points" then
+            v = c.dkp or 0
+        elseif k == "pr" then
+            v = round2(c.pr or 0)
+        elseif k == "account" then
+            k, v = "account:" .. entry.acct, held(c, entry.acct, rule)
+            if v == QUEUE_END then v = nil end
+        elseif k == "ratio" then
+            v = round2(ratioOf(c, rule, entry))
+        elseif k == "score" then
+            v = round2(scoreOf(c, rule, entry))
+        elseif k == "roll" and entry.bonus then
+            k, v = "account:" .. entry.bonus, bonusOf(c, rule, entry.bonus)
+        end
+        if type(v) == "number" and v == v and v > -math.huge and v < math.huge then
+            values[k], any = v, true
+        end
+    end
+    return any and values or nil
+end
+
+local function whyCandidate(c, rule)
+    return {
+        name = tostring(c.name or c.key or ""), answer = c.rollType or "",
+        roll = tonumber(c.roll) or 0, bid = tonumber(c.bid) or 0, values = comparedOf(c, rule),
+    }
+end
+
+-- The record of one award. `spec`: { rule, ruleAt, winner = <name>, sorted = <the candidates in the
+-- rule's order>, decidedBy, exception = <its name>, votes }. A winner who gave no answer (an item given
+-- straight from the loot window, or sent to the bank) is still the first candidate, with no answer.
+function LootRule:Why(spec)
+    local rule = spec.rule or self:Active()
+    local candidates, winner = {}, nil
+    for _, c in ipairs(spec.sorted or {}) do
+        if not winner and (c.name or c.key) == spec.winner then winner = c end
+    end
+    candidates[1] = winner and whyCandidate(winner, rule)
+        or { name = tostring(spec.winner or ""), answer = "", roll = 0, bid = 0 }
+    for _, c in ipairs(spec.sorted or {}) do
+        if c ~= winner and #candidates < self.WHY_CANDIDATES then
+            candidates[#candidates + 1] = whyCandidate(c, rule)
+        end
+    end
+    return {
+        v = self.WHY_VERSION, rule = rule.model or "custom", ruleAt = math.floor(tonumber(spec.ruleAt) or 0),
+        decidedBy = spec.decidedBy or "ml", exception = spec.exception, candidates = candidates, votes = spec.votes,
+    }
+end
+
+-- What decided an award by the order alone: "only" with a single candidate, the criterion that put
+-- the winner ahead of the next when the winner is the first of the order, and "ml" when the master
+-- looter gave it to somebody else, or when every criterion tied and nothing in the rule told them apart.
+function LootRule:WhyDecided(winnerName, sorted, rule)
+    local first = sorted and sorted[1]
+    if not first or (first.name or first.key) ~= winnerName then return "ml" end
+    if #sorted == 1 then return "only" end
+    return self:DecidedBy(first, sorted[2], rule) or "ml"
+end
+
+-- The stamp of the rule in force, for the record: the night's start for the raid night's rule, when
+-- an officer last changed it for a core's or the guild's own, and 0 for the rule of a loot system.
+function LootRule:Stamp()
+    if self:Night() then return tonumber(GuildOS.db.lootNight.startsAt) or 0 end
+    local CM = GuildOS.CoreManager
+    local coreName = coreOrNil(CM and CM.GetActiveName and CM:GetActiveName() or "")
+    if coreName and CM.GetLootRule then
+        local own = CM:GetLootRule(coreName)
+        local lm = GuildOS.db.cores[coreName].lootMaster
+        if own and self:Validate(own) then return tonumber(lm and lm.lootAt) or 0 end
+        local sys = CM:GetLootSystem(coreName)
+        if sys and GuildOS:IsLootSystemHere(sys) then return 0 end
+    end
+    local s = GuildOS.db and GuildOS.db.settings
+    if s and s.lootRule and self:Validate(s.lootRule) then return tonumber(s.lootRuleAt) or 0 end
+    return 0
+end
+
 -- A TradeCouncil answer row as a candidate: Need is the main answer and Greed the second.
 local CHOICE_AS = { N = "MS", G = "OS", P = "PASS" }
 function LootRule:FromAnswer(row)
@@ -1555,6 +1738,58 @@ function LootRule:SetCounterReset(acct, reset, coreName)
     local rule = self:Draft(coreName)
     for _, a in ipairs(rule.accounts or {}) do
         if a.key == acct then a.reset = reset end
+    end
+    return self:Set(rule, coreName)
+end
+
+-- Who decides (issue #336), for the rule editor: "auto" (the order), "ml" (the master looter) or
+-- "council". A council chosen for the first time is the guild's officers, two votes to close.
+function LootRule:SetDecide(by, coreName)
+    local rule = self:Draft(coreName)
+    local decide = rule.decide or {}
+    decide.by = by
+    if by == "council" and decide.council == nil then
+        local top = GuildOS.db and GuildOS.db.settings and tonumber(GuildOS.db.settings.officerMaxRank) or 1
+        local ranks = {}
+        for rank = 0, math.max(0, math.min(RANK_MAX, math.floor(top))) do ranks[#ranks + 1] = rank end
+        decide.council = { ranks = ranks, quorum = 2 }
+    end
+    rule.decide = decide
+    return self:Set(rule, coreName)
+end
+
+-- One thing about the council: `field` is "anon", "self" or "note" (yes or no), "quorum" (a number;
+-- nothing for none), "names" (the members named one by one, as typed: split at commas and spaces) or
+-- "rank" (`value` is a guild rank index, which joins the council or leaves it).
+function LootRule:SetCouncilField(field, value, coreName)
+    local rule = self:Draft(coreName)
+    local decide = rule.decide
+    if not (decide and decide.by == "council") then return false, "decide" end
+    local council = decide.council or {}
+    decide.council = council
+    if field == "anon" or field == "self" or field == "note" then
+        council[field] = value and true or false
+    elseif field == "quorum" then
+        council.quorum = tonumber(value)
+    elseif field == "names" then
+        local names, seen = {}, {}
+        for name in tostring(value or ""):gmatch("[^%s,]+") do
+            if not seen[name:lower()] then
+                seen[name:lower()] = true
+                names[#names + 1] = name
+            end
+        end
+        council.names = #names > 0 and names or nil
+    elseif field == "rank" then
+        local ranks, had = {}, false
+        for _, rank in ipairs(council.ranks or {}) do
+            if rank == value then had = true else ranks[#ranks + 1] = rank end
+        end
+        if not had then ranks[#ranks + 1] = value end
+        table.sort(ranks)
+        council.ranks = ranks
+    else
+        return false, "decide"
     end
     return self:Set(rule, coreName)
 end

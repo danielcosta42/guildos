@@ -718,6 +718,63 @@ do
   -- Kept on for the string below, so the site's fixture decodes a real book.
 end
 
+-- `why` on a loot entry (issue #336, the site's #517): additive within v16. An entry the history keeps
+-- a record for carries it, in the documented shape and nothing else; an entry without one, and every
+-- other field of the one with it, is exactly what a reader from before was sent.
+do
+  local history = GuildOS.LootTracker.GetHistory()
+  local plain = GuildOS.Companion:BuildPayload()
+  local plainJson = GuildOS.Companion.EncodeJson(plain.loot)
+  assert(not plainJson:find('"why"', 1, true), "no record kept: no `why` on any entry")
+  local kept = history[1]
+  local saved = GuildOS.LootTracker.GetHistory
+  GuildOS.LootTracker.GetHistory = function()
+    local out = {}
+    for i, e in ipairs(history) do out[i] = e end
+    local with = {}
+    for k, v in pairs(kept) do with[k] = v end
+    with.why = {
+      v = 1, rule = "softres", ruleAt = 1791000000, decidedBy = "council", exception = "Thunderfury",
+      candidates = {
+        { name = "Chehul", answer = "MS", roll = 41, bid = 0, values = { softres = 1, ["account:plus1"] = 0, attendance = 96 } },
+        { name = "Rias", answer = "MS", roll = 12, bid = 0 },
+      },
+      votes = { anon = false, quorum = 2, cast = { { by = "Kawa", ["for"] = "Chehul" } }, tally = { Chehul = 2, Rias = 1 } },
+      debug = { "never sent" },
+    }
+    out[1] = with
+    return out
+  end
+  local payload = GuildOS.Companion:BuildPayload()
+  local why = payload.loot[1].why
+  assert(payload.v == 16, "additive: the payload's version does not move")
+  assert(GuildOS.Companion.EncodeJson(why) == '{"candidates":[{"answer":"MS","bid":0,"name":"Chehul","roll":41,'
+    .. '"values":{"account:plus1":0,"attendance":96,"softres":1}},{"answer":"MS","bid":0,"name":"Rias","roll":12}],'
+    .. '"decidedBy":"council","exception":"Thunderfury","rule":"softres","ruleAt":1791000000,"v":1,'
+    .. '"votes":{"anon":false,"cast":[{"by":"Kawa","for":"Chehul"}],"quorum":2,"tally":{"Chehul":2,"Rias":1}}}',
+    "the entry carries `why` in the documented shape: " .. GuildOS.Companion.EncodeJson(why))
+  assert(why.debug == nil, "and nothing the shape does not name")
+  for i = 2, #payload.loot do assert(payload.loot[i].why == nil, "an entry with no record carries none") end
+  -- A reader from before never looks at `why`: without it the list is the one it always got.
+  payload.loot[1].why = nil
+  assert(GuildOS.Companion.EncodeJson(payload.loot) == plainJson, "every other field of every entry is as before")
+  -- An anonymous council: who voted for whom never leaves.
+  local anon = GuildOS.Companion.LootWhy({ v = 1, rule = "council", decidedBy = "council", candidates = {},
+    votes = { anon = true, quorum = 2, cast = { { by = "Kawa", ["for"] = "Chehul" } }, tally = { Chehul = 2 } } })
+  assert(anon.votes.cast == nil and anon.votes.tally.Chehul == 2 and GuildOS.Companion.EncodeJson(anon.candidates) == "[]",
+    "anonymous: the tally alone")
+  -- What a saved file may hold is not trusted: a record that is no record is left out, a figure that is no number is 0.
+  assert(GuildOS.Companion.LootWhy("x") == nil, "a record that is no table is none")
+  local odd = GuildOS.Companion.LootWhy({ v = "1", rule = string.rep("r", 300), ruleAt = 0 / 0, candidates = { "x",
+    { name = 7, roll = "a", values = { softres = 1 / 0, [3] = 1 } } }, votes = { tally = {} } })
+  assert(odd.ruleAt == 0 and #odd.rule == 64 and #odd.candidates == 1 and odd.candidates[1].roll == 0
+    and odd.candidates[1].values == nil and odd.votes.tally == nil, "odd figures and texts are held to the shape")
+  local many = { v = 1, candidates = {} }
+  for i = 1, 30 do many.candidates[i] = { name = "P" .. i } end
+  assert(#GuildOS.Companion.LootWhy(many).candidates == 10, "ten candidates at most")
+  GuildOS.LootTracker.GetHistory = saved
+end
+
 -- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.
 GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
 local text, countOrErr = GuildOS.Companion:Build()

@@ -351,6 +351,13 @@ local row = GuildOS.db.lootHistory[1]
 check(#GuildOS.db.lootHistory == 1 and row.playerKey == "Ana-Gallywix" and row.player == "Ana-Gallywix"
   and row.awarded and row.from == "Chehul-TolBarad" and row.raid == "The Voidspire" and row.timestamp == DROP,
   "the award is recorded: my row of that drop becomes the winner's, at the drop's time")
+-- Why it went to her (issue #336): the record every award keeps, written here too.
+local why = row.why
+check(type(why) == "table" and why.v == 1 and why.rule == "rolls" and why.ruleAt == 0 and why.votes == nil,
+  "the row keeps the award's record: the guild's rule, and no council")
+check(why.decidedBy == "ml" and why.candidates[1].name == "Ana-Gallywix" and why.candidates[2].name == "Bob-TolBarad"
+  and why.candidates[2].roll == 70, "awarded against the order: the winner first, then the order, and the awarder decided: "
+  .. tostring(why.decidedBy) .. " " .. tostring(why.candidates[1].name) .. " " .. tostring(why.candidates[2] and why.candidates[2].name))
 check(o.done and o.closed and lastAddon().text == ("D|%s|Ana-Gallywix|Chehul-TolBarad"):format(o.id),
   "however long the winner took, and the raid hears it went through: winner and who awarded it")
 check(GuildOS.Wishlist:IsItemDelivered(250001) == false, "the item is the winner's now, not mine")

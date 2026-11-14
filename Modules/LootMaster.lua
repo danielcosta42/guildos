@@ -19,6 +19,10 @@
 --   ACK|sid|name|KEY                     loot master -> raid: an answer with nothing else to show
 --   NO|sid|name|why|number               loot master -> raid: an answer it refused
 -- Who answered is always the sender the game names, never a name inside the message.
+--
+-- Since issue #336 every award keeps a record of why the winner got the item (AwardWhy, LootRule:Why),
+-- and a rule whose items a council decides opens a vote when the answers close: its messages (COPEN,
+-- CMEM, CCAND, CVOTE, CTALLY, CWHO, CNO, CCLOSE) and its rules are in Modules/LootCouncil.lua.
 ----------------------------------------------------------------------
 -- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
 if GuildOS.Client.isRetail then return end
@@ -375,6 +379,35 @@ function LootMaster:IsMasterLooter()
 end
 
 ----------------------------------------------------------------------
+-- Whether `sender`, as the game names an addon message's, is this raid's master looter (issue #336): a
+-- council's vote is opened and closed by nobody else. The game says who the master looter is by their
+-- place in the raid; where it does not say (no master loot, or a client that names none), nobody is.
+----------------------------------------------------------------------
+function LootMaster:MasterLooterName()
+    local raidID
+    if GetLootMethod then
+        local method, _, id = GetLootMethod()
+        if method == "master" then raidID = id end
+    end
+    if not raidID and C_PartyInfo and C_PartyInfo.GetLootMethod then
+        local method, _, id = C_PartyInfo.GetLootMethod()
+        local master = Enum and Enum.LootMethod and Enum.LootMethod.Masterlooter or 2
+        if method == master then raidID = id end
+    end
+    if not (raidID and IsInRaid()) then return nil end
+    return (GuildOS.Compat.UnitIdentity("raid" .. raidID))
+end
+
+function LootMaster:IsFromMasterLooter(sender)
+    if GuildOS.Compat.IsSecret(sender) or type(sender) ~= "string" or sender == "" then return false end
+    local ml = self:MasterLooterName()
+    if not ml then return false end
+    local name = sender:match("^([^%-]+)") or sender
+    return name == ml or sender == ml
+        or (GuildOS.Client.has.surnames and self:WholeRollerName(name, ml) ~= nil) or false
+end
+
+----------------------------------------------------------------------
 -- /roll capture: start/stop listening for CHAT_MSG_SYSTEM roll results
 ----------------------------------------------------------------------
 function LootMaster:StartListeningForRolls()
@@ -662,6 +695,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         sid       = self:NewSessionId(),
         rule      = rule,
         system    = system,
+        ruleAt    = GuildOS.LootRule:Stamp(),   -- for the award's record (issue #336)
     }
 
     local itemId = tonumber(itemLink:match("item:(%d+)"))
@@ -693,6 +727,12 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     -- for everyone, with none of the shortcuts the loot systems of before take by the wishlist.
     if GuildOS.LootRule.Night and GuildOS.LootRule:Night() == rule then
         self.activeLoot.night = true
+        self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
+        return
+    end
+    -- So does a rule with a council, a queue, a bonus account or a summed score (issues #336, #337):
+    -- every candidate is read, so nobody is left out of the roll by a place on the wishlist.
+    if GuildOS.LootRule:PlaysWhole(rule) then
         self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
         return
     end
@@ -1101,8 +1141,10 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
     -- An addon message is somebody else's text: nothing of it is read before it is known to be text.
     if GuildOS.Compat.IsSecret(msg, channel, sender) or type(msg) ~= "string" then return end
     -- A sealed bid is whispered to the loot master (issue #334); nothing else comes by whisper.
+    -- So is a vote of an anonymous council (issue #336).
     if channel == "WHISPER" then
         if msg:sub(1, 4) == "ANS|" then self:OnAnswerMessage(msg:sub(5), sender) end
+        if msg:sub(1, 6) == "CVOTE|" and GuildOS.LootCouncil then GuildOS.LootCouncil:OnVoteMessage(msg:sub(7), sender) end
         return
     end
     if channel ~= "RAID" and channel ~= "RAID_LEADER" then return end
@@ -1124,6 +1166,15 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
 
     elseif cmd == "ROLL" or cmd == "BID" or cmd == "ACK" or cmd == "NO" then
         self:OnAnswerEcho(cmd, rest, sender)
+
+    elseif cmd == "CVOTE" then
+        -- A council member's vote (issue #336), to the master looter.
+        if GuildOS.LootCouncil then GuildOS.LootCouncil:OnVoteMessage(rest, sender) end
+
+    elseif cmd == "COPEN" or cmd == "CMEM" or cmd == "CCAND" or cmd == "CTALLY" or cmd == "CWHO" or cmd == "CNO"
+        or cmd == "CCLOSE" then
+        -- A council's vote as the master looter's client tells it (issue #336).
+        if GuildOS.LootCouncil then GuildOS.LootCouncil:OnMessage(cmd, rest, sender) end
 
     elseif cmd == "ANNOUNCE" then
         -- Another ML announced an item - show roll popup if we're not ML
@@ -1440,7 +1491,8 @@ function LootMaster:TakeAnswer(name, key, bid, note)
     end
     local response, place = LR:Response(key, rule)
     if not response then return nil, "unknown" end
-    if response.note and note == "" then return nil, "note" end
+    -- The answer's own flag, or the council's, which reads every note (issue #336).
+    if LR:NeedsNote(response, rule) and note == "" then return nil, "note" end
     local ask = response.ask or "roll"
     local row
 
@@ -1675,8 +1727,17 @@ function LootMaster:EndRolling(byClick)
         say(self, string.format(L["[Rolls] %s"], line), "RAID")
     end
 
-    -- Announce winner in raid
-    if #sorted > 0 then
+    -- A rule whose items a council decides (issue #336): with more than one candidate the council
+    -- votes, and the raid is told so in place of a winner. One candidate needs no vote.
+    local Council = GuildOS.LootCouncil
+    local council = Council and GuildOS.LootRule:Council(rule) and #sorted > 1 and self:IsMasterLooter()
+    if council then
+        if not self.activeLoot.council then
+            local session = Council:Open(self.activeLoot, sorted, rule)
+            say(self, string.format(L["[Council] %s: %d candidates, the council votes (%ds)"], self.activeLoot.link,
+                #session.candidates, session.seconds), "RAID_WARNING")
+        end
+    elseif #sorted > 0 then
         local winner = sorted[1]
         local wishStr = ""
         if winner.prioOrder then
@@ -1820,10 +1881,12 @@ function LootMaster:AwardLoot(playerName, silent, free)
         table.remove(awardHistory)
     end
 
-    -- Record to the central loot history (ML-awarded items only, officer action)
+    -- Record to the central loot history (ML-awarded items only, officer action), with why the winner
+    -- got it (issue #336).
     if GuildOS.LootTracker then
         local itemName = GuildOS.Compat.GetItemInfo(itemLink)
         GuildOS.LootTracker:RecordMLAward({
+            why        = self:AwardWhy(playerName, rule, free),
             itemLink   = itemLink,
             itemName   = itemName or "",
             quality    = itemQuality,
@@ -1945,6 +2008,38 @@ function LootMaster:AwardLoot(playerName, silent, free)
     if self.activeLoot then self.activeLoot.delivered = true end
     self.activeLoot = nil
     self.rolls = {}
+end
+
+----------------------------------------------------------------------
+-- The record of the award being made (issue #336): the rule, the candidates in its order with what
+-- each criterion compared, and what decided. Built before the award changes any account, so the
+-- figures are the ones the order was read from.
+----------------------------------------------------------------------
+function LootMaster:AwardWhy(playerName, rule, free)
+    local LR = GuildOS.LootRule
+    local loot = self.activeLoot or {}
+    local sorted = loot.sortedResults
+    if not sorted then
+        -- Given before the roll ended, or with no roll at all: whoever has answered so far.
+        sorted = {}
+        for _, r in pairs(self.rolls) do
+            if r.rollType ~= "PASS" then sorted[#sorted + 1] = r end
+        end
+        LR:Sort(sorted, rule)
+    end
+    local decidedBy = free and "ml" or LR:WhyDecided(playerName, sorted, rule)
+    -- A council's vote: awarding ends it, and the record keeps the votes whoever decided in the end.
+    local votes
+    local Council, session = GuildOS.LootCouncil, loot.council
+    if Council and session and not free then
+        if session.open then Council:Close("ml") end
+        decidedBy, votes = Council:DecidedBy(session, playerName), Council:Record(session)
+    end
+    return LR:Why({
+        rule = rule, ruleAt = loot.ruleAt or LR:Stamp(), winner = playerName,
+        sorted = free and {} or sorted, decidedBy = decidedBy,
+        exception = loot.exception and LR:ExceptionLabel(loot.exception) or nil, votes = votes,
+    })
 end
 
 ----------------------------------------------------------------------
@@ -2147,6 +2242,8 @@ function LootMaster:CancelRolling()
         self.rollTimer = nil
     end
     if self.activeLoot then
+        -- A council's vote on it (issue #336) is over too.
+        if self.activeLoot.council and GuildOS.LootCouncil then GuildOS.LootCouncil:Close("cancel") end
         self:SafeSendChat(L["[Loot] Roll cancelled: "] .. self.activeLoot.link, "RAID")
         self.activeLoot.delivered = true
     end
@@ -3972,6 +4069,13 @@ function LootMaster:UpdateRollTimer()
     if not self.rollFrame or not self.activeLoot then return end
 
     if self.activeLoot.ended then
+        -- With a council's vote on the item (issue #336), where the vote stands.
+        local Council = GuildOS.LootCouncil
+        local view = Council and self.activeLoot.council and Council:View()
+        if view then
+            self.rollFrame.timerText:SetText("|cffFFFF00" .. Council:StatusText(view) .. "|r")
+            return
+        end
         self.rollFrame.timerText:SetText(L["|cffFF4444Rolling ended - click Award|r"])
         return
     end
@@ -4087,6 +4191,7 @@ function LootMaster:SendToDestination(exception, itemLink, lootSlot, itemId, rea
         msg = string.format(L["[Loot] %s goes to Disenchant (%s) - exception: %s"], itemLink or L["item"], name, label)
     end
     self:SafeSendChat(msg, "RAID")
+    self.activeLoot.exception = exception   -- the award's record names it (issue #336)
     self:AwardLoot(name, true, true)   -- silent: the line above said it; free: nobody pays for it
     return true
 end

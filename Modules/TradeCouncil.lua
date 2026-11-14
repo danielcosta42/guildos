@@ -548,11 +548,28 @@ function TradeCouncil:Complete(o)
         GuildOS.LootTracker:RecordTradeAward({
             itemLink = o.link, itemId = o.itemId, holder = o.holder, winner = o.award.winner, timestamp = o.dropTs,
             raid = session and session.name or "", instanceID = session and session.instanceID or 0,
+            why = self:Why(o),
         })
     end
     GuildOS:Print(string.format(L["%s was traded to %s: the award is recorded."], o.link, o.award.winner))
     local mine = me()
     if o.award.by == mine and o.awards[mine] == o.award.winner then self:Charge(o) end
+end
+
+-- The record of an award by trade (issue #336), as the loot master's awards have it: the guild's rule,
+-- whoever asked in its order with the winner first, and what decided. Whoever awards here is an officer
+-- or the item's holder, so an award against the order reads "ml" as a master looter's does.
+function TradeCouncil:Why(o)
+    local LR = GuildOS.LootRule
+    local rule = LR:Active()
+    local sorted = {}
+    for _, row in ipairs(self:Ranked(o)) do
+        if row.choice ~= "P" then sorted[#sorted + 1] = LR:FromAnswer(row) end
+    end
+    return LR:Why({
+        rule = rule, ruleAt = LR:Stamp(), winner = o.award.winner, sorted = sorted,
+        decidedBy = LR:WhyDecided(o.award.winner, sorted, rule),
+    })
 end
 
 -- Charge the winner the guild's cost per item (DKP only; an officer's client, once).

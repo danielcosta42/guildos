@@ -188,7 +188,10 @@ recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:
     os pontos têm configurado no jogo. A exceção é `gp.start`, o GP base pelo qual o `ratio` da regra
     divide.
 - **`decide`**: `auto`, `ml` e `holder` são lidos e terminam igual: a ordem diz o vencedor e o clique
-  do master looter entrega o item, que não volta.
+  do master looter entrega o item, que não volta. `council` (#336) abre uma votação quando as respostas
+  fecham: ver "O conselho" abaixo. `decide.council` é validado campo a campo com qualquer `by`:
+  `ranks` (até 10 índices de 0 a 9), `names` (até 20 nomes, sem espaço nem vírgula), `anon`, `self`,
+  `note` e `quorum` (1 a 40); um campo que o cliente não conhece recusa a regra.
 - **`effects`**, aplicados na ordem:
   - `charge` nos pontos (`dkp` ou `gp`; no máximo um): `table` (o preço do item, o padrão), `fixed`,
     `bid`, `second` (o maior lance vencido na mesma resposta mais um passo, nunca acima do lance do
@@ -200,18 +203,19 @@ recusada com o motivo `unsupported: <peça>` (`LootRule:Unsupported`, `LootRule:
   - `add` num contador, quando a resposta vencedora tem `plus = true`; `reset` zera o contador do
     vencedor, qualquer que seja a resposta. O Desfazer devolve os dois.
   - `bottom` numa fila e `split` nos pontos (#337): ver "As contas raras" abaixo.
-- **Recusado, com motivo próprio:** `decide.by = "council"` (`council`), `upgrade` (a linha do
-  candidato não tem o dado), conta `balance` fora das três (`balance`), contador com início, teto, piso
+- **Recusado, com motivo próprio:** `upgrade` (a linha do candidato não tem o dado), conta `balance` fora das três (`balance`), contador com início, teto, piso
   ou decaimento (`counter`) e ganho que um contador não recebe (`earn`).
 - **`exceptions`** (#335): ver "As exceções por item" abaixo.
-- Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid`, `dkpsealed` e, desde a #337,
-  `sk` (Suicide Kings) e `karma` (fora do retail, que não tem master looter). Escolher um sistema de
-  loot volta à regra pronta dele.
+- Modelos prontos novos em `GuildOS.LOOT_SYSTEMS`: `plus1`, `dkpbid`, `dkpsealed`, desde a #337 `sk`
+  (Suicide Kings) e `karma`, e desde a #336 `council` (fora do retail, que não tem master looter).
+  Escolher um sistema de loot volta à regra pronta dele.
+- Uma regra com conselho, fila, conta de bônus ou `score` é jogada inteira (`LootRule:PlaysWhole`): o
+  item é anunciado direto na disputa aberta, sem os atalhos de wishlist dos sistemas de antes.
 
-Dos 14 modelos do site com as respostas padrão (`tools/data/loot-rule-models.json`,
-`tools/loot-contract.lua`): 13 são lidos e jogados (`rolls`, `plus1`, `softres`, `srplus`, `hardres`,
-`wishlist`, `dkp`, `dkpbid`, `zerosum`, `epgp`, `sk`, `karma`, `ranked`) e 1 é recusado inteiro
-(`council`, por `council`, até a #336).
+Os 14 modelos do site com as respostas padrão (`tools/data/loot-rule-models.json`,
+`tools/loot-contract.lua`) são lidos e jogados: `rolls`, `plus1`, `softres`, `srplus`, `hardres`,
+`wishlist`, `council`, `dkp`, `dkpbid`, `zerosum`, `epgp`, `sk`, `karma`, `ranked`. Nenhum é recusado.
+Uma regra do contrato com `upgrade` segue recusada inteira.
 
 ### As contas raras (#337)
 
@@ -330,3 +334,102 @@ Mora no pool de pontos (`pool.accounts[conta] = { rs, per, v }`) e viaja no mesm
 a ação própria `cdelta` (um cliente de antes não a lê como pontos), e no snapshot. Cada lançamento diz
 o período em que foi feito: a sessão de raide (noite), a semana do lockout, ou nenhum. Um lançamento de
 período mais novo zera a conta antes de somar; um de período mais velho chega atrasado e não soma.
+
+### O conselho (#336)
+
+`decide = { by = "council", council = { ranks, names, anon, self, note, quorum } }`
+(`Modules/LootCouncil.lua`, janela em `UI/LootCouncil.lua`; fora do retail).
+
+- **Quem vota:** quem tem um dos índices de rank em `ranks`, lido do roster da guilda de cada cliente,
+  ou está em `names`. Sem `ranks` e sem `names`, os oficiais da guilda (ranks 0 até o limiar de
+  oficial). Membro por nome não precisa ser da guilda; todo voto precisa vir de quem está na raide.
+- **A votação:** quando as respostas fecham com mais de um candidato, o cliente do master looter abre a
+  sessão (o id é o da rolagem do item), manda os candidatos já na ordem da regra (até 10) e anuncia
+  à raide que o conselho vota, no lugar da linha do vencedor. Com um candidato só não há votação.
+  Dura `time` da regra, no mínimo 30 segundos.
+- **O voto:** um por membro por item; um voto novo substitui o anterior e `0` retira o voto (a
+  abstenção é não ter voto: não conta para o quórum nem entra no registro). `self = false` (o padrão):
+  um membro que é candidato não vota naquele item. `anon = true`: o voto vai por WHISPER ao master
+  looter (como o lance fechado), a raide ouve só os totais e o registro não guarda quem votou em quem.
+- **O fim:** ao atingir `quorum` votos, ou quando o master looter encerra (botão, ou ao clicar Award
+  com a votação aberta), o candidato com mais votos é proposto; empate vai para quem a ordem da regra
+  põe primeiro. O master looter confirma com Award. Tempo esgotado sem quórum: ninguém é proposto, o
+  master looter decide e o registro diz `decidedBy = "ml"` com os votos que houve. Sem `quorum` na
+  regra a votação só fecha pelo master looter ou pelo tempo, e então propõe o mais votado, se houve
+  voto.
+- **`note = true`:** toda resposta precisa de nota (o `ASK` manda a letra maiúscula em todos os
+  botões e a resposta sem nota é recusada), só enquanto quem decide é o conselho.
+- **Entrada não confiável:** só o master looter da raide (o que o jogo aponta em `GetLootMethod`) abre
+  e fecha sessão, e um cliente não lê essas mensagens de mais ninguém; o voto é de quem o jogo diz que
+  mandou, nunca de um nome dentro da mensagem; voto de fora da raide, de fora do conselho, de outra
+  sessão ou para um candidato que não existe não conta. Cliente de antes ignora tudo.
+- **Editor e seletor:** seção "Who decides" no editor da regra (ordem, master looter, conselho; ranks
+  por botão, nomes, anônimo, candidato vota, nota, quórum). "Loot council" no seletor de sistema dá a
+  regra pronta: respostas sem rolagem, ordem resposta, wishlist, menos itens recebidos, presença em
+  faixas de 10, oficiais votam, quórum 2, 60 segundos.
+
+| Mensagem | De quem | O quê |
+| --- | --- | --- |
+| `COPEN\|sid\|segundos\|flags\|quórum\|ranks\|link` | master looter, RAID | Abre a votação. flags: `a` anônimo, `s` candidato vota, `-` nenhum; ranks em dígitos |
+| `CMEM\|sid\|nome,nome` | master looter, RAID | Os membros por nome |
+| `CCAND\|sid\|i\|nome\|KEY\|rolagem\|lance\|presença\|recebidos\|pontos\|wishlist\|prio\|reserva\|contas\|nota` | master looter, RAID | O candidato na posição `i` |
+| `CVOTE\|sid\|i` | membro | RAID; WHISPER ao master looter quando o conselho é anônimo. `0` retira o voto |
+| `CTALLY\|sid\|i=n,i=n` | master looter, RAID | Os votos até agora |
+| `CWHO\|sid\|votante\|i` | master looter, RAID | Quem votou em quem (nunca com `anon`) |
+| `CNO\|sid\|votante\|motivo` | master looter, RAID | Voto recusado: `member`, `self`, `unknown`, `closed` |
+| `CCLOSE\|sid\|motivo\|i` | master looter, RAID | Fim: `q` quórum, `m` master looter, `t` tempo, `x` cancelado; `i` o proposto, 0 nenhum |
+
+O item equipado no slot não vai na linha do candidato: a linha do master looter não tem esse dado (só
+a do TradeCouncil, no retail, tem).
+
+## O registro do prêmio (why)
+
+Todo prêmio guarda por que o vencedor levou o item, quem quer que decida (`LootRule:Why`). Fica na
+entrada do histórico de loot (`db.lootHistory[i].why`), só nas 200 entradas mais novas que têm
+registro (`LootTracker:PruneWhy`), some com o Desfazer junto da entrada, e sobe ao site como campo
+aditivo `why` de cada entrada de `loot` do GOSCOMP1 (a versão do payload segue 16; no máximo 200
+entradas com `why` por envio; `Companion.LootWhy` reescreve campo a campo, então nada fora do formato
+sai). Entrada sem registro não leva o campo: prêmio de antes, prêmio ouvido de outro oficial pela
+mensagem `AWARD` (só o cliente de quem entregou tem o registro) e loot pessoal do retail.
+
+```jsonc
+"why": {
+  "v": 1,
+  "rule": "softres",            // rule.model, ou "custom"
+  "ruleAt": 1791000000,         // carimbo da regra em vigor (0 quando vem do sistema de loot)
+  "decidedBy": "softres",       // chave do critério | "council" | "ml" | "only" (candidato único)
+  "exception": "Thunderfury",   // nome da exceção que valeu; ausente sem exceção
+  "candidates": [               // na ordem da regra, vencedor primeiro; no máximo 10
+    { "name": "Chehul", "answer": "MS", "roll": 41, "bid": 0, "values": { "softres": 1, "account:plus1": 0, "attendance": 96 } }
+  ],
+  "votes": { "anon": false, "quorum": 2, "cast": [ { "by": "Kawa", "for": "Chehul" } ], "tally": { "Chehul": 2, "Rias": 1 } }   // ausente sem conselho
+}
+```
+
+Com `anon`, `cast` é omitido e só o `tally` vai.
+
+- **`ruleAt`:** o início da noite (`startsAt`) para a regra da noite; quando um oficial salvou pela
+  última vez a regra própria do core (`lootAt`) ou da guilda (`lootRuleAt`); 0 para a regra pronta de
+  um sistema de loot.
+- **`decidedBy`:** a chave do critério que pôs o vencedor à frente do segundo quando o vencedor é o
+  primeiro da ordem (`response`, `hardres`, `softres`, `prio`, `wishlist`, `received`, `attendance`,
+  `points`, `pr`, `bid`, `roll`, `account`, `ratio`, `score`); `only` com um candidato só; `council`
+  quando o vencedor é quem o conselho propôs; `ml` quando o master looter (no retail, o oficial ou o
+  dono do item) deu o item a outro, decidiu por falta de quórum, entregou sem disputa (direto da
+  janela de loot, ou destino fixo de uma exceção) ou quando todos os critérios empataram e nada na
+  regra separou os dois.
+- **`candidates`:** quem pediu (pass fica de fora), na ordem da regra, com o vencedor sempre em
+  primeiro. `answer` é a chave da resposta, `""` quando o vencedor não respondeu (item entregue sem
+  disputa: ele é então o único candidato). `roll` e `bid` vão sempre, 0 quando não houve. `name` é o
+  nome curto do personagem; no retail é a chave `Nome-Reino`.
+- **`values`:** o que cada critério da ordem comparou além da resposta, da rolagem e do lance, que têm
+  campo próprio. Chave = a do critério; `account:<conta>` para uma conta (para a conta de bônus da
+  rolagem, o que ela somou). `softres` e `hardres`: 1 ou 0. `prio` e `wishlist`: a posição, ausente
+  para quem não está na lista. `received`, `attendance`, `points`: o número. `pr`, `ratio`, `score`:
+  com duas casas. Uma fila: a posição, ausente para quem não está nela. Ausente quando a ordem só tem
+  resposta, rolagem e lance. Os valores são os de antes de o prêmio mexer em qualquer conta.
+- **`votes`:** só quando um conselho votou naquele item. `quorum` é 0 quando a regra não pede um.
+  `cast` em ordem de quem votou, só os votos válidos no fim (um voto retirado não aparece). `tally` por
+  nome do candidato, só quem teve voto; **ausente quando ninguém votou** (o codificador escreve mapa
+  vazio como lista, então mapa vazio nunca sai; o mesmo vale para `values`).
+- **Limites:** nomes e chaves com até 64 bytes, 10 candidatos, 40 votos em `cast`.

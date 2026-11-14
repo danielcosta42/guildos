@@ -3,10 +3,10 @@
 -- Modules/Points.lua, Modules/LootRule.lua, Modules/LootMaster.lua, Modules/CompanionImport.lua and
 -- Modules/RaidPlan.lua, with the rules the site's fourteen ready-made models emit at their default
 -- answers (tools/data/loot-rule-models.json, written from apps/web/lib/loot-rule-models.ts):
---   * every model either reads whole and a small roll ends in the order the model documents, or is
---     refused whole with the piece of the contract this client does not apply yet. Since issue #337 the
---     rare systems play too (SR+, karma, Suicide Kings, zero-sum, a summed score), each with the effects
---     its model documents;
+--   * every model reads whole and a small roll ends in the order the model documents: since issue #337
+--     the rare systems too (SR+, karma, Suicide Kings, zero-sum, a summed score), each with the effects
+--     its model documents, and since issue #336 the council, which votes. A rule that asks for a piece
+--     of the contract this client does not apply is still refused whole, with that piece for a reason;
 --   * the pieces behind them: who may ask (an account's least, a reserve, the night's limit, block or
 --     downgrade), the order (any account high or low, a ratio, a hard reserve) and what an award
 --     changes (a share of the balance, the price to enter, a counter emptied or charged);
@@ -66,7 +66,10 @@ function GetTime() return 100 end
 time, date = os.time, os.date
 function IsInGuild() return true end
 function GetGuildInfo() return "Guild", "Officer", 1 end
-function GetNumGuildMembers() return 0 end
+-- The guild roster, for a council's ranks: { { "Name-Realm", rankIndex }, ... }, set by the scene.
+local guild = {}
+function GetNumGuildMembers() return #guild end
+function GetGuildRosterInfo(i) return guild[i] and guild[i][1], "Rank", guild[i] and guild[i][2] end
 local inRaid, leader = true, true
 function IsInRaid() return inRaid end
 function IsInGroup() return true end
@@ -102,6 +105,8 @@ dofile(ADDON .. "/Modules/RaidTracker.lua")
 dofile(ADDON .. "/Modules/Points.lua")
 dofile(ADDON .. "/Modules/LootRule.lua")
 dofile(ADDON .. "/Modules/LootMaster.lua")
+dofile(ADDON .. "/Modules/LootCouncil.lua")
+dofile(ADDON .. "/Modules/LootTracker.lua")
 dofile(ADDON .. "/Libs/LibDeflate.lua")
 dofile(ADDON .. "/Modules/CompanionImport.lua")
 dofile(ADDON .. "/Modules/RaidPlan.lua")
@@ -223,12 +228,13 @@ local function plays(name)
   supported[#supported + 1] = name
   return roster
 end
-local function isRefused(name, piece)
-  local rule = fixtures.models[name] or fixtures.variants[name]
+-- `json`: a rule of the contract no model of the site emits, written here.
+local function isRefused(name, piece, json)
+  local rule = json and GuildOS.JsonDecode(json) or fixtures.models[name] or fixtures.variants[name]
   local ok, why = LR:Validate(rule)
   check(ok == false and why == "unsupported: " .. piece, name .. " is refused for " .. piece .. " (" .. tostring(why) .. ")")
   check(LR:Unsupported(why) == piece and LR:UnsupportedText(piece), name .. ": and the piece has words")
-  tonight(jsonOf(name))
+  tonight(json or jsonOf(name))
   check(LR:Night() == nil and LR:Active().model == "rolls" and GuildOS.db.lootNight == nil,
     name .. ": refused whole, the guild's rule stays in force")
   local state, _, missing = LR:NightStatus()
@@ -404,7 +410,37 @@ P:OnRaidEnd(session)
 check(P:Counter("srplus", K("Ana")) == 40 and P:Counter("srplus", K("Bo")) == 10 and P:Counter("srplus", K("Dee")) == 50,
   "srplus: a raid attended adds ten, never past the cap of fifty")
 
-isRefused("council", "council")
+-- council (issue #336): nobody rolls; the candidates are listed by the answer, the wishlist, fewer
+-- items received and attendance in steps of ten, the officers (ranks 0 and 1) vote, and two votes
+-- propose who the master looter confirms. tools/loot-council.lua has the vote in full.
+plays("council")
+check(LR:Council() and LR:Council().quorum == 2 and LR:Council().ranks[2] == 1 and LM.activeLoot == nil, "council: the rule names its council")
+guild = { { "Lead-Realm", 0 }, { "Ana-Realm", 1 }, { "Bo-Realm", 1 }, { "Cy-Realm", 4 }, { "Dee-Realm", 4 } }
+wishes = { { name = "Dee", order = 1 } }
+recv = { Cy = 1 }
+announce()
+check(LM.activeLoot.rule.time == 60 and sent[1]:find("MS=n", 1, true), "council: a minute to answer, and no button asks for a roll: " .. tostring(sent[1]))
+LM:TakeAnswer("Cy", "MS")
+LM:TakeAnswer("Dee", "MS")
+LM:TakeAnswer("Bo", "OS")
+quiet()
+check(order() == "Dee,Cy,Bo", "council: the candidates are in the rule's order: " .. order())
+local vote = LM.activeLoot.council
+check(vote and vote.open and all(said):find("3 candidates, the council votes (60s)", 1, true) and not all(said):find("[WINNER]", 1, true),
+  "council: the answers closed, a vote opens in place of a winner: " .. all(said))
+check(GuildOS.LootCouncil:TakeVote("Cy", 2) == false, "council: a raider of no council rank has no vote")
+GuildOS.LootCouncil:TakeVote("Lead", 2)
+check(vote.open and vote.proposed == nil, "council: one vote of two is no quorum yet")
+GuildOS.LootCouncil:TakeVote("Ana", 2)
+check(not vote.open and vote.proposed == "Cy", "council: two votes propose a candidate, here against the order")
+LM:AwardLoot("Cy")
+local why = GuildOS.db.lootHistory[1].why
+check(why.rule == "council" and why.decidedBy == "council" and why.candidates[1].name == "Cy" and why.votes.tally.Cy == 2
+  and #why.votes.cast == 2, "council: and the award's record says the council decided, with its votes")
+guild = {}
+
+-- A rule that asks for a piece this client does not apply is still refused whole, with the piece named.
+isRefused("upgrade", "upgrade", '{"v":1,"model":"custom","order":[{"k":"response"},{"k":"upgrade"},{"k":"roll"}]}')
 
 -- zerosum (issue #337): the answer, the points, the roll; a fixed price of ten, off spec for half, and
 -- what was paid goes back to whoever is in the raid in equal shares, the remainder dropped.
@@ -476,8 +512,8 @@ P:AddCounter("karma", K("Ana"), 57, "never")
 P:OnRaidEnd(session)
 check(P:Counter("karma", K("Ana")) == 100, "karma: five a raid attended, never past the cap of a hundred: " .. P:Counter("karma", K("Ana")))
 
-local modelsPlayed, modelsRefused = #supported, #refused
-check(modelsPlayed == 13 and modelsRefused == 1, string.format("thirteen models play and one waits: %d and %d", modelsPlayed, modelsRefused))
+local modelsPlayed, modelsRefused = #supported, #refused - 1   -- the refused one is no model of the site's
+check(modelsPlayed == 14 and modelsRefused == 0, string.format("all fourteen models play: %d and %d", modelsPlayed, modelsRefused))
 for _, name in ipairs(MODELS) do
   local found = false
   for _, n in ipairs(supported) do found = found or n == name end
@@ -645,7 +681,13 @@ no(rule({ accounts = { { key = "dkp", type = "balance", colour = "red" } } }), "
 no(rule({ accounts = { wait, wait } }), "accounts", "the same account twice")
 no(rule({ colour = "red" }), "unknown field", "a block it never heard of")
 no(rule({ decide = { by = "vote" } }), "decide", "a decider it does not know")
-no(rule({ decide = { by = "council" } }), "unsupported: council", "a council")
+reads(rule({ decide = { by = "council" } }), "a council (the guild's officers, with no member named)")
+reads(rule({ decide = { by = "auto", council = { ranks = { 0, 1 }, names = {}, anon = false, self = false, note = false, quorum = 2 } } }),
+  "a council's settings beside another decider, as the contract writes them")
+no(rule({ decide = { by = "council", council = { ranks = { 10 } } } }), "decide", "a rank no guild has")
+no(rule({ decide = { by = "council", council = { names = { "Ana Bo" } } } }), "decide", "a name that is two")
+no(rule({ decide = { by = "council", council = { quorum = 41 } } }), "decide", "a quorum past any raid")
+no(rule({ decide = { by = "council", council = { secret = true } } }), "decide", "a council field it never heard of")
 reads(rule({ decide = { by = "auto" } }), "the order decides")
 reads(rule({ decide = { by = "holder" } }), "whoever holds the item decides")
 reads(rule({ exceptions = { { on = { cat = "recipe" }, to = "bank" } } }), "an exception (tools/loot-exceptions.lua)")

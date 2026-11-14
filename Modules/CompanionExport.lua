@@ -60,6 +60,8 @@ local FMT = "GOSCOMP1"
 -- lootBook() below. Absent with every loot module off. 16 adds `officerRanks`, the guild's officer
 -- threshold as the officers set it ({ max, at }, issue #313, the site's #495): ranks 0..max are
 -- officers. Absent until somebody in the guild chose one, so the site keeps its default.
+-- Within 16, each loot entry may carry `why`, the record of how the item was awarded (issue #336, the
+-- site's #517; see lootWhy() below): one more absent field, which a reader from before never looks at.
 local PAYLOAD_VERSION = 16
 
 ----------------------------------------------------------------------
@@ -769,6 +771,72 @@ local function lootBook()
     return any and book or nil
 end
 
+-- The record of why an item was awarded (issue #336, the site's #517), as it goes up: `why` on a loot
+-- entry. Written field by field from what the history keeps, so nothing but the shape below ever
+-- leaves, whatever a saved file holds:
+--   { v, rule, ruleAt, decidedBy, exception?, candidates = [ { name, answer, roll, bid, values? } ],
+--     votes? = { anon, quorum, cast? = [ { by, for } ], tally? = { [name] = n } } }
+-- An empty map is left out (this encoder writes an empty table as a list).
+local WHY_MAX = 200             -- loot entries of one upload that carry a record
+local WHY_CANDIDATES = 10
+local WHY_VOTES = 40
+local WHY_TEXT = 64             -- bytes of a name or a key in it
+
+local function whyText(v)
+    return tostring(v or ""):sub(1, WHY_TEXT)
+end
+
+local function whyNumber(v)
+    local n = GuildOS.Finite(v)
+    return n or 0
+end
+
+local function lootWhy(why)
+    if type(why) ~= "table" then return nil end
+    local out = {
+        v = whyNumber(why.v), rule = whyText(why.rule), ruleAt = math.floor(whyNumber(why.ruleAt)),
+        decidedBy = whyText(why.decidedBy), candidates = {},
+    }
+    if type(why.exception) == "string" and why.exception ~= "" then out.exception = whyText(why.exception) end
+    for _, c in ipairs(type(why.candidates) == "table" and why.candidates or {}) do
+        if type(c) == "table" and #out.candidates < WHY_CANDIDATES then
+            local cand = { name = whyText(c.name), answer = whyText(c.answer), roll = whyNumber(c.roll), bid = whyNumber(c.bid) }
+            local values
+            for k, v in pairs(type(c.values) == "table" and c.values or {}) do
+                if type(k) == "string" and GuildOS.Finite(v) then
+                    values = values or {}
+                    values[whyText(k)] = whyNumber(v)
+                end
+            end
+            cand.values = values
+            out.candidates[#out.candidates + 1] = cand
+        end
+    end
+    local votes = why.votes
+    if type(votes) == "table" then
+        local v = { anon = votes.anon == true, quorum = math.floor(whyNumber(votes.quorum)) }
+        if not v.anon then
+            v.cast = {}
+            for _, vote in ipairs(type(votes.cast) == "table" and votes.cast or {}) do
+                if type(vote) == "table" and #v.cast < WHY_VOTES then
+                    v.cast[#v.cast + 1] = { by = whyText(vote.by), ["for"] = whyText(vote["for"]) }
+                end
+            end
+        end
+        local tally
+        for name, n in pairs(type(votes.tally) == "table" and votes.tally or {}) do
+            if type(name) == "string" and GuildOS.Finite(n) then
+                tally = tally or {}
+                tally[whyText(name)] = math.floor(whyNumber(n))
+            end
+        end
+        v.tally = tally
+        out.votes = v
+    end
+    return out
+end
+Companion.LootWhy = lootWhy
+
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
     if not guildName then return nil, "not in a guild" end
@@ -791,13 +859,22 @@ function Companion:BuildPayload()
         end
     end
 
-    local loot = {}
+    local loot, whys = {}, 0
     if GuildOS.LootTracker then
         for _, e in ipairs(GuildOS.LootTracker:GetHistory(500) or {}) do
             -- The history stores an item link, not an id; the site wants the id
             -- so it can build its own tooltip link.
             local itemId = tonumber(e.itemId or (e.itemLink and e.itemLink:match("item:(%d+)"))) or 0
+            -- Why it was awarded (issue #336, the site's #517): additive, absent on an entry that has
+            -- none, and on every entry past the newest that may carry it. A record that cannot be
+            -- written costs only itself.
+            local why
+            if e.why ~= nil and whys < WHY_MAX then
+                why = optional("loot.why", lootWhy, e.why)
+                if why then whys = whys + 1 end
+            end
             loot[#loot + 1] = {
+                why = why,
                 playerKey = e.playerKey or "",
                 player = e.player or "",
                 itemId = itemId,

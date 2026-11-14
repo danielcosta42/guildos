@@ -189,7 +189,7 @@ no(base({ { on = { cat = "recipe" }, to = "bank", set = { order = { { k = "roll"
 no(base({ { on = { cat = "recipe" }, set = {} } }), "blocks, and none of them")
 no(base({ { on = { cat = "recipe" }, set = { time = 10 } } }), "a block an exception cannot swap")
 no(base({ { on = { cat = "recipe" }, set = { order = { { k = "parse" } } } } }), "an order it cannot read", "unknown criterion")
-no(base({ { on = { cat = "recipe" }, set = { decide = { by = "council" } } } }), "a council inside an exception", "unsupported: council")
+no(base({ { on = { cat = "recipe" }, set = { decide = { by = "council", council = { quorum = 0 } } } } }), "a council of no quorum inside an exception", "decide")
 no(base({ { on = { cat = "recipe" }, set = { effects = { { k = "add", acct = "plus1", value = 1 } } } } }), "an effect on an account the rule does not keep")
 no(base({ { on = { items = {} }, to = "bank" } }), "an empty list of items")
 no(base({ { on = { items = { 0 } }, to = "bank" } }), "an item id that is none")

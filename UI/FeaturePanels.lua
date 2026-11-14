@@ -2178,6 +2178,72 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)
         yOff = yOff + 28
     end
 
+    -- Who decides (issue #336): the order alone, the master looter, or a council that votes among the
+    -- candidates when the answers close. The council is by guild rank and by name; where there is no
+    -- master looter (retail) there is no vote to offer.
+    local decideBy = rule.decide and rule.decide.by or "auto"
+    local deciders = { { k = "auto", n = L["The order"] }, { k = "ml", n = L["The master looter"] } }
+    if GuildOS.LootCouncil then deciders[#deciders + 1] = { k = "council", n = L["A council's vote"] } end
+    local decideLbl = UI:CreateText(content, L["Who decides:"], 11, C.white.r, C.white.g, C.white.b)
+    decideLbl:SetPoint("TOPLEFT", 16, -yOff)
+    choices(220, deciders, decideBy, function(k) changed(LR:SetDecide(k, coreName)) end)
+    yOff = yOff + 28
+    local council = GuildOS.LootCouncil and LR:Council(rule)
+    if council then
+        local councilDesc = UI:CreateText(content, L["Council: when the answers close, its members with GuildOS see the candidates in the rule's order and vote. The master looter confirms who the council proposes."], 9, C.silver.r, C.silver.g, C.silver.b)
+        councilDesc:SetPoint("TOPLEFT", 28, -yOff)
+        councilDesc:SetWidth(content:GetWidth() - 40)
+        councilDesc:SetJustifyH("LEFT")
+        yOff = yOff + 30
+        -- Who votes: a button a guild rank, lit when the rank is on the council.
+        local ranksLbl = UI:CreateText(content, L["Ranks that vote:"], 11, C.white.r, C.white.g, C.white.b)
+        ranksLbl:SetPoint("TOPLEFT", 16, -yOff)
+        local onCouncil = GuildOS.LootCouncil:Ranks(council)
+        local rx = 220
+        local numRanks = GuildControlGetNumRanks and GuildControlGetNumRanks() or 0
+        for ri = 1, math.min(10, numRanks) do
+            local rankName = GuildControlGetRankName and GuildControlGetRankName(ri) or ""
+            if rankName ~= "" then
+                local rankIndex = ri - 1
+                local rb = UI:CreateButton(content, rankName, 90, 22)
+                if rx > 220 and rx + rb:GetWidth() > content:GetWidth() - 20 then
+                    rx = 220
+                    yOff = yOff + 26
+                end
+                rb:SetPoint("TOPLEFT", rx, -yOff + 2)
+                if onCouncil[rankIndex] then
+                    rb:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+                    rb.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                end
+                rb:SetScript("OnClick", function() changed(LR:SetCouncilField("rank", rankIndex, coreName)) end)
+                rx = rx + rb:GetWidth() + 4
+            end
+        end
+        yOff = yOff + 28
+        local namesLbl = UI:CreateText(content, L["Members by name:"], 11, C.white.r, C.white.g, C.white.b)
+        namesLbl:SetPoint("TOPLEFT", 16, -yOff)
+        local namesBox = ruleBox(300, false, 240, 220, table.concat(council.names or {}, ", "))
+        UI:AttachSaveButton(namesBox, function(box) changed(LR:SetCouncilField("names", box:GetText(), coreName)) end)
+        yOff = yOff + 28
+        local YES_NO = { { k = true, n = L["Yes"] }, { k = false, n = L["No"] } }
+        local function flag(label, field)
+            local lbl = UI:CreateText(content, label, 11, C.white.r, C.white.g, C.white.b)
+            lbl:SetPoint("TOPLEFT", 16, -yOff)
+            choices(300, YES_NO, council[field] == true, function(k) changed(LR:SetCouncilField(field, k, coreName)) end)
+            yOff = yOff + 28
+        end
+        flag(L["Hide who voted for whom:"], "anon")
+        flag(L["A candidate votes on their own item:"], "self")
+        flag(L["Every answer needs a note:"], "note")
+        local quorumLbl = UI:CreateText(content, L["Votes that close the vote:"], 11, C.white.r, C.white.g, C.white.b)
+        quorumLbl:SetPoint("TOPLEFT", 16, -yOff)
+        local quorumBox = ruleBox(60, true, 2, 220, council.quorum and tostring(council.quorum) or "")
+        UI:AttachSaveButton(quorumBox, function(box) changed(LR:SetCouncilField("quorum", box:GetText(), coreName)) end)
+        local quorumHint = UI:CreateText(content, L["Empty: the vote runs until the master looter ends it or the time is up"], 9, C.silver.r, C.silver.g, C.silver.b)
+        quorumHint:SetPoint("TOPLEFT", 360, -yOff)
+        yOff = yOff + 28
+    end
+
     -- The queues the rule keeps (Suicide Kings, issue #337): who moves up when the winner drops, and
     -- where somebody the list never saw joins it.
     for _, q in ipairs(LR:Queues(rule)) do

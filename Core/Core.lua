@@ -1194,7 +1194,8 @@ end
 -- (LootRule:FromLegacy), which retail does not have: the +1 counter, and DKP won by an open bid or by
 -- a sealed one that pays the second price. "sk" and "karma" (issue #337) are two more: Suicide Kings,
 -- a list whose winner drops to the end, and karma, a bonus added to the roll of which the winner
--- loses half.
+-- loses half. "council" (issue #336): the guild's officers vote among whoever asked, and the master
+-- looter confirms.
 GuildOS.LOOT_SYSTEMS = {
     { key = "rolls",    label = "/roll (MS/OS)" },
     { key = "plus1",    label = "MS > OS +1", retail = false },
@@ -1206,6 +1207,7 @@ GuildOS.LOOT_SYSTEMS = {
     { key = "epgp",     label = "EPGP" },
     { key = "sk",       label = "Suicide Kings", retail = false },
     { key = "karma",    label = "Karma", retail = false },
+    { key = "council",  label = "Loot council", retail = false },
     { key = "external", label = "External / Off" },
 }
 
@@ -1258,6 +1260,7 @@ function GuildOS:LootSystemLabel(sys)
     if sys.key == "dkpsealed" then return L["DKP sealed second-price"] end
     if sys.key == "sk" then return L["Suicide Kings"] end
     if sys.key == "karma" then return L["Karma"] end
+    if sys.key == "council" then return L["Loot council"] end
     return sys.label
 end
 
@@ -1351,7 +1354,8 @@ end
 function GuildOS:LootSystemShowsWishlist()
     if not self.Wishlist then return false end
     local s = self:GetLootSystem()
-    return s == "wishlist" or s == "tmb"
+    -- A loot council (issue #336) lists its candidates by the wishlist too.
+    return s == "wishlist" or s == "tmb" or s == "council"
 end
 
 -- Whether the loot system in force (or `sys`, the one an item was announced under) runs on the points
