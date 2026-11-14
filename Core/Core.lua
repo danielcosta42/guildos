@@ -1195,6 +1195,7 @@ GuildOS.LOOT_SYSTEMS = {
     { key = "tmb",      label = "TMB", retail = false },
     { key = "wishlist", label = "Wishlist" },
     { key = "dkp",      label = "DKP / Points" },
+    { key = "epgp",     label = "EPGP" },
     { key = "external", label = "External / Off" },
 }
 
@@ -1234,6 +1235,13 @@ end
 
 function GuildOS:SetLootSystem(sys)
     self:SetSetting("lootSystem", sys)
+    -- EPGP is its own system (issue #319): choosing it puts the points in EPGP, and going back to DKP
+    -- takes them out of it. The standings are the same rows either way: nothing is lost.
+    if self.Points and self.Points.GetMode and self.db and self.db.points and self:IsOfficer() then
+        local mode = self.Points:GetMode()
+        if sys == "epgp" and mode ~= "epgp" then self.Points:SetMode("epgp")
+        elseif sys == "dkp" and mode == "epgp" then self.Points:SetMode("dkp") end
+    end
     -- On retail the system decides who may award an offered item, on every member's client: an
     -- officer's choice is stamped and published, as the officer threshold is (issue #185).
     if self.Client.isRetail and self:IsOfficer() then
@@ -1287,9 +1295,15 @@ function GuildOS:LootSystemShowsWishlist()
     return s == "wishlist" or s == "tmb"
 end
 
+-- Whether the guild's loot system runs on the points economy: DKP, or EPGP (issue #319).
+function GuildOS:LootSystemUsesPoints()
+    local s = self:GetLootSystem()
+    return s == "dkp" or s == "epgp"
+end
+
 function GuildOS:LootSystemShowsDKP()
     if not self.Points then return false end
-    return self:GetLootSystem() == "dkp"
+    return self:LootSystemUsesPoints()
 end
 
 ----------------------------------------------------------------------

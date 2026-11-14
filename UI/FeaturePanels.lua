@@ -2538,8 +2538,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
 
     -- DKP/Points configuration appears when the DKP system is selected
-    if curSys == "dkp" and GuildOS.Points then
+    if (curSys == "dkp" or curSys == "epgp") and GuildOS.Points then
         local pcfg = GuildOS.Points:GetDB().config
+        local isEPGP = curSys == "epgp"
         local function numRow(labelText, key, hint)
             local lbl = UI:CreateText(content, labelText, 11, C.white.r, C.white.g, C.white.b)
             lbl:SetPoint("TOPLEFT", 16, -yOff)
@@ -2568,10 +2569,17 @@ function GuildOS:RefreshSettingsPanel(content, category)
             yOff = yOff + 28
         end
 
-        -- Mode: DKP / EPGP / Loot Council
+        -- Mode: DKP / Loot Council. EPGP is a loot system of its own (issue #319), picked above; a
+        -- guild still on the EPGP mode of before keeps its button until it moves.
         local modeLbl = UI:CreateText(content, L["Mode:"], 11, C.white.r, C.white.g, C.white.b)
         modeLbl:SetPoint("TOPLEFT", 16, -yOff)
-        local MODES = { { k = "dkp", n = "DKP" }, { k = "epgp", n = "EPGP" }, { k = "council", n = L["Loot Council"] } }
+        local MODES = { { k = "dkp", n = "DKP" }, { k = "council", n = L["Loot Council"] } }
+        if GuildOS.Points:GetMode() == "epgp" then table.insert(MODES, 2, { k = "epgp", n = "EPGP" }) end
+        if isEPGP then
+            MODES = {}
+            modeLbl:Hide()
+            yOff = yOff - 30
+        end
         local mx = 90
         for _, m in ipairs(MODES) do
             local mb = UI:CreateButton(content, m.n, 90, 22)
@@ -2589,11 +2597,103 @@ function GuildOS:RefreshSettingsPanel(content, category)
         yOff = yOff + 30
 
         numRow(L["Points per boss:"], "bossAward", L["Awarded to raiders on each boss kill"])
+        -- What a raid night gives beyond its bosses (issue #309). Given when the raid ends, with the
+        -- auto-award below on.
+        numRow(L["Points per raid:"], "raidAward", L["Given to everyone in the raid when it ends"])
+        numRow(L["On time:"], "onTimeAward", L["In the raid when it started"])
+        numRow(L["Late:"], "lateAward", L["Arrived after the raid started"])
+        numRow(L["Stayed until the end:"], "stayedAward")
+        numRow(L["Left early:"], "leftEarlyAward")
         numRow(L["Weekly decay (%):"], "decayPct", L["Use the DKP window's Decay button to apply"])
-        numRow(L["Starting points:"], "startingPoints", L["Default for a player's first entry"])
-        numRow(L["Cost per item:"], "itemCost", GuildOS.Client.isRetail
-            and L["Charged to the winner when the trade of an award is recorded (0 = off)"]
-            or L["Charged to the winner when the ML awards (0 = off)"])
+
+        -- Decay rounding: nearest (as always), up or down.
+        local roundLbl = UI:CreateText(content, L["Decay rounding:"], 11, C.white.r, C.white.g, C.white.b)
+        roundLbl:SetPoint("TOPLEFT", 16, -yOff)
+        local ROUNDS = { { k = "near", n = L["Nearest"] }, { k = "up", n = L["Up"] }, { k = "down", n = L["Down"] } }
+        local rx = 220
+        for _, r in ipairs(ROUNDS) do
+            local rb = UI:CreateButton(content, r.n, 80, 22)
+            rb:SetPoint("TOPLEFT", rx, -yOff + 2)
+            if (pcfg.decayRound or "near") == r.k then
+                rb:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+                rb.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            end
+            rb:SetScript("OnClick", function()
+                pcfg.decayRound = r.k
+                GuildOS.Points:BroadcastSnapshot()
+                GuildOS:RefreshSettingsPanel(content)
+            end)
+            rx = rx + rb:GetWidth() + 4
+        end
+        yOff = yOff + 28
+
+        if isEPGP then
+            -- EPGP (issue #319): priority is EP / (GP + base GP); an item's GP comes from its slot and
+            -- item level against a chest piece's.
+            numRow(L["GP of a chest piece:"], "itemCost", L["Other slots cost a share of it; 0 = items cost nothing"])
+            numRow(L["Reference item level:"], "gpRefIlvl", L["GP doubles every 26 item levels above it; 0 = ignore item level"])
+            numRow(L["Base GP:"], "baseGP", L["Added to everyone's GP, so a first item does not end all priority"])
+            numRow(L["Minimum EP:"], "minEP", L["Below it, after everyone who has it"])
+        else
+            numRow(L["Starting points:"], "startingPoints", L["Default for a player's first entry"])
+            numRow(L["Points cap:"], "cap", L["Earnings above it do not add (0 = no cap)"])
+            numRow(L["Cost per item:"], "itemCost", GuildOS.Client.isRetail
+                and L["Charged to the winner when the trade of an award is recorded (0 = off)"]
+                or L["Charged to the winner when the ML awards (0 = off)"])
+        end
+        numRow(L["Cost to enter a roll:"], "entryCost", L["Paid by everyone who rolls for the item (0 = off)"])
+        numRow(L["Back to whoever loses (%):"], "refundPct", L["Share of the entry cost given back"])
+
+        -- The guild's own reasons to earn (issue #309): a donation, consumables handed in, a guild
+        -- dungeon run. Each with what it gives and how much of it a week.
+        local rsTitle = UI:CreateText(content, L["Other reasons to earn points:"], 11, C.white.r, C.white.g, C.white.b)
+        rsTitle:SetPoint("TOPLEFT", 16, -yOff)
+        yOff = yOff + 20
+        for _, r in ipairs(GuildOS.Points:GetReasons()) do
+            local line = UI:CreateText(content, string.format(
+                (r.weekly or 0) > 0 and L["%s: %d points, up to %d a week"] or L["%s: %d points"],
+                r.name, r.value, r.weekly), 10, C.silver.r, C.silver.g, C.silver.b)
+            line:SetPoint("TOPLEFT", 28, -yOff)
+            local del = UI:CreateButton(content, L["Remove"], 70, 18)
+            del:SetPoint("TOPLEFT", 420, -yOff + 2)
+            local rk = r.key
+            del:SetScript("OnClick", function()
+                GuildOS.Points:SetReason(rk)
+                GuildOS:RefreshSettingsPanel(content)
+            end)
+            yOff = yOff + 22
+        end
+        local function reasonBox(width, numeric, x, tip)
+            local box = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+            box:SetSize(width, 22)
+            box:SetPoint("TOPLEFT", x, -yOff + 2)
+            box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            box:SetBackdropColor(0.05, 0.05, 0.066, 1)
+            box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+            GuildOS:ApplyFont(box, 11)
+            box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            box:SetAutoFocus(false)
+            box:SetNumeric(numeric)
+            box:SetMaxLetters(numeric and 4 or 40)
+            box:SetTextInsets(4, 4, 0, 0)
+            box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            local hintFS = UI:CreateText(content, tip, 9, C.silver.r, C.silver.g, C.silver.b)
+            hintFS:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 1)
+            return box
+        end
+        yOff = yOff + 14
+        local rsName = reasonBox(180, false, 28, L["Reason"])
+        local rsValue = reasonBox(50, true, 214, L["Points"])
+        local rsWeekly = reasonBox(50, true, 270, L["Per week"])
+        local rsAdd = UI:CreateButton(content, L["Add reason"], 100, 22)
+        rsAdd:SetPoint("TOPLEFT", 330, -yOff + 2)
+        rsAdd:SetScript("OnClick", function()
+            local name = strtrim(rsName:GetText() or "")
+            if name == "" or not tonumber(rsValue:GetText()) then return end
+            GuildOS.Points:SetReason(name, name, rsValue:GetText(), rsWeekly:GetText())
+            GuildOS:RefreshSettingsPanel(content)
+        end)
+        yOff = yOff + 30
 
         local autoCb = UI:CreateCheckbox(content, L["Auto-award on boss kill (raid leader only)"], 18)
         autoCb:SetPoint("TOPLEFT", 12, -yOff)

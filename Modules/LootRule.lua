@@ -12,7 +12,7 @@
 -- updates chooses nothing and sees no change. A custom rule, once an officer saves one, replaces it.
 --
 -- A candidate is the row LootMaster keeps per roller: { name, rollType, roll, prioOrder, softRes,
--- wishlist, recvCount, att25, dkp }. TradeCouncil's rows are mapped onto the same fields (`FromAnswer`).
+-- wishlist, recvCount, att25, dkp, pr }. TradeCouncil's rows are mapped onto the same fields (`FromAnswer`).
 -- Pure: no UI, no chat, no events.
 ----------------------------------------------------------------------
 
@@ -53,12 +53,13 @@ LootRule.CRITERIA = {
     received   = { raw = function(c) return c.recvCount or 0 end },
     attendance = { raw = function(c) return c.att25 or 0 end, high = true },
     points     = { raw = function(c) return c.dkp or 0 end, high = true },
+    pr         = { raw = function(c) return c.pr or 0 end, high = true },
     roll       = { raw = function(c) return c.roll or -1 end, high = true },
 }
 
 -- The order criteria are offered in, and their names. Names are looked up when shown, never at load.
 LootRule.CRITERIA_ORDER = {
-    "response", "hardres", "softres", "prio", "wishlist", "received", "attendance", "points", "roll",
+    "response", "hardres", "softres", "prio", "wishlist", "received", "attendance", "points", "pr", "roll",
 }
 local LABELS = {
     response   = "the answer",
@@ -69,6 +70,7 @@ local LABELS = {
     received   = "fewer items received",
     attendance = "attendance",
     points     = "points",
+    pr         = "EP/GP priority",
     roll       = "the roll",
 }
 function LootRule:Label(key)
@@ -108,10 +110,10 @@ function LootRule:Validate(rule)
     if filters ~= nil then
         if type(filters) ~= "table" or #filters > self.MAX_FILTERS then return false, "filters" end
         for _, f in ipairs(filters) do
-            if type(f) ~= "table" or f.k ~= "attendance" or type(f.min) ~= "number"
-                or f.act ~= "downgrade" or type(f.from) ~= "string" or type(f.to) ~= "string" then
-                return false, "unknown filter"
-            end
+            local known = type(f) == "table" and type(f.min) == "number" and (
+                (f.k == "attendance" and f.act == "downgrade" and type(f.from) == "string" and type(f.to) == "string")
+                or (f.k == "points" and f.act == "block"))
+            if not known then return false, "unknown filter" end
         end
     end
     if rule.responses ~= nil then
@@ -135,8 +137,14 @@ function LootRule:FromLegacy(system, cfg)
     if minAtt > 0 then
         rule.filters[1] = { k = "attendance", min = minAtt, act = "downgrade", from = "MS", to = "OS" }
     end
-    if system == "dkp" then
-        rule.order = { { k = "response" }, { k = "points" }, { k = "roll" } }
+    -- The points economy: a roll that costs something to enter (issue #309) is closed to whoever
+    -- cannot pay it.
+    if system == "dkp" or system == "epgp" then
+        local entry = tonumber(cfg.entryCost) or 0
+        if entry > 0 and system == "dkp" then
+            rule.filters[#rule.filters + 1] = { k = "points", min = entry, act = "block" }
+        end
+        rule.order = { { k = "response" }, { k = system == "epgp" and "pr" or "points" }, { k = "roll" } }
         return rule
     end
     -- Retail has no Master Loot (TradeCouncil): the free roll reads the answer and the roll, and only
@@ -162,13 +170,19 @@ function LootRule:Active()
     if cfg.rule and self:Validate(cfg.rule) then return cfg.rule end
     local s = GuildOS.db and GuildOS.db.settings
     if s and s.lootRule and self:Validate(s.lootRule) then return s.lootRule end
-    return self:FromLegacy(GuildOS.GetLootSystem and GuildOS:GetLootSystem() or "rolls", cfg)
+    -- The loot settings, and beside them what the points ask to enter a roll.
+    local pool = GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
+    local legacy = {}
+    for k, v in pairs(cfg) do legacy[k] = v end
+    legacy.entryCost = pool and pool.config and pool.config.entryCost
+    return self:FromLegacy(GuildOS.GetLootSystem and GuildOS:GetLootSystem() or "rolls", legacy)
 end
 
 ----------------------------------------------------------------------
 -- Who may ask: the answer a candidate's is read as. A filter that downgrades turns one answer into
 -- another (main spec into off spec below the attendance the guild asks for). Returns the answer and,
--- when it changed, the filter that changed it.
+-- when it changed, the filter that changed it; no answer at all (nil) when a filter keeps the candidate
+-- out, as a roll that costs more points to enter than they hold.
 ----------------------------------------------------------------------
 function LootRule:AnswerFor(c, response, rule)
     rule = rule or self:Active()
@@ -176,6 +190,10 @@ function LootRule:AnswerFor(c, response, rule)
         if f.k == "attendance" and f.act == "downgrade" and response == f.from
             and (c.att25 or 0) < f.min then
             return f.to, f
+        end
+        -- Out of the roll: nil for an answer.
+        if f.k == "points" and f.act == "block" and response ~= "PASS" and (c.dkp or 0) < f.min then
+            return nil, f
         end
     end
     return response
@@ -218,7 +236,7 @@ local CHOICE_AS = { N = "MS", G = "OS", P = "PASS" }
 function LootRule:FromAnswer(row)
     return {
         key = row.key, name = row.key, rollType = CHOICE_AS[row.choice] or row.choice, roll = row.roll,
-        wishlist = row.wish and { order = row.wish } or nil, dkp = row.points, row = row,
+        wishlist = row.wish and { order = row.wish } or nil, dkp = row.points, pr = row.pr, row = row,
     }
 end
 

@@ -250,6 +250,9 @@ GuildOS.Points = {
   GetDB = function() return { config = { itemCost = 5 } } end,
   Charge = function(_, key) charged[#charged + 1] = key end,
   Get = function() return 0 end,
+  PR = function() return 0 end,
+  PriceOf = function() return 5 end,
+  ChargeEntry = function() return {} end,
 }
 LM.QueueForTrade = function() end
 LM.testMode = true

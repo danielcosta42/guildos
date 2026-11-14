@@ -141,7 +141,35 @@ function GuildOS:ShowPointsFrame()
             GuildOS:Print(L["Points snapshot sent to guild."])
         end)
 
-        listTop = -106
+        -- Third row: one of the guild's named reasons to earn (issue #309), for the player typed
+        -- above, as many times as the amount says (a stack donated, a dungeon run), up to its weekly cap.
+        local reasonBtn = UI:CreateButton(f, "", 220, 20)
+        reasonBtn:SetPoint("TOPLEFT", 16, -104)
+        local giveBtn = UI:CreateButton(f, L["Award reason"], 120, 20)
+        giveBtn:SetPoint("LEFT", reasonBtn, "RIGHT", 6, 0)
+        local picked = 1
+        local function showReason()
+            local list = GuildOS.Points:GetReasons()
+            if picked > #list then picked = 1 end
+            local r = list[picked]
+            reasonBtn.label:SetText(r and string.format(L["%s: %d points"], r.name, r.value) or L["No reasons set (Settings)"])
+            return r
+        end
+        f.showReason = showReason
+        reasonBtn:SetScript("OnClick", function()
+            picked = picked + 1
+            showReason()
+        end)
+        giveBtn:SetScript("OnClick", function()
+            local r = showReason()
+            local nm = strtrim(nameInput:GetText() or "")
+            if not r or nm == "" then return end
+            local e = GuildOS.Points:AwardReason(GuildOS.Points:KeyOf(nm), r.key, tonumber(amtInput:GetText()) or 1)
+            if e then GuildOS:Print(string.format(L["%s: %+d points (%s)"], nm, e.delta, e.reason)) end
+            amtInput:SetText("")
+        end)
+
+        listTop = -132
     end
 
     -- Column headers
@@ -155,9 +183,8 @@ function GuildOS:ShowPointsFrame()
         return fs
     end
     hcol(L["MEMBER"], 4)
-    hcol(L["CURRENT"], 250)
-    hcol(L["EARNED"], 330)
-    hcol(L["SPENT"], 410)
+    -- In EPGP the three columns read priority, EP and GP (issue #319).
+    local hCur, hEarn, hSpent = hcol(L["CURRENT"], 250), hcol(L["EARNED"], 330), hcol(L["SPENT"], 410)
     local logHdr = UI:CreateHeaderText(f, L["HISTORY"], 9)
     logHdr:SetPoint("TOPLEFT", 500, listTop)
 
@@ -187,6 +214,11 @@ function GuildOS:ShowPointsFrame()
         local cfg = GuildOS.Points:GetDB().config
         summary:SetText(string.format(L["Boss award: %d  |  Decay: %d%%  |  Auto-award: %s"],
             cfg.bossAward or 0, cfg.decayPct or 0, cfg.autoAward and L["on"] or L["off"]))
+        local epgp = mode == "epgp"
+        hCur:SetText(epgp and "PR" or L["CURRENT"])
+        hEarn:SetText(epgp and "EP" or L["EARNED"])
+        hSpent:SetText(epgp and "GP" or L["SPENT"])
+        if f.showReason then f.showReason() end
 
         -- Standings
         standChild:SetWidth(standHolder:GetWidth() - 12)
@@ -200,11 +232,13 @@ function GuildOS:ShowPointsFrame()
             local cr, cg, cb = GuildOS:GetClassColor(s.class)
             local nameFS = UI:CreateText(row, idx .. ". " .. s.name, 11, cr, cg, cb)
             nameFS:SetPoint("LEFT", 4, 0)
-            local curFS = UI:CreateText(row, tostring(s.current), 11, C.gold.r, C.gold.g, C.gold.b)
+            local curFS = UI:CreateText(row, epgp and string.format("%.2f", math.max(0, s.pr or 0))
+                or tostring(s.current), 11, C.gold.r, C.gold.g, C.gold.b)
             curFS:SetPoint("LEFT", 250, 0)
             local earnFS = UI:CreateText(row, tostring(s.earned), 10, C.green.r, C.green.g, C.green.b)
             earnFS:SetPoint("LEFT", 330, 0)
-            local spentFS = UI:CreateText(row, tostring(s.spent), 10, C.silver.r, C.silver.g, C.silver.b)
+            local spentFS = UI:CreateText(row, tostring(epgp and GuildOS.Points:GP(s.key) or s.spent), 10,
+                C.silver.r, C.silver.g, C.silver.b)
             spentFS:SetPoint("LEFT", 410, 0)
             y = y + 23
         end

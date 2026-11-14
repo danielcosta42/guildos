@@ -560,6 +560,8 @@ function RaidTracker:EndSession(away, at)
         self.currentRaid.isGuildRaid = true
         -- Rebuild from scratch so lockout-dedup logic always applies
         self:RebuildAttendanceFromSessions()
+        -- The points a raid night gives beyond its bosses: on time, to the end, the raid (issue #309).
+        if GuildOS.Points and GuildOS.Points.OnRaidEnd then GuildOS.Points:OnRaidEnd(self.currentRaid) end
     else
         self.currentRaid.isGuildRaid = false
         GuildOS:Print(L["|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r"])

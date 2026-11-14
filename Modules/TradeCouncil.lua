@@ -234,6 +234,7 @@ function TradeCouncil:Ranked(o)
         rows[#rows + 1] = {
             key = key, choice = a.choice, equipped = a.equipped, roll = a.roll,
             wish = self:WishOrder(o.itemId, key), points = P and P.GetDB and P:GetDB() and P:Get(key) or nil,
+            pr = P and P.GetDB and P:GetDB() and P:GetMode() == "epgp" and P:PR(key) or nil,
         }
     end
     -- The guild's loot rule (issue #333), which on retail reads the answer, the points or the wishlist
@@ -557,9 +558,9 @@ end
 -- Charge the winner the guild's cost per item (DKP only; an officer's client, once).
 function TradeCouncil:Charge(o)
     local P = GuildOS.Points
-    if not (P and GuildOS:GetLootSystem() == "dkp" and GuildOS:IsOfficer()) then return end
-    local pool = P:GetDB()
-    local cost = (pool and pool.config and pool.config.itemCost) or 0
+    if not (P and GuildOS:LootSystemUsesPoints() and GuildOS:IsOfficer()) then return end
+    -- The item's price: the guild's own for it, its GP in EPGP, else the one cost per item (#319).
+    local cost = P:GetDB() and P:PriceOf(o.link) or 0
     if cost <= 0 then return end
     P:Charge(o.award.winner, cost, Compat.GetItemInfo(o.link) or o.link)
     GuildOS:Print(string.format(L["[DKP] %s charged %d points for %s"], o.award.winner, cost, o.link))

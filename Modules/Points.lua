@@ -13,6 +13,15 @@
 --   epgp     - effort/gear (earned vs spent shown as a ratio)
 --   council  - points are informational only (no enforced spend)
 --
+-- The accounts of the loot rule (issues #309, #319), every one off until the guild sets it:
+--   * a cap (earnings above it do not add, and the history says so);
+--   * reasons to earn beyond the boss: on time or late, stayed or left early, the whole raid, and the
+--     guild's own named reasons (a donation, consumables handed in), each with its weekly cap;
+--   * decay rounded up, down or to the nearest;
+--   * a price to enter a roll, part of it given back to whoever loses;
+--   * EPGP: EP is what was earned, GP what was spent, priority is EP / (GP + base GP), an item's GP
+--     comes from its slot and item level or from the guild's own table, and decay takes both.
+--
 -- On retail too since issue #185: boss-kill EP, awards, decay and standings as anywhere else. With no
 -- Master Loot there, an item is charged when an award by trade is recorded (TradeCouncil).
 ----------------------------------------------------------------------
@@ -23,6 +32,21 @@ local L = GuildOS.L
 
 local LOG_MAX = 500
 local OPS_MAX = 2000
+local WEEK = 604800               -- seconds: a reason's weekly cap counts within one of these
+local MAX_REASONS = 12            -- named reasons a pool keeps
+local EARN_KINDS = { award = true, raid = true, reason = true }   -- what the caps hold back
+
+-- An item's GP by where it is worn, against the price of a chest piece (the EPGP addons' own table).
+local SLOT_GP = {
+    INVTYPE_HEAD = 1, INVTYPE_CHEST = 1, INVTYPE_ROBE = 1, INVTYPE_LEGS = 1, INVTYPE_2HWEAPON = 2,
+    INVTYPE_SHOULDER = 0.75, INVTYPE_HAND = 0.75, INVTYPE_WAIST = 0.75, INVTYPE_FEET = 0.75,
+    INVTYPE_TRINKET = 0.75,
+    INVTYPE_WRIST = 0.5, INVTYPE_NECK = 0.5, INVTYPE_CLOAK = 0.5, INVTYPE_FINGER = 0.5,
+    INVTYPE_HOLDABLE = 0.5, INVTYPE_SHIELD = 0.5, INVTYPE_RANGED = 0.5, INVTYPE_RANGEDRIGHT = 0.5,
+    INVTYPE_THROWN = 0.5, INVTYPE_RELIC = 0.5,
+    INVTYPE_WEAPON = 1.5, INVTYPE_WEAPONMAINHAND = 1.5, INVTYPE_WEAPONOFFHAND = 0.5,
+}
+local GP_ILVL_STEP = 26           -- item levels in which an item's GP doubles
 
 ----------------------------------------------------------------------
 -- Active pool resolver
@@ -114,7 +138,13 @@ function Points:GetStandings()
             earned = s.earned or 0, spent = s.spent or 0,
         }
     end
+    -- EPGP reads the list by priority (issue #319).
+    local epgp = self:GetMode() == "epgp"
+    if epgp then
+        for _, row in ipairs(list) do row.pr = self:PR(row.key) end
+    end
     table.sort(list, function(a, b)
+        if epgp and a.pr ~= b.pr then return a.pr > b.pr end
         if a.current ~= b.current then return a.current > b.current end
         return a.name:lower() < b.name:lower()
     end)
@@ -163,15 +193,33 @@ function Points:ApplyEntry(e, pool)
     if e.name then s.name = e.name end
     if e.class and e.class ~= "" then s.class = e.class end
     s.current = (s.current or 0) + e.delta
-    if e.delta >= 0 then
+    -- EPGP names the side an entry moves (issue #319): decay takes from what was earned (EP) and from
+    -- what was spent (GP), which no sign alone can say.
+    if e.acct == "ep" then
+        s.earned = math.max(0, (s.earned or 0) + e.delta)
+    elseif e.acct == "gp" then
+        s.spent = math.max(0, (s.spent or 0) - e.delta)
+    elseif e.delta >= 0 then
         s.earned = (s.earned or 0) + e.delta
     else
         s.spent = (s.spent or 0) + (-e.delta)
     end
+    -- What a reason has given this week, for its weekly cap (issue #309).
+    if e.rk and e.delta > 0 then
+        local week = math.floor((e.ts or 0) / WEEK)
+        pool.weekly = pool.weekly or {}
+        for w in pairs(pool.weekly) do
+            if w < week - 1 then pool.weekly[w] = nil end
+        end
+        local t = pool.weekly[week] or {}
+        pool.weekly[week] = t
+        local wk = e.key .. "|" .. e.rk
+        t[wk] = (t[wk] or 0) + e.delta
+    end
     local log = pool.log
     table.insert(log, 1, {
         ts = e.ts, key = e.key, name = e.name, delta = e.delta,
-        reason = e.reason, author = e.author, kind = e.kind,
+        reason = e.reason, author = e.author, kind = e.kind, rk = e.rk,
     })
     while #log > LOG_MAX do table.remove(log) end
 end
@@ -199,14 +247,103 @@ end
 ----------------------------------------------------------------------
 -- Officer mutations
 ----------------------------------------------------------------------
--- Award (positive) or charge (negative) a single player. reason is free text.
-function Points:Adjust(key, amount, reason, kind)
+----------------------------------------------------------------------
+-- The caps (issue #309): how much of an earning still fits.
+----------------------------------------------------------------------
+-- The guild's named reasons to earn: { { key, name, value, weekly }, ... } (weekly 0 or nil: no cap).
+function Points:GetReasons(pool)
+    local c = (pool or self:GetDB()).config
+    return (c and type(c.reasons) == "table") and c.reasons or {}
+end
+
+function Points:GetReason(rk, pool)
+    for _, r in ipairs(self:GetReasons(pool)) do
+        if r.key == rk then return r end
+    end
+    return nil
+end
+
+-- Add, change (same key) or, with no value, remove a named reason. Officer only.
+function Points:SetReason(rk, name, value, weekly)
+    if not GuildOS:IsOfficer() then return false end
+    rk = tostring(rk or ""):lower():gsub("[^a-z0-9]", ""):sub(1, 8)
+    if rk == "" then return false end
+    local c = self:GetDB().config
+    local list = {}
+    for _, r in ipairs(self:GetReasons()) do
+        if r.key ~= rk then list[#list + 1] = r end
+    end
+    value = tonumber(value)
+    if value and value > 0 then
+        if #list >= MAX_REASONS then return false end
+        list[#list + 1] = {
+            key = rk, name = strtrim(tostring(name or rk)):sub(1, 40), value = math.floor(value),
+            weekly = math.max(0, math.floor(tonumber(weekly) or 0)),
+        }
+    end
+    c.reasons = list
+    self:BroadcastSnapshot()
+    self:Refresh()
+    return true
+end
+
+-- What `rk` has given `key` in the week of `ts`.
+function Points:WeeklyEarned(key, rk, ts, pool)
+    pool = pool or self:GetDB()
+    local t = pool.weekly and pool.weekly[math.floor((ts or GetServerTime()) / WEEK)]
+    return (t and t[key .. "|" .. rk]) or 0
+end
+
+-- How much of `amount` `key` may still earn, and what held the rest back ("weekly", "cap" or nil).
+-- EPGP has no cap: EP only matters against GP.
+function Points:Room(key, amount, rk, pool)
+    pool = pool or self:GetDB()
+    local c, why = pool.config or {}, nil
+    local reason = rk and self:GetReason(rk, pool)
+    if reason and (reason.weekly or 0) > 0 then
+        local left = math.max(0, reason.weekly - self:WeeklyEarned(key, rk, nil, pool))
+        if left < amount then amount, why = left, "weekly" end
+    end
+    local cap = tonumber(c.cap) or 0
+    if cap > 0 and pool.mode ~= "epgp" then
+        local s = pool.standings[key]
+        local left = math.max(0, cap - (s and s.current or c.startingPoints or 0))
+        if left < amount then amount, why = left, "cap" end
+    end
+    return amount, why
+end
+
+-- An earning as an entry, held to the caps. What did not fit is said in the entry's reason, and an
+-- earning that fits nowhere still leaves its line in the history, with nothing added.
+function Points:EarnEntry(key, amount, reason, kind, rk)
+    local fits, why = self:Room(key, amount, rk)
+    reason = reason or ""
+    if why == "cap" then
+        reason = string.format(L["%s (cap reached: %d of %d)"], reason, fits, amount)
+    elseif why == "weekly" then
+        reason = string.format(L["%s (weekly cap reached: %d of %d)"], reason, fits, amount)
+    end
+    local e = self:MakeEntry(key, fits, reason, kind)
+    e.rk = rk
+    if self:GetMode() == "epgp" then e.acct = "ep" end
+    return e
+end
+
+-- Award (positive) or charge (negative) a single player. reason is free text. An award is held to the
+-- caps; a refund or an undo (any other kind) is not.
+function Points:Adjust(key, amount, reason, kind, rk)
     if not GuildOS:IsOfficer() then
         GuildOS:Print(L["|cffFF4444Points are officer-managed.|r"])
         return nil
     end
     if not key or not amount or amount == 0 then return nil end
-    local e = self:MakeEntry(key, amount, reason, kind)
+    local e
+    if amount > 0 and EARN_KINDS[kind or ""] then
+        e = self:EarnEntry(key, amount, reason, kind, rk)
+    else
+        e = self:MakeEntry(key, amount, reason, kind)
+        if self:GetMode() == "epgp" then e.acct = amount < 0 and "gp" or (kind == "undo" and "gp" or "ep") end
+    end
     self:ApplyEntry(e)
     self:MarkApplied(e.op)
     publishDelta({ e })
@@ -216,6 +353,16 @@ end
 
 function Points:Award(key, amount, reason) return self:Adjust(key, math.abs(amount), reason, "award") end
 function Points:Charge(key, amount, reason) return self:Adjust(key, -math.abs(amount), reason, "spend") end
+-- Give back what a charge took: never held to a cap, and in EPGP it comes off the GP.
+function Points:Refund(key, amount, reason) return self:Adjust(key, math.abs(amount), reason, "undo") end
+
+-- One of the guild's named reasons, `times` over (a stack donated, a dungeon run), up to its weekly cap.
+function Points:AwardReason(key, rk, times)
+    local r = self:GetReason(rk)
+    if not r then return nil end
+    times = math.max(1, math.floor(tonumber(times) or 1))
+    return self:Adjust(key, r.value * times, r.name, "reason", rk)
+end
 
 -- Award the same amount to every player currently in the raid.
 function Points:AwardRaidGroup(amount, reason)
@@ -233,7 +380,7 @@ function Points:AwardRaidGroup(amount, reason)
         if nm then
             realm = (realm and realm ~= "") and realm or GetRealmName()
             local key = GuildOS:GetPlayerKey(nm, realm)
-            local e = self:MakeEntry(key, math.abs(amount), reason, "raid")
+            local e = self:EarnEntry(key, math.abs(amount), reason, "raid")
             if cls and cls ~= "" then e.class = cls end
             entries[#entries + 1] = e
         end
@@ -249,15 +396,37 @@ function Points:ApplyDecay(pct)
     if not GuildOS:IsOfficer() then return 0 end
     pct = pct or cfg().decayPct or 0
     if pct <= 0 then return 0 end
-    local entries = {}
+    -- Rounded the way the guild says (issue #309): to the nearest as always, up or down.
+    local how = cfg().decayRound
+    local function part(n)
+        local x = math.max(0, n or 0) * pct / 100
+        if how == "up" then return math.ceil(x) end
+        if how == "down" then return math.floor(x) end
+        return math.floor(x + 0.5)
+    end
+    local entries, epgp = {}, self:GetMode() == "epgp"
+    local label = string.format(L["Decay %d%%"], pct)
     for key, s in pairs(standings()) do
-        local dec = math.floor((s.current or 0) * pct / 100 + 0.5)
-        if dec > 0 then
-            entries[#entries + 1] = self:MakeEntry(key, -dec, string.format(L["Decay %d%%"], pct), "decay")
+        if epgp then
+            -- Both sides decay (issue #319): EP down, and GP down, which gives priority back.
+            local ep, gp = part(s.earned), part(s.spent)
+            if ep > 0 then
+                local e = self:MakeEntry(key, -ep, label .. " (EP)", "decay"); e.acct = "ep"
+                entries[#entries + 1] = e
+            end
+            if gp > 0 then
+                local e = self:MakeEntry(key, gp, label .. " (GP)", "decay"); e.acct = "gp"
+                entries[#entries + 1] = e
+            end
+        else
+            local dec = part(s.current)
+            if dec > 0 then entries[#entries + 1] = self:MakeEntry(key, -dec, label, "decay") end
         end
     end
     for _, e in ipairs(entries) do self:ApplyEntry(e); self:MarkApplied(e.op) end
     if #entries > 0 then publishDelta(entries) end
+    -- A client from before EPGP's two sides reads a decay as plain points: the snapshot sets it right.
+    if epgp and #entries > 0 then self:BroadcastSnapshot() end
     self:Refresh()
     return #entries
 end
@@ -273,6 +442,121 @@ function Points:OnBossKill(encounterName)
     local amount = cfg().bossAward or 0
     if amount <= 0 then return end
     self:AwardRaidGroup(amount, encounterName or L["Boss kill"])
+end
+
+-- Called by RaidTracker when a guild raid's session is saved (issue #309): on time or late, stayed or
+-- left early, and the raid itself, for everyone the session saw. Each award's op is the session's own,
+-- so two officers' clients ending the same raid give it once.
+function Points:OnRaidEnd(session)
+    local pool = self:GetDB()
+    if not (pool and pool.config and pool.config.autoAward) then return 0 end
+    if not GuildOS:IsOfficer() or type(session) ~= "table" then return 0 end
+    local c, snaps = pool.config, session.snapshots or {}
+    local first, last = snaps[1], snaps[#snaps]
+    if not (first and first.members) then return 0 end
+    local seen = {}
+    for _, snap in ipairs(snaps) do
+        for key in pairs(snap.members or {}) do seen[key] = true end
+    end
+    local entries = {}
+    local function give(key, amount, label, tag)
+        amount = tonumber(amount) or 0
+        if amount <= 0 then return end
+        local op = string.format("S%X-%s-%s", session.startTime or 0, tag, key)
+        if pool.appliedOps[op] then return end
+        local e = self:EarnEntry(key, amount, label, "raid")
+        e.op, e.ts = op, session.endTime or e.ts
+        self:ApplyEntry(e); self:MarkApplied(e.op)
+        entries[#entries + 1] = e
+    end
+    for key in pairs(seen) do
+        if first.members[key] then give(key, c.onTimeAward, L["On time"], "ot")
+        else give(key, c.lateAward, L["Late"], "lt") end
+        if last.members[key] then give(key, c.stayedAward, L["Stayed until the end"], "st")
+        else give(key, c.leftEarlyAward, L["Left early"], "le") end
+        give(key, c.raidAward, L["Raid attended"], "rd")
+    end
+    if #entries > 0 then publishDelta(entries) end
+    self:Refresh()
+    return #entries
+end
+
+----------------------------------------------------------------------
+-- EPGP (issue #319)
+----------------------------------------------------------------------
+function Points:EP(key)
+    local s = standings()[key]
+    return s and s.earned or 0
+end
+
+function Points:GP(key)
+    local s = standings()[key]
+    return (s and s.spent or 0) + (tonumber(cfg().baseGP) or 0)
+end
+
+-- Priority: EP / GP, with GP never under 1 so a new raider divides by something. Below the EP the
+-- guild asks for there is no priority: after everyone who has it.
+function Points:PR(key)
+    local ep = self:EP(key)
+    local pr = ep / math.max(1, self:GP(key))
+    if ep < (tonumber(cfg().minEP) or 0) then return pr - 1e6 end
+    return pr
+end
+
+-- What an item costs the winner: the guild's own price for that item, else in EPGP its GP by slot and
+-- item level against the price of a chest piece, else the one price per item.
+function Points:PriceOf(itemLink)
+    local c = cfg()
+    local base = tonumber(c.itemCost) or 0
+    local itemId = itemLink and tonumber(tostring(itemLink):match("item:(%d+)"))
+    local own = itemId and type(c.itemPrices) == "table" and tonumber(c.itemPrices[itemId])
+    if own then return own end
+    if self:GetMode() ~= "epgp" or base <= 0 or not itemLink then return base end
+    local _, _, _, ilvl, _, _, _, _, equipLoc = GuildOS.Compat.GetItemInfo(itemLink)
+    local gp = base * (SLOT_GP[equipLoc or ""] or 1)
+    local ref = tonumber(c.gpRefIlvl) or 0
+    if ref > 0 and tonumber(ilvl) then gp = gp * 2 ^ ((ilvl - ref) / GP_ILVL_STEP) end
+    return math.max(1, math.floor(gp + 0.5))
+end
+
+-- The guild's own price for one item (nil or 0 goes back to the rule). Officer only.
+function Points:SetItemPrice(itemId, price)
+    if not GuildOS:IsOfficer() or not tonumber(itemId) then return false end
+    local c = self:GetDB().config
+    c.itemPrices = type(c.itemPrices) == "table" and c.itemPrices or {}
+    price = tonumber(price)
+    c.itemPrices[tonumber(itemId)] = (price and price > 0) and math.floor(price) or nil
+    self:BroadcastSnapshot()
+    return true
+end
+
+-- The price to enter a roll (issue #309): everyone who asked pays it, and whoever lost gets part of it
+-- back. `asked` is the list of keys; returns what each paid in the end, { { key, amount }, ... }, for
+-- an undo to give back.
+function Points:ChargeEntry(asked, winnerKey, itemName)
+    local c = cfg()
+    local entry = tonumber(c.entryCost) or 0
+    if entry <= 0 or not GuildOS:IsOfficer() then return {} end
+    local back = math.floor(entry * math.min(100, math.max(0, tonumber(c.refundPct) or 0)) / 100)
+    local paid, entries = {}, {}
+    for _, key in ipairs(asked) do
+        local e
+        if key == winnerKey then
+            e = self:MakeEntry(key, -entry, string.format(L["Rolled for %s"], itemName), "spend")
+        elseif entry - back > 0 then
+            e = self:MakeEntry(key, -(entry - back),
+                string.format(L["Lost the roll for %s (%d paid, %d back)"], itemName, entry, back), "spend")
+        end
+        if e then
+            if self:GetMode() == "epgp" then e.acct = "gp" end
+            self:ApplyEntry(e); self:MarkApplied(e.op)
+            entries[#entries + 1] = e
+            paid[#paid + 1] = { key = key, amount = -e.delta }
+        end
+    end
+    if #entries > 0 then publishDelta(entries) end
+    self:Refresh()
+    return paid
 end
 
 ----------------------------------------------------------------------

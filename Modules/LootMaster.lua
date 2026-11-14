@@ -678,7 +678,10 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
     -- Main announce (DKP mode rolls register interest; the ML awards by standings)
     local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
     local msg
-    if lootSystem == "dkp" then
+    if lootSystem == "epgp" then
+        msg = format(L["[EPGP] %s  -  /roll to ask, highest priority wins  -  %ds"],
+            itemLink, self.ROLL_DURATION)
+    elseif lootSystem == "dkp" then
         msg = format(L["[DKP] %s  -  /roll to bid, highest DKP wins  -  %ds"],
             itemLink, self.ROLL_DURATION)
     else
@@ -1042,7 +1045,15 @@ function LootMaster:RegisterRoll(name, rollType, roll)
     -- Who may ask (the loot rule's filters, issue #333): below the attendance the guild asks for, a
     -- main spec answer is read as off spec.
     local ctx = self:GetPlayerContext(name)
+    ctx.dkp = (GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
+        and GuildOS.Points:Get(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0
     local answer, filter = GuildOS.LootRule:AnswerFor(ctx, rollType)
+    if filter and not answer then
+        -- A roll that costs more to enter than the roller holds (issue #309): no roll, and told why.
+        self:SafeSendChatAuto(string.format(
+            L["[Loot] %s: not in this roll (%d points, %d needed to enter)"], name, ctx.dkp, filter.min), "RAID")
+        return
+    end
     if filter then
         rollType = answer
         self:SafeSendChatAuto(string.format(
@@ -1123,7 +1134,9 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         softRes    = srInfo,
         att25      = ctx.att25,
         recvCount  = ctx.recvThisLockout,
-        dkp        = (GuildOS.Points and GuildOS.Points:Get(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0,
+        dkp        = ctx.dkp,
+        pr         = (GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
+                      and GuildOS.Points:PR(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0,
     }
 
     -- Announce prio or wishlist position to raid
@@ -1310,11 +1323,20 @@ function LootMaster:AwardLoot(playerName, silent)
 
     -- DKP: charge the winner when the guild runs the points system and a
     -- per-item cost is configured (cost 0 = informational standings only).
-    if GuildOS.Points and (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) == "dkp" and GuildOS:IsOfficer() then
-        local _pdb = GuildOS.Points and GuildOS.Points:GetDB()
-        local cost = (_pdb and _pdb.config and _pdb.config.itemCost) or 0
+    if GuildOS.Points and GuildOS:LootSystemUsesPoints() and GuildOS:IsOfficer() then
+        local pKey = GuildOS:GetPlayerKey(playerName)
+        -- The price to enter the roll (issue #309): everyone who asked pays it, and whoever lost gets
+        -- part of it back. Only for the item that was rolled, and what each paid is kept for an undo.
+        local rolled = self.activeLoot and self.activeLoot.link == itemLink and self.activeLoot.sortedResults
+        if rolled then
+            local asked = {}
+            for _, r in ipairs(rolled) do asked[#asked + 1] = GuildOS:GetPlayerKey(r.name) end
+            local paid = GuildOS.Points:ChargeEntry(asked, pKey, GuildOS.Compat.GetItemInfo(itemLink) or itemLink)
+            if #paid > 0 then award.paid = paid end
+        end
+        -- The item's price: the guild's own for it, its GP in EPGP, else the one cost per item (#319).
+        local cost = GuildOS.Points:PriceOf(itemLink)
         if cost > 0 then
-            local pKey = GuildOS:GetPlayerKey(playerName)
             GuildOS.Points:Charge(pKey, cost, GuildOS.Compat.GetItemInfo(itemLink) or itemLink)
             -- What an undo gives back (issue #294).
             award.charged, award.chargedKey = cost, pKey
@@ -1373,8 +1395,14 @@ function LootMaster:UndoLastAward()
     if not award then return nil, L["No award to undo."] end
     award.undone = true
     forgetAward(award.player, award.itemId, award.timestamp)
+    -- Given back as it was taken: never held to a cap, and off the GP in EPGP (issues #309, #319).
+    local undoLabel = L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link)
     if award.charged and award.charged > 0 and award.chargedKey and GuildOS.Points then
-        GuildOS.Points:Award(award.chargedKey, award.charged, L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link))
+        GuildOS.Points:Refund(award.chargedKey, award.charged, undoLabel)
+    end
+    -- And what each roller paid to enter the roll.
+    for _, paid in ipairs(GuildOS.Points and award.paid or {}) do
+        GuildOS.Points:Refund(paid.key, paid.amount, undoLabel)
     end
     for i = #(self.pendingTrades or {}), 1, -1 do
         local t = self.pendingTrades[i]
@@ -3009,7 +3037,9 @@ function LootMaster:RefreshRollFrame()
         local tmbText = row:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(tmbText, 10)
         tmbText:SetPoint("LEFT", 250, 0)
-        if lootSystem == "dkp" then
+        if lootSystem == "epgp" then
+            tmbText:SetText(string.format(L["|cffFFD700%.2f PR|r"], math.max(0, r.pr or 0)))
+        elseif lootSystem == "dkp" then
             tmbText:SetText(string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
         elseif r.prioOrder then
             tmbText:SetText(string.format(L["|cffFFD700* Prio #%d|r"], r.prioOrder))
