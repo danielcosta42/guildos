@@ -265,12 +265,19 @@ local function onlyKeys(t, allowed)
     return true
 end
 
--- A list: a table of at most `max` entries and nothing beside them.
+-- A list: a table of at most `max` entries and nothing beside them, its keys exactly 1 to n with
+-- none missing. Counting the keys against `#t` was not that: with a hole and a key beside the entries
+-- ({ nil, a, b, extra = true }) both say 3, and a rule nothing of which had been read passed, to break
+-- whoever read it next.
 local function isList(t, max)
     if type(t) ~= "table" then return false end
     local n = 0
     for _ in pairs(t) do n = n + 1 end
-    return n == #t and n <= max
+    if n > max then return false end
+    for i = 1, n do
+        if t[i] == nil then return false end
+    end
+    return true
 end
 
 local RULE_KEYS = { v = true, model = true, time = true, responses = true, bid = true, filters = true,

@@ -209,6 +209,15 @@ refused({ v = 1, order = { { k = "roll" }, { k = "roll" } } }, "a criterion twic
 refused({ v = 1, order = { { k = "roll", band = 0 } } }, "a band of zero")
 refused({ v = 1, order = { { k = "roll" } }, filters = { { k = "rank" } } }, "a filter it does not know")
 refused({ v = 1, order = { { k = "roll" } }, responses = { "MS", "PASS" } }, "a pass as an answer")
+-- A list is its entries 1 to n and nothing else. A hole with a key beside the entries has as many
+-- keys as `#` says: such a list used to pass with none of its entries read, and broke the announce.
+refused({ v = 1, order = { { k = "roll" } }, responses = { nil, { key = "OS" }, { key = "X" }, extra = true } },
+  "answers with a hole and a key that is no entry")
+refused({ v = 1, order = { nil, { k = "no-such-criterion", band = "x" }, { k = 5 }, z = 1 } }, "an order with a hole and a key that is no entry")
+refused({ v = 1, order = { { k = "roll" } }, filters = { nil, { k = "rank" }, x = 1 } }, "filters with a hole")
+refused({ v = 1, order = { { k = "roll" } }, effects = { nil, { k = "nonsense" }, x = 1 } }, "effects with a hole")
+refused({ v = 1, order = { { k = "roll" } }, responses = { [2] = { key = "OS" }, [3] = { key = "MS" }, [4] = { key = "X" }, x = 1, y = 2 } },
+  "answers that start after the first")
 local long = { v = 1, order = {} }
 for i, k in ipairs(LR.CRITERIA_ORDER) do long.order[i] = { k = k } end
 check(LR:Validate(long), "all nine criteria are a rule")

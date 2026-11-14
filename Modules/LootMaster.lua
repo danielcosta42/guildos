@@ -974,7 +974,7 @@ function LootMaster:AnnounceLine(itemLink, duration)
     local list = LR:Responses(rule)
     local first, second = list[1], list[2]
     local function rolls(r) return r and (r.ask or "roll") == "roll" end
-    if #list == 2 and first.key == "MS" and second.key == "OS" and rolls(first) and rolls(second) then
+    if #list == 2 and first and second and first.key == "MS" and second.key == "OS" and rolls(first) and rolls(second) then
         local lootSystem = self:System()
         if lootSystem == "epgp" then
             return format(L["[EPGP] %s  -  /roll to ask, highest priority wins  -  %ds"], itemLink, duration)
