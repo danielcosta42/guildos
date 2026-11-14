@@ -201,7 +201,7 @@ check(s[1000] and s[2100] and s[1000].difficulty == 14 and s[2100].difficulty ==
 RT = load(false)
 check(not GuildOS.Client.isRetail, "the stub is Forever")
 check(RT:IsTracked(9001, 3) and RT:IsTracked(9001, 17), "Forever tracks every raid")
-check(RT:Is25Man(9001, 20) and not RT:Is25Man(9001, 10), "Forever's progression is 20 and up")
-check(RT:ProgLabel("(%d/%d raids, 25-man)") == "(%d/%d raids, 20+ man)", "Forever's label is 20+")
+check(RT:Is25Man(9001, 20) and RT:Is25Man(9001, 10) and not RT:Is25Man(9001, 5), "Forever's progression is 10 and up")
+check(RT:ProgLabel("(%d/%d raids, 25-man)") == "(%d/%d raids, 10+ man)", "Forever's label is 10+")
 
 print(("retail-raids: %d checks passed"):format(checks))

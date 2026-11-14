@@ -93,8 +93,19 @@
 -- v10 (chehulnet#9): Warmth, the family's campfire addon, announces a camp on the realm bus under ChehulCamp. The
 -- prefix joins the family's relayed prefixes, so a client that runs GuildOS, Lodestar or PartyLens and not Warmth
 -- still passes a camp's announce on. Low rate by design: one announce per camp every four minutes.
+-- v11 (chehulnet#11): someone took ChehulNetH and changed its password (CurseForge report, 2026-11-10). Besides the
+-- WRONG_PASSWORD notice the game fires CHANNEL_PASSWORD_REQUEST, and Blizzard's UI answers it with a password box,
+-- on each of our joins and on each login, when the game rejoins the channels saved at logout. v10 heard only the
+-- notice, so the box stayed. Now, for a channel whose name starts with DIR_PREFIX:
+--   * the box is closed at once and again a frame later, except in gamepad mode: closing a Blizzard dialog from an
+--     addon runs its close callbacks tainted, and in gamepad mode those include the gamepad's popup handler (the
+--     taint of guildos#315). There the player cancels it.
+--   * the directory's own channel steps to the next number, as WRONG_PASSWORD does (whichever comes first steps;
+--     the other finds the name already changed).
+--   * any other family channel (the faction-wide one of v5–v8, one this session moved away from) is left, so the
+--     game stops saving it and the next login asks nothing. Its notices stay out of the chat.
 
-local VERSION = 10
+local VERSION = 11
 if _G.ChehulMesh and (_G.ChehulMesh.version or 0) >= VERSION then
     return
 end
@@ -983,6 +994,36 @@ end
 -- filter; v7 whispers saved and passed-on names, so that filter must be in before any of its whispers.
 if M.dir.on then InstallFilters() end
 
+-- v11: closing a Blizzard dialog from here runs its close callbacks tainted; in gamepad mode they include the
+-- gamepad's popup handler (guildos#315). Unknown counts as on.
+local function GamepadOn()
+    if not (C_GamePad and C_GamePad.IsEnabled) then return false end
+    local ok, on = pcall(C_GamePad.IsEnabled)
+    return not ok or on == true
+end
+
+local function CloseBox(name)
+    if not StaticPopup_Hide or GamepadOn() then return end
+    pcall(StaticPopup_Hide, "CHAT_CHANNEL_PASSWORD", name)
+    -- whichever handler showed it may run after this one
+    if C_Timer and C_Timer.After then C_Timer.After(0, function() pcall(StaticPopup_Hide, "CHAT_CHANNEL_PASSWORD", name) end) end
+end
+
+-- v11: the server wants a password for a family channel: someone holds it.
+local function OnPasswordRequest(name)
+    if type(name) ~= "string" or Secret(name) or name:lower():sub(1, #M.DIR_PREFIX) ~= M.DIR_PREFIX:lower() then return end
+    CloseBox(name)
+    local mine = M.dir.channel
+    if M.dir.on and mine and name:lower() == mine:lower() then
+        OnNotice("WRONG_PASSWORD", nil, mine)
+        return
+    end
+    -- not the one in use: a saved channel the game rejoined at login, or one already moved away from
+    M.dir.past[name] = true
+    InstallFilters()
+    if LeaveChannelByName then pcall(LeaveChannelByName, name) end
+end
+
 -- One frame and one ticker, bound to THIS version's functions (a superseded one's are cancelled/replaced).
 M.dirFrame = M.dirFrame or (CreateFrame and CreateFrame("Frame")) or nil
 if M.dirFrame then
@@ -990,10 +1031,13 @@ if M.dirFrame then
     pcall(M.dirFrame.RegisterEvent, M.dirFrame, "PLAYER_ENTERING_WORLD")
     pcall(M.dirFrame.RegisterEvent, M.dirFrame, "CHAT_MSG_CHANNEL_NOTICE")
     pcall(M.dirFrame.RegisterEvent, M.dirFrame, "CHAT_MSG_CHANNEL_NOTICE_USER")
+    pcall(M.dirFrame.RegisterEvent, M.dirFrame, "CHANNEL_PASSWORD_REQUEST") -- v11
     -- a channel notice: (kind, player, language, "N. Channel", player2, flags, zoneChannelID, index, baseName)
     M.dirFrame:SetScript("OnEvent", function(_, event, a, b, _, d, _, _, _, _, i)
         if event == "CHANNEL_ROSTER_UPDATE" then
             OnRoster(a, b)
+        elseif event == "CHANNEL_PASSWORD_REQUEST" then
+            OnPasswordRequest(a)
         elseif event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then
             OnNotice(a, d, i)
         elseif C_Timer and C_Timer.After then -- the game joins its own channels first; a join before them is lost

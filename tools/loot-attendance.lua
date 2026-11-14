@@ -4,7 +4,7 @@
 --
 -- A raider can be on several cores (#132). The loot rules (minimum attendance for MS, the attendance
 -- tiebreaker) are the raid's core's config, so the attendance compared to them is that core's too:
--- not the core where the raider has the most raids. A core none of whose nights count (a 10 on Forever,
+-- not the core where the raider has the most raids. A core none of whose nights count (nights an addon from before #90 recorded with no size,
 -- or a core on its first raid) has no figure to judge by, and the raider keeps the old one.
 --
 --   luajit -e 'ADDON="."' tools/loot-attendance.lua
@@ -62,7 +62,7 @@ GuildOS.db = { settings = {}, members = {}, altLinks = {}, cores = {}, lootHisto
   raidTracker = { sessions = {}, attendance = {}, deletedSessions = {}, currentGroupTag = "" } }
 local RT, CM, LM = GuildOS.RaidTracker, GuildOS.CoreManager, GuildOS.LootMaster
 RT.currentGroupTag = ""
-CM:Create("Twenty"); CM:Create("Other"); CM:Create("Ten"); CM:Create("Fresh")
+CM:Create("Twenty"); CM:Create("Other"); CM:Create("Old"); CM:Create("Fresh")
 
 local WEEK, seq = 7 * 86400, 0
 local function night(week, id, size, tag, players)
@@ -79,17 +79,17 @@ local function night(week, id, size, tag, players)
     snapshots = { { time = t, members = members }, { time = t + 3 * 3600, members = members } } }
 end
 -- Ana: both nights of the Twenty; half of the Other's six, so the Other is where she raids most;
--- the Ten's two nights, which never count for progression on Forever. Dee: both nights of the Ten, one
--- of the Twenty's: the Ten is where she raids most, and has no night that counts.
+-- the Old's two nights, recorded with no size, which never count on Forever (a 10 does since #321). Dee: both nights of the Old, one
+-- of the Twenty's: the Old is where she raids most, and has no night that counts.
 night(0, 9020, 20, "Twenty", { "Ana", "Bo" })
 night(1, 9020, 20, "Twenty", { "Ana", "Bo", "Dee" })
 for w = 0, 5 do
   night(w, 9021, 20, "Other", w % 2 == 0 and { "Ana", "Bo" } or { "Bo" })
 end
-night(0, 9010, 10, "Ten", { "Ana", "Bo", "Dee", "Fay" })
-night(1, 9010, 10, "Ten", { "Ana", "Bo", "Dee", "Fay" })
--- Fay: a third Ten night, and two 20s from before the guild had cores (no core at all).
-night(2, 9010, 10, "Ten", { "Fay" })
+night(0, 9010, nil, "Old", { "Ana", "Bo", "Dee", "Fay" })
+night(1, 9010, nil, "Old", { "Ana", "Bo", "Dee", "Fay" })
+-- Fay: a third Old night, and two 20s from before the guild had cores (no core at all).
+night(2, 9010, nil, "Old", { "Fay" })
 night(2, 9020, 20, "", { "Fay" })
 night(3, 9020, 20, "", { "Fay" })
 RT:RebuildAttendanceFromSessions()
@@ -111,12 +111,12 @@ att, kind = roll("Twenty")
 check(att == 100 and kind == "MS", "in a raid of the Twenty, Ana is judged by the Twenty's 100%, and her MS stands")
 att, kind = roll("Other")
 check(att == 50 and kind == "OS", "in a raid of the Other, by the Other's 50%: below the 75% minimum, MS becomes OS")
-att, kind = roll("Ten")
+att, kind = roll("Old")
 check(att == 50, "a core none of whose nights count has no figure: Ana keeps the old one, not 0%")
 att, kind = roll("Fresh")
 check(att == 50, "and a core on its first raid the same")
-att = roll("Ten", "Dee")
-check(att == 50, "the old figure is the core with the most nights that count: Dee's Twenty, 50%, not her Ten's 0%")
+att = roll("Old", "Dee")
+check(att == 50, "the old figure is the core with the most nights that count: Dee's Twenty, 50%, not her Old's 0%")
 check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Dee")) == 50, "and the roster's figure is the same one")
 dofile(ADDON .. "/Modules/LootTracker.lua")
 local ROSTER = { "Dee-Realm", "Fay-Realm" }
@@ -126,6 +126,6 @@ local rows = {}
 for _, r in ipairs(GuildOS.LootTracker:GetGuildLootEquity()) do rows[r.name] = r end
 check(rows.Dee and rows.Dee.attendance == 50 and rows.Dee.raids == 1, "and loot equity's row reads both figures from that core: 50%, 1 raid")
 check(RT:GetAttendance25ManPercent(GuildOS:GetPlayerKey("Fay")) == 100 and rows.Fay and rows.Fay.attendance == 100
-  and rows.Fay.raids == 2, "nights with no core are a core of their own: Fay's two 20s, 100%, over her three 10s")
+  and rows.Fay.raids == 2, "nights with no core are a core of their own: Fay's two 20s, 100%, over her three unsized nights")
 
 print(("loot-attendance: %d checks passed"):format(checks))

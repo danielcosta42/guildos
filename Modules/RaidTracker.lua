@@ -92,10 +92,11 @@ RaidTracker.RAID_25MAN = {
 
 -- Whether a raid counts for progression attendance (the "25-man" figures). Anniversary: the
 -- 25-player raids above, by instance id. WoW: Forever: by the size the game gave on the way in
--- (`size`, a session's maxPlayers), 20 and up, never 10 (issue #90). Forever's ids are not known
--- until its raids open, and a size needs no list: the raids of 9 December count on the day, and
--- so does every tier after.
-RaidTracker.FOREVER_PROGRESSION_SIZE = 20
+-- (`size`, a session's maxPlayers), 10 and up: every raid (issue #90). It was 20 and up, TBC's rule,
+-- where the 10s were side content; Forever's 10 is Barrow Deeps, a tier raid of its own (#321).
+-- Forever's ids are not known until its raids open, and a size needs no list: the raids of
+-- 9 December count on the day, and so does every tier after.
+RaidTracker.FOREVER_PROGRESSION_SIZE = 10
 -- Retail (ADR-0026): what counts is the difficulty, and every one tracked is progression. Normal,
 -- Heroic and Mythic; Raid Finder, timewalking and the legacy sizes are not tracked at all. Each with
 -- the letter a session shows (issue #177).
@@ -125,8 +126,8 @@ end
 -- Italian, a retail-only client, says "25 giocatori" (#186).
 local SIZE_WORDS = { "%-man", "er", " jogadores", " jugadores", " joueurs", " giocatori", " чел%.", " ?인", " ?人" }
 
--- A "25-man" label as this game says it: unchanged on Anniversary, "20+" on WoW: Forever, where
--- the 20- and 40-player raids are the ones that count (issue #90), the difficulties on retail. It
+-- A "25-man" label as this game says it: unchanged on Anniversary, "10+" on WoW: Forever, where
+-- every raid counts (issues #90, #321), the difficulties on retail. It
 -- works on the translated text, which every locale writes with the digits ("25er", "25 jogadores",
 -- "à 25").
 function RaidTracker:ProgLabel(text)
@@ -135,7 +136,7 @@ function RaidTracker:ProgLabel(text)
         return (text:gsub("25", "N/H/M"))
     end
     if GuildOS.Client and not GuildOS.Client.isAnniversary and type(text) == "string" then
-        return (text:gsub("25%-man", "20+ man"):gsub("25", "20+"))
+        return (text:gsub("25%-man", "10+ man"):gsub("25", "10+"))
     end
     return text
 end
