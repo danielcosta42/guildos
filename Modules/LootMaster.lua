@@ -737,6 +737,48 @@ function LootMaster:ResolvePrioList(itemId)
 end
 
 ----------------------------------------------------------------------
+-- The roll's timers. Each one is its roll's alone: it is cancelled when the roll ends, is cancelled,
+-- is awarded or gives way to another item, and its closure checks the roll it was started for, so one
+-- that fires late never ends, or counts down, the item that came after.
+----------------------------------------------------------------------
+function LootMaster:StartRollTimer(duration)
+    if self.rollTimer then self.rollTimer:Cancel() end
+    local sid = self.activeLoot and self.activeLoot.sid
+    self.rollTimer = C_Timer.NewTimer(duration, function()
+        local loot = LootMaster.activeLoot
+        if loot and loot.sid == sid and not loot.ended then LootMaster:EndRolling() end
+    end)
+end
+
+function LootMaster:StopRollTimer()
+    if self.rollTimer then
+        self.rollTimer:Cancel()
+        self.rollTimer = nil
+    end
+end
+
+-- The roll in progress gives way, with no line to the raid: no timer of it, no /roll line and no
+-- council's vote outlives it.
+function LootMaster:DropRoll()
+    self:StopListeningForRolls()
+    self:StopRollTimer()
+    local loot = self.activeLoot
+    if loot and loot.council and loot.council.open and GuildOS.LootCouncil then
+        GuildOS.LootCouncil:Close("cancel")
+    end
+end
+
+-- The item whose roll is open now (answers still being taken, or its council voting), or nil: the
+-- loot window opens no other roll over it.
+function LootMaster:OpenRoll()
+    local loot = self.activeLoot
+    if not loot or loot.delivered then return nil end
+    if loot.council and loot.council.open then return loot.link or "?" end
+    if loot.sid and not loot.ended and (self.rollTimer or self.listeningForRolls) then return loot.link or "?" end
+    return nil
+end
+
+----------------------------------------------------------------------
 -- Announce an item for rolling.
 -- Priority logic (always active, regardless of WISHLIST_ONLY_MODE):
 --   ≥ 2 players tied at top wishlist position in raid → restricted roll (only they roll)
@@ -748,6 +790,11 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         GuildOS:Print(L["You must be in a raid to announce loot."])
         return
     end
+
+    -- The item before is over, whatever state it was left in: its timer (which used to run out on the
+    -- next item and, with nobody asking for that one yet, send it to the disenchanter), its /roll
+    -- lines, and its council's vote, whose windows the raiders' clients close on hearing so.
+    self:DropRoll()
 
     -- Clear previous session
     self.rolls             = {}
@@ -902,10 +949,7 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
     self:StartListeningForRolls()
 
     -- Start countdown timer
-    if self.rollTimer then self.rollTimer:Cancel() end
-    self.rollTimer = C_Timer.NewTimer(duration, function()
-        LootMaster:EndRolling()
-    end)
+    self:StartRollTimer(duration)
     self:ScheduleCountdownWarnings()
 
     -- Update UI — always open/refresh the ML roll frame
@@ -1040,10 +1084,7 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
     self:StartListeningForRolls()
 
     -- Timer
-    if self.rollTimer then self.rollTimer:Cancel() end
-    self.rollTimer = C_Timer.NewTimer(duration, function()
-        LootMaster:EndRolling()
-    end)
+    self:StartRollTimer(duration)
     self:ScheduleCountdownWarnings()
 
     -- Show roll tracker for ML
@@ -1772,10 +1813,7 @@ function LootMaster:EndRolling(byClick)
     self:StopListeningForRolls()
     self.restrictedRollers = nil
 
-    if self.rollTimer then
-        self.rollTimer:Cancel()
-        self.rollTimer = nil
-    end
+    self:StopRollTimer()
 
     -- Sort rolls: MS first (by wishlist order then roll), then OS (by roll)
     local sorted = {}
@@ -2097,6 +2135,9 @@ function LootMaster:AwardLootNow(playerName, silent, free)
     if self.activeLoot then self.activeLoot.delivered = true end
     self.activeLoot = nil
     self.rolls = {}
+    -- Given before its time ran out: its timer and its /roll lines are over with it.
+    self:StopListeningForRolls()
+    self:StopRollTimer()
 end
 
 ----------------------------------------------------------------------
@@ -2318,12 +2359,13 @@ function LootMaster:ScheduleCountdownWarnings()
     -- the loot master's frame shows the seconds left.
     if GuildOS.Compat.NeedsClick() then return end
     local dur = self:RollTime()
+    local sid = self.activeLoot and self.activeLoot.sid   -- the warnings are this roll's alone
     local warnings = { 10, 5, 3, 2, 1 }
     for _, t in ipairs(warnings) do
         if dur > t then
             local secs = t  -- capture for closure
             C_Timer.After(dur - secs, function()
-                if LootMaster.activeLoot and not LootMaster.activeLoot.ended then
+                if LootMaster.activeLoot and LootMaster.activeLoot.sid == sid and not LootMaster.activeLoot.ended then
                     LootMaster:SafeSendChat(
                         L["[Roll] "] .. string.format(secs == 1 and L["%d second!"] or L["%d seconds!"], secs),
                         "RAID_WARNING")
@@ -2339,10 +2381,7 @@ end
 function LootMaster:CancelRolling()
     self:StopListeningForRolls()
     self.restrictedRollers = nil
-    if self.rollTimer then
-        self.rollTimer:Cancel()
-        self.rollTimer = nil
-    end
+    self:StopRollTimer()
     if self.activeLoot then
         -- A council's vote on it (issue #336) is over too.
         if self.activeLoot.council and GuildOS.LootCouncil then GuildOS.LootCouncil:Close("cancel") end
@@ -3703,6 +3742,12 @@ function LootMaster:ShowLootFrame(items)
             statusText:SetText(L["|cffFF4444Select an item first.|r"])
             return
         end
+        -- One roll at a time: the one that is open is ended, awarded or cancelled first.
+        local open = LootMaster:OpenRoll()
+        if open then
+            statusText:SetText("|cffFF4444" .. L["Roll in progress: "] .. open .. "|r")
+            return
+        end
         LootMaster:AnnounceItem(selectedItem.link, selectedItem.slot)
         LootMaster:ShowRollFrame()
         statusText:SetText(L["|cffFFFF00Roll opened!|r"])
@@ -4279,10 +4324,7 @@ function LootMaster:SendToDestination(exception, itemLink, lootSlot, itemId, rea
         if not reason then self.activeLoot = nil end
         return false
     end
-    if self.rollTimer then
-        self.rollTimer:Cancel()
-        self.rollTimer = nil
-    end
+    self:StopRollTimer()
     if not self.activeLoot then self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0) end
     local label = GuildOS.LootRule:ExceptionLabel(exception)
     local msg

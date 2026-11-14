@@ -334,6 +334,26 @@ check(session.votes.Ana == nil and echo[1] == ("CNO|%s|Ana|self"):format(sid), "
 LM:CancelRolling()
 check(not session.open and session.reason == "cancel" and session.proposed == nil and heard("CCLOSE") == ("CCLOSE|%s|x|0"):format(sid),
   "cancelling the roll ends its vote, and proposes nobody")
+-- Another item announced while the council votes: the vote is over, the raiders' windows are told so
+-- (they used to stay open on an item nobody was deciding any more), and no timer of the item before
+-- ends or counts on the new one.
+night(councilRule({ ranks = { 0, 1 }, quorum = 2 }))
+announce()
+LM:TakeAnswer("Ana", "MS")
+LM:TakeAnswer("Cy", "MS")
+LM:EndRolling(true)
+session, sid = LM.activeLoot.council, LM.activeLoot.sid
+check(session.open and LM:OpenRoll() == LINK, "a vote under way is a roll still open")
+local stale = {}
+for i, fn in ipairs(timers) do stale[i] = fn end
+announce()
+check(not session.open and session.reason == "cancel" and heard("CCLOSE") == ("CCLOSE|%s|x|0"):format(sid),
+  "a new item announced during a vote closes it for every client: " .. tostring(heard("CCLOSE")))
+check(LM.activeLoot.sid ~= sid and LM.activeLoot.council == nil and LM:OpenRoll() == LINK, "and the new item's roll is the one open")
+for _, fn in ipairs(stale) do fn() end
+check(LM.activeLoot and not LM.activeLoot.ended and LM.activeLoot.council == nil, "the timers of the item before do nothing to it")
+LM:CancelRolling()
+check(LM:OpenRoll() == nil, "with the roll cancelled, none is open")
 night(councilRule({ ranks = { 0, 1 }, quorum = 2, self = true }))
 announce()
 LM:TakeAnswer("Ana", "MS")

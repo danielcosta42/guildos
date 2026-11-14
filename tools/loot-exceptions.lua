@@ -78,8 +78,13 @@ function UnitName(unit)
   return i and raid[i] or nil
 end
 function UnitExists(unit) return UnitName(unit) ~= nil end
+local timers = {}   -- every roll timer started, to run one late
 C_Timer = { After = function() end, NewTicker = function() return { Cancel = function() end } end,
-  NewTimer = function() return { Cancel = function() end } end }
+  NewTimer = function(_, fn)
+    local t = { fn = fn, Cancel = function(self) self.cancelled = true end }
+    timers[#timers + 1] = t
+    return t
+  end }
 Enum = { SendAddonMessageResult = {} }
 StaticPopupDialogs, SlashCmdList = {}, {}
 local registry = {}
@@ -126,7 +131,6 @@ LM.SafeSendChatAuto = function(_, msg) said[#said + 1] = msg end
 LM.IsMasterLooter = function() return true end
 LM.GetPlayerContext = function() return { att25 = 100, recvThisLockout = 0 } end
 LM.ShowRollFrame = function() end
-LM.StopListeningForRolls = function() end
 function GuildOS:Print(msg) printed[#printed + 1] = msg end
 local shown = 0
 function GuildOS:UpdateLootSystemUI() shown = shown + 1 end
@@ -333,6 +337,38 @@ LM:EndRolling(true)
 check(#GuildOS.db.lootMaster.awardHistory == 5 and LM.activeLoot ~= nil, "only the master looter's client sends it")
 LM.IsMasterLooter = function() return true end
 LM:CancelRolling()
+-- A roll's timer is its roll's alone. Item A is rolled for; before its time runs out the loot master
+-- announces item B, which the wishlist gives to one raider and only asks the loot master to confirm.
+-- A's timer used to stay alive, run out on B, find that nobody had rolled for it and send it to the
+-- disenchanter.
+LR:Set(base({ { on = { cat = "unclaimed" }, to = "de" } }))
+LM.WISHLIST_ONLY_MODE = true
+local prompted
+local realCouncilFrame = LM.ShowCouncilResultFrame
+LM.ShowCouncilResultFrame = function(_, winner) prompted = winner.name end
+announce()
+local timerA, sidA = timers[#timers], LM.activeLoot.sid
+check(timerA and not timerA.cancelled and LM:OpenRoll() == LINK, "item A's roll is open, on its timer")
+wishes = { { name = "Ana", order = 1 } }
+local awardsBefore = #GuildOS.db.lootMaster.awardHistory
+announce(30003)
+check(prompted == "Ana" and LM.activeLoot.sid ~= sidA, "item B goes to the one raider who wishes for it, for the loot master to confirm")
+check(timerA.cancelled == true, "announcing B cancels A's timer")
+timerA.fn()
+check(LM.activeLoot and LM.activeLoot.itemId == 30003 and not LM.activeLoot.ended
+  and #GuildOS.db.lootMaster.awardHistory == awardsBefore and not all(said):find("nobody rolled", 1, true),
+  "and A's timer, run late all the same, neither ends B nor sends it to the disenchanter")
+check(LM:OpenRoll() == nil, "an item waiting for the loot master's word is no open roll")
+LM:CancelRolling()
+wishes = {}
+LM.WISHLIST_ONLY_MODE = false
+LM.ShowCouncilResultFrame = realCouncilFrame
+-- Given before its time ran out, a roll's timer is over with it.
+announce()
+local timerC = timers[#timers]
+LM:RegisterRoll("Ana", "MS", 50)
+LM:AwardLoot("Ana")
+check(timerC.cancelled == true and LM.activeLoot == nil, "an award before the time runs out cancels the roll's timer")
 
 -- ── 6. An exception's own order ─────────────────────────────────────
 local thunder = { on = { items = { 28770 } }, name = "Mindblade", set = { order = { { k = "wishlist" }, { k = "roll" } }, decide = { by = "ml" } } }
