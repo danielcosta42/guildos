@@ -663,10 +663,15 @@ end
 
 ----------------------------------------------------------------------
 -- Counter accounts (issue #334)
--- pool.accounts[acct] = { rs = "night"|"lockout"|"never", per = <period>, v = { [key] = n } }
+-- pool.accounts[acct] = { rs = "night"|"lockout"|"never", per = <period>, v = { [key] = n },
+--                         t = { [key] = <when the key's figure last moved> } }
 -- Every entry names the period it was made in. An entry of a newer period empties the account before
 -- it adds; one of an older period is late and adds nothing, so every client ends on the same figures
 -- in whatever order the entries reach it.
+-- A snapshot never replaces an account (MergeAccounts): one of an older period changes nothing, one of
+-- a newer period is taken whole, and within the same period each key keeps the figure that moved last
+-- (`t`), or the higher one where either side cannot say when. An officer's snapshot from before
+-- tonight's raid used to wipe tonight's +1, and the next item went to the wrong raider.
 ----------------------------------------------------------------------
 -- The period `now` falls in: the raid session's start for a night (or the moment itself with no
 -- session on), the lockout week, and one period for ever.
@@ -718,20 +723,32 @@ function Points:ApplyCounterEntry(e, pool)
         pool.accounts[e.acct] = a
     elseif not samePeriod(a.rs, e.per, a.per) then
         if e.per < a.per then return false end
-        a.per, a.v = e.per, {}
+        a.per, a.v, a.t = e.per, {}, {}
     end
     local n = (a.v[e.key] or 0) + e.delta
     a.v[e.key] = n > 0 and n or nil
+    -- When this key's figure last moved, for a snapshot to be merged by (MergeAccounts).
+    local ts = tonumber(e.ts)
+    if ts and ts > 0 and ts < math.huge then
+        a.t = a.t or {}
+        a.t[e.key] = math.max(a.t[e.key] or 0, ts)
+    end
     return true
 end
 
 -- Add `delta` (negative to give back) to `key` on the counter `acct`, which resets the way `reset`
 -- says. `per` is the period of the entry being undone; nil is now. Kept here whoever awards, and told
 -- to the guild when an officer does. Returns the entry, for an undo.
-function Points:AddCounter(acct, key, delta, reset, per)
+-- `op` names the entry after what caused it (an award, LootMaster), so every client that makes it for
+-- the same cause makes it once: nil when it was already made here.
+function Points:AddCounter(acct, key, delta, reset, per, op)
     local e = self:MakeEntry(key, delta, "", "counter")
     e.acct, e.rs = acct, COUNTER_RESETS[reset] and reset or "never"
     e.per = per or self:CounterPeriod(e.rs)
+    if op then
+        if self:GetDB().appliedOps[op] then return nil end
+        e.op = op
+    end
     if not self:ApplyCounterEntry(e) then return nil end
     self:MarkApplied(e.op)
     if GuildOS:IsOfficer() and GuildOS.SyncService then
@@ -1045,10 +1062,52 @@ local function localAccounts(accounts)
                     v[key] = (v[key] or 0) + math.floor(n)
                 end
             end
-            out[acct] = { rs = a.rs, per = a.per, v = v }
+            local t = {}
+            for key, at in pairs(type(a.t) == "table" and a.t or {}) do
+                if type(key) == "string" and type(at) == "number" and at > 0 and at < math.huge then
+                    key = GuildOS:LocalMemberKey(key)
+                    t[key] = math.max(t[key] or 0, at)
+                end
+            end
+            out[acct] = { rs = a.rs, per = a.per, v = v, t = t }
         end
     end
     return out
+end
+
+-- A snapshot's accounts into this client's, account by account (see "Counter accounts" above).
+function Points:MergeAccounts(pool, accounts)
+    pool.accounts = pool.accounts or {}
+    for acct, theirs in pairs(localAccounts(accounts)) do
+        local mine = pool.accounts[acct]
+        if not mine then
+            pool.accounts[acct] = theirs
+        elseif mine.rs ~= theirs.rs then
+            -- Reset another way than here: two periods that cannot be compared. What is here stays,
+            -- unless it is empty; the entry that changes how an account resets says so by itself.
+            if next(mine.v) == nil then pool.accounts[acct] = theirs end
+        elseif samePeriod(mine.rs, theirs.per, mine.per) then
+            mine.t = mine.t or {}
+            local keys = {}
+            for key in pairs(mine.v) do keys[key] = true end
+            for key in pairs(theirs.v) do keys[key] = true end
+            for key in pairs(mine.t) do keys[key] = true end
+            for key in pairs(theirs.t) do keys[key] = true end
+            for key in pairs(keys) do
+                local mineAt, theirsAt = mine.t[key] or 0, theirs.t[key] or 0
+                local has, got = mine.v[key] or 0, theirs.v[key] or 0
+                if mineAt > 0 and theirsAt > 0 and mineAt ~= theirsAt then
+                    if theirsAt > mineAt then has = got end
+                else
+                    has = math.max(has, got)
+                end
+                mine.v[key] = has > 0 and has or nil
+                if math.max(mineAt, theirsAt) > 0 then mine.t[key] = math.max(mineAt, theirsAt) end
+            end
+        elseif theirs.per > mine.per then
+            pool.accounts[acct] = theirs
+        end
+    end
 end
 
 ----------------------------------------------------------------------
@@ -1125,7 +1184,8 @@ function Points:OnSync(env)
             end
             -- The counters, when the officer's client keeps them (issue #334); one from before says
             -- nothing of them, and they stay as they are here.
-            if type(d.accounts) == "table" then pool.accounts = localAccounts(d.accounts) end
+            -- Merged, never replaced: a snapshot older than tonight leaves tonight's figures alone.
+            if type(d.accounts) == "table" then self:MergeAccounts(pool, d.accounts) end
             -- The queues (issue #337): each one's newest order wins, as with its entries.
             if type(d.queues) == "table" then
                 for _, e in pairs(localQueues(d.queues)) do self:ApplyQueueEntry(e, pool) end

@@ -18,10 +18,13 @@
 --   BID|sid|name|KEY|bid                 loot master -> raid: an open bid it took
 --   ACK|sid|name|KEY                     loot master -> raid: an answer with nothing else to show
 --   NO|sid|name|why|number               loot master -> raid: an answer it refused
+--   WON|sid|itemId|KEY|name              loot master who is no officer -> raid, after an award that
+--                                        moved a counter: the officers' clients make the same entries
 -- Who answered is always the sender the game names, never a name inside the message. Who each message
 -- is read from:
 --   ASK, ANNOUNCE, ROLL, BID, ACK, NO   the raid's master looter (IsFromMasterLooter), by a raider's client
 --   ANS                                 a raid member (the tied, in a roll for a tie), by the master looter's
+--   WON                                 the raid's master looter, when no officer, by an officer's client
 --   AWARD, UNDO                         as before: an officer of the guild, for what is recorded or forgotten
 --
 -- Since issue #336 every award keeps a record of why the winner got the item (AwardWhy, LootRule:Why),
@@ -1320,6 +1323,9 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
             self:ShowRollPopup(link, duration, itemId, ask and ask.spec)
         end
 
+    elseif cmd == "WON" then
+        self:OnWonMessage(rest, sender)
+
     elseif cmd == "UNDO" then
         -- An officer took an award back (issue #294): forget it here too.
         local who, id, at = rest:match("^([^|]+)|(%d+)|(%d+)$")
@@ -2078,51 +2084,18 @@ function LootMaster:AwardLootNow(playerName, silent, free)
         end
     end
 
-    -- What the award changes on the rule's counters, in the rule's order; each move is kept for an undo.
-    --   * "add" (the +1, issue #334): an answer that counts adds to the winner's counter;
-    --   * "reset": the winner's counter goes back to nothing (a wait that ends with the item);
-    --   * "charge" on a counter: a fixed figure or a share of it comes off, by the answer's cost.
-    -- Whoever the loot master is. An item given with no answer (straight from the loot window) moves none.
+    -- What the award changes on the rule's counters and queues (CounterEffects). Whoever the loot master
+    -- is. An item given with no answer (straight from the loot window) moves none.
     if pointsReady and response then
         local pKey = GuildOS:GetPlayerKey(playerName)
-        -- One entry moves a counter by a hundred at most (Points): a larger move takes several.
-        local function move(acct, delta)
-            local counter = LR:Counter(acct, rule)
-            local reset = counter and counter.reset or "never"
-            while delta ~= 0 do
-                local step = math.max(-100, math.min(100, delta))
-                local e = GuildOS.Points:AddCounter(acct, pKey, step, reset)
-                if not e then return end
-                award.plus = award.plus or {}
-                award.plus[#award.plus + 1] = { acct = e.acct, key = pKey, value = step, reset = e.rs, per = e.per }
-                delta = delta - step
-            end
-        end
-        for _, effect in ipairs(rule.effects or {}) do
-            local counter = LR:Counter(effect.acct, rule)
-            local bonus = counter and counter.type == "bonus"
-            if effect.k == "add" and response.plus then
-                -- An account with a cap (a bonus, issue #337) never grows past it.
-                local value = effect.value
-                if counter and counter.cap then
-                    value = math.min(value, math.max(0, counter.cap - GuildOS.Points:Counter(effect.acct, pKey)))
-                end
-                move(effect.acct, value)
-            elseif effect.k == "reset" and counter then
-                move(effect.acct, -GuildOS.Points:Counter(effect.acct, pKey))
-            elseif effect.k == "charge" and counter and (response.plus or not bonus) then
-                -- A bonus account is charged only when the winning answer used it (karma: lose half).
-                move(effect.acct, -LR:CounterCharge(effect, GuildOS.Points:Counter(effect.acct, pKey), response))
-            elseif effect.k == "bottom" and response.plus then
-                -- The winner drops to the end of the queue (Suicide Kings, issue #337), when the answer
-                -- is one that counts: an off spec roll moves nobody.
-                local queue = LR:Queue(effect.acct, rule)
-                local moved = queue and GuildOS.Points:QueueBottom(effect.acct, pKey, GuildOS.Points:RaidKeys(), queue.frozen)
-                if moved then
-                    award.queue = award.queue or {}
-                    award.queue[#award.queue + 1] = moved
-                end
-            end
+        local opBase = self:AwardOp(self.activeLoot.sid, itemId, pKey)
+        self:CounterEffects(rule, response, pKey, opBase, award)
+        -- A master looter who is no officer cannot tell the guild's accounts anything: the entries above
+        -- stay on this client. The raid's officers hear who won with which answer and make the same
+        -- entries themselves, under the same names, once (OnWonMessage).
+        if award.plus and opBase and not GuildOS:IsOfficer() then
+            self:SafeSendAddon(LootMaster.PREFIX, string.format("WON|%s|%d|%s|%s", self.activeLoot.sid, itemId,
+                row.rollType, playerName), "RAID")
         end
     end
 
@@ -2138,6 +2111,92 @@ function LootMaster:AwardLootNow(playerName, silent, free)
     -- Given before its time ran out: its timer and its /roll lines are over with it.
     self:StopListeningForRolls()
     self:StopRollTimer()
+end
+
+----------------------------------------------------------------------
+-- What an award changes on the rule's counters, in the rule's order:
+--   * "add" (the +1, issue #334): an answer that counts adds to the winner's counter;
+--   * "reset": the winner's counter goes back to nothing (a wait that ends with the item);
+--   * "charge" on a counter: a fixed figure or a share of it comes off, by the answer's cost;
+--   * "bottom": the winner drops to the end of a queue (Suicide Kings, issue #337).
+-- `opBase` names each entry after the award (AwardOp), so the master looter's client and every officer
+-- who hears of the award make it once between them. `award` is the master looter's record of the award:
+-- each move is kept on it for an undo, and only with it does a queue move, since a queue's order is the
+-- master looter's client's to say.
+----------------------------------------------------------------------
+function LootMaster:AwardOp(sid, itemId, pKey)
+    if not sid then return nil end
+    return string.format("W%s-%d-%s", sid, itemId or 0, pKey)
+end
+
+function LootMaster:CounterEffects(rule, response, pKey, opBase, award)
+    local LR, P = GuildOS.LootRule, GuildOS.Points
+    local made, moves = 0, 0
+    -- One entry moves a counter by a hundred at most (Points): a larger move takes several.
+    local function move(acct, delta)
+        local counter = LR:Counter(acct, rule)
+        local reset = counter and counter.reset or "never"
+        while delta ~= 0 do
+            local step = math.max(-100, math.min(100, delta))
+            moves = moves + 1
+            local e = P:AddCounter(acct, pKey, step, reset, nil, opBase and (opBase .. "." .. moves) or nil)
+            if not e then return end
+            made = made + 1
+            if award then
+                award.plus = award.plus or {}
+                award.plus[#award.plus + 1] = { acct = e.acct, key = pKey, value = step, reset = e.rs, per = e.per }
+            end
+            delta = delta - step
+        end
+    end
+    for _, effect in ipairs(rule.effects or {}) do
+        local counter = LR:Counter(effect.acct, rule)
+        local bonus = counter and counter.type == "bonus"
+        if effect.k == "add" and response.plus then
+            -- An account with a cap (a bonus, issue #337) never grows past it.
+            local value = effect.value
+            if counter and counter.cap then
+                value = math.min(value, math.max(0, counter.cap - P:Counter(effect.acct, pKey)))
+            end
+            move(effect.acct, value)
+        elseif effect.k == "reset" and counter then
+            move(effect.acct, -P:Counter(effect.acct, pKey))
+        elseif effect.k == "charge" and counter and (response.plus or not bonus) then
+            -- A bonus account is charged only when the winning answer used it (karma: lose half).
+            move(effect.acct, -LR:CounterCharge(effect, P:Counter(effect.acct, pKey), response))
+        elseif effect.k == "bottom" and response.plus and award then
+            -- When the answer is one that counts: an off spec roll moves nobody.
+            local queue = LR:Queue(effect.acct, rule)
+            local moved = queue and P:QueueBottom(effect.acct, pKey, P:RaidKeys(), queue.frozen)
+            if moved then
+                award.queue = award.queue or {}
+                award.queue[#award.queue + 1] = moved
+            end
+        end
+    end
+    return made
+end
+
+-- An officer's side: the raid's master looter, who is no officer, gave an item to `player` for the
+-- answer `key`. This client makes the counter entries that award makes, by its own rule in force and its
+-- own figures, and tells the guild, as it would for an award of its own; the entries carry the award's
+-- name, so several officers in the raid add up to one. Read from the raid's master looter alone, and
+-- only for a raider and an answer this client knows. Queues are not moved from here.
+function LootMaster:OnWonMessage(rest, sender)
+    if self:IsMasterLooter() or not GuildOS:IsOfficer() or not self:IsFromMasterLooter(sender) then return end
+    -- An officer's own award reaches the guild by the officers' sync: nothing to do for it here.
+    if GuildOS:IsOfficerByName(sender) then return end
+    local P = GuildOS.Points
+    if not (P and P.GetDB and P:GetDB()) or #rest > 120 then return end
+    local sid, itemId, key, player = rest:match("^(%x+)|(%d+)|([A-Z0-9]+)|([^|]+)$")
+    if not sid or #sid > 8 or #itemId > 9 or #key > 8 then return end
+    local name = self:RaidRollerName(player)
+    if not name then return end
+    local rule = GuildOS.LootRule:Active()
+    local response = GuildOS.LootRule:Response(key, rule)
+    if not response then return end
+    local pKey = GuildOS:GetPlayerKey(name)
+    self:CounterEffects(rule, response, pKey, self:AwardOp(sid, tonumber(itemId), pKey), nil)
 end
 
 ----------------------------------------------------------------------

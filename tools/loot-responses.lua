@@ -650,6 +650,99 @@ P:OnSync({ act = "snapshot", rev = 3, data = { core = "", mode = "dkp", config =
 check(theirs.accounts.plus1.v[K("Ana")] == 1, "a snapshot from an officer on a version from before leaves the counters alone")
 GuildOS.db.points = mine
 
+-- A snapshot is merged into the counters, never taken whole. An officer's snapshot from before tonight
+-- (sent by saving a points setting, at home) used to replace tonight's +1, and the next item went to
+-- whoever had already won one.
+local function copyOf(t)
+  local out = {}
+  for k, v in pairs(t) do out[k] = type(v) == "table" and copyOf(v) or v end
+  return out
+end
+local scratch = copyOf(mine)
+scratch.config = mine.config
+GuildOS.db.points = scratch
+local function snapshotOf(accounts)
+  P:OnSync({ act = "snapshot", rev = 9, data = { core = "", mode = "dkp", config = mine.config, accounts = accounts } })
+end
+check(P:Counter("plus1", K("Ana")) == 1 and P:Counter("plus1", K("Bo")) == 1 and P:Counter("plus1", K("Cy")) == 0, "tonight: Ana and Bo at +1")
+snapshotOf({ plus1 = { rs = "night", per = NOW - 7 * 86400, v = { ["Cy-Realm"] = 2 } } })
+check(P:Counter("plus1", K("Bo")) == 1 and P:Counter("plus1", K("Ana")) == 1 and P:Counter("plus1", K("Cy")) == 0
+  and scratch.accounts.plus1.per == mine.accounts.plus1.per, "a snapshot of last week's counters changes nothing of tonight's")
+res = rollOff({ { "Bo", "MS", 90 }, { "Cy", "MS", 10 } })
+check(res[1].name == "Cy" and LM.activeLoot.decidedBy == "account", "so the next item still goes to whoever has no +1")
+LM:CancelRolling()
+-- The same night: each key keeps the figure that moved last, or the higher where a side cannot say when.
+snapshotOf({ plus1 = { rs = "night", per = NOW, v = { ["Ana-Realm"] = 3, ["Cy-Realm"] = 1 },
+  t = { ["Ana-Realm"] = NOW - 5, ["Bo-Realm"] = NOW + 5, ["Cy-Realm"] = NOW + 5 } } })
+check(P:Counter("plus1", K("Ana")) == 1, "same night: a figure that moved before this client's does not replace it")
+check(P:Counter("plus1", K("Bo")) == 0, "one taken back later elsewhere (an undo this client missed) comes off here")
+check(P:Counter("plus1", K("Cy")) == 1, "and one added later elsewhere is added here")
+snapshotOf({ plus1 = { rs = "night", per = NOW, v = { ["Dee-Realm"] = 2, ["Ana-Realm"] = 2 } } })
+check(P:Counter("plus1", K("Dee")) == 2 and P:Counter("plus1", K("Ana")) == 2 and P:Counter("plus1", K("Cy")) == 1,
+  "from a client that does not say when, the higher figure of each key, and nothing is dropped")
+snapshotOf({ plus1 = { rs = "lockout", per = 5, v = { ["Ana-Realm"] = 9 } } })
+check(P:Counter("plus1", K("Ana")) == 2 and scratch.accounts.plus1.rs == "night", "an account that resets another way there leaves this one alone")
+snapshotOf({ plus1 = { rs = "night", per = NOW + 86400, v = { ["Dee-Realm"] = 1 } } })
+check(scratch.accounts.plus1.per == NOW + 86400 and scratch.accounts.plus1.v[K("Dee")] == 1 and scratch.accounts.plus1.v[K("Ana")] == nil,
+  "and a snapshot of a newer night is that night's, whole")
+
+-- A master looter who is no officer. The +1 of an award is kept on that client and cannot be told to
+-- the guild from it; the raid's officers hear who won with which answer and make the same entry, once.
+scratch = copyOf(mine)
+scratch.config = mine.config
+GuildOS.db.points = scratch
+local isOfficer, isOfficerByName = GuildOS.IsOfficer, GuildOS.IsOfficerByName
+GuildOS.IsOfficer = function() return false end
+published = {}
+res = rollOff({ { "Cy", "MS", 90 }, { "Dee", "MS", 10 } })
+sid = LM.activeLoot.sid
+quiet()
+LM:AwardLoot("Cy")
+check(P:Counter("plus1", K("Cy")) == 1 and #published == 0, "a master looter who is no officer keeps the +1 and publishes nothing")
+local won = ("WON|%s|28770|MS|Cy"):format(sid)
+local toldWon = false
+for _, payload in ipairs(sent) do toldWon = toldWon or payload == won end
+check(toldWon, "and tells the raid who won with which answer: " .. all(sent))
+table.remove(GuildOS.db.lootMaster.awardHistory, 1)
+-- An officer's client in that raid.
+local officerPool = copyOf(mine)
+officerPool.config = mine.config
+GuildOS.db.points = officerPool
+GuildOS.IsOfficer = function() return true end
+GuildOS.IsOfficerByName = function(_, name) return (name:match("^[^-]+")) ~= "Lead" end
+isML = false
+published = {}
+LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Cy-Realm")
+check(P:Counter("plus1", K("Cy")) == 0, "an officer's client reads it from the master looter alone")
+LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 1 and #published == 1 and published[1].act == "cdelta"
+  and published[1].data.entries[1].delta == 1, "and makes the +1 itself, told to the guild as its own would be")
+local wonEntry = published[1].data.entries[1]
+LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Cy")) == 1 and #published == 1, "heard twice, it is still one")
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|OS|Dee"):format(sid), "RAID", "Lead-Realm")
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Zed"):format(sid), "RAID", "Lead-Realm")
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|XX|Dee"):format(sid), "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Dee")) == 0 and #published == 1, "an answer that does not count, a stranger or an answer the rule lacks adds nothing")
+GuildOS.IsOfficerByName = isOfficerByName
+LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Dee"):format(sid), "RAID", "Lead-Realm")
+check(P:Counter("plus1", K("Dee")) == 0, "and a master looter who is an officer says it by the officers' sync, not this way")
+-- A second officer hears both the master looter and the first officer; and so does the master looter.
+local second = copyOf(mine)
+second.config = mine.config
+GuildOS.db.points = second
+GuildOS.IsOfficerByName = function(_, name) return (name:match("^[^-]+")) ~= "Lead" end
+LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
+P:OnSync({ act = "cdelta", data = { entries = { copyOf(wonEntry) } } })
+check(P:Counter("plus1", K("Cy")) == 1, "two officers in the raid add up to one +1")
+GuildOS.db.points = scratch
+P:OnSync({ act = "cdelta", data = { entries = { copyOf(wonEntry) } } })
+check(P:Counter("plus1", K("Cy")) == 1, "and the master looter's own client, hearing the officers, counts it once")
+GuildOS.IsOfficer, GuildOS.IsOfficerByName = isOfficer, isOfficerByName
+isML = true
+published = {}
+GuildOS.db.points = mine
+
 -- Reset: per night, per lockout, never.
 check(P:Counter("plus1", K("Ana")) == 1, "tonight Ana has one")
 NOW = NOW + 3 * 3600
