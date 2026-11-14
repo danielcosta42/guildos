@@ -303,17 +303,17 @@ local entry = GuildOS.db.lootHistory[1]
 local expected = {
   v = 1, rule = "council", ruleAt = ruleAt, decidedBy = "council",
   candidates = {
-    { name = "Cy", answer = "MS", roll = 0, bid = 0, values = { received = 0, attendance = 100 } },
-    { name = "Dee", answer = "MS", roll = 0, bid = 0, values = { wishlist = 1, received = 0, attendance = 100 } },
-    { name = "Fay", answer = "OS", roll = 0, bid = 0, values = { received = 0, attendance = 100 } },
+    { name = "Cy", answer = "MS", roll = 0, bid = 0, values = { softres = 0, hardres = 0, points = 0, received = 0, attendance = 100 } },
+    { name = "Dee", answer = "MS", roll = 0, bid = 0, values = { softres = 0, hardres = 0, points = 0, wishlist = 1, received = 0, attendance = 100 } },
+    { name = "Fay", answer = "OS", roll = 0, bid = 0, values = { softres = 0, hardres = 0, points = 0, received = 0, attendance = 100 } },
   },
   votes = { anon = false, quorum = 2, cast = { { by = "Ana", ["for"] = "Cy" }, { by = "Bo", ["for"] = "Cy" } }, tally = { Cy = 2 } },
 }
 check(entry.player == "Cy" and same(entry.why, expected), "a council award's record: " .. json(entry.why))
 check(ruleAt and ruleAt > 0, "stamped with when the guild's rule was last changed")
-check(json(GuildOS.Companion.LootWhy(entry.why)) == '{"candidates":[{"answer":"MS","bid":0,"name":"Cy","roll":0,"values":{"attendance":100,"received":0}},'
-  .. '{"answer":"MS","bid":0,"name":"Dee","roll":0,"values":{"attendance":100,"received":0,"wishlist":1}},'
-  .. '{"answer":"OS","bid":0,"name":"Fay","roll":0,"values":{"attendance":100,"received":0}}],"decidedBy":"council","rule":"council","ruleAt":'
+check(json(GuildOS.Companion.LootWhy(entry.why)) == '{"candidates":[{"answer":"MS","bid":0,"name":"Cy","roll":0,"values":{"attendance":100,"hardres":0,"points":0,"received":0,"softres":0}},'
+  .. '{"answer":"MS","bid":0,"name":"Dee","roll":0,"values":{"attendance":100,"hardres":0,"points":0,"received":0,"softres":0,"wishlist":1}},'
+  .. '{"answer":"OS","bid":0,"name":"Fay","roll":0,"values":{"attendance":100,"hardres":0,"points":0,"received":0,"softres":0}}],"decidedBy":"council","rule":"council","ruleAt":'
   .. ruleAt .. ',"v":1,"votes":{"anon":false,"cast":[{"by":"Ana","for":"Cy"},{"by":"Bo","for":"Cy"}],"quorum":2,"tally":{"Cy":2}}}',
   "and as it goes to the site: " .. json(GuildOS.Companion.LootWhy(entry.why)))
 check(LM.activeLoot == nil, "the item is given")
@@ -563,9 +563,9 @@ entry = GuildOS.db.lootHistory[1]
 expected = {
   v = 1, rule = "softres", ruleAt = ruleAt, decidedBy = "softres",
   candidates = {
-    { name = "Ana", answer = "MS", roll = 41, bid = 0, values = { softres = 1, ["account:plus1"] = 0, attendance = 96 } },
-    { name = "Bo", answer = "MS", roll = 99, bid = 0, values = { softres = 0, ["account:plus1"] = 1, attendance = 80 } },
-    { name = "Cy", answer = "OS", roll = 77, bid = 0, values = { softres = 0, ["account:plus1"] = 0, attendance = 100 } },
+    { name = "Ana", answer = "MS", roll = 41, bid = 0, values = { hardres = 0, points = 0, received = 0, softres = 1, ["account:plus1"] = 0, attendance = 96 } },
+    { name = "Bo", answer = "MS", roll = 99, bid = 0, values = { hardres = 0, points = 0, received = 0, softres = 0, ["account:plus1"] = 1, attendance = 80 } },
+    { name = "Cy", answer = "OS", roll = 77, bid = 0, values = { hardres = 0, points = 0, received = 0, softres = 0, ["account:plus1"] = 0, attendance = 100 } },
   },
 }
 check(same(entry.why, expected), "a roll award's record, with nobody who passed and no votes: " .. json(entry.why))
@@ -596,7 +596,9 @@ LM:RegisterRoll("Dee", "MS", 50)
 LM:EndRolling(true)
 LM:AwardLoot("Cy")
 why = GuildOS.db.lootHistory[1].why
-check(why.decidedBy == "ml" and why.rule == "custom" and why.candidates[1].values == nil, "a tie on every criterion is the master looter's to settle; no figure beside the roll, no values")
+check(why.decidedBy == "ml" and why.rule == "custom" and why.candidates[1].values.roll == nil
+  and why.candidates[1].values.softres == 0 and why.candidates[1].values.received == 0,
+  "a tie on every criterion is the master looter's to settle; the roll has its own field, and the values are what the row knows beside it")
 -- Before the roll ended, and with no roll at all.
 announce()
 LM:RegisterRoll("Cy", "MS", 10)

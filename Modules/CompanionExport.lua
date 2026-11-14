@@ -780,10 +780,16 @@ end
 local WHY_MAX = 200             -- loot entries of one upload that carry a record
 local WHY_CANDIDATES = 10
 local WHY_VOTES = 40
-local WHY_TEXT = 64             -- bytes of a name or a key in it
+local WHY_TEXT = 48             -- bytes of a name or a key in it: the site reads none longer (guildos-web#517)
+local WHY_VALUES = 12           -- figures per candidate, the site's limit too
 
+-- Cut to WHY_TEXT bytes, never through the middle of a character.
 local function whyText(v)
-    return tostring(v or ""):sub(1, WHY_TEXT)
+    local s = tostring(v or "")
+    if #s <= WHY_TEXT then return s end
+    local cut = WHY_TEXT
+    while cut > 0 and s:byte(cut + 1) and s:byte(cut + 1) >= 128 and s:byte(cut + 1) < 192 do cut = cut - 1 end
+    return s:sub(1, cut)
 end
 
 local function whyNumber(v)
@@ -801,11 +807,12 @@ local function lootWhy(why)
     for _, c in ipairs(type(why.candidates) == "table" and why.candidates or {}) do
         if type(c) == "table" and #out.candidates < WHY_CANDIDATES then
             local cand = { name = whyText(c.name), answer = whyText(c.answer), roll = whyNumber(c.roll), bid = whyNumber(c.bid) }
-            local values
+            local values, kept = nil, 0
             for k, v in pairs(type(c.values) == "table" and c.values or {}) do
-                if type(k) == "string" and GuildOS.Finite(v) then
+                if type(k) == "string" and GuildOS.Finite(v) and kept < WHY_VALUES then
                     values = values or {}
                     values[whyText(k)] = whyNumber(v)
+                    kept = kept + 1
                 end
             end
             cand.values = values

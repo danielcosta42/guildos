@@ -1456,18 +1456,20 @@ end
 --     votes = { anon, quorum, cast = { { by, for }, ... }, tally = { [name] = n } } }
 -- `candidates` are in the rule's order with the winner first, ten at most. `values` holds what each
 -- criterion of the order compared beside the answer, the roll and the bid, which have their own
--- fields: a reserve as 1 or 0, a place on a list (absent with none), a figure, "account:<key>" for an
+-- fields, then what else the row knows (reserve, list places, items received, attendance, points),
+-- twelve figures at most: a reserve as 1 or 0, a place on a list (absent with none), a figure, "account:<key>" for an
 -- account (a bonus account: what it added to the roll). `votes` is there only when a council voted;
 -- with an anonymous council `cast` is left out.
 ----------------------------------------------------------------------
 LootRule.WHY_VERSION = 1
 LootRule.WHY_CANDIDATES = 10
+local WHY_VALUES = 12             -- figures a candidate carries: the site reads no record with more
 
 local function round2(n) return math.floor(n * 100 + 0.5) / 100 end
 
 -- What each criterion of the rule's order compared for a candidate, as figures a person reads.
 local function comparedOf(c, rule)
-    local values, any = {}, false
+    local values, any, count = {}, false, 0
     for _, entry in ipairs(rule.order or {}) do
         local k, v = entry.k, nil
         local reserve = c.softRes
@@ -1497,8 +1499,29 @@ local function comparedOf(c, rule)
         elseif k == "roll" and entry.bonus then
             k, v = "account:" .. entry.bonus, bonusOf(c, rule, entry.bonus)
         end
-        if type(v) == "number" and v == v and v > -math.huge and v < math.huge then
+        if type(v) == "number" and v == v and v > -math.huge and v < math.huge and count < WHY_VALUES then
+            if values[k] == nil then count = count + 1 end
             values[k], any = v, true
+        end
+    end
+    -- And what the candidate's row knows beside it, while there is room: the site replays an award
+    -- under another rule from these alone (guildos-web#517), and a rule that orders by something this
+    -- one did not compare could not be replayed without them.
+    local reserve = c.softRes
+    local facts = {
+        { "softres", reserve and 1 or 0 },
+        { "hardres", (type(reserve) == "table" and reserve.hard) and 1 or 0 },
+        { "prio", c.prioOrder },
+        { "wishlist", c.wishlist and c.wishlist.order },
+        { "received", c.recvCount },
+        { "attendance", c.att25 },
+        { "points", c.dkp },
+    }
+    for _, fact in ipairs(facts) do
+        local k, v = fact[1], fact[2]
+        if values[k] == nil and count < WHY_VALUES and type(v) == "number" and v == v
+            and v > -math.huge and v < math.huge then
+            values[k], any, count = v, true, count + 1
         end
     end
     return any and values or nil

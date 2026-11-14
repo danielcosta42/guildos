@@ -432,4 +432,5 @@ Com `anon`, `cast` é omitido e só o `tally` vai.
   `cast` em ordem de quem votou, só os votos válidos no fim (um voto retirado não aparece). `tally` por
   nome do candidato, só quem teve voto; **ausente quando ninguém votou** (o codificador escreve mapa
   vazio como lista, então mapa vazio nunca sai; o mesmo vale para `values`).
-- **Limites:** nomes e chaves com até 64 bytes, 10 candidatos, 40 votos em `cast`.
+- **Limites:** nomes e chaves com até 48 bytes, 12 valores por candidato, 10 candidatos, 40 votos em `cast`: os mesmos da porta do site (guildos-web#517), que descarta o registro que passar deles.
+- **`values` leva mais do que a regra comparou:** depois do que a ordem leu, entram os fatos que a linha do candidato já tem (reserva, lugar nas listas, itens recebidos, presença, pontos), até os 12. É o que deixa o simulador do site refazer o prêmio sob outra regra.

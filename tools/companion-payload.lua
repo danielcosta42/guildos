@@ -767,7 +767,7 @@ do
   assert(GuildOS.Companion.LootWhy("x") == nil, "a record that is no table is none")
   local odd = GuildOS.Companion.LootWhy({ v = "1", rule = string.rep("r", 300), ruleAt = 0 / 0, candidates = { "x",
     { name = 7, roll = "a", values = { softres = 1 / 0, [3] = 1 } } }, votes = { tally = {} } })
-  assert(odd.ruleAt == 0 and #odd.rule == 64 and #odd.candidates == 1 and odd.candidates[1].roll == 0
+  assert(odd.ruleAt == 0 and #odd.rule == 48 and #odd.candidates == 1 and odd.candidates[1].roll == 0
     and odd.candidates[1].values == nil and odd.votes.tally == nil, "odd figures and texts are held to the shape")
   local many = { v = 1, candidates = {} }
   for i = 1, 30 do many.candidates[i] = { name = "P" .. i } end
