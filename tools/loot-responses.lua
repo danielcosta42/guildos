@@ -1,6 +1,6 @@
 -- How raiders answer a roll (issue #334), run against the real Core/Core.lua, Core/Compat.lua,
--- Core/Utils.lua, Core/Data.lua, Modules/CoreManager.lua, Modules/Points.lua, Modules/LootRule.lua
--- and Modules/LootMaster.lua:
+-- Core/Utils.lua, Core/Data.lua, Modules/CoreManager.lua, Modules/Points.lua, Modules/LootRule.lua,
+-- Modules/LootMaster.lua and UI/FeaturePanels.lua:
 --   * a rule's answers are objects (key, label, what each asks for, +1, cost), and a rule with a
 --     malformed one is refused whole; the rules of before come out with MS and OS as they were;
 --   * the loot master sends the buttons (ASK) before the announce every client reads, a client from
@@ -885,6 +885,50 @@ ok, err = pcall(function()
 end)
 check(ok, "the rows draw with a bid, a pass, a note and a counter: " .. tostring(err))
 LM:CancelRolling()
+
+-- The loot settings: the answers' editor.
+dofile(ADDON .. "/UI/FeaturePanels.lua")
+GuildOS.CreateRolePicker = function() return widget() end
+GuildOS.ShowPointsFrame = function() end
+local content = widget()
+local function draw()
+  widgets, buttons = {}, {}
+  local drew, problem = pcall(GuildOS.RefreshSettingsPanel, GuildOS, content, "loot")
+  check(drew, "the loot settings draw (" .. tostring(problem) .. ")")
+end
+GuildOS:SetLootSystem("rolls")
+draw()
+check(button("Add answer") and button("Roll") and button("Remove") and button("Down") and not button("+1"),
+  "the loot settings list the answers, with no +1 where the rule keeps none")
+check(button("MS > OS +1") and button("DKP bidding") and button("DKP sealed second-price"), "and offer the three new loot systems")
+check(not button("Back to the loot system's rule"), "with nothing changed there is nothing to go back to")
+click("Roll")
+check(LR:Responses()[2].ask == "bid" and LR:HasBids() and LR:IsCustom(), "a click on what an answer asks for changes the rule, through LootRule")
+check(button("Sealed") and button("Their bid") and button("Back to the loot system's rule"), "the bids' own settings show once an answer bids")
+click("Sealed")
+check((LR:BidRules()) == true, "sealed is a click")
+click("The second bid, plus a step")
+check(LR:ChargeEffect().price == "second", "and so is the price")
+click("Down")
+check(LR:Responses()[1].key == "OS", "Down moves an answer")
+for _, w in ipairs(boxes()) do
+  if w.text == "30" and w.save then w.save("90") break end
+end
+check(LM:RollTime() == 90, "the time to answer is saved from its box")
+printed = {}
+for _, w in ipairs(boxes()) do
+  if w.text == "90" and w.save then w.save("1") break end
+end
+check(LM:RollTime() == 90 and #printed == 1, "and a time that is none is refused, with a word to the officer")
+click("Back to the loot system's rule")
+check(not LR:IsCustom() and LR:Responses()[1].key == "MS", "back to the loot system's rule")
+click("MS > OS +1")
+check(GuildOS:GetLootSystem() == "plus1", "picking +1 is a click")
+check(button("+1") and button("Each raid night") and button("Each lockout") and button("Never"), "its answers say which count, and when the counter starts over")
+click("Each lockout")
+check(LR:Counters()[1].reset == "lockout", "and that is a click too")
+click("DKP sealed second-price")
+check(GuildOS:GetLootSystem() == "dkpsealed" and not LR:IsCustom() and button("Open DKP Window"), "DKP by sealed bids shows the points' settings")
 
 math.random = realRandom
 print(("loot-responses: %d checks passed"):format(checks))

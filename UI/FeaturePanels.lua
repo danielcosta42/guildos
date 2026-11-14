@@ -2537,8 +2537,200 @@ function GuildOS:RefreshSettingsPanel(content, category)
         yOff = yOff + 28
     end
 
-    -- DKP/Points configuration appears when the DKP system is selected
-    if (curSys == "dkp" or curSys == "epgp") and GuildOS.Points then
+    -- How raiders answer (issue #334): the buttons of the roll popup, where there is a loot master.
+    -- Every change goes through GuildOS.LootRule, which keeps the guild's rule and refuses one that
+    -- is not a rule; this panel only shows it.
+    if GuildOS.LootMaster and GuildOS.LootRule and curSys ~= "external" then
+        local LR = GuildOS.LootRule
+        local rule = LR:Active()
+        local answers = LR:Responses(rule)
+        -- What a change came to: said when the rule refused it, and the panel drawn again either way.
+        local function changed(ok)
+            if not ok then GuildOS:Print(L["|cffFF4444That change does not make a rule the loot master can use.|r"]) end
+            GuildOS:RefreshSettingsPanel(content)
+        end
+        local function ruleBox(width, numeric, maxLetters, x, text)
+            local box = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+            box:SetSize(width, 22)
+            box:SetPoint("TOPLEFT", x, -yOff + 2)
+            box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            box:SetBackdropColor(0.05, 0.05, 0.066, 1)
+            box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+            GuildOS:ApplyFont(box, 11)
+            box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+            box:SetAutoFocus(false)
+            box:SetNumeric(numeric)
+            box:SetMaxLetters(maxLetters)
+            box:SetTextInsets(4, 4, 0, 0)
+            box:SetText(text or "")
+            box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            return box
+        end
+        -- A row of buttons of which one is the choice in force.
+        local function choices(x, list, current, onPick)
+            for _, c in ipairs(list) do
+                local b = UI:CreateButton(content, c.n, 80, 22)
+                b:SetPoint("TOPLEFT", x, -yOff + 2)
+                if c.k == current then
+                    b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+                    b.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                end
+                b:SetScript("OnClick", function() onPick(c.k) end)
+                x = x + b:GetWidth() + 4
+            end
+        end
+
+        local hraTitle = UI:CreateText(content, L["How raiders answer:"], 11, C.white.r, C.white.g, C.white.b)
+        hraTitle:SetPoint("TOPLEFT", 16, -yOff)
+        yOff = yOff + 18
+        local hraDesc = UI:CreateText(content, L["The buttons of the roll popup, in order of priority. Without GuildOS, /roll 1-100 is the first and /roll 1-99 the second; the loot master types in any other answer."], 9, C.silver.r, C.silver.g, C.silver.b)
+        hraDesc:SetPoint("TOPLEFT", 28, -yOff)
+        hraDesc:SetWidth(content:GetWidth() - 40)
+        hraDesc:SetJustifyH("LEFT")
+        yOff = yOff + 30
+
+        -- Whether winning with an answer can count for a +1: only a rule that keeps the counter.
+        local countsPlus = false
+        for _, e in ipairs(rule.effects or {}) do
+            if e.k == "add" then countsPlus = true end
+        end
+        local ASK_NEXT = { roll = "bid", bid = "none", none = "roll" }
+        local ASK_NAME = { roll = L["Roll"], bid = L["Bid"], none = L["No roll"] }
+        for i, r in ipairs(answers) do
+            local keyText = UI:CreateText(content, r.key, 11, C.gold.r, C.gold.g, C.gold.b)
+            keyText:SetPoint("TOPLEFT", 28, -yOff)
+            local labelBox = ruleBox(110, false, 24, 100, LR:ResponseLabel(r))
+            UI:AttachSaveButton(labelBox, function(box)
+                changed(LR:SetResponseField(i, "label", box:GetText()))
+            end)
+            local x = 100 + 110 + 6 + labelBox.saveButton:GetWidth() + 8
+            local ask = r.ask or "roll"
+            local askBtn = UI:CreateButton(content, ASK_NAME[ask], 70, 22)
+            askBtn:SetPoint("TOPLEFT", x, -yOff + 2)
+            askBtn:SetScript("OnClick", function() changed(LR:SetResponseField(i, "ask", ASK_NEXT[ask])) end)
+            x = x + askBtn:GetWidth() + 4
+            if countsPlus then
+                local plusBtn = UI:CreateButton(content, "+1", 36, 22)
+                plusBtn:SetPoint("TOPLEFT", x, -yOff + 2)
+                if r.plus then
+                    plusBtn:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
+                    plusBtn.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                end
+                plusBtn:SetScript("OnClick", function() changed(LR:SetResponseField(i, "plus", not r.plus)) end)
+                x = x + plusBtn:GetWidth() + 4
+            end
+            local costBox = ruleBox(40, false, 4, x, tostring(r.cost or 1))
+            UI:AttachSaveButton(costBox, function(box)
+                changed(LR:SetResponseField(i, "cost", box:GetText()))
+            end)
+            x = x + 40 + 6 + costBox.saveButton:GetWidth() + 8
+            if i > 1 then
+                local up = UI:CreateButton(content, L["Up"], 40, 22)
+                up:SetPoint("TOPLEFT", x, -yOff + 2)
+                up:SetScript("OnClick", function() changed(LR:MoveResponse(i, -1)) end)
+                x = x + up:GetWidth() + 4
+            end
+            if i < #answers then
+                local down = UI:CreateButton(content, L["Down"], 40, 22)
+                down:SetPoint("TOPLEFT", x, -yOff + 2)
+                down:SetScript("OnClick", function() changed(LR:MoveResponse(i, 1)) end)
+                x = x + down:GetWidth() + 4
+            end
+            if #answers > 1 then
+                local del = UI:CreateButton(content, L["Remove"], 70, 22)
+                del:SetPoint("TOPLEFT", x, -yOff + 2)
+                del:SetScript("OnClick", function() changed(LR:RemoveResponse(i)) end)
+            end
+            yOff = yOff + 26
+        end
+        local colHint = UI:CreateText(content, L["Each answer: the button's name, what it asks for, and the share of the item's price it pays (1 = all, 0.5 = half, 0 = free)."], 9, C.silver.r, C.silver.g, C.silver.b)
+        colHint:SetPoint("TOPLEFT", 28, -yOff)
+        colHint:SetWidth(content:GetWidth() - 40)
+        colHint:SetJustifyH("LEFT")
+        yOff = yOff + 30
+
+        if #answers < LR.MAX_RESPONSES then
+            local newKey = ruleBox(70, false, 8, 28)
+            local keyHint = UI:CreateText(content, L["Key (A-Z, 0-9)"], 9, C.silver.r, C.silver.g, C.silver.b)
+            keyHint:SetPoint("BOTTOMLEFT", newKey, "TOPLEFT", 0, 1)
+            local newLabel = ruleBox(130, false, 24, 104)
+            local labelHint = UI:CreateText(content, L["Button"], 9, C.silver.r, C.silver.g, C.silver.b)
+            labelHint:SetPoint("BOTTOMLEFT", newLabel, "TOPLEFT", 0, 1)
+            local addBtn = UI:CreateButton(content, L["Add answer"], 100, 22)
+            addBtn:SetPoint("TOPLEFT", 240, -yOff + 2)
+            addBtn:SetScript("OnClick", function()
+                if LR:CleanKey(newKey:GetText()) == "" then return end
+                changed(LR:AddResponse(newKey:GetText(), newLabel:GetText()))
+            end)
+            yOff = yOff + 30
+        end
+
+        local timeLbl = UI:CreateText(content, L["Time to answer (seconds):"], 11, C.white.r, C.white.g, C.white.b)
+        timeLbl:SetPoint("TOPLEFT", 16, -yOff)
+        local timeBox = ruleBox(60, true, 3, 220, tostring(GuildOS.LootMaster:RollTime()))
+        UI:AttachSaveButton(timeBox, function(box) changed(LR:SetTime(box:GetText())) end)
+        local timeHint = UI:CreateText(content, L["5 to 300"], 9, C.silver.r, C.silver.g, C.silver.b)
+        timeHint:SetPoint("TOPLEFT", 360, -yOff)
+        yOff = yOff + 28
+
+        -- Bids, when an answer asks for one: open or sealed, the least bid, the step, and the price.
+        if LR:HasBids(rule) then
+            local sealed, minBid, step = LR:BidRules(rule)
+            local bidLbl = UI:CreateText(content, L["Bids:"], 11, C.white.r, C.white.g, C.white.b)
+            bidLbl:SetPoint("TOPLEFT", 16, -yOff)
+            choices(220, { { k = false, n = L["Open"] }, { k = true, n = L["Sealed"] } }, sealed,
+                function(k) changed(LR:SetBidField("sealed", k)) end)
+            yOff = yOff + 28
+            local minLbl = UI:CreateText(content, L["Minimum bid:"], 11, C.white.r, C.white.g, C.white.b)
+            minLbl:SetPoint("TOPLEFT", 16, -yOff)
+            local minBox = ruleBox(60, true, 6, 220, tostring(minBid))
+            UI:AttachSaveButton(minBox, function(box) changed(LR:SetBidField("min", box:GetText())) end)
+            yOff = yOff + 28
+            local stepLbl = UI:CreateText(content, L["Bid step:"], 11, C.white.r, C.white.g, C.white.b)
+            stepLbl:SetPoint("TOPLEFT", 16, -yOff)
+            local stepBox = ruleBox(60, true, 6, 220, tostring(step))
+            UI:AttachSaveButton(stepBox, function(box) changed(LR:SetBidField("step", box:GetText())) end)
+            local stepHint = UI:CreateText(content, L["An open bid goes over the best one by at least this"], 9, C.silver.r, C.silver.g, C.silver.b)
+            stepHint:SetPoint("TOPLEFT", 360, -yOff)
+            yOff = yOff + 28
+            local payLbl = UI:CreateText(content, L["The winner pays:"], 11, C.white.r, C.white.g, C.white.b)
+            payLbl:SetPoint("TOPLEFT", 16, -yOff)
+            local charge = LR:ChargeEffect(rule)
+            choices(220, {
+                { k = "table", n = L["The item's price"] }, { k = "bid", n = L["Their bid"] },
+                { k = "second", n = L["The second bid, plus a step"] },
+            }, charge and charge.price or "table", function(k) changed(LR:SetPrice(k)) end)
+            yOff = yOff + 28
+        end
+
+        -- The counters the rule keeps (the +1): when each goes back to nothing.
+        for _, a in ipairs(LR:Counters(rule)) do
+            local resetLbl = UI:CreateText(content, string.format(L["Counter %s starts over:"], a.name or a.key),
+                11, C.white.r, C.white.g, C.white.b)
+            resetLbl:SetPoint("TOPLEFT", 16, -yOff)
+            local acct = a.key
+            choices(220, {
+                { k = "night", n = L["Each raid night"] }, { k = "lockout", n = L["Each lockout"] },
+                { k = "never", n = L["Never"] },
+            }, a.reset or "never", function(k) changed(LR:SetCounterReset(acct, k)) end)
+            yOff = yOff + 28
+        end
+
+        -- A rule an officer changed stays the guild's until a loot system is picked again.
+        if LR:IsCustom() then
+            local backBtn = UI:CreateButton(content, L["Back to the loot system's rule"], 220, 22)
+            backBtn:SetPoint("TOPLEFT", 16, -yOff)
+            backBtn:SetScript("OnClick", function() changed(LR:Set(nil)) end)
+            local backHint = UI:CreateText(content, L["The guild's own rule is in force: the loot system's other settings no longer change who wins."], 9, C.silver.r, C.silver.g, C.silver.b)
+            backHint:SetPoint("LEFT", backBtn, "RIGHT", 10, 0)
+            backHint:SetWidth(content:GetWidth() - 270)
+            backHint:SetJustifyH("LEFT")
+            yOff = yOff + 30
+        end
+    end
+
+    -- DKP/Points configuration appears when the DKP system is selected (or DKP by bids, issue #334)
+    if GuildOS:LootSystemUsesPoints() and GuildOS.Points then
         local pcfg = GuildOS.Points:GetDB().config
         local isEPGP = curSys == "epgp"
         local function numRow(labelText, key, hint)
