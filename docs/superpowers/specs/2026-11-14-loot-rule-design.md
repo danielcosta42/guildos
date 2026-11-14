@@ -323,6 +323,20 @@ Tudo sob o prefixo do LootMaster. Quem respondeu é sempre o remetente que o jog
 | `BID\|sid\|nome\|KEY\|lance` | master looter, RAID | Um lance aberto aceito |
 | `ACK\|sid\|nome\|KEY` | master looter, RAID | Resposta recebida (lance fechado, sem rolagem, pass) |
 | `NO\|sid\|nome\|motivo\|número` | master looter, RAID | Resposta recusada |
+| `WON\|sid\|itemId\|KEY\|nome` | master looter que não é oficial, RAID | Depois de um prêmio que mexeu em contador: os oficiais na raide fazem os mesmos lançamentos |
+
+De quem cada mensagem é aceita: `ASK`, `ANNOUNCE`, `ROLL`, `BID`, `ACK`, `NO`, `WON` e as do conselho
+(`COPEN`, `CMEM`, `CCAND`, `CTALLY`, `CWHO`, `CNO`, `CCLOSE`) só do master looter que o jogo aponta pela
+posição na raide (`LootMaster:IsFromMasterLooter`); onde o jogo não aponta nenhum, do líder da raide ou
+de um assistente. `ANS` e `CVOTE`, de qualquer membro da raide, e só o cliente do master looter os lê.
+Em cliente com sobrenome, o primeiro nome sozinho só identifica alguém quando um único raider o tem.
+
+Limites do que o cliente do master looter responde: a mesma resposta repetida em menos de 5 segundos é
+descartada sem resposta, cada raider tem 30 respostas por item, e o chat da raide ouve cada aviso sobre
+um jogador e um item uma vez. A primeira rolagem lida ou sorteada para um jogador num item vale até o
+fim, qualquer que seja a troca de respostas. Com lances abertos, quem tem um lance só pode aumentá-lo
+(motivo `held`). O item guarda o core em que foi anunciado e é cobrado, contado e registrado nas contas
+dele; anunciar outro item encerra o timer, a leitura de `/roll` e a votação do anterior.
 
 Versões misturadas: um cliente de antes ignora `ASK` e mostra o popup MS / OS do `ANNOUNCE`, cujo
 `/roll` o master looter novo ainda lê do chat (1-100 é a primeira resposta da regra, 1-99 a segunda);
@@ -334,6 +348,20 @@ Mora no pool de pontos (`pool.accounts[conta] = { rs, per, v }`) e viaja no mesm
 a ação própria `cdelta` (um cliente de antes não a lê como pontos), e no snapshot. Cada lançamento diz
 o período em que foi feito: a sessão de raide (noite), a semana do lockout, ou nenhum. Um lançamento de
 período mais novo zera a conta antes de somar; um de período mais velho chega atrasado e não soma.
+O snapshot funde, nunca substitui (`Points:MergeAccounts`): conta de período mais antigo não muda nada,
+de período mais novo entra inteira e, no mesmo período, cada chave fica com o valor que mudou por último
+(`t`, o horário do lançamento; o maior, onde um dos lados não diz quando). Os lançamentos de contador de
+um prêmio têm id tirado do prêmio (`W<sid>-<itemId>-<chave>.<n>`), então o master looter e os oficiais
+que ouviram o `WON` somam uma vez. A posição na fila e os contadores de cada candidato são relidos
+quando a rolagem encerra.
+
+### Fim da raide
+
+Pontual / atrasado, ficou até o fim / saiu cedo e por raide só pagam com `raidEndAwards` ligado (padrão
+desligado). Paga um cliente só: o do líder da raide (o último que a sessão viu), ou, se ele não é
+oficial, o do oficial visto na sessão cuja chave vem primeiro. O id de cada lançamento é o da noite de
+raide (instância, semana do reset e dia contado da hora do reset; dificuldade no retail), igual em todo
+cliente. O teto semanal de um motivo conta pela semana do reset e vai no snapshot (`weekly = { w, v }`).
 
 ### O conselho (#336)
 
