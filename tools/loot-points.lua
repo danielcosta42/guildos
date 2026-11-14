@@ -89,6 +89,25 @@ P:Award(K("Ana"), 30, "boss")
 check(P:Get(K("Ana")) == 30 and top().reason == "boss", "with no cap, an award adds whole")
 check(P:PriceOf("|Hitem:1|h[x]|h") == 0, "and an item costs nothing until the guild says what")
 
+-- An entry's name never repeats on a client, whatever the dice say: forty shares made in one second
+-- used to meet now and then, and the other officers' clients dropped the second of the two.
+local realRandom = math.random
+math.random = function() return 7 end
+local names, clash = {}, false
+for i = 1, 40 do
+  local e = P:MakeEntry("P" .. i .. "-Realm", 1, "share", "split")
+  clash = clash or names[e.op] ~= nil
+  names[e.op] = true
+end
+math.random = realRandom
+check(not clash, "forty entries made in one second, with the same random bits, carry forty names")
+local home = GuildOS.db.points
+GuildOS.db.points = { mode = "dkp", config = cfg, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+P:OnSync({ act = "delta", data = { entries = { { op = "6AC0B3C0-1F2E", key = K("Ana"), delta = 5, reason = "old", kind = "award", core = "" } } } })
+P:OnSync({ act = "delta", data = { entries = { { op = "6AC0B3C0-1F2E", key = K("Ana"), delta = 5, reason = "old", kind = "award", core = "" } } } })
+check(P:Get(K("Ana")) == 5, "an entry named the way of before is still read, once")
+GuildOS.db.points = home
+
 -- ── The cap ─────────────────────────────────────────────────────────
 cfg.cap = 25
 P:Award(K("Bo"), 5, "raid")

@@ -136,8 +136,21 @@ end
 local function cfg()       return Points:GetDB().config    end
 local function standings()  return Points:GetDB().standings end
 
+-- An entry's own name: the second, sixteen random bits, then who made it (a short hash of the
+-- author's name) and a count that only grows while this client runs. The first two alone, as every
+-- entry was named before, met too often: a share to each of forty raiders is forty entries in one
+-- second, one batch in ninety carried two with one name, and every other officer's client dropped the
+-- second as already applied. Old names are still names: nothing reads inside one.
+local opSeq = 0
+local function authorId()
+    local name = GuildOS.Compat.PlayerName() or ""
+    local h = 0
+    for i = 1, #name do h = (h * 31 + name:byte(i)) % 0x10000 end
+    return h
+end
 local function newOp()
-    return string.format("%X-%04X", GetServerTime(), math.random(0, 0xFFFF))
+    opSeq = opSeq + 1
+    return string.format("%X-%04X.%04X.%X", GetServerTime(), math.random(0, 0xFFFF), authorId(), opSeq)
 end
 
 ----------------------------------------------------------------------
