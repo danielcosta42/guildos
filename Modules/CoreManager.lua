@@ -175,7 +175,6 @@ local DEFAULT_PENALTIES = { LATE = 10, LEFT_EARLY = 10, NO_CONSUMES = 10 }
 
 -- Loot config fallbacks
 local DEFAULT_LOOT = {
-    lootMethod       = "roll",  -- "roll" | "dkp" | "tmb"
     rollDuration     = 30,
     autoAnnounce     = true,
     wishlistOnlyMode = false,
@@ -411,7 +410,6 @@ end
 function CoreManager:GetLootConfig(coreName)
     local core = self:GetCore(coreName)
     return {
-        lootMethod       = lmField(core, "lootMethod"),
         rollDuration     = lmField(core, "rollDuration"),
         autoAnnounce     = lmField(core, "autoAnnounce"),
         wishlistOnlyMode = lmField(core, "wishlistOnlyMode"),
@@ -422,8 +420,114 @@ function CoreManager:GetLootConfig(coreName)
         disenchanter     = lmField(core, "disenchanter"),
         dkpMinBid        = lmField(core, "dkpMinBid"),
         dkpBidTime       = lmField(core, "dkpBidTime"),
-        rule             = lmField(core, "rule"),
+        -- The core's own choice (issue #338), never the guild's: nil follows the guild.
+        lootSystem       = core and core.lootMaster and core.lootMaster.lootSystem or nil,
+        rule             = core and core.lootMaster and core.lootMaster.rule or nil,
     }
+end
+
+----------------------------------------------------------------------
+-- A core's own loot system and loot rule (issue #338). A core that chose neither follows the guild.
+-- Kept beside its loot settings, under one stamp, and told to the other officers with the core:
+--   core.lootMaster.lootSystem   one of GuildOS.LOOT_SYSTEMS' keys, or nil
+--   core.lootMaster.rule         a loot rule (LootRule:Validate), or nil
+--   core.lootMaster.lootAt       when an officer last changed either
+-- The `lootMethod` field of before was read by nothing and is not carried over: no core changes
+-- behaviour on update.
+----------------------------------------------------------------------
+local LOOT_FUTURE_SLACK = 300   -- seconds a peer's clock may run ahead of this one
+local CORE_NAME_MAX = 64        -- bytes of a core's name an officer's message may carry
+
+-- A core that exists, by name (nil: the active one), without making one.
+local function coreNamed(self, coreName)
+    if coreName == nil then coreName = self:GetActiveName() end
+    if type(coreName) ~= "string" or coreName == "" then return nil end
+    local cores = GuildOS.db and GuildOS.db.cores
+    local core = cores and cores[coreName]
+    return type(core) == "table" and core or nil, coreName
+end
+
+function CoreManager:GetLootSystem(coreName)
+    local core = coreNamed(self, coreName)
+    local sys = core and core.lootMaster and core.lootMaster.lootSystem
+    return type(sys) == "string" and sys or nil
+end
+
+function CoreManager:GetLootRule(coreName)
+    local core = coreNamed(self, coreName)
+    local rule = core and core.lootMaster and core.lootMaster.rule
+    return type(rule) == "table" and rule or nil
+end
+
+local function stampLoot(self, core, coreName)
+    local lm = core.lootMaster
+    lm.lootAt = math.max(GetServerTime(), (tonumber(lm.lootAt) or 0) + 1)
+    self:PublishLoot(coreName)
+end
+
+-- A core's own loot system; nil goes back to following the guild. Choosing one puts its ready-made
+-- rule in force again, over a rule the officers had made for the core. Officer only.
+function CoreManager:SetLootSystem(coreName, sys)
+    if not GuildOS:IsOfficer() then return false end
+    local core, name = coreNamed(self, coreName)
+    if not core then return false end
+    if sys ~= nil and not GuildOS:IsLootSystemHere(sys) then return false end
+    core.lootMaster = core.lootMaster or {}
+    core.lootMaster.lootSystem, core.lootMaster.rule = sys, nil
+    stampLoot(self, core, name)
+    return true
+end
+
+-- A core's own loot rule, which LootRule:Set has read whole; nil goes back to its loot system's.
+function CoreManager:SetLootRule(coreName, rule)
+    if not GuildOS:IsOfficer() then return false end
+    local core, name = coreNamed(self, coreName)
+    if not core then return false end
+    core.lootMaster = core.lootMaster or {}
+    core.lootMaster.rule = rule
+    stampLoot(self, core, name)
+    return true
+end
+
+-- One core's choice to the other officers: when it changes, and again on the officers' regular sync.
+-- It travels with the core's roster (domain "core.roster"), under an action a client from before
+-- ignores, as it carries no `members`.
+function CoreManager:PublishLoot(coreName)
+    local core, name = coreNamed(self, coreName)
+    local lm = core and core.lootMaster
+    if not (lm and lm.lootAt and GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    GuildOS.SyncService:Publish("core.roster", "loot",
+        { coreName = name, sys = lm.lootSystem or false, rule = lm.rule or false }, { rev = lm.lootAt })
+end
+
+function CoreManager:PublishAllLoot()
+    for _, name in ipairs(self:GetSortedNames()) do self:PublishLoot(name) end
+end
+
+-- Another officer's choice for a core (the handler has checked the officer and SyncService the
+-- channel). The newest stamp wins. A loot system this client does not offer, or a rule it cannot read
+-- whole, is refused whole: the core keeps what it had, system and rule. A core this client does not
+-- have is not made by this message; it comes with its roster.
+function CoreManager:OnLootSync(env)
+    local d = env and env.data
+    local at = env and tonumber(env.rev)
+    if type(d) ~= "table" or type(d.coreName) ~= "string" or #d.coreName > CORE_NAME_MAX then return false end
+    if not (at and at > 0 and at < math.huge) then return false end
+    local core = coreNamed(self, d.coreName)
+    if not core then return false end
+    local sys, rule = d.sys, d.rule
+    if sys == false then sys = nil end
+    if rule == false then rule = nil end
+    if sys ~= nil and (type(sys) ~= "string" or not GuildOS:IsLootSystemHere(sys)) then return false end
+    if rule ~= nil and not (GuildOS.LootRule and GuildOS.LootRule:Validate(rule)) then return false end
+    at = math.min(at, GetServerTime() + LOOT_FUTURE_SLACK)
+    core.lootMaster = core.lootMaster or {}
+    local lm = core.lootMaster
+    if lm.lootAt and at <= lm.lootAt then return false end
+    local before = GuildOS:GetLootSystem()
+    lm.lootSystem, lm.rule, lm.lootAt = sys, rule, at
+    if GuildOS:GetLootSystem() ~= before and GuildOS.OnLootSystemChanged then GuildOS:OnLootSystemChanged() end
+    return true
 end
 
 function CoreManager:SetLootConfigKey(key, value, coreName)
@@ -1270,6 +1374,13 @@ function CoreManager:InitSync()
         local d = env.data
         if type(d) ~= "table" or type(d.coreName) ~= "string" or d.coreName == "" then return end
         local discord = env.act == "discord" or env.act == "discordList"
+        -- A core's own loot system and rule (issue #338).
+        if env.act == "loot" then
+            if GuildOS:IsOfficerByName(sender) and self:OnLootSync(env) and GuildOS.coresPanelRefresh then
+                GuildOS.coresPanelRefresh()
+            end
+            return
+        end
         if not discord and not d.members then return end
         if not GuildOS:IsOfficerByName(sender) then return end
         if discord then

@@ -719,12 +719,17 @@ end
 
 function RaidTracker:SetGroupTag(name)
     name = name or ""
+    local systemBefore = GuildOS.GetLootSystem and GuildOS:GetLootSystem()
     self.currentGroupTag = name
     if GuildOS.db and GuildOS.db.raidTracker then
         GuildOS.db.raidTracker.currentGroupTag = name
     end
     -- Loot rules cached from the old core's config follow the new one (issue #99).
     if GuildOS.LootMaster and GuildOS.LootMaster.LoadCfg then GuildOS.LootMaster:LoadCfg() end
+    -- And what the loot system shows, when the new core runs another one (issue #338).
+    if systemBefore and GuildOS:GetLootSystem() ~= systemBefore and GuildOS.OnLootSystemChanged then
+        GuildOS:OnLootSystemChanged()
+    end
 end
 
 -- An officer picking the active core (Raid Core's "Set Active"), issue #99.

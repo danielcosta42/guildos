@@ -132,6 +132,32 @@ Chaves curtas porque a regra viaja pelo `GOSROST1` e pela sincronização da gui
 }
 ```
 
+## Cada core com o seu sistema, a sua regra e as suas contas (#338)
+
+O sistema de loot e a regra em vigor são os do core ativo da raide (`CoreManager:GetActiveName()`);
+sem core ativo, os da guilda. A ordem de quem fala:
+
+1. a regra própria do core (`core.lootMaster.rule`);
+2. o sistema de loot próprio do core (`core.lootMaster.lootSystem`), pela regra pronta dele;
+3. a regra da guilda (`settings.lootRule`);
+4. o sistema de loot da guilda (`settings.lootSystem`), pela regra pronta dele.
+
+Um core que não escolheu nada segue a guilda. O campo `lootMethod` de antes, que nenhum código lia, não
+é migrado. `GuildOS:GetLootSystem(coreName)` e `LootRule:For(coreName)` respondem por um core pelo
+nome; `""` é a guilda. `LootRule:Set(rule, coreName)` e cada função do editor de respostas recebem o
+core por último; sem ele, mexem na regra da guilda.
+
+- **Sincronização:** a escolha de um core (sistema e regra, sob um carimbo só, `lootAt`) viaja entre
+  oficiais no domínio `core.roster`, ação `loot`: `{ coreName, sys = <chave> | false, rule = <regra> |
+  false }`, `rev = lootAt`. Carimbo mais novo vence; sistema que este cliente não oferece ou regra que
+  ele não lê inteira é recusado inteiro (nem o sistema que veio junto entra). Um cliente de antes
+  ignora a ação, que não leva `members`. A mensagem não cria core: ele chega com o roster.
+- **Item anunciado:** guarda a regra e o sistema com que foi anunciado (`activeLoot.rule`,
+  `activeLoot.system`). Trocar o core ativo, ou um oficial salvar outra regra, muda o próximo item,
+  nunca a rolagem em curso.
+- **Contas:** o contador mora no pool de pontos, que já é por core; cada lançamento leva o core.
+- **Tela:** o que o sistema mostra (janela de pontos, acesso à wishlist) segue o core ativo.
+
 ## O que o addon lê do contrato (#334)
 
 `LootRule:Validate` aceita só o que este cliente aplica; o resto do contrato entra com a sua fatia.

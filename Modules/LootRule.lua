@@ -452,19 +452,56 @@ function LootRule:FromLegacy(system, cfg)
     return rule
 end
 
--- The rule in force: the active core's own, else the guild's, else the one its loot system and
--- settings always meant.
-function LootRule:Active()
-    local cfg = (GuildOS.LootMaster and GuildOS.LootMaster.GetCfg and GuildOS.LootMaster:GetCfg()) or {}
-    if cfg.rule and self:Validate(cfg.rule) then return cfg.rule end
+-- A core that exists, by name; nil for the guild ("" or nil) and for a name no core has.
+local function coreOrNil(coreName)
+    local cores = GuildOS.db and GuildOS.db.cores
+    if type(coreName) == "string" and coreName ~= "" and cores and type(cores[coreName]) == "table" then
+        return coreName
+    end
+    return nil
+end
+
+-- The loot settings a ready-made rule is built from: the core's (each one the guild's where the core
+-- set none), and beside them what its points ask to enter a roll.
+local function legacySettings(coreName)
+    local CM, LM, legacy = GuildOS.CoreManager, GuildOS.LootMaster, {}
+    local active = CM and CM.GetActiveName and CM:GetActiveName() or ""
+    local cfg
+    if (coreName or "") == active and LM and LM.GetCfg then
+        cfg = LM:GetCfg()   -- the raid's own, as the loot master reads them
+    else
+        cfg = (CM and CM.GetLootConfig and CM:GetLootConfig(coreName or "")) or (GuildOS.db and GuildOS.db.lootMaster)
+    end
+    cfg = cfg or {}
+    for k, v in pairs(cfg) do legacy[k] = v end
+    local P = GuildOS.Points
+    local pool = P and P.GetDBForCore and GuildOS.db and GuildOS.db.points and P:GetDBForCore(coreName or "")
+    legacy.entryCost = pool and pool.config and pool.config.entryCost
+    return legacy
+end
+
+-- The rule of a core, or of the guild ("" or nil), in this order (issue #338): the core's own rule,
+-- else the ready-made rule of the core's own loot system, else the guild's rule, else the ready-made
+-- rule of the guild's loot system. A core that chose nothing follows the guild; a kept rule this
+-- client cannot read whole is passed over, never applied in part.
+function LootRule:For(coreName)
+    coreName = coreOrNil(coreName)
+    local CM = GuildOS.CoreManager
+    if coreName and CM and CM.GetLootRule then
+        local own = CM:GetLootRule(coreName)
+        if own and self:Validate(own) then return own end
+        local sys = CM:GetLootSystem(coreName)
+        if sys and GuildOS:IsLootSystemHere(sys) then return self:FromLegacy(sys, legacySettings(coreName)) end
+    end
     local s = GuildOS.db and GuildOS.db.settings
     if s and s.lootRule and self:Validate(s.lootRule) then return s.lootRule end
-    -- The loot settings, and beside them what the points ask to enter a roll.
-    local pool = GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
-    local legacy = {}
-    for k, v in pairs(cfg) do legacy[k] = v end
-    legacy.entryCost = pool and pool.config and pool.config.entryCost
-    return self:FromLegacy(GuildOS.GetLootSystem and GuildOS:GetLootSystem() or "rolls", legacy)
+    return self:FromLegacy(GuildOS.GetLootSystem and GuildOS:GetLootSystem("") or "rolls", legacySettings(coreName))
+end
+
+-- The rule in force: the one of the raid's active core, and with no core active the guild's.
+function LootRule:Active()
+    local CM = GuildOS.CoreManager
+    return self:For(CM and CM.GetActiveName and CM:GetActiveName() or "")
 end
 
 ----------------------------------------------------------------------
@@ -532,17 +569,26 @@ end
 ----------------------------------------------------------------------
 -- The guild's own rule (an officer's): stamped, kept, and told to the guild where the loot system is
 -- (retail, issue #185). `nil` goes back to the rule of the loot system.
+-- With `coreName`, that core's own rule (issue #338): kept with the core and told to the other
+-- officers with it (CoreManager); `nil` goes back to what the core follows.
 ----------------------------------------------------------------------
-function LootRule:Set(rule)
+function LootRule:Set(rule, coreName)
     if not GuildOS:IsOfficer() then return false, "officer" end
     if rule ~= nil then
         local ok, why = self:Validate(rule)
         if not ok then return false, why end
     end
-    local s = GuildOS.db.settings
-    s.lootRule = rule
-    s.lootRuleAt = math.max(GetServerTime(), (s.lootRuleAt or 0) + 1)
-    self:Publish()
+    if coreName ~= nil and coreName ~= "" then
+        local CM = GuildOS.CoreManager
+        if not (coreOrNil(coreName) and CM and CM.SetLootRule and CM:SetLootRule(coreName, rule)) then
+            return false, "core"
+        end
+    else
+        local s = GuildOS.db.settings
+        s.lootRule = rule
+        s.lootRuleAt = math.max(GetServerTime(), (s.lootRuleAt or 0) + 1)
+        self:Publish()
+    end
     if GuildOS.LootMaster and GuildOS.LootMaster.RefreshRollFrame then GuildOS.LootMaster:RefreshRollFrame() end
     return true
 end
@@ -574,6 +620,8 @@ end
 -- An officer's changes to how raiders answer (issue #334), for the loot settings: each one takes the
 -- rule in force, changes one thing in a copy and saves it as the guild's own (`Set`), which refuses a
 -- rule that is no longer one. Returns what `Set` returns.
+-- Every one takes a last `coreName` (issue #338): the core whose rule is being changed, from its
+-- Config tab; nil or "" is the guild's.
 ----------------------------------------------------------------------
 local function copyOf(v)
     if type(v) ~= "table" then return v end
@@ -582,15 +630,20 @@ local function copyOf(v)
     return out
 end
 
--- Whether the guild keeps a rule of its own, over its loot system's.
-function LootRule:IsCustom()
+-- Whether the guild (or the core) keeps a rule of its own, over its loot system's.
+function LootRule:IsCustom(coreName)
+    coreName = coreOrNil(coreName)
+    if coreName then
+        local own = GuildOS.CoreManager and GuildOS.CoreManager:GetLootRule(coreName)
+        return (own and self:Validate(own)) and true or false
+    end
     local s = GuildOS.db and GuildOS.db.settings
     return (s and s.lootRule and self:Validate(s.lootRule)) and true or false
 end
 
--- The rule in force as one to change: a copy, its answers written out.
-function LootRule:Draft()
-    local rule = copyOf(self:Active())
+-- The guild's rule (or the core's) as one to change: a copy, its answers written out.
+function LootRule:Draft(coreName)
+    local rule = copyOf(self:For(coreName))
     rule.model = "custom"
     rule.responses = rule.responses or defaultResponses()
     return rule
@@ -619,36 +672,36 @@ function LootRule:CleanKey(text)
     return (tostring(text or ""):upper():gsub("[^A-Z0-9]", ""):sub(1, KEY_MAX))
 end
 
-function LootRule:AddResponse(key, label)
-    local rule = self:Draft()
+function LootRule:AddResponse(key, label, coreName)
+    local rule = self:Draft(coreName)
     key = self:CleanKey(key)
     label = strtrim(tostring(label or ""))
     rule.responses[#rule.responses + 1] = {
         key = key, label = label ~= "" and label or key, ask = "roll", plus = false, cost = 1,
     }
     fitOrder(rule)
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
-function LootRule:RemoveResponse(index)
-    local rule = self:Draft()
+function LootRule:RemoveResponse(index, coreName)
+    local rule = self:Draft(coreName)
     if not rule.responses[index] then return false, "responses" end
     table.remove(rule.responses, index)
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
 -- One place up (`by` -1) or down (+1): the order of the answers is their priority.
-function LootRule:MoveResponse(index, by)
-    local rule = self:Draft()
+function LootRule:MoveResponse(index, by, coreName)
+    local rule = self:Draft(coreName)
     local list, to = rule.responses, index + by
     if not (list[index] and list[to]) then return false, "responses" end
     list[index], list[to] = list[to], list[index]
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
 -- `field` is "label", "ask", "plus", "cost" or "note".
-function LootRule:SetResponseField(index, field, value)
-    local rule = self:Draft()
+function LootRule:SetResponseField(index, field, value, coreName)
+    local rule = self:Draft(coreName)
     local r = rule.responses[index]
     if not r or not (field == "label" or field == "ask" or field == "plus" or field == "cost" or field == "note") then
         return false, "responses"
@@ -661,43 +714,43 @@ function LootRule:SetResponseField(index, field, value)
     end
     r[field] = value
     fitOrder(rule)
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
-function LootRule:SetTime(seconds)
-    local rule = self:Draft()
+function LootRule:SetTime(seconds, coreName)
+    local rule = self:Draft(coreName)
     rule.time = tonumber(seconds)
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
 -- What the winner pays: "table" (the item's price, as always), "bid" (their own bid) or "second" (one
 -- step over the bid they beat).
-function LootRule:SetPrice(how)
-    local rule = self:Draft()
+function LootRule:SetPrice(how, coreName)
+    local rule = self:Draft(coreName)
     local effects = {}
     for _, e in ipairs(rule.effects or {}) do
         if e.k ~= "charge" then effects[#effects + 1] = e end
     end
     if how ~= "table" then effects[#effects + 1] = { k = "charge", acct = "dkp", price = how } end
     rule.effects = effects
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
 -- When a counter goes back to nothing: "night", "lockout" or "never".
-function LootRule:SetCounterReset(acct, reset)
-    local rule = self:Draft()
+function LootRule:SetCounterReset(acct, reset, coreName)
+    local rule = self:Draft(coreName)
     for _, a in ipairs(rule.accounts or {}) do
         if a.key == acct then a.reset = reset end
     end
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end
 
 -- `field` is "sealed", "min" or "step".
-function LootRule:SetBidField(field, value)
-    local rule = self:Draft()
+function LootRule:SetBidField(field, value, coreName)
+    local rule = self:Draft(coreName)
     if not (field == "sealed" or field == "min" or field == "step") then return false, "bid" end
     rule.bid = rule.bid or {}
     if field ~= "sealed" then value = tonumber(value) end
     rule.bid[field] = value
-    return self:Set(rule)
+    return self:Set(rule, coreName)
 end

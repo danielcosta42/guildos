@@ -113,13 +113,21 @@ end
 ----------------------------------------------------------------------
 -- Accessors
 ----------------------------------------------------------------------
-function Points:GetMode() return self:GetDB().mode end
+-- The pool `coreName` names: nil is the active core's, "" the guild's own.
+local function poolOf(coreName)
+    if coreName == nil then return Points:GetDB() end
+    return Points:GetDBForCore(coreName)
+end
 
-function Points:SetMode(mode)
+-- `coreName` (issue #338): another core's pool than the active one's, when a core picks its own loot
+-- system.
+function Points:GetMode(coreName) return poolOf(coreName).mode end
+
+function Points:SetMode(mode, coreName)
     if not GuildOS:IsOfficer() then return end
     if mode ~= "dkp" and mode ~= "epgp" and mode ~= "council" then return end
-    self:GetDB().mode = mode
-    self:BroadcastSnapshot()
+    poolOf(coreName).mode = mode
+    self:BroadcastSnapshot(coreName)
     self:Refresh()
 end
 
@@ -728,12 +736,12 @@ function Points:OnSync(env)
 end
 
 -- Officer authoritative snapshot (mode + config + full standings).
--- Broadcasts for the currently active core.
-function Points:BroadcastSnapshot()
+-- Broadcasts for the currently active core, or for the one `coreName` names (issue #338).
+function Points:BroadcastSnapshot(coreName)
     if not GuildOS:IsOfficer() then return end
     if not GuildOS.SyncService then return end
-    local coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
-    local pool  = self:GetDB()
+    if coreName == nil then coreName = GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or "" end
+    local pool  = poolOf(coreName)
     local domain = (coreName ~= "") and ("points:" .. coreName) or "points"
     local rev = GuildOS.SyncService:NextRevision(domain, "standings")
     GuildOS.SyncService:Publish("points", "snapshot", {

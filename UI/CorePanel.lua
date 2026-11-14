@@ -394,7 +394,6 @@ function GuildOS:CreateCoresPanel(panel)
         end
 
         local lootCfg = CM:GetLootConfig(coreName)
-        local curMethod = lootCfg.lootMethod or "roll"
         -- Loot rules: only where the Loot Master exists, never on retail (ADR-0026).
         if GuildOS.LootMaster then
             ------------------------------------------------------------
@@ -403,123 +402,124 @@ function GuildOS:CreateCoresPanel(panel)
             y = MakeSectionHeader(rightContent, L["Loot Rules"], y)
             y = y - 6
 
-            local METHOD_LABELS = { roll = L["Roll"], dkp = "DKP", tmb = "TMB" }
-            local METHOD_CYCLE  = { "roll", "dkp", "tmb" }
-
             local function lmSave(key, val)
                 CM:SetLootConfigKey(key, val, coreName)
             end
 
-            -- Method selector
-            local mthLbl = track(MakeLabel(rightContent, L["Loot method:"], 10))
-            mthLbl:SetPoint("TOPLEFT", 4, y)
-            local mthBtn = track(UI:CreateButton(rightContent, METHOD_LABELS[curMethod] or "Roll", 70, 20))
-            mthBtn:SetPoint("LEFT", mthLbl, "RIGHT", 6, 1)
-            mthBtn:SetScript("OnClick", function()
-                for i, v in ipairs(METHOD_CYCLE) do
-                    if v == curMethod then
-                        curMethod = METHOD_CYCLE[(i % #METHOD_CYCLE) + 1]
-                        break
-                    end
+            -- The core's own loot system (issue #338): every one this client offers, and "Follow the
+            -- guild" for a core that chose none. The choice in force is the lit one.
+            local ownSys = CM:GetLootSystem(coreName)
+            local inForce = GuildOS:GetLootSystem(coreName)
+            local sysLbl = track(MakeLabel(rightContent, L["Loot system:"], 10))
+            sysLbl:SetPoint("TOPLEFT", 4, y)
+            y = y - 18
+            local choices = { { key = nil, label = L["Follow the guild"] } }
+            for _, sys in ipairs(GuildOS:LootSystemsHere()) do
+                choices[#choices + 1] = { key = sys.key, label = GuildOS:LootSystemLabel(sys) }
+            end
+            local bx = 4
+            for _, choice in ipairs(choices) do
+                local b = track(UI:CreateButton(rightContent, choice.label, 110, 20))
+                -- A row the next button does not fit on goes on to the next one.
+                if bx > 4 and bx + b:GetWidth() > CFG_W - 24 then
+                    bx = 4
+                    y = y - 24
                 end
-                lmSave("lootMethod", curMethod)
-                BuildSettings(coreName)
-            end)
-            y = y - 30
-
-            if curMethod == "roll" then
-                --------------------------------------------------------
-                -- Roll settings
-                --------------------------------------------------------
-                local rdLabel = track(MakeLabel(rightContent, L["Roll duration (sec):"], 10))
-                rdLabel:SetPoint("TOPLEFT", 4, y)
-                local rdInput = track(MakeInput(rightContent, 44, true))
-                rdInput:SetPoint("LEFT", rdLabel, "RIGHT", 6, 1)
-                rdInput:SetText(tostring(lootCfg.rollDuration or 30))
-                rdInput:SetScript("OnEnterPressed", function(self)
-                    local v = tonumber(self:GetText()) or 30
-                    if v < 5 then v = 5 end
-                    self:SetText(tostring(v))
-                    lmSave("rollDuration", v)
-                    self:ClearFocus()
-                end)
-
-                local aaCheck = track(MakeCheck(rightContent, L["Auto-announce"]))
-                aaCheck:SetPoint("LEFT", rdInput, "RIGHT", 16, 0)
-                aaCheck:SetChecked(lootCfg.autoAnnounce ~= false)
-                -- Store an explicit boolean (GetChecked yields true/nil in TBC) so the
-                -- per-core cascade doesn't fall back to default-true when unchecked.
-                aaCheck:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked() and true or false) end)
-                y = y - 28
-
-                local wmCheck = track(MakeCheck(rightContent, L["Wishlist-only mode"]))
-                wmCheck:SetPoint("TOPLEFT", 4, y)
-                wmCheck:SetChecked(lootCfg.wishlistOnlyMode or false)
-                wmCheck:SetScript("OnClick", function(self) lmSave("wishlistOnlyMode", self:GetChecked()) end)
-
-                local maLabel = track(MakeLabel(rightContent, L["Min attendance % for MS:"], 10))
-                maLabel:SetPoint("LEFT", wmCheck.label, "RIGHT", 24, 0)
-                local maInput = track(MakeInput(rightContent, 40, true))
-                maInput:SetPoint("LEFT", maLabel, "RIGHT", 6, 1)
-                maInput:SetText(tostring(lootCfg.minAttendancePct or 0))
-                maInput:SetScript("OnEnterPressed", function(self)
-                    local v = tonumber(self:GetText()) or 0
-                    if v < 0 then v = 0 elseif v > 100 then v = 100 end
-                    self:SetText(tostring(v))
-                    lmSave("minAttendancePct", v)
-                    self:ClearFocus()
-                end)
-                y = y - 28
-
-                local atCheck = track(MakeCheck(rightContent, L["Attendance tiebreaker"]))
-                atCheck:SetPoint("TOPLEFT", 4, y)
-                atCheck:SetChecked(lootCfg.attTiebreaker ~= false)
-                atCheck:SetScript("OnClick", function(self) lmSave("attTiebreaker", self:GetChecked()) end)
-
-                local rpCheck = track(MakeCheck(rightContent, L["Recent loot penalty"]))
-                rpCheck:SetPoint("LEFT", atCheck.label, "RIGHT", 24, 0)
-                rpCheck:SetChecked(lootCfg.recvPenalty ~= false)
-                rpCheck:SetScript("OnClick", function(self) lmSave("recvPenalty", self:GetChecked()) end)
-                y = y - 28
-
-                local thLbl = track(MakeLabel(rightContent, L["Loot threshold:"], 10))
-                thLbl:SetPoint("TOPLEFT", 4, y)
-                local THRESH_NAMES = { [2]=L["Uncommon"], [3]=L["Rare"], [4]=L["Epic"], [5]=L["Legendary"] }
-                local THRESH_CYCLE = { 2, 3, 4, 5 }
-                local curThresh = lootCfg.lootThreshold or 3
-                local thBtn = track(UI:CreateButton(rightContent, THRESH_NAMES[curThresh] or "Rare", 90, 20))
-                thBtn:SetPoint("LEFT", thLbl, "RIGHT", 6, 1)
-                thBtn:SetScript("OnClick", function(self)
-                    for i, v in ipairs(THRESH_CYCLE) do
-                        if v == curThresh then curThresh = THRESH_CYCLE[(i % #THRESH_CYCLE) + 1]; break end
+                b:SetPoint("TOPLEFT", bx, y)
+                if choice.key == ownSys then
+                    b:SetBaseColor(C.accent.r * 0.35, C.accent.g * 0.35, C.accent.b * 0.35, 0.9)
+                end
+                local pick = choice.key
+                b:SetScript("OnClick", function()
+                    if GuildOS:SetLootSystem(pick, coreName) then
+                        SetStatus(string.format(L["Loot system of %s: %s."], coreName, choice.label), C.green)
                     end
-                    self.label:SetText(THRESH_NAMES[curThresh] or "?")
-                    lmSave("lootThreshold", curThresh)
+                    BuildSettings(coreName)
                 end)
+                bx = bx + b:GetWidth() + 6
+            end
+            y = y - 28
 
-                local deLbl = track(MakeLabel(rightContent, L["Disenchanter:"], 10))
-                deLbl:SetPoint("LEFT", thBtn, "RIGHT", 18, -1)
-                local deInp = track(MakeInput(rightContent, 110, false, L["Player name"]))
-                deInp:SetPoint("LEFT", deLbl, "RIGHT", 6, 1)
-                deInp:SetText(lootCfg.disenchanter or "")
-                deInp:SetScript("OnEnterPressed", function(self)
-                    lmSave("disenchanter", strtrim(self:GetText() or ""))
-                    self:ClearFocus()
-                end)
-                y = y - 30
+            if not ownSys then
+                local followed = inForce
+                for _, sys in ipairs(GuildOS:LootSystemsHere()) do
+                    if sys.key == inForce then followed = GuildOS:LootSystemLabel(sys) end
+                end
+                local followLbl = track(MakeLabel(rightContent,
+                    string.format(L["Following the guild: %s."], followed), 9, C.textDim.r, C.textDim.g, C.textDim.b))
+                followLbl:SetPoint("TOPLEFT", 4, y)
+                y = y - 18
+            end
 
-            elseif curMethod == "dkp" then
-                --------------------------------------------------------
-                -- DKP bidding settings
-                --------------------------------------------------------
-                local noteL = track(MakeLabel(rightContent,
-                    L["Items are bid on using this core's DKP pool. Highest bidder wins."],
-                    10, C.textDim.r, C.textDim.g, C.textDim.b))
-                noteL:SetPoint("TOPLEFT", 4, y)
-                noteL:SetWidth(CFG_W - 32)
-                noteL:SetWordWrap(true)
-                y = y - 24
+            -- The core's own rule, in the same editor the guild's has (Settings > Loot).
+            if GuildOS.LootRule and inForce ~= "external" then
+                local ruleBtn = track(UI:CreateButton(rightContent, L["Edit this core's loot rule"], 190, 20))
+                ruleBtn:SetPoint("TOPLEFT", 4, y)
+                ruleBtn:SetScript("OnClick", function() GuildOS:ShowLootRuleEditor(coreName) end)
+                local ruleLbl = track(MakeLabel(rightContent, GuildOS.LootRule:IsCustom(coreName)
+                    and L["This core has a loot rule of its own."]
+                    or L["How raiders answer, bids and counters: the rule of the loot system until changed."],
+                    9, C.textDim.r, C.textDim.g, C.textDim.b))
+                ruleLbl:SetPoint("LEFT", ruleBtn, "RIGHT", 10, 0)
+                y = y - 28
+            end
 
+            --------------------------------------------------------
+            -- The core's loot settings, whatever its loot system
+            --------------------------------------------------------
+            local rdLabel = track(MakeLabel(rightContent, L["Roll duration (sec):"], 10))
+            rdLabel:SetPoint("TOPLEFT", 4, y)
+            local rdInput = track(MakeInput(rightContent, 44, true))
+            rdInput:SetPoint("LEFT", rdLabel, "RIGHT", 6, 1)
+            rdInput:SetText(tostring(lootCfg.rollDuration or 30))
+            rdInput:SetScript("OnEnterPressed", function(self)
+                local v = tonumber(self:GetText()) or 30
+                if v < 5 then v = 5 end
+                self:SetText(tostring(v))
+                lmSave("rollDuration", v)
+                self:ClearFocus()
+            end)
+
+            local aaCheck = track(MakeCheck(rightContent, L["Auto-announce"]))
+            aaCheck:SetPoint("LEFT", rdInput, "RIGHT", 16, 0)
+            aaCheck:SetChecked(lootCfg.autoAnnounce ~= false)
+            -- Store an explicit boolean (GetChecked yields true/nil in TBC) so the
+            -- per-core cascade doesn't fall back to default-true when unchecked.
+            aaCheck:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked() and true or false) end)
+            y = y - 28
+
+            local wmCheck = track(MakeCheck(rightContent, L["Wishlist-only mode"]))
+            wmCheck:SetPoint("TOPLEFT", 4, y)
+            wmCheck:SetChecked(lootCfg.wishlistOnlyMode or false)
+            wmCheck:SetScript("OnClick", function(self) lmSave("wishlistOnlyMode", self:GetChecked()) end)
+
+            local maLabel = track(MakeLabel(rightContent, L["Min attendance % for MS:"], 10))
+            maLabel:SetPoint("LEFT", wmCheck.label, "RIGHT", 24, 0)
+            local maInput = track(MakeInput(rightContent, 40, true))
+            maInput:SetPoint("LEFT", maLabel, "RIGHT", 6, 1)
+            maInput:SetText(tostring(lootCfg.minAttendancePct or 0))
+            maInput:SetScript("OnEnterPressed", function(self)
+                local v = tonumber(self:GetText()) or 0
+                if v < 0 then v = 0 elseif v > 100 then v = 100 end
+                self:SetText(tostring(v))
+                lmSave("minAttendancePct", v)
+                self:ClearFocus()
+            end)
+            y = y - 28
+
+            local atCheck = track(MakeCheck(rightContent, L["Attendance tiebreaker"]))
+            atCheck:SetPoint("TOPLEFT", 4, y)
+            atCheck:SetChecked(lootCfg.attTiebreaker ~= false)
+            atCheck:SetScript("OnClick", function(self) lmSave("attTiebreaker", self:GetChecked()) end)
+
+            local rpCheck = track(MakeCheck(rightContent, L["Recent loot penalty"]))
+            rpCheck:SetPoint("LEFT", atCheck.label, "RIGHT", 24, 0)
+            rpCheck:SetChecked(lootCfg.recvPenalty ~= false)
+            rpCheck:SetScript("OnClick", function(self) lmSave("recvPenalty", self:GetChecked()) end)
+            y = y - 28
+
+            -- The least bid and the time to bid, which only DKP by bids reads (LootRule:FromLegacy).
+            if inForce == "dkpbid" or inForce == "dkpsealed" then
                 local mbLbl = track(MakeLabel(rightContent, L["Min bid (DKP):"], 10))
                 mbLbl:SetPoint("TOPLEFT", 4, y)
                 local mbInp = track(MakeInput(rightContent, 60, true))
@@ -546,153 +546,33 @@ function GuildOS:CreateCoresPanel(panel)
                     self:ClearFocus()
                 end)
                 y = y - 28
-
-                local aaCheck2 = track(MakeCheck(rightContent, L["Auto-announce bids"]))
-                aaCheck2:SetPoint("TOPLEFT", 4, y)
-                aaCheck2:SetChecked(lootCfg.autoAnnounce ~= false)
-                aaCheck2:SetScript("OnClick", function(self) lmSave("autoAnnounce", self:GetChecked() and true or false) end)
-                y = y - 28
-
-                local thLbl2 = track(MakeLabel(rightContent, L["Loot threshold:"], 10))
-                thLbl2:SetPoint("TOPLEFT", 4, y)
-                local THRESH_NAMES2 = { [2]=L["Uncommon"], [3]=L["Rare"], [4]=L["Epic"], [5]=L["Legendary"] }
-                local THRESH_CYCLE2 = { 2, 3, 4, 5 }
-                local curThresh2 = lootCfg.lootThreshold or 3
-                local thBtn2 = track(UI:CreateButton(rightContent, THRESH_NAMES2[curThresh2] or "Rare", 90, 20))
-                thBtn2:SetPoint("LEFT", thLbl2, "RIGHT", 6, 1)
-                thBtn2:SetScript("OnClick", function(self)
-                    for i, v in ipairs(THRESH_CYCLE2) do
-                        if v == curThresh2 then curThresh2 = THRESH_CYCLE2[(i % #THRESH_CYCLE2) + 1]; break end
-                    end
-                    self.label:SetText(THRESH_NAMES2[curThresh2] or "?")
-                    lmSave("lootThreshold", curThresh2)
-                end)
-
-                local deLbl2 = track(MakeLabel(rightContent, L["Disenchanter:"], 10))
-                deLbl2:SetPoint("LEFT", thBtn2, "RIGHT", 18, -1)
-                local deInp2 = track(MakeInput(rightContent, 110, false, L["Player name"]))
-                deInp2:SetPoint("LEFT", deLbl2, "RIGHT", 6, 1)
-                deInp2:SetText(lootCfg.disenchanter or "")
-                deInp2:SetScript("OnEnterPressed", function(self)
-                    lmSave("disenchanter", strtrim(self:GetText() or ""))
-                    self:ClearFocus()
-                end)
-                y = y - 30
-
-            elseif curMethod == "tmb" then
-                --------------------------------------------------------
-                -- TMB (That's My BiS) import & priority list
-                --------------------------------------------------------
-                local tmbList    = CM:GetTMBList(coreName)
-                local entryCount = #tmbList
-
-                local countLbl = track(MakeLabel(rightContent,
-                    string.format(L["%d priority entries imported."], entryCount),
-                    10, C.textDim.r, C.textDim.g, C.textDim.b))
-                countLbl:SetPoint("TOPLEFT", 4, y)
-                y = y - 20
-
-                local instrLbl = track(MakeLabel(rightContent,
-                    L["Paste TMB export below (CSV: player,item,priority):"],
-                    10, C.silver.r, C.silver.g, C.silver.b))
-                instrLbl:SetPoint("TOPLEFT", 4, y)
-                y = y - 18
-
-                -- Multiline paste area
-                local importBg = track(CreateFrame("Frame", nil, rightContent, "BackdropTemplate"))
-                importBg:SetSize(CFG_W - 24, 80)
-                importBg:SetPoint("TOPLEFT", 4, y)
-                importBg:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-                importBg:SetBackdropColor(0.04, 0.04, 0.055, 1)
-                importBg:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-
-                local importScroll = CreateFrame("ScrollFrame", nil, importBg, "UIPanelScrollFrameTemplate")
-                importScroll:SetPoint("TOPLEFT", 4, -4)
-                importScroll:SetPoint("BOTTOMRIGHT", -22, 4)
-
-                local importBox = track(CreateFrame("EditBox", nil, importScroll))
-                importBox:SetSize(CFG_W - 54, 70)
-                importBox:SetMultiLine(true)
-                importBox:SetMaxLetters(50000)
-                GuildOS:ApplyFont(importBox, 10)
-                importBox:SetTextColor(C.text.r, C.text.g, C.text.b)
-                importBox:SetAutoFocus(false)
-                importBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-                importScroll:SetScrollChild(importBox)
-                y = y - 88
-
-                local importBtn = track(UI:CreateButton(rightContent, L["Import"], 80, 22))
-                importBtn:SetPoint("TOPLEFT", 4, y)
-                importBtn:SetScript("OnClick", function()
-                    local text = importBox:GetText() or ""
-                    if text == "" then return end
-                    local list = CM:ParseTMBImport(text)
-                    CM:SetTMBList(list, coreName)
-                    BuildSettings(coreName)
-                end)
-
-                local clearBtn = track(UI:CreateButton(rightContent, L["Clear List"], 80, 22))
-                clearBtn:SetPoint("LEFT", importBtn, "RIGHT", 8, 0)
-                clearBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
-                clearBtn:SetScript("OnClick", function()
-                    CM:SetTMBList({}, coreName)
-                    BuildSettings(coreName)
-                end)
-                y = y - 30
-
-                local thLbl3 = track(MakeLabel(rightContent, L["Loot threshold:"], 10))
-                thLbl3:SetPoint("TOPLEFT", 4, y)
-                local THRESH_NAMES3 = { [2]=L["Uncommon"], [3]=L["Rare"], [4]=L["Epic"], [5]=L["Legendary"] }
-                local THRESH_CYCLE3 = { 2, 3, 4, 5 }
-                local curThresh3 = lootCfg.lootThreshold or 3
-                local thBtn3 = track(UI:CreateButton(rightContent, THRESH_NAMES3[curThresh3] or "Rare", 90, 20))
-                thBtn3:SetPoint("LEFT", thLbl3, "RIGHT", 6, 1)
-                thBtn3:SetScript("OnClick", function(self)
-                    for i, v in ipairs(THRESH_CYCLE3) do
-                        if v == curThresh3 then curThresh3 = THRESH_CYCLE3[(i % #THRESH_CYCLE3) + 1]; break end
-                    end
-                    self.label:SetText(THRESH_NAMES3[curThresh3] or "?")
-                    lmSave("lootThreshold", curThresh3)
-                end)
-
-                local deLbl3 = track(MakeLabel(rightContent, L["Disenchanter:"], 10))
-                deLbl3:SetPoint("LEFT", thBtn3, "RIGHT", 18, -1)
-                local deInp3 = track(MakeInput(rightContent, 110, false, L["Player name"]))
-                deInp3:SetPoint("LEFT", deLbl3, "RIGHT", 6, 1)
-                deInp3:SetText(lootCfg.disenchanter or "")
-                deInp3:SetScript("OnEnterPressed", function(self)
-                    lmSave("disenchanter", strtrim(self:GetText() or ""))
-                    self:ClearFocus()
-                end)
-                y = y - 30
-
-                if entryCount > 0 then
-                    local listHdr = track(MakeLabel(rightContent, L["Priority list:"], 10,
-                        C.gold.r, C.gold.g, C.gold.b))
-                    listHdr:SetPoint("TOPLEFT", 4, y)
-                    y = y - 18
-
-                    local MAX_SHOW = math.min(entryCount, 30)
-                    for i = 1, MAX_SHOW do
-                        local e = tmbList[i]
-                        local row = track(MakeLabel(rightContent,
-                            string.format("|cffFFD700%s|r  %s  |cff888888#%d|r",
-                                e.player or "?", e.item or "?", e.priority or 1),
-                            9))
-                        row:SetPoint("TOPLEFT", 8, y)
-                        row:SetWidth(CFG_W - 32)
-                        y = y - 14
-                    end
-                    if entryCount > MAX_SHOW then
-                        local moreL = track(MakeLabel(rightContent,
-                            string.format(L["...and %d more"], entryCount - MAX_SHOW),
-                            9, C.textDim.r, C.textDim.g, C.textDim.b))
-                        moreL:SetPoint("TOPLEFT", 8, y)
-                        y = y - 14
-                    end
-                    y = y - 6
-                end
             end
+
+            local thLbl = track(MakeLabel(rightContent, L["Loot threshold:"], 10))
+            thLbl:SetPoint("TOPLEFT", 4, y)
+            local THRESH_NAMES = { [2]=L["Uncommon"], [3]=L["Rare"], [4]=L["Epic"], [5]=L["Legendary"] }
+            local THRESH_CYCLE = { 2, 3, 4, 5 }
+            local curThresh = lootCfg.lootThreshold or 3
+            local thBtn = track(UI:CreateButton(rightContent, THRESH_NAMES[curThresh] or "Rare", 90, 20))
+            thBtn:SetPoint("LEFT", thLbl, "RIGHT", 6, 1)
+            thBtn:SetScript("OnClick", function(self)
+                for i, v in ipairs(THRESH_CYCLE) do
+                    if v == curThresh then curThresh = THRESH_CYCLE[(i % #THRESH_CYCLE) + 1]; break end
+                end
+                self.label:SetText(THRESH_NAMES[curThresh] or "?")
+                lmSave("lootThreshold", curThresh)
+            end)
+
+            local deLbl = track(MakeLabel(rightContent, L["Disenchanter:"], 10))
+            deLbl:SetPoint("LEFT", thBtn, "RIGHT", 18, -1)
+            local deInp = track(MakeInput(rightContent, 110, false, L["Player name"]))
+            deInp:SetPoint("LEFT", deLbl, "RIGHT", 6, 1)
+            deInp:SetText(lootCfg.disenchanter or "")
+            deInp:SetScript("OnEnterPressed", function(self)
+                lmSave("disenchanter", strtrim(self:GetText() or ""))
+                self:ClearFocus()
+            end)
+            y = y - 30
         end
 
         ------------------------------------------------------------
@@ -742,9 +622,9 @@ function GuildOS:CreateCoresPanel(panel)
         y = y - 24
 
         ------------------------------------------------------------
-        -- Section: Points / DKP (only when loot method is DKP)
+        -- Section: Points / DKP (only when the core's loot system runs on points, issue #338)
         ------------------------------------------------------------
-        if curMethod == "dkp" and GuildOS.Points then  -- no points on retail (ADR-0026)
+        if GuildOS.Points and GuildOS:LootSystemUsesPoints(GuildOS:GetLootSystem(coreName)) then  -- no points on retail (ADR-0026)
         y = MakeSectionHeader(rightContent, L["Points / DKP"], y)
         y = y - 6
 
@@ -809,7 +689,7 @@ function GuildOS:CreateCoresPanel(panel)
             pCfg.autoAward = self:GetChecked()
         end)
         y = y - 32
-        end -- if curMethod == "dkp"
+        end -- the core's points
 
         ------------------------------------------------------------
         -- Raid Leader Ranks (who can manage core rosters)

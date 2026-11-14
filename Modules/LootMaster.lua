@@ -123,7 +123,20 @@ end
 -- How long a roll stays open: the loot rule's own time when it names one (issue #334), else the
 -- roll duration of the loot settings.
 function LootMaster:RollTime()
-    return GuildOS.LootRule:Active().time or self.ROLL_DURATION or 30
+    return self:Rule().time or self.ROLL_DURATION or 30
+end
+
+-- The rule and the loot system of the item being rolled for. An item keeps the ones it was announced
+-- under (issue #338): another core becoming the raid's, or an officer saving another rule, changes the
+-- next item and never the roll in progress. With no roll open, the ones in force.
+function LootMaster:Rule()
+    local loot = self.activeLoot
+    return (loot and loot.rule) or GuildOS.LootRule:Active()
+end
+
+function LootMaster:System()
+    local loot = self.activeLoot
+    return (loot and loot.system) or (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
 end
 
 ----------------------------------------------------------------------
@@ -421,7 +434,7 @@ function LootMaster:ProcessSystemRoll(message)
     -- Only the two agreed-upon ranges count; ignore all other /roll usage. They are the rule's first
     -- and second answers (MS and OS unless the guild named others, issue #334), and only when that
     -- answer asks for a roll: a bid, or an answer with no roll, has no /roll line.
-    local list = GuildOS.LootRule:Responses()
+    local list = GuildOS.LootRule:Responses(self:Rule())
     local response
     if low == 1 and high == ROLL_TOP then
         response = list[1]
@@ -637,12 +650,18 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     -- Clear previous session
     self.rolls             = {}
     self.restrictedRollers = nil
+    -- The rule and the loot system in force now are this item's until it is given (issue #338).
+    self.activeLoot = nil
+    local rule = GuildOS.LootRule:Active()
+    local system = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
     self.activeLoot = {
         link      = itemLink,
         slot      = lootSlot,
         startTime = GetServerTime(),
-        endTime   = GetServerTime() + self:RollTime(),
+        endTime   = GetServerTime() + (rule.time or self.ROLL_DURATION or 30),
         sid       = self:NewSessionId(),
+        rule      = rule,
+        system    = system,
     }
 
     local itemId = tonumber(itemLink:match("item:(%d+)"))
@@ -651,7 +670,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     -- The guild's chosen loot system (Settings) decides the default flow:
     -- "wishlist"/"tmb" force wishlist auto-council; "dkp"/"rolls" open a roll
     -- (DKP just changes how the roll frame ranks and what award charges).
-    local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
+    local lootSystem = system
     local wishlistOnly = self.WISHLIST_ONLY_MODE or lootSystem == "wishlist" or lootSystem == "tmb"
 
     -- Check officer prios first — they override wishlist council
@@ -759,12 +778,12 @@ end
 ----------------------------------------------------------------------
 function LootMaster:AnnounceLine(itemLink, duration)
     local LR = GuildOS.LootRule
-    local rule = LR:Active()
+    local rule = self:Rule()
     local list = LR:Responses(rule)
     local first, second = list[1], list[2]
     local function rolls(r) return r and (r.ask or "roll") == "roll" end
     if #list == 2 and first.key == "MS" and second.key == "OS" and rolls(first) and rolls(second) then
-        local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
+        local lootSystem = self:System()
         if lootSystem == "epgp" then
             return format(L["[EPGP] %s  -  /roll to ask, highest priority wins  -  %ds"], itemLink, duration)
         elseif lootSystem == "dkp" then
@@ -796,7 +815,7 @@ function LootMaster:SendAsk(duration)
     local loot = self.activeLoot
     if not loot then return end
     loot.sid = loot.sid or self:NewSessionId()
-    self:SafeSendAddon(LootMaster.PREFIX, "ASK|" .. loot.sid .. "|" .. GuildOS.LootRule:Encode(nil, duration), "RAID")
+    self:SafeSendAddon(LootMaster.PREFIX, "ASK|" .. loot.sid .. "|" .. GuildOS.LootRule:Encode(self:Rule(), duration), "RAID")
 end
 
 ----------------------------------------------------------------------
@@ -1161,7 +1180,7 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
     local ctx = self:GetPlayerContext(name)
     ctx.dkp = (GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
         and GuildOS.Points:Get(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0
-    local answer, filter = GuildOS.LootRule:AnswerFor(ctx, rollType)
+    local answer, filter = GuildOS.LootRule:AnswerFor(ctx, rollType, self:Rule())
     if filter and not answer then
         -- A roll that costs more to enter than the roller holds (issue #309): no roll, and told why.
         self:SafeSendChatAuto(string.format(
@@ -1242,7 +1261,7 @@ function LootMaster:RegisterRoll(name, rollType, roll, extra)
     local accts
     local P = GuildOS.Points
     if P and P.GetDB and P:GetDB() then
-        for _, a in ipairs(GuildOS.LootRule:Counters()) do
+        for _, a in ipairs(GuildOS.LootRule:Counters(self:Rule())) do
             accts = accts or {}
             accts[a.key] = P:Counter(a.key, key)
         end
@@ -1314,7 +1333,7 @@ function LootMaster:TakeAnswer(name, key, bid, note)
     local loot = self.activeLoot
     if not loot or loot.ended or loot.delivered then return nil, "closed" end
     local LR = GuildOS.LootRule
-    local rule = LR:Active()
+    local rule = self:Rule()
     local rkey = GuildOS:GetPlayerKey(name)
     local held = self.rolls[rkey]
     note = cleanNote(note)
@@ -1401,7 +1420,7 @@ function LootMaster:EchoAnswer(name, row, why, n, byClick)
     elseif row.rollType == "PASS" then
         payload = string.format("ACK|%s|%s|PASS", loot.sid, name)
     elseif row.bid then
-        local sealed = LR:BidRules()
+        local sealed = LR:BidRules(self:Rule())
         if sealed then
             payload = string.format("ACK|%s|%s|%s", loot.sid, name, row.rollType)
         else
@@ -1421,7 +1440,7 @@ end
 
 -- What the button of the answer `key` says, in the rule in force.
 function LootMaster:AnswerLabel(key)
-    local r = GuildOS.LootRule:Response(key)
+    local r = GuildOS.LootRule:Response(key, self:Rule())
     return r and GuildOS.LootRule:ResponseLabel(r) or key
 end
 
@@ -1543,7 +1562,7 @@ function LootMaster:EndRolling(byClick)
     -- In DKP the winner is who the ML window puts on top: highest DKP among MS, then the roll
     -- (issue #294). The announcement used to ignore DKP and name somebody else.
     -- The loot rule's order (issue #333): the same one the Master Loot window shows.
-    local rule = GuildOS.LootRule:Active()
+    local rule = self:Rule()
     GuildOS.LootRule:Sort(sorted, rule)
 
     self.activeLoot.sortedResults = sorted
@@ -1616,7 +1635,7 @@ function LootMaster:AwardLoot(playerName, silent)
     -- The winner's answer, when the item was rolled for: what it costs and whether it counts for the
     -- +1 come from it (issue #334). An item given straight from the loot window has none.
     local LR = GuildOS.LootRule
-    local rule = LR:Active()
+    local rule = self:Rule()
     local row = self.rolls[GuildOS:GetPlayerKey(playerName)]
     local response = row and LR:Response(row.rollType, rule)
     -- Default to 0 so the "%d" in the AWARD payload (and history record) never sees nil
@@ -1716,7 +1735,7 @@ function LootMaster:AwardLoot(playerName, silent)
     -- per-item cost is configured (cost 0 = informational standings only).
     -- A rule that names what the winner pays (their bid, issue #334) charges whatever the loot system.
     local pointsReady = GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
-    if pointsReady and (GuildOS:LootSystemUsesPoints() or LR:ChargeEffect(rule)) and GuildOS:IsOfficer() then
+    if pointsReady and (GuildOS:LootSystemUsesPoints(self:System()) or LR:ChargeEffect(rule)) and GuildOS:IsOfficer() then
         local pKey = GuildOS:GetPlayerKey(playerName)
         -- The price to enter the roll (issue #309): everyone who asked pays it, and whoever lost gets
         -- part of it back. Only for the item that was rolled, and what each paid is kept for an undo.
@@ -3474,7 +3493,7 @@ function LootMaster:ShowRollFrame()
     -- no /roll says (issue #334): the name, the answer (a click goes to the next one), the bid when
     -- the answer asks for one, and Enter. The loot master's own answer goes through the same boxes.
     local LR = GuildOS.LootRule
-    local answers = LR:Responses()
+    local answers = LR:Responses(self:Rule())
     local forLabel = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(forLabel, 10)
     forLabel:SetPoint("BOTTOMLEFT", 10, 56)
@@ -3491,7 +3510,7 @@ function LootMaster:ShowRollFrame()
     end)
     local forBid = lootEditBox(f, 60, true, 7)
     forBid:SetPoint("LEFT", forAnswer, "RIGHT", 6, 0)
-    if not LR:HasBids() then forBid:Hide() end
+    if not LR:HasBids(self:Rule()) then forBid:Hide() end
     -- What EnterAnswer said of an answer, to the loot master.
     local function entered(row, why, n)
         if not row then GuildOS:Print("|cffFF4444" .. LootMaster:WhyNot(why, n) .. "|r") end
@@ -3584,18 +3603,18 @@ function LootMaster:RefreshRollFrame()
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
 
     -- Build sorted list
-    local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
+    local lootSystem = self:System()
     local sorted = {}
     for _, r in pairs(self.rolls) do
         table.insert(sorted, r)
     end
     -- The loot rule's order (issue #333), a pass after every answer: the row on top is the winner
     -- the roll's end announces.
-    local rule = GuildOS.LootRule:Active()
+    local rule = self:Rule()
     GuildOS.LootRule:Sort(sorted, rule)
     local counters = GuildOS.LootRule:Counters(rule)
     local sealed = GuildOS.LootRule:BidRules(rule)
-    local usesPoints = GuildOS.LootSystemUsesPoints and GuildOS:LootSystemUsesPoints()
+    local usesPoints = GuildOS.LootSystemUsesPoints and GuildOS:LootSystemUsesPoints(lootSystem)
 
     local CLASS_COLORS = RAID_CLASS_COLORS
     local yOff = 0

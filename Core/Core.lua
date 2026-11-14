@@ -1205,10 +1205,6 @@ GuildOS.LOOT_SYSTEMS = {
     { key = "external", label = "External / Off" },
 }
 
-function GuildOS:GetLootSystem()
-    return self:GetSetting("lootSystem") or "rolls"
-end
-
 -- The loot systems this client offers, in order.
 function GuildOS:LootSystemsHere()
     local out = {}
@@ -1216,6 +1212,26 @@ function GuildOS:LootSystemsHere()
         if not (sys.retail == false and self.Client.isRetail) then out[#out + 1] = sys end
     end
     return out
+end
+
+-- Whether `key` is a loot system this client offers.
+local function lootSystemHere(key)
+    for _, sys in ipairs(GuildOS:LootSystemsHere()) do
+        if sys.key == key then return true end
+    end
+    return false
+end
+function GuildOS:IsLootSystemHere(key) return lootSystemHere(key) end
+
+-- The loot system in force (issue #338): the one the raid's active core chose for itself, else the
+-- guild's. `coreName` asks for another core; "" is the guild's own, whatever core is active.
+function GuildOS:GetLootSystem(coreName)
+    local CM = self.CoreManager
+    if coreName ~= "" and CM and CM.GetLootSystem and self.db and self.db.cores then
+        local own = CM:GetLootSystem(coreName)
+        if own and lootSystemHere(own) then return own end
+    end
+    return self:GetSetting("lootSystem") or "rolls"
 end
 
 -- A loot system's name on its button. On retail nobody /rolls: "rolls" is the free roll, where whoever
@@ -1227,43 +1243,53 @@ function GuildOS:LootSystemLabel(sys)
     return sys.label
 end
 
--- Whether `key` is a loot system this client offers.
-local function lootSystemHere(key)
-    for _, sys in ipairs(GuildOS:LootSystemsHere()) do
-        if sys.key == key then return true end
-    end
-    return false
-end
-
--- True unless the guild has opted out of GuildOS loot handling entirely
+-- True unless the loot system in force has opted out of GuildOS loot handling entirely
 -- ("external": loot is run by Gargul/RCLootCouncil/etc.).
 function GuildOS:LootSystemActive()
     return self:GetLootSystem() ~= "external"
 end
 
-function GuildOS:SetLootSystem(sys)
-    self:SetSetting("lootSystem", sys)
+-- The guild's loot system, or with `coreName` that core's own (issue #338; nil for a core goes back to
+-- following the guild). Returns false when a core's choice was not saved.
+function GuildOS:SetLootSystem(sys, coreName)
+    local ofCore = coreName ~= nil and coreName ~= ""
+    if ofCore then
+        if not (self.CoreManager and self.CoreManager:SetLootSystem(coreName, sys)) then return false end
+    else
+        self:SetSetting("lootSystem", sys)
+    end
     -- EPGP is its own system (issue #319): choosing it puts the points in EPGP, and going back to DKP
     -- takes them out of it. The standings are the same rows either way: nothing is lost.
+    -- A core's choice moves that core's own pool.
+    local pool = ofCore and coreName or nil
     if self.Points and self.Points.GetMode and self.db and self.db.points and self:IsOfficer() then
-        local mode = self.Points:GetMode()
-        if sys == "epgp" and mode ~= "epgp" then self.Points:SetMode("epgp")
+        local mode = self.Points:GetMode(pool)
+        if sys == "epgp" and mode ~= "epgp" then self.Points:SetMode("epgp", pool)
         elseif (sys == "dkp" or sys == "dkpbid" or sys == "dkpsealed") and mode == "epgp" then
-            self.Points:SetMode("dkp")
+            self.Points:SetMode("dkp", pool)
         end
     end
     -- A loot system is a ready-made loot rule: choosing one puts its rule in force again, over the
-    -- changes an officer had made to the one before (issue #334).
-    if self.LootRule and self.db and self.db.settings and self.db.settings.lootRule ~= nil and self:IsOfficer() then
+    -- changes an officer had made to the one before (issue #334). A core's own rule went with its
+    -- choice (CoreManager:SetLootSystem).
+    if not ofCore and self.LootRule and self.db and self.db.settings and self.db.settings.lootRule ~= nil
+        and self:IsOfficer() then
         self.LootRule:Set(nil)
     end
     -- On retail the system decides who may award an offered item, on every member's client: an
     -- officer's choice is stamped and published, as the officer threshold is (issue #185).
-    if self.Client.isRetail and self:IsOfficer() then
+    if not ofCore and self.Client.isRetail and self:IsOfficer() then
         local s = self.db.settings
         s.lootSystemAt = math.max(GetServerTime(), (s.lootSystemAt or 0) + 1)
         self:PublishLootSystem()
     end
+    self:OnLootSystemChanged()
+    return true
+end
+
+-- The loot system in force may be another one: the guild's or a core's changed, or another core is
+-- now the raid's (issue #338).
+function GuildOS:OnLootSystemChanged()
     -- Loot Master follows the system: "external" silences it entirely (no
     -- roll popups, ML window, council, or /roll capture — and with no awards
     -- the loot history stops growing too). SetEnabled hides any open frames
@@ -1281,7 +1307,7 @@ function GuildOS:PublishLootSystem()
     if not self.Client.isRetail then return end
     local s = self.db and self.db.settings
     if not (s and s.lootSystemAt and self.SyncService and self:IsOfficer()) then return end
-    self.SyncService:Publish("guildcfg", "lootsys", { sys = self:GetLootSystem() }, { rev = s.lootSystemAt })
+    self.SyncService:Publish("guildcfg", "lootsys", { sys = self:GetLootSystem("") }, { rev = s.lootSystemAt })
 end
 
 -- The guild's loot system from an officer (SyncService has checked the officer and GUILD): the newest
@@ -1296,7 +1322,7 @@ function GuildOS:OnLootSystemSync(env)
     at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
     local s = self.db.settings
     local held = s.lootSystemAt
-    if held and (at < held or (at == held and sys >= self:GetLootSystem())) then return end
+    if held and (at < held or (at == held and sys >= self:GetLootSystem(""))) then return end
     s.lootSystem, s.lootSystemAt = sys, at
     if self.UpdateLootSystemUI then self:UpdateLootSystemUI() end
 end
@@ -1310,10 +1336,10 @@ function GuildOS:LootSystemShowsWishlist()
     return s == "wishlist" or s == "tmb"
 end
 
--- Whether the guild's loot system runs on the points economy: DKP, or EPGP (issue #319).
--- And DKP by bids (issue #334), which spends the same points.
-function GuildOS:LootSystemUsesPoints()
-    local s = self:GetLootSystem()
+-- Whether the loot system in force (or `sys`, the one an item was announced under) runs on the points
+-- economy: DKP, or EPGP (issue #319). And DKP by bids (issue #334), which spends the same points.
+function GuildOS:LootSystemUsesPoints(sys)
+    local s = sys or self:GetLootSystem()
     return s == "dkp" or s == "epgp" or s == "dkpbid" or s == "dkpsealed"
 end
 
