@@ -446,27 +446,28 @@ function LootMaster:SenderRaidIndex(sender)
     for i = 1, GetNumGroupMembers() or 0 do
         local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
         if uName then
-            if uName == name or uName == sender then return i end
-            if GuildOS.Client.has.surnames then
-                local whole = (uSecond and uSecond ~= "") and (uName .. " " .. uSecond) or uName
-                if whole == name or whole == sender then return i end
-                if self:WholeRollerName(name, uName, uSecond) then loose, matches = i, matches + 1 end
+            local surnamed = GuildOS.Client.has.surnames and uSecond and uSecond ~= ""
+            local whole = surnamed and (uName .. " " .. uSecond) or uName
+            if whole == name or whole == sender then return i end
+            -- Named by the first name alone, whichever way the game hands the surname (apart, or
+            -- inside the name): counted, never taken at once, or the first "Ana" of the raid would
+            -- answer for every other one.
+            if GuildOS.Client.has.surnames and self:WholeRollerName(name, uName, uSecond) then
+                loose, matches = i, matches + 1
             end
         end
     end
     return matches == 1 and loose or nil
 end
 
--- Whether `sender` is who this raid's rolls and votes are read from: its master looter, or, where the
--- game names none, its leader or one of its assistants.
+-- Whether `sender` is who this raid's rolls and votes are read from: its master looter, and nobody
+-- else. Where the game names none nobody is: this module only ever announces under master loot
+-- (IsMasterLooter), so a roll or a vote opened without one comes from no honest client, and reading it
+-- from the leader or an assistant would hand them every sealed bid and the council's votes.
 function LootMaster:IsFromMasterLooter(sender)
     local index = self:SenderRaidIndex(sender)
-    if not index then return false end
     local ml = self:MasterLooterIndex()
-    if ml then return index == ml end
-    local unit = "raid" .. index
-    return (UnitIsGroupLeader and UnitIsGroupLeader(unit) and true)
-        or (UnitIsGroupAssistant and UnitIsGroupAssistant(unit) and true) or false
+    return index ~= nil and ml ~= nil and index == ml
 end
 
 ----------------------------------------------------------------------
@@ -543,6 +544,13 @@ function LootMaster:ProcessSystemRoll(message)
 
     -- Restricted-roll session: only allowed players may roll; ignore everyone else silently
     if self.restrictedRollers and not self.restrictedRollers[strlower(cleanName)] then
+        return
+    end
+
+    -- An open bid stands (TakeAnswerNow): a /roll for another answer does not take it back either.
+    local held = self.rolls[GuildOS:GetPlayerKey(cleanName)]
+    if held and held.bid and held.rollType ~= "PASS" and response.key ~= held.rollType
+        and GuildOS.LootRule:HasBids(self:Rule()) and not GuildOS.LootRule:BidRules(self:Rule()) then
         return
     end
 
@@ -2266,6 +2274,11 @@ function LootMaster:OnWonMessage(rest, sender)
     if not (P and P.GetDB and P:GetDB()) or #rest > 120 then return end
     local sid, itemId, key, player = rest:match("^(%x+)|(%d+)|([A-Z0-9]+)|([^|]+)$")
     if not sid or #sid > 8 or #itemId > 9 or #key > 8 then return end
+    -- Only for the roll this client heard that master looter announce, and once: a WON for a roll
+    -- that never was, or the same one again under another id, would write the guild's counters at will.
+    local heard = self.heard
+    if not (heard and heard.sid == sid and heard.sender == sender) or heard.won then return end
+    heard.won = true
     local name = self:RaidRollerName(player)
     if not name then return end
     local rule = GuildOS.LootRule:Active()

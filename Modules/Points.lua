@@ -265,17 +265,20 @@ function Points:ApplyEntry(e, pool)
     end
     -- What a reason has given this week, for its weekly cap (issue #309).
     if e.rk and e.delta > 0 then
-        local week = self:Week(e.ts)
+        local week, now = self:Week(e.ts), self:Week()
         pool.weekly = pool.weekly or {}
-        -- This week's and last week's are kept; anything else (a week counted another way before
-        -- among it) goes.
+        -- This week's and last week's are kept, counted from today and not from the entry: an entry
+        -- dated weeks ago, arriving late from another officer, used to wipe this week's count and the
+        -- cap paid again. Anything else (a week counted another way before among it) goes.
         for w in pairs(pool.weekly) do
-            if w ~= week and w ~= week - 1 then pool.weekly[w] = nil end
+            if w ~= now and w ~= now - 1 then pool.weekly[w] = nil end
         end
-        local t = pool.weekly[week] or {}
-        pool.weekly[week] = t
-        local wk = e.key .. "|" .. e.rk
-        t[wk] = (t[wk] or 0) + e.delta
+        if week == now or week == now - 1 then
+            local t = pool.weekly[week] or {}
+            pool.weekly[week] = t
+            local wk = e.key .. "|" .. e.rk
+            t[wk] = (t[wk] or 0) + e.delta
+        end
     end
     local log = pool.log
     table.insert(log, 1, {

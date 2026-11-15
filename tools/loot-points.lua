@@ -146,6 +146,16 @@ function GetServerTime() return realNow() + 7 * 86400 end
 P:AwardReason(K("Cy"), "material", 1)
 check(P:Get(K("Cy")) == before + 7, "a week later the reason gives again")
 GetServerTime = realNow
+-- An entry dated more than a week ago, arriving late from another officer, leaves this week's count
+-- alone: it used to wipe it, and the cap paid again.
+check(P:WeeklyEarned(K("Dee"), "material") == 5, "Dee is at this week's cap")
+P:ApplyEntry({ op = "late-1", key = K("Eve"), name = "Eve", delta = 1, rk = "material", reason = "Material donation",
+  kind = "reason", ts = GetServerTime() - 8 * 86400 })
+check(P:WeeklyEarned(K("Dee"), "material") == 5, "a late entry from weeks ago does not wipe this week's count")
+local deeBefore = P:Get(K("Dee"))
+P:AwardReason(K("Dee"), "material", 1)
+check(P:Get(K("Dee")) == deeBefore, "so the cap still holds")
+check(P:WeeklyEarned(K("Eve"), "material") == 0, "and what is that old counts for no week kept")
 -- The week is the game's reset week, not a calendar week from Thursday 00:00 UTC, which fell in the
 -- middle of the raid week: the cap paid on Wednesday at 23:00 and again on Thursday at 01:00.
 GuildOS.RaidTracker = { GetCurrentGroup = function() return "" end,

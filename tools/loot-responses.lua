@@ -333,17 +333,23 @@ check(#whispered == 1 and whispered[1].target == "Lead-Realm" and whispered[1].t
   "so the sealed bid still goes to the master looter and to nobody else")
 hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Zed-Realm")
 check(#popups == shown, "an announce from outside the raid is nothing")
--- Where the game names no master looter, the raid's leader and its assistants are read, nobody else.
+-- Where the game names no master looter nobody opens a roll: this addon only announces under master
+-- loot, so one opened without it comes from no honest client, and an assistant who could would be
+-- whispered every sealed bid.
 lootMethod = { "group" }
 hear("ASK|D2|30,-,0,1;MS=r;OS=r", "Bo-Realm")
 hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Bo-Realm")
 check(#popups == shown and LM.heard.sid == "D1", "with no master looter named, a raider's announce is still nothing")
-hear("ASK|D3|30,-,0,1;MS=r;OS=r", "Ana-Realm")
+hear("ASK|D3|30,s,10,1;MS=bMS;OS=bOS", "Ana-Realm")
 hear("ANNOUNCE|" .. LINK .. "|30|28770|0", "Ana-Realm")
-check(#popups == shown + 1 and LM.heard.sid == "D3" and LM.heard.sender == "Ana-Realm", "an assistant's is read")
+check(#popups == shown and LM.heard.sid == "D1" and LM.heard.sender == "Lead-Realm", "nor is an assistant's")
 hear("ASK|D4|30,-,0,1;MS=r;OS=r")
 hear("ANNOUNCE|" .. LINK .. "|30|28770|0")
-check(#popups == shown + 2 and LM.heard.sid == "D4", "and the leader's")
+check(#popups == shown and LM.heard.sid == "D1", "nor the leader's")
+check(LM:IsFromMasterLooter("Lead-Realm") == false and LM:IsFromMasterLooter("Ana-Realm") == false,
+  "with no master looter, nobody is read as one")
+lootMethod = { "master" }
+check(LM:IsFromMasterLooter("Lead-Realm") == false, "nor when the game says master loot and names no raider")
 lootMethod = { "master", nil, 1 }
 hear("ROLL|D4|Lead|MS|100", "Ana-Realm")
 -- On a client with surnames a first name alone names the master looter only when one raider has it.
@@ -355,6 +361,19 @@ check(LM:IsFromMasterLooter("Lead") == false, "and a first name two raiders shar
 raid[2] = "Ana Costa"
 check(LM:IsFromMasterLooter("Lead") == true and LM:IsFromMasterLooter("Ana") == false,
   "a first name only one raider has is theirs")
+-- The game may hand the first name and the surname apart, and an addon message the first name alone:
+-- the first raider of that first name is not taken at once for whoever sent it.
+local realIdentity = GuildOS.Compat.UnitIdentity
+local apart = { raid1 = { "Ana", "Lima" }, raid2 = { "Ana", "Costa" } }
+GuildOS.Compat.UnitIdentity = function(unit)
+  local who = apart[unit]
+  if who then return who[1], who[2], "MAGE" end
+end
+check(LM:IsFromMasterLooter("Ana") == false, "two raiders called Ana: the first name alone is not the master looter's")
+check(LM:IsFromMasterLooter("Ana Lima") == true and LM:IsFromMasterLooter("Ana Costa") == false, "the whole name still is")
+apart.raid2 = { "Bo", "Reis" }
+check(LM:IsFromMasterLooter("Ana") == true and LM:SenderRaidIndex("Bo") == 2, "and a first name only one raider has is theirs, with the surname handed apart")
+GuildOS.Compat.UnitIdentity = realIdentity
 raid[1], raid[2] = "Lead", "Ana"
 GuildOS.Client.has.surnames = false
 
@@ -748,8 +767,16 @@ GuildOS.IsOfficer = function() return true end
 GuildOS.IsOfficerByName = function(_, name) return (name:match("^[^-]+")) ~= "Lead" end
 isML = false
 published = {}
+-- It heard the master looter announce that roll, as every client in the raid did.
+LM.heard = { sender = "Lead-Realm", sid = sid }
 LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Cy-Realm")
 check(P:Counter("plus1", K("Cy")) == 0, "an officer's client reads it from the master looter alone")
+-- A roll that never was: the master looter, who is no officer, cannot write the guild's counters by
+-- naming winners of rolls nobody heard announced.
+for _, forged in ipairs({ "AAAA", "BBBB", "CCCC" }) do
+  LM:OnAddonMessage(LM.PREFIX, ("WON|%s|28770|MS|Cy"):format(forged), "RAID", "Lead-Realm")
+end
+check(P:Counter("plus1", K("Cy")) == 0 and #published == 0, "a win in a roll this client never heard announced adds nothing")
 LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
 check(P:Counter("plus1", K("Cy")) == 1 and #published == 1 and published[1].act == "cdelta"
   and published[1].data.entries[1].delta == 1, "and makes the +1 itself, told to the guild as its own would be")
@@ -768,6 +795,7 @@ local second = copyOf(mine)
 second.config = mine.config
 GuildOS.db.points = second
 GuildOS.IsOfficerByName = function(_, name) return (name:match("^[^-]+")) ~= "Lead" end
+LM.heard = { sender = "Lead-Realm", sid = sid }
 LM:OnAddonMessage(LM.PREFIX, won, "RAID", "Lead-Realm")
 P:OnSync({ act = "cdelta", data = { entries = { copyOf(wonEntry) } } })
 check(P:Counter("plus1", K("Cy")) == 1, "two officers in the raid add up to one +1")
@@ -881,6 +909,24 @@ local line = GuildOS.db.points.log[1]
 check(line.delta == -70 and line.reason:find("bid 70, paid 70", 1, true), "and the points history keeps the bid and the price: " .. line.reason)
 undone = LM:UndoLastAward()
 check(undone.player == "Ana" and P:Get(K("Ana")) == 100, "an undo gives the bid back")
+
+-- A rule that mixes a bid and a roll: a /roll in chat for the other answer does not take an open bid
+-- back either. Ana could bid Bo up, then type /roll and be out, leaving Bo to pay against nobody.
+check(LR:Set({ v = 1, model = "custom", accounts = { { key = "dkp", type = "balance" } },
+  responses = { { key = "MS", ask = "bid", cost = 1 }, { key = "OS", ask = "roll", cost = 0 } },
+  order = { { k = "response" }, { k = "bid" }, { k = "roll" } },
+  effects = { { k = "charge", acct = "dkp", price = "second" } },
+  bid = { sealed = false, min = 1, step = 1 }, decide = { by = "ml" } }) == true, "a rule with a bid and a roll")
+sid = announce()
+answer("Bo", sid, "MS", 20)
+answer("Ana", sid, "MS", 60)
+check(row("Ana").bid == 60 and row("Ana").rollType == "MS", "Ana holds the best open bid")
+LM:ProcessSystemRoll("Ana rolls 12 (1-99).")
+check(row("Ana").bid == 60 and row("Ana").rollType == "MS", "and a /roll for the other answer leaves it where it is")
+LM:ProcessSystemRoll("Dee rolls 12 (1-99).")
+check(row("Dee") and row("Dee").rollType == "OS", "whoever holds no bid still rolls for it")
+LM:CancelRolling()
+check(LR:Set(nil) == true, "back to the loot system's rule")
 
 -- ── 9. Sealed bids, second price ────────────────────────────────────
 GuildOS:SetLootSystem("dkpsealed")
