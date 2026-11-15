@@ -1188,3 +1188,24 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Groups:ActiveList(store, now, onlineSet)` / `:Counts(now, onlineSet)` / `:NeedText(need)` / `:SizeOf(act)` | The cards, the tiles' counts (`{ [act] = { groups, seekers } }`), "1 Tank, 2 DPS", and a group's size from the catalogue |
 | `Compat.InstanceName(mapID)` / `Compat.TextureExists(path)` / `Compat.GroupRoster()` / `Compat.InGroup(members, key)` | An instance's localized name or nil; whether the client has a texture file (art is drawn only then: a missing path is a green square); who is in my party or raid, as keys, and how many; membership, by first name on WoW: Forever when the whole name does not match (#48) |
 | `GuildOS:CreateGroupsPanel(parent)` | The tab: sub-tabs Active, Dungeons, Raids, Quests and more (`parent.SelectSub`), one scroll area repainted from pools (no frame is created twice), and one composer popup with two modes. `tools/groups-panel.lua` builds and clicks it |
+
+## The Loot window — UI/LootWindow.lua, UI/PointsPanel.lua (#346, ADR-0037)
+
+| Function | What it does |
+|---|---|
+| `GuildOS:CreateLootWindow(container)` | The `loot` tab, every member's: sub-tabs Rule · Accounts · Lists · History (`container.SelectSub(sub, coreName)`, `ActiveSub()`, `panels`), each built the first time it is shown |
+| `GuildOS:RefreshLootRuleTab(content, scope)` | The Rule tab drawn for a core (`""` the guild; nil keeps the last, else `DefaultLootScope`): the selector, the model as a list (officers), the loot master's settings (`LootMaster:SetLootSetting`), `BuildLootRuleEditor`, and "how players will read it" (`LootRule:Describe`) for everyone |
+| `GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)` | The answers' editor (#334), moved here from Settings > Loot; what an answer asks for, the price, a counter's reset, who decides (with a council) and an exception's kind, category and destination are dropdowns |
+| `GuildOS:ShowLootRuleEditor(coreName)` | Opens the Rule tab on that core (it was a window of its own) |
+| `GuildOS:DrawLootPointer(content, y, scope, x)` | "Loot: <rule> — Open Loot": what Settings > Loot and the core's Config tab keep; `content.lootPointer` is the button |
+| `GuildOS:DefaultLootScope()` | The raid's active core when it is one, else `""` |
+| `GuildOS:BuildLootAccounts(panel)` / `GuildOS:ShowPointsFrame(coreName)` | The Accounts tab: core and account dropdowns, the award row (`Points:AwardRow`), Award Raid / Apply Decay / Sync, the standings (columns by `ResolveColumns`) and the movements (dropped below 640 px), and "Account settings" (`Points:SetConfigKey`, `SetMode`, the named reasons). Every read on the core picked (`Points:InCore`). `ShowPointsFrame` opens it (`/gos points`, `/gos dkp`) |
+| `GuildOS:RefreshLootPanel(content, countText, header)` / `:RefreshLootEquity(...)` | The History tab's tables, rows pooled, columns dropped by priority |
+| `GuildOS.MarkToggle(btn, on)` | One of a pair of view buttons, lit in gold |
+| `UI:OpenWindow(id, sub, filter)` | A feature with `tab = false, opens = { tab, sub }` (`dkp`, `wishlist`) opens that sub-tab |
+| `LootRule:Describe(rule, seconds)` | `{ who, how, order = {…}, decide, exceptions }`: the rule in sentences |
+| `LootRule:SavedAt(coreName)` | When an officer last saved the core's (or guild's) own rule; 0 for a loot system's |
+| `LootRule:Compared(c, rule)` / `LootRule:DecidingEntry(a, b, rule)` | The figures each criterion compared (the award record's); the order entry that put `a` before `b` |
+| `LootMaster:SetLootSetting(key, value, scope)` / `:LootSettings(scope)` | One loot setting of a core (`""` the guild's), checked (duration 5-120, attendance 0-100, threshold 2-5, switches, trimmed names) and written where `CoreManager:SetLootConfigKey` writes; the cache reloads. Returns the value or nil and why |
+| `Points:AwardRow(spec)` | `{ name, reason, times, amount, note, charge }`: a named reason `times` over (to its weekly cap) or typed points; nil and `"name"`, `"amount"` or `"reason"` |
+| `Points:SetConfigKey(key, value, coreName)` | One of the points' settings of a pool, whole and not negative (percentages to 100), switches, the decay's rounding; broadcast |

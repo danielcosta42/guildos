@@ -27,22 +27,24 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateRaidHubPanel(c, win) end,
 })
 
+-- One Loot window for every member (issue #346): the rule, the accounts, the lists and the history.
+-- On retail too since issue #183: the history and the equity of personal loot, no soft reserves.
 UI:RegisterFeature({
-    -- On retail too since issue #183: the history and the equity of personal loot, no soft reserves.
-    id = "loot", label = L["Loot"], order = 30, officerOnly = true,
-    build = function(c, win) GuildOS:CreateLootPanel(c, win) end,
+    id = "loot", label = L["Loot"], order = 30,
+    subs = { "rule", "accounts", "lists", "history" },
+    build = function(c, win) GuildOS:CreateLootWindow(c, win) end,
 })
 
+-- The DKP and the guild's wishlists are the Loot window's Accounts and Lists (issue #346): their
+-- switches stay in Settings, and /gos open dkp or wishlist opens the sub-tab.
 UI:RegisterFeature({
-    id = "dkp", label = L["DKP"], order = 35,   -- on retail too since issue #185
+    id = "dkp", label = L["DKP"], order = 35, tab = false, opens = { "loot", "accounts" },   -- retail too since #185
     condition = function() return GuildOS:LootSystemShowsDKP() end,
-    build = function(c, win) GuildOS:CreateDKPPanel(c, win) end,
 })
 
 UI:RegisterFeature({
-    id = "wishlist", label = L["Wishlist"], order = 38,   -- on retail too since issue #185
+    id = "wishlist", label = L["Wishlist"], order = 38, tab = false, opens = { "loot", "lists" },   -- retail too since #185
     condition = function() return GuildOS:IsOfficer() and GuildOS:LootSystemShowsWishlist() end,
-    build = function(c, win) GuildOS:CreateWishlistGuildPanel(c, win) end,
 })
 
 -- On WoW: Forever the Professions panel (issue #33) takes the Recipes tab: the whole catalog,

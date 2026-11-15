@@ -737,7 +737,7 @@ local function handleCommand(msg)
         local id  = msg:match("^open%s+(%S+)")
         local sub = msg:match("^open%s+%S+%s+(%S+)")
         local def = id and GuildOS.UI and GuildOS.UI.GetFeature and GuildOS.UI:GetFeature(id)
-        if def and def.tab then
+        if def and (def.tab or def.opens) then
             GuildOS.UI:OpenWindow(id, sub)
         else
             GuildOS:Print(L["Usage: /gos open <feature>. Try /gos open roster."])

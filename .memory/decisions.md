@@ -1659,3 +1659,44 @@ everything. Until now cores reached the game only through the companion's `Inbox
   had until the next change, as the Discord's lists before #138.
 - (−) The night ends on each officer's client with its own raid session: an officer who was not in the raid keeps the
   night's guests until the officer who was sends who left.
+
+---
+
+## ADR-0037 — One dropdown, and one Loot window for the rule, the accounts, the lists and the history (#346)
+
+### Context
+- No control picked one of several values: the screens used a button that turned to the next value on each click (the
+  loot method, the threshold, the raid size, the role, the account shown, what an answer asks for, an exception's kind).
+  A player could not see the choices, nor land on one without passing the others.
+- Each loot setting was edited in two or three places: Settings > Loot (the active core's, or the guild's), the core's
+  Config tab (that core's), the rule's own window, the points window, the DKP tab and the Master Loot window
+  (`wishlistOnlyMode` in three). Each wrote the same keys by its own path, with its own checks.
+- The Loot tab was officer-only, so the Dashboard's "your loot" sent members to a tab they could not open.
+
+### Decision
+- **`UI:CreateDropdown`** in UI/Helpers.lua, the one factory: a `CreateButton` that shows the value, and one list the
+  addon shares, built on first use, anchored under the button that opened it, closed by a click outside it (a
+  transparent sheet under the list), by Escape (UISpecialFrames, as every popup of the addon) and by a choice; ten rows
+  then a scroll. Painted by `StylePopup` and `CreateButton`, so both interface styles draw it. Every control that
+  picks among more than two values on the loot and core screens is one; two values stay a pair of buttons.
+- **The Loot window** is one tab (`loot`, every member's) with sub-tabs Rule · Accounts · Lists · History. An officer
+  edits, a member reads. The Rule tab has a selector (the guild or a core) and is the only place the loot system,
+  the loot master's settings, the answers' editor (`BuildLootRuleEditor`, moved, not copied), the council and the
+  exceptions are edited; under them, "how players will read it" (`LootRule:Describe`). The Accounts tab is the points
+  window of before on the core picked (`Points:InCore`), with the award row and the points' own settings. Lists holds
+  the wishlists and the soft reserves; History the history and the equity.
+- **The old places point here**: Settings > Loot and the core's Config tab keep one line, "Loot: <rule> — Open
+  Loot" (`GuildOS:DrawLootPointer`). `/gos points`, `/gos dkp` and `ShowPointsFrame` open Accounts; `dkp` and
+  `wishlist` stay features (their Settings switches) without a tab of their own (`opens = { tab, sub }`).
+- **Writes go through the modules**: `LootMaster:SetLootSetting(key, value, scope)` (the same keys, checked as the
+  screens checked them, written where `CoreManager:SetLootConfigKey` writes) and `Points:SetConfigKey(key, value, core)`;
+  the award row is `Points:AwardRow`.
+
+### Consequences
+- (+) Each setting has one place, and one check; a guild that changes nothing keeps every stored key and behaviour.
+- (+) A raider reads the rule their raid plays and their own balance.
+- (−) The loot master's settings in Settings followed the raid's active core; the Rule tab opens on that core too,
+  but an officer now sees which one is being changed and may pick another.
+- (−) `wishlistOnlyMode` unchecked on a core is now stored `false` (it was `nil`, which fell back to the guild's).
+- (−) Escape closes an open list and, like every popup of the addon, the windows behind it.
+

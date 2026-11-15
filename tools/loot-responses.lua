@@ -1037,7 +1037,21 @@ GuildOS:SetLootSystem("rolls")
 check(not LR:IsCustom() and #LR:Responses() == 2 and LR:Responses()[1].key == "MS", "picking a loot system puts its rule in force again")
 
 -- ── 12. The windows draw, and their buttons reach the module ────────
+local dropdowns = {}
+GetLocale = GetLocale or function() return "enUS" end   -- the Rule tab says when the rule was saved
 GuildOS.UI = setmetatable({
+  -- The Loot window's dropdown (issue #346): its options, and a choice as a click on one.
+  CreateDropdown = function()
+    local dd = widget({ kind = "Dropdown", options = {} })
+    dd.SetOptions = function(self, o) self.options = o or {} end
+    dd.SetValue = function(self, v) self.value = v end
+    dd.GetValue = function(self) return self.value end
+    dd.Select = function(self, v) self.value = v; if self.onSelect then self:onSelect(v) end end
+    dropdowns[#dropdowns + 1] = dd
+    return dd
+  end,
+  LabelColumn = function(_, _, _, floor) return floor end,
+  CreateScrollFrame = function() return widget(), widget() end,
   CreateButton = function(_, _, text)
     local b = widget({ text = tostring(text), label = widget() })
     buttons[#buttons + 1] = b
@@ -1050,6 +1064,20 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Layout.lua")
+-- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
+local function offered(text)
+  for i = #dropdowns, 1, -1 do
+    for _, o in ipairs(dropdowns[i].options) do
+      if o.text == text then return dropdowns[i], o.value end
+    end
+  end
+end
+local function choose(text)
+  local dd, value = offered(text)
+  check(dd ~= nil, "a dropdown offers " .. text)
+  dd:Select(value)
+end
 local function button(text)
   for i = #buttons, 1, -1 do
     if buttons[i].text == text then return buttons[i] end
@@ -1152,49 +1180,74 @@ end)
 check(ok, "the rows draw with a bid, a pass, a note and a counter: " .. tostring(err))
 LM:CancelRolling()
 
--- The loot settings: the answers' editor.
+-- The answers' editor: the Loot window's Rule tab since issue #346 (it was Settings > Loot). What an
+-- answer asks for is a dropdown there, where it was a button that cycled.
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/LootWindow.lua")
+dofile(ADDON .. "/UI/PointsPanel.lua")
 GuildOS.CreateRolePicker = function() return widget() end
-GuildOS.ShowPointsFrame = function() end
 local content = widget()
 local function draw()
-  widgets, buttons = {}, {}
-  local drew, problem = pcall(GuildOS.RefreshSettingsPanel, GuildOS, content, "loot")
-  check(drew, "the loot settings draw (" .. tostring(problem) .. ")")
+  widgets, buttons, dropdowns = {}, {}, {}
+  local drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "")
+  check(drew, "the Rule tab draws (" .. tostring(problem) .. ")")
+end
+GuildOS.RefreshLootRuleTab = (function(real)
+  return function(self, c, scope)
+    widgets, buttons, dropdowns = {}, {}, {}
+    return real(self, c, scope)
+  end
+end)(GuildOS.RefreshLootRuleTab)
+local function askOf(i)
+  local n = 0
+  for _, dd in ipairs(dropdowns) do
+    if dd.options[1] and dd.options[1].value == "roll" and dd.options[2] and dd.options[2].value == "bid" then
+      n = n + 1
+      if n == i then return dd end
+    end
+  end
 end
 GuildOS:SetLootSystem("rolls")
 draw()
-check(button("Add answer") and button("Roll") and button("Remove") and button("Down") and not button("+1"),
-  "the loot settings list the answers, with no +1 where the rule keeps none")
-check(button("MS > OS +1") and button("DKP bidding") and button("DKP sealed second-price"), "and offer the three new loot systems")
+check(button("Add answer") and askOf(2) and button("Remove") and button("Down") and not button("+1"),
+  "the Rule tab lists the answers, with no +1 where the rule keeps none")
+check(button("MS > OS +1") and button("DKP bidding") and button("DKP sealed second-price"), "and offers the three new loot systems")
 check(not button("Back to the loot system's rule"), "with nothing changed there is nothing to go back to")
-click("Roll")
-check(LR:Responses()[2].ask == "bid" and LR:HasBids() and LR:IsCustom(), "a click on what an answer asks for changes the rule, through LootRule")
-check(button("Sealed") and button("Their bid") and button("Back to the loot system's rule"), "the bids' own settings show once an answer bids")
+askOf(2):Select("bid")
+check(LR:Responses()[2].ask == "bid" and LR:HasBids() and LR:IsCustom(), "picking what an answer asks for changes the rule, through LootRule")
+check(button("Sealed") and offered("Their bid") and button("Back to the loot system's rule"), "the bids' own settings show once an answer bids")
 click("Sealed")
 check((LR:BidRules()) == true, "sealed is a click")
-click("The second bid, plus a step")
-check(LR:ChargeEffect().price == "second", "and so is the price")
+choose("The second bid, plus a step")
+check(LR:ChargeEffect().price == "second", "and the price is picked from a list")
 click("Down")
 check(LR:Responses()[1].key == "OS", "Down moves an answer")
-for _, w in ipairs(boxes()) do
-  if w.text == "30" and w.save then w.save("90") break end
+local function timeBox()
+  for _, w in ipairs(boxes()) do
+    if w.ruleKey == "time" then return w end
+  end
 end
+check(timeBox() and timeBox().text == "30", "the time to answer has its box")
+timeBox().save("90")
 check(LM:RollTime() == 90, "the time to answer is saved from its box")
 printed = {}
-for _, w in ipairs(boxes()) do
-  if w.text == "90" and w.save then w.save("1") break end
-end
+timeBox().save("1")
 check(LM:RollTime() == 90 and #printed == 1, "and a time that is none is refused, with a word to the officer")
 click("Back to the loot system's rule")
 check(not LR:IsCustom() and LR:Responses()[1].key == "MS", "back to the loot system's rule")
 click("MS > OS +1")
 check(GuildOS:GetLootSystem() == "plus1", "picking +1 is a click")
-check(button("+1") and button("Each raid night") and button("Each lockout") and button("Never"), "its answers say which count, and when the counter starts over")
-click("Each lockout")
-check(LR:Counters()[1].reset == "lockout", "and that is a click too")
+check(button("+1") and offered("Each raid night") and offered("Each lockout") and offered("Never"), "its answers say which count, and when the counter starts over")
+choose("Each lockout")
+check(LR:Counters()[1].reset == "lockout", "and that is picked from a list")
 click("DKP sealed second-price")
-check(GuildOS:GetLootSystem() == "dkpsealed" and not LR:IsCustom() and button("Open DKP Window"), "DKP by sealed bids shows the points' settings")
-
+check(GuildOS:GetLootSystem() == "dkpsealed" and not LR:IsCustom() and button("Open Accounts"),
+  "DKP by sealed bids points to the points' settings in Accounts")
+-- They are there, and only there: the Accounts tab of the same core.
+local accounts = widget()
+local drewAccounts, whyNot = pcall(GuildOS.BuildLootAccounts, GuildOS, accounts)
+check(drewAccounts, "the Accounts tab draws: " .. tostring(whyNot))
+local settingsBtn = button("Account settings")
+check(settingsBtn, "with its settings behind one button")
 math.random = realRandom
 print(("loot-responses: %d checks passed"):format(checks))

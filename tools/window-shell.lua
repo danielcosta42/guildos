@@ -316,12 +316,13 @@ local function builder(name, withSub)
     end
   end
 end
-for _, n in ipairs({ "CreateRosterPanel", "CreateLootPanel", "CreateDKPPanel", "CreateWishlistGuildPanel",
+-- The Loot window took the Loot, DKP and Wishlist tabs' panels (issue #346), with sub-tabs.
+for _, n in ipairs({ "CreateRosterPanel",
   "CreateRecipesPanel", "CreateTrialsPanel", "CreateWebPanel", "CreateSettingsPanel", "CreateDashboardPanel" }) do
   builder(n)
 end
 for _, n in ipairs({ "CreateRaidHubPanel", "CreateGuildHub", "CreateAlliancePanel", "CreateRecruitmentPanel",
-  "CreateManagementPanel" }) do
+  "CreateManagementPanel", "CreateLootWindow" }) do
   builder(n, true)
 end
 
@@ -514,8 +515,10 @@ GuildOS.State.startup.failedFeatures.alliance = nil
 officer = false
 f:UpdateTabVisibility()
 printed = {}
-check(not UI:OpenWindow("loot") and said("Loot is officer-only."), "an officer-only tab refuses a member")
-check(not listed(f, "loot") and not listed(f, "management"), "a member sees no officer tabs")
+check(not UI:OpenWindow("management") and said("Leadership is officer-only."), "an officer-only tab refuses a member")
+check(not listed(f, "management") and not listed(f, "trials"), "a member sees no officer tabs")
+-- The Loot window is every member's since issue #346 (it was officer-only): a raider reads the rule.
+check(listed(f, "loot") and UI:IsFeatureAllowed(UI:GetFeature("loot")), "a member has the Loot tab")
 officer = true
 f:UpdateTabVisibility()
 
@@ -663,10 +666,10 @@ do
   flush()
   officer = false
   fire(f, "OnEvent", "GROUP_ROSTER_UPDATE")
-  check(not listed(f, "loot"), "a group change re-checks the tabs")
+  check(not listed(f, "management"), "a group change re-checks the tabs")
   officer = true
   fire(f, "OnEvent", "PARTY_LOOT_METHOD_CHANGED")
-  check(listed(f, "loot"), "so does a loot-method change")
+  check(listed(f, "management"), "so does a loot-method change")
   roster = {}
   f:RefreshTitle()
   check(f.metaText.text == "Chama · \226\128\148", "while the roster loads, a dash instead of 0 online")
@@ -988,8 +991,8 @@ do
   check(#A:Activity(2) == 2 and A:Activity(2)[1].ts == feed[1].ts, "the limit keeps the newest")
   officer = false
   local mine = A:Activity()
-  check(mine[1].id == "roster" and mine[1].sub == nil and mine[6].id == "roster",
-    "a member's rows open the roster where the owner is officer-only")
+  check(mine[1].id == "roster" and mine[1].sub == nil and mine[6].id == "loot",
+    "a member's rows open the roster where the owner is officer-only, and loot the Loot window, every member's since #346")
   officer = true
 
   local saved = { GuildOS.db.rosterLog, GuildOS.db.lootHistory, GuildOS.db.milestones, GuildOS.db.raidTracker }

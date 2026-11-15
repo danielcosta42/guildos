@@ -2,6 +2,11 @@
 -- client, in both interface styles (the flat "guildos" one and "forever"):
 --   * the dropdown: a button that shows the value chosen, a list under it that a click opens, a click
 --     on a row chooses, a click outside or Escape closes, and a long list scrolls;
+--   * the Loot window: an officer edits the rule (the model, its settings, the answers) and the accounts
+--     (the award row, the points' settings) of the guild or of a core; a member reads the rule as
+--     players will read it and the standings, and edits nothing;
+--   * no loot setting is reachable from two places: Settings > Loot and the core's Config tab only
+--     point to the window, and the code that writes each setting is in one UI file;
 --
 --   luajit -e 'ADDON="."' tools/loot-window.lua
 --
@@ -97,11 +102,18 @@ function Frame:SetBackdropColor(r, g, b, a) self.bg = { r, g, b, a } end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
 function Frame:SetVerticalScroll(v) self.vscroll = v end
 function Frame:SetFrameStrata(s) self.strata = s end
-function Frame:GetChildren() return unpack(self.children) end
+-- Only the ones shown: a screen hides what it drew before, and what is hidden needs nothing more.
+function Frame:GetChildren()
+  local out = {}
+  for _, c in ipairs(self.children) do
+    if c.shown and c.kind ~= "FontString" and c.kind ~= "Texture" then out[#out + 1] = c end
+  end
+  return unpack(out)
+end
 function Frame:GetRegions()
   local out = {}
   for _, c in ipairs(self.children) do
-    if c.kind == "FontString" or c.kind == "Texture" then out[#out + 1] = c end
+    if c.shown and (c.kind == "FontString" or c.kind == "Texture") then out[#out + 1] = c end
   end
   return unpack(out)
 end
@@ -284,9 +296,250 @@ local function dropdown(UI)
   check(saved == 1 and btn.label.text == "Saved" and not btn:IsEnabled(), "and saving says so")
 end
 
+
+-- ── 2. The Loot window ──────────────────────────────────────────────────
+local officer = true
+local function loadModules()
+  dofile(ADDON .. "/Modules/CoreManager.lua")
+  dofile(ADDON .. "/Modules/Points.lua")
+  dofile(ADDON .. "/Modules/LootRule.lua")
+  dofile(ADDON .. "/Modules/LootMaster.lua")
+  GuildOS.db = { settings = { lootSystem = "rolls", modules = {} }, members = {}, altLinks = {}, cores = {},
+    lootHistory = {}, lootMaster = { awardHistory = {} }, points = {},
+    raidTracker = { sessions = {}, attendance = {}, deletedSessions = {}, currentGroupTag = "" } }
+  GuildOS.IsOfficer = function() return officer end
+  GuildOS.IsOfficerByName = function() return officer end
+  GuildOS.Points:Initialize()
+  GuildOS.LootMaster:LoadCfg()
+  GuildOS.Wishlist = { GetItemInterest = function() return nil end }   -- what the Lists tab and the popup read
+  GuildOS.LootMasterStatus = function() return "Master Loot: Lead" end   -- Core/Commands.lua's
+  dofile(ADDON .. "/UI/FeaturePanels.lua")
+  dofile(ADDON .. "/UI/LootWindow.lua")
+  dofile(ADDON .. "/UI/PointsPanel.lua")
+  dofile(ADDON .. "/UI/CorePanel.lua")
+  GuildOS.CreateRolePicker = function(_, parent) return newFrame("Frame", parent) end
+  UI_OPENED = nil
+  GuildOS.UI.OpenWindow = function(_, id, sub, filter) UI_OPENED = { id, sub, filter } return true end
+end
+
+-- Lay the scroll children out as the client would: the stub has no layout engine.
+local function sized(root, w)
+  walk(root, function(f)
+    if f.kind == "ScrollFrame" then f:SetSize(w, 400) end
+    if f.scrollChild then f.scrollChild:SetWidth(w - 12) end
+  end)
+end
+
+local function lootWindow(width)
+  local box = newFrame("Frame", UIParent)
+  box:SetSize(width or 680, 470)
+  GuildOS:CreateLootWindow(box)
+  sized(box, (width or 680) - 40)
+  return box
+end
+
+-- The frames of `root` that carry `field` (a setting's key, a dropdown's role), visible ones only.
+local function tagged(root, field, value)
+  local out = {}
+  walk(root, function(f)
+    if f:IsVisible() and f[field] ~= nil and (value == nil or f[field] == value) then out[#out + 1] = f end
+  end)
+  return out
+end
+local function typeAndSave(box, text)
+  box.text = text
+  box.scripts.OnTextChanged(box, true)
+  box.saveButton.scripts.OnClick(box.saveButton)
+end
+
+local function lootTab(UI)
+  loadModules()
+  local LM, LR, CM, P = GuildOS.LootMaster, GuildOS.LootRule, GuildOS.CoreManager, GuildOS.Points
+
+  -- The officer's Rule tab, on the guild.
+  local win = lootWindow()
+  check(type(win.SelectSub) == "function" and win.ActiveSub() == "rule", "the tab opens on Rule, and takes a deep link")
+  local rule = win.panels.rule
+  rule.Draw("")
+  check(#buttons(rule, "MS > OS +1") == 1 and #buttons(rule, "DKP / Points") == 1 and #buttons(rule, "Add answer") == 1,
+    "an officer sees the models as a list and the answers' editor")
+  check(#tagged(rule, "isScope") == 1, "and a selector: the guild or a core")
+  check(shows(rule, "Who may ask.") and shows(rule, "Who takes it.") and shows(rule, "The higher roll"),
+    "and the rule as players will read it, in the rule's order")
+  local wl = tagged(rule, "lootKey", "wishlistOnlyMode")
+  check(#wl == 1, "the wishlist-only switch is here, once")
+  wl[1].onChanged(wl[1], true)
+  check(GuildOS.db.lootMaster.wishlistOnlyMode == true and LM.WISHLIST_ONLY_MODE == true, "and writes the key it always did")
+  local thr = tagged(rule, "lootKey", "lootThreshold")[1]
+  check(thr and thr.options and #thr.options == 4, "the loot threshold is a dropdown of the four qualities")
+  thr:Select(4)
+  check(GuildOS.db.lootMaster.lootThreshold == 4 and LM:GetLootThreshold() == 4, "a choice saves it")
+  local dur = tagged(rule, "lootKey", "rollDuration")[1]
+  check(dur and dur.saveButton.label.text == "Saved", "the roll duration's box shows it is saved")
+  typeAndSave(dur, "45")
+  check(GuildOS.db.lootMaster.rollDuration == 45 and LM.ROLL_DURATION == 45, "a typed duration is saved")
+  typeAndSave(dur, "500")
+  check(GuildOS.db.lootMaster.rollDuration == 45 and dur.text == "45", "one out of bounds is refused, and the box says what holds")
+  click(rule, "MS > OS +1")
+  check(GuildOS:GetLootSystem("") == "plus1", "a model is a click")
+  rule.Draw("")
+  check(shows(rule, "The answer: MS > OS") and shows(rule, "Who holds less +1"), "and what players read follows it")
+
+  -- A core's rule: Follow the guild, its own model, and the way to its accounts.
+  check(CM:Create("Alpha"), "a core")
+  local scope = tagged(rule, "isScope")[1]
+  scope:Select("Alpha")
+  check(#buttons(rule, "Follow the guild") == 1, "a core offers to follow the guild: " .. #buttons(rule, "Follow the guild"))
+  check(shows(rule, "Following the guild"), "a core follows the guild until it picks: " .. texts(rule):sub(1, 300))
+  click(rule, "DKP / Points")
+  check(CM:GetLootSystem("Alpha") == "dkp" and GuildOS:GetLootSystem("") == "plus1", "its pick is its own")
+  check(#buttons(rule, "Open Accounts") == 1, "a model on points says its settings are in Accounts")
+  click(rule, "Open Accounts")
+  check(win.ActiveSub() == "accounts" and win.panels.accounts.Scope() == "Alpha", "and opens them, on that core")
+
+  -- The officer's Accounts: the award row, on the core picked.
+  local acc = win.panels.accounts
+  sized(acc, 640)
+  acc.Refresh()
+  local who
+  walk(acc, function(f) if f.kind == "EditBox" and f:IsVisible() and not who then who = f end end)
+  local reason = tagged(acc, "isReason")[1]
+  check(who and reason and #buttons(acc, "Award") == 1 and #buttons(acc, "Charge") == 1, "who, a reason, Award and Charge")
+  check(reason.options[#reason.options].text == "Other (type it)", "the reason is a named one, or typed")
+  who.text = "Ana"
+  local amount
+  walk(acc, function(f) if f.kind == "EditBox" and f:IsVisible() and f ~= who and not amount then amount = f end end)
+  amount.text = "10"
+  click(acc, "Award")
+  check(P:InCore("Alpha", P.Get, P, P:KeyOf("Ana")) == 10 and P:Get(P:KeyOf("Ana")) ~= 10, "an award lands in the core's pool")
+  amount.text = "3"
+  click(acc, "Charge")
+  check(P:InCore("Alpha", P.Get, P, P:KeyOf("Ana")) == 7, "and a charge too")
+  check(shows(acc, "Ana") and shows(acc, "7"), "the standings show it")
+  P:InCore("Alpha", P.SetReason, P, "don", "Donation", 5, 2)
+  acc.Refresh()
+  check(reason.options[1].text == "Donation: 5 points, up to 2 a week", "a named reason is offered with its points and its cap")
+  reason:Select("don")
+  who.text, amount.text = "Bo", "3"
+  click(acc, "Award")
+  check(P:InCore("Alpha", P.Get, P, P:KeyOf("Bo")) == 2, "given three times, held to its cap of two a week")
+  click(acc, "Account settings")
+  local boss = tagged(acc, "pointsKey", "bossAward")[1]
+  check(boss and #buttons(acc, "Back to the standings") == 1, "the points' settings are behind one button")
+  typeAndSave(boss, "15")
+  check(P:GetDBForCore("Alpha").config.bossAward == 15 and P:GetDBForCore("").config.bossAward ~= 15, "and save on the core's pool")
+  local mode = tagged(acc, "isMode")[1]
+  check(mode and #mode.options == 2, "the mode is a dropdown: DKP or a council")
+  mode:Select("council")
+  check(P:GetMode("Alpha") == "council", "and a choice changes it")
+  click(acc, "Back to the standings")
+
+  -- Settings > Loot and the core's Config tab only point here.
+  local settings = newFrame("Frame", UIParent)
+  settings:SetSize(560, 900)
+  GuildOS:RefreshSettingsPanel(settings, "loot")
+  check(#buttons(settings, "Open Loot") == 1, "Settings > Loot says where the loot settings are")
+  local LOOT_CONTROLS = { "Wishlist Auto-Council", "Roll Duration", "Rarity threshold", "Disenchanter", "Bank character",
+    "Points per boss", "Min. Attendance", "Auto-announce", "LOOT SYSTEM", "LOOT MASTER", "Wishlist-only mode",
+    "Roll duration", "Loot threshold", "Mode:" }
+  for _, label in ipairs(LOOT_CONTROLS) do
+    check(not shows(settings, label), "Settings has no \"" .. label .. "\" left")
+  end
+  click(settings, "Open Loot")
+  check(UI_OPENED[1] == "loot" and UI_OPENED[2] == "rule" and UI_OPENED[3] == "", "its button opens the Rule tab on the guild")
+
+  local cores = newFrame("Frame", UIParent)
+  cores:SetSize(780, 540)
+  GuildOS:CreateCoresPanel(cores)
+  sized(cores, 540)
+  cores.scripts.OnShow(cores)
+  local alphaRow
+  walk(cores, function(f) if f.coreName == "Alpha" and f.scripts.OnClick and f:IsVisible() then alphaRow = alphaRow or f end end)
+  check(alphaRow, "the core is listed")
+  alphaRow.scripts.OnClick(alphaRow)
+  click(cores, "Config")
+  check(#buttons(cores, "Open Loot") == 1 and shows(cores, "Loot: DKP (fixed price)"), "the Config tab says what the core plays")
+  for _, label in ipairs(LOOT_CONTROLS) do
+    check(not shows(cores, label), "the Config tab has no \"" .. label .. "\" left")
+  end
+  click(cores, "Open Loot")
+  check(UI_OPENED[3] == "Alpha", "and its button opens the Rule tab on that core")
+
+  -- Each loot setting is written from one UI file.
+  local function read(path)
+    local f = assert(io.open(ADDON .. "/" .. path, "rb"))
+    local src = f:read("*a")
+    f:close()
+    return src
+  end
+  local WRITES = {
+    { "SetLootSetting(", "UI/LootWindow.lua" }, { "SetLootSystem(", "UI/LootWindow.lua" },
+    { "SetConfigKey(", "UI/PointsPanel.lua" }, { "Points:SetMode(", "UI/PointsPanel.lua" },
+    { "P:SetMode(", "UI/PointsPanel.lua" }, { "wishlistOnlyMode", "UI/LootWindow.lua" },
+  }
+  local uiFiles = {}
+  for line in io.popen('ls "' .. ADDON .. '/UI"'):lines() do uiFiles[#uiFiles + 1] = "UI/" .. line end
+  for _, w in ipairs(WRITES) do
+    for _, path in ipairs(uiFiles) do
+      if path ~= w[2] then
+        check(not read(path):find(w[1], 1, true), w[1] .. " is written from " .. w[2] .. " alone, not " .. path)
+      end
+    end
+  end
+  for _, path in ipairs(uiFiles) do
+    check(not read(path):find("SaveCfgKey(", 1, true) and not read(path):find("SetLootConfigKey(", 1, true),
+      path .. " writes no loot setting behind the Loot window's back")
+  end
+
+  -- What players read, from the rule's own blocks.
+  local d = LR:Describe({ v = 1, model = "custom", time = 25,
+    responses = { { key = "MS", label = "Main", ask = "roll", cost = 1 }, { key = "OS", label = "Off", ask = "roll", cost = 0 } },
+    filters = { { k = "attendance", min = 50, act = "downgrade", from = "MS", to = "OS" }, { k = "points", min = 4, act = "block" } },
+    order = { { k = "softres" }, { k = "response" }, { k = "roll" } },
+    exceptions = { { on = { cat = "recipe" }, to = "bank" } } })
+  check(d.who == "Everyone in the raid. With attendance below 50%, Main counts as Off. Whoever holds fewer than 4 points may not ask.",
+    "who may ask, filter by filter: " .. d.who)
+  check(d.how == "Main, Off, pass, within 25 seconds.", "how to ask, with the rule's own time: " .. d.how)
+  check(d.order[1] == "Who reserved the item" and d.order[2] == "The answer: Main > Off" and d.order[3] == "The higher roll",
+    "who takes it, in the order")
+  check(d.exceptions == "recipes: the guild bank.", "and what goes elsewhere: " .. tostring(d.exceptions))
+  check(select(2, LM:SetLootSetting("colour", 1, "")) == "key" and select(2, LM:SetLootSetting("lootThreshold", 9, "")) == "range",
+    "a setting that is none, or a threshold that is no quality, is refused")
+  check(LM:SetLootSetting("minAttendancePct", 140, "") == 100 and LM:SetLootSetting("bank", "  Vault ", "Alpha") == "Vault"
+    and CM:GetLootConfig("Alpha").bank == "Vault" and CM:GetLootConfig("").bank ~= "Vault", "and the others are held to their bounds, on their core")
+  check(select(2, P:AwardRow({ name = "" })) == "name" and select(2, P:AwardRow({ name = "Ana" })) == "amount"
+    and select(2, P:AwardRow({ name = "Ana", reason = "nope" })) == "reason", "the award row needs who, and points or a reason")
+  check(P:SetConfigKey("decayPct", 250, "") == 100 and P:SetConfigKey("decayRound", "sideways", "") == nil
+    and P:SetConfigKey("autoAward", 1, "") == true and P:SetConfigKey("nonsense", 1, "") == nil, "the points' settings are held to theirs")
+
+  -- A member reads, and edits nothing.
+  officer = false
+  local mine = lootWindow()
+  local r2 = mine.panels.rule
+  r2.Draw("")
+  check(#buttons(r2, "MS > OS +1") == 0 and #buttons(r2, "Add answer") == 0 and #tagged(r2, "lootKey") == 0,
+    "a member sees no model to pick, no editor and no setting")
+  check(shows(r2, "Model: MS > OS +1") and shows(r2, "Who may ask.") and shows(r2, "Who takes it."),
+    "but reads the model and the rule as players will read it")
+  check(#tagged(r2, "isScope") == 1, "of the guild or of any core")
+  mine.SelectSub("accounts", "Alpha")
+  local a2 = mine.panels.accounts
+  sized(a2, 640)
+  a2.Refresh()
+  check(#buttons(a2, "Award") == 0 and #buttons(a2, "Charge") == 0 and #buttons(a2, "Account settings") == 0,
+    "nor the award row, nor the points' settings")
+  check(shows(a2, "Ana") and shows(a2, "Bo"), "and reads the standings of the core")
+  mine.SelectSub("lists")
+  check(shows(mine.panels.lists, "Your wishlist is yours to keep"), "the lists say where their own wishlist is")
+  mine.SelectSub("history")
+  check(mine.ActiveSub() == "history", "and the history opens")
+  officer = true
+end
+
 for _, style in ipairs({ "guildos", "forever" }) do
   local UI = load(style)
   dropdown(UI)
+  lootTab(UI)
 end
 
 print(("loot-window: %d checks passed"):format(checks))

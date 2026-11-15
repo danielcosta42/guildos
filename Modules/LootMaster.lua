@@ -133,6 +133,50 @@ function LootMaster:SaveCfgKey(key, value)
     end
 end
 
+-- One loot setting of a core ("" the guild's own), from the Loot window's Rule tab (issue #346): the
+-- one place it is edited. The same keys as always, checked as the screens of before checked them: a
+-- roll lasts 5 to 120 seconds, attendance is a percentage, the bids' least and time are whole, the
+-- threshold is a quality from uncommon to legendary, the switches are yes or no and the names are
+-- trimmed. The active core's figures the loot master caches are read again. Returns the value kept,
+-- or nil and why ("range" for a figure out of bounds, "key" for a setting that is none).
+local SETTING_SWITCHES = { autoAnnounce = true, wishlistOnlyMode = true, attTiebreaker = true, recvPenalty = true }
+local SETTING_NAMES = { disenchanter = true, bank = true }
+function LootMaster:SetLootSetting(key, value, scope)
+    if SETTING_SWITCHES[key] then
+        value = value and true or false
+    elseif SETTING_NAMES[key] then
+        value = strtrim(tostring(value or ""))
+    elseif key == "rollDuration" then
+        value = tonumber(value)
+        if not value or value < 5 or value > 120 then return nil, "range" end
+        value = math.floor(value)
+    elseif key == "minAttendancePct" then
+        value = math.max(0, math.min(100, math.floor(tonumber(value) or 0)))
+    elseif key == "dkpMinBid" then
+        value = math.max(0, math.floor(tonumber(value) or 0))
+    elseif key == "dkpBidTime" then
+        value = math.max(5, math.floor(tonumber(value) or 30))
+    elseif key == "lootThreshold" then
+        value = tonumber(value)
+        if not value or value < 2 or value > 5 then return nil, "range" end
+    else
+        return nil, "key"
+    end
+    if GuildOS.CoreManager then
+        GuildOS.CoreManager:SetLootConfigKey(key, value, scope or "")
+    elseif GuildOS.db.lootMaster then
+        GuildOS.db.lootMaster[key] = value
+    end
+    self:LoadCfg()
+    return value
+end
+
+-- The loot settings of a core ("" the guild's), as the Rule tab shows them.
+function LootMaster:LootSettings(scope)
+    if GuildOS.CoreManager then return GuildOS.CoreManager:GetLootConfig(scope or "") end
+    return GuildOS.db.lootMaster or {}
+end
+
 -- How long a roll stays open: the loot rule's own time when it names one (issue #334), else the
 -- roll duration of the loot settings.
 function LootMaster:RollTime()

@@ -458,6 +458,60 @@ function Points:AwardReason(key, rk, times)
     return self:Adjust(key, r.value * times, r.name, "reason", rk)
 end
 
+-- The award row of the Loot window's Accounts tab (issue #346): who, a named reason or a typed one,
+-- how many times or how many points, and whether it is an award or a charge. A named reason given is
+-- its points `times` over, held to its weekly cap; charged, it takes its points `times` over. A typed
+-- reason moves `amount` points. Returns the entry, or nil and why ("name", "amount", "reason").
+function Points:AwardRow(spec)
+    spec = spec or {}
+    local name = strtrim(tostring(spec.name or ""))
+    if name == "" then return nil, "name" end
+    local key = self:KeyOf(name)
+    local times = math.max(1, math.floor(tonumber(spec.times) or 1))
+    if spec.reason then
+        local r = self:GetReason(spec.reason)
+        if not r then return nil, "reason" end
+        if spec.charge then return self:Charge(key, r.value * times, r.name) end
+        return self:AwardReason(key, r.key, times)
+    end
+    local amount = math.abs(math.floor(tonumber(spec.amount) or 0))
+    if amount == 0 then return nil, "amount" end
+    local note = strtrim(tostring(spec.note or ""))
+    return self:Adjust(key, spec.charge and -amount or amount, note, spec.charge and "spend" or "award")
+end
+
+-- One of the points' settings of a core's pool ("" the guild's), from the Accounts tab (issue #346):
+-- the figures are whole and not below zero (the percentages not above a hundred), the switches yes or
+-- no, the decay's rounding one of three. The pool's officers hear it. Returns the value kept, or nil.
+local CONFIG_NUMBERS = {
+    bossAward = true, raidAward = true, onTimeAward = true, lateAward = true, stayedAward = true,
+    leftEarlyAward = true, startingPoints = true, cap = true, itemCost = true, entryCost = true,
+    gpRefIlvl = true, baseGP = true, minEP = true,
+}
+local CONFIG_PERCENTS = { decayPct = true, refundPct = true }
+local CONFIG_SWITCHES = { autoAward = true, raidEndAwards = true }
+local DECAY_ROUNDS = { near = true, up = true, down = true }
+function Points:SetConfigKey(key, value, coreName)
+    if not GuildOS:IsOfficer() then return nil end
+    if CONFIG_NUMBERS[key] or CONFIG_PERCENTS[key] then
+        value = math.floor(tonumber(value) or 0)
+        if value < 0 then value = 0 end
+        if CONFIG_PERCENTS[key] and value > 100 then value = 100 end
+    elseif CONFIG_SWITCHES[key] then
+        value = value and true or false
+    elseif key == "decayRound" then
+        if not DECAY_ROUNDS[value] then return nil end
+    else
+        return nil
+    end
+    local pool = poolOf(coreName)
+    pool.config = pool.config or {}
+    pool.config[key] = value
+    self:BroadcastSnapshot(coreName)
+    self:Refresh()
+    return value
+end
+
 -- Award the same amount to every player currently in the raid.
 function Points:AwardRaidGroup(amount, reason)
     if not GuildOS:IsOfficer() then return 0 end

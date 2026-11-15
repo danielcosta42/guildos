@@ -188,7 +188,7 @@ function Agora:Activity(limit)
     end
     for _, e in ipairs(db.lootHistory or {}) do
         add(e.timestamp, string.format(L["%s received %s"], e.player or "?", e.itemLink or e.itemName or "?"), "loot",
-            nil, e.playerKey)
+            "history", e.playerKey)
     end
     for _, e in ipairs((db.milestones and db.milestones.events) or {}) do
         if e.type == "ding" then
