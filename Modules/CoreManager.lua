@@ -1452,18 +1452,24 @@ local function followName(self, name, discordName)
         return name
     end
     local before = core.discordName
-    core.discordName = discordName
-    if GuildOS.db.cores[discordName] then return name end
     local follow = before and before ~= discordName and name == before
     -- A core imported by a version from before `discordName` (#339) has none: the first package after
     -- the update may already carry the new name, and recording it alone left this client on the old one
     -- forever while an officer who saw both followed. It follows too when it holds the tag and is not
     -- named by it (a name the Discord reused, "alfa-2", stays), nor linked by hand under a name of the
-    -- officers' (`linkAt`, LinkDiscord).
+    -- officers' (`linkAt`, LinkDiscord), nor named in a way that reduces to the tag: an officer's
+    -- "Nucleo Alfa" for nucleo-alfa, or "Kara" for kara, adopted by its slug (coreFor), is the officers'
+    -- own name for it, which nothing on Discord changed. Its Discord name is recorded all the same, so
+    -- the next rename follows by the rule above.
     if not before and core.discordTag and not core.linkAt and name ~= discordName then
         local tag = core.discordTag
-        follow = name ~= tag and not (name:sub(1, #tag + 1) == tag .. "-" and name:sub(#tag + 2):match("^%d+$"))
+        follow = name ~= tag and CoreManager.Slug(name) ~= tag
+            and not (name:sub(1, #tag + 1) == tag .. "-" and name:sub(#tag + 2):match("^%d+$"))
     end
+    -- A new name another core here has: neither followed nor recorded, so a later package tries again
+    -- once that name is free (recorded, it read as already followed).
+    if follow and GuildOS.db.cores[discordName] then return name end
+    core.discordName = discordName
     if follow then
         moveCore(name, discordName)
         return discordName

@@ -299,14 +299,34 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:IsLinked() and CM:LinkSeenAt() == list.seenAt, G("another officer's list links this client too, as fresh as theirs"))
   -- A core imported by a version from before `discordName`: the first package after the update already
   -- carries the Discord's new name, and the core follows it, as the officer who saw both did.
+  -- Rewritten (review of #339): this was a core named "Núcleo Alfa" for the tag nucleo-alfa, a name that
+  -- reduces to the tag, which is also how an officer's own core adopted by its slug looks ("Nucleo
+  -- Alfa", "Kara" for kara): renamed on the first package after the update with nothing changed on
+  -- Discord. A name that reduces to the tag is kept; one that does not follows.
   CM = load(game)
-  GuildOS.db.cores["Núcleo Alfa"] = { name = "Núcleo Alfa", members = {}, discordTag = "nucleo-alfa", raidSize = 10,
+  GuildOS.db.cores["Raide Alfa"] = { name = "Raide Alfa", members = {}, discordTag = "nucleo-alfa", raidSize = 10,
     points = { mode = "dkp", config = {}, standings = { Ana = { current = 70 } }, log = {}, appliedOps = {}, appliedCount = 0 } }
   CM:Initialize()
   CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
-  check(GuildOS.db.cores["Núcleo Beta"] and GuildOS.db.cores["Núcleo Alfa"] == nil and count(GuildOS.db.cores) == 1
+  check(GuildOS.db.cores["Núcleo Beta"] and GuildOS.db.cores["Raide Alfa"] == nil and count(GuildOS.db.cores) == 1
     and GuildOS.db.cores["Núcleo Beta"].points.standings.Ana.current == 70,
     G("a core with no Discord name remembered follows the first package's new name, points along"))
+  -- Named by the officers in a way that reduces to the tag, nothing changed on Discord: kept, and the
+  -- Discord's name recorded, so the next rename follows as any other.
+  for _, case in ipairs({ { "Nucleo Alfa", "nucleo-alfa", "Núcleo Alfa" }, { "Kara", "kara", "Karazhan Sexta" },
+                          { "Núcleo Alfa", "nucleo-alfa", "Núcleo Alfa" } }) do
+    local own, tag, discord = case[1], case[2], case[3]
+    CM = load(game)
+    GuildOS.db.cores[own] = { name = own, discordTag = tag, importedAt = 900, members = {} }
+    GuildOS.db.coreLink = { importedAt = 900 }
+    CM:Initialize()
+    CM:ImportFromSite(package(1000, { { tag = tag, name = discord, size = 10, members = {} } }), 1000)
+    check(GuildOS.db.cores[own] and count(GuildOS.db.cores) == 1 and GuildOS.db.cores[own].discordName == discord,
+      G("a legacy core named " .. own .. " for " .. tag .. " keeps its name on the first package"))
+    CM:ImportFromSite(package(2000, { { tag = tag, name = "Outro Nome", size = 10, members = {} } }), 2000)
+    local renamed = GuildOS.db.cores["Outro Nome"] ~= nil
+    check(renamed == (own == discord), G("and follows the next rename only as any core does (" .. own .. ")"))
+  end
   -- Nor when the core is named by its tag, or the name is another core's.
   CM = load(game)
   GuildOS.db.cores["alfa-2"] = { name = "alfa-2", members = {}, discordTag = "alfa" }
@@ -333,6 +353,11 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM:ImportFromSite(package(1000, { alfa() }), 1000)
   CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
   check(CM:IsFromDiscord("Núcleo Alfa") and not CM:IsFromDiscord("Núcleo Beta"), G("a name taken here is not taken over"))
+  -- And once that name is free, the next package follows it.
+  check(CM:Rename("Núcleo Beta", "Outra"), G("the other core renamed"))
+  CM:ImportFromSite(package(3000, { alfa("Núcleo Beta") }), 3000)
+  check(CM:IsFromDiscord("Núcleo Beta") and GuildOS.db.cores["Núcleo Alfa"] == nil,
+    G("a later package follows the name once it is free"))
 
   -- The rename comes with the inbox at login (#339): CoreManager:Initialize runs before
   -- RaidTracker:Initialize, the module loaded but its tag "" and no raid. The raid saved for the
