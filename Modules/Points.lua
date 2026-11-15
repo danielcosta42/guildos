@@ -1291,6 +1291,65 @@ local function waiting()
     return w
 end
 
+-- The name an entry gives a core is the sender's: what was kept here before a rename, and an officer
+-- whose client has not seen it yet, still say the old one. db.pointsAliases[old] = { to, at } is each
+-- rename here (CoreManager's moveCore, NoteRename), at most ALIAS_MAX, let go after WAIT_AGE as what
+-- is kept is.
+local ALIAS_MAX = 16
+
+function Points:NoteRename(oldName, newName)
+    if type(oldName) ~= "string" or type(newName) ~= "string" or oldName == newName or #oldName > 96 then return end
+    local a = GuildOS.db.pointsAliases
+    if type(a) ~= "table" then a = {}; GuildOS.db.pointsAliases = a end
+    local now = GetServerTime()
+    a[newName] = nil                       -- a core's own name now, no one's alias
+    a[oldName] = { to = newName, at = now }
+    local n, oldest, oldestAt = 0, nil, math.huge
+    for name, to in pairs(a) do
+        local at = type(to) == "table" and tonumber(to.at) or 0
+        if at < now - WAIT_AGE then a[name] = nil else
+            n = n + 1
+            if at < oldestAt then oldest, oldestAt = name, at end
+        end
+    end
+    if n > ALIAS_MAX and oldest then a[oldest] = nil end
+    if next(a) == nil then GuildOS.db.pointsAliases = nil end
+end
+
+-- The core this client has for the name `name` an entry gives, or nil. Its own name; else where a
+-- rename here took it (pointsAliases); else the Discord core known here under another name (named by
+-- its tag, coreFor): the one whose Discord name it is, or whose tag it reduces to (the name it had on
+-- Discord when it was made, before a rename this client never saw).
+function Points:CoreNamed(name)
+    local cores = GuildOS.db and GuildOS.db.cores
+    if type(name) ~= "string" or name == "" or type(cores) ~= "table" then return nil end
+    local a, since = GuildOS.db.pointsAliases, GetServerTime() - WAIT_AGE
+    for _ = 1, ALIAS_MAX + 1 do
+        if type(cores[name]) == "table" then return name end
+        local to = type(a) == "table" and a[name]
+        if not (type(to) == "table" and type(to.to) == "string" and (tonumber(to.at) or 0) >= since) then break end
+        name = to.to
+    end
+    local CM = GuildOS.CoreManager
+    local slug = CM and CM.Slug and CM.Slug(name)
+    local byTag
+    for here, core in pairs(cores) do
+        if type(core) == "table" and type(core.discordTag) == "string" then
+            if core.discordName == name then return here end
+            if core.discordTag == slug then byTag = here end
+        end
+    end
+    return byTag
+end
+
+-- The pool an entry naming `core` goes to: the guild's for none, the core's this client has for it
+-- (CoreNamed), nil while it has none.
+local function poolFor(core)
+    if core == nil or core == "" then return Points:GetDBForCore(core) end
+    local here = Points:CoreNamed(core)
+    return here and Points:GetDBForCore(here) or nil
+end
+
 -- Keeps `e` (an entry of `act`) for the core it names, when that is a core this client lacks.
 local function keepForLater(act, e)
     local core = e.core
@@ -1316,21 +1375,29 @@ local function keepForLater(act, e)
 end
 Points.KeepForLater = keepForLater
 
--- Plays what was kept for `coreName`, now that this client has it; what is too old is let go. Returns
--- how many entries were played.
+-- Plays what was kept for `coreName`, now that this client has it, under that name or one that is it
+-- (CoreNamed: renamed here, or the Discord's); what is too old is let go. Returns how many entries were
+-- played.
 function Points:ReplayWaiting(coreName)
     local w = GuildOS.db and GuildOS.db.pointsWaiting
-    if type(w) ~= "table" or type(coreName) ~= "string" or type(w[coreName]) ~= "table" then return 0 end
+    if type(w) ~= "table" or type(coreName) ~= "string" then return 0 end
     if not self:GetDBForCore(coreName) then return 0 end
-    local list = w[coreName]
-    w[coreName] = nil
+    local names = {}
+    for name, list in pairs(w) do
+        if type(list) == "table" and self:CoreNamed(name) == coreName then names[#names + 1] = name end
+    end
+    table.sort(names)
     local since, n = GetServerTime() - WAIT_AGE, 0
-    for _, kept in ipairs(list) do
-        if type(kept) == "table" and type(kept.e) == "table" and (tonumber(kept.at) or 0) >= since
-            and (kept.act == "delta" or kept.act == "cdelta" or kept.act == "qset") then
-            kept.e.core = coreName
-            self:OnSync({ act = kept.act, data = { entries = { kept.e } } })
-            n = n + 1
+    for _, name in ipairs(names) do
+        local list = w[name]
+        w[name] = nil
+        for _, kept in ipairs(list) do
+            if type(kept) == "table" and type(kept.e) == "table" and (tonumber(kept.at) or 0) >= since
+                and (kept.act == "delta" or kept.act == "cdelta" or kept.act == "qset") then
+                kept.e.core = coreName
+                self:OnSync({ act = kept.act, data = { entries = { kept.e } } })
+                n = n + 1
+            end
         end
     end
     if next(w) == nil then GuildOS.db.pointsWaiting = nil end
@@ -1348,9 +1415,10 @@ function Points:ReplayAllWaiting()
         if type(name) ~= "string" or last < since then w[name] = nil else names[#names + 1] = name end
     end
     for _, name in ipairs(names) do
-        if GuildOS.db.cores and type(GuildOS.db.cores[name]) == "table" then self:ReplayWaiting(name) end
+        local here = self:CoreNamed(name)
+        if here then self:ReplayWaiting(here) end
     end
-    if next(w) == nil then GuildOS.db.pointsWaiting = nil end
+    if GuildOS.db.pointsWaiting and next(GuildOS.db.pointsWaiting) == nil then GuildOS.db.pointsWaiting = nil end
 end
 
 function Points:OnSync(env)
@@ -1360,7 +1428,7 @@ function Points:OnSync(env)
         for _, e in ipairs(d.entries) do
             e.key = GuildOS:LocalMemberKey(e.key)   -- the sending officer's key, as this client's (#97)
             -- A core this client does not have (yet): kept, never marked, so it lands once it arrives.
-            local pool = self:GetDBForCore(e.core)
+            local pool = poolFor(e.core)
             if not pool then keepForLater("delta", e) end
             if pool and e.op and not pool.appliedOps[e.op] then
                 self:ApplyEntry(e, pool)
@@ -1375,7 +1443,7 @@ function Points:OnSync(env)
         for _, e in ipairs(d.entries) do
             if type(e) == "table" and type(e.key) == "string" and type(e.op) == "string" then
                 e.key = GuildOS:LocalMemberKey(e.key)
-                local pool = self:GetDBForCore(e.core)
+                local pool = poolFor(e.core)
                 if not pool then keepForLater("cdelta", e) end
                 if pool and not pool.appliedOps[e.op] then
                     applied = self:ApplyCounterEntry(e, pool) or applied
@@ -1389,7 +1457,7 @@ function Points:OnSync(env)
         local applied = false
         for _, e in ipairs(d.entries) do
             if type(e) == "table" and type(e.op) == "string" and type(e.list) == "table" then
-                local pool = self:GetDBForCore(e.core)
+                local pool = poolFor(e.core)
                 if not pool then keepForLater("qset", e) end
                 if pool and not pool.appliedOps[e.op] then
                     local list, seen = {}, {}

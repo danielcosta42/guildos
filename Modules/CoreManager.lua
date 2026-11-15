@@ -269,10 +269,17 @@ end
 -- A core of a guild without the site, with all sub-tables initialized. No check: the import makes
 -- Discord cores through here in a linked guild too.
 -- Another officer's points entries for a core this client did not have are kept (Points:ReplayWaiting):
--- a core that comes into existence here, made, imported or renamed into that name, plays them.
+-- a core that comes into existence here, made, imported or renamed into that name (or one it is known
+-- by, Points:CoreNamed), plays them. With no name, every core that has some by now (after an import,
+-- once the Discord's tag and name are on the core).
 local function replayWaiting(name)
     local w, P = GuildOS.db.pointsWaiting, GuildOS.Points
-    if type(w) == "table" and w[name] ~= nil and P and P.ReplayWaiting then P:ReplayWaiting(name) end
+    if type(w) ~= "table" or next(w) == nil or not P then return end
+    if name == nil then
+        if P.ReplayAllWaiting then P:ReplayAllWaiting() end
+    elseif P.ReplayWaiting then
+        P:ReplayWaiting(name)
+    end
 end
 
 local function newCore(name)
@@ -404,7 +411,9 @@ local function moveCore(oldName, newName)
     end
     -- Its loot rule, points, counters, queues, sign-ups and guests are the core table's own and moved with
     -- it; the night's rule (db.lootNight) is the raid's, not a core's; the loot history keeps the raid.
-    -- What other officers sent under the new name before it was this client's lands now.
+    -- What other officers send under the old name (kept, or from a client that has not seen the rename)
+    -- is this core's, and what they sent under the new name before it was this client's lands now.
+    if GuildOS.Points and GuildOS.Points.NoteRename then GuildOS.Points:NoteRename(oldName, newName) end
     replayWaiting(newName)
 end
 
@@ -1825,6 +1834,7 @@ function CoreManager:ImportFromSite(data, at, received)
     took(at)
     -- Linked while the site sends cores; a package with none gives creating back to the officers (#339).
     if #catalog > 0 then linkOn() else linkOff() end
+    replayWaiting()
     return cores, tonumber(data.unlinked) or 0
 end
 
@@ -2098,6 +2108,7 @@ function CoreManager:InitSync()
                     self:SyncDiscordCore(name, d.list, d.size, d.tag, d.waiting)
                     linkOn(sane(d.seenAt))
                     self:MigrateGuests(name)
+                    replayWaiting(name)
                 else
                     self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
                     if d.tag == false then

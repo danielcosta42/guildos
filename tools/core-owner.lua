@@ -224,6 +224,43 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     reason = "Boss" } } } }, "Officer-Firemaw")
   GuildOS.db.cores["Alfa Hoje"] = { name = "Alfa Hoje", members = {} }   -- an officers' core from before the link
   check(CM:Rename("Alfa Hoje", "Alfa Velha") and CM:GetPointsDB("Alfa Velha").appliedOps["op-9"], G("a rename into the name plays them"))
+  -- Renamed here (third review of #339): an officer whose client has not seen the rename still names
+  -- the old core, and what it sends lands on the new one, across a /reload, for thirty days.
+  check(CM:Rename("Alfa Velha", "Alfa Outra"), G("renamed again"))
+  ph({ act = "delta", data = { entries = { { op = "op-10", key = "Guildguy", delta = 3, core = "Alfa Velha", kind = "award" } } } },
+    "Officer-Firemaw")
+  check(CM:GetPointsDB("Alfa Outra").appliedOps["op-10"] and (GuildOS.db.pointsWaiting or {})["Alfa Velha"] == nil,
+    G("an entry under the old name lands on the renamed core"))
+  check(GuildOS.db.pointsAliases and GuildOS.db.pointsAliases["Alfa Velha"] and GuildOS.db.pointsAliases["Alfa Hoje"]
+    and GuildOS.db.pointsAliases["Alfa Hoje"].to == "Alfa Velha", G("the renames are kept with the saved variables"))
+  ph({ act = "delta", data = { entries = { { op = "op-11", key = "Guildguy", delta = 3, core = "Alfa Hoje", kind = "award" } } } },
+    "Officer-Firemaw")
+  check(CM:GetPointsDB("Alfa Outra").appliedOps["op-11"], G("through every rename"))
+  NOW = NOW + 31 * DAY
+  ph({ act = "delta", data = { entries = { { op = "op-12", key = "Guildguy", delta = 3, core = "Alfa Velha", kind = "award" } } } },
+    "Officer-Firemaw")
+  check(not CM:GetPointsDB("Alfa Outra").appliedOps["op-12"] and #GuildOS.db.pointsWaiting["Alfa Velha"] == 1,
+    G("not after thirty days: kept, as for any core this client lacks"))
+  NOW = NOW - 31 * DAY
+  for i = 1, 20 do P:NoteRename("Velho" .. i, "Novo" .. i) end
+  check(count(GuildOS.db.pointsAliases) == 16, G("sixteen renames kept at most"))
+  GuildOS.db.pointsWaiting, GuildOS.db.pointsAliases = nil, nil
+  -- Kept under the Discord's name, the core reaches this client renamed there since and named by its tag
+  -- (q2): what was kept lands on it, and what an officer sends under either name too.
+  ph({ act = "delta", data = { entries = { { op = "op-13", key = "Guildguy", delta = 20, core = "Omega", kind = "award" } } } },
+    "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Omega Nova", list = {}, tag = "omega", size = 10, at = NOW,
+    discordName = "Omega Nova" } }, "Officer-Firemaw")
+  local omega = CM:GetPointsDB("omega")
+  check(omega and omega.appliedOps["op-13"] and (GuildOS.db.pointsWaiting or {}).Omega == nil,
+    G("kept under the Discord's old name, it lands on the core named by its tag"))
+  ph({ act = "delta", data = { entries = { { op = "op-14", key = "Guildguy", delta = 1, core = "Omega Nova", kind = "award" } } } },
+    "Officer-Firemaw")
+  ph({ act = "delta", data = { entries = { { op = "op-15", key = "Guildguy", delta = 1, core = "Omega", kind = "award" } } } },
+    "Officer-Firemaw")
+  check(omega.appliedOps["op-14"] and omega.appliedOps["op-15"] and GuildOS.db.pointsWaiting == nil,
+    G("and so does what is sent under its Discord name or the old one"))
+  GuildOS.db.pointsWaiting, GuildOS.db.pointsAliases = nil, nil
   -- Bounded: two hundred entries a core, the oldest let go, and none older than thirty days.
   for i = 1, 210 do
     ph({ act = "delta", data = { entries = { { op = "b-" .. i, key = "Guildguy", delta = 1, core = "Longe", kind = "award" } } } },
@@ -554,6 +591,30 @@ for _, game in ipairs({ "anniversary", "forever" }) do
       G("an old officer's release, with no offAt, is dated when it arrives: " .. tostring(GuildOS.db.coreLink.releasedAt)))
     CM:ImportPackage({ guild = "Nucleo BR", realm = "Firemaw", unlinked = 0, at = siteAt, cores = { alfa() } }, NOW - 35 * DAY)
     check(not CM:IsLinked(), G("and the inbox acked before it does not link the guild again"))
+  end
+
+  -- Kept under a core's Discord name, the import brings it renamed there since and named here by its tag
+  -- (third review of #339): what was kept lands on it.
+  do
+    CM = load(game)
+    CM:Initialize()
+    CM:ImportFromSite(package(1000, { { tag = "beta", name = "Beta", size = 10, members = {} } }), 1000)
+    dofile(ADDON .. "/Modules/Points.lua")
+    local P = GuildOS.Points
+    GuildOS.db.points = { mode = "dkp", config = {}, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+    P:Initialize()
+    handlers["points"]({ act = "delta", data = { entries = { { op = "w-1", key = "Ana", delta = 20, core = "Alfa", kind = "award" } } } },
+      "Officer-Firemaw")
+    check(#GuildOS.db.pointsWaiting.Alfa == 1, G("kept for a core this client lacks"))
+    CM:ImportFromSite(package(2000, { { tag = "beta", name = "Beta", size = 10, members = {} },
+      { tag = "alfa", name = "Alfa Nova", size = 10, members = {} } }), 2000)
+    local name = next(GuildOS.db.cores, nil)
+    if name == "Beta" then name = next(GuildOS.db.cores, name) end
+    local pool = CM:GetPointsDB(name)
+    local _, ana = next(pool and pool.standings or {})
+    check(ana and ana.current == 20 and GuildOS.db.pointsWaiting == nil,
+      G("and lands on the core when the import brings it renamed: " .. tostring(name)))
+    GuildOS.Points = nil
   end
 end
 
