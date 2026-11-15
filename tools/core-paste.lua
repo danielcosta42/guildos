@@ -26,9 +26,9 @@ end
 local FIXTURE = io.open(ADDON .. "/tools/cores-fixture.txt", "rb"):read("*a")
 
 local printed, sent, handlers = {}, {}, {}
-local GUILD, RANK = "Nucleo BR", 1
+local GUILD, RANK, NOW = "Nucleo BR", 1, 1790000000
 local function load(game)
-  printed, sent, handlers, GUILD, RANK = {}, {}, {}, "Nucleo BR", 1
+  printed, sent, handlers, GUILD, RANK, NOW = {}, {}, {}, "Nucleo BR", 1, 1790000000
   DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = m end }
   function CreateFrame()
     local f = {}
@@ -52,7 +52,7 @@ local function load(game)
   end
   function GetRealmName() return "Firemaw" end
   function GetTime() return 1 end
-  function GetServerTime() return 1790000000 end
+  function GetServerTime() return NOW end
   time = os.time
   function IsInGuild() return true end
   function GetGuildInfo() return GUILD, "Rank", RANK end
@@ -166,6 +166,70 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   GuildOS.db.discordAt = 9000
   local _, behind = Import:Load(pkg(8500, nil, game == "anniversary" and "Firemaw" or nil))
   check(behind == "This client already has newer cores from Discord: that code is older.", G("older than another officer's lists"))
+
+  -- ── After "Create cores in game again": what counts is when this client got the package ──
+  -- The site stamps `at` with when its cores last changed: a fresh copy of unchanged cores carries the
+  -- same `at` as the package before the choice (review of #339).
+  local REALM = game == "anniversary" and "Firemaw" or nil
+  CM = load(game)
+  Import = GuildOS.CompanionImport
+  CM:Initialize()
+  check(Import:Load(pkg(7000, nil, REALM)) == 1 and CM:IsLinked(), G("pasted, linked"))
+  NOW = NOW + 31 * 86400
+  check(CM:IsLinkQuiet() and CM:CreateInGameAgain() and not CM:IsLinked(), G("31 days quiet, given back to the game"))
+  local releases = {}
+  for _, s in ipairs(sent) do if s.act == "discord" then releases[#releases + 1] = s end end
+  NOW = NOW + 60
+  check(Import:Load(pkg(7000, nil, REALM)) == 1 and CM:IsLinked() and CM:IsFromDiscord("Núcleo Alfa"),
+    G("a fresh copy of the same cores, pasted after the choice, links the guild again"))
+  check(not CM:IsLinkQuiet() and CM:LinkSeenAt() == NOW, G("as fresh as the paste"))
+  -- The inbox: the one the companion wrote before the choice is older; one it writes after is not.
+  CM = load(game)
+  CM:Initialize()
+  CM:ImportPackage(GuildOS.CompanionImport.ReadCores(pkg(7000, nil, REALM)), NOW)
+  local choseAt = NOW + 31 * 86400
+  NOW = choseAt
+  CM:CreateInGameAgain()
+  NOW = NOW + 60
+  GuildOSInbox, GuildOSInboxAck = { pkg(7000, nil, REALM) }, { at = choseAt - 3600 }
+  CM:ImportInbox()
+  check(not CM:IsLinked(), G("the inbox written before the choice does not link the guild again"))
+  GuildOSInboxAck = { at = NOW }
+  CM:ImportInbox()
+  check(CM:IsLinked() and CM:LinkSeenAt() == NOW, G("the companion back, writing the same package after it, does"))
+  -- Another officer's list: by when that officer got the package (`seenAt`).
+  CM = load(game)
+  CM:Initialize()
+  local base = NOW
+  for _, r in ipairs(releases) do handlers["core.roster"]({ act = r.act, data = r.data }, "Officer-Firemaw") end
+  local list = { coreName = "Núcleo Alfa", list = {}, tag = "nucleo-alfa", size = 10, at = 7000 }
+  NOW = base + 40 * 86400
+  list.seenAt = base - 60
+  handlers["core.roster"]({ act = "discordList", data = list }, "Officer-Firemaw")
+  check(not CM:IsLinked(), G("another officer's list of a package got before the choice is older"))
+  list.seenAt = NOW - 10
+  handlers["core.roster"]({ act = "discordList", data = list }, "Officer-Firemaw")
+  check(CM:IsLinked() and CM:IsFromDiscord("Núcleo Alfa"), G("one got after it links the guild here too"))
+
+  -- ── Freshness: a paste or an inbox read of the SAME package is seen ───
+  CM = load(game)
+  Import = GuildOS.CompanionImport
+  CM:Initialize()
+  local t0 = NOW
+  Import:Load(pkg(7000, nil, REALM))
+  NOW = t0 + 29 * 86400
+  Import:Load(pkg(7000, nil, REALM))
+  NOW = t0 + 31 * 86400
+  check(not CM:IsLinkQuiet(), G("in a guild that pastes, the same package pasted again 29 days on is a sight of it"))
+  CM = load(game)
+  t0 = NOW
+  GuildOSInbox, GuildOSInboxAck = { pkg(7000, nil, REALM) }, { at = t0 }
+  CM:Initialize()
+  NOW = t0 + 29 * 86400
+  GuildOSInboxAck = { at = NOW }
+  CM:ImportInbox()
+  NOW = t0 + 31 * 86400
+  check(not CM:IsLinkQuiet(), G("and so is the companion writing the same package again"))
 
   -- ── Every refusal says why ────────────────────────────────────────────
   CM = load(game)

@@ -228,8 +228,10 @@ end
 --   db.coreLink.seenAt      how fresh the newest package is (the inbox's ack, a paste, another officer's)
 --   db.coreLink.importedAt  when this client last imported a GOSCORE1 (the upload's receipt, #347)
 --   db.coreLink.toldFor     the `seenAt` the "30 days with no package" line was said for
---   db.coreLink.releasedAt  an officer chose to create cores in game again: packages up to this site
---                           time are older than that choice
+--   db.coreLink.releasedAt  an officer chose to create cores in game again, at this realm time: a
+--                           package this client RECEIVED by then (an inbox the companion wrote, another
+--                           officer's list of a package seen) is older than that choice; one received
+--                           later (a code pasted now, a companion back) links the guild again
 ----------------------------------------------------------------------
 local QUIET_DAYS = 30            -- days with no new package before the game offers to create cores again
 local DAY = 86400
@@ -1464,12 +1466,19 @@ local function olderThanMark(at)
     return mark ~= nil and (at == nil or at < mark)
 end
 local function isStale(at)
-    if olderThanMark(at) then return true end
-    -- An officer chose to create cores in game again (#339): the lists up to that choice are older. A
-    -- release is never older for it (it links nothing): see the core.roster handler.
+    return olderThanMark(at)
+end
+-- An officer chose to create cores in game again (#339): a package this client received by then is older
+-- than that choice. `received` is when this client got it, on the realm's clock (the inbox's ack, another
+-- officer's `seenAt`), never the site's `at`: the site stamps a package with when its cores last changed,
+-- the same for a fresh copy of unchanged cores, which then read as older until a core changed on Discord.
+-- A code pasted is received now, after any choice this client knows (`pasted`). A release is never older
+-- for it (it links nothing): see the core.roster handler.
+local function beforeRelease(received, pasted)
     local link = GuildOS.db.coreLink
     local off = type(link) == "table" and link.releasedAt
-    return off and (at == nil or at <= off) or false
+    if not off or pasted then return false end
+    return received == nil or received <= off
 end
 
 -- The guild is linked from now, by its own import or another officer's list (#339). `fresh` is how
@@ -1664,11 +1673,13 @@ end
 -- nothing on it changed; `released` and tag false for a core the Discord no longer sends), and how many
 -- people the site had no character for. When the payload is not this guild's: nil, and whose it is.
 -- When this client already has newer lists, from another officer: nothing, and true.
-function CoreManager:ImportFromSite(data, at)
+-- `received` is when this client got it (beforeRelease); nil is now, as a code pasted.
+function CoreManager:ImportFromSite(data, at, received)
     if type(data) ~= "table" or type(data.cores) ~= "table" then return nil end
     local other = notOurs(data)
     if other then return nil, other end
     if at and isStale(at) then return {}, 0, true end
+    if received ~= nil and beforeRelease(received) then return {}, 0, true end
     local cores, sent, catalog = {}, {}, {}
     for _, c in ipairs(data.cores) do
         if type(c) == "table" and type(c.tag) == "string" and c.tag ~= "" and type(c.name) == "string"
@@ -1717,8 +1728,8 @@ end
 -- the session for SendDiscordChanges. Returns what ImportFromSite returns: the cores, how many people the
 -- site had no character for and whether it was older than what this client has; or nil, whose it is
 -- and why ("guild", "realm"); or nil, nil, "older" for a package from before the site dated them, once
--- this client has one it dated.
-function CoreManager:ImportPackage(data, ackAt)
+-- this client has one it dated. `pasted`: an officer pasted it now (received now, beforeRelease).
+function CoreManager:ImportPackage(data, ackAt, pasted)
     local other, why = notOurs(data)
     if other then return nil, other, why end
     -- The site's time for the package when it sends one (guildos-web #126): one clock for every officer.
@@ -1728,8 +1739,12 @@ function CoreManager:ImportPackage(data, ackAt)
     if siteAt and not GuildOS.db.discordSiteAt then GuildOS.db.discordAt, GuildOS.db.discordSiteAt = nil, true end
     if not siteAt and GuildOS.db.discordSiteAt then return nil, nil, "older" end
     -- Undated altogether (a pasted code from a site before #126): older than any list this client has.
-    if not siteAt and not ackAt and (GuildOS.db.discordAt or (GuildOS.db.coreLink or {}).releasedAt) then return nil, nil, "older" end
+    -- An officer's choice to create in game again is no list: a code pasted after it is received after it.
+    if not siteAt and not ackAt and (GuildOS.db.discordAt or (not pasted and (GuildOS.db.coreLink or {}).releasedAt)) then
+        return nil, nil, "older"
+    end
     local wasLinked = self:IsLinked()
+    if beforeRelease(sane(ackAt), pasted) then return {}, 0, true end
     local cores, unlinked, stale = self:ImportFromSite(data, sane(siteAt or ackAt))
     if not cores then return nil end
     GuildOS.db.discordTold = nil
@@ -1790,7 +1805,7 @@ function CoreManager:ImportPasted(raw)
     if not GuildOS:IsOfficer() then return nil, L["Only officers import the guild's cores."] end
     local data = GuildOS.CompanionImport and GuildOS.CompanionImport.ReadCores(raw)
     if not data then return nil, L["The cores code is damaged. Copy it again from guildos.me."] end
-    local cores, other, why = self:ImportPackage(data, nil)
+    local cores, other, why = self:ImportPackage(data, nil, true)
     if not cores then
         if why == "guild" then return nil, string.format(L["These cores are for %s, not this guild."], other) end
         if why == "realm" then return nil, string.format(L["These cores are for %s: another realm or another game."], other) end
@@ -1816,7 +1831,8 @@ function CoreManager:SendDiscordChanges()
     if not (pending and GuildOS.SyncService) then return end
     for _, c in ipairs(pending) do
         if c.released then
-            GuildOS.SyncService:Publish("core.roster", "discord", { coreName = c.name, tag = false, at = c.at, off = c.off })
+            GuildOS.SyncService:Publish("core.roster", "discord", { coreName = c.name, tag = false, at = c.at, off = c.off,
+                offAt = c.offAt })
         else
             GuildOS.SyncService:Publish("core.roster", "discordList", {
                 coreName = c.name, list = c.list, size = c.size, tag = c.tag, waiting = c.waiting, at = c.at,
@@ -1869,15 +1885,16 @@ end
 function CoreManager:CreateInGameAgain()
     if not (self:IsLinked() and GuildOS:IsOfficer()) then return false end
     local at = GuildOS.db.discordAt or GetServerTime()
+    local now = GetServerTime()
     local pending = {}
     for _, name in ipairs(self:GetSortedNames()) do
         if GuildOS.db.cores[name].discordTag then
             release(name, false)
-            pending[#pending + 1] = { name = name, released = true, tag = false, at = at, off = true }
+            pending[#pending + 1] = { name = name, released = true, tag = false, at = at, off = true, offAt = now }
         end
     end
     linkOff()
-    linkRec().releasedAt = at
+    linkRec().releasedAt = now
     GuildOS.State.discordCores = #pending > 0 and pending or nil
     self:SendDiscordChanges()
     if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
@@ -1954,11 +1971,14 @@ function CoreManager:InitSync()
             -- A list lands on the core holding its tag here, as the import's does; only a link moves a tag.
             local at, list = sane(d.at), env.act == "discordList"
             if list and (type(d.list) ~= "table" or type(d.tag) ~= "string" or d.tag == "") then return end
+            -- Older than the newest this client applied, or received by the sender before an officer chose
+            -- to create in game again (its `seenAt`; none from a client from before: older).
+            local stale = isStale(at) or beforeRelease(sane(d.seenAt))
             -- A link to a tag no core here holds needs fresh lists: an older one would link a core the
             -- Discord has closed since.
-            if list and (holderOf(d.tag) or not isStale(at)) then heardLink(self, d.coreName, d.tag, sane(d.linkAt)) end
+            if list and (holderOf(d.tag) or not stale) then heardLink(self, d.coreName, d.tag, sane(d.linkAt)) end
             local giveBack = not list and d.tag == false
-            if not (giveBack and olderThanMark(at) or not giveBack and isStale(at)) then
+            if not (giveBack and olderThanMark(at) or not giveBack and stale) then
                 if list then
                     local name = followName(self, (coreFor(self, { tag = d.tag, name = d.coreName })), d.discordName)
                     self:SyncDiscordCore(name, d.list, d.size, d.tag, d.waiting)
@@ -1968,7 +1988,10 @@ function CoreManager:InitSync()
                     self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
                     if d.tag == false then
                         -- An officer chose to create in game again: the lists up to then are older here too.
-                        if d.off == true and at then linkRec().releasedAt = math.max(at, linkRec().releasedAt or 0) end
+                        -- When it was chosen, on the realm's clock (`offAt`); a client from before sent only the
+                        -- package's own time.
+                        local offAt = sane(d.offAt) or at
+                        if d.off == true and offAt then linkRec().releasedAt = math.max(offAt, linkRec().releasedAt or 0) end
                         if not self:HasDiscordCores() then linkOff() end
                     elseif type(d.tag) == "string" and d.tag ~= "" then
                         linkOn()

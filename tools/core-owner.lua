@@ -348,8 +348,16 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(releases == 2, G("the officers online hear each release, as the officer's choice"))
   CM:ImportInbox()
   check(not CM:IsLinked() and not CM:HasDiscordCores(), G("the old inbox does not link the guild again"))
-  local stale = select(2, GuildOS.CompanionImport:Load(FIXTURE))
-  check(stale == "This client already has newer cores from Discord: that code is older.", G("nor does pasting it"))
+  -- Rewritten (review of #339): this asserted that pasting refused a fresh copy, as the release compared
+  -- the site's `at` (unchanged while no core changes on Discord) with the choice. What counts is when
+  -- this client received it: a code an officer copies now and pastes links the guild again.
+  local again = { fmt = "GOSCORE1", v = 1, guild = "Nucleo BR", realm = "Firemaw", unlinked = 0, at = GuildOS.db.discordAt,
+    cores = { alfa() } }
+  local LD = LibStub("LibDeflate")
+  local n2 = GuildOS.CompanionImport:Load("GOSCORE1:" .. LD:EncodeForPrint(LD:CompressDeflate(GuildOS.Companion.EncodeJson(again))))
+  check(n2 == 1 and CM:IsLinked() and CM:IsFromDiscord("Núcleo Alfa"), G("a fresh copy of the same cores, pasted, links it again"))
+  check(not CM:IsLinkQuiet(), G("and is fresh"))
+  check(CM:CreateInGameAgain() and not CM:IsLinked(), G("given back again"))
   CM:ImportFromSite(package(GuildOS.db.discordAt + 10, { alfa() }), GuildOS.db.discordAt + 10)
   check(CM:IsLinked(), G("a package the site makes later links it again"))
   -- The other officer: the choice reaches it, and its own old inbox does not undo it.
