@@ -34,7 +34,7 @@ end
 -- with that file, never to make a check here pass. Returns nil when the site keeps the receipt, else
 -- the place it failed, as the site says it.
 local CAPS = { cores = 50, name = 48, guests = 40, tag = 40, size = 40, members = 1000 }
-local CLOCK_MAX = 2147483647
+local CLOCK_MAX = 4294967295   -- the site's CLOCK_MAX: 2^32 - 1, the year 2106 (site #519)
 local PROTO = { __proto__ = true, constructor = true, prototype = true }
 
 -- JavaScript decodes the upload: a byte sequence that is not UTF-8 becomes U+FFFD (three bytes).
@@ -348,8 +348,16 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   for i = 1, 50 do fifty["G" .. i .. "-A"] = { name = "G" .. i } end
   g = guestState("fifty guests", fifty)
   check(#g == 40, G("forty guests at most"))
-  state("the clock past 2038", { A = core("A") }, 1, nil, function() NOW = 2 ^ 32 end)
-  state("a link stamp past 2038", { A = core("A") }, 1, nil, function() GuildOS.db.coreLink = { importedAt = 2 ^ 33 } end)
+  -- Past 2038 the time is kept as it is, up to the site's CLOCK_MAX (2^32 - 1, site #519), and held there.
+  local r2038 = state("the clock past 2038", { A = core("A", { discordTag = "a", importedAt = 2 ^ 31 + 5 }) }, 1, nil,
+    function() NOW = 2 ^ 31 + 10 end)
+  check(r2038.at == 2 ^ 31 + 10 and r2038.cores[1].importedAt == 2 ^ 31 + 5
+    and GuildOS.Companion.EncodeJson(r2038):find('"at":2147483658', 1, true),
+    G("a time past 2038 goes as it is: " .. GuildOS.Companion.EncodeJson(r2038)))
+  local r2106 = state("the clock past 2106", { A = core("A") }, 1, nil, function() NOW = 2 ^ 32 end)
+  check(r2106.at == 4294967295, G("and is held at 2^32 - 1"))
+  local rLink = state("a link stamp past 2106", { A = core("A") }, 1, nil, function() GuildOS.db.coreLink = { importedAt = 2 ^ 33 } end)
+  check(rLink.linkedAt == 4294967295, G("a link stamp too"))
 end
 if out then out:close() end
 

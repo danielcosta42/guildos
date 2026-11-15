@@ -90,7 +90,9 @@ end
 local function jsonNumber(n)
     if n ~= n or n == math.huge or n == -math.huge then return "0" end
     -- Integers must not go out as "5.0": the web side reads counts and ids.
-    if n == math.floor(n) then return string.format("%d", n) end
+    -- "%.0f", not "%d": "%d" goes through a C long, 32 bits on Windows, where a time past 2038 (the
+    -- receipt's, up to 2^32 - 1) would come out negative; every whole double is written exactly.
+    if n == math.floor(n) then return string.format("%.0f", n) end
     return string.format("%.4g", n)
 end
 
@@ -865,7 +867,9 @@ local RECEIPT_TEXT = 48          -- bytes of a core's name or a guest's
 local RECEIPT_TAG = 40           -- bytes of a core's tag
 local RECEIPT_SIZE = 40          -- the largest raid size the site reads
 local RECEIPT_MEMBERS = 1000     -- the most members one core is said to hold
-local RECEIPT_INT = 2147483647   -- the largest figure written: a time until 2038, the game's time()
+-- The largest figure written: 2^32 - 1, a time until 2106. The site reads up to it (guildos-web
+-- lib/core-receipt.ts CLOCK_MAX, site #519) and keeps the time as a timestamp, so nothing ends in 2038.
+local RECEIPT_INT = 4294967295
 
 local function receiptInt(v, max)
     local n = GuildOS.Finite(v) or 0

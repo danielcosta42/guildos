@@ -836,8 +836,8 @@ do
   assert(#r.cores[1].guests[1] == 48 and r.cores[1].guests[1] == string.rep("é", 24), "and a guest's")
   GuildOS.db.cores = { Big = { raidSize = 25, importedAt = 1e300, discordTag = "big", members = {} } }
   json = GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload().coreReceipt)
-  -- Rewritten (review of #347): 4294967295 was the cap, past the site's clock (2^31 - 1), which refuses it.
-  assert(json:find('"importedAt":2147483647', 1, true) and not json:find("[eE][%+%-]?%d"), "plain integers, never an exponent: " .. json)
+  -- The cap is 2^32 - 1, the site's CLOCK_MAX (guildos-web lib/core-receipt.ts, site #519: past 2038).
+  assert(json:find('"importedAt":4294967295', 1, true) and not json:find("[eE][%+%-]?%d"), "plain integers, never an exponent: " .. json)
   -- One that fails costs only itself, and goes to /guildos errors.
   local receipt = GuildOS.Companion.CoreReceipt
   GuildOS.Companion.CoreReceipt = function() error("boom") end
