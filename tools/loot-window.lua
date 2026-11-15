@@ -17,6 +17,8 @@
 --   * Raids › Cores: the list with size, fill and origin, the header with origin and the raid's mark,
 --     the sub-tabs, the role meters, the role as a dropdown, the guests of the night, the Discord's
 --     notes, the format and the penalties that say when they are saved, the columns that drop;
+--   * the core sign-up: one card a core with where the player stands always in sight (Cancel request
+--     shown with no hover), when it raids and who leads it, its loot rule in one line;
 --
 --   luajit -e 'ADDON="."' tools/loot-window.lua
 --
@@ -805,6 +807,42 @@ local function cores()
   check(shows(panel, "Pending Sign-ups (0)"), "the requests")
 end
 
+-- ── 6. The core sign-up ────────────────────────────────────────────────
+local function signup()
+  loadModules()
+  local CM = GuildOS.CoreManager
+  local sent
+  CM.BroadcastSignup = function(_, core, note, role) sent = { core = core, note = note, role = role } end
+  local me = GuildOS:GetPlayerKey("Lead", "Realm")
+  CM:Create("Alfa"); CM:Create("Bravo"); CM:Create("Sat")
+  CM:AddMember(me, { name = "Lead", class = "MAGE", role = "rdps" }, "Alfa")
+  GuildOS.db.cores.Alfa.schedule, GuildOS.db.cores.Alfa.leader = "Wed and Sun, 21h", "Chehul"
+  GuildOS.db.cores.Bravo.signups = { [me] = { name = "Lead", class = "MAGE", role = "rdps", ts = GetServerTime() - 3 * 3600 } }
+  GuildOS:ShowCoreSignupFrame()
+  local f = _G.GuildOSCoreSignupFrame
+  check(f and f:IsShown(), "the sign-up window opens")
+  f.content:SetWidth(430)
+  GuildOS:ShowCoreSignupFrame()   -- a second call closes it
+  check(not f:IsShown(), "and the same call closes it")
+  GuildOS:ShowCoreSignupFrame()
+  check(f.states.Alfa == "you are a starter" and f.states.Bravo:find("^request sent ") and f.states.Sat:find("^missing "),
+    "each card says where the player stands: " .. tostring(f.states.Bravo) .. " / " .. tostring(f.states.Sat))
+  check(shows(f, "Wed and Sun, 21h") and shows(f, "leader Chehul") and shows(f, "no leader set"), "when it raids and who leads it")
+  check(shows(f, "Loot: Rolls (MS > OS)"), "the core's loot rule in one line")
+  local cancel = buttons(f, "Cancel request")
+  check(#cancel == 1 and cancel[1]:IsVisible() and cancel[1].variant == "danger", "Cancel request is in sight, with no hover to find it")
+  check(not shows(f, "Pending"), "and nothing says Pending in English")
+  local src = assert(io.open(ADDON .. "/UI/FeaturePanels.lua", "rb")):read("*a")
+  check(not src:find('"Pending "', 1, true), "the untranslated Pending is gone from the code")
+  cancel[1].scripts.OnClick(cancel[1])
+  check(not GuildOS.db.cores.Bravo.signups[me], "Cancel takes the request back")
+  click(f, "Ask for a place")
+  check(sent and sent.core == "Bravo", "Ask for a place asks, on its own core")
+  click(f, "See the rule", 3)
+  check(UI_OPENED and UI_OPENED[1] == "loot" and UI_OPENED[3] == "Sat", "See the rule opens the core's rule in the Loot window")
+  f:Hide()
+end
+
 for _, style in ipairs({ "guildos", "forever" }) do
   local UI = load(style)
   dropdown(UI)
@@ -812,6 +850,7 @@ for _, style in ipairs({ "guildos", "forever" }) do
   lootTable()
   popup()
   cores()
+  signup()
 end
 
 print(("loot-window: %d checks passed"):format(checks))

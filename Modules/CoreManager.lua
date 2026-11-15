@@ -834,6 +834,30 @@ function CoreManager:SetMemberBench(playerKey, bench, coreName)
     return true
 end
 
+-- Where a player stands with a core, for the sign-up window's card (issue #346): on it (and in
+-- reserve or not), asked (when), or neither; what the core still lacks by role, whether it is full,
+-- when it raids and who leads it (where the site sent them: `schedule`, `leader` on the core) and the
+-- player's presence on its nights.
+--   { member, bench, pending = <ts or true>, missing = { tank, healer, mdps, rdps }, full, schedule,
+--     leader, presence }
+function CoreManager:SignupState(coreName, playerKey)
+    local core = GuildOS.db.cores and GuildOS.db.cores[coreName]
+    if type(core) ~= "table" then return nil end
+    local out = {}
+    local mem = core.members and core.members[playerKey]
+    out.member = mem ~= nil
+    out.bench = mem ~= nil and mem.status == "bench"
+    local su = core.signups and core.signups[playerKey]
+    out.pending = (su and (su.ts or true)) or nil
+    local open = self:OpenSlots(coreName)
+    out.missing = { tank = open.tank, healer = open.healer, mdps = open.mdps, rdps = open.rdps }
+    out.full = self:GetComposition(coreName).total >= self:GetRaidSize(coreName)
+    out.schedule = type(core.schedule) == "string" and core.schedule ~= "" and core.schedule or nil
+    out.leader = type(core.leader) == "string" and core.leader ~= "" and core.leader or nil
+    out.presence = self:MemberPresence(playerKey, coreName)
+    return out
+end
+
 -- A member's presence on the core's nights, in percent, for the roster's column (RaidTracker's).
 function CoreManager:MemberPresence(playerKey, coreName)
     local RT = GuildOS.RaidTracker

@@ -21,16 +21,6 @@ local _coreSignupFrame = nil
 
 local WHITE8 = "Interface\\Buttons\\WHITE8x8"
 
-local function TimeAgo(ts)
-    if not ts or ts == 0 then return "" end
-    local d = time() - ts
-    if d < 60 then return "just now"
-    elseif d < 3600 then return math.floor(d / 60) .. "m ago"
-    elseif d < 86400 then return math.floor(d / 3600) .. "h ago"
-    else return math.floor(d / 86400) .. "d ago"
-    end
-end
-
 local function RefreshCoreSignupFrame()
     local f = _coreSignupFrame
     if not f or not f:IsShown() then return end
@@ -84,51 +74,78 @@ local function RefreshCoreSignupFrame()
         return
     end
 
+    -- One card a core (issue #346, Inscricao.dc.html): its name and size and where the player
+    -- stands with it, always in sight; when it raids and who leads it; its loot rule in one line;
+    -- the role coverage; and the one action that applies, Cancel request as visible as Ask.
     local y = 0
-
+    local CARD_PAD = 8
+    local function line(text, size, col, x, yy, w)
+        local fs = UI:CreateText(content, text, size, col.r, col.g, col.b)
+        fs:SetPoint("TOPLEFT", x, yy)
+        if w then fs:SetWidth(w) end
+        fs:SetJustifyH("LEFT")
+        if fs.SetWordWrap then fs:SetWordWrap(false) end
+        return fs
+    end
     for _, coreName in ipairs(coreNames) do
         local comp     = CM:GetComposition(coreName)
-        local signups  = CM:GetSignups(coreName) or {}
         local roles    = comp.roleCounts or {}
-        local isMember = CM:GetMembers(coreName)[playerKey] ~= nil   -- on as many cores as they joined (#132)
-        local isPending= (signups[playerKey] ~= nil)
-
-        -- ── Header ───────────────────────────────────────────
-        local hdrBg = content:CreateTexture(nil, "BACKGROUND")
-        hdrBg:SetTexture(WHITE8)
-        hdrBg:SetPoint("TOPLEFT", 0, y)
-        hdrBg:SetSize(W, 24)
-        hdrBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.88)
-
-        local hdrLbl = content:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(hdrLbl, 11)
-        hdrLbl:SetPoint("TOPLEFT", 8, y - 5)
-        hdrLbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        hdrLbl:SetText(coreName)
-
-        local cntLbl = content:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(cntLbl, 9)
-        cntLbl:SetPoint("TOPRIGHT", -8, y - 6)
-        cntLbl:SetTextColor(0.5, 0.5, 0.5)
-        local sz = CM:GetRaidSize(coreName)
-        cntLbl:SetText(comp.total .. "/" .. sz .. " " .. L["members"]
-            .. ((comp.bench or 0) > 0 and ("  " .. string.format(L["%d in reserve"], comp.bench)) or ""))
-
-        local hdrLine = content:CreateTexture(nil, "ARTWORK")
-        hdrLine:SetTexture(WHITE8); hdrLine:SetHeight(1)
-        hdrLine:SetPoint("BOTTOMLEFT", 0, y - 23)
-        hdrLine:SetPoint("BOTTOMRIGHT", 0, y - 23)
-        hdrLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.25)
-        y = y - 24
-
-        -- ── Role coverage row ─────────────────────────────────
-        local rowBg = content:CreateTexture(nil, "BACKGROUND")
-        rowBg:SetTexture(WHITE8)
-        rowBg:SetPoint("TOPLEFT", 0, y)
-        rowBg:SetSize(W, 30)
-        rowBg:SetVertexColor(0.04, 0.04, 0.06, 1)
-
+        local st       = CM:SignupState(coreName, playerKey) or { missing = {} }
         local raidSize = CM:GetRaidSize(coreName)
+        local top      = y
+
+        -- The card's surface: a panel with a 1px line, gold when the player is on the core.
+        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        card:SetPoint("TOPLEFT", 0, y)
+        card:SetWidth(W)
+        if GuildOS.Style then GuildOS.Style:Paint(card, "panel") end
+        if st.member then card:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end
+        card:SetFrameLevel(content:GetFrameLevel())
+
+        -- Name, size, and the state on the right.
+        local nameFS = line(coreName, 12, C.gold, CARD_PAD, y - CARD_PAD)
+        local sizeBadge = UI:CreateBadge(content, tostring(raidSize))
+        sizeBadge:SetPoint("LEFT", nameFS, "RIGHT", 8, 0)
+        local state, stateCol
+        if st.member then
+            state, stateCol = st.bench and L["you are in reserve"] or L["you are a starter"], C.ok
+        elseif st.pending then
+            state, stateCol = type(st.pending) == "number" and string.format(L["request sent %s"], GuildOS:TimeAgo(st.pending))
+                or L["request sent"], C.gold
+        elseif st.full then
+            state, stateCol = L["full"], C.labelDim
+        else
+            local short = {}
+            for _, role in ipairs({ "tank", "healer", "mdps", "rdps" }) do
+                local n = st.missing[role] or 0
+                if n > 0 then short[#short + 1] = string.format(L["%d %s"], n, CM.ROLE_LABELS[role] or role) end
+            end
+            state, stateCol = #short > 0 and string.format(L["missing %s"], table.concat(short, ", ")) or "", C.silver
+        end
+        local stateFS = UI:CreateText(content, state, 10, stateCol.r, stateCol.g, stateCol.b)
+        stateFS:SetPoint("TOPRIGHT", -CARD_PAD, y - CARD_PAD - 2)
+        stateFS:SetJustifyH("RIGHT")
+        f.states = f.states or {}
+        f.states[coreName] = state
+        y = y - 26
+
+        -- When it raids and who leads it, as far as the site said.
+        line((st.schedule or L["no schedule set"]) .. "  \194\183  "
+            .. (st.leader and string.format(L["leader %s"], st.leader) or L["no leader set"]), 10, C.textDim, CARD_PAD, y)
+        y = y - 16
+        -- The core's loot rule, in one line, and the player's presence on its nights.
+        local LR = GuildOS.LootRule
+        if LR then
+            local site = CM.LootRuleFromSite and CM:LootRuleFromSite(coreName)
+            line(string.format(L["Loot: %s"], LR:ModelName(site or LR:For(coreName))), 10, C.text, CARD_PAD, y, W - 2 * CARD_PAD - 130)
+        end
+        if st.presence then
+            local presFS = UI:CreateText(content, string.format(L["your presence %d%%"], st.presence), 10, C.silver.r, C.silver.g, C.silver.b)
+            presFS:SetPoint("TOPRIGHT", -CARD_PAD, y)
+        end
+        y = y - 18
+
+        -- The role coverage, the player's own role larger and underlined.
         local T = CM:RaidTargets(raidSize)
         local ROLE_DEFS = {
             { key="tank",   short="T", target=T.tank },
@@ -136,123 +153,95 @@ local function RefreshCoreSignupFrame()
             { key="mdps",   short="M", target=T.mdps },
             { key="rdps",   short="R", target=T.rdps },
         }
-        local rx = 8
+        local rx = CARD_PAD
         for _, rd in ipairs(ROLE_DEFS) do
-            local cnt     = roles[rd.key] or 0
-            local rcol    = CM.ROLE_COLORS[rd.key] or { r=1, g=1, b=1 }
-            -- Highlight the player's role
-            local isMine  = (rd.key == playerRole)
+            local cnt  = roles[rd.key] or 0
+            local rcol = CM.ROLE_COLORS[rd.key] or C.text
+            local isMine = (rd.key == playerRole)
             local rlbl = content:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(rlbl, isMine and 12 or 10)
-            rlbl:SetPoint("TOPLEFT", rx, y - 8)
+            rlbl:SetPoint("TOPLEFT", rx, y - 2)
             rlbl:SetTextColor(rcol.r, rcol.g, rcol.b)
             rlbl:SetText(string.format("%s:%d/%d", rd.short, cnt, rd.target))
             if isMine then
-                -- Underline the player's own role column
                 local ul = content:CreateTexture(nil, "ARTWORK")
                 ul:SetTexture(WHITE8); ul:SetHeight(1)
-                ul:SetPoint("TOPLEFT", rx, y - 21)
+                ul:SetPoint("TOPLEFT", rx, y - 16)
                 ul:SetWidth(44)
                 ul:SetVertexColor(rcol.r, rcol.g, rcol.b, 0.7)
             end
             rx = rx + 56
         end
 
-        -- ── Note input + action button ────────────────────────
-        local NOTE_W, BTN_W = 110, 85
-        local noteInp = CreateFrame("EditBox", nil, content, "BackdropTemplate")
-        noteInp:SetSize(NOTE_W, 20)
-        noteInp:SetPoint("TOPRIGHT", -(BTN_W + 10), y - 5)
-        noteInp:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
-        noteInp:SetBackdropColor(0.05, 0.05, 0.07, 1)
-        noteInp:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        GuildOS:ApplyFont(noteInp, 9)
-        noteInp:SetTextColor(C.white.r, C.white.g, C.white.b)
-        noteInp:SetTextInsets(4, 4, 0, 0)
-        noteInp:SetAutoFocus(false)
-        noteInp:SetMaxLetters(80)
-        noteInp:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        -- Placeholder
-        local ph = noteInp:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(ph, 9)
-        ph:SetPoint("LEFT", 4, 0)
-        ph:SetTextColor(0.35, 0.35, 0.35)
-        ph:SetText(L["Note (optional)"])
-        local noteCore = coreName
-        noteInp:SetScript("OnTextChanged", function(self)
-            if self:GetText() ~= "" then ph:Hide() else ph:Show() end
-            f.notes[noteCore] = self:GetText()   -- kept across a redraw, such as a role click (#94)
-        end)
-        noteInp:SetText(f.notes[coreName] or "")
-
-        local actBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-        actBtn:SetSize(BTN_W, 20)
-        actBtn:SetPoint("TOPRIGHT", -4, y - 5)
-        actBtn:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
-        local actLbl = actBtn:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(actLbl, 10)
-        actLbl:SetPoint("CENTER")
-
-        if isMember then
-            noteInp:Hide()
-            actBtn:SetBackdropColor(0.04, 0.22, 0.06, 0.9)
-            actBtn:SetBackdropBorderColor(0.2, 0.7, 0.3, 0.4)
-            actLbl:SetTextColor(0.25, 0.85, 0.35)
-            actLbl:SetText(L["In Roster"])
-        elseif isPending then
-            noteInp:Hide()
-            actBtn:SetBackdropColor(C.accent.r*0.18, C.accent.g*0.18, C.accent.b*0.18, 0.9)
-            actBtn:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.45)
-            actLbl:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-            local pendTs   = signups[playerKey] and signups[playerKey].ts
-            local pendBase = pendTs and ("Pending " .. TimeAgo(pendTs)) or L["Pending"]
-            actLbl:SetText(pendBase .. "  ×")
-            local capCore = coreName
-            actBtn:SetScript("OnClick", function()
-                CM:DeclineSignup(playerKey, capCore)
-                if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
-                RefreshCoreSignupFrame()
+        -- The action: a note and Ask for a place, or Cancel request; nothing to do once on the core.
+        local capCore = coreName
+        if not st.member then
+            local noteInp = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+            noteInp:SetSize(math.max(90, math.min(160, W - rx - 150)), 22)
+            noteInp:SetPoint("TOPRIGHT", -(CARD_PAD + 124), y + 2)
+            if GuildOS.Style then GuildOS.Style:Paint(noteInp, "input") end
+            GuildOS:ApplyFont(noteInp, 10)
+            noteInp:SetTextColor(C.text.r, C.text.g, C.text.b)
+            noteInp:SetTextInsets(6, 6, 0, 0)
+            noteInp:SetAutoFocus(false)
+            noteInp:SetMaxLetters(80)
+            noteInp:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            local ph = noteInp:CreateFontString(nil, "OVERLAY")
+            GuildOS:ApplyFont(ph, 9)
+            ph:SetPoint("LEFT", 6, 0)
+            ph:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
+            ph:SetText(L["Note (optional)"])
+            noteInp:SetScript("OnTextChanged", function(self)
+                if self:GetText() ~= "" then ph:Hide() else ph:Show() end
+                f.notes[capCore] = self:GetText()   -- kept across a redraw, such as a role click (#94)
             end)
-            actBtn:SetScript("OnEnter", function(s)
-                s:SetBackdropColor(0.28, 0.04, 0.04, 0.9)
-                actLbl:SetText(L["Cancel signup"])
-            end)
-            actBtn:SetScript("OnLeave", function(s)
-                s:SetBackdropColor(C.accent.r*0.18, C.accent.g*0.18, C.accent.b*0.18, 0.9)
-                actLbl:SetText(pendBase .. "  ×")
-            end)
-        else
-            actBtn:SetBackdropColor(0.06, 0.06, 0.10, 0.9)
-            actBtn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.45)
-            actLbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            actLbl:SetText(L["Sign Up"])
-            local capCore = coreName
-            actBtn:SetScript("OnClick", function()
-                local note = strtrim(noteInp:GetText() or "")
-                CM:BroadcastSignup(capCore, note, playerRole)
-                f.notes[capCore] = nil
-                noteInp:SetText("")
-                if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
-                RefreshCoreSignupFrame()
-            end)
-            actBtn:SetScript("OnEnter", function(s)
-                s:SetBackdropColor(C.accent.r*0.22, C.accent.g*0.22, C.accent.b*0.22, 0.9)
-                s:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.65)
-            end)
-            actBtn:SetScript("OnLeave", function(s)
-                s:SetBackdropColor(0.06, 0.06, 0.10, 0.9)
-                s:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.45)
-            end)
+            noteInp:SetText(f.notes[coreName] or "")
+            if st.pending then noteInp:Hide() end
+            local actBtn = UI:CreateButton(content, st.pending and L["Cancel request"] or L["Ask for a place"], 120, 22)
+            actBtn:SetPoint("TOPRIGHT", -CARD_PAD, y + 2)
+            if st.pending then
+                UI:SetButtonVariant(actBtn, "danger")
+                actBtn:SetScript("OnClick", function()
+                    CM:DeclineSignup(playerKey, capCore)
+                    if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
+                    RefreshCoreSignupFrame()
+                end)
+            else
+                UI:SetButtonVariant(actBtn, "primary")
+                actBtn:SetScript("OnClick", function()
+                    local note = strtrim(noteInp:GetText() or "")
+                    CM:BroadcastSignup(capCore, note, playerRole)
+                    f.notes[capCore] = nil
+                    noteInp:SetText("")
+                    if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
+                    RefreshCoreSignupFrame()
+                end)
+            end
         end
-
-        y = y - 34   -- role row height + gap
+        -- The rule, read whole in the Loot window.
+        local ruleBtn = UI:CreateButton(content, L["See the rule"], 100, 20)
+        ruleBtn:SetPoint("TOPRIGHT", -CARD_PAD, y - 26)
+        UI:SetButtonVariant(ruleBtn, "ghost")
+        ruleBtn:SetScript("OnClick", function() UI:OpenWindow("loot", "rule", capCore) end)
+        y = y - 52
+        card:SetHeight(top - y)
+        y = y - 8
     end
 
+    -- Where the requests of a Discord core go, under the cards.
+    if CM:IsLinked() then
+        local foot = UI:CreateText(content, L["The requests for a Discord core go to Discord: its leader answers there and the answer comes back here."],
+            9, C.textDim.r, C.textDim.g, C.textDim.b)
+        foot:SetPoint("TOPLEFT", 2, y)
+        foot:SetWidth(W - 4)
+        foot:SetJustifyH("LEFT")
+        y = y - 30
+    end
     content:SetHeight(math.abs(y) + 8)
 end
 
 local function BuildCoreSignupFrame()
-    local FRAME_W, FRAME_H = 420, 460
+    local FRAME_W, FRAME_H = 460, 480
 
     local f = CreateFrame("Frame", "GuildOSCoreSignupFrame", UIParent, "BackdropTemplate")
     f:SetSize(FRAME_W, FRAME_H)
@@ -262,44 +251,22 @@ local function BuildCoreSignupFrame()
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", function(s) s:StartMoving() end)
     f:SetScript("OnDragStop",  function(s) s:StopMovingOrSizing() end)
-    f:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=2 })
-    f:SetBackdropColor(C.bg0.r, C.bg0.g, C.bg0.b, 0.97)
-    f:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.75)
+    UI:StylePopup(f)
     f:Hide()
     table.insert(UISpecialFrames, "GuildOSCoreSignupFrame")
 
     -- Title bar
-    local tBg = f:CreateTexture(nil, "BACKGROUND")
-    tBg:SetTexture(WHITE8)
-    tBg:SetPoint("TOPLEFT", 2, -2)
-    tBg:SetPoint("TOPRIGHT", -2, -2)
-    tBg:SetHeight(28)
-    tBg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.92)
-
-    local tLine = f:CreateTexture(nil, "ARTWORK")
-    tLine:SetTexture(WHITE8); tLine:SetHeight(1)
+    local tTitle = UI:CreateTitle(f, L["Core Sign-ups"], 14)
+    tTitle:SetPoint("TOPLEFT", 12, -9)
+    local tLine = UI:CreateSeparator(f)
     tLine:SetPoint("TOPLEFT", 2, -30)
     tLine:SetPoint("TOPRIGHT", -2, -30)
-    tLine:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
 
-    local tTitle = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(tTitle, 13)
-    tTitle:SetPoint("TOPLEFT", 10, -7)
-    tTitle:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    tTitle:SetText(L["Core Sign-ups"])
-
-    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
-    closeBtn:SetSize(26, 26)
+    local closeBtn = UI:CreateCloseButton(f)
+    closeBtn:SetPoint("TOPRIGHT", -6, -5)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    -- Player role strip
-    local roleBg = f:CreateTexture(nil, "BACKGROUND")
-    roleBg:SetTexture(WHITE8)
-    roleBg:SetPoint("TOPLEFT", 2, -32)
-    roleBg:SetPoint("TOPRIGHT", -2, -32)
-    roleBg:SetHeight(22)
-    roleBg:SetVertexColor(0.05, 0.05, 0.08, 1)
+    -- Player role strip: "I play as", and the roles the class can play.
 
     f.playerRoleLbl = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(f.playerRoleLbl, 10)
@@ -317,33 +284,36 @@ local function BuildCoreSignupFrame()
         for i = #roles, 1, -1 do
             local role = roles[i]
             local b = CreateFrame("Button", nil, f, "BackdropTemplate")
-            b:SetSize(54, 16)
-            b:SetPoint("TOPRIGHT", x, -35)
             b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
             b.lbl = b:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(b.lbl, 9)
+            GuildOS:ApplyFont(b.lbl, 10)
             b.lbl:SetPoint("CENTER")
             b.lbl:SetText(CM.ROLE_LABELS[role] or role)
+            -- As wide as its name ("Curandeiro" is wider than "Healer"), never less than 54.
+            local bw = math.max(54, math.ceil(b.lbl:GetStringWidth() or 0) + 14)
+            b:SetSize(bw, 18)
+            b:SetPoint("TOPRIGHT", x, -35)
             b:SetScript("OnClick", function()
                 f.pickedRole = role
                 RefreshCoreSignupFrame()
             end)
             f.roleBtns[role] = b
-            x = x - 58
+            x = x - bw - 4
         end
     end
 
     -- Scroll area for core list
     local scroll = CreateFrame("ScrollFrame", "GuildOSCoreSignupScroll", f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 2, -58)
-    scroll:SetPoint("BOTTOMRIGHT", -20, 6)
+    scroll:SetPoint("TOPLEFT", 8, -60)
+    scroll:SetPoint("BOTTOMRIGHT", -14, 8)
     UI:SkinScrollBar(scroll, "GuildOSCoreSignupScroll")
 
-    -- Explicit width so child buttons render correctly (avoids GetWidth()=0 bug)
+    -- The cards take the scroll area's width, whatever the frame's.
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(FRAME_W - 26)   -- frame width minus scrollbar (18) and padding (8)
+    content:SetWidth(FRAME_W - 30)
     content:SetHeight(1)
     scroll:SetScrollChild(content)
+    UI:BindScrollChildWidth(scroll, content, 4)
 
     f.content = content
     return f
