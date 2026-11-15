@@ -11,6 +11,7 @@ local LootTracker = {}
 GuildOS.LootTracker = LootTracker
 
 local HISTORY_MAX = 500         -- entries kept, newest first
+local WHY_KEEP = 200            -- newest entries that keep the record of why they were awarded (issue #336)
 -- Personal loot (retail, issue #183).
 local PERSONAL_MIN_QUALITY = 3  -- Rare: the loot master's default threshold (LootMaster.LOOT_THRESHOLD)
 local PERSONAL_UNKNOWN_QUALITY = 4  -- an item neither cached nor coloured in its link: a boss's, as an ML award assumes
@@ -38,6 +39,19 @@ local function remember(entry)
     table.insert(GuildOS.db.lootHistory, 1, entry)
     while #GuildOS.db.lootHistory > HISTORY_MAX do
         table.remove(GuildOS.db.lootHistory)
+    end
+    LootTracker:PruneWhy()
+end
+
+-- The record of why an item was awarded (issue #336) is kept on the newest entries only: the saved
+-- file and the upload to the site stay small however long the history grows.
+function LootTracker:PruneWhy()
+    local kept = 0
+    for _, e in ipairs(GuildOS.db.lootHistory or {}) do
+        if e.why ~= nil then
+            kept = kept + 1
+            if kept > WHY_KEEP then e.why = nil end
+        end
     end
 end
 
@@ -139,7 +153,8 @@ end
 -- item is one row and equity counts it once, with `awarded` and the holder in `from`; a client that
 -- missed the drop gets a new row. Either way the row is stamped with the drop's time as the holder's
 -- client had it (`timestamp`, carried by the offer), so every client writes the same row and the site
--- keeps one. `award`: { itemLink, itemId, holder, winner, timestamp, raid, instanceID }. Returns the row.
+-- keeps one. `award`: { itemLink, itemId, holder, winner, timestamp, raid, instanceID, why }. Returns the
+-- row. `why` is the record of the award (issue #336), kept with the row.
 function LootTracker:RecordTradeAward(award)
     if not (award and award.holder and award.winner and award.itemLink) then return nil end
     local itemId = tonumber(award.itemId) or tonumber(award.itemLink:match("item:(%d+)")) or 0
@@ -147,6 +162,8 @@ function LootTracker:RecordTradeAward(award)
     local e = self:DropOf(award.holder, itemId)
     if e then
         e.player, e.playerKey, e.awarded, e.from, e.timestamp = award.winner, award.winner, true, award.holder, stamp
+        e.why = award.why
+        self:PruneWhy()
         return e
     end
     local quality, itemName = itemFacts(award.itemLink)
@@ -163,6 +180,7 @@ function LootTracker:RecordTradeAward(award)
         instanceID = award.instanceID or 0,
         awarded    = true,
         from       = award.holder,
+        why        = award.why,
     }
     -- Where its time puts it, so the history stays newest first for the readers that stop at an old row.
     local h = GuildOS.db.lootHistory
@@ -170,6 +188,7 @@ function LootTracker:RecordTradeAward(award)
     while h[at] and (tonumber(h[at].timestamp) or 0) > stamp do at = at + 1 end
     table.insert(h, at, row)
     while #h > HISTORY_MAX do table.remove(h) end
+    self:PruneWhy()
     return row
 end
 

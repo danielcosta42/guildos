@@ -89,7 +89,7 @@ dofile(ADDON .. "/Core/Core.lua")
 dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Core/Commands.lua")
-for _, m in ipairs({ "CommSystem", "RaidTracker", "LootMaster", "WishlistSystem", "ConsumableChecker",
+for _, m in ipairs({ "CommSystem", "RaidTracker", "LootRule", "LootMaster", "WishlistSystem", "ConsumableChecker",
                      "PugInspector", "CompanionExport", "CompanionImport" }) do
   dofile(ADDON .. "/Modules/" .. m .. ".lua")
 end
@@ -250,6 +250,11 @@ GuildOS.Points = {
   GetDB = function() return { config = { itemCost = 5 } } end,
   Charge = function(_, key) charged[#charged + 1] = key end,
   Get = function() return 0 end,
+  PR = function() return 0 end,
+  EP = function() return 0 end,
+  GP = function() return 0 end,
+  PriceOf = function() return 5 end,
+  ChargeEntry = function() return {} end,
 }
 LM.QueueForTrade = function() end
 LM.testMode = true

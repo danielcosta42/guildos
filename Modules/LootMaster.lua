@@ -2,6 +2,34 @@
 -- Guild OS - Loot Master (Gargul-style)
 -- Master Looter announces items, players roll MS/OS, ML awards loot.
 -- Integrates with wishlists to show interest on items.
+--
+-- Since issue #334 the answers are the loot rule's (`LootRule:Responses`), and a raider with GuildOS
+-- answers by a button whose answer travels as an addon message: the loot master's client draws the
+-- roll, so nobody sends a number of their own and WoW: Forever, which shows no /roll line inside the
+-- raid (issue #48), needs none. The messages, all under LootMaster.PREFIX:
+--   ASK|sid|<LootRule:Encode>            loot master -> raid, right before ANNOUNCE: the buttons
+--   ANNOUNCE|link|seconds|itemId|0or1    loot master -> raid, as always: a client from before reads
+--                                        only this one and shows its MS / OS popup, whose /roll lines
+--                                        the loot master still reads from chat where chat shows them
+--   ANS|sid|KEY|bid|note                 raider -> loot master: over RAID, or whispered when the bid
+--                                        is sealed, so that no other client ever holds it
+--   ROLL|sid|name|KEY|roll               loot master -> raid: the roll it drew for an answer (the
+--                                        raid's chat gets them all in one line when the roll ends)
+--   BID|sid|name|KEY|bid                 loot master -> raid: an open bid it took
+--   ACK|sid|name|KEY                     loot master -> raid: an answer with nothing else to show
+--   NO|sid|name|why|number               loot master -> raid: an answer it refused
+--   WON|sid|itemId|KEY|name              loot master who is no officer -> raid, after an award that
+--                                        moved a counter: the officers' clients make the same entries
+-- Who answered is always the sender the game names, never a name inside the message. Who each message
+-- is read from:
+--   ASK, ANNOUNCE, ROLL, BID, ACK, NO   the raid's master looter (IsFromMasterLooter), by a raider's client
+--   ANS                                 a raid member (the tied, in a roll for a tie), by the master looter's
+--   WON                                 the raid's master looter, when no officer, by an officer's client
+--   AWARD, UNDO                         as before: an officer of the guild, for what is recorded or forgotten
+--
+-- Since issue #336 every award keeps a record of why the winner got the item (AwardWhy, LootRule:Why),
+-- and a rule whose items a council decides opens a vote when the answers close: its messages (COPEN,
+-- CMEM, CCAND, CVOTE, CTALLY, CWHO, CNO, CCLOSE) and its rules are in Modules/LootCouncil.lua.
 ----------------------------------------------------------------------
 -- Not on retail, which is personal loot only (ADR-0026): absent there, as TBC content is elsewhere.
 if GuildOS.Client.isRetail then return end
@@ -31,6 +59,15 @@ LootMaster.pendingTrades     = {}     -- items awaiting trade: [itemId] = { play
 LootMaster.testMode          = false  -- when true, bypasses raid/ML checks for local testing
 LootMaster.rollFormat        = nil    -- the localized RANDOM_ROLL_RESULT, set in Initialize()
 LootMaster.disenchanter      = ""     -- runtime cache; persisted to GuildOS.db.lootMaster.disenchanter
+LootMaster.pendingAsk        = nil    -- a raider's side: the ASK heard, waiting for its ANNOUNCE
+LootMaster.heard             = nil    -- a raider's side: { sender, sid, spec, link } of the roll being answered
+
+local ASK_WINDOW = 5          -- seconds an ASK waits for the ANNOUNCE it came with
+local NOTE_MAX = 60           -- bytes of a note an answer carries
+local ROLL_TOP, ROLL_TOP_SECOND = 100, 99   -- /roll 1-100 is the first answer, /roll 1-99 the second
+local ROLLS_LINE_MAX = 200    -- bytes of the line that tells the raid the rolls drawn for it
+local ANSWER_BUDGET = 30      -- answers one raider's client may send for one item; the rest are not read
+local ANSWER_REPEAT = 5       -- seconds within which the same answer sent again is dropped unanswered
 
 -- Config defaults
 LootMaster.ROLL_DURATION = 30     -- seconds to wait for rolls
@@ -94,6 +131,41 @@ function LootMaster:SaveCfgKey(key, value)
     elseif GuildOS.db.lootMaster then
         GuildOS.db.lootMaster[key] = value
     end
+end
+
+-- How long a roll stays open: the loot rule's own time when it names one (issue #334), else the
+-- roll duration of the loot settings.
+function LootMaster:RollTime()
+    return self:Rule().time or self.ROLL_DURATION or 30
+end
+
+-- The rule and the loot system of the item being rolled for. An item keeps the ones it was announced
+-- under (issue #338): another core becoming the raid's, or an officer saving another rule, changes the
+-- next item and never the roll in progress. With no roll open, the ones in force.
+function LootMaster:Rule()
+    local loot = self.activeLoot
+    return (loot and loot.rule) or GuildOS.LootRule:Active()
+end
+
+function LootMaster:System()
+    local loot = self.activeLoot
+    return (loot and loot.system) or (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
+end
+
+-- The core whose points, counters, queues and award log an item belongs to: the raid's when the item
+-- was announced, kept on it like its rule (issue #338). The raid's core changing while a roll is open
+-- used to send the charge, the +1 and the award log to the new core, with the rule and the balances
+-- the order was read from still the old one's.
+function LootMaster:ActiveCore()
+    return GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
+end
+
+-- Runs `fn(...)` on the accounts of the item being given (Points:InCore). With no item, or one that
+-- names no core, on the active core's.
+function LootMaster:InLootCore(fn, ...)
+    local P, loot = GuildOS.Points, self.activeLoot
+    if not (P and P.InCore and loot and loot.core ~= nil) then return fn(...) end
+    return P:InCore(loot.core, fn, ...)
 end
 
 ----------------------------------------------------------------------
@@ -247,7 +319,7 @@ function LootMaster:GetPlayerContext(playerName)
     local RT = GuildOS.RaidTracker
     if RT then
         local pKey = GuildOS:GetPlayerKey(playerName, GetRealmName())
-        local core = RT.GetCurrentGroup and RT:GetCurrentGroup()
+        local core = (self.activeLoot and self.activeLoot.core) or (RT.GetCurrentGroup and RT:GetCurrentGroup())
         if core == "" or (core and RT:GetTotal25ManSessions(core) == 0) then core = nil end
         ctx.att25 = RT:GetAttendance25ManPercent(pKey, core) or 0
     end
@@ -332,6 +404,73 @@ function LootMaster:IsMasterLooter()
 end
 
 ----------------------------------------------------------------------
+-- Who may open a roll, as a raider's client reads it. Everything a master looter's client tells the
+-- raid (ASK, ANNOUNCE, ROLL, BID, ACK, NO and the council's COPEN, CMEM, CCAND, CTALLY, CWHO, CNO,
+-- CCLOSE) is read from the raid's master looter and from nobody else: a raider who replayed an ASK
+-- used to have every answer, sealed bids among them, sent to them in place of the master looter.
+--
+-- The game says who the master looter is by their place in the raid. Where it names none (group loot,
+-- or a client with no master loot to ask about) the raid's leader and its assistants stand in: they
+-- are who the raid already trusts with its marks and invites, and nobody else is read.
+----------------------------------------------------------------------
+-- The master looter's place in the raid, or nil when the game names none.
+function LootMaster:MasterLooterIndex()
+    local raidID
+    if GetLootMethod then
+        local method, _, id = GetLootMethod()
+        if method == "master" then raidID = id end
+    end
+    if not raidID and C_PartyInfo and C_PartyInfo.GetLootMethod then
+        local method, _, id = C_PartyInfo.GetLootMethod()
+        local master = Enum and Enum.LootMethod and Enum.LootMethod.Masterlooter or 2
+        if method == master then raidID = id end
+    end
+    if not (raidID and IsInRaid()) then return nil end
+    return raidID
+end
+
+function LootMaster:MasterLooterName()
+    local raidID = self:MasterLooterIndex()
+    if not raidID then return nil end
+    return (GuildOS.Compat.UnitIdentity("raid" .. raidID))
+end
+
+-- The place in the raid of `sender`, as the game names an addon message's or a /roll line's, or nil
+-- for somebody outside it. The whole name decides. On a client with surnames one side may hold the
+-- first name alone (issue #48): it then decides only when a single raider has that first name, so two
+-- raiders who share one are never taken for each other.
+function LootMaster:SenderRaidIndex(sender)
+    if GuildOS.Compat.IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
+    local name = sender:match("^([^%-]+)") or sender
+    local loose, matches = nil, 0
+    for i = 1, GetNumGroupMembers() or 0 do
+        local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
+        if uName then
+            local surnamed = GuildOS.Client.has.surnames and uSecond and uSecond ~= ""
+            local whole = surnamed and (uName .. " " .. uSecond) or uName
+            if whole == name or whole == sender then return i end
+            -- Named by the first name alone, whichever way the game hands the surname (apart, or
+            -- inside the name): counted, never taken at once, or the first "Ana" of the raid would
+            -- answer for every other one.
+            if GuildOS.Client.has.surnames and self:WholeRollerName(name, uName, uSecond) then
+                loose, matches = i, matches + 1
+            end
+        end
+    end
+    return matches == 1 and loose or nil
+end
+
+-- Whether `sender` is who this raid's rolls and votes are read from: its master looter, and nobody
+-- else. Where the game names none nobody is: this module only ever announces under master loot
+-- (IsMasterLooter), so a roll or a vote opened without one comes from no honest client, and reading it
+-- from the leader or an assistant would hand them every sealed bid and the council's votes.
+function LootMaster:IsFromMasterLooter(sender)
+    local index = self:SenderRaidIndex(sender)
+    local ml = self:MasterLooterIndex()
+    return index ~= nil and ml ~= nil and index == ml
+end
+
+----------------------------------------------------------------------
 -- /roll capture: start/stop listening for CHAT_MSG_SYSTEM roll results
 ----------------------------------------------------------------------
 function LootMaster:StartListeningForRolls()
@@ -388,50 +527,76 @@ function LootMaster:ProcessSystemRoll(message)
     high = tonumber(high)
     if not roll or not low or not high then return end
 
-    -- Only the two agreed-upon ranges count; ignore all other /roll usage
-    local rollType
-    if low == 1 and high == 100 then
-        rollType = "MS"
-    elseif low == 1 and high == 99 then
-        rollType = "OS"
-    else
-        return
+    -- Only the two agreed-upon ranges count; ignore all other /roll usage. They are the rule's first
+    -- and second answers (MS and OS unless the guild named others, issue #334), and only when that
+    -- answer asks for a roll: a bid, or an answer with no roll, has no /roll line.
+    local list = GuildOS.LootRule:Responses(self:Rule())
+    local response
+    if low == 1 and high == ROLL_TOP then
+        response = list[1]
+    elseif low == 1 and high == ROLL_TOP_SECOND then
+        response = list[2]
     end
+    if not response or (response.ask or "roll") ~= "roll" then return end
 
-    -- Strip realm suffix that may appear in some client versions
-    local cleanName = roller:match("^([^%-]+)") or roller
-
-    -- Verify the roller is currently in the raid (or testMode)
-    local inRaid = self.testMode
-    if not inRaid then
-        local numMembers = GetNumGroupMembers() or 0
-        for i = 1, numMembers do
-            local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
-            local whole = uName and GuildOS.Client.has.surnames
-                and self:WholeRollerName(cleanName, uName, uSecond)
-            if whole then
-                inRaid, cleanName = true, whole
-                break
-            end
-            if uName and (uName == cleanName or uName == roller) then
-                inRaid = true
-                break
-            end
-        end
-        -- Also accept own roll (solo / testMode outside raid)
-        if not inRaid and cleanName == GuildOS.Compat.PlayerName() then
-            inRaid = true
-        end
-    end
-
-    if not inRaid then return end
+    local cleanName = self:RaidRollerName(roller)
+    if not cleanName then return end
 
     -- Restricted-roll session: only allowed players may roll; ignore everyone else silently
     if self.restrictedRollers and not self.restrictedRollers[strlower(cleanName)] then
         return
     end
 
-    self:RegisterRoll(cleanName, rollType, roll)
+    -- An open bid stands (TakeAnswerNow): a /roll for another answer does not take it back either.
+    local held = self.rolls[GuildOS:GetPlayerKey(cleanName)]
+    if held and held.bid and held.rollType ~= "PASS" and response.key ~= held.rollType
+        and GuildOS.LootRule:HasBids(self:Rule()) and not GuildOS.LootRule:BidRules(self:Rule()) then
+        return
+    end
+
+    -- One roll a player and an item: the first one read or drawn stands. A /roll after it changes the
+    -- answer, never the number.
+    local kept = self:KeepRoll(cleanName, roll, false)
+    self:RegisterRoll(cleanName, response.key, kept.roll, { drawn = kept.drawn or nil })
+end
+
+----------------------------------------------------------------------
+-- The one roll `name` has for the item being rolled for. The first number read from a /roll line or
+-- drawn here for a button is kept apart from the row, which every new answer rewrites: a pass, a bid or
+-- an answer that asks for no roll in between never buys another draw. `roll` is the number to keep
+-- when the player has none yet (nil: only look), `drawn` whether this client drew it.
+-- Returns { roll, drawn }, or nil.
+----------------------------------------------------------------------
+function LootMaster:KeepRoll(name, roll, drawn)
+    local loot = self.activeLoot
+    if not loot then return nil end
+    loot.kept = loot.kept or {}
+    local key = GuildOS:GetPlayerKey(name)
+    if not loot.kept[key] and roll then loot.kept[key] = { roll = roll, drawn = drawn and true or false } end
+    return loot.kept[key]
+end
+
+----------------------------------------------------------------------
+-- The name a roller or the sender of an answer has in this raid, or nil for somebody outside it: only
+-- a raid member's roll or answer counts. `roller` is the name of a /roll line or of an addon
+-- message's sender, with or without its realm.
+----------------------------------------------------------------------
+function LootMaster:RaidRollerName(roller)
+    if GuildOS.Compat.IsSecret(roller) or type(roller) ~= "string" or roller == "" then return nil end
+    -- Strip realm suffix that may appear in some client versions
+    local cleanName = roller:match("^([^%-]+)") or roller
+    if self.testMode then return cleanName end
+    local numMembers = GetNumGroupMembers() or 0
+    for i = 1, numMembers do
+        local uName, uSecond = GuildOS.Compat.UnitIdentity("raid" .. i)
+        local whole = uName and GuildOS.Client.has.surnames
+            and self:WholeRollerName(cleanName, uName, uSecond)
+        if whole then return whole end
+        if uName and (uName == cleanName or uName == roller) then return cleanName end
+    end
+    -- Also accept own roll (solo / testMode outside raid)
+    if cleanName == GuildOS.Compat.PlayerName() then return cleanName end
+    return nil
 end
 
 ----------------------------------------------------------------------
@@ -585,6 +750,48 @@ function LootMaster:ResolvePrioList(itemId)
 end
 
 ----------------------------------------------------------------------
+-- The roll's timers. Each one is its roll's alone: it is cancelled when the roll ends, is cancelled,
+-- is awarded or gives way to another item, and its closure checks the roll it was started for, so one
+-- that fires late never ends, or counts down, the item that came after.
+----------------------------------------------------------------------
+function LootMaster:StartRollTimer(duration)
+    if self.rollTimer then self.rollTimer:Cancel() end
+    local sid = self.activeLoot and self.activeLoot.sid
+    self.rollTimer = C_Timer.NewTimer(duration, function()
+        local loot = LootMaster.activeLoot
+        if loot and loot.sid == sid and not loot.ended then LootMaster:EndRolling() end
+    end)
+end
+
+function LootMaster:StopRollTimer()
+    if self.rollTimer then
+        self.rollTimer:Cancel()
+        self.rollTimer = nil
+    end
+end
+
+-- The roll in progress gives way, with no line to the raid: no timer of it, no /roll line and no
+-- council's vote outlives it.
+function LootMaster:DropRoll()
+    self:StopListeningForRolls()
+    self:StopRollTimer()
+    local loot = self.activeLoot
+    if loot and loot.council and loot.council.open and GuildOS.LootCouncil then
+        GuildOS.LootCouncil:Close("cancel")
+    end
+end
+
+-- The item whose roll is open now (answers still being taken, or its council voting), or nil: the
+-- loot window opens no other roll over it.
+function LootMaster:OpenRoll()
+    local loot = self.activeLoot
+    if not loot or loot.delivered then return nil end
+    if loot.council and loot.council.open then return loot.link or "?" end
+    if loot.sid and not loot.ended and (self.rollTimer or self.listeningForRolls) then return loot.link or "?" end
+    return nil
+end
+
+----------------------------------------------------------------------
 -- Announce an item for rolling.
 -- Priority logic (always active, regardless of WISHLIST_ONLY_MODE):
 --   ≥ 2 players tied at top wishlist position in raid → restricted roll (only they roll)
@@ -597,14 +804,28 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         return
     end
 
+    -- The item before is over, whatever state it was left in: its timer (which used to run out on the
+    -- next item and, with nobody asking for that one yet, send it to the disenchanter), its /roll
+    -- lines, and its council's vote, whose windows the raiders' clients close on hearing so.
+    self:DropRoll()
+
     -- Clear previous session
     self.rolls             = {}
     self.restrictedRollers = nil
+    -- The rule and the loot system in force now are this item's until it is given (issue #338).
+    self.activeLoot = nil
+    local rule = GuildOS.LootRule:Active()
+    local system = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
     self.activeLoot = {
         link      = itemLink,
         slot      = lootSlot,
         startTime = GetServerTime(),
-        endTime   = GetServerTime() + self.ROLL_DURATION,
+        endTime   = GetServerTime() + (rule.time or self.ROLL_DURATION or 30),
+        sid       = self:NewSessionId(),
+        rule      = rule,
+        system    = system,
+        core      = self:ActiveCore(),          -- whose accounts and award log this item is given in
+        ruleAt    = GuildOS.LootRule:Stamp(),   -- for the award's record (issue #336)
     }
 
     local itemId = tonumber(itemLink:match("item:(%d+)"))
@@ -613,7 +834,48 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
     -- The guild's chosen loot system (Settings) decides the default flow:
     -- "wishlist"/"tmb" force wishlist auto-council; "dkp"/"rolls" open a roll
     -- (DKP just changes how the roll frame ranks and what award charges).
-    local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
+    -- An item that follows another rule (issue #335): a fixed destination has no roll at all, and an
+    -- exception that swaps blocks is the rule this item is announced and decided by.
+    local item = self:ItemFacts(itemLink, lootSlot)
+    local played, exception = GuildOS.LootRule:ForItem(rule, item)
+    self.activeLoot.item, self.activeLoot.baseRule = item, rule
+    -- An item the client has not read yet (GetItemInfo answers nothing until the server does) has no
+    -- quality, class or binding to tell its category by. A rule with an exception for a category then
+    -- cannot say whether this item is one: it is played by the general rule, and both the loot master
+    -- and the raid are told so. Never guessed: an item is not sent to the bank on a maybe.
+    if not exception and item.quality == nil and GuildOS.LootRule:NeedsItemInfo(rule) then
+        self.activeLoot.unread = true
+        GuildOS:Print("|cffFFAA00" .. itemLink .. L["  -  item details not loaded yet: the general rule applies"] .. "|r")
+    end
+    if exception and exception.to then
+        self:SendToDestination(exception, itemLink, lootSlot, itemId)
+        return
+    end
+    -- A rule that keeps a queue (Suicide Kings, issue #337): whoever of the raid it never saw joins it
+    -- before anybody answers, so every place is known when the answers come.
+    self:JoinQueues(played)
+    if exception then
+        self.activeLoot.rule, self.activeLoot.exception = played, exception
+        self.activeLoot.endTime = GetServerTime() + (played.time or self.ROLL_DURATION or 30)
+        self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
+        return
+    end
+
+    -- The raid night's own rule (the site's, guildos-web#516) says the whole order: it opens its roll
+    -- for everyone, with none of the shortcuts the loot systems of before take by the wishlist.
+    if GuildOS.LootRule.Night and GuildOS.LootRule:Night() == rule then
+        self.activeLoot.night = true
+        self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
+        return
+    end
+    -- So does a rule with a council, a queue, a bonus account or a summed score (issues #336, #337):
+    -- every candidate is read, so nobody is left out of the roll by a place on the wishlist.
+    if GuildOS.LootRule:PlaysWhole(rule) then
+        self:DoNormalAnnounce(itemLink, lootSlot, itemId, nil, nil)
+        return
+    end
+
+    local lootSystem = system
     local wishlistOnly = self.WISHLIST_ONLY_MODE or lootSystem == "wishlist" or lootSystem == "tmb"
 
     -- Check officer prios first — they override wishlist council
@@ -675,17 +937,18 @@ end
 -- One of these is used to post an info line about who has priority.
 ----------------------------------------------------------------------
 function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prioEntry)
+    local duration = self:RollTime()
     -- Main announce (DKP mode rolls register interest; the ML awards by standings)
-    local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
-    local msg
-    if lootSystem == "dkp" then
-        msg = format(L["[DKP] %s  -  /roll to bid, highest DKP wins  -  %ds"],
-            itemLink, self.ROLL_DURATION)
-    else
-        msg = format(L["[ROLL] %s  -  /roll 1-100 = MS  -  /roll 1-99 = OS  -  %ds"],
-            itemLink, self.ROLL_DURATION)
+    local announceLine = self:AnnounceLine(itemLink, duration)
+    -- An item that follows an exception says which one (issue #335).
+    local exception = self.activeLoot and self.activeLoot.exception
+    if exception then
+        announceLine = announceLine .. string.format(L["  -  exception: %s"], GuildOS.LootRule:ExceptionLabel(exception))
     end
-    self:SafeSendChat(msg, "RAID_WARNING")
+    if self.activeLoot and self.activeLoot.unread then
+        announceLine = announceLine .. L["  -  item details not loaded yet: the general rule applies"]
+    end
+    self:SafeSendChat(announceLine, "RAID_WARNING")
 
     -- Post priority info note
     if prioEntry then
@@ -700,24 +963,80 @@ function LootMaster:DoNormalAnnounce(itemLink, _lootSlot, itemId, topEntry, prio
 
     self:AnnounceSoftReserves(itemId)
 
-    -- Send addon message so GuildOS users get the roll popup
-    local payload = format("ANNOUNCE|%s|%d|%d|0", itemLink, self.ROLL_DURATION, itemId or 0)
+    -- Send addon message so GuildOS users get the roll popup: the rule's buttons first (issue #334),
+    -- which a client from before ignores, then the announce every client reads.
+    self:SendAsk(duration)
+    local payload = format("ANNOUNCE|%s|%d|%d|0", itemLink, duration, itemId or 0)
     self:SafeSendAddon(LootMaster.PREFIX, payload, "RAID")
 
     -- Start capturing /roll results from CHAT_MSG_SYSTEM
     self:StartListeningForRolls()
 
     -- Start countdown timer
-    if self.rollTimer then self.rollTimer:Cancel() end
-    self.rollTimer = C_Timer.NewTimer(self.ROLL_DURATION, function()
-        LootMaster:EndRolling()
-    end)
+    self:StartRollTimer(duration)
     self:ScheduleCountdownWarnings()
 
     -- Update UI — always open/refresh the ML roll frame
     self:ShowRollFrame()
 
-    GuildOS:Print(L["Loot announced: "] .. itemLink .. " (" .. self.ROLL_DURATION .. "s)")
+    GuildOS:Print(L["Loot announced: "] .. itemLink .. " (" .. duration .. "s)")
+end
+
+----------------------------------------------------------------------
+-- The raid warning that opens a roll. With the answers every guild had (MS and OS by a roll) it is the
+-- line of before, by loot system. With answers of the guild's own (issue #334) it names the /roll of
+-- the first two when they ask for one, and says that the rest, and any bid, go by the GuildOS window.
+----------------------------------------------------------------------
+function LootMaster:AnnounceLine(itemLink, duration)
+    local LR = GuildOS.LootRule
+    local rule = self:Rule()
+    local list = LR:Responses(rule)
+    local first, second = list[1], list[2]
+    local function rolls(r) return r and (r.ask or "roll") == "roll" end
+    if #list == 2 and first and second and first.key == "MS" and second.key == "OS" and rolls(first) and rolls(second) then
+        local lootSystem = self:System()
+        if lootSystem == "epgp" then
+            return format(L["[EPGP] %s  -  /roll to ask, highest priority wins  -  %ds"], itemLink, duration)
+        elseif lootSystem == "dkp" then
+            return format(L["[DKP] %s  -  /roll to bid, highest DKP wins  -  %ds"], itemLink, duration)
+        end
+        return format(L["[ROLL] %s  -  /roll 1-100 = MS  -  /roll 1-99 = OS  -  %ds"], itemLink, duration)
+    end
+    local parts = {}
+    if rolls(first) then parts[#parts + 1] = "/roll 1-100 = " .. LR:ResponseLabel(first) end
+    if rolls(second) then parts[#parts + 1] = "/roll 1-99 = " .. LR:ResponseLabel(second) end
+    if LR:HasBids(rule) then
+        local _, min = LR:BidRules(rule)
+        parts[#parts + 1] = format(L["bids from %d in the GuildOS window, or tell the loot master"], min)
+    elseif #parts < #list then
+        parts[#parts + 1] = L["other answers in the GuildOS window, or tell the loot master"]
+    end
+    return format(L["[ROLL] %s  -  %s  -  %ds"], itemLink, table.concat(parts, "  -  "), duration)
+end
+
+-- Whoever of the raid a queue of `rule` does not hold joins it, where the account says newcomers go.
+function LootMaster:JoinQueues(rule)
+    local P = GuildOS.Points
+    if not (P and P.GetDB and P:GetDB()) then return end
+    local queues = GuildOS.LootRule:Queues(rule)
+    if #queues == 0 then return end
+    local keys = P:RaidKeys()
+    for _, q in ipairs(queues) do P:QueueJoin(q.key, keys, q.newcomer) end
+end
+
+-- A short name for the roll being opened: an answer names it, so one that comes late for the item
+-- before is not read as one for this.
+function LootMaster:NewSessionId()
+    self.sessionSeq = ((self.sessionSeq or 0) + 1) % 16
+    return string.format("%X", (GetServerTime() % 0x10000) * 16 + self.sessionSeq)
+end
+
+-- The rule's buttons, to the raiders' popups (issue #334).
+function LootMaster:SendAsk(duration)
+    local loot = self.activeLoot
+    if not loot then return end
+    loot.sid = loot.sid or self:NewSessionId()
+    self:SafeSendAddon(LootMaster.PREFIX, "ASK|" .. loot.sid .. "|" .. GuildOS.LootRule:Encode(self:Rule(), duration), "RAID")
 end
 
 ----------------------------------------------------------------------
@@ -771,33 +1090,32 @@ function LootMaster:StartRestrictedRoll(tied, _allCandidates, itemLink, _lootSlo
     local nameStr = table.concat(names, ", ")
 
     -- Announce in RAID_WARNING — only listed players should roll
+    local duration = self:RollTime()
     self:SafeSendChat(
         string.format(L["[ROLL] %s  -  Tie [%s]: %s  -  /roll 1-100 MS  -  /roll 1-99 OS  -  %ds"],
-            itemLink, orderStr, nameStr, self.ROLL_DURATION),
+            itemLink, orderStr, nameStr, duration),
         "RAID_WARNING"
     )
     self:AnnounceSoftReserves(itemId or (self.activeLoot and self.activeLoot.itemId))
 
     -- Addon comm: show popup to GuildOS users who have the item on their wishlist
     itemId = itemId or (self.activeLoot and self.activeLoot.itemId) or 0
-    local payload = string.format("ANNOUNCE|%s|%d|%d|1", itemLink, self.ROLL_DURATION, itemId)
+    self:SendAsk(duration)
+    local payload = string.format("ANNOUNCE|%s|%d|%d|1", itemLink, duration, itemId)
     self:SafeSendAddon(LootMaster.PREFIX, payload, "RAID")
 
     -- Start capturing /roll (restricted list enforced in ProcessSystemRoll)
     self:StartListeningForRolls()
 
     -- Timer
-    if self.rollTimer then self.rollTimer:Cancel() end
-    self.rollTimer = C_Timer.NewTimer(self.ROLL_DURATION, function()
-        LootMaster:EndRolling()
-    end)
+    self:StartRollTimer(duration)
     self:ScheduleCountdownWarnings()
 
     -- Show roll tracker for ML
     self:ShowRollFrame()
 
     GuildOS:Print(string.format(L["|cffFFD700Wishlist tie|r [wishlist #%d]: %s - only they may roll (%ds)"],
-        tied[1].order, nameStr, self.ROLL_DURATION))
+        tied[1].order, nameStr, duration))
 end
 
 ----------------------------------------------------------------------
@@ -955,14 +1273,57 @@ end
 ----------------------------------------------------------------------
 function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
     if prefix ~= LootMaster.PREFIX then return end
+    -- An addon message is somebody else's text: nothing of it is read before it is known to be text.
+    if GuildOS.Compat.IsSecret(msg, channel, sender) or type(msg) ~= "string" then return end
+    -- A sealed bid is whispered to the loot master (issue #334); nothing else comes by whisper.
+    -- So is a vote of an anonymous council (issue #336).
+    if channel == "WHISPER" then
+        if msg:sub(1, 4) == "ANS|" then self:OnAnswerMessage(msg:sub(5), sender) end
+        if msg:sub(1, 6) == "CVOTE|" and GuildOS.LootCouncil then GuildOS.LootCouncil:OnVoteMessage(msg:sub(7), sender) end
+        return
+    end
     if channel ~= "RAID" and channel ~= "RAID_LEADER" then return end
 
     local cmd, rest = msg:match("^(%w+)|(.+)$")
     if not cmd then return end
 
-    if cmd == "ANNOUNCE" then
-        -- Another ML announced an item - show roll popup if we're not ML
-        if not self:IsMasterLooter() then
+    if cmd == "ASK" then
+        -- The buttons of the roll a loot master is about to announce (issue #334). Kept only until
+        -- the ANNOUNCE that follows it, and only when every part of it is read.
+        -- Read from the raid's master looter alone: anybody else's would send this client's answers,
+        -- a sealed bid among them, to whoever asked.
+        if not self:IsMasterLooter() and self:IsFromMasterLooter(sender) then
+            local sid, encoded = rest:match("^(%x+)|(.+)$")
+            local spec = sid and #sid <= 8 and GuildOS.LootRule:Decode(encoded)
+            self.pendingAsk = spec and { sender = sender, sid = sid, spec = spec, at = GetTime() } or nil
+        end
+
+    elseif cmd == "ANS" then
+        self:OnAnswerMessage(rest, sender)
+
+    elseif cmd == "ROLL" or cmd == "BID" or cmd == "ACK" or cmd == "NO" then
+        self:OnAnswerEcho(cmd, rest, sender)
+
+    elseif cmd == "CVOTE" then
+        -- A council member's vote (issue #336), to the master looter.
+        if GuildOS.LootCouncil then GuildOS.LootCouncil:OnVoteMessage(rest, sender) end
+
+    elseif cmd == "COPEN" or cmd == "CMEM" or cmd == "CCAND" or cmd == "CTALLY" or cmd == "CWHO" or cmd == "CNO"
+        or cmd == "CCLOSE" then
+        -- A council's vote as the master looter's client tells it (issue #336).
+        if GuildOS.LootCouncil then GuildOS.LootCouncil:OnMessage(cmd, rest, sender) end
+
+    elseif cmd == "ANNOUNCE" then
+        -- The master looter announced an item - show roll popup if we're not ML. From anybody else it
+        -- is not an announce: no popup, and the roll being answered stays the master looter's.
+        if not self:IsMasterLooter() and self:IsFromMasterLooter(sender) then
+            -- The buttons that came with it, from the same loot master a moment ago. With none (a
+            -- loot master on a version from before) the popup is the MS / OS one, by /roll.
+            local ask = self.pendingAsk
+            self.pendingAsk = nil
+            if ask and (ask.sender ~= sender or GetTime() - ask.at > ASK_WINDOW) then ask = nil end
+            self.heard = nil
+
             local link, duration, itemId, wishlistOnly = rest:match("^(.+)|(%d+)|(%d+)|([01])$")
             if not link then
                 -- Backwards compat: old format without wishlistOnly flag
@@ -979,8 +1340,12 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
                 end
             end
 
-            self:ShowRollPopup(link, duration, itemId)
+            if ask then self.heard = { sender = sender, sid = ask.sid, spec = ask.spec, link = link } end
+            self:ShowRollPopup(link, duration, itemId, ask and ask.spec)
         end
+
+    elseif cmd == "WON" then
+        self:OnWonMessage(rest, sender)
 
     elseif cmd == "UNDO" then
         -- An officer took an award back (issue #294): forget it here too.
@@ -1030,24 +1395,26 @@ function LootMaster:OnAddonMessage(prefix, msg, channel, sender)
 end
 
 ----------------------------------------------------------------------
--- Register a player's /roll result (called from ProcessSystemRoll).
--- name: bare player name (no realm);  rollType: "MS" or "OS";
--- roll: the actual number the player rolled.
+-- Register a player's /roll result (called from ProcessSystemRoll) or
+-- an answer by the addon (TakeAnswer, issue #334).
+-- name: bare player name (no realm);  rollType: the key of one of the
+-- rule's answers ("MS" or "OS" unless the guild named others) or "PASS";
+-- roll: the actual number the player rolled, nil for an answer that asks
+-- for none;  extra: { bid, note, drawn (this client drew the roll),
+-- quiet (no line to the raid) }.
+-- Returns the row kept, or nil when a filter keeps the player out.
 ----------------------------------------------------------------------
-function LootMaster:RegisterRoll(name, rollType, roll)
+function LootMaster:RegisterRoll(name, rollType, roll, extra)
     if not self.activeLoot then return end
+    return self:InLootCore(self.RegisterRollNow, self, name, rollType, roll, extra)
+end
+
+function LootMaster:RegisterRollNow(name, rollType, roll, extra)
+    extra = extra or {}
 
     local key = GuildOS:GetPlayerKey(name)
-
-    -- Attendance gate: auto-downgrade MS → OS if below minimum threshold
+    local rule = self:Rule()
     local ctx = self:GetPlayerContext(name)
-    local minAtt = self:GetCfg().minAttendancePct or 0
-    if rollType == "MS" and minAtt > 0 and ctx.att25 < minAtt then
-        rollType = "OS"
-        self:SafeSendChatAuto(string.format(
-            L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
-            name, ctx.att25, minAtt), "RAID")
-    end
 
     -- Wishlist lookup
     local wishInfo = nil
@@ -1088,6 +1455,71 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         end
     end
 
+    -- The points as they stand now: the balance, and the two sides of EPGP with the pool's base GP,
+    -- which a rule orders and filters by under the accounts "dkp", "ep" and "gp".
+    local P = GuildOS.Points
+    local pointsReady = P and P.GetDB and P:GetDB()
+    local pKey = GuildOS:GetPlayerKey(name, GetRealmName())
+    local ep, gp, gpBase, pr = 0, 0, 0, 0
+    ctx.dkp = pointsReady and P:Get(pKey) or 0
+    if pointsReady then
+        gpBase = tonumber(pointsReady.config and pointsReady.config.baseGP) or 0
+        ep, gp, pr = P:EP(pKey), P:GP(pKey) - gpBase, P:PR(pKey)
+    end
+
+    -- The counters the rule compares by (the +1, issue #334), as they stand now, a bonus account among
+    -- them; and the place in each queue it keeps (issue #337), which whoever it never saw joins first.
+    local accts
+    if pointsReady then
+        for _, a in ipairs(GuildOS.LootRule:Counters(rule)) do
+            accts = accts or {}
+            accts[a.key] = P:Counter(a.key, key)
+        end
+        for _, q in ipairs(GuildOS.LootRule:Queues(rule)) do
+            accts = accts or {}
+            if rollType ~= "PASS" and not P:QueuePos(q.key, key) then P:QueueJoin(q.key, { key }, q.newcomer) end
+            accts[q.key] = P:QueuePos(q.key, key)
+        end
+    end
+
+    -- Who may ask (the loot rule's filters, issue #333): below the attendance the guild asks for, a
+    -- main spec answer is read as off spec; without the points to enter, a reserve on the item or room
+    -- under the night's limit, no roll at all.
+    local cand = {
+        att25 = ctx.att25, recvCount = ctx.recvThisLockout, dkp = ctx.dkp, ep = ep, gp = gp, gpBase = gpBase,
+        softRes = srInfo, accts = accts,
+    }
+    -- The raid's chat hears each thing about a player and an item once: an answer repeated, by a
+    -- click or by a client sending it three hundred times, says nothing new, and a master looter's
+    -- client that answered every one in chat could be disconnected for flooding in the middle of the loot.
+    local told = self.activeLoot.told or {}
+    self.activeLoot.told = told
+    local function sayOnce(what, line)
+        local id = key .. "|" .. what
+        if told[id] then return end
+        told[id] = true
+        self:SafeSendChatAuto(line, "RAID")
+    end
+
+    local asked = rollType   -- what was clicked, before a filter reads it as another answer
+    local answer, filter = GuildOS.LootRule:AnswerFor(cand, rollType, rule)
+    if filter and not answer then
+        sayOnce("out|" .. filter.k .. "|" .. tostring(filter.acct or ""), self:BlockedLine(name, filter, cand, rule))
+        return
+    end
+    if filter then
+        local what = "read|" .. filter.k .. "|" .. tostring(filter.from) .. "|" .. tostring(filter.to)
+        if filter.k == "attendance" and filter.from == "MS" and filter.to == "OS" then
+            sayOnce(what, string.format(
+                L["[Loot] %s: MS converted to OS (attendance %d%% below minimum %d%%)"],
+                name, ctx.att25, filter.min))
+        else
+            sayOnce(what, string.format(L["[Loot] %s: %s read as %s (%s)"], name,
+                self:AnswerLabel(filter.from), self:AnswerLabel(filter.to), self:FilterReason(filter, cand, rule)))
+        end
+        rollType = answer
+    end
+
     -- Class from raid unit or stored member data
     local class = "UNKNOWN"
     local numMembers = GetNumGroupMembers() or 0
@@ -1103,7 +1535,6 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         end
     end
     if class == "UNKNOWN" then
-        local pKey = GuildOS:GetPlayerKey(name, GetRealmName())
         local memberData = GuildOS.db.members and GuildOS.db.members[pKey]
         if memberData and memberData.class then
             class = memberData.class
@@ -1116,27 +1547,346 @@ function LootMaster:RegisterRoll(name, rollType, roll)
         name       = name,
         class      = class,
         rollType   = rollType,
+        live       = true,   -- read from the accounts here: read again when the roll ends (RereadAccounts)
+        asked      = asked ~= rollType and asked or nil,   -- for the award's record (LootRule:Why)
         roll       = roll,
+        rolled     = roll ~= nil and rollType ~= "PASS" or (extra.drawn and true) or nil,
+        drawn      = extra.drawn or nil,
+        bid        = extra.bid,
+        note       = (extra.note and extra.note ~= "") and extra.note or nil,
+        accts      = accts,
         wishlist   = wishInfo,
         prioOrder  = prioOrder,
         softRes    = srInfo,
         att25      = ctx.att25,
         recvCount  = ctx.recvThisLockout,
-        dkp        = (GuildOS.Points and GuildOS.Points:Get(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0,
+        dkp        = ctx.dkp,
+        pr         = pr,
+        ep         = ep,
+        gp         = gp,
+        gpBase     = gpBase,
     }
 
     -- Announce prio or wishlist position to raid
-    if prioOrder then
-        self:SafeSendChatAuto(string.format(L["[Loot] %s: %s (Official Prio #%d)"],
-            name, rollType, prioOrder), "RAID")
-    elseif wishInfo then
-        self:SafeSendChatAuto(string.format(L["[Loot] %s: %s (Wishlist #%d)"],
-            name, rollType, wishInfo.order), "RAID")
+    if prioOrder and not extra.quiet then
+        sayOnce("prio|" .. rollType, string.format(L["[Loot] %s: %s (Official Prio #%d)"],
+            name, rollType, prioOrder))
+    elseif wishInfo and not extra.quiet then
+        sayOnce("wish|" .. rollType, string.format(L["[Loot] %s: %s (Wishlist #%d)"],
+            name, rollType, wishInfo.order))
     end
 
     -- Refresh ML roll frame
     if self.rollFrame and self.rollFrame:IsShown() then
         self:RefreshRollFrame()
+    end
+    return self.rolls[key]
+end
+
+-- Why a filter of the rule failed a candidate, in words. Each one by its own literal key.
+function LootMaster:FilterReason(f, c, rule)
+    if f.k == "attendance" then
+        return string.format(L["attendance %d%% below minimum %d%%"], c.att25 or 0, f.min)
+    elseif f.k == "reserved" then
+        return L["the item was not reserved"]
+    elseif f.k == "received" then
+        return string.format(L["%d items received tonight, the limit is %d"], c.recvCount or 0, f.max)
+    end
+    local acct = f.k == "points" and "dkp" or f.acct
+    local has = GuildOS.LootRule:Held(c, acct, rule)
+    if acct == "dkp" then return string.format(L["%d points, %d needed"], has, f.min) end
+    local counter = GuildOS.LootRule:Counter(acct, rule)
+    return string.format(L["%s: %d, %d needed"], (counter and counter.name) or acct:upper(), has, f.min)
+end
+
+-- The line the raid reads when a filter keeps somebody out of the roll. The points' own, a roll that
+-- costs more to enter than the roller holds (issue #309), is the line of before.
+function LootMaster:BlockedLine(name, f, c, rule)
+    if f.k == "points" or (f.k == "account" and f.acct == "dkp") then
+        return string.format(L["[Loot] %s: not in this roll (%d points, %d needed to enter)"], name, c.dkp or 0, f.min)
+    end
+    return string.format(L["[Loot] %s: not in this roll (%s)"], name, self:FilterReason(f, c, rule))
+end
+
+----------------------------------------------------------------------
+-- Answers by the addon (issue #334)
+----------------------------------------------------------------------
+-- Why an answer was not taken, in words. `n` is the figure the reason carries, when it has one.
+-- Each one by its own literal key, so every language file finds it.
+function LootMaster:WhyNot(why, n)
+    if why == "closed" then return L["No roll is open."] end
+    if why == "unknown" then return L["That answer is not one of this roll's."] end
+    if why == "note" then return L["That answer needs a note."] end
+    if why == "bid" then return string.format(L["A bid must be a whole number of at least %d."], n or 0) end
+    if why == "balance" then return L["That bid is more than the points you hold."] end
+    if why == "low" then return string.format(L["That bid is too low: at least %d now."], n or 0) end
+    if why == "held" then return L["Your bid stands: an open bid can be raised, never withdrawn or changed."] end
+    if why == "raid" then return L["Only a raid member can answer."] end
+    if why == "ml" then return L["You are not the Master Looter."] end
+    return L["Not in this roll."]
+end
+
+-- A note as it is kept: no colour code, no control character, and short.
+local function cleanNote(note)
+    return (tostring(note or ""):gsub("[|%c]", ""):sub(1, NOTE_MAX))
+end
+
+-- The loot master's side: one answer of `name`, a raid member, to the open roll. `key` is one of the
+-- rule's answers or "PASS". The roll an answer asks for is drawn here and nowhere else; a bid is held
+-- to the rule (the least bid, the step over the best one when bids are open) and to the points the
+-- bidder holds. Returns the row kept, or nil, why and the figure the reason carries.
+function LootMaster:TakeAnswer(name, key, bid, note)
+    local loot = self.activeLoot
+    if not loot or loot.ended or loot.delivered then return nil, "closed" end
+    return self:InLootCore(self.TakeAnswerNow, self, name, key, bid, note)
+end
+
+function LootMaster:TakeAnswerNow(name, key, bid, note)
+    local LR = GuildOS.LootRule
+    local rule = self:Rule()
+    local rkey = GuildOS:GetPlayerKey(name)
+    note = cleanNote(note)
+
+    -- An open bid stands, as in any open auction: whoever holds one may raise it on the same answer,
+    -- and nothing else. A bidder used to push the price up and then pass, leaving the next one to pay
+    -- a price nobody was bidding against any more. Sealed bids, which nobody sees, change freely.
+    local held = self.rolls[rkey]
+    if held and held.bid and held.rollType ~= "PASS" and key ~= held.rollType
+        and GuildOS.LootRule:HasBids(self:Rule()) and not GuildOS.LootRule:BidRules(self:Rule()) then
+        return nil, "held"
+    end
+
+    if key == "PASS" then
+        -- Out of the roll, bid and all; the roll already read or drawn stays the player's (KeepRoll)
+        -- in case the answer changes again.
+        local kept = self:KeepRoll(name)
+        local passed = self:RegisterRoll(name, "PASS", kept and kept.roll or 0,
+            { drawn = kept and kept.drawn or nil, quiet = true })
+        if not passed then return nil, "out" end
+        return passed
+    end
+    local response, place = LR:Response(key, rule)
+    if not response then return nil, "unknown" end
+    -- The answer's own flag, or the council's, which reads every note (issue #336).
+    if LR:NeedsNote(response, rule) and note == "" then return nil, "note" end
+    local ask = response.ask or "roll"
+    local row
+
+    if ask == "bid" then
+        local sealed, min, step = LR:BidRules(rule)
+        bid = tonumber(bid)
+        if not bid or bid ~= math.floor(bid) or bid < min or bid > LR.MAX_BID then return nil, "bid", min end
+        local P = GuildOS.Points
+        local balance = (P and P.GetDB and P:GetDB() and P:Get(GuildOS:GetPlayerKey(name, GetRealmName()))) or 0
+        if bid > balance then return nil, "balance" end
+        if not sealed then
+            -- Open: over the best bid of the same answer by a step, and never back down from one's own.
+            local least = min
+            for k, r in pairs(self.rolls) do
+                if r.bid and r.rollType == key and r.rollType ~= "PASS" then
+                    least = math.max(least, k == rkey and (r.bid + 1) or (r.bid + step))
+                end
+            end
+            if bid < least then return nil, "low", least end
+        end
+        row = self:RegisterRoll(name, key, nil, { bid = bid, note = note })
+    elseif ask == "roll" then
+        -- One roll a player and an item: answering again keeps the number, whatever was answered
+        -- in between and whoever entered it.
+        local kept = self:KeepRoll(name)
+            or self:KeepRoll(name, math.random(1, place == 2 and ROLL_TOP_SECOND or ROLL_TOP), true)
+        row = self:RegisterRoll(name, key, kept.roll, { drawn = kept.drawn or nil, note = note })
+    else
+        row = self:RegisterRoll(name, key, nil, { note = note })
+    end
+    if not row then return nil, "out" end
+    return row
+end
+
+-- The loot master's side: an ANS message. The answer is its sender's, who has to be in the raid (and,
+-- in a roll for a tie, one of the tied); what the message says about anybody else is never read.
+function LootMaster:OnAnswerMessage(rest, sender)
+    local loot = self.activeLoot
+    if not (loot and loot.sid and not loot.ended) then return end
+    if not self:IsMasterLooter() then return end
+    if #rest > 120 then return end
+    local sid, key, bid, note = rest:match("^(%x+)|([A-Z0-9]+)|(%d+)|?(.*)$")
+    if not sid or sid ~= loot.sid or #key > 8 or #bid > 7 then return end
+    local name = self:RaidRollerName(sender)
+    if not name then return end
+    if self.restrictedRollers and not self.restrictedRollers[strlower(name)] then return end
+
+    -- One raider's client cannot make this one talk without end. The answer it just sent, sent again
+    -- within a few seconds, is dropped with no reply (the first one was answered; a raider who clicks
+    -- again later, with more points by then, is read again); and past a budget no answer of that
+    -- raider's for this item is read at all. Nothing is said either way: a reply is what a flood wants.
+    loot.heardFrom = loot.heardFrom or {}
+    local from = loot.heardFrom[name] or { n = 0 }
+    loot.heardFrom[name] = from
+    local said, now = key .. "|" .. bid .. "|" .. note, GetTime()
+    if from.last == said and now - (from.at or 0) < ANSWER_REPEAT then return end
+    from.n = from.n + 1
+    if from.n > ANSWER_BUDGET then return end
+    from.last, from.at = said, now
+
+    local row, why, n = self:TakeAnswer(name, key, tonumber(bid), note)
+    self:EchoAnswer(name, row, why, n)
+end
+
+-- What the loot master did with an answer, to the raid: the roll it drew, an open bid, or that the
+-- answer is in. A sealed bid is only acknowledged. A refusal says why, without the bidder's figures.
+-- `byClick`: the loot master typed the answer in, so the bid's line reaches the raid on WoW: Forever
+-- too (issue #63). The echoes take the throttled queue: a whole raid answers within a few seconds.
+function LootMaster:SendEcho(payload)
+    if IsInRaid() and not self.testMode then
+        GuildOS.Compat.SendAddonMessage(LootMaster.PREFIX, payload, "RAID", nil, "NORMAL")
+    end
+end
+
+function LootMaster:EchoAnswer(name, row, why, n, byClick)
+    local loot = self.activeLoot
+    if not (loot and loot.sid) then return end
+    local LR = GuildOS.LootRule
+    local payload
+    if not row then
+        payload = string.format("NO|%s|%s|%s|%d", loot.sid, name, why or "out", n or 0)
+    elseif row.rollType == "PASS" then
+        payload = string.format("ACK|%s|%s|PASS", loot.sid, name)
+    elseif row.bid then
+        local sealed = LR:BidRules(self:Rule())
+        if sealed then
+            payload = string.format("ACK|%s|%s|%s", loot.sid, name, row.rollType)
+        else
+            payload = string.format("BID|%s|%s|%s|%d", loot.sid, name, row.rollType, row.bid)
+            local say = byClick and self.SafeSendChat or self.SafeSendChatAuto
+            say(self, string.format(L["[Loot] %s: %s, bid %d"], name,
+                self:AnswerLabel(row.rollType), row.bid), "RAID")
+        end
+    elseif row.drawn then
+        -- The raid's chat hears the rolls drawn here in one line, when the roll ends (EndRolling).
+        payload = string.format("ROLL|%s|%s|%s|%d", loot.sid, name, row.rollType, row.roll)
+    else
+        payload = string.format("ACK|%s|%s|%s", loot.sid, name, row.rollType)
+    end
+    self:SendEcho(payload)
+end
+
+-- What the button of the answer `key` says, in the rule in force.
+function LootMaster:AnswerLabel(key)
+    local r = GuildOS.LootRule:Response(key, self:Rule())
+    return r and GuildOS.LootRule:ResponseLabel(r) or key
+end
+
+-- The loot master's side: an answer typed in for a raider who has no GuildOS, or the loot master's
+-- own. `typed` is the raider's name as typed, in any case. Returns the row, or nil, why and a figure.
+function LootMaster:EnterAnswer(typed, key, bid, note)
+    if not self:IsMasterLooter() then return nil, "ml" end
+    typed = strtrim(tostring(typed or ""))
+    local name
+    if typed ~= "" and strlower(typed) == strlower(GuildOS.Compat.PlayerName() or "") then
+        name = self:RaidRollerName(GuildOS.Compat.PlayerName())
+    elseif typed ~= "" then
+        local numMembers = GetNumGroupMembers() or 0
+        for i = 1, numMembers do
+            local uName = GuildOS.Compat.UnitIdentity("raid" .. i)
+            if uName and strlower(uName) == strlower(typed) then
+                name = self:RaidRollerName(uName)
+                break
+            end
+        end
+        if not name and self.testMode then name = typed end
+    end
+    if not name then return nil, "raid" end
+    -- What the raider's own client sent last is no longer what stands: the same answer from it counts again.
+    local heardFrom = self.activeLoot and self.activeLoot.heardFrom and self.activeLoot.heardFrom[name]
+    if heardFrom then heardFrom.last = nil end
+    local row, why, n = self:TakeAnswer(name, key, bid, note)
+    self:EchoAnswer(name, row, why, n, true)
+    if row and self.rollFrame and self.rollFrame:IsShown() then self:RefreshRollFrame() end
+    return row, why, n
+end
+
+-- A raider's side: the button clicked in the roll popup. The answer goes to the loot master who
+-- announced the item: over the raid, or by whisper when it is a sealed bid.
+function LootMaster:SendAnswer(key, bid, note)
+    local heard = self.heard
+    if not heard then return false end
+    bid = math.max(0, math.floor(tonumber(bid) or 0))
+    local msg = string.format("ANS|%s|%s|%d", heard.sid, key, bid)
+    note = cleanNote(note)
+    if note ~= "" then msg = msg .. "|" .. note end
+    if heard.spec.sealed and bid > 0 then
+        if IsInRaid() and not self.testMode then
+            GuildOS:NoteWhisper(heard.sender)
+            GuildOS.Compat.SendAddonMessageNow(LootMaster.PREFIX, msg, "WHISPER", heard.sender)
+        end
+    else
+        self:SafeSendAddon(LootMaster.PREFIX, msg, "RAID")
+    end
+    return true
+end
+
+-- Whether `name`, as a loot master's client wrote it, is this player. On a client with surnames the
+-- loot master may hold the first name alone (issue #48): the first name then says so.
+local function isSelf(name)
+    local me = GuildOS.Compat.PlayerName() or ""
+    if name == me then return true end
+    return GuildOS.Client.has.surnames and name:match("^%S+") == me:match("^%S+") or false
+end
+
+-- A raider's side: what the loot master did with an answer. Read only from the loot master whose
+-- roll this client is answering; it shows, and changes nothing a roll is decided by.
+function LootMaster:OnAnswerEcho(cmd, rest, sender)
+    local heard = self.heard
+    if not heard or sender ~= heard.sender or not self:IsFromMasterLooter(sender) then return end
+    local sid, name, key, number = rest:match("^(%x+)|([^|]+)|(%w+)|?(%d*)$")
+    if sid ~= heard.sid or #name > 64 or #key > 8 or #number > 7 then return end
+    number = tonumber(number) or 0
+    local popup = self.rollPopup
+    local function reply(text)
+        if isSelf(name) then
+            GuildOS:Print(text)
+            if popup and popup.replyText then popup.replyText:SetText(text) end
+        end
+    end
+    local label = key
+    for _, r in ipairs(heard.spec.responses) do
+        if r.key == key then label = r.label end
+    end
+    if cmd == "ROLL" then
+        reply(string.format(L["You rolled |cff00ff00%d|r (%s) for %s"], number, label, heard.link or L["item"]))
+    elseif cmd == "BID" then
+        if not heard.high or number > heard.high then
+            heard.high = number
+            if popup and popup.highText then
+                popup.highText:SetText(string.format(L["Highest bid: %d (%s)"], number, name))
+            end
+        end
+        reply(string.format(L["Your bid of %d (%s) is in."], number, label))
+    elseif cmd == "ACK" then
+        reply(key == "PASS" and L["You passed."] or string.format(L["Your answer (%s) is in."], label))
+    elseif cmd == "NO" then
+        reply("|cffFF4444" .. self:WhyNot(key, number) .. "|r")
+    end
+end
+
+----------------------------------------------------------------------
+-- The counters and the places in a queue each row holds, read again as they stand now. A row keeps
+-- what its player held when they answered; an award undone, or another officer's entry, in the
+-- seconds the roll stays open moves a queue or a counter, and the roll ended by places nobody held any
+-- more. Only rows this client read from the accounts (`live`).
+----------------------------------------------------------------------
+function LootMaster:RereadAccounts(rule)
+    local P, LR = GuildOS.Points, GuildOS.LootRule
+    if not (P and P.GetDB and P:GetDB()) then return end
+    local counters, queues = LR:Counters(rule), LR:Queues(rule)
+    if #counters == 0 and #queues == 0 then return end
+    for key, r in pairs(self.rolls) do
+        if r.live then
+            r.accts = r.accts or {}
+            for _, a in ipairs(counters) do r.accts[a.key] = P:Counter(a.key, key) end
+            for _, q in ipairs(queues) do r.accts[q.key] = P:QueuePos(q.key, key) end
+        end
     end
 end
 
@@ -1152,10 +1902,7 @@ function LootMaster:EndRolling(byClick)
     self:StopListeningForRolls()
     self.restrictedRollers = nil
 
-    if self.rollTimer then
-        self.rollTimer:Cancel()
-        self.rollTimer = nil
-    end
+    self:StopRollTimer()
 
     -- Sort rolls: MS first (by wishlist order then roll), then OS (by roll)
     local sorted = {}
@@ -1167,49 +1914,39 @@ function LootMaster:EndRolling(byClick)
 
     -- In DKP the winner is who the ML window puts on top: highest DKP among MS, then the roll
     -- (issue #294). The announcement used to ignore DKP and name somebody else.
-    local dkpMode = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) == "dkp"
-    table.sort(sorted, function(a, b)
-        -- MS beats OS
-        if a.rollType ~= b.rollType then
-            return a.rollType == "MS"
-        end
-        if dkpMode then
-            local ad, bd = a.dkp or 0, b.dkp or 0
-            if ad ~= bd then return ad > bd end
-            return a.roll > b.roll
-        end
-        -- Officer prio: lower index wins (no prio = 999)
-        local aPrio = a.prioOrder or 999
-        local bPrio = b.prioOrder or 999
-        if aPrio ~= bPrio then return aPrio < bPrio end
-        -- Soft reserve: SR holder beats non-SR (below officer prio, above wishlist)
-        local aSR = a.softRes and 1 or 2
-        local bSR = b.softRes and 1 or 2
-        if aSR ~= bSR then return aSR < bSR end
-        -- Wishlist priority: lower order number wins; no wishlist entry ranks last
-        local aOrder = a.wishlist and a.wishlist.order or 999
-        local bOrder = b.wishlist and b.wishlist.order or 999
-        if aOrder ~= bOrder then return aOrder < bOrder end
-        -- Received tiebreaker: fewer items received this lockout wins (when enabled)
-        local _cfg = LootMaster:GetCfg()
-        if _cfg.recvPenalty ~= false then
-            local aRecv = a.recvCount or 0
-            local bRecv = b.recvCount or 0
-            if aRecv ~= bRecv then return aRecv < bRecv end
-        end
-        -- Attendance tiebreaker: higher 25-man attendance wins
-        if _cfg.attTiebreaker and (a.att25 or 0) ~= (b.att25 or 0) then
-            return (a.att25 or 0) > (b.att25 or 0)
-        end
-        -- Final tiebreaker: higher roll
-        return a.roll > b.roll
-    end)
+    -- The loot rule's order (issue #333): the same one the Master Loot window shows.
+    local rule = self:Rule()
+    self:InLootCore(self.RereadAccounts, self, rule)
+    GuildOS.LootRule:Sort(sorted, rule)
 
     self.activeLoot.sortedResults = sorted
     self.activeLoot.ended = true
 
-    -- Announce winner in raid
-    if #sorted > 0 then
+    -- The rolls this client drew for the raiders' buttons (issue #334), in one line for the raid's
+    -- chat: whoever has no GuildOS sees every number the winner was picked from, as with /roll.
+    local drawn = {}
+    for _, r in ipairs(sorted) do
+        if r.drawn and r.roll then
+            drawn[#drawn + 1] = string.format("%s %s %d", r.name, r.rollType, r.roll)
+        end
+    end
+    if #drawn > 0 then
+        local line = table.concat(drawn, ", ")
+        if #line > ROLLS_LINE_MAX then line = line:sub(1, ROLLS_LINE_MAX):gsub(",[^,]*$", "") .. ", ..." end
+        say(self, string.format(L["[Rolls] %s"], line), "RAID")
+    end
+
+    -- A rule whose items a council decides (issue #336): with more than one candidate the council
+    -- votes, and the raid is told so in place of a winner. One candidate needs no vote.
+    local Council = GuildOS.LootCouncil
+    local council = Council and GuildOS.LootRule:Council(rule) and #sorted > 1 and self:IsMasterLooter()
+    if council then
+        if not self.activeLoot.council then
+            local session = Council:Open(self.activeLoot, sorted, rule)
+            say(self, string.format(L["[Council] %s: %d candidates, the council votes (%ds)"], self.activeLoot.link,
+                #session.candidates, session.seconds), "RAID_WARNING")
+        end
+    elseif #sorted > 0 then
         local winner = sorted[1]
         local wishStr = ""
         if winner.prioOrder then
@@ -1219,10 +1956,37 @@ function LootMaster:EndRolling(byClick)
         elseif winner.wishlist then
             wishStr = string.format(L[" [Wishlist #%d]"], winner.wishlist.order)
         end
-        say(self, string.format(L["[WINNER] %s - %s (%d)%s - %s"],
-            winner.name, winner.rollType, winner.roll, wishStr, self.activeLoot.link), "RAID_WARNING")
+        -- What put the winner ahead of the next candidate, when it was not the roll itself.
+        local decided = GuildOS.LootRule:DecidedBy(winner, sorted[2], rule)
+        self.activeLoot.decidedBy = decided
+        if decided and decided ~= "roll" and wishStr == "" then
+            wishStr = string.format(L[" [by %s]"], GuildOS.LootRule:Label(decided))
+        end
+        -- The answer by its button's name, and what it asked for: the roll, the bid, or neither (#334).
+        local label = self:AnswerLabel(winner.rollType)
+        if winner.bid then
+            say(self, string.format(L["[WINNER] %s - %s (bid %d)%s - %s"],
+                winner.name, label, winner.bid, wishStr, self.activeLoot.link), "RAID_WARNING")
+        elseif winner.roll and GuildOS.LootRule:BonusOf(winner, rule) > 0 then
+            -- The roll and what the bonus account added to it, each by itself (issue #337).
+            say(self, string.format(L["[WINNER] %s - %s (%d + %d)%s - %s"], winner.name, label, winner.roll,
+                GuildOS.LootRule:BonusOf(winner, rule), wishStr, self.activeLoot.link), "RAID_WARNING")
+        elseif winner.roll then
+            say(self, string.format(L["[WINNER] %s - %s (%d)%s - %s"],
+                winner.name, label, winner.roll, wishStr, self.activeLoot.link), "RAID_WARNING")
+        else
+            say(self, string.format(L["[WINNER] %s - %s%s - %s"],
+                winner.name, label, wishStr, self.activeLoot.link), "RAID_WARNING")
+        end
     else
         say(self, L["[Roll] No roll received for "] .. self.activeLoot.link, "RAID_WARNING")
+        -- Nobody asked (issue #335): a rule with an exception for that sends the item where it says.
+        -- With none, the loot master's Send to Disenchant button, as always.
+        local loot = self.activeLoot
+        local unclaimed = loot.item and GuildOS.LootRule:ExceptionFor(loot.baseRule or rule, loot.item, true)
+        if unclaimed and unclaimed.to and self:IsMasterLooter() then
+            self:SendToDestination(unclaimed, loot.link, loot.slot, loot.itemId, "norolls")
+        end
     end
 
     -- Refresh UI
@@ -1234,14 +1998,27 @@ end
 ----------------------------------------------------------------------
 -- Award loot to a player (Gargul-style two-path distribution)
 ----------------------------------------------------------------------
-function LootMaster:AwardLoot(playerName, silent)
+-- `free`: the item goes to a fixed destination (the bank, the disenchanter of an exception, issue
+-- #335) and costs nobody anything.
+function LootMaster:AwardLoot(playerName, silent, free)
     if not self.activeLoot then return end
     if not self:IsMasterLooter() then
         GuildOS:Print(L["You are not the Master Looter."])
         return
     end
+    -- Everything the award reads and writes is the core's the item was announced under.
+    return self:InLootCore(self.AwardLootNow, self, playerName, silent, free)
+end
+
+function LootMaster:AwardLootNow(playerName, silent, free)
 
     local itemLink = self.activeLoot.link
+    -- The winner's answer, when the item was rolled for: what it costs and whether it counts for the
+    -- +1 come from it (issue #334). An item given straight from the loot window has none.
+    local LR = GuildOS.LootRule
+    local rule = self:Rule()
+    local row = self.rolls[GuildOS:GetPlayerKey(playerName)]
+    local response = row and LR:Response(row.rollType, rule)
     -- Default to 0 so the "%d" in the AWARD payload (and history record) never sees nil
     -- for malformed/non-item links. The receiver skips this field with "%d+", so 0 is safe.
     local itemId = self.activeLoot.itemId or 0
@@ -1304,9 +2081,11 @@ function LootMaster:AwardLoot(playerName, silent)
 
     -- Save to LootMaster's own award log (for undo / ML reference)
     local awardedAt = GetServerTime()
-    local awardHistory = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory()
+    local lootCore = self.activeLoot.core
+    local awardHistory = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory(lootCore)
                          or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
     local award = {
+        core = lootCore,   -- an undo gives back into the accounts the award took from
         link = itemLink,
         itemId = itemId,
         player = playerName,
@@ -1314,14 +2093,17 @@ function LootMaster:AwardLoot(playerName, silent)
         received = awarded,
     }
     table.insert(awardHistory, 1, award)
+    self.lastAwardCore = lootCore
     while #awardHistory > 200 do
         table.remove(awardHistory)
     end
 
-    -- Record to the central loot history (ML-awarded items only, officer action)
+    -- Record to the central loot history (ML-awarded items only, officer action), with why the winner
+    -- got it (issue #336).
     if GuildOS.LootTracker then
         local itemName = GuildOS.Compat.GetItemInfo(itemLink)
         GuildOS.LootTracker:RecordMLAward({
+            why        = self:AwardWhy(playerName, rule, free),
             itemLink   = itemLink,
             itemName   = itemName or "",
             quality    = itemQuality,
@@ -1337,16 +2119,67 @@ function LootMaster:AwardLoot(playerName, silent)
 
     -- DKP: charge the winner when the guild runs the points system and a
     -- per-item cost is configured (cost 0 = informational standings only).
-    if GuildOS.Points and (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) == "dkp" and GuildOS:IsOfficer() then
-        local _pdb = GuildOS.Points and GuildOS.Points:GetDB()
-        local cost = (_pdb and _pdb.config and _pdb.config.itemCost) or 0
+    -- A rule that names what the winner pays (their bid, issue #334) charges whatever the loot system.
+    local pointsReady = GuildOS.Points and GuildOS.Points.GetDB and GuildOS.Points:GetDB()
+    local entryEffect = LR:EntryEffect(rule)
+    if pointsReady and not free and (GuildOS:LootSystemUsesPoints(self:System()) or LR:ChargeEffect(rule) or entryEffect)
+        and GuildOS:IsOfficer() then
+        local pKey = GuildOS:GetPlayerKey(playerName)
+        -- The price to enter the roll (issue #309): everyone who asked pays it, and whoever lost gets
+        -- part of it back. Only for the item that was rolled, and what each paid is kept for an undo.
+        local rolled = self.activeLoot and self.activeLoot.link == itemLink and self.activeLoot.sortedResults
+        if rolled then
+            local asked = {}
+            for _, r in ipairs(rolled) do asked[#asked + 1] = GuildOS:GetPlayerKey(r.name) end
+            -- The rule's own price and refund when it names them ("entry"), else the points' settings.
+            local paid = GuildOS.Points:ChargeEntry(asked, pKey, GuildOS.Compat.GetItemInfo(itemLink) or itemLink,
+                entryEffect and entryEffect.value, entryEffect and (entryEffect.refund or 0) * 100)
+            if #paid > 0 then award.paid = paid end
+        end
+        -- The item's price: the guild's own for it, its GP in EPGP, else the one cost per item (#319).
+        -- Then what the rule says of it (issue #334): the winner's bid, or one step over the bid they
+        -- beat, and the share of it their answer pays (off spec for half, a free answer for nothing).
+        -- The points history keeps both the bid and what was charged.
+        local others = {}
+        for _, r in pairs(self.rolls) do others[#others + 1] = r end
+        -- A price that is a share of what the winner holds ("fraction", "all") reads the balance now.
+        local cost = LR:PriceFor(row, others, GuildOS.Points:PriceOf(itemLink, self:System()), rule, GuildOS.Points:Get(pKey))
         if cost > 0 then
-            local pKey = GuildOS:GetPlayerKey(playerName)
-            GuildOS.Points:Charge(pKey, cost, GuildOS.Compat.GetItemInfo(itemLink) or itemLink)
+            local reason = GuildOS.Compat.GetItemInfo(itemLink) or itemLink
+            if row and row.bid then
+                reason = string.format(L["%s (bid %d, paid %d)"], reason, row.bid, cost)
+            end
+            GuildOS.Points:Charge(pKey, cost, reason)
             -- What an undo gives back (issue #294).
             award.charged, award.chargedKey = cost, pKey
             self:SafeSendChat(string.format(L["[DKP] %s charged %d points for %s"],
                 playerName, cost, itemLink), "RAID")
+            -- Zero-sum (issue #337): what was charged goes back to whoever is in the raid, in equal
+            -- shares, the winner's own among them. What each got is kept for an undo.
+            if LR:Splits(rule) then
+                local shares = GuildOS.Points:Split(GuildOS.Points:RaidKeys(), cost,
+                    string.format(L["Share of %s"], GuildOS.Compat.GetItemInfo(itemLink) or itemLink))
+                if #shares > 0 then
+                    award.split = shares
+                    self:SafeSendChat(string.format(L["[DKP] %d points each to %d raiders for %s"],
+                        shares[1].amount, #shares, itemLink), "RAID")
+                end
+            end
+        end
+    end
+
+    -- What the award changes on the rule's counters and queues (CounterEffects). Whoever the loot master
+    -- is. An item given with no answer (straight from the loot window) moves none.
+    if pointsReady and response then
+        local pKey = GuildOS:GetPlayerKey(playerName)
+        local opBase = self:AwardOp(self.activeLoot.sid, itemId, pKey)
+        self:CounterEffects(rule, response, pKey, opBase, award)
+        -- A master looter who is no officer cannot tell the guild's accounts anything: the entries above
+        -- stay on this client. The raid's officers hear who won with which answer and make the same
+        -- entries themselves, under the same names, once (OnWonMessage).
+        if award.plus and opBase and not GuildOS:IsOfficer() then
+            self:SafeSendAddon(LootMaster.PREFIX, string.format("WON|%s|%d|%s|%s", self.activeLoot.sid, itemId,
+                row.rollType, playerName), "RAID")
         end
     end
 
@@ -1359,12 +2192,139 @@ function LootMaster:AwardLoot(playerName, silent)
     if self.activeLoot then self.activeLoot.delivered = true end
     self.activeLoot = nil
     self.rolls = {}
+    -- Given before its time ran out: its timer and its /roll lines are over with it.
+    self:StopListeningForRolls()
+    self:StopRollTimer()
+end
+
+----------------------------------------------------------------------
+-- What an award changes on the rule's counters, in the rule's order:
+--   * "add" (the +1, issue #334): an answer that counts adds to the winner's counter;
+--   * "reset": the winner's counter goes back to nothing (a wait that ends with the item);
+--   * "charge" on a counter: a fixed figure or a share of it comes off, by the answer's cost;
+--   * "bottom": the winner drops to the end of a queue (Suicide Kings, issue #337).
+-- `opBase` names each entry after the award (AwardOp), so the master looter's client and every officer
+-- who hears of the award make it once between them. `award` is the master looter's record of the award:
+-- each move is kept on it for an undo, and only with it does a queue move, since a queue's order is the
+-- master looter's client's to say.
+----------------------------------------------------------------------
+function LootMaster:AwardOp(sid, itemId, pKey)
+    if not sid then return nil end
+    return string.format("W%s-%d-%s", sid, itemId or 0, pKey)
+end
+
+function LootMaster:CounterEffects(rule, response, pKey, opBase, award)
+    local LR, P = GuildOS.LootRule, GuildOS.Points
+    local made, moves = 0, 0
+    -- One entry moves a counter by a hundred at most (Points): a larger move takes several.
+    local function move(acct, delta)
+        local counter = LR:Counter(acct, rule)
+        local reset = counter and counter.reset or "never"
+        while delta ~= 0 do
+            local step = math.max(-100, math.min(100, delta))
+            moves = moves + 1
+            local e = P:AddCounter(acct, pKey, step, reset, nil, opBase and (opBase .. "." .. moves) or nil)
+            if not e then return end
+            made = made + 1
+            if award then
+                award.plus = award.plus or {}
+                award.plus[#award.plus + 1] = { acct = e.acct, key = pKey, value = step, reset = e.rs, per = e.per }
+            end
+            delta = delta - step
+        end
+    end
+    for _, effect in ipairs(rule.effects or {}) do
+        local counter = LR:Counter(effect.acct, rule)
+        local bonus = counter and counter.type == "bonus"
+        if effect.k == "add" and response.plus then
+            -- An account with a cap (a bonus, issue #337) never grows past it.
+            local value = effect.value
+            if counter and counter.cap then
+                value = math.min(value, math.max(0, counter.cap - P:Counter(effect.acct, pKey)))
+            end
+            move(effect.acct, value)
+        elseif effect.k == "reset" and counter then
+            move(effect.acct, -P:Counter(effect.acct, pKey))
+        elseif effect.k == "charge" and counter and (response.plus or not bonus) then
+            -- A bonus account is charged only when the winning answer used it (karma: lose half).
+            move(effect.acct, -LR:CounterCharge(effect, P:Counter(effect.acct, pKey), response))
+        elseif effect.k == "bottom" and response.plus and award then
+            -- When the answer is one that counts: an off spec roll moves nobody.
+            local queue = LR:Queue(effect.acct, rule)
+            local moved = queue and P:QueueBottom(effect.acct, pKey, P:RaidKeys(), queue.frozen)
+            if moved then
+                award.queue = award.queue or {}
+                award.queue[#award.queue + 1] = moved
+            end
+        end
+    end
+    return made
+end
+
+-- An officer's side: the raid's master looter, who is no officer, gave an item to `player` for the
+-- answer `key`. This client makes the counter entries that award makes, by its own rule in force and its
+-- own figures, and tells the guild, as it would for an award of its own; the entries carry the award's
+-- name, so several officers in the raid add up to one. Read from the raid's master looter alone, and
+-- only for a raider and an answer this client knows. Queues are not moved from here.
+function LootMaster:OnWonMessage(rest, sender)
+    if self:IsMasterLooter() or not GuildOS:IsOfficer() or not self:IsFromMasterLooter(sender) then return end
+    -- An officer's own award reaches the guild by the officers' sync: nothing to do for it here.
+    if GuildOS:IsOfficerByName(sender) then return end
+    local P = GuildOS.Points
+    if not (P and P.GetDB and P:GetDB()) or #rest > 120 then return end
+    local sid, itemId, key, player = rest:match("^(%x+)|(%d+)|([A-Z0-9]+)|([^|]+)$")
+    if not sid or #sid > 8 or #itemId > 9 or #key > 8 then return end
+    -- Only for the roll this client heard that master looter announce, and once: a WON for a roll
+    -- that never was, or the same one again under another id, would write the guild's counters at will.
+    local heard = self.heard
+    if not (heard and heard.sid == sid and heard.sender == sender) or heard.won then return end
+    heard.won = true
+    local name = self:RaidRollerName(player)
+    if not name then return end
+    local rule = GuildOS.LootRule:Active()
+    local response = GuildOS.LootRule:Response(key, rule)
+    if not response then return end
+    local pKey = GuildOS:GetPlayerKey(name)
+    self:CounterEffects(rule, response, pKey, self:AwardOp(sid, tonumber(itemId), pKey), nil)
+end
+
+----------------------------------------------------------------------
+-- The record of the award being made (issue #336): the rule, the candidates in its order with what
+-- each criterion compared, and what decided. Built before the award changes any account, so the
+-- figures are the ones the order was read from.
+----------------------------------------------------------------------
+function LootMaster:AwardWhy(playerName, rule, free)
+    local LR = GuildOS.LootRule
+    local loot = self.activeLoot or {}
+    local sorted = loot.sortedResults
+    if not sorted then
+        -- Given before the roll ended, or with no roll at all: whoever has answered so far.
+        sorted = {}
+        for _, r in pairs(self.rolls) do
+            if r.rollType ~= "PASS" then sorted[#sorted + 1] = r end
+        end
+        LR:Sort(sorted, rule)
+    end
+    local decidedBy = free and "ml" or LR:WhyDecided(playerName, sorted, rule)
+    -- A council's vote: awarding ends it, and the record keeps the votes whoever decided in the end.
+    local votes
+    local Council, session = GuildOS.LootCouncil, loot.council
+    if Council and session and not free then
+        if session.open then Council:Close("ml") end
+        decidedBy, votes = Council:DecidedBy(session, playerName), Council:Record(session)
+    end
+    return LR:Why({
+        rule = rule, ruleAt = loot.ruleAt or LR:Stamp(), winner = playerName,
+        sorted = free and {} or sorted, decidedBy = decidedBy,
+        exception = loot.exception and LR:ExceptionLabel(loot.exception) or nil, votes = votes,
+    })
 end
 
 ----------------------------------------------------------------------
 -- Undo (issue #294): the last award, taken back. The item is no longer anybody's in the loot
 -- history (here and, by the UNDO message, on the other officers' clients), the points it cost go
--- back, and a trade not yet made is dropped. Officer only; one award at a time, newest first.
+-- back, the +1 it counted comes off (issue #334), and a trade not yet made is dropped. Officer only;
+-- one award at a time, newest first.
 ----------------------------------------------------------------------
 local UNDO_MATCH_WINDOW = 600   -- seconds: a peer recorded the award on its own clock
 
@@ -1384,13 +2344,22 @@ end
 LootMaster.ForgetAward = forgetAward
 
 -- The newest award not undone yet, and its place in the log.
+-- Looked for in the active core's log and in the log of the core this client last awarded in: an item
+-- given in the core it was announced under, after another became the raid's, is still the last award.
 function LootMaster:LastAward()
-    local history = GuildOS.CoreManager and GuildOS.CoreManager:GetAwardHistory()
-                    or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
-    for _, a in ipairs(history) do
-        if not a.undone then return a end
+    local CM = GuildOS.CoreManager
+    local best
+    local function look(history)
+        for _, a in ipairs(history or {}) do
+            if not a.undone then
+                if not best or (a.timestamp or 0) > (best.timestamp or 0) then best = a end
+                return
+            end
+        end
     end
-    return nil
+    if CM and self.lastAwardCore ~= nil then look(CM:GetAwardHistory(self.lastAwardCore)) end
+    look(CM and CM:GetAwardHistory() or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory))
+    return best
 end
 
 -- Returns the award taken back, or nil and why.
@@ -1400,9 +2369,33 @@ function LootMaster:UndoLastAward()
     if not award then return nil, L["No award to undo."] end
     award.undone = true
     forgetAward(award.player, award.itemId, award.timestamp)
-    if award.charged and award.charged > 0 and award.chargedKey and GuildOS.Points then
-        GuildOS.Points:Award(award.chargedKey, award.charged, L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link))
+    -- Into the accounts of the core the award was made in (issue #338), whatever core is the raid's now.
+    local function giveBack()
+        -- Given back as it was taken: never held to a cap, and off the GP in EPGP (issues #309, #319).
+        local undoLabel = L["Undo: "] .. (GuildOS.Compat.GetItemInfo(award.link) or award.link)
+        if award.charged and award.charged > 0 and award.chargedKey and GuildOS.Points then
+            GuildOS.Points:Refund(award.chargedKey, award.charged, undoLabel)
+        end
+        -- And what each roller paid to enter the roll.
+        for _, paid in ipairs(GuildOS.Points and award.paid or {}) do
+            GuildOS.Points:Refund(paid.key, paid.amount, undoLabel)
+        end
+        -- And the +1 it counted (issue #334), off the night it was added in.
+        for _, plus in ipairs(GuildOS.Points and award.plus or {}) do
+            GuildOS.Points:AddCounter(plus.acct, plus.key, -plus.value, plus.reset, plus.per)
+        end
+        -- And what it shared among the raid (zero-sum) and the place it took in a queue (issue #337).
+        if GuildOS.Points and award.split then GuildOS.Points:UndoSplit(award.split, undoLabel) end
+        for i = #(GuildOS.Points and award.queue or {}), 1, -1 do
+            GuildOS.Points:QueueUndo(award.queue[i])
+        end
+        -- A client from before EPGP's two sides reads what an undo gives back as EP earned, where it
+        -- comes off the GP: the snapshot sets it right there, as it does after a decay.
+        if GuildOS.Points and GuildOS.Points:GetMode() == "epgp" and (award.charged or award.paid or award.split) then
+            GuildOS.Points:BroadcastSnapshot()
+        end
     end
+    if GuildOS.Points and GuildOS.Points.InCore then GuildOS.Points:InCore(award.core, giveBack) else giveBack() end
     for i = #(self.pendingTrades or {}), 1, -1 do
         local t = self.pendingTrades[i]
         if t.player == award.player and t.itemId == award.itemId then
@@ -1518,13 +2511,14 @@ function LootMaster:ScheduleCountdownWarnings()
     -- WoW: Forever drops these timer lines (issue #63); the raiders' popup has its own bar and
     -- the loot master's frame shows the seconds left.
     if GuildOS.Compat.NeedsClick() then return end
-    local dur = self.ROLL_DURATION
+    local dur = self:RollTime()
+    local sid = self.activeLoot and self.activeLoot.sid   -- the warnings are this roll's alone
     local warnings = { 10, 5, 3, 2, 1 }
     for _, t in ipairs(warnings) do
         if dur > t then
             local secs = t  -- capture for closure
             C_Timer.After(dur - secs, function()
-                if LootMaster.activeLoot and not LootMaster.activeLoot.ended then
+                if LootMaster.activeLoot and LootMaster.activeLoot.sid == sid and not LootMaster.activeLoot.ended then
                     LootMaster:SafeSendChat(
                         L["[Roll] "] .. string.format(secs == 1 and L["%d second!"] or L["%d seconds!"], secs),
                         "RAID_WARNING")
@@ -1540,11 +2534,10 @@ end
 function LootMaster:CancelRolling()
     self:StopListeningForRolls()
     self.restrictedRollers = nil
-    if self.rollTimer then
-        self.rollTimer:Cancel()
-        self.rollTimer = nil
-    end
+    self:StopRollTimer()
     if self.activeLoot then
+        -- A council's vote on it (issue #336) is over too.
+        if self.activeLoot.council and GuildOS.LootCouncil then GuildOS.LootCouncil:Close("cancel") end
         self:SafeSendChat(L["[Loot] Roll cancelled: "] .. self.activeLoot.link, "RAID")
         self.activeLoot.delivered = true
     end
@@ -1574,8 +2567,136 @@ end
 -- Displays the item link, the local player's own prio/wishlist
 -- position, and the full priority list so everyone can see who
 -- has priority without having to ask.
+-- `ask` (issue #334): what the loot master's ASK said of the rule, when
+-- one came with the announce. The buttons are then the rule's, and a
+-- click answers by the addon (SendAnswer). Without it (a loot master on
+-- a version from before, or the settings' test) the buttons are MS, OS
+-- and Pass, by /roll, as always.
 ----------------------------------------------------------------------
-function LootMaster:ShowRollPopup(itemLink, duration, itemId)
+-- An edit box in the loot windows' own look.
+local function lootEditBox(parent, width, numeric, maxLetters)
+    local C = GuildOS.Colors
+    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    box:SetSize(width, 22)
+    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    box:SetBackdropColor(0.05, 0.05, 0.066, 1)
+    box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
+    GuildOS:ApplyFont(box, 11)
+    box:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+    box:SetAutoFocus(false)
+    box:SetNumeric(numeric)
+    box:SetMaxLetters(maxLetters)
+    box:SetTextInsets(4, 4, 0, 0)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    return box
+end
+
+-- The rule's buttons at the foot of the roll popup, a box for the bid when an answer asks for one and
+-- one for the note when an answer needs it. Returns how much taller than the MS / OS / Pass row they
+-- are, for the popup to grow by.
+function LootMaster:BuildAnswerControls(f, ask, itemLink, width)
+    local C, UI = GuildOS.Colors, GuildOS.UI
+    local MARGIN, GAP, ROW, FOOT = 15, 6, 30, 12
+    local bidBox, noteBox, replyText
+
+    local function label(text, x, y)
+        local t = f:CreateFontString(nil, "OVERLAY")
+        GuildOS:ApplyFont(t, 10)
+        t:SetPoint("BOTTOMLEFT", x, y + 5)
+        t:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+        t:SetText(text)
+        return t
+    end
+
+    local function answer(r)
+        local bid = 0
+        if r.ask == "bid" then
+            bid = bidBox and tonumber(bidBox:GetText())
+            if not bid then
+                replyText:SetText(L["Type your bid first."])
+                return
+            end
+        end
+        local note = noteBox and strtrim(noteBox:GetText() or "") or ""
+        if r.note and note == "" then
+            GuildOS:Print(L["That answer needs a note."])
+            return
+        end
+        LootMaster:SendAnswer(r.key, bid, note)
+        if r.ask == "bid" then
+            -- The popup stays: a bid may be refused, or raised.
+            replyText:SetText(string.format(L["Bid of %d sent."], bid))
+            return
+        end
+        f:Hide()
+        GuildOS:Print(string.format(L["Answered |cff00ff00%s|r on %s"], r.label, itemLink or L["item"]))
+    end
+
+    -- One button an answer, then Pass.
+    local buttons = {}
+    for i, r in ipairs(ask.responses) do
+        local b = UI:CreateButton(f, r.label, 90, 26)
+        if i == 1 then b:SetBackdropColor(0.0, 0.4, 0.0, 0.6) end
+        b:SetScript("OnClick", function() answer(r) end)
+        buttons[#buttons + 1] = b
+    end
+    local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
+    passBtn:SetBackdropColor(0.4, 0.0, 0.0, 0.6)
+    passBtn:SetScript("OnClick", function()
+        LootMaster:SendAnswer("PASS", 0, "")
+        f:Hide()
+    end)
+    buttons[#buttons + 1] = passBtn
+
+    -- Three sit where MS, OS and Pass always did; more wrap into rows, left to right, top to bottom.
+    local rows = 1
+    if #buttons == 3 then
+        buttons[1]:SetPoint("BOTTOMLEFT", MARGIN, FOOT)
+        buttons[2]:SetPoint("BOTTOM", 0, FOOT)
+        buttons[3]:SetPoint("BOTTOMRIGHT", -MARGIN, FOOT)
+    else
+        local rowOf, xOf, x = {}, {}, MARGIN
+        for i, b in ipairs(buttons) do
+            local w = b:GetWidth() or 90
+            if x > MARGIN and x + w > width - MARGIN then rows, x = rows + 1, MARGIN end
+            rowOf[i], xOf[i] = rows, x
+            x = x + w + GAP
+        end
+        for i, b in ipairs(buttons) do
+            b:SetPoint("BOTTOMLEFT", xOf[i], FOOT + (rows - rowOf[i]) * ROW)
+        end
+    end
+
+    local y = FOOT + rows * ROW
+    if ask.bids then
+        label(string.format(L["Your bid (from %d):"], ask.min), MARGIN, y)
+        bidBox = lootEditBox(f, 70, true, 7)
+        bidBox:SetPoint("BOTTOMLEFT", 150, y)
+        -- Open bids show the best one so far; sealed ones are nobody's to see.
+        if not ask.sealed then
+            f.highText = label(L["Highest bid: none yet"], 230, y)
+        else
+            label(L["Sealed: only the loot master's addon reads it."], 230, y)
+        end
+        y = y + ROW
+    end
+    for _, r in ipairs(ask.responses) do
+        if r.note and not noteBox then
+            label(L["Note:"], MARGIN, y)
+            noteBox = lootEditBox(f, 240, false, NOTE_MAX)
+            noteBox:SetPoint("BOTTOMLEFT", 70, y)
+            y = y + ROW
+        end
+    end
+    if ask.bids then
+        replyText = label("", MARGIN, y - 5)
+        f.replyText = replyText
+        y = y + 16
+    end
+    return math.max(0, y - (FOOT + ROW))
+end
+
+function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     local C      = GuildOS.Colors
     local myName = GuildOS.Compat.PlayerName()
 
@@ -1905,29 +3026,34 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId)
     -- Roll buttons (MS / OS / Pass)
     ----------------------------------------------------------------
     local UI = GuildOS.UI
-    local msBtn = UI:CreateButton(f, "MS", 90, 26)
-    msBtn:SetPoint("BOTTOMLEFT", 15, 12)
-    msBtn:SetBackdropColor(0.0, 0.4, 0.0, 0.6)
-    msBtn:SetScript("OnClick", function()
-        RandomRoll(1, 100)
-        f:Hide()
-        GuildOS:Print(L["Rolled |cff00ff00MS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-100")
-    end)
+    if ask then
+        -- The rule's own buttons, answered by the addon (issue #334).
+        f:SetHeight(FRAME_H + self:BuildAnswerControls(f, ask, itemLink, FRAME_W))
+    else
+        local msBtn = UI:CreateButton(f, "MS", 90, 26)
+        msBtn:SetPoint("BOTTOMLEFT", 15, 12)
+        msBtn:SetBackdropColor(0.0, 0.4, 0.0, 0.6)
+        msBtn:SetScript("OnClick", function()
+            RandomRoll(1, 100)
+            f:Hide()
+            GuildOS:Print(L["Rolled |cff00ff00MS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-100")
+        end)
 
-    local osBtn = UI:CreateButton(f, "OS", 90, 26)
-    osBtn:SetPoint("BOTTOM", 0, 12)
-    osBtn:SetScript("OnClick", function()
-        RandomRoll(1, 99)
-        f:Hide()
-        GuildOS:Print(L["Rolled |cffFFFF00OS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-99")
-    end)
+        local osBtn = UI:CreateButton(f, "OS", 90, 26)
+        osBtn:SetPoint("BOTTOM", 0, 12)
+        osBtn:SetScript("OnClick", function()
+            RandomRoll(1, 99)
+            f:Hide()
+            GuildOS:Print(L["Rolled |cffFFFF00OS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-99")
+        end)
 
-    local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
-    passBtn:SetPoint("BOTTOMRIGHT", -15, 12)
-    passBtn:SetBackdropColor(0.4, 0.0, 0.0, 0.6)
-    passBtn:SetScript("OnClick", function()
-        f:Hide()
-    end)
+        local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
+        passBtn:SetPoint("BOTTOMRIGHT", -15, 12)
+        passBtn:SetBackdropColor(0.4, 0.0, 0.0, 0.6)
+        passBtn:SetScript("OnClick", function()
+            f:Hide()
+        end)
+    end
 
     ----------------------------------------------------------------
     -- Timer countdown bar + 5-second warning
@@ -1994,6 +3120,7 @@ end
 ----------------------------------------------------------------------
 function LootMaster:SetActiveLoot(link, slot, itemId)
     self.activeLoot = {
+        core      = self:ActiveCore(),
         link      = link,
         slot      = slot,
         itemId    = itemId,
@@ -2768,6 +3895,12 @@ function LootMaster:ShowLootFrame(items)
             statusText:SetText(L["|cffFF4444Select an item first.|r"])
             return
         end
+        -- One roll at a time: the one that is open is ended, awarded or cancelled first.
+        local open = LootMaster:OpenRoll()
+        if open then
+            statusText:SetText("|cffFF4444" .. L["Roll in progress: "] .. open .. "|r")
+            return
+        end
         LootMaster:AnnounceItem(selectedItem.link, selectedItem.slot)
         LootMaster:ShowRollFrame()
         statusText:SetText(L["|cffFFFF00Roll opened!|r"])
@@ -2859,7 +3992,7 @@ function LootMaster:ShowRollFrame()
     -- Scroll area for rolls
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRollScroll", f, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 10, -76)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -10, 50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -10, 82)   -- above the "answer for" strip (issue #334)
     UI:SkinScrollBar(scrollFrame, "GuildOSRollScroll")
     local scrollContent = CreateFrame("Frame", nil, scrollFrame)
     scrollContent:SetSize(480, 1)
@@ -2910,32 +4043,70 @@ function LootMaster:ShowRollFrame()
     end)
     deRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Roll buttons for the initiator (ML can also compete for the item)
-    -- OS button (right-most)
-    local osRollBtn = UI:CreateButton(f, "OS", 64, 24)
-    osRollBtn:SetPoint("BOTTOMRIGHT", -10, 12)
-    osRollBtn:SetScript("OnClick", function()
-        RandomRoll(1, 99)   -- /roll 1-99 = OS; captured by ProcessSystemRoll
+    -- An answer typed in for a raider who has no GuildOS, when the rule has a button or a bid that
+    -- no /roll says (issue #334): the name, the answer (a click goes to the next one), the bid when
+    -- the answer asks for one, and Enter. The loot master's own answer goes through the same boxes.
+    local LR = GuildOS.LootRule
+    local answers = LR:Responses(self:Rule())
+    local forLabel = f:CreateFontString(nil, "OVERLAY")
+    GuildOS:ApplyFont(forLabel, 10)
+    forLabel:SetPoint("BOTTOMLEFT", 10, 56)
+    forLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+    forLabel:SetText(L["Answer for:"])
+    local forBox = lootEditBox(f, 120, false, 48)
+    forBox:SetPoint("BOTTOMLEFT", 90, 52)
+    local forIndex = 1
+    local forAnswer = UI:CreateButton(f, LR:ResponseLabel(answers[1]), 80, 22)
+    forAnswer:SetPoint("LEFT", forBox, "RIGHT", 6, 0)
+    forAnswer:SetScript("OnClick", function(self)
+        forIndex = forIndex % #answers + 1
+        self.label:SetText(LR:ResponseLabel(answers[forIndex]))
     end)
-    osRollBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(L["Roll Off-Spec"] .. "\n|cff888888/roll 1-99|r", 1, 1, 1)
-        GameTooltip:Show()
+    local forBid = lootEditBox(f, 60, true, 7)
+    forBid:SetPoint("LEFT", forAnswer, "RIGHT", 6, 0)
+    if not LR:HasBids(self:Rule()) then forBid:Hide() end
+    -- What EnterAnswer said of an answer, to the loot master.
+    local function entered(row, why, n)
+        if not row then GuildOS:Print("|cffFF4444" .. LootMaster:WhyNot(why, n) .. "|r") end
+        return row
+    end
+    local forEnter = UI:CreateButton(f, L["Enter answer"], 100, 22)
+    forEnter:SetPoint("LEFT", forBid, "RIGHT", 6, 0)
+    forEnter:SetScript("OnClick", function()
+        if entered(LootMaster:EnterAnswer(forBox:GetText(), answers[forIndex].key, tonumber(forBid:GetText()))) then
+            forBox:SetText("")
+        end
     end)
-    osRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- MS button (left of OS)
-    local msRollBtn = UI:CreateButton(f, "MS", 64, 24)
+    -- Roll buttons for the initiator (ML can also compete for the item): the rule's first two
+    -- answers, MS and OS unless the guild named others. This client draws the roll (issue #334), as
+    -- it does for every raider's button.
+    local function mine(index)
+        local r = answers[index]
+        entered(LootMaster:EnterAnswer(GuildOS.Compat.PlayerName(), r.key, tonumber(forBid:GetText())))
+    end
+    local function mineTip(self, index)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(string.format(L["Your answer: %s"], LR:ResponseLabel(answers[index])), 1, 1, 1)
+        GameTooltip:Show()
+    end
+    -- Second answer (right-most)
+    local osRollBtn = UI:CreateButton(f, answers[2] and answers[2].key or "-", 64, 24)
+    osRollBtn:SetPoint("BOTTOMRIGHT", -10, 12)
+    if answers[2] then
+        osRollBtn:SetScript("OnClick", function() mine(2) end)
+        osRollBtn:SetScript("OnEnter", function(self) mineTip(self, 2) end)
+        osRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    else
+        osRollBtn:Hide()
+    end
+
+    -- First answer (left of the second)
+    local msRollBtn = UI:CreateButton(f, answers[1].key, 64, 24)
     msRollBtn:SetPoint("RIGHT", osRollBtn, "LEFT", -4, 0)
     msRollBtn:SetBackdropColor(0.0, 0.35, 0.0, 0.6)
-    msRollBtn:SetScript("OnClick", function()
-        RandomRoll(1, 100)  -- /roll 1-100 = MS; captured by ProcessSystemRoll
-    end)
-    msRollBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(L["Roll Main Spec"] .. "\n|cff888888/roll 1-100|r", 1, 1, 1)
-        GameTooltip:Show()
-    end)
+    msRollBtn:SetScript("OnClick", function() mine(1) end)
+    msRollBtn:SetScript("OnEnter", function(self) mineTip(self, 1) end)
     msRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Roll label
@@ -2986,28 +4157,17 @@ function LootMaster:RefreshRollFrame()
     for _, child in pairs({ content:GetChildren() }) do child:Hide() end
 
     -- Build sorted list
-    local lootSystem = (GuildOS.GetLootSystem and GuildOS:GetLootSystem()) or "rolls"
+    local lootSystem = self:System()
     local sorted = {}
     for _, r in pairs(self.rolls) do
         table.insert(sorted, r)
     end
-    -- Sort: MS first, then (DKP mode) highest DKP / (else) prio order, then roll
-    table.sort(sorted, function(a, b)
-        if a.rollType ~= b.rollType then
-            if a.rollType == "PASS" then return false end
-            if b.rollType == "PASS" then return true end
-            return a.rollType == "MS"
-        end
-        if lootSystem == "dkp" then
-            local ad, bd = a.dkp or 0, b.dkp or 0
-            if ad ~= bd then return ad > bd end
-        else
-            local aPrio = a.prioOrder or 999
-            local bPrio = b.prioOrder or 999
-            if aPrio ~= bPrio then return aPrio < bPrio end
-        end
-        return a.roll > b.roll
-    end)
+    -- The loot rule's order (issue #333), a pass after every answer: the row on top is the winner
+    -- the roll's end announces.
+    local rule = self:Rule()
+    GuildOS.LootRule:Sort(sorted, rule)
+    local sealed = GuildOS.LootRule:BidRules(rule)
+    local usesPoints = GuildOS.LootSystemUsesPoints and GuildOS:LootSystemUsesPoints(lootSystem)
 
     local CLASS_COLORS = RAID_CLASS_COLORS
     local yOff = 0
@@ -3026,39 +4186,70 @@ function LootMaster:RefreshRollFrame()
         nameText:SetTextColor(cc.r, cc.g, cc.b)
         nameText:SetText(r.name)
 
-        -- Roll type
+        -- Roll type: the answer, by its key. The rule's first is green and its second yellow, as MS
+        -- and OS always were; a pass is grey.
         local typeText = row:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(typeText, 10)
         typeText:SetPoint("LEFT", 150, 0)
-        if r.rollType == "MS" then
+        local _, place = GuildOS.LootRule:Response(r.rollType, rule)
+        if place == 1 then
             typeText:SetTextColor(0.3, 1.0, 0.3)
-        elseif r.rollType == "OS" then
+        elseif place == 2 then
             typeText:SetTextColor(1.0, 1.0, 0.3)
+        elseif place then
+            typeText:SetTextColor(0.6, 0.8, 1.0)
         else
             typeText:SetTextColor(0.5, 0.5, 0.5)
         end
         typeText:SetText(r.rollType)
 
-        -- Roll number
+        -- Roll number, or the bid (issue #334). A sealed bid stays hidden on the loot master's own
+        -- screen too until the roll ends.
         local rollText = row:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(rollText, 10)
         rollText:SetPoint("LEFT", 200, 0)
         rollText:SetTextColor(1, 1, 1)
-        rollText:SetText(r.rollType ~= "PASS" and tostring(r.roll) or "-")
+        if r.rollType == "PASS" then
+            rollText:SetText("-")
+        elseif r.bid then
+            local ended = self.activeLoot and self.activeLoot.ended
+            rollText:SetText((sealed and not ended) and L["sealed"] or string.format(L["bid %d"], r.bid))
+        else
+            rollText:SetText(self:RollText(r, rule))
+        end
 
-        -- Prio / Wishlist info
+        -- Prio / Wishlist info, after the +1 counter when the rule keeps one (issue #334).
         local tmbText = row:CreateFontString(nil, "OVERLAY")
         GuildOS:ApplyFont(tmbText, 10)
         tmbText:SetPoint("LEFT", 250, 0)
-        if lootSystem == "dkp" then
-            tmbText:SetText(string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
+        local plus = self:AccountsText(r, rule)
+        if lootSystem == "epgp" then
+            -- The rule's own ratio when it orders by one (a rule from the site), else the pool's priority.
+            local ratio = GuildOS.LootRule:RatioOf(r, rule)
+            tmbText:SetText(plus .. string.format(L["|cffFFD700%.2f PR|r"], math.max(0, ratio or r.pr or 0)))
+        elseif usesPoints then
+            tmbText:SetText(plus .. string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
         elseif r.prioOrder then
-            tmbText:SetText(string.format(L["|cffFFD700* Prio #%d|r"], r.prioOrder))
+            tmbText:SetText(plus .. string.format(L["|cffFFD700* Prio #%d|r"], r.prioOrder))
         elseif r.wishlist then
-            tmbText:SetText(L["|cff4CB8FFwishlist #"] .. r.wishlist.order .. "|r")
+            tmbText:SetText(plus .. L["|cff4CB8FFwishlist #"] .. r.wishlist.order .. "|r")
+        elseif plus ~= "" then
+            tmbText:SetText(plus)
         else
             tmbText:SetTextColor(0.4, 0.4, 0.4)
             tmbText:SetText("-")
+        end
+
+        -- The note an answer came with, and the parts of its score (issue #337), on the row's tooltip.
+        local tip = self:RowTip(r, rule)
+        if #tip > 0 then
+            row:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(tip[1], 1, 1, 1)
+                for i = 2, #tip do GameTooltip:AddLine(tip[i], 0.8, 0.8, 0.8) end
+                GameTooltip:Show()
+            end)
+            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
         end
 
         -- ATT% (25-man attendance)
@@ -3125,12 +4316,67 @@ function LootMaster:RefreshRollFrame()
 end
 
 ----------------------------------------------------------------------
+-- What a row of the roll frame says of a candidate, in words (issue #337). Text only: every figure
+-- is the loot rule's.
+----------------------------------------------------------------------
+-- The roll, and beside it what a bonus account added and what the two come to.
+function LootMaster:RollText(r, rule)
+    if not r.roll then return "-" end
+    local bonus = GuildOS.LootRule:BonusOf(r, rule)
+    if bonus > 0 then return string.format("%d |cffFF9900+%d|r = %d", r.roll, bonus, r.roll + bonus) end
+    return tostring(r.roll)
+end
+
+-- The accounts the rule keeps, as the candidate stands on each: a counter as "+1", a bonus account by
+-- its name, a queue as the place in it; and the rule's summed score, when it orders by one.
+function LootMaster:AccountsText(r, rule)
+    local LR = GuildOS.LootRule
+    local text = ""
+    for _, a in ipairs(LR:OwnAccounts(rule)) do
+        local has = r.accts and r.accts[a.key]
+        if a.type == "queue" then
+            text = text .. (has and string.format("|cffFF9900#%d|r ", has) or "|cff888888#-|r ")
+        elseif a.type == "bonus" then
+            text = text .. string.format("|cffFF9900%s %d|r ", a.name or a.key, has or 0)
+        else
+            text = text .. string.format("|cffFF9900+%d|r ", has or 0)
+        end
+    end
+    local score = LR:ScoreOf(r, rule)
+    if score then text = text .. string.format(L["|cff4CB8FFscore %s|r "], string.format("%.1f", score)) end
+    return text
+end
+
+-- The lines of a row's tooltip: the note the answer came with, then each part of its score.
+function LootMaster:RowTip(r, rule)
+    local LR = GuildOS.LootRule
+    local lines = {}
+    if r.note then lines[#lines + 1] = r.note end
+    local score, parts = LR:ScoreOf(r, rule)
+    if score then
+        lines[#lines + 1] = string.format(L["Score: %s"], string.format("%.1f", score))
+        for _, part in ipairs(parts) do
+            lines[#lines + 1] = string.format("%s: %s x %s = %s", LR:PartLabel(part, rule),
+                string.format("%.4g", part.value), string.format("%.4g", part.w), string.format("%.1f", part.points))
+        end
+    end
+    return lines
+end
+
+----------------------------------------------------------------------
 -- Update timer display
 ----------------------------------------------------------------------
 function LootMaster:UpdateRollTimer()
     if not self.rollFrame or not self.activeLoot then return end
 
     if self.activeLoot.ended then
+        -- With a council's vote on the item (issue #336), where the vote stands.
+        local Council = GuildOS.LootCouncil
+        local view = Council and self.activeLoot.council and Council:View()
+        if view then
+            self.rollFrame.timerText:SetText("|cffFFFF00" .. Council:StatusText(view) .. "|r")
+            return
+        end
         self.rollFrame.timerText:SetText(L["|cffFF4444Rolling ended - click Award|r"])
         return
     end
@@ -3185,6 +4431,69 @@ function LootMaster:SetLootThreshold(q)
     self:SaveCfgKey("lootThreshold", q)
 end
 
+-- The bank character (issue #335): who receives an item an exception sends "to the bank". Kept with
+-- the loot settings, beside the disenchanter.
+function LootMaster:GetBank()
+    return self:GetCfg().bank or ""
+end
+
+function LootMaster:SetBank(name)
+    self:SaveCfgKey("bank", strtrim(tostring(name or "")))
+end
+
+-- What the client knows of an item when it is announced, for the rule's exceptions: its id, quality,
+-- class and how it binds, the loot threshold of the loot settings, the raid it is in and, while the
+-- item is in the open loot window of a boss killed a short while ago, that boss.
+local BOSS_LOOT_WINDOW = 600   -- seconds after a kill its loot window still names the boss
+function LootMaster:ItemFacts(itemLink, lootSlot)
+    local id = tonumber(tostring(itemLink):match("item:(%d+)"))
+    local _, _, quality, _, _, _, _, _, _, _, _, classID, subclassID, bindType = GuildOS.Compat.GetItemInfo(itemLink)
+    local facts = {
+        id = id, quality = quality, classID = classID, subclassID = subclassID, bindType = bindType,
+        threshold = self:GetLootThreshold(),
+    }
+    local _, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceType == "raid" then facts.raid = instanceID end
+    local raid = GuildOS.RaidTracker and GuildOS.RaidTracker.currentRaid
+    if self.lootWindowOpen and lootSlot and raid and type(raid.encounters) == "table" then
+        local last = raid.encounters[#raid.encounters]
+        if last and last.success and last.endTime and GetServerTime() - last.endTime <= BOSS_LOOT_WINDOW then
+            facts.boss = last.id
+        end
+    end
+    return facts
+end
+
+-- An exception's fixed destination (issue #335): the item goes to the bank character or to the
+-- disenchanter with no roll, the raid is told which exception said so, and nobody is charged.
+-- `reason` "norolls": nobody asked for it. With no character set for the destination the loot master
+-- is told, and nothing is given.
+function LootMaster:SendToDestination(exception, itemLink, lootSlot, itemId, reason)
+    local toBank = exception.to == "bank"
+    local name = toBank and self:GetBank() or self:GetDisenchanter()
+    if not name or name == "" then
+        GuildOS:Print("|cffFF4444" .. (toBank and L["No bank character set."] or L["No disenchanter set."]) .. "|r "
+            .. L["Configure it in the Loot Master options."])
+        if not reason then self.activeLoot = nil end
+        return false
+    end
+    self:StopRollTimer()
+    if not self.activeLoot then self:SetActiveLoot(itemLink or "", lootSlot, itemId or 0) end
+    local label = GuildOS.LootRule:ExceptionLabel(exception)
+    local msg
+    if toBank then
+        msg = string.format(L["[Loot] %s goes to the guild bank (%s) - exception: %s"], itemLink or L["item"], name, label)
+    elseif reason == "norolls" then
+        msg = string.format(L["[Loot] %s - nobody rolled. Sending to Disenchant: %s"], itemLink or L["item"], name)
+    else
+        msg = string.format(L["[Loot] %s goes to Disenchant (%s) - exception: %s"], itemLink or L["item"], name, label)
+    end
+    self:SafeSendChat(msg, "RAID")
+    self.activeLoot.exception = exception   -- the award's record names it (issue #336)
+    self:AwardLoot(name, true, true)   -- silent: the line above said it; free: nobody pays for it
+    return true
+end
+
 -- Award the active item (or the provided item) to the disenchanter.
 -- Called when ML clicks "Send to DE" from any loot UI.
 function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
@@ -3209,7 +4518,10 @@ function LootMaster:SendToDisenchanter(itemLink, lootSlot, itemId, reason)
     end
     self:SafeSendChat(msg, "RAID")
 
-    self:AwardLoot(deName, true)  -- silent: message already sent above
+    -- silent: the line above said it; free: an item nobody keeps costs nobody anything. The button
+    -- pressed after a roll with a price to enter used to charge every asker "Lost the roll", and the
+    -- disenchanter the item's price.
+    self:AwardLoot(deName, true, true)
 end
 
 ----------------------------------------------------------------------

@@ -63,7 +63,7 @@ GuildOS.db = { settings = { modules = {} }, members = {}, raidTracker = {} }
 
 -- ── 1. What hands loot out, and the look, are absent ─────────────────
 local ABSENT = {
-  { "LootMaster", "LootMaster" }, { "SoftResSystem", "SoftRes" }, { "Look", "Look" },
+  { "LootMaster", "LootMaster" }, { "LootCouncil", "LootCouncil" }, { "SoftResSystem", "SoftRes" }, { "Look", "Look" },
 }
 for _, m in ipairs(ABSENT) do
   dofile(ADDON .. "/Modules/" .. m[1] .. ".lua")

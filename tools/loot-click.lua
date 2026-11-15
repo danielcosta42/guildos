@@ -64,6 +64,7 @@ local function load(game)
   dofile(ADDON .. "/Core/Core.lua")
   dofile(ADDON .. "/Core/Compat.lua")
   dofile(ADDON .. "/Core/Utils.lua")
+  dofile(ADDON .. "/Modules/LootRule.lua")
   dofile(ADDON .. "/Modules/LootMaster.lua")
   local LM = GuildOS.LootMaster
   GuildOS.db = { lootMaster = {}, lootPrios = { [30627] = { { name = "Ana", order = 1 } } } }

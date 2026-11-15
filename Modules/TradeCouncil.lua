@@ -35,7 +35,6 @@ TradeCouncil.OFFER_TTL = OFFER_TTL
 local EXPIRY_SLACK = 60        -- seconds: a trade time is read in whole minutes, so up to one more may be left
 local ROLL_MAX = 100
 local ROLL_WAIT = 10           -- seconds after an answer in which its player's next /roll 1-100 is its roll
-local NO_ROLL = -1             -- ranks an answer whose roll was not seen after every one whose roll was
 local BAGS_LAST = 4            -- backpack 0 and four bags; the reagent bag holds no gear
 local MIN_QUALITY = 3          -- Rare: what the loot history keeps
 local NO_WISH = 999            -- the wishlist place of somebody who has not wished for the item
@@ -230,25 +229,21 @@ end
 function TradeCouncil:Ranked(o)
     local rows = {}
     if not o then return rows end
-    local sys = GuildOS:GetLootSystem()
     local P = GuildOS.Points
     for key, a in pairs(o.answers) do
         rows[#rows + 1] = {
             key = key, choice = a.choice, equipped = a.equipped, roll = a.roll,
             wish = self:WishOrder(o.itemId, key), points = P and P.GetDB and P:GetDB() and P:Get(key) or nil,
+            pr = P and P.GetDB and P:GetDB() and P:GetMode() == "epgp" and P:PR(key) or nil,
         }
     end
-    local C = self.CHOICES
-    table.sort(rows, function(a, b)
-        if C[a.choice] ~= C[b.choice] then return C[a.choice] < C[b.choice] end
-        if sys == "dkp" and (a.points or 0) ~= (b.points or 0) then return (a.points or 0) > (b.points or 0) end
-        if sys == "wishlist" and (a.wish or NO_WISH) ~= (b.wish or NO_WISH) then
-            return (a.wish or NO_WISH) < (b.wish or NO_WISH)
-        end
-        local ar, br = a.roll or NO_ROLL, b.roll or NO_ROLL
-        if ar ~= br then return ar > br end
-        return a.key < b.key
-    end)
+    -- The guild's loot rule (issue #333), which on retail reads the answer, the points or the wishlist
+    -- place its loot system names, then the server's roll.
+    local LR = GuildOS.LootRule
+    local cands = {}
+    for i, row in ipairs(rows) do cands[i] = LR:FromAnswer(row) end
+    LR:Sort(cands)
+    for i, c in ipairs(cands) do rows[i] = c.row end
     return rows
 end
 
@@ -553,6 +548,7 @@ function TradeCouncil:Complete(o)
         GuildOS.LootTracker:RecordTradeAward({
             itemLink = o.link, itemId = o.itemId, holder = o.holder, winner = o.award.winner, timestamp = o.dropTs,
             raid = session and session.name or "", instanceID = session and session.instanceID or 0,
+            why = self:Why(o),
         })
     end
     GuildOS:Print(string.format(L["%s was traded to %s: the award is recorded."], o.link, o.award.winner))
@@ -560,12 +556,28 @@ function TradeCouncil:Complete(o)
     if o.award.by == mine and o.awards[mine] == o.award.winner then self:Charge(o) end
 end
 
+-- The record of an award by trade (issue #336), as the loot master's awards have it: the guild's rule,
+-- whoever asked in its order with the winner first, and what decided. Whoever awards here is an officer
+-- or the item's holder, so an award against the order reads "ml" as a master looter's does.
+function TradeCouncil:Why(o)
+    local LR = GuildOS.LootRule
+    local rule = LR:Active()
+    local sorted = {}
+    for _, row in ipairs(self:Ranked(o)) do
+        if row.choice ~= "P" then sorted[#sorted + 1] = LR:FromAnswer(row) end
+    end
+    return LR:Why({
+        rule = rule, ruleAt = LR:Stamp(), winner = o.award.winner, sorted = sorted,
+        decidedBy = LR:WhyDecided(o.award.winner, sorted, rule),
+    })
+end
+
 -- Charge the winner the guild's cost per item (DKP only; an officer's client, once).
 function TradeCouncil:Charge(o)
     local P = GuildOS.Points
-    if not (P and GuildOS:GetLootSystem() == "dkp" and GuildOS:IsOfficer()) then return end
-    local pool = P:GetDB()
-    local cost = (pool and pool.config and pool.config.itemCost) or 0
+    if not (P and GuildOS:LootSystemUsesPoints() and GuildOS:IsOfficer()) then return end
+    -- The item's price: the guild's own for it, its GP in EPGP, else the one cost per item (#319).
+    local cost = P:GetDB() and P:PriceOf(o.link) or 0
     if cost <= 0 then return end
     P:Charge(o.award.winner, cost, Compat.GetItemInfo(o.link) or o.link)
     GuildOS:Print(string.format(L["[DKP] %s charged %d points for %s"], o.award.winner, cost, o.link))

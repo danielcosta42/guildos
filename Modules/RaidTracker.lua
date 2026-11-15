@@ -560,6 +560,8 @@ function RaidTracker:EndSession(away, at)
         self.currentRaid.isGuildRaid = true
         -- Rebuild from scratch so lockout-dedup logic always applies
         self:RebuildAttendanceFromSessions()
+        -- The points a raid night gives beyond its bosses: on time, to the end, the raid (issue #309).
+        if GuildOS.Points and GuildOS.Points.OnRaidEnd then GuildOS.Points:OnRaidEnd(self.currentRaid) end
     else
         self.currentRaid.isGuildRaid = false
         GuildOS:Print(L["|cffFF9900Raid ended — less than 50% guild members, attendance not counted.|r"])
@@ -616,6 +618,24 @@ function RaidTracker:TakeSnapshot(reason)
     -- Include self
     local myName = GuildOS.Compat.PlayerName()
     local myKey = GuildOS:GetPlayerKey(myName)
+    -- Who leads the raid now: whose client pays what the raid's end gives (Points:RaidEndPayer). Kept
+    -- from the last snapshot that saw one, since the raid is often disbanded before the session closes.
+    if isRaid and UnitIsGroupLeader then
+        local mine = UnitIsGroupLeader("player")
+        if not GuildOS.Compat.IsSecret(mine) and mine then
+            self.currentRaid.leader = myKey
+        else
+            for i = 1, numMembers do
+                local unit = "raid" .. i
+                local leads = UnitExists(unit) and UnitIsGroupLeader(unit)
+                if not GuildOS.Compat.IsSecret(leads) and leads and not GuildOS.Compat.IsPlayer(unit) then
+                    local name, realm = GuildOS.Compat.UnitIdentity(unit)
+                    if name then self.currentRaid.leader = GuildOS:GetPlayerKey(name, realm) end
+                    break
+                end
+            end
+        end
+    end
     members[myKey] = {
         name = myName,
         class = select(2, UnitClass("player")),
@@ -717,12 +737,17 @@ end
 
 function RaidTracker:SetGroupTag(name)
     name = name or ""
+    local systemBefore = GuildOS.GetLootSystem and GuildOS:GetLootSystem()
     self.currentGroupTag = name
     if GuildOS.db and GuildOS.db.raidTracker then
         GuildOS.db.raidTracker.currentGroupTag = name
     end
     -- Loot rules cached from the old core's config follow the new one (issue #99).
     if GuildOS.LootMaster and GuildOS.LootMaster.LoadCfg then GuildOS.LootMaster:LoadCfg() end
+    -- And what the loot system shows, when the new core runs another one (issue #338).
+    if systemBefore and GuildOS:GetLootSystem() ~= systemBefore and GuildOS.OnLootSystemChanged then
+        GuildOS:OnLootSystemChanged()
+    end
 end
 
 -- An officer picking the active core (Raid Core's "Set Active"), issue #99.

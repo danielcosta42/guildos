@@ -57,6 +57,7 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Utils.lua")
 dofile(ADDON .. "/Modules/CoreManager.lua")
 dofile(ADDON .. "/Modules/Points.lua")
+dofile(ADDON .. "/Modules/LootRule.lua")
 dofile(ADDON .. "/Modules/LootMaster.lua")
 dofile(ADDON .. "/Modules/LootTracker.lua")
 GuildOS.db = { settings = { lootSystem = "dkp" }, members = {}, altLinks = {}, cores = {}, lootHistory = {},

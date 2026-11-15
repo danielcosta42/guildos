@@ -117,6 +117,40 @@ function Import.ReadPlan(data)
     return any and plan or nil
 end
 
+-- The loot rule the raid plays by, as the site sends it (GOSROST1 v5, guildos-web#516). The inbox is
+-- untrusted input: what is kept is a copy held to a size no rule of the contract reaches (its depth,
+-- its number of fields, the length of a text), and whether it is a rule this client reads is
+-- LootRule's to say. nil when the block carries none; false when it carries something that is no rule
+-- at all, so the plan window can say the raid's rule was not read.
+local RULE_MAX = { depth = 8, nodes = 1500, text = 200 }
+local function boundedCopy(v, depth, budget)
+    local t = type(v)
+    if t == "string" then
+        if #v > RULE_MAX.text then error("text") end
+        return v
+    elseif t == "number" or t == "boolean" then
+        return v
+    elseif t ~= "table" then
+        error("type")
+    end
+    if depth > RULE_MAX.depth then error("depth") end
+    local out = {}
+    for k, x in pairs(v) do
+        budget.n = budget.n + 1
+        if budget.n > RULE_MAX.nodes then error("size") end
+        if type(k) ~= "string" and type(k) ~= "number" then error("key") end
+        if type(k) == "string" and #k > 32 then error("key") end
+        out[k] = boundedCopy(x, depth + 1, budget)
+    end
+    return out
+end
+function Import.ReadLootRule(rule)
+    if rule == nil then return nil end
+    if type(rule) ~= "table" then return false end
+    local ok, copy = pcall(boundedCopy, rule, 1, { n = 0 })
+    return ok and copy or false
+end
+
 --- Returns (roster, err). roster = { title, instance, startsAt, members = {...} }
 function Import:Parse(raw)
     if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
@@ -181,6 +215,8 @@ function Import:Parse(raw)
         raidId = data.raidId,
         -- v4 (the site's #463): the night's plan, nil from an older site (issue #296).
         plan = Import.ReadPlan(data),
+        -- v5 (the site's #516): the rule the raid plays by, nil when the site sent none.
+        lootRule = Import.ReadLootRule(data.lootRule),
         title = data.title or "",
         instance = data.instance,
         instanceKey = type(data.instanceKey) == "string" and data.instanceKey or nil,
