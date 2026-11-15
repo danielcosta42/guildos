@@ -42,6 +42,7 @@ SyncService.OFFICER_DOMAINS = {
     allyhide  = true,  -- chat lines an ambassador pulled from the alliance feed
     guildcfg  = true,  -- the guild's officer threshold (issue #81), on retail its loot system (#185), its trials (#249)
     founding  = true,  -- WoW: Forever's founding and an officer's suggested date (issue #208)
+    allylink  = true,  -- the alliance code an officer saved (issue #348); ask/have are member relays
 }
 
 -- Domains outside OFFICER_DOMAINS whose handlers trust IsOfficerByName(sender) themselves.
@@ -58,6 +59,7 @@ SyncService.GUILD_ONLY_DOMAINS = {
 -- dressed as an RSVP, and so become an officer everywhere (issue #108).
 SyncService.MEMBER_ACTIONS = {
     event = { rsvp = true },    -- event signup
+    allylink = { ask = true, have = true },   -- asking for the alliance code, and relaying an officer's
     poll  = { vote = true },    -- poll vote
     cta   = { going = true },   -- "On my way" to an officer's call to arms (issue #108)
 }

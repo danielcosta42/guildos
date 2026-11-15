@@ -3,7 +3,8 @@
 -- Modules/AllianceChat.lua, Modules/GuildChat.lua and Modules/AllianceLink.lua under a stubbed client.
 --
 -- One client of "Guilda A". Proves:
---   * the line in the guild info is read, written and replaced, and refused when it is broken;
+--   * the alliance code is read and refused when it is broken; an officer saves it, the guild hands it
+--     on (set / ask / have), the newest wins, a removal sticks, and only an officer's copy counts;
 --   * it is the pact every module reads, it names no ambassadors, and the whisper ops that built the
 --     old pact do nothing under it;
 --   * the hidden channel is joined with the key and taken out of the chat frames, and its lines never
@@ -59,8 +60,6 @@ function GetPlayerInfoByGUID(guid) if guid == "Player-1-B" then return "Mage", "
 CHAT_GUILD_GET = "|Hchannel:GUILD|h[Guild]|h %s: "
 NUM_CHAT_WINDOWS = 2
 
-local info = ""
-function GetGuildInfoText() return info end
 
 -- Channels: joined with a password, listed in frames, numbered.
 local joined, channelArgs, removed = {}, {}, {}
@@ -104,7 +103,11 @@ end
 
 local ignored = {}
 C_FriendList = { IsIgnored = function(name) return ignored[name] == true end }
-C_Timer = { After = function(_, fn) fn() end, NewTicker = function() return { Cancel = function() end } end }
+local deferred, defer = {}, false
+C_Timer = {
+  After = function(_, fn) if defer then deferred[#deferred + 1] = fn else fn() end end,
+  NewTicker = function() return { Cancel = function() end } end,
+}
 
 local frames = {}
 function CreateFrame()
@@ -152,13 +155,17 @@ dofile(ADDON .. "/Modules/AllianceLink.lua")
 GuildOS.State = GuildOS.State or {}
 GuildOS.isGuilded = true
 GuildOS.db = { members = {} }
-local canEdit = true
-GuildOS.GuildManager = {
-  CanSetGuildInfo = function() return canEdit end,
-  GetGuildInfo = function() return info end,
-  SetGuildInfo = function(_, text) info = text; return true end,
+local officer = true
+GuildOS.IsOfficer = function() return officer end
+local officers = { ["Ofi-Realm"] = true, ["Ana-Realm"] = true }
+GuildOS.IsOfficerByName = function(_, name) return officers[name] == true end
+-- The guild's sync: what we publish, and the handler the module registers.
+local published, syncHandlers = {}, {}
+GuildOS.SyncService = {
+  Publish = function(_, dom, act, data) published[#published + 1] = { dom = dom, act = act, data = data } end,
+  On = function(_, dom, fn) syncHandlers[dom] = fn end,
 }
-GuildOS.IsOfficer = function() return true end
+local function setCode(line, rev) GuildOS.db.allianceLink = { line = line, rev = rev or 1 } end
 
 local A, Link, Chat, GC = GuildOS.Alliance, GuildOS.AllianceLink, GuildOS.AllianceChat, GuildOS.GuildChat
 local index = {}
@@ -171,19 +178,13 @@ check(#(filters.CHAT_MSG_CHANNEL or {}) == 1, "the channel's lines get a filter"
 local line = Link.Build("nucleo", "Kx7Pq2Lm9Z", { "Guilda A", "Guilda B", "Guilda C" })
 check(line == "GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda A;Guilda B;Guilda C", "the line reads as documented")
 local cfg = Link.Parse("Bem-vindos!\n" .. line .. "\nRaide quinta")
-check(cfg and cfg.tag == "NUCLEO" and cfg.key == "Kx7Pq2Lm9Z" and #cfg.order == 3, "parsed out of the rest of the info")
+check(cfg and cfg.tag == "NUCLEO" and cfg.key == "Kx7Pq2Lm9Z" and #cfg.order == 3, "parsed out of any text around it")
 check(cfg.guilds["Guilda B"] == Link.Code("Guilda B") and cfg.codes[Link.Code("Guilda C")] == "Guilda C", "codes both ways")
 check(#Link.Code("Guilda B") == 3 and Link.Code("Guilda B") == Link.Code("Guilda B"), "a code is three characters, stable")
 check(Link.Parse("GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda A") == nil, "one guild is no alliance")
 check(Link.Parse("GOS=NUCLEO:k:Guilda A;Guilda B") == nil, "a key too short is refused")
 check(Link.Parse("GOS=...:Kx7Pq2Lm9Z:Guilda A;Guilda B") == nil, "a tag with nothing usable is refused")
 check(Link.Parse("nada aqui") == nil and Link.Parse(nil) == nil, "no line, no alliance")
-local applied = Link.Apply("Bem-vindos!\nGOS=OLD:abcdef:X;Y\nRaide quinta", line)
-check(applied == "Bem-vindos!\n" .. line .. "\nRaide quinta", "the old line is replaced in place")
-check(Link.Apply("Bem-vindos!", line) == "Bem-vindos!\n" .. line, "or added at the end")
-check(Link.Apply("Bem-vindos!\n" .. line, nil) == "Bem-vindos!", "and removed")
-local full, why = Link.Apply(string.rep("x", 480), line)
-check(full == nil and why, "a line that does not fit is refused")
 local key = Link.NewKey()
 check(#key == Link.KEY_LEN and key:match("^%w+$"), "a new key is alphanumeric")
 check(Link.Decode(Link.Encode("G", "abc", "oi gente")) == "G", "a channel line round-trips")
@@ -192,24 +193,24 @@ check(k2 == "G" and c2 == "abc" and t2 == "oi gente", "decoded into kind, code a
 check(Link.Decode("oi gente") == nil, "a human line is not ours")
 check(#Link.Encode("G", "abc", string.rep("é", 200)) <= 255, "a long line fits the chat line")
 
--- ── 2. The pact comes from the guild info ──────────────────────────────
-check(A:Get() == nil, "nothing in the info, no pact")
+-- ── 2. The pact comes from the alliance code ───────────────────────────
+check(A:Get() == nil, "no code, no pact")
 GuildOS.db.alliance = { tag = "OLD", guilds = { ["Guilda A"] = { ambassadors = { "Ana" } }, ["Guilda Z"] = { ambassadors = { "Zed" } } } }
-check(A:Get().tag == "OLD" and not A.InGuildInfo(), "without the line, the old pact")
+check(A:Get().tag == "OLD" and not A.InLink(), "without the line, the old pact")
 local suggest = Link.Parse(Link:Suggest())
 check(suggest and suggest.tag == "OLD" and suggest.guilds["Guilda Z"], "the panel offers a line made from the old pact")
-info = "Bem-vindos!\n" .. line
+setCode(line)
 local pact = A:Get()
-check(pact and pact.source == "guildinfo" and pact.tag == "NUCLEO", "the line wins over the old pact")
+check(pact and pact.source == "link" and pact.tag == "NUCLEO", "the code wins over the old pact")
 check(pact.guilds["Guilda C"] and #pact.guilds["Guilda C"].ambassadors == 0, "and names no ambassadors")
-check(A.InGuildInfo(), "the pact is the guild info's")
+check(A.InLink(), "the pact is the code's")
 check(A:CanAdminister(), "an officer administers it")
 local ok, err = A:Invite("Zed")
-check(not ok and err == "This alliance is set in the guild info. Change it there.", "the whisper ops that build a pact do nothing")
+check(not ok and err == "This alliance is set in Alliance > Setup. Change it there.", "the whisper ops that build a pact do nothing")
 check(not A:Leave() and not A:Create("X", "Y"), "leave and create too")
-info = "GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda B;Guilda C"
-check(A:Get().tag == "OLD", "a line that does not name this guild is not this guild's pact")
-info = "Bem-vindos!\n" .. line
+setCode("GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda B;Guilda C")
+check(A:Get().tag == "OLD", "a code that does not name this guild is not this guild's pact")
+setCode(line)
 
 -- ── 3. The hidden channel ──────────────────────────────────────────────
 joined["GOSOLD"] = ""
@@ -330,14 +331,66 @@ op("PACT", { _g = "Guilda B", _k = Link.Proof("Kx7Pq2Lm9Z", "Bob") }, "Bob-Realm
 op("INV", {}, "Bob-Realm")
 check(pacts == 0, "the old pact's ops do nothing under the line")
 
--- ── 7. Officers write the line ─────────────────────────────────────────
-info = "Bem-vindos!"
-check(Link:WriteGuildInfo(line) and info == "Bem-vindos!\n" .. line, "the line is written into the guild info")
-check(A:Get().source == "guildinfo", "and is the pact at once")
-canEdit = false
-local wrote, why2 = Link:WriteGuildInfo(nil)
-check(not wrote and why2, "without the right to edit the info nothing is written")
-canEdit = true
-check(Link:WriteGuildInfo(nil) and info == "Bem-vindos!", "and it is taken out again")
+-- ── 7. Officers save the code, the guild hands it on ──────────────────
+published = {}
+officer = false
+check(not Link:SetCode(line), "only an officer saves the code")
+officer = true
+check(not Link:SetCode("lixo"), "a broken code is refused")
+check(not Link:SetCode("GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda B;Guilda C"), "a code without this guild is refused")
+local revBefore = GuildOS.db.allianceLink.rev
+check(Link:SetCode("  " .. line .. "  "), "an officer saves it")
+local held = GuildOS.db.allianceLink
+check(held.line == line and held.rev > revBefore and held.by == "Ana-Realm", "kept with a newer revision and its author")
+check(#published == 1 and published[1].dom == "allylink" and published[1].act == "set" and published[1].data.line == line,
+      "and said to the guild at once")
+check(A:Get().source == "link", "and is the pact at once")
+
+local sync = syncHandlers.allylink
+check(type(sync) == "function", "the module listens to the guild's sync")
+local function env(act, data) return { act = act, data = data } end
+local line2 = Link.Build("NUCLEO", "Kx7Pq2Lm9Z", { "Guilda A", "Guilda B", "Guilda C", "Guilda D" })
+sync(env("set", { line = line2, rev = held.rev - 5, by = "Ofi-Realm" }), "Ofi-Realm")
+check(GuildOS.db.allianceLink.line == line, "an older revision does not replace the code")
+sync(env("set", { line = line2, rev = held.rev + 10, by = "Ofi-Realm" }), "Ofi-Realm")
+check(GuildOS.db.allianceLink.line == line2 and A:Get().guilds["Guilda D"], "a newer one from an officer does, and is the pact")
+local r = GuildOS.db.allianceLink.rev
+sync(env("have", { line = line, rev = r + 1, by = "Leo-Realm" }), "Leo-Realm")
+check(GuildOS.db.allianceLink.line == line2, "a relayed copy naming somebody who is not an officer is refused")
+sync(env("have", { line = line, rev = r + 1, by = "Ofi-Realm" }), "Leo-Realm")
+check(GuildOS.db.allianceLink.line == line and GuildOS.db.allianceLink.rev == r + 1, "a relayed officer's copy is taken from anybody")
+sync(env("have", { line = "GOS=NUCLEO:Kx7Pq2Lm9Z:Guilda B;Guilda C", rev = r + 2, by = "Ofi-Realm" }), "Leo-Realm")
+check(GuildOS.db.allianceLink.line == line, "a copy that does not name this guild is refused")
+
+-- Somebody asks: one holder answers after a moment, unless another answered first.
+published, defer, deferred = {}, true, {}
+sync(env("ask", { rev = 0 }), "Novo-Realm")
+check(#published == 0 and #deferred == 1, "the answer waits a moment")
+deferred[1]()
+check(#published == 1 and published[1].act == "have" and published[1].data.line == line, "then hands over the code")
+published, deferred = {}, {}
+sync(env("ask", { rev = 0 }), "Novo-Realm")
+sync(env("have", { line = line, rev = GuildOS.db.allianceLink.rev, by = "Ofi-Realm" }), "Leo-Realm")
+deferred[1]()
+check(#published == 0, "and keeps quiet when somebody else answered")
+published, deferred = {}, {}
+sync(env("ask", { rev = GuildOS.db.allianceLink.rev }), "Leo-Realm")
+check(#deferred == 0, "nobody answers who holds nothing newer")
+defer = false
+
+-- Turning it off is a revision too: an old copy never brings it back.
+check(Link:SetCode(nil), "an officer turns it off")
+check(GuildOS.db.allianceLink.line == nil and A:Get().tag == "OLD", "the code is gone for the guild")
+local off = GuildOS.db.allianceLink.rev
+sync(env("have", { line = line, rev = off - 1, by = "Ofi-Realm" }), "Leo-Realm")
+check(GuildOS.db.allianceLink.line == nil, "an older copy does not bring it back")
+
+-- At login the client asks the guild for anything newer than it holds.
+published = {}
+Link._asked = nil
+local login
+for _, f in ipairs(frames) do if f.events.PLAYER_ENTERING_WORLD and f.fn then login = f end end
+login.fn(login, "PLAYER_ENTERING_WORLD")
+check(#published == 1 and published[1].act == "ask" and published[1].data.rev == off, "at login it asks the guild")
 
 print(("alliance-link: %d checks passed"):format(checks))

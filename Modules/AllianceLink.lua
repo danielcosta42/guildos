@@ -4,14 +4,20 @@
 -- Modelled on GreenWall (AIE-Guild/GreenWall, the base of Greenwall Forever),
 -- because it works without anybody in particular being online:
 --
---   * THE CONFIGURATION IS IN THE GUILD INFO. One line, the same in every
---     guild of the alliance:
+--   * ONE CODE, THE SAME IN EVERY GUILD of the alliance:
 --
 --         GOS=TAG:key:Guilda A;Guilda B;Guilda C
 --
---     Every member reads it the moment the guild roster loads. Nothing is
---     sent, nobody has to be an ambassador, and only who may edit the guild
---     info (the guild's own officers) can change it.
+--     An officer of each guild pastes it once in Alliance > Setup. It is NOT
+--     sent between guilds: nobody has to be an ambassador. GreenWall keeps it
+--     in the guild info; here it is the addon's own data (db.allianceLink),
+--     handed to the guild over the GUILD channel (SyncService "allylink"):
+--     an officer's "set" reaches whoever is online, and anybody who logs in
+--     asks ("ask") and is answered by any guildmate that holds it ("have").
+--     The newest revision wins, and a removal is kept as one, so an old copy
+--     never brings the alliance back. Only an officer authors it: "set" is an
+--     officer write, and a relayed copy counts only when the officer it names
+--     is an officer on the roster.
 --
 --   * ONE HIDDEN CHANNEL WITH A PASSWORD ("GOSA" .. TAG, the key). Every
 --     member joins it and it is taken out of every chat frame.
@@ -48,7 +54,8 @@ Link.DIRECTIVE  = "GOS="
 Link.MAX_GUILDS = 16
 Link.KEY_LEN    = 10
 Link.MAX_LINE   = 255     -- what the game sends in one line of chat
-Link.INFO_MAX   = 500     -- what the guild info holds
+Link.ASK_DELAY  = 12      -- seconds after login before asking the guild for the code
+Link.ANSWER_MAX = 4       -- seconds a holder waits before answering, so one answers, not all
 
 Link.stats = { sent = 0, heard = 0, shown = 0, dropped = 0 }
 
@@ -79,7 +86,7 @@ function Link.Code(guildName)
     return out
 end
 
--- The configuration in a guild info text, or nil. Only the first GOS= line
+-- The configuration in a text, or nil. Only the first GOS= line
 -- counts. A configuration with a repeated code (two names hashing alike) is
 -- refused whole: the lines of one would show under the other.
 function Link.Parse(text)
@@ -120,33 +127,6 @@ function Link.Build(tag, key, guilds)
         .. table.concat(guilds, ";")
 end
 
--- `info` with its GOS= line replaced by `line` (or added at the end; removed
--- when `line` is nil). nil and a reason when it would not fit.
-function Link.Apply(info, line)
-    local rows, put = {}, false
-    for row in ((info or "") .. "\n"):gmatch("([^\n]*)\n") do
-        if row:match("^%s*GOS=") then
-            if line and not put then
-                rows[#rows + 1] = line
-                put = true
-            end
-        else
-            rows[#rows + 1] = row
-        end
-    end
-    while #rows > 0 and trim(rows[#rows]) == "" do
-        rows[#rows] = nil
-    end
-    if line and not put then
-        rows[#rows + 1] = line
-    end
-    local out = table.concat(rows, "\n")
-    if #out > Link.INFO_MAX then
-        return nil, L["The guild info is full: shorten it or the list of guilds."]
-    end
-    return out
-end
-
 function Link.NewKey()
     local out = {}
     for i = 1, Link.KEY_LEN do
@@ -177,20 +157,24 @@ end
 ----------------------------------------------------------------------
 -- The configuration in force
 ----------------------------------------------------------------------
+-- What this guild holds: { line, rev, by }. `line` nil is a removal, kept
+-- with its revision.
+function Link:Store()
+    GuildOS.db.allianceLink = GuildOS.db.allianceLink or { rev = 0 }
+    return GuildOS.db.allianceLink
+end
+
 function Link:Config()
-    local text = GetGuildInfoText and GetGuildInfoText() or ""
-    if GuildOS.Compat.IsSecret(text) then
-        return self._config
-    end
-    if text ~= self._text then
-        self._text = text
-        self._config = Link.Parse(text)
+    local line = GuildOS.db and GuildOS.db.allianceLink and GuildOS.db.allianceLink.line
+    if line ~= self._text then
+        self._text = line
+        self._config = line and Link.Parse(line) or nil
     end
     return self._config
 end
 
 -- The pact the rest of the alliance reads (Alliance:Get), or nil: only while
--- the guild info holds a configuration that names this guild.
+-- the guild holds a code that names this guild.
 function Link:Pact()
     local cfg = self:Config()
     local mine = GuildOS.Alliance:MyGuildName()
@@ -205,7 +189,7 @@ function Link:Pact()
             guilds[name] = { ambassadors = {}, joinedAt = 0 }
         end
         p = {
-            source = "guildinfo", line = cfg.line,
+            source = "link", line = cfg.line,
             tag = cfg.tag, name = cfg.tag, owner = cfg.order[1], revision = 0,
             guilds = guilds, key = cfg.key,
         }
@@ -373,22 +357,102 @@ function Link:_Filter(chanBaseName)
 end
 
 ----------------------------------------------------------------------
--- Officers: the line for the guild info
+-- The code, kept by the guild
 ----------------------------------------------------------------------
--- Write `line` (nil removes it) into this guild's info. Needs the right to
--- edit it, and is a button click.
-function Link:WriteGuildInfo(line)
-    local gm = GuildOS.GuildManager
-    if not gm or not gm:CanSetGuildInfo() then
-        return false, L["|cffFF4444No permission to edit the guild info.|r"]
+-- Pure. Does an incoming copy replace what is held? Only a newer revision.
+function Link.Newer(held, rev)
+    return (tonumber(rev) or 0) > (tonumber(held and held.rev) or 0)
+end
+
+function Link:_Changed()
+    self._pact = nil
+    if self:Pact() then
+        self:EnsureJoined()
     end
-    local text, err = Link.Apply(gm:GetGuildInfo(), line)
-    if not text then
-        return false, err
+    if GuildOS.AllianceChat then GuildOS.AllianceChat:_Notify() end
+end
+
+-- An officer saves `line` for the guild (nil turns the alliance off). A
+-- button click; the guild gets it at once over GUILD.
+function Link:SetCode(line)
+    if not GuildOS:IsOfficer() then
+        return false, L["Only officers can do that."]
     end
-    gm:SetGuildInfo(text)
-    self._text = nil
+    if line then
+        line = trim(line)
+        local cfg = Link.Parse(line)
+        local mine = GuildOS.Alliance:MyGuildName()
+        if not cfg then
+            return false, L["That is not an alliance code."]
+        end
+        if not mine or not cfg.guilds[mine] then
+            return false, L["The code does not name this guild."]
+        end
+        line = cfg.line
+    end
+    local held = self:Store()
+    local rev = math.max(GetServerTime(), (tonumber(held.rev) or 0) + 1)
+    local by = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName(), GetRealmName())
+    held.line, held.rev, held.by = line, rev, by
+    if GuildOS.SyncService then
+        GuildOS.SyncService:Publish("allylink", "set", { line = line, rev = rev, by = by }, { priority = "ALERT" })
+    end
+    self:_Changed()
     return true
+end
+
+-- A copy from the guild. `trusted` is an officer's own "set"; a relayed
+-- "have" counts only when the officer it names is one on the roster.
+function Link:_Take(d, sender, trusted)
+    if type(d) ~= "table" or not Link.Newer(self:Store(), d.rev) then
+        return false
+    end
+    local by = type(d.by) == "string" and d.by or nil
+    if trusted then
+        by = by or sender
+    elseif not by or not GuildOS:IsOfficerByName(by) then
+        return false
+    end
+    local line = type(d.line) == "string" and d.line or nil
+    local mine = GuildOS.Alliance:MyGuildName()
+    local cfg = line and Link.Parse(line)
+    if line and (not cfg or not mine or not cfg.guilds[mine]) then
+        return false
+    end
+    local held = self:Store()
+    held.line, held.rev, held.by = cfg and cfg.line or nil, tonumber(d.rev), by
+    self:_Changed()
+    return true
+end
+
+function Link:OnSync(env, sender)
+    local d = env and env.data
+    if type(d) ~= "table" then return end
+    if env.act == "set" then
+        self:_Take(d, sender, true)
+    elseif env.act == "have" then
+        self._answered = (tonumber(d.rev) or 0)
+        self:_Take(d, sender, false)
+    elseif env.act == "ask" then
+        local held = self:Store()
+        if not Link.Newer({ rev = d.rev }, held.rev) then
+            return   -- nothing newer than what they hold
+        end
+        -- Wait a moment: whoever answers first saves everybody else the send.
+        local want = tonumber(held.rev) or 0
+        self._answered = nil
+        GuildOS.Compat.After(math.random() * self.ANSWER_MAX, function()
+            if (self._answered or -1) >= want then return end
+            local now = self:Store()
+            GuildOS.SyncService:Publish("allylink", "have", { line = now.line, rev = now.rev, by = now.by })
+        end)
+    end
+end
+
+function Link:Ask()
+    if GuildOS.SyncService and IsInGuild and IsInGuild() then
+        GuildOS.SyncService:Publish("allylink", "ask", { rev = tonumber(self:Store().rev) or 0 })
+    end
 end
 
 -- What the panel offers: the line in force, or one made from the old pact
@@ -430,18 +494,19 @@ function Link:Initialize()
     end
     local f = CreateFrame("Frame")
     GuildOS.Compat.RegisterEvent(f, "CHAT_MSG_CHANNEL")
-    GuildOS.Compat.RegisterEvent(f, "GUILD_ROSTER_UPDATE")
+    GuildOS.Compat.RegisterEvent(f, "PLAYER_ENTERING_WORLD")
     f:SetScript("OnEvent", function(_, event, ...)
         if event == "CHAT_MSG_CHANNEL" then
             local args = { ... }
             GuildOS:SafeCall(function() Link:_OnChannel(unpack(args, 1, 12)) end)
-        else
-            -- The guild info arrives with the roster: a configuration written
-            -- or changed by an officer takes effect here, for everybody.
-            GuildOS:SafeCall(function()
-                local before = Link._pact
-                if Link:Pact() ~= before then Link:EnsureJoined() end
-            end)
+        elseif not Link._asked then
+            -- Once a session: whatever the guild has newer than ours (a code saved
+            -- while we were away, or ours lost with a reinstall) comes now.
+            Link._asked = true
+            GuildOS.Compat.After(Link.ASK_DELAY, function() GuildOS:SafeCall(function() Link:Ask() end) end)
         end
     end)
+    if GuildOS.SyncService then
+        GuildOS.SyncService:On("allylink", function(env, sender) Link:OnSync(env, sender) end)
+    end
 end

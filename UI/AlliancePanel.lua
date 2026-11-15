@@ -1437,13 +1437,13 @@ local function BuildManage(panel)
 end
 
 ----------------------------------------------------------------------
--- Setup: the alliance written in the guild info, the GreenWall way (issue
--- #348). One line, the same in every guild; every member reads it.
+-- Setup: the alliance code, the GreenWall way (issue #348). One code, the same
+-- in every guild; an officer saves it and the guild hands it to every member.
 ----------------------------------------------------------------------
 local function BuildSetup(panel)
     local LINK = function() return GuildOS.AllianceLink end
 
-    local hdr = UI:CreateHeaderText(panel, L["Alliance in the guild info"], 11)
+    local hdr = UI:CreateHeaderText(panel, L["Alliance code"], 11)
     hdr:SetPoint("TOPLEFT", 6, -10)
     local status = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
     status:SetPoint("TOPLEFT", 6, -32)
@@ -1464,12 +1464,12 @@ local function BuildSetup(panel)
     local lineBox = makeInput(panel, 540)
     lineBox:SetPoint("TOPLEFT", 6, -156)
     lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    local writeBtn = UI:CreateButton(panel, L["Write to guild info"], 170, 24)
+    local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
     writeBtn:SetPoint("TOPLEFT", 6, -188)
-    local removeBtn = UI:CreateButton(panel, L["Remove from guild info"], 170, 24)
+    local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
     removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", 8, 0)
 
-    local hint = UI:CreateText(panel, L["Paste this same line in the guild info of every guild in the alliance. Every member reads it from there: nobody has to be online and there are no ambassadors."],
+    local hint = UI:CreateText(panel, L["Paste this same code in Alliance > Setup in every guild of the alliance and save. Guild OS hands it to every member of the guild: no ambassadors, nobody in particular has to be online."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
     hint:SetPoint("TOPLEFT", 6, -222)
     hint:SetWidth(540)
@@ -1508,20 +1508,15 @@ local function BuildSetup(panel)
     writeBtn:SetScript("OnClick", function()
         local link = LINK()
         if not link then return end
-        local line = strtrim(lineBox:GetText() or "")
-        if not link.Parse(line) then
-            GuildOS:Print(L["No alliance line in the guild info."])
-            return
-        end
-        local ok, err = link:WriteGuildInfo(line)
+        local ok, err = link:SetCode(strtrim(lineBox:GetText() or ""))
         say(ok, err)
-        if ok then GuildOS:Print(L["Saved in the guild info."]) end
+        if ok then GuildOS:Print(L["Saved. The guild gets it now."]) end
         refresh()
     end)
     removeBtn:SetScript("OnClick", function()
         local link = LINK()
         if not link then return end
-        say(link:WriteGuildInfo(nil))
+        say(link:SetCode(nil))
         refresh()
     end)
 
@@ -1533,9 +1528,9 @@ local function BuildSetup(panel)
         if cfg and mine and cfg.guilds[mine] then
             status:SetText(string.format(L["Active: %s, %d guilds."], cfg.tag, #cfg.order))
         elseif cfg then
-            status:SetText(L["The line in the guild info does not name this guild."])
+            status:SetText(L["The code does not name this guild."])
         else
-            status:SetText(L["No alliance line in the guild info."])
+            status:SetText(L["No alliance set up for this guild."])
         end
         local officer = GuildOS:IsOfficer()
         for _, w in ipairs({ tagLbl, tagBox, guildsLbl, guildsBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
@@ -1551,9 +1546,7 @@ local function BuildSetup(panel)
                 guildsBox:SetText(table.concat(parsed.order, "; "))
             end
         end
-        local gm = GuildOS.GuildManager
-        local canWrite = gm and gm:CanSetGuildInfo()
-        if canWrite then writeBtn:Enable(); removeBtn:Enable() else writeBtn:Disable(); removeBtn:Disable() end
+        if link:Config() then removeBtn:Enable() else removeBtn:Disable() end
     end
     return refresh
 end

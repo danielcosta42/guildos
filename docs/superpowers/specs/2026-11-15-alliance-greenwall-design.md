@@ -18,21 +18,29 @@ ambassador.
 The model now is GreenWall's (AIE-Guild/GreenWall, the base of Greenwall Forever), which needs
 nobody in particular.
 
-## Configuration: one line in the guild info
+## Configuration: one code, kept by each guild
 
 ```
 GOS=TAG:key:Guilda A;Guilda B;Guilda C
 ```
 
-- The same line in the guild info of every guild. Every member reads it when the roster loads
-  (`GetGuildInfoText`). Nothing is sent, nobody is an ambassador, and only who may edit the guild
-  info (the guild's officers) changes it.
-- The pact is in force for a client only when the line names its guild. It takes precedence over a
-  pact made by invitation, which keeps working where there is no line.
-- Alliance > Setup makes the line (the same tag keeps its key), writes it into this guild's info and
-  shows it to paste in the others. From an old pact it offers a line with the same tag and guilds.
-- Under the line the ops that built the old pact (invite, join, leave, ambassadors, codes) refuse
-  with "set in the guild info".
+- The same code in every guild. An officer of each guild pastes it once in Alliance > Setup
+  (which also makes one: the same tag keeps its key; from an old pact it offers the same tag and
+  guilds). It never travels between guilds, so nobody has to be an ambassador.
+- GreenWall keeps it in the guild info. Here it is the addon's own data, `db.allianceLink =
+  { line, rev, by }`, handed around inside the guild over GUILD (`SyncService` domain `allylink`,
+  an officer domain):
+  - `set`: an officer saved it. Reaches whoever is online.
+  - `ask`: a client asks once per session (12 s after entering the world) for anything newer than
+    it holds; a reinstall or a member who was away gets it here.
+  - `have`: any guildmate holding something newer answers after a random 0 to 4 s, unless somebody
+    answered first. A relayed copy counts only when the officer it names (`by`) is an officer on the
+    roster.
+  - The newest revision wins; turning it off is a revision with no line, so an old copy never
+    brings the alliance back.
+- The pact is in force for a client only when the code names its guild. It takes precedence over a
+  pact made by invitation, which keeps working where there is no code. Under the code, the ops that
+  built the old pact (invite, join, leave, ambassadors, codes) refuse with "set in Alliance > Setup".
 
 ## Chat: a hidden channel, every member carries their own words
 
@@ -54,14 +62,16 @@ GOS=TAG:key:Guilda A;Guilda B;Guilda C
 
 Rosters, calendars and crafters still go by whisper between bridges (timers cannot speak on a
 channel). Under the line, `Alliance:Send` adds `_g` (our guild) and `_k` = `Proof(key, sender)`;
-`Alliance:OnMessage` runs a data op only for a guild in the line, not ours, not blocked, whose proof
+`Alliance:OnMessage` runs a data op only for a guild in the code, not ours, not blocked, whose proof
 matches the envelope sender. Who never read the key cannot make one; a proof seen is good only for
 its own sender.
 
 ## Honest limits (GreenWall's too)
 
 - Who does not run Guild OS does not see the other guilds.
-- The key is readable by every member of every guild in the line.
+- The key is in the saved data of every member of every guild in the alliance.
+- A member who joins or reinstalls needs any guildmate with Guild OS online once to receive the code.
+- A relayed copy names an officer; if that officer is demoted, an officer saves the code again.
 - A line sent by a macro does not cross: no key was pressed.
 - In a chat lockdown (retail encounters) nothing is said on the channel.
 
