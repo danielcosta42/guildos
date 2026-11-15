@@ -1460,7 +1460,8 @@ end
 -- follows only when the game's core carried the Discord's previous name, so a core named by its tag
 -- (a name the Discord reused) or linked by hand under another name keeps it, and only to a name no
 -- other core here has. `discordName` is remembered for the next time; a core holding a tag with none
--- remembered (imported before it was kept) follows unless named by its tag. Returns the core's name now.
+-- remembered (imported before it was kept) follows a Discord name that no longer reduces to its tag,
+-- unless named by its tag. Returns the core's name now.
 local function followName(self, name, discordName)
     local core = GuildOS.db.cores[name]
     -- A name past 48 bytes is followed cut (discordNameHere), never left behind for being long.
@@ -1470,15 +1471,16 @@ local function followName(self, name, discordName)
     local follow = before and before ~= discordName and name == before
     -- A core imported by a version from before `discordName` (#339) has none: the first package after
     -- the update may already carry the new name, and recording it alone left this client on the old one
-    -- forever while an officer who saw both followed. It follows too when it holds the tag and is not
-    -- named by it (a name the Discord reused, "alfa-2", stays), nor linked by hand under a name of the
-    -- officers' (`linkAt`, LinkDiscord), nor named in a way that reduces to the tag: an officer's
-    -- "Nucleo Alfa" for nucleo-alfa, or "Kara" for kara, adopted by its slug (coreFor), is the officers'
-    -- own name for it, which nothing on Discord changed. Its Discord name is recorded all the same, so
-    -- the next rename follows by the rule above.
+    -- forever while an officer who saw both followed. The tag is the Discord name the core was made
+    -- with, reduced: a Discord name that still reduces to it is the one the core had, nothing changed
+    -- there, so an officers' "Nucleo Alfa" adopted by its slug keeps its name; one that no longer does
+    -- was renamed on Discord, and the core follows, whatever 1.24.0 called it here (the Discord's old
+    -- name, an officers' name of the same slug). Never when named by its tag (a name the Discord
+    -- reused, "alfa-2"), nor linked by hand (`linkAt`, LinkDiscord). The Discord name is recorded either
+    -- way, so the next rename follows by the rule above.
     if not before and core.discordTag and not core.linkAt and name ~= discordName then
         local tag = core.discordTag
-        follow = name ~= tag and CoreManager.Slug(name) ~= tag
+        follow = name ~= tag and CoreManager.Slug(discordName) ~= tag
             and not (name:sub(1, #tag + 1) == tag .. "-" and name:sub(#tag + 2):match("^%d+$"))
     end
     -- A new name another core here has: neither followed nor recorded, so a later package tries again
