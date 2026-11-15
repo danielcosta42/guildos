@@ -1017,6 +1017,30 @@ function Compat.AddChatFilter(event, fn)
     return true
 end
 
+-- Does a chat frame show a message group ("GUILD")? Retail moved the check to ChatFrameUtil; a client with
+-- neither is read from the frame's own list (issue #344).
+function Compat.ChatFrameShows(frame, group)
+    if not frame then return false end
+    local has = (ChatFrameUtil and ChatFrameUtil.ContainsMessageGroup) or ChatFrame_ContainsMessageGroup
+    if has then
+        local ok, yes = pcall(has, frame, group)
+        return ok and yes and true or false
+    end
+    for _, g in ipairs(frame.messageTypeList or {}) do
+        if g == group then return true end
+    end
+    return false
+end
+
+-- Is `name` on the player's ignore list? C_FriendList where it exists, the old global elsewhere (issue #344).
+function Compat.IsIgnored(name)
+    if type(name) ~= "string" or name == "" or Compat.IsSecret(name) then return false end
+    local is = (C_FriendList and C_FriendList.IsIgnored) or IsIgnored
+    if not is then return false end
+    local ok, yes = pcall(is, name)
+    return ok and yes and true or false
+end
+
 ----------------------------------------------------------------------
 -- Talents and skill lines (issue #10)
 -- nil, "no-api" when the client has no such function, so own-character

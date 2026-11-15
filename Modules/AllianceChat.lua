@@ -29,6 +29,7 @@ AllianceChat.DEFAULTS = {
     history     = true,   -- keep a rolling log in SavedVariables
     hideDefault = false,  -- suppress the channel from the default chat frame
     system      = true,   -- alliance events in the feed, not just conversation
+    guildBridge = true,   -- show the allied guilds' /g in our guild chat (issue #344)
 }
 
 -- Capped on purpose: this is plain text on the player's disk, and an

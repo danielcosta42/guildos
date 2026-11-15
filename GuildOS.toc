@@ -66,6 +66,7 @@ Modules\SyncService.lua
 Modules\Alliance.lua
 Modules\AllianceSync.lua
 Modules\AllianceChat.lua
+Modules\AllianceGuildChat.lua
 Modules\GuildChat.lua
 Modules\RosterLog.lua
 Modules\BanList.lua

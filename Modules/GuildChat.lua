@@ -70,9 +70,63 @@ function GuildChat:Entries(stream)
         return server or {}, true
     end
     if server and #server > 0 then
-        return server, true
+        return GuildChat.Merge(server, self:AlliedLog(), self.MAX_LOG), true
     end
-    return self:Log(), false
+    return GuildChat.Merge(self:Log(), self:AlliedLog(), self.MAX_LOG), false
+end
+
+----------------------------------------------------------------------
+-- The allied guilds' /g (issue #344), kept apart from ours: the server's
+-- history replaces our log where it has one, and it never holds these.
+-- Each entry carries `g`, the guild it came from, which the feed shows as a
+-- tag and which keeps two namesakes of two guilds in separate blocks.
+----------------------------------------------------------------------
+function GuildChat:AlliedLog()
+    GuildOS.db.guildChatAllyLog = GuildOS.db.guildChatAllyLog or {}
+    return GuildOS.db.guildChatAllyLog
+end
+
+function GuildChat:AddAllied(guild, line)
+    if type(guild) ~= "string" or type(line) ~= "table" then return end
+    local log = self:AlliedLog()
+    log[#log + 1] = {
+        t = GetServerTime(),
+        n = (Ambiguate and Ambiguate(line.n or "", "short")) or line.n,
+        c = line.c,
+        g = guild,
+        m = line.m,
+    }
+    while #log > self.MAX_LOG do
+        table.remove(log, 1)
+    end
+    self:_Notify()
+end
+
+-- Pure. Two time-ordered logs as one, oldest first, the newest `cap` kept. An
+-- empty allied log hands back ours untouched, which is every guild outside an
+-- alliance.
+function GuildChat.Merge(own, allied, cap)
+    if type(allied) ~= "table" or #allied == 0 then
+        return own
+    end
+    local out, i, j = {}, 1, 1
+    while i <= #own or j <= #allied do
+        local a, b = own[i], allied[j]
+        if b and (not a or (tonumber(b.t) or 0) < (tonumber(a.t) or 0)) then
+            out[#out + 1] = b
+            j = j + 1
+        else
+            out[#out + 1] = a
+            i = i + 1
+        end
+    end
+    cap = cap or #out
+    if #out > cap then
+        local trimmed = {}
+        for k = #out - cap + 1, #out do trimmed[#trimmed + 1] = out[k] end
+        out = trimmed
+    end
+    return out
 end
 
 -- A channel's tab opened (true) or closed. Two feeds can show one channel (the
