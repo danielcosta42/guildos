@@ -190,14 +190,58 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     and not GuildOS.db.points.appliedOps["op-2"] and not GuildOS.db.points.appliedOps["op-3"]
     and not (GuildOS.db.points.accounts and next(GuildOS.db.points.accounts)) and not (GuildOS.db.points.queues and next(GuildOS.db.points.queues)),
     G("nor do its points, counters and queues, which stay unapplied"))
-  -- The core arrives (the Discord's list): the same traffic lands on it, once.
+  -- Rewritten (review of #339): this delivered the delta a second time once the core had arrived, which
+  -- the wire never does (published once, no ack, and SyncService drops an envelope it has seen). Each
+  -- envelope is delivered once here: what was skipped is kept, across a /reload, and played when the
+  -- core arrives.
+  check(GuildOS.db.pointsWaiting and #GuildOS.db.pointsWaiting["Alfa Nova"] == 3, G("the three skipped entries are kept"))
+  -- A /reload: SavedVariables are what is left; the modules start again from them.
+  do
+    local saved = GuildOS.db
+    CM = load(game)
+    GuildOS.db = saved
+    CM:Initialize()
+    dofile(ADDON .. "/Modules/Points.lua")
+    P = GuildOS.Points
+    P:Initialize()
+    GuildOS.SyncService.ShouldApply = function(_, domain, _, rev) return rev > (revs[domain] or 0) end
+    GuildOS.SyncService.SetRevision = function(_, domain, _, rev) revs[domain] = rev end
+    ph = handlers["points"]
+  end
+  check(#GuildOS.db.pointsWaiting["Alfa Nova"] == 3, G("and still kept after a /reload"))
+  -- The core arrives (the Discord's list): the kept traffic lands on it, once, with nothing sent again.
   handlers["core.roster"]({ act = "discordList", data = { coreName = "Alfa Nova", list = {}, tag = "alfa-nova", size = 10, at = NOW } },
     "Officer-Firemaw")
-  ph({ act = "delta", data = delta }, "Officer-Firemaw")
-  ph({ act = "delta", data = delta }, "Officer-Firemaw")
-  local _, got = next(CM:GetPointsDB("Alfa Nova").standings)
-  check(got and got.current == 25 and count(CM:GetPointsDB("Alfa Nova").standings) == 1 and GuildOS.db.cores["Alfa Nova"].points.appliedOps["op-1"]
+  local nova = CM:GetPointsDB("Alfa Nova")
+  local _, got = next(nova.standings)
+  check(got and got.current == 25 and count(nova.standings) == 1 and nova.appliedOps["op-1"]
     and GuildOS.db.points.standings.Guildguy.current == 500, G("once the core is here its entries land on it, once"))
+  check(nova.appliedOps["op-2"] and nova.accounts and next(nova.accounts) and nova.appliedOps["op-3"] and nova.queues and nova.queues.q,
+    G("its counters and queues too"))
+  check(GuildOS.db.pointsWaiting == nil, G("and nothing is kept any more"))
+  -- Renamed into existence: a core this client has under another name becomes the one the entries name.
+  ph({ act = "delta", data = { entries = { { op = "op-9", key = "Guildguy", delta = 4, core = "Alfa Velha", kind = "award",
+    reason = "Boss" } } } }, "Officer-Firemaw")
+  GuildOS.db.cores["Alfa Hoje"] = { name = "Alfa Hoje", members = {} }   -- an officers' core from before the link
+  check(CM:Rename("Alfa Hoje", "Alfa Velha") and CM:GetPointsDB("Alfa Velha").appliedOps["op-9"], G("a rename into the name plays them"))
+  -- Bounded: two hundred entries a core, the oldest let go, and none older than thirty days.
+  for i = 1, 210 do
+    ph({ act = "delta", data = { entries = { { op = "b-" .. i, key = "Guildguy", delta = 1, core = "Longe", kind = "award" } } } },
+      "Officer-Firemaw")
+  end
+  local kept = GuildOS.db.pointsWaiting["Longe"]
+  check(#kept == 200 and kept[1].e.op == "b-11", G("two hundred kept, the oldest let go"))
+  for i = 1, 8 do
+    NOW = NOW + 1
+    ph({ act = "delta", data = { entries = { { op = "c-" .. i, key = "Guildguy", delta = 1, core = "C" .. i, kind = "award" } } } },
+      "Officer-Firemaw")
+  end
+  check(GuildOS.db.pointsWaiting["Longe"] == nil and GuildOS.db.pointsWaiting.C1 and GuildOS.db.pointsWaiting.C8,
+    G("eight cores kept at most, the one heard of longest ago let go"))
+  NOW = NOW + 31 * DAY
+  P:ReplayAllWaiting()
+  check(GuildOS.db.pointsWaiting == nil, G("and let go after thirty days"))
+  NOW = NOW - 31 * DAY - 8
   ph({ act = "snapshot", rev = 5, data = { core = "Alfa Nova", mode = "dkp", config = {}, standings = { Raider = { current = 42 } } } },
     "Officer-Firemaw")
   _, got = next(CM:GetPointsDB("Alfa Nova").standings)

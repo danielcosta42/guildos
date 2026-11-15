@@ -147,6 +147,8 @@ function Points:Initialize()
     if GuildOS.SyncService then
         GuildOS.SyncService:On("points", function(env, sender) Points:OnSync(env, sender) end)
     end
+    -- What was kept for a core that this client has by now (CoreManager initializes first).
+    self:ReplayAllWaiting()
 end
 
 -- Internal helpers — always use the active pool via GetDB()
@@ -1264,14 +1266,93 @@ end
 -- right pool. Snapshots carry `core` in the payload.
 -- Old clients without the `core` field fall back to global db.points.
 ----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- Entries for a core this client does not have (yet), kept until it arrives (review of #339)
+-- An entry is published once, with no ack, and SyncService drops an envelope it has seen: skipped
+-- unkept, nothing would ever bring it back. db.pointsWaiting[core] holds them, in the order heard, as
+-- { act, e, at }; the core created, imported or renamed into existence here plays them
+-- (ReplayWaiting), each applied once (appliedOps). Bounded as SavedVariables must be: WAIT_MAX entries
+-- a core (the oldest go first), WAIT_CORES cores (the one heard of longest ago goes), WAIT_AGE seconds.
+----------------------------------------------------------------------
+local WAIT_MAX, WAIT_CORES, WAIT_AGE = 200, 8, 30 * 86400
+
+local function waiting()
+    local w = GuildOS.db.pointsWaiting
+    if type(w) ~= "table" then w = {}; GuildOS.db.pointsWaiting = w end
+    return w
+end
+
+-- Keeps `e` (an entry of `act`) for the core it names, when that is a core this client lacks.
+local function keepForLater(act, e)
+    local core = e.core
+    if type(core) ~= "string" or core == "" or #core > 96 or type(e.op) ~= "string" then return end
+    local w, now = waiting(), GetServerTime()
+    local list = w[core]
+    if type(list) ~= "table" then
+        local n, oldest, oldestAt = 0, nil, math.huge
+        for name, l in pairs(w) do
+            n = n + 1
+            local last = type(l) == "table" and l[#l] and tonumber(l[#l].at) or 0
+            if last < oldestAt then oldest, oldestAt = name, last end
+        end
+        if n >= WAIT_CORES and oldest then w[oldest] = nil end
+        list = {}
+        w[core] = list
+    end
+    for _, kept in ipairs(list) do
+        if type(kept) == "table" and type(kept.e) == "table" and kept.e.op == e.op then return end
+    end
+    list[#list + 1] = { act = act, e = e, at = now }
+    while #list > WAIT_MAX do table.remove(list, 1) end
+end
+Points.KeepForLater = keepForLater
+
+-- Plays what was kept for `coreName`, now that this client has it; what is too old is let go. Returns
+-- how many entries were played.
+function Points:ReplayWaiting(coreName)
+    local w = GuildOS.db and GuildOS.db.pointsWaiting
+    if type(w) ~= "table" or type(coreName) ~= "string" or type(w[coreName]) ~= "table" then return 0 end
+    if not self:GetDBForCore(coreName) then return 0 end
+    local list = w[coreName]
+    w[coreName] = nil
+    local since, n = GetServerTime() - WAIT_AGE, 0
+    for _, kept in ipairs(list) do
+        if type(kept) == "table" and type(kept.e) == "table" and (tonumber(kept.at) or 0) >= since
+            and (kept.act == "delta" or kept.act == "cdelta" or kept.act == "qset") then
+            kept.e.core = coreName
+            self:OnSync({ act = kept.act, data = { entries = { kept.e } } })
+            n = n + 1
+        end
+    end
+    if next(w) == nil then GuildOS.db.pointsWaiting = nil end
+    return n
+end
+
+-- Every core kept for that this client has by now (at login: the inbox's import ran first), and what
+-- is too old let go.
+function Points:ReplayAllWaiting()
+    local w = GuildOS.db and GuildOS.db.pointsWaiting
+    if type(w) ~= "table" then return end
+    local since, names = GetServerTime() - WAIT_AGE, {}
+    for name, list in pairs(w) do
+        local last = type(list) == "table" and list[#list] and tonumber(list[#list].at) or 0
+        if type(name) ~= "string" or last < since then w[name] = nil else names[#names + 1] = name end
+    end
+    for _, name in ipairs(names) do
+        if GuildOS.db.cores and type(GuildOS.db.cores[name]) == "table" then self:ReplayWaiting(name) end
+    end
+    if next(w) == nil then GuildOS.db.pointsWaiting = nil end
+end
+
 function Points:OnSync(env)
     local d = env.data
     if env.act == "delta" and d and d.entries then
         local applied = false
         for _, e in ipairs(d.entries) do
             e.key = GuildOS:LocalMemberKey(e.key)   -- the sending officer's key, as this client's (#97)
-            -- A core this client does not have (yet): skipped, never marked, so it lands once it arrives.
+            -- A core this client does not have (yet): kept, never marked, so it lands once it arrives.
             local pool = self:GetDBForCore(e.core)
+            if not pool then keepForLater("delta", e) end
             if pool and e.op and not pool.appliedOps[e.op] then
                 self:ApplyEntry(e, pool)
                 self:MarkApplied(e.op, pool)
@@ -1286,6 +1367,7 @@ function Points:OnSync(env)
             if type(e) == "table" and type(e.key) == "string" and type(e.op) == "string" then
                 e.key = GuildOS:LocalMemberKey(e.key)
                 local pool = self:GetDBForCore(e.core)
+                if not pool then keepForLater("cdelta", e) end
                 if pool and not pool.appliedOps[e.op] then
                     applied = self:ApplyCounterEntry(e, pool) or applied
                     self:MarkApplied(e.op, pool)
@@ -1299,6 +1381,7 @@ function Points:OnSync(env)
         for _, e in ipairs(d.entries) do
             if type(e) == "table" and type(e.op) == "string" and type(e.list) == "table" then
                 local pool = self:GetDBForCore(e.core)
+                if not pool then keepForLater("qset", e) end
                 if pool and not pool.appliedOps[e.op] then
                     local list, seen = {}, {}
                     for _, key in ipairs(e.list) do

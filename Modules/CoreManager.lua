@@ -268,6 +268,13 @@ end
 
 -- A core of a guild without the site, with all sub-tables initialized. No check: the import makes
 -- Discord cores through here in a linked guild too.
+-- Another officer's points entries for a core this client did not have are kept (Points:ReplayWaiting):
+-- a core that comes into existence here, made, imported or renamed into that name, plays them.
+local function replayWaiting(name)
+    local w, P = GuildOS.db.pointsWaiting, GuildOS.Points
+    if type(w) == "table" and w[name] ~= nil and P and P.ReplayWaiting then P:ReplayWaiting(name) end
+end
+
 local function newCore(name)
     GuildOS.db.cores[name] = {
         name       = name,
@@ -283,6 +290,7 @@ local function newCore(name)
         },
         members    = {},
     }
+    replayWaiting(name)
     return GuildOS.db.cores[name]
 end
 
@@ -395,6 +403,8 @@ local function moveCore(oldName, newName)
     end
     -- Its loot rule, points, counters, queues, sign-ups and guests are the core table's own and moved with
     -- it; the night's rule (db.lootNight) is the raid's, not a core's; the loot history keeps the raid.
+    -- What other officers sent under the new name before it was this client's lands now.
+    replayWaiting(newName)
 end
 
 -- Renames a core and migrates all session/attendance data.
