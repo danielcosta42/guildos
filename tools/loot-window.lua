@@ -397,6 +397,18 @@ local function lootTab(UI)
   rule.Draw("")
   check(shows(rule, "The answer: MS > OS") and shows(rule, "Who holds less +1"), "and what players read follows it")
 
+  -- At the window's narrow band an answer's controls wrap instead of running past the edge.
+  local ruleContent = rule.content
+  ruleContent:SetWidth(480)
+  rule.Draw("")
+  local past = 0
+  walk(ruleContent, function(f)
+    if f:IsVisible() and (f.kind == "Button" or f.kind == "EditBox") and f.points[1] and f.points[1][1] == "TOPLEFT"
+      and type(f.points[1][2]) == "number" and f.points[1][2] + f.w > 480 then past = past + 1 end
+  end)
+  check(past == 0, "at 480px nothing of the editor runs past the edge (" .. past .. " did)")
+  ruleContent:SetWidth(628)
+
   -- A core's rule: Follow the guild, its own model, and the way to its accounts.
   check(CM:Create("Alpha"), "a core")
   local scope = tagged(rule, "isScope")[1]

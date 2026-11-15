@@ -91,10 +91,18 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)
         box:SetText(text or "")
         return box
     end
+    -- How far a row may run before it wraps (#346: the window's narrow band).
+    local ROW_START = 100
+    local maxX = math.max(ROW_START + 200, (content:GetWidth() or 0) - 8)
     -- A row of buttons of which one is the choice in force (two values: a dropdown for more).
     local function choices(x, list, current, onPick)
+        local start = x
         for _, c in ipairs(list) do
             local b = UI:CreateButton(content, c.n, 80, 22)
+            if x > start and x + b:GetWidth() > maxX then
+                x = 28
+                yOff = yOff + 26
+            end
             b:SetPoint("TOPLEFT", x, -yOff + 2)
             if c.k == current then
                 b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
@@ -131,47 +139,56 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)
         if e.k == "add" then countsPlus = true end
     end
     local ASKS = { { k = "roll", n = L["Roll"] }, { k = "bid", n = L["Bid"] }, { k = "none", n = L["No roll"] } }
+    -- An answer's controls wrap onto a second line where the window is too narrow for one (#346).
+    local rowX
+    local function at(w, width)
+        if rowX > ROW_START and rowX + width > maxX then
+            rowX = ROW_START
+            yOff = yOff + 26
+        end
+        w:ClearAllPoints()
+        w:SetPoint("TOPLEFT", rowX, -yOff + 2)
+        rowX = rowX + width + 4
+    end
     for i, r in ipairs(answers) do
+        rowX = ROW_START
         local keyText = UI:CreateText(content, r.key, 11, C.gold.r, C.gold.g, C.gold.b)
         keyText:SetPoint("TOPLEFT", 28, -yOff)
-        local labelBox = ruleBox(110, false, 24, 100, LR:ResponseLabel(r))
+        local labelBox = ruleBox(110, false, 24, ROW_START, LR:ResponseLabel(r))
         UI:AttachSaveButton(labelBox, function(box)
             changed(LR:SetResponseField(i, "label", box:GetText(), coreName))
         end)
-        local x = 100 + 110 + 6 + labelBox.saveButton:GetWidth() + 8
-        local askDD = pick(x, 90, ASKS, r.ask or "roll", function(k) changed(LR:SetResponseField(i, "ask", k, coreName)) end)
-        x = x + askDD:GetWidth() + 4
+        at(labelBox, 110 + 6 + labelBox.saveButton:GetWidth())
+        local askDD = pick(rowX, 90, ASKS, r.ask or "roll", function(k) changed(LR:SetResponseField(i, "ask", k, coreName)) end)
+        at(askDD, askDD:GetWidth())
         if countsPlus then
             local plusBtn = UI:CreateButton(content, "+1", 36, 22)
-            plusBtn:SetPoint("TOPLEFT", x, -yOff + 2)
             if r.plus then
                 plusBtn:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
                 plusBtn.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
             end
             plusBtn:SetScript("OnClick", function() changed(LR:SetResponseField(i, "plus", not r.plus, coreName)) end)
-            x = x + plusBtn:GetWidth() + 4
+            at(plusBtn, plusBtn:GetWidth())
         end
-        local costBox = ruleBox(40, false, 4, x, tostring(r.cost or 1))
+        local costBox = ruleBox(40, false, 4, rowX, tostring(r.cost or 1))
         UI:AttachSaveButton(costBox, function(box)
             changed(LR:SetResponseField(i, "cost", box:GetText(), coreName))
         end)
-        x = x + 40 + 6 + costBox.saveButton:GetWidth() + 8
+        at(costBox, 40 + 6 + costBox.saveButton:GetWidth())
         if i > 1 then
             local up = UI:CreateButton(content, L["Up"], 40, 22)
-            up:SetPoint("TOPLEFT", x, -yOff + 2)
             up:SetScript("OnClick", function() changed(LR:MoveResponse(i, -1, coreName)) end)
-            x = x + up:GetWidth() + 4
+            at(up, up:GetWidth())
         end
         if i < #answers then
             local down = UI:CreateButton(content, L["Down"], 40, 22)
-            down:SetPoint("TOPLEFT", x, -yOff + 2)
             down:SetScript("OnClick", function() changed(LR:MoveResponse(i, 1, coreName)) end)
-            x = x + down:GetWidth() + 4
+            at(down, down:GetWidth())
         end
         if #answers > 1 then
             local del = UI:CreateButton(content, L["Remove"], 70, 22)
-            del:SetPoint("TOPLEFT", x, -yOff + 2)
             del:SetScript("OnClick", function() changed(LR:RemoveResponse(i, coreName)) end)
+            at(del, del:GetWidth())
         end
         yOff = yOff + 26
     end
@@ -393,22 +410,33 @@ function GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)
             box.onSelect = function(_, k) onPick(k) end
             return box
         end
-        local x = 28
-        local kindDD = dd(x, 150, KINDS, adding.kind, function(k) adding.kind = k; redraw() end)
-        x = x + kindDD:GetWidth() + 4
+        -- The row wraps where the window is too narrow for it, as an answer's does.
+        local startX = 28
+        local excX = startX
+        local function place(w, width)
+            if excX > startX and excX + width > maxX then
+                excX = startX
+                yOff = yOff + 26
+            end
+            w:ClearAllPoints()
+            w:SetPoint("TOPLEFT", excX, -yOff + 2)
+            excX = excX + width + 4
+        end
+        local kindDD = dd(excX, 150, KINDS, adding.kind, function(k) adding.kind = k; redraw() end)
+        place(kindDD, kindDD:GetWidth())
         local valueBox
         if adding.kind == "cat" then
-            local catDD = dd(x, 160, CATS, adding.cat, function(k) adding.cat = k; redraw() end)
-            x = x + catDD:GetWidth() + 4
+            local catDD = dd(excX, 160, CATS, adding.cat, function(k) adding.cat = k; redraw() end)
+            place(catDD, catDD:GetWidth())
         else
-            valueBox = ruleBox(150, false, 120, x, adding.value or "")
+            valueBox = ruleBox(150, false, 120, excX, adding.value or "")
             valueBox:SetScript("OnTextChanged", function(self) adding.value = self:GetText() end)
-            x = x + 150 + 4
+            place(valueBox, 150)
         end
-        local toDD = dd(x, 150, TOS, adding.to, function(k) adding.to = k; redraw() end)
-        x = x + toDD:GetWidth() + 4
+        local toDD = dd(excX, 150, TOS, adding.to, function(k) adding.to = k; redraw() end)
+        place(toDD, toDD:GetWidth())
         local addExc = UI:CreateButton(content, L["Add exception"], 110, 22)
-        addExc:SetPoint("TOPLEFT", x, -yOff + 2)
+        place(addExc, addExc:GetWidth())
         addExc:SetScript("OnClick", function()
             local spec = { kind = adding.kind, value = adding.kind == "cat" and adding.cat or (valueBox and valueBox:GetText()) }
             if adding.to == "order" then spec.order = adding.order else spec.to = adding.to end

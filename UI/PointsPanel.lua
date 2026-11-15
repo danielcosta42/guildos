@@ -94,6 +94,7 @@ function GuildOS:BuildLootAccounts(panel)
 
     -- ── The award row (officers) ────────────────────────────────────
     local reasonDD, amountBox, nameBox, noteBox, settingsBtn
+    local flow   -- the officer's rows, laid out again at every width
     if isOfficer then
         local row = CreateFrame("Frame", nil, panel)
         row:SetPoint("TOPLEFT", PAD, -56)
@@ -168,12 +169,26 @@ function GuildOS:BuildLootAccounts(panel)
         end)
         settingsBtn = UI:CreateButton(row2, L["Account settings"], 130, 20)
         settingsBtn:SetPoint("RIGHT", 0, 0)
-        status = UI:CreateText(row2, "", 10, C.silver.r, C.silver.g, C.silver.b)
-        status:SetPoint("LEFT", syncBtn, "RIGHT", 10, 0)
-        status:SetPoint("RIGHT", settingsBtn, "LEFT", -8, 0)
+        settingsBtn:ClearAllPoints()
+        status = UI:CreateText(panel, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        status:SetPoint("TOPLEFT", row2, "BOTTOMLEFT", 0, -4)
+        status:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
         status:SetJustifyH("LEFT")
         if status.SetWordWrap then status:SetWordWrap(false) end
-        listTop = 116
+        listTop = 132
+        -- Both rows wrap where the window is too narrow for them (FlowBar), the hints over the boxes
+        -- keeping their room; what is under them follows.
+        flow = function(body)
+            local h1 = UI:FlowBar(row, { nameBox, reasonDD, amountBox, noteBox, awardBtn, chargeBtn }, { gap = 6, rowGap = 14, rowH = 22 })
+            local top2 = 56 + h1 + 8
+            row2:ClearAllPoints()
+            row2:SetPoint("TOPLEFT", PAD, -top2)
+            row2:SetPoint("TOPRIGHT", -PAD, -top2)
+            local h2 = UI:FlowBar(row2, { raidBtn, decayBtn, syncBtn, settingsBtn }, { gap = 6, rowGap = 4, rowH = 20 })
+            body:ClearAllPoints()
+            body:SetPoint("TOPLEFT", PAD, -(top2 + h2 + 20))
+            body:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+        end
     end
 
     -- ── The standings and the movements ─────────────────────────────
@@ -287,6 +302,7 @@ function GuildOS:BuildLootAccounts(panel)
             if not keep then reasonDD:Select(ropts[1].value) end
         end
 
+        if flow then flow(body) end
         local mode = inScope(P.GetMode, P)
         local cfg = inScope(function() return P:GetDB().config end) or {}
         local MODE_NAME = { dkp = "DKP", epgp = "EPGP", council = L["Loot Council"] }
