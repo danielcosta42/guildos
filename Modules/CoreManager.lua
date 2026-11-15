@@ -1601,11 +1601,13 @@ local function release(name, moved)
     if type(core) ~= "table" then return end
     core.discordTag, core.discordWaiting, core.linkAt, core.importedAt = nil, nil, nil, nil
     -- Whoever MigrateGuests made a guest is a member of the officers' core again, as before the link; a
-    -- guest an officer added as one stays a guest.
+    -- guest an officer added as one stays a guest. An officer on an earlier build of this version sent
+    -- the migrated without `migrated`: they are the guests marked to stay that nobody added (AddGuest
+    -- always says who, `by`; a member's record made a guest has none).
     if type(core.guests) == "table" then
         core.members = type(core.members) == "table" and core.members or {}
         for key, rec in pairs(core.guests) do
-            if type(rec) == "table" and rec.migrated then
+            if type(rec) == "table" and (rec.migrated or (rec.stay and rec.by == nil)) then
                 if not core.members[key] then
                     core.members[key] = { name = rec.name, class = rec.class, role = rec.role, note = rec.note or "" }
                 end

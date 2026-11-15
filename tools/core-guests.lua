@@ -396,6 +396,22 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   for _, rec in pairs(nc.guests) do if rec.migrated then back = back + 1 end end
   check(back == 0 and nc.guests[K("Novo")] and not nc.members[K("Novo")], G("a guest added as one stays a guest"))
   check(kept() == 46, G("and nobody disappears"))
+  -- A guest migrated by an officer on an earlier build of this version comes with no `migrated`: marked to
+  -- stay, and added by nobody (no `by`). Given back, a member again; one added by hand and marked to stay
+  -- stays a guest.
+  CM = load(game)
+  K = function(name) return GuildOS:LocalMemberKey(name .. "-Firemaw") end
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  local na = GuildOS.db.cores["Núcleo Alfa"]
+  handlers["core.roster"]({ act = "guests", data = { coreName = "Núcleo Alfa", tag = na.discordTag,
+    put = { [K("Dora")] = { name = "Dora", class = "MAGE", role = "rdps", stay = true, at = NOW - 100 } } } }, "Old-Firemaw")
+  check(na.guests[K("Dora")] and not na.guests[K("Dora")].migrated, G("an earlier build's migrated guest arrives unmarked"))
+  CM:AddGuest(K("Eli"), { name = "Eli", class = "MAGE" }, "Núcleo Alfa", true)
+  GuildOS.db.coreLink.seenAt = NOW - 31 * 86400
+  check(CM:CreateInGameAgain(), G("given back"))
+  check(na.members[K("Dora")] and not na.guests[K("Dora")], G("the earlier build's migrated guest is a member again"))
+  check(na.guests[K("Eli")] and not na.members[K("Eli")], G("a guest added by hand to stay stays a guest"))
 
   -- ── The night's raid counts guests ───────────────────────────────────
   CM = load(game)
