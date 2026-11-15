@@ -2638,9 +2638,9 @@ end
 -- The rule's buttons at the foot of the roll popup, a box for the bid when an answer asks for one and
 -- one for the note when an answer needs it. Returns how much taller than the MS / OS / Pass row they
 -- are, for the popup to grow by.
-function LootMaster:BuildAnswerControls(f, ask, itemLink, width)
+function LootMaster:BuildAnswerControls(f, ask, itemLink, width, foot)
     local C, UI = GuildOS.Colors, GuildOS.UI
-    local MARGIN, GAP, ROW, FOOT = 15, 6, 30, 12
+    local MARGIN, GAP, ROW, FOOT = 15, 6, 30, foot or 12
     local bidBox, noteBox, replyText
 
     local function label(text, x, y)
@@ -2680,12 +2680,12 @@ function LootMaster:BuildAnswerControls(f, ask, itemLink, width)
     local buttons = {}
     for i, r in ipairs(ask.responses) do
         local b = UI:CreateButton(f, r.label, 90, 26)
-        if i == 1 then b:SetBackdropColor(0.0, 0.4, 0.0, 0.6) end
+        if i == 1 then UI:SetButtonVariant(b, "primary") end   -- the rule's first answer, as the design leads with it
         b:SetScript("OnClick", function() answer(r) end)
         buttons[#buttons + 1] = b
     end
     local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
-    passBtn:SetBackdropColor(0.4, 0.0, 0.0, 0.6)
+    UI:SetButtonVariant(passBtn, "ghost")
     passBtn:SetScript("OnClick", function()
         LootMaster:SendAnswer("PASS", 0, "")
         f:Hide()
@@ -2740,117 +2740,23 @@ function LootMaster:BuildAnswerControls(f, ask, itemLink, width)
     return math.max(0, y - (FOOT + ROW))
 end
 
+-- The raider's popup (issue #346): the item, what the player wears there when the game says, where
+-- they stand in the rule (their reserve, their places on the lists, the rule's counters and, where it
+-- spends points, the balance and what entering costs), then the rule's buttons and one line naming
+-- the rule. The buttons are BuildAnswerControls', as before; this lays the rest out above them.
+local POPUP_W   = 380
+local POPUP_PAD = 14
+local POPUP_FOOT = 30   -- the rule's line and the timer under the buttons
+
 function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
-    local C      = GuildOS.Colors
-    local myName = GuildOS.Compat.PlayerName()
+    local C, UI = GuildOS.Colors, GuildOS.UI
+    if self.rollPopup then self.rollPopup:Hide() end
+    local rule = self:Rule()
 
-    if self.rollPopup then
-        self.rollPopup:Hide()
-    end
-
-    ----------------------------------------------------------------
-    -- Build combined priority list: officer prios first, then wishlist
-    ----------------------------------------------------------------
-    local entries  = {}
-    local entrySet = {}  -- track names already added (deduplicate)
-
-    -- 1. Officer prios (from db.lootPrios)
-    if itemId and itemId > 0 and GuildOS.db and GuildOS.db.lootPrios then
-        local prioList = GuildOS.db.lootPrios[itemId]
-        if prioList then
-            for idx, e in ipairs(prioList) do
-                local key = strlower(e.name or "")
-                if key ~= "" and not entrySet[key] then
-                    table.insert(entries, {
-                        name    = e.name,
-                        class   = e.class or "UNKNOWN",
-                        typeStr = L["PRIO"],
-                        typeCat = "prio",
-                        order   = idx,
-                    })
-                    entrySet[key] = true
-                end
-            end
-        end
-    end
-
-    -- 2. Wishlist entries (not already covered by an officer prio)
-    if itemId and itemId > 0 and GuildOS.Wishlist then
-        local interest = GuildOS.Wishlist:GetItemInterest(itemId)
-        if interest then
-            for _, e in ipairs(interest) do
-                local key = strlower(e.name or "")
-                if key ~= "" and not entrySet[key] then
-                    table.insert(entries, {
-                        name    = e.name,
-                        class   = e.class or "UNKNOWN",
-                        typeStr = L["WISH"],
-                        typeCat = "wishlist",
-                        order   = e.order or 999,
-                    })
-                    entrySet[key] = true
-                end
-            end
-        end
-    end
-
-    -- Annotate with in-group status and update class from live unit data
-    local inGroup    = {}
-    local numMembers = GetNumGroupMembers()
-    for i = 1, numMembers do
-        local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-        local name, _, classFile = GuildOS.Compat.UnitIdentity(unit)
-        if name then
-            inGroup[strlower(name)] = classFile or "UNKNOWN"
-        end
-    end
-    -- Always include self (covers solo testing and the local player's row highlight)
-    inGroup[strlower(myName)] = select(2, UnitClass("player")) or "UNKNOWN"
-
-    for _, e in ipairs(entries) do
-        local key = strlower(e.name)
-        e.inRaid = inGroup[key] ~= nil
-        if inGroup[key] then
-            e.class = inGroup[key]  -- prefer live unit class over stored value
-        end
-    end
-
-    ----------------------------------------------------------------
-    -- Calculate frame dimensions
-    ----------------------------------------------------------------
-    local MAX_VISIBLE = 10
-    local numEntries  = #entries
-    local visCount    = math.min(numEntries, MAX_VISIBLE)
-    local ROW_H       = 20
-
-    -- list area: column-header row + entry rows + optional overflow label
-    local listArea
-    if numEntries > 0 then
-        listArea = 20 + visCount * ROW_H
-        if numEntries > MAX_VISIBLE then listArea = listArea + 16 end
-    else
-        listArea = 22  -- "no wishlist data" label
-    end
-
-    local FRAME_W = 360
-    local TOP_H   = 68   -- title + item link + status
-    local BTN_H   = 42   -- buttons + timer bar
-    local FRAME_H = math.max(120, TOP_H + listArea + BTN_H + 10)
-
-    ----------------------------------------------------------------
-    -- Main frame
-    ----------------------------------------------------------------
     local f = CreateFrame("Frame", "GuildOSRollPopup", UIParent, "BackdropTemplate")
-    f:SetSize(FRAME_W, FRAME_H)
+    f:SetWidth(POPUP_W)
     f:SetPoint("TOP", UIParent, "TOP", 0, -120)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    f:SetBackdropColor(0.082, 0.082, 0.105, 0.95)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    GuildOS.UI:StylePopup(f)
+    UI:StylePopup(f)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -2858,300 +2764,168 @@ function LootMaster:ShowRollPopup(itemLink, duration, itemId, ask)
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
 
-    -- Title
-    local title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(title, 12)
-    title:SetPoint("TOP", 0, -8)
-    title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText(L["Guild OS Loot Master"])
+    -- The header: "Loot", the clock, the close.
+    local head = UI:CreateHeaderText(f, L["LOOT"], 10)
+    head:SetPoint("TOPLEFT", POPUP_PAD, -10)
+    local clock = UI:CreateText(f, "", 11, C.gold.r, C.gold.g, C.gold.b)
+    clock:SetPoint("TOPRIGHT", -34, -9)
+    f.clock = clock
+    local close = UI:CreateCloseButton(f)
+    close:SetPoint("TOPRIGHT", -6, -6)
+    close:SetScript("OnClick", function() f:Hide() end)
+    local y = 30
 
-    -- Item link
-    local itemText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(itemText, 11)
-    itemText:SetPoint("TOP", 0, -26)
-    itemText:SetText(itemLink or L["Unknown Item"])
+    -- The item, and what it is.
+    local itemText = UI:CreateText(f, itemLink or L["Unknown Item"], 13)
+    itemText:SetPoint("TOPLEFT", POPUP_PAD, -y)
+    itemText:SetWidth(POPUP_W - POPUP_PAD * 2)
+    itemText:SetJustifyH("LEFT")
+    f.itemText = itemText
+    y = y + 18
+    local what = self:ItemLine(itemLink)
+    if what ~= "" then
+        local whatText = UI:CreateText(f, what, 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+        whatText:SetPoint("TOPLEFT", POPUP_PAD, -y)
+        y = y + 16
+    end
+    y = y + 6
 
-    -- Player's own prio / wishlist status
-    local tmbText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(tmbText, 10)
-    tmbText:SetPoint("TOP", 0, -44)
-    tmbText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-
-    if itemId and itemId > 0 then
-        local myPrioOrder = nil
-        if GuildOS.db and GuildOS.db.lootPrios and GuildOS.db.lootPrios[itemId] then
-            for idx, e in ipairs(GuildOS.db.lootPrios[itemId]) do
-                if strlower(e.name or "") == strlower(myName) then
-                    myPrioOrder = idx
-                    break
-                end
-            end
+    -- What the player wears there.
+    local worn, diff = self:EquippedFor(itemLink)
+    if worn then
+        local wearHead = UI:CreateHeaderText(f, L["YOU WEAR"], 9)
+        wearHead:SetPoint("TOPLEFT", POPUP_PAD, -y)
+        y = y + 14
+        local wornText = UI:CreateText(f, worn, 11)
+        wornText:SetPoint("TOPLEFT", POPUP_PAD, -y)
+        wornText:SetWidth(POPUP_W - POPUP_PAD * 2 - 110)
+        wornText:SetJustifyH("LEFT")
+        if diff then
+            local col = (diff > 0 and C.ok) or (diff < 0 and C.danger) or C.labelDim
+            local diffText = UI:CreateText(f, diff == 0 and L["same item level"]
+                or string.format(L["%+d item level"], diff), 10, col.r, col.g, col.b)
+            diffText:SetPoint("TOPRIGHT", -POPUP_PAD, -y)
+            f.diffText = diffText
         end
-
-        if myPrioOrder then
-            tmbText:SetText(format(L["|cffFFD700[OFFICIAL PRIO #%d]|r"], myPrioOrder))
-        else
-            local interest = GuildOS.Wishlist and GuildOS.Wishlist:GetItemInterest(itemId)
-            local myEntry  = nil
-            if interest then
-                for _, e in ipairs(interest) do
-                    if strlower(e.name) == strlower(myName) then
-                        myEntry = e
-                        break
-                    end
-                end
-            end
-            if myEntry then
-                tmbText:SetText(L["|cff4CB8FFWishlist #"] .. myEntry.order .. "|r")
-            else
-                tmbText:SetText(L["|cff666666Not on your wishlist|r"])
-            end
-        end
+        y = y + 20
     end
 
-    ----------------------------------------------------------------
-    -- Priority list
-    ----------------------------------------------------------------
-    local listY = -(TOP_H)
-
-    -- Thin separator above list
-    local sep1 = f:CreateTexture(nil, "ARTWORK")
-    sep1:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sep1:SetHeight(1)
-    sep1:SetPoint("TOPLEFT",  8, listY)
-    sep1:SetPoint("TOPRIGHT", -8, listY)
-    sep1:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.35)
-    listY = listY - 2
-
-    if numEntries > 0 then
-        -- Column headers
-        local function MakeHdr(lbl, xOff)
-            local h = f:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(h, 8)
-            h:SetPoint("TOPLEFT", xOff, listY - 2)
-            h:SetTextColor(0.5, 0.5, 0.5)
-            h:SetText(lbl)
-        end
-        MakeHdr("#",            12)
-        MakeHdr(L["TYPE"],      26)
-        MakeHdr(L["ORD"],       68)
-        MakeHdr(L["PLAYER"],    98)
-        MakeHdr(L["ATT%"],     234)
-        MakeHdr(L["RECV"],     275)
-        MakeHdr(L["RAID"],     310)
-        listY = listY - 18
-
-        -- Entry rows
-        for idx = 1, visCount do
-            local e    = entries[idx]
-            local isMe = strlower(e.name) == strlower(myName)
-
-            local row = CreateFrame("Frame", nil, f, "BackdropTemplate")
-            row:SetSize(FRAME_W - 16, ROW_H)
-            row:SetPoint("TOPLEFT", 8, listY)
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-
-            if isMe then
-                row:SetBackdropColor(0.08, 0.22, 0.08, 0.9)
-            else
-                local bg   = (idx % 2 == 1) and C.row1 or C.row2
-                local bgA  = e.inRaid and (bg.a or 0.6) or ((bg.a or 0.6) * 0.4)
-                row:SetBackdropColor(bg.r, bg.g, bg.b, bgA)
-            end
-
-            -- # (index)
-            local idxT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(idxT, 9)
-            idxT:SetPoint("LEFT", 4, 0)
-            idxT:SetTextColor(
-                e.inRaid and C.gold.r or 0.35,
-                e.inRaid and C.gold.g or 0.35,
-                e.inRaid and C.gold.b or 0.35)
-            idxT:SetText(idx)
-
-            -- TYPE (PRIO / WISH)
-            local typeT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(typeT, 8)
-            typeT:SetPoint("LEFT", 18, 0)
-            local tc = e.typeCat == "prio" and C.accent or C.gold
-            typeT:SetTextColor(
-                e.inRaid and tc.r or tc.r * 0.5,
-                e.inRaid and tc.g or tc.g * 0.5,
-                e.inRaid and tc.b or tc.b * 0.5)
-            typeT:SetText(e.typeStr)
-
-            -- Order (#N)
-            local ordT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(ordT, 8)
-            ordT:SetPoint("LEFT", 60, 0)
-            ordT:SetTextColor(
-                e.inRaid and 0.65 or 0.3,
-                e.inRaid and 0.65 or 0.3,
-                e.inRaid and 0.65 or 0.3)
-            ordT:SetText("#" .. e.order)
-
-            -- Name (class-colored when in group / is self)
-            local nameT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(nameT, 10)
-            nameT:SetPoint("LEFT", 92, 0)
-            nameT:SetWidth(134)
-            if e.inRaid or isMe then
-                local cr, cg, cb = GuildOS:GetClassColor(e.class)
-                nameT:SetTextColor(cr, cg, cb)
-            else
-                nameT:SetTextColor(0.4, 0.4, 0.4)
-            end
-            nameT:SetText(e.name)
-
-            -- ATT% (25-man attendance)
-            local attCtx = self:GetPlayerContext(e.name)
-            local attT   = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(attT, 9)
-            attT:SetPoint("LEFT", 228, 0)
-            attT:SetWidth(40)
-            attT:SetJustifyH("CENTER")
-            if attCtx.att25 >= 60 then
-                attT:SetTextColor(0.3, 1.0, 0.3)
-            elseif attCtx.att25 >= 40 then
-                attT:SetTextColor(1.0, 1.0, 0.3)
-            else
-                attT:SetTextColor(1.0, 0.3, 0.3)
-            end
-            attT:SetText(attCtx.att25 .. "%")
-
-            -- RECV (items received this lockout)
-            local recvT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(recvT, 9)
-            recvT:SetPoint("LEFT", 270, 0)
-            recvT:SetWidth(32)
-            recvT:SetJustifyH("CENTER")
-            if attCtx.recvThisLockout == 0 then
-                recvT:SetTextColor(0.4, 0.4, 0.4)
-            elseif attCtx.recvThisLockout == 1 then
-                recvT:SetTextColor(1.0, 1.0, 0.3)
-            else
-                recvT:SetTextColor(1.0, 0.3, 0.3)
-            end
-            recvT:SetText(tostring(attCtx.recvThisLockout))
-
-            -- IN RAID indicator
-            local raidT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(raidT, 9)
-            raidT:SetPoint("LEFT", 306, 0)
-            if e.inRaid then
-                raidT:SetTextColor(0.3, 1.0, 0.3)
-                raidT:SetText(L["YES"])
-            else
-                raidT:SetTextColor(0.4, 0.4, 0.4)
-                raidT:SetText("-")
-            end
-
-            listY = listY - ROW_H
-        end
-
-        -- Overflow label when list is clipped
-        if numEntries > MAX_VISIBLE then
-            local moreT = f:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(moreT, 9)
-            moreT:SetPoint("TOPLEFT", 12, listY - 2)
-            moreT:SetTextColor(0.5, 0.5, 0.5)
-            moreT:SetText(format(L["+ %d more interested"], numEntries - MAX_VISIBLE))
-        end
-    else
-        -- No wishlist/prio data for this item
-        local noDataT = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(noDataT, 9)
-        noDataT:SetPoint("TOPLEFT", 12, listY - 4)
-        noDataT:SetTextColor(0.5, 0.5, 0.5)
-        noDataT:SetText(L["No wishlist data for this item."])
+    -- Where the player stands in the rule.
+    local standHead = UI:CreateHeaderText(f, L["WHERE YOU STAND IN THIS RULE"], 9)
+    standHead:SetPoint("TOPLEFT", POPUP_PAD, -y)
+    y = y + 16
+    local st = self:Standing(itemId, rule)
+    local chips = {}
+    if st.reserved then chips[#chips + 1] = st.hard and L["Hard reserved the item"] or L["Reserved the item"] end
+    if st.prio then chips[#chips + 1] = string.format(L["Officer prio #%d"], st.prio) end
+    if st.wishlist then chips[#chips + 1] = string.format(L["Wishlist #%d"], st.wishlist) end
+    for _, c in ipairs(st.counters) do chips[#chips + 1] = string.format(L["%s tonight: %d"], c.name, c.value or 0) end
+    if #chips == 0 then chips[1] = L["Not on your lists"] end
+    local badges, widths = {}, {}
+    for i, text in ipairs(chips) do
+        local b = UI:CreateBadge(f, text, (i == 1 and (st.reserved or st.prio)) and C.gold or nil)
+        badges[i], widths[i] = b, b:GetWidth() or 60
     end
+    f.standing = chips
+    for r, row in ipairs(UI:FlowRows(widths, POPUP_W - POPUP_PAD * 2, 6)) do
+        local x = POPUP_PAD
+        for _, idx in ipairs(row) do
+            badges[idx]:SetPoint("TOPLEFT", x, -(y + (r - 1) * 20))
+            x = x + widths[idx] + 6
+        end
+    end
+    y = y + #UI:FlowRows(widths, POPUP_W - POPUP_PAD * 2, 6) * 20 + 4
+    if st.points then
+        local line = (st.entry or 0) > 0
+            and string.format(L["Points: %d. Entering this roll costs %d; whoever loses gets %d back."], st.points, st.entry, st.refund or 0)
+            or string.format(L["Points: %d."], st.points)
+        local pts = UI:CreateText(f, line, 10, C.silver.r, C.silver.g, C.silver.b)
+        pts:SetPoint("TOPLEFT", POPUP_PAD, -y)
+        pts:SetWidth(POPUP_W - POPUP_PAD * 2)
+        pts:SetJustifyH("LEFT")
+        f.pointsText = pts
+        y = y + 28
+    end
+    y = y + 6
+    local sep = UI:CreateSeparator(f)
+    sep:SetPoint("TOPLEFT", POPUP_PAD, -y)
+    sep:SetPoint("TOPRIGHT", -POPUP_PAD, -y)
 
-    ----------------------------------------------------------------
-    -- Roll buttons (MS / OS / Pass)
-    ----------------------------------------------------------------
-    local UI = GuildOS.UI
+    -- The rule's buttons, then the line naming it.
+    local ROW_H = 30
+    local extra
     if ask then
         -- The rule's own buttons, answered by the addon (issue #334).
-        f:SetHeight(FRAME_H + self:BuildAnswerControls(f, ask, itemLink, FRAME_W))
+        extra = self:BuildAnswerControls(f, ask, itemLink, POPUP_W, POPUP_FOOT)
     else
-        local msBtn = UI:CreateButton(f, "MS", 90, 26)
-        msBtn:SetPoint("BOTTOMLEFT", 15, 12)
-        msBtn:SetBackdropColor(0.0, 0.4, 0.0, 0.6)
+        local msBtn = UI:CreateButton(f, "MS", 100, 26)
+        msBtn:SetPoint("BOTTOMLEFT", POPUP_PAD, POPUP_FOOT)
+        UI:SetButtonVariant(msBtn, "primary")
         msBtn:SetScript("OnClick", function()
             RandomRoll(1, 100)
             f:Hide()
             GuildOS:Print(L["Rolled |cff00ff00MS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-100")
         end)
-
-        local osBtn = UI:CreateButton(f, "OS", 90, 26)
-        osBtn:SetPoint("BOTTOM", 0, 12)
+        local osBtn = UI:CreateButton(f, "OS", 100, 26)
+        osBtn:SetPoint("BOTTOM", 0, POPUP_FOOT)
         osBtn:SetScript("OnClick", function()
             RandomRoll(1, 99)
             f:Hide()
             GuildOS:Print(L["Rolled |cffFFFF00OS|r on "] .. (itemLink or L["item"]) .. " — /roll 1-99")
         end)
-
-        local passBtn = UI:CreateButton(f, L["Pass"], 90, 26)
-        passBtn:SetPoint("BOTTOMRIGHT", -15, 12)
-        passBtn:SetBackdropColor(0.4, 0.0, 0.0, 0.6)
-        passBtn:SetScript("OnClick", function()
-            f:Hide()
-        end)
+        local passBtn = UI:CreateButton(f, L["Pass"], 100, 26)
+        passBtn:SetPoint("BOTTOMRIGHT", -POPUP_PAD, POPUP_FOOT)
+        UI:SetButtonVariant(passBtn, "ghost")
+        passBtn:SetScript("OnClick", function() f:Hide() end)
+        extra = 0
     end
+    local CM = GuildOS.CoreManager
+    local core = CM and CM:GetActiveName() or ""
+    local note = ask and string.format(L["Rule of %s: %s. The roll is drawn by the master looter's addon and shows here."],
+        core ~= "" and core or L["the guild"], GuildOS.LootRule:ModelName(rule))
+        or L["Rolls by /roll: 1-100 for the first answer, 1-99 for the second."]
+    local noteText = UI:CreateText(f, note, 9, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    noteText:SetPoint("BOTTOMLEFT", POPUP_PAD, 10)
+    noteText:SetWidth(POPUP_W - POPUP_PAD * 2)
+    noteText:SetJustifyH("LEFT")
+    f.ruleText = noteText
+    f:SetHeight(y + 12 + ROW_H + extra + POPUP_FOOT)
 
-    ----------------------------------------------------------------
-    -- Timer countdown bar + 5-second warning
-    ----------------------------------------------------------------
+    -- The time left: the clock in the header, a thin bar at the foot, red and a sound in the last 5s.
     local timerBar = CreateFrame("StatusBar", nil, f)
-    timerBar:SetSize(FRAME_W - 20, 4)
-    timerBar:SetPoint("BOTTOM", 0, 6)
+    timerBar:SetSize(POPUP_W - 2, 3)
+    timerBar:SetPoint("BOTTOM", 0, 1)
     timerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    timerBar:SetStatusBarColor(C.accent.r, C.accent.g, C.accent.b, 0.8)
+    timerBar:SetStatusBarColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
     timerBar:SetMinMaxValues(0, duration)
     timerBar:SetValue(duration)
-
-    -- Warning label (hidden until last 5s)
-    local warnText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(warnText, 13)
-    warnText:SetPoint("BOTTOM", 0, 14)
-    warnText:SetTextColor(1.0, 0.2, 0.2)
-    warnText:Hide()
-
-    local elapsed     = 0
-    local warnFired   = false
-    local warnFlash   = 0
+    local elapsed, warned = 0, false
+    local function tick()
+        local remaining = math.max(0, duration - elapsed)
+        clock:SetText(string.format("%d:%02d", math.floor(remaining / 60), math.floor(remaining % 60)))
+    end
+    tick()
     local ticker = C_Timer.NewTicker(0.1, function()
-        elapsed   = elapsed + 0.1
+        elapsed = elapsed + 0.1
         local remaining = duration - elapsed
         if remaining <= 0 then
             f:Hide()
             return
         end
         timerBar:SetValue(remaining)
-
-        -- Switch bar to red in last 5s
+        tick()
         if remaining <= 5 then
-            timerBar:SetStatusBarColor(1.0, 0.15, 0.15, 0.9)
-
-            -- Play sound once when we cross 5s
-            if not warnFired then
-                warnFired = true
+            timerBar:SetStatusBarColor(C.danger.r, C.danger.g, C.danger.b, 0.9)
+            clock:SetTextColor(C.danger.r, C.danger.g, C.danger.b)
+            if not warned then
+                warned = true
                 PlaySound(SOUNDKIT and SOUNDKIT.IG_ABILITY_ICON_DROP or 1304)
             end
-
-            -- Flash "X segundos!" label
-            warnFlash = warnFlash + 0.1
-            local secs = math.ceil(remaining)
-            warnText:SetText(secs .. "s!")
-            warnText:Show()
-            -- Pulse alpha: 0.5s cycle
-            local alpha = 0.6 + 0.4 * math.abs(math.sin(warnFlash * math.pi * 2))
-            warnText:SetAlpha(alpha)
         end
     end)
 
     f:SetScript("OnHide", function()
-        ticker:Cancel()
+        if ticker then ticker:Cancel() end
         LootMaster.testMode = false
     end)
 
@@ -4021,6 +3795,80 @@ function LootMaster:ItemState(item)
         return "exception", string.format(L["exception: %s"], to)
     end
     return "queued", L["queued"]
+end
+
+-- Where the player stands on an item in the rule in force (issue #346), for the raider's popup: their
+-- reserve, their places on the lists, the rule's counters and, where the rule spends points, the
+-- balance and what entering costs. { reserved, hard, prio, wishlist, counters = { { name, value } },
+-- points, entry, refund }.
+function LootMaster:Standing(itemId, rule)
+    rule = rule or self:Rule()
+    local me = GuildOS.Compat.PlayerName() or ""
+    local key = GuildOS:GetPlayerKey(me, GetRealmName())
+    local out = { counters = {} }
+    if itemId and GuildOS.SoftRes then
+        for _, e in ipairs(GuildOS.SoftRes:GetReserves(itemId)) do
+            if strlower(e.name or "") == strlower(me) then out.reserved, out.hard = true, e.hard or false end
+        end
+    end
+    local prios = itemId and GuildOS.db and GuildOS.db.lootPrios and GuildOS.db.lootPrios[itemId]
+    for i, e in ipairs(prios or {}) do
+        if strlower(e.name or "") == strlower(me) then out.prio = i end
+    end
+    local interest = itemId and GuildOS.Wishlist and GuildOS.Wishlist:GetItemInterest(itemId)
+    for _, e in ipairs(interest or {}) do
+        if strlower(e.name or "") == strlower(me) and e.type ~= "received" then out.wishlist = e.order end
+    end
+    local P = GuildOS.Points
+    if P and P.GetDB and GuildOS.db and GuildOS.db.points then
+        for _, a in ipairs(GuildOS.LootRule:Counters(rule)) do
+            out.counters[#out.counters + 1] = { name = a.name or a.key, value = P:Counter(a.key, key) }
+        end
+        if GuildOS.LootRule:UsesPoints(rule) then
+            out.points = P:Get(key)
+            local entry = GuildOS.LootRule:EntryEffect(rule)
+            local cfg = P:GetDB().config or {}
+            out.entry = entry and entry.value or tonumber(cfg.entryCost) or 0
+            local refund = entry and (entry.refund or 0) * 100 or tonumber(cfg.refundPct) or 0
+            out.refund = math.floor(out.entry * refund / 100 + 0.5)
+        end
+    end
+    return out
+end
+
+-- What an item is, in one line for the popup: its slot, its type and its item level, as far as the
+-- game has read it. Empty for an item it has not.
+function LootMaster:ItemLine(itemLink)
+    if not itemLink then return "" end
+    local _, _, _, ilvl, _, _, subType, _, equipLoc = GuildOS.Compat.GetItemInfo(itemLink)
+    local parts = {}
+    local slot = equipLoc and equipLoc ~= "" and _G[equipLoc]
+    if type(slot) == "string" and slot ~= "" then parts[#parts + 1] = slot end
+    if type(subType) == "string" and subType ~= "" then parts[#parts + 1] = subType end
+    if tonumber(ilvl) and ilvl > 0 then parts[#parts + 1] = string.format(L["item level %d"], ilvl) end
+    return table.concat(parts, " \194\183 ")
+end
+
+-- What the player wears where an item goes, when the game says (issue #346): the link and the item
+-- level it would gain (negative: lose). nil for an item that is not worn, or a slot this client cannot read.
+local EQUIP_SLOTS = {
+    INVTYPE_HEAD = 1, INVTYPE_NECK = 2, INVTYPE_SHOULDER = 3, INVTYPE_BODY = 4, INVTYPE_CHEST = 5,
+    INVTYPE_ROBE = 5, INVTYPE_WAIST = 6, INVTYPE_LEGS = 7, INVTYPE_FEET = 8, INVTYPE_WRIST = 9,
+    INVTYPE_HAND = 10, INVTYPE_FINGER = 11, INVTYPE_TRINKET = 13, INVTYPE_CLOAK = 15,
+    INVTYPE_WEAPON = 16, INVTYPE_2HWEAPON = 16, INVTYPE_WEAPONMAINHAND = 16, INVTYPE_SHIELD = 17,
+    INVTYPE_WEAPONOFFHAND = 17, INVTYPE_HOLDABLE = 17, INVTYPE_RANGED = 18, INVTYPE_RANGEDRIGHT = 18,
+    INVTYPE_THROWN = 18, INVTYPE_RELIC = 18,
+}
+function LootMaster:EquippedFor(itemLink)
+    if not (itemLink and GetInventoryItemLink) then return nil end
+    local _, _, _, ilvl, _, _, _, _, equipLoc = GuildOS.Compat.GetItemInfo(itemLink)
+    local slot = equipLoc and EQUIP_SLOTS[equipLoc]
+    if not slot then return nil end
+    local worn = GetInventoryItemLink("player", slot)
+    if not worn then return nil end
+    local _, _, _, wornIlvl = GuildOS.Compat.GetItemInfo(worn)
+    local diff = (tonumber(ilvl) and tonumber(wornIlvl)) and (ilvl - wornIlvl) or nil
+    return worn, diff
 end
 
 ----------------------------------------------------------------------

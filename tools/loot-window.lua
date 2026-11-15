@@ -11,6 +11,9 @@
 --     order with why each is there, the decision in a sentence that follows that order, an Award
 --     button whose label says who (the relabel that never showed), End now, Disenchant, Cancel, the
 --     night's awards and Undo; every way in (the loot window, a roll announced, a bag click);
+--   * the raider's popup: the item and what it is, what the player wears there, where they stand in
+--     the rule (reserve, lists, counters, points and what entering costs), the rule's buttons and the
+--     line that names the rule;
 --
 --   luajit -e 'ADDON="."' tools/loot-window.lua
 --
@@ -654,11 +657,69 @@ local function lootTable()
   LR:Set(nil)
 end
 
+-- ── 4. The raider's popup ──────────────────────────────────────────────
+local function popup()
+  loadModules()
+  local LM, P = GuildOS.LootMaster, GuildOS.Points
+  local sent = {}
+  LM.SendAnswer = function(_, key, bid, note) sent[#sent + 1] = { key = key, bid = bid, note = note } end
+  INVTYPE_HEAD = "Head"
+  function GetItemInfo(link)
+    local id = tonumber(tostring(link):match("item:(%d+)"))
+    local name = tostring(link):match("%[(.-)%]")
+    return name, link, 4, id == 99999 and 66 or 76, 70, "Armor", "Cloth", 1, "INVTYPE_HEAD", 133000
+  end
+  local WORN = "|cff0070dd|Hitem:99999::::::::70:::::|h[Arcanist Cowl]|h|r"
+  function GetInventoryItemLink(unit, slot) if unit == "player" and slot == 1 then return WORN end end
+  GuildOS.SoftRes = { GetReserves = function() return { { name = "Lead" } } end }
+  GuildOS.Wishlist = { GetItemInterest = function() return { { name = "Lead", order = 2, type = "wishlist" } } end }
+  GuildOS:SetLootSystem("plus1")
+  local ask = { responses = { { key = "MS", label = "Main spec", ask = "roll" }, { key = "OS", label = "Off spec", ask = "roll" },
+    { key = "TMOG", label = "Transmog", ask = "roll" } }, bids = false }
+  LM:ShowRollPopup(LINK1, 30, 28770, ask)
+  local f = LM.rollPopup
+  check(f and f:IsShown() and f.w == 380, "the popup opens")
+  check(shows(f, "Crown of the Abyssal Wind") and shows(f, "Head \194\183 Cloth \194\183 item level 76"), "with the item and what it is")
+  check(shows(f, "YOU WEAR") and shows(f, "Arcanist Cowl") and f.diffText.text == "+10 item level", "what the player wears there, and the gain")
+  check(f.standing[1] == "Reserved the item" and f.standing[2] == "Wishlist #2" and f.standing[3] == "+1 tonight: 0",
+    "where they stand: the reserve, the wishlist place, the counter: " .. table.concat(f.standing, ", "))
+  check(#buttons(f, "Main spec") == 1 and #buttons(f, "Off spec") == 1 and #buttons(f, "Transmog") == 1 and #buttons(f, "Pass") == 1,
+    "the rule's buttons, and Pass")
+  check(f.ruleText.text == "Rule of the guild: MS > OS +1. The roll is drawn by the master looter's addon and shows here.",
+    "and the line that names the rule: " .. tostring(f.ruleText.text))
+  check(f.clock.text == "0:30", "the clock counts what is left")
+  click(f, "Off spec")
+  check(sent[1] and sent[1].key == "OS" and not f:IsShown(), "an answer is sent and the popup closes")
+
+  -- On points: the balance and what entering costs.
+  GuildOS:SetLootSystem("dkp")
+  P:SetConfigKey("entryCost", 4, "")
+  P:SetConfigKey("refundPct", 50, "")
+  P:Adjust(P:KeyOf("Lead"), 18, "start", "award")
+  GuildOS.SoftRes, GuildOS.Wishlist = nil, nil
+  function GetInventoryItemLink() return nil end
+  LM:ShowRollPopup(LINK1, 30, 28770, ask)
+  f = LM.rollPopup
+  check(f.pointsText and f.pointsText.text == "Points: 18. Entering this roll costs 4; whoever loses gets 2 back.",
+    "the balance and the price of entering: " .. tostring(f.pointsText and f.pointsText.text))
+  check(f.standing[1] == "Not on your lists" and not shows(f, "YOU WEAR"), "nothing worn or listed: it says so, and no empty block")
+  -- A loot master from before: MS, OS and Pass by /roll.
+  local rolled
+  function RandomRoll(a, b) rolled = a .. "-" .. b end
+  LM:ShowRollPopup(LINK1, 30, 28770, nil)
+  f = LM.rollPopup
+  check(#buttons(f, "MS") == 1 and #buttons(f, "OS") == 1 and #buttons(f, "Pass") == 1, "a loot master from before: MS, OS, Pass")
+  check(f.ruleText.text:find("/roll", 1, true), "and the line says they are /roll")
+  click(f, "OS")
+  check(rolled == "1-99", "OS is /roll 1-99")
+end
+
 for _, style in ipairs({ "guildos", "forever" }) do
   local UI = load(style)
   dropdown(UI)
   lootTab(UI)
   lootTable()
+  popup()
 end
 
 print(("loot-window: %d checks passed"):format(checks))
