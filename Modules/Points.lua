@@ -99,6 +99,22 @@ function Points:ActiveCore()
     return name
 end
 
+-- The core an entry made here names: the one `InCore` is on, else the raid's, even one this client
+-- does not have (yet). Tagged "" for a raid tag no core has here, the officers whose clients have that
+-- core booked the night's entries in the guild's pool (review of #339): they carry the raid's core,
+-- and here they are kept for it (ApplyEntry, keepForLater) rather than written in the guild's.
+function Points:EntryCore()
+    if self.scope ~= nil then return self.scope end
+    local CM = GuildOS.CoreManager
+    return CM and CM:GetActiveName() or ""
+end
+
+-- Whether `e`, made here on the raid's core, names one this client does not have: kept, not applied.
+local function forLater(e)
+    local core = type(e) == "table" and e.core
+    return Points.scope == nil and type(core) == "string" and core ~= "" and Points:GetDBForCore(core) == nil
+end
+
 -- Runs `fn(...)` with the pool of the core `coreName` ("" is the guild's own) as the one every read,
 -- charge, counter and queue of this module works on, whatever core is the raid's by then; entries are
 -- tagged with it, so the other officers' clients route them to the same pool. An item is announced
@@ -252,7 +268,7 @@ function Points:MakeEntry(key, delta, reason, kind)
     local short = GuildOS.Client.isRetail and key or (key:match("^([^-]+)") or key)
     local class = (GuildOS.db.members[key] and GuildOS.db.members[key].class) or ""
     -- Tag with the active core so receivers can route to the right pool
-    local coreName = self:ActiveCore()
+    local coreName = self:EntryCore()
     return {
         op = newOp(), key = key, name = short, class = class,
         delta = delta, reason = reason or "", kind = kind or "adjust",
@@ -264,6 +280,7 @@ end
 -- Apply an entry to a specific pool (nil → active pool).
 function Points:ApplyEntry(e, pool)
     if not e or not e.key or not e.delta then return end
+    if pool == nil and forLater(e) then return Points.KeepForLater("delta", e) end
     pool = pool or self:Pool()
     local stnd = pool.standings
     local s = stnd[e.key]
@@ -856,6 +873,7 @@ end
 
 function Points:ApplyCounterEntry(e, pool)
     if not counterEntry(e) then return false end
+    if pool == nil and forLater(e) then Points.KeepForLater("cdelta", e); return true end
     pool = pool or self:Pool()
     pool.accounts = pool.accounts or {}
     local a = pool.accounts[e.acct]

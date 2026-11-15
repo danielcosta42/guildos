@@ -247,6 +247,22 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   _, got = next(CM:GetPointsDB("Alfa Nova").standings)
   check(got and got.current == 42 and count(GuildOS.db.points.standings) == 1,
     G("and its snapshot, the revision not spent on the skip"))
+  -- The raid's tag names a core this client has not got yet (review of #339): what it gives on the raid's
+  -- core says that core, so the officers who have it book it there and not in the guild's pool, and here
+  -- it waits for the core instead of landing in the guild's.
+  GuildOS.db.raidTracker.currentGroupTag = "Alfa Amanha"
+  sent = {}
+  P:Award("Guildguy", 6, "Boss")
+  local told = sent[#sent]
+  check(told and told.act == "delta" and told.data.entries[1].core == "Alfa Amanha",
+    G("an award on the raid's core names it even when this client lacks it: " .. tostring(told and told.data.entries[1].core)))
+  check(GuildOS.db.points.standings.Guildguy.current == 500 and #GuildOS.db.pointsWaiting["Alfa Amanha"] == 1,
+    G("and is kept for it here, the guild's pool untouched"))
+  GuildOS.db.raidTracker.currentGroupTag = ""
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Alfa Amanha", list = {}, tag = "alfa-amanha", size = 10,
+    at = NOW } }, "Officer-Firemaw")
+  _, got = next(CM:GetPointsDB("Alfa Amanha").standings)
+  check(got and got.current == 6 and (GuildOS.db.pointsWaiting or {})["Alfa Amanha"] == nil, G("and lands on it when it arrives"))
   -- What this client writes under a core it does not have is no one's, and told to no one.
   sent = {}
   P:InCore("Sumiu", function() P:Charge("Guildguy", 10, "x") end)
