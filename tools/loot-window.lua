@@ -458,6 +458,23 @@ local function lootTab(UI)
   check(P:GetMode("Alpha") == "council", "and a choice changes it")
   click(acc, "Back to the standings")
 
+  -- The core picked is renamed while the tab is open (another officer, or the Discord's rename by
+  -- moveCore, #339): the next refresh is on the guild's, it neither throws nor makes the old core again.
+  for _, linked in ipairs({ false, true }) do
+    check(CM:Rename("Alpha", "Alpha2"), "the core renamed")
+    GuildOS.db.coreLink = linked and { since = 1 } or nil
+    local ok, err = pcall(acc.Refresh)
+    check(ok, "the accounts refresh after the core's rename (linked " .. tostring(linked) .. "): " .. tostring(err))
+    check(acc.Scope() == "" and GuildOS.db.cores.Alpha == nil,
+      "on the guild's, the old name not made again (linked " .. tostring(linked) .. ")")
+    click(acc, "Account settings")
+    click(acc, "Back to the standings")
+    check(GuildOS.db.cores.Alpha == nil, "nor by the settings")
+    GuildOS.db.coreLink = nil
+    check(CM:Rename("Alpha2", "Alpha"), "and back")
+    acc.SetScope("Alpha")
+  end
+
   -- Settings > Loot and the core's Config tab only point here.
   local settings = newFrame("Frame", UIParent)
   settings:SetSize(560, 900)

@@ -3838,7 +3838,7 @@ function LootMaster:Standing(itemId, rule)
         if GuildOS.LootRule:UsesPoints(rule) then
             out.points = P:Get(key)
             local entry = GuildOS.LootRule:EntryEffect(rule)
-            local cfg = P:GetDB().config or {}
+            local cfg = P:Pool().config or {}
             out.entry = entry and entry.value or tonumber(cfg.entryCost) or 0
             local refund = entry and (entry.refund or 0) * 100 or tonumber(cfg.refundPct) or 0
             out.refund = math.floor(out.entry * refund / 100 + 0.5)

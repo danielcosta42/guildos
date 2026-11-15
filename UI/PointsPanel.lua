@@ -60,6 +60,12 @@ function GuildOS:BuildLootAccounts(panel)
     local shownAcct = nil
     local settingsOpen = false
 
+    -- The core picked may be gone since (renamed or closed on Discord, by another officer, #339): the
+    -- guild's then, as SetScope does, and never a read of a pool that is no one's.
+    local function scopeHolds()
+        if scope ~= "" and not (GuildOS.db.cores and GuildOS.db.cores[scope]) then scope = ""; return false end
+        return true
+    end
     local function inScope(fn, ...) return P:InCore(scope, fn, ...) end
     local function ruleOf() return GuildOS.LootRule and GuildOS.LootRule:For(scope) end
     local function ownAccounts()
@@ -127,6 +133,7 @@ function GuildOS:BuildLootAccounts(panel)
             amountHint:SetText(other and L["Points"] or L["Times"])
         end
         local function doRow(charge)
+            if not scopeHolds() then panel.Refresh(); return end   -- nothing given on a core that is gone
             local v = reasonDD:GetValue()
             local e, why = inScope(P.AwardRow, P, {
                 name = nameBox:GetText(), reason = v ~= OTHER and v or nil, times = amountBox:GetText(),
@@ -151,13 +158,15 @@ function GuildOS:BuildLootAccounts(panel)
         local raidBtn = UI:CreateButton(row2, L["Award Raid"], 100, 20)
         raidBtn:SetPoint("LEFT", 0, 0)
         raidBtn:SetScript("OnClick", function()
-            local amt = inScope(function() return P:GetDB().config.bossAward or 0 end)
+            if not scopeHolds() then panel.Refresh(); return end   -- nothing given on a core that is gone
+            local amt = inScope(function() return P:Pool().config.bossAward or 0 end)
             local n = inScope(P.AwardRaidGroup, P, amt, L["Manual raid award"])
             if n and n > 0 then status:SetText(string.format(L["Awarded %d points to %d raiders."], amt, n)) end
         end)
         local decayBtn = UI:CreateButton(row2, L["Apply Decay"], 100, 20)
         decayBtn:SetPoint("LEFT", raidBtn, "RIGHT", 6, 0)
         decayBtn:SetScript("OnClick", function()
+            if not scopeHolds() then panel.Refresh(); return end
             local n = inScope(P.ApplyDecay, P)
             status:SetText(string.format(L["Decay applied to %d player(s)."], n or 0))
         end)
@@ -273,6 +282,7 @@ function GuildOS:BuildLootAccounts(panel)
 
     local function refresh()
         if not panel:IsVisible() then return end
+        scopeHolds()
         coreDD:SetOptions(GuildOS.LootScopeOptions())
         coreDD:SetValue(scope)
         local accounts = ownAccounts()
@@ -304,7 +314,7 @@ function GuildOS:BuildLootAccounts(panel)
 
         if flow then flow(body) end
         local mode = inScope(P.GetMode, P)
-        local cfg = inScope(function() return P:GetDB().config end) or {}
+        local cfg = inScope(function() return P:Pool().config end) or {}
         local MODE_NAME = { dkp = "DKP", epgp = "EPGP", council = L["Loot Council"] }
         summary:SetText(string.format(L["%s  |  Boss award: %d  |  Decay: %d%%  |  Auto-award: %s"], MODE_NAME[mode] or tostring(mode),
             cfg.bossAward or 0, cfg.decayPct or 0, cfg.autoAward and L["on"] or L["off"]))
@@ -407,7 +417,7 @@ function GuildOS:BuildLootAccounts(panel)
         for _, child in pairs({ content:GetChildren() }) do child:Hide() end
         for _, region in pairs({ content:GetRegions() }) do region:Hide() end
         local mode = inScope(P.GetMode, P)
-        local cfg = inScope(function() return P:GetDB().config end) or {}
+        local cfg = inScope(function() return P:Pool().config end) or {}
         local epgp = GuildOS:GetLootSystem(scope) == "epgp" or mode == "epgp"
         local y = 0
         local function lbl(text, yy)
