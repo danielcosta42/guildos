@@ -357,6 +357,39 @@ local function moveCore(oldName, newName)
     if RT and RT.gracePick == oldName then RT.gracePick = newName end
     local pick = rtDB and rtDB.corePick
     if type(pick) == "table" and pick.tag == oldName then pick.tag = newName end
+
+    -- Every other place that keeps a core by its name (review of #339: an undo after a Discord rename
+    -- gave back into the guild's pool, the award still naming the old core):
+    -- the awards an undo gives back into (the core's own log, and the guild's from before cores),
+    local function awards(list)
+        for _, award in ipairs(type(list) == "table" and list or {}) do
+            if type(award) == "table" and award.core == oldName then award.core = newName end
+        end
+    end
+    local moved = GuildOS.db.cores[newName]
+    awards(type(moved.lootMaster) == "table" and moved.lootMaster.awardHistory)
+    awards(type(GuildOS.db.lootMaster) == "table" and GuildOS.db.lootMaster.awardHistory)
+    -- the item being given and the last award's core (LootMaster), the pool `InCore` is on (Points),
+    local LM = GuildOS.LootMaster
+    if LM and type(LM.activeLoot) == "table" and LM.activeLoot.core == oldName then LM.activeLoot.core = newName end
+    if LM and LM.lastAwardCore == oldName then LM.lastAwardCore = newName end
+    if GuildOS.Points and GuildOS.Points.scope == oldName then GuildOS.Points.scope = newName end
+    -- the revision of its points' snapshots (SyncService, "points:<name>"), so the next one is newer,
+    local rev = GuildOS.db.sync and GuildOS.db.sync.rev
+    if type(rev) == "table" and type(rev["points:" .. oldName]) == "table" then
+        local from, to = rev["points:" .. oldName], rev["points:" .. newName] or {}
+        for key, n in pairs(from) do
+            if type(n) == "number" and n > (tonumber(to[key]) or 0) then to[key] = n end
+        end
+        rev["points:" .. newName], rev["points:" .. oldName] = to, nil
+    end
+    -- and the Discord's lists waiting to go to the other officers.
+    for _, c in ipairs(type(GuildOS.State) == "table" and type(GuildOS.State.discordCores) == "table"
+        and GuildOS.State.discordCores or {}) do
+        if type(c) == "table" and c.name == oldName then c.name = newName end
+    end
+    -- Its loot rule, points, counters, queues, sign-ups and guests are the core table's own and moved with
+    -- it; the night's rule (db.lootNight) is the raid's, not a core's; the loot history keeps the raid.
 end
 
 -- Renames a core and migrates all session/attendance data.

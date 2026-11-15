@@ -325,6 +325,33 @@ announce()
 check(LM.activeLoot.rule.model == "plus1" and said[1]:find("[ROLL]", 1, true), "the next item is announced under the new core's rule")
 LM:CancelRolling()
 
+-- A core renamed (here, or by its Discord) takes every reference to its name along (review of #339):
+-- an undo after it gave back into the guild's pool, the award still naming the old core.
+activate("Alpha")
+announce()
+check(LM.activeLoot.core == "Alpha", "an item announced in Alpha")
+CM:Rename("Alpha", "Alpha Nova")
+check(LM.activeLoot.core == "Alpha Nova", "the item being given follows the core's new name")
+LM:RegisterRoll("Bo", "MS", 3)
+LM:EndRolling(true)
+quiet()
+local guildBo = GuildOS.db.points.standings[K("Bo")] and GuildOS.db.points.standings[K("Bo")].current
+LM:AwardLoot("Bo")
+check(alphaPool.standings[K("Bo")].current == 40 and CM:GetPointsDB("Alpha Nova") == alphaPool, "and is charged on its pool")
+CM:Rename("Alpha Nova", "Alpha Velha")
+check(CM:GetAwardHistory("Alpha Velha")[1].core == "Alpha Velha" and LM.lastAwardCore == "Alpha Velha",
+  "the award log's entries name the core by its new name")
+undone = LM:UndoLastAward()
+check(undone and alphaPool.standings[K("Bo")].current == 60 and GuildOS.db.cores["Alpha Nova"] == nil
+  and GuildOS.db.cores["Alpha"] == nil
+  and (GuildOS.db.points.standings[K("Bo")] and GuildOS.db.points.standings[K("Bo")].current) == guildBo,
+  "an undo after the rename gives back into the core's pool, never the guild's, and makes no core")
+GuildOS.db.sync = { rev = { ["points:Alpha Velha"] = { standings = 7 } } }
+CM:Rename("Alpha Velha", "Alpha")
+check(GuildOS.db.sync.rev["points:Alpha"].standings == 7 and GuildOS.db.sync.rev["points:Alpha Velha"] == nil,
+  "and its points' snapshot revision goes along")
+activate("Alpha")
+
 -- ── 6. A core's choice between officers ─────────────────────────────
 local function hear(data, rev, from, act)
   handlers["core.roster"]({ act = act or "loot", data = data, rev = rev }, from or "Off-Realm")
