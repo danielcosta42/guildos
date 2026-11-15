@@ -828,14 +828,16 @@ do
   assert(r.linkedAt == 0, "a client that never imported says 0")
   assert(#r.cores == 50, "at most 50 cores")
   assert(#r.cores[1].guests == 40 and r.cores[1].guests[40] == "G40", "at most 40 guests, in order")
-  assert(r.cores[1].size == 0 and r.cores[1].importedAt == 0, "a figure that is no finite number is 0")
+  -- Rewritten (review of #347): a size of 0 is one the site's door refuses whole (size is 1..40).
+  assert(r.cores[1].size == 1 and r.cores[1].importedAt == 0, "a figure that is no finite number is the least the site reads")
   GuildOS.db.cores = { [long] = GuildOS.db.cores[long] }
   r = GuildOS.Companion:BuildPayload().coreReceipt
   assert(#r.cores[1].name == 47 and r.cores[1].name == string.rep("a", 47), "a name cut to 48 bytes, never inside a character")
   assert(#r.cores[1].guests[1] == 48 and r.cores[1].guests[1] == string.rep("é", 24), "and a guest's")
   GuildOS.db.cores = { Big = { raidSize = 25, importedAt = 1e300, discordTag = "big", members = {} } }
   json = GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload().coreReceipt)
-  assert(json:find('"importedAt":4294967295', 1, true) and not json:find("[eE][%+%-]?%d"), "plain integers, never an exponent: " .. json)
+  -- Rewritten (review of #347): 4294967295 was the cap, past the site's clock (2^31 - 1), which refuses it.
+  assert(json:find('"importedAt":2147483647', 1, true) and not json:find("[eE][%+%-]?%d"), "plain integers, never an exponent: " .. json)
   -- One that fails costs only itself, and goes to /guildos errors.
   local receipt = GuildOS.Companion.CoreReceipt
   GuildOS.Companion.CoreReceipt = function() error("boom") end

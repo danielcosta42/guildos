@@ -862,13 +862,59 @@ Companion.LootWhy = lootWhy
 local RECEIPT_CORES = 50
 local RECEIPT_GUESTS = 40
 local RECEIPT_TEXT = 48          -- bytes of a core's name or a guest's
-local RECEIPT_INT = 4294967295   -- the largest figure written: a time until 2106, and any count
+local RECEIPT_TAG = 40           -- bytes of a core's tag
+local RECEIPT_SIZE = 40          -- the largest raid size the site reads
+local RECEIPT_MEMBERS = 1000     -- the most members one core is said to hold
+local RECEIPT_INT = 2147483647   -- the largest figure written: a time until 2038, the game's time()
 
-local function receiptInt(v)
+local function receiptInt(v, max)
     local n = GuildOS.Finite(v) or 0
-    return math.max(0, math.min(RECEIPT_INT, math.floor(n)))
+    return math.max(0, math.min(max or RECEIPT_INT, math.floor(n)))
 end
 
+-- A tag the site reads: its slug, lowercase words of letters and digits joined by "-".
+local function receiptTag(tag)
+    if tag == "" then return true end
+    return #tag <= RECEIPT_TAG and tag:find("^[a-z0-9%-]+$") ~= nil and not tag:find("^%-") and not tag:find("%-$")
+        and not tag:find("%-%-") and tag ~= "constructor" and tag ~= "prototype"
+end
+
+-- The night's guests of one core by the name the site shows (a list of names, no two alike): the name
+-- each was added under, or, when two keys share it (a pug of another realm, retail's connected-realm
+-- namesakes), the key with its realm for both. A name the site would refuse is left out and counted.
+local function receiptGuests(guestsOf)
+    local shown, byName = {}, {}
+    for key, rec in pairs(guestsOf) do
+        if type(key) == "string" then
+            local name = cutText(type(rec) == "table" and type(rec.name) == "string" and rec.name or "", RECEIPT_TEXT)
+            if GuildOS:NameProblem(name, RECEIPT_TEXT) then name = key:match("^([^-]+)") or key end
+            shown[key] = name
+            byName[name] = (byName[name] or 0) + 1
+        end
+    end
+    local keys = {}
+    for key in pairs(shown) do keys[#keys + 1] = key end
+    table.sort(keys)
+    local out, seen, left = {}, {}, 0
+    for _, key in ipairs(keys) do
+        local name = shown[key]
+        if byName[name] > 1 then name = key end
+        name = cutText(name, RECEIPT_TEXT)
+        if GuildOS:NameProblem(name, RECEIPT_TEXT) or seen[name] then
+            left = left + 1
+        else
+            seen[name] = true
+            out[#out + 1] = name
+        end
+    end
+    table.sort(out)
+    while #out > RECEIPT_GUESTS do table.remove(out) end
+    return out, left
+end
+
+-- Never anything the site's door refuses (guildos-web lib/core-receipt.ts `cleanReceipt`, which reads the
+-- receipt whole or drops it): a core whose name the site would refuse, or whose name cut to the site's
+-- length is one already sent, and a guest the same, are left out, and /gos errors says how many.
 local function coreReceipt()
     local cores = GuildOS.db.cores or {}
     local names = {}
@@ -877,33 +923,41 @@ local function coreReceipt()
     end
     table.sort(names)
     local CM = GuildOS.CoreManager
-    local out = {}
-    for i = 1, math.min(#names, RECEIPT_CORES) do
-        local name = names[i]
+    local out, sentNames, sentTags = {}, {}, {}
+    local leftCores, leftGuests = 0, 0
+    for _, name in ipairs(names) do
+        if #out >= RECEIPT_CORES then break end
         local core = cores[name]
-        local members, fromDiscord = 0, 0
-        for _, rec in pairs(type(core.members) == "table" and core.members or {}) do
-            members = members + 1
-            if type(rec) == "table" and rec.src == "discord" then fromDiscord = fromDiscord + 1 end
-        end
-        local guests = {}
-        for key, rec in pairs(type(core.guests) == "table" and core.guests or {}) do
-            local shown = type(rec) == "table" and type(rec.name) == "string" and rec.name ~= "" and rec.name or key
-            guests[#guests + 1] = cutText(shown, RECEIPT_TEXT)
-        end
-        table.sort(guests)
-        while #guests > RECEIPT_GUESTS do table.remove(guests) end
+        local shown = cutText(name, RECEIPT_TEXT)
         local tag = type(core.discordTag) == "string" and core.discordTag or ""
-        local size = CM and CM.GetRaidSize and CM:GetRaidSize(name) or core.raidSize
-        out[#out + 1] = {
-            tag = tag, name = cutText(name, RECEIPT_TEXT), size = receiptInt(size),
-            members = receiptInt(members), fromDiscord = receiptInt(fromDiscord), guests = guests,
-            importedAt = tag ~= "" and receiptInt(core.importedAt) or 0,
-        }
+        if GuildOS:NameProblem(shown, RECEIPT_TEXT) or sentNames[shown] or not receiptTag(tag) or (tag ~= "" and sentTags[tag]) then
+            leftCores = leftCores + 1
+        else
+            sentNames[shown] = true
+            if tag ~= "" then sentTags[tag] = true end
+            local members, fromDiscord = 0, 0
+            for _, rec in pairs(type(core.members) == "table" and core.members or {}) do
+                members = members + 1
+                if type(rec) == "table" and rec.src == "discord" then fromDiscord = fromDiscord + 1 end
+            end
+            local guests, left = receiptGuests(type(core.guests) == "table" and core.guests or {})
+            leftGuests = leftGuests + left
+            local size = CM and CM.GetRaidSize and CM:GetRaidSize(name) or core.raidSize
+            members = receiptInt(members, RECEIPT_MEMBERS)
+            out[#out + 1] = {
+                tag = tag, name = shown, size = math.max(1, receiptInt(size, RECEIPT_SIZE)),
+                members = members, fromDiscord = math.min(members, receiptInt(fromDiscord)), guests = guests,
+                importedAt = tag ~= "" and receiptInt(core.importedAt) or 0,
+            }
+        end
+    end
+    if leftCores + leftGuests > 0 then
+        GuildOS:RecordError(string.format("export coreReceipt: %d core(s) and %d guest(s) left out, named as the site refuses",
+            leftCores, leftGuests))
     end
     local link = GuildOS.db.coreLink
     return {
-        at = receiptInt(GetServerTime()),
+        at = math.max(1, receiptInt(GetServerTime())),
         linkedAt = receiptInt(type(link) == "table" and link.importedAt),
         cores = out,
     }

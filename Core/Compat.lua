@@ -1834,3 +1834,62 @@ local flusher = CreateFrame("Frame")
 Compat.RegisterEvent(flusher, "PLAYER_REGEN_ENABLED")
 Compat.RegisterEvent(flusher, "ZONE_CHANGED_NEW_AREA")
 flusher:SetScript("OnEvent", function() Compat.FlushHeldMessages() end)
+
+----------------------------------------------------------------------
+-- Names the site keeps (review of #347), and the cut that keeps them whole: here, beside the client's
+-- own text rules, so CoreManager and CompanionExport (and every stubbed check that loads them) have
+-- them without Utils.
+----------------------------------------------------------------------
+-- `s` cut to `maxBytes` bytes, never through the middle of a character.
+function GuildOS:Utf8Cut(s, maxBytes)
+    s = tostring(s or "")
+    if #s <= maxBytes then return s end
+    local cut = maxBytes
+    while cut > 0 and (s:byte(cut + 1) or 0) >= 0x80 and s:byte(cut + 1) < 0xC0 do cut = cut - 1 end
+    return s:sub(1, cut)
+end
+
+-- Whether `s` is well-formed UTF-8: no stray continuation byte, no character cut short, no overlong
+-- form, no surrogate (what the site's decoder would turn into U+FFFD, three bytes longer).
+function GuildOS:IsUtf8(s)
+    local i, n = 1, #s
+    while i <= n do
+        local c = s:byte(i)
+        local need
+        local lo, hi = 0x80, 0xBF
+        if c < 0x80 then need = 0
+        elseif c >= 0xC2 and c <= 0xDF then need = 1
+        elseif c == 0xE0 then need, lo = 2, 0xA0
+        elseif c == 0xED then need, hi = 2, 0x9F
+        elseif c >= 0xE1 and c <= 0xEF then need = 2
+        elseif c == 0xF0 then need, lo = 3, 0x90
+        elseif c >= 0xF1 and c <= 0xF3 then need = 3
+        elseif c == 0xF4 then need, hi = 3, 0x8F
+        else return false end
+        for j = 1, need do
+            local b = s:byte(i + j)
+            if not b or b < (j == 1 and lo or 0x80) or b > (j == 1 and hi or 0xBF) then return false end
+        end
+        i = i + need + 1
+    end
+    return true
+end
+
+-- The words every object already has as a key on the site (guildos-web lib/core-receipt.ts PROTO_KEYS):
+-- a core or a guest named so is refused there.
+local PROTO_WORDS = { __proto__ = true, constructor = true, prototype = true }
+
+-- Why `s` cannot be a name the site keeps for a core or a guest (guildos-web lib/core-receipt.ts
+-- `isName`): "empty", "long" (over `maxBytes`, 48 by default), "char" (a `|`, a control character or
+-- broken UTF-8) or "word" (constructor, prototype, __proto__). nil when it can.
+function GuildOS:NameProblem(s, maxBytes)
+    if type(s) ~= "string" then return "empty" end
+    -- Blank as JavaScript's trim() sees it: ASCII spaces, no-break and the other Unicode spaces.
+    local bare = s:gsub("[%s]", ""):gsub("\194\160", ""):gsub("\225\154\128", ""):gsub("\226\128[\128-\138\168\169\175]", "")
+        :gsub("\226\129\159", ""):gsub("\227\128\128", ""):gsub("\239\187\191", "")
+    if bare == "" then return "empty" end
+    if #s > (maxBytes or 48) then return "long" end
+    if s:find("[%c|]") or not self:IsUtf8(s) then return "char" end
+    if PROTO_WORDS[s] then return "word" end
+    return nil
+end

@@ -287,10 +287,27 @@ end
 -- Creates a new core with all sub-tables initialized, as an officer asks from the panel.
 -- Returns true on success, or false + error message on failure. A guild linked to the site creates
 -- its cores on Discord (#339): refused here, saying where.
+-- What a core's name may be (review of #347): what the site keeps of it in the upload's receipt
+-- (guildos-web lib/core-receipt.ts `isName`), so a core named in game is never one the site refuses
+-- whole. nil when it may, else the line saying why.
+local CORE_NAME_LIMIT = 48   -- bytes
+local function badCoreName(name)
+    local why = GuildOS:NameProblem(name, CORE_NAME_LIMIT)
+    if why == "empty" then return L["Name cannot be empty."] end
+    if why == "long" then
+        return string.format(L["A core's name has at most %d bytes (a letter with an accent is two)."], CORE_NAME_LIMIT)
+    end
+    if why then return L["A core's name cannot have | or control characters, nor be constructor, prototype or __proto__."] end
+    return nil
+end
+CoreManager.BadCoreName = badCoreName
+
 function CoreManager:Create(name)
     if not name or name == "" then
         return false, L["Name cannot be empty."]
     end
+    local bad = badCoreName(name)
+    if bad then return false, bad end
     if GuildOS.db.cores[name] then
         return false, L["A core with that name already exists."]
     end
@@ -353,6 +370,8 @@ function CoreManager:Rename(oldName, newName)
     if not newName or newName == "" then
         return false, L["Name cannot be empty."]
     end
+    local bad = badCoreName(newName)
+    if bad then return false, bad end
     if GuildOS.db.cores[newName] then
         return false, L["A core with that name already exists."]
     end
@@ -452,7 +471,9 @@ end
 function CoreManager:GetCore(name)
     if name == nil then name = self:GetActiveName() end
     if not name or name == "" then return nil end
-    if not GuildOS.db.cores[name] and not self:IsLinked() then
+    -- Nor a name no core may have (badCoreName): a raid tag or another officer's roster under it is
+    -- no core either.
+    if not GuildOS.db.cores[name] and not self:IsLinked() and not badCoreName(name) then
         newCore(name)
     end
     return GuildOS.db.cores[name]
@@ -914,17 +935,22 @@ local function countOf(t)
     return n
 end
 
--- A guest's record from what an officer typed or sent, every field checked.
+-- A guest's record from what an officer typed or sent, every field checked. The key (with the realm)
+-- is who the guest is; the name is only how they are shown, cut on a character, never with a `|` or a
+-- control character in it: one that has them, or none, is the key's own name. nil for a key that
+-- cannot be anyone's name.
 local function guestRecord(self, key, info, stay)
     info = type(info) == "table" and info or {}
+    if type(key) ~= "string" or key == "" or key:find("[%c|]") then return nil end
     local cls = self.CLASS_ROLES[info.class] and info.class or "WARRIOR"
-    local name = type(info.name) == "string" and info.name ~= "" and info.name or key
+    local name = type(info.name) == "string" and info.name or ""
+    if name:find("[%c|]") or not GuildOS:IsUtf8(name) or strtrim(name) == "" then name = key:match("^([^-]+)") or key end
     local note = type(info.note) == "string" and info.note or ""
     return {
-        name = #name > GUEST_TEXT and name:sub(1, GUEST_TEXT) or name,
+        name = GuildOS:Utf8Cut(name, GUEST_TEXT),
         class = cls,
         role = self:RoleFor(cls, info.role, key),
-        note = #note > GUEST_NOTE and note:sub(1, GUEST_NOTE) or note,
+        note = GuildOS:Utf8Cut(note, GUEST_NOTE),
         stay = stay == true or nil,
         at = math.floor(GuildOS.Finite(info.at) or GetServerTime()),
         by = type(info.by) == "string" and info.by:sub(1, GUEST_KEY) or nil,
@@ -951,6 +977,7 @@ function CoreManager:AddGuest(playerKey, info, coreName, stay)
         return false, string.format(L["A core holds at most %d guests."], GUEST_MAX)
     end
     local rec = guestRecord(self, playerKey, info, stay)
+    if not rec then return false, L["Type the guest's name."] end
     rec.by = rec.by or GuildOS.Compat.PlayerName()
     guests[playerKey] = rec
     publishGuests(self, name, { [playerKey] = rec }, nil)
@@ -1042,10 +1069,13 @@ function CoreManager:MigrateGuests(coreName)
                 if type(rec) ~= "table" or rec.src ~= "discord" then
                     rec = type(rec) == "table" and rec or {}
                     local guest = guestRecord(self, key, rec, true)
-                    guest.at = GetServerTime()
-                    guests[key] = guest
-                    core.members[key] = nil
-                    moved = moved + 1
+                    -- A key no guest can have stays a member: nobody disappears.
+                    if guest then
+                        guest.at = GetServerTime()
+                        guests[key] = guest
+                        core.members[key] = nil
+                        moved = moved + 1
+                    end
                 end
             end
         end
@@ -1078,9 +1108,10 @@ function CoreManager:OnGuestsSync(d)
         n = n + 1
         if n > GUEST_MAX then break end
         local k = guestKey(key)
-        if k and type(rec) == "table" and not (type(core.members) == "table" and core.members[k])
+        local guest = k and type(rec) == "table" and guestRecord(self, k, rec, rec.stay == true)
+        if guest and not (type(core.members) == "table" and core.members[k])
             and (guests[k] or countOf(guests) < GUEST_MAX) then
-            guests[k] = guestRecord(self, k, rec, rec.stay == true)
+            guests[k] = guest
             changed = true
         end
     end
