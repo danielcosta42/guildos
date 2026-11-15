@@ -253,6 +253,29 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(GuildOS.db.cores["Núcleo Beta"] and GuildOS.db.cores["Núcleo Alfa"] == nil and count(GuildOS.db.cores) == 1,
     G("and renames its own core the same way"))
   check(CM:IsLinked() and CM:LinkSeenAt() == list.seenAt, G("another officer's list links this client too, as fresh as theirs"))
+  -- A core imported by a version from before `discordName`: the first package after the update already
+  -- carries the Discord's new name, and the core follows it, as the officer who saw both did.
+  CM = load(game)
+  GuildOS.db.cores["Núcleo Alfa"] = { name = "Núcleo Alfa", members = {}, discordTag = "nucleo-alfa", raidSize = 10,
+    points = { mode = "dkp", config = {}, standings = { Ana = { current = 70 } }, log = {}, appliedOps = {}, appliedCount = 0 } }
+  CM:Initialize()
+  CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
+  check(GuildOS.db.cores["Núcleo Beta"] and GuildOS.db.cores["Núcleo Alfa"] == nil and count(GuildOS.db.cores) == 1
+    and GuildOS.db.cores["Núcleo Beta"].points.standings.Ana.current == 70,
+    G("a core with no Discord name remembered follows the first package's new name, points along"))
+  -- Nor when the core is named by its tag, or the name is another core's.
+  CM = load(game)
+  GuildOS.db.cores["alfa-2"] = { name = "alfa-2", members = {}, discordTag = "alfa" }
+  GuildOS.db.cores["nucleo-alfa"] = { name = "nucleo-alfa", members = {}, discordTag = "nucleo-alfa" }
+  GuildOS.db.cores["Gama"] = { name = "Gama", members = {}, discordTag = "gama" }
+  GuildOS.db.cores["Delta"] = { name = "Delta", members = {} }
+  CM:Initialize()
+  CM:ImportFromSite(package(2000, { { tag = "alfa", name = "Alfa Nova", size = 10, members = {} }, alfa("Núcleo Beta"),
+    { tag = "gama", name = "Delta", size = 10, members = {} } }), 2000)
+  check(GuildOS.db.cores["alfa-2"] and GuildOS.db.cores["nucleo-alfa"] and GuildOS.db.cores["Gama"]
+    and CM:IsFromDiscord("Gama") and not CM:IsFromDiscord("Delta"),
+    G("a core named by its tag, or whose new name another core has, keeps its own"))
+
   -- A core named apart from the Discord (by its tag, or linked by hand) keeps its name.
   CM = load(game)
   CM:Initialize()

@@ -1366,7 +1366,8 @@ end
 -- along (moveCore). The link is the tag, so the core is the same one whatever it is called; the name
 -- follows only when the game's core carried the Discord's previous name, so a core named by its tag
 -- (a name the Discord reused) or linked by hand under another name keeps it, and only to a name no
--- other core here has. `discordName` is remembered for the next time. Returns the core's name now.
+-- other core here has. `discordName` is remembered for the next time; a core holding a tag with none
+-- remembered (imported before it was kept) follows unless named by its tag. Returns the core's name now.
 local function followName(self, name, discordName)
     local core = GuildOS.db.cores[name]
     if type(core) ~= "table" or type(discordName) ~= "string" or discordName == "" or #discordName > CORE_NAME_MAX then
@@ -1374,7 +1375,18 @@ local function followName(self, name, discordName)
     end
     local before = core.discordName
     core.discordName = discordName
-    if before and before ~= discordName and name == before and not GuildOS.db.cores[discordName] then
+    if GuildOS.db.cores[discordName] then return name end
+    local follow = before and before ~= discordName and name == before
+    -- A core imported by a version from before `discordName` (#339) has none: the first package after
+    -- the update may already carry the new name, and recording it alone left this client on the old one
+    -- forever while an officer who saw both followed. It follows too when it holds the tag and is not
+    -- named by it (a name the Discord reused, "alfa-2", stays), nor linked by hand under a name of the
+    -- officers' (`linkAt`, LinkDiscord).
+    if not before and core.discordTag and not core.linkAt and name ~= discordName then
+        local tag = core.discordTag
+        follow = name ~= tag and not (name:sub(1, #tag + 1) == tag .. "-" and name:sub(#tag + 2):match("^%d+$"))
+    end
+    if follow then
         moveCore(name, discordName)
         return discordName
     end

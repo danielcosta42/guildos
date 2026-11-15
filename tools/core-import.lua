@@ -533,7 +533,9 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   -- ── A core linked by hand is never taken by another Discord core of its name (#138) ──
   CM = load(game)
   make("Alpha")
-  GuildOS.db.cores["Alpha"].discordTag = "nucleo-alfa"
+  -- Linked by hand as LinkDiscord links: the tag and when (review of #339: a core holding a tag with no
+  -- Discord name remembered and no `linkAt` is one an older version imported, and follows the name).
+  GuildOS.db.cores["Alpha"].discordTag, GuildOS.db.cores["Alpha"].linkAt = "nucleo-alfa", 1000
   GuildOS.db.cores["Alpha"].members[K("Pug")] = { name = "Pug", class = "MAGE", role = "rdps", note = "pug" }
   CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {
     { tag = "nucleo-alfa", name = "Núcleo Alfa", size = 20, members = { { key = "Ana-Firemaw", name = "Ana" } } },
