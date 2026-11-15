@@ -70,6 +70,8 @@ local QUEUE_KEY_MAX = 64          -- bytes of a player's key in a queue
 -- Returns the points DB for the currently active core, or the global
 -- db.points when no named core is active (ungrouped raids).
 ----------------------------------------------------------------------
+-- nil while `InCore` names a core this client does not have (CoreManager:GetPointsDB): no pool, and
+-- every caller that charges or gives checks it (LootMaster's `pointsReady`).
 function Points:GetDB()
     if GuildOS.CoreManager then
         return GuildOS.CoreManager:GetPointsDB(self.scope)
@@ -77,10 +79,24 @@ function Points:GetDB()
     return GuildOS.db.points
 end
 
+-- An empty pool that is no one's, for this module's own reads and writes while there is none: what is
+-- written there goes nowhere, and nothing of it is told to the other officers (canTell).
+local function nowhere()
+    return { nowhere = true, mode = "dkp", config = {}, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+end
+function Points:Pool()
+    return self:GetDB() or nowhere()
+end
+
 -- The core whose pool is being read and written: the raid's active one, or the one `InCore` names.
+-- A raid tag no core has here (a linked guild makes none, #339) is a raid outside a core: "", the
+-- guild's pool, which is the one GetDB reads for it.
 function Points:ActiveCore()
     if self.scope ~= nil then return self.scope end
-    return GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
+    local CM = GuildOS.CoreManager
+    local name = CM and CM:GetActiveName() or ""
+    if name ~= "" and not CM:GetCore(name) then return "" end
+    return name
 end
 
 -- Runs `fn(...)` with the pool of the core `coreName` ("" is the guild's own) as the one every read,
@@ -99,6 +115,7 @@ function Points:InCore(coreName, fn, ...)
 end
 
 -- Returns the points DB for a specific core (used during sync routing).
+-- nil for a core this client does not have: the sync skips those entries, unapplied, until it arrives.
 function Points:GetDBForCore(coreName)
     if GuildOS.CoreManager then
         return GuildOS.CoreManager:GetPointsDB(coreName)
@@ -133,8 +150,8 @@ function Points:Initialize()
 end
 
 -- Internal helpers — always use the active pool via GetDB()
-local function cfg()       return Points:GetDB().config    end
-local function standings()  return Points:GetDB().standings end
+local function cfg()       return Points:Pool().config    end
+local function standings()  return Points:Pool().standings end
 
 -- An entry's own name: the second, sixteen random bits, then who made it (a short hash of the
 -- author's name) and a count that only grows while this client runs. The first two alone, as every
@@ -158,8 +175,14 @@ end
 ----------------------------------------------------------------------
 -- The pool `coreName` names: nil is the active core's, "" the guild's own.
 local function poolOf(coreName)
-    if coreName == nil then return Points:GetDB() end
-    return Points:GetDBForCore(coreName)
+    if coreName == nil then return Points:Pool() end
+    return Points:GetDBForCore(coreName) or nowhere()
+end
+
+-- Whether what this module just wrote may be told to the other officers: never an entry for a core
+-- this client has no pool for (written nowhere here, it would be applied elsewhere alone).
+local function canTell()
+    return GuildOS.SyncService ~= nil and Points:GetDB() ~= nil
 end
 
 -- `coreName` (issue #338): another core's pool than the active one's, when a core picks its own loot
@@ -211,7 +234,7 @@ function Points:GetStandings()
 end
 
 function Points:GetLog(limit)
-    local log = self:GetDB().log
+    local log = self:Pool().log
     if not limit or limit >= #log then return log end
     local out = {}
     for i = 1, limit do out[i] = log[i] end
@@ -239,7 +262,7 @@ end
 -- Apply an entry to a specific pool (nil → active pool).
 function Points:ApplyEntry(e, pool)
     if not e or not e.key or not e.delta then return end
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     local stnd = pool.standings
     local s = stnd[e.key]
     if not s then
@@ -291,7 +314,7 @@ end
 -- Mark an op as applied in a specific pool (nil → active pool).
 function Points:MarkApplied(op, pool)
     if not op then return end
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     if not pool.appliedOps[op] then
         pool.appliedOps[op] = true
         pool.appliedCount = (pool.appliedCount or 0) + 1
@@ -303,7 +326,7 @@ function Points:MarkApplied(op, pool)
 end
 
 local function publishDelta(entries)
-    if GuildOS.SyncService then
+    if canTell() then
         GuildOS.SyncService:Publish("points", "delta", { entries = entries })
     end
 end
@@ -316,7 +339,7 @@ end
 ----------------------------------------------------------------------
 -- The guild's named reasons to earn: { { key, name, value, weekly }, ... } (weekly 0 or nil: no cap).
 function Points:GetReasons(pool)
-    local c = (pool or self:GetDB()).config
+    local c = (pool or self:Pool()).config
     return (c and type(c.reasons) == "table") and c.reasons or {}
 end
 
@@ -332,7 +355,7 @@ function Points:SetReason(rk, name, value, weekly)
     if not GuildOS:IsOfficer() then return false end
     rk = tostring(rk or ""):lower():gsub("[^a-z0-9]", ""):sub(1, 8)
     if rk == "" then return false end
-    local c = self:GetDB().config
+    local c = self:Pool().config
     local list = {}
     for _, r in ipairs(self:GetReasons()) do
         if r.key ~= rk then list[#list + 1] = r end
@@ -363,7 +386,7 @@ end
 
 -- What `rk` has given `key` in the week of `ts`.
 function Points:WeeklyEarned(key, rk, ts, pool)
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     local t = pool.weekly and pool.weekly[self:Week(ts)]
     return (t and t[key .. "|" .. rk]) or 0
 end
@@ -391,7 +414,7 @@ end
 -- How much of `amount` `key` may still earn, and what held the rest back ("weekly", "cap" or nil).
 -- EPGP has no cap: EP only matters against GP.
 function Points:Room(key, amount, rk, pool)
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     local c, why = pool.config or {}, nil
     local reason = rk and self:GetReason(rk, pool)
     if reason and (reason.weekly or 0) > 0 then
@@ -594,7 +617,7 @@ function Points:OnBossKill(encounterName)
         self:EarnCounters("boss", keys)
     end
     -- A pool not set up yet (the module switched off in Settings, so never initialized) awards nothing.
-    local pool = self:GetDB()
+    local pool = self:Pool()
     if not (pool and pool.config and pool.config.autoAward) then return end
     if not GuildOS:IsOfficer() then return end
     if not (UnitIsGroupLeader and UnitIsGroupLeader("player")) then return end
@@ -639,7 +662,7 @@ end
 -- each award's op is the raid night's own (RaidNight), so a second client that ends the same raid, or
 -- the same client ending it again after a /reload, gives nothing twice.
 function Points:OnRaidEnd(session)
-    local pool = self:GetDB()
+    local pool = self:Pool()
     if not GuildOS:IsOfficer() or type(session) ~= "table" then return 0 end
     local snaps = session.snapshots or {}
     local first, last = snaps[1], snaps[#snaps]
@@ -731,7 +754,7 @@ end
 -- The guild's own price for one item (nil or 0 goes back to the rule). Officer only.
 function Points:SetItemPrice(itemId, price)
     if not GuildOS:IsOfficer() or not tonumber(itemId) then return false end
-    local c = self:GetDB().config
+    local c = self:Pool().config
     c.itemPrices = type(c.itemPrices) == "table" and c.itemPrices or {}
     price = tonumber(price)
     c.itemPrices[tonumber(itemId)] = (price and price > 0) and math.floor(price) or nil
@@ -805,7 +828,7 @@ end
 
 -- What `key` holds on the counter `acct`: nothing once its period is over.
 function Points:Counter(acct, key, pool)
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     local a = pool.accounts and pool.accounts[acct]
     if not a then return 0 end
     local now = self:CounterPeriod(a.rs)
@@ -825,7 +848,7 @@ end
 
 function Points:ApplyCounterEntry(e, pool)
     if not counterEntry(e) then return false end
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     pool.accounts = pool.accounts or {}
     local a = pool.accounts[e.acct]
     if not a or a.rs ~= e.rs then
@@ -857,12 +880,12 @@ function Points:AddCounter(acct, key, delta, reset, per, op)
     e.acct, e.rs = acct, COUNTER_RESETS[reset] and reset or "never"
     e.per = per or self:CounterPeriod(e.rs)
     if op then
-        if self:GetDB().appliedOps[op] then return nil end
+        if self:Pool().appliedOps[op] then return nil end
         e.op = op
     end
     if not self:ApplyCounterEntry(e) then return nil end
     self:MarkApplied(e.op)
-    if GuildOS:IsOfficer() and GuildOS.SyncService then
+    if GuildOS:IsOfficer() and canTell() then
         GuildOS.SyncService:Publish("points", "cdelta", { entries = { e } })
     end
     self:Refresh()
@@ -876,7 +899,7 @@ end
 function Points:EarnCounters(auto, keys, tag)
     local LR = GuildOS.LootRule
     if not (LR and LR.Active and GuildOS:IsOfficer()) then return 0 end
-    local pool = self:GetDB()
+    local pool = self:Pool()
     if not (pool and pool.appliedOps) then return 0 end
     local entries = {}
     for _, a in ipairs(LR:Counters()) do
@@ -899,7 +922,7 @@ function Points:EarnCounters(auto, keys, tag)
         end
     end
     if #entries > 0 then
-        if GuildOS.SyncService then GuildOS.SyncService:Publish("points", "cdelta", { entries = entries }) end
+        if canTell() then GuildOS.SyncService:Publish("points", "cdelta", { entries = entries }) end
         self:Refresh()
     end
     return #entries
@@ -908,7 +931,7 @@ end
 -- Everyone on a counter or a bonus account with something on it: { { key, name, class, value }, ... },
 -- the most first. For the points window.
 function Points:CounterStandings(acct, pool)
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     local a = pool.accounts and pool.accounts[acct]
     local list = {}
     for key in pairs(a and a.v or {}) do
@@ -995,7 +1018,7 @@ end
 ----------------------------------------------------------------------
 -- The order of the queue `acct`, first in line first. Not a copy: never changed by a caller.
 function Points:Queue(acct, pool)
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     local q = pool.queues and pool.queues[acct]
     return q and q.list or {}
 end
@@ -1027,7 +1050,7 @@ end
 
 function Points:ApplyQueueEntry(e, pool)
     if not queueEntry(e) then return false end
-    pool = pool or self:GetDB()
+    pool = pool or self:Pool()
     pool.queues = pool.queues or {}
     local q = pool.queues[e.acct]
     if q and (e.seq < q.seq or (e.seq == q.seq and e.op <= q.op)) then return false end
@@ -1040,7 +1063,7 @@ end
 -- The queue's order becomes `list`. Kept here whoever awards, and told to the guild when an officer
 -- does, as a counter's entry is. Returns the entry, or nil.
 function Points:SetQueue(acct, list)
-    local pool = self:GetDB()
+    local pool = self:Pool()
     local q = pool.queues and pool.queues[acct]
     local e = {
         op = newOp(), acct = acct, seq = (q and q.seq or 0) + 1, list = list,
@@ -1049,7 +1072,7 @@ function Points:SetQueue(acct, list)
     }
     if not self:ApplyQueueEntry(e, pool) then return nil end
     self:MarkApplied(e.op, pool)
-    if GuildOS:IsOfficer() and GuildOS.SyncService then
+    if GuildOS:IsOfficer() and canTell() then
         GuildOS.SyncService:Publish("points", "qset", { entries = { e } })
     end
     self:Refresh()
@@ -1233,8 +1256,9 @@ function Points:OnSync(env)
         local applied = false
         for _, e in ipairs(d.entries) do
             e.key = GuildOS:LocalMemberKey(e.key)   -- the sending officer's key, as this client's (#97)
+            -- A core this client does not have (yet): skipped, never marked, so it lands once it arrives.
             local pool = self:GetDBForCore(e.core)
-            if e.op and not pool.appliedOps[e.op] then
+            if pool and e.op and not pool.appliedOps[e.op] then
                 self:ApplyEntry(e, pool)
                 self:MarkApplied(e.op, pool)
                 applied = true
@@ -1248,7 +1272,7 @@ function Points:OnSync(env)
             if type(e) == "table" and type(e.key) == "string" and type(e.op) == "string" then
                 e.key = GuildOS:LocalMemberKey(e.key)
                 local pool = self:GetDBForCore(e.core)
-                if not pool.appliedOps[e.op] then
+                if pool and not pool.appliedOps[e.op] then
                     applied = self:ApplyCounterEntry(e, pool) or applied
                     self:MarkApplied(e.op, pool)
                 end
@@ -1261,7 +1285,7 @@ function Points:OnSync(env)
         for _, e in ipairs(d.entries) do
             if type(e) == "table" and type(e.op) == "string" and type(e.list) == "table" then
                 local pool = self:GetDBForCore(e.core)
-                if not pool.appliedOps[e.op] then
+                if pool and not pool.appliedOps[e.op] then
                     local list, seen = {}, {}
                     for _, key in ipairs(e.list) do
                         if type(key) == "string" then
@@ -1277,6 +1301,9 @@ function Points:OnSync(env)
         if applied then self:Refresh() end
     elseif env.act == "snapshot" and d then
         local pool = self:GetDBForCore(d.core)
+        -- A core this client does not have: no pool to write, and its revision left unread, so the
+        -- officer's next snapshot for it lands once the core does.
+        if not pool then return end
         -- Use a composite revision key so per-core snapshots don't
         -- overwrite each other's revision counter.
         local domain = d.core and ("points:" .. d.core) or "points"
@@ -1316,6 +1343,7 @@ function Points:BroadcastSnapshot(coreName)
     if not GuildOS.SyncService then return end
     if coreName == nil then coreName = self:ActiveCore() end
     local pool  = poolOf(coreName)
+    if pool.nowhere then return end   -- a core this client does not have: nothing of its own to tell
     local domain = (coreName ~= "") and ("points:" .. coreName) or "points"
     local rev = GuildOS.SyncService:NextRevision(domain, "standings")
     GuildOS.SyncService:Publish("points", "snapshot", {

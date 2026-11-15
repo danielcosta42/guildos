@@ -134,7 +134,14 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   local ok, why = CM:Create("Novo")
   check(not ok and why == REFUSED and GuildOS.db.cores["Novo"] == nil, G("creating is refused, saying where: " .. tostring(why)))
   check(CM:GetCore("Tag Solto") == nil and GuildOS.db.cores["Tag Solto"] == nil, G("a raid tag no core has makes none"))
-  check(CM:GetPointsDB("Tag Solto") == GuildOS.db.points, G("its points go to the guild's pool"))
+  -- Rewritten (review of #339): this asserted the fallback to the guild's pool, the way another officer's
+  -- entries for a core this client lacks landed in the guild's own standings.
+  GuildOS.db.points = { standings = {} }
+  check(CM:GetPointsDB("Tag Solto") == nil and GuildOS.db.cores["Tag Solto"] == nil,
+    G("a core named that this client does not have has no pool, never the guild's"))
+  GuildOS.db.raidTracker.currentGroupTag = "Tag Solto"
+  check(CM:GetPointsDB() == GuildOS.db.points, G("a raid under a tag no core has is outside a core: the guild's pool"))
+  GuildOS.db.raidTracker.currentGroupTag = ""
   check(CM:AddMember("Ana", { name = "Ana" }, "Tag Solto") == false and GuildOS.db.cores["Tag Solto"] == nil, G("nor does adding to it"))
   handlers["core.roster"]({ act = "update", data = { coreName = "Do Outro", members = { X = { name = "X" } } } }, "Officer-Firemaw")
   check(GuildOS.db.cores["Do Outro"] == nil, G("another officer's roster that would make a core is ignored"))
@@ -157,6 +164,51 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:Delete("Antigo 2") and GuildOS.db.cores["Antigo 2"] == nil, G("and deleted, as before"))
   -- The Discord's are not, as before.
   check(not CM:Rename("Núcleo Alfa", "X") and not CM:Delete("Núcleo Alfa"), G("a Discord core is neither renamed nor deleted here"))
+
+  -- ── Another officer's points for a core this client has not got ──────
+  dofile(ADDON .. "/Modules/Points.lua")
+  local P = GuildOS.Points
+  GuildOS.db.points = { mode = "dkp", config = {}, standings = { Guildguy = { current = 500 } }, log = {}, appliedOps = {}, appliedCount = 0 }
+  P:Initialize()
+  local revs = {}
+  GuildOS.SyncService.ShouldApply = function(_, domain, _, rev) return rev > (revs[domain] or 0) end
+  GuildOS.SyncService.SetRevision = function(_, domain, _, rev) revs[domain] = rev end
+  local ph = handlers["points"]
+  ph({ act = "snapshot", rev = 5, data = { core = "Alfa Nova", mode = "dkp", config = {}, standings = { Raider = { current = 42 } } } },
+    "Officer-Firemaw")
+  check(GuildOS.db.points.standings.Guildguy and count(GuildOS.db.points.standings) == 1,
+    G("another officer's snapshot for a core this client lacks leaves the guild's pool alone"))
+  local delta = { entries = { { op = "op-1", key = "Guildguy", delta = 25, core = "Alfa Nova", kind = "award", reason = "Boss" } } }
+  local cdelta = { entries = { { op = "op-2", key = "Guildguy", delta = 1, core = "Alfa Nova", kind = "counter", acct = "plus",
+    rs = "never", per = 0 } } }
+  local qset = { entries = { { op = "op-3", acct = "q", seq = 1, core = "Alfa Nova", list = { "Guildguy" } } } }
+  ph({ act = "delta", data = delta }, "Officer-Firemaw")
+  ph({ act = "cdelta", data = cdelta }, "Officer-Firemaw")
+  ph({ act = "qset", data = qset }, "Officer-Firemaw")
+  check(GuildOS.db.points.standings.Guildguy.current == 500 and count(GuildOS.db.points.standings) == 1
+    and not GuildOS.db.points.appliedOps["op-1"]
+    and not GuildOS.db.points.appliedOps["op-2"] and not GuildOS.db.points.appliedOps["op-3"]
+    and not (GuildOS.db.points.accounts and next(GuildOS.db.points.accounts)) and not (GuildOS.db.points.queues and next(GuildOS.db.points.queues)),
+    G("nor do its points, counters and queues, which stay unapplied"))
+  -- The core arrives (the Discord's list): the same traffic lands on it, once.
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Alfa Nova", list = {}, tag = "alfa-nova", size = 10, at = NOW } },
+    "Officer-Firemaw")
+  ph({ act = "delta", data = delta }, "Officer-Firemaw")
+  ph({ act = "delta", data = delta }, "Officer-Firemaw")
+  local _, got = next(CM:GetPointsDB("Alfa Nova").standings)
+  check(got and got.current == 25 and count(CM:GetPointsDB("Alfa Nova").standings) == 1 and GuildOS.db.cores["Alfa Nova"].points.appliedOps["op-1"]
+    and GuildOS.db.points.standings.Guildguy.current == 500, G("once the core is here its entries land on it, once"))
+  ph({ act = "snapshot", rev = 5, data = { core = "Alfa Nova", mode = "dkp", config = {}, standings = { Raider = { current = 42 } } } },
+    "Officer-Firemaw")
+  _, got = next(CM:GetPointsDB("Alfa Nova").standings)
+  check(got and got.current == 42 and count(GuildOS.db.points.standings) == 1,
+    G("and its snapshot, the revision not spent on the skip"))
+  -- What this client writes under a core it does not have is no one's, and told to no one.
+  sent = {}
+  P:InCore("Sumiu", function() P:Charge("Guildguy", 10, "x") end)
+  check(GuildOS.db.points.standings.Guildguy.current == 500 and count(GuildOS.db.points.standings) == 1 and #sent == 0, G("a charge in a core this client lacks goes nowhere"))
+  check(P:InCore("Sumiu", function() return P:GetDB() end) == nil, G("and reads as no pool to the loot master"))
+  GuildOS.Points = nil
 
   -- ── The loot rule the site sends is the site's ────────────────────────
   check(CM:SetLootRule("Núcleo Alfa", { model = "rolls" }), G("with no rule from the site, the officers set the core's"))

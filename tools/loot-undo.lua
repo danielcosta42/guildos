@@ -120,6 +120,18 @@ check(LM:UndoLastAward().player == "Ana", "a second undo takes the one before")
 local none, why = LM:UndoLastAward()
 check(none == nil and why == "No award to undo.", "and with nothing left, it says so")
 
+-- An award made in a core that is gone from this client gives nothing back, and never into the guild's
+-- own accounts (review of #339: GetPointsDB fell back to the guild's pool for a core it lacked).
+award("Bo", 16914, 20)
+GuildOS.db.lootMaster.awardHistory[1].core = "Fechado"
+local guildBefore = P:Get(boKey)
+local gone, goneWhy = LM:UndoLastAward()
+check(gone == nil and goneWhy == "The core that item was given in is no longer here: there is nothing to give back into."
+  and P:Get(boKey) == guildBefore and not GuildOS.db.lootMaster.awardHistory[1].undone,
+  "an award in a core that is gone is not undone into the guild's points")
+table.remove(GuildOS.db.lootMaster.awardHistory, 1)
+table.remove(GuildOS.db.lootHistory, 1)
+
 -- A peer forgets the award it recorded on its own clock, when an officer says so.
 GuildOS.db.lootHistory = { { itemLink = LINK, player = "Cy", timestamp = NOW + 40, fromML = true } }
 LM:OnAddonMessage(LM.PREFIX, "UNDO|Cy|16914|" .. NOW, "RAID", "Other-Realm")

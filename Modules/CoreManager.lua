@@ -715,14 +715,22 @@ end
 -- Points/DKP — per-core pool, with fallback to global db.points
 -- for the "ungrouped" (empty-tag) pseudo-core.
 ----------------------------------------------------------------------
+-- A core NAMED that this client does not have (a linked guild makes none, #339: renamed or new on
+-- Discord and not here yet) has no pool: nil, never the guild's, or another officer's entries for that
+-- core would land in the guild's own standings. Only the raid's active tag naming no core reads as the
+-- guild's: that raid is outside a core (Points:ActiveCore tags its entries "").
 function CoreManager:GetPointsDB(coreName)
-    if coreName == nil then coreName = self:GetActiveName() end
+    local named = coreName ~= nil
+    if not named then coreName = self:GetActiveName() end
     if not coreName or coreName == "" then
         return GuildOS.db.points
     end
 
     local core = self:GetCore(coreName)
-    if not core then return GuildOS.db.points end
+    if not core then
+        if named then return nil end
+        return GuildOS.db.points
+    end
 
     if not core.points then
         core.points = {
@@ -745,6 +753,13 @@ function CoreManager:GetPointsDB(coreName)
     if not p.appliedOps   then p.appliedOps    = {}     end
     if p.appliedCount == nil then p.appliedCount = 0    end
     return p
+end
+
+-- Whether `coreName` names a pool here ("" is the guild's), without making a core: an undo into a core
+-- that is gone has nowhere to give back to.
+function CoreManager:HasPool(coreName)
+    if coreName == nil or coreName == "" then return true end
+    return type(GuildOS.db.cores[coreName]) == "table"
 end
 
 ----------------------------------------------------------------------

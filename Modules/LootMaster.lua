@@ -200,8 +200,13 @@ end
 -- was announced, kept on it like its rule (issue #338). The raid's core changing while a roll is open
 -- used to send the charge, the +1 and the award log to the new core, with the rule and the balances
 -- the order was read from still the old one's.
+-- A raid tag no core has here (a linked guild makes none, #339) is a raid outside a core: "", the
+-- guild's accounts, as Points:ActiveCore reads it.
 function LootMaster:ActiveCore()
-    return GuildOS.CoreManager and GuildOS.CoreManager:GetActiveName() or ""
+    local CM = GuildOS.CoreManager
+    local name = CM and CM:GetActiveName() or ""
+    if name ~= "" and not CM:GetCore(name) then return "" end
+    return name
 end
 
 -- Runs `fn(...)` on the accounts of the item being given (Points:InCore). With no item, or one that
@@ -2411,6 +2416,12 @@ function LootMaster:UndoLastAward()
     if not GuildOS:IsOfficer() then return nil, L["Only an officer can undo an award."] end
     local award = self:LastAward()
     if not award then return nil, L["No award to undo."] end
+    -- Its core is gone from this client (closed): what the award took has nowhere to go back to, and
+    -- never into the guild's own accounts.
+    local CM = GuildOS.CoreManager
+    if CM and CM.HasPool and not CM:HasPool(award.core) then
+        return nil, L["The core that item was given in is no longer here: there is nothing to give back into."]
+    end
     award.undone = true
     forgetAward(award.player, award.itemId, award.timestamp)
     -- Into the accounts of the core the award was made in (issue #338), whatever core is the raid's now.
