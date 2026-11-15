@@ -201,11 +201,15 @@ end
 -- used to send the charge, the +1 and the award log to the new core, with the rule and the balances
 -- the order was read from still the old one's.
 -- A raid tag no core has here (a linked guild makes none, #339) is a raid outside a core: "", the
--- guild's accounts, as Points:ActiveCore reads it.
+-- guild's accounts, as Points:ActiveCore reads it, and the officer is told so the same way.
 function LootMaster:ActiveCore()
     local CM = GuildOS.CoreManager
     local name = CM and CM:GetActiveName() or ""
-    if name ~= "" and not CM:GetCore(name) then return "" end
+    if name ~= "" and not CM:GetCore(name) then
+        local P = GuildOS.Points
+        if P and P.TellMissingCore then P:TellMissingCore(name) end
+        return ""
+    end
     return name
 end
 
