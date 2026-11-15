@@ -720,8 +720,14 @@ end
 ----------------------------------------------------------------------
 -- Minimal recursive-descent JSON decoder
 -- Handles objects, arrays, strings, numbers, booleans, null.
+-- What it reads comes from outside the game (the site's packages, a pasted soft-reserve export): text
+-- that is not JSON stops the read (`malformed`), and the caller gets nil. It used to stand still on a
+-- character it did not expect inside a list or an object, a number written with an exponent among
+-- them (`1e-7`), and the game froze with it.
 ----------------------------------------------------------------------
-local function JsonDecode(s)
+local function malformed() error("json", 0) end
+
+local function decodeJson(s)
     local pos = 1
 
     local function skip()
@@ -757,8 +763,14 @@ local function JsonDecode(s)
 
     local function parseNumber()
         local n, np = s:match("^(-?%d+%.?%d*)()", pos)
-        if n then pos = np end
-        return tonumber(n)
+        if not n then malformed() end
+        -- An exponent, as any JSON writer may give a very small or a very large number.
+        local e, ep = s:match("^([eE][-+]?%d+)()", np)
+        if e then n, np = n .. e, ep end
+        pos = np
+        local value = tonumber(n)
+        if not value then malformed() end
+        return value
     end
 
     local function parseArray()
@@ -771,7 +783,8 @@ local function JsonDecode(s)
             skip()
             local c = s:sub(pos, pos)
             if c == ']' then pos = pos + 1; break end
-            if c == ',' then pos = pos + 1 end
+            if c ~= ',' then malformed() end
+            pos = pos + 1
         end
         return arr
     end
@@ -783,14 +796,17 @@ local function JsonDecode(s)
         if s:sub(pos, pos) == '}' then pos = pos + 1; return obj end
         while true do
             skip()
+            if s:sub(pos, pos) ~= '"' then malformed() end
             local k = parseString()
             skip()
+            if k == nil or s:sub(pos, pos) ~= ':' then malformed() end
             pos = pos + 1  -- consume :
             obj[k] = parseValue()
             skip()
             local c = s:sub(pos, pos)
             if c == '}' then pos = pos + 1; break end
-            if c == ',' then pos = pos + 1 end
+            if c ~= ',' then malformed() end
+            pos = pos + 1
         end
         return obj
     end
@@ -809,6 +825,15 @@ local function JsonDecode(s)
     end
 
     return parseValue()
+end
+
+-- nil for text that is not JSON, whatever stopped the read (a character out of place, nesting too
+-- deep for the client): the caller never sees an error, as it never did.
+local function JsonDecode(s)
+    if type(s) ~= "string" then return nil end
+    local ok, value = pcall(decodeJson, s)
+    if ok then return value end
+    return nil
 end
 
 -- Shared: SoftRes reads Gargul's JSON with it and the companion import the site's. It lives here,
