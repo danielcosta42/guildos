@@ -84,6 +84,15 @@ local function load(game)
   GuildOS.IsOfficerByName = function() return true end
   return GuildOS.CoreManager
 end
+-- A core an officer made in game, as before the guild was linked: a linked guild creates none (#339,
+-- tools/core-owner.lua), and these checks are about the import, not about who may create.
+local function make(name)
+  local link = GuildOS.db.coreLink
+  GuildOS.db.coreLink = nil
+  local ok, why = GuildOS.CoreManager:Create(name)
+  GuildOS.db.coreLink = link
+  return ok, why
+end
 local function said(text)
   for _, m in ipairs(printed) do if m:find(text, 1, true) then return m end end
 end
@@ -115,7 +124,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   -- ── The fixture lands ─────────────────────────────────────────────────
   CM = load(game)
   local K = function(name) return GuildOS:LocalMemberKey(name .. "-Firemaw") end
-  CM:Create("Nucleo Alfa")
+  make("Nucleo Alfa")
   local alfa = GuildOS.db.cores["Nucleo Alfa"].members
   alfa[K("Ana")] = { name = "Ana", class = "PRIEST", role = "rdps", note = "x" }   -- put here by an officer
   alfa[K("Carla")] = { name = "Carla", class = "MAGE", role = "rdps", note = "" }  -- a pug, never on the Discord
@@ -156,7 +165,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   local okD, whyD = CM:Delete("alfa-2")
   check(not okD and whyD and GuildOS.db.cores["alfa-2"] ~= nil, G("nor deleted here"))
   -- A core only this client has still is, both ways.
-  check(CM:Create("So Aqui") and CM:Rename("So Aqui", "So Aqui 2") and CM:Delete("So Aqui 2") and GuildOS.db.cores["So Aqui 2"] == nil,
+  check(make("So Aqui") and CM:Rename("So Aqui", "So Aqui 2") and CM:Delete("So Aqui 2") and GuildOS.db.cores["So Aqui 2"] == nil,
     G("a local core is renamed and deleted as before"))
 
   local line = said("Cores from Discord:")
@@ -193,7 +202,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   local back = GuildOS.db.cores["Nucleo Alfa"]
   check(back and back.members[K("Ana")] and back.members[K("Bruno")], G("a core deleted here comes back with its Discord people, not empty"))
   -- The same tag on another core here hands it over, with the Discord's people (#138).
-  CM:Create("Duplicado")
+  make("Duplicado")
   GuildOS.db.cores["Duplicado"].discordTag = "nucleo-alfa"
   GuildOS.db.cores["Duplicado"].members[K("Ana")] = { name = "Ana", class = "PRIEST", role = "healer", note = "", src = "discord" }
   GuildOS.db.cores["Duplicado"].members[K("Pug2")] = { name = "Pug2", class = "MAGE", role = "rdps", note = "" }
@@ -218,7 +227,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   handlers["core.roster"]({ act = "discordList", data = { coreName = 5, list = d.list, tag = "x" } }, "Officer-Firemaw")
   check(GuildOS.db.cores[5] == nil, G("a core name that is not text makes nothing"))
   -- A sender's core name that is another Discord core's here: the list goes to the core holding its tag.
-  CM:Create("Alpha")
+  make("Alpha")
   GuildOS.db.cores["Alpha"].discordTag = "alpha"
   GuildOS.db.cores["Alpha"].members[K("Bia")] = { name = "Bia", class = "MAGE", role = "rdps", note = "", src = "discord" }
   handlers["core.roster"]({ act = "discordList", data = { coreName = "Alpha", list = d.list, size = 20, tag = "nucleo-alfa", at = 3000 } },
@@ -325,9 +334,9 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM = load(game)
   local pkg = { guild = "Nucleo BR", unlinked = 0, cores = { { tag = "nucleo-alfa", name = "Núcleo Alfa", size = 20,
     members = { { key = "Ana-Firemaw", name = "Ana", class = "PRIEST" } } } } }
-  CM:Create("nucleo alfa")
+  make("nucleo alfa")
   CM:ImportFromSite(pkg)
-  CM:Create("Núcleo Alfa")
+  make("Núcleo Alfa")
   pkg.cores[1].members[2] = { key = "Bia-Firemaw", name = "Bia", class = "MAGE" }
   CM:ImportFromSite(pkg)
   check(CM:IsFromDiscord("nucleo alfa") and GuildOS.db.cores["nucleo alfa"].members[K("Bia")]
@@ -435,12 +444,12 @@ for _, game in ipairs({ "anniversary", "forever" }) do
 
   -- ── Deleting the active core leaves no active core to make again, empty (#138) ──
   CM = load(game)
-  CM:Create("Ativo")
+  make("Ativo")
   GuildOS.db.raidTracker.currentGroupTag = "Ativo"
   CM:Delete("Ativo")
   check(CM:GetActiveName() == "" and GuildOS.db.cores["Ativo"] == nil, G("the active core deleted is no longer active"))
-  CM:Create("Outro"); GuildOS.db.raidTracker.currentGroupTag = "Outro"
-  CM:Create("Fora"); CM:Delete("Fora")
+  make("Outro"); GuildOS.db.raidTracker.currentGroupTag = "Outro"
+  make("Fora"); CM:Delete("Fora")
   check(CM:GetActiveName() == "Outro", G("deleting another core leaves the active one alone"))
   -- Inside a raid: the raid, the announced core and an officer's pick let go of it too.
   local tag = "Raide"
@@ -448,7 +457,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     GetCurrentGroup = function(self) return self.currentGroupTag end,
     SetGroupTag = function(self, t) self.currentGroupTag = t end }
   GuildOS.db.raidTracker.corePick = { tag = tag }
-  CM:Create(tag); CM:Delete(tag)
+  make(tag); CM:Delete(tag)
   local RT = GuildOS.RaidTracker
   check(RT.currentGroupTag == "" and RT.currentRaid.groupTag == "" and RT.coreAnnounced == nil and RT.gracePick == nil
     and GuildOS.db.raidTracker.corePick == nil, G("a /reload inside the raid does not bring the deleted core back"))
@@ -456,7 +465,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
 
   -- ── Linking a game core of another name to a Discord core (#138) ──────
   CM = load(game)
-  CM:Create("Core Alfa Velho")
+  make("Core Alfa Velho")
   GuildOS.db.cores["Core Alfa Velho"].members[K("Ana")] = { name = "Ana", class = "PRIEST", role = "healer", note = "" }
   GuildOSInbox = { FIXTURE }
   CM:Initialize()
@@ -485,7 +494,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(CM:LinkDiscord("alfa-2", "nucleo-alfa") == false and GuildOS.db.cores["alfa-2"].discordTag == "alfa-2",
     G("a core already another Discord core's is not linked"))
   -- The core holding the tag deleted: the inbox makes it again first, or nothing is linked and the chat says why.
-  CM:Create("Sozinho")
+  make("Sozinho")
   GuildOS.db.cores["Core Alfa Velho"] = nil
   GuildOS.db.settings.companion, printed = false, {}
   check(CM:LinkDiscord("Sozinho", "nucleo-alfa") == false and not CM:IsFromDiscord("Sozinho") and said("/gos web on"),
@@ -518,7 +527,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
 
   -- ── A core linked by hand is never taken by another Discord core of its name (#138) ──
   CM = load(game)
-  CM:Create("Alpha")
+  make("Alpha")
   GuildOS.db.cores["Alpha"].discordTag = "nucleo-alfa"
   GuildOS.db.cores["Alpha"].members[K("Pug")] = { name = "Pug", class = "MAGE", role = "rdps", note = "pug" }
   CM:ImportFromSite({ guild = "Nucleo BR", unlinked = 0, cores = {
@@ -531,7 +540,7 @@ for _, game in ipairs({ "anniversary", "forever" }) do
 
   -- ── Two of the game's cores reduce to the tag: the one named as on the Discord ──
   CM = load(game)
-  CM:Create("ALFA"); CM:Create("alfa")
+  make("ALFA"); make("alfa")
   CM:ImportFromSite({ guild = "Nucleo BR", cores = { { tag = "alfa", name = "alfa", size = 10, unlinked = 0,
     members = { { key = "Ana-Firemaw", name = "Ana", class = "PRIEST" } } } } })
   check(GuildOS.db.cores["alfa"].members[K("Ana")] and not GuildOS.db.cores["ALFA"].members[K("Ana")],

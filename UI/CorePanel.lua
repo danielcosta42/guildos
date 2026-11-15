@@ -144,11 +144,31 @@ function GuildOS:CreateCoresPanel(panel)
     listScroll:SetScrollChild(listContent)
     UI:BindScrollChildWidth(listScroll, listContent)
 
-    -- "New core" input + button at the bottom of the list column
+    -- "New core" input + button at the bottom of the list column. A guild linked to the site creates
+    -- its cores on Discord (#339): a sentence saying so takes their place, and after 30 days with no
+    -- package from the site, a button to create in game again (RebuildList shows the one that holds).
     local newInput = MakeInput(leftCol, LIST_W - 80, false, L["Core name"])
     newInput:SetPoint("BOTTOMLEFT", 4, 6)
     local createBtn = UI:CreateButton(leftCol, L["Create"], 60, 22)
     createBtn:SetPoint("LEFT", newInput, "RIGHT", 4, 0)
+    local onDiscordLbl = MakeLabel(leftCol, L["New cores are created on Discord: /core criar."], 9,
+        C.textDim.r, C.textDim.g, C.textDim.b)
+    onDiscordLbl:SetPoint("BOTTOMLEFT", 6, 34)
+    onDiscordLbl:SetWidth(LIST_W - 12)
+    onDiscordLbl:SetJustifyH("LEFT")
+    local againBtn = UI:CreateButton(leftCol, L["Create cores in game again"], LIST_W - 12, 22)
+    againBtn:SetPoint("BOTTOMLEFT", 4, 6)
+    local function showIf(w, on)
+        if on then w:Show() else w:Hide() end
+    end
+    local function ShowCreate()
+        local CM = GuildOS.CoreManager
+        local linked = CM and CM:IsLinked()
+        showIf(newInput, not linked)
+        showIf(createBtn, not linked)
+        showIf(onDiscordLbl, linked)
+        showIf(againBtn, linked and CM:IsLinkQuiet() and GuildOS:IsOfficer())
+    end
 
     ----------------------------------------------------------------
     -- Right column: settings for the selected core
@@ -276,8 +296,10 @@ function GuildOS:CreateCoresPanel(panel)
             local managed = track(MakeLabel(rightContent, L["Managed on guildos.me and Discord: name, members and closing are changed there."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
             managed:SetPoint("LEFT", setActiveBtn, "RIGHT", 10, 0)
         else
-            -- A core only this client has (issue #293): the others officers and the site never see it.
-            local onlyHere = track(MakeLabel(rightContent, L["Only on this client."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
+            -- A core only this client has (issue #293): the others officers and the site never see it. In a
+            -- linked guild it is one from before the link, which the site can adopt (#339, guildos-web#520).
+            local onlyHere = track(MakeLabel(rightContent, CM:IsLinked() and L["Not on Discord yet: guildos.me can adopt it."]
+                or L["Only on this client."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
             onlyHere:SetPoint("TOPLEFT", setActiveBtn, "BOTTOMLEFT", 0, -4)
             local renameInput = track(MakeInput(rightContent, 130, false, L["New name"]))
             renameInput:SetPoint("LEFT", deleteBtn, "RIGHT", 10, 0)
@@ -407,10 +429,19 @@ function GuildOS:CreateCoresPanel(panel)
             end
 
             -- The core's own loot system (issue #338): every one this client offers, and "Follow the
-            -- guild" for a core that chose none. The choice in force is the lit one.
+            -- guild" for a core that chose none. The choice in force is the lit one. A Discord core's
+            -- rule the site sends is the site's (#339): shown, not offered.
             local ownSys = CM:GetLootSystem(coreName)
             local inForce = GuildOS:GetLootSystem(coreName)
-            local sysLbl = track(MakeLabel(rightContent, L["Loot system:"], 10))
+            local siteRule = CM:LootRuleFromSite(coreName)
+            if siteRule then
+                local siteLbl = track(MakeLabel(rightContent, L["This core's loot rule is set on guildos.me, which sends it with the raid's roster."],
+                    10, C.textDim.r, C.textDim.g, C.textDim.b))
+                siteLbl:SetPoint("TOPLEFT", 4, y)
+                y = y - 22
+            end
+            local sysLbl = not siteRule and track(MakeLabel(rightContent, L["Loot system:"], 10))
+            if sysLbl then
             sysLbl:SetPoint("TOPLEFT", 4, y)
             y = y - 18
             local choices = { { key = nil, label = L["Follow the guild"] } }
@@ -450,9 +481,10 @@ function GuildOS:CreateCoresPanel(panel)
                 followLbl:SetPoint("TOPLEFT", 4, y)
                 y = y - 18
             end
+            end -- not siteRule
 
             -- The core's own rule, in the same editor the guild's has (Settings > Loot).
-            if GuildOS.LootRule and inForce ~= "external" then
+            if GuildOS.LootRule and inForce ~= "external" and not siteRule then
                 local ruleBtn = track(UI:CreateButton(rightContent, L["Edit this core's loot rule"], 190, 20))
                 ruleBtn:SetPoint("TOPLEFT", 4, y)
                 ruleBtn:SetScript("OnClick", function() GuildOS:ShowLootRuleEditor(coreName) end)
@@ -879,7 +911,8 @@ function GuildOS:CreateCoresPanel(panel)
                     BuildSettings(coreName)
                 end)
 
-                if not discordOwned then
+                -- A Discord core's list is the Discord's (#339): who leaves it, and who is a reserve, too.
+                if not fromDiscord then
                     local remBtn = track(UI:CreateButton(rightContent, "x", 18, 16))
                     remBtn:SetPoint("LEFT", roleBtn, "RIGHT", 3, 0)
                     remBtn:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
@@ -907,8 +940,14 @@ function GuildOS:CreateCoresPanel(panel)
         end
         y = y - 8
 
-        -- Add from guild roster: dropdown selectbox (RL only)
-        if isRL then
+        -- Add from guild roster: dropdown selectbox (RL only). Not on a Discord core: who is on it is
+        -- set on Discord (#339).
+        if isRL and fromDiscord then
+            local fixed = track(MakeLabel(rightContent, L["Who is on this core is set on Discord."], 10,
+                C.textDim.r, C.textDim.g, C.textDim.b))
+            fixed:SetPoint("TOPLEFT", 4, y)
+            y = y - 20
+        elseif isRL then
             y = MakeSectionHeader(rightContent, L["Add from Guild"], y)
             y = y - 6
 
@@ -1278,6 +1317,7 @@ function GuildOS:CreateCoresPanel(panel)
         end
 
         listContent:SetHeight(math.max(1, #names * ROW_H))
+        ShowCreate()
     end
 
     ----------------------------------------------------------------
@@ -1299,6 +1339,12 @@ function GuildOS:CreateCoresPanel(panel)
             SetStatus(string.format(L["Core \"%s\" created, only on this client. Call it on Discord with /core so guildos.me and every officer have it."], name), C.online)
             RebuildList()
             BuildSettings(name)
+        end
+    end)
+
+    againBtn:SetScript("OnClick", function()
+        if GuildOS.CoreManager:CreateInGameAgain() then
+            SetStatus(L["The guild's cores are created in game again."], C.online)
         end
     end)
 

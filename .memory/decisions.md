@@ -1609,6 +1609,25 @@ everything. Until now cores reached the game only through the companion's `Inbox
   each Discord core's `importedAt` is when this client last applied a Discord list to it (an import or another
   officer's list). Figures are clamped integers, so the hand-written encoder never writes an exponent.
 
+### Decision — a linked guild creates no core in game (#339)
+- **Linked** is stored: `db.coreLink.since`, set by an own import with cores or a heard `discordList`, cleared by an
+  own empty package, by the last release heard (no core holds a tag) or by an officer's "create in game again". A
+  guild from before (a core holding a tag, no record) is linked at `Initialize`.
+- **Creating** goes through `Create`, which a linked guild refuses with where to create; the import and the
+  `discord`/`discordList` actions use the local `newCore`. `GetCore` no longer makes a core for an unknown name in a
+  linked guild: the raid's free tag, a sign-up and another officer's `update` roster make none (their points fall to
+  the guild's pool, as a raid outside a core). The panel's input becomes a sentence.
+- **The Discord's rename** follows on the next import, by `moveCore` (the body of `Rename`): the core is the tag's, and
+  its name follows only when it carried the Discord's previous name (`core.discordName`), so a core named by its tag or
+  linked by hand keeps its own; never onto a name another core has. `discordList` carries `discordName`, so an officer
+  without the companion renames too.
+- **The loot rule** of a Discord core is the site's while the roster in hand carries one (`LootRuleFromSite`): the
+  GOSROST1 names no core, so the rule the site sends counts for every Discord core of the guild.
+- **30 days quiet** (`seenAt`, the freshest package: the inbox's ack, a paste, another officer's `seenAt` on its
+  list): the officer hears it once and the panel offers "create cores in game again" (`CreateInGameAgain`). That
+  choice marks `releasedAt`, which makes every package up to it older (the same inbox at every login links nothing),
+  and goes to the officers online as releases with `off = true`.
+
 ### Consequences
 - (+) A guild where no officer runs the companion can still receive its cores.
 - (+) An older site ignores the receipt; an older addon never had the paste.
@@ -1616,4 +1635,10 @@ everything. Until now cores reached the game only through the companion's `Inbox
   carries no game, and the realm check is the inbox's (a Forever package has no realm).
 - (−) The decompressed size of a pasted code is not bounded by LibDeflate; the 256 KB on the encoded body bounds it to
   what deflate can expand that to.
+- (+) A guild that never imported a GOSCORE1 sees no change.
+- (−) A client before this version in a linked guild still creates cores and sends their rosters; clients on this
+  version ignore a roster for a core they lack.
+- (−) A core renamed in game to the Discord's new name no longer reduces to its tag: the site counts its nights by the
+  core's name (`coreTags`), but anything on the site matching only by `slugOf(groupTag)` (the idle check) does not.
+- (−) The site's rule locks every Discord core's rule while the roster in hand carries one, not only the raid's core.
 

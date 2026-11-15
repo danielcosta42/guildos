@@ -195,7 +195,16 @@ function CoreManager:Initialize()
     if not GuildOS.db.cores          then GuildOS.db.cores          = {} end
     if not GuildOS.db.raidLeaderRanks then GuildOS.db.raidLeaderRanks = {} end
     self:InitSync()
+    self:MigrateLink()
     GuildOS:SafeCall(self.ImportInbox, self)   -- the Discord's cores (#135)
+end
+
+-- Whether any core here is the Discord's now.
+function CoreManager:HasDiscordCores()
+    for _, core in pairs(GuildOS.db.cores or {}) do
+        if type(core) == "table" and core.discordTag then return true end
+    end
+    return false
 end
 
 ----------------------------------------------------------------------
@@ -209,15 +218,54 @@ function CoreManager:Exists(name)
     return name and name ~= "" and GuildOS.db.cores[name] ~= nil
 end
 
--- Creates a new core with all sub-tables initialized.
--- Returns true on success, or false + error message on failure.
-function CoreManager:Create(name)
-    if not name or name == "" then
-        return false, L["Name cannot be empty."]
+----------------------------------------------------------------------
+-- Who owns the guild's cores (ADR-0036; guildos-web specs/085, issue #339). A guild linked to the site
+-- has its cores born on Discord (`/core criar`) and reaching the game by GOSCORE1; the game creates none.
+-- A guild without the site owns them here, as always. Kept in the guild's db:
+--   db.coreLink.since       when this guild became linked (an import or another officer's list with
+--                           cores); nil when it is not
+--   db.coreLink.seenAt      how fresh the newest package is (the inbox's ack, a paste, another officer's)
+--   db.coreLink.importedAt  when this client last imported a GOSCORE1 (the upload's receipt, #347)
+--   db.coreLink.toldFor     the `seenAt` the "30 days with no package" line was said for
+--   db.coreLink.releasedAt  an officer chose to create cores in game again: packages up to this site
+--                           time are older than that choice
+----------------------------------------------------------------------
+local QUIET_DAYS = 30            -- days with no new package before the game offers to create cores again
+local DAY = 86400
+
+local function linkRec()
+    local link = GuildOS.db.coreLink
+    if type(link) ~= "table" then
+        link = {}
+        GuildOS.db.coreLink = link
     end
-    if GuildOS.db.cores[name] then
-        return false, L["A core with that name already exists."]
-    end
+    return link
+end
+
+-- Whether this guild's cores are the site's: it has imported, or heard from an officer, a GOSCORE1 with
+-- cores, and neither an empty one nor an officer's choice has given them back since.
+function CoreManager:IsLinked()
+    local link = GuildOS.db and GuildOS.db.coreLink
+    return type(link) == "table" and link.since ~= nil
+end
+
+-- When the newest package for a linked guild was seen (nil when not linked).
+function CoreManager:LinkSeenAt()
+    local link = GuildOS.db and GuildOS.db.coreLink
+    if type(link) ~= "table" or not link.since then return nil end
+    return link.seenAt or link.since
+end
+
+-- Whether a linked guild has had no new package for QUIET_DAYS (spec 085's open question): its
+-- federation may be off with no companion left to bring the empty package.
+function CoreManager:IsLinkQuiet()
+    local seen = self:LinkSeenAt()
+    return seen ~= nil and GetServerTime() - seen > QUIET_DAYS * DAY
+end
+
+-- A core of a guild without the site, with all sub-tables initialized. No check: the import makes
+-- Discord cores through here in a linked guild too.
+local function newCore(name)
     GuildOS.db.cores[name] = {
         name       = name,
         lootMaster = {},
@@ -232,26 +280,29 @@ function CoreManager:Create(name)
         },
         members    = {},
     }
+    return GuildOS.db.cores[name]
+end
+
+-- Creates a new core with all sub-tables initialized, as an officer asks from the panel.
+-- Returns true on success, or false + error message on failure. A guild linked to the site creates
+-- its cores on Discord (#339): refused here, saying where.
+function CoreManager:Create(name)
+    if not name or name == "" then
+        return false, L["Name cannot be empty."]
+    end
+    if GuildOS.db.cores[name] then
+        return false, L["A core with that name already exists."]
+    end
+    if self:IsLinked() then
+        return false, L["This guild's cores are created on Discord, with /core criar: the game gets them from guildos.me."]
+    end
+    newCore(name)
     return true
 end
 
--- Renames a core and migrates all session/attendance data.
-function CoreManager:Rename(oldName, newName)
-    if not oldName or not GuildOS.db.cores[oldName] then
-        return false, L["Core not found."]
-    end
-    -- A core from the site and its Discord is the site's (issue #293): its name is changed there, or
-    -- the next import would make it again under the old one, beside the renamed copy.
-    if self:IsFromDiscord(oldName) then
-        return false, L["This core is managed on guildos.me and its Discord: rename it there."]
-    end
-    if not newName or newName == "" then
-        return false, L["Name cannot be empty."]
-    end
-    if GuildOS.db.cores[newName] then
-        return false, L["A core with that name already exists."]
-    end
-
+-- A core's table moves to another name, with its nights, attendance, points and loot rule, and the
+-- raid's active core, kept pick and announcement follow. For Rename and for the Discord's own rename.
+local function moveCore(oldName, newName)
     GuildOS.db.cores[newName] = GuildOS.db.cores[oldName]
     GuildOS.db.cores[newName].name = newName
     GuildOS.db.cores[oldName] = nil
@@ -275,6 +326,8 @@ function CoreManager:Rename(oldName, newName)
     -- Update active tag if it was the renamed one
     if GuildOS.RaidTracker and GuildOS.RaidTracker.currentGroupTag == oldName then
         GuildOS.RaidTracker:SetGroupTag(newName)
+    elseif not GuildOS.RaidTracker and rtDB and rtDB.currentGroupTag == oldName then
+        rtDB.currentGroupTag = newName   -- as Delete does, before the tracker has started
     end
     -- And the raid in progress, and an officer's pick kept for it (issue #99).
     local RT = GuildOS.RaidTracker
@@ -284,7 +337,25 @@ function CoreManager:Rename(oldName, newName)
     if RT and RT.gracePick == oldName then RT.gracePick = newName end
     local pick = rtDB and rtDB.corePick
     if type(pick) == "table" and pick.tag == oldName then pick.tag = newName end
+end
 
+-- Renames a core and migrates all session/attendance data.
+function CoreManager:Rename(oldName, newName)
+    if not oldName or not GuildOS.db.cores[oldName] then
+        return false, L["Core not found."]
+    end
+    -- A core from the site and its Discord is the site's (issue #293): its name is changed there, and
+    -- the next import renames it here (#339).
+    if self:IsFromDiscord(oldName) then
+        return false, L["This core is managed on guildos.me and its Discord: rename it there."]
+    end
+    if not newName or newName == "" then
+        return false, L["Name cannot be empty."]
+    end
+    if GuildOS.db.cores[newName] then
+        return false, L["A core with that name already exists."]
+    end
+    moveCore(oldName, newName)
     return true
 end
 
@@ -373,11 +444,13 @@ end
 -- Returns the core table for `name` (or the active core when name is nil).
 -- Auto-creates the entry when name is non-empty and doesn't exist yet,
 -- so callers never have to guard against nil.
+-- In a guild linked to the site a name no core has makes none (#339): the raid's tag, a sign-up or
+-- another officer's roster for it read as no core.
 function CoreManager:GetCore(name)
     if name == nil then name = self:GetActiveName() end
     if not name or name == "" then return nil end
-    if not GuildOS.db.cores[name] then
-        self:Create(name)
+    if not GuildOS.db.cores[name] and not self:IsLinked() then
+        newCore(name)
     end
     return GuildOS.db.cores[name]
 end
@@ -472,7 +545,7 @@ end
 function CoreManager:SetLootSystem(coreName, sys)
     if not GuildOS:IsOfficer() then return false end
     local core, name = coreNamed(self, coreName)
-    if not core then return false end
+    if not core or self:LootRuleFromSite(name) then return false end
     if sys ~= nil and not GuildOS:IsLootSystemHere(sys) then return false end
     core.lootMaster = core.lootMaster or {}
     core.lootMaster.lootSystem, core.lootMaster.rule = sys, nil
@@ -484,7 +557,7 @@ end
 function CoreManager:SetLootRule(coreName, rule)
     if not GuildOS:IsOfficer() then return false end
     local core, name = coreNamed(self, coreName)
-    if not core then return false end
+    if not core or self:LootRuleFromSite(name) then return false end
     core.lootMaster = core.lootMaster or {}
     core.lootMaster.rule = rule
     stampLoot(self, core, name)
@@ -960,8 +1033,27 @@ local function coreFor(self, c)
         name = string.format("%s-%d", c.tag, n)                 -- a core name, not a member key
         n = n + 1
     end
-    self:Create(name)
+    newCore(name)
     return name, true
+end
+
+-- The Discord renamed a core (#339): the game's follows on the next import, nights, points and rule
+-- along (moveCore). The link is the tag, so the core is the same one whatever it is called; the name
+-- follows only when the game's core carried the Discord's previous name, so a core named by its tag
+-- (a name the Discord reused) or linked by hand under another name keeps it, and only to a name no
+-- other core here has. `discordName` is remembered for the next time. Returns the core's name now.
+local function followName(self, name, discordName)
+    local core = GuildOS.db.cores[name]
+    if type(core) ~= "table" or type(discordName) ~= "string" or discordName == "" or #discordName > CORE_NAME_MAX then
+        return name
+    end
+    local before = core.discordName
+    core.discordName = discordName
+    if before and before ~= discordName and name == before and not GuildOS.db.cores[discordName] then
+        moveCore(name, discordName)
+        return discordName
+    end
+    return name
 end
 
 -- A member key as the site or another officer sent it, as this client keys that member (#97).
@@ -1030,9 +1122,39 @@ local function sane(at)
     at = tonumber(at)
     return at and at == at and math.min(at, GetServerTime()) or nil
 end
-local function isStale(at)
+local function olderThanMark(at)
     local mark = GuildOS.db.discordAt
     return mark ~= nil and (at == nil or at < mark)
+end
+local function isStale(at)
+    if olderThanMark(at) then return true end
+    -- An officer chose to create cores in game again (#339): the lists up to that choice are older. A
+    -- release is never older for it (it links nothing): see the core.roster handler.
+    local link = GuildOS.db.coreLink
+    local off = type(link) == "table" and link.releasedAt
+    return off and (at == nil or at <= off) or false
+end
+
+-- The guild is linked from now, by its own import or another officer's list (#339). `fresh` is how
+-- new the package is, when known.
+local function linkOn(fresh)
+    local link = linkRec()
+    local now = GetServerTime()
+    if not link.since then link.since, link.seenAt = now, fresh or now end
+    if fresh and fresh > (link.seenAt or 0) then link.seenAt = math.min(fresh, now) end
+end
+
+-- The guild's cores are the officers' again: an empty package (the federation switched off, or no
+-- core left on Discord), the last Discord core given back, or an officer's choice.
+local function linkOff()
+    local link = linkRec()
+    link.since, link.seenAt, link.toldFor = nil, nil, nil
+end
+
+-- A guild that imported before the link was kept (#339): a core holding a tag is the Discord's, so the
+-- guild is linked, from now.
+function CoreManager:MigrateLink()
+    if not self:IsLinked() and self:HasDiscordCores() then linkOn() end
 end
 local function took(at)
     if at and at > (GuildOS.db.discordAt or 0) then GuildOS.db.discordAt = at end
@@ -1057,8 +1179,7 @@ end
 -- clock) says which link is the newest. Returns who is the Discord's on the core now, as the site would
 -- send them.
 local function moveTag(self, coreName, tag, linkAt)
-    local core = self:GetCore(coreName)
-    if not core then return {} end
+    local core = GuildOS.db.cores[coreName] or newCore(coreName)   -- the Discord's own, linked or not
     local from = holderOf(tag)
     if from and from ~= coreName then
         local old, members = GuildOS.db.cores[from], self:GetMembers(coreName)
@@ -1151,8 +1272,9 @@ function CoreManager:ApplyDiscordChanges(coreName, add, remove, size, tag)
     local linking = type(tag) == "string" and tag ~= ""
     if linking then coreName = (coreFor(self, { tag = tag, name = coreName })) end
     -- A release is for a core that is here: one this client deleted is not made again for it.
-    local core = tag == false and GuildOS.db.cores[coreName] or (tag ~= false and self:GetCore(coreName))
-    if not core then return 0, 0 end
+    local core = GuildOS.db.cores[coreName]
+    if not core and tag ~= false and coreName ~= "" then core = newCore(coreName) end
+    if type(core) ~= "table" then return 0, 0 end
     if tag == false then
         release(coreName, false)
     elseif linking then
@@ -1214,13 +1336,14 @@ function CoreManager:ImportFromSite(data, at)
             and type(c.members) == "table" then
             catalog[#catalog + 1] = { tag = c.tag, name = c.name }
             local name, created = coreFor(self, c)
+            name = followName(self, name, c.name)
             sent[c.tag] = name
             local linked = GuildOS.db.cores[name].discordTag == c.tag
             local added, removed, adopted = self:SyncDiscordCore(name, c.members, c.size, c.tag, c.waiting)
             cores[#cores + 1] = {
                 name = name, added = added, removed = removed, adopted = adopted,
                 list = c.members, size = self:GetRaidSize(name), tag = c.tag, waiting = namesOnly(c.waiting), at = at,
-                linkAt = GuildOS.db.cores[name].linkAt,
+                linkAt = GuildOS.db.cores[name].linkAt, discordName = c.name,
                 quiet = not (created or not linked or added > 0 or removed > 0 or adopted > 0),
             }
         end
@@ -1236,6 +1359,8 @@ function CoreManager:ImportFromSite(data, at)
         end
     end
     took(at)
+    -- Linked while the site sends cores; a package with none gives creating back to the officers (#339).
+    if #catalog > 0 then linkOn() else linkOff() end
     return cores, tonumber(data.unlinked) or 0
 end
 
@@ -1263,13 +1388,21 @@ function CoreManager:ImportPackage(data, ackAt)
     local siteAt = tonumber(data.at)
     if siteAt and not GuildOS.db.discordSiteAt then GuildOS.db.discordAt, GuildOS.db.discordSiteAt = nil, true end
     if not siteAt and GuildOS.db.discordSiteAt then return nil, nil, "older" end
+    -- Undated altogether (a pasted code from a site before #126): older than any list this client has.
+    if not siteAt and not ackAt and (GuildOS.db.discordAt or (GuildOS.db.coreLink or {}).releasedAt) then return nil, nil, "older" end
+    local wasLinked = self:IsLinked()
     local cores, unlinked, stale = self:ImportFromSite(data, sane(siteAt or ackAt))
     if not cores then return nil end
     GuildOS.db.discordTold = nil
     if stale then return cores, unlinked, stale end
-    -- When this client last took the guild's cores from the site, for the upload's receipt (#347).
-    GuildOS.db.coreLink = type(GuildOS.db.coreLink) == "table" and GuildOS.db.coreLink or {}
-    GuildOS.db.coreLink.importedAt = GetServerTime()
+    -- When this client last took the guild's cores from the site, for the upload's receipt (#347), and how
+    -- fresh they are (#339): when the companion last wrote the inbox, or now for a code just copied.
+    local link = linkRec()
+    link.importedAt = GetServerTime()
+    if self:IsLinked() then
+        local fresh = sane(ackAt) or GetServerTime()
+        if wasLinked then linkOn(fresh) else link.seenAt = fresh end
+    end
     local parts = {}
     for _, c in ipairs(cores) do
         if not c.released and not c.quiet then parts[#parts + 1] = string.format("%s +%d -%d", c.name, c.added, c.removed) end
@@ -1343,11 +1476,11 @@ function CoreManager:SendDiscordChanges()
     if not (pending and GuildOS.SyncService) then return end
     for _, c in ipairs(pending) do
         if c.released then
-            GuildOS.SyncService:Publish("core.roster", "discord", { coreName = c.name, tag = false, at = c.at })
+            GuildOS.SyncService:Publish("core.roster", "discord", { coreName = c.name, tag = false, at = c.at, off = c.off })
         else
             GuildOS.SyncService:Publish("core.roster", "discordList", {
                 coreName = c.name, list = c.list, size = c.size, tag = c.tag, waiting = c.waiting, at = c.at,
-                linkAt = c.linkAt,
+                linkAt = c.linkAt, discordName = c.discordName, seenAt = self:LinkSeenAt(),
             })
         end
     end
@@ -1374,6 +1507,50 @@ function CoreManager:LinkDiscord(coreName, tag)
     GuildOS.State.discordCores = pending
     self:SendDiscordChanges()
     return true
+end
+
+-- From OFFICER_START: a linked guild with no new package for QUIET_DAYS is told once (per package seen)
+-- that its cores may be created in game again (spec 085's open question): the federation may have
+-- been switched off with no companion left to bring the empty package. The panel offers the button.
+function CoreManager:TellQuietLink()
+    if not (self:IsLinkQuiet() and GuildOS:IsOfficer()) then return end
+    local link = linkRec()
+    local seen = self:LinkSeenAt()
+    if link.toldFor == seen then return end
+    link.toldFor = seen
+    GuildOS:Print(string.format(L["No cores from Discord for %d days. If the guild no longer uses them, choose \"Create cores in game again\" in Raids > Cores."], QUIET_DAYS))
+end
+
+-- An officer gives the guild's cores back to the game (#339), as an empty package would: every
+-- Discord core stays as it is, people and history, and is the officers' again; creating comes back.
+-- The packages up to now are older than this choice, here and, by the releases sent, on every officer
+-- online; a package the site makes later links the guild again. Returns false when not linked or
+-- not an officer.
+function CoreManager:CreateInGameAgain()
+    if not (self:IsLinked() and GuildOS:IsOfficer()) then return false end
+    local at = GuildOS.db.discordAt or GetServerTime()
+    local pending = {}
+    for _, name in ipairs(self:GetSortedNames()) do
+        if GuildOS.db.cores[name].discordTag then
+            release(name, false)
+            pending[#pending + 1] = { name = name, released = true, tag = false, at = at, off = true }
+        end
+    end
+    linkOff()
+    linkRec().releasedAt = at
+    GuildOS.State.discordCores = #pending > 0 and pending or nil
+    self:SendDiscordChanges()
+    if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
+    return true
+end
+
+-- Whether a core's loot rule is the site's (#339, spec 085): in a linked guild, a Discord core's rule is
+-- configured on guildos.me, and the site sends it with the raid's roster (GOSROST1 `lootRule`). While
+-- the roster in hand carries one, the core's own rule and loot system are not changed in game.
+function CoreManager:LootRuleFromSite(coreName)
+    if not (self:IsLinked() and self:IsFromDiscord(coreName)) then return false end
+    local roster = GuildOS.db and GuildOS.db.companionRoster
+    return type(roster) == "table" and type(roster.lootRule) == "table"
 end
 
 function CoreManager:BroadcastRoster(coreName)
@@ -1433,15 +1610,26 @@ function CoreManager:InitSync()
             -- A link to a tag no core here holds needs fresh lists: an older one would link a core the
             -- Discord has closed since.
             if list and (holderOf(d.tag) or not isStale(at)) then heardLink(self, d.coreName, d.tag, sane(d.linkAt)) end
-            if not isStale(at) then
+            local giveBack = not list and d.tag == false
+            if not (giveBack and olderThanMark(at) or not giveBack and isStale(at)) then
                 if list then
-                    self:SyncDiscordCore((coreFor(self, { tag = d.tag, name = d.coreName })), d.list, d.size, d.tag, d.waiting)
+                    local name = followName(self, (coreFor(self, { tag = d.tag, name = d.coreName })), d.discordName)
+                    self:SyncDiscordCore(name, d.list, d.size, d.tag, d.waiting)
+                    linkOn(sane(d.seenAt))
                 else
                     self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
+                    if d.tag == false then
+                        -- An officer chose to create in game again: the lists up to then are older here too.
+                        if d.off == true and at then linkRec().releasedAt = math.max(at, linkRec().releasedAt or 0) end
+                        if not self:HasDiscordCores() then linkOff() end
+                    elseif type(d.tag) == "string" and d.tag ~= "" then
+                        linkOn()
+                    end
                 end
                 took(at)
             end
         else
+            -- In a linked guild a roster for a core this client does not have makes none (#339).
             local core = self:GetCore(d.coreName)
             if core then core.members = GuildOS:LocalizeMemberTable(d.members) end   -- this client's keys (#97)
         end

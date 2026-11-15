@@ -1,0 +1,293 @@
+-- Who owns the guild's cores (issue #339; guildos-web specs/085), run against the real Core, Compat,
+-- Utils, CoreManager, CompanionExport and CompanionImport under a stubbed client, with the site's
+-- fixture (tools/cores-fixture.txt).
+--
+--   * a guild that imported a GOSCORE1 with cores is linked: the game creates no core (the panel, the
+--     raid's tag, a sign-up, another officer's roster), only the import does; a guild that never did
+--     creates as always;
+--   * a Discord core is the Discord's: renamed there, renamed here on the next import, nights, points
+--     and rule along; deleted, renamed, resized only there; its loot rule the site's while the site
+--     sends one; a core from before the link stays the officers';
+--   * an empty package, or the last Discord core given back, gives creating back; 30 days with no
+--     package tell the officer once and offer to create in game again.
+--
+--   luajit -e 'ADDON="."' tools/core-owner.lua
+--
+-- Exits 1 on the first failed check.
+ADDON = ADDON or "."
+
+local checks = 0
+local function check(cond, what)
+  checks = checks + 1
+  if not cond then
+    io.stderr:write("FAIL: " .. what .. "\n")
+    os.exit(1)
+  end
+end
+
+local FIXTURE = io.open(ADDON .. "/tools/cores-fixture.txt", "rb"):read("*a")
+local DAY = 86400
+
+local printed, sent, handlers = {}, {}, {}
+local GUILD, RANK, NOW = "Nucleo BR", 1, 1790000000
+local function load(game)
+  printed, sent, handlers, GUILD, RANK, NOW = {}, {}, {}, "Nucleo BR", 1, 1790000000
+  DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed + 1] = m end }
+  function CreateFrame()
+    local f = {}
+    function f:RegisterEvent() end
+    function f:UnregisterEvent() end
+    function f:SetScript() end
+    function f:Hide() end
+    function f:Show() end
+    return f
+  end
+  function hooksecurefunc() end
+  if game == "forever" then
+    function GetBuildInfo() return "1.60.1", "70205", "", 16001 end
+    WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 99
+    function UnitFullName() return "Lead", "Er" end
+    C_PlayerInfo = { ShouldDisplaySurname = function() return true end }
+  else
+    function GetBuildInfo() return "2.5.6", "60000", "", 20506 end
+    WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
+    function UnitName() return "Leader" end
+  end
+  function GetRealmName() return "Firemaw" end
+  function GetTime() return 1 end
+  function GetServerTime() return NOW end
+  time = os.time
+  function IsInGuild() return true end
+  function GetGuildInfo() return GUILD, "Rank", RANK end
+  function GetNumGuildMembers() return 0 end
+  function GetGuildRosterInfo() end
+  function UnitClass() return "Mage", "MAGE" end
+  function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+  C_Timer = { After = function() end,
+              NewTicker = function() return { Cancel = function() end } end,
+              NewTimer = function() return { Cancel = function() end } end }
+  Enum = { SendAddonMessageResult = {} }
+  StaticPopupDialogs = {}
+  local registry = {}
+  LibStub = setmetatable({
+    NewLibrary = function(_, name) registry[name] = registry[name] or {}; return registry[name] end,
+    GetLibrary = function(_, name) return registry[name] end,
+    minor = 1,
+  }, { __call = function(_, name) return registry[name] end })
+  GuildOS = { L = setmetatable({}, { __index = function(_, k) return k end }), VERSION = "test" }
+  dofile(ADDON .. "/Core/Core.lua")
+  dofile(ADDON .. "/Core/Compat.lua")
+  dofile(ADDON .. "/Core/Utils.lua")
+  GuildOS.db = { settings = { companion = true, officerMaxRank = 1 }, members = {}, altLinks = {}, cores = {},
+                 raidTracker = { sessions = {}, attendance = {}, deletedSessions = {}, currentGroupTag = "" } }
+  dofile(ADDON .. "/Libs/LibDeflate.lua")
+  dofile(ADDON .. "/Modules/CompanionExport.lua")
+  dofile(ADDON .. "/Modules/CompanionImport.lua")
+  dofile(ADDON .. "/Modules/CoreManager.lua")
+  GuildOS.SyncService = {
+    On = function(_, domain, fn) handlers[domain] = fn end,
+    Publish = function(_, domain, act, data) sent[#sent + 1] = { domain = domain, act = act, data = data } end,
+  }
+  GuildOS.IsOfficerByName = function() return true end
+  GuildOSInbox, GuildOSInboxAck = nil, nil
+  return GuildOS.CoreManager
+end
+local function said(text)
+  for _, m in ipairs(printed) do if m:find(text, 1, true) then return m end end
+end
+local function count(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
+local function package(at, cores)
+  return { guild = "Nucleo BR", realm = "Firemaw", unlinked = 0, at = at, cores = cores }
+end
+local function alfa(name, members)
+  return { tag = "nucleo-alfa", name = name or "Núcleo Alfa", size = 10,
+           members = members or { { key = "Ana-Firemaw", name = "Ana", class = "PRIEST", slot = "healer" } } }
+end
+local REFUSED = "This guild's cores are created on Discord, with /core criar: the game gets them from guildos.me."
+
+for _, game in ipairs({ "anniversary", "forever" }) do
+  local function G(what) return game .. ": " .. what end
+
+  -- ── A guild with no GOSCORE1: everything as before, creating included ──
+  local CM = load(game)
+  CM:Initialize()
+  check(not CM:IsLinked() and CM:LinkSeenAt() == nil, G("a guild that never imported is not linked"))
+  check(CM:Create("Raide de Sexta") and GuildOS.db.cores["Raide de Sexta"], G("an officer creates a core"))
+  check(CM:GetCore("Pelo Tag") and GuildOS.db.cores["Pelo Tag"], G("the raid's tag makes one, as before"))
+  handlers["core.roster"]({ act = "update", data = { coreName = "Do Outro", members = {} } }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Do Outro"], G("another officer's roster for a core makes it, as before"))
+  check(CM:Rename("Raide de Sexta", "Raide de Sabado") and CM:Delete("Raide de Sabado"), G("renamed and deleted as before"))
+  CM:SetRaidSize("Do Outro", 10)
+  check(CM:GetRaidSize("Do Outro") == 10, G("and resized"))
+  CM:TellQuietLink()
+  check(#printed == 0, G("no line about Discord for a guild without it"))
+
+  -- ── Linked by its import ──────────────────────────────────────────────
+  CM = load(game)
+  CM:Create("Antigo")                                                     -- a core from before the link
+  GuildOS.db.cores["Antigo"].members[GuildOS:LocalMemberKey("Rui-Firemaw")] = { name = "Rui", class = "MAGE", role = "rdps", note = "" }
+  GuildOSInbox, GuildOSInboxAck = { FIXTURE }, { at = NOW - 3600 }
+  CM:Initialize()
+  check(CM:IsLinked() and GuildOS.db.coreLink.since == NOW, G("an import with cores links the guild, and says when"))
+  check(CM:LinkSeenAt() == NOW - 3600, G("as fresh as the companion's inbox"))
+  check(GuildOS.db.coreLink.importedAt == NOW, G("and when this client imported it"))
+  local ok, why = CM:Create("Novo")
+  check(not ok and why == REFUSED and GuildOS.db.cores["Novo"] == nil, G("creating is refused, saying where: " .. tostring(why)))
+  check(CM:GetCore("Tag Solto") == nil and GuildOS.db.cores["Tag Solto"] == nil, G("a raid tag no core has makes none"))
+  check(CM:GetPointsDB("Tag Solto") == GuildOS.db.points, G("its points go to the guild's pool"))
+  check(CM:AddMember("Ana", { name = "Ana" }, "Tag Solto") == false and GuildOS.db.cores["Tag Solto"] == nil, G("nor does adding to it"))
+  handlers["core.roster"]({ act = "update", data = { coreName = "Do Outro", members = { X = { name = "X" } } } }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Do Outro"] == nil, G("another officer's roster that would make a core is ignored"))
+  handlers["core.signup"]({ data = { coreName = "Inventado", info = {} } }, "Fulano-Firemaw")
+  check(GuildOS.db.cores["Inventado"] == nil, G("and a sign-up for a core nobody has"))
+  handlers["core.roster"]({ act = "update", data = { coreName = "Antigo", members = { Y = { name = "Y" } } } }, "Officer-Firemaw")
+  local landed = false
+  for _, m in pairs(GuildOS.db.cores["Antigo"].members) do if m.name == "Y" then landed = true end end
+  check(landed, G("a roster for a core this client has still lands"))
+  -- The Discord's own action still makes the core it needs (a core deleted here comes back).
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Charlie", list = {}, tag = "charlie", size = 10, at = NOW } },
+    "Officer-Firemaw")
+  check(GuildOS.db.cores["Charlie"] and CM:IsFromDiscord("Charlie"), G("except the discord action: the import's own way in"))
+
+  -- A core from before the link, holding no tag, stays the officers'.
+  check(not CM:IsFromDiscord("Antigo"), G("a core from before the link is no Discord core"))
+  check(CM:Rename("Antigo", "Antigo 2") and GuildOS.db.cores["Antigo 2"], G("it is renamed"))
+  CM:SetRaidSize("Antigo 2", 10)
+  check(CM:GetRaidSize("Antigo 2") == 10, G("resized"))
+  check(CM:Delete("Antigo 2") and GuildOS.db.cores["Antigo 2"] == nil, G("and deleted, as before"))
+  -- The Discord's are not, as before.
+  check(not CM:Rename("Núcleo Alfa", "X") and not CM:Delete("Núcleo Alfa"), G("a Discord core is neither renamed nor deleted here"))
+
+  -- ── The loot rule the site sends is the site's ────────────────────────
+  check(CM:SetLootRule("Núcleo Alfa", { model = "rolls" }), G("with no rule from the site, the officers set the core's"))
+  GuildOS.db.companionRoster = { title = "Kara", members = {}, lootRule = { model = "council" } }
+  check(CM:LootRuleFromSite("Núcleo Alfa") and not CM:LootRuleFromSite("Charlie2"), G("a Discord core's rule is the site's while it sends one"))
+  check(not CM:SetLootRule("Núcleo Alfa", { model = "plus1" }) and CM:GetLootRule("Núcleo Alfa").model == "rolls",
+    G("not changed in game then"))
+  check(not CM:SetLootSystem("Núcleo Alfa", "rolls"), G("nor its loot system"))
+  GuildOS.db.companionRoster = nil
+  check(CM:SetLootSystem("Núcleo Alfa", "rolls"), G("a roster with no rule leaves them to the officers"))
+
+  -- ── Renamed on Discord, renamed here: the link is the tag ─────────────
+  CM = load(game)
+  CM:Initialize()
+  CM:ImportFromSite(package(1000, { alfa() }), 1000)
+  local core = GuildOS.db.cores["Núcleo Alfa"]
+  check(core and core.discordName == "Núcleo Alfa", G("the Discord's name is remembered"))
+  GuildOS.db.raidTracker.sessions[1] = { groupTag = "Núcleo Alfa" }
+  GuildOS.db.raidTracker.attendance["Núcleo Alfa"] = { x = 1 }
+  GuildOS.db.raidTracker.currentGroupTag = "Núcleo Alfa"
+  CM:GetPointsDB("Núcleo Alfa").standings.Ana = { current = 7 }
+  CM:SetLootRule("Núcleo Alfa", { model = "rolls" })
+  local cores, _ = CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
+  check(GuildOS.db.cores["Núcleo Alfa"] == nil and GuildOS.db.cores["Núcleo Beta"] == core and count(GuildOS.db.cores) == 1,
+    G("the same core, under the Discord's new name, and no second core"))
+  check(cores[1].name == "Núcleo Beta" and cores[1].discordName == "Núcleo Beta", G("the import reports it under the new name"))
+  check(GuildOS.db.raidTracker.sessions[1].groupTag == "Núcleo Beta" and GuildOS.db.raidTracker.attendance["Núcleo Beta"]
+    and GuildOS.db.raidTracker.currentGroupTag == "Núcleo Beta", G("its nights, attendance and the active core go along"))
+  check(CM:GetPointsDB("Núcleo Beta").standings.Ana.current == 7 and CM:GetLootRule("Núcleo Beta").model == "rolls",
+    G("and its points and loot rule"))
+  -- Another officer's client hears the rename with the list.
+  sent = {}
+  GuildOS.State.discordCores = cores
+  CM:SendDiscordChanges()
+  local list = sent[1].data
+  check(list.discordName == "Núcleo Beta" and list.seenAt, G("the list says the Discord's name and how fresh it is"))
+  CM = load(game)
+  CM:Initialize()
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "Núcleo Alfa", list = {}, tag = "nucleo-alfa", size = 10,
+    at = 1000, discordName = "Núcleo Alfa" } }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = list }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Núcleo Beta"] and GuildOS.db.cores["Núcleo Alfa"] == nil and count(GuildOS.db.cores) == 1,
+    G("and renames its own core the same way"))
+  check(CM:IsLinked() and CM:LinkSeenAt() == list.seenAt, G("another officer's list links this client too, as fresh as theirs"))
+  -- A core named apart from the Discord (by its tag, or linked by hand) keeps its name.
+  CM = load(game)
+  CM:Initialize()
+  CM:ImportFromSite(package(1000, { { tag = "alfa-2", name = "Alfa", size = 10, members = {} } }), 1000)
+  CM:ImportFromSite(package(2000, { { tag = "alfa-2", name = "Bravo", size = 10, members = {} } }), 2000)
+  check(GuildOS.db.cores["alfa-2"] and GuildOS.db.cores["Bravo"] == nil, G("a core named by its tag keeps it"))
+  -- A new name another core here already has: the core keeps its own.
+  CM = load(game)
+  CM:Create("Núcleo Beta")
+  CM:Initialize()
+  CM:ImportFromSite(package(1000, { alfa() }), 1000)
+  CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
+  check(CM:IsFromDiscord("Núcleo Alfa") and not CM:IsFromDiscord("Núcleo Beta"), G("a name taken here is not taken over"))
+
+  -- ── Federation switched off: creating comes back ──────────────────────
+  CM = load(game)
+  CM:Initialize()
+  CM:ImportFromSite(package(1000, { alfa() }), 1000)
+  check(CM:IsLinked(), G("linked"))
+  CM:ImportFromSite(package(2000, {}), 2000)
+  check(not CM:IsLinked() and not CM:IsFromDiscord("Núcleo Alfa") and GuildOS.db.cores["Núcleo Alfa"],
+    G("an empty package gives the cores and creating back"))
+  check(CM:Create("De Novo"), G("an officer creates again"))
+  -- On a client that only heard: the last release gives creating back.
+  CM = load(game)
+  CM:Initialize()
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "A", list = {}, tag = "a", size = 10, at = 1000 } }, "Officer-Firemaw")
+  handlers["core.roster"]({ act = "discordList", data = { coreName = "B", list = {}, tag = "b", size = 10, at = 1000 } }, "Officer-Firemaw")
+  check(CM:IsLinked(), G("heard lists link"))
+  handlers["core.roster"]({ act = "discord", data = { coreName = "A", tag = false, at = 2000 } }, "Officer-Firemaw")
+  check(CM:IsLinked(), G("one release leaves the guild linked while another core is the Discord's"))
+  handlers["core.roster"]({ act = "discord", data = { coreName = "B", tag = false, at = 2000 } }, "Officer-Firemaw")
+  check(not CM:IsLinked() and CM:Create("Livre"), G("the last one gives creating back"))
+
+  -- ── An older guild: linked by its tags ───────────────────────────────
+  CM = load(game)
+  GuildOS.db.cores["Velho"] = { name = "Velho", members = {}, discordTag = "velho" }
+  CM:Initialize()
+  check(CM:IsLinked() and not CM:Create("Outro"), G("a guild that imported before this version is linked"))
+
+  -- ── 30 days with no package: told once, and offered to create again ───
+  CM = load(game)
+  GuildOSInbox, GuildOSInboxAck = { FIXTURE }, { at = NOW }
+  CM:Initialize()
+  CM:TellQuietLink()
+  check(not CM:IsLinkQuiet() and #printed == 1, G("a fresh package says nothing")) -- the import's own line
+  NOW = NOW + 31 * DAY
+  CM:ImportInbox()                                                        -- the same inbox, every login
+  check(CM:IsLinkQuiet(), G("the same inbox again is no new package: 31 days on, the link is quiet"))
+  printed = {}
+  RANK = 5
+  CM:TellQuietLink()
+  check(#printed == 0, G("a member is not told"))
+  RANK = 1
+  CM:TellQuietLink()
+  check(said("No cores from Discord for 30 days"), G("the officer is told"))
+  printed = {}
+  CM:TellQuietLink()
+  check(#printed == 0, G("once"))
+  RANK = 5
+  check(CM:CreateInGameAgain() == false and CM:IsLinked(), G("a member cannot give the cores back"))
+  RANK = 1
+  sent = {}
+  check(CM:CreateInGameAgain(), G("an officer can"))
+  check(not CM:IsLinked() and not CM:HasDiscordCores() and GuildOS.db.cores["Núcleo Alfa"]
+    and next(GuildOS.db.cores["Núcleo Alfa"].members), G("every core is the officers' again, people and all"))
+  check(CM:Create("Feito Aqui"), G("and creating is back"))
+  local releases = 0
+  for _, s in ipairs(sent) do if s.act == "discord" and s.data.tag == false and s.data.off == true then releases = releases + 1 end end
+  check(releases == 2, G("the officers online hear each release, as the officer's choice"))
+  CM:ImportInbox()
+  check(not CM:IsLinked() and not CM:HasDiscordCores(), G("the old inbox does not link the guild again"))
+  local stale = select(2, GuildOS.CompanionImport:Load(FIXTURE))
+  check(stale == "This client already has newer cores from Discord: that code is older.", G("nor does pasting it"))
+  CM:ImportFromSite(package(GuildOS.db.discordAt + 10, { alfa() }), GuildOS.db.discordAt + 10)
+  check(CM:IsLinked(), G("a package the site makes later links it again"))
+  -- The other officer: the choice reaches it, and its own old inbox does not undo it.
+  local choice = {}
+  for _, s in ipairs(sent) do if s.act == "discord" then choice[#choice + 1] = s end end
+  CM = load(game)
+  GuildOSInbox, GuildOSInboxAck = { FIXTURE }, { at = NOW }
+  CM:Initialize()
+  check(CM:IsLinked(), G("the other officer's client is linked"))
+  for _, s in ipairs(choice) do handlers["core.roster"]({ act = s.act, data = s.data }, "Officer-Firemaw") end
+  check(not CM:IsLinked() and not CM:HasDiscordCores(), G("the choice gives the cores back there"))
+  CM:ImportInbox()
+  check(not CM:IsLinked(), G("and its own old inbox does not link them again"))
+end
+
+print(("core-owner: %d checks passed"):format(checks))
