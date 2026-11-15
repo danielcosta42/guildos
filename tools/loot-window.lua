@@ -7,6 +7,10 @@
 --     players will read it and the standings, and edits nothing;
 --   * no loot setting is reachable from two places: Settings > Loot and the core's Config tab only
 --     point to the window, and the code that writes each setting is in one UI file;
+--   * the master looter's table: the boss's items with where each stands, the candidates in the rule's
+--     order with why each is there, the decision in a sentence that follows that order, an Award
+--     button whose label says who (the relabel that never showed), End now, Disenchant, Cancel, the
+--     night's awards and Undo; every way in (the loot window, a roll announced, a bag click);
 --
 --   luajit -e 'ADDON="."' tools/loot-window.lua
 --
@@ -536,10 +540,125 @@ local function lootTab(UI)
   officer = true
 end
 
+-- ── 3. The master looter's table ───────────────────────────────────────
+local LINK1 = "|cffa335ee|Hitem:28770::::::::70:::::|h[Crown of the Abyssal Wind]|h|r"
+local LINK2 = "|cffa335ee|Hitem:30627::::::::70:::::|h[Ring of the Oath]|h|r"
+local LINK3 = "|cffa335ee|Hitem:30628::::::::70:::::|h[Shard of the Bond]|h|r"
+local function lootTable()
+  loadModules()
+  local LM, LR = GuildOS.LootMaster, GuildOS.LootRule
+  local said = {}
+  LM.SafeSendChat = function(_, msg) said[#said + 1] = msg end
+  LM.SafeSendChatAuto = LM.SafeSendChat
+  LM.SafeSendAddon = function() end
+  LM.SendEcho = function() end
+  LM.IsMasterLooter = function() return true end
+  LM.GetPlayerContext = function() return { att25 = 90, recvThisLockout = 0 } end
+  function GetInstanceInfo() return "Karazhan", "raid", 9, "", 10, 0, false, 532 end
+  function IsInRaid() return true end
+  function GetItemInfo(link)
+    local name = tostring(link):match("%[(.-)%]")
+    return name, link, 4, 70, 70, "Armor", "Cloth", 1, "INVTYPE_HEAD", 133000, 0, 4, 1, 1
+  end
+  -- The rule of the table's sentence: the reserve first, then the answer, then the roll.
+  check(LR:Set({ v = 1, model = "custom", order = { { k = "softres" }, { k = "response" }, { k = "roll" } } }) == true,
+    "a rule that orders by the reserve, the answer and the roll")
+
+  LM:ShowLootFrame({ { slot = 1, link = LINK1, name = "Crown of the Abyssal Wind", quality = 4 },
+                     { slot = 2, link = LINK2, name = "Ring of the Oath", quality = 4 } })
+  local f = _G.GuildOSLootTable
+  check(f and f:IsShown() and LM.lootFrame == f and LM.rollFrame == f, "the loot window and the roll tracker are one table")
+  f:SetSize(1000, 480)
+  LM:RefreshRollFrame()
+  check(f.itemRows[1]:IsShown() and f.itemRows[2]:IsShown() and f.itemRows[1].stateKey == "queued", "the boss's items, each with its state")
+  check(f.selected and f.selected.link == LINK1, "the first is picked")
+  check(f.openBtn:IsShown() and f.openBtn:IsEnabled() and not f.endBtn:IsShown(), "before its roll: Open roll")
+  check(not f.awardBtn:IsEnabled() and f.awardBtn.label.text == "Award", "and no one to award yet")
+  check(shows(f, "Nobody has it on a list: open a roll."), "the decision says what to do")
+  -- No setting lives in the table any more: the wishlist council and the disenchanter are the Rule tab's.
+  check(not shows(f, "Wishlist Council") and #buttons(f, ">") == 0, "no wishlist-council box and no disenchanter picker")
+  local src = assert(io.open(ADDON .. "/Modules/LootMaster.lua", "rb")):read("*a")
+  check(not src:find('SaveCfgKey("wishlistOnlyMode"', 1, true), "nothing in the loot master writes the wishlist-only switch any more")
+
+  -- A roll: the candidates in the rule's order, and why.
+  click(f, "Open Roll")
+  check(LM.activeLoot and LM.activeLoot.link == LINK1 and f.itemRows[1].stateKey == "rolling", "Open roll announces the item")
+  check(f.endBtn:IsShown() and f.endBtn:IsEnabled() and not f.openBtn:IsShown(), "and End now takes its place")
+  local function K(n) return GuildOS:GetPlayerKey(n) end
+  LM.rolls[K("Kawa")] = { name = "Kawa", class = "MAGE", rollType = "MS", roll = 93 }
+  LM.rolls[K("Rias")] = { name = "Rias", class = "MAGE", rollType = "MS", roll = 17, softRes = { hard = false } }
+  LM.rolls[K("Chehul")] = { name = "Chehul", class = "MAGE", rollType = "MS", roll = 41, softRes = { hard = false } }
+  LM.rolls[K("Dean")] = { name = "Dean", class = "MAGE", rollType = "PASS", roll = 0 }
+  LM:RefreshRollFrame()
+  local order = {}
+  for i = 1, 4 do order[i] = f.rows[i].cells.name.text end
+  check(table.concat(order, ",") == "Chehul,Rias,Kawa,Dean", "the candidates in the rule's order, a pass last: " .. table.concat(order, ","))
+  check(f.rows[1].cells.why.text == "reserved" and f.rows[3].cells.why.text == "", "why each is there: the reserve the rule compares")
+  check(f.rows[4].cells.answer.text == "Passed", "a pass says so")
+  local sentence = f.decision.text
+  check(sentence == "Chehul leads: both reserved the item (Rias too), and their roll 41 beats Rias's 17.",
+    "the decision in a sentence, in the rule's order: " .. tostring(sentence))
+  check(not f.awardBtn:IsEnabled(), "Award waits for the answers to close")
+  click(f, "End now")
+  check(LM.activeLoot.ended and f.decision.text:find("^Chehul wins: both reserved the item"), "End now closes it: " .. f.decision.text)
+  check(f.awardBtn:IsEnabled() and f.awardBtn.label.text == "Award to Chehul",
+    "and the Award button says who, on the label the player sees: " .. tostring(f.awardBtn.label.text))
+  -- The rule's order changes, and so do the sentence and the button.
+  check(LR:Set({ v = 1, model = "custom", order = { { k = "response" }, { k = "roll" } } }) == true, "a rule that reads only the roll")
+  LM.activeLoot.rule = LR:Active()
+  LM:RefreshRollFrame()
+  check(f.rows[1].cells.name.text == "Kawa" and f.decision.text == "Kawa wins: their roll 93 beats Chehul's 41.",
+    "the sentence follows the order: " .. f.decision.text)
+  -- The master looter picks someone else.
+  f.rows[2].scripts.OnClick(f.rows[2])
+  check(f.awardBtn.label.text == "Award to Chehul" and f.decision.text:find("You picked Chehul instead.", 1, true), "a click on a row picks them")
+  f.rows[4].scripts.OnClick(f.rows[4])
+  check(f.awardBtn.label.text == "Award to Chehul", "a pass cannot be picked")
+  click(f, "Award to Chehul")
+  check(LM.activeLoot == nil and said[#said]:find("delivered to Chehul", 1, true), "Award gives it: " .. tostring(said[#said]))
+  check(f.itemRows[1].stateKey == "awarded" and f.itemRows[1].state.text == "to Chehul", "the item says who got it")
+  check(shows(f, "Crown of the Abyssal Wind \226\134\146 Chehul"), "and the night's awards list it")
+  check(f.undoBtn:IsEnabled(), "which Undo can take back")
+  click(f, "Undo last award")
+  check(f.itemRows[1].stateKey == "queued" and not shows(f, "\226\134\146 Chehul"), "Undo takes it back")
+
+  -- Disenchant and Cancel.
+  f.itemRows[2].scripts.OnClick(f.itemRows[2])
+  check(f.selected.link == LINK2 and f.deBtn:IsEnabled() and not f.cancelBtn:IsEnabled(), "another item: Disenchant, nothing to cancel")
+  GuildOS.LootMaster:SetLootSetting("disenchanter", "Dis", "")
+  click(f, "Disenchant")
+  check(said[#said]:find("delivered to Disenchant (Dis)", 1, true), "Disenchant sends it to the disenchanter: " .. tostring(said[#said]))
+  click(f, "Open Roll")
+  check(f.cancelBtn:IsEnabled(), "a roll can be cancelled")
+  click(f, "Cancel")
+  check(LM.activeLoot == nil and f.openBtn:IsShown(), "and Cancel cancels it")
+
+  -- The answer for someone: a dropdown of the rule's answers.
+  check(f.forAnswer.options[1].value == "MS" and f.forAnswer.options[2].value == "OS", "the answer for someone is the rule's answers")
+
+  -- A narrow table drops columns by priority; a wide one shows them all.
+  f:SetSize(600, 360)
+  LM:RefreshRollFrame()
+  local L1 = f.layout.byKey
+  check(L1.name.shown and L1.answer.shown and L1.roll.shown and not L1.rank.shown and not L1.att.shown, "at 600px the rank and the attendance go first")
+  f:SetSize(1100, 480)
+  LM:RefreshRollFrame()
+  check(f.layout.byKey.att.shown and f.layout.byKey.rank.shown and f.layout.byKey.why.shown, "and come back with room")
+
+  -- A roll announced from a bag: its item joins the list and is picked.
+  LM:SetActiveLoot(LINK3, nil, 30628)
+  LM:ShowRollFrame()
+  check(f.selected.link == LINK3 and #LM.lootItems == 3, "a roll from a bag adds its item to the table")
+  LM:CancelRolling()
+  f:Hide()
+  LR:Set(nil)
+end
+
 for _, style in ipairs({ "guildos", "forever" }) do
   local UI = load(style)
   dropdown(UI)
   lootTab(UI)
+  lootTable()
 end
 
 print(("loot-window: %d checks passed"):format(checks))

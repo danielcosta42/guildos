@@ -1160,13 +1160,13 @@ strip[1].text, strip[2].text = "Zed", "50"
 quiet()
 click("Enter answer")
 check(row("Zed") == nil and printed[1]:find("Only a raid member", 1, true) and strip[1].text == "Zed", "and one for nobody in the raid is said to be so")
-local cycle
-for _, b in ipairs(buttons) do
-  if b.text == "MS" and b.scripts.OnClick and not b.scripts.OnEnter then cycle = b end
+-- The answer to type in is a dropdown of the rule's answers (issue #346; it was a button that cycled).
+local answerDD
+for _, dd in ipairs(dropdowns) do
+  if dd.options[1] and dd.options[1].value == "MS" then answerDD = dd end
 end
-check(cycle, "the answer to type in is a button")
-cycle.scripts.OnClick(cycle)
-check(cycle.label.text == "OS", "that a click turns to the next answer")
+check(answerDD and answerDD.value == "MS" and answerDD.options[2].value == "OS", "the answer to type in is picked from the rule's answers")
+answerDD:Select("OS")
 strip[1].text, strip[2].text = "Cy", "20"
 click("Enter answer")
 check(row("Cy").rollType == "OS" and row("Cy").bid == 20, "and the answer entered is that one")

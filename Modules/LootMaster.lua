@@ -3175,1188 +3175,651 @@ function LootMaster:SetActiveLoot(link, slot, itemId)
 end
 
 ----------------------------------------------------------------------
--- UI: Loot frame for ML — auto-opens on boss kill, shows wishlist priority
--- per item; officer can award directly or open a roll for tied players.
+-- The master looter's loot table (issue #346): the boss's items on the left, each with where it
+-- stands, and on the right the candidates of the one picked in the rule's order, why each is where
+-- the rule puts them, the decision in a sentence, and Award / End now / Disenchant / Cancel; under
+-- the items, what was given out tonight and Undo. One window, built once, for the loot window that
+-- opens on a boss (ShowLootFrame), a roll announced from it or from a bag (ShowRollFrame) and the
+-- settings' test. It was two windows of fixed columns (the loot frame and the roll tracker).
 ----------------------------------------------------------------------
-function LootMaster:ShowLootFrame(items)
-    local C  = GuildOS.Colors
-    local UI = GuildOS.UI
+local TABLE_W, TABLE_H       = 800, 480
+local TABLE_MIN_W, TABLE_MIN_H = 600, 360
+local TABLE_LIST_W           = 214   -- the items' column
+local TABLE_ROW_H            = 22
+local TABLE_ITEM_H           = 34
+local TABLE_PAD              = 10
+local TABLE_FOOT             = 40    -- the buttons' row
 
-    if self.lootFrame then self.lootFrame:Hide() end
+-- The candidates' columns, by priority: the player, the answer and the roll stay; the rest drop.
+local TABLE_COLS = {
+    { key = "rank",   min = 20,  weight = 0, priority = 2 },
+    { key = "name",   min = 90,  weight = 2, priority = 9, required = true },
+    { key = "answer", min = 56,  weight = 1, priority = 8, required = true },
+    { key = "why",    min = 110, weight = 4, priority = 6 },
+    { key = "plus",   min = 30,  weight = 0, priority = 3 },
+    { key = "att",    min = 40,  weight = 0, priority = 4 },
+    { key = "roll",   min = 56,  weight = 1, priority = 7, required = true },
+}
 
-    local FRAME_W = 680
-    local FRAME_H = 440
-    local LEFT_W  = 178
-    local RIGHT_X = LEFT_W + 12
-    local rightW  = FRAME_W - LEFT_W - 22
+-- Who is in the group now, by lower-case name: their class.
+local function raidMap()
+    local map = {}
+    for i = 1, GetNumGroupMembers() do
+        local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
+        local name, _, classFile = GuildOS.Compat.UnitIdentity(unit)
+        if name then map[strlower(name)] = classFile or "UNKNOWN" end
+    end
+    local me = GuildOS.Compat.PlayerName()
+    if me then map[strlower(me)] = select(2, UnitClass("player")) or "UNKNOWN" end
+    return map
+end
 
-    local f = CreateFrame("Frame", "GuildOSMLLootFrame", UIParent, "BackdropTemplate")
-    f:SetSize(FRAME_W, FRAME_H)
+-- Before a roll: who has the item on a list, in the lists' order (officer prio, then wishlist), who
+-- of them is in the group, and the first of them when no one else in the group shares their place.
+-- Returns the rows, the first (or nil) and how many share the first place.
+function LootMaster:InterestFor(itemId)
+    local rows, top, tied = {}, nil, 0
+    local interest = itemId and GuildOS.Wishlist and GuildOS.Wishlist:GetItemInterest(itemId)
+    if not interest then return rows, nil, 0 end
+    local here = raidMap()
+    for _, e in ipairs(interest) do
+        if e.type ~= "received" then
+            local row = {
+                name = e.name, class = here[strlower(e.name or "")] or e.class, inRaid = here[strlower(e.name or "")] ~= nil,
+                prioOrder = e.type == "prio" and e.order or nil,
+                wishlist = e.type ~= "prio" and { order = e.order } or nil, listType = e.type, order = e.order,
+            }
+            rows[#rows + 1] = row
+            if row.inRaid and not top then top = row end
+        end
+    end
+    if top then
+        for _, r in ipairs(rows) do
+            if r.inRaid and r.listType == top.listType and r.order == top.order then tied = tied + 1 end
+        end
+    end
+    return rows, top, tied
+end
+
+-- The candidates the table shows for `item`: the answers of its roll in the rule's order (a pass
+-- last), or before its roll who has it on a list. Returns the rows, "rolls" or "lists", and the
+-- one the rule puts first (nil when nobody asked, or when the lists tie).
+function LootMaster:TableCandidates(item)
+    local loot = self.activeLoot
+    if loot and item and loot.link == item.link and not loot.delivered then
+        local sorted = {}
+        for _, r in pairs(self.rolls) do sorted[#sorted + 1] = r end
+        GuildOS.LootRule:Sort(sorted, self:Rule())
+        local first = sorted[1]
+        if first and first.rollType == "PASS" then first = nil end
+        return sorted, "rolls", first
+    end
+    local itemId = item and tonumber(tostring(item.link):match("item:(%d+)"))
+    local rows, top, tied = self:InterestFor(itemId)
+    return rows, "lists", tied == 1 and top or nil, tied
+end
+
+local function tableText(parent, size, col)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    GuildOS:ApplyFont(fs, size or 11)
+    col = col or GuildOS.Colors.text
+    fs:SetTextColor(col.r, col.g, col.b)
+    fs:SetJustifyH("LEFT")
+    if fs.SetWordWrap then fs:SetWordWrap(false) end
+    return fs
+end
+
+function LootMaster:BuildLootTable()
+    local C, UI = GuildOS.Colors, GuildOS.UI
+    local LR = GuildOS.LootRule
+    local f = CreateFrame("Frame", "GuildOSLootTable", UIParent, "BackdropTemplate")
+    f:SetSize(TABLE_W, TABLE_H)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
-    })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.97)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     UI:StylePopup(f)
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
+    f:SetResizable(true)
+    if f.SetResizeBounds then f:SetResizeBounds(TABLE_MIN_W, TABLE_MIN_H) elseif f.SetMinResize then f:SetMinResize(TABLE_MIN_W, TABLE_MIN_H) end
+    f:SetClampedToScreen(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
-    f:SetScript("OnDragStop",  f.StopMovingOrSizing)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:Hide()
 
-    -- Title
-    local titleText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(titleText, 13)
-    titleText:SetPoint("TOPLEFT", 12, -10)
-    titleText:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    titleText:SetText(L["Master Loot"])
+    -- Title: what is being given, by which rule, and the clock.
+    f.title = UI:CreateTitle(f, L["Loot table"], 14)
+    f.title:SetPoint("TOPLEFT", 12, -10)
+    f.ruleText = UI:CreateText(f, "", 10, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    f.ruleText:SetPoint("LEFT", f.title, "RIGHT", 12, 0)
+    f.timerText = UI:CreateText(f, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    f.timerText:SetPoint("TOPRIGHT", -34, -12)
+    local close = UI:CreateCloseButton(f)
+    close:SetPoint("TOPRIGHT", -6, -6)
+    close:SetScript("OnClick", function() f:Hide() end)
+    local titleSep = UI:CreateSeparator(f)
+    titleSep:SetPoint("TOPLEFT", 8, -32)
+    titleSep:SetPoint("TOPRIGHT", -8, -32)
 
-    -- Instance name
-    local instText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(instText, 10)
-    instText:SetPoint("TOPLEFT", 132, -12)
-    instText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    local instName = GetInstanceInfo and (select(1, GetInstanceInfo())) or ""
-    instText:SetText((instName and instName ~= "") and ("— " .. instName) or "")
+    -- The resize grip.
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(14, 14)
+    grip:SetPoint("BOTTOMRIGHT", -2, 2)
+    grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
+    grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() end)
+    local gripMark = grip:CreateTexture(nil, "OVERLAY")
+    gripMark:SetTexture("Interface\\Buttons\\WHITE8x8")
+    gripMark:SetSize(8, 1)
+    gripMark:SetPoint("BOTTOMRIGHT", -2, 3)
+    gripMark:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
 
-    -- Close
-    local closeBtn = UI:CreateCloseButton(f)
-    closeBtn:SetPoint("TOPRIGHT", -6, -6)
-    closeBtn:SetScript("OnClick", function() f:Hide() end)
-
-    -- Title separator
-    local titleSep = f:CreateTexture(nil, "ARTWORK")
-    titleSep:SetTexture("Interface\\Buttons\\WHITE8x8")
-    titleSep:SetHeight(1)
-    titleSep:SetPoint("TOPLEFT",  8, -26)
-    titleSep:SetPoint("TOPRIGHT", -8, -26)
-    titleSep:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.4)
-
-    -- Vertical divider between left and right
+    -- ── Left: the boss's items, then what was given tonight ──────────
+    local left = CreateFrame("Frame", nil, f)
+    left:SetPoint("TOPLEFT", TABLE_PAD, -40)
+    left:SetPoint("BOTTOMLEFT", TABLE_PAD, TABLE_PAD)
+    left:SetWidth(TABLE_LIST_W)
+    f.left = left
+    local itemsHdr = UI:CreateHeaderText(left, L["BOSS ITEMS"], 10)
+    itemsHdr:SetPoint("TOPLEFT", 0, 0)
+    f.itemsHdr = itemsHdr
+    f.itemRows = {}
+    local nightHdr = UI:CreateHeaderText(left, L["DELIVERED TONIGHT"], 10)
+    f.nightHdr = nightHdr
+    f.nightLines = {}
+    local undoBtn = UI:CreateButton(left, L["Undo last award"], TABLE_LIST_W, 22)
+    undoBtn:SetPoint("BOTTOMLEFT", 0, 0)
+    undoBtn:SetScript("OnClick", function()
+        local award, why = LootMaster:UndoLastAward()
+        f.status:SetText(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or ("|cffFF4444" .. why .. "|r"))
+        LootMaster:RefreshRollFrame()
+    end)
+    f.undoBtn = undoBtn
     local vDiv = f:CreateTexture(nil, "ARTWORK")
     vDiv:SetTexture("Interface\\Buttons\\WHITE8x8")
     vDiv:SetWidth(1)
-    vDiv:SetPoint("TOPLEFT",    LEFT_W + 4, -28)
-    vDiv:SetPoint("BOTTOMLEFT", LEFT_W + 4, 42)
-    vDiv:SetVertexColor(C.border.r, C.border.g, C.border.b, 0.5)
-
-    ----------------------------------------------------------------
-    -- Disenchanter selector (title bar, right of instance name)
-    ----------------------------------------------------------------
-
-    -- ">" button that opens the raid-member picker popup
-    local dePickBtn = UI:CreateButton(f, ">", 22, 18)
-    dePickBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -32, -7)
-
-    -- Current DE name shown inline
-    local deNameText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(deNameText, 9)
-    deNameText:SetPoint("RIGHT", dePickBtn, "LEFT", -4, 1)
-    deNameText:SetWidth(120)
-    deNameText:SetJustifyH("LEFT")
-
-    -- Static "DE:" label
-    local deTitleLabel = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(deTitleLabel, 9)
-    deTitleLabel:SetPoint("RIGHT", deNameText, "LEFT", -3, 0)
-    deTitleLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    deTitleLabel:SetText(L["DE:"])
-
-    -- Popup frame (child of f so it auto-hides with it)
-    local dePickerPopup = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    dePickerPopup:SetSize(170, 280)
-    dePickerPopup:SetFrameStrata("DIALOG")
-    dePickerPopup:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    dePickerPopup:SetBackdropColor(0.060, 0.060, 0.080, 0.98)
-    dePickerPopup:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(dePickerPopup, { shadowSize = 10 })
-    dePickerPopup:Hide()
-
-    -- Popup header
-    local dePopHdr = dePickerPopup:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(dePopHdr, 8)
-    dePopHdr:SetPoint("TOPLEFT", 6, -4)
-    dePopHdr:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-    dePopHdr:SetText(L["DISENCHANTER"])
-
-    -- Scroll frame inside popup
-    local dePopScroll = CreateFrame("ScrollFrame", "GuildOSMLDEPickerScroll", dePickerPopup, "UIPanelScrollFrameTemplate")
-    dePopScroll:SetPoint("TOPLEFT",     4, -16)
-    dePopScroll:SetPoint("BOTTOMRIGHT", -4, 4)
-    UI:SkinScrollBar(dePopScroll, "GuildOSMLDEPickerScroll")
-
-    local dePopContent = CreateFrame("Frame", nil, dePopScroll)
-    dePopContent:SetWidth(140)
-    dePopContent:SetHeight(1)
-    dePopScroll:SetScrollChild(dePopContent)
-
-    -- Refresh the "DE: <name>" text in the title bar
-    local function RefreshDELabel()
-        local deName = LootMaster:GetDisenchanter()
-        if deName and deName ~= "" then
-            deNameText:SetTextColor(0.3, 1.0, 0.3)
-            deNameText:SetText(deName)
-        else
-            deNameText:SetTextColor(0.45, 0.45, 0.45)
-            deNameText:SetText(L["None"])
-        end
-    end
-    RefreshDELabel()
-
-    -- Rebuild the popup rows from the current raid roster
-    local function BuildAndShowDEPicker()
-        -- Clear old member rows (preserves header + scroll frame)
-        for _, ch in ipairs({ dePopContent:GetChildren() }) do ch:Hide() end
-        for _, rg in ipairs({ dePopContent:GetRegions() }) do rg:Hide() end
-
-        -- Collect raid / party members
-        local members = {}
-        local numMembers = GetNumGroupMembers()
-        if numMembers > 0 then
-            for i = 1, numMembers do
-                local unit = (IsInRaid() and ("raid" .. i)) or ("party" .. i)
-                local name, _, classFile = GuildOS.Compat.UnitIdentity(unit)
-                if name then
-                    table.insert(members, { name = name, class = classFile or "UNKNOWN" })
-                end
-            end
-        end
-        -- In testMode (or outside a group) include the local player
-        if LootMaster.testMode or numMembers == 0 then
-            local myName  = GuildOS.Compat.PlayerName()
-            local myClass = select(2, UnitClass("player")) or "UNKNOWN"
-            if myName then
-                local found = false
-                for _, m in ipairs(members) do
-                    if m.name == myName then found = true; break end
-                end
-                if not found then
-                    table.insert(members, { name = myName, class = myClass })
-                end
-            end
-        end
-
-        table.sort(members, function(a, b) return a.name < b.name end)
-
-        local ROW_H = 20
-        local rowW  = math.max(10, dePopContent:GetWidth() - 2)
-        local yOff  = 0
-        local curDE = LootMaster:GetDisenchanter()
-
-        for _, m in ipairs(members) do
-            local isSelected = (m.name == curDE)
-            local row = CreateFrame("Button", nil, dePopContent, "BackdropTemplate")
-            row:SetSize(rowW, ROW_H)
-            row:SetPoint("TOPLEFT", 0, -yOff)
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            row:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, isSelected and C.accentSoft.a or 0)
-
-            local cr, cg, cb = GuildOS:GetClassColor(m.class)
-            local rowText = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(rowText, 10)
-            rowText:SetPoint("LEFT", 6, 0)
-            rowText:SetTextColor(cr, cg, cb)
-            rowText:SetText(m.name)
-
-            local capturedName = m.name
-            row:SetScript("OnClick", function()
-                LootMaster:SetDisenchanter(capturedName)
-                RefreshDELabel()
-                dePickerPopup:Hide()
-                GuildOS:Print(L["Disenchanter: |cff00ff00"] .. capturedName .. "|r")
-            end)
-            row:SetScript("OnEnter", function(self)
-                self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-            end)
-            row:SetScript("OnLeave", function(self)
-                if LootMaster:GetDisenchanter() == capturedName then
-                    self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
-                else
-                    self:SetBackdropColor(0, 0, 0, 0)
-                end
-            end)
-            yOff = yOff + ROW_H + 1
-        end
-
-        -- "— Nenhum —" clears the current selection
-        local clearRow = CreateFrame("Button", nil, dePopContent, "BackdropTemplate")
-        clearRow:SetSize(rowW, ROW_H)
-        clearRow:SetPoint("TOPLEFT", 0, -yOff)
-        clearRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        clearRow:SetBackdropColor(0, 0, 0, 0)
-        local clearText = clearRow:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(clearText, 10)
-        clearText:SetPoint("LEFT", 6, 0)
-        clearText:SetTextColor(0.4, 0.4, 0.4)
-        clearText:SetText(L["--- None ---"])
-        clearRow:SetScript("OnClick", function()
-            LootMaster:SetDisenchanter("")
-            RefreshDELabel()
-            dePickerPopup:Hide()
-        end)
-        clearRow:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-        end)
-        clearRow:SetScript("OnLeave", function(self)
-            self:SetBackdropColor(0, 0, 0, 0)
-        end)
-        yOff = yOff + ROW_H + 1
-
-        dePopContent:SetHeight(math.max(1, yOff))
-
-        -- Anchor popup below the ">" button
-        dePickerPopup:ClearAllPoints()
-        dePickerPopup:SetPoint("TOPRIGHT", dePickBtn, "BOTTOMRIGHT", 0, -2)
-        dePickerPopup:Show()
-    end
-
-    dePickBtn:SetScript("OnClick", function()
-        if dePickerPopup:IsShown() then
-            dePickerPopup:Hide()
-        else
-            BuildAndShowDEPicker()
-        end
-    end)
-
-    ----------------------------------------------------------------
-    -- Left panel: items list
-    ----------------------------------------------------------------
-    local itemsLabel = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(itemsLabel, 9)
-    itemsLabel:SetPoint("TOPLEFT", 8, -30)
-    itemsLabel:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-    itemsLabel:SetText(L["LOOT  ("] .. #items .. ")")
-
-    local selectedBtn  = nil
-    local selectedItem = nil
-    local itemBtns     = {}
-
-    ----------------------------------------------------------------
-    -- Right panel: selected item header + column headers
-    ----------------------------------------------------------------
-    local selItemText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(selItemText, 12)
-    selItemText:SetPoint("TOPLEFT", RIGHT_X, -30)
-    selItemText:SetWidth(rightW - 10)
-    selItemText:SetJustifyH("LEFT")
-    selItemText:SetText(L["|cff888888Select an item from the left.|r"])
-
-    -- Column headers
-    local prioHdr = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    prioHdr:SetSize(rightW, 16)
-    prioHdr:SetPoint("TOPLEFT", RIGHT_X, -52)
-    prioHdr:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    prioHdr:SetBackdropColor(0.040, 0.040, 0.055, 1)
-    local function PH(txt, x)
-        local t = prioHdr:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(t, 8)
-        t:SetPoint("LEFT", x, 0)
-        t:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
-        t:SetText(txt)
-    end
-    PH("#", 4); PH(L["TYPE"], 22); PH(L["ORDER"], 64); PH(L["PLAYER"], 106); PH(L["ATT%"], 210); PH(L["RECV"], 255); PH(L["IN RAID"], 295)
-
-    -- Priority scroll area
-    local prioContainer = CreateFrame("Frame", nil, f)
-    prioContainer:SetPoint("TOPLEFT",     RIGHT_X, -70)
-    prioContainer:SetPoint("BOTTOMRIGHT", -8,       42)
-
-    local prioScroll = CreateFrame("ScrollFrame", "GuildOSMLPrioScroll", prioContainer, "UIPanelScrollFrameTemplate")
-    prioScroll:SetPoint("TOPLEFT",     0, 0)
-    prioScroll:SetPoint("BOTTOMRIGHT", 0, 0)
-    UI:SkinScrollBar(prioScroll, "GuildOSMLPrioScroll")
-
-    local prioChild = CreateFrame("Frame", nil, prioScroll)
-    prioChild:SetWidth(rightW - 20)
-    prioChild:SetHeight(1)
-    prioScroll:SetScrollChild(prioChild)
-
-    prioContainer:SetScript("OnSizeChanged", function(self)
-        prioChild:SetWidth(math.max(1, self:GetWidth() - 20))
-    end)
-
-    -- Bottom row: status text + Roll + Award buttons
-    local statusText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(statusText, 10)
-    statusText:SetPoint("BOTTOMLEFT", RIGHT_X, 14)
-    statusText:SetWidth(rightW - 290)
-    statusText:SetJustifyH("LEFT")
-    statusText:SetText("")
-
-    local awardTopBtn = UI:CreateButton(f, L["Award #1"], 140, 26)
-    awardTopBtn:SetPoint("BOTTOMRIGHT", -10, 10)
-    awardTopBtn:Disable()
-
-    local openRollBtn = UI:CreateButton(f, L["Open Roll"], 120, 26)
-    openRollBtn:SetPoint("RIGHT", awardTopBtn, "LEFT", -6, 0)
-
-    -- Send to disenchanter (for items nobody wants)
-    local deLootBtn = UI:CreateButton(f, L["Send to DE"], 110, 26)
-    deLootBtn:SetPoint("RIGHT", openRollBtn, "LEFT", -6, 0)
-
-    -- Take the last award back (issue #294): the item, its points and a trade not yet made.
-    local undoBtn = UI:CreateButton(f, L["Undo last award"], 130, 26)
-    undoBtn:SetPoint("RIGHT", deLootBtn, "LEFT", -6, 0)
-    undoBtn:SetScript("OnClick", function()
-        local award, why = LootMaster:UndoLastAward()
-        statusText:SetText(award and string.format(L["|cffFFD700Undone:|r %s"], award.link) or ("|cffFF4444" .. why .. "|r"))
-    end)
-    deLootBtn:SetScript("OnClick", function()
-        if not selectedItem then
-            statusText:SetText(L["|cffFF4444Select an item first.|r"])
-            return
-        end
-        local iId = tonumber(selectedItem.link:match("item:(%d+)"))
-        LootMaster:SetActiveLoot(selectedItem.link, selectedItem.slot, iId)
-        LootMaster:SendToDisenchanter(selectedItem.link, selectedItem.slot, iId)
-        statusText:SetText(L["|cff9966FFSent to Disenchant!|r"])
-        if itemBtns[selectedItem.slot] then
-            itemBtns[selectedItem.slot].awardedText:Show()
-        end
-    end)
-    deLootBtn:SetScript("OnEnter", function(self)
-        local deName = LootMaster:GetDisenchanter()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if deName and deName ~= "" then
-            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
-        else
-            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cffFF4444" .. L["No disenchanter set"] .. "|r", 1, 1, 1)
-        end
-        GameTooltip:Show()
-    end)
-    deLootBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    local topCandidate = nil
-    local tiedCount    = 0
-
-    ----------------------------------------------------------------
-    -- Helper: build raid-member name→class lookup
-    ----------------------------------------------------------------
-    local function BuildRaidMap()
-        local map = {}
-        local n = GetNumGroupMembers()
-        for i = 1, n do
-            local unit = IsInRaid() and ("raid" .. i) or ("party" .. i)
-            local name, _, classFile = GuildOS.Compat.UnitIdentity(unit)
-            if name then
-                map[strlower(name)] = classFile or "UNKNOWN"
-            end
-        end
-        local myName = GuildOS.Compat.PlayerName()
-        if myName then
-            map[strlower(myName)] = select(2, UnitClass("player")) or "UNKNOWN"
-        end
-        return map
-    end
-
-    ----------------------------------------------------------------
-    -- Helper: do the award + UI update
-    ----------------------------------------------------------------
-    local function DoAward(item, entryName)
-        local iId = tonumber(item.link:match("item:(%d+)"))
-        LootMaster:SetActiveLoot(item.link, item.slot, iId)
-        LootMaster:AwardLoot(entryName)  -- RecordReceived is called inside AwardLoot
-        statusText:SetText(L["|cff4CFF4CAwarded to "] .. entryName .. "!|r")
-        if itemBtns[item.slot] then
-            itemBtns[item.slot].awardedText:Show()
-        end
-    end
-
-    ----------------------------------------------------------------
-    -- Load priority list for a selected item
-    ----------------------------------------------------------------
-    local function LoadItem(item)
-        selectedItem = item
-        topCandidate = nil
-        tiedCount    = 0
-        statusText:SetText("")
-
-        selItemText:SetText(item.link)
-
-        -- Clear previous list
-        for _, ch in ipairs({ prioChild:GetChildren() }) do ch:Hide() end
-        for _, rg in ipairs({ prioChild:GetRegions() }) do rg:Hide() end
-
-        local itemId = tonumber(item.link:match("item:(%d+)"))
-
-        local function NoData(msg)
-            local t = prioChild:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(t, 10)
-            t:SetPoint("TOPLEFT", 6, -14)
-            t:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-            t:SetText(msg)
-            prioChild:SetHeight(40)
-            awardTopBtn:SetText(L["Award #1"])
-            awardTopBtn:Disable()
-            openRollBtn:SetText(L["Roll for All"])
-        end
-
-        if not itemId then
-            NoData(L["Could not parse item ID."])
-            return
-        end
-
-        -- Full wishlist interest list
-        local interest = GuildOS.Wishlist and GuildOS.Wishlist:GetItemInterest(itemId) or nil
-        local candidates = {}
-        if interest then
-            for _, e in ipairs(interest) do
-                table.insert(candidates, e)
-            end
-        end
-
-        if #candidates == 0 then
-            NoData(L["No wishlist data for this item - use Open Roll."])
-            return
-        end
-
-        local raidMap = BuildRaidMap()
-
-        -- Find first in-raid candidate (candidates already sorted prio→wish→order)
-        for _, e in ipairs(candidates) do
-            if raidMap[strlower(e.name)] then
-                if not topCandidate then topCandidate = e end
-            end
-        end
-
-        -- Count how many share the exact same top tier
-        if topCandidate then
-            for _, e in ipairs(candidates) do
-                if raidMap[strlower(e.name)]
-                    and e.type  == topCandidate.type
-                    and e.order == topCandidate.order then
-                    tiedCount = tiedCount + 1
-                end
-            end
-        end
-
-        -- Update bottom buttons
-        if topCandidate then
-            if tiedCount == 1 then
-                awardTopBtn:SetText(L["Award → "] .. topCandidate.name)
-                awardTopBtn:Enable()
-                openRollBtn:SetText(L["Open Roll"])
-            else
-                awardTopBtn:SetText(format(L["Tied %d — Roll"], tiedCount))
-                awardTopBtn:Disable()
-                openRollBtn:SetText(format(L["Roll Tied (%d)"], tiedCount))
-            end
-        else
-            awardTopBtn:SetText(L["Award #1"])
-            awardTopBtn:Disable()
-            openRollBtn:SetText(L["Roll for All"])
-        end
-
-        -- Render priority rows
-        local yOff = 0
-        local rowW = math.max(10, prioChild:GetWidth())
-        if rowW < 10 then rowW = rightW - 24 end
-
-        for idx, e in ipairs(candidates) do
-            local isPresent = raidMap[strlower(e.name)] ~= nil
-            local isTopTier = topCandidate
-                and e.type  == topCandidate.type
-                and e.order == topCandidate.order
-            local rowH = 22
-
-            local row = CreateFrame("Frame", nil, prioChild, "BackdropTemplate")
-            row:SetSize(rowW, rowH)
-            row:SetPoint("TOPLEFT", 0, -yOff)
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-
-            local bg = (idx % 2 == 1) and C.row1 or C.row2
-            local bgA = isPresent and (bg.a or 1) or (bg.a or 1) * 0.4
-
-            if isTopTier and isPresent then
-                row:SetBackdropColor(0.100, 0.100, 0.140, 1.0)
-                -- accent bar on left edge
-                local bar = row:CreateTexture(nil, "ARTWORK")
-                bar:SetTexture("Interface\\Buttons\\WHITE8x8")
-                bar:SetPoint("TOPLEFT",    0, 0)
-                bar:SetPoint("BOTTOMLEFT", 0, 0)
-                bar:SetWidth(3)
-                local tc = e.type == "prio" and C.accent or C.gold
-                bar:SetVertexColor(tc.r, tc.g, tc.b, 0.9)
-            else
-                row:SetBackdropColor(bg.r, bg.g, bg.b, bgA)
-            end
-
-            -- Column: index
-            local idxT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(idxT, 9)
-            idxT:SetPoint("LEFT", 4, 0)
-            idxT:SetText(idx)
-            idxT:SetTextColor(
-                isPresent and C.gold.r or 0.35,
-                isPresent and C.gold.g or 0.35,
-                isPresent and C.gold.b or 0.35)
-
-            -- Column: type
-            local typeT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(typeT, 8)
-            typeT:SetPoint("LEFT", 22, 0)
-            typeT:SetText(e.type == "prio" and L["PRIO"] or L["WISH"])
-            local tc2 = e.type == "prio" and C.accent or C.gold
-            typeT:SetTextColor(
-                isPresent and tc2.r or 0.3,
-                isPresent and tc2.g or 0.3,
-                isPresent and tc2.b or 0.3)
-
-            -- Column: order
-            local ordT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(ordT, 8)
-            ordT:SetPoint("LEFT", 64, 0)
-            ordT:SetText("#" .. (e.order or "?"))
-            ordT:SetTextColor(
-                isPresent and 0.65 or 0.3,
-                isPresent and 0.65 or 0.3,
-                isPresent and 0.65 or 0.3)
-
-            -- Column: player name (class-colored if in raid)
-            local nameT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(nameT, 10)
-            nameT:SetPoint("LEFT", 106, 0)
-            nameT:SetWidth(100)
-            if isPresent then
-                local rClass = raidMap[strlower(e.name)]
-                local cr, cg, cb = GuildOS:GetClassColor(rClass or e.class)
-                nameT:SetTextColor(cr, cg, cb)
-            else
-                nameT:SetTextColor(0.4, 0.4, 0.4)
-            end
-            nameT:SetText(e.name)
-
-            -- Column: ATT% (25-man attendance)
-            local attCtx = LootMaster:GetPlayerContext(e.name)
-            local attT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(attT, 9)
-            attT:SetPoint("LEFT", 210, 0)
-            attT:SetWidth(40)
-            attT:SetJustifyH("CENTER")
-            if attCtx.att25 >= 60 then
-                attT:SetTextColor(0.3, 1.0, 0.3)
-            elseif attCtx.att25 >= 40 then
-                attT:SetTextColor(1.0, 1.0, 0.3)
-            else
-                attT:SetTextColor(1.0, 0.3, 0.3)
-            end
-            attT:SetText(attCtx.att25 .. "%")
-
-            -- Column: RECV (items received this lockout)
-            local recvT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(recvT, 9)
-            recvT:SetPoint("LEFT", 255, 0)
-            recvT:SetWidth(35)
-            recvT:SetJustifyH("CENTER")
-            if attCtx.recvThisLockout == 0 then
-                recvT:SetTextColor(0.4, 0.4, 0.4)
-            elseif attCtx.recvThisLockout == 1 then
-                recvT:SetTextColor(1.0, 1.0, 0.3)
-            else
-                recvT:SetTextColor(1.0, 0.3, 0.3)
-            end
-            recvT:SetText(tostring(attCtx.recvThisLockout))
-
-            -- Column: in-raid indicator
-            local raidT = row:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(raidT, 9)
-            raidT:SetPoint("LEFT", 295, 0)
-            if isPresent then
-                raidT:SetTextColor(0.3, 1.0, 0.3)
-                raidT:SetText(L["IN RAID"])
-            else
-                raidT:SetTextColor(0.4, 0.4, 0.4)
-                raidT:SetText(L["absent"])
-            end
-
-            -- Award button (in-raid + ML only)
-            if isPresent and LootMaster:IsMasterLooter() then
-                local aBtn = UI:CreateButton(row, L["Award"], 58, 18)
-                aBtn:SetPoint("RIGHT", -4, 0)
-                local capturedEntry = e
-                local capturedItem  = item
-                aBtn:SetScript("OnClick", function()
-                    DoAward(capturedItem, capturedEntry.name)
-                    C_Timer.After(0.3, function()
-                        if selectedItem == capturedItem then
-                            LoadItem(capturedItem)
-                        end
-                    end)
-                end)
-            end
-
-            -- Row hover
-            local capturedBg   = bg
-            local capturedBgA  = bgA
-            local capturedTop  = isTopTier and isPresent
-            row:EnableMouse(true)
-            row:SetScript("OnEnter", function(self)
-                self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-            end)
-            row:SetScript("OnLeave", function(self)
-                if capturedTop then
-                    self:SetBackdropColor(0.100, 0.100, 0.140, 1.0)
-                else
-                    self:SetBackdropColor(capturedBg.r, capturedBg.g, capturedBg.b, capturedBgA)
-                end
-            end)
-
-            yOff = yOff + rowH + 2
-        end
-
-        -- "Already received by" section
-        if interest then
-            local recvList = {}
-            for _, e in ipairs(interest) do
-                if e.type == "received" then table.insert(recvList, e) end
-            end
-            if #recvList > 0 then
-                yOff = yOff + 6
-                local recvHdr = prioChild:CreateFontString(nil, "OVERLAY")
-                GuildOS:ApplyFont(recvHdr, 9)
-                recvHdr:SetPoint("TOPLEFT", 4, -yOff)
-                recvHdr:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-                recvHdr:SetText(L["Already received:"])
-                yOff = yOff + 16
-                for _, e in ipairs(recvList) do
-                    local rt = prioChild:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(rt, 9)
-                    rt:SetPoint("TOPLEFT", 12, -yOff)
-                    rt:SetTextColor(0.5, 0.5, 0.5)
-                    rt:SetText(e.name .. (e.receivedAt and " (" .. e.receivedAt .. ")" or ""))
-                    yOff = yOff + 16
-                end
-            end
-        end
-
-        prioChild:SetHeight(math.max(1, yOff + 8))
-    end
-
-    ----------------------------------------------------------------
-    -- Left panel: one button per loot item
-    ----------------------------------------------------------------
-    local leftYOff = 46
-    for _, item in ipairs(items) do
-        local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
-        btn:SetSize(LEFT_W - 10, 32)
-        btn:SetPoint("TOPLEFT", 5, -leftYOff)
-        btn:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-        })
-        btn:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
-        btn:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
-
-        -- Quality-colored item name
-        local qc = GuildOS.QualityColors[item.quality] or GuildOS.QualityColors[4]
-        local nameT = btn:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(nameT, 10)
-        nameT:SetPoint("TOPLEFT", 6, -4)
-        nameT:SetWidth(LEFT_W - 24)
-        nameT:SetJustifyH("LEFT")
-        nameT:SetTextColor(qc.r, qc.g, qc.b)
-        nameT:SetText(item.name or item.link)
-
-        -- "✓ awarded" badge (hidden initially)
-        local aText = btn:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(aText, 8)
-        aText:SetPoint("BOTTOMLEFT", 6, 3)
-        aText:SetTextColor(0.3, 1.0, 0.3)
-        aText:SetText(L["awarded"])
-        aText:Hide()
-        btn.awardedText = aText
-
-        -- Tooltip
-        local capturedItem = item
-        btn:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
-            GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-            GameTooltip:SetHyperlink(capturedItem.link)
-            GameTooltip:Show()
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if selectedItem == capturedItem then
-                self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
-            else
-                self:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
-            end
-            GameTooltip:Hide()
-        end)
-        btn:SetScript("OnClick", function(self)
-            if selectedBtn then
-                selectedBtn:SetBackdropColor(0.090, 0.090, 0.115, 0.7)
-            end
-            selectedBtn = self
-            self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
-            LoadItem(capturedItem)
-        end)
-
-        itemBtns[item.slot] = btn
-        leftYOff = leftYOff + 34
-    end
-
-    -- Wishlist Council toggle (bottom-left)
-    local tmbCheck = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-    tmbCheck:SetSize(22, 22)
-    tmbCheck:SetPoint("BOTTOMLEFT", 5, 14)
-    tmbCheck:SetChecked(self.WISHLIST_ONLY_MODE)
-    tmbCheck:SetScript("OnClick", function(cb)
-        local val = cb:GetChecked()
-        LootMaster.WISHLIST_ONLY_MODE = val
-        LootMaster:SaveCfgKey("wishlistOnlyMode", val)
-    end)
-    local tmbLabel = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(tmbLabel, 9)
-    tmbLabel:SetPoint("LEFT", tmbCheck, "RIGHT", 2, 0)
-    tmbLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    tmbLabel:SetText(L["Wishlist Council"])
-
-    ----------------------------------------------------------------
-    -- Bottom button handlers
-    ----------------------------------------------------------------
-    awardTopBtn:SetScript("OnClick", function()
-        if not topCandidate or not selectedItem then
-            statusText:SetText(L["|cffFF4444No top priority candidate.|r"])
-            return
-        end
-        DoAward(selectedItem, topCandidate.name)
-        C_Timer.After(0.3, function()
-            if selectedItem then LoadItem(selectedItem) end
-        end)
-    end)
-
-    openRollBtn:SetScript("OnClick", function()
-        if not selectedItem then
-            statusText:SetText(L["|cffFF4444Select an item first.|r"])
-            return
-        end
-        -- One roll at a time: the one that is open is ended, awarded or cancelled first.
-        local open = LootMaster:OpenRoll()
-        if open then
-            statusText:SetText("|cffFF4444" .. L["Roll in progress: "] .. open .. "|r")
-            return
-        end
-        LootMaster:AnnounceItem(selectedItem.link, selectedItem.slot)
-        LootMaster:ShowRollFrame()
-        statusText:SetText(L["|cffFFFF00Roll opened!|r"])
-    end)
-
-    ----------------------------------------------------------------
-    -- Auto-select first item
-    ----------------------------------------------------------------
-    if #items > 0 then
-        local firstBtn = itemBtns[items[1].slot]
-        if firstBtn then
-            selectedBtn = firstBtn
-            firstBtn:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
-        end
-        LoadItem(items[1])
-    end
-
-    f:Show()
-    self.lootFrame = f
-end
-
-----------------------------------------------------------------------
--- UI: Roll tracking frame for ML
-----------------------------------------------------------------------
-function LootMaster:ShowRollFrame()
-    local C = GuildOS.Colors
-    local UI = GuildOS.UI
-
-    if self.rollFrame then
-        self.rollFrame:Hide()
-    end
-
-    local f = CreateFrame("Frame", "GuildOSMLRollFrame", UIParent, "BackdropTemplate")
-    f:SetSize(520, 350)
-    f:SetPoint("CENTER", UIParent, "CENTER", 200, 0)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    f:SetBackdropColor(0.058, 0.058, 0.075, 0.95)
-    f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
-    UI:StylePopup(f)
-    f:SetFrameStrata("DIALOG")
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-
-    -- Title
-    local title = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(title, 13)
-    title:SetPoint("TOP", 0, -8)
-    title:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-    title:SetText(L["Roll Tracker"])
-
-    -- Item display
-    local itemText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(itemText, 12)
-    itemText:SetPoint("TOP", 0, -28)
-    f.itemText = itemText
-
-    -- Timer
-    local timerText = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(timerText, 10)
-    timerText:SetPoint("TOP", 0, -44)
-    timerText:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    f.timerText = timerText
-
-    -- Separator
-    local sep = f:CreateTexture(nil, "ARTWORK")
-    sep:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sep:SetHeight(1)
-    sep:SetPoint("TOPLEFT", 10, -56)
-    sep:SetPoint("TOPRIGHT", -10, -56)
-    sep:SetVertexColor(C.border.r, C.border.g, C.border.b, 0.4)
-
-    -- Column headers
-    local headers = { { L["Player"], 6 }, { L["Type"], 145 }, { L["Roll"], 195 }, { L["Prio/WL"], 245 }, { L["ATT%"], 325 }, { L["RECV"], 375 } }
-    for _, h in ipairs(headers) do
-        local ht = f:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(ht, 9)
-        ht:SetPoint("TOPLEFT", h[2], -62)
-        ht:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-        ht:SetText(h[1])
-    end
-
-    -- Scroll area for rolls
-    local scrollFrame = CreateFrame("ScrollFrame", "GuildOSRollScroll", f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 10, -76)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -10, 82)   -- above the "answer for" strip (issue #334)
-    UI:SkinScrollBar(scrollFrame, "GuildOSRollScroll")
-    local scrollContent = CreateFrame("Frame", nil, scrollFrame)
-    scrollContent:SetSize(480, 1)
-    scrollFrame:SetScrollChild(scrollContent)
-    f.scrollContent = scrollContent
-
-    -- Bottom buttons
-    local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
-    cancelBtn:SetPoint("BOTTOMLEFT", 10, 12)
-    cancelBtn:SetBackdropColor(C.red.r * 0.3, C.red.g * 0.3, C.red.b * 0.3, 0.6)
-    cancelBtn:SetScript("OnClick", function()
-        LootMaster:CancelRolling()
-    end)
-
-    local endBtn = UI:CreateButton(f, L["End Rolling"], 100, 24)
-    endBtn:SetPoint("BOTTOM", 0, 12)
-    endBtn:SetScript("OnClick", function()
-        LootMaster:EndRolling(true)    -- a click: the winner line goes out on Forever too (#63)
-    end)
-    f.endBtn = endBtn
-
-    -- Send to Disenchanter (between Cancel and End Rolling)
-    local deRollBtn = UI:CreateButton(f, L["Send to DE"], 100, 24)
-    deRollBtn:SetPoint("LEFT", cancelBtn, "RIGHT", 8, 0)
-    -- End Rolling stays centred unless the pair on its left, grown by its labels, reaches it (issue #28).
-    if 10 + cancelBtn:GetWidth() + 8 + deRollBtn:GetWidth() + 8 > (f:GetWidth() - endBtn:GetWidth()) / 2 then
-        endBtn:ClearAllPoints()
-        endBtn:SetPoint("LEFT", deRollBtn, "RIGHT", 8, 0)
-    end
-    deRollBtn:SetScript("OnClick", function()
-        if not LootMaster.activeLoot then
-            GuildOS:Print(L["No active item to send to the disenchanter."])
-            return
-        end
-        local loot = LootMaster.activeLoot
-        LootMaster:SendToDisenchanter(loot.link, loot.slot, loot.itemId)
-        f:Hide()
-    end)
-    deRollBtn:SetScript("OnEnter", function(self)
-        local deName = LootMaster:GetDisenchanter()
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        if deName and deName ~= "" then
-            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cff00ff00" .. deName .. "|r", 1, 1, 1)
-        else
-            GameTooltip:SetText(L["Send to Disenchant"] .. "\n|cffFF4444" .. L["No disenchanter set"] .. "|r", 1, 1, 1)
-        end
-        GameTooltip:Show()
-    end)
-    deRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- An answer typed in for a raider who has no GuildOS, when the rule has a button or a bid that
-    -- no /roll says (issue #334): the name, the answer (a click goes to the next one), the bid when
-    -- the answer asks for one, and Enter. The loot master's own answer goes through the same boxes.
-    local LR = GuildOS.LootRule
-    local answers = LR:Responses(self:Rule())
-    local forLabel = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(forLabel, 10)
-    forLabel:SetPoint("BOTTOMLEFT", 10, 56)
-    forLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    forLabel:SetText(L["Answer for:"])
-    local forBox = lootEditBox(f, 120, false, 48)
-    forBox:SetPoint("BOTTOMLEFT", 90, 52)
-    local forIndex = 1
-    local forAnswer = UI:CreateButton(f, LR:ResponseLabel(answers[1]), 80, 22)
+    vDiv:SetPoint("TOPLEFT", left, "TOPRIGHT", 6, 0)
+    vDiv:SetPoint("BOTTOMLEFT", left, "BOTTOMRIGHT", 6, 0)
+    vDiv:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+
+    -- ── Right: the item picked ───────────────────────────────────────
+    local right = CreateFrame("Frame", nil, f)
+    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 14, 0)
+    right:SetPoint("BOTTOMRIGHT", -TABLE_PAD, TABLE_PAD)
+    f.right = right
+    f.itemText = tableText(right, 12)
+    f.itemText:SetPoint("TOPLEFT", 0, 0)
+    f.itemText:SetPoint("RIGHT", right, "RIGHT", 0, 0)
+
+    -- Answer for someone with no GuildOS (issue #334): the name, the answer, the bid when it asks for
+    -- one; and the loot master's own answer, by the rule's first two answers.
+    local strip = CreateFrame("Frame", nil, right)
+    strip:SetPoint("TOPLEFT", 0, -22)
+    strip:SetPoint("TOPRIGHT", 0, -22)
+    strip:SetHeight(24)
+    local forLabel = tableText(strip, 10, C.silver)
+    forLabel:SetPoint("LEFT", 0, 0)
+    forLabel:SetText(L["Answer for someone:"])
+    local forBox = lootEditBox(strip, 110, false, 48)
+    forBox:SetPoint("LEFT", forLabel, "RIGHT", 6, 0)
+    local forAnswer = UI:CreateDropdown(strip, 90, 22)
     forAnswer:SetPoint("LEFT", forBox, "RIGHT", 6, 0)
-    forAnswer:SetScript("OnClick", function(self)
-        forIndex = forIndex % #answers + 1
-        self.label:SetText(LR:ResponseLabel(answers[forIndex]))
-    end)
-    local forBid = lootEditBox(f, 60, true, 7)
+    local forBid = lootEditBox(strip, 56, true, 7)
     forBid:SetPoint("LEFT", forAnswer, "RIGHT", 6, 0)
-    if not LR:HasBids(self:Rule()) then forBid:Hide() end
-    -- What EnterAnswer said of an answer, to the loot master.
+    local forEnter = UI:CreateButton(strip, L["Enter answer"], 100, 22)
+    forEnter:SetPoint("LEFT", forBid, "RIGHT", 6, 0)
     local function entered(row, why, n)
         if not row then GuildOS:Print("|cffFF4444" .. LootMaster:WhyNot(why, n) .. "|r") end
         return row
     end
-    local forEnter = UI:CreateButton(f, L["Enter answer"], 100, 22)
-    forEnter:SetPoint("LEFT", forBid, "RIGHT", 6, 0)
     forEnter:SetScript("OnClick", function()
-        if entered(LootMaster:EnterAnswer(forBox:GetText(), answers[forIndex].key, tonumber(forBid:GetText()))) then
+        if entered(LootMaster:EnterAnswer(forBox:GetText(), forAnswer:GetValue(), tonumber(forBid:GetText()))) then
             forBox:SetText("")
         end
     end)
-
-    -- Roll buttons for the initiator (ML can also compete for the item): the rule's first two
-    -- answers, MS and OS unless the guild named others. This client draws the roll (issue #334), as
-    -- it does for every raider's button.
-    local function mine(index)
-        local r = answers[index]
-        entered(LootMaster:EnterAnswer(GuildOS.Compat.PlayerName(), r.key, tonumber(forBid:GetText())))
+    local mineLabel = tableText(strip, 10, C.silver)
+    mineLabel:SetText(L["Your roll:"])
+    local mine = {}
+    local firstAnswers = LR:Responses(self:Rule())
+    for i = 1, 2 do
+        local b = UI:CreateButton(strip, firstAnswers[i] and firstAnswers[i].key or "-", 44, 22)
+        b.index = i
+        b:SetScript("OnClick", function(self)
+            local r = LR:Responses(LootMaster:Rule())[self.index]
+            if r then entered(LootMaster:EnterAnswer(GuildOS.Compat.PlayerName(), r.key, tonumber(forBid:GetText()))) end
+        end)
+        b:SetScript("OnEnter", function(self)
+            local r = LR:Responses(LootMaster:Rule())[self.index]
+            if not r then return end
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(string.format(L["Your answer: %s"], LR:ResponseLabel(r)), 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        mine[i] = b
     end
-    local function mineTip(self, index)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(string.format(L["Your answer: %s"], LR:ResponseLabel(answers[index])), 1, 1, 1)
-        GameTooltip:Show()
-    end
-    -- Second answer (right-most)
-    local osRollBtn = UI:CreateButton(f, answers[2] and answers[2].key or "-", 64, 24)
-    osRollBtn:SetPoint("BOTTOMRIGHT", -10, 12)
-    if answers[2] then
-        osRollBtn:SetScript("OnClick", function() mine(2) end)
-        osRollBtn:SetScript("OnEnter", function(self) mineTip(self, 2) end)
-        osRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    else
-        osRollBtn:Hide()
-    end
+    mine[2]:SetPoint("RIGHT", strip, "RIGHT", 0, 0)
+    mine[1]:SetPoint("RIGHT", mine[2], "LEFT", -4, 0)
+    mineLabel:SetPoint("RIGHT", mine[1], "LEFT", -6, 0)
+    f.strip, f.forBox, f.forAnswer, f.forBid, f.mine, f.forEnter = strip, forBox, forAnswer, forBid, mine, forEnter
 
-    -- First answer (left of the second)
-    local msRollBtn = UI:CreateButton(f, answers[1].key, 64, 24)
-    msRollBtn:SetPoint("RIGHT", osRollBtn, "LEFT", -4, 0)
-    msRollBtn:SetBackdropColor(0.0, 0.35, 0.0, 0.6)
-    msRollBtn:SetScript("OnClick", function() mine(1) end)
-    msRollBtn:SetScript("OnEnter", function(self) mineTip(self, 1) end)
-    msRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- The candidates.
+    local head = CreateFrame("Frame", nil, right)
+    head:SetPoint("TOPLEFT", 0, -52)
+    head:SetPoint("TOPRIGHT", 0, -52)
+    head:SetHeight(18)
+    f.head = head
+    f.heads = {}
+    local TITLES = { rank = "#", name = L["PLAYER"], answer = L["ANSWER"], why = L["WHY THEY ARE HERE"],
+        plus = "+1", att = L["ATT%"], roll = L["ROLL"] }
+    for _, col in ipairs(TABLE_COLS) do f.heads[col.key] = UI:CreateHeaderText(head, TITLES[col.key], 9) end
+    local scroll, child = UI:CreateScrollFrame(right, "GuildOSLootTableScroll")
+    scroll:SetPoint("TOPLEFT", 0, -72)
+    scroll:SetPoint("BOTTOMRIGHT", -10, TABLE_FOOT + 40)
+    f.scroll, f.scrollContent = scroll, child
+    f.rows = {}
 
-    -- Roll label
-    local rollLabel = f:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(rollLabel, 8)
-    rollLabel:SetPoint("BOTTOM", msRollBtn, "TOP", 32, 2)
-    rollLabel:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    rollLabel:SetText(L["Your roll:"])
+    -- The decision, in a sentence, before the button that carries it out.
+    f.decision = UI:CreateText(right, "", 11, C.text.r, C.text.g, C.text.b)
+    f.decision:SetPoint("BOTTOMLEFT", 0, TABLE_FOOT + 4)
+    f.decision:SetPoint("RIGHT", right, "RIGHT", 0, 0)
+    f.decision:SetJustifyH("LEFT")
+    if f.decision.SetWordWrap then f.decision:SetWordWrap(true) end
+    f.status = UI:CreateText(right, "", 10, C.silver.r, C.silver.g, C.silver.b)
+    f.status:SetPoint("BOTTOMLEFT", 0, TABLE_FOOT - 12)
+    f.status:SetPoint("RIGHT", right, "RIGHT", 0, 0)
+    f.status:SetJustifyH("LEFT")
 
-    -- Close
-    local closeBtn = UI:CreateCloseButton(f)
-    closeBtn:SetPoint("TOPRIGHT", -4, -4)
-    closeBtn:SetScript("OnClick", function() f:Hide() end)
-
-    f:Show()
-    self.rollFrame = f
-
-    -- Timer ticker
-    if f.ticker then f.ticker:Cancel() end
-    f.ticker = C_Timer.NewTicker(1, function()
-        LootMaster:UpdateRollTimer()
+    -- Award · End now (or Open roll) · Disenchant · Cancel.
+    local awardBtn = UI:CreateButton(right, L["Award"], 150, 26)
+    UI:SetButtonVariant(awardBtn, "primary")
+    awardBtn:SetPoint("BOTTOMLEFT", 0, 0)
+    local endBtn = UI:CreateButton(right, L["End now"], 100, 26)
+    endBtn:SetPoint("LEFT", awardBtn, "RIGHT", 6, 0)
+    endBtn:SetScript("OnClick", function()
+        LootMaster:EndRolling(true)    -- a click: the winner line goes out on Forever too (#63)
+        LootMaster:RefreshRollFrame()
     end)
+    local openBtn = UI:CreateButton(right, L["Open Roll"], 100, 26)
+    openBtn:SetPoint("LEFT", awardBtn, "RIGHT", 6, 0)
+    local deBtn = UI:CreateButton(right, L["Disenchant"], 100, 26)
+    deBtn:SetPoint("LEFT", endBtn, "RIGHT", 6, 0)
+    local cancelBtn = UI:CreateButton(right, L["Cancel"], 80, 26)
+    UI:SetButtonVariant(cancelBtn, "danger")
+    cancelBtn:SetPoint("LEFT", deBtn, "RIGHT", 6, 0)
+    f.awardBtn, f.endBtn, f.openBtn, f.deBtn, f.cancelBtn = awardBtn, endBtn, openBtn, deBtn, cancelBtn
+
+    awardBtn:SetScript("OnClick", function()
+        local item, who = f.selected, f.chosen
+        if not (item and who) then return end
+        local loot = LootMaster.activeLoot
+        if not (loot and loot.link == item.link) then
+            LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
+        end
+        LootMaster:AwardLoot(who)
+        f.status:SetText(string.format(L["|cff4CFF4CAwarded to %s.|r"], who))
+        f.picked = nil
+        LootMaster:RefreshRollFrame()
+    end)
+    openBtn:SetScript("OnClick", function()
+        local item = f.selected
+        if not item then return end
+        -- One roll at a time: the one that is open is ended, awarded or cancelled first.
+        local open = LootMaster:OpenRoll()
+        if open then
+            f.status:SetText("|cffFF4444" .. L["Roll in progress: "] .. open .. "|r")
+            return
+        end
+        LootMaster:AnnounceItem(item.link, item.slot)
+        LootMaster:ShowRollFrame()
+    end)
+    deBtn:SetScript("OnClick", function()
+        local item = f.selected
+        if not item then return end
+        local loot = LootMaster.activeLoot
+        if not (loot and loot.link == item.link) then
+            LootMaster:SetActiveLoot(item.link, item.slot, tonumber(item.link:match("item:(%d+)")))
+            loot = LootMaster.activeLoot
+        end
+        LootMaster:SendToDisenchanter(loot.link, loot.slot, loot.itemId)
+        f.status:SetText(L["|cff9966FFSent to Disenchant!|r"])
+        LootMaster:RefreshRollFrame()
+    end)
+    -- Who disenchants is set in the Loot window's Rule tab, its one place (issue #346).
+    deBtn:SetScript("OnEnter", function(self)
+        local de = LootMaster:GetDisenchanter()
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["Send to Disenchant"], 1, 1, 1)
+        if de ~= "" then
+            GameTooltip:AddLine(de, 0.3, 1, 0.3)
+        else
+            GameTooltip:AddLine(L["No disenchanter set: Loot, Rule tab."], 1, 0.3, 0.3)
+        end
+        GameTooltip:Show()
+    end)
+    deBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    cancelBtn:SetScript("OnClick", function()
+        LootMaster:CancelRolling()
+        LootMaster:RefreshRollFrame()
+    end)
+
     f:SetScript("OnHide", function()
-        if f.ticker then f.ticker:Cancel() end
+        if f.ticker then f.ticker:Cancel(); f.ticker = nil end
         LootMaster.testMode = false
     end)
+    UI:MakeResponsive(f, function() LootMaster:RefreshRollFrame() end)
+    return f
+end
 
+-- The table, built the first time; the loot window, the roll tracker and the settings' test all show it.
+function LootMaster:LootTable()
+    if not self.lootTable then
+        self.lootTable = self:BuildLootTable()
+        self.lootFrame, self.rollFrame = self.lootTable, self.lootTable
+    end
+    return self.lootTable
+end
+
+local function showTable(self)
+    local f = self:LootTable()
+    f:Show()
+    if not f.ticker then
+        f.ticker = C_Timer.NewTicker(1, function() LootMaster:UpdateRollTimer() end)
+    end
     self:RefreshRollFrame()
+    return f
+end
+
+-- The boss's items, as the loot window lists them: { { slot, link, name, quality }, ... }.
+function LootMaster:ShowLootFrame(items)
+    self.lootItems = items or {}
+    self.lootShownAt = GetServerTime()
+    local f = self:LootTable()
+    f.selected, f.picked = self.lootItems[1], nil
+    showTable(self)
+end
+
+-- A roll announced (from the table, a bag click or the settings' test): its item joins the list.
+function LootMaster:ShowRollFrame()
+    local f = self:LootTable()
+    local loot = self.activeLoot
+    if loot then
+        self.lootItems = self.lootItems or {}
+        local found
+        for _, item in ipairs(self.lootItems) do
+            if item.link == loot.link then found = item end
+        end
+        if not found then
+            local _, _, q = GuildOS.Compat.GetItemInfo(loot.link)
+            found = { slot = loot.slot, link = loot.link, quality = q or 4 }
+            table.insert(self.lootItems, found)
+        end
+        f.selected, f.picked = found, nil
+        self.lootShownAt = self.lootShownAt or GetServerTime()
+    end
+    showTable(self)
 end
 
 ----------------------------------------------------------------------
--- Refresh the roll tracker display
+-- Draw the table again: the items and their state, the candidates of the item picked, the decision
+-- and what the buttons do now. Every figure is the loot rule's (TableCandidates, WhyHere,
+-- DecisionText); this only lays them out.
 ----------------------------------------------------------------------
 function LootMaster:RefreshRollFrame()
-    if not self.rollFrame or not self.rollFrame:IsShown() then return end
-    local f = self.rollFrame
-
-    -- Update item
-    if self.activeLoot then
-        f.itemText:SetText(self.activeLoot.link or L["No item"])
-    else
-        f.itemText:SetText(L["|cff888888No active roll|r"])
-        f.timerText:SetText("")
-    end
-
-    -- Clear scroll content
-    local content = f.scrollContent
-    for _, child in pairs({ content:GetChildren() }) do child:Hide() end
-
-    -- Build sorted list
-    local lootSystem = self:System()
-    local sorted = {}
-    for _, r in pairs(self.rolls) do
-        table.insert(sorted, r)
-    end
-    -- The loot rule's order (issue #333), a pass after every answer: the row on top is the winner
-    -- the roll's end announces.
+    local f = self.lootTable
+    if not f or not f:IsShown() then return end
+    local C, UI, LR = GuildOS.Colors, GuildOS.UI, GuildOS.LootRule
     local rule = self:Rule()
-    GuildOS.LootRule:Sort(sorted, rule)
-    local sealed = GuildOS.LootRule:BidRules(rule)
-    local usesPoints = GuildOS.LootSystemUsesPoints and GuildOS:LootSystemUsesPoints(lootSystem)
+    local W, H = f:GetWidth() or TABLE_W, f:GetHeight() or TABLE_H
 
-    local CLASS_COLORS = RAID_CLASS_COLORS
-    local yOff = 0
-    for _, r in ipairs(sorted) do
-        local row = CreateFrame("Button", nil, content, "BackdropTemplate")
-        row:SetSize(480, 22)
-        row:SetPoint("TOPLEFT", 0, -yOff)
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        row:SetBackdropColor(0.082, 0.082, 0.105, 0.6)
+    -- Which rule, of which core.
+    local core = self.activeLoot and self.activeLoot.core or self:ActiveCore()
+    f.ruleText:SetText(string.format("%s \194\183 %s", (core ~= "" and core) or L["The guild"], LR:ModelName(rule)))
 
-        -- Player name (class colored)
-        local cc = CLASS_COLORS[r.class] or { r = 0.8, g = 0.8, b = 0.8 }
-        local nameText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(nameText, 10)
-        nameText:SetPoint("LEFT", 6, 0)
-        nameText:SetTextColor(cc.r, cc.g, cc.b)
-        nameText:SetText(r.name)
-
-        -- Roll type: the answer, by its key. The rule's first is green and its second yellow, as MS
-        -- and OS always were; a pass is grey.
-        local typeText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(typeText, 10)
-        typeText:SetPoint("LEFT", 150, 0)
-        local _, place = GuildOS.LootRule:Response(r.rollType, rule)
-        if place == 1 then
-            typeText:SetTextColor(0.3, 1.0, 0.3)
-        elseif place == 2 then
-            typeText:SetTextColor(1.0, 1.0, 0.3)
-        elseif place then
-            typeText:SetTextColor(0.6, 0.8, 1.0)
-        else
-            typeText:SetTextColor(0.5, 0.5, 0.5)
-        end
-        typeText:SetText(r.rollType)
-
-        -- Roll number, or the bid (issue #334). A sealed bid stays hidden on the loot master's own
-        -- screen too until the roll ends.
-        local rollText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(rollText, 10)
-        rollText:SetPoint("LEFT", 200, 0)
-        rollText:SetTextColor(1, 1, 1)
-        if r.rollType == "PASS" then
-            rollText:SetText("-")
-        elseif r.bid then
-            local ended = self.activeLoot and self.activeLoot.ended
-            rollText:SetText((sealed and not ended) and L["sealed"] or string.format(L["bid %d"], r.bid))
-        else
-            rollText:SetText(self:RollText(r, rule))
-        end
-
-        -- Prio / Wishlist info, after the +1 counter when the rule keeps one (issue #334).
-        local tmbText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(tmbText, 10)
-        tmbText:SetPoint("LEFT", 250, 0)
-        local plus = self:AccountsText(r, rule)
-        if lootSystem == "epgp" then
-            -- The rule's own ratio when it orders by one (a rule from the site), else the pool's priority.
-            local ratio = GuildOS.LootRule:RatioOf(r, rule)
-            tmbText:SetText(plus .. string.format(L["|cffFFD700%.2f PR|r"], math.max(0, ratio or r.pr or 0)))
-        elseif usesPoints then
-            tmbText:SetText(plus .. string.format(L["|cffFFD700%d DKP|r"], r.dkp or 0))
-        elseif r.prioOrder then
-            tmbText:SetText(plus .. string.format(L["|cffFFD700* Prio #%d|r"], r.prioOrder))
-        elseif r.wishlist then
-            tmbText:SetText(plus .. L["|cff4CB8FFwishlist #"] .. r.wishlist.order .. "|r")
-        elseif plus ~= "" then
-            tmbText:SetText(plus)
-        else
-            tmbText:SetTextColor(0.4, 0.4, 0.4)
-            tmbText:SetText("-")
-        end
-
-        -- The note an answer came with, and the parts of its score (issue #337), on the row's tooltip.
-        local tip = self:RowTip(r, rule)
-        if #tip > 0 then
+    -- ── The items ───────────────────────────────────────────────────
+    local items = self.lootItems or {}
+    if not f.selected then f.selected = items[1] end
+    f.itemsHdr:SetText(string.format(L["BOSS ITEMS (%d)"], #items))
+    local y = 18
+    for i, item in ipairs(items) do
+        local row = f.itemRows[i]
+        if not row then
+            row = CreateFrame("Button", nil, f.left, "BackdropTemplate")
+            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            row.name = tableText(row, 11)
+            row.name:SetPoint("TOPLEFT", 6, -4)
+            row.name:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            row.state = tableText(row, 9, C.labelDim)
+            row.state:SetPoint("BOTTOMLEFT", 6, 4)
+            row.state:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            row:SetScript("OnClick", function(self)
+                f.selected, f.picked = self.item, nil
+                LootMaster:RefreshRollFrame()
+            end)
             row:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetText(tip[1], 1, 1, 1)
-                for i = 2, #tip do GameTooltip:AddLine(tip[i], 0.8, 0.8, 0.8) end
+                GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+                GameTooltip:SetHyperlink(self.item.link)
                 GameTooltip:Show()
             end)
             row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            f.itemRows[i] = row
         end
-
-        -- ATT% (25-man attendance)
-        local attText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(attText, 10)
-        attText:SetPoint("LEFT", 330, 0)
-        attText:SetWidth(42)
-        attText:SetJustifyH("RIGHT")
-        local att25 = r.att25 or 0
-        if att25 >= 60 then
-            attText:SetTextColor(0.3, 1.0, 0.3)
-        elseif att25 >= 40 then
-            attText:SetTextColor(1.0, 1.0, 0.3)
-        else
-            attText:SetTextColor(1.0, 0.3, 0.3)
-        end
-        attText:SetText(att25 .. "%")
-
-        -- RECV (items received this lockout)
-        local recvText = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(recvText, 10)
-        recvText:SetPoint("LEFT", 378, 0)
-        recvText:SetWidth(32)
-        recvText:SetJustifyH("CENTER")
-        local recvN = r.recvCount or 0
-        if recvN == 0 then
-            recvText:SetTextColor(0.4, 0.4, 0.4)
-        elseif recvN == 1 then
-            recvText:SetTextColor(1.0, 1.0, 0.3)
-        else
-            recvText:SetTextColor(1.0, 0.3, 0.3)
-        end
-        recvText:SetText(tostring(recvN))
-
-        -- Award button (only when rolling ended and ML)
-        if self.activeLoot and self.activeLoot.ended and self:IsMasterLooter() and r.rollType ~= "PASS" then
-            local awardBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
-            awardBtn:SetSize(50, 18)
-            awardBtn:SetPoint("RIGHT", -2, 0)
-            awardBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-            awardBtn:SetBackdropColor(0.0, 0.3, 0.0, 0.6)
-            awardBtn:SetBackdropBorderColor(0.0, 0.5, 0.0, 0.4)
-            local aText = awardBtn:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(aText, 9)
-            aText:SetPoint("CENTER")
-            aText:SetText(L["Award"])
-            aText:SetTextColor(0.3, 1.0, 0.3)
-            local playerName = r.name
-            awardBtn:SetScript("OnClick", function()
-                LootMaster:AwardLoot(playerName)
-                f:Hide()
-            end)
-            awardBtn:SetScript("OnEnter", function(self)
-                self:SetBackdropColor(0.0, 0.5, 0.0, 0.8)
-            end)
-            awardBtn:SetScript("OnLeave", function(self)
-                self:SetBackdropColor(0.0, 0.3, 0.0, 0.6)
-            end)
-        end
-
-        yOff = yOff + 24
+        row.item = item
+        row:SetSize(TABLE_LIST_W, TABLE_ITEM_H - 2)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -y)
+        local qc = GuildOS.QualityColors[item.quality] or GuildOS.QualityColors[4]
+        row.name:SetText(item.name or item.link)
+        row.name:SetTextColor(qc.r, qc.g, qc.b)
+        local state, text = self:ItemState(item)
+        row.stateKey = state
+        row.state:SetText(text)
+        local ink = (state == "rolling" and C.gold) or (state == "awarded" and C.ok) or C.labelDim
+        row.state:SetTextColor(ink.r, ink.g, ink.b)
+        local on = f.selected == item
+        row:SetBackdropColor(C.well.r, C.well.g, C.well.b, on and 1 or 0)
+        local edge = on and C.gold or C.line
+        row:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
+        row:Show()
+        y = y + TABLE_ITEM_H
     end
-    content:SetHeight(math.max(1, yOff))
+    for i = #items + 1, #f.itemRows do f.itemRows[i]:Hide() end
+
+    -- What was given tonight, newest first, as many as the column has room for.
+    y = y + 10
+    f.nightHdr:ClearAllPoints()
+    f.nightHdr:SetPoint("TOPLEFT", 0, -y)
+    y = y + 18
+    local room = math.max(0, math.floor((H - 40 - TABLE_PAD - y - 30) / 14))
+    local night = self:NightAwards(core)
+    for i = 1, math.max(#f.nightLines, math.min(room, #night)) do
+        local line = f.nightLines[i]
+        if not line then
+            line = tableText(f.left, 10, C.silver)
+            f.nightLines[i] = line
+        end
+        local a = i <= room and night[i]
+        if a then
+            line:ClearAllPoints()
+            line:SetPoint("TOPLEFT", 0, -(y + (i - 1) * 14))
+            line:SetWidth(TABLE_LIST_W)
+            line:SetText(string.format("%s \226\134\146 %s", GuildOS.Compat.GetItemInfo(a.link) or a.link or "?", a.player or "?"))
+            line:Show()
+        else
+            line:Hide()
+        end
+    end
+    if #night == 0 then
+        local line = f.nightLines[1] or tableText(f.left, 10, C.labelDim)
+        f.nightLines[1] = line
+        line:ClearAllPoints()
+        line:SetPoint("TOPLEFT", 0, -y)
+        line:SetText(L["Nothing given yet."])
+        line:Show()
+    end
+
+    -- ── The item picked ─────────────────────────────────────────────
+    local item = f.selected
+    f.itemText:SetText(item and item.link or L["|cff888888Select an item from the left.|r"])
+    local answers = LR:Responses(rule)
+    local opts = {}
+    for i, r in ipairs(answers) do opts[i] = { value = r.key, text = LR:ResponseLabel(r) } end
+    f.forAnswer:SetOptions(opts)
+    local keep = false
+    for _, o in ipairs(opts) do keep = keep or o.value == f.forAnswer:GetValue() end
+    if not keep then f.forAnswer:SetValue(opts[1] and opts[1].value) end
+    if LR:HasBids(rule) then f.forBid:Show() else f.forBid:Hide() end
+    for i, b in ipairs(f.mine) do
+        local r = answers[i]
+        if r then b.label:SetText(r.key); b:Show() else b:Hide() end
+    end
+
+    local rows, mode, first, tied = self:TableCandidates(item)
+    local loot = self.activeLoot
+    local ours = loot and item and loot.link == item.link and not loot.delivered
+    local ended = ours and loot.ended
+    -- Whom the Award button gives it to: the one the master looter clicked, while they are still a
+    -- candidate; else the rule's first once the answers are in, and before a roll the first on the lists.
+    local picked
+    for _, r in ipairs(rows) do
+        if f.picked and r.name == f.picked and r.rollType ~= "PASS" then picked = r.name end
+    end
+    f.picked = picked
+    f.chosen = picked or (mode == "lists" and first and first.name) or (ended and first and first.name) or nil
+
+    -- The columns that fit, by priority; no "+1" where the rule keeps no counter.
+    local counters = LR:Counters(rule)
+    local spec = {}
+    for _, col in ipairs(TABLE_COLS) do
+        if not (col.key == "plus" and #counters == 0) then spec[#spec + 1] = col end
+    end
+    local tableW = math.max(1, W - TABLE_LIST_W - TABLE_PAD * 2 - 14 - 14)
+    f.scrollContent:SetWidth(tableW)
+    local layout = UI:ResolveColumns(spec, tableW, 6)
+    for _, col in ipairs(TABLE_COLS) do
+        local at, fs = layout.byKey[col.key], f.heads[col.key]
+        fs:ClearAllPoints()
+        if at and at.shown then
+            fs:SetPoint("LEFT", f.head, "LEFT", at.x + 4, 0)
+            fs:Show()
+        else
+            fs:Hide()
+        end
+    end
+    f.layout = layout
+
+    local sealed = LR:BidRules(rule)
+    for i, r in ipairs(rows) do
+        local row = f.rows[i]
+        if not row then
+            row = CreateFrame("Button", nil, f.scrollContent, "BackdropTemplate")
+            row:SetHeight(TABLE_ROW_H)
+            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            row.cells = {}
+            for _, col in ipairs(TABLE_COLS) do row.cells[col.key] = tableText(row, 10) end
+            row:SetScript("OnClick", function(self)
+                if self.candidate and self.candidate.rollType ~= "PASS" then
+                    f.picked = self.candidate.name
+                    LootMaster:RefreshRollFrame()
+                end
+            end)
+            row:SetScript("OnEnter", function(self)
+                if not self.tip or #self.tip == 0 then return end
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(self.tip[1], 1, 1, 1)
+                for n = 2, #self.tip do GameTooltip:AddLine(self.tip[n], 0.8, 0.8, 0.8) end
+                GameTooltip:Show()
+            end)
+            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            f.rows[i] = row
+        end
+        row.candidate = r
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -(i - 1) * (TABLE_ROW_H + 2))
+        row:SetPoint("TOPRIGHT", 0, -(i - 1) * (TABLE_ROW_H + 2))
+        local pass = r.rollType == "PASS"
+        local chosen = f.chosen ~= nil and r.name == f.chosen
+        local bg = chosen and C.well or ((i % 2 == 1) and C.row1 or C.row2)
+        row:SetBackdropColor(bg.r, bg.g, bg.b, chosen and 1 or (bg.a or 0.6))
+        local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class] or nil
+        local values = {}
+        values.rank = pass and "-" or tostring(i)
+        values.name = r.name or "?"
+        if mode == "rolls" then
+            local resp, place = LR:Response(r.rollType, rule)
+            values.answer = pass and L["Passed"] or (resp and LR:ResponseLabel(resp)) or tostring(r.rollType or "")
+            values.why = pass and "" or self:WhyHere(r, rule)
+            if r.rollType == "PASS" then
+                values.roll = "-"
+            elseif r.bid then
+                values.roll = (sealed and not ended) and L["sealed"] or string.format(L["bid %d"], r.bid)
+            else
+                values.roll = self:RollText(r, rule)
+            end
+            row.answerPlace = place
+        else
+            values.answer = r.listType == "prio" and L["PRIO"] or L["WISH"]
+            values.why = (r.listType == "prio" and string.format(L["priority #%d"], r.order or 0)
+                or string.format(L["wishlist #%d"], r.order or 0)) .. (r.inRaid and "" or (" \194\183 " .. L["absent"]))
+            values.roll = "-"
+        end
+        local counter = counters[1]
+        values.plus = counter and tostring(r.accts and r.accts[counter.key] or 0) or ""
+        local ctx = mode == "lists" and self:GetPlayerContext(r.name) or nil
+        local att = (ctx and ctx.att25) or r.att25 or 0
+        values.att = att .. "%"
+        for _, col in ipairs(TABLE_COLS) do
+            local fs, at = row.cells[col.key], layout.byKey[col.key]
+            fs:SetText(values[col.key] or "")
+            if at and at.shown then
+                fs:ClearAllPoints()
+                fs:SetPoint("LEFT", row, "LEFT", at.x + 4, 0)
+                fs:SetWidth(math.max(1, at.w - 6))
+                fs:Show()
+            else
+                fs:Hide()
+            end
+        end
+        local nameInk = cc or C.text
+        if pass or (mode == "lists" and not r.inRaid) then nameInk = C.labelDim end
+        row.cells.name:SetTextColor(nameInk.r, nameInk.g, nameInk.b)
+        local ansInk = (pass and C.labelDim) or (row.answerPlace == 1 and C.ok) or (row.answerPlace == 2 and C.gold) or C.text
+        row.cells.answer:SetTextColor(ansInk.r, ansInk.g, ansInk.b)
+        local attInk = (att >= 60 and C.ok) or (att >= 40 and C.gold) or C.danger
+        row.cells.att:SetTextColor(attInk.r, attInk.g, attInk.b)
+        row.cells.why:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+        row.tip = mode == "rolls" and self:RowTip(r, rule) or nil
+        row:Show()
+    end
+    for i = #rows + 1, #f.rows do f.rows[i]:Hide() end
+    f.scrollContent:SetHeight(math.max(1, #rows * (TABLE_ROW_H + 2)))
+
+    -- ── The decision, and the buttons that carry it out ─────────────
+    local decision
+    if mode == "rolls" then
+        decision = self:DecisionText(rows, rule, ended)
+        if f.picked and first and f.picked ~= first.name then
+            decision = decision .. " " .. string.format(L["You picked %s instead."], f.chosen)
+        end
+    elseif first then
+        decision = string.format(L["%s is first on the lists: award it now, or open a roll."], first.name)
+    elseif (tied or 0) > 1 then
+        decision = string.format(L["%d share the first place on the lists: open a roll."], tied)
+    else
+        decision = L["Nobody has it on a list: open a roll."]
+    end
+    f.decision:SetText(item and decision or "")
+    local isML = self:IsMasterLooter()
+    local awardTo = f.chosen
+    f.awardBtn.label:SetText(awardTo and string.format(L["Award to %s"], awardTo) or L["Award"])
+    if item and awardTo and isML and (mode == "lists" or ended) then f.awardBtn:Enable() else f.awardBtn:Disable() end
+    local rolling = ours and not ended
+    if ours then f.openBtn:Hide(); f.endBtn:Show() else f.endBtn:Hide(); f.openBtn:Show() end
+    if rolling then f.endBtn:Enable() else f.endBtn:Disable() end
+    if item and not ours and isML then f.openBtn:Enable() else f.openBtn:Disable() end
+    if item and isML then f.deBtn:Enable() else f.deBtn:Disable() end
+    if ours then f.cancelBtn:Enable() else f.cancelBtn:Disable() end
+    if self:LastAward() then f.undoBtn:Enable() else f.undoBtn:Disable() end
+    self:UpdateRollTimer()
 end
 
 ----------------------------------------------------------------------
@@ -4408,10 +3871,167 @@ function LootMaster:RowTip(r, rule)
 end
 
 ----------------------------------------------------------------------
+-- The loot table in words (issue #346). Text only: the order and every figure are the loot rule's.
+----------------------------------------------------------------------
+local function answerLabel(key, rule)
+    local r = GuildOS.LootRule:Response(key, rule)
+    return r and GuildOS.LootRule:ResponseLabel(r) or tostring(key or "")
+end
+
+-- The clause that says what put `a` ahead of `b` by `entry` of the rule's order.
+local function decidingClause(entry, a, b, rule)
+    local LR = GuildOS.LootRule
+    if not entry then return string.format(L["everything ties with %s, and the name settles it"], b.name) end
+    local k = entry.k
+    if k == "response" then
+        return string.format(L["answered %s, before %s's %s"], answerLabel(a.rollType, rule), b.name, answerLabel(b.rollType, rule))
+    elseif k == "softres" then
+        return string.format(L["reserved the item, and %s did not"], b.name)
+    elseif k == "hardres" then
+        return string.format(L["hard reserved the item, and %s did not"], b.name)
+    elseif k == "prio" or k == "wishlist" then
+        local va = k == "prio" and a.prioOrder or (a.wishlist and a.wishlist.order)
+        local vb = k == "prio" and b.prioOrder or (b.wishlist and b.wishlist.order)
+        local what = k == "prio" and L["officer priority"] or L["wishlist place"]
+        if vb then return string.format(L["%s #%d, before %s's #%d"], what, va or 0, b.name, vb) end
+        return string.format(L["%s #%d, and %s has none"], what, va or 0, b.name)
+    elseif k == "received" then
+        return string.format(L["received %d items, fewer than %s's %d"], a.recvCount or 0, b.name, b.recvCount or 0)
+    elseif k == "attendance" then
+        return string.format(L["attendance %d%%, over %s's %d%%"], a.att25 or 0, b.name, b.att25 or 0)
+    elseif k == "points" then
+        return string.format(L["%d points, over %s's %d"], a.dkp or 0, b.name, b.dkp or 0)
+    elseif k == "bid" then
+        return string.format(L["bid %d, over %s's %d"], a.bid or 0, b.name, b.bid or 0)
+    elseif k == "roll" then
+        local ra = (a.roll or 0) + LR:BonusOf(a, rule)
+        local rb = (b.roll or 0) + LR:BonusOf(b, rule)
+        return string.format(L["their roll %d beats %s's %d"], ra, b.name, rb)
+    elseif k == "account" then
+        local acct = LR:Counter(entry.acct, rule) or LR:Queue(entry.acct, rule)
+        local name = (acct and acct.name) or tostring(entry.acct):upper()
+        return string.format(L["%s %d, before %s's %d"], name, LR:Held(a, entry.acct, rule), b.name, LR:Held(b, entry.acct, rule))
+    end
+    local va, vb = LR:Compared(a, rule)[k], LR:Compared(b, rule)[k]
+    return string.format(L["%s %s, over %s's %s"], LR:Label(k), tostring(va or 0), b.name, tostring(vb or 0))
+end
+
+-- Who comes first among `sorted` (the candidates in the rule's order) and why, in one sentence: what
+-- the first two share that a raider reads as a reason (both reserved the item), then what parted
+-- them. `ended`: the answers are closed, and the first one wins; before that they lead.
+function LootMaster:DecisionText(sorted, rule, ended)
+    rule = rule or self:Rule()
+    local asked = {}
+    for _, c in ipairs(sorted or {}) do
+        if c.rollType ~= "PASS" then asked[#asked + 1] = c end
+    end
+    local first, second = asked[1], asked[2]
+    if not first then return L["Nobody has asked for it yet."] end
+    local lead = string.format(ended and L["%s wins"] or L["%s leads"], first.name)
+    if not second then return string.format(L["%s: the only one who asked."], lead) end
+    local entry = GuildOS.LootRule:DecidingEntry(first, second, rule)
+    local clauses = {}
+    for _, e in ipairs(rule.order or {}) do
+        if e == entry then break end
+        if (e.k == "softres" or e.k == "hardres") and first.softRes then
+            clauses[#clauses + 1] = string.format(L["both reserved the item (%s too)"], second.name)
+        end
+    end
+    clauses[#clauses + 1] = decidingClause(entry, first, second, rule)
+    local text = lead .. ": " .. table.concat(clauses, L[", and "]) .. "."
+    if GuildOS.LootRule:Council(rule) then text = text .. " " .. L["The council's vote decides."] end
+    return text
+end
+
+-- Why a candidate is where the rule puts them, in a few words: a filter that read their answer as
+-- another, then each figure the rule's order compares beside the answer and the roll, which have
+-- columns of their own.
+function LootMaster:WhyHere(c, rule)
+    rule = rule or self:Rule()
+    local LR = GuildOS.LootRule
+    local parts = {}
+    if c.asked and c.asked ~= c.rollType then
+        local _, f = LR:AnswerFor(c, c.asked, rule)
+        parts[#parts + 1] = f and self:FilterReason(f, c, rule)
+            or string.format(L["%s read as %s"], answerLabel(c.asked, rule), answerLabel(c.rollType, rule))
+    end
+    for _, entry in ipairs(rule.order or {}) do
+        local k = entry.k
+        if k == "softres" or k == "hardres" then
+            if c.softRes then parts[#parts + 1] = (c.softRes.hard and L["hard reserved"]) or L["reserved"] end
+        elseif k == "prio" and c.prioOrder then
+            parts[#parts + 1] = string.format(L["priority #%d"], c.prioOrder)
+        elseif k == "wishlist" and c.wishlist then
+            parts[#parts + 1] = string.format(L["wishlist #%d"], c.wishlist.order or 0)
+        elseif k == "received" and (c.recvCount or 0) > 0 then
+            parts[#parts + 1] = string.format(L["already won %d"], c.recvCount)
+        elseif k == "points" then
+            parts[#parts + 1] = string.format(L["%d points"], c.dkp or 0)
+        elseif k == "pr" then
+            parts[#parts + 1] = string.format("PR %.2f", c.pr or 0)
+        elseif k == "account" then
+            local acct = LR:Counter(entry.acct, rule) or LR:Queue(entry.acct, rule)
+            local held = LR:Held(c, entry.acct, rule)
+            if acct and acct.type == "queue" then
+                parts[#parts + 1] = (c.accts and c.accts[entry.acct]) and string.format("%s #%d", acct.name or acct.key, held) or nil
+            else
+                parts[#parts + 1] = string.format("%s: %d", (acct and acct.name) or tostring(entry.acct):upper(), held)
+            end
+        elseif k == "score" then
+            local score = LR:ScoreOf(c, rule)
+            if score then parts[#parts + 1] = string.format(L["score %s"], string.format("%.1f", score)) end
+        end
+    end
+    return table.concat(parts, " \194\183 ")
+end
+
+-- What was given out tonight from this client's award log (the core's, "" the guild's), newest first,
+-- an award taken back left out: the night is the last NIGHT_SPAN seconds.
+local NIGHT_SPAN = 12 * 3600
+function LootMaster:NightAwards(core)
+    local CM = GuildOS.CoreManager
+    local log = (CM and CM.GetAwardHistory and CM:GetAwardHistory(core or self:ActiveCore()))
+        or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
+    local since, out = GetServerTime() - NIGHT_SPAN, {}
+    for _, a in ipairs(log) do
+        if (a.timestamp or 0) >= since and not a.undone then out[#out + 1] = a end
+    end
+    return out
+end
+
+-- Where an item of the boss's loot stands, for the loot table's list (issue #346): "awarded" (and to
+-- whom), "rolling" (with how many asked), "exception" (what the rule's exception does with it) or
+-- "queued". `item` is { link, slot, quality } as the loot window lists it.
+function LootMaster:ItemState(item)
+    local loot = self.activeLoot
+    if loot and loot.link == item.link and not loot.delivered then
+        if loot.ended then return "ended", string.format(L["%d asked, closed"], self:CountRolls()) end
+        return "rolling", string.format(L["%d asked, rolling"], self:CountRolls())
+    end
+    for _, a in ipairs(self:NightAwards()) do
+        if a.link == item.link and (a.timestamp or 0) >= (self.lootShownAt or 0) then
+            return "awarded", string.format(L["to %s"], a.player or "?")
+        end
+    end
+    local LR = GuildOS.LootRule
+    local facts = self:ItemFacts(item.link, item.slot)
+    local x = facts and LR:ExceptionFor(LR:Active(), facts)
+    if x then
+        local to = (x.to == "bank" and L["bank"]) or (x.to == "de" and L["disenchant"]) or LR:ExceptionLabel(x)
+        return "exception", string.format(L["exception: %s"], to)
+    end
+    return "queued", L["queued"]
+end
+
+----------------------------------------------------------------------
 -- Update timer display
 ----------------------------------------------------------------------
 function LootMaster:UpdateRollTimer()
-    if not self.rollFrame or not self.activeLoot then return end
+    if not self.rollFrame then return end
+    if not self.activeLoot then
+        self.rollFrame.timerText:SetText("")
+        return
+    end
 
     if self.activeLoot.ended then
         -- With a council's vote on the item (issue #336), where the vote stands.
