@@ -333,6 +333,13 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   handlers["core.roster"]({ act = early[1].act, data = early[1].data }, "OfficerA-Firemaw")
   handlers["core.roster"]({ act = ended[1].act, data = ended[1].data }, "Leader-Firemaw")
   check(away[K("Amanha")], G("the same night's ends, heard again or late, leave the next night's guest alone"))
+  -- And one of the night's own guests put on again since (the next night): the end that names it, heard
+  -- late, leaves it on.
+  handlers["core.roster"]({ act = "guests", data = { coreName = "Núcleo Alfa", tag = "nucleo-alfa",
+    put = { [K("Pugtank")] = { name = "Pugtank", class = "WARRIOR", role = "tank", at = NOW } } } }, "Leader-Firemaw")
+  check(away[K("Pugtank")] and ended[1].data.endAt < NOW, G("the night's guest put on again for the next one"))
+  handlers["core.roster"]({ act = ended[1].act, data = ended[1].data }, "Leader-Firemaw")
+  check(away[K("Pugtank")], G("stays when the end that names it is heard late"))
   -- The raid's leader is no officer, and the session's first officer runs no addon: this officer's end
   -- is the one the others hear.
   CM = load(game)
