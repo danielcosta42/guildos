@@ -987,6 +987,9 @@ local function guestRecord(self, key, info, stay)
         role = self:RoleFor(cls, info.role, key),
         note = GuildOS:Utf8Cut(note, GUEST_NOTE),
         stay = stay == true or nil,
+        -- A member made a guest by MigrateGuests, not added as one: a member again once the core is no
+        -- longer the Discord's (release).
+        migrated = info.migrated == true or nil,
         at = math.floor(GuildOS.Finite(info.at) or GetServerTime()),
         by = type(info.by) == "string" and info.by:sub(1, GUEST_KEY) or nil,
     }
@@ -1107,6 +1110,7 @@ end
 -- Whoever is on a Discord core with no record from the Discord is a guest (issue #340): an officer put
 -- them there before the core was the Discord's, or a client from before sent them. They become guests
 -- marked to stay, record and all, so nobody disappears. Runs at login and after every Discord list.
+-- At most GUEST_MAX guests: whoever is past it, in key order, stays a member, as before.
 function CoreManager:MigrateGuests(coreName)
     local names = coreName and { coreName } or self:GetSortedNames()
     local moved = 0
@@ -1114,13 +1118,17 @@ function CoreManager:MigrateGuests(coreName)
         local core = GuildOS.db.cores[name]
         if type(core) == "table" and core.discordTag and type(core.members) == "table" and self:IsLinked() then
             local guests = self:GetGuests(name)
-            for key, rec in pairs(core.members) do
-                if type(rec) ~= "table" or rec.src ~= "discord" then
+            local keys = {}
+            for key in pairs(core.members) do keys[#keys + 1] = key end
+            table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+            for _, key in ipairs(keys) do
+                local rec = core.members[key]
+                if (type(rec) ~= "table" or rec.src ~= "discord") and (guests[key] or countOf(guests) < GUEST_MAX) then
                     rec = type(rec) == "table" and rec or {}
                     local guest = guestRecord(self, key, rec, true)
                     -- A key no guest can have stays a member: nobody disappears.
                     if guest then
-                        guest.at = GetServerTime()
+                        guest.at, guest.migrated = GetServerTime(), true
                         guests[key] = guest
                         core.members[key] = nil
                         moved = moved + 1
@@ -1561,6 +1569,19 @@ local function release(name, moved)
     local core = GuildOS.db.cores[name]
     if type(core) ~= "table" then return end
     core.discordTag, core.discordWaiting, core.linkAt, core.importedAt = nil, nil, nil, nil
+    -- Whoever MigrateGuests made a guest is a member of the officers' core again, as before the link; a
+    -- guest an officer added as one stays a guest.
+    if type(core.guests) == "table" then
+        core.members = type(core.members) == "table" and core.members or {}
+        for key, rec in pairs(core.guests) do
+            if type(rec) == "table" and rec.migrated then
+                if not core.members[key] then
+                    core.members[key] = { name = rec.name, class = rec.class, role = rec.role, note = rec.note or "" }
+                end
+                core.guests[key] = nil
+            end
+        end
+    end
     if moved and type(core.members) == "table" then
         for key, rec in pairs(core.members) do
             if type(rec) == "table" and rec.src == "discord" then core.members[key] = nil end
@@ -2050,7 +2071,12 @@ function CoreManager:InitSync()
         else
             -- In a linked guild a roster for a core this client does not have makes none (#339).
             local core = self:GetCore(d.coreName)
-            if core then core.members = GuildOS:LocalizeMemberTable(d.members) end   -- this client's keys (#97)
+            if core then
+                core.members = GuildOS:LocalizeMemberTable(d.members)   -- this client's keys (#97)
+                -- One person is never both: a client from before sends the whole roster, a migrated guest
+                -- among its members; the member wins, and the guest record goes.
+                for key in pairs(type(core.guests) == "table" and core.members or {}) do core.guests[key] = nil end
+            end
         end
         if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
     end)

@@ -323,6 +323,49 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   handlers["core.roster"]({ act = ended[1].act, data = ended[1].data }, "Leader-Firemaw")
   check(count(elsewhere) == 0, G("and so does one raiding another core"))
 
+  -- ── Migrated guests: members again when the core is given back; one person, never both ──
+  CM = load(game)
+  K = function(name) return GuildOS:LocalMemberKey(name .. "-Firemaw") end
+  CM:Create("Nucleo Alfa")
+  local mine = GuildOS.db.cores["Nucleo Alfa"].members
+  mine[K("Carla")] = { name = "Carla", class = "MAGE", role = "rdps", note = "pug" }
+  for i = 1, 45 do mine[K(("M%02d"):format(i))] = { name = ("M%02d"):format(i), class = "MAGE", role = "rdps", note = "" } end
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  local nc = GuildOS.db.cores["Nucleo Alfa"]
+  local ours = { K("Carla") }
+  for i = 1, 45 do ours[#ours + 1] = K(("M%02d"):format(i)) end
+  local function kept()
+    local n = 0
+    for _, key in ipairs(ours) do if nc.members[key] or nc.guests[key] then n = n + 1 end end
+    return n
+  end
+  check(count(nc.guests) == 40 and kept() == 46, G("migrating keeps the 40-guest cap: whoever is past it stays a member, nobody dropped"))
+  for key, rec in pairs(nc.members) do
+    check(rec.src == "discord" or not nc.guests[key], G("and nobody is both"))
+  end
+  local carlaWas = nc.guests[K("Carla")]
+  check(carlaWas and carlaWas.migrated, G("a migrated guest is marked as one"))
+  -- A whole roster from an officer on a version from before re-adds a migrated guest as a member.
+  local roster = {}
+  for key, rec in pairs(nc.members) do roster[key] = rec end
+  roster[K("Carla")] = { name = "Carla", class = "MAGE", role = "rdps", note = "pug" }
+  handlers["core.roster"]({ act = "update", data = { coreName = "Nucleo Alfa", members = roster } }, "Old-Firemaw")
+  check(nc.members[K("Carla")] and not nc.guests[K("Carla")], G("a member wins: the guest record is dropped"))
+  -- Carla's seat among the guests is free now: an officer adds a guest who stays.
+  check(CM:AddToRoster(K("Novo"), { name = "Novo", class = "WARRIOR" }, "Nucleo Alfa") == "guest"
+    and not nc.guests[K("Novo")].migrated, G("an officer's guest is no migrated one"))
+  CM:SetGuestStay(K("Novo"), "Nucleo Alfa", true)
+  -- The cores given back to the game: the migrated are members again; the one added as a guest stays one.
+  GuildOS.db.coreLink.seenAt = NOW - 31 * 86400
+  check(CM:CreateInGameAgain(), G("created in game again"))
+  check(nc.members[K("Carla")] and not nc.guests[K("Carla")] and nc.members[K("Carla")].note == "pug",
+    G("a migrated guest is a member again, record and all"))
+  local back = 0
+  for _, rec in pairs(nc.guests) do if rec.migrated then back = back + 1 end end
+  check(back == 0 and nc.guests[K("Novo")] and not nc.members[K("Novo")], G("a guest added as one stays a guest"))
+  check(kept() == 46, G("and nobody disappears"))
+
   -- ── The night's raid counts guests ───────────────────────────────────
   CM = load(game)
   K = function(name) return GuildOS:LocalMemberKey(name .. "-Firemaw") end
