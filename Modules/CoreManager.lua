@@ -448,6 +448,25 @@ function CoreManager:Delete(name)
         return false, L["This core is managed on guildos.me and its Discord: close it there."]
     end
     GuildOS.db.cores[name] = nil
+    -- Nor a name that points entries kept for later at it: a core made later under that name, or under
+    -- a name renamed into it, is another core and must not take them (Points:CoreNamed).
+    local aliases = GuildOS.db.pointsAliases
+    if type(aliases) == "table" then
+        aliases[name] = nil
+        -- The whole chain: Kara -> Karazhan -> Kz, Kz deleted, leaves no Kara for a later Karazhan.
+        local gone = { [name] = true }
+        local removed = true
+        while removed do
+            removed = false
+            for from, alias in pairs(aliases) do
+                if type(alias) == "table" and gone[alias.to] then
+                    aliases[from] = nil
+                    gone[from] = true
+                    removed = true
+                end
+            end
+        end
+    end
     -- The active core deleted is no longer active, nor the raid's, nor an officer's pick: left set,
     -- the next read of it, or a /reload inside the raid, would make it again, empty (#138).
     local RT, rtDB = GuildOS.RaidTracker, GuildOS.db.raidTracker
@@ -1487,11 +1506,17 @@ local function followName(self, name, discordName)
     -- name, an officers' name of the same slug). Never when named by its tag (a name the Discord
     -- reused, "alfa-2"), nor linked by hand (`linkAt`, LinkDiscord). The Discord name is recorded either
     -- way, so the next rename follows by the rule above.
-    if not before and core.discordTag and not core.linkAt and name ~= discordName then
+    local legacy = not before and core.discordTag and not core.linkAt and name ~= discordName
+    if legacy then
         local tag = core.discordTag
         follow = name ~= tag and CoreManager.Slug(discordName) ~= tag
             and not (name:sub(1, #tag + 1) == tag .. "-" and name:sub(#tag + 2):match("^%d+$"))
     end
+    -- A legacy core kept under the officers' name ("Nucleo Alfa" for the Discord's "Núcleo Alfa"):
+    -- nothing is recorded, so a later rename on Discord is judged by the same rule and followed by every
+    -- officer, whichever package each saw first. Recorded, an officer who saw the old name first would
+    -- read the next one as "not my name, not followed" while one who saw the new name first followed.
+    if legacy and not follow then return name end
     -- A new name another core here has: neither followed nor recorded, so a later package tries again
     -- once that name is free (recorded, it read as already followed).
     if follow and GuildOS.db.cores[discordName] then return name end

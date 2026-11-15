@@ -1330,16 +1330,21 @@ function Points:CoreNamed(name)
         if not (type(to) == "table" and type(to.to) == "string" and (tonumber(to.at) or 0) >= since) then break end
         name = to.to
     end
+    -- A Discord core known here under another name: by the Discord name it carries, or by the tag the
+    -- name reduces to. Only when exactly one core answers: a name the Discord reused can point at two
+    -- (one core remembers it as its Discord name, another holds its tag), and an entry applied to the
+    -- wrong core is worse than an entry kept until it is clear.
     local CM = GuildOS.CoreManager
     local slug = CM and CM.Slug and CM.Slug(name)
-    local byTag
+    local found, many = nil, false
     for here, core in pairs(cores) do
-        if type(core) == "table" and type(core.discordTag) == "string" then
-            if core.discordName == name then return here end
-            if core.discordTag == slug then byTag = here end
+        if type(core) == "table" and type(core.discordTag) == "string"
+            and (core.discordName == name or core.discordTag == slug) then
+            if found and found ~= here then many = true end
+            found = here
         end
     end
-    return byTag
+    return (not many) and found or nil
 end
 
 -- The pool an entry naming `core` goes to: the guild's for none, the core's this client has for it

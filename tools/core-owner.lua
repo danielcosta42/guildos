@@ -378,8 +378,9 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     and GuildOS.db.cores["Núcleo Beta"].points.standings.Ana.current == 70,
     G("a core with no Discord name remembered follows the first package's new name, points along"))
   -- Nothing changed on Discord (its name still reduces to the tag): kept, whether the core is named
-  -- after it or by the officers with the same slug, and the Discord's name recorded, so the next rename
-  -- follows as any other.
+  -- after it or by the officers with the same slug. The Discord's name is recorded only where it is the
+  -- core's own; under an officers' name it is not, so the next rename is judged by the same rule on every
+  -- client (fourth review: recorded, an officer who saw the old name first never followed).
   for _, case in ipairs({ { "Nucleo Alfa", "nucleo-alfa", "Núcleo Alfa" }, { "Núcleo Alfa", "nucleo-alfa", "Núcleo Alfa" },
                           { "Kara", "kara", "Kara" } }) do
     local own, tag, discord = case[1], case[2], case[3]
@@ -388,11 +389,15 @@ for _, game in ipairs({ "anniversary", "forever" }) do
     GuildOS.db.coreLink = { importedAt = 900 }
     CM:Initialize()
     CM:ImportFromSite(package(1000, { { tag = tag, name = discord, size = 10, members = {} } }), 1000)
-    check(GuildOS.db.cores[own] and count(GuildOS.db.cores) == 1 and GuildOS.db.cores[own].discordName == discord,
+    check(GuildOS.db.cores[own] and count(GuildOS.db.cores) == 1
+      and GuildOS.db.cores[own].discordName == (own == discord and discord or nil),
       G("a legacy core named " .. own .. " for " .. tag .. " keeps its name on a package named " .. discord))
     CM:ImportFromSite(package(2000, { { tag = tag, name = "Outro Nome", size = 10, members = {} } }), 2000)
     local renamed = GuildOS.db.cores["Outro Nome"] ~= nil
-    check(renamed == (own == discord), G("and follows the next rename only as any core does (" .. own .. ")"))
+    -- A real rename on Discord is followed from every one of these: before the fourth review an
+    -- officers' name never followed it on a client whose first package had the old name, while a client
+    -- whose first package had the new name did, and the two stayed apart.
+    check(renamed, G("and follows the next rename on Discord, whatever it was called here (" .. own .. ")"))
   end
   -- Two officers on a legacy core: one saw the old name then the new, the other the new one first. Both
   -- end on the Discord's name, and the first one's list changes nothing on the second's.
@@ -616,6 +621,42 @@ for _, game in ipairs({ "anniversary", "forever" }) do
       G("and lands on the core when the import brings it renamed: " .. tostring(name)))
     GuildOS.Points = nil
   end
+end
+
+-- The fourth review of #339, three narrow cases.
+do
+  local CM = load("anniversary")
+  CM:Initialize()
+  -- A legacy core kept under the officers' name of the same slug: the package that still carries the
+  -- Discord's old name records nothing, so the next one, renamed on Discord, is followed like by any
+  -- officer whose first package was the renamed one.
+  GuildOS.db.cores["Nucleo Alfa"] = { name = "Nucleo Alfa", discordTag = "nucleo-alfa", members = {} }
+  local function nucleo(name) return { tag = "nucleo-alfa", name = name, size = 20, members = {} } end
+  CM:ImportFromSite(package(3000, { nucleo("Núcleo Alfa") }), 3000)
+  check(GuildOS.db.cores["Nucleo Alfa"] and GuildOS.db.cores["Nucleo Alfa"].discordName == nil,
+    "legacy: the officers' name of the same slug stays, and the Discord name is not recorded")
+  CM:ImportFromSite(package(4000, { nucleo("Núcleo Beta") }), 4000)
+  check(GuildOS.db.cores["Núcleo Beta"] ~= nil and GuildOS.db.cores["Nucleo Alfa"] == nil,
+    "legacy: so the rename on Discord is followed, as by an officer who saw only the new name")
+
+  dofile(ADDON .. "/Modules/Points.lua")
+  local P = GuildOS.Points
+  GuildOS.db.points = { mode = "dkp", config = {}, standings = {}, log = {}, appliedOps = {}, appliedCount = 0 }
+  P:Initialize()
+  -- A core deleted takes the names pointing at it: entries kept for its old name never land on an
+  -- unrelated core made later under the name it had been renamed to.
+  GuildOS.db.pointsAliases = { Kara = { to = "Karazhan", at = GetServerTime() }, Karazhan = { to = "Kz", at = GetServerTime() } }
+  GuildOS.db.cores.Kz = { name = "Kz", members = {} }
+  check(P:CoreNamed("Kara") == "Kz", "an alias chain leads to the renamed core")
+  CM:Delete("Kz")
+  GuildOS.db.cores.Karazhan = { name = "Karazhan", members = {} }
+  check(P:CoreNamed("Kara") == nil, "deleted, its old names point at no core made later")
+  -- A name two cores answer to (one remembers it as its Discord name, another holds its tag): no core.
+  GuildOS.db.cores.Raid = { name = "Raid", discordTag = "alfa", discordName = "Beta", linkAt = 5, members = {} }
+  GuildOS.db.cores.Gama = { name = "Gama", discordTag = "beta", discordName = "Gama", members = {} }
+  check(P:CoreNamed("Beta") == nil, "a name two cores answer to is kept, never applied to one of them")
+  check(P:CoreNamed("Gama") == "Gama", "one that a single core answers to still resolves")
+  GuildOS.Points = nil
 end
 
 print(("core-owner: %d checks passed"):format(checks))
