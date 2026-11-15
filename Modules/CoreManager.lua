@@ -311,6 +311,7 @@ local function badCoreName(name)
     return nil
 end
 CoreManager.BadCoreName = badCoreName
+local ON_DEMAND_MAX = 64   -- bytes of a core's name made on demand: what an officer's message carries
 
 function CoreManager:Create(name)
     if not name or name == "" then
@@ -518,9 +519,13 @@ end
 function CoreManager:GetCore(name)
     if name == nil then name = self:GetActiveName() end
     if not name or name == "" then return nil end
-    -- Nor a name no core may have (badCoreName): a raid tag or another officer's roster under it is
-    -- no core either.
-    if not GuildOS.db.cores[name] and not self:IsLinked() and not badCoreName(name) then
+    -- Elsewhere a name is made on demand as always, whatever the rule for a new name typed in the
+    -- panel says (badCoreName gates Create and Rename only): a core named before that rule ("Kara ||
+    -- Sexta", fifty bytes) is still another officer's, and its roster and points, or a raid under its
+    -- tag, would be dropped here. The receipt leaves out what the site refuses. Only what no person typed:
+    -- a control character, or past what an officer's message carries.
+    if not GuildOS.db.cores[name] and not self:IsLinked() and type(name) == "string" and #name <= ON_DEMAND_MAX
+        and not name:find("%c") then
         newCore(name)
     end
     return GuildOS.db.cores[name]

@@ -250,9 +250,16 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   for _, bad in ipairs({ "Kara | Sexta", LONG, "constructor" }) do
     check(not CM:Rename("Kara", bad) and GuildOS.db.cores.Kara and not GuildOS.db.cores[bad], G("nor renamed to " .. bad))
   end
-  check(CM:GetCore("constructor") == nil and GuildOS.db.cores.constructor == nil, G("a raid tag no core may have makes none"))
-  handlers["core.roster"]({ act = "update", data = { coreName = "Raid | x", members = {} } }, "Officer-Firemaw")
-  check(GuildOS.db.cores["Raid | x"] == nil, G("nor another officer's roster under it"))
+  -- Rewritten (review of #347): these asserted that a raid tag or another officer's roster under a name
+  -- the panel refuses made no core. In a guild without the site that dropped the roster and points of a
+  -- core named before the rule ("Kara || Sexta"), still the other officers'. The rule is for a name a
+  -- person types; on demand a name is made as always, and the receipt leaves it out.
+  check(CM:GetCore("constructor") and GuildOS.db.cores.constructor, G("a raid tag under an old name makes its core, as before"))
+  handlers["core.roster"]({ act = "update", data = { coreName = "Raid | x", members = { Bo = { name = "Bo" } } } },
+    "Officer-Firemaw")
+  check(GuildOS.db.cores["Raid | x"], G("and another officer's roster under one"))
+  handlers["core.roster"]({ act = "update", data = { coreName = "Raid\nx", members = {} } }, "Officer-Firemaw")
+  check(GuildOS.db.cores["Raid\nx"] == nil, G("but no name with a control character, which no one typed"))
   sweep(G("cores named in game"), 3)
 
   -- ── At the source: a guest ────────────────────────────────────────────
