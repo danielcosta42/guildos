@@ -156,6 +156,13 @@ read_globals = {
     "CHAT_TIMESTAMP_FORMAT",
     "BetterDate",
     "NUM_CHAT_WINDOWS",
+    -- The alliance's hidden channel and the /g it carries (issue #348).
+    "JoinTemporaryChannel",
+    "ChatFrame_RemoveChannel",
+    "GetChatWindowChannels",
+    "ChatFrame1EditBox",
+    "ChatEdit_ParseText",
+    "ChatFrame_MessageEventHandler",
     "ChatFrameUtil",
     "ChatFrame_SendTell",
 

@@ -708,6 +708,14 @@ function GuildOS:Utf8Len(s)
     return n
 end
 
+-- `s` cut to `maxBytes` without splitting a UTF-8 codepoint, and nothing else touched: a line of chat keeps
+-- its links (issue #348).
+function GuildOS:CutBytes(s, maxBytes)
+    s = tostring(s or "")
+    if #s <= maxBytes then return s end
+    return utf8Backoff(s:sub(1, maxBytes))
+end
+
 function GuildOS:SanitizeUserText(text, maxBytes)
     local s = (tostring(text or ""):gsub("|", ""):gsub("%c", " "):gsub("%s+", " "))
     s = strtrim(s)

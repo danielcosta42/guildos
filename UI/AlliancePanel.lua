@@ -1437,6 +1437,121 @@ local function BuildManage(panel)
 end
 
 ----------------------------------------------------------------------
+-- Setup: the alliance code, the GreenWall way (issue #348). One code, the same
+-- in every guild; an officer saves it and the guild hands it to every member.
+----------------------------------------------------------------------
+local function BuildSetup(panel)
+    local LINK = function() return GuildOS.AllianceLink end
+
+    local hdr = UI:CreateHeaderText(panel, L["Alliance code"], 11)
+    hdr:SetPoint("TOPLEFT", 6, -10)
+    local status = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
+    status:SetPoint("TOPLEFT", 6, -32)
+    status:SetJustifyH("LEFT")
+
+    local tagLbl = UI:CreateText(panel, L["Tag (letters and numbers)"], 10,
+        C.textDim.r, C.textDim.g, C.textDim.b)
+    tagLbl:SetPoint("TOPLEFT", 6, -58)
+    local tagBox = makeInput(panel, 110)
+    tagBox:SetPoint("TOPLEFT", 6, -74)
+    local guildsLbl = UI:CreateText(panel, L["Guilds, separated by ;"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    guildsLbl:SetPoint("TOPLEFT", 6, -104)
+    local guildsBox = makeInput(panel, 420)
+    guildsBox:SetPoint("TOPLEFT", 6, -120)
+    local genBtn = UI:CreateButton(panel, L["Generate"], 110, 24)
+    genBtn:SetPoint("LEFT", guildsBox, "RIGHT", 8, 0)
+
+    local lineBox = makeInput(panel, 540)
+    lineBox:SetPoint("TOPLEFT", 6, -156)
+    lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
+    writeBtn:SetPoint("TOPLEFT", 6, -188)
+    local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
+    removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", 8, 0)
+
+    local hint = UI:CreateText(panel, L["Paste this same code in Alliance > Setup in every guild of the alliance and save. Guild OS hands it to every member of the guild: no ambassadors, nobody in particular has to be online."],
+        10, C.textDim.r, C.textDim.g, C.textDim.b)
+    hint:SetPoint("TOPLEFT", 6, -222)
+    hint:SetWidth(540)
+    hint:SetJustifyH("LEFT")
+    hint:SetWordWrap(true)
+    addFlexHint(hint)
+
+    local refresh
+    local function say(ok, err)
+        if not ok and err then GuildOS:Print(err) end
+    end
+
+    genBtn:SetScript("OnClick", function()
+        local link = LINK()
+        if not link then return end
+        local names = {}
+        for name in (guildsBox:GetText() .. ";"):gmatch("([^;]*);") do
+            name = strtrim(name)
+            if name ~= "" then names[#names + 1] = name end
+        end
+        local mine = ALLY() and ALLY():MyGuildName()
+        local has = false
+        for _, n in ipairs(names) do if n == mine then has = true end end
+        if mine and not has then table.insert(names, 1, mine) end
+        local tag = GuildOS.Alliance.NormalizeTag(tagBox:GetText())
+        if tag == "" or #names < 2 then
+            GuildOS:Print(L["Name at least two guilds, this one included."])
+            return
+        end
+        -- The same tag keeps its key, so the guilds already set need nothing new but the list.
+        local cfg = link:Config()
+        local key = (cfg and cfg.tag == tag) and cfg.key or link.NewKey()
+        lineBox:SetText(link.Build(tag, key, names))
+        lineBox:HighlightText()
+    end)
+    writeBtn:SetScript("OnClick", function()
+        local link = LINK()
+        if not link then return end
+        local ok, err = link:SetCode(strtrim(lineBox:GetText() or ""))
+        say(ok, err)
+        if ok then GuildOS:Print(L["Saved. The guild gets it now."]) end
+        refresh()
+    end)
+    removeBtn:SetScript("OnClick", function()
+        local link = LINK()
+        if not link then return end
+        say(link:SetCode(nil))
+        refresh()
+    end)
+
+    refresh = function()
+        local link = LINK()
+        if not link then return end
+        local cfg = link:Config()
+        local mine = ALLY() and ALLY():MyGuildName()
+        if cfg and mine and cfg.guilds[mine] then
+            status:SetText(string.format(L["Active: %s, %d guilds."], cfg.tag, #cfg.order))
+        elseif cfg then
+            status:SetText(L["The code does not name this guild."])
+        else
+            status:SetText(L["No alliance set up for this guild."])
+        end
+        local officer = GuildOS:IsOfficer()
+        for _, w in ipairs({ tagLbl, tagBox, guildsLbl, guildsBox, genBtn, lineBox, writeBtn, removeBtn, hint }) do
+            setShown(w, officer)
+        end
+        if not officer then return end
+        if not lineBox:HasFocus() then
+            local line = link:Suggest()
+            local parsed = line and link.Parse(line)
+            lineBox:SetText(line or "")
+            if parsed and tagBox:GetText() == "" then
+                tagBox:SetText(parsed.tag)
+                guildsBox:SetText(table.concat(parsed.order, "; "))
+            end
+        end
+        if link:Config() then removeBtn:Enable() else removeBtn:Disable() end
+    end
+    return refresh
+end
+
+----------------------------------------------------------------------
 -- Confirmations
 ----------------------------------------------------------------------
 local function registerPopups()
@@ -1487,6 +1602,7 @@ local SUBTABS = {
     { key = "bulletin", label = L["Bulletin"], needsPact = true },
     { key = "chat",     label = L["Chat"],     needsPact = true },
     { key = "overview", label = L["Overview"] },
+    { key = "setup",    label = L["Setup"] },
     { key = "manage",   label = L["Manage"] },
 }
 
@@ -1552,7 +1668,7 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
 
     local builders = {
         chat = BuildChat, overview = BuildOverview,
-        bulletin = BuildBulletin, manage = BuildManage,
+        bulletin = BuildBulletin, manage = BuildManage, setup = BuildSetup,
     }
     flexHints = {}
     for _, t in ipairs(SUBTABS) do

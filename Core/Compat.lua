@@ -1032,6 +1032,78 @@ function Compat.ChatFrameShows(frame, group)
     return false
 end
 
+-- A line in a custom channel by its number. The game takes it only from a key press, so this is only ever
+-- called from one (issue #348). Nothing in a chat lockdown.
+function Compat.SendChannelMessage(text, index)
+    if not index or index == 0 or Compat.IsSecret(text) then return false end
+    if Compat.InChatLockdown and Compat.InChatLockdown() then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if not send then return false end
+    return (pcall(send, text, "CHANNEL", nil, index))
+end
+
+-- Join a channel with a password without the client saving it for the next login (issue #348).
+function Compat.JoinPrivateChannel(name, password)
+    local join = JoinTemporaryChannel or JoinChannelByName
+    if not join or not name then return false end
+    return (pcall(join, name, password))
+end
+
+-- Take a channel out of every chat frame that lists it, so its lines never print there (issue #348).
+function Compat.RemoveChannelFromFrames(name)
+    local remove = (ChatFrameUtil and ChatFrameUtil.RemoveChannel) or ChatFrame_RemoveChannel
+    if not remove or not GetChatWindowChannels or not name then return 0 end
+    local n = 0
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local frame = _G["ChatFrame" .. i]
+        local list = { GetChatWindowChannels(i) }
+        for j = 1, #list, 2 do
+            if type(list[j]) == "string" and list[j]:lower() == name:lower() and frame then
+                if pcall(remove, frame, list[j]) then n = n + 1 end
+            end
+        end
+    end
+    return n
+end
+
+-- `fn(chatType, text)` for every line the player sends from a chat box, called inside the key press that
+-- sends it (a post-hook of the box's ParseText), which is what lets `fn` post to a channel. Patch 1.15.9 and
+-- retail 11 moved ParseText onto each box; older clients have the global (issue #348).
+function Compat.HookChatSend(fn)
+    local function onParse(box, send)
+        if send ~= 1 or not box or not box.GetAttribute then return end
+        local chatType, text = box:GetAttribute("chatType"), box:GetText()
+        if Compat.IsSecret(chatType, text) then return end
+        if type(text) == "string" and text:match("%S") then fn(chatType, text) end
+    end
+    if ChatFrame1EditBox and ChatFrame1EditBox.ParseText then
+        local n = 0
+        for i = 1, (NUM_CHAT_WINDOWS or 10) do
+            local box = _G["ChatFrame" .. i .. "EditBox"]
+            if box and box.ParseText then
+                hooksecurefunc(box, "ParseText", onParse)
+                n = n + 1
+            end
+        end
+        return n > 0
+    end
+    if ChatEdit_ParseText then
+        hooksecurefunc("ChatEdit_ParseText", onParse)
+        return true
+    end
+    return false
+end
+
+-- Hand `frame` a chat event as if the game had sent it, through the frame's own handler, so the line is
+-- drawn exactly as the game draws that event (issue #348). False when the frame has no handler or it errored.
+function Compat.ReplayChatEvent(frame, event, ...)
+    if not frame then return false end
+    local handler = ChatFrame_MessageEventHandler
+    if type(handler) ~= "function" and frame.GetScript then handler = frame:GetScript("OnEvent") end
+    if type(handler) ~= "function" then return false end
+    return (pcall(handler, frame, event, ...))
+end
+
 -- Is `name` on the player's ignore list? C_FriendList where it exists, the old global elsewhere (issue #344).
 function Compat.IsIgnored(name)
     if type(name) ~= "string" or name == "" or Compat.IsSecret(name) then return false end

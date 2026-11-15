@@ -169,8 +169,9 @@ Who in the guild can craft what, what nobody covers yet, and the crafters right 
 - **Guild calendar**: raids planned on guildos.me land on the in-game calendar, with who signed up on the site
 - **Call to Arms**: an officer rallies the guild for a world boss or an open-world fight. Everyone running Guild OS
   gets a popup with a sound and can answer *On my way*, and a guild chat line goes out for the rest
-- **Alliances**: link allied guilds for a shared chat, bulletin and crafter directory; every guild's
-  /g shows in the others' guild chat, tagged with the guild it came from
+- **Alliances**: link allied guilds with one code pasted once per guild (the GreenWall way): every
+  guild's /g shows in the others' guild chat, tagged with the guild it came from, plus a shared
+  room, bulletin and crafter directory. No ambassadors, nobody has to be online
 
 ## 🧭 Groups: your guild's own group finder
 
