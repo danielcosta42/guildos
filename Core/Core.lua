@@ -264,6 +264,8 @@ local MODULE_START = {
     { "Alliance", ui = "alliance" },
     { "AllianceSync" },
     { "AllianceChat" },
+    -- The allied guilds' /g in our own guild chat (issue #344).
+    { "AllianceGuildChat" },
     { "GuildChat" },
     { "RosterLog" },
     { "BanList" },

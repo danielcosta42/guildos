@@ -520,6 +520,23 @@ function Alliance:GuildOfSender(sender, pact)
     return nil
 end
 
+-- The member guild a character is on the synced roster of, or nil. Never our
+-- own guild, and never a guild that left the pact. Only the data ops take it
+-- (see OnMessage): the pact's own ops stay with the ambassadors.
+function Alliance:GuildOfRosterMember(name)
+    local sync = GuildOS.AllianceSync
+    local short = shortName(name or ""):lower()
+    if not sync or not sync.MemberIndex or short == "" then
+        return nil
+    end
+    local hit = sync:MemberIndex()[short]
+    local guild = hit and hit.guild
+    if not guild or guild == self:MyGuildName() or not self:IsMemberGuild(guild) then
+        return nil
+    end
+    return guild
+end
+
 -- Every online guildmate we know runs Guild OS, as "Name-Realm" keys. This is
 -- the candidate set for bridge election, and it is identical on every client
 -- because it is derived from the shared guild roster plus synced member data.
@@ -912,6 +929,14 @@ function Alliance:OnMessage(payload, sender, dist)
     end
 
     local senderGuild = self:GuildOfSender(sender)
+    -- The pact itself (PACT, LEAVE, EJECT) is the ambassadors' alone. The data
+    -- ops are sent by the bridge, which is anybody online, so for those a name on
+    -- a member guild's synced roster speaks for that guild too: until now a
+    -- HEAD from a bridge that was not an ambassador was dropped here, and the
+    -- guilds only synced while ambassadors happened to be both ends (issue #344).
+    if not senderGuild and Alliance.ops[op] then
+        senderGuild = self:GuildOfRosterMember(sender)
+    end
     if not senderGuild or self:IsBlocked(senderGuild) then
         return
     end
@@ -2005,6 +2030,17 @@ function Alliance:HandleCommand(args)
         if ok then
             GuildOS:Print(string.format(L["No longer ignoring %s."], rest))
         end
+    elseif verb == "gchat" then
+        -- The allied guilds' /g (issue #344): on, off, or how it is doing.
+        local chat, agc = GuildOS.AllianceChat, GuildOS.AllianceGuildChat
+        if not chat or not agc then return end
+        local sub = rest:lower()
+        if sub == "on" or sub == "off" then
+            chat:Prefs().guildBridge = (sub == "on")
+        end
+        GuildOS:Print((chat:Prefs().guildBridge and L["Allied /g: shown"] or L["Allied /g: hidden"])
+            .. " · " .. agc:StatusLine())
+        return
     else
         return GuildOS:Print(L["Usage: /gos ally [create|invite|code|join|request|amb|leave|kick|block|unblock]"])
     end

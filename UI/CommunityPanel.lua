@@ -604,7 +604,12 @@ function GuildOS:CreateGuildChatFeed(panel)
             else
                 b.icon:Hide()
             end
-            b.nameFS:SetText(g.name or "?")
+            -- A line from an allied guild (issue #344) says which one, in its colour.
+            local who = g.name or "?"
+            if g.guild and GuildOS.Alliance then
+                who = "|cff" .. GuildOS.Alliance.GuildColorHex(g.guild) .. "[" .. g.guild .. "]|r " .. who
+            end
+            b.nameFS:SetText(who)
             b.nameFS:SetTextColor(GuildOS:GetClassColor(class))
             -- The log outlives the session: a line from another day says which day.
             local t = tonumber(g.t)

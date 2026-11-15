@@ -149,6 +149,13 @@ read_globals = {
     "ChannelModerator",
     "SetChannelOwner",
     "ChatFrame_AddMessageEventFilter",
+    -- The allied guilds' /g drawn as a line of /g (issue #344).
+    "ChatFrame_ContainsMessageGroup",
+    "IsIgnored",
+    "CHAT_GUILD_GET",
+    "CHAT_TIMESTAMP_FORMAT",
+    "BetterDate",
+    "NUM_CHAT_WINDOWS",
     "ChatFrameUtil",
     "ChatFrame_SendTell",
 
