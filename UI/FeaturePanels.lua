@@ -1916,9 +1916,11 @@ function GuildOS:ShowImportPopup()
 
     local hint = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(hint, 10)
-    hint:SetPoint("TOP", 0, -28)
+    hint:SetPoint("TOP", 0, -26)
+    hint:SetWidth(496)
     hint:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
-    hint:SetText(L["Paste the roster string, then Load. Invite and Groups work after that."])
+    hint:SetText(L["Paste the roster string, then Load. Invite and Groups work after that."] .. " "
+        .. L["A cores code from guildos.me goes here too."])
 
     local status = f:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(status, 11)
@@ -1932,7 +1934,7 @@ function GuildOS:ShowImportPopup()
     end
 
     local scrollFrame = CreateFrame("ScrollFrame", "GuildOSCompanionImportScroll", f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 12, -50)
+    scrollFrame:SetPoint("TOPLEFT", 12, -56)   -- below a hint of two lines
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 76)
     UI:SkinScrollBar(scrollFrame, "GuildOSCompanionImportScroll")
 
@@ -1952,10 +1954,14 @@ function GuildOS:ShowImportPopup()
     local loadBtn = UI:CreateButton(f, L["Load"], 90, 26)
     loadBtn:SetPoint("BOTTOMRIGHT", -12, 44)
     loadBtn:SetScript("OnClick", function()
-        local n, err = GuildOS.CompanionImport:Load(editBox:GetText())
+        local n, err, said = GuildOS.CompanionImport:Load(editBox:GetText())
         if err then
             status:SetTextColor(1, 0.35, 0.35)
             status:SetText(err)
+        elseif said then
+            -- A GOSCORE1 pasted here: the guild's cores, not a raid's roster (issue #347).
+            status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)
+            status:SetText(said)
         else
             local r = GuildOS.CompanionImport:Current()
             status:SetTextColor(C.silver.r, C.silver.g, C.silver.b)

@@ -62,6 +62,8 @@ local FMT = "GOSCOMP1"
 -- officers. Absent until somebody in the guild chose one, so the site keeps its default.
 -- Within 16, each loot entry may carry `why`, the record of how the item was awarded (issue #336, the
 -- site's #517; see lootWhy() below): one more absent field, which a reader from before never looks at.
+-- Also within 16, `coreReceipt`: the cores as this game has them, for the site to show what differs
+-- (issue #347, the site's #519; see coreReceipt() below). Absent with the Raids module off.
 local PAYLOAD_VERSION = 16
 
 ----------------------------------------------------------------------
@@ -783,13 +785,18 @@ local WHY_VOTES = 40
 local WHY_TEXT = 48             -- bytes of a name or a key in it: the site reads none longer (guildos-web#517)
 local WHY_VALUES = 12           -- figures per candidate, the site's limit too
 
--- Cut to WHY_TEXT bytes, never through the middle of a character.
-local function whyText(v)
+-- Cut to `max` bytes, never through the middle of a character.
+local function cutText(v, max)
     local s = tostring(v or "")
-    if #s <= WHY_TEXT then return s end
-    local cut = WHY_TEXT
+    if #s <= max then return s end
+    local cut = max
     while cut > 0 and s:byte(cut + 1) and s:byte(cut + 1) >= 128 and s:byte(cut + 1) < 192 do cut = cut - 1 end
     return s:sub(1, cut)
+end
+
+-- Cut to WHY_TEXT bytes, never through the middle of a character.
+local function whyText(v)
+    return cutText(v, WHY_TEXT)
 end
 
 local function whyNumber(v)
@@ -845,6 +852,63 @@ local function lootWhy(why)
     return out
 end
 Companion.LootWhy = lootWhy
+
+-- The receipt of the cores (issue #347, the site's #519): what this client has of each core, so the site
+-- can say "in the game: 19 of 20, 2 h ago" and show the difference both ways, changing nothing itself.
+--   coreReceipt = { at, linkedAt, cores = [ { tag, name, size, members, fromDiscord, guests = [name], importedAt } ] }
+-- `linkedAt` is when this client last imported a GOSCORE1 for the guild (0: never); `tag` is "" and
+-- `importedAt` 0 for a core only in the game. Every figure a whole number, held to RECEIPT_INT: the site's
+-- decoder and this addon's read plain integers, never an exponent.
+local RECEIPT_CORES = 50
+local RECEIPT_GUESTS = 40
+local RECEIPT_TEXT = 48          -- bytes of a core's name or a guest's
+local RECEIPT_INT = 4294967295   -- the largest figure written: a time until 2106, and any count
+
+local function receiptInt(v)
+    local n = GuildOS.Finite(v) or 0
+    return math.max(0, math.min(RECEIPT_INT, math.floor(n)))
+end
+
+local function coreReceipt()
+    local cores = GuildOS.db.cores or {}
+    local names = {}
+    for name, core in pairs(cores) do
+        if type(name) == "string" and type(core) == "table" then names[#names + 1] = name end
+    end
+    table.sort(names)
+    local CM = GuildOS.CoreManager
+    local out = {}
+    for i = 1, math.min(#names, RECEIPT_CORES) do
+        local name = names[i]
+        local core = cores[name]
+        local members, fromDiscord = 0, 0
+        for _, rec in pairs(type(core.members) == "table" and core.members or {}) do
+            members = members + 1
+            if type(rec) == "table" and rec.src == "discord" then fromDiscord = fromDiscord + 1 end
+        end
+        local guests = {}
+        for key, rec in pairs(type(core.guests) == "table" and core.guests or {}) do
+            local shown = type(rec) == "table" and type(rec.name) == "string" and rec.name ~= "" and rec.name or key
+            guests[#guests + 1] = cutText(shown, RECEIPT_TEXT)
+        end
+        table.sort(guests)
+        while #guests > RECEIPT_GUESTS do table.remove(guests) end
+        local tag = type(core.discordTag) == "string" and core.discordTag or ""
+        local size = CM and CM.GetRaidSize and CM:GetRaidSize(name) or core.raidSize
+        out[#out + 1] = {
+            tag = tag, name = cutText(name, RECEIPT_TEXT), size = receiptInt(size),
+            members = receiptInt(members), fromDiscord = receiptInt(fromDiscord), guests = guests,
+            importedAt = tag ~= "" and receiptInt(core.importedAt) or 0,
+        }
+    end
+    local link = GuildOS.db.coreLink
+    return {
+        at = receiptInt(GetServerTime()),
+        linkedAt = receiptInt(type(link) == "table" and link.importedAt),
+        cores = out,
+    }
+end
+Companion.CoreReceipt = coreReceipt
 
 function Companion:BuildPayload()
     local guildName = GetGuildInfo("player")
@@ -925,6 +989,9 @@ function Companion:BuildPayload()
     -- v15 (#295): points, wishlists, priorities, reserves and TMB lists. Never in the pack.
     payload.lootBook = lootBook()
     payload.officerRanks = officerRanks()
+    -- Within 16 (#347): the cores as the game has them. Never in the pack.
+    payload.coreReceipt = GuildOS.IsFeatureEnabled ~= nil and GuildOS:IsFeatureEnabled("raids")
+        and optional("coreReceipt", Companion.CoreReceipt) or nil
     return payload
 end
 

@@ -1044,7 +1044,7 @@ end
 local function release(name, moved)
     local core = GuildOS.db.cores[name]
     if type(core) ~= "table" then return end
-    core.discordTag, core.discordWaiting, core.linkAt = nil, nil, nil
+    core.discordTag, core.discordWaiting, core.linkAt, core.importedAt = nil, nil, nil, nil
     if moved and type(core.members) == "table" then
         for key, rec in pairs(core.members) do
             if type(rec) == "table" and rec.src == "discord" then core.members[key] = nil end
@@ -1112,6 +1112,7 @@ function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting)
     if not core then return 0, 0, 0 end
     core.discordTag = tag
     core.discordWaiting = namesOnly(waiting)
+    core.importedAt = GetServerTime()   -- when this client last took the Discord's list for it (#347)
     if tonumber(size) then self:SetRaidSize(coreName, tonumber(size)) end
     local members, incoming, added, removed, adopted = self:GetMembers(coreName), {}, 0, 0, 0
     for _, m in ipairs(list) do
@@ -1182,16 +1183,18 @@ end
 -- The name is the site's spelling, so capitals aside, as the game and the site's upload take it (#144).
 -- On retail the realm is the guild's home realm, normalized, whichever connected realm this
 -- character is on: the site keeps the guild by it (issue #182).
+-- The second answer says which: "guild", or "realm" for a guild of this name on another realm, which
+-- is also how another game's package reads here (a pasted code, #347).
 local function notOurs(data)
     local mine = GetGuildInfo("player")
-    if type(data.guild) ~= "string" or not mine or data.guild:lower() ~= mine:lower() then return tostring(data.guild) end
+    if type(data.guild) ~= "string" or not mine or data.guild:lower() ~= mine:lower() then return tostring(data.guild), "guild" end
     local other
     if GuildOS.Client.isRetail then
         other = type(data.realm) == "string" and data.realm:gsub("[%s%-]", "") ~= GuildOS:GuildRealm()
     elseif GuildOS.Client.isAnniversary then
         other = data.realm and data.realm ~= GetRealmName()
     end
-    if other then return tostring(data.guild) .. " (" .. tostring(data.realm) .. ")" end
+    if other then return tostring(data.guild) .. " (" .. tostring(data.realm) .. ")", "realm" end
     return nil
 end
 
@@ -1244,6 +1247,47 @@ local function tellOnce(key, text)
     GuildOS:Print(text)
 end
 
+-- One GOSCORE1 into this guild, from the inbox or pasted by an officer (issue #347): one path, so both
+-- import alike. `ackAt` is when the inbox was written (nil for a pasted code: the site dates every
+-- package it gives to copy). Prints one line when something changed, and keeps every core's list in
+-- the session for SendDiscordChanges. Returns what ImportFromSite returns: the cores, how many people the
+-- site had no character for and whether it was older than what this client has; or nil, whose it is
+-- and why ("guild", "realm"); or nil, nil, "older" for a package from before the site dated them, once
+-- this client has one it dated.
+function CoreManager:ImportPackage(data, ackAt)
+    local other, why = notOurs(data)
+    if other then return nil, other, why end
+    -- The site's time for the package when it sends one (guildos-web #126): one clock for every officer.
+    -- From the first, a PC's clock no longer counts: not the mark it left (one running ahead would hold
+    -- back every site package), nor an inbox from before (a companion stopped since the site dated them).
+    local siteAt = tonumber(data.at)
+    if siteAt and not GuildOS.db.discordSiteAt then GuildOS.db.discordAt, GuildOS.db.discordSiteAt = nil, true end
+    if not siteAt and GuildOS.db.discordSiteAt then return nil, nil, "older" end
+    local cores, unlinked, stale = self:ImportFromSite(data, sane(siteAt or ackAt))
+    if not cores then return nil end
+    GuildOS.db.discordTold = nil
+    if stale then return cores, unlinked, stale end
+    -- When this client last took the guild's cores from the site, for the upload's receipt (#347).
+    GuildOS.db.coreLink = type(GuildOS.db.coreLink) == "table" and GuildOS.db.coreLink or {}
+    GuildOS.db.coreLink.importedAt = GetServerTime()
+    local parts = {}
+    for _, c in ipairs(cores) do
+        if not c.released and not c.quiet then parts[#parts + 1] = string.format("%s +%d -%d", c.name, c.added, c.removed) end
+    end
+    if #parts > 0 then
+        local line = string.format(L["Cores from Discord: %s."], table.concat(parts, ", "))
+        if unlinked > 0 then
+            line = line .. " " .. string.format(L["%d on Discord with no confirmed character on the site."], unlinked)
+        end
+        GuildOS:Print(line)
+    end
+    -- ponytail: the lists wait in the session; a rank still unknown after OFFICER_START's minute
+    -- drops them until the next login. Keep them in the guild's db until sent if that ever bites.
+    GuildOS.State.discordCores = #cores > 0 and cores or nil
+    if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
+    return cores, unlinked, false
+end
+
 -- The Discord's cores the companion left in Inbox.lua, imported once this guild's db is known
 -- (PLAYER_LOGIN does not wait for it), with one line saying what changed, or why nothing was. Every
 -- core then waits for SendDiscordChanges, which needs the guild rank this early login lacks. An inbox
@@ -1262,31 +1306,28 @@ function CoreManager:ImportInbox()
         tellOnce("companion-off", L["Cores from Discord are waiting in the inbox: turn the web companion on with /gos web on."])
         return
     end
-    -- The site's time for the package when it sends one (guildos-web #126): one clock for every officer.
-    -- From the first, a PC's clock no longer counts: not the mark it left (one running ahead would hold
-    -- back every site package), nor an inbox from before (a companion stopped since the site dated them).
-    local siteAt = tonumber(data.at)
-    if siteAt and not GuildOS.db.discordSiteAt then GuildOS.db.discordAt, GuildOS.db.discordSiteAt = nil, true end
-    if not siteAt and GuildOS.db.discordSiteAt then return end
-    local cores, unlinked, stale = self:ImportFromSite(data, sane(siteAt or at))
-    if not cores then return end
-    GuildOS.db.discordTold = nil
-    if stale then return end
-    local parts = {}
-    for _, c in ipairs(cores) do
-        if not c.released and not c.quiet then parts[#parts + 1] = string.format("%s +%d -%d", c.name, c.added, c.removed) end
+    self:ImportPackage(data, at)
+end
+
+-- A GOSCORE1 an officer copied from the site and pasted into the roster box (issue #347), for a guild
+-- where nobody runs the companion: checked and imported exactly as the inbox's (ImportPackage), and sent
+-- to the officers online at once, as the inbox's is once the rank is known (the officer pasting is in
+-- the game, so it is). Returns how many cores, nil and the line to show; or nil and why not.
+function CoreManager:ImportPasted(raw)
+    if not GuildOS:IsOfficer() then return nil, L["Only officers import the guild's cores."] end
+    local data = GuildOS.CompanionImport and GuildOS.CompanionImport.ReadCores(raw)
+    if not data then return nil, L["The cores code is damaged. Copy it again from guildos.me."] end
+    local cores, other, why = self:ImportPackage(data, nil)
+    if not cores then
+        if why == "guild" then return nil, string.format(L["These cores are for %s, not this guild."], other) end
+        if why == "realm" then return nil, string.format(L["These cores are for %s: another realm or another game."], other) end
+        return nil, L["This client already has newer cores from Discord: that code is older."]
     end
-    if #parts > 0 then
-        local line = string.format(L["Cores from Discord: %s."], table.concat(parts, ", "))
-        if unlinked > 0 then
-            line = line .. " " .. string.format(L["%d on Discord with no confirmed character on the site."], unlinked)
-        end
-        GuildOS:Print(line)
-    end
-    -- ponytail: the lists wait in the session; a rank still unknown after OFFICER_START's minute
-    -- drops them until the next login. Keep them in the guild's db until sent if that ever bites.
-    GuildOS.State.discordCores = #cores > 0 and cores or nil
-    if GuildOS.coresPanelRefresh then GuildOS.coresPanelRefresh() end
+    if why then return nil, L["This client already has newer cores from Discord: that code is older."] end
+    self:SendDiscordChanges()
+    local n = 0
+    for _, c in ipairs(cores) do if not c.released then n = n + 1 end end
+    return n, nil, string.format(L["Cores from Discord loaded: %d. The officers online get them too."], n)
 end
 
 -- From OFFICER_START, once the rank is known and is an officer's: every Discord core goes to the other

@@ -782,6 +782,72 @@ do
   GuildOS.LootTracker.GetHistory = saved
 end
 
+-- `coreReceipt` (issue #347, the site's #519): additive within v16, behind the Raids module and its own
+-- pcall, in exactly the shape the site reads, every figure a plain integer.
+do
+  local on, recorded = { raids = true }, {}
+  local enabled = GuildOS.IsFeatureEnabled
+  GuildOS.IsFeatureEnabled = function(_, id) return on[id] == true end
+  GuildOS.RecordError = function(_, msg) recorded[#recorded + 1] = msg end
+  local savedCores, savedLink = GuildOS.db.cores, GuildOS.db.coreLink
+  GuildOS.db.cores = {
+    ["Núcleo Alfa"] = { name = "Núcleo Alfa", discordTag = "nucleo-alfa", raidSize = 20, importedAt = 1754390000.7,
+      members = { ["Ana-Firemaw"] = { name = "Ana", src = "discord" }, ["Bia-Firemaw"] = { name = "Bia", src = "discord" },
+                  ["Pug-Firemaw"] = { name = "Pug" } },
+      guests = { ["Zed-Firemaw"] = { name = "Pugzão", stay = false }, ["Yan-Firemaw"] = { name = "Yan", stay = true } } },
+    ["So no jogo"] = { name = "So no jogo", raidSize = 10, importedAt = 1754000000, members = { ["Ana-Firemaw"] = { name = "Ana" } } },
+  }
+  GuildOS.db.coreLink = { importedAt = 1754390000 }
+  local payload = GuildOS.Companion:BuildPayload()
+  local json = GuildOS.Companion.EncodeJson(payload.coreReceipt)
+  assert(json == '{"at":1754400000,"cores":[{"fromDiscord":2,"guests":["Pugzão","Yan"],"importedAt":1754390000,"members":3,'
+    .. '"name":"Núcleo Alfa","size":20,"tag":"nucleo-alfa"},{"fromDiscord":0,"guests":[],"importedAt":0,"members":1,'
+    .. '"name":"So no jogo","size":10,"tag":""}],"linkedAt":1754390000}', "the receipt's documented shape: " .. json)
+  assert(payload.v == 16, "additive: the payload's version does not move")
+  -- A reader from before never looks at it: without it the payload is the one it always got.
+  local withJson = GuildOS.Companion.EncodeJson(payload)
+  payload.coreReceipt = nil
+  on.raids = false
+  local before = GuildOS.Companion:BuildPayload()
+  assert(before.coreReceipt == nil, "the Raids module off: no receipt at all")
+  assert(GuildOS.Companion.EncodeJson(before) == GuildOS.Companion.EncodeJson(payload), "every other field is as before")
+  assert(#withJson > #GuildOS.Companion.EncodeJson(before), "and the receipt is one more field beside them")
+  on.raids = true
+  -- Never linked: 0. Caps: 50 cores, 40 guests, names of 48 bytes cut on a character.
+  GuildOS.db.coreLink = nil
+  GuildOS.db.cores = {}
+  local long = string.rep("a", 47) .. "ã" .. "bbb"
+  for i = 1, 60 do
+    local guests = {}
+    for j = 1, 45 do guests["G" .. j .. "-Firemaw"] = { name = string.format("G%02d", j) } end
+    GuildOS.db.cores[string.format("Core %02d", i)] = { raidSize = 1 / 0, importedAt = 0 / 0, discordTag = "c" .. i,
+      members = {}, guests = guests }
+  end
+  GuildOS.db.cores[long] = { raidSize = 25, members = {}, guests = { ["X-Firemaw"] = { name = string.rep("é", 30) } } }
+  local r = GuildOS.Companion:BuildPayload().coreReceipt
+  assert(r.linkedAt == 0, "a client that never imported says 0")
+  assert(#r.cores == 50, "at most 50 cores")
+  assert(#r.cores[1].guests == 40 and r.cores[1].guests[40] == "G40", "at most 40 guests, in order")
+  assert(r.cores[1].size == 0 and r.cores[1].importedAt == 0, "a figure that is no finite number is 0")
+  GuildOS.db.cores = { [long] = GuildOS.db.cores[long] }
+  r = GuildOS.Companion:BuildPayload().coreReceipt
+  assert(#r.cores[1].name == 47 and r.cores[1].name == string.rep("a", 47), "a name cut to 48 bytes, never inside a character")
+  assert(#r.cores[1].guests[1] == 48 and r.cores[1].guests[1] == string.rep("é", 24), "and a guest's")
+  GuildOS.db.cores = { Big = { raidSize = 25, importedAt = 1e300, discordTag = "big", members = {} } }
+  json = GuildOS.Companion.EncodeJson(GuildOS.Companion:BuildPayload().coreReceipt)
+  assert(json:find('"importedAt":4294967295', 1, true) and not json:find("[eE][%+%-]?%d"), "plain integers, never an exponent: " .. json)
+  -- One that fails costs only itself, and goes to /guildos errors.
+  local receipt = GuildOS.Companion.CoreReceipt
+  GuildOS.Companion.CoreReceipt = function() error("boom") end
+  local p = GuildOS.Companion:BuildPayload()
+  assert(p.coreReceipt == nil and #p.members > 0 and p.loot, "a receipt that fails is left out; the roster still goes up")
+  assert(recorded[#recorded]:find("coreReceipt", 1, true), "and goes to /guildos errors")
+  GuildOS.Companion.CoreReceipt = receipt
+  GuildOS.db.cores, GuildOS.db.coreLink = savedCores, savedLink
+  GuildOS.RecordError = nil
+  GuildOS.IsFeatureEnabled = enabled   -- the loot book stays on for the string below
+end
+
 -- The string printed below carries one alt (v14), so the site's fixture decodes a real `main`.
 GuildOS.db.altLinks = { ["Fulano-Firemaw"] = "Chehul-Firemaw" }
 local text, countOrErr = GuildOS.Companion:Build()

@@ -1587,3 +1587,33 @@ duration on `LG`, drawn by a popup. It could not name an activity, and there was
 - (−) On WoW: Forever a queued player is matched by first name when the unit's name carries no surname (#48): a
   guildmate who shares it would close the spot early.
 - (−) Groups do not cross to allied guilds; the alliance keeps seeing who is looking, without the activities.
+
+## ADR-0036 — The core's owner: the site in a linked guild, the game otherwise (guildos-web specs/085; #347, #339, #340)
+
+### Context
+A core lived in two places and was born in two: on Discord (`/core criar`) and in an officer's client. The site's
+decision (specs/085) is that in a guild linked to the site the site's database owns a core's existence, its people and
+its configuration, and the game owns only what happened in the raids; in a guild without the site the game owns
+everything. Until now cores reached the game only through the companion's `Inbox.lua`, and nothing went back.
+
+### Decision — a second way in, and a receipt out (#347)
+- **A pasted GOSCORE1 is the inbox's package.** The roster box (`ShowImportPopup`) takes a `GOSCORE1:` code too;
+  `CompanionImport:Load` sends it to `CoreManager:ImportPasted`, which checks the officer and hands it to
+  `ImportPackage`, the one path the inbox also takes: the same guild and realm check (`notOurs`, which now says which),
+  the same site clock (`db.discordAt`, newest `at` wins, an undated package is older than a dated one), the same
+  `ImportFromSite`, the same chat line. `CompanionImport.ReadCores` reads both strings: the companion's alphabet, a body
+  under 256 KB, the `fmt` and a `cores` list. The officer who pasted sends the lists at once (`SendDiscordChanges`):
+  the rank is known, unlike at login.
+- **`coreReceipt` in the upload**, within v16 as `why` was: one more absent field, behind the Raids module and its
+  own `optional()`. `linkedAt` is `db.coreLink.importedAt` (the last own import, inbox or pasted, that was not older);
+  each Discord core's `importedAt` is when this client last applied a Discord list to it (an import or another
+  officer's list). Figures are clamped integers, so the hand-written encoder never writes an exponent.
+
+### Consequences
+- (+) A guild where no officer runs the companion can still receive its cores.
+- (+) An older site ignores the receipt; an older addon never had the paste.
+- (−) A Forever package pasted into an Anniversary client of a guild with the same name is not told apart: the GOSCORE1
+  carries no game, and the realm check is the inbox's (a Forever package has no realm).
+- (−) The decompressed size of a pasted code is not bounded by LibDeflate; the 256 KB on the encoded body bounds it to
+  what deflate can expand that to.
+
