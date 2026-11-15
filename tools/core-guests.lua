@@ -88,6 +88,7 @@ local function load(game)
   dofile(ADDON .. "/Modules/CompanionImport.lua")
   dofile(ADDON .. "/Modules/CoreManager.lua")
   dofile(ADDON .. "/Modules/RaidTracker.lua")
+  dofile(ADDON .. "/Modules/Points.lua")   -- who closes the night (Points:EndsTheNight)
   GuildOS.SyncService = {
     On = function(_, domain, fn) handlers[domain] = fn end,
     Publish = function(_, domain, act, data) sent[#sent + 1] = { domain = domain, act = act, data = data } end,
@@ -241,7 +242,11 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM:SetGuestStay(K("Fica"), "Núcleo Alfa", true)
   CM:AddGuest(K("Beta"), { name = "Beta" }, "alfa-2")
   sent = {}
-  check(CM:EndNight("Núcleo Alfa") == 1, G("one guest of the night leaves"))
+  -- Rewritten (review of #340): EndNight took no session and told every officer; it now tells them only
+  -- from the client that closes the night (the raid's leader, as the raid's end awards), here this one.
+  local me = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
+  check(CM:EndNight("Núcleo Alfa", { leader = me, snapshots = { { members = { [me] = {} } } } }) == 1,
+    G("one guest of the night leaves"))
   local nucleo = GuildOS.db.cores["Núcleo Alfa"]
   check(nucleo.guests[K("Hoje")] == nil and nucleo.guests[K("Fica")], G("the one marked to stay stays"))
   check(GuildOS.db.cores["alfa-2"].guests[K("Beta")], G("another core's guests are its own night's"))
@@ -265,6 +270,58 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   NOW = NOW + 60
   RT:EndSession()
   check(nucleo.guests[K("Hoje")], G("a session discarded as too short keeps them"))
+
+  -- ── Two officers: one's session ending is not the night's end ────────
+  -- Officer A leaves early (or disconnects past the hold); Ana, the raid's leader, is still raiding.
+  CM = load(game)
+  K = function(name) return GuildOS:LocalMemberKey(name .. "-Firemaw") end
+  GuildOSInbox = { FIXTURE }
+  CM:Initialize()
+  CM:AddGuest(K("Pugtank"), { name = "Pugtank", role = "tank" }, "Núcleo Alfa")
+  CM:AddGuest(K("Pugheal"), { name = "Pugheal", role = "healer" }, "Núcleo Alfa")
+  local puts = published("guests")
+  local leader = K("Ana")
+  local session = { groupTag = "Núcleo Alfa", leader = leader,
+    snapshots = { { members = { [leader] = {}, [GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())] = {} } } } }
+  sent = {}
+  check(CM:EndNight("Núcleo Alfa", session) == 2 and count(GuildOS.db.cores["Núcleo Alfa"].guests) == 0,
+    G("officer A's session ends: the night's guests leave A's list"))
+  check(#published("guests") == 0, G("and A tells nobody: the raid goes on for the others"))
+  -- The leader's client: it heard A's guests, and is still raiding the core.
+  local function client(raiding)
+    CM = load(game)
+    K = function(name) return GuildOS:LocalMemberKey(name .. "-Firemaw") end
+    GuildOSInbox = { FIXTURE }
+    CM:Initialize()
+    for _, m in ipairs(puts) do handlers["core.roster"]({ act = m.act, data = m.data }, "OfficerA-Firemaw") end
+    if raiding then GuildOS.RaidTracker.currentRaid = { groupTag = "Núcleo Alfa" } end
+    return GuildOS.db.cores["Núcleo Alfa"].guests
+  end
+  local onLeader = client(true)
+  check(onLeader[K("Pugtank")] and onLeader[K("Pugheal")], G("the leader's client has the night's guests mid-raid"))
+  -- The leader ends the night: the guests leave every officer's list.
+  sent = {}
+  local leaderSession = { groupTag = "Núcleo Alfa", leader = GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()),
+    snapshots = { { members = { [GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())] = {} } } } }
+  GuildOS.RaidTracker.currentRaid = nil
+  check(CM:EndNight("Núcleo Alfa", leaderSession) == 2, G("the leader's client ends the night"))
+  local ended = published("guests")
+  check(#ended == 1 and ended[1].data.ended == true and #ended[1].data.gone == 2, G("and tells the other officers, as the night's end"))
+  -- An officer still in that core's raid session (it zoned out, its hold running) keeps them; one not
+  -- raiding lets them go; a removal by hand is applied even mid-raid.
+  local still = client(true)
+  handlers["core.roster"]({ act = ended[1].act, data = ended[1].data }, "Leader-Firemaw")
+  check(still[K("Pugtank")] and still[K("Pugheal")], G("a client still raiding that core keeps its night's guests"))
+  handlers["core.roster"]({ act = "guests", data = { coreName = "Núcleo Alfa", tag = "nucleo-alfa", gone = { K("Pugheal") } } },
+    "Leader-Firemaw")
+  check(still[K("Pugtank")] and not still[K("Pugheal")], G("but a guest taken off by hand leaves it"))
+  local away = client(false)
+  handlers["core.roster"]({ act = ended[1].act, data = ended[1].data }, "Leader-Firemaw")
+  check(count(away) == 0, G("an officer not raiding lets them go"))
+  local elsewhere = client(false)
+  GuildOS.RaidTracker.currentRaid = { groupTag = "alfa-2" }
+  handlers["core.roster"]({ act = ended[1].act, data = ended[1].data }, "Leader-Firemaw")
+  check(count(elsewhere) == 0, G("and so does one raiding another core"))
 
   -- ── The night's raid counts guests ───────────────────────────────────
   CM = load(game)

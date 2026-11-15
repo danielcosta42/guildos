@@ -960,11 +960,13 @@ local function guestRecord(self, key, info, stay)
 end
 
 -- The change to the other officers: the guests put on the core (by key) and the keys taken off.
-local function publishGuests(self, coreName, put, gone)
+-- `ended`: the gone are the night's end (EndNight), which a client still raiding that core lets pass.
+local function publishGuests(self, coreName, put, gone, ended)
     if not (GuildOS.SyncService and GuildOS:IsOfficer()) then return end
     local core = GuildOS.db.cores[coreName]
     GuildOS.SyncService:Publish("core.roster", "guests", {
         coreName = coreName, tag = type(core) == "table" and core.discordTag or nil, put = put, gone = gone,
+        ended = ended or nil,
     })
 end
 
@@ -1042,9 +1044,13 @@ function CoreManager:RaidRoster(coreName)
     return out
 end
 
--- The raid session of a core ended (RaidTracker:EndSession): its guests leave, but those marked to
--- stay. The other officers hear who left. Returns how many.
-function CoreManager:EndNight(coreName)
+-- The raid session of a core ended on this client (RaidTracker:EndSession, `session`): its guests leave
+-- here, but those marked to stay. An officer's session ends for reasons of its own (left early, a
+-- disconnect past the hold, another zone) while the raid goes on for the others, so only the client that
+-- closes the night for the guild, the one the raid's end awards pick (Points:EndsTheNight, the raid
+-- leader's), tells the other officers who left; a client still raiding that core lets it pass
+-- (OnGuestsSync). Returns how many.
+function CoreManager:EndNight(coreName, session)
     local core, name = coreNamed(self, coreName)
     if not (core and type(core.guests) == "table") then return 0 end
     local gone = {}
@@ -1053,8 +1059,16 @@ function CoreManager:EndNight(coreName)
     end
     table.sort(gone)
     for _, key in ipairs(gone) do core.guests[key] = nil end
-    if #gone > 0 then publishGuests(self, name, nil, gone) end
+    local P = GuildOS.Points
+    if #gone > 0 and P and P.EndsTheNight and P:EndsTheNight(session) then publishGuests(self, name, nil, gone, true) end
     return #gone
+end
+
+-- Whether this client is in a raid session of the core `coreName` now (the hold after leaving included).
+local function raidingCore(coreName)
+    local RT = GuildOS.RaidTracker
+    local raid = RT and RT.currentRaid
+    return type(raid) == "table" and raid.groupTag == coreName
 end
 
 -- Whoever is on a Discord core with no record from the Discord is a guest (issue #340): an officer put
@@ -1117,7 +1131,8 @@ function CoreManager:OnGuestsSync(d)
             changed = true
         end
     end
-    local gone = type(d.gone) == "table" and d.gone or {}
+    -- The night's end on another client, while this one still raids that core: its guests stay here.
+    local gone = type(d.gone) == "table" and not (d.ended == true and raidingCore(name)) and d.gone or {}
     for i = 1, math.min(#gone, GUEST_MAX) do
         local k = guestKey(gone[i])
         if k and guests[k] then

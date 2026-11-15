@@ -661,18 +661,32 @@ end
 -- left early, and the raid itself, for everyone the session saw. One client pays (RaidEndPayer), and
 -- each award's op is the raid night's own (RaidNight), so a second client that ends the same raid, or
 -- the same client ending it again after a /reload, gives nothing twice.
+-- Everyone a session's snapshots saw, by key: as a set and as a list.
+local function sessionKeys(session)
+    local seen, everyone = {}, {}
+    for _, snap in ipairs(type(session) == "table" and session.snapshots or {}) do
+        for key in pairs(type(snap) == "table" and snap.members or {}) do
+            if not seen[key] then seen[key] = true; everyone[#everyone + 1] = key end
+        end
+    end
+    return seen, everyone
+end
+
+-- Whether this client is the one that closes the raid night for the guild (RaidEndPayer): the raid's end
+-- awards, and the night's guests sent away for every officer (CoreManager:EndNight, issue #340).
+function Points:EndsTheNight(session)
+    if type(session) ~= "table" then return false end
+    local _, everyone = sessionKeys(session)
+    return self:RaidEndPayer(session, everyone) == GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
+end
+
 function Points:OnRaidEnd(session)
     local pool = self:Pool()
     if not GuildOS:IsOfficer() or type(session) ~= "table" then return 0 end
     local snaps = session.snapshots or {}
     local first, last = snaps[1], snaps[#snaps]
     if not (first and first.members) then return 0 end
-    local seen, everyone = {}, {}
-    for _, snap in ipairs(snaps) do
-        for key in pairs(snap.members or {}) do
-            if not seen[key] then seen[key] = true; everyone[#everyone + 1] = key end
-        end
-    end
+    local seen, everyone = sessionKeys(session)
     if self:RaidEndPayer(session, everyone) ~= GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName()) then return 0 end
     local night = self:RaidNight(session)
     -- The counters the loot rule feeds per raid attended, whatever the points' own switch says; the
