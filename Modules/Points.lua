@@ -674,14 +674,6 @@ local function sessionKeys(session)
     return seen, everyone
 end
 
--- Whether this client is the one that closes the raid night for the guild (RaidEndPayer): the raid's end
--- awards, and the night's guests sent away for every officer (CoreManager:EndNight, issue #340).
-function Points:EndsTheNight(session)
-    if type(session) ~= "table" then return false end
-    local _, everyone = sessionKeys(session)
-    return self:RaidEndPayer(session, everyone) == GuildOS:GetPlayerKey(GuildOS.Compat.PlayerName())
-end
-
 function Points:OnRaidEnd(session)
     local pool = self:Pool()
     if not GuildOS:IsOfficer() or type(session) ~= "table" then return 0 end

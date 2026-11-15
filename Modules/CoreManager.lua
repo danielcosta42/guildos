@@ -1008,13 +1008,14 @@ local function guestRecord(self, key, info, stay)
 end
 
 -- The change to the other officers: the guests put on the core (by key) and the keys taken off.
--- `ended`: the gone are the night's end (EndNight), which a client still raiding that core lets pass.
-local function publishGuests(self, coreName, put, gone, ended)
+-- `endAt`: the gone are the night's end (EndNight) at that time, which a client still raiding that core
+-- lets pass, and which takes off only the guests put on before it (OnGuestsSync).
+local function publishGuests(self, coreName, put, gone, endAt)
     if not (GuildOS.SyncService and GuildOS:IsOfficer()) then return end
     local core = GuildOS.db.cores[coreName]
     GuildOS.SyncService:Publish("core.roster", "guests", {
         coreName = coreName, tag = type(core) == "table" and core.discordTag or nil, put = put, gone = gone,
-        ended = ended or nil,
+        ended = endAt and true or nil, endAt = endAt,
     })
 end
 
@@ -1093,11 +1094,13 @@ function CoreManager:RaidRoster(coreName)
 end
 
 -- The raid session of a core ended on this client (RaidTracker:EndSession, `session`): its guests leave
--- here, but those marked to stay. An officer's session ends for reasons of its own (left early, a
--- disconnect past the hold, another zone) while the raid goes on for the others, so only the client that
--- closes the night for the guild, the one the raid's end awards pick (Points:EndsTheNight, the raid
--- leader's), tells the other officers who left; a client still raiding that core lets it pass
--- (OnGuestsSync). Returns how many.
+-- here, but those marked to stay, and every officer's client that ends it tells the others, as the
+-- night's end. Only one client was told before (the one the raid's end awards pick), and when that one
+-- ran no addon nobody heard: the officers who did not raid kept the night's guests for good. An
+-- officer's session ends for reasons of its own (left early, a disconnect past the hold, another zone)
+-- while the raid goes on for the others: a client still raiding that core lets it pass, and each end
+-- takes off only the guests put on before it, so N officers ending one night take each guest off once
+-- and a late one never takes off a guest of the next night (OnGuestsSync). Returns how many.
 function CoreManager:EndNight(coreName, session)
     local core, name = coreNamed(self, coreName)
     if not (core and type(core.guests) == "table") then return 0 end
@@ -1107,8 +1110,8 @@ function CoreManager:EndNight(coreName, session)
     end
     table.sort(gone)
     for _, key in ipairs(gone) do core.guests[key] = nil end
-    local P = GuildOS.Points
-    if #gone > 0 and P and P.EndsTheNight and P:EndsTheNight(session) then publishGuests(self, name, nil, gone, true) end
+    local endAt = math.floor(GuildOS.Finite(type(session) == "table" and session.endTime) or GetServerTime())
+    if #gone > 0 then publishGuests(self, name, nil, gone, endAt) end
     return #gone
 end
 
@@ -1185,10 +1188,15 @@ function CoreManager:OnGuestsSync(d)
         end
     end
     -- The night's end on another client, while this one still raids that core: its guests stay here.
-    local gone = type(d.gone) == "table" and not (d.ended == true and raidingCore(name)) and d.gone or {}
+    local ended = d.ended == true
+    local gone = type(d.gone) == "table" and not (ended and raidingCore(name)) and d.gone or {}
+    -- Each end takes off the guests put on before it, once: another officer's end of the same night, or
+    -- one heard late, leaves a guest put on since (the next night's) alone. A client from before sends no
+    -- `endAt`: the end is when it arrives.
+    local endAt = ended and (GuildOS.Finite(d.endAt) or GetServerTime()) or nil
     for i = 1, math.min(#gone, GUEST_MAX) do
         local k = guestKey(gone[i])
-        if k and guests[k] then
+        if k and guests[k] and not (endAt and (tonumber(guests[k].at) or 0) > endAt) then
             guests[k] = nil
             changed = true
         end
