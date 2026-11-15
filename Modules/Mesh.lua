@@ -56,11 +56,6 @@ function Mesh:BuildCaps()
         if pact.tag and pact.tag ~= "" then
             caps = caps .. ",gosa=" .. pact.tag
         end
-        -- This client takes the allied guilds' /g (Modules/AllianceGuildChat.lua), so a bridge
-        -- of another guild may pick it to hand its guild the lines (issue #344).
-        if GuildOS.AllianceGuildChat then
-            caps = caps .. "," .. GuildOS.AllianceGuildChat.CAP
-        end
     end
     return caps
 end

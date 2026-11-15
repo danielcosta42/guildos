@@ -465,8 +465,23 @@ end
 ----------------------------------------------------------------------
 -- Live state
 ----------------------------------------------------------------------
+-- The pact. One written in the guild info (Modules/AllianceLink.lua, issue
+-- #348) comes first: every member reads it, nobody has to send it. Without
+-- one, the pact made by invitation between ambassadors.
 function Alliance:Get()
+    local link = GuildOS.AllianceLink
+    local fromInfo = link and GuildOS.db and link:Pact()
+    if fromInfo then
+        return fromInfo
+    end
     return (GuildOS.db and GuildOS.db.alliance) or nil
+end
+
+-- Is the pact in force the one in the guild info? Then it changes only by
+-- editing that line, and the ops that build a pact by whisper do nothing.
+function Alliance.InGuildInfo()
+    local link = GuildOS.AllianceLink
+    return (link and GuildOS.db and link:Active()) and true or false
 end
 
 function Alliance:MyGuildName()
@@ -518,6 +533,22 @@ function Alliance:GuildOfSender(sender, pact)
         end
     end
     return nil
+end
+
+-- Pure. The guild a data op from `sender` speaks for under a pact in the guild
+-- info, or nil: the guild it names must be in the pact, not ours, not
+-- blocked, and the proof must be the one the key makes for that sender.
+function Alliance.VerifyProof(pact, claimed, proof, sender, myGuild)
+    if type(pact) ~= "table" or type(pact.guilds) ~= "table" or type(claimed) ~= "string" then
+        return nil
+    end
+    if claimed == myGuild or not pact.guilds[claimed] or (pact.blocked and pact.blocked[claimed]) then
+        return nil
+    end
+    if type(proof) ~= "string" or proof ~= GuildOS.AllianceLink.Proof(pact.key, sender) then
+        return nil
+    end
+    return claimed
 end
 
 -- The member guild a character is on the synced roster of, or nil. Never our
@@ -657,6 +688,16 @@ function Alliance:Send(op, tbl, target)
     if not mesh or not target or target == "" then
         return false
     end
+    -- With the pact in the guild info nobody is on a list of names, so every
+    -- op says which guild it speaks for and proves it read the key (issue #348).
+    local pact = self:Get()
+    if pact and pact.source == "guildinfo" and type(tbl) == "table" then
+        local signed = {}
+        for k, v in pairs(tbl) do signed[k] = v end
+        signed._g = self:MyGuildName()
+        signed._k = GuildOS.AllianceLink.Proof(pact.key, GuildOS.Compat.PlayerName())
+        tbl = signed
+    end
     local blob = Alliance.Encode(tbl)
     if not blob then
         return false
@@ -714,6 +755,9 @@ end
 -- Officer actions
 ----------------------------------------------------------------------
 function Alliance:Create(tag, name)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -746,6 +790,9 @@ function Alliance:Create(tag, name)
 end
 
 function Alliance:Invite(officerName)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -782,6 +829,9 @@ function Alliance:Invite(officerName)
 end
 
 function Alliance:Leave()
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
@@ -812,6 +862,9 @@ function Alliance:Leave()
 end
 
 function Alliance:RemoveGuild(guildName)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
@@ -902,6 +955,19 @@ function Alliance:OnMessage(payload, sender, dist)
     end
     local data = Alliance.Decode(blob)
     if type(data) ~= "table" then
+        return
+    end
+
+    -- The pact in the guild info (issue #348): nothing builds or changes it by
+    -- whisper, and a data op is believed for the guild it names only with the
+    -- proof made from the key and the sender's own name.
+    local pact = self:Get()
+    if pact and pact.source == "guildinfo" then
+        local fn = Alliance.ops[op]
+        local guild = Alliance.VerifyProof(pact, data._g, data._k, sender, self:MyGuildName())
+        if fn and guild then
+            GuildOS:SafeCall(fn, data, sender, guild)
+        end
         return
     end
 
@@ -1182,6 +1248,9 @@ function Alliance:_MyEntry()
 end
 
 function Alliance:AddAmbassador(name)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     local entry = self:_MyEntry()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
@@ -1211,6 +1280,9 @@ function Alliance:AddAmbassador(name)
 end
 
 function Alliance:RemoveAmbassador(name)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     local entry = self:_MyEntry()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
@@ -1235,6 +1307,9 @@ function Alliance:RemoveAmbassador(name)
 end
 
 function Alliance:ClaimAmbassador()
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     local entry = self:_MyEntry()
     if not entry then
         return false, L["This guild is not in an alliance yet."]
@@ -1454,6 +1529,10 @@ function Alliance:CanAdminister()
     if not pact or not GuildOS:IsOfficer() then
         return false
     end
+    -- In the guild info there are no ambassadors: the guild's officers speak for it.
+    if pact.source == "guildinfo" then
+        return true
+    end
     return Alliance.IsAmbassador(pact, self:MyGuildName(), GuildOS.Compat.PlayerName())
 end
 
@@ -1483,6 +1562,9 @@ end
 -- found. Still ends in the normal human-approved invite flow.
 ----------------------------------------------------------------------
 function Alliance:RequestJoin(tag, officerName)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -1537,6 +1619,9 @@ end
 -- false, reason, "needContact" when nobody from that alliance is visible, so
 -- the UI can ask for a name only then instead of always.
 function Alliance:JoinWithToken(token, contactName)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -1575,6 +1660,9 @@ function Alliance:JoinWithToken(token, contactName)
 end
 
 function Alliance:JoinWithCode(tag, code, contactName)
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     if not GuildOS:IsOfficer() then
         return false, L["Only officers can do that."]
     end
@@ -1662,6 +1750,9 @@ function Alliance:JoinToken()
 end
 
 function Alliance:RegenerateCode()
+    if Alliance.InGuildInfo() then
+        return false, L["This alliance is set in the guild info. Change it there."]
+    end
     local pact = self:Get()
     if not pact then
         return false, L["This guild is not in an alliance yet."]
@@ -2032,7 +2123,7 @@ function Alliance:HandleCommand(args)
         end
     elseif verb == "gchat" then
         -- The allied guilds' /g (issue #344): on, off, or how it is doing.
-        local chat, agc = GuildOS.AllianceChat, GuildOS.AllianceGuildChat
+        local chat, agc = GuildOS.AllianceChat, GuildOS.AllianceLink
         if not chat or not agc then return end
         local sub = rest:lower()
         if sub == "on" or sub == "off" then

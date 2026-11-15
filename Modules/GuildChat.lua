@@ -195,6 +195,9 @@ function GuildChat:Send(text, stream)
     end
     if isGuild(stream) then
         SendChatMessage(clean, "GUILD")
+        -- The same click carries it to the allied guilds (issue #348): the tab's
+        -- box is not one of the chat frame's, so the hook there never sees it.
+        if GuildOS.AllianceLink then GuildOS.AllianceLink:OnPlayerChat("GUILD", clean) end
     elseif stream.kind == "officer" then
         SendChatMessage(clean, "OFFICER")
     else
