@@ -415,6 +415,12 @@ GuildOS.UI = setmetatable({
     return dd
   end,
   LabelColumn = function(_, _, _, floor) return floor end,
+  -- The core panel's sub-tabs are tabs since issue #346 (they were buttons): clicked the same way.
+  CreateTab = function(_, _, text)
+    local b = widget({ text = tostring(text), label = widget() })
+    buttons[#buttons + 1] = b
+    return b
+  end,
   CreateButton = function(_, _, text)
     local b = widget({ text = tostring(text), label = widget() })
     buttons[#buttons + 1] = b
@@ -503,7 +509,8 @@ check(button("Add answer"), "and its rule is edited right there")
 click("Follow the guild")
 check(CM:GetLootSystem("Gamma") == nil, "Follow the guild is a click too")
 
--- The core's Config tab keeps one line: what the core plays, and the way to the Loot window.
+-- The core's screen keeps one line: what the core plays, and the way to the Loot window (its Rule tab,
+-- since issue #346; it was the Config tab's).
 dofile(ADDON .. "/UI/CorePanel.lua")
 widgets, buttons, dropdowns = {}, {}, {}
 local coresPanel = widget()
@@ -513,8 +520,10 @@ coresPanel.scripts.OnShow(coresPanel)
 for _, w in ipairs(widgets) do
   if w.coreName == "Gamma" and w.scripts.OnClick then w.scripts.OnClick(w) break end
 end
+click("Rule")
+check(button("Open Loot"), "the core's Rule tab points to the Loot window")
 click("Config")
-check(button("Open Loot"), "the Config tab points to the Loot window")
+check(not button("Open Loot") or button("Open Loot").hidden, "and its Config tab has no loot left")
 for _, sys in ipairs(GuildOS:LootSystemsHere()) do
   check(not button(GuildOS:LootSystemLabel(sys)), "and offers no loot system of its own: " .. sys.key)
 end

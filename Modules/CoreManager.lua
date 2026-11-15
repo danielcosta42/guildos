@@ -810,6 +810,37 @@ function CoreManager:RemoveMember(playerKey, coreName)
     if core and core.members then core.members[playerKey] = nil end
 end
 
+-- A member's role and place, from the core's roster (issue #346: the role is a dropdown there, and the
+-- screen wrote the field itself). Told to the other officers with the roster. A Discord core's people
+-- keep the Discord's place: only their role is the officers'. Returns whether it changed.
+local MEMBER_ROLES = { tank = true, healer = true, mdps = true, rdps = true }
+function CoreManager:SetMemberRole(playerKey, role, coreName)
+    local core = coreName and coreName ~= "" and GuildOS.db.cores[coreName]
+    local mem = core and core.members and core.members[playerKey]
+    if not (mem and MEMBER_ROLES[role]) then return false end
+    if mem.role == role then return true end
+    mem.role = role
+    self:BroadcastRoster(coreName)
+    return true
+end
+
+-- Titular or reserve ("bench"), for somebody the officers put on the core (issue #212).
+function CoreManager:SetMemberBench(playerKey, bench, coreName)
+    local core = coreName and coreName ~= "" and GuildOS.db.cores[coreName]
+    local mem = core and core.members and core.members[playerKey]
+    if not mem or (self:IsFromDiscord(coreName) and mem.src == "discord") then return false end
+    mem.status = bench and "bench" or nil
+    self:BroadcastRoster(coreName)
+    return true
+end
+
+-- A member's presence on the core's nights, in percent, for the roster's column (RaidTracker's).
+function CoreManager:MemberPresence(playerKey, coreName)
+    local RT = GuildOS.RaidTracker
+    if not (RT and RT.GetAttendancePercent) then return nil end
+    return RT:GetAttendancePercent(playerKey, coreName)
+end
+
 ----------------------------------------------------------------------
 -- The night's guests (issue #340; ADR-0036). A pug is a guest of the night, not a member of the core:
 -- in a guild linked to the site the Discord says who is on a Discord core, so whoever an officer adds

@@ -101,9 +101,11 @@ local function read(path)
   return s
 end
 local panel = read("UI/CorePanel.lua")
-check(panel:find("CM:NextRaidSize(", 1, true) and panel:find("CM:SetRaidSize(coreName, curSize)", 1, true)
+-- The format is picked among CoreManager's sizes (issue #346: a dropdown where there are three or
+-- more, Forever's 10, 20 and 40; two buttons for TBC's 10 and 25), no longer a button that cycles.
+check(panel:find("CM:RaidSizes()", 1, true) and panel:find("CM:SetRaidSize(coreName, size)", 1, true)
   and not panel:find("(curSize == 25) and 10 or 25", 1, true) and not panel:find('"25-man"', 1, true),
-  "the core's format button cycles through CoreManager's sizes")
+  "the core's format is picked among CoreManager's sizes")
 for _, path in ipairs({ "UI/CorePanel.lua", "UI/FeaturePanels.lua" }) do
   check(not read(path):find("RAID_TARGETS%s*%["), path .. " asks RaidTargets, never indexes RAID_TARGETS itself")
 end

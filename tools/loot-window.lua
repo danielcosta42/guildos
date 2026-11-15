@@ -14,6 +14,9 @@
 --   * the raider's popup: the item and what it is, what the player wears there, where they stand in
 --     the rule (reserve, lists, counters, points and what entering costs), the rule's buttons and the
 --     line that names the rule;
+--   * Raids › Cores: the list with size, fill and origin, the header with origin and the raid's mark,
+--     the sub-tabs, the role meters, the role as a dropdown, the guests of the night, the Discord's
+--     notes, the format and the penalties that say when they are saved, the columns that drop;
 --
 --   luajit -e 'ADDON="."' tools/loot-window.lua
 --
@@ -465,12 +468,17 @@ local function lootTab(UI)
   check(alphaRow, "the core is listed")
   alphaRow.scripts.OnClick(alphaRow)
   click(cores, "Config")
-  check(#buttons(cores, "Open Loot") == 1 and shows(cores, "Loot: DKP (fixed price)"), "the Config tab says what the core plays")
   for _, label in ipairs(LOOT_CONTROLS) do
-    check(not shows(cores, label), "the Config tab has no \"" .. label .. "\" left")
+    check(not shows(cores, label), "the core's Config tab has no \"" .. label .. "\" left")
+  end
+  check(#buttons(cores, "Open Loot") == 0, "nor the way to the Loot window: its Rule tab has that")
+  click(cores, "Rule")
+  check(#buttons(cores, "Open Loot") == 1 and shows(cores, "Loot: DKP (fixed price)"), "the core's Rule tab says what the core plays")
+  for _, label in ipairs(LOOT_CONTROLS) do
+    check(not shows(cores, label), "and edits none of it: no \"" .. label .. "\"")
   end
   click(cores, "Open Loot")
-  check(UI_OPENED[3] == "Alpha", "and its button opens the Rule tab on that core")
+  check(UI_OPENED[3] == "Alpha", "and its button opens the Loot window's Rule tab on that core")
 
   -- Each loot setting is written from one UI file.
   local function read(path)
@@ -714,12 +722,96 @@ local function popup()
   check(rolled == "1-99", "OS is /roll 1-99")
 end
 
+-- ── 5. Raids › Cores ───────────────────────────────────────────────────
+local function cores()
+  loadModules()
+  local CM = GuildOS.CoreManager
+  function GetGuildRosterInfo(i)
+    local roster = { { "Pug-Realm", "PRIEST", true }, { "Bea-Realm", "MAGE", false } }
+    local m = roster[i]
+    if m then return m[1], "Raider", 2, 70, "Priest", "Zone", "", "", m[3], 0, m[2] end
+  end
+  function GetNumGuildMembers() return 2 end
+  GuildOS.KeyOfRosterName = function(_, full) return full end
+  -- A linked guild: one core of the Discord, one only in this game from before the link.
+  check(CM:Create("Bravo"), "a core of this game")
+  CM:Create("Alfa")
+  GuildOS.db.cores.Alfa.discordTag = "alfa"
+  GuildOS.db.cores.Alfa.raidSize = 10
+  GuildOS.db.cores.Alfa.discordWaiting = { "Dean_Ales" }
+  local K = function(n) return n .. "-Realm" end
+  CM:AddMember(K("Chehul"), { name = "Chehul", class = "PRIEST", role = "healer", src = "discord" }, "Alfa")
+  CM:AddMember(K("Kawa"), { name = "Kawa", class = "WARRIOR", role = "tank", src = "discord" }, "Alfa")
+  GuildOS.db.coreLink = { since = GetServerTime() - 7200, seenAt = GetServerTime() - 7200 }
+  CM:AddGuest(K("Xablau"), { name = "Xablau", class = "MAGE", role = "rdps" }, "Alfa", true)
+
+  local panel = newFrame("Frame", UIParent)
+  panel:SetSize(780, 540)
+  GuildOS:CreateCoresPanel(panel)
+  sized(panel, 520)
+  panel.scripts.OnShow(panel)
+  local rows = {}
+  walk(panel, function(f) if f.coreName and f:IsVisible() then rows[f.coreName] = f end end)
+  check(rows.Alfa and rows.Bravo, "the guild's cores are listed")
+  check(rows.Alfa.sub.text == "10 \194\183 2 of 10 \194\183 from Discord", "with size, fill and origin: " .. rows.Alfa.sub.text)
+  check(rows.Bravo.sub.text:find("only in this game", 1, true), "and a core only this game has says so")
+  check(shows(panel, "New cores are born on Discord") and shows(panel, "Received from the site"), "a linked guild is told where cores are born")
+  rows.Alfa.scripts.OnClick(rows.Alfa)
+  check(shows(panel, "Alfa") and shows(panel, "from Discord") and #buttons(panel, "Rename") == 0,
+    "the header says the origin, and a Discord core is not renamed here")
+  check(#buttons(panel, "Roster") == 1 and #buttons(panel, "Requests") == 1 and #buttons(panel, "Rule") == 1 and #buttons(panel, "Config") == 1,
+    "sub-tabs Roster, Requests, Rule, Config")
+  check(shows(panel, "Tanks") and shows(panel, "Healers") and shows(panel, "1 of "), "the role meters")
+  local roleDD
+  walk(panel, function(f) if f:IsVisible() and f.memberKey == K("Kawa") then roleDD = f end end)
+  check(roleDD and #roleDD.options == 4 and roleDD:GetValue() == "tank", "each member's role is a dropdown of the four")
+  roleDD:Select("mdps")
+  check(GuildOS.db.cores.Alfa.members[K("Kawa")].role == "mdps", "and a choice changes it, through CoreManager")
+  check(shows(panel, "Guests of the night (1)") and shows(panel, "Xablau"), "the guests of the night")
+  check(shows(panel, "Dean_Ales") and shows(panel, "waiting for a character"), "who the Discord has with no character")
+  check(shows(panel, "Who joins and leaves the core is decided on Discord"), "and what is the Discord's to decide")
+  check(#buttons(panel, "Remove") == 1, "a Discord member is not removed here; a guest is")
+  local picker
+  walk(panel, function(f) if f:IsVisible() and f.isMemberPicker then picker = f end end)
+  check(picker and #picker.options == 2, "the guild's people to invite, in a dropdown")
+  picker:Select("Pug-Realm")
+  click(panel, "Invite")
+  check(GuildOS.db.cores.Alfa.guests["Pug-Realm"] and GuildOS.db.cores.Alfa.guests["Pug-Realm"].role == "healer",
+    "invited as a guest, in their class's role")
+  -- The columns drop by priority at a narrow width.
+  sized(panel, 320)
+  panel.scripts.OnSizeChanged(panel)
+  rows.Alfa.scripts.OnClick(rows.Alfa)
+  local layout = panel.memberLayout
+  check(layout.byKey.name.shown and layout.byKey.role.shown and not layout.byKey.origin.shown, "narrow: the origin goes first, the member and the role stay")
+  sized(panel, 520)
+  rows.Alfa.scripts.OnClick(rows.Alfa)
+  -- A core of this game: its format and its penalties.
+  walk(panel, function(f) if f.coreName and f:IsVisible() then rows[f.coreName] = f end end)
+  rows.Bravo.scripts.OnClick(rows.Bravo)
+  click(panel, "Config")
+  check(#buttons(panel, "10-man") == 1 and #buttons(panel, "25-man") == 1, "TBC's two formats are two buttons")
+  click(panel, "10-man")
+  check(CM:GetRaidSize("Bravo") == 10, "and a click is the format")
+  local late
+  walk(panel, function(f) if f:IsVisible() and f.penaltyKey == "LATE" then late = f end end)
+  check(late and late.saveButton.label.text == "Saved", "a penalty's box says it is saved")
+  late.text = "20"
+  late.scripts.OnTextChanged(late, true)
+  check(late.saveButton.label.text == "Save", "typing says it is not, yet")
+  late.saveButton.scripts.OnClick(late.saveButton)
+  check(CM:GetPenalties("Bravo").LATE == 20 and late.saveButton.label.text == "Saved", "and saving does")
+  click(panel, "Requests")
+  check(shows(panel, "Pending Sign-ups (0)"), "the requests")
+end
+
 for _, style in ipairs({ "guildos", "forever" }) do
   local UI = load(style)
   dropdown(UI)
   lootTab(UI)
   lootTable()
   popup()
+  cores()
 end
 
 print(("loot-window: %d checks passed"):format(checks))
