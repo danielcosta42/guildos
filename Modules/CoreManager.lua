@@ -343,16 +343,21 @@ local function moveCore(oldName, newName)
         end
     end
 
-    -- Update active tag if it was the renamed one
+    -- Update active tag if it was the renamed one: the tracker's and the saved one, each on its own. A
+    -- rename that comes with the inbox at login runs before RaidTracker:Initialize, when the module is
+    -- loaded but has read nothing yet (its tag "", no raid): only the saved state names the core then,
+    -- and the raid reopened from it must find it under the new name.
     if GuildOS.RaidTracker and GuildOS.RaidTracker.currentGroupTag == oldName then
         GuildOS.RaidTracker:SetGroupTag(newName)
-    elseif not GuildOS.RaidTracker and rtDB and rtDB.currentGroupTag == oldName then
-        rtDB.currentGroupTag = newName   -- as Delete does, before the tracker has started
     end
-    -- And the raid in progress, and an officer's pick kept for it (issue #99).
+    if rtDB and rtDB.currentGroupTag == oldName then rtDB.currentGroupTag = newName end
+    -- And the raid in progress (the tracker's, and the one saved for a /reload), and an officer's pick
+    -- kept for it (issue #99).
     local RT = GuildOS.RaidTracker
     local raid = RT and RT.currentRaid
     if raid and raid.groupTag == oldName then raid.groupTag = newName end
+    local open = rtDB and rtDB.openSession
+    if type(open) == "table" and open.groupTag == oldName then open.groupTag = newName end
     if RT and RT.coreAnnounced == oldName then RT.coreAnnounced = newName end
     if RT and RT.gracePick == oldName then RT.gracePick = newName end
     local pick = rtDB and rtDB.corePick
@@ -426,14 +431,11 @@ function CoreManager:Delete(name)
     -- The active core deleted is no longer active, nor the raid's, nor an officer's pick: left set,
     -- the next read of it, or a /reload inside the raid, would make it again, empty (#138).
     local RT, rtDB = GuildOS.RaidTracker, GuildOS.db.raidTracker
-    if self:GetActiveName() == name then
-        if RT then
-            RT:SetGroupTag("")
-        elseif rtDB then
-            rtDB.currentGroupTag = ""
-        end
-    end
+    if RT and RT.currentGroupTag == name then RT:SetGroupTag("") end
+    -- The saved tag on its own too: before RaidTracker:Initialize the module names nothing yet.
+    if rtDB and rtDB.currentGroupTag == name then rtDB.currentGroupTag = "" end
     if RT and RT.currentRaid and RT.currentRaid.groupTag == name then RT.currentRaid.groupTag = "" end
+    if rtDB and type(rtDB.openSession) == "table" and rtDB.openSession.groupTag == name then rtDB.openSession.groupTag = "" end
     if RT and RT.coreAnnounced == name then RT.coreAnnounced = nil end
     if RT and RT.gracePick == name then RT.gracePick = nil end
     if rtDB and type(rtDB.corePick) == "table" and rtDB.corePick.tag == name then rtDB.corePick = nil end

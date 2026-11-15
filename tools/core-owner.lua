@@ -290,6 +290,34 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
   check(CM:IsFromDiscord("Núcleo Alfa") and not CM:IsFromDiscord("Núcleo Beta"), G("a name taken here is not taken over"))
 
+  -- The rename comes with the inbox at login (#339): CoreManager:Initialize runs before
+  -- RaidTracker:Initialize, the module loaded but its tag "" and no raid. The raid saved for the
+  -- /reload, its tag and the officer's pick follow all the same, and the reopened raid is the core's.
+  do
+    CM = load(game)
+    CM:ImportFromSite(package(1000, { alfa() }), 1000)
+    local rt = GuildOS.db.raidTracker
+    rt.currentGroupTag = "Núcleo Alfa"
+    rt.openSession = { groupTag = "Núcleo Alfa", snapshots = {}, encounters = {} }
+    rt.corePick = { tag = "Núcleo Alfa" }
+    dofile(ADDON .. "/Modules/RaidTracker.lua")
+    check(GuildOS.RaidTracker.currentRaid == nil and GuildOS.RaidTracker:GetCurrentGroup() == "", G("the tracker not started"))
+    CM:ImportFromSite(package(2000, { alfa("Núcleo Beta") }), 2000)
+    check(GuildOS.db.cores["Núcleo Beta"] and rt.currentGroupTag == "Núcleo Beta" and rt.openSession.groupTag == "Núcleo Beta"
+      and rt.corePick.tag == "Núcleo Beta",
+      G("before the tracker starts, the saved tag, the saved raid and the pick follow the rename: "
+        .. tostring(rt.currentGroupTag) .. " / " .. tostring(rt.openSession.groupTag)))
+    GuildOS.RaidTracker:Initialize()
+    check(GuildOS.RaidTracker:GetCurrentGroup() == "Núcleo Beta" and CM:GetCore(GuildOS.RaidTracker:GetCurrentGroup()),
+      G("and the tracker starts on the core, under its new name"))
+    rt.openSession = { groupTag = "Núcleo Beta", snapshots = {}, encounters = {} }
+    GuildOS.RaidTracker.currentGroupTag = ""   -- as before its Initialize
+    GuildOS.db.cores["Núcleo Beta"].discordTag = nil
+    check(CM:Delete("Núcleo Beta") and rt.currentGroupTag == "" and rt.openSession.groupTag == "",
+      G("deleted before the tracker starts, the saved tag and raid let go of it"))
+    GuildOS.RaidTracker = nil
+  end
+
   -- ── Federation switched off: creating comes back ──────────────────────
   CM = load(game)
   CM:Initialize()
