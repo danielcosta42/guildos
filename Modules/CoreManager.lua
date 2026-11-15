@@ -1416,11 +1416,21 @@ local SITE_ROLES = { tank = true, healer = true, mdps = true, rdps = true }
 -- reduces to the tag, the one named as on the Discord when two do. Else one made now, named as on
 -- the Discord, or by the tag when the name does not reduce to it (a name the Discord reused is
 -- "alfa-2"), so its nights count on the site.
+-- The name a Discord core has here: the Discord's, cut on a character to the 48 bytes a core's name
+-- has (the site allows 32 UTF-16 characters, up to 96 bytes), its trailing spaces off.
+local DISCORD_NAME_MAX = 128   -- bytes of a Discord name read at all
+local function discordNameHere(name)
+    if type(name) ~= "string" or name == "" or #name > DISCORD_NAME_MAX then return nil end
+    local cut = strtrim(GuildOS:Utf8Cut(name, CORE_NAME_LIMIT))
+    return cut ~= "" and cut or nil
+end
+
 local function coreFor(self, c)
+    local want = discordNameHere(c.name) or c.name
     local held
     for _, name in ipairs(self:GetSortedNames()) do
         if GuildOS.db.cores[name].discordTag == c.tag then
-            if name == c.name then return name, false end
+            if name == want then return name, false end
             held = held or name
         end
     end
@@ -1429,12 +1439,12 @@ local function coreFor(self, c)
     for _, name in ipairs(self:GetSortedNames()) do
         -- A core linked to another Discord core is that one's, whatever its name (#138).
         if not GuildOS.db.cores[name].discordTag and CoreManager.Slug(name) == c.tag then
-            if name == c.name then return name, false end
+            if name == want then return name, false end
             found = found or name
         end
     end
     if found then return found, false end
-    local name = CoreManager.Slug(c.name) == c.tag and c.name or c.tag
+    local name = CoreManager.Slug(c.name) == c.tag and want or c.tag
     if GuildOS.db.cores[name] then name = c.tag end
     local n = 2
     while GuildOS.db.cores[name] do
@@ -1453,9 +1463,9 @@ end
 -- remembered (imported before it was kept) follows unless named by its tag. Returns the core's name now.
 local function followName(self, name, discordName)
     local core = GuildOS.db.cores[name]
-    if type(core) ~= "table" or type(discordName) ~= "string" or discordName == "" or #discordName > CORE_NAME_MAX then
-        return name
-    end
+    -- A name past 48 bytes is followed cut (discordNameHere), never left behind for being long.
+    discordName = discordNameHere(discordName)
+    if type(core) ~= "table" or not discordName then return name end
     local before = core.discordName
     local follow = before and before ~= discordName and name == before
     -- A core imported by a version from before `discordName` (#339) has none: the first package after

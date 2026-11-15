@@ -374,6 +374,26 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   CM:ImportFromSite(package(3000, { alfa("Núcleo Beta") }), 3000)
   check(CM:IsFromDiscord("Núcleo Beta") and GuildOS.db.cores["Núcleo Alfa"] == nil,
     G("a later package follows the name once it is free"))
+  -- A Discord name past 48 bytes (the site allows 32 UTF-16 characters: 96 bytes of Korean, 64 of
+  -- emoji) is followed cut on a character, and the next rename follows from it.
+  for _, long in ipairs({ ("한"):rep(30), ("\240\159\152\128"):rep(16), "Raide de Quinta-feira da Guilda Nucleo BR Grupo A1 x" }) do
+    CM = load(game)
+    CM:Initialize()
+    CM:ImportFromSite(package(1000, { alfa() }), 1000)
+    CM:ImportFromSite(package(2000, { alfa(long) }), 2000)
+    local name = next(GuildOS.db.cores)
+    check(count(GuildOS.db.cores) == 1 and #name <= 48 and long:sub(1, #name) == name and GuildOS:IsUtf8(name)
+      and CM:IsFromDiscord(name), G("a long Discord name is followed, cut on a character: " .. #name .. " bytes"))
+    CM:ImportFromSite(package(3000, { alfa("Núcleo Gama") }), 3000)
+    check(GuildOS.db.cores["Núcleo Gama"] and count(GuildOS.db.cores) == 1, G("and the next rename follows from it"))
+  end
+  -- A core made from a long Discord name is named the same cut.
+  CM = load(game)
+  CM:Initialize()
+  CM:ImportFromSite(package(1000, { { tag = "aaaaaaaaaa-aaaaaaaaaa-aaaaaaaaaa", name = ("Aaaaaaaaaa "):rep(3) .. ("é"):rep(20),
+    size = 10, members = {} } }), 1000)
+  local made = next(GuildOS.db.cores)
+  check(made and (#made <= 48), G("a core made from a long Discord name has at most 48 bytes: " .. tostring(made)))
 
   -- The rename comes with the inbox at login (#339): CoreManager:Initialize runs before
   -- RaidTracker:Initialize, the module loaded but its tag "" and no raid. The raid saved for the
