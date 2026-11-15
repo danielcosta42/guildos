@@ -2059,9 +2059,11 @@ function CoreManager:InitSync()
                     self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
                     if d.tag == false then
                         -- An officer chose to create in game again: the lists up to then are older here too.
-                        -- When it was chosen, on the realm's clock (`offAt`); a client from before sent only the
-                        -- package's own time.
-                        local offAt = sane(d.offAt) or at
+                        -- When it was chosen, on the realm's clock (`offAt`). A client from before sends only the
+                        -- package's own time, the site's (when its cores last changed on Discord, often weeks
+                        -- ago): taken as the choice, this client's own inbox acked before it would pass as newer
+                        -- and link the guild again. Without `offAt` the choice is no older than its receipt here.
+                        local offAt = sane(d.offAt) or GetServerTime()
                         if d.off == true and offAt then linkRec().releasedAt = math.max(offAt, linkRec().releasedAt or 0) end
                         if not self:HasDiscordCores() then linkOff() end
                     elseif type(d.tag) == "string" and d.tag ~= "" then

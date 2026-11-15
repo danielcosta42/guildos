@@ -399,6 +399,24 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   check(not CM:IsLinked() and not CM:HasDiscordCores(), G("the choice gives the cores back there"))
   CM:ImportInbox()
   check(not CM:IsLinked(), G("and its own old inbox does not link them again"))
+
+  -- The choice from an officer on the version before (#339): `{ tag = false, off = true, at = <site at> }`
+  -- with no `offAt`. The site's `at` is when the cores last changed on Discord (40 days ago here); this
+  -- client's inbox was acked 35 days ago, before the choice. Taken as the choice's time, the stale inbox
+  -- read after it linked the guild again against the officer's will.
+  do
+    CM = load(game)
+    local siteAt = NOW - 40 * DAY
+    CM:Initialize()
+    CM:ImportPackage({ guild = "Nucleo BR", realm = "Firemaw", unlinked = 0, at = siteAt, cores = { alfa() } }, NOW - 35 * DAY)
+    check(CM:IsLinked(), G("linked by its inbox"))
+    handlers["core.roster"]({ act = "discord", data = { coreName = "Núcleo Alfa", tag = false, at = siteAt, off = true } },
+      "Old-Firemaw")
+    check(not CM:IsLinked() and GuildOS.db.coreLink.releasedAt == NOW,
+      G("an old officer's release, with no offAt, is dated when it arrives: " .. tostring(GuildOS.db.coreLink.releasedAt)))
+    CM:ImportPackage({ guild = "Nucleo BR", realm = "Firemaw", unlinked = 0, at = siteAt, cores = { alfa() } }, NOW - 35 * DAY)
+    check(not CM:IsLinked(), G("and the inbox acked before it does not link the guild again"))
+  end
 end
 
 print(("core-owner: %d checks passed"):format(checks))
