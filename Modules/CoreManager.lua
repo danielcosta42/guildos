@@ -197,6 +197,7 @@ function CoreManager:Initialize()
     self:InitSync()
     self:MigrateLink()
     GuildOS:SafeCall(self.ImportInbox, self)   -- the Discord's cores (#135)
+    GuildOS:SafeCall(self.MigrateGuests, self)   -- a pug on a Discord core is a guest (#340)
 end
 
 -- Whether any core here is the Discord's now.
@@ -420,9 +421,11 @@ function CoreManager:CoreForGroup(players, instanceSize)
     for name, core in pairs((GuildOS.db and GuildOS.db.cores) or {}) do
         local members = type(core) == "table" and core.members
         if type(members) == "table" then
+            -- The night's raid is the core's members and its guests (issue #340).
+            local guests = type(core.guests) == "table" and core.guests or {}
             local count = 0
             for key in pairs(players or {}) do
-                if members[key] or members[altLinks[key]] then count = count + 1 end
+                if members[key] or members[altLinks[key]] or guests[key] or guests[altLinks[key]] then count = count + 1 end
             end
             if count >= 2 and count * 2 >= size then
                 candidates[#candidates + 1] = { name = name, count = count, raidSize = self:GetRaidSize(name) }
@@ -808,6 +811,221 @@ function CoreManager:RemoveMember(playerKey, coreName)
 end
 
 ----------------------------------------------------------------------
+-- The night's guests (issue #340; ADR-0036). A pug is a guest of the night, not a member of the core:
+-- in a guild linked to the site the Discord says who is on a Discord core, so whoever an officer adds
+-- there is a guest, kept apart from the members:
+--   core.guests[key] = { name, class, role, note, stay = true|nil, at, by }
+-- The composition and the open seats count members only; the night's raid (which core a group is)
+-- counts both. A guest leaves when the raid session ends, unless marked to stay. Guests travel between
+-- officers as changes (`core.roster`, action "guests": `put` and `gone`), never as a whole list, so no
+-- officer's guest is taken off by another's; a client from before ignores the action (no `members`).
+----------------------------------------------------------------------
+local GUEST_MAX = 40          -- guests a core holds, and a message may carry
+local GUEST_TEXT = 48         -- bytes of a guest's name
+local GUEST_NOTE = 120        -- bytes of a guest's note
+local GUEST_KEY = 64          -- bytes of a key another officer's message may carry
+
+-- Whether an officer's "add" on this core makes a guest: a Discord core of a linked guild.
+function CoreManager:TakesGuests(coreName)
+    return self:IsLinked() and self:IsFromDiscord(coreName)
+end
+
+-- A core's guests by key; an empty table for a core that has none, or does not exist (none is made).
+function CoreManager:GetGuests(coreName)
+    local core = coreNamed(self, coreName)
+    if not core then return {} end
+    if type(core.guests) ~= "table" then core.guests = {} end
+    return core.guests
+end
+
+local function countOf(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
+-- A guest's record from what an officer typed or sent, every field checked.
+local function guestRecord(self, key, info, stay)
+    info = type(info) == "table" and info or {}
+    local cls = self.CLASS_ROLES[info.class] and info.class or "WARRIOR"
+    local name = type(info.name) == "string" and info.name ~= "" and info.name or key
+    local note = type(info.note) == "string" and info.note or ""
+    return {
+        name = #name > GUEST_TEXT and name:sub(1, GUEST_TEXT) or name,
+        class = cls,
+        role = self:RoleFor(cls, info.role, key),
+        note = #note > GUEST_NOTE and note:sub(1, GUEST_NOTE) or note,
+        stay = stay == true or nil,
+        at = math.floor(GuildOS.Finite(info.at) or GetServerTime()),
+        by = type(info.by) == "string" and info.by:sub(1, GUEST_KEY) or nil,
+    }
+end
+
+-- The change to the other officers: the guests put on the core (by key) and the keys taken off.
+local function publishGuests(self, coreName, put, gone)
+    if not (GuildOS.SyncService and GuildOS:IsOfficer()) then return end
+    local core = GuildOS.db.cores[coreName]
+    GuildOS.SyncService:Publish("core.roster", "guests", {
+        coreName = coreName, tag = type(core) == "table" and core.discordTag or nil, put = put, gone = gone,
+    })
+end
+
+-- Adds or updates a guest of the night on a core that exists; `stay` keeps them past the night. A member
+-- of the core is not made a guest too. Returns true, or false and why.
+function CoreManager:AddGuest(playerKey, info, coreName, stay)
+    local core, name = coreNamed(self, coreName)
+    if not core or type(playerKey) ~= "string" or playerKey == "" then return false, L["Core not found."] end
+    if type(core.members) == "table" and core.members[playerKey] then return false, L["Already on this core."] end
+    local guests = self:GetGuests(name)
+    if not guests[playerKey] and countOf(guests) >= GUEST_MAX then
+        return false, string.format(L["A core holds at most %d guests."], GUEST_MAX)
+    end
+    local rec = guestRecord(self, playerKey, info, stay)
+    rec.by = rec.by or GuildOS.Compat.PlayerName()
+    guests[playerKey] = rec
+    publishGuests(self, name, { [playerKey] = rec }, nil)
+    return true
+end
+
+function CoreManager:RemoveGuest(playerKey, coreName)
+    local core, name = coreNamed(self, coreName)
+    if not (core and type(core.guests) == "table" and core.guests[playerKey]) then return false end
+    core.guests[playerKey] = nil
+    publishGuests(self, name, nil, { playerKey })
+    return true
+end
+
+-- Marks a guest to stay past the night, or to leave with it.
+function CoreManager:SetGuestStay(playerKey, coreName, stay)
+    local core, name = coreNamed(self, coreName)
+    local rec = core and type(core.guests) == "table" and core.guests[playerKey]
+    if not rec then return false end
+    rec.stay = stay and true or nil
+    publishGuests(self, name, { [playerKey] = rec }, nil)
+    return true
+end
+
+-- An officer's "add" in the core's roster (issue #340): a guest on a Discord core of a linked guild, a
+-- member everywhere else, as always (then the whole roster goes to the other officers, as before).
+-- Returns "guest" or "member", or false and why.
+function CoreManager:AddToRoster(playerKey, info, coreName)
+    if self:TakesGuests(coreName) then
+        local ok, why = self:AddGuest(playerKey, info, coreName, false)
+        if not ok then return false, why end
+        return "guest"
+    end
+    local ok, why = self:AddMember(playerKey, info, coreName)
+    if not ok then return false, why end
+    self:BroadcastRoster(coreName)
+    return "member"
+end
+
+-- A guest by the name an officer typed (issue #340): a pug is often from outside the guild, so not in the
+-- guild roster's picker. "Name" or "Name-Realm"; the class is the one this client knows for them, else
+-- the default. Returns true, or false and why.
+function CoreManager:AddGuestByName(text, role, coreName)
+    local name = strtrim(tostring(text or ""))
+    if #name < 2 or #name > GUEST_TEXT or name:find("[%c|]") then return false, L["Type the guest's name."] end
+    local key = GuildOS:RealmBound() and GuildOS:KeyOfRosterName(name) or GuildOS:GetPlayerKey(name)
+    if not key then return false, L["Type the guest's name."] end
+    local known = GuildOS.db.members and GuildOS.db.members[key]
+    local cls = known and self.CLASS_ROLES[known.class] and known.class or "WARRIOR"
+    return self:AddGuest(key, { name = name:match("^([^-]+)") or name, class = cls, role = role }, coreName, false)
+end
+
+-- Who plays the core's night: its members and its guests, by key (a member's record wins).
+function CoreManager:RaidRoster(coreName)
+    local out = {}
+    local core = coreNamed(self, coreName)
+    if not core then return out end
+    for key, rec in pairs(type(core.guests) == "table" and core.guests or {}) do out[key] = rec end
+    for key, rec in pairs(type(core.members) == "table" and core.members or {}) do out[key] = rec end
+    return out
+end
+
+-- The raid session of a core ended (RaidTracker:EndSession): its guests leave, but those marked to
+-- stay. The other officers hear who left. Returns how many.
+function CoreManager:EndNight(coreName)
+    local core, name = coreNamed(self, coreName)
+    if not (core and type(core.guests) == "table") then return 0 end
+    local gone = {}
+    for key, rec in pairs(core.guests) do
+        if type(rec) ~= "table" or not rec.stay then gone[#gone + 1] = key end
+    end
+    table.sort(gone)
+    for _, key in ipairs(gone) do core.guests[key] = nil end
+    if #gone > 0 then publishGuests(self, name, nil, gone) end
+    return #gone
+end
+
+-- Whoever is on a Discord core with no record from the Discord is a guest (issue #340): an officer put
+-- them there before the core was the Discord's, or a client from before sent them. They become guests
+-- marked to stay, record and all, so nobody disappears. Runs at login and after every Discord list.
+function CoreManager:MigrateGuests(coreName)
+    local names = coreName and { coreName } or self:GetSortedNames()
+    local moved = 0
+    for _, name in ipairs(names) do
+        local core = GuildOS.db.cores[name]
+        if type(core) == "table" and core.discordTag and type(core.members) == "table" and self:IsLinked() then
+            local guests = self:GetGuests(name)
+            for key, rec in pairs(core.members) do
+                if type(rec) ~= "table" or rec.src ~= "discord" then
+                    rec = type(rec) == "table" and rec or {}
+                    local guest = guestRecord(self, key, rec, true)
+                    guest.at = GetServerTime()
+                    guests[key] = guest
+                    core.members[key] = nil
+                    moved = moved + 1
+                end
+            end
+        end
+    end
+    return moved
+end
+
+-- Another officer's change to a core's guests (the handler checked the officer): lands on the core
+-- holding its tag here, else the one of its name; makes no core. Puts and takes off only the guests it
+-- names, so this client's own stay. Returns whether anything changed.
+local function guestKey(key)
+    return type(key) == "string" and key ~= "" and #key <= GUEST_KEY and GuildOS:LocalMemberKey(key) or nil
+end
+
+local function tagHolder(tag)
+    for name, core in pairs(GuildOS.db.cores) do
+        if type(core) == "table" and core.discordTag == tag then return name end
+    end
+    return nil
+end
+
+function CoreManager:OnGuestsSync(d)
+    if type(d) ~= "table" then return false end
+    local name = type(d.tag) == "string" and d.tag ~= "" and tagHolder(d.tag) or d.coreName
+    local core = type(name) == "string" and GuildOS.db.cores[name]
+    if type(core) ~= "table" then return false end
+    local guests = self:GetGuests(name)
+    local changed, n = false, 0
+    for key, rec in pairs(type(d.put) == "table" and d.put or {}) do
+        n = n + 1
+        if n > GUEST_MAX then break end
+        local k = guestKey(key)
+        if k and type(rec) == "table" and not (type(core.members) == "table" and core.members[k])
+            and (guests[k] or countOf(guests) < GUEST_MAX) then
+            guests[k] = guestRecord(self, k, rec, rec.stay == true)
+            changed = true
+        end
+    end
+    local gone = type(d.gone) == "table" and d.gone or {}
+    for i = 1, math.min(#gone, GUEST_MAX) do
+        local k = guestKey(gone[i])
+        if k and guests[k] then
+            guests[k] = nil
+            changed = true
+        end
+    end
+    return changed
+end
+
+----------------------------------------------------------------------
 -- Sign-up queue — player applications to join a core
 ----------------------------------------------------------------------
 function CoreManager:GetSignups(coreName)
@@ -837,7 +1055,13 @@ function CoreManager:AcceptSignup(playerKey, coreName)
     if not core then return false end
     local su = core.signups and core.signups[playerKey]
     if not su then return false end
-    self:AddMember(playerKey, su, coreName)
+    -- On a Discord core of a linked guild, who joins is the Discord's: the applicant plays as a guest
+    -- who stays until they are on the Discord's list (issue #340).
+    if self:TakesGuests(coreName) then
+        self:AddGuest(playerKey, su, coreName, true)
+    else
+        self:AddMember(playerKey, su, coreName)
+    end
     core.signups[playerKey] = nil
     return true
 end
@@ -1241,6 +1465,8 @@ function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting)
         if key then
             incoming[key] = true
             local rec = members[key]
+            -- A guest the Discord now has is a member: one or the other, never both (issue #340).
+            if type(core.guests) == "table" then core.guests[key] = nil end
             if type(rec) ~= "table" then
                 members[key] = discordRecord(self, key, m)
                 added = added + 1
@@ -1403,6 +1629,7 @@ function CoreManager:ImportPackage(data, ackAt)
         local fresh = sane(ackAt) or GetServerTime()
         if wasLinked then linkOn(fresh) else link.seenAt = fresh end
     end
+    self:MigrateGuests()
     local parts = {}
     for _, c in ipairs(cores) do
         if not c.released and not c.quiet then parts[#parts + 1] = string.format("%s +%d -%d", c.name, c.added, c.removed) end
@@ -1601,6 +1828,13 @@ function CoreManager:InitSync()
             end
             return
         end
+        -- A core's guests (issue #340): changes only, never a whole list.
+        if env.act == "guests" then
+            if GuildOS:IsOfficerByName(sender) and self:OnGuestsSync(d) and GuildOS.coresPanelRefresh then
+                GuildOS.coresPanelRefresh()
+            end
+            return
+        end
         if not discord and not d.members then return end
         if not GuildOS:IsOfficerByName(sender) then return end
         if discord then
@@ -1616,6 +1850,7 @@ function CoreManager:InitSync()
                     local name = followName(self, (coreFor(self, { tag = d.tag, name = d.coreName })), d.discordName)
                     self:SyncDiscordCore(name, d.list, d.size, d.tag, d.waiting)
                     linkOn(sane(d.seenAt))
+                    self:MigrateGuests(name)
                 else
                     self:ApplyDiscordChanges(d.coreName, d.add, d.remove, d.size, d.tag)
                     if d.tag == false then

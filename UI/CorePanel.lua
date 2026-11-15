@@ -940,15 +940,51 @@ function GuildOS:CreateCoresPanel(panel)
         end
         y = y - 8
 
-        -- Add from guild roster: dropdown selectbox (RL only). Not on a Discord core: who is on it is
-        -- set on Discord (#339).
+        -- The night's guests (issue #340): apart from the members, out of the composition. Each one
+        -- leaves when the raid session ends, unless marked to stay.
+        local guests = CM:GetGuests(coreName)
+        local takesGuests = CM:TakesGuests(coreName)
+        local guestList = {}
+        for k, g in pairs(guests) do guestList[#guestList + 1] = { key = k, g = g } end
+        table.sort(guestList, function(a, b) return (a.g.name or a.key) < (b.g.name or b.key) end)
+        if takesGuests or #guestList > 0 then
+            y = MakeSectionHeader(rightContent, string.format(L["Guests of the night (%d)"], #guestList), y)
+            y = y - 6
+            for _, entry in ipairs(guestList) do
+                local g, gk = entry.g, entry.key
+                local cr, cg, cb = GuildOS:GetClassColor(g.class or "WARRIOR")
+                local gLbl = track(MakeLabel(rightContent, string.format("[%s] %s%s", ROLE_LBL[g.role] or "?", g.name or gk,
+                    g.stay and (" |cff808080" .. L["stays"] .. "|r") or ""), 10, cr, cg, cb))
+                gLbl:SetPoint("TOPLEFT", 4, y)
+                if isRL then
+                    local gRem = track(UI:CreateButton(rightContent, "x", 18, 16))
+                    gRem:SetPoint("LEFT", gLbl, "RIGHT", 6, 0)
+                    gRem:SetBaseColor(C.red.r * 0.25, C.red.g * 0.25, C.red.b * 0.25, 0.9)
+                    gRem:SetScript("OnClick", function() CM:RemoveGuest(gk, coreName); BuildSettings(coreName) end)
+                    local gStay = track(UI:CreateButton(rightContent, g.stay and L["tonight only"] or L["keep"], 70, 16))
+                    gStay:SetPoint("LEFT", gRem, "RIGHT", 3, 0)
+                    gStay:SetScript("OnClick", function() CM:SetGuestStay(gk, coreName, not g.stay); BuildSettings(coreName) end)
+                end
+                y = y - 18
+            end
+            if #guestList == 0 then
+                local noG = track(MakeLabel(rightContent, L["No guests tonight."], 10, C.textDim.r, C.textDim.g, C.textDim.b))
+                noG:SetPoint("TOPLEFT", 4, y)
+                y = y - 18
+            end
+            y = y - 8
+        end
+
+        -- Add from guild roster: dropdown selectbox (RL only). On a Discord core who is on it is set
+        -- on Discord (#339), and whoever is added here is a guest of the night (#340).
         if isRL and fromDiscord then
             local fixed = track(MakeLabel(rightContent, L["Who is on this core is set on Discord."], 10,
                 C.textDim.r, C.textDim.g, C.textDim.b))
             fixed:SetPoint("TOPLEFT", 4, y)
             y = y - 20
-        elseif isRL then
-            y = MakeSectionHeader(rightContent, L["Add from Guild"], y)
+        end
+        if isRL and (takesGuests or not fromDiscord) then
+            y = MakeSectionHeader(rightContent, takesGuests and L["Add a guest for the night"] or L["Add from Guild"], y)
             y = y - 6
 
             local ADD_ROLES    = { "tank", "healer", "mdps", "rdps" }
@@ -1164,16 +1200,30 @@ function GuildOS:CreateCoresPanel(panel)
             addBtn:SetScript("OnClick", function()
                 if not addGMName then SetStatus(L["Select a player first."], C.red); return end
                 local k = addGMKey or GuildOS:GetPlayerKey(addGMName, GetRealmName())
-                CM:AddMember(k, {
+                -- A member, or on a Discord core of a linked guild a guest of the night (#340).
+                local added, why = CM:AddToRoster(k, {
                     name  = addGMName,
                     class = addGMClass,
                     role  = addGMRole or InferRole(addGMClass or "WARRIOR", k),
                 }, coreName)
-                CM:BroadcastRoster(coreName)
+                if not added then SetStatus(why or L["Core not found."], C.red) end
                 addGMName = nil; addGMClass = nil; addGMRole = nil; addGMKey = nil
                 BuildSettings(coreName)
             end)
             y = y - 30
+            -- A pug from outside the guild, by name (#340).
+            if takesGuests then
+                local nameIn = track(MakeInput(rightContent, 200, false, L["Guest's name"]))
+                nameIn:SetPoint("TOPLEFT", 4, y)
+                local byName = track(UI:CreateButton(rightContent, L["Add guest"], 90, 22))
+                byName:SetPoint("LEFT", nameIn, "RIGHT", 6, 0)
+                byName:SetScript("OnClick", function()
+                    local ok, why = CM:AddGuestByName(nameIn:GetText(), addGMRole, coreName)
+                    if not ok then SetStatus(why or L["Core not found."], C.red); return end
+                    BuildSettings(coreName)
+                end)
+                y = y - 30
+            end
         end
 
         elseif activeRightTab == "signups" then

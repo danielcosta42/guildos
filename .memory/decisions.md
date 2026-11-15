@@ -1628,6 +1628,20 @@ everything. Until now cores reached the game only through the companion's `Inbox
   choice marks `releasedAt`, which makes every package up to it older (the same inbox at every login links nothing),
   and goes to the officers online as releases with `off = true`.
 
+### Decision — a pug is a guest of the night (#340)
+- **`core.guests`**, apart from `core.members`: `GetComposition` and `OpenSlots` read the members alone; the night's raid
+  (`RaidRoster`, `CoreForGroup`) reads both. Attendance and loot candidates come from who is in the raid group, so a
+  guest in it counts there already.
+- **Who becomes one**: in a linked guild an officer's "add" on a Discord core (`AddToRoster`, the picker and a name
+  field for a pug outside the guild) and a sign-up accepted there; anywhere else "add" is a member, as always.
+  Migration: whoever is on a Discord core without `src = "discord"` becomes a guest marked to stay, so nobody
+  disappears; it runs at login, after an own import and after a heard list, which keeps a Discord core's members all
+  the Discord's.
+- **The night ends** with the raid session (`RaidTracker:EndSession`, a kept session only): its guests leave, but those
+  marked to stay.
+- **Sync** is a change, `core.roster`/`guests` `{ put, gone }`, never the whole list: an officer's guests are never taken
+  off by another's message. A client from before ignores it (no `members`).
+
 ### Consequences
 - (+) A guild where no officer runs the companion can still receive its cores.
 - (+) An older site ignores the receipt; an older addon never had the paste.
@@ -1641,4 +1655,7 @@ everything. Until now cores reached the game only through the companion's `Inbox
 - (−) A core renamed in game to the Discord's new name no longer reduces to its tag: the site counts its nights by the
   core's name (`coreTags`), but anything on the site matching only by `slugOf(groupTag)` (the idle check) does not.
 - (−) The site's rule locks every Discord core's rule while the roster in hand carries one, not only the raid's core.
-
+- (−) Guests are heard only by the officers online when they change: an officer who was away keeps the guests they
+  had until the next change, as the Discord's lists before #138.
+- (−) The night ends on each officer's client with its own raid session: an officer who was not in the raid keeps the
+  night's guests until the officer who was sends who left.

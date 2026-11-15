@@ -148,7 +148,10 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   local open = CM:OpenSlots("Nucleo Alfa")
   check(open.total == math.max(0, CM:GetRaidSize("Nucleo Alfa") - titulars), G("the open slots are the size less the titulars"))
   check(open.tank == math.max(0, CM:RaidTargets(CM:GetRaidSize("Nucleo Alfa")).tank - comp.roleCounts.tank), G("and per role, its target less who plays it"))
-  check(alfa[K("Carla")] ~= nil, G("whoever an officer put here stays"))
+  -- A pug is a guest of the night now (#340, tools/core-guests.lua): kept, apart from the members.
+  local carla = (GuildOS.db.cores["Nucleo Alfa"].guests or {})[K("Carla")]
+  check(alfa[K("Carla")] == nil and carla and carla.stay == true and carla.name == "Carla",
+    G("whoever an officer put here stays, as a guest who stays"))
   check(alfa[K("Velho")] == nil, G("whoever came from the Discord and left it goes"))
   check(CM:GetRaidSize("Nucleo Alfa") == (game == "forever" and 20 or 25), G("the Discord's size, as this game has it"))
 
@@ -195,7 +198,9 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   GuildOS.db.cores["Nucleo Alfa"].discordTag = nil
   handlers["core.roster"]({ act = "discordList", data = d }, "Officer-Firemaw")
   check(CM:IsFromDiscord("Nucleo Alfa"), G("the receiver learns the core is the Discord's"))
-  check(mine[K("Pug")] and mine[K("Bruno")] and mine[K("Bruno")].src == "discord" and mine[K("Velho")] == nil
+  -- The pug an old client added as a member is kept as a guest who stays (#340).
+  local pug = (GuildOS.db.cores["Nucleo Alfa"].guests or {})[K("Pug")]
+  check(pug and pug.stay and mine[K("Bruno")] and mine[K("Bruno")].src == "discord" and mine[K("Velho")] == nil
     and mine[K("Ana")].src == "discord", G("the receiver converges: the missed one in, the stale one out, the pug kept, Ana taken over"))
   GuildOS.db.cores["Nucleo Alfa"] = nil                                          -- deleted here
   handlers["core.roster"]({ act = "discordList", data = d }, "Officer-Firemaw")
