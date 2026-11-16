@@ -802,7 +802,20 @@ check(GuildOS.db.lootHistory[1].why.decidedBy == "only" and GuildOS.db.lootHisto
 -- ── 10. The windows ─────────────────────────────────────────────────
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
 local saves = {}
+local dropdowns = {}
+GetLocale = GetLocale or function() return "enUS" end   -- the Rule tab says when the rule was saved
 GuildOS.UI = setmetatable({
+  -- The Loot window's dropdown (issue #346): its options, and a choice as a click on one.
+  CreateDropdown = function()
+    local dd = widget({ kind = "Dropdown", options = {} })
+    dd.SetOptions = function(self, o) self.options = o or {} end
+    dd.SetValue = function(self, v) self.value = v end
+    dd.GetValue = function(self) return self.value end
+    dd.Select = function(self, v) self.value = v; if self.onSelect then self:onSelect(v) end end
+    dropdowns[#dropdowns + 1] = dd
+    return dd
+  end,
+  LabelColumn = function(_, _, _, floor) return floor end,
   CreateButton = function(_, _, text)
     local b = widget({ text = tostring(text), label = widget() })
     buttons[#buttons + 1] = b
@@ -818,6 +831,20 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Layout.lua")
+-- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
+local function offered(text)
+  for i = #dropdowns, 1, -1 do
+    for _, o in ipairs(dropdowns[i].options) do
+      if o.text == text then return dropdowns[i], o.value end
+    end
+  end
+end
+local function choose(text)
+  local dd, value = offered(text)
+  check(dd ~= nil, "a dropdown offers " .. text)
+  dd:Select(value)
+end
 local function button(text)
   for i = #buttons, 1, -1 do
     if buttons[i].text == text then return buttons[i] end
@@ -829,16 +856,25 @@ local function click(text)
   b.scripts.OnClick(b)
 end
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/LootWindow.lua")
 dofile(ADDON .. "/UI/LootCouncil.lua")
 
--- The rule editor's Council section.
+-- The rule editor's Council section, in the Loot window's Rule tab (issue #346). Who decides is one
+-- of three: a dropdown (it was three buttons).
 night(nil, "rolls")
-widgets, buttons, saves = {}, {}, {}
-local drew, problem = pcall(GuildOS.ShowLootRuleEditor, GuildOS, "")
+widgets, buttons, saves, dropdowns = {}, {}, {}, {}
+local ruleTab = widget()
+GuildOS.RefreshLootRuleTab = (function(real)
+  return function(self, c, scope)
+    buttons, saves, dropdowns = {}, {}, {}
+    return real(self, c, scope)
+  end
+end)(GuildOS.RefreshLootRuleTab)
+local drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, ruleTab, "")
 check(drew, "the rule editor draws (" .. tostring(problem) .. ")")
-check(button("The order") and button("The master looter") and button("A council's vote") and not button("Officer"),
+check(offered("The order") and offered("The master looter") and offered("A council's vote") and not button("Officer"),
   "it asks who decides, and shows no council while none does")
-click("A council's vote")
+choose("A council's vote")
 check(LR:IsCustom() and same(LR:Council(), { ranks = { 0, 1 }, quorum = 2 }), "a click hands the items to a council: the guild's officers, two votes")
 check(button("Guild Master") and button("Officer") and button("Raider"), "with a button a guild rank")
 click("Raider")
@@ -857,15 +893,14 @@ box("3").save("")
 check(LR:Council().quorum == nil, "empty is no quorum")
 LR:SetCouncilField("names", "Fay, Gil  fay", "")
 check(same(LR:Council().names, { "Fay", "Gil" }), "members by name, as typed, each once")
-saves, buttons = {}, {}
-GuildOS:ShowLootRuleEditor("")
+GuildOS:RefreshLootRuleTab(ruleTab, "")
 check(box("Fay, Gil"), "shown as they were kept")
 box("Fay, Gil").save("Hal")
 check(same(LR:Council().names, { "Hal" }), "and saved from the editor's own box")
 check(LR:SetCouncilField("anon", true) and LR:SetCouncilField("self", true) and LR:SetCouncilField("note", true)
   and LR:Council().anon and LR:Council().self and LR:Council().note, "the three switches")
 check(select(2, LR:SetCouncilField("colour", "red")) == "decide" and LR:SetCouncilField("quorum", 99) == false, "nothing else, and no quorum past a raid")
-click("The master looter")
+choose("The master looter")
 check(LR:Council() == nil and LR:Active().decide.by == "ml" and select(2, LR:SetCouncilField("anon", true)) == "decide",
   "back to the master looter: no council to set")
 

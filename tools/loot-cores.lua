@@ -325,6 +325,33 @@ announce()
 check(LM.activeLoot.rule.model == "plus1" and said[1]:find("[ROLL]", 1, true), "the next item is announced under the new core's rule")
 LM:CancelRolling()
 
+-- A core renamed (here, or by its Discord) takes every reference to its name along (review of #339):
+-- an undo after it gave back into the guild's pool, the award still naming the old core.
+activate("Alpha")
+announce()
+check(LM.activeLoot.core == "Alpha", "an item announced in Alpha")
+CM:Rename("Alpha", "Alpha Nova")
+check(LM.activeLoot.core == "Alpha Nova", "the item being given follows the core's new name")
+LM:RegisterRoll("Bo", "MS", 3)
+LM:EndRolling(true)
+quiet()
+local guildBo = GuildOS.db.points.standings[K("Bo")] and GuildOS.db.points.standings[K("Bo")].current
+LM:AwardLoot("Bo")
+check(alphaPool.standings[K("Bo")].current == 40 and CM:GetPointsDB("Alpha Nova") == alphaPool, "and is charged on its pool")
+CM:Rename("Alpha Nova", "Alpha Velha")
+check(CM:GetAwardHistory("Alpha Velha")[1].core == "Alpha Velha" and LM.lastAwardCore == "Alpha Velha",
+  "the award log's entries name the core by its new name")
+undone = LM:UndoLastAward()
+check(undone and alphaPool.standings[K("Bo")].current == 60 and GuildOS.db.cores["Alpha Nova"] == nil
+  and GuildOS.db.cores["Alpha"] == nil
+  and (GuildOS.db.points.standings[K("Bo")] and GuildOS.db.points.standings[K("Bo")].current) == guildBo,
+  "an undo after the rename gives back into the core's pool, never the guild's, and makes no core")
+GuildOS.db.sync = { rev = { ["points:Alpha Velha"] = { standings = 7 } } }
+CM:Rename("Alpha Velha", "Alpha")
+check(GuildOS.db.sync.rev["points:Alpha"].standings == 7 and GuildOS.db.sync.rev["points:Alpha Velha"] == nil,
+  "and its points' snapshot revision goes along")
+activate("Alpha")
+
 -- ── 6. A core's choice between officers ─────────────────────────────
 local function hear(data, rev, from, act)
   handlers["core.roster"]({ act = act or "loot", data = data, rev = rev }, from or "Off-Realm")
@@ -401,7 +428,26 @@ LR:Set(nil, "Beta")
 
 -- ── 8. The windows draw, and their buttons reach the modules ────────
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
+local dropdowns = {}
+GetLocale = GetLocale or function() return "enUS" end   -- the Rule tab says when the rule was saved
 GuildOS.UI = setmetatable({
+  -- The Loot window's dropdown (issue #346): its options, and a choice as a click on one.
+  CreateDropdown = function()
+    local dd = widget({ kind = "Dropdown", options = {} })
+    dd.SetOptions = function(self, o) self.options = o or {} end
+    dd.SetValue = function(self, v) self.value = v end
+    dd.GetValue = function(self) return self.value end
+    dd.Select = function(self, v) self.value = v; if self.onSelect then self:onSelect(v) end end
+    dropdowns[#dropdowns + 1] = dd
+    return dd
+  end,
+  LabelColumn = function(_, _, _, floor) return floor end,
+  -- The core panel's sub-tabs are tabs since issue #346 (they were buttons): clicked the same way.
+  CreateTab = function(_, _, text)
+    local b = widget({ text = tostring(text), label = widget() })
+    buttons[#buttons + 1] = b
+    return b
+  end,
   CreateButton = function(_, _, text)
     local b = widget({ text = tostring(text), label = widget() })
     buttons[#buttons + 1] = b
@@ -415,6 +461,20 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Layout.lua")
+-- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
+local function offered(text)
+  for i = #dropdowns, 1, -1 do
+    for _, o in ipairs(dropdowns[i].options) do
+      if o.text == text then return dropdowns[i], o.value end
+    end
+  end
+end
+local function choose(text)
+  local dd, value = offered(text)
+  check(dd ~= nil, "a dropdown offers " .. text)
+  dd:Select(value)
+end
 local function button(text)
   for i = #buttons, 1, -1 do
     if buttons[i].text == text then return buttons[i] end
@@ -426,34 +486,60 @@ local function click(text)
   b.scripts.OnClick(b)
 end
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/LootWindow.lua")
 GuildOS.CreateRolePicker = function() return widget() end
 GuildOS.ShowPointsFrame = function() end
 
--- The guild's loot settings show the guild's own choice, whatever core is active.
+-- The loot settings moved to the Loot window's Rule tab (issue #346); Settings > Loot only points
+-- there. The tab on the guild shows the guild's own choice, whatever core is active.
 activate("Alpha")
 local content = widget()
-widgets, buttons = {}, {}
+widgets, buttons, dropdowns = {}, {}, {}
 local drew, problem = pcall(GuildOS.RefreshSettingsPanel, GuildOS, content, "loot")
-check(drew, "the loot settings draw with a core active (" .. tostring(problem) .. ")")
-click("Roll")
+check(drew and button("Open Loot") and not button("Add answer"), "Settings > Loot only points to the Loot window (" .. tostring(problem) .. ")")
+widgets, buttons, dropdowns = {}, {}, {}
+drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "")
+check(drew, "the Rule tab draws on the guild with a core active (" .. tostring(problem) .. ")")
+-- The second answer asks for a roll; the editor's dropdown turns it to a bid (it was a button that cycled).
+local askDD
+for _, dd in ipairs(dropdowns) do
+  if dd.value == "roll" then askDD = dd end
+end
+check(askDD, "each answer says what it asks for in a dropdown")
+askDD:Select("bid")
 check(LR:IsCustom() and not LR:IsCustom("Alpha") and LR:For("").responses[2].ask == "bid",
   "and their editor changes the guild's rule, not the active core's")
 LR:Set(nil)
 
--- The same editor, in a window, on one core's rule.
-widgets, buttons = {}, {}
-drew, problem = pcall(GuildOS.ShowLootRuleEditor, GuildOS, "Beta")
-check(drew, "the editor's window draws for a core (" .. tostring(problem) .. ")")
-check(button("Add answer") and button("+1") and button("Each raid night"), "with that core's answers and its counter")
-click("Each raid night")
+-- The same editor on one core's rule: the Rule tab on that core (the window of its own is gone).
+widgets, buttons, dropdowns = {}, {}, {}
+drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "Beta")
+check(drew, "the Rule tab draws for a core (" .. tostring(problem) .. ")")
+check(button("Add answer") and button("+1") and offered("Each raid night"), "with that core's answers and its counter")
+choose("Each raid night")
 check(LR:Counters(LR:For("Beta"))[1].reset == "night" and LR:IsCustom("Beta") and not LR:IsCustom(), "a click there changes that core's rule only")
 check(button("Back to the loot system's rule"), "and offers the way back")
 click("Back to the loot system's rule")
 check(not LR:IsCustom("Beta"), "which is a click")
 
--- The core's Config tab: every loot system this client offers, and Follow the guild.
+-- The Rule tab on a core: every loot system this client offers, and Follow the guild (they were the
+-- core's Config tab's until issue #346).
+widgets, buttons, dropdowns = {}, {}, {}
+drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "Gamma")
+check(drew and button("Follow the guild"), "the Rule tab offers Follow the guild on a core (" .. tostring(problem) .. ")")
+for _, sys in ipairs(GuildOS:LootSystemsHere()) do
+  check(button(GuildOS:LootSystemLabel(sys)), "and " .. sys.key)
+end
+click("DKP / Points")
+check(CM:GetLootSystem("Gamma") == "dkp", "a click on a system is that core's choice")
+check(button("Add answer"), "and its rule is edited right there")
+click("Follow the guild")
+check(CM:GetLootSystem("Gamma") == nil, "Follow the guild is a click too")
+
+-- The core's screen keeps one line: what the core plays, and the way to the Loot window (its Rule tab,
+-- since issue #346; it was the Config tab's).
 dofile(ADDON .. "/UI/CorePanel.lua")
-widgets, buttons = {}, {}
+widgets, buttons, dropdowns = {}, {}, {}
 local coresPanel = widget()
 drew, problem = pcall(GuildOS.CreateCoresPanel, GuildOS, coresPanel)
 check(drew, "the cores panel draws (" .. tostring(problem) .. ")")
@@ -461,17 +547,15 @@ coresPanel.scripts.OnShow(coresPanel)
 for _, w in ipairs(widgets) do
   if w.coreName == "Gamma" and w.scripts.OnClick then w.scripts.OnClick(w) break end
 end
+click("Rule")
+check(button("Open Loot"), "the core's Rule tab points to the Loot window")
 click("Config")
-check(button("Follow the guild"), "the Config tab offers Follow the guild")
+check(not button("Open Loot") or button("Open Loot").hidden, "and its Config tab has no loot left")
 for _, sys in ipairs(GuildOS:LootSystemsHere()) do
-  check(button(GuildOS:LootSystemLabel(sys)), "and " .. sys.key)
+  check(not button(GuildOS:LootSystemLabel(sys)), "and offers no loot system of its own: " .. sys.key)
 end
-check(not button("Roll") and not button("Import") and not button("Clear List"), "the selector of before and its TMB paste are gone")
-click("DKP / Points")
-check(CM:GetLootSystem("Gamma") == "dkp", "a click on a system is that core's choice")
-check(button("Edit this core's loot rule"), "and its rule opens from there")
-click("Follow the guild")
-check(CM:GetLootSystem("Gamma") == nil, "Follow the guild is a click too")
+check(not button("Follow the guild") and not button("Roll") and not button("Import") and not button("Clear List")
+  and not button("Edit this core's loot rule"), "the selector, the rule's window and the TMB paste are gone from it")
 local src = assert(io.open(ADDON .. "/UI/CorePanel.lua", "rb")):read("*a")
 check(not src:find("lootMethod", 1, true) and not src:find("METHOD_CYCLE", 1, true), "nothing in the panel saves the loot method of before")
 

@@ -560,7 +560,20 @@ check(not GuildOS:LootSystemShowsDKP(), "nor one on +1")
 
 -- ── 6. The windows draw them ────────────────────────────────────────
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
+local dropdowns = {}
+GetLocale = GetLocale or function() return "enUS" end   -- the Rule tab says when the rule was saved
 GuildOS.UI = setmetatable({
+  -- The Loot window's dropdown (issue #346): its options, and a choice as a click on one.
+  CreateDropdown = function()
+    local dd = widget({ kind = "Dropdown", options = {} })
+    dd.SetOptions = function(self, o) self.options = o or {} end
+    dd.SetValue = function(self, v) self.value = v end
+    dd.GetValue = function(self) return self.value end
+    dd.Select = function(self, v) self.value = v; if self.onSelect then self:onSelect(v) end end
+    dropdowns[#dropdowns + 1] = dd
+    return dd
+  end,
+  LabelColumn = function(_, _, _, floor) return floor end,
   CreateButton = function(_, _, text)
     local b = widget({ text = tostring(text), label = widget() })
     buttons[#buttons + 1] = b
@@ -575,6 +588,20 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Layout.lua")
+-- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
+local function offered(text)
+  for i = #dropdowns, 1, -1 do
+    for _, o in ipairs(dropdowns[i].options) do
+      if o.text == text then return dropdowns[i], o.value end
+    end
+  end
+end
+local function choose(text)
+  local dd, value = offered(text)
+  check(dd ~= nil, "a dropdown offers " .. text)
+  dd:Select(value)
+end
 local function button(text)
   for i = #buttons, 1, -1 do
     if buttons[i].text == text then return buttons[i] end
@@ -588,12 +615,14 @@ end
 function GuildOS:GetClassColor() return 1, 1, 1 end
 function GuildOS:ColorText(t) return t end
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/LootWindow.lua")
 dofile(ADDON .. "/UI/PointsPanel.lua")
+GuildOS.DefaultLootScope = function() return "" end
 
--- The rule editor: the queue's two options.
+-- The rule editor (the Loot window's Rule tab since issue #346): the queue's two options.
 night(nil, "sk")
 widgets, buttons = {}, {}
-local drew, problem = pcall(GuildOS.ShowLootRuleEditor, GuildOS, "")
+local drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, widget(), "")
 check(drew, "the rule editor draws a rule with a queue (" .. tostring(problem) .. ")")
 check(button("Only who is in the raid moves up") and button("At a random place"), "with the queue's options")
 click("Everyone below moves up")
@@ -602,23 +631,28 @@ click("At a random place")
 check(LR:Queue("sk").newcomer == "random", "and so does the other")
 check(select(2, LR:SetQueueField("sk", "seq", 1)) == "accounts", "the queue has no other option to set")
 
--- The points window: the account picker.
+-- The points window is the Loot window's Accounts tab (issue #346): the account picker is a
+-- dropdown there (it was a button that cycled).
 P:SetQueue("sk", keys("Bo", "Ana"))
-widgets, buttons = {}, {}
-drew, problem = pcall(GuildOS.ShowPointsFrame, GuildOS)
-check(drew, "the points window draws (" .. tostring(problem) .. ")")
+widgets, buttons, dropdowns = {}, {}, {}
+local accounts = widget()
+accounts.IsVisible = function() return true end
+drew, problem = pcall(GuildOS.BuildLootAccounts, GuildOS, accounts)
+check(drew, "the Accounts tab draws (" .. tostring(problem) .. ")")
 local picker
-for _, b in ipairs(buttons) do
-  if b.label.text == "Account: Points" then picker = b end
+for _, dd in ipairs(dropdowns) do
+  if dd.isAccount then picker = dd end
 end
-check(picker and not picker.hidden, "with a button that says which account is shown")
-picker.scripts.OnClick(picker)
-check(picker.label.text == "Account: Suicide Kings", "a click shows the rule's queue: " .. tostring(picker.label.text))
-picker.scripts.OnClick(picker)
-check(picker.label.text == "Account: Points", "and another goes back to the points")
+P:Refresh()
+check(picker and not picker.hidden and picker.options[1].text == "Points" and picker.options[2].text == "Suicide Kings",
+  "with a dropdown that says which account is shown: the points, or the rule's queue")
+picker:Select("sk")
+check(picker.value == "sk", "a choice shows the rule's queue")
+picker:Select(false)
+check(picker.value == false, "and another goes back to the points")
 LR:Set(nil)
 GuildOS.db.settings.lootSystem = "rolls"
 P:Refresh()
-check(picker.hidden, "a rule that keeps no account hides the button")
+check(picker.hidden, "a rule that keeps no account hides the dropdown")
 
 print(("loot-rare: %d checks passed"):format(checks))

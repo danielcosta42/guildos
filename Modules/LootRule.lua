@@ -1463,6 +1463,17 @@ function LootRule:Sort(list, rule)
     return list
 end
 
+-- The entry of the order that put `first` ahead of `second` (issue #346: the loot table says it in a
+-- sentence, and an account's criterion names its account). nil with no second, or when all tied.
+function LootRule:DecidingEntry(first, second, rule)
+    if not (first and second) then return nil end
+    rule = rule or self:Active()
+    for _, entry in ipairs(rule.order or {}) do
+        if rankOf(entry, first, rule) ~= rankOf(entry, second, rule) then return entry end
+    end
+    return nil
+end
+
 -- The criterion that put `first` ahead of `second`: what the winner line says decided. nil with no
 -- second candidate, or when every criterion tied.
 function LootRule:DecidedBy(first, second, rule)
@@ -1594,6 +1605,106 @@ function LootRule:WhyDecided(winnerName, sorted, rule)
     return self:DecidedBy(first, sorted[2], rule) or "ml"
 end
 
+-- What each criterion of the order compared for a candidate (the figures of the award's record): the
+-- loot table's "why they are here" (issue #346) shows the same figures the record keeps.
+function LootRule:Compared(c, rule)
+    return comparedOf(c, rule or self:Active()) or {}
+end
+
+----------------------------------------------------------------------
+-- The rule as a raider reads it (issue #346): who may ask, how, who takes the item, who decides and
+-- what follows another rule, in sentences for the Loot window's read-only block. `seconds` is the time
+-- to answer the loot settings give when the rule names none. Nothing here decides anything.
+--   { who = text, how = text, order = { text, ... }, decide = text|nil, exceptions = text|nil }
+----------------------------------------------------------------------
+local function accountName(rule, key)
+    for _, a in ipairs(rule.accounts or {}) do
+        if a.key == key then return a.name or a.key end
+    end
+    if key == "dkp" then return L["points"] end
+    return tostring(key):upper()
+end
+
+local function orderLine(entry, rule)
+    local k = entry.k
+    if k == "response" then
+        local labels = {}
+        for i, r in ipairs(LootRule:Responses(rule)) do labels[i] = LootRule:ResponseLabel(r) end
+        return string.format(L["The answer: %s"], table.concat(labels, " > "))
+    elseif k == "softres" then return L["Who reserved the item"]
+    elseif k == "hardres" then return L["Who hard reserved the item"]
+    elseif k == "prio" then return L["The officers' priority list"]
+    elseif k == "wishlist" then return L["The wishlist place"]
+    elseif k == "received" then return L["Who received fewer items"]
+    elseif k == "attendance" then return L["The higher attendance"]
+    elseif k == "points" then return L["Who holds more points"]
+    elseif k == "pr" then return L["The higher EP/GP priority"]
+    elseif k == "bid" then return L["The higher bid"]
+    elseif k == "roll" then
+        if entry.bonus then return string.format(L["The higher roll, plus %s"], accountName(rule, entry.bonus)) end
+        return L["The higher roll"]
+    elseif k == "account" then
+        local name = accountName(rule, entry.acct)
+        if entry.dir == "low" then return string.format(L["Who holds less %s"], name) end
+        return string.format(L["Who holds more %s"], name)
+    elseif k == "score" then return L["The higher score"]
+    elseif k == "ratio" then return L["The higher ratio"]
+    end
+    return LootRule:Label(k)
+end
+
+local function filterLine(f, rule)
+    if f.k == "attendance" then
+        if f.act == "block" then return string.format(L["With attendance below %d%%, nobody may ask."], f.min) end
+        local from, to = LootRule:Response(f.from, rule), LootRule:Response(f.to, rule)
+        return string.format(L["With attendance below %d%%, %s counts as %s."], f.min,
+            from and LootRule:ResponseLabel(from) or tostring(f.from), to and LootRule:ResponseLabel(to) or tostring(f.to))
+    elseif f.k == "points" then
+        return string.format(L["Whoever holds fewer than %d points may not ask."], f.min)
+    elseif f.k == "account" then
+        return string.format(L["Whoever holds less than %d %s may not ask."], f.min, accountName(rule, f.acct))
+    elseif f.k == "reserved" then
+        return L["Only who reserved the item may ask."]
+    elseif f.k == "received" then
+        return string.format(L["Whoever received %d items tonight may not ask."], f.max)
+    end
+    return LootRule:Label(f.k)
+end
+
+function LootRule:Describe(rule, seconds)
+    rule = rule or self:Active()
+    local out = { order = {} }
+    local who = { L["Everyone in the raid."] }
+    for _, f in ipairs(rule.filters or {}) do who[#who + 1] = filterLine(f, rule) end
+    out.who = table.concat(who, " ")
+    local labels = {}
+    for i, r in ipairs(self:Responses(rule)) do labels[i] = self:ResponseLabel(r) end
+    labels[#labels + 1] = L["pass"]
+    local time = tonumber(rule.time) or tonumber(seconds) or 30
+    out.how = string.format(L["%s, within %d seconds."], table.concat(labels, ", "), time)
+    if self:HasBids(rule) then
+        local sealed, min = self:BidRules(rule)
+        out.how = out.how .. " " .. string.format(sealed and L["Bids are sealed, from %d."] or L["Bids are open, from %d."], min)
+    end
+    for _, entry in ipairs(rule.order or {}) do out.order[#out.order + 1] = orderLine(entry, rule) end
+    local by = rule.decide and rule.decide.by
+    if by == "council" then
+        out.decide = L["A council votes among the candidates, in this order; the master looter confirms."]
+    elseif by == "ml" then
+        out.decide = L["The master looter decides, reading this order."]
+    end
+    local xs = {}
+    for _, x in ipairs(rule.exceptions or {}) do
+        local what
+        if x.to == "bank" then what = L["the guild bank"]
+        elseif x.to == "de" then what = L["the disenchanter"]
+        else what = L["an order of its own"] end
+        xs[#xs + 1] = string.format("%s: %s", self:ExceptionLabel(x), what)
+    end
+    if #xs > 0 then out.exceptions = table.concat(xs, ". ") .. "." end
+    return out
+end
+
 -- The stamp of the rule in force, for the record: the night's start for the raid night's rule, when
 -- an officer last changed it for a core's or the guild's own, and 0 for the rule of a loot system.
 function LootRule:Stamp()
@@ -1610,6 +1721,18 @@ function LootRule:Stamp()
     local s = GuildOS.db and GuildOS.db.settings
     if s and s.lootRule and self:Validate(s.lootRule) then return tonumber(s.lootRuleAt) or 0 end
     return 0
+end
+
+-- When an officer last saved the own rule of a core ("" the guild), for the Rule tab; 0 when it keeps
+-- none and plays its loot system's.
+function LootRule:SavedAt(coreName)
+    coreName = coreOrNil(coreName)
+    if not self:IsCustom(coreName) then return 0 end
+    if coreName then
+        local lm = GuildOS.db.cores[coreName].lootMaster
+        return tonumber(lm and lm.lootAt) or 0
+    end
+    return tonumber(GuildOS.db.settings.lootRuleAt) or 0
 end
 
 -- A TradeCouncil answer row as a candidate: Need is the main answer and Greed the second.

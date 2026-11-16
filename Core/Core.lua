@@ -349,6 +349,8 @@ local OFFICER_START = {
     { "TrialTracker", feature = "trialTracker", ui = "trials", after = "CheckReady" },
     -- What the Discord's cores changed at login, to the other officers (#135).
     { "CoreManager", method = "SendDiscordChanges" },
+    -- A linked guild with no package from the site for 30 days hears it once (#339).
+    { "CoreManager", method = "TellQuietLink" },
     -- The requests from the site: read at the start with no rank known, they reached no officer's notice.
     { "JoinRequests", method = "Refresh" },
     -- Repeating events: the next weeks of every series, filled in by an officer's client (#267).

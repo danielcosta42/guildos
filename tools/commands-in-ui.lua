@@ -32,8 +32,9 @@ local IN_UI = {
   selftest    = { { "UI/FeaturePanels.lua", "GuildOS.SelfTest:Run()" } },
   myalts      = { { "UI/MemberDetail.lua", "GuildOS.AltAutoDetect:PromptNow()" } },
   sync        = { { "UI/Window.lua", "GuildOS.CommSystem:FullSync()" } },
-  points      = { { "UI/Features.lua", 'id = "dkp"' } },
-  equity      = { { "UI/FeaturePanels.lua", 'showView("equity")' } },
+  -- The points and the equity are the Loot window's Accounts and History (issue #346).
+  points      = { { "UI/Features.lua", 'id = "dkp"' }, { "UI/PointsPanel.lua", "function GuildOS:BuildLootAccounts" } },
+  equity      = { { "UI/LootWindow.lua", 'show("equity")' } },
   digest      = { { "UI/FeaturePanels.lua", "GuildOS.Digest:Show()" } },
   backup      = { { "UI/FeaturePanels.lua", "GuildOS.Backup:ShowExport()" } },
   restore     = { { "UI/FeaturePanels.lua", "GuildOS.Backup:ShowRestore()" } },
@@ -68,12 +69,12 @@ local IN_UI = {
   consreport  = { { "UI/RaidHUD.lua", 'GuildOS.ConsumableChecker:ReportToChat("RAID")' } },
   trial       = { { "UI/RosterFrame.lua", "GuildOS.TrialTracker:AddTrial(key)" } },
   note        = { { "UI/RosterFrame.lua", "GuildOS.OfficerNotes:AddNote(" } },
-  lm          = { { "UI/FeaturePanels.lua", "GuildOS:LootMasterStatus()" } },
+  lm          = { { "UI/LootWindow.lua", "GuildOS:LootMasterStatus()" } },
   -- The Master Loot window's own button (issue #294).
   ["lm undo"] = { { "Modules/LootMaster.lua", "LootMaster:UndoLastAward()" } },
   -- Retail's loot council (issue #185): an Offer button by each tradeable item and on my own loot
   -- history rows, and the council in Settings' quick access.
-  offer       = { { "UI/TradeCouncil.lua", "GuildOS.TradeCouncil:Offer(" }, { "UI/FeaturePanels.lua", "GuildOS.TradeCouncil:Offer(entry.itemLink)" },
+  offer       = { { "UI/TradeCouncil.lua", "GuildOS.TradeCouncil:Offer(" }, { "UI/LootWindow.lua", "GuildOS.TradeCouncil:Offer(link)" },
                   { "UI/FeaturePanels.lua", "GuildOS:ShowTradeCouncil()" } },
   web         = { { "UI/WebPanel.lua", "GuildOS:ShowWebString()" }, { "UI/WebPanel.lua", "co:SetEnabled(" } },
   roster      = { { "UI/WebPanel.lua", 'L["Bring roster"]' } },

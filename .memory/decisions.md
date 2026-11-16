@@ -1587,3 +1587,116 @@ duration on `LG`, drawn by a popup. It could not name an activity, and there was
 - (−) On WoW: Forever a queued player is matched by first name when the unit's name carries no surname (#48): a
   guildmate who shares it would close the spot early.
 - (−) Groups do not cross to allied guilds; the alliance keeps seeing who is looking, without the activities.
+
+## ADR-0036 — The core's owner: the site in a linked guild, the game otherwise (guildos-web specs/085; #347, #339, #340)
+
+### Context
+A core lived in two places and was born in two: on Discord (`/core criar`) and in an officer's client. The site's
+decision (specs/085) is that in a guild linked to the site the site's database owns a core's existence, its people and
+its configuration, and the game owns only what happened in the raids; in a guild without the site the game owns
+everything. Until now cores reached the game only through the companion's `Inbox.lua`, and nothing went back.
+
+### Decision — a second way in, and a receipt out (#347)
+- **A pasted GOSCORE1 is the inbox's package.** The roster box (`ShowImportPopup`) takes a `GOSCORE1:` code too;
+  `CompanionImport:Load` sends it to `CoreManager:ImportPasted`, which checks the officer and hands it to
+  `ImportPackage`, the one path the inbox also takes: the same guild and realm check (`notOurs`, which now says which),
+  the same site clock (`db.discordAt`, newest `at` wins, an undated package is older than a dated one), the same
+  `ImportFromSite`, the same chat line. `CompanionImport.ReadCores` reads both strings: the companion's alphabet, a body
+  under 256 KB, the `fmt` and a `cores` list. The officer who pasted sends the lists at once (`SendDiscordChanges`):
+  the rank is known, unlike at login.
+- **`coreReceipt` in the upload**, within v16 as `why` was: one more absent field, behind the Raids module and its
+  own `optional()`. `linkedAt` is `db.coreLink.importedAt` (the last own import, inbox or pasted, that was not older);
+  each Discord core's `importedAt` is when this client last applied a Discord list to it (an import or another
+  officer's list). Figures are clamped integers, so the hand-written encoder never writes an exponent.
+
+### Decision — a linked guild creates no core in game (#339)
+- **Linked** is stored: `db.coreLink.since`, set by an own import with cores or a heard `discordList`, cleared by an
+  own empty package, by the last release heard (no core holds a tag) or by an officer's "create in game again". A
+  guild from before (a core holding a tag, no record) is linked at `Initialize`.
+- **Creating** goes through `Create`, which a linked guild refuses with where to create; the import and the
+  `discord`/`discordList` actions use the local `newCore`. `GetCore` no longer makes a core for an unknown name in a
+  linked guild: the raid's free tag, a sign-up and another officer's `update` roster make none (their points fall to
+  the guild's pool, as a raid outside a core). The panel's input becomes a sentence.
+- **The Discord's rename** follows on the next import, by `moveCore` (the body of `Rename`): the core is the tag's, and
+  its name follows only when it carried the Discord's previous name (`core.discordName`), so a core named by its tag or
+  linked by hand keeps its own; never onto a name another core has. `discordList` carries `discordName`, so an officer
+  without the companion renames too.
+- **The loot rule** of a Discord core is the site's while the roster in hand carries one (`LootRuleFromSite`): the
+  GOSROST1 names no core, so the rule the site sends counts for every Discord core of the guild.
+- **30 days quiet** (`seenAt`, the freshest package: the inbox's ack, a paste, another officer's `seenAt` on its
+  list): the officer hears it once and the panel offers "create cores in game again" (`CreateInGameAgain`). That
+  choice marks `releasedAt`, which makes every package up to it older (the same inbox at every login links nothing),
+  and goes to the officers online as releases with `off = true`.
+
+### Decision — a pug is a guest of the night (#340)
+- **`core.guests`**, apart from `core.members`: `GetComposition` and `OpenSlots` read the members alone; the night's raid
+  (`RaidRoster`, `CoreForGroup`) reads both. Attendance and loot candidates come from who is in the raid group, so a
+  guest in it counts there already.
+- **Who becomes one**: in a linked guild an officer's "add" on a Discord core (`AddToRoster`, the picker and a name
+  field for a pug outside the guild) and a sign-up accepted there; anywhere else "add" is a member, as always.
+  Migration: whoever is on a Discord core without `src = "discord"` becomes a guest marked to stay, so nobody
+  disappears; it runs at login, after an own import and after a heard list, which keeps a Discord core's members all
+  the Discord's.
+- **The night ends** with the raid session (`RaidTracker:EndSession`, a kept session only): its guests leave, but those
+  marked to stay.
+- **Sync** is a change, `core.roster`/`guests` `{ put, gone }`, never the whole list: an officer's guests are never taken
+  off by another's message. A client from before ignores it (no `members`).
+
+### Consequences
+- (+) A guild where no officer runs the companion can still receive its cores.
+- (+) An older site ignores the receipt; an older addon never had the paste.
+- (−) A Forever package pasted into an Anniversary client of a guild with the same name is not told apart: the GOSCORE1
+  carries no game, and the realm check is the inbox's (a Forever package has no realm).
+- (−) The decompressed size of a pasted code is not bounded by LibDeflate; the 256 KB on the encoded body bounds it to
+  what deflate can expand that to.
+- (+) A guild that never imported a GOSCORE1 sees no change.
+- (−) A client before this version in a linked guild still creates cores and sends their rosters; clients on this
+  version ignore a roster for a core they lack.
+- (−) A core renamed in game to the Discord's new name no longer reduces to its tag: the site counts its nights by the
+  core's name (`coreTags`), but anything on the site matching only by `slugOf(groupTag)` (the idle check) does not.
+- (−) The site's rule locks every Discord core's rule while the roster in hand carries one, not only the raid's core.
+- (−) Guests are heard only by the officers online when they change: an officer who was away keeps the guests they
+  had until the next change, as the Discord's lists before #138.
+- (−) The night ends on each officer's client with its own raid session: an officer who was not in the raid keeps the
+  night's guests until the officer who was sends who left.
+
+---
+
+## ADR-0037 — One dropdown, and one Loot window for the rule, the accounts, the lists and the history (#346)
+
+### Context
+- No control picked one of several values: the screens used a button that turned to the next value on each click (the
+  loot method, the threshold, the raid size, the role, the account shown, what an answer asks for, an exception's kind).
+  A player could not see the choices, nor land on one without passing the others.
+- Each loot setting was edited in two or three places: Settings > Loot (the active core's, or the guild's), the core's
+  Config tab (that core's), the rule's own window, the points window, the DKP tab and the Master Loot window
+  (`wishlistOnlyMode` in three). Each wrote the same keys by its own path, with its own checks.
+- The Loot tab was officer-only, so the Dashboard's "your loot" sent members to a tab they could not open.
+
+### Decision
+- **`UI:CreateDropdown`** in UI/Helpers.lua, the one factory: a `CreateButton` that shows the value, and one list the
+  addon shares, built on first use, anchored under the button that opened it, closed by a click outside it (a
+  transparent sheet under the list), by Escape (UISpecialFrames, as every popup of the addon) and by a choice; ten rows
+  then a scroll. Painted by `StylePopup` and `CreateButton`, so both interface styles draw it. Every control that
+  picks among more than two values on the loot and core screens is one; two values stay a pair of buttons.
+- **The Loot window** is one tab (`loot`, every member's) with sub-tabs Rule · Accounts · Lists · History. An officer
+  edits, a member reads. The Rule tab has a selector (the guild or a core) and is the only place the loot system,
+  the loot master's settings, the answers' editor (`BuildLootRuleEditor`, moved, not copied), the council and the
+  exceptions are edited; under them, "how players will read it" (`LootRule:Describe`). The Accounts tab is the points
+  window of before on the core picked (`Points:InCore`), with the award row and the points' own settings. Lists holds
+  the wishlists and the soft reserves; History the history and the equity.
+- **The old places point here**: Settings > Loot and the core's Config tab keep one line, "Loot: <rule> — Open
+  Loot" (`GuildOS:DrawLootPointer`). `/gos points`, `/gos dkp` and `ShowPointsFrame` open Accounts; `dkp` and
+  `wishlist` stay features (their Settings switches) without a tab of their own (`opens = { tab, sub }`).
+- **Writes go through the modules**: `LootMaster:SetLootSetting(key, value, scope)` (the same keys, checked as the
+  screens checked them, written where `CoreManager:SetLootConfigKey` writes) and `Points:SetConfigKey(key, value, core)`;
+  the award row is `Points:AwardRow`.
+
+### Consequences
+- (+) Each setting has one place, and one check; a guild that changes nothing keeps every stored key and behaviour.
+- (+) A raider reads the rule their raid plays and their own balance.
+- (−) The loot master's settings in Settings followed the raid's active core; the Rule tab opens on that core too,
+  but an officer now sees which one is being changed and may pick another.
+- (−) `wishlistOnlyMode` unchecked on a core is now stored `false` (it was `nil`, which fell back to the guild's).
+- (−) Escape closes an open list and, like every popup of the addon, the windows behind it.
+

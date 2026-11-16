@@ -231,8 +231,36 @@ function Import:Parse(raw)
     }
 end
 
---- Parse and keep. Returns (count, err).
+-- A GOSCORE1 the site gives as a code to copy, read the way the inbox's is (CoresFromInbox): the same
+-- alphabet the companion lets into Inbox.lua, a body no longer than CORES_MAX, the `fmt` inside. Pasted
+-- text may come with spaces, line breaks or words around the code; the marker is looked for anywhere.
+-- Returns the decoded table, or nil when it is not one (issue #347).
+local CORES_MAX = 262144   -- characters of a GOSCORE1 body: a guild's cores are a few kilobytes
+function Import.ReadCores(raw)
+    if type(raw) ~= "string" then return nil end
+    local at = raw:find(CORES_PREFIX, 1, true)
+    if not at then return nil end
+    local body = raw:sub(at + #CORES_PREFIX):gsub("%s+", "")
+    if body == "" or #body > CORES_MAX or body:find("[^A-Za-z0-9()]") then return nil end
+    local data = unwrap(body, "GOSCORE1")
+    if type(data) ~= "table" or type(data.cores) ~= "table" then return nil end
+    return data
+end
+
+-- Whether a pasted text is a GOSCORE1 rather than a raid's roster (issue #347).
+function Import.IsCoresCode(raw)
+    return type(raw) == "string" and raw:find(CORES_PREFIX, 1, true) ~= nil and not raw:find(WIRE_PREFIX, 1, true)
+end
+
+--- Parse and keep. Returns (count, err). A GOSCORE1 pasted into the same box is the guild's cores, imported
+--- as the inbox's are (CoreManager:ImportPasted): then (count of cores, nil, the line to show) (issue #347).
 function Import:Load(raw)
+    if Import.IsCoresCode(raw) and GuildOS.CoreManager then
+        if not (GuildOS.Companion and GuildOS.Companion:IsEnabled()) then
+            return nil, L["The web companion is off. Turn it on with /gos web on."]
+        end
+        return GuildOS.CoreManager:ImportPasted(raw)
+    end
     local roster, err = self:Parse(raw)
     if not roster then return nil, err end
     -- Pasted by hand, a roster with nobody in it is a copy of the wrong thing. Nobody to invite is
@@ -366,7 +394,7 @@ function Import:CoresFromInbox()
             local ack = _G.GuildOSInboxAck
             local at = type(ack) == "table" and tonumber(ack.at) or nil
             local on = GuildOS.Companion and GuildOS.Companion:IsEnabled() or false
-            return unwrap(v:sub(#CORES_PREFIX + 1), "GOSCORE1"), on, at
+            return Import.ReadCores(v), on, at
         end
     end
     return nil

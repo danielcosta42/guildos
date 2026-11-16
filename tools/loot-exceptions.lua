@@ -474,7 +474,20 @@ LR:Set(nil)
 
 -- ── 9. The editor draws, and its buttons reach LootRule ─────────────
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
+local dropdowns = {}
+GetLocale = GetLocale or function() return "enUS" end   -- the Rule tab says when the rule was saved
 GuildOS.UI = setmetatable({
+  -- The Loot window's dropdown (issue #346): its options, and a choice as a click on one.
+  CreateDropdown = function()
+    local dd = widget({ kind = "Dropdown", options = {} })
+    dd.SetOptions = function(self, o) self.options = o or {} end
+    dd.SetValue = function(self, v) self.value = v end
+    dd.GetValue = function(self) return self.value end
+    dd.Select = function(self, v) self.value = v; if self.onSelect then self:onSelect(v) end end
+    dropdowns[#dropdowns + 1] = dd
+    return dd
+  end,
+  LabelColumn = function(_, _, _, floor) return floor end,
   CreateButton = function(_, _, text)
     local b = widget({ text = tostring(text), label = widget() })
     buttons[#buttons + 1] = b
@@ -488,6 +501,20 @@ GuildOS.UI = setmetatable({
     return box.saveButton
   end,
 }, { __index = function() return function() return widget() end end })
+dofile(ADDON .. "/UI/Layout.lua")
+-- The newest dropdown that offers `text`, and whether one does; `choose` picks it there.
+local function offered(text)
+  for i = #dropdowns, 1, -1 do
+    for _, o in ipairs(dropdowns[i].options) do
+      if o.text == text then return dropdowns[i], o.value end
+    end
+  end
+end
+local function choose(text)
+  local dd, value = offered(text)
+  check(dd ~= nil, "a dropdown offers " .. text)
+  dd:Select(value)
+end
 local function button(text)
   for i = #buttons, 1, -1 do
     if buttons[i].text == text then return buttons[i] end
@@ -499,31 +526,34 @@ local function click(text)
   b.scripts.OnClick(b)
 end
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/LootWindow.lua")
 GuildOS.CreateRolePicker = function() return widget() end
 GuildOS.ShowPointsFrame = function() end
+-- The editor is the Loot window's Rule tab since issue #346; the kind, the category and the
+-- destination are dropdowns there (they were buttons that cycled).
 local content = widget()
 local function draw()
-  widgets, buttons = {}, {}
-  local drew, problem = pcall(GuildOS.RefreshSettingsPanel, GuildOS, content, "loot")
-  check(drew, "the loot settings draw (" .. tostring(problem) .. ")")
+  widgets, buttons, dropdowns = {}, {}, {}
+  local drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "")
+  check(drew, "the Rule tab draws (" .. tostring(problem) .. ")")
 end
-GuildOS.RefreshSettingsPanel = (function(real)
-  return function(self, c, cat)
-    widgets, buttons = {}, {}
-    return real(self, c, cat)
+GuildOS.RefreshLootRuleTab = (function(real)
+  return function(self, c, scope)
+    widgets, buttons, dropdowns = {}, {}, {}
+    return real(self, c, scope)
   end
-end)(GuildOS.RefreshSettingsPanel)
+end)(GuildOS.RefreshLootRuleTab)
 draw()
-check(button("Add exception") and button("Category") and button("recipes") and button("To the bank"), "the editor offers an exception to add")
+check(button("Add exception") and offered("Category") and offered("recipes") and offered("To the bank"), "the editor offers an exception to add")
 click("Add exception")
 check(LR:Active().exceptions and LR:Active().exceptions[1].on.cat == "recipe" and LR:Active().exceptions[1].to == "bank",
   "a click adds the one shown: recipes to the bank")
 check(button("Remove") ~= nil, "which is listed with a way to remove it")
-click("recipes")
-click("To the bank")
-check(button("bind on equip") and button("To the disenchanter"), "the category and the destination turn with a click")
-click("To the disenchanter")
-check(button("Another order") and button("wishlist place") and button("the roll"), "another order offers the criteria")
+choose("bind on equip")
+check(select(2, offered("bind on equip")) == "boe" and offered("To the disenchanter"), "the category and the destination are picked from a list")
+choose("To the disenchanter")
+choose("Another order")
+check(button("wishlist place") and button("the roll"), "another order offers the criteria")
 click("wishlist place")
 click("the roll")
 check(button("Clear order") and not button("wishlist place"), "a criterion picked is next in the order, and offered no more")
@@ -531,10 +561,10 @@ click("Add exception")
 local made = LR:Active().exceptions[2]
 check(made and made.on.cat == "boe" and made.set.order[1].k == "wishlist" and made.set.order[2].k == "roll",
   "and the exception added is decided by the order picked")
-click("Category")
-check(button("Item ids"), "the kind turns with a click too")
-click("Another order")
-check(button("To the bank"), "and the destination comes round to the bank")
+choose("Item ids")
+check(offered("Item ids"), "the kind is picked from a list too")
+choose("To the bank")
+check(offered("To the bank"), "and the destination can be the bank again")
 local typed
 for _, w in ipairs(widgets) do
   if w.kind == "EditBox" and w.scripts.OnTextChanged then typed = w end

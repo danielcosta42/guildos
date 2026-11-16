@@ -693,6 +693,14 @@ end
 -- every entry point uses. Returns true when the tab opened.
 function UI:OpenWindow(id, sub, filter)
     local def = self:GetFeature(id)
+    -- A feature that lives in another tab's sub-tab (issue #346: DKP, the wishlists) opens it.
+    if def and not def.tab and def.opens then
+        if self:IsFeatureAbsent(def) then
+            GuildOS:Print(L["Not available on this client."])
+            return false
+        end
+        return self:OpenWindow(def.opens[1], sub or def.opens[2], filter)
+    end
     if not (def and def.tab) then return false end
     -- Checked here with their own messages, before the tab gate that covers
     -- all four: an absent feature, a disabled one, a failed one and a rank

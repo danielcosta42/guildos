@@ -568,6 +568,10 @@ function RaidTracker:EndSession(away, at)
     end
 
     GuildOS:Print(L["Raid tracking ended: |cffFFD700"] .. self.currentRaid.name .. "|r")
+    -- The night's guests leave with it, but those marked to stay (issue #340).
+    if GuildOS.CoreManager and GuildOS.CoreManager.EndNight then
+        GuildOS:SafeCall(GuildOS.CoreManager.EndNight, GuildOS.CoreManager, self.currentRaid.groupTag, self.currentRaid)
+    end
     self.currentRaid = nil
 
     -- Broadcast updated raid data to all officer clients

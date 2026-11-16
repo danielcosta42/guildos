@@ -403,12 +403,27 @@ function Helpers:AttachSaveButton(editBox, onSave, opts)
         btn:SetPoint("LEFT", editBox, "RIGHT", opts.gap or 6, 0)
     end
 
+    -- `opts.state` (issue #346): the button says whether the box holds what was saved. "Saved",
+    -- and unclickable, until the text changes; "Save" from then until the commit.
+    local savedText = opts.state and ((GuildOS.L and GuildOS.L["Saved"]) or "Saved")
+    local function showSaved(saved)
+        if not savedText then return end
+        btn.label:SetText(saved and savedText or label)
+        if saved then btn:Disable() else btn:Enable() end
+    end
     local function commit()
         onSave(editBox)
         editBox:ClearFocus()
+        showSaved(true)
     end
     btn:SetScript("OnClick", commit)
     editBox:SetScript("OnEnterPressed", commit)
+    if savedText then
+        editBox:HookScript("OnTextChanged", function(_, typed)
+            if typed ~= false then showSaved(false) end
+        end)
+        showSaved(true)
+    end
 
     editBox.saveButton = btn
     return btn
@@ -505,6 +520,200 @@ function Helpers:CreateCheckbox(parent, labelText, size)
 
     frame.checkbox = cb
     return frame
+end
+
+----------------------------------------------------------------------
+-- Dropdown (issue #346)
+-- A button that shows the value chosen and, clicked, opens the list of the others under it: one
+-- popup the whole addon shares, built on first use, scrolled by the wheel past DROPDOWN_ROWS
+-- rows, closed by a click outside it, by Escape and by a choice. No typing: a choice is a click.
+-- Where a control picks one of more than two values it is this, never a button that cycles.
+--   dd = UI:CreateDropdown(parent, width, height)
+--   dd:SetOptions({ { value = v, text = "label", color = {r,g,b}? }, ... })
+--   dd:SetValue(v)      show v, without telling anyone
+--   dd:GetValue()
+--   dd:Select(v)        show v and call dd.onSelect(dd, v), as a click on it does
+--   dd.onSelect = function(dd, value) ... end
+--   dd:SetPlaceholder(text)   what it says while no option is chosen
+-- The button is a CreateButton, so it paints like every other one in either style; the list is a
+-- popup surface (StylePopup) whose rows are borderless buttons.
+----------------------------------------------------------------------
+local DROPDOWN_ROWS  = 10     -- rows the list shows before it scrolls
+local DROPDOWN_ROW_H = 20
+local DROPDOWN_PAD   = 2      -- px between the list's edge and its rows
+local ARROW_W        = 14     -- room the button keeps on its right for the arrow
+local dropdownList            -- the shared list, built on first open
+
+-- A small arrow pointing down, drawn as three rows of solid pixels (no glyph a font may lack).
+local function dropdownArrow(btn)
+    local rows = {}
+    for i, w in ipairs({ 7, 5, 3, 1 }) do
+        local t = btn:CreateTexture(nil, "OVERLAY")
+        t:SetTexture(WHITE)
+        t:SetSize(w, 1)
+        t:SetPoint("RIGHT", btn, "RIGHT", -(6 + (7 - w) / 2), 2 - i)
+        rows[i] = t
+    end
+    function btn:PaintArrow(col)
+        for _, t in ipairs(rows) do t:SetVertexColor(col.r, col.g, col.b, 1) end
+    end
+    btn:PaintArrow(C.label)
+end
+
+local function closeDropdown()
+    if dropdownList then
+        dropdownList.owner = nil
+        dropdownList:Hide()
+        dropdownList.catcher:Hide()
+    end
+end
+
+local function buildDropdownList()
+    local f = CreateFrame("Frame", "GuildOSDropdownList", UIParent, "BackdropTemplate")
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:SetFrameLevel(20)
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    Helpers:StylePopup(f, { noFade = true })
+    f:Hide()
+    table.insert(UISpecialFrames, "GuildOSDropdownList")   -- Escape closes it
+
+    -- A click anywhere else closes the list: a transparent sheet over the screen, under the list.
+    local catcher = CreateFrame("Button", nil, UIParent)
+    catcher:SetAllPoints(UIParent)
+    catcher:SetFrameStrata("FULLSCREEN_DIALOG")
+    catcher:SetFrameLevel(10)
+    catcher:EnableMouse(true)
+    catcher:RegisterForClicks("AnyUp")
+    catcher:SetScript("OnClick", closeDropdown)
+    catcher:Hide()
+    f.catcher = catcher
+    f:SetScript("OnHide", function(self)
+        self.catcher:Hide()
+        self.owner = nil
+    end)
+
+    f.scroll, f.child = Helpers:CreateScrollFrame(f, "GuildOSDropdownListScroll")
+    f.scroll:SetPoint("TOPLEFT", DROPDOWN_PAD, -DROPDOWN_PAD)
+    f.scroll:SetPoint("BOTTOMRIGHT", -DROPDOWN_PAD, DROPDOWN_PAD)
+    f.rows = {}
+    return f
+end
+
+-- One row of the list, made once and reused by every dropdown.
+local function dropdownRow(f, i)
+    local row = f.rows[i]
+    if row then return row end
+    row = Helpers:CreateButton(f.child, "", 10, DROPDOWN_ROW_H)
+    row.baseBorder = nil
+    row.label:ClearAllPoints()
+    row.label:SetPoint("LEFT", 8, 0)
+    row.label:SetJustifyH("LEFT")
+    local mark = row:CreateTexture(nil, "OVERLAY")
+    mark:SetTexture(WHITE)
+    mark:SetSize(2, DROPDOWN_ROW_H - 6)
+    mark:SetPoint("LEFT", 2, 0)
+    mark:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
+    row.mark = mark
+    row:SetScript("OnClick", function(self)
+        local owner = f.owner
+        closeDropdown()
+        if owner then owner:Select(self.value) end
+    end)
+    Helpers:_ButtonState(row, "rest")
+    f.rows[i] = row
+    return row
+end
+
+local function openDropdown(dd)
+    dropdownList = dropdownList or buildDropdownList()
+    local f = dropdownList
+    local options = dd.options or {}
+    local width = math.max(dd:GetWidth() or 0, dd.listWidth or 0)
+    local shown = math.max(1, math.min(#options, DROPDOWN_ROWS))
+    f:SetSize(width, shown * DROPDOWN_ROW_H + DROPDOWN_PAD * 2)
+    f.child:SetWidth(width - DROPDOWN_PAD * 2 - (#options > DROPDOWN_ROWS and 10 or 0))
+    for i, opt in ipairs(options) do
+        local row = dropdownRow(f, i)
+        row.value = opt.value
+        row:SetWidth(f.child:GetWidth())
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -(i - 1) * DROPDOWN_ROW_H)
+        row.label:SetText(opt.text or tostring(opt.value))
+        local chosen = opt.value == dd.value
+        local ink = opt.color or (chosen and C.gold) or C.text
+        row.baseLabelColor = { ink.r, ink.g, ink.b }
+        row.mark:SetShown(chosen)
+        if opt.disabled then row:Disable() else row:Enable() end
+        Helpers:_ButtonState(row, opt.disabled and "disabled" or "rest")
+        row:Show()
+    end
+    for i = #options + 1, #f.rows do f.rows[i]:Hide() end
+    f.child:SetHeight(math.max(1, #options * DROPDOWN_ROW_H))
+    if f.scroll.SetVerticalScroll then f.scroll:SetVerticalScroll(0) end
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", dd, "BOTTOMLEFT", 0, -2)
+    f.owner = dd
+    f.catcher:Show()
+    f:Show()
+end
+
+-- Whether the shared list is open, and for which dropdown (the tests read it).
+function Helpers:DropdownOpenFor()
+    return dropdownList and dropdownList:IsShown() and dropdownList.owner or nil
+end
+
+function Helpers:CloseDropdown() closeDropdown() end
+
+function Helpers:CreateDropdown(parent, width, height)
+    local dd = self:CreateButton(parent, "", width or 140, height or 22)
+    dd.label:ClearAllPoints()
+    dd.label:SetPoint("LEFT", 8, 0)
+    dd.label:SetPoint("RIGHT", -ARROW_W, 0)
+    dd.label:SetJustifyH("LEFT")
+    if dd.label.SetWordWrap then dd.label:SetWordWrap(false) end
+    dropdownArrow(dd)
+    dd.options, dd.placeholder = {}, ""
+
+    local function textOf(value)
+        for _, opt in ipairs(dd.options) do
+            if opt.value == value then return opt.text or tostring(value), opt.color end
+        end
+        return nil
+    end
+    function dd:SetOptions(list)
+        self.options = list or {}
+        self:SetValue(self.value)
+    end
+    function dd:SetPlaceholder(text)
+        self.placeholder = text or ""
+        if textOf(self.value) == nil then self.label:SetText(self.placeholder) end
+    end
+    function dd:SetValue(value)
+        self.value = value
+        local text, color = textOf(value)
+        self.label:SetText(text or self.placeholder)
+        -- A value with a colour of its own (an item quality) keeps it at rest.
+        local ink = color or (text and C.text) or C.label
+        self.baseLabelColor = { ink.r, ink.g, ink.b }
+        Helpers:_ButtonState(self, self:IsEnabled() and "rest" or "disabled")
+    end
+    function dd:GetValue() return self.value end
+    function dd:Select(value)
+        self:SetValue(value)
+        if self.onSelect then self:onSelect(value) end
+    end
+    function dd:Open() openDropdown(self) end
+    function dd:Close() if dropdownList and dropdownList.owner == self then closeDropdown() end end
+    dd:SetScript("OnClick", function(self)
+        if dropdownList and dropdownList:IsShown() and dropdownList.owner == self then
+            closeDropdown()
+        else
+            openDropdown(self)
+        end
+    end)
+    dd:HookScript("OnHide", function(self) self:Close() end)
+    return dd
 end
 
 -- Create a close button (×): `label` at rest, paper on a `popup` square when hovered.

@@ -100,8 +100,15 @@ local function load(game)
   GuildOS.SyncService = { On = function(_, dom, fn) handlers[dom] = fn end,
                          Publish = function(_, dom, act, data) published[#published + 1] = { dom = dom, data = data } end }
   GuildOS.CoreManager:InitSync()
-  GuildOS.UI = setmetatable({ GetFeature = function() return nil end, SkinScrollBar = function() end },
-                           { __index = function() return function() return stub end end })
+  -- The window's buttons are the addon's own since issue #346: a button made by UI:CreateButton is a
+  -- frame of `made` too, with the label it was given.
+  GuildOS.UI = setmetatable({ GetFeature = function() return nil end, SkinScrollBar = function() end,
+    CreateButton = function(_, _, text)
+      local w = widget(); w.kind = "Button"; w.label = widget(); w.label.text = text
+      made[#made + 1] = w
+      return w
+    end },
+    { __index = function() return function() return stub end end })
   dofile(ADDON .. "/UI/FeaturePanels.lua")
   SlashCmdList = {}
   dofile(ADDON .. "/Core/Commands.lua")

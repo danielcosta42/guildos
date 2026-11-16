@@ -96,7 +96,7 @@ function GuildOS:CreateDashboardPanel(panel)
     local cReady    = makeCard(L["YOUR READINESS"],  "raids")
     local cPulse    = makeCard(L["GUILD PULSE"],     "roster")
     local cRecruit  = makeCard(L["RECRUITMENT"],     "recruitment")
-    local cLoot     = makeCard(L["YOUR LOOT"],       "loot")
+    local cLoot     = makeCard(L["YOUR LOOT"],       "loot",        "history")
     -- The guild's chat (#126), where "Guild activity" repeated the Activity column beside it.
     local cChat     = makeCard(L["GUILD CHAT"],      "guild",       "chat", true)
     local chatRefresh = GuildOS:CreateGuildChatFeed(cChat.body)

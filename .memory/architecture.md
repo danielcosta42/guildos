@@ -52,7 +52,10 @@ GuildOS/
     AuditPanel.lua        — "Audit" tab (attunement grid / enchant audit / sync health)
     RaidToolsPanel.lua    — "Raid Tools" tab (composition / cooldown coverage)
     Minimap.lua           — draggable minimap button (no LibDBIcon)
-    FeaturePanels.lua     — raids, loot, trials, settings, wishlist, recruitment panels
+    FeaturePanels.lua     — raids, trials, settings, wishlist, core sign-up, recruitment panels
+    LootWindow.lua        — the Loot tab (#346): Rule · Accounts · Lists · History; BuildLootRuleEditor
+    PointsPanel.lua       — the Loot tab's Accounts (was the points window; ShowPointsFrame opens it)
+    CorePanel.lua         — Raids › Cores (#346): the core list, Roster · Requests · Rule · Config
     RecipesPanel.lua      — profession recipes panel
     RaidHUD.lua           — floating CD tracker + consumable check popup
 ```
@@ -113,7 +116,8 @@ Until that split is done, all UI code continues to use `GuildOS.UI` / the `UI` l
 | `UI/RosterFrame.lua` | Roster window, tabs | data writes |
 | `UI/MemberDetail.lua` | Per-member detail panel | data writes |
 | `UI/ManagementPanel.lua` | "Liderança" tab UI (calls GuildManager) | data writes |
-| `UI/FeaturePanels.lua` | Feature panels (raids/loot/etc.) | data writes |
+| `UI/FeaturePanels.lua` | Feature panels (raids/trials/settings/sign-up) | data writes |
+| `UI/LootWindow.lua` | The Loot window (#346): every loot setting's one place | data writes (LootRule, LootMaster, Points do them) |
 | `UI/RecipesPanel.lua` | Recipes panel | data writes |
 | `UI/RaidHUD.lua` | CD overlay + consumable popup | data writes |
 
