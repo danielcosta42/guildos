@@ -231,20 +231,20 @@ end
 function AltAutoDetect:_UnclaimPending(key)
     local pending = GuildOSDB and GuildOSDB.altPending
     if not pending then return end
+    local rewrite = {}   -- kept after the walk: a new key added during pairs() is undefined in Lua
     for sig, p in pairs(pending) do
         if type(p) ~= "table" or p.main == key or type(p.alts) ~= "table" then
             if type(p) ~= "table" or p.main == key then pending[sig] = nil end
         else
             local alts = {}
             for _, k in ipairs(p.alts) do if k ~= key then alts[#alts + 1] = k end end
-            if #alts == 0 then
+            if #alts < #p.alts then
                 pending[sig] = nil
-            elseif #alts < #p.alts then
-                pending[sig] = nil
-                self:_KeepPending(p.main, alts)
+                if #alts > 0 then rewrite[#rewrite + 1] = { p.main, alts } end
             end
         end
     end
+    for _, r in ipairs(rewrite) do self:_KeepPending(r[1], r[2]) end
 end
 
 -- A member's re-main replaces any claim waiting about the group's characters with the new one.
