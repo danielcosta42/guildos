@@ -158,7 +158,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     countText:SetJustifyH("LEFT")
     countText:SetWordWrap(true)
     ackText:SetJustifyH("LEFT")
-    ackText:SetWordWrap(false)
+    ackText:SetWordWrap(true)   -- the no-ack lines say what to do, and run past one row
 
     local publishBtn  = UI:CreateButton(panel, L["Publish now"], 120, BTN_H)
     local publishWhy  = UI:CreateText(panel, "", 9, C.gold.r, C.gold.g, C.gold.b)
@@ -402,9 +402,15 @@ function GuildOS:CreateWebPanel(parent, _win)
 
             local dim, gold = C.textDim, C.gold
             if not ackAt then
-                -- A companion from before this existed never writes the value at
-                -- all, so its absence is the signature of an old one.
-                ackText:SetText(string.format(L["Companion out of date. Download it again at %s"], SITE))
+                -- No ack: a companion that wrote blocks without one has no guild link for this
+                -- folder; an empty inbox is the one the addon package ships, not written over yet.
+                local msg
+                if I and I:InboxHasBlocks() then
+                    msg = L["The companion is working, but none of its guild links sends this guild's raids here. Link the guild at %s"]
+                else
+                    msg = L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"]
+                end
+                ackText:SetText(string.format(msg, SITE))
                 ackText:SetTextColor(gold.r, gold.g, gold.b)
             elseif (GetServerTime() or time()) - ackAt > ACK_STALE then
                 ackText:SetText(string.format(L["The companion has sent nothing since %s"], stamp(ackAt)))
@@ -414,7 +420,12 @@ function GuildOS:CreateWebPanel(parent, _win)
                 ackText:SetTextColor(dim.r, dim.g, dim.b)
             end
 
-            publishNote:SetText(L["Writes and reloads the interface. The companion sends it on from your PC."])
+            -- Only an officer's client puts the site's raids on the guild calendar (UpsertWebRaid).
+            local note = L["Writes and reloads the interface. The companion sends it on from your PC."]
+            if not GuildOS:IsOfficer() then
+                note = note .. "\n" .. L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."]
+            end
+            publishNote:SetText(note)
         else
             -- The guild's: a member's own pack goes out with the switch off, through their own companion.
             countText:SetText(L["The guild's data stays in the game while this is off."])
@@ -568,7 +579,7 @@ function GuildOS:CreateWebPanel(parent, _win)
         y = y + ROW_H
         if ackText:IsShown() then
             place(ackText); ackText:SetWidth(inner)
-            y = y + ROW_H
+            y = y + math.max(ROW_H, math.ceil(ackText:GetStringHeight() or 0) + 2)
         end
         y = y + GAP
 
@@ -583,7 +594,7 @@ function GuildOS:CreateWebPanel(parent, _win)
             publishWhy:SetWidth(math.max(60, inner - 128))
             y = y + BTN_H + 2
             place(publishNote); publishNote:SetWidth(inner)
-            y = y + ROW_H * 2 + GAP
+            y = y + math.max(ROW_H * 2, math.ceil(publishNote:GetStringHeight() or 0) + 2) + GAP
         end
 
         y = y + SECTION
