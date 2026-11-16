@@ -1001,3 +1001,7 @@ L["Officers can always create every type."] = "Officers can always create every 
 L["|cffFF4444Your rank cannot create this type of event.|r"] = "|cffFF4444Your rank cannot create this type of event.|r"
 L["Pick a dungeon"] = "Pick a dungeon"
 L["Other (type a name)"] = "Other (type a name)"
+L["The companion is working, but none of its guild links sends this guild's raids here. Link the guild at %s"] = "The companion is working, but none of its guild links sends this guild's raids here. Link the guild at %s"
+L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"] = "No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"
+L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."] = "Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."
+L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."] = "Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."

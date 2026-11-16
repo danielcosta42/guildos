@@ -2898,3 +2898,7 @@ L["The core that item was given in is no longer here: there is nothing to give b
 L["A core's name has at most %d bytes (a letter with an accent is two)."] = "核心团名称最多 %d 字节（一个汉字算三个）。"
 L["A core's name cannot have | or control characters, nor be constructor, prototype or __proto__."] = "核心团名称不能包含 | 或控制字符，也不能是 constructor、prototype 或 __proto__。"
 L["This client does not have the core %s yet: tonight's points go to the guild's pool."] = "此客户端还没有核心团 %s：今晚的分数将计入公会的分数池。"
+L["The companion is working, but none of its guild links sends this guild's raids here. Link the guild at %s"] = "伴侣程序正在运行，但它的公会关联都没有把本公会的团队发到这里。请在 %s 关联公会"
+L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"] = "暂未收到伴侣程序的消息。如果它在运行，请等几分钟；否则请在 %s 下载"
+L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."] = "网站上的团队通过官员的客户端进入日历。你的会阶不在公会官员会阶内，所以这里只在此标签页显示。"
+L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."] = "在这里创建的活动只留在游戏中。若要在 Discord 报名，请在 guildos.me 或用 /raid create 创建团队。"

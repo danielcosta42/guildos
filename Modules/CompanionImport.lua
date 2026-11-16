@@ -297,6 +297,21 @@ function Import:Ack()
     return at, tonumber(a.members) or 0
 end
 
+--- Whether Inbox.lua carries any block. A current companion leaves the ack out where no guild
+--- link of it owns this client's folder and still writes the recruiting list, so an inbox with
+--- blocks and no ack is a working companion, not an old one; an empty one is the file the addon
+--- package ships, which the companion has not written over yet.
+function Import:InboxHasBlocks()
+    local inbox = _G.GuildOSInbox
+    if type(inbox) == "string" then return inbox ~= "" end
+    if type(inbox) == "table" then
+        for _, v in ipairs(inbox) do
+            if type(v) == "string" and v ~= "" then return true end
+        end
+    end
+    return type(_G.GuildOSInboxFirst) == "string" and _G.GuildOSInboxFirst ~= ""
+end
+
 ----------------------------------------------------------------------
 -- Inviting
 ----------------------------------------------------------------------
