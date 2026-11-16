@@ -360,6 +360,8 @@ function CommSystem:OnMessageReceived(msg, channel, sender)
                     if la ~= lm then localized[la] = lm end   -- one split person is not their own alt
                 end
                 GuildOS.db.altLinks = localized
+                -- A member's own claim the list lacks goes back on top of it (#353).
+                if GuildOS.AltAutoDetect then GuildOS.AltAutoDetect:OnOfficerLinks() end
             end
         end
     elseif msgType == CommSystem.MSG_TYPES.SELF_ALT then
