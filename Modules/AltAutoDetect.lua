@@ -240,11 +240,17 @@ function AltAutoDetect:_UnclaimPending(key)
             for _, k in ipairs(p.alts) do if k ~= key then alts[#alts + 1] = k end end
             if #alts < #p.alts then
                 pending[sig] = nil
-                if #alts > 0 then rewrite[#rewrite + 1] = { p.main, alts } end
+                if #alts > 0 then rewrite[#rewrite + 1] = { main = p.main, alts = alts, guild = p.guild, ts = p.ts } end
             end
         end
     end
-    for _, r in ipairs(rewrite) do self:_KeepPending(r[1], r[2]) end
+    -- Same guild and age as the claim it came from: an unlink here neither moves another guild's
+    -- claim into this one nor restarts its thirty days.
+    for _, r in ipairs(rewrite) do
+        local group = { r.main }
+        for _, k in ipairs(r.alts) do group[#group + 1] = k end
+        pending[GroupSignature(group)] = r
+    end
 end
 
 -- A member's re-main replaces any claim waiting about the group's characters with the new one.
