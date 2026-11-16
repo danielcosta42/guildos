@@ -2898,3 +2898,7 @@ L["The core that item was given in is no longer here: there is nothing to give b
 L["A core's name has at most %d bytes (a letter with an accent is two)."] = "코어 이름은 최대 %d바이트입니다 (한글 한 글자는 3바이트)."
 L["A core's name cannot have | or control characters, nor be constructor, prototype or __proto__."] = "코어 이름에는 |나 제어 문자를 쓸 수 없으며, constructor, prototype, __proto__도 될 수 없습니다."
 L["This client does not have the core %s yet: tonight's points go to the guild's pool."] = "이 클라이언트에는 아직 %s 코어가 없습니다: 오늘 밤의 점수는 길드 풀로 들어갑니다."
+L["%d · %d of %d · group"] = "%d · %d/%d · 그룹"
+L["group of %s"] = "%s의 그룹"
+L["group of %s · points in its pool"] = "%s의 그룹 · 점수는 그쪽 풀로"
+L["split into %d groups"] = "%d개 그룹으로 나뉨"

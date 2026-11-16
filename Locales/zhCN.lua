@@ -2898,3 +2898,7 @@ L["The core that item was given in is no longer here: there is nothing to give b
 L["A core's name has at most %d bytes (a letter with an accent is two)."] = "核心团名称最多 %d 字节（一个汉字算三个）。"
 L["A core's name cannot have | or control characters, nor be constructor, prototype or __proto__."] = "核心团名称不能包含 | 或控制字符，也不能是 constructor、prototype 或 __proto__。"
 L["This client does not have the core %s yet: tonight's points go to the guild's pool."] = "此客户端还没有核心团 %s：今晚的分数将计入公会的分数池。"
+L["%d · %d of %d · group"] = "%d · %d/%d · 小组"
+L["group of %s"] = "%s 的小组"
+L["group of %s · points in its pool"] = "%s 的小组 · 分数计入其积分池"
+L["split into %d groups"] = "分为 %d 个小组"

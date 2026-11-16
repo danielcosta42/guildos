@@ -3042,3 +3042,7 @@ L["The core that item was given in is no longer here: there is nothing to give b
 L["A core's name has at most %d bytes (a letter with an accent is two)."] = "Il nome di un core ha al massimo %d byte (una lettera accentata conta due)."
 L["A core's name cannot have | or control characters, nor be constructor, prototype or __proto__."] = "Il nome di un core non può contenere | né caratteri di controllo, né essere constructor, prototype o __proto__."
 L["This client does not have the core %s yet: tonight's points go to the guild's pool."] = "Questo client non ha ancora il core %s: i punti di stasera vanno nel fondo della gilda."
+L["%d · %d of %d · group"] = "%d · %d di %d · gruppo"
+L["group of %s"] = "gruppo di %s"
+L["group of %s · points in its pool"] = "gruppo di %s · punti nel suo pool"
+L["split into %d groups"] = "diviso in %d gruppi"

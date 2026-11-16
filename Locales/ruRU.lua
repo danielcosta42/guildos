@@ -2898,3 +2898,7 @@ L["The core that item was given in is no longer here: there is nothing to give b
 L["A core's name has at most %d bytes (a letter with an accent is two)."] = "Название статика — не больше %d байт (буква кириллицы или с акцентом считается за две)."
 L["A core's name cannot have | or control characters, nor be constructor, prototype or __proto__."] = "Название статика не может содержать | или управляющие символы и не может быть constructor, prototype или __proto__."
 L["This client does not have the core %s yet: tonight's points go to the guild's pool."] = "У этого клиента пока нет кора %s: очки за сегодняшний вечер идут в общий пул гильдии."
+L["%d · %d of %d · group"] = "%d · %d из %d · группа"
+L["group of %s"] = "группа состава %s"
+L["group of %s · points in its pool"] = "группа состава %s · очки в его пуле"
+L["split into %d groups"] = "разделён на группы: %d"
