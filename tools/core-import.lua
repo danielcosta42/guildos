@@ -567,4 +567,18 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   end
 end
 
+-- An inbox with blocks and no ack is a working companion with no guild link for this folder, not an
+-- old one; an empty inbox is the addon package's own file (the Web tab tells them apart).
+do
+  local I = GuildOS.CompanionImport
+  local saved, savedFirst = GuildOSInbox, GuildOSInboxFirst
+  GuildOSInbox, GuildOSInboxFirst = {}, nil
+  check(not I:InboxHasBlocks(), "the packaged empty inbox carries no block")
+  GuildOSInbox = { "", "GOSRECR1:abc" }
+  check(I:InboxHasBlocks(), "a recruiting list with no ack is a block")
+  GuildOSInbox = "GOSROST1:abc"
+  check(I:InboxHasBlocks(), "and so is an old companion's bare string")
+  GuildOSInbox, GuildOSInboxFirst = saved, savedFirst
+end
+
 print(("core-import: %d checks passed"):format(checks))

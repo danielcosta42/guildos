@@ -287,6 +287,15 @@ local function buildEditor()
     saveBtn:SetPoint("BOTTOMLEFT", 14, 14)
     local cancelBtn = UI:CreateButton(f, L["Cancel"], 80, 24)
     cancelBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
+
+    -- An event made here never becomes a raid on the site or a Discord post (spec 075 in guildos-web):
+    -- said where it is made, since "the bot didn't post my dungeon" is the question it answers.
+    local HINT_ROW = 28
+    local gameOnly = UI:CreateText(f, L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."], 9, C.textDim.r, C.textDim.g, C.textDim.b)
+    gameOnly:SetPoint("BOTTOMLEFT", saveBtn, "TOPLEFT", 0, 6)
+    gameOnly:SetWidth(332)
+    gameOnly:SetJustifyH("LEFT")
+    gameOnly:SetWordWrap(true)
     cancelBtn:SetScript("OnClick", function() f:Hide() end)
 
     local function commit()
@@ -339,7 +348,7 @@ local function buildEditor()
         local inAlliance = GuildOS.Alliance and GuildOS.Alliance:Get() ~= nil
         shareCb:SetShown(inAlliance)
         shareHint:SetShown(inAlliance)
-        f:SetHeight((inAlliance and 392 or 336) + REP_ROW)
+        f:SetHeight((inAlliance and 392 or 336) + REP_ROW + HINT_ROW)
         -- New: pick a repeat. An event of a series: change only it, or every later date too.
         f.inSeries = event and type(event.series) == "table" or false
         f.rep = "none"
