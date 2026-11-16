@@ -15,6 +15,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 local LIST_MIN, LIST_MAX = 180, 240   -- the core list's column, by the window's width
 local LIST_SHARE = 0.28
 local CORE_ROW_H = 36
+local GROUP_INDENT = 12   -- a group's row, under its elenco's (issue #352)
 local ROW_H = 22
 local METER_W = 120
 
@@ -228,13 +229,22 @@ function GuildOS:CreateCoresPanel(panel)
         local origin = track(UI:CreateBadge(header, originOf(CM, coreName)))
         origin:SetPoint("LEFT", title, "RIGHT", 10, 0)
         local x = origin
+        -- A group says its elenco, and where its points go (issue #352).
+        local parent = CM:ParentOf(coreName)
+        if parent then
+            local text = CM:UsesParentPool(coreName) and string.format(L["group of %s \194\183 points in its pool"], parent)
+                or string.format(L["group of %s"], parent)
+            local grp = track(UI:CreateBadge(header, text))
+            grp:SetPoint("LEFT", x, "RIGHT", 6, 0)
+            x = grp
+        end
         if coreName == GetActiveName() then
             local active = track(UI:CreateBadge(header, L["active in the raid"], C.gold))
-            active:SetPoint("LEFT", origin, "RIGHT", 6, 0)
+            active:SetPoint("LEFT", x, "RIGHT", 6, 0)
             x = active
         elseif GuildOS.RaidTracker then
             local setActiveBtn = track(UI:CreateButton(header, L["Set Active"], 90, 20))
-            setActiveBtn:SetPoint("LEFT", origin, "RIGHT", 8, 0)
+            setActiveBtn:SetPoint("LEFT", x, "RIGHT", 8, 0)
             setActiveBtn:SetScript("OnClick", function()
                 GuildOS.RaidTracker:PickCore(coreName)
                 SetStatus(string.format(L["Active core set to: %s"], coreName), C.online)
@@ -866,12 +876,14 @@ function GuildOS:CreateCoresPanel(panel)
         coreRows = {}
         local CM = GuildOS.CoreManager
         if not CM then return end
-        local names = CM:GetSortedNames()
+        -- Each elenco with its groups under it (issue #352); a core with neither lists as always.
+        local names = CM:SortedTree()
         local active = GetActiveName()
-        for idx, name in ipairs(names) do
+        for idx, entry in ipairs(names) do
+            local name, indent = entry.name, entry.depth * GROUP_INDENT
             local row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
-            row:SetSize(listW - 14, CORE_ROW_H - 2)
-            row:SetPoint("TOPLEFT", 0, -(idx - 1) * CORE_ROW_H)
+            row:SetSize(listW - 14 - indent, CORE_ROW_H - 2)
+            row:SetPoint("TOPLEFT", indent, -(idx - 1) * CORE_ROW_H)
             row:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
             local on = name == selectedCore
             row:SetBackdropColor(C.well.r, C.well.g, C.well.b, on and 1 or 0)
@@ -885,8 +897,14 @@ function GuildOS:CreateCoresPanel(panel)
             if name == active then lbl:SetTextColor(C.gold.r, C.gold.g, C.gold.b) end
             local size = CM:GetRaidSize(name)
             local comp = CM:GetComposition(name)
-            local sub = MakeLabel(row, string.format(L["%d \194\183 %d of %d \194\183 %s"], size, comp.total, size, originOf(CM, name)),
-                9, C.labelDim.r, C.labelDim.g, C.labelDim.b)
+            local subText = string.format(L["%d \194\183 %d of %d \194\183 %s"], size, comp.total, size, originOf(CM, name))
+            local nGroups = #CM:GroupsOf(name)
+            if entry.depth > 0 then
+                subText = string.format(L["%d \194\183 %d of %d \194\183 group"], size, comp.total, size)
+            elseif nGroups > 0 then
+                subText = subText .. " \194\183 " .. string.format(L["split into %d groups"], nGroups)
+            end
+            local sub = MakeLabel(row, subText, 9, C.labelDim.r, C.labelDim.g, C.labelDim.b)
             sub:SetPoint("BOTTOMLEFT", 8, 4)
             sub:SetPoint("RIGHT", row, "RIGHT", -6, 0)
             sub:SetJustifyH("LEFT")

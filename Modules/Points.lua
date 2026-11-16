@@ -70,11 +70,26 @@ local QUEUE_KEY_MAX = 64          -- bytes of a player's key in a queue
 -- Returns the points DB for the currently active core, or the global
 -- db.points when no named core is active (ungrouped raids).
 ----------------------------------------------------------------------
+-- A group whose points go to its elenco's pool (issue #352, CoreManager:PoolOwner) reads and writes the
+-- elenco's: its own name never names a pool then, here or in what is told to the other officers.
+local function ownerOf(name)
+    local CM = GuildOS.CoreManager
+    if CM and CM.PoolOwner and type(name) == "string" and name ~= "" then return CM:PoolOwner(name) end
+    return name
+end
+
 -- nil while `InCore` names a core this client does not have (CoreManager:GetPointsDB): no pool, and
 -- every caller that charges or gives checks it (LootMaster's `pointsReady`).
 function Points:GetDB()
-    if GuildOS.CoreManager then
-        return GuildOS.CoreManager:GetPointsDB(self.scope)
+    local CM = GuildOS.CoreManager
+    if CM then
+        local scope = self.scope
+        if scope == nil and CM.PoolOwner then
+            local active = CM:GetActiveName()
+            local owner = ownerOf(active)
+            if owner ~= active then scope = owner end
+        end
+        return CM:GetPointsDB(scope)
     end
     return GuildOS.db.points
 end
@@ -100,7 +115,7 @@ function Points:ActiveCore()
         self:TellMissingCore(name)
         return ""
     end
-    return name
+    return ownerOf(name)
 end
 
 -- Says to an officer, once a raid night (the raid tracker's session; once a login outside one), that
@@ -121,21 +136,33 @@ end
 -- tagged with it, so the other officers' clients route them to the same pool. An item is announced
 -- under one core and is given, paid for and undone in that core's accounts (LootMaster, issue #338).
 -- nil runs `fn` on the active core, as everything outside a roll does.
-function Points:InCore(coreName, fn, ...)
-    if coreName == nil then return fn(...) end
+local function inScope(self, scope, fn, ...)
     local was = self.scope
-    self.scope = coreName
+    self.scope = scope
     local ok, a, b, c = pcall(fn, ...)
     self.scope = was
     if not ok then error(a, 0) end
     return a, b, c
+end
+function Points:InCore(coreName, fn, ...)
+    if coreName == nil then return fn(...) end
+    return inScope(self, ownerOf(coreName), fn, ...)
+end
+
+-- The pool the core `coreName`'s points are in now (a group with the elenco's pool: the elenco's, #352),
+-- to be kept with what was given in it; and `fn(...)` run on a pool kept so (`poolName`, never resolved
+-- again), so an undo gives back where the award took from, whatever the group's pool setting is by then.
+function Points:PoolOf(coreName) return ownerOf(coreName) end
+function Points:InPool(poolName, fn, ...)
+    if poolName == nil then return fn(...) end
+    return inScope(self, poolName, fn, ...)
 end
 
 -- Returns the points DB for a specific core (used during sync routing).
 -- nil for a core this client does not have: the sync skips those entries, unapplied, until it arrives.
 function Points:GetDBForCore(coreName)
     if GuildOS.CoreManager then
-        return GuildOS.CoreManager:GetPointsDB(coreName)
+        return GuildOS.CoreManager:GetPointsDB(ownerOf(coreName))
     end
     return GuildOS.db.points
 end
@@ -1464,7 +1491,12 @@ function Points:OnSync(env)
             if type(e) == "table" and type(e.op) == "string" and type(e.list) == "table" then
                 local pool = poolFor(e.core)
                 if not pool then keepForLater("qset", e) end
-                if pool and not pool.appliedOps[e.op] then
+                -- A group's own queue, from a client that does not know it uses its elenco's (#352): as
+                -- with its snapshot, the elenco's queue here is not the group's and is left alone.
+                local here = pool and type(e.core) == "string" and e.core ~= "" and self:CoreNamed(e.core)
+                if here and ownerOf(here) ~= here then
+                    self:MarkApplied(e.op, pool)
+                elseif pool and not pool.appliedOps[e.op] then
                     local list, seen = {}, {}
                     for _, key in ipairs(e.list) do
                         if type(key) == "string" then
@@ -1479,6 +1511,9 @@ function Points:OnSync(env)
         end
         if applied then self:Refresh() end
     elseif env.act == "snapshot" and d then
+        -- A group's own pool, from a client that does not know it uses its elenco's (#352): the elenco's
+        -- standings here are not the group's, and are left alone.
+        if ownerOf(d.core) ~= d.core then return end
         local pool = self:GetDBForCore(d.core)
         -- A core this client does not have: no pool to write, and its revision left unread, so the
         -- officer's next snapshot for it lands once the core does.
@@ -1520,7 +1555,9 @@ end
 function Points:BroadcastSnapshot(coreName)
     if not GuildOS:IsOfficer() then return end
     if not GuildOS.SyncService then return end
-    if coreName == nil then coreName = self:ActiveCore() end
+    -- A group with the elenco's pool tells the elenco's (#352); ActiveCore says it already, or the pool
+    -- InPool keeps as it is.
+    if coreName == nil then coreName = self:ActiveCore() else coreName = ownerOf(coreName) end
     local pool  = poolOf(coreName)
     if pool.nowhere then return end   -- a core this client does not have: nothing of its own to tell
     local domain = (coreName ~= "") and ("points:" .. coreName) or "points"
