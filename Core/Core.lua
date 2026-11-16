@@ -1003,10 +1003,31 @@ function GuildOS:OnOfficerMaxRankSync(env)
     if held and (at < held or (at == held and max >= (s.officerMaxRank or 1))) then return end
     -- A client up to 1.12 read the event limit as this one and its officers re-send it as
     -- theirs, with the event limit's own stamp (#331): that copy is not an officer change.
-    if s.eventMaxRankAt and at == s.eventMaxRankAt and max == s.eventMaxRank then return end
+    if GuildOS:_IsEventLimitCopy(at, max) then return end
     -- Kept so the event limit, arriving after such a copy, can put the officers back.
     s.officerMaxRankPrev, s.officerMaxRankPrevAt = s.officerMaxRank, s.officerMaxRankAt
     s.officerMaxRank, s.officerMaxRankAt = max, at
+end
+
+-- Every event limit an officer stamped, held a while (#331): an old client's officer copy carries one of
+-- these exact (stamp, ranks) pairs, also of a limit that has since been replaced.
+local EVENT_SEEN_KEEP = 8
+function GuildOS:_SeeEventLimit(at, max)
+    local s = self.db.settings
+    s.eventMaxRankSeen = s.eventMaxRankSeen or {}
+    s.eventMaxRankSeen[at] = max
+    local stamps = {}
+    for k in pairs(s.eventMaxRankSeen) do stamps[#stamps + 1] = k end
+    if #stamps <= EVENT_SEEN_KEEP then return end
+    table.sort(stamps)
+    for i = 1, #stamps - EVENT_SEEN_KEEP do s.eventMaxRankSeen[stamps[i]] = nil end
+end
+
+function GuildOS:_IsEventLimitCopy(at, max)
+    local s = self.db and self.db.settings
+    if not (s and at and max) then return false end
+    if s.eventMaxRankAt == at and s.eventMaxRank == max then return true end
+    return s.eventMaxRankSeen ~= nil and s.eventMaxRankSeen[at] == max
 end
 
 -- Who creates calendar events (issue #283): ranks 0 to this. The guild's, stamped and published as the
@@ -1035,6 +1056,7 @@ function GuildOS:SetEventMaxRank(maxRank)
     local s = self.db.settings
     s.eventMaxRank = maxRank
     s.eventMaxRankAt = math.max(GetServerTime(), (s.eventMaxRankAt or 0) + 1)
+    self:_SeeEventLimit(s.eventMaxRankAt, maxRank)
     self:PublishEventMaxRank(true)
     return true
 end
@@ -1054,13 +1076,17 @@ function GuildOS:OnEventMaxRankSync(env)
     if max < 0 or max > MAX_RANK_INDEX or max ~= math.floor(max) then return end
     at = math.min(at, GetServerTime() + RANK_FUTURE_SLACK)
     local s = self.db.settings
+    self:_SeeEventLimit(at, max)
+    -- The officer threshold we hold is an old client's copy of this change (#331), even of one
+    -- older than the limit we keep: back to the one before it, unless that was a copy too.
+    if s.officerMaxRankAt == at and s.officerMaxRank == max then
+        local prev, prevAt = s.officerMaxRankPrev, s.officerMaxRankPrevAt
+        if self:_IsEventLimitCopy(prevAt, prev) then prev, prevAt = nil, nil end
+        s.officerMaxRank, s.officerMaxRankAt = prev, prevAt
+    end
     local held = s.eventMaxRankAt
     if held and (at < held or (at == held and max >= (s.eventMaxRank or 0))) then return end
     s.eventMaxRank, s.eventMaxRankAt = max, at
-    -- The officer threshold we hold is an old client's copy of this very change (#331).
-    if s.officerMaxRankAt == at and s.officerMaxRank == max then
-        s.officerMaxRank, s.officerMaxRankAt = s.officerMaxRankPrev, s.officerMaxRankPrevAt
-    end
     -- An open calendar shows the New Event button the moment the limit lets this rank in.
     if self.Calendar and self.Calendar.Refresh then self.Calendar:Refresh() end
 end

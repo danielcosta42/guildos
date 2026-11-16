@@ -163,4 +163,33 @@ deliver(limit, "Off")
 deliver(real, "Off")
 check(GuildOS.db.settings.officerMaxRank == 2, "a real officer change still goes through")
 
+-- An old client re-sending an event limit that has since been replaced is a copy all the same.
+client("Off")
+now = now + 10
+GuildOS:SetEventMaxRank(5)
+local older = sent[1]
+local olderAt = now
+now = now + 10
+sent = {}
+GuildOS:SetEventMaxRank(3)
+local newest = sent[1]
+client("Off")
+SS:Publish("guildcfg", "officers", { max = 5 }, { rev = olderAt })
+local staleCopy = sent[1]
+client("Mem")
+deliver(older, "Off")
+deliver(newest, "Off")
+deliver(staleCopy, "Off")
+check(GuildOS.db.settings.officerMaxRank == 1, "the copy of a replaced event limit is no officer change either")
+client("Off")
+SS:Publish("guildcfg", "officers", { max = 5 }, { rev = olderAt })
+local staleCopy2 = sent[1]                       -- a fresh envelope: the wire drops ids it has seen
+client("Mem")
+deliver(newest, "Off")
+deliver(staleCopy2, "Off")
+check(GuildOS.db.settings.officerMaxRank == 5, "a copy of a limit never heard cannot be told apart")
+deliver(older, "Off")
+check(GuildOS.db.settings.officerMaxRank == 1 and GuildOS.db.settings.eventMaxRank == 3,
+  "the older limit, heard late, still puts the officers back and leaves the newest limit")
+
 print(string.format("event-ranks: %d checks passed", checks))

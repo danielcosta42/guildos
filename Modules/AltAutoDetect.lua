@@ -149,6 +149,7 @@ function AltAutoDetect:_SendClaim(mainKey, alts)
 end
 
 local PENDING_TTL = 30 * 86400
+local CLAIM_HEARD = 20   -- seconds an officer has to apply a re-sent claim before its list counts as an answer
 
 -- Account-wide like accountChars, tagged with the guild: the keys only mean something there.
 function AltAutoDetect:_KeepPending(mainKey, alts)
@@ -187,16 +188,22 @@ end
 -- on our view and to the officers again, once a session each (an officer is online now).
 function AltAutoDetect:OnOfficerLinks()
     if GuildOS:IsOfficer() then return end
-    self._resent = self._resent or {}
+    self._resentAt = self._resentAt or {}
+    local t = GetTime()
     self:_EachPending(function(sig, p)
+        local resentAt = self._resentAt[sig]
         if carries(GuildOS.db.altLinks or {}, p) then
+            GuildOSDB.altPending[sig] = nil
+        elseif resentAt and t - resentAt > CLAIM_HEARD then
+            -- Sent this session and an officer's list still lacks it a while later: the officers
+            -- heard it and undid it (an unlink since), and their word stands.
             GuildOSDB.altPending[sig] = nil
         else
             local group = { p.main }
             for _, k in ipairs(p.alts) do group[#group + 1] = k end
             GuildOS.db.altLinks = self:PlanGroup(GuildOS.db.altLinks, group, p.main)
-            if not self._resent[sig] then
-                self._resent[sig] = true
+            if not resentAt then
+                self._resentAt[sig] = t
                 self:_SendClaim(p.main, p.alts)
             end
         end
@@ -212,9 +219,26 @@ function AltAutoDetect:ResendPending()
             self:LinkOwnAlts(p.main, group)
             GuildOSDB.altPending[sig] = nil
         else
+            self._resentAt = self._resentAt or {}
+            self._resentAt[sig] = GetTime()
             self:_SendClaim(p.main, p.alts)
         end
     end)
+end
+
+-- A member's own unlink or re-main replaces any claim still waiting about those characters.
+function AltAutoDetect:_DropPendingWith(keys)
+    local pending = GuildOSDB and GuildOSDB.altPending
+    if not pending then return end
+    local hit = {}
+    for _, k in ipairs(keys) do hit[k] = true end
+    for sig, p in pairs(pending) do
+        local touches = type(p) ~= "table" or hit[p.main]
+        if not touches and type(p.alts) == "table" then
+            for _, k in ipairs(p.alts) do if hit[k] then touches = true; break end end
+        end
+        if touches then pending[sig] = nil end
+    end
 end
 
 -- Member-safe "set which of my chars is the main". Officers apply directly
@@ -233,6 +257,7 @@ function AltAutoDetect:SetOwnMain(newMainKey)
     local links = GuildOS.db.altLinks or {}
     local group = GuildOS:GetLinkedChars(newMainKey)
     if #group < 2 then return end               -- nothing to re-main
+    self:_DropPendingWith(group)
     if links[newMainKey] == nil then return end -- already the main, no-op
     GuildOS.db.altLinks = GuildOS:_RepointGroup(links, group, newMainKey)
     if GuildOS.CommSystem then
@@ -253,6 +278,7 @@ function AltAutoDetect:UnlinkOwnAlt(altKey)
         GuildOS:UnlinkAlt(altKey)
     else
         GuildOS.db.altLinks = GuildOS.db.altLinks or {}
+        self:_DropPendingWith({ altKey, GuildOS.db.altLinks[altKey] })
         GuildOS.db.altLinks[altKey] = nil
         if GuildOS.CommSystem then
             local payload = LibSerialize:Serialize({ unlink = { altKey } })

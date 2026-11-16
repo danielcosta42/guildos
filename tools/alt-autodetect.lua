@@ -35,7 +35,8 @@ WOW_PROJECT_BURNING_CRUSADE_CLASSIC, WOW_PROJECT_ID = 5, 5
 function GetRealmName() return "Realm" end
 local now = 1000000
 function GetServerTime() return now end
-function GetTime() return 1 end
+local clock = 1
+function GetTime() return clock end
 local afters = {}
 C_Timer = { After = function(_, fn) afters[#afters + 1] = fn end,
             NewTicker = function() return { Cancel = function() end } end }
@@ -81,7 +82,7 @@ local function client(who)
   me = who
   GuildOS.db = { settings = { officerMaxRank = 1 } }
   GuildOSDB = {}
-  sent, printed, AD._resent = {}, {}, nil
+  sent, printed, AD._resentAt = {}, {}, nil
 end
 local function deliver(msg, sender, channel)
   CS:OnMessageReceived("S:" .. msg.t .. ":" .. msg.data, channel or "GUILD", sender)
@@ -156,6 +157,33 @@ local newList = sentOf("AL")[#sentOf("AL")]
 me, GuildOS.db, GuildOSDB = "Main", memberDb, memberAcc
 deliver(newList, "Off-Realm")
 check(next(GuildOSDB.altPending) == nil, "the officer's list carries it: the claim is done")
+
+-- The member's own unlink or re-main after accepting replaces the claim still waiting (review of #353).
+client("Main")
+GuildOS.db.altLinks = {}
+AD:LinkOwnAlts(ALT, { MAIN, ALT })
+AD:UnlinkOwnAlt(MAIN)
+check(next(GuildOSDB.altPending) == nil, "an unlink drops the waiting claim about those characters")
+sent = {}
+deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(GuildOS.db.altLinks[MAIN] == nil and #sentOf("SA") == 0, "so the officer's list does not bring the link back")
+client("Main")
+GuildOS.db.altLinks = {}
+AD:LinkOwnAlts(ALT, { MAIN, ALT })
+AD:SetOwnMain(MAIN)
+check(next(GuildOSDB.altPending) == nil, "a re-main drops it too")
+
+-- Re-sent this session and still missing from an officer's list a while later: the officers undid it.
+client("Main")
+GuildOS.db.altLinks = {}
+AD:LinkOwnAlts(ALT, { MAIN, ALT })
+AD:ResendPending()
+deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(next(GuildOSDB.altPending) ~= nil, "a list right after the claim went out may predate it: kept")
+clock = clock + 60
+deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(next(GuildOSDB.altPending) == nil and GuildOS.db.altLinks[MAIN] == nil,
+  "a minute on, the officers' list stands and the claim is dropped")
 
 -- A claim from another guild, or a month old, is left alone.
 client("Main")
