@@ -192,4 +192,19 @@ deliver(older, "Off")
 check(GuildOS.db.settings.officerMaxRank == 1 and GuildOS.db.settings.eventMaxRank == 3,
   "the older limit, heard late, still puts the officers back and leaves the newest limit")
 
+-- An officer setting both to the same ranks in the same second: the two stamps never collide.
+client("Off")
+now = now + 10
+GuildOS:SetOfficerMaxRank(2)
+local o2 = sent[1]
+sent = {}
+GuildOS:SetEventMaxRank(2)
+local e2 = sent[1]
+check(GuildOS.db.settings.officerMaxRankAt ~= GuildOS.db.settings.eventMaxRankAt, "the event limit takes the next stamp")
+for _, order in ipairs({ { o2, e2 }, { e2, o2 } }) do
+  client("Mem")
+  deliver(order[1], "Off"); deliver(order[2], "Off")
+  check(GuildOS.db.settings.officerMaxRank == 2, "the real officer change holds whatever arrives first")
+end
+
 print(string.format("event-ranks: %d checks passed", checks))

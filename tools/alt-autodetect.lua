@@ -171,7 +171,34 @@ client("Main")
 GuildOS.db.altLinks = {}
 AD:LinkOwnAlts(ALT, { MAIN, ALT })
 AD:SetOwnMain(MAIN)
-check(next(GuildOSDB.altPending) == nil, "a re-main drops it too")
+local only = 0
+for _, p in pairs(GuildOSDB.altPending) do only = only + 1; check(p.main == MAIN and p.alts[1] == ALT, "the re-main is what waits now") end
+check(only == 1, "a re-main replaces the waiting claim with itself")
+sent = {}
+deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(GuildOS.db.altLinks[ALT] == MAIN and #sentOf("SA") == 1, "and it survives an officer list that never heard it")
+
+-- Unlinking one character of a waiting group keeps the rest of the claim.
+client("Main")
+GuildOS.db.altLinks = {}
+AD:LinkOwnAlts(MAIN, { MAIN, ALT, THIRD })
+AD:UnlinkOwnAlt(THIRD)
+local p1 = select(2, next(GuildOSDB.altPending))
+check(p1 and p1.main == MAIN and #p1.alts == 1 and p1.alts[1] == ALT, "unlinking Third leaves Alt -> Main waiting")
+deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(GuildOS.db.altLinks[ALT] == MAIN and GuildOS.db.altLinks[THIRD] == nil, "an officer list keeps Alt and not Third")
+
+-- The claim sent at login, with nobody online, is not taken as heard (review of #353).
+client("Main")
+GuildOS.db.altLinks = {}
+AD:LinkOwnAlts(ALT, { MAIN, ALT })
+AD._resentAt = nil                                 -- a new session
+AD:ResendPending()
+clock = clock + 600
+sent = {}
+deliver({ t = "AL", data = oldList }, "Off-Realm")
+check(next(GuildOSDB.altPending) ~= nil and GuildOS.db.altLinks[MAIN] == ALT and #sentOf("SA") == 1,
+  "the first officer list ten minutes on gets the claim again, not a drop")
 
 -- Re-sent this session and still missing from an officer's list a while later: the officers undid it.
 client("Main")

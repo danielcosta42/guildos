@@ -973,7 +973,10 @@ function GuildOS:SetOfficerMaxRank(maxRank)
     if not self:IsOfficer() then return false end
     local s = self.db.settings
     s.officerMaxRank = maxRank
-    s.officerMaxRankAt = math.max(GetServerTime(), (s.officerMaxRankAt or 0) + 1)
+    local at = math.max(GetServerTime(), (s.officerMaxRankAt or 0) + 1)
+    -- Never the stamp and ranks of an event limit: receivers would take it for an old client's copy (#331).
+    while self:_IsEventLimitCopy(at, maxRank) do at = at + 1 end
+    s.officerMaxRankAt = at
     self:PublishOfficerMaxRank(true)
     return true
 end
@@ -1055,7 +1058,9 @@ function GuildOS:SetEventMaxRank(maxRank)
     if type(maxRank) ~= "number" or maxRank < 0 or maxRank > MAX_RANK_INDEX or maxRank ~= math.floor(maxRank) then return false end
     local s = self.db.settings
     s.eventMaxRank = maxRank
-    s.eventMaxRankAt = math.max(GetServerTime(), (s.eventMaxRankAt or 0) + 1)
+    local at = math.max(GetServerTime(), (s.eventMaxRankAt or 0) + 1)
+    while s.officerMaxRankAt == at and s.officerMaxRank == maxRank do at = at + 1 end
+    s.eventMaxRankAt = at
     self:_SeeEventLimit(s.eventMaxRankAt, maxRank)
     self:PublishEventMaxRank(true)
     return true
