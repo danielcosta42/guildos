@@ -100,8 +100,7 @@ function AltAutoDetect:DetectOwnAlts(accountChars, guildSet, altLinks)
         if a.level ~= b.level then return a.level > b.level end
         return a.key < b.key
     end)
-    local inGroup, roots, nRoots = {}, {}, 0
-    for _, g in ipairs(group) do inGroup[g.key] = true end
+    local roots, nRoots = {}, 0
     for _, g in ipairs(group) do
         local root = altLinks[g.key] or g.key
         if not roots[root] then roots[root] = 0; nRoots = nRoots + 1 end
