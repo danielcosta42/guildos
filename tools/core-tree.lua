@@ -8,7 +8,9 @@
 --   * a raid night goes to the group whose people are in the raid, though the elenco's roster has them
 --     too; an elenco keeps a night bigger than its groups, and one where two of its groups tie;
 --   * a group with the elenco's pool earns and is charged in the elenco's pool, and tells the other
---     officers so; one with its own pool, as always.
+--     officers so; one with its own pool, as always; a snapshot or queue of the group's own pool from a
+--     client without the tree leaves the elenco's alone; a cycle keeps each core's own pool.
+--     (The pool an item is given and undone in: tools/loot-cores.lua.)
 --
 --   luajit -e 'ADDON="."' tools/core-tree.lua
 --
@@ -218,6 +220,9 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   cycle.cores[2].pool = "parent"
   CM:ImportFromSite(cycle)
   check(#CM:SortedTree() == 3 and type(CM:PoolOwner("Kara A")) == "string", G("a cycle neither loops nor drops a core"))
+  check(CM:PoolOwner("Kara A") == "Kara A" and CM:PoolOwner("Elenco") == "Elenco",
+    G("and in a cycle each core keeps its own pool, never swapping with another: " .. tostring(CM:PoolOwner("Kara A"))
+      .. ", " .. tostring(CM:PoolOwner("Elenco"))))
 
   -- ── A raid night goes to the group whose people are in it ─────────────
   CM, RT = load(game)
@@ -292,6 +297,18 @@ for _, game in ipairs({ "anniversary", "forever" }) do
   handlers["points"]({ act = "snapshot", rev = 9, data = { core = "Kara B", mode = "dkp", config = {}, standings = { [bia] = { current = 1 } } } },
     "Officer-Firemaw")
   check(elenco.standings[bia].current == 32, G("a snapshot of the group's own pool leaves the elenco's alone"))
+  -- Nor does its own queue from such a client replace the elenco's, newer as its order may be.
+  P:SetQueue("main", { bia, key(B[2]) })
+  local queue = elenco.queues and elenco.queues.main
+  check(queue and #queue.list == 2 and queue.list[1] == bia, G("the group's queue is the elenco's"))
+  handlers["points"]({ act = "qset", data = { entries = { { op = "far-q", acct = "main", seq = (queue.seq or 0) + 50,
+    list = { key(A[9]) }, core = "Kara B" } } } }, "Officer-Firemaw")
+  queue = elenco.queues.main
+  check(#queue.list == 2 and queue.list[1] == bia and elenco.appliedOps["far-q"],
+    G("a queue named for the group from a client without the tree leaves the elenco's alone, applied once"))
+  handlers["points"]({ act = "qset", data = { entries = { { op = "far-q2", acct = "main", seq = (queue.seq or 0) + 50,
+    list = { key(A[9]) }, core = "Elenco" } } } }, "Officer-Firemaw")
+  check(#elenco.queues.main.list == 1 and elenco.queues.main.list[1] == key(A[9]), G("one named for the elenco still lands"))
   sent = {}
   P:BroadcastSnapshot("Kara B")
   check(sent[1] and sent[1].data.core == "Elenco", G("the group's snapshot is told as the elenco's"))

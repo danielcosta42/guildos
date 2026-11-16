@@ -382,17 +382,21 @@ local function moveCore(oldName, newName)
     -- Every other place that keeps a core by its name (review of #339: an undo after a Discord rename
     -- gave back into the guild's pool, the award still naming the old core):
     -- the awards an undo gives back into (the core's own log, and the guild's from before cores),
+    -- and the pool an award was given in (#352), which for a group is its elenco's, kept in the group's log,
     local function awards(list)
         for _, award in ipairs(type(list) == "table" and list or {}) do
             if type(award) == "table" and award.core == oldName then award.core = newName end
+            if type(award) == "table" and award.pool == oldName then award.pool = newName end
         end
     end
-    local moved = GuildOS.db.cores[newName]
-    awards(type(moved.lootMaster) == "table" and moved.lootMaster.awardHistory)
+    for _, core in pairs(GuildOS.db.cores) do
+        awards(type(core) == "table" and type(core.lootMaster) == "table" and core.lootMaster.awardHistory)
+    end
     awards(type(GuildOS.db.lootMaster) == "table" and GuildOS.db.lootMaster.awardHistory)
     -- the item being given and the last award's core (LootMaster), the pool `InCore` is on (Points),
     local LM = GuildOS.LootMaster
     if LM and type(LM.activeLoot) == "table" and LM.activeLoot.core == oldName then LM.activeLoot.core = newName end
+    if LM and type(LM.activeLoot) == "table" and LM.activeLoot.pool == oldName then LM.activeLoot.pool = newName end
     if LM and LM.lastAwardCore == oldName then LM.lastAwardCore = newName end
     if GuildOS.Points and GuildOS.Points.scope == oldName then GuildOS.Points.scope = newName end
     -- the revision of its points' snapshots (SyncService, "points:<name>"), so the next one is newer,
@@ -1698,7 +1702,9 @@ function CoreManager:PoolOwner(name)
         seen[cur] = true
         if not self:UsesParentPool(cur) then return cur end
         local parent = self:ParentOf(cur)
-        if seen[parent] then return cur end
+        -- A cycle (never a tree the site sends) is no elenco's pool: each core keeps its own, never
+        -- another's of the loop.
+        if seen[parent] then return name end
         cur = parent
     end
     return cur

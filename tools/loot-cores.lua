@@ -426,6 +426,37 @@ LR:Set(nil)
 LR:Set(nil, "Alpha")
 LR:Set(nil, "Beta")
 
+-- ── 7b. A group with its elenco's pool (issue #352) ─────────────────
+-- The pool an item is given in is the one when it was announced, and its undo gives back there, whatever
+-- the group's pool setting is by then.
+check(CM:Create("Elenco") and CM:Create("Kara"), "an elenco and its group")
+GuildOS.db.cores.Elenco.discordTag, GuildOS.db.cores.Kara.discordTag = "elenco", "kara"
+GuildOS.db.cores.Kara.discordParent, GuildOS.db.cores.Kara.pointsPool = "elenco", "parent"
+local elencoPool, karaPool = CM:GetPointsDB("Elenco"), CM:GetPointsDB("Kara")
+elencoPool.config.itemCost = 20
+check(GuildOS:SetLootSystem("dkp", "Kara") == true, "the group runs DKP")
+activate("Kara")
+P:Award(K("Bo"), 80, "seed")
+check(elencoPool.standings[K("Bo")].current == 80 and karaPool.standings[K("Bo")] == nil, "the group's points are the elenco's")
+announce()
+LM:RegisterRoll("Bo", "MS", 50)
+LM:EndRolling(true)
+check(LM.activeLoot.core == "Kara" and LM.activeLoot.pool == "Elenco", "the item keeps the group and the pool it is given in")
+GuildOS.db.cores.Kara.pointsPool = nil                     -- the group goes back to its own pool mid-roll
+LM:AwardLoot("Bo")
+check(elencoPool.standings[K("Bo")].current == 60 and karaPool.standings[K("Bo")] == nil,
+  "the winner pays in the pool the item was announced in")
+local lastAward = CM:GetAwardHistory("Kara")[1]
+check(lastAward and lastAward.core == "Kara" and lastAward.pool == "Elenco", "the award keeps that pool")
+check(LM:UndoLastAward() and elencoPool.standings[K("Bo")].current == 80 and karaPool.standings[K("Bo")] == nil,
+  "and its undo gives back there, though the group's pool is its own now")
+activate("")
+for _, name in ipairs({ "Kara", "Elenco" }) do
+  local core = GuildOS.db.cores[name]
+  core.discordTag, core.discordParent, core.pointsPool = nil, nil, nil
+  CM:Delete(name)
+end
+
 -- ── 8. The windows draw, and their buttons reach the modules ────────
 GuildOS.Colors = setmetatable({}, { __index = function() return { r = 1, g = 1, b = 1, a = 1 } end })
 local dropdowns = {}

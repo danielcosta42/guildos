@@ -213,11 +213,22 @@ function LootMaster:ActiveCore()
     return name
 end
 
+-- The pool the active core's points are in now (Points:PoolOf, #352): the elenco's for a group that uses
+-- it. nil without the points module.
+function LootMaster:LootPool()
+    local P = GuildOS.Points
+    if not (P and P.PoolOf) then return nil end
+    return P:PoolOf(self:ActiveCore())
+end
+
 -- Runs `fn(...)` on the accounts of the item being given (Points:InCore). With no item, or one that
 -- names no core, on the active core's.
 function LootMaster:InLootCore(fn, ...)
     local P, loot = GuildOS.Points, self.activeLoot
     if not (P and P.InCore and loot and loot.core ~= nil) then return fn(...) end
+    -- The pool kept when the item was announced (#352): a group's pool setting changed mid-roll moves
+    -- nothing of this item.
+    if loot.pool ~= nil and P.InPool then return P:InPool(loot.pool, fn, ...) end
     return P:InCore(loot.core, fn, ...)
 end
 
@@ -878,6 +889,7 @@ function LootMaster:AnnounceItem(itemLink, lootSlot)
         rule      = rule,
         system    = system,
         core      = self:ActiveCore(),          -- whose accounts and award log this item is given in
+        pool      = self:LootPool(),            -- and whose pool those accounts are, kept (#352)
         ruleAt    = GuildOS.LootRule:Stamp(),   -- for the award's record (issue #336)
     }
 
@@ -2139,6 +2151,7 @@ function LootMaster:AwardLootNow(playerName, silent, free)
                          or (GuildOS.db.lootMaster and GuildOS.db.lootMaster.awardHistory) or {}
     local award = {
         core = lootCore,   -- an undo gives back into the accounts the award took from
+        pool = self.activeLoot.pool,   -- the pool they were (#352), whatever the group's setting is later
         link = itemLink,
         itemId = itemId,
         player = playerName,
@@ -2423,7 +2436,7 @@ function LootMaster:UndoLastAward()
     -- Its core is gone from this client (closed): what the award took has nowhere to go back to, and
     -- never into the guild's own accounts.
     local CM = GuildOS.CoreManager
-    if CM and CM.HasPool and not CM:HasPool(award.core) then
+    if CM and CM.HasPool and not CM:HasPool(award.pool or award.core) then
         return nil, L["The core that item was given in is no longer here: there is nothing to give back into."]
     end
     award.undone = true
@@ -2454,7 +2467,14 @@ function LootMaster:UndoLastAward()
             GuildOS.Points:BroadcastSnapshot()
         end
     end
-    if GuildOS.Points and GuildOS.Points.InCore then GuildOS.Points:InCore(award.core, giveBack) else giveBack() end
+    local P = GuildOS.Points
+    if P and award.pool ~= nil and P.InPool then
+        P:InPool(award.pool, giveBack)   -- the pool the award took from (#352)
+    elseif P and P.InCore then
+        P:InCore(award.core, giveBack)
+    else
+        giveBack()
+    end
     for i = #(self.pendingTrades or {}), 1, -1 do
         local t = self.pendingTrades[i]
         if t.player == award.player and t.itemId == award.itemId then
@@ -2954,6 +2974,7 @@ end
 function LootMaster:SetActiveLoot(link, slot, itemId)
     self.activeLoot = {
         core      = self:ActiveCore(),
+        pool      = self:LootPool(),
         link      = link,
         slot      = slot,
         itemId    = itemId,
