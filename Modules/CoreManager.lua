@@ -528,15 +528,45 @@ function CoreManager:CoreForGroup(players, instanceSize)
         end
     end
     local raidSize = isSizeOfThisGame(instanceSize) and instanceSize or size
-    local best
+    -- Elenco e grupos (issue #352): an elenco's roster holds its groups' people, so it covers a group's
+    -- night as well as the group does, often with more of the raid on it (a sub from the elenco). A
+    -- group of the raid's format with the group's people on it is the night's: its elenco steps aside.
+    -- When two of its groups tie (half of each came), the night is the elenco's. An elenco whose groups
+    -- are smaller than the raid (a 40 with its two 20s) keeps it. Cores with no elenco and no groups
+    -- rank as always.
+    local covered, pool = {}, candidates
     for _, c in ipairs(candidates) do
+        if c.raidSize >= raidSize then
+            for _, e in ipairs(candidates) do
+                if e ~= c and self:IsAncestor(e.name, c.name) then covered[e] = true end
+            end
+        end
+    end
+    if next(covered) then
+        pool = {}
+        for _, c in ipairs(candidates) do if not covered[c] then pool[#pool + 1] = c end end
+    end
+    local best
+    for _, c in ipairs(pool) do
         if not best or ranksBefore(c, best, raidSize) then best = c end
     end
     if not best then return nil end
-    for _, c in ipairs(candidates) do
-        if c ~= best and not ranksBefore(best, c, raidSize) then return nil end   -- a tie: no roster is the raid
+    local tied = { best }
+    for _, c in ipairs(pool) do
+        if c ~= best and not ranksBefore(best, c, raidSize) then tied[#tied + 1] = c end
     end
-    return best.name, best.count, size
+    if #tied == 1 then return best.name, best.count, size end
+    -- A tie: no roster is the raid, unless the tied are groups of one elenco here, the nearest one.
+    local closest
+    for e in pairs(covered) do
+        local holds = true
+        for _, t in ipairs(tied) do
+            if not self:IsAncestor(e.name, t.name) then holds = false; break end
+        end
+        if holds and (not closest or self:IsAncestor(closest.name, e.name)) then closest = e end
+    end
+    if closest then return closest.name, closest.count, size end
+    return nil
 end
 
 -- Returns the core table for `name` (or the active core when name is nil).
@@ -1583,6 +1613,97 @@ local function holderOf(tag)
     return nil
 end
 
+----------------------------------------------------------------------
+-- Elenco e grupos (issue #352; guildos-web specs/086). A Discord core can have one parent, its
+-- elenco: a 25 split into Karazhan groups of 10, a 40 into two 20s. The GOSCORE1 says it per core as
+-- `parent`, the elenco's tag ("" or absent: none), and `pool`, "own" (the default) or "parent" (the
+-- group's points land in the elenco's pool). Kept on the core by tag (`discordParent`), so the elenco
+-- is whichever core holds that tag here, renamed or linked by hand; a tag no core here holds yet is no
+-- elenco until it arrives. `pointsPool` is "parent" or nil (own). A tree of at most three layers
+-- (40 -> 20 -> 10), never a cycle: a walk up stops at TREE_DEPTH, or at a core seen already.
+----------------------------------------------------------------------
+local TREE_DEPTH = 3
+
+-- The elenco and pool a site's core entry (or another officer's list) says, checked: a tag of a few
+-- dozen bytes that is not the core's own, and "parent" or nothing.
+local function treeOf(c)
+    local parent = c.parent
+    if type(parent) ~= "string" or parent == "" or #parent > 64 or parent == c.tag then parent = nil end
+    return { parent = parent, pool = (parent and c.pool == "parent") and "parent" or nil }
+end
+
+-- The elenco of the core `name` here, or nil: none, or its tag held by no core here yet.
+function CoreManager:ParentOf(name)
+    local core = GuildOS.db.cores and GuildOS.db.cores[name]
+    local tag = type(core) == "table" and core.discordTag and core.discordParent
+    if type(tag) ~= "string" then return nil end
+    local parent = holderOf(tag)
+    if parent == name then return nil end
+    return parent
+end
+
+-- Whether the core `a` is an elenco of the core `b`, its parent or the parent's.
+function CoreManager:IsAncestor(a, b)
+    local seen, cur = { [b] = true }, self:ParentOf(b)
+    for _ = 1, TREE_DEPTH do
+        if not cur or seen[cur] then return false end
+        if cur == a then return true end
+        seen[cur] = true
+        cur = self:ParentOf(cur)
+    end
+    return false
+end
+
+-- The groups of the elenco `name` here, sorted by name.
+function CoreManager:GroupsOf(name)
+    local out = {}
+    for _, other in ipairs(self:GetSortedNames()) do
+        if other ~= name and self:ParentOf(other) == name then out[#out + 1] = other end
+    end
+    return out
+end
+
+-- The guild's cores as the cores screen lists them: every elenco followed by its groups, each with how
+-- deep it sits ({ name, depth }). A core with no elenco and no groups is listed as always, by name.
+function CoreManager:SortedTree()
+    local out, placed = {}, {}
+    local function add(name, depth)
+        if placed[name] then return end
+        placed[name] = true
+        out[#out + 1] = { name = name, depth = depth }
+        if depth < TREE_DEPTH then
+            for _, child in ipairs(self:GroupsOf(name)) do add(child, depth + 1) end
+        end
+    end
+    for _, name in ipairs(self:GetSortedNames()) do
+        if not self:ParentOf(name) then add(name, 0) end
+    end
+    -- A core whose walk up loops (never a tree the site sends) is under no root: listed at the top.
+    for _, name in ipairs(self:GetSortedNames()) do add(name, 0) end
+    return out
+end
+
+-- Whether the core `name` is a group whose points go to its elenco's pool (`pool` "parent").
+function CoreManager:UsesParentPool(name)
+    local core = GuildOS.db.cores and GuildOS.db.cores[name]
+    return type(core) == "table" and core.pointsPool == "parent" and self:ParentOf(name) ~= nil
+end
+
+-- The core whose pool the points of the core `name` are: its own, or for a group with the elenco's pool
+-- the elenco's (and up, when the elenco itself uses its parent's). "" and nil stay as they are.
+function CoreManager:PoolOwner(name)
+    if type(name) ~= "string" or name == "" then return name end
+    local seen, cur = {}, name
+    for _ = 1, TREE_DEPTH do
+        seen[cur] = true
+        if not self:UsesParentPool(cur) then return cur end
+        local parent = self:ParentOf(cur)
+        if seen[parent] then return cur end
+        cur = parent
+    end
+    return cur
+end
+
 -- How new the Discord's lists are (#138): `at`, when the inbox they came from was written, against the
 -- newest this client applied, from its own inbox or from another officer (`GuildOS.db.discordAt`). The
 -- site sends every core of the guild together, so one mark for the guild settles them all, releases
@@ -1646,6 +1767,7 @@ local function release(name, moved)
     local core = GuildOS.db.cores[name]
     if type(core) ~= "table" then return end
     core.discordTag, core.discordWaiting, core.linkAt, core.importedAt = nil, nil, nil, nil
+    core.discordParent, core.pointsPool = nil, nil   -- the elenco is the Discord's too (#352)
     -- Whoever MigrateGuests made a guest is a member of the officers' core again, as before the link; a
     -- guest an officer added as one stays a guest. An officer on an earlier build of this version sent
     -- the migrated without `migrated`: they are the guests marked to stay that nobody added (AddGuest
@@ -1688,6 +1810,7 @@ local function moveTag(self, coreName, tag, linkAt)
             end
         end
         core.discordWaiting = old.discordWaiting
+        core.discordParent, core.pointsPool = old.discordParent, old.pointsPool   -- the elenco rides with the tag (#352)
         self:SetRaidSize(coreName, self:GetRaidSize(from))
         release(from, true)
     end
@@ -1718,8 +1841,10 @@ end
 -- for somebody the Discord has becomes the Discord's, class, role and note as the officer left them;
 -- and the Discord's own people it no longer has leave. Whoever the Discord does not have, an officer
 -- put there, and stays. Whether the list is newer than what this client has is the caller's to ask.
+-- `tree` is its elenco and pool (treeOf, #352): nil leaves them as they are (a list from an officer's
+-- client from before them, which says nothing of either).
 -- Returns how many joined, left and were taken over.
-function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting)
+function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting, tree)
     for name, other in pairs(GuildOS.db.cores) do
         if name ~= coreName and type(other) == "table" and other.discordTag == tag then release(name, true) end
     end
@@ -1727,6 +1852,7 @@ function CoreManager:SyncDiscordCore(coreName, list, size, tag, waiting)
     if not core then return 0, 0, 0 end
     core.discordTag = tag
     core.discordWaiting = namesOnly(waiting)
+    if type(tree) == "table" then core.discordParent, core.pointsPool = tree.parent, tree.pool end
     core.importedAt = GetServerTime()   -- when this client last took the Discord's list for it (#347)
     if tonumber(size) then self:SetRaidSize(coreName, tonumber(size)) end
     local members, incoming, added, removed, adopted = self:GetMembers(coreName), {}, 0, 0, 0
@@ -1837,11 +1963,14 @@ function CoreManager:ImportFromSite(data, at, received)
             name = followName(self, name, c.name)
             sent[c.tag] = name
             local linked = GuildOS.db.cores[name].discordTag == c.tag
-            local added, removed, adopted = self:SyncDiscordCore(name, c.members, c.size, c.tag, c.waiting)
+            -- A package from before #352 says nothing of either: no elenco, its own pool.
+            local tree = treeOf(c)
+            local added, removed, adopted = self:SyncDiscordCore(name, c.members, c.size, c.tag, c.waiting, tree)
             cores[#cores + 1] = {
                 name = name, added = added, removed = removed, adopted = adopted,
                 list = c.members, size = self:GetRaidSize(name), tag = c.tag, waiting = namesOnly(c.waiting), at = at,
                 linkAt = GuildOS.db.cores[name].linkAt, discordName = c.name,
+                parent = tree.parent or "", pool = tree.pool or "own",
                 quiet = not (created or not linked or added > 0 or removed > 0 or adopted > 0),
             }
         end
@@ -1986,6 +2115,7 @@ function CoreManager:SendDiscordChanges()
             GuildOS.SyncService:Publish("core.roster", "discordList", {
                 coreName = c.name, list = c.list, size = c.size, tag = c.tag, waiting = c.waiting, at = c.at,
                 linkAt = c.linkAt, discordName = c.discordName, seenAt = self:LinkSeenAt(),
+                parent = c.parent, pool = c.pool,   -- the elenco (#352); a client from before ignores both
             })
         end
     end
@@ -2008,7 +2138,8 @@ function CoreManager:LinkDiscord(coreName, tag)
     local list = moveTag(self, coreName, tag, GetServerTime())
     local pending = GuildOS.State.discordCores or {}
     pending[#pending + 1] = { name = coreName, list = list, size = self:GetRaidSize(coreName), tag = tag,
-        waiting = core.discordWaiting, at = GuildOS.db.discordAt, linkAt = core.linkAt }
+        waiting = core.discordWaiting, at = GuildOS.db.discordAt, linkAt = core.linkAt,
+        parent = core.discordParent or "", pool = core.pointsPool or "own" }
     GuildOS.State.discordCores = pending
     self:SendDiscordChanges()
     return true
@@ -2130,7 +2261,9 @@ function CoreManager:InitSync()
             if not (giveBack and olderThanMark(at) or not giveBack and stale) then
                 if list then
                     local name = followName(self, (coreFor(self, { tag = d.tag, name = d.coreName })), d.discordName)
-                    self:SyncDiscordCore(name, d.list, d.size, d.tag, d.waiting)
+                    -- The elenco only from a client that says it (#352): one from before sends no `pool`.
+                    local tree = d.pool ~= nil and treeOf(d) or nil
+                    self:SyncDiscordCore(name, d.list, d.size, d.tag, d.waiting, tree)
                     linkOn(sane(d.seenAt))
                     self:MigrateGuests(name)
                     replayWaiting(name)
