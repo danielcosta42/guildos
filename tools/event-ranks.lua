@@ -127,4 +127,40 @@ check(not Cal.MayWriteRemote({ author = "Off" }, { author = "Mem" }, "Mem-Realm"
 check(not Cal.MayWriteRemote({ id = "web:abc", author = "Mem" }, nil, "Mem-Realm", false), "never a raid from the site")
 check(Cal.MayWriteRemote({ author = "Off" }, nil, "Off2-Realm", true), "an officer writes any event")
 
+-- ── 5. The open calendar follows the limit; an old client's copy is no officer change (#331) ──
+client("Off")
+now = now + 10
+GuildOS:SetEventMaxRank(5)
+local limit = sent[1]
+client("Mem")
+local refreshed = 0
+local realRefresh = Cal.Refresh
+Cal.Refresh = function() refreshed = refreshed + 1 end
+deliver(limit, "Off")
+check(refreshed == 1, "the calendar is redrawn when the limit arrives, so the New Event button shows")
+Cal.Refresh = realRefresh
+-- A 1.12 officer re-sends the event limit as the officer threshold, with the same stamp.
+client("Off")
+SS:Publish("guildcfg", "officers", { max = 5 }, { rev = now })
+local relayed = sent[1]
+client("Mem")
+deliver(limit, "Off")
+deliver(relayed, "Off")
+check(GuildOS.db.settings.officerMaxRank == 1 and not GuildOS:IsOfficer(),
+  "the old client's copy does not make every rank up to the event limit an officer")
+client("Mem")
+deliver(relayed, "Off")
+check(GuildOS.db.settings.officerMaxRank == 5, "heard first, the copy cannot be told apart yet")
+deliver(limit, "Off")
+check(GuildOS.db.settings.officerMaxRank == 1 and not GuildOS:IsOfficer() and GuildOS:MayCreateEvents(),
+  "the event limit arriving after it puts the officers back")
+client("Off")
+now = now + 10
+GuildOS:SetOfficerMaxRank(2)
+local real = sent[1]
+client("Mem")
+deliver(limit, "Off")
+deliver(real, "Off")
+check(GuildOS.db.settings.officerMaxRank == 2, "a real officer change still goes through")
+
 print(string.format("event-ranks: %d checks passed", checks))

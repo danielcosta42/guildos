@@ -1001,6 +1001,11 @@ function GuildOS:OnOfficerMaxRankSync(env)
     -- same answer on every client whatever order they arrive in.
     local held = s.officerMaxRankAt
     if held and (at < held or (at == held and max >= (s.officerMaxRank or 1))) then return end
+    -- A client up to 1.12 read the event limit as this one and its officers re-send it as
+    -- theirs, with the event limit's own stamp (#331): that copy is not an officer change.
+    if s.eventMaxRankAt and at == s.eventMaxRankAt and max == s.eventMaxRank then return end
+    -- Kept so the event limit, arriving after such a copy, can put the officers back.
+    s.officerMaxRankPrev, s.officerMaxRankPrevAt = s.officerMaxRank, s.officerMaxRankAt
     s.officerMaxRank, s.officerMaxRankAt = max, at
 end
 
@@ -1052,6 +1057,12 @@ function GuildOS:OnEventMaxRankSync(env)
     local held = s.eventMaxRankAt
     if held and (at < held or (at == held and max >= (s.eventMaxRank or 0))) then return end
     s.eventMaxRank, s.eventMaxRankAt = max, at
+    -- The officer threshold we hold is an old client's copy of this very change (#331).
+    if s.officerMaxRankAt == at and s.officerMaxRank == max then
+        s.officerMaxRank, s.officerMaxRankAt = s.officerMaxRankPrev, s.officerMaxRankPrevAt
+    end
+    -- An open calendar shows the New Event button the moment the limit lets this rank in.
+    if self.Calendar and self.Calendar.Refresh then self.Calendar:Refresh() end
 end
 
 -- Check whether a named player (may include realm, e.g. "Name-Realm") is an officer
