@@ -13,6 +13,7 @@
 --
 -- Exits 1 on the first failed check.
 ADDON = ADDON or "."
+STYLE = STYLE or "guildos"
 
 local checks = 0
 local function check(cond, what)
@@ -164,13 +165,25 @@ dofile(ADDON .. "/Core/Compat.lua")
 dofile(ADDON .. "/Core/Data.lua")
 dofile(ADDON .. "/Core/Style.lua")
 dofile(ADDON .. "/Core/Utils.lua")
+-- tools/settings-panel-forever.lua runs this whole harness again under the Forever style, with the
+-- client's atlases: its tabs, checkboxes and primary button wear the game's art.
+if STYLE == "forever" then
+  local atlases = {}
+  for line in io.lines(ADDON .. "/tools/data/forever-atlas-elements.txt") do
+    if not line:find("^#") then atlases[(line:gsub(" %*$", "")):lower()] = true end
+  end
+  C_Texture = { GetAtlasInfo = function(n) return atlases[tostring(n):lower()] and { width = 32, height = 32 } or nil end }
+  GuildOSDB.style = "forever"
+end
 GuildOS.Style:Resolve()
+dofile(ADDON .. "/UI/StylePreview.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 dofile(ADDON .. "/UI/Features.lua")
 dofile(ADDON .. "/UI/SettingsPanel.lua")
 local UI = GuildOS.UI
+check(GuildOS.Style.current == STYLE, "the " .. STYLE .. " style is the one in force")
 
 local printed = {}
 GuildOS.Print = function(_, msg) printed[#printed + 1] = tostring(msg) end
@@ -199,6 +212,14 @@ walk(parent, function(f)
 end)
 check(table.concat(labels, "|") == "Profile|Interface|Chat and alerts|Modules|Guild rules|Data and support",
   "six sub-tabs, in order (" .. table.concat(labels, "|") .. ")")
+parent.SelectSub("profile")
+local profileTab
+walk(parent, function(f) if f.kind == "Button" and f.underline and f.label and f.label.text == "Profile" then profileTab = f end end)
+if STYLE == "forever" then
+  check(profileTab.__styleTab and not profileTab.underline.shown, "on Forever the sub-tabs wear the game's tab art, no gold rule")
+else
+  check(not profileTab.__styleTab and profileTab.underline.shown, "on GuildOS the open sub-tab has its gold rule")
+end
 for old, page in pairs({ about = "data", officer = "rules", raid = "rules", general = "profile", loot = "profile",
                          nonsense = "profile" }) do
   parent.SelectSub(old)
@@ -255,7 +276,9 @@ comm.checkbox.checked = not comm.checkbox.checked
 comm.checkbox.onChanged(comm.checkbox, comm.checkbox.checked)
 check(strip:IsShown() and strip.text.text == "1 change applies after you reload the interface.",
   "switching a background module lights the strip")
-check(find(strip, "button", "Reload"), "with one Reload button")
+local reload = find(strip, "button", "Reload")
+check(reload and reload.variant == "primary", "with one Reload button, the primary one")
+check((STYLE == "forever") == (reload.__forever == true), "wearing the game's red button on Forever only")
 comm.checkbox.checked = not comm.checkbox.checked
 comm.checkbox.onChanged(comm.checkbox, comm.checkbox.checked)
 check(not strip:IsShown(), "switching it back puts the strip out")
@@ -264,11 +287,21 @@ groups.checkbox.onChanged(groups.checkbox, false)
 check(not strip:IsShown() and not GuildOS:IsFeatureEnabled("groups"), "a tab switches live, with no reload")
 groups.checkbox.onChanged(groups.checkbox, true)
 parent.SelectSub("interface")
-local font = find(parent.subPanels.interface.content, "check", "Use the game's font")
-font.checkbox.onChanged(font.checkbox, true)
-check(GuildOSDB.font == "game" and strip:IsShown(), "the game's font waits for a reload")
-font.checkbox.onChanged(font.checkbox, false)
-check(GuildOSDB.font == nil and not strip:IsShown(), "and is no change once switched back")
+local interface = parent.subPanels.interface.content
+local font = find(interface, "check", "Use the game's font")
+if STYLE == "forever" then
+  -- The Forever style always draws in the game's font: the box says so and cannot be changed.
+  check(font.checkbox.checked and not font.checkbox:IsEnabled() and shows(interface, "This client always uses the game's font."),
+    "on Forever the game's font is ticked, locked, and says why")
+  check(find(interface, "button", "In use") and find(interface, "button", "Apply"),
+    "and the style picker offers the other style")
+else
+  font.checkbox.onChanged(font.checkbox, true)
+  check(GuildOSDB.font == "game" and strip:IsShown(), "the game's font waits for a reload")
+  font.checkbox.onChanged(font.checkbox, false)
+  check(GuildOSDB.font == nil and not strip:IsShown(), "and is no change once switched back")
+  check(not find(interface, "button", "Apply"), "with one style there is no style picker")
+end
 
 -- ── 5. A sub-option greys out with its parent ───────────────────────────
 parent.SelectSub("chat")

@@ -77,4 +77,7 @@ The result:
   - sub-options greying out with their parent;
   - members reading the rules while officers change them;
   - that every setting the old panel had is still on a page.
+- `tools/settings-panel-forever.lua` runs the same checks under the WoW: Forever style, plus what only Forever
+  does: the sub-tabs wear the game's tab art, the game's font is locked on with its reason, the style picker
+  offers the other style, and the reload strip's button is the game's red one.
 - `tools/commands-in-ui.lua` keeps every slash command reachable from the interface.
