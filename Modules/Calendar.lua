@@ -327,6 +327,7 @@ function Calendar:GetEvents() return GuildOS.db.calendar.events end
 -- the guild channel, and so old events truly disappear instead of lingering
 -- forever as canceled records. Pruned after TOMBSTONE_TTL.
 local TOMBSTONE_TTL = 30 * 86400
+local YEARLY_DAYS = 733   -- how far ahead a yearly series is filled in (#358)
 function Calendar:Tombstones() return GuildOS.db.calendar.deleted end
 function Calendar:IsDeleted(id) return self:Tombstones()[id] ~= nil end
 
@@ -342,7 +343,15 @@ function Calendar:IsSeriesEnded(sid) return sid ~= nil and self:EndedSeries()[si
 function Calendar:PruneTombstones()
     local now = GetServerTime()
     for id, ts in pairs(self:Tombstones()) do
-        if (ts or 0) < now - TOMBSTONE_TTL then self:Tombstones()[id] = nil end
+        -- A series date deleted ahead of time stays deleted until its day has passed: a yearly date
+        -- is filled in up to a year ahead, far past TOMBSTONE_TTL (#358).
+        -- Only a real date, no further ahead than a series is ever filled in.
+        local y, m, d = tostring(id):match(":(%d%d%d%d)(%d%d)(%d%d)$")
+        y, m, d = tonumber(y), tonumber(m), tonumber(d)
+        local dayOf = y and m >= 1 and m <= 12 and d >= 1 and d <= 31
+            and time({ year = y, month = m, day = d, hour = 23, min = 59 })
+        local ahead = dayOf and dayOf > now and dayOf <= now + YEARLY_DAYS * 86400
+        if (ts or 0) < now - TOMBSTONE_TTL and not ahead then self:Tombstones()[id] = nil end
     end
     for sid, ts in pairs(self:EndedSeries()) do
         if (ts or 0) < now - ENDED_TTL then self:EndedSeries()[sid] = nil end
@@ -482,11 +491,17 @@ end
 -- client fills the rest in as days pass (TopUpSeries). A date deleted by hand leaves a tombstone, which
 -- outlives the window, so it is not brought back.
 ----------------------------------------------------------------------
-Calendar.REPEATS = { "none", "weekly", "biweekly", "daily", "everyother", "monthnth", "monthday" }
+Calendar.REPEATS = { "none", "weekly", "biweekly", "daily", "everyother", "monthnth", "monthday", "yearly" }
 local SERIES_DAYS = 28    -- under TOMBSTONE_TTL
 local SERIES_CAP = 16     -- dates per fill, whatever the rule
 local STEP_DAYS = { weekly = 7, biweekly = 14, daily = 1, everyother = 2 }
 local MONTHLY = { monthnth = true, monthday = true }
+-- A yearly date (#358) is a year apart: the window reaches two years and a fill makes the next two,
+-- so a birthday is always on the calendar, and skipping one year (deleting that date) still leaves the
+-- series a date to be found by and filled in from. A client from before this reads the rule as unknown
+-- and keeps the date as an ordinary event.
+local YEARLY_CAP = 2
+local function knownRep(rep) return STEP_DAYS[rep] or MONTHLY[rep] or rep == "yearly" end
 
 local function noonOf(y, m, d) return time({ year = y, month = m, day = d, hour = 12 }) end
 local function daysIn(y, m) return date("*t", noonOf(y, m + 1, 0)).day end
@@ -527,6 +542,15 @@ function Calendar._Occurrences(rule, first, fromT, toT, cap)
                 keep(ts)
             end
         end
+    elseif rule.rep == "yearly" then
+        -- The same day every year; 29 February falls on the 28th when the year has none.
+        for k = 0, 200 do
+            local y = base.year + k
+            local day = math.min(base.day, daysIn(y, base.month))
+            local ts = time({ year = y, month = base.month, day = day, hour = hour, min = min })
+            if ts > toT or #out >= cap then break end
+            keep(ts)
+        end
     else
         keep(first)
     end
@@ -538,7 +562,7 @@ local function occurrenceId(sid, ts) return sid .. ":" .. date("%Y%m%d", ts) end
 -- A series' rule, cleaned like anything off the guild channel, or nil.
 local function cleanSeries(s)
     if type(s) ~= "table" or type(s.id) ~= "string" or not tonumber(s.first) then return nil end
-    if not (STEP_DAYS[s.rep] or MONTHLY[s.rep]) then return nil end
+    if not knownRep(s.rep) then return nil end
     local function n(v, lo, hi) v = tonumber(v); return (v and v >= lo and v <= hi) and math.floor(v) or nil end
     return { id = s.id:sub(1, 40), rep = s.rep, first = tonumber(s.first), hour = n(s.hour, 0, 23),
              min = n(s.min, 0, 59), untilT = tonumber(s.untilT) }
@@ -549,10 +573,11 @@ end
 function Calendar:_FillSeries(template, now)
     local s = template.series
     local from = math.max(now, s.first)
-    local to = from + SERIES_DAYS * 86400 - 1   -- four weeks, the fifth week's date not yet
+    local yearly = s.rep == "yearly"
+    local to = from + (yearly and YEARLY_DAYS or SERIES_DAYS) * 86400 - 1   -- four weeks, the fifth week's date not yet
     if s.untilT then to = math.min(to, s.untilT) end
     local n = 0
-    for _, ts in ipairs(Calendar._Occurrences(s, s.first, from, to, SERIES_CAP)) do
+    for _, ts in ipairs(Calendar._Occurrences(s, s.first, from, to, yearly and YEARLY_CAP or SERIES_CAP)) do
         local id = occurrenceId(s.id, ts)
         if not self:GetEvents()[id] and not self:IsDeleted(id) then
             local e = newEvent(template.title, ts, template.size, template.note, template.kind, template.shareAlliance)
@@ -568,7 +593,7 @@ end
 -- An officer's event that repeats: `rep` one of REPEATS. "none" is an ordinary event. Returns how
 -- many dates were created, nil when nothing could be.
 function Calendar:CreateSeries(title, when, size, note, kind, shareAlliance, rep)
-    if not (STEP_DAYS[rep] or MONTHLY[rep]) then
+    if not knownRep(rep) then
         return self:Create(title, when, size, note, kind, shareAlliance) and 1 or nil
     end
     title, when = validNew(title, when, kind)

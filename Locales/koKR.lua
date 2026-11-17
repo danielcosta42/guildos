@@ -2906,3 +2906,4 @@ L["The companion is working, but none of its guild links sends this guild's raid
 L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"] = "아직 컴패니언 소식이 없습니다. 실행 중이라면 몇 분 기다리고, 아니라면 %s에서 내려받으세요"
 L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."] = "사이트의 공격대는 장교의 클라이언트를 통해 달력에 들어갑니다. 당신의 등급은 길드 장교 등급보다 낮아서 여기서는 이 탭에만 표시됩니다."
 L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."] = "여기서 만든 일정은 게임 안에만 남습니다. Discord에서 신청을 받으려면 guildos.me 또는 /raid create로 공격대를 만드세요."
+L["Every year on %s"] = "매년 %s"

@@ -2906,3 +2906,4 @@ L["The companion is working, but none of its guild links sends this guild's raid
 L["No word from the companion yet. If it is running, wait a few minutes; if not, download it at %s"] = "暂未收到伴侣程序的消息。如果它在运行，请等几分钟；否则请在 %s 下载"
 L["Raids from the site go on the calendar from an officer's client. Your rank is above the guild's officer ranks, so here they only show in this tab."] = "网站上的团队通过官员的客户端进入日历。你的会阶不在公会官员会阶内，所以这里只在此标签页显示。"
 L["Events made here stay in the game. For signups on Discord, create the raid on guildos.me or with /raid create."] = "在这里创建的活动只留在游戏中。若要在 Discord 报名，请在 guildos.me 或用 /raid create 创建团队。"
+L["Every year on %s"] = "每年 %s"

@@ -258,6 +258,7 @@ local function buildEditor()
         if rep == "everyother" then return L["Every other day"] end
         if rep == "monthnth" then return string.format(L["Every month, %s"], WEEKDAYS[r.wday] .. " #" .. r.nth) end
         if rep == "monthday" then return string.format(L["Every month on day %d"], r.day) end
+        if rep == "yearly" then return string.format(L["Every year on %s"], ts and (GuildOS:LocalDate("%d %b", ts):gsub("^0", "")) or "") end
         return L["Does not repeat"]
     end
     local function refreshRep() repBtn.label:SetText(repLabel(f.rep)) end
