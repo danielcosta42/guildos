@@ -2411,6 +2411,7 @@ L["Undo: "] = "Annulé : "
 L["[Loot] Award of %s to %s undone"] = "[Butin] Attribution de %s à %s annulée"
 L["Undo last award"] = "Annuler la dernière attribution"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Annulé :|r %s"
+L["Undone: %s"] = "Annulé : %s"
 
 -- Fit the group to the plan (issue #292)
 L["Only the raid leader can remove people from the raid."] = "Seul le chef de raid peut retirer des gens du raid."

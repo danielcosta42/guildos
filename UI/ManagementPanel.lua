@@ -27,6 +27,17 @@ local TAB_H = 28        -- UI:CreateTab's fixed height
 local TAB_MIN_W = 70    -- narrowest a sub-tab may be drawn
 local TAB_PAD = 20      -- label padding inside a sub-tab
 
+-- The shared spacing (#371), read as numbers: a test that stubs GuildOS.UI hands back functions.
+local GAP = tonumber(UI.GAP) or 8
+local GUTTER = tonumber(UI.SCROLL_GUTTER) or 12
+local SECTION_ABOVE = 20   -- room over a later section title for the rule drawn 12px above it
+local TITLE_H = 24         -- a section title and the gap under it
+
+-- A colour token as the hex an inline |c code takes (#371).
+local function hex(c)
+    return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255)
+end
+
 -- Confirmation dialog for a bulk Apply. The full, already-formatted message
 -- is passed as text arg1 ("%s"); OnAccept runs the officer-gated ApplyPreset
 -- on exactly the members captured when Apply was clicked. Rank/kick handoffs
@@ -51,11 +62,13 @@ GuildOS.Dialogs["GUILDOS_MODPRESET_APPLY"] = {
 ----------------------------------------------------------------------
 -- Small builders shared by the sub-panels
 ----------------------------------------------------------------------
--- A scroll frame + content child that fills its parent panel.
+-- A scroll frame + content child that fills its parent panel. It reaches the scroll gutter past the
+-- panel's right edge: the child stops that gutter short (BindScrollChildWidth), so the rows end where
+-- the screen's other lines do and the bar sits in the margin, never over a row's buttons (#371).
 local function MakeScrollList(panel, name)
     local scroll = CreateFrame("ScrollFrame", name, panel, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", -10, 0)
+    scroll:SetPoint("BOTTOMRIGHT", GUTTER, 0)
     UI:SkinScrollBar(scroll, name)
 
     local content = CreateFrame("Frame", nil, scroll)
@@ -73,26 +86,37 @@ local function MakeRow(content, yOff, index, height)
     local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
     row:SetHeight(height or ROW_H)
     row:SetPoint("TOPLEFT", 0, -yOff)
-    row:SetPoint("TOPRIGHT", -4, -yOff)
+    row:SetPoint("TOPRIGHT", 0, -yOff)
     row:SetBackdrop({ bgFile = WHITE })
     local alt = (index % 2 == 0) and C.row1 or C.row2
     row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
     return row
 end
 
--- A section header frame parented to `content`.
-local function MakeSectionHeader(content, text, yOff)
+-- A group of rows' title, parented to `content`: the shared section title, not a filled band (#371).
+-- Held by a strip across the list, so its rule reaches the right edge and a ClearContent hides both.
+-- `first`: the list's first title, with no rule; a later one wants SECTION_ABOVE over it.
+local function MakeSectionHeader(content, text, yOff, first)
     local f = CreateFrame("Frame", nil, content)
-    f:SetHeight(22)
+    f:SetHeight(18)
     f:SetPoint("TOPLEFT", 0, -yOff)
-    f:SetPoint("TOPRIGHT", -4, -yOff)
-    local bg = f:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture(WHITE)
-    bg:SetVertexColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.7)
-    local lbl = UI:CreateHeaderText(f, text, 10)
-    lbl:SetPoint("LEFT", 8, 0)
+    f:SetPoint("TOPRIGHT", 0, -yOff)
+    local lbl = UI:CreateSectionTitle(f, text, first)
+    lbl:SetPoint("TOPLEFT", 0, 0)
     return f
+end
+
+-- A table's column labels on the shared header row (#371): mono labels, no fill, a rule under them.
+-- cols: { { text, x }, ... }. Anchored by its top corners at `y` on `parent`.
+local function MakeTableHeader(parent, cols, y)
+    local header = UI:CreateTableHeader(parent)
+    header:SetPoint("TOPLEFT", 0, -y)
+    header:SetPoint("TOPRIGHT", 0, -y)
+    for _, col in ipairs(cols) do
+        local fs = UI:CreateHeaderText(header, col[1], 10)
+        fs:SetPoint("LEFT", col[2], 0)
+    end
+    return header
 end
 
 -- Clear all (frame) children of a content holder before a rebuild.
@@ -106,11 +130,11 @@ end
 local function BuildRanksSub(panel)
     local note = UI:CreateText(panel,
         L["Rank changes are Blizzard-protected: the arrow buttons open the official guild panel for you to confirm."],
-        9, C.silver.r, C.silver.g, C.silver.b)
-    note:SetPoint("TOPLEFT", 2, -2)
+        11, C.silver.r, C.silver.g, C.silver.b)
+    note:SetPoint("TOPLEFT", 0, 0)
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -22)
+    listHolder:SetPoint("TOPLEFT", 0, -(14 + GAP))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtRanksScroll")
 
@@ -182,7 +206,7 @@ local function BuildRanksSub(panel)
 
         if #members == 0 then
             local empty = UI:CreateText(content, L["Roster empty or unavailable."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+            empty:SetPoint("TOPLEFT", 0, -4)
         end
         content:SetHeight(math.max(1, yOff))
     end
@@ -195,30 +219,21 @@ local function BuildInactiveSub(panel)
     panel.threshold = GuildOS.GuildManager.DEFAULT_INACTIVE_DAYS
 
     local lbl = UI:CreateText(panel, L["Inactive for more than"], 11, C.text.r, C.text.g, C.text.b)
-    lbl:SetPoint("TOPLEFT", 2, -4)
+    lbl:SetPoint("TOPLEFT", 0, -4)
 
-    local daysBox = CreateFrame("EditBox", nil, panel, "BackdropTemplate")
-    daysBox:SetSize(44, 22)
+    local daysBox = UI:CreateInput(panel, 44, 22, { numeric = true, max = 4, justify = "CENTER" })   -- #371
     daysBox:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
-    daysBox:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(daysBox) })
-    daysBox:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
-    daysBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(daysBox, 11)
-    daysBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    daysBox:SetJustifyH("CENTER")
-    daysBox:SetAutoFocus(false)
-    daysBox:SetNumeric(true)
-    daysBox:SetMaxLetters(4)
     daysBox:SetText(tostring(panel.threshold))
 
     local daysLbl = UI:CreateText(panel, L["days"], 11, C.text.r, C.text.g, C.text.b)
     daysLbl:SetPoint("LEFT", daysBox, "RIGHT", 6, 0)
 
-    local summary = UI:CreateText(panel, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    -- How many matched: secondary text, not gold (#371).
+    local summary = UI:CreateText(panel, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     summary:SetPoint("LEFT", daysLbl, "RIGHT", 16, 0)
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -32)
+    listHolder:SetPoint("TOPLEFT", 0, -(22 + GAP + 2))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtInactiveScroll")
 
@@ -245,7 +260,8 @@ local function BuildInactiveSub(panel)
             local lvlFS = UI:CreateText(row, L["Lv "] .. m.level, 9, C.textDim.r, C.textDim.g, C.textDim.b)
             lvlFS:SetPoint("LEFT", 320, 0)
 
-            local daysColor = m.daysOffline >= 60 and C.red or C.gold
+            -- Status: long gone is `danger`, gone a while `warn` (gold is no status colour, #371).
+            local daysColor = m.daysOffline >= 60 and C.red or C.warn
             local daysFS = UI:CreateText(row, m.daysOffline .. L["d offline"], 10, daysColor.r, daysColor.g, daysColor.b)
             daysFS:SetPoint("LEFT", 390, 0)
 
@@ -262,7 +278,7 @@ local function BuildInactiveSub(panel)
 
         if #list == 0 then
             local empty = UI:CreateText(content, L["No inactive members in this period."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+            empty:SetPoint("TOPLEFT", 0, -4)
         end
         content:SetHeight(math.max(1, yOff))
     end
@@ -274,8 +290,7 @@ local function BuildInactiveSub(panel)
         daysBox:ClearFocus()
         refresh()
     end
-    daysBox:SetScript("OnEnterPressed", apply)
-    daysBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    daysBox:SetScript("OnEnterPressed", apply)   -- Escape is the field's own (UI:CreateInput)
 
     local applyBtn = UI:CreateButton(panel, L["Apply"], 70, 22)
     applyBtn:SetPoint("LEFT", summary, "RIGHT", 16, 0)
@@ -301,8 +316,8 @@ local function BuildSuggestSub(panel)
         local yOff = 0
 
         -- Trials ready for a decision
-        MakeSectionHeader(content, format(L["TRIALS READY FOR DECISION  (%d)"], #data.trialsReady), yOff)
-        yOff = yOff + 24
+        MakeSectionHeader(content, format(L["TRIALS READY FOR DECISION  (%d)"], #data.trialsReady), yOff, true)
+        yOff = yOff + TITLE_H
         if #data.trialsReady == 0 then
             local none = MakeRow(content, yOff, 1)
             local fs = UI:CreateText(none, L["No trials due."], 10, C.silver.r, C.silver.g, C.silver.b)
@@ -311,7 +326,7 @@ local function BuildSuggestSub(panel)
         else
             for idx, t in ipairs(data.trialsReady) do
                 local row = MakeRow(content, yOff, idx)
-                local nameFS = UI:CreateText(row, t.name, 11, C.gold.r, C.gold.g, C.gold.b)
+                local nameFS = UI:CreateText(row, t.name, 11, C.text.r, C.text.g, C.text.b)
                 nameFS:SetPoint("LEFT", 8, 0)
 
                 local infoFS = UI:CreateText(row,
@@ -339,11 +354,11 @@ local function BuildSuggestSub(panel)
             end
         end
 
-        yOff = yOff + 8
+        yOff = yOff + SECTION_ABOVE
 
         -- Promotion candidates
         MakeSectionHeader(content, format(L["PROMOTION CANDIDATES  (%d)"], #data.promoteCandidates), yOff)
-        yOff = yOff + 24
+        yOff = yOff + TITLE_H
         if #data.promoteCandidates == 0 then
             local none = MakeRow(content, yOff, 1)
             local fs = UI:CreateText(none, L["No candidates (high attendance) right now."], 10, C.silver.r, C.silver.g, C.silver.b)
@@ -386,58 +401,49 @@ end
 ----------------------------------------------------------------------
 -- MOTD / GUILD INFO sub-panel
 ----------------------------------------------------------------------
+-- The shared multi-line field (#371); its width comes from its anchors.
 local function MakeTextArea(parent, height)
-    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(box) })
-    box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
-    box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    box:SetMultiLine(true)
-    GuildOS:ApplyFont(box, 11)
-    box:SetTextColor(C.white.r, C.white.g, C.white.b)
-    box:SetTextInsets(6, 6, 4, 4)
-    box:SetAutoFocus(false)
-    box:SetHeight(height)
-    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    return box
+    return UI:CreateInput(parent, nil, height, { multiline = true })
 end
 
 local function BuildMotdSub(panel)
-    -- MOTD
-    local motdLabel = UI:CreateHeaderText(panel, L["MESSAGE OF THE DAY"], 11)
-    motdLabel:SetPoint("TOPLEFT", 2, -4)
+    -- MOTD: the screen's first section title (#371), its field under it, both flush with the edges.
+    local motdLabel = UI:CreateSectionTitle(panel, L["MESSAGE OF THE DAY"], true)
+    motdLabel:SetPoint("TOPLEFT", 0, 0)
 
     local motdBox = MakeTextArea(panel, 50)
-    motdBox:SetPoint("TOPLEFT", 2, -24)
-    motdBox:SetPoint("TOPRIGHT", -12, -24)
+    motdBox:SetPoint("TOPLEFT", 0, -TITLE_H)
+    motdBox:SetPoint("TOPRIGHT", 0, -TITLE_H)
     motdBox:SetMaxLetters(128)
 
     local motdBtn = UI:CreateButton(panel, L["Save MOTD"], 110, 24)
-    motdBtn:SetPoint("TOPLEFT", 2, -82)
+    motdBtn:SetPoint("TOPLEFT", 0, -(TITLE_H + 50 + GAP))
     motdBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:SetMOTD(motdBox:GetText())
         motdBox:ClearFocus()
     end)
 
-    local motdNote = UI:CreateText(panel, "", 9, C.silver.r, C.silver.g, C.silver.b)
+    local motdNote = UI:CreateText(panel, "", 11, C.silver.r, C.silver.g, C.silver.b)
     motdNote:SetPoint("LEFT", motdBtn, "RIGHT", 10, 0)
 
-    -- Guild Info
-    local infoLabel = UI:CreateHeaderText(panel, L["GUILD INFORMATION"], 11)
-    infoLabel:SetPoint("TOPLEFT", 2, -122)
+    -- Guild Info: a later section, its rule SECTION_ABOVE under the MOTD's button.
+    local infoTop = TITLE_H + 50 + GAP + 24 + SECTION_ABOVE
+    local infoLabel = UI:CreateSectionTitle(panel, L["GUILD INFORMATION"])
+    infoLabel:SetPoint("TOPLEFT", 0, -infoTop)
 
     local infoBox = MakeTextArea(panel, 120)
-    infoBox:SetPoint("TOPLEFT", 2, -142)
-    infoBox:SetPoint("TOPRIGHT", -12, -142)
+    infoBox:SetPoint("TOPLEFT", 0, -(infoTop + TITLE_H))
+    infoBox:SetPoint("TOPRIGHT", 0, -(infoTop + TITLE_H))
     infoBox:SetMaxLetters(500)
 
     local infoBtn = UI:CreateButton(panel, L["Save Info"], 110, 24)
-    infoBtn:SetPoint("TOPLEFT", 2, -270)
+    infoBtn:SetPoint("TOPLEFT", 0, -(infoTop + TITLE_H + 120 + GAP))
     infoBtn:SetScript("OnClick", function()
         GuildOS.GuildManager:SetGuildInfo(infoBox:GetText())
         infoBox:ClearFocus()
     end)
 
-    local infoNote = UI:CreateText(panel, "", 9, C.silver.r, C.silver.g, C.silver.b)
+    local infoNote = UI:CreateText(panel, "", 11, C.silver.r, C.silver.g, C.silver.b)
     infoNote:SetPoint("LEFT", infoBtn, "RIGHT", 10, 0)
 
     return function()
@@ -460,22 +466,23 @@ end
 ----------------------------------------------------------------------
 -- ACTION LOG sub-panel
 ----------------------------------------------------------------------
+-- Status colours only (#371): a demotion is a `warn`, the guild's texts `info`; gold is no status.
 local ACTION_LABELS = {
     promote = { txt = L["Promoted"], color = "green" },
-    demote  = { txt = L["Demoted"],  color = "gold" },
+    demote  = { txt = L["Demoted"],  color = "warn" },
     kick    = { txt = L["Removed"],  color = "red" },
-    motd    = { txt = L["MOTD"],     color = "accent" },
-    info    = { txt = L["Info"],     color = "accent" },
+    motd    = { txt = L["MOTD"],     color = "info" },
+    info    = { txt = L["Info"],     color = "info" },
     join    = { txt = L["Joined"], color = "online" },
     leave   = { txt = L["Left"],   color = "offline" },
 }
 
 local function BuildLogSub(panel)
     local clearBtn = UI:CreateButton(panel, L["Clear"], 80, 22)
-    clearBtn:SetPoint("TOPLEFT", 2, -2)
+    clearBtn:SetPoint("TOPLEFT", 0, 0)
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -30)
+    listHolder:SetPoint("TOPLEFT", 0, -(22 + GAP))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtLogScroll")
 
@@ -496,7 +503,8 @@ local function BuildLogSub(panel)
             local actFS = UI:CreateText(row, meta.txt, 10, col.r, col.g, col.b)
             actFS:SetPoint("LEFT", 90, 0)
 
-            local tgt = e.target and ("|cffFFD700" .. e.target .. "|r ") or ""
+            -- Who it was done to, in `text` against the detail's softer one: not gold (#371).
+            local tgt = e.target and ("|cff" .. hex(C.text) .. e.target .. "|r ") or ""
             local detail = e.detail and tostring(e.detail) or ""
             local descFS = UI:CreateText(row, tgt .. detail, 10, C.silver.r, C.silver.g, C.silver.b)
             descFS:SetPoint("LEFT", 170, 0)
@@ -512,7 +520,7 @@ local function BuildLogSub(panel)
 
         if #entries == 0 then
             local empty = UI:CreateText(content, L["No actions logged yet."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+            empty:SetPoint("TOPLEFT", 0, -4)
         end
         content:SetHeight(math.max(1, yOff))
     end
@@ -530,39 +538,33 @@ end
 -- BAN LIST sub-panel — officer blacklist (add / search / remove)
 ----------------------------------------------------------------------
 local function BuildBanSub(panel)
-    -- Header + one-line context
-    local header = UI:CreateHeaderText(panel, L["BANNED PLAYERS"], 11)
-    header:SetPoint("TOPLEFT", 2, -4)
+    -- Header + one-line context: the screen's first section title (#371).
+    local header = UI:CreateSectionTitle(panel, L["BANNED PLAYERS"], true)
+    header:SetPoint("TOPLEFT", 0, 0)
     local hint = UI:CreateText(panel,
         L["Blocked from auto-invite. You're alerted when a banned player rejoins the guild or whispers you."],
-        9, C.silver.r, C.silver.g, C.silver.b)
-    hint:SetPoint("TOPLEFT", 2, -22)
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -22)
+        11, C.silver.r, C.silver.g, C.silver.b)
+    hint:SetPoint("TOPLEFT", 0, -TITLE_H)
+    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -TITLE_H)
     hint:SetJustifyH("LEFT")
 
-    -- Add form, row 1: player + reason
-    local playerLbl = UI:CreateText(panel, L["Player"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
-    playerLbl:SetPoint("TOPLEFT", 4, -52)
-    local nameBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    nameBox:SetSize(140, 22); nameBox:SetPoint("LEFT", playerLbl, "RIGHT", 8, 0)
-    nameBox:SetAutoFocus(false); nameBox:SetMaxLetters(40)
-    nameBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    -- Add form, row 1: player + reason. Form labels in `text`, the shared fields (#371).
+    local playerLbl = UI:CreateText(panel, L["Player"], 11, C.text.r, C.text.g, C.text.b)
+    playerLbl:SetPoint("TOPLEFT", 0, -52)
+    local nameBox = UI:CreateInput(panel, 140, 22, { max = 40 })
+    nameBox:SetPoint("LEFT", playerLbl, "RIGHT", 8, 0)
 
-    local reasonLbl = UI:CreateText(panel, L["Reason"], 11, C.textDim.r, C.textDim.g, C.textDim.b)
+    local reasonLbl = UI:CreateText(panel, L["Reason"], 11, C.text.r, C.text.g, C.text.b)
     reasonLbl:SetPoint("LEFT", nameBox, "RIGHT", 16, 0)
-    local reasonBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    reasonBox:SetSize(210, 22); reasonBox:SetPoint("LEFT", reasonLbl, "RIGHT", 8, 0)
-    reasonBox:SetAutoFocus(false); reasonBox:SetMaxLetters(80)
-    reasonBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    local reasonBox = UI:CreateInput(panel, 210, 22, { max = 80 })
+    reasonBox:SetPoint("LEFT", reasonLbl, "RIGHT", 8, 0)
 
     -- Add form, row 2: temporary toggle (+days) and the Ban button
     local tempChk = UI:CreateCheckbox(panel, L["Temporary"], 18)
-    tempChk:SetPoint("TOPLEFT", 4, -84)
-    local daysBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    daysBox:SetSize(42, 20); daysBox:SetPoint("LEFT", tempChk, "LEFT", 104, 0)
-    daysBox:SetAutoFocus(false); daysBox:SetNumeric(true); daysBox:SetMaxLetters(4)
-    daysBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-    local daysLbl = UI:CreateText(panel, L["days"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    tempChk:SetPoint("TOPLEFT", 0, -84)
+    local daysBox = UI:CreateInput(panel, 42, 20, { numeric = true, max = 4 })
+    daysBox:SetPoint("LEFT", tempChk, "LEFT", 104, 0)
+    local daysLbl = UI:CreateText(panel, L["days"], 11, C.text.r, C.text.g, C.text.b)
     daysLbl:SetPoint("LEFT", daysBox, "RIGHT", 6, 0)
     daysBox:Hide(); daysLbl:Hide()
     tempChk.checkbox.onChanged = function(_, checked)
@@ -571,7 +573,7 @@ local function BuildBanSub(panel)
     end
 
     local banBtn = UI:CreateButton(panel, L["Ban player"], 110, 24)
-    banBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -82)
+    banBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -82)
 
     local function doAdd()
         local n = strtrim(nameBox:GetText())
@@ -596,30 +598,23 @@ local function BuildBanSub(panel)
 
     -- Divider between the form and the list
     local sep = UI:CreateSeparator(panel)
-    sep:SetPoint("TOPLEFT", 2, -114)
-    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -114)
+    sep:SetPoint("TOPLEFT", 0, -114)
+    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -114)
 
-    -- Filter + column headers
-    local filterLbl = UI:CreateText(panel, L["Filter"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    filterLbl:SetPoint("TOPLEFT", 4, -128)
-    local searchBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    searchBox:SetSize(180, 20); searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    -- Filter + column headers: the shared table header, its labels over the cells below (#371).
+    local filterLbl = UI:CreateText(panel, L["Filter"], 11, C.text.r, C.text.g, C.text.b)
+    filterLbl:SetPoint("TOPLEFT", 0, -128)
+    local searchBox = UI:CreateInput(panel, 180, 20)
+    searchBox:SetPoint("LEFT", filterLbl, "RIGHT", 8, 0)
 
-    local function colHeader(text, x)
-        local fs = UI:CreateText(panel, text, 9, C.textDim.r, C.textDim.g, C.textDim.b)
-        fs:SetPoint("TOPLEFT", x, -152)
-    end
-    colHeader(L["PLAYER"], 8)
-    colHeader(L["REASON"], 160)
-    colHeader(L["BY"], 340)
-    colHeader(L["EXPIRES"], 430)
+    local CELL_X = { 0, 152, 332, 422 }
+    MakeTableHeader(panel, { { L["PLAYER"], CELL_X[1] }, { L["REASON"], CELL_X[2] },
+        { L["BY"], CELL_X[3] }, { L["EXPIRES"], CELL_X[4] } }, 146)
 
     -- List
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 4, -168)
-    listHolder:SetPoint("BOTTOMRIGHT", -4, 4)
+    listHolder:SetPoint("TOPLEFT", 0, -(146 + 22 + 4))
+    listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtBanScroll")
 
     local function cell(text, x, w, y, r, g, b)
@@ -648,12 +643,12 @@ local function BuildBanSub(panel)
                 else
                     expTxt = GuildOS:DateText(e.expiry, "/%y")
                 end
-                cell(e.name or "?", 4, 148, y, nr, ng, nb)
-                cell(e.reason or "", 156, 176, y, C.text.r, C.text.g, C.text.b)
-                cell(e.author or "?", 336, 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
-                cell(expTxt, 426, 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
+                cell(e.name or "?", CELL_X[1], 148, y, nr, ng, nb)
+                cell(e.reason or "", CELL_X[2], 176, y, C.text.r, C.text.g, C.text.b)
+                cell(e.author or "?", CELL_X[3], 86, y, C.textDim.r, C.textDim.g, C.textDim.b)
+                cell(expTxt, CELL_X[4], 82, y, C.textDim.r, C.textDim.g, C.textDim.b)
                 local del = UI:CreateButton(content, "\195\151", 22, 18)  -- ×
-                del:SetPoint("TOPRIGHT", -4, -y)
+                del:SetPoint("TOPRIGHT", 0, -y)
                 -- By the row's own key: on retail a name alone is a different ban from Name-Realm (#184).
                 local key = e.key
                 del:SetScript("OnClick", function() if GuildOS.BanList then GuildOS.BanList:RemoveKey(key) end end)
@@ -664,12 +659,13 @@ local function BuildBanSub(panel)
             local empty = UI:CreateText(content,
                 L["No banned players yet. Add one above to block them."],
                 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+            empty:SetPoint("TOPLEFT", 0, -4)
         end
         content:SetHeight(math.max(1, y))
     end
 
-    searchBox:SetScript("OnTextChanged", refresh)
+    -- Hooked: the field keeps its own text handlers (#371).
+    searchBox:HookScript("OnTextChanged", function() refresh() end)
     -- let sync / mutations repaint this tab
     if GuildOS.BanList then GuildOS.BanList.uiRefresh = refresh end
     return refresh
@@ -699,11 +695,12 @@ local function statusOf(r, now)
 end
 
 local function BuildEngageSub(panel)
-    local totalsFS = UI:CreateText(panel, "", 11, C.gold.r, C.gold.g, C.gold.b)
-    totalsFS:SetPoint("TOPLEFT", 2, -4)
+    -- The guild's totals lead the screen in `text`, the trend under them softer (#371).
+    local totalsFS = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
+    totalsFS:SetPoint("TOPLEFT", 0, 0)
 
     local trendFS = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    trendFS:SetPoint("TOPLEFT", 2, -22)
+    trendFS:SetPoint("TOPLEFT", 0, -18)
 
     -- Invite sparkline as texture bars (glyph blocks do not render in the skin fonts).
     -- One bar per day, oldest on the left, newest on the right; heights scaled
@@ -715,28 +712,22 @@ local function BuildEngageSub(panel)
     for i = 1, SPARK_BARS do
         local tex = sparkFrame:CreateTexture(nil, "ARTWORK")
         tex:SetTexture(WHITE)
-        tex:SetVertexColor(C.accent.r, C.accent.g, C.accent.b, 0.9)
+        tex:SetVertexColor(C.label.r, C.label.g, C.label.b, 0.9)   -- data in `label`, not gold (#371)
         tex:SetPoint("BOTTOMLEFT", (i - 1) * SPARK_STEP, 0)
         tex:SetSize(SPARK_BAR_W, 1)
         sparkBars[i] = tex
     end
 
-    -- Fixed column header (aligns with the row x-offsets below).
+    -- Fixed column header (aligns with the row x-offsets below): the shared header row (#371).
     local COLS = { name = 8, status = 150, posts = 280, invites = 350, joined = 430, last = 510 }
-    local function headerAt(text, x)
-        local fs = UI:CreateText(panel, text, 9, C.silver.r, C.silver.g, C.silver.b)
-        fs:SetPoint("TOPLEFT", x, -42)
-        return fs
-    end
-    headerAt(L["MEMBER"], COLS.name)
-    headerAt(L["STATUS"], COLS.status)
-    headerAt(L["POSTS"], COLS.posts)
-    headerAt(L["INVITES"], COLS.invites)
-    headerAt(L["JOINED"], COLS.joined)
-    headerAt(L["LAST"], COLS.last)
+    local headTop = 18 + 14 + GAP
+    MakeTableHeader(panel, {
+        { L["MEMBER"], COLS.name }, { L["STATUS"], COLS.status }, { L["POSTS"], COLS.posts },
+        { L["INVITES"], COLS.invites }, { L["JOINED"], COLS.joined }, { L["LAST"], COLS.last },
+    }, headTop)
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -58)
+    listHolder:SetPoint("TOPLEFT", 0, -(headTop + 22))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtEngageScroll")
 
@@ -800,7 +791,7 @@ local function BuildEngageSub(panel)
             local row = rowAt(idx)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", 0, -yOff)
-            row:SetPoint("TOPRIGHT", -4, -yOff)
+            row:SetPoint("TOPRIGHT", 0, -yOff)
 
             local nameColor = r.stale and C.textDim or C.text
             row.nameFS:SetText(r.name)
@@ -824,7 +815,7 @@ local function BuildEngageSub(panel)
 
         if not emptyFS then
             emptyFS = UI:CreateText(content, L["No recruitment activity yet."], 11, C.silver.r, C.silver.g, C.silver.b)
-            emptyFS:SetPoint("TOPLEFT", 4, -4)
+            emptyFS:SetPoint("TOPLEFT", 0, -4)
         end
         emptyFS:SetShown(#agg.rows == 0)
         content:SetHeight(math.max(1, yOff))
@@ -879,32 +870,22 @@ local function BuildPresetsSub(panel)
     panel.expanded = {}
     panel.showChooser = false
 
-    local title = UI:CreateHeaderText(panel, L["MODERATION PRESETS"], 11)
-    title:SetPoint("TOPLEFT", 2, -4)
+    -- The screen's first section title, on the line of its one action (#371).
+    local title = UI:CreateSectionTitle(panel, L["MODERATION PRESETS"], true)
+    title:SetPoint("TOPLEFT", 0, -2)
 
     local newBtn = UI:CreateButton(panel, L["+ New"], 80, 22)
-    newBtn:SetPoint("TOPRIGHT", -12, -2)
+    newBtn:SetPoint("TOPRIGHT", 0, 0)
 
     local listHolder = CreateFrame("Frame", nil, panel)
-    listHolder:SetPoint("TOPLEFT", 0, -30)
+    listHolder:SetPoint("TOPLEFT", 0, -(22 + GAP))
     listHolder:SetPoint("BOTTOMRIGHT", 0, 0)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtPresetsScroll")
 
-    -- Small numeric threshold editor; commits to ModPresets then repaints.
+    -- Small numeric threshold editor, the shared field (#371); commits to ModPresets then repaints.
     local function makeNumBox(parent, value, onCommit)
-        local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-        box:SetSize(40, 20)
-        box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(box) })
-        box:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
-        box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        GuildOS:ApplyFont(box, 11)
-        box:SetTextColor(C.white.r, C.white.g, C.white.b)
-        box:SetJustifyH("CENTER")
-        box:SetAutoFocus(false)
-        box:SetNumeric(true)
-        box:SetMaxLetters(4)
+        local box = UI:CreateInput(parent, 40, 20, { numeric = true, max = 4, justify = "CENTER" })
         box:SetText(tostring(value or 0))
-        box:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
         box:SetScript("OnEnterPressed", function(s)
             onCommit(tonumber(s:GetText()))
             s:ClearFocus()
@@ -926,8 +907,8 @@ local function BuildPresetsSub(panel)
             local chooser = CreateFrame("Frame", nil, content)
             chooser:SetHeight(ROW_H)
             chooser:SetPoint("TOPLEFT", 0, -yOff)
-            chooser:SetPoint("TOPRIGHT", -4, -yOff)
-            local lbl = UI:CreateText(chooser, L["Add preset:"], 10, C.gold.r, C.gold.g, C.gold.b)
+            chooser:SetPoint("TOPRIGHT", 0, -yOff)
+            local lbl = UI:CreateText(chooser, L["Add preset:"], 11, C.text.r, C.text.g, C.text.b)   -- a form label (#371)
             lbl:SetPoint("LEFT", 8, 0)
             local bx = 96
             for _, key in ipairs(MP.TYPE_ORDER) do
@@ -948,7 +929,7 @@ local function BuildPresetsSub(panel)
         if #presets == 0 and not panel.showChooser then
             local empty = UI:CreateText(content, L["No presets yet. Use [+ New] to add one."],
                 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -(yOff + 4))
+            empty:SetPoint("TOPLEFT", 0, -(yOff + 4))
             content:SetHeight(math.max(1, yOff + ROW_H))
             return
         end
@@ -963,13 +944,13 @@ local function BuildPresetsSub(panel)
             local block = CreateFrame("Frame", nil, content, "BackdropTemplate")
             block:SetHeight(blockH)
             block:SetPoint("TOPLEFT", 0, -yOff)
-            block:SetPoint("TOPRIGHT", -4, -yOff)
+            block:SetPoint("TOPRIGHT", 0, -yOff)
             block:SetBackdrop({ bgFile = WHITE })
             local alt = (idx % 2 == 0) and C.row1 or C.row2
             block:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
 
-            -- Header line: name + criteria summary + remove.
-            local nameFS = UI:CreateText(block, MP:Name(preset), 12, C.gold.r, C.gold.g, C.gold.b)
+            -- Header line: name + criteria summary + remove. The name in `text`, not gold (#371).
+            local nameFS = UI:CreateText(block, MP:Name(preset), 12, C.text.r, C.text.g, C.text.b)
             nameFS:SetPoint("TOPLEFT", 8, -5)
             local sumFS = UI:CreateText(block, MP:Summarize(preset), 10, C.silver.r, C.silver.g, C.silver.b)
             -- After the name when the name runs past the column: French ones do (#114).
@@ -1006,7 +987,7 @@ local function BuildPresetsSub(panel)
                 end
             end
 
-            local countFS = UI:CreateText(block, format(L["%d match"], #matches), 10, C.gold.r, C.gold.g, C.gold.b)
+            local countFS = UI:CreateText(block, format(L["%d match"], #matches), 11, C.text.r, C.text.g, C.text.b)
             countFS:SetPoint("TOPLEFT", math.max(x + 8, 320), cy - 2)
 
             local applyBtn = UI:CreateButton(block, L["Apply"], 70, 20)
@@ -1034,10 +1015,11 @@ local function BuildPresetsSub(panel)
                         9, C.silver.r, C.silver.g, C.silver.b)
                     none:SetPoint("TOPLEFT", 16, -py)
                 else
+                    -- No bullet in front (#371); the detail in `label`.
                     for _, m in ipairs(matches) do
                         local mFS = UI:CreateText(block,
-                            "\226\128\162 " .. m.name .. "  |cff888888" .. (m.detail or "") .. "|r",
-                            9, C.text.r, C.text.g, C.text.b)
+                            m.name .. "  |cff" .. hex(C.label) .. (m.detail or "") .. "|r",
+                            11, C.text.r, C.text.g, C.text.b)
                         mFS:SetPoint("TOPLEFT", 16, -py)
                         py = py + 18
                     end
@@ -1110,10 +1092,12 @@ function GuildOS:CreateManagementPanel(parent, _mainFrame)
     -- One content panel per sub-tab, all sharing the area below the bar.
     -- Anchored to the bar rather than a fixed offset, so a wrapped
     -- two-row tab bar pushes the content down instead of overlapping it.
+    -- Flush with the bar's left edge, GAP under it, ending GAP short of its right edge (the bar spans
+    -- the parent less 10px a side), as every screen's content does (#371).
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -8)
-        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 10)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -GAP)
+        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + GAP), 10)
         p:Hide()
         return p
     end

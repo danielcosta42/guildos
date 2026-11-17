@@ -2412,6 +2412,7 @@ L["Undo: "] = "Deshecho: "
 L["[Loot] Award of %s to %s undone"] = "[Botín] Adjudicación de %s a %s deshecha"
 L["Undo last award"] = "Deshacer última adjudicación"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Deshecho:|r %s"
+L["Undone: %s"] = "Deshecho: %s"
 
 -- Fit the group to the plan (issue #292)
 L["Only the raid leader can remove people from the raid."] = "Solo el líder de banda puede sacar gente de la banda."

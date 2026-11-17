@@ -164,6 +164,7 @@ function Frame:IsEnabled() return self.disabled ~= true end
 function Frame:Enable() self.disabled = nil end
 function Frame:Disable() self.disabled = true end
 function Frame:SetFocus() self.focused = true end
+function Frame:HasFocus() return self.focused == true end
 function Frame:IsMouseOver() return false end
 for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
@@ -283,6 +284,9 @@ end
 GuildOS.Style:Resolve()
 dofile(ADDON .. "/Core/Commands.lua")
 dofile(ADDON .. "/UI/Helpers.lua")
+-- Core/Utils.lua's UTF-8 head; this harness loads Utils further down. The calendar editor's kind
+-- buttons shorten a long label with it (#371).
+function GuildOS:Utf8Head(s, n) return tostring(s):sub(1, n) end
 dofile(ADDON .. "/UI/Layout.lua")
 dofile(ADDON .. "/UI/FeatureRegistry.lua")
 local UI, C = GuildOS.UI, GuildOS.Colors
@@ -1336,6 +1340,15 @@ do
   end
   check(pills.RAID and pills.RAID.disabled and pills.DUNGEON and not pills.DUNGEON.disabled,
     "a kind this rank does not create is there, and cannot be picked")
+  -- Six fixed 52px places inside the 360px editor, labels never marked as removable chips (#371).
+  local placed, chipX = 0, false
+  for i, k in ipairs(Cal.KINDS) do
+    local p = pills[k]
+    local pt = p and p.points[1]
+    if p and p.w == 52 and pt and pt[2] == 14 + (i - 1) * 55 then placed = placed + 1 end
+    if p and p.label.text:find("x$") then chipX = true end
+  end
+  check(placed == #Cal.KINDS and not chipX, "the kinds sit in six 52px places, no chip's x on any")
   check(picker and picker.shown and titleBox and titleBox.w == 222,
     "it starts on the first kind it creates, a dungeon, with the list beside the title")
   fire(picker, "OnClick")
@@ -1516,9 +1529,9 @@ do
   win:Hide()
   CTA.recent[1].title = "Later"
   CTA.uiRefresh()
-  check(not find(p, "|cffFF8800Later|r  Go"), "with the window closed, an answer arriving repaints nothing")
+  check(not find(p, "Later  Go"), "with the window closed, an answer arriving repaints nothing")
   UI:OpenWindow("guild", "cta")
-  check(find(p, "|cffFF8800Later|r  Go"), "it catches up when the tab opens")
+  check(find(p, "Later  Go"), "it catches up when the tab opens")
   win:Hide()
   CTA.recent = {}
 
@@ -1536,7 +1549,7 @@ do
   saved[1] = { id = "c1", name = "A very long template nam", text = "x", kind = "pvp" }
   for i = 2, CTA.TEMPLATES_MAX do saved[i] = { id = "c" .. i, name = "t" .. i, text = "x", kind = "rally" } end
   win, p = open()
-  local wb = find(p, "> World Boss")
+  local wb = find(p, "World Boss")   -- the chosen template is marked by UI:SetSelected, not "> " (#371)
   local row = wb.parent.parent
   local function laid()
     local cells, lines = {}, {}

@@ -250,9 +250,15 @@ function Helpers:CreateInput(parent, width, height, opts)
     opts = opts or {}
     local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     box:SetSize(width or 160, height or 22)
-    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(box) })
-    box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
-    box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    -- The style paints a one-line field, as the fields it replaced were painted: flat, or in WoW: Forever
+    -- the game's search-box art (#122). That art is a 22px bar: a multi-line box (export, import) scaled
+    -- to it would be a giant blurred search bar, so it stays flat. Only a flat box takes the lineHi border.
+    local look = not opts.multiline and Style:Paint(box, "input")
+    if look ~= "art" then
+        box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(box) })
+        box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+        box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    end
     box:SetTextInsets(6, 6, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
     GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
     box:SetTextColor(C.text.r, C.text.g, C.text.b)
@@ -328,9 +334,10 @@ function Helpers:_ButtonState(btn, state)
     end
 
     -- Selected (Helpers:SetSelected): gold border and gold label, through hover and press (#371).
-    if btn.__selected and state ~= "disabled" and variant ~= "primary" then
+    -- Disabled, it keeps the border: an event's kind the rank may no longer pick still shows as its kind.
+    if btn.__selected and variant ~= "primary" then
         border = C.gold
-        tr, tg, tb = C.gold.r, C.gold.g, C.gold.b
+        if state ~= "disabled" then tr, tg, tb = C.gold.r, C.gold.g, C.gold.b end
     end
 
     btn:SetBackdropColor(r, g, b, a)

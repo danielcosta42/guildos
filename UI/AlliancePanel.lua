@@ -38,60 +38,73 @@ local function clear(child)
     for _, r in pairs({ child:GetRegions() }) do r:Hide() end
 end
 
-local function makeInput(parent, width)
-    local b = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    b:SetSize(width, 24)
-    b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(b) })
-    b:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
-    b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(b, 11)
-    b:SetTextColor(C.text.r, C.text.g, C.text.b)
-    b:SetTextInsets(6, 6, 0, 0)
-    b:SetAutoFocus(false)
-    b:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    return b
+-- The shared field (#371). Its own Escape, focus and hint handlers are hooks, so callers may set
+-- OnEnterPressed but hook anything else.
+local function makeInput(parent, width, opts)
+    return UI:CreateInput(parent, width, 24, opts)
+end
+
+-- A colour token as the hex an inline |c code takes: secondary text inside a line keeps the palette
+-- instead of a hard-coded grey (#371).
+local function hex(c)
+    return string.format("%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255)
+end
+
+-- Room over a later section title for the rule UI:CreateSectionTitle draws 12px above it, and the
+-- height a title takes with the gap under it (#371).
+local SECTION_ABOVE, TITLE_H = 20, 24
+
+-- A scroll frame filling `holder` and reaching UI.SCROLL_GUTTER past its right edge: the child stops
+-- that gutter short (BindScrollChildWidth), so the content ends where the screen's other lines do and
+-- the bar sits in the margin, not over the content (#371).
+local function fillScroll(scroll, content)
+    scroll:SetPoint("TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", UI.SCROLL_GUTTER, 0)
+    UI:BindScrollChildWidth(scroll, content)
 end
 
 ----------------------------------------------------------------------
 -- Overview: the header band, the allied guild table, the blocked list.
 ----------------------------------------------------------------------
 local function BuildOverview(panel)
-    local empty = UI:CreateText(panel, "", 12, C.textDim.r, C.textDim.g, C.textDim.b)
-    empty:SetPoint("TOPLEFT", 4, -6)
-    empty:SetPoint("RIGHT", -4, 0)
+    local empty = UI:CreateText(panel, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    empty:SetPoint("TOPLEFT", 0, 0)
+    empty:SetPoint("RIGHT", 0, 0)
     empty:SetJustifyH("LEFT")
     empty:SetWordWrap(true)
 
-    local title = UI:CreateText(panel, "", 13, C.gold.r, C.gold.g, C.gold.b)
-    title:SetPoint("TOPLEFT", 4, -6)
+    -- The alliance is the screen's first section (#371): the shared title, no gold and no gold rule.
+    local title = UI:CreateSectionTitle(panel, "", true)
+    title:SetPoint("TOPLEFT", 0, 0)
 
-    local status = UI:CreateText(panel, "", 11, C.textDim.r, C.textDim.g, C.textDim.b)
-    status:SetPoint("TOPLEFT", 4, -26)
-
-    local line = UI:CreateAccentLine(panel, 1)
-    line:SetPoint("TOPLEFT", 0, -44)
-    line:SetPoint("TOPRIGHT", 0, -44)
+    local status = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
+    status:SetPoint("TOPLEFT", 0, -22)
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -50)
-    holder:SetPoint("BOTTOMRIGHT", 0, 4)
+    holder:SetPoint("TOPLEFT", 0, -36 - UI.GAP)
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
     -- CreateScrollFrame does NOT anchor the scroll frame; without this the
     -- content is clipped to 0x0 and renders as nothing, with no error.
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceOverviewScroll")
-    scroll:SetAllPoints()
+    fillScroll(scroll, content)
+
+    -- A later section's title inside the list, with the room its rule needs above it.
+    local function sectionTitle(text, y)
+        y = y + SECTION_ABOVE
+        local fs = UI:CreateSectionTitle(content, text)
+        fs:SetPoint("TOPLEFT", 0, -y)
+        return y + TITLE_H
+    end
 
     local function refresh()
         local ally = ALLY()
         local summary = ally and ally:Summary()
 
-        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
         clear(content)
 
         if not summary then
             title:Hide()
             status:Hide()
-            line:Hide()
             empty:Show()
             empty:SetText(GuildOS:IsOfficer()
                 and L["This guild is not in an alliance yet. Use the Manage tab to join or found one."]
@@ -102,10 +115,10 @@ local function BuildOverview(panel)
         empty:Hide()
         title:Show()
         status:Show()
-        line:Show()
 
-        title:SetText(string.format("%s  |cff888888[%s]|r  %s",
-            summary.name, summary.tag,
+        -- The name takes the width it needs; the tag and the size follow it as secondary text (#371).
+        title:SetText(string.format("%s  |cff%s[%s]  %s|r",
+            summary.name, hex(C.label), summary.tag,
             string.format(L["%d guilds, %d members"], #summary.guilds, summary.members)))
 
         local bridgeText = summary.bridge or L["nobody online"]
@@ -113,7 +126,7 @@ local function BuildOverview(panel)
             bridgeText = bridgeText .. " " .. L["(you)"]
         end
         local chanText = summary.connected and L["connected"] or L["not connected"]
-        status:SetText(string.format("%s  |cff555555.|r  %s %s",
+        status:SetText(string.format("%s  \194\183  %s %s",
             string.format(L["Bridge: %s"], bridgeText),
             summary.channel or "?", chanText))
 
@@ -126,11 +139,7 @@ local function BuildOverview(panel)
         local cal = GuildOS.Calendar
         local conflicts = (cal and cal.AllianceConflicts and cal:AllianceConflicts()) or {}
         if #conflicts > 0 then
-            local hdr = UI:CreateText(content,
-                string.format(L["SCHEDULE CONFLICTS (%d)"], #conflicts),
-                10, C.gold.r, C.gold.g, C.gold.b)
-            hdr:SetPoint("TOPLEFT", 6, -y)
-            y = y + 16
+            y = sectionTitle(string.format(L["SCHEDULE CONFLICTS (%d)"], #conflicts), y)
 
             for i = 1, math.min(#conflicts, 6) do
                 local c = conflicts[i]
@@ -139,12 +148,13 @@ local function BuildOverview(panel)
                     and string.format(L["%dh%02d apart"], math.floor(mins / 60), mins % 60)
                     or string.format(L["%dmin apart"], mins)
                 local head = UI:CreateText(content, string.format(
-                    "%s  %s  |cff888888x|r  %s  |cff8888aa%s|r  |cff666666%s|r",
+                    "%s  %s  |cff%sx|r  %s  |cff%s%s  %s|r",
                     GuildOS:LocalDate("%a %H:%M", c.mine.when), c.mine.title or "?",
-                    c.theirs.title or "?", c.theirs.guild or "?", gapText),
+                    hex(C.label), c.theirs.title or "?", hex(C.label), c.theirs.guild or "?", gapText),
                     11, C.text.r, C.text.g, C.text.b)
-                head:SetPoint("TOPLEFT", 10, -y)
-                head:SetWidth(math.max(content:GetWidth() - 20, 200))
+                -- Held by both sides of the list, not sized from its width (#371).
+                head:SetPoint("TOPLEFT", 0, -y)
+                head:SetPoint("RIGHT", content, "RIGHT", 0, 0)
                 head:SetJustifyH("LEFT")
                 head:SetWordWrap(false)
                 y = y + 15
@@ -160,34 +170,37 @@ local function BuildOverview(panel)
                     c.sharedCount > 0 and C.red.r or C.textDim.r,
                     c.sharedCount > 0 and C.red.g or C.textDim.g,
                     c.sharedCount > 0 and C.red.b or C.textDim.b)
-                sub:SetPoint("TOPLEFT", 18, -y)
-                sub:SetWidth(math.max(content:GetWidth() - 28, 200))
+                sub:SetPoint("TOPLEFT", 8, -y)
+                sub:SetPoint("RIGHT", content, "RIGHT", 0, 0)
                 sub:SetJustifyH("LEFT")
                 sub:SetWordWrap(false)
                 y = y + 17
             end
-            y = y + 10
+            y = y + UI.GAP
         end
 
         ------------------------------------------------------------------
-        -- Allied guilds
+        -- Allied guilds: the shared table header (#371), its labels flush with the rows' text.
         ------------------------------------------------------------------
         local COLS = {
-            { label = L["GUILD"],       x = 6 },
+            { label = L["GUILD"],       x = 0 },
             { label = L["SEEN"],        x = 200 },
             { label = L["AMBASSADORS"], x = 274 },
             { label = L["LAST SYNC"],   x = 478 },
         }
+        local header = UI:CreateTableHeader(content)
+        header:SetPoint("TOPLEFT", 0, -y)
+        header:SetPoint("TOPRIGHT", 0, -y)
         for _, col in ipairs(COLS) do
-            local fs = UI:CreateHeaderText(content, col.label, 10)
-            fs:SetPoint("TOPLEFT", col.x, -y)
+            local fs = UI:CreateHeaderText(header, col.label, 10)
+            fs:SetPoint("LEFT", col.x, 0)
             fs:SetJustifyH("LEFT")
         end
-        y = y + 18
+        y = y + 22
 
         for i, g in ipairs(summary.guilds) do
             local row = CreateFrame("Frame", nil, content)
-            row:SetSize(content:GetWidth() > 0 and content:GetWidth() or 600, ROW_H)
+            row:SetHeight(ROW_H)
             row:SetPoint("TOPLEFT", 0, -y)
             row:SetPoint("TOPRIGHT", 0, -y)
 
@@ -203,14 +216,14 @@ local function BuildOverview(panel)
                 live and C.online.r or C.offline.r,
                 live and C.online.g or C.offline.g,
                 live and C.online.b or C.offline.b)
-            mark:SetPoint("LEFT", 6, 0)
+            mark:SetPoint("LEFT", 0, 0)
 
             local label = g.name
             if g.isOwner then label = label .. " " .. L["(owner)"] end
             if g.isMine then label = label .. " " .. L["(you)"] end
             local nameFs = UI:CreateText(row, label, 11, C.text.r, C.text.g, C.text.b)
-            nameFs:SetPoint("LEFT", 18, 0)
-            nameFs:SetWidth(178)
+            nameFs:SetPoint("LEFT", 12, 0)
+            nameFs:SetWidth(184)
             nameFs:SetJustifyH("LEFT")
 
             local seenFs = UI:CreateText(row, string.format("%d/%d", g.seen, g.members), 11,
@@ -251,34 +264,30 @@ local function BuildOverview(panel)
         -- Upcoming events published by allied guilds, with a slot request.
         local events = (cal and cal.AllianceEvents and cal:AllianceEvents()) or {}
         if #events > 0 then
-            y = y + 10
-            local hdr = UI:CreateText(content, L["UPCOMING ALLIANCE EVENTS"], 10,
-                C.gold.r, C.gold.g, C.gold.b)
-            hdr:SetPoint("TOPLEFT", 6, -y)
-            y = y + 18
+            y = sectionTitle(L["UPCOMING ALLIANCE EVENTS"], y)
 
             for i = 1, math.min(#events, 8) do
                 local ev = events[i]
                 local size = tonumber(ev.size) or GuildOS.Client.defaultRaidSize   -- from another guild
                 local full = (ev.yes or 0) >= size
                 local when = GuildOS:LocalDate("%a %H:%M", ev.when)
-                local fs = UI:CreateText(content, string.format("%s  %s  |cff888888%s  %d/%d|r",
-                    when, ev.title or "?", ev.guild or "?", ev.yes or 0, size),
+                local fs = UI:CreateText(content, string.format("%s  %s  |cff%s%s  %d/%d|r",
+                    when, ev.title or "?", hex(C.label), ev.guild or "?", ev.yes or 0, size),
                     11, C.text.r, C.text.g, C.text.b)
-                fs:SetPoint("TOPLEFT", 10, -y)
-                fs:SetWidth(math.max(content:GetWidth() - 200, 200))
+                fs:SetPoint("TOPLEFT", 0, -y)
+                fs:SetPoint("RIGHT", content, "RIGHT", -190, 0)
                 fs:SetJustifyH("LEFT")
                 fs:SetWordWrap(false)
 
                 if full then
                     local fullFs = UI:CreateText(content, L["full"], 10,
                         C.textDim.r, C.textDim.g, C.textDim.b)
-                    fullFs:SetPoint("TOPRIGHT", -6, -y)
+                    fullFs:SetPoint("TOPRIGHT", 0, -y)
                 else
                     local roleBtn = UI:CreateButton(content, L["DPS"], 56, 18)
                     roleBtn.role = "DPS"
                     local askBtn = UI:CreateButton(content, L["Request slot"], 100, 18)
-                    askBtn:SetPoint("TOPRIGHT", -6, -y + 2)
+                    askBtn:SetPoint("TOPRIGHT", 0, -y + 2)
                     roleBtn:SetPoint("RIGHT", askBtn, "LEFT", -6, 0)
                     roleBtn:SetScript("OnClick", function()
                         local order = { TANK = "HEALER", HEALER = "DPS", DPS = "TANK" }
@@ -300,11 +309,11 @@ local function BuildOverview(panel)
         end
 
         if #summary.blocked > 0 then
-            y = y + 8
+            y = y + UI.GAP
             local fs = UI:CreateText(content,
                 string.format(L["Blocked: %s"], table.concat(summary.blocked, ", ")),
                 11, C.red.r, C.red.g, C.red.b)
-            fs:SetPoint("TOPLEFT", 6, -y)
+            fs:SetPoint("TOPLEFT", 0, -y)
             y = y + ROW_H
         end
 
@@ -420,16 +429,17 @@ function GuildOS:ShowAllyCard(name, guild, anchor)
         for _, p in ipairs(info.professions) do
             profs[#profs + 1] = string.format("%s %d", L[p.n or "?"], p.r or 0)
         end
-        lines[#lines + 1] = "|cffEDCC7B" .. L["Professions"] .. "|r\n  " .. table.concat(profs, "\n  ")
+        -- A block's name in `label`, not a gold of its own (#371).
+        lines[#lines + 1] = "|cff" .. hex(C.label) .. L["Professions"] .. "|r\n  " .. table.concat(profs, "\n  ")
     end
     if info.attunements and #info.attunements > 0 then
-        lines[#lines + 1] = "|cffEDCC7B" .. L["Attunements"] .. "|r\n  " ..
+        lines[#lines + 1] = "|cff" .. hex(C.label) .. L["Attunements"] .. "|r\n  " ..
             table.concat(info.attunements, ", ")
     end
     if #lines == 0 then
         -- Be explicit rather than showing an empty card: for an ally we only
         -- ever know what their guild published.
-        lines[#lines + 1] = "|cff888888" .. L["Nothing synced for this character yet."] .. "|r"
+        lines[#lines + 1] = "|cff" .. hex(C.textSoft) .. L["Nothing synced for this character yet."] .. "|r"
     end
     f.body:SetText(table.concat(lines, "\n\n"))
 
@@ -485,11 +495,12 @@ end
 local function BuildChat(panel)
     local CHAT = function() return GuildOS.AllianceChat end
 
+    -- The status and the toggles share the screen's first line, flush with its edges (#371).
     local status = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    status:SetPoint("TOPLEFT", 6, -6)
+    status:SetPoint("LEFT", panel, "TOPLEFT", 0, -10)
 
     local sysBtn = UI:CreateButton(panel, L["Events"], 90, 20)
-    sysBtn:SetPoint("TOPRIGHT", -6, -2)
+    sysBtn:SetPoint("TOPRIGHT", 0, 0)
     local hideBtn = UI:CreateButton(panel, L["Default chat"], 120, 20)
     hideBtn:SetPoint("RIGHT", sysBtn, "LEFT", -6, 0)
     local clearBtn = UI:CreateButton(panel, L["Clear"], 70, 20)
@@ -499,19 +510,19 @@ local function BuildChat(panel)
     gchatBtn:SetPoint("RIGHT", clearBtn, "LEFT", -6, 0)
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -28)
-    holder:SetPoint("BOTTOMRIGHT", 0, 32)
+    holder:SetPoint("TOPLEFT", 0, -(20 + UI.GAP))
+    holder:SetPoint("BOTTOMRIGHT", 0, 24 + UI.GAP)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceChatScroll")
-    scroll:SetAllPoints()
+    fillScroll(scroll, content)
 
     local input = makeInput(panel, 100)
-    input:SetPoint("BOTTOMLEFT", 6, 4)
-    input:SetPoint("BOTTOMRIGHT", -74, 4)
+    input:SetPoint("BOTTOMLEFT", 0, 0)
+    input:SetPoint("BOTTOMRIGHT", -(62 + UI.GAP), 0)
     local sendBtn = UI:CreateButton(panel, L["Send"], 62, 24)
-    sendBtn:SetPoint("BOTTOMRIGHT", -6, 4)
+    sendBtn:SetPoint("BOTTOMRIGHT", 0, 0)
 
     local empty = UI:CreateText(content, L["Nothing here yet. Say hello."], 11,
-        C.textDim.r, C.textDim.g, C.textDim.b)
+        C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:Hide()
 
     -- Blocks are POOLED. Refresh runs on every incoming message and WoW never
@@ -561,9 +572,10 @@ local function BuildChat(panel)
         local hit = CreateFrame("Button", nil, card)
         hit:SetPoint("TOPLEFT", 8, -5)
         hit:SetSize(200, 22)
+        -- Hovered, the name lights to `text` (#371): gold marks selection, not a link.
         hit:SetScript("OnEnter", function(self)
             if self.name then
-                nameFS:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                nameFS:SetTextColor(C.text.r, C.text.g, C.text.b)
             end
         end)
         hit:SetScript("OnLeave", function()
@@ -651,10 +663,7 @@ local function BuildChat(panel)
         local chat = CHAT()
         if not chat then return end
         chat:MarkRead()
-        -- CreateScrollFrame sizes the child from the scroll frame AT CREATION,
-        -- when nothing has been laid out yet, so it is born 0 wide and stays
-        -- that way. Every working panel in this addon re-sets it here.
-        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
+        -- The child's width is kept by BindScrollChildWidth (fillScroll), gutter included (#371).
         -- No clear() here: the rows are pooled, so this refresh shows exactly
         -- the ones it needs and parks the rest at the end.
 
@@ -677,7 +686,9 @@ local function BuildChat(panel)
         local groups = GuildOS.AllianceChat.GroupLog(log, GuildOS.AllianceChat.GROUP_WINDOW)
         local canHide = GuildOS.Alliance and GuildOS.Alliance:CanAdminister()
         local myGuild = GuildOS.Alliance and GuildOS.Alliance:MyGuildName()
-        local width = math.max(content:GetWidth() - 12, 200)
+        -- The wrap width of a message: refresh runs only while the tab is shown, so the child's
+        -- width is real; the cards themselves hang by both sides (#371).
+        local width = math.max(content:GetWidth(), 200)
         local y = 0
 
         for i, g in ipairs(groups) do
@@ -685,10 +696,9 @@ local function BuildChat(panel)
             local stamp = g.t and date("%H:%M", g.t) or ""
 
             if g.sys then
-                -- Events stand apart: no card, no speaker, just a marked line.
-                local lbl = GuildOS.Colors.label
-                local col = (g.sys == "warn") and "E0B040"
-                    or string.format("%02x%02x%02x", lbl.r * 255, lbl.g * 255, lbl.b * 255)
+                -- Events stand apart: no card, no speaker, a line in `label`, or `warn` for a warning.
+                -- No marker in front of it (#371).
+                local col = hex((g.sys == "warn") and C.warn or C.label)
                 b.card:SetBackdropColor(0, 0, 0, 0)
                 b.card:SetBackdropBorderColor(0, 0, 0, 0)
                 b.accent:Hide()
@@ -697,12 +707,14 @@ local function BuildChat(panel)
                 b.hit:Hide()
                 b.hide:Hide()
                 b.timeFS:SetText(stamp)
-                b.bodyFS:SetPoint("TOPLEFT", 12, -4)
+                b.bodyFS:SetPoint("TOPLEFT", 0, -4)
                 b.bodyFS:SetWidth(width - 60)
-                b.bodyFS:SetText(string.format("|cff%s\194\187 %s|r", col, g.lines[1] or ""))
+                b.bodyFS:SetText(string.format("|cff%s%s|r", col, g.lines[1] or ""))
                 local h = math.max(18, (b.bodyFS:GetStringHeight() or 12) + 8)
-                b.card:SetPoint("TOPLEFT", 4, -y)
-                b.card:SetSize(width, h)
+                b.card:ClearAllPoints()
+                b.card:SetPoint("TOPLEFT", 0, -y)
+                b.card:SetPoint("TOPRIGHT", 0, -y)
+                b.card:SetHeight(h)
                 b.card:Show()
                 y = y + h + 2
             else
@@ -732,7 +744,7 @@ local function BuildChat(panel)
                 -- The guild tag stays dim for our own guild: in an alliance
                 -- channel the signal worth reading is WHICH ALLY is speaking.
                 b.nameFS:SetText(string.format("%s  |cff%s[%s]|r",
-                    g.name or "?", own and "555566" or "8FA8C8", g.guild or "?"))
+                    g.name or "?", hex(own and C.labelDim or C.info), g.guild or "?"))
                 b.nameFS:SetTextColor(cr, cg, cb)
                 b.nameColor = { cr, cg, cb }
                 b.nameFS:Show()
@@ -743,8 +755,10 @@ local function BuildChat(panel)
                 b.bodyFS:SetText(table.concat(g.lines, "\n"))
 
                 local h = math.max(34, (b.bodyFS:GetStringHeight() or 12) + 28)
-                b.card:SetPoint("TOPLEFT", 4, -y)
-                b.card:SetSize(width, h)
+                b.card:ClearAllPoints()
+                b.card:SetPoint("TOPLEFT", 0, -y)
+                b.card:SetPoint("TOPRIGHT", 0, -y)
+                b.card:SetHeight(h)
                 b.card:Show()
 
                 b.hit.name = g.name
@@ -767,7 +781,7 @@ local function BuildChat(panel)
         end
 
         if #log == 0 then
-            empty:SetPoint("TOPLEFT", 6, 0)
+            empty:SetPoint("TOPLEFT", 0, 0)
             empty:Show()
             y = 20
         else
@@ -798,51 +812,38 @@ end
 local function BuildBulletin(panel)
     ------------------------------------------------------------------
     -- Identity band. This board is the face of the alliance, so it opens
-    -- with who the alliance IS: name, size, and one colour chip per member
-    -- guild. The chips are the same colours the notices use, so the legend
-    -- and the content teach each other.
+    -- with who the alliance IS: its name, as the screen's first section
+    -- title, and its size. The name is held across the line up to the
+    -- size, so a long one is never cut short by a width of its own, and it
+    -- is the shared title in `text`, not gold caps (#371). The colour chips
+    -- that stood under it went: unlabelled, they named nobody; each
+    -- notice still carries its guild's colour.
     ------------------------------------------------------------------
-    local title = UI:CreateText(panel, "", 14, C.gold.r, C.gold.g, C.gold.b)
-    title:SetPoint("TOPLEFT", 8, -6)
-    local count = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    count:SetPoint("TOPRIGHT", -8, -9)
+    local count = UI:CreateText(panel, "", 11, C.label.r, C.label.g, C.label.b)
+    count:SetPoint("TOPRIGHT", 0, -3)
+    local title = UI:CreateSectionTitle(panel, "", true)
+    title:SetPoint("TOPLEFT", 0, 0)
+    title:SetPoint("RIGHT", count, "LEFT", -UI.GAP, 0)
+    title:SetWordWrap(false)
 
-    local chips = {}
-    local function getChip(i)
-        if chips[i] then return chips[i] end
-        chips[i] = panel:CreateTexture(nil, "ARTWORK")
-        chips[i]:SetSize(14, 4)
-        return chips[i]
-    end
-
-    local rule = UI:CreateSeparator(panel)
-    rule:SetPoint("TOPLEFT", 0, -38)
-    rule:SetPoint("TOPRIGHT", 0, -38)
-
-    local box = makeInput(panel, 100)
-    box:SetPoint("TOPLEFT", 8, -48)
-    box:SetPoint("RIGHT", panel, "RIGHT", -104, 0)
+    local box = makeInput(panel, 100, { placeholder = L["Write a notice for the alliance"] })
+    box:SetPoint("TOPLEFT", 0, -(18 + UI.GAP))
+    box:SetPoint("RIGHT", panel, "RIGHT", -(88 + UI.GAP), 0)
     box:SetHeight(26)
-    local placeholder = UI:CreateText(box, L["Write a notice for the alliance"], 11,
-        C.textDim.r, C.textDim.g, C.textDim.b)
-    placeholder:SetPoint("LEFT", 8, 0)
-    box:SetScript("OnTextChanged", function(self)
-        setShown(placeholder, (self:GetText() or "") == "")
-    end)
 
     local postBtn = UI:CreateButton(panel, L["Post"], 88, 26)
-    postBtn:SetPoint("TOPRIGHT", -8, -48)
+    postBtn:SetPoint("TOPRIGHT", 0, -(18 + UI.GAP))
 
-    local hint = UI:CreateText(panel, "", 9, C.textDim.r, C.textDim.g, C.textDim.b)
-    hint:SetPoint("TOPLEFT", 8, -78)
+    local hint = UI:CreateText(panel, "", 10, C.textDim.r, C.textDim.g, C.textDim.b)
+    hint:SetPoint("TOPLEFT", 0, -(18 + UI.GAP + 26 + 4))
 
     local holder = CreateFrame("Frame", nil, panel)
-    holder:SetPoint("TOPLEFT", 0, -94)
-    holder:SetPoint("BOTTOMRIGHT", 0, 4)
+    holder:SetPoint("TOPLEFT", 0, -(18 + UI.GAP + 26 + 4 + 14 + UI.GAP))
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
     local scroll, content = UI:CreateScrollFrame(holder, "GuildOSAllianceBoardScroll")
-    scroll:SetAllPoints()
+    fillScroll(scroll, content)
 
-    local empty = UI:CreateText(content, "", 12, C.textDim.r, C.textDim.g, C.textDim.b)
+    local empty = UI:CreateText(content, "", 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     empty:Hide()
 
     local refresh
@@ -913,36 +914,22 @@ local function BuildBulletin(panel)
     refresh = function()
         local ally = ALLY()
         local Ally = GuildOS.Alliance
-        content:SetWidth(math.max(holder:GetWidth() - 12, 1))
 
         local summary = ally and ally:Summary()
         title:SetText((summary and summary.name) or "")
         count:SetText(summary
             and string.format(L["%d guilds, %d members"], #summary.guilds, summary.members) or "")
 
-        local shown = 0
-        if summary then
-            for i, g in ipairs(summary.guilds) do
-                local chip = getChip(i)
-                local r, gg, b = Ally.GuildColor(g.name)
-                chip:SetColorTexture(r, gg, b, 0.95)
-                chip:SetPoint("TOPLEFT", 8 + (i - 1) * 18, -28)
-                chip:Show()
-                shown = i
-            end
-        end
-        for i = shown + 1, #chips do chips[i]:Hide() end
-
         local canPost = ally and ally:CanAdminister()
         setShown(box, canPost)
         setShown(postBtn, canPost)
-        setShown(placeholder, canPost and (box:GetText() or "") == "")
         hint:SetText(canPost and L["Ambassadors can post. Everyone in the alliance sees it."]
             or L["Only alliance ambassadors can post here."])
 
         local posts = (ally and ally.BoardPosts and ally:BoardPosts()) or {}
         local mine = ally and ally:MyGuildName()
-        local width = math.max(content:GetWidth() - 8, 200)
+        -- The wrap width of a notice; the cards hang by both sides of the list (#371).
+        local width = math.max(content:GetWidth(), 200)
         local y = 0
 
         for i, p in ipairs(posts) do
@@ -952,7 +939,7 @@ local function BuildBulletin(panel)
             c.card:SetBackdropColor(C.bg2.r, C.bg2.g, C.bg2.b, 0.5)
             c.rail:SetColorTexture(r, g, b, 0.95)
 
-            c.who:SetText(string.format("|cff%s%s|r  |cff666666\194\183|r  %s",
+            c.who:SetText(string.format("|cff%s%s|r  \194\183  %s",
                 Ally.GuildColorHex(p.guild), (p.guild or "?"):upper(), p.by or "?"))
             c.when:SetText(p.ts and GuildOS:TimeAgo(p.ts) or "")
 
@@ -965,10 +952,12 @@ local function BuildBulletin(panel)
             setShown(c.del, canPost and p.guild == mine)
 
             local h = math.max(46, (c.body:GetStringHeight() or 12) + 34)
-            c.card:SetPoint("TOPLEFT", 4, -y)
-            c.card:SetSize(width, h)
+            c.card:ClearAllPoints()
+            c.card:SetPoint("TOPLEFT", 0, -y)
+            c.card:SetPoint("TOPRIGHT", 0, -y)
+            c.card:SetHeight(h)
             c.card:Show()
-            y = y + h + 6
+            y = y + h + UI.GAP
         end
 
         for i = #posts + 1, #cards do cards[i].card:Hide() end
@@ -977,7 +966,7 @@ local function BuildBulletin(panel)
             -- An empty board is an invitation, not a status report.
             empty:SetText(canPost and L["Nothing here yet. Welcome the allied guilds."]
                 or L["Nothing here yet."])
-            empty:SetPoint("TOPLEFT", 8, -4)
+            empty:SetPoint("TOPLEFT", 0, 0)
             empty:Show()
             y = 24
         else
@@ -994,18 +983,27 @@ end
 ----------------------------------------------------------------------
 local function BuildManage(panel)
     local notOfficer = UI:CreateText(panel, L["Only officers can manage the alliance."],
-        12, C.textDim.r, C.textDim.g, C.textDim.b)
-    notOfficer:SetPoint("TOPLEFT", 6, -8)
+        12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    notOfficer:SetPoint("TOPLEFT", 0, 0)
 
-    local body = CreateFrame("Frame", nil, panel)
-    body:SetPoint("TOPLEFT", 0, 0)
-    body:SetPoint("BOTTOMRIGHT", 0, 0)
+    -- A scrolling body: with the section titles' spacing (#371) an ambassador's view runs past a
+    -- 620px window, and the window clips what does not fit. The layouts below set its height.
+    local bodyScroll, body = UI:CreateScrollFrame(panel, nil)
+    bodyScroll:SetPoint("TOPLEFT", 0, 0)
+    bodyScroll:SetPoint("BOTTOMRIGHT", 0, 0)
+    UI:BindScrollChildWidth(bodyScroll, body)
+
+    -- Each block opens with the shared section title (#371): the first of a view has no rule, every
+    -- later one a 1px rule above it, which is a region of `body`, shown and hidden with its title.
+    local function sectionTitle(text, first)
+        return UI:CreateSectionTitle(body, text, first)
+    end
 
     ------------------------------------------------------------------
     -- No pact yet. JOINING comes first and is one field: almost every guild
     -- joins, exactly one founds.
     ------------------------------------------------------------------
-    local joinHdr = UI:CreateHeaderText(body, L["Join an alliance"], 11)
+    local joinHdr = sectionTitle(L["Join an alliance"], true)
     local joinBox = makeInput(body, 100)
     local joinBtn = UI:CreateButton(body, L["Join"], 90, 24)
     local joinHint = UI:CreateText(body, L["Paste the invite an ambassador gave you."],
@@ -1013,8 +1011,8 @@ local function BuildManage(panel)
 
     -- Fallback, shown ONLY after a join failed to find anybody. The mesh
     -- normally supplies the contact, so asking up front would be friction
-    -- charged to everyone to cover a minority case.
-    local joinWarn = UI:CreateText(body, "", 10, C.gold.r, C.gold.g, C.gold.b)
+    -- charged to everyone to cover a minority case. A warning, so `warn`.
+    local joinWarn = UI:CreateText(body, "", 10, C.warn.r, C.warn.g, C.warn.b)
     addFlexHint(joinWarn)
     joinWarn:SetJustifyH("LEFT")
     joinWarn:SetWordWrap(true)
@@ -1023,7 +1021,7 @@ local function BuildManage(panel)
     contactBtn:SetPoint("LEFT", contactBox, "RIGHT", 8, 0)
 
     -- /gos ally request: no invite in hand, ask an officer of a guild already in the alliance (#142).
-    local reqHdr = UI:CreateHeaderText(body, L["Ask to join an alliance"], 11)
+    local reqHdr = sectionTitle(L["Ask to join an alliance"])
     local reqTagBox = makeInput(body, 110)
     local reqWhoBox = makeInput(body, 200)
     reqWhoBox:SetPoint("LEFT", reqTagBox, "RIGHT", 8, 0)
@@ -1032,9 +1030,8 @@ local function BuildManage(panel)
     local reqHint = UI:CreateText(body, L["Alliance tag and an officer of a guild already in it. They approve the request."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
 
-    local foundSep = UI:CreateSeparator(body)
-
-    local foundHdr = UI:CreateHeaderText(body, L["Found an alliance"], 11)
+    -- The rule over this title is the line that used to stand alone between joining and founding.
+    local foundHdr = sectionTitle(L["Found an alliance"])
     local tagBox = makeInput(body, 110)
     local nameBox = makeInput(body, 240)
     nameBox:SetPoint("LEFT", tagBox, "RIGHT", 8, 0)
@@ -1044,28 +1041,28 @@ local function BuildManage(panel)
         10, C.textDim.r, C.textDim.g, C.textDim.b)
 
     -- Invite / block, shown once a pact exists.
-    local inviteHdr = UI:CreateHeaderText(body, L["Invite a guild"], 11)
-    inviteHdr:SetPoint("TOPLEFT", 6, -10)
+    local inviteHdr = sectionTitle(L["Invite a guild"], true)
+    inviteHdr:SetPoint("TOPLEFT", 0, 0)
     local inviteBox = makeInput(body, 200)
-    inviteBox:SetPoint("TOPLEFT", 6, -30)
+    inviteBox:SetPoint("TOPLEFT", 0, -TITLE_H)
     local inviteBtn = UI:CreateButton(body, L["Invite"], 90, 24)
-    inviteBtn:SetPoint("LEFT", inviteBox, "RIGHT", 8, 0)
+    inviteBtn:SetPoint("LEFT", inviteBox, "RIGHT", UI.GAP, 0)
     local inviteHint = UI:CreateText(body,
         L["Name any officer of that guild. They get a prompt and must accept."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    inviteHint:SetPoint("TOPLEFT", 6, -58)
+    inviteHint:SetPoint("TOPLEFT", 0, -(TITLE_H + 24 + 6))
 
     ------------------------------------------------------------------
     -- Ambassadors. Rows are POOLED (created once, shown/hidden), because
     -- WoW never frees a frame: rebuilding them per refresh would leak.
     ------------------------------------------------------------------
-    local ambHdr = UI:CreateHeaderText(body, L["Ambassadors of this guild"], 11)
+    local ambHdr = sectionTitle(L["Ambassadors of this guild"])
     local ambRows = {}
     for i = 1, 8 do
         local row = CreateFrame("Frame", nil, body)
         row:SetSize(360, 20)
         row.name = UI:CreateText(row, "", 11, C.text.r, C.text.g, C.text.b)
-        row.name:SetPoint("LEFT", 6, 0)
+        row.name:SetPoint("LEFT", 0, 0)
         row.name:SetWidth(250)
         row.name:SetJustifyH("LEFT")
         row.del = UI:CreateButton(row, L["Remove"], 80, 18)
@@ -1089,7 +1086,7 @@ local function BuildManage(panel)
     -- Join code. Shown ONLY to ambassadors: it is stored on every member's
     -- client (they all have to validate it) so this is a deterrent against
     -- casual sharing rather than real secrecy, and the hint says as much.
-    local codeHdr = UI:CreateHeaderText(body, L["Join code"], 11)
+    local codeHdr = sectionTitle(L["Join code"])
     local codeBox = makeInput(body, 140)
     codeBox:SetAutoFocus(false)
     codeBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
@@ -1102,7 +1099,7 @@ local function BuildManage(panel)
     codeHint:SetJustifyH("LEFT")
     codeHint:SetWordWrap(true)
 
-    local blockHdr = UI:CreateHeaderText(body, L["Ignore a guild locally"], 11)
+    local blockHdr = sectionTitle(L["Ignore a guild locally"])
     local blockBox = makeInput(body, 200)
     local blockBtn = UI:CreateButton(body, L["Block"], 90, 24)
     blockBtn:SetPoint("LEFT", blockBox, "RIGHT", 8, 0)
@@ -1112,13 +1109,15 @@ local function BuildManage(panel)
         L["Only affects you. The pact is untouched and nobody is told."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
 
-    local removeHdr = UI:CreateHeaderText(body, L["Remove a guild from the pact"], 11)
+    local removeHdr = sectionTitle(L["Remove a guild from the pact"])
     local removeBox = makeInput(body, 200)
     local removeBtn = UI:CreateButton(body, L["Remove"], 90, 24)
     removeBtn:SetPoint("LEFT", removeBox, "RIGHT", 8, 0)
     local removeHint = UI:CreateText(body, L["Only the founding guild can do this."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
 
+    -- The channel and leaving have no title of their own: a rule closes the block above them.
+    local chatRule = UI:CreateSeparator(body)
     local chatBtn = UI:CreateButton(body, L["Alliance chat"], 150, 24)
     local chatHint = UI:CreateText(body,
         L["A custom channel is public: anyone who guesses the name can join. Keep secrets out of it."],
@@ -1142,16 +1141,17 @@ local function BuildManage(panel)
 
     local leaveBtn = UI:CreateButton(body, L["Leave the alliance"], 170, 24)
 
-    local foundGroup  = { joinHdr, joinBox, joinBtn, joinHint, foundSep,
-                          foundHdr, tagBox, nameBox, foundBtn, foundHint,
-                          reqHdr, reqTagBox, reqWhoBox, reqBtn, reqHint }
+    -- A later section title's rule is its own region: it goes in the group with its title.
+    local foundGroup  = { joinHdr, joinBox, joinBtn, joinHint,
+                          foundHdr, foundHdr.rule, tagBox, nameBox, foundBtn, foundHint,
+                          reqHdr, reqHdr.rule, reqTagBox, reqWhoBox, reqBtn, reqHint }
     -- Set by a join that could not find anybody on the mesh.
     local needContact = false
-    local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr,
-                          blockHdr, blockBox, blockBtn, unblockBtn, blockHint,
-                          removeHdr, removeBox, removeBtn, removeHint,
-                          chatBtn, chatHint, modBtn, leaveBtn,
-                          codeHdr, codeBox, codeNewBtn, codeHint }
+    local memberGroup = { inviteHdr, inviteBox, inviteBtn, inviteHint, ambHdr, ambHdr.rule,
+                          blockHdr, blockHdr.rule, blockBox, blockBtn, unblockBtn, blockHint,
+                          removeHdr, removeHdr.rule, removeBox, removeBtn, removeHint,
+                          chatRule, chatBtn, chatHint, modBtn, leaveBtn,
+                          codeHdr, codeHdr.rule, codeBox, codeNewBtn, codeHint }
 
     local function say(ok, err)
         if not ok and err then GuildOS:Print(err) end
@@ -1161,65 +1161,77 @@ local function BuildManage(panel)
 
     -- The no-pact side also runs on an offset, because the contact fallback
     -- appears and disappears between renders.
+    -- Flush with the screen's left edge, a title's field TITLE_H under it, and SECTION_ABOVE over every
+    -- later title for its rule (#371). HINT_H: a one-line hint and the gap under it.
+    local HINT_H = 14
     local function layoutJoin()
-        local y = 10
-        joinHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
-        joinBox:SetPoint("TOPLEFT", 6, -y)
-        joinBox:SetPoint("RIGHT", body, "RIGHT", -110, 0)
-        joinBtn:SetPoint("TOPRIGHT", -8, -y); y = y + 30
-        joinHint:SetPoint("TOPLEFT", 6, -y);  y = y + 24
+        local y = 0
+        joinHdr:SetPoint("TOPLEFT", 0, -y);   y = y + TITLE_H
+        joinBox:SetPoint("TOPLEFT", 0, -y)
+        joinBox:SetPoint("RIGHT", body, "RIGHT", -(90 + UI.GAP), 0)
+        joinBtn:SetPoint("TOPRIGHT", 0, -y);  y = y + 30
+        joinHint:SetPoint("TOPLEFT", 0, -y);  y = y + HINT_H
         if needContact then
-            joinWarn:SetPoint("TOPLEFT", 6, -y);   y = y + 30
-            contactBox:SetPoint("TOPLEFT", 6, -y); y = y + 32
+            y = y + UI.GAP
+            joinWarn:SetPoint("TOPLEFT", 0, -y);   y = y + 30
+            contactBox:SetPoint("TOPLEFT", 0, -y); y = y + 24
         end
-        reqHdr:SetPoint("TOPLEFT", 6, -y);     y = y + 20
-        reqTagBox:SetPoint("TOPLEFT", 6, -y);  y = y + 30
-        reqHint:SetPoint("TOPLEFT", 6, -y);    y = y + 24
-        foundSep:SetPoint("TOPLEFT", 4, -y)
-        foundSep:SetPoint("TOPRIGHT", -4, -y); y = y + 16
-        foundHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
-        tagBox:SetPoint("TOPLEFT", 6, -y);     y = y + 30
-        foundHint:SetPoint("TOPLEFT", 6, -y)
+        y = y + SECTION_ABOVE
+        reqHdr:SetPoint("TOPLEFT", 0, -y);     y = y + TITLE_H
+        reqTagBox:SetPoint("TOPLEFT", 0, -y);  y = y + 30
+        reqHint:SetPoint("TOPLEFT", 0, -y);    y = y + HINT_H + SECTION_ABOVE
+        foundHdr:SetPoint("TOPLEFT", 0, -y);   y = y + TITLE_H
+        tagBox:SetPoint("TOPLEFT", 0, -y);     y = y + 30
+        foundHint:SetPoint("TOPLEFT", 0, -y);  y = y + HINT_H
+        body:SetHeight(y + UI.GAP)
     end
 
     -- Everything under the invite block is laid out with a running offset,
     -- because the ambassador list grows and shrinks. Fixed offsets would either
     -- overlap or leave a hole.
-    local function layout(ambCount, vacancy)
-        local y = 86
-        ambHdr:SetPoint("TOPLEFT", 6, -y)
-        y = y + 20
+    local function layout(ambCount, vacancy, showCode)
+        local y = TITLE_H + 30 + HINT_H + SECTION_ABOVE
+        ambHdr:SetPoint("TOPLEFT", 0, -y)
+        y = y + TITLE_H
         for i, row in ipairs(ambRows) do
             if i <= ambCount then
-                row:SetPoint("TOPLEFT", 6, -y)
+                row:SetPoint("TOPLEFT", 0, -y)
                 y = y + 20
             end
         end
         if vacancy then
-            ambWarn:SetPoint("TOPLEFT", 6, -y)
+            ambWarn:SetPoint("TOPLEFT", 0, -y)
             y = y + 32
-            ambClaimBtn:SetPoint("TOPLEFT", 6, -y)
-            y = y + 30
-        else
-            ambBox:SetPoint("TOPLEFT", 6, -(y + 4))
-            y = y + 34
-            ambHint:SetPoint("TOPLEFT", 6, -y)
+            ambClaimBtn:SetPoint("TOPLEFT", 0, -y)
             y = y + 24
+        else
+            ambBox:SetPoint("TOPLEFT", 0, -(y + 4))
+            y = y + 34
+            ambHint:SetPoint("TOPLEFT", 0, -y)
+            y = y + HINT_H
         end
 
-        codeHdr:SetPoint("TOPLEFT", 6, -y);     y = y + 20
-        codeBox:SetPoint("TOPLEFT", 6, -y);     y = y + 28
-        codeHint:SetPoint("TOPLEFT", 6, -y);    y = y + 30
-        blockHdr:SetPoint("TOPLEFT", 6, -y);    y = y + 20
-        blockBox:SetPoint("TOPLEFT", 6, -y);    y = y + 28
-        blockHint:SetPoint("TOPLEFT", 6, -y);   y = y + 24
-        removeHdr:SetPoint("TOPLEFT", 6, -y);   y = y + 20
-        removeBox:SetPoint("TOPLEFT", 6, -y);   y = y + 28
-        removeHint:SetPoint("TOPLEFT", 6, -y);  y = y + 26
-        chatBtn:SetPoint("TOPLEFT", 6, -y);     y = y + 28
-        chatHint:SetPoint("TOPLEFT", 6, -y);    y = y + 30
-        modBtn:SetPoint("TOPLEFT", 6, -y);      y = y + 30
-        leaveBtn:SetPoint("TOPLEFT", 6, -y)
+        -- The join code is for ambassadors only: hidden, it leaves no hole.
+        if showCode then
+            y = y + SECTION_ABOVE
+            codeHdr:SetPoint("TOPLEFT", 0, -y);     y = y + TITLE_H
+            codeBox:SetPoint("TOPLEFT", 0, -y);     y = y + 28
+            codeHint:SetPoint("TOPLEFT", 0, -y);    y = y + 26
+        end
+        y = y + SECTION_ABOVE
+        blockHdr:SetPoint("TOPLEFT", 0, -y);    y = y + TITLE_H
+        blockBox:SetPoint("TOPLEFT", 0, -y);    y = y + 28
+        blockHint:SetPoint("TOPLEFT", 0, -y);   y = y + HINT_H + SECTION_ABOVE
+        removeHdr:SetPoint("TOPLEFT", 0, -y);   y = y + TITLE_H
+        removeBox:SetPoint("TOPLEFT", 0, -y);   y = y + 28
+        removeHint:SetPoint("TOPLEFT", 0, -y);  y = y + HINT_H + SECTION_ABOVE
+        chatRule:SetPoint("TOPLEFT", 0, -(y - 12))
+        chatRule:SetPoint("TOPRIGHT", 0, -(y - 12))
+        chatBtn:SetPoint("TOPLEFT", 0, -y);     y = y + 28
+        chatHint:SetPoint("TOPLEFT", 0, -y);    y = y + 30
+        modBtn:SetPoint("TOPLEFT", 0, -y);      y = y + 30
+        leaveBtn:SetPoint("TOPLEFT", 0, -y);    y = y + 24
+        body:SetHeight(y + UI.GAP)
     end
 
     ambAddBtn:SetScript("OnClick", function()
@@ -1396,7 +1408,10 @@ local function BuildManage(panel)
         if vacancy then
             ambWarn:SetText(L["No ambassador of this guild is on the roster any more. Without one this guild cannot invite, approve slots or post."])
         end
-        layout(vacancy and 0 or #list, vacancy)
+        -- Ambassadors only. A plain officer manages the pact but does not
+        -- get the code to hand around.
+        local isAmb = ally:CanAdminister()
+        layout(vacancy and 0 or #list, vacancy, isAmb)
         if not vacancy then
             ambAddBtn:SetPoint("LEFT", ambBox, "RIGHT", 8, 0)
         end
@@ -1412,10 +1427,7 @@ local function BuildManage(panel)
             removeBox:Disable()
         end
 
-        -- Ambassadors only. A plain officer manages the pact but does not
-        -- get the code to hand around.
-        local isAmb = ally:CanAdminister()
-        for _, w in ipairs({ codeHdr, codeBox, codeNewBtn, codeHint }) do
+        for _, w in ipairs({ codeHdr, codeHdr.rule, codeBox, codeNewBtn, codeHint }) do
             setShown(w, isAmb)
         end
         if isAmb then
@@ -1443,35 +1455,35 @@ end
 local function BuildSetup(panel)
     local LINK = function() return GuildOS.AllianceLink end
 
-    local hdr = UI:CreateHeaderText(panel, L["Alliance code"], 11)
-    hdr:SetPoint("TOPLEFT", 6, -10)
+    -- The screen's first section title, then form labels in `text` over their fields (#371).
+    local hdr = UI:CreateSectionTitle(panel, L["Alliance code"], true)
+    hdr:SetPoint("TOPLEFT", 0, 0)
     local status = UI:CreateText(panel, "", 11, C.text.r, C.text.g, C.text.b)
-    status:SetPoint("TOPLEFT", 6, -32)
+    status:SetPoint("TOPLEFT", 0, -TITLE_H)
     status:SetJustifyH("LEFT")
 
-    local tagLbl = UI:CreateText(panel, L["Tag (letters and numbers)"], 10,
-        C.textDim.r, C.textDim.g, C.textDim.b)
-    tagLbl:SetPoint("TOPLEFT", 6, -58)
+    local tagLbl = UI:CreateText(panel, L["Tag (letters and numbers)"], 11)
+    tagLbl:SetPoint("TOPLEFT", 0, -50)
     local tagBox = makeInput(panel, 110)
-    tagBox:SetPoint("TOPLEFT", 6, -74)
-    local guildsLbl = UI:CreateText(panel, L["Guilds, separated by ;"], 10, C.textDim.r, C.textDim.g, C.textDim.b)
-    guildsLbl:SetPoint("TOPLEFT", 6, -104)
+    tagBox:SetPoint("TOPLEFT", 0, -68)
+    local guildsLbl = UI:CreateText(panel, L["Guilds, separated by ;"], 11)
+    guildsLbl:SetPoint("TOPLEFT", 0, -100)
     local guildsBox = makeInput(panel, 420)
-    guildsBox:SetPoint("TOPLEFT", 6, -120)
+    guildsBox:SetPoint("TOPLEFT", 0, -118)
     local genBtn = UI:CreateButton(panel, L["Generate"], 110, 24)
-    genBtn:SetPoint("LEFT", guildsBox, "RIGHT", 8, 0)
+    genBtn:SetPoint("LEFT", guildsBox, "RIGHT", UI.GAP, 0)
 
     local lineBox = makeInput(panel, 540)
-    lineBox:SetPoint("TOPLEFT", 6, -156)
+    lineBox:SetPoint("TOPLEFT", 0, -(118 + 24 + UI.GAP + 4))
     lineBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     local writeBtn = UI:CreateButton(panel, L["Save for the guild"], 170, 24)
-    writeBtn:SetPoint("TOPLEFT", 6, -188)
+    writeBtn:SetPoint("TOPLEFT", lineBox, "BOTTOMLEFT", 0, -UI.GAP)
     local removeBtn = UI:CreateButton(panel, L["Turn off for the guild"], 170, 24)
-    removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", 8, 0)
+    removeBtn:SetPoint("LEFT", writeBtn, "RIGHT", UI.GAP, 0)
 
     local hint = UI:CreateText(panel, L["Paste this same code in Alliance > Setup in every guild of the alliance and save. Guild OS hands it to every member of the guild: no ambassadors, nobody in particular has to be online."],
         10, C.textDim.r, C.textDim.g, C.textDim.b)
-    hint:SetPoint("TOPLEFT", 6, -222)
+    hint:SetPoint("TOPLEFT", writeBtn, "BOTTOMLEFT", 0, -UI.GAP)
     hint:SetWidth(540)
     hint:SetJustifyH("LEFT")
     hint:SetWordWrap(true)
@@ -1657,11 +1669,13 @@ function GuildOS:CreateAlliancePanel(parent, _mainFrame)
     end
 
     -- Anchored to the bar, not a fixed offset, so a wrapped two-row tab
-    -- bar pushes the content down instead of hiding behind it.
+    -- bar pushes the content down instead of hiding behind it. Flush with the
+    -- bar's left edge, UI.GAP under it, ending UI.GAP short of its right edge
+    -- (the bar spans the parent less 10px a side), as every screen does (#371).
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, parent)
-        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -8)
-        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 10)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -UI.GAP)
+        p:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -(10 + UI.GAP), 10)
         p:Hide()
         return p
     end

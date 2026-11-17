@@ -105,6 +105,7 @@ function Frame:Disable() self.enabled = false; if self.scripts.OnDisable then se
 function Frame:SetEnabled(v) if v then self:Enable() else self:Disable() end end
 function Frame:IsEnabled() return self.enabled end
 function Frame:IsMouseOver() return false end
+function Frame:HasFocus() return false end   -- the shared field's hint asks it (UI:CreateInput, #371)
 function Frame:SetChecked(v) self.checked = v and true or nil end
 function Frame:GetChecked() return self.checked end
 function Frame:SetTexture(t) self.texture = t end

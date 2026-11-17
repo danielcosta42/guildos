@@ -2411,6 +2411,7 @@ L["Undo: "] = "Rückgängig: "
 L["[Loot] Award of %s to %s undone"] = "[Beute] Vergabe von %s an %s rückgängig gemacht"
 L["Undo last award"] = "Letzte Vergabe rückgängig"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700Rückgängig:|r %s"
+L["Undone: %s"] = "Rückgängig: %s"
 
 -- Fit the group to the plan (issue #292)
 L["Only the raid leader can remove people from the raid."] = "Nur der Schlachtzugsleiter kann Leute aus dem Schlachtzug entfernen."

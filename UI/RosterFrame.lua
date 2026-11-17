@@ -608,48 +608,15 @@ function GuildOS:CreateRosterPanel(parent, host)
     columnsBtn:SetPoint("RIGHT", offlineBtn, "LEFT", -10, 0)
     columnsBtn:SetScript("OnClick", function(self) GuildOS:ToggleColumnsPanel(self) end)
 
-    -- Search box
-    local searchBox = CreateFrame("EditBox", "GuildOSSearchBox" .. uid, statsBar, "BackdropTemplate")
-    searchBox:SetSize(160, 22)
+    -- Search box: the shared field (#371). Its placeholder, its gold border while typing and its
+    -- Escape are the component's; the filter hooks the text.
+    local searchBox = UI:CreateInput(statsBar, 160, 22, { max = 30, placeholder = L["Search / 60-70 / >=60"] })
     searchBox:SetPoint("RIGHT", columnsBtn, "LEFT", -10, 0)
-    searchBox:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GuildOS.UI:Edge(searchBox),
-    })
-    searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(searchBox, 11)
-    searchBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    searchBox:SetTextInsets(8, 8, 0, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(30)
-
-    local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(searchPlaceholder, 11)
-    searchPlaceholder:SetPoint("LEFT", 8, 0)
-    searchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    searchPlaceholder:SetText(L["Search / 60-70 / >=60"])
-
-    searchBox:SetScript("OnTextChanged", function(self)
-        local text = self:GetText()
-        if text and text ~= "" then
-            searchPlaceholder:Hide()
-        else
-            searchPlaceholder:Show()
-        end
-        host.searchFilter = text
+    searchBox:HookScript("OnTextChanged", function(self)
+        host.searchFilter = self:GetText()
         host:RefreshRoster()
     end)
-    searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    -- Focus highlight: border glows with the accent while typing
-    searchBox:SetScript("OnEditFocusGained", function(self)
-        self:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.85)
-    end)
-    searchBox:SetScript("OnEditFocusLost", function(self)
-        self:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    end)
     host.searchBox = searchBox
 
     -- The guild's make-up by class, level, rank and zone (`/gos analytics`): every command has a
@@ -2104,28 +2071,30 @@ end
 ----------------------------------------------------------------------
 function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
     local expandedChar = nil  -- key of currently expanded character
+    local GAP = UI.GAP
 
     ----------------------------------------------------------------
-    -- Top bar: status text
+    -- Top bar: status text. Flush with the Lists view's buttons above it, at x = 0 (#371): the
+    -- whole panel sat 15px in.
     ----------------------------------------------------------------
     local topBar = CreateFrame("Frame", nil, parent)
-    topBar:SetPoint("TOPLEFT", 15, -10)
-    topBar:SetPoint("TOPRIGHT", -15, -10)
-    topBar:SetHeight(30)
+    topBar:SetPoint("TOPLEFT", 0, 0)
+    topBar:SetPoint("TOPRIGHT", 0, 0)
+    topBar:SetHeight(26)
 
-    local statusText = UI:CreateText(topBar, "", 11, C.white.r, C.white.g, C.white.b)
-    statusText:SetPoint("LEFT", 5, 0)
+    local statusText = UI:CreateText(topBar, "", 11, C.text.r, C.text.g, C.text.b)
+    statusText:SetPoint("LEFT", 0, 0)
     statusText:SetWidth(280)
     statusText:SetJustifyH("LEFT")
 
-    -- "Minha Wishlist" button — open personal wishlist manager
+    -- "Minha Wishlist" button: open personal wishlist manager
     local myWishBtn = UI:CreateButton(topBar, L["My Wishlist"], 120, 24)
-    myWishBtn:SetPoint("RIGHT", -140, 0)
+    myWishBtn:SetPoint("RIGHT", -134, 0)
     myWishBtn:SetScript("OnClick", function() GuildOS:ShowWishlistFrame() end)
 
-    -- "Gerenciar Prios" button — officer only, opens prio modal
+    -- "Gerenciar Prios" button: officer only, opens prio modal
     local managePrioBtn = UI:CreateButton(topBar, L["Manage Prios"], 120, 24)
-    managePrioBtn:SetPoint("RIGHT", -6, 0)
+    managePrioBtn:SetPoint("RIGHT", 0, 0)
     managePrioBtn:SetScript("OnClick", function() GuildOS:ShowPrioModal() end)
 
     -- Hide officer button for non-officers; refresh on show
@@ -2138,50 +2107,31 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
     end)
 
     ----------------------------------------------------------------
-    -- Search bar
+    -- Search bar: a form label in the text colour and the shared field (#371), the count it
+    -- filters right after it instead of floating at the far right.
     ----------------------------------------------------------------
+    local SEARCH_Y = -26 - GAP
     local searchBar = CreateFrame("Frame", nil, parent)
-    searchBar:SetPoint("TOPLEFT", 15, -44)
-    searchBar:SetPoint("TOPRIGHT", -15, -44)
-    searchBar:SetHeight(26)
+    searchBar:SetPoint("TOPLEFT", 0, SEARCH_Y)
+    searchBar:SetPoint("TOPRIGHT", 0, SEARCH_Y)
+    searchBar:SetHeight(22)
 
-    local searchIcon = searchBar:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(searchIcon, 12)
-    searchIcon:SetPoint("LEFT", 8, 0)
-    searchIcon:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
-    searchIcon:SetText(L["Search:"])
+    local searchIcon = UI:CreateText(searchBar, L["Search:"], 11, C.text.r, C.text.g, C.text.b)
+    searchIcon:SetPoint("LEFT", 0, 0)
 
-    local wishSearch = CreateFrame("EditBox", nil, searchBar, "BackdropTemplate")
-    wishSearch:SetSize(200, 22)
+    local wishSearch = UI:CreateInput(searchBar, 200, 22, { max = 30, placeholder = L["Player name..."] })
     wishSearch:SetPoint("LEFT", searchIcon, "RIGHT", 8, 0)
-    wishSearch:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(wishSearch) })
-    wishSearch:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    wishSearch:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(wishSearch, 11)
-    wishSearch:SetTextColor(C.white.r, C.white.g, C.white.b)
-    wishSearch:SetTextInsets(6, 6, 0, 0)
-    wishSearch:SetAutoFocus(false)
-    wishSearch:SetMaxLetters(30)
-    wishSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    local wishSearchPlaceholder = wishSearch:CreateFontString(nil, "OVERLAY")
-    GuildOS:ApplyFont(wishSearchPlaceholder, 11)
-    wishSearchPlaceholder:SetPoint("LEFT", 6, 0)
-    wishSearchPlaceholder:SetTextColor(0.4, 0.4, 0.4)
-    wishSearchPlaceholder:SetText(L["Player name..."])
-
-    local charCountText = UI:CreateText(searchBar, "", 10, C.silver.r, C.silver.g, C.silver.b)
-    charCountText:SetPoint("RIGHT", -5, 0)
+    local charCountText = UI:CreateText(searchBar, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+    charCountText:SetPoint("LEFT", wishSearch, "RIGHT", 12, 0)
 
     ----------------------------------------------------------------
-    -- Column header
+    -- Column header: the shared header, no band, a 1px rule under it (#371)
     ----------------------------------------------------------------
-    local colHeader = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    colHeader:SetPoint("TOPLEFT", 15, -74)
-    colHeader:SetPoint("TOPRIGHT", -15, -74)
-    colHeader:SetHeight(20)
-    colHeader:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-    colHeader:SetBackdropColor(C.headerBg.r, C.headerBg.g, C.headerBg.b, 0.8)
+    local HEADER_Y = SEARCH_Y - 22 - GAP
+    local colHeader = UI:CreateTableHeader(parent)
+    colHeader:SetPoint("TOPLEFT", 0, HEADER_Y)
+    colHeader:SetPoint("TOPRIGHT", 0, HEADER_Y)
 
     local hName = UI:CreateHeaderText(colHeader, L["Character"], 10)
     hName:SetPoint("LEFT", 28, 0)
@@ -2193,25 +2143,28 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
     hAtt:SetPoint("LEFT", 400, 0)
 
     ----------------------------------------------------------------
-    -- Scrollable character list
+    -- Scrollable character list. The child keeps the scroll frame's width less the bar's gutter, and
+    -- every row hangs from its two top corners (#371): the width was read once, as 720 while the tab
+    -- was hidden, and the rows ran under the bar.
     ----------------------------------------------------------------
-    local listContainer = CreateFrame("Frame", nil, parent)
-    listContainer:SetPoint("TOPLEFT", 15, -94)
-    listContainer:SetPoint("BOTTOMRIGHT", -15, 5)
-
-    local listScroll = CreateFrame("ScrollFrame", "GuildOSWishlistGuildScroll", listContainer, "UIPanelScrollFrameTemplate")
-    listScroll:SetPoint("TOPLEFT", 0, 0)
+    local listScroll = CreateFrame("ScrollFrame", "GuildOSWishlistGuildScroll", parent, "UIPanelScrollFrameTemplate")
+    listScroll:SetPoint("TOPLEFT", colHeader, "BOTTOMLEFT", 0, -2)
     listScroll:SetPoint("BOTTOMRIGHT", 0, 0)
     UI:SkinScrollBar(listScroll, "GuildOSWishlistGuildScroll")
 
     local listChild = CreateFrame("Frame", "GuildOSWishlistGuildChild", listScroll)
-    listChild:SetWidth(listContainer:GetWidth() or 720)
-    listChild:SetHeight(1)
+    listChild:SetSize(1, 1)
     listScroll:SetScrollChild(listChild)
+    UI:BindScrollChildWidth(listScroll, listChild)
 
-    listContainer:SetScript("OnSizeChanged", function(self)
-        listChild:SetWidth(self:GetWidth() - 24)
-    end)
+    -- A row of the list, hung by both top corners from `left` in.
+    local function hang(frame, left, y, h)
+        frame:SetPoint("TOPLEFT", left, y)
+        frame:SetPoint("TOPRIGHT", 0, y)
+        frame:SetHeight(h)
+        frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        frame:Show()
+    end
 
     ----------------------------------------------------------------
     -- Populate character list
@@ -2224,8 +2177,6 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
         for _, rg in ipairs(regions) do rg:Hide() end
 
         local guildWl = GuildOS.db.guildWishlists
-        local childWidth = listChild:GetWidth()
-        if childWidth < 100 then childWidth = 720 end
         local ly = -2
         local count = 0
         local totalCount = 0
@@ -2243,8 +2194,6 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             return (a.data.name or a.key) < (b.data.name or b.key)
         end)
 
-        local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
-
         for _, entry in ipairs(sorted) do
             local charData = entry.data
             local charKey = entry.key
@@ -2255,21 +2204,18 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
             -- Character row (clickable)
             local charRow = CreateFrame("Button", nil, listChild, "BackdropTemplate")
-            charRow:SetPoint("TOPLEFT", 0, ly)
-            charRow:SetSize(childWidth, 24)
-            charRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            hang(charRow, 0, ly, 24)
             charRow:SetBackdropColor(rowBg.r, rowBg.g, rowBg.b, rowBg.a)
-            charRow:Show()
 
             -- Expand indicator
             local arrow = charRow:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(arrow, 10)
             arrow:SetPoint("LEFT", 8, 0)
-            arrow:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.6)
+            arrow:SetTextColor(C.label.r, C.label.g, C.label.b)
             arrow:SetText(isExpanded and "v" or ">")
 
             -- Character name
-            local cc = GuildOS.ClassColors and GuildOS.ClassColors[(charData.class or ""):upper()] or C.white
+            local cc = GuildOS.ClassColors and GuildOS.ClassColors[(charData.class or ""):upper()] or C.text
             local nameStr = charRow:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(nameStr, 11)
             nameStr:SetPoint("LEFT", 24, 0)
@@ -2283,23 +2229,23 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             classStr:SetTextColor(cc.r, cc.g, cc.b, 0.7)
             classStr:SetText(charData.class or "")
 
-            -- Wishlist count
+            -- Wishlist count, in the text colours: no blue of its own (#371)
             local wishItems = charData.wishlist or {}
             local wishCount = charRow:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(wishCount, 10)
             wishCount:SetPoint("LEFT", 310, 0)
             wishCount:SetWidth(60)
             if #wishItems > 0 then
-                wishCount:SetTextColor(wColor.r, wColor.g, wColor.b)
+                wishCount:SetTextColor(C.text.r, C.text.g, C.text.b)
                 wishCount:SetText(string.format(L["%d items"], #wishItems))
             else
-                wishCount:SetTextColor(0.3, 0.3, 0.3)
+                wishCount:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
                 wishCount:SetText("-")
             end
 
-            -- ATT%
+            -- ATT%, in the status colours (#371: they were hand-mixed greens and reds)
             local attStr = "-"
-            local attR, attG, attB = 0.35, 0.35, 0.35
+            local attInk = C.labelDim
             if GuildOS.RaidTracker then
                 -- On retail a list's name is its owner's whole key already (issue #185).
                 local pKey = GuildOS.Client.isRetail and charData.name
@@ -2307,20 +2253,14 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 local attVal = GuildOS.RaidTracker:GetAttendance25ManPercent(pKey) or 0
                 if attVal > 0 then
                     attStr = attVal .. "%"
-                    if attVal >= 60 then
-                        attR, attG, attB = 0.3, 1.0, 0.3
-                    elseif attVal >= 40 then
-                        attR, attG, attB = 1.0, 1.0, 0.3
-                    else
-                        attR, attG, attB = 1.0, 0.3, 0.3
-                    end
+                    attInk = (attVal >= 60 and C.ok) or (attVal >= 40 and C.warn) or C.danger
                 end
             end
             local attPct = charRow:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(attPct, nil, "tableNum")
             attPct:SetPoint("LEFT", 400, 0)
             attPct:SetWidth(50)
-            attPct:SetTextColor(attR, attG, attB)
+            attPct:SetTextColor(attInk.r, attInk.g, attInk.b)
             attPct:SetText(attStr)
 
             -- Officer prio indicator: a star if this character has any prios
@@ -2365,42 +2305,29 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
             ly = ly - 26
 
             ----------------------------------------------------
-            -- Expanded: wishlist items
+            -- Expanded: wishlist items, on the table's own surfaces: no blue or gold bars, no gold
+            -- wash, its captions the column headers' (#371)
             ----------------------------------------------------
             if isExpanded and (#wishItems > 0 or hasPrio) then
                 local detailBg = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
-                detailBg:SetPoint("TOPLEFT", 0, ly)
-                detailBg:SetSize(childWidth, 1)
-                detailBg:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                detailBg:SetBackdropColor(0.068, 0.068, 0.088, 0.9)
-                detailBg:Show()
+                hang(detailBg, 0, ly, 1)
+                detailBg:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
 
                 local detailLy = -4
 
                 -- Section label
                 local secLabel = listChild:CreateFontString(nil, "OVERLAY")
-                GuildOS:ApplyFont(secLabel, 9)
+                GuildOS:ApplyFont(secLabel, nil, "colHeader")
                 secLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
-                secLabel:SetTextColor(wColor.r, wColor.g, wColor.b)
+                secLabel:SetTextColor(C.label.r, C.label.g, C.label.b)
                 secLabel:SetText(string.format(L["WISHLIST  (%d)"], #wishItems))
                 secLabel:Show()
                 detailLy = detailLy - 16
 
                 for _, item in ipairs(wishItems) do
                     local iRow = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
-                    iRow:SetPoint("TOPLEFT", 20, ly + detailLy)
-                    iRow:SetSize(childWidth - 30, 18)
-                    iRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                    iRow:SetBackdropColor(0.066, 0.066, 0.084, 0.6)
-                    iRow:Show()
-
-                    -- Color bar
-                    local colorBar = iRow:CreateTexture(nil, "ARTWORK")
-                    colorBar:SetPoint("TOPLEFT", 0, 0)
-                    colorBar:SetPoint("BOTTOMLEFT", 0, 0)
-                    colorBar:SetWidth(3)
-                    colorBar:SetTexture("Interface\\Buttons\\WHITE8x8")
-                    colorBar:SetVertexColor(wColor.r, wColor.g, wColor.b, 0.9)
+                    hang(iRow, 20, ly + detailLy, 18)
+                    iRow:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
 
                     -- Order
                     local orderStr = iRow:CreateFontString(nil, "OVERLAY")
@@ -2408,20 +2335,20 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     orderStr:SetPoint("LEFT", 8, 0)
                     orderStr:SetWidth(22)
                     orderStr:SetJustifyH("RIGHT")
-                    orderStr:SetTextColor(wColor.r, wColor.g, wColor.b, 0.7)
+                    orderStr:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
                     orderStr:SetText("#" .. (item.order or "?"))
 
-                    -- Item name
-                    local qColor = C.white
+                    -- Item name, up to the badges on the right
+                    local qColor = C.text
                     if GuildOS.Wishlist and GuildOS.QualityColors then
                         local q = GuildOS.Wishlist:GetItemQuality(item.itemId)
-                        qColor = GuildOS.QualityColors[q] or C.white
+                        qColor = GuildOS.QualityColors[q] or C.text
                     end
                     local itemName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(item.itemId) or string.format(L["Item #%s"], item.itemId or "?")
                     local itemStr = iRow:CreateFontString(nil, "OVERLAY")
                     GuildOS:ApplyFont(itemStr, 10)
                     itemStr:SetPoint("LEFT", 34, 0)
-                    itemStr:SetWidth(childWidth - 140)
+                    itemStr:SetPoint("RIGHT", -76, 0)
                     itemStr:SetJustifyH("LEFT")
                     itemStr:SetWordWrap(false)
                     itemStr:SetTextColor(qColor.r, qColor.g, qColor.b)
@@ -2432,7 +2359,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                         local osBadge = iRow:CreateFontString(nil, "OVERLAY")
                         GuildOS:ApplyFont(osBadge, 8)
                         osBadge:SetPoint("RIGHT", -8, 0)
-                        osBadge:SetTextColor(0.7, 0.7, 0.7, 0.7)
+                        osBadge:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
                         osBadge:SetText(L["OS"])
                     end
 
@@ -2454,13 +2381,13 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     -- Tooltip
                     iRow:EnableMouse(true)
                     iRow:SetScript("OnEnter", function(self)
-                        self:SetBackdropColor(0.130, 0.130, 0.170, 0.8)
+                        self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
                         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                         GameTooltip:SetHyperlink("item:" .. (item.itemId or 0))
                         GameTooltip:Show()
                     end)
                     iRow:SetScript("OnLeave", function(self)
-                        self:SetBackdropColor(0.066, 0.066, 0.084, 0.6)
+                        self:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
                         GameTooltip:Hide()
                     end)
 
@@ -2482,14 +2409,11 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 if #prioBadges > 0 then
                     table.sort(prioBadges, function(a, b) return a.order < b.order end)
 
-                    -- Section separator
+                    -- Section separator: a 1px line, not gold (#371)
                     detailLy = detailLy - 4
-                    local prioSep = listChild:CreateTexture(nil, "ARTWORK")
-                    prioSep:SetTexture("Interface\\Buttons\\WHITE8x8")
+                    local prioSep = UI:CreateSeparator(listChild)
                     prioSep:SetPoint("TOPLEFT", 20, ly + detailLy)
                     prioSep:SetPoint("TOPRIGHT", -20, ly + detailLy)
-                    GuildOS.UI:Hairline(prioSep, "Height")
-                    prioSep:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.3)
                     prioSep:Show()
                     detailLy = detailLy - 5
 
@@ -2503,18 +2427,8 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     for _, badge in ipairs(prioBadges) do
                         local pRow = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
-                        pRow:SetPoint("TOPLEFT", 20, ly + detailLy)
-                        pRow:SetSize(childWidth - 30, 18)
-                        pRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-                        pRow:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
-                        pRow:Show()
-
-                        local goldBar = pRow:CreateTexture(nil, "ARTWORK")
-                        goldBar:SetPoint("TOPLEFT", 0, 0)
-                        goldBar:SetPoint("BOTTOMLEFT", 0, 0)
-                        goldBar:SetWidth(3)
-                        goldBar:SetTexture("Interface\\Buttons\\WHITE8x8")
-                        goldBar:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
+                        hang(pRow, 20, ly + detailLy, 18)
+                        pRow:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
 
                         local starStr = pRow:CreateFontString(nil, "OVERLAY")
                         GuildOS:ApplyFont(starStr, 10, "tableNum")
@@ -2525,15 +2439,15 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                         starStr:SetText("* #" .. badge.order)
 
                         local pName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(badge.itemId) or string.format(L["Item #%s"], badge.itemId)
-                        local pqColor = C.white
+                        local pqColor = C.text
                         if GuildOS.QualityColors and GuildOS.Wishlist then
                             local q = GuildOS.Wishlist:GetItemQuality(badge.itemId)
-                            pqColor = GuildOS.QualityColors[q] or C.white
+                            pqColor = GuildOS.QualityColors[q] or C.text
                         end
                         local pItemStr = pRow:CreateFontString(nil, "OVERLAY")
                         GuildOS:ApplyFont(pItemStr, 10)
                         pItemStr:SetPoint("LEFT", 40, 0)
-                        pItemStr:SetWidth(childWidth - 150)
+                        pItemStr:SetPoint("RIGHT", -80, 0)
                         pItemStr:SetJustifyH("LEFT")
                         pItemStr:SetWordWrap(false)
                         pItemStr:SetTextColor(pqColor.r, pqColor.g, pqColor.b)
@@ -2541,13 +2455,13 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
                         pRow:EnableMouse(true)
                         pRow:SetScript("OnEnter", function(self)
-                            self:SetBackdropColor(C.gold.r, C.gold.g, C.gold.b, 0.20)
+                            self:SetBackdropColor(C.rowHover.r, C.rowHover.g, C.rowHover.b, C.rowHover.a)
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetHyperlink("item:" .. (badge.itemId or 0))
                             GameTooltip:Show()
                         end)
                         pRow:SetScript("OnLeave", function(self)
-                            self:SetBackdropColor(C.accentSoft.r, C.accentSoft.g, C.accentSoft.b, C.accentSoft.a)
+                            self:SetBackdropColor(C.row1.r, C.row1.g, C.row1.b, C.row1.a)
                             GameTooltip:Hide()
                         end)
 
@@ -2556,28 +2470,30 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 end
 
                 local detailHeight = math.abs(detailLy) + 4
-                detailBg:SetHeight(detailHeight)                ly = ly - detailHeight - 2
+                detailBg:SetHeight(detailHeight)
+                ly = ly - detailHeight - 2
             end
         end
 
+        -- An empty list says so, left-aligned under the header (#371): it was centred.
         if count == 0 and totalCount == 0 then
             local noData = listChild:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(noData, 11)
-            noData:SetPoint("TOP", listChild, "TOP", 0, ly - 30)
-            noData:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            noData:SetPoint("TOPLEFT", listChild, "TOPLEFT", 6, ly - 6)
+            noData:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
             noData:SetText(L["No member has synced their wishlist yet.\nUse the Sync button in the My Wishlist window to send your data."])
-            noData:SetJustifyH("CENTER")
+            noData:SetJustifyH("LEFT")
             noData:Show()
-            ly = ly - 60
+            ly = ly - 40
         elseif count == 0 then
             local noMatch = listChild:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(noMatch, 11)
-            noMatch:SetPoint("TOP", listChild, "TOP", 0, ly - 20)
-            noMatch:SetTextColor(C.silver.r, C.silver.g, C.silver.b, 0.5)
+            noMatch:SetPoint("TOPLEFT", listChild, "TOPLEFT", 6, ly - 6)
+            noMatch:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
             noMatch:SetText(L["No character found."])
-            noMatch:SetJustifyH("CENTER")
+            noMatch:SetJustifyH("LEFT")
             noMatch:Show()
-            ly = ly - 40
+            ly = ly - 26
         end
 
         local total = 0
@@ -2595,8 +2511,8 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
         end
     end
 
-    wishSearch:SetScript("OnTextChanged", function(self)
-        if self:GetText() ~= "" then wishSearchPlaceholder:Hide() else wishSearchPlaceholder:Show() end
+    -- Hooked: the field shows and hides its own placeholder (#371).
+    wishSearch:HookScript("OnTextChanged", function(self)
         PopulateWishlistPanel(self:GetText())
     end)
 
@@ -2644,38 +2560,41 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
                 end
             end
         end
+        -- At the officers' sub-tab bar's inset, 10px in, and as high as it starts (#371): it sat at 20.
+        local INSET = 10
+
         -- Status badge
         local statusLabel = UI:CreateTitle(parent, "", 15)
-        statusLabel:SetPoint("TOPLEFT", 20, -15)
+        statusLabel:SetPoint("TOPLEFT", INSET, -8)
 
-        local updatedLabel = UI:CreateText(parent, "", 10, C.silver.r, C.silver.g, C.silver.b)
-        updatedLabel:SetPoint("TOPLEFT", 20, -36)
+        local updatedLabel = UI:CreateText(parent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        updatedLabel:SetPoint("TOPLEFT", INSET, -29)
 
-        -- Discord
-        local discordHeader = UI:CreateText(parent, L["Discord:"], 11, C.silver.r, C.silver.g, C.silver.b)
-        discordHeader:SetPoint("TOPLEFT", 20, -60)
+        -- Discord: a form label in the text colour (#371)
+        local discordHeader = UI:CreateText(parent, L["Discord:"], 11, C.text.r, C.text.g, C.text.b)
+        discordHeader:SetPoint("TOPLEFT", INSET, -53)
         local discordText = UI:CreateText(parent, "—", 11, C.text.r, C.text.g, C.text.b)
         discordText:SetPoint("LEFT", discordHeader, "RIGHT", 8, 0)
 
         -- Recruitment message preview
-        local msgText = UI:CreateText(parent, "", 11, C.silver.r, C.silver.g, C.silver.b)
-        msgText:SetPoint("TOPLEFT", 20, -84)
+        local msgText = UI:CreateText(parent, "", 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        msgText:SetPoint("TOPLEFT", INSET, -77)
 
         -- Both were fixed at 400/700, which is wider than the window this
         -- panel now opens in.
         UI:MakeResponsive(parent, function(_, w)
             discordText:SetWidth(math.max(120, w - 200))
-            msgText:SetWidth(math.max(160, w - 40))
+            msgText:SetWidth(math.max(160, w - 2 * INSET))
         end)
 
         -- Action row separator
         local actionSep = UI:CreateSeparator(parent)
-        actionSep:SetPoint("TOPLEFT", 20, -112)
-        actionSep:SetPoint("TOPRIGHT", -20, -112)
+        actionSep:SetPoint("TOPLEFT", INSET, -105)
+        actionSep:SetPoint("TOPRIGHT", -INSET, -105)
 
         -- Send Now button (one-shot manual send)
         local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 130, 28)
-        sendNowBtn:SetPoint("TOPLEFT", 20, -120)
+        sendNowBtn:SetPoint("TOPLEFT", INSET, -113)
         sendNowBtn:SetScript("OnClick", function()
             if GuildOS.Recruitment then GuildOS.Recruitment:ShowSendPopup() end
         end)
@@ -2684,15 +2603,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         local autoBtn = UI:CreateButton(parent, L["Auto-Send: OFF"], 140, 28)
         autoBtn:SetPoint("LEFT", sendNowBtn, "RIGHT", 8, 0)
 
-        local autoStatusText = UI:CreateText(parent, "", 10, C.silver.r, C.silver.g, C.silver.b)
+        local autoStatusText = UI:CreateText(parent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
         autoStatusText:SetPoint("LEFT", autoBtn, "RIGHT", 10, 0)
 
+        -- The label says ON or OFF; no red or green fill of its own (#371).
         local function updateAutoBtn()
             -- Opt-in (#150): only an explicit choice helps.
             local participating = GuildOS.db.recruitParticipate == true
             if participating then
                 autoBtn.label:SetText(L["Auto-Send: ON"])
-                autoBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
                 local interval = GuildOS.db.guildRecruitment and GuildOS.db.guildRecruitment.interval or 120
                 local R = GuildOS.Recruitment
                 local blocked = R and GuildOS:IsOnGuildDB() and not R:MemberMayPost()
@@ -2700,7 +2619,6 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
                     or string.format(L["(popup every %ds)"], interval))
             else
                 autoBtn.label:SetText(L["Auto-Send: OFF"])
-                autoBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
                 autoStatusText:SetText("")
             end
         end
@@ -2761,15 +2679,19 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Left-anchored: UI:FlowBar reads GetWidth, and a frame pinned on both
     -- sides reports a stale width in the frame its container was resized.
+    local BAR_INSET = 10   -- the bar's left inset, and the room it leaves on the right
     local bar = CreateFrame("Frame", nil, root)
-    bar:SetPoint("TOPLEFT", 10, -8)
+    bar:SetPoint("TOPLEFT", BAR_INSET, -8)
     bar:SetSize(300, 28)
     UI:StyleSubTabBar(bar)
 
+    -- A sub-panel starts flush with the bar's left edge, right under it, and ends where the bar does:
+    -- it sat 2px in and 8px down, and its content 17px further in than the tabs (#371). Each screen
+    -- puts its first line UI.GAP below the panel's top.
     local function makeSubPanel()
         local p = CreateFrame("Frame", nil, root)
-        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 2, -8)
-        p:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
+        p:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
+        p:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", -BAR_INSET, 0)
         p:Hide()
         return p
     end
@@ -2862,12 +2784,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- the stack builds into the scroll child.
     --
     -- CreateScrollFrame does NOT anchor the frame it returns: without
-    -- these four points the content clips to 0x0 and the whole panel
-    -- renders blank, with no Lua error to explain it.
+    -- these points the content clips to 0x0 and the whole panel
+    -- renders blank, with no Lua error to explain it. Its first line sits UI.GAP under the bar and its
+    -- right edge is the bar's: the scroll bar sits there, and the child stops UI.SCROLL_GUTTER short
+    -- of it (#371).
+    local GAP = UI.GAP
     local recruitScroll, recruitContent =
         UI:CreateScrollFrame(recruitingSub, "GuildOSRecruitScroll" .. uid)
-    recruitScroll:SetPoint("TOPLEFT", 0, 0)
-    recruitScroll:SetPoint("BOTTOMRIGHT", -22, 0)
+    recruitScroll:SetPoint("TOPLEFT", 0, -GAP)
+    recruitScroll:SetPoint("BOTTOMRIGHT", 0, 0)
     recruitContent:SetSize(1, 1)
 
     -- Everything below builds onto `parent`, unchanged since before the
@@ -2886,62 +2811,73 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         return entry
     end
 
-    -- The controls start after the widest row label in this client's language, never before x = 140
-    -- where they always were (#265): a fixed column put "Membres qui aident :" over its own button.
+    -- One label column for the whole form (#371): every row label at x = 0, flush with the bar, and
+    -- every control where the widest label in this client's language ends, never before x = 110, the
+    -- column the form always had (#265: a fixed column put "Membres qui aident :" over its own button).
     local measure = UI:CreateText(parent, "", 11, 1, 1, 1)
     local labelWidths = {}
     for _, text in ipairs({ L["Status:"], L["Interval (sec):"], L["Members who help:"], L["Channels:"],
-        L["Other channel:"], L["Keyword:"], L["Min level:"], L["Classes:"], L["Not confirmed:"],
-        L["Auto-Welcome:"], L["Discord:"] }) do
+        L["Other channel:"], L["Message:"], L["Keyword:"], L["Min level:"], L["Classes:"], L["Not confirmed:"],
+        L["Auto-Welcome:"], L["Discord:"], L["Welcome Msg:"] }) do
         measure:SetText(text)
         labelWidths[#labelWidths + 1] = measure:GetStringWidth() or 0
     end
     measure:Hide()
-    local COL = UI.LabelColumn(labelWidths, 30, 12, 140)
-    local GRID = COL - 12   -- the button grids sat 12 px left of the column
-    local SIDE = COL + 160  -- a button beside a status line
+    local COL = UI.LabelColumn(labelWidths, 0, 12, 110)
+    local SIDE = COL + 160               -- a button beside a status line
+    local ROW_H = 22                     -- every control of the form
+    local ROW = ROW_H + 6                -- from one row to the next
+    local CHIP_STEP, CHIP_ROW = 136, 26  -- a 130px chip to the next one along, and to the next row
+    local NOTE_H = 16                    -- a note's line under the control it explains
 
-    local yOff = -15
+    local yOff = 0
 
-    -- Helper to create a labeled section
-    local function SectionHeader(text, y)
-        local header = UI:CreateText(parent, text, nil, C.text.r, C.text.g, C.text.b)
-        GuildOS:ApplyFont(header, nil, "sectionTitle")
-        header:SetPoint("TOPLEFT", 20, y)
-        local line = UI:CreateSeparator(parent)
-        line:SetPoint("TOPLEFT", 20, y - 16)
-        line:SetPoint("TOPRIGHT", -20, y - 16)
-        return y - 26
+    -- A section title as every screen draws it (#371). A later one keeps 20px over it for its rule.
+    local function SectionHeader(text, y, first)
+        if not first then y = y - 20 end
+        local header = UI:CreateSectionTitle(parent, text, first)
+        header:SetPoint("TOPLEFT", 0, y)
+        return y - 18 - GAP
     end
 
-    -- Helper to create a row label
+    -- A row label: the form's one column, in the text colour, level with its row's control (#371).
     local function RowLabel(text, y)
-        local label = UI:CreateText(parent, text, 11, C.silver.r, C.silver.g, C.silver.b)
-        label:SetPoint("TOPLEFT", 30, y)
+        local label = UI:CreateText(parent, text, 11, C.text.r, C.text.g, C.text.b)
+        label:SetPoint("LEFT", parent, "TOPLEFT", 0, y - ROW_H / 2)
         return label
+    end
+
+    -- A note under the thing it explains, left-aligned with it (#371): they floated beside their
+    -- controls, or in gold over the section.
+    local function Note(text, x, y)
+        local note = UI:CreateText(parent, text, 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        note:SetPoint("TOPLEFT", x, y)
+        note:SetJustifyH("LEFT")
+        flexWidth(note, x)
+        return note
+    end
+
+    -- A status word beside its row label, level with the row.
+    local function StatusText(y)
+        local fs = UI:CreateText(parent, "", 11, C.text.r, C.text.g, C.text.b)
+        fs:SetPoint("LEFT", parent, "TOPLEFT", COL, y - ROW_H / 2)
+        return fs
     end
 
     ----------------------------------------------------------------
     -- Auto-Recruit Section
     ----------------------------------------------------------------
-    yOff = SectionHeader(L["Auto-Recruit Messages"], yOff)
-
-    -- Info note about Blizzard restriction
-    local infoNote = UI:CreateText(parent, L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."], 10, 0.7, 0.55, 0.2)
-    infoNote:SetPoint("TOPLEFT", 30, yOff)
-    flexWidth(infoNote, 30)
-    yOff = yOff - 18
+    yOff = SectionHeader(L["Auto-Recruit Messages"], yOff, true)
 
     -- Status + toggle
     RowLabel(L["Status:"], yOff)
-    local statusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    statusText:SetPoint("TOPLEFT", COL, yOff)
+    local statusText = StatusText(yOff)
 
-    local toggleBtn = UI:CreateButton(parent, L["Enable"], 80, 22)
-    toggleBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
+    local toggleBtn = UI:CreateButton(parent, L["Enable"], 80, ROW_H)
+    toggleBtn:SetPoint("TOPLEFT", SIDE, yOff)
 
     -- Manual send button
-    local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, 22)
+    local sendNowBtn = UI:CreateButton(parent, L["Send Now"], 100, ROW_H)
     sendNowBtn:SetPoint("LEFT", toggleBtn, "RIGHT", 10, 0)  -- pushed by a grown toggle label (issue #28)
     sendNowBtn:SetScript("OnClick", function()
         if GuildOS.Recruitment then
@@ -2949,16 +2885,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end
     end)
 
+    -- ON or OFF, the words the Welcome row and /gos recruit status use (#371: this row said ACTIVE).
+    -- The toggle says what a click does, with no red or green fill of its own.
     local function UpdateRecruitStatus()
         local s = GuildOS.db.recruitment
         if s.enabled then
-            statusText:SetText(L["|cff4CFF4CACTIVE|r"])
+            statusText:SetText(L["|cff4CFF4CON|r"])
             toggleBtn.label:SetText(L["Disable"])
-            toggleBtn:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
         else
-            statusText:SetText(L["|cffFF4444INACTIVE|r"])
+            statusText:SetText(L["|cffFF4444OFF|r"])
             toggleBtn.label:SetText(L["Enable"])
-            toggleBtn:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
     end
 
@@ -2968,22 +2904,12 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             UpdateRecruitStatus()
         end
     end)
-    yOff = yOff - 28
+    yOff = yOff - ROW
 
-    -- Interval
+    -- Interval: the shared field (#371).
     RowLabel(L["Interval (sec):"], yOff)
-    local intervalBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    intervalBox:SetSize(80, 22)
+    local intervalBox = UI:CreateInput(parent, 80, ROW_H, { numeric = true, max = 5 })
     intervalBox:SetPoint("TOPLEFT", COL, yOff)
-    intervalBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(intervalBox) })
-    intervalBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    intervalBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(intervalBox, 11)
-    intervalBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    intervalBox:SetTextInsets(6, 6, 0, 0)
-    intervalBox:SetAutoFocus(false)
-    intervalBox:SetNumeric(true)
-    intervalBox:SetMaxLetters(5)
     local function commitInterval(box)
         local val = tonumber(box:GetText())
         if val and val >= 60 then
@@ -2993,15 +2919,17 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             box:SetText(tostring(GuildOS.db.recruitment.interval))
         end
     end
-    intervalBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(intervalBox, commitInterval)
-    yOff = yOff - 28
+    yOff = yOff - ROW_H - 4
+    -- What the interval does, under it: the click Blizzard requires is the popup it opens.
+    Note(L["Note: Blizzard requires a click to send channel messages. A popup will appear on interval."], COL, yOff)
+    yOff = yOff - NOTE_H - 6
 
     -- Which members post the guild's message: every rank, or up to one. It travels with the ad, and a
     -- member past it is never asked (#150). Each click moves one member rank down, then back to every rank.
     RowLabel(L["Members who help:"], yOff)
-    local rankBtn = UI:CreateButton(parent, "", 160, 22)
-    rankBtn:SetPoint("TOPLEFT", COL, yOff + 3)
+    local rankBtn = UI:CreateButton(parent, "", 160, ROW_H)
+    rankBtn:SetPoint("TOPLEFT", COL, yOff)
     local function rankText()
         local limit = GuildOS.db.recruitment.postMaxRank
         if limit == nil then return L["Any rank"] end
@@ -3013,7 +2941,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         if GuildOS.Recruitment then GuildOS.Recruitment:CyclePostMaxRank() end
         rankBtn.label:SetText(rankText())
     end)
-    yOff = yOff - 28
+    yOff = yOff - ROW
 
     -- Channels (multi-select toggles)
     RowLabel(L["Channels:"], yOff)
@@ -3021,21 +2949,18 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local CHAN_LIST = GuildOS.Recruitment:PresetChannels()
     local CHAN_PER_ROW = 4
     local chanBtns = {}
+    -- A channel it posts to is the selected chip (UI:SetSelected, #371), not a green fill.
     local function refreshChanBtns()
         local chs = GuildOS.db.recruitment.channels
         for _, b in ipairs(chanBtns) do
-            if GuildOS.Recruitment:HasChannel(chs, b._ch) then
-                b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
-            else
-                b:SetBaseColor(0.12, 0.12, 0.16, 0.85)
-            end
+            UI:SetSelected(b, GuildOS.Recruitment:HasChannel(chs, b._ch))
         end
     end
     for i, ch in ipairs(CHAN_LIST) do
         local col = (i - 1) % CHAN_PER_ROW
         local row = math.floor((i - 1) / CHAN_PER_ROW)
-        local btn = UI:CreateButton(parent, ch, 130, 22)
-        btn:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
+        local btn = UI:CreateButton(parent, ch, 130, ROW_H)
+        btn:SetPoint("TOPLEFT", COL + col * CHIP_STEP, yOff - row * CHIP_ROW)
         btn._ch = ch
         btn:SetScript("OnClick", function()
             local chs = GuildOS.db.recruitment.channels
@@ -3044,32 +2969,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end)
         chanBtns[i] = btn
     end
-    yOff = yOff - 6 - math.ceil(#CHAN_LIST / CHAN_PER_ROW) * 26
-
-    -- An edit box styled like the interval's, for the rows below.
-    local function MakeBox(width, numeric, maxLetters)
-        local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-        box:SetSize(width, 22)
-        box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(box) })
-        box:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-        box:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-        GuildOS:ApplyFont(box, 11)
-        box:SetTextColor(C.white.r, C.white.g, C.white.b)
-        box:SetTextInsets(6, 6, 0, 0)
-        box:SetAutoFocus(false)
-        box:SetNumeric(numeric and true or false)
-        box:SetMaxLetters(maxLetters)
-        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        return box
-    end
+    yOff = yOff - (math.ceil(#CHAN_LIST / CHAN_PER_ROW) - 1) * CHIP_ROW - ROW
 
     -- Channels beyond the three presets (issue #59): one box adds, a chip per channel removes.
     RowLabel(L["Other channel:"], yOff)
-    local chanBox = MakeBox(130, false, 31)
+    local chanBox = UI:CreateInput(parent, 130, ROW_H, { max = 31 })
     chanBox:SetPoint("TOPLEFT", COL, yOff)
     local CUSTOM_MAX, CUSTOM_PER_ROW = 6, 3
     local customBtns = {}
-    local customMore = UI:CreateText(parent, "", 10, 0.6, 0.6, 0.65)
+    local customMore = UI:CreateText(parent, "", 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     local function isPreset(name)
         return GuildOS.Recruitment:HasChannel(CHAN_LIST, name)
     end
@@ -3107,16 +3015,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Already posting to: |cffFFFFFF"] .. strtrim(box:GetText()) .. "|r")
         end
     end, { text = L["Add"] })
-    chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, 0.6, 0.6, 0.65)
+    -- Under the box, over the chips it explains, left-aligned with them (#371).
+    local otherBottom = yOff - ROW_H
+    chanHint = UI:CreateText(parent, L["Click a channel below to stop posting to it."], 10, C.textSoft.r, C.textSoft.g, C.textSoft.b)
     chanHint:Hide()
-    chanHint:SetPoint("LEFT", chanBox.saveButton, "RIGHT", 8, 0)
-    yOff = yOff - 28
+    chanHint:SetPoint("TOPLEFT", COL, otherBottom - 4)
+    -- A channel of one's own is on, so its chip is selected like an on preset's, and keeps its x:
+    -- a click takes it off the list (#371).
     for i = 1, CUSTOM_MAX do
-        local col = (i - 1) % CUSTOM_PER_ROW
-        local row = math.floor((i - 1) / CUSTOM_PER_ROW)
-        local b = UI:CreateButton(parent, "", 130, 22)
-        b:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
-        b:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
+        local b = UI:CreateButton(parent, "", 130, ROW_H)
+        UI:SetSelected(b, true)
         b:SetScript("OnClick", function(self)
             GuildOS.Recruitment:RemoveChannel(GuildOS.db.recruitment.channels, self._ch)
             refreshCustomChans()
@@ -3125,39 +3033,39 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         b:Hide()
         customBtns[i] = b
     end
-    local chipsTop = yOff
     below = CreateFrame("Frame", nil, recruitContent)
     below:SetHeight(1)
+    -- The chips, the "+N more" line and everything after them, placed under what is shown.
     placeBelow = function(shown, more)
-        local bottom = chipsTop - UI.ChipRowsHeight(shown, CUSTOM_PER_ROW, 26)
+        local chipsTop = otherBottom - 4 - NOTE_H
+        for i, b in ipairs(customBtns) do
+            local col = (i - 1) % CUSTOM_PER_ROW
+            local row = math.floor((i - 1) / CUSTOM_PER_ROW)
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", COL + col * CHIP_STEP, chipsTop - row * CHIP_ROW)
+        end
+        local rows = math.ceil(shown / CUSTOM_PER_ROW)
+        local bottom = rows > 0 and (chipsTop - (rows - 1) * CHIP_ROW - ROW_H) or otherBottom
         customMore:ClearAllPoints()
-        customMore:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", GRID, bottom + 4)
-        belowY = bottom - (more and 10 or 0)
+        customMore:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", COL, bottom - 4)
+        if more then bottom = bottom - NOTE_H end
+        belowY = bottom - 6
         below:ClearAllPoints()
         below:SetPoint("TOPLEFT", recruitContent, "TOPLEFT", 0, belowY)
         below:SetPoint("TOPRIGHT", recruitContent, "TOPRIGHT", 0, belowY)
-        if yEnd then recruitContent:SetHeight(math.max(1, -(belowY + yEnd) + 60)) end
+        if yEnd then recruitContent:SetHeight(math.max(1, -(belowY + yEnd) + GAP)) end
     end
     placeBelow(0, false)
     -- From here on the stack builds into `below`, its y measured from there.
     parent = below
-    yOff = -12
+    yOff = 0
 
-    -- Message
+    -- Message: its field in the label column like every other row, on one line as the channel takes it
+    -- (#371: it ran under its label, 40px tall, and its Save button under the scroll bar).
     RowLabel(L["Message:"], yOff)
-    local msgBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    msgBox:SetHeight(40)
-    local msgFlex = flexWidth(msgBox, 30, 66)
-    msgBox:SetPoint("TOPLEFT", 30, yOff - 18)
-    msgBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(msgBox) })
-    msgBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    msgBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(msgBox, 11)
-    msgBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    msgBox:SetTextInsets(8, 8, 6, 6)
-    msgBox:SetAutoFocus(false)
-    msgBox:SetMaxLetters(255)
-    msgBox:SetMultiLine(false)
+    local msgBox = UI:CreateInput(parent, 200, ROW_H, { max = 255 })
+    local msgFlex = flexWidth(msgBox, COL, 66)
+    msgBox:SetPoint("TOPLEFT", COL, yOff)
     local function commitMsg(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
@@ -3168,18 +3076,17 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Recruitment message updated."])
         end
     end
-    msgBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(msgBox, commitMsg)
     msgFlex.reserve = UI.ReserveFor(msgBox.saveButton, 6)   -- "Enregistrer" is wider than "Save" (#265)
-    yOff = yOff - 68
+    yOff = yOff - ROW
 
-    -- Broadcast button
+    -- Broadcast button, under the message it sends
     local broadcastBtn = UI:CreateButton(parent, L["Broadcast to Members"], 180, 24)
-    broadcastBtn:SetPoint("TOPLEFT", 30, yOff)
+    broadcastBtn:SetPoint("TOPLEFT", COL, yOff)
     broadcastBtn:SetScript("OnClick", function()
         if GuildOS.Recruitment then GuildOS.Recruitment:BroadcastStatus() end
     end)
-    yOff = yOff - 36
+    yOff = yOff - 24
 
     ----------------------------------------------------------------
     -- Auto-Invite (issue #59): everything /gos autoinvite sets, through the same
@@ -3189,16 +3096,24 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local R = GuildOS.Recruitment
     local function aiCfg() return GuildOS.db.recruitment and GuildOS.db.recruitment.autoInvite end
 
+    -- A game that lets no addon invite says so first, at the top of the section, and its controls are
+    -- greyed out below (#371): every control came first and the reason last.
+    local canInvite = GuildOS.Client.isAnniversary
+    if not canInvite then
+        Note(L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."], 0, yOff)
+        yOff = yOff - NOTE_H - 6
+    end
+
     local aiChk = UI:CreateCheckbox(parent, L["Invite players who whisper the keyword"], 18)
-    aiChk:SetPoint("TOPLEFT", 28, yOff)
+    aiChk:SetPoint("TOPLEFT", 0, yOff - 2)
     aiChk.checkbox.onChanged = function(_, checked)
         local cfg = aiCfg()
         if cfg then cfg.enabled = checked and true or false end
     end
-    yOff = yOff - 28
+    yOff = yOff - ROW
 
     RowLabel(L["Keyword:"], yOff)
-    local kwBox = MakeBox(120, false, R.KEYWORD_MAX)
+    local kwBox = UI:CreateInput(parent, 120, ROW_H, { max = R.KEYWORD_MAX })
     kwBox:SetPoint("TOPLEFT", COL, yOff)
     UI:AttachSaveButton(kwBox, function(box)
         local cfg = aiCfg()
@@ -3207,10 +3122,10 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         box:SetText(cfg.keyword)
         GuildOS:Print(L["Auto-invite keyword set to |cffFFFFFF"] .. cfg.keyword .. "|r.")
     end)
-    yOff = yOff - 28
+    yOff = yOff - ROW
 
     RowLabel(L["Min level:"], yOff)
-    local lvlBox = MakeBox(50, true, 2)
+    local lvlBox = UI:CreateInput(parent, 50, ROW_H, { numeric = true, max = 2 })
     lvlBox:SetPoint("TOPLEFT", COL, yOff)
     UI:AttachSaveButton(lvlBox, function(box)
         local cfg = aiCfg()
@@ -3218,30 +3133,26 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         R:SetAutoInviteMinLevel(cfg, box:GetText())
         box:SetText(tostring(cfg.minLevel))
     end)
-    local lvlHint = UI:CreateText(parent, L["0 = any level"], 10, 0.6, 0.6, 0.65)
-    lvlHint:SetPoint("LEFT", lvlBox.saveButton, "RIGHT", 8, 0)
-    yOff = yOff - 28
+    yOff = yOff - ROW_H - 4
+    Note(L["0 = any level"], COL, yOff)
+    yOff = yOff - NOTE_H - 6
 
     RowLabel(L["Classes:"], yOff)
     local CLASS_PER_ROW = 3
     local classBtns = {}
+    -- A class the invite takes is the selected chip (UI:SetSelected, #371), not a fill in its colour.
     local function refreshClassBtns()
         local cfg = aiCfg()
         for _, b in ipairs(classBtns) do
-            local cc = GuildOS.ClassColors[b._class] or C.silver
-            if cfg and cfg.classes[b._class] then
-                b:SetBaseColor(cc.r * 0.45, cc.g * 0.45, cc.b * 0.45, 0.9)
-            else
-                b:SetBaseColor(0.12, 0.12, 0.16, 0.85)
-            end
+            UI:SetSelected(b, cfg and cfg.classes[b._class] and true or false)
         end
     end
     for i, class in ipairs(R.CLASSES) do
         local col = (i - 1) % CLASS_PER_ROW
         local row = math.floor((i - 1) / CLASS_PER_ROW)
         local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
-        local b = UI:CreateButton(parent, name, 130, 22)
-        b:SetPoint("TOPLEFT", GRID + col * 136, yOff + 2 - row * 26)
+        local b = UI:CreateButton(parent, name, 130, ROW_H)
+        b:SetPoint("TOPLEFT", COL + col * CHIP_STEP, yOff - row * CHIP_ROW)
         b._class = class
         b:SetScript("OnClick", function(self)
             local cfg = aiCfg()
@@ -3252,13 +3163,13 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         classBtns[i] = b
     end
     local classRows = math.ceil(#R.CLASSES / CLASS_PER_ROW)
-    local classHint = UI:CreateText(parent, L["None selected = any class."], 10, 0.6, 0.6, 0.65)
-    classHint:SetPoint("TOPLEFT", GRID, yOff - classRows * 26)
-    yOff = yOff - classRows * 26 - 22
+    yOff = yOff - (classRows - 1) * CHIP_ROW - ROW_H - 4
+    Note(L["None selected = any class."], COL, yOff)
+    yOff = yOff - NOTE_H - 6
 
     RowLabel(L["Not confirmed:"], yOff)
-    local fbBtn = UI:CreateButton(parent, "", 120, 22)
-    fbBtn:SetPoint("TOPLEFT", COL, yOff + 3)
+    local fbBtn = UI:CreateButton(parent, "", 120, ROW_H)
+    fbBtn:SetPoint("TOPLEFT", COL, yOff)
     local function refreshFallback()
         local cfg = aiCfg()
         fbBtn.label:SetText((cfg and cfg.whoFallback == "invite") and L["Invite them"] or L["Skip them"])
@@ -3269,16 +3180,27 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         R:SetAutoInviteFallback(cfg, cfg.whoFallback == "invite" and "skip" or "invite")
         refreshFallback()
     end)
-    local fbHint = UI:CreateText(parent, L["When /who can't confirm the level or class."], 10, 0.6, 0.6, 0.65)
-    fbHint:SetPoint("LEFT", fbBtn, "RIGHT", 8, 0)
-    yOff = yOff - 28
+    yOff = yOff - ROW_H - 4
+    Note(L["When /who can't confirm the level or class."], COL, yOff)
+    yOff = yOff - NOTE_H
 
-    local aiNote = UI:CreateText(parent, not GuildOS.Client.isAnniversary
-        and L["This game does not let an addon invite: the auto-invite works on TBC Anniversary only."]
-        or L["Banned players are never invited. Level and class filters are checked with /who."], 10, 0.6, 0.6, 0.65)
-    aiNote:SetPoint("TOPLEFT", 30, yOff)
-    flexWidth(aiNote, 30)
-    yOff = yOff - 30
+    if canInvite then
+        -- How the invite decides, under the section it explains.
+        yOff = yOff - 6
+        Note(L["Banned players are never invited. Level and class filters are checked with /who."], 0, yOff)
+        yOff = yOff - NOTE_H
+    else
+        -- Greyed out and kept, under the sentence that says why (#371).
+        aiChk.checkbox:SetEnabled(false)
+        aiChk.label:SetTextColor(C.disabled.r, C.disabled.g, C.disabled.b)
+        for _, box in ipairs({ kwBox, lvlBox }) do
+            box:EnableMouse(false)
+            box:SetTextColor(C.disabled.r, C.disabled.g, C.disabled.b)
+            box.saveButton:SetEnabled(false)
+        end
+        for _, b in ipairs(classBtns) do b:SetEnabled(false) end
+        fbBtn:SetEnabled(false)
+    end
 
     local function refreshAutoInvite()
         local cfg = aiCfg()
@@ -3296,22 +3218,20 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Welcome status + toggle
     RowLabel(L["Auto-Welcome:"], yOff)
-    local welcomeStatusText = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    welcomeStatusText:SetPoint("TOPLEFT", COL, yOff)
+    local welcomeStatusText = StatusText(yOff)
 
-    local welcomeToggle = UI:CreateButton(parent, L["Enable"], 80, 22)
-    welcomeToggle:SetPoint("TOPLEFT", SIDE, yOff + 3)
+    local welcomeToggle = UI:CreateButton(parent, L["Enable"], 80, ROW_H)
+    welcomeToggle:SetPoint("TOPLEFT", SIDE, yOff)
 
+    -- ON or OFF; the toggle says what a click does, with no red or green fill of its own (#371).
     local function UpdateWelcomeStatus()
         local s = GuildOS.db.recruitment
         if s.welcomeEnabled then
             welcomeStatusText:SetText(L["|cff4CFF4CON|r"])
             welcomeToggle.label:SetText(L["Disable"])
-            welcomeToggle:SetBaseColor(C.red.r * 0.32, C.red.g * 0.32, C.red.b * 0.32, 0.85)
         else
             welcomeStatusText:SetText(L["|cffFF4444OFF|r"])
             welcomeToggle.label:SetText(L["Enable"])
-            welcomeToggle:SetBaseColor(C.online.r * 0.32, C.online.g * 0.32, C.online.b * 0.32, 0.85)
         end
     end
 
@@ -3321,22 +3241,13 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         local state = GuildOS.db.recruitment.welcomeEnabled and L["enabled"] or L["disabled"]
         GuildOS:Print(string.format(L["Welcome message %s."], state))
     end)
-    yOff = yOff - 28
+    yOff = yOff - ROW
 
     -- Discord link
     RowLabel(L["Discord:"], yOff)
-    local discordBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    discordBox:SetHeight(22)
+    local discordBox = UI:CreateInput(parent, 200, ROW_H, { max = 100 })
     local discordFlex = flexWidth(discordBox, COL, 66)
     discordBox:SetPoint("TOPLEFT", COL, yOff)
-    discordBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(discordBox) })
-    discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(discordBox, 11)
-    discordBox:SetTextColor(C.text.r, C.text.g, C.text.b)
-    discordBox:SetTextInsets(6, 6, 0, 0)
-    discordBox:SetAutoFocus(false)
-    discordBox:SetMaxLetters(100)
     local function commitDiscord(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
@@ -3344,26 +3255,15 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Discord link updated."])
         end
     end
-    discordBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(discordBox, commitDiscord)
     discordFlex.reserve = UI.ReserveFor(discordBox.saveButton, 6)
-    yOff = yOff - 28
+    yOff = yOff - ROW
 
-    -- Welcome message
+    -- Welcome message: in the label column, on one line, like the recruitment message (#371).
     RowLabel(L["Welcome Msg:"], yOff)
-    local welcomeBox = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    welcomeBox:SetHeight(40)
-    local welcomeFlex = flexWidth(welcomeBox, 30, 66)
-    welcomeBox:SetPoint("TOPLEFT", 30, yOff - 18)
-    welcomeBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(welcomeBox) })
-    welcomeBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
-    welcomeBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-    GuildOS:ApplyFont(welcomeBox, 11)
-    welcomeBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-    welcomeBox:SetTextInsets(8, 8, 6, 6)
-    welcomeBox:SetAutoFocus(false)
-    welcomeBox:SetMaxLetters(255)
-    welcomeBox:SetMultiLine(false)
+    local welcomeBox = UI:CreateInput(parent, 200, ROW_H, { max = 255 })
+    local welcomeFlex = flexWidth(welcomeBox, COL, 66)
+    welcomeBox:SetPoint("TOPLEFT", COL, yOff)
     local function commitWelcome(box)
         local txt = box:GetText()
         if txt and txt ~= "" then
@@ -3374,20 +3274,18 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             GuildOS:Print(L["Welcome message updated."])
         end
     end
-    welcomeBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     UI:AttachSaveButton(welcomeBox, commitWelcome)
     welcomeFlex.reserve = UI.ReserveFor(welcomeBox.saveButton, 6)
+    yOff = yOff - ROW_H
 
     ----------------------------------------------------------------
-    -- Recruitment Beacon (Chehul mesh) — realm/city-wide ad, officer-only
+    -- Recruitment Beacon (Chehul mesh): realm/city-wide ad, officer-only
     ----------------------------------------------------------------
-    yOff = yOff - 66
     yOff = SectionHeader(L["Recruitment Beacon (mesh)"], yOff)
     RowLabel(L["Status:"], yOff)
-    local beaconStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-    beaconStatus:SetPoint("TOPLEFT", COL, yOff)
-    local editBeaconBtn = UI:CreateButton(parent, L["Edit Beacon"], 130, 22)
-    editBeaconBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
+    local beaconStatus = StatusText(yOff)
+    local editBeaconBtn = UI:CreateButton(parent, L["Edit Beacon"], 130, ROW_H)
+    editBeaconBtn:SetPoint("TOPLEFT", SIDE, yOff)
     editBeaconBtn:SetScript("OnClick", function()
         if GuildOS.ShowRecruitBeacon then GuildOS:ShowRecruitBeacon() end
     end)
@@ -3400,8 +3298,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         end
     end
     UpdateBeaconStatus()
-    local beaconHint = UI:CreateText(parent, L["Lives in the mesh and keeps circulating even when you're offline."], 10, 0.6, 0.6, 0.65)
-    beaconHint:SetPoint("TOPLEFT", 30, yOff - 22)
+    yOff = yOff - ROW_H - 4
+    Note(L["Lives in the mesh and keeps circulating even when you're offline."], COL, yOff)
+    yOff = yOff - NOTE_H
 
     ----------------------------------------------------------------
     -- Join requests: people with no guild who asked this one to take them
@@ -3409,13 +3308,11 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- Not where the module never starts (Anniversary): a section with nothing behind it.
     local UpdateRequestsStatus = function() end
     if GuildOS.JoinRequests and not GuildOS.Client.isAnniversary then
-        yOff = yOff - 66
         yOff = SectionHeader(L["Join requests"], yOff)
         RowLabel(L["Status:"], yOff)
-        local requestsStatus = UI:CreateText(parent, "", 11, C.white.r, C.white.g, C.white.b)
-        requestsStatus:SetPoint("TOPLEFT", COL, yOff)
-        local requestsBtn = UI:CreateButton(parent, L["Open the list"], 130, 22)
-        requestsBtn:SetPoint("TOPLEFT", SIDE, yOff + 3)
+        local requestsStatus = StatusText(yOff)
+        local requestsBtn = UI:CreateButton(parent, L["Open the list"], 130, ROW_H)
+        requestsBtn:SetPoint("TOPLEFT", SIDE, yOff)
         requestsBtn:SetScript("OnClick", function()
             if GuildOS.ShowJoinRequests then GuildOS:ShowJoinRequests() end
         end)
@@ -3426,15 +3323,16 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
             requestsStatus:SetText(n > 0 and GuildOS:JoinRequestsOpenText(n) or L["|cff888888None|r"])
         end
         UpdateRequestsStatus()
-        local requestsHint = UI:CreateText(parent, L["Players who asked your guild to take them, from the game or from guildos.me."], 10, 0.6, 0.6, 0.65)
-        requestsHint:SetPoint("TOPLEFT", 30, yOff - 22)
+        yOff = yOff - ROW_H - 4
+        Note(L["Players who asked your guild to take them, from the game or from guildos.me."], COL, yOff)
+        yOff = yOff - NOTE_H
     end
 
     ----------------------------------------------------------------
     -- Refresh function for the "Recruiting" sub-tab. Registered into
     -- root.subPanels so selectSub() runs it whenever this sub-tab becomes
     -- active (and root's OnShow below re-runs it every time the officer
-    -- opens the Recruitment tab) — NOT wired to recruitingSub's own
+    -- opens the Recruitment tab), NOT wired to recruitingSub's own
     -- OnShow, which (being a child frame already left "shown") would
     -- never see a real hidden->shown transition on its own.
     ----------------------------------------------------------------
@@ -3465,15 +3363,17 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     -- far yOff walked, which is what gives the scroll frame its range.
     ----------------------------------------------------------------
     yEnd = yOff
-    local function stackHeight() return math.max(1, -((belowY or 0) + yOff) + 60) end
+    local function stackHeight() return math.max(1, -((belowY or 0) + yOff) + GAP) end
     UI:MakeResponsive(root, function(_, w, _)
-        bar:SetWidth(math.max(180, w - 20))
+        bar:SetWidth(math.max(180, w - 2 * BAR_INSET))
         layoutTabs()
 
-        local contentW = math.max(200, w - 24)
+        -- The scroll child is the sub-panel, as wide as the bar, less the scroll bar's gutter (#371): it
+        -- was 10px wider than its scroll frame, so the Save buttons ran under the bar.
+        local contentW = math.max(200, w - 2 * BAR_INSET - UI.SCROLL_GUTTER)
         recruitContent:SetSize(contentW, stackHeight())
         for _, f in ipairs(flex) do
-            f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve - 10))
+            f.widget:SetWidth(math.max(80, contentW - f.left - f.reserve))
         end
         -- The tab's OnShow fills every box while recruitContent is still 1x1 and the flexible
         -- ones have no width, and an edit box filled before it is laid out shows nothing until

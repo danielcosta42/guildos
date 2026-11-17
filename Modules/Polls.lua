@@ -151,39 +151,16 @@ function Polls:Show()
 
         local listTop = -44
         if GuildOS:IsOfficer() then
-            local qBox = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-            qBox:SetSize(330, 24)
+            -- The shared fields (#371): the question's hint inside it while empty, the options box
+            -- three lines tall with its hint right under it.
+            local qBox = UI:CreateInput(f, 330, 24, { max = 150, placeholder = L["Question..."] })
             qBox:SetPoint("TOPLEFT", 16, -42)
-            qBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(qBox) })
-            qBox:SetBackdropColor(0.05, 0.05, 0.066, 1)
-            qBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            GuildOS:ApplyFont(qBox, 11)
-            qBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-            qBox:SetTextInsets(6, 6, 0, 0)
-            qBox:SetAutoFocus(false)
-            qBox:SetMaxLetters(150)
-            qBox:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
-            local qPh = qBox:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(qPh, 10)
-            qPh:SetPoint("LEFT", 6, 0)
-            qPh:SetTextColor(0.4, 0.4, 0.4)
-            qPh:SetText(L["Question..."])
-            qBox:SetScript("OnTextChanged", function(self2) if self2:GetText() ~= "" then qPh:Hide() else qPh:Show() end end)
 
-            local oBox = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-            oBox:SetPoint("TOPLEFT", 16, -70)
-            oBox:SetSize(420, 56)
-            oBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(oBox) })
-            oBox:SetBackdropColor(0.05, 0.05, 0.066, 1)
-            oBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
-            oBox:SetMultiLine(true)
-            GuildOS:ApplyFont(oBox, 10)
-            oBox:SetTextColor(C.white.r, C.white.g, C.white.b)
-            oBox:SetTextInsets(6, 6, 4, 4)
-            oBox:SetAutoFocus(false)
-            oBox:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
-            local oHint = UI:CreateText(f, L["One option per line (2-6)"], 8, C.textDim.r, C.textDim.g, C.textDim.b)
-            oHint:SetPoint("TOPLEFT", 18, -128)
+            local oBox = UI:CreateInput(f, 0, 56, { multiline = true })
+            oBox:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -8)
+            oBox:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -74)
+            local oHint = UI:CreateText(f, L["One option per line (2-6)"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            oHint:SetPoint("TOPLEFT", oBox, "BOTTOMLEFT", 0, -4)
 
             local createBtn = UI:CreateButton(f, L["Create Poll"], 110, 24)
             createBtn:SetPoint("LEFT", qBox, "RIGHT", 8, 0)
@@ -196,14 +173,16 @@ function Polls:Show()
                 GuildOS.Polls:Create(qBox:GetText(), opts)
                 qBox:SetText(""); oBox:SetText(""); qBox:ClearFocus(); oBox:ClearFocus()
             end)
-            listTop = -146
+            listTop = -156
         end
 
         local holder = CreateFrame("Frame", nil, f)
-        holder:SetPoint("TOPLEFT", 12, listTop)
+        holder:SetPoint("TOPLEFT", 16, listTop)
         holder:SetPoint("BOTTOMRIGHT", -12, 14)
         local scroll, child = UI:CreateScrollFrame(holder, "GuildOSPollsScroll")
         scroll:SetAllPoints()
+        -- The rows hang from both of the child's top corners; it keeps the list's width (#371).
+        UI:BindScrollChildWidth(scroll, child)
         f.child = child
         f.holder = holder
         self.frame = f
@@ -214,22 +193,22 @@ function Polls:Show()
         local child = f.child
         for _, c in pairs({ child:GetChildren() }) do c:Hide() end
         for _, r in pairs({ child:GetRegions() }) do r:Hide() end
-        child:SetWidth(f.holder:GetWidth() - 12)
 
         local polls = GuildOS.Polls:GetSorted()
         local isOfficer = GuildOS:IsOfficer()
         local myKey = keyOf(GuildOS.Compat.PlayerName())
         local y = 0
         for _, p in ipairs(polls) do
-            -- Question
-            local q = UI:CreateText(child, (p.closed and "|cff888888[" .. L["closed"] .. "]|r " or "") .. p.question,
-                12, C.gold.r, C.gold.g, C.gold.b)
-            q:SetPoint("TOPLEFT", 4, -y)
-            q:SetWidth(child:GetWidth() - (isOfficer and 70 or 10))
+            -- Question: the text colour, a closed one the soft one (#371).
+            local qc = p.closed and C.textSoft or C.text
+            local closable = isOfficer and not p.closed
+            local q = UI:CreateText(child, (p.closed and "[" .. L["closed"] .. "] " or "") .. p.question, 12, qc.r, qc.g, qc.b)
+            q:SetPoint("TOPLEFT", 0, -y)
+            q:SetPoint("TOPRIGHT", closable and -64 or 0, -y)
             q:SetJustifyH("LEFT")
-            if isOfficer and not p.closed then
+            if closable then
                 local closeBtn = UI:CreateButton(child, L["Close"], 56, 18)
-                closeBtn:SetPoint("TOPRIGHT", -2, -y)
+                closeBtn:SetPoint("TOPRIGHT", 0, -y)
                 local id = p.id
                 closeBtn:SetScript("OnClick", function() GuildOS.Polls:Close(id) end)
             end
@@ -247,14 +226,12 @@ function Polls:Show()
             for idx, optText in ipairs(p.options or {}) do
                 local n = counts[idx] or 0
                 local pct = total > 0 and math.floor(n / total * 100 + 0.5) or 0
-                local mine = (myVote == idx)
                 local label = string.format("%s  (%d · %d%%)", optText, n, pct)
-                local btn = UI:CreateButton(child, label, child:GetWidth() - 8, 20)
-                btn:SetPoint("TOPLEFT", 4, -y)
-                if mine then
-                    btn:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
-                    btn.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                end
+                local btn = UI:CreateButton(child, label, 1, 20)
+                btn:SetPoint("TOPLEFT", 0, -y)
+                btn:SetPoint("TOPRIGHT", 0, -y)
+                -- My vote is the selected option, as every selection is marked (#371).
+                UI:SetSelected(btn, myVote == idx)
                 btn.label:SetJustifyH("LEFT")
                 btn.label:ClearAllPoints()
                 btn.label:SetPoint("LEFT", 8, 0)
@@ -265,15 +242,14 @@ function Polls:Show()
                 y = y + 22
             end
 
-            local meta = UI:CreateText(child,
-                "|cff888888" .. string.format(L["%d vote(s) · by %s"], total, p.author or "?") .. "|r",
-                8, C.textDim.r, C.textDim.g, C.textDim.b)
-            meta:SetPoint("TOPLEFT", 4, -y)
+            local meta = UI:CreateText(child, string.format(L["%d vote(s) · by %s"], total, p.author or "?"),
+                11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            meta:SetPoint("TOPLEFT", 0, -y)
             y = y + 22
         end
         if #polls == 0 then
-            local empty = UI:CreateText(child, L["No polls yet."], 11, C.silver.r, C.silver.g, C.silver.b)
-            empty:SetPoint("TOPLEFT", 4, -4)
+            local empty = UI:CreateText(child, L["No polls yet."], 12, C.textSoft.r, C.textSoft.g, C.textSoft.b)
+            empty:SetPoint("TOPLEFT", 0, 0)
         end
         child:SetHeight(math.max(1, y))
     end

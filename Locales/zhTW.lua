@@ -2291,6 +2291,7 @@ L["Undo: "] = "撤銷： "
 L["[Loot] Award of %s to %s undone"] = "[拾取] 已撤銷 %s 分配給 %s"
 L["Undo last award"] = "撤銷上一次分配"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700已撤銷：|r %s"
+L["Undone: %s"] = "已撤銷：%s"
 
 -- Fit the group to the plan (issue #292)
 L["Only the raid leader can remove people from the raid."] = "只有團長可以把人移出團隊。"

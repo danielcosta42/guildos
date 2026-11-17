@@ -491,4 +491,71 @@ end
 check(#files > 100 and #literal == 0,
   "no border is a literal 1 unit (use GuildOS.UI:Edge): " .. table.concat(literal, ", "))
 
+-- ── 11. One of each screen part (issue #371) ───────────────────────────
+S = load({ db = {} }); S:Resolve()
+UI = GuildOS.UI
+local C = GuildOS.Colors
+local function same(col, c) return col and math.abs(col[1] - c.r) < 1e-6 and math.abs(col[2] - c.g) < 1e-6 end
+local host = UI:CreatePanel(UIParent)
+
+-- A field: lineHi border, gold while typing, a hint while empty.
+local field = UI:CreateInput(host, 120, 22, { placeholder = "Search" })
+check(field.kind == "EditBox" and same(field.border, C.lineHi), "a field is an edit box with the lineHi border")
+check(field.placeholder and field.placeholder.shown and field.placeholder.text == "Search", "an empty field shows its hint")
+field.scripts.OnEditFocusGained(field)
+check(same(field.border, C.gold), "it turns gold while typing")
+field.scripts.OnEditFocusLost(field)
+check(same(field.border, C.lineHi), "and back when it lets go")
+field:SetText("ana"); field.scripts.OnTextChanged(field)
+check(not field.placeholder.shown, "the hint goes once there is text")
+
+-- Selection: gold border and label, kept under the cursor, gone when unselected.
+local opt = UI:CreateButton(host, "All", 60, 22)
+UI:SetSelected(opt, true)
+check(same(opt.border, C.gold) and same(opt.label.color, C.gold), "a selected button has a gold border and label")
+opt.scripts.OnEnter(opt)
+check(same(opt.border, C.gold), "and keeps it under the cursor")
+opt.scripts.OnLeave(opt)
+UI:SetSelected(opt, false)
+check(same(opt.border, C.lineHi) and same(opt.label.color, C.text), "unselected, it is a secondary button again")
+UI:SetSelected(opt, true); opt:Disable(); opt.scripts.OnLeave(opt)
+UI:_ButtonState(opt, "disabled")
+check(same(opt.border, C.gold) and same(opt.label.color, C.disabled),
+  "a selected button that cannot be clicked keeps the gold border, so the choice still shows")
+
+-- Section titles: a rule above every one but the first; table headers: a rule under, no fill.
+local t1 = UI:CreateSectionTitle(host, "Your raid roles", true)
+local t2 = UI:CreateSectionTitle(host, "Notices")
+check(t1.rule == nil and t2.rule ~= nil and t2.rule.h ~= nil, "a later section title has a rule above it, the first none")
+check(same(t2.color, C.text), "a section title is text, not gold")
+local th = UI:CreateTableHeader(host)
+check(th.h == 22 and th.rule and th.backdrop == nil, "a table header is 22px with a rule and no fill")
+
+-- Scrolling: no empty track when nothing scrolls.
+local scroll = UI:CreateScrollFrame(host, "TestScroll")
+local bar = scroll.ScrollBar
+local track
+for _, c in ipairs(bar.children) do if c.kind == "CreateTexture" and c.layer == "BACKGROUND" then track = c end end
+bar.GetMinMaxValues = function() return 0, 0 end
+bar.scripts.OnMinMaxChanged(bar)
+check(track and not track.shown, "a scroll bar with nothing to scroll shows no track")
+bar.GetMinMaxValues = function() return 0, 300 end
+bar.scripts.OnMinMaxChanged(bar)
+check(track.shown, "and shows it once there is something to scroll")
+check(UI.SCROLL_GUTTER == 12, "content keeps 12px clear of the scroll bar")
+
+-- In WoW: Forever a field takes the game's search-box art, as the fields it replaced did (#122).
+S = load({ db = { style = "forever" } }); S:Resolve()
+local fhost = GuildOS.UI:CreatePanel(UIParent)
+local ffield = GuildOS.UI:CreateInput(fhost, 120, 22)
+local atlases = 0
+for _, c in ipairs(ffield.children) do if c.atlas then atlases = atlases + 1 end end
+check(atlases > 0 and ffield.backdrop and ffield.backdrop.edgeFile == nil,
+  "a Forever field wears the game's art, with no flat edge under it")
+local fbox = GuildOS.UI:CreateInput(fhost, 460, 250, { multiline = true })
+local boxArt = 0
+for _, c in ipairs(fbox.children) do if c.atlas then boxArt = boxArt + 1 end end
+check(boxArt == 0 and fbox.backdrop and fbox.backdrop.edgeFile ~= nil,
+  "a multi-line box stays flat: the 22px search-bar art is not stretched over it")
+
 print(("style: %d checks passed"):format(checks))

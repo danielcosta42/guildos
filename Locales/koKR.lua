@@ -2291,6 +2291,7 @@ L["Undo: "] = "취소: "
 L["[Loot] Award of %s to %s undone"] = "[전리품] %s의 %s 분배 취소됨"
 L["Undo last award"] = "마지막 분배 취소"
 L["|cffFFD700Undone:|r %s"] = "|cffFFD700취소됨:|r %s"
+L["Undone: %s"] = "취소됨: %s"
 
 -- Fit the group to the plan (issue #292)
 L["Only the raid leader can remove people from the raid."] = "공격대장만 공격대에서 사람을 내보낼 수 있습니다."
