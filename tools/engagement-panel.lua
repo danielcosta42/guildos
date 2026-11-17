@@ -133,4 +133,29 @@ nameOf1 = nil
 find(engage)
 check(nameOf1 == "Renamed", "opening the tab draws what came in meanwhile")
 
+-- Leadership > Ranks, drawn while every frame still reads a width of 0 (#371: the tab showed nothing).
+-- Rows sized from content:GetWidth() came out negative; held by both sides they take the list's width.
+local roster = {}
+for i = 1, 5 do roster[i] = { "Member" .. i .. "-Realm", "Rank", 1, 60, nil, nil, nil, nil, true, nil, "MAGE" } end
+function GetNumGuildMembers() return #roster end
+function GetGuildRosterInfo(i) return unpack(roster[i]) end
+function Frame:GetWidth() return 0 end
+function Frame:SetWidth(w) self.w = w end
+function Frame:SetSize(w, h) self.w, self.h = w, h end
+function Frame:SetPoint(p) local t = rawget(self, "points") or {}; t[p] = true; rawset(self, "points", t) end
+function GuildOS:SafeCall(fn, ...) return true, fn(...) end   -- let a failing refresh raise here
+parent.SelectSub("ranks")
+local held, negative = 0, 0
+local function scan(f)
+  for _, c in ipairs(f.children) do
+    if type(rawget(c, "w")) == "number" and c.w < 0 then negative = negative + 1 end
+    local pts = rawget(c, "points")
+    if type(pts) == "table" and pts.TOPLEFT and pts.TOPRIGHT then held = held + 1 end
+    scan(c)
+  end
+end
+scan(parent.subPanels.ranks.panel)
+check(held == 5, "every member's rank row hangs by both sides (" .. held .. ")")
+check(negative == 0, "and no frame on Ranks gets a negative width (" .. negative .. ")")
+
 print("engagement-panel: " .. checks .. " checks passed")

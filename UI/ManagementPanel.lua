@@ -67,10 +67,13 @@ end
 
 -- A striped row frame parented to `content`. All text/widgets must be created
 -- on the returned frame so a single Hide() clears the row on refresh.
+-- Held by both sides, not sized from content:GetWidth(): a list built while its tab is hidden reads a
+-- width of 0, and rows sized from it came out negative and invisible (Ranks showed nothing, #371).
 local function MakeRow(content, yOff, index, height)
     local row = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    row:SetSize(content:GetWidth() - 4, height or ROW_H)
+    row:SetHeight(height or ROW_H)
     row:SetPoint("TOPLEFT", 0, -yOff)
+    row:SetPoint("TOPRIGHT", -4, -yOff)
     row:SetBackdrop({ bgFile = WHITE })
     local alt = (index % 2 == 0) and C.row1 or C.row2
     row:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
@@ -80,8 +83,9 @@ end
 -- A section header frame parented to `content`.
 local function MakeSectionHeader(content, text, yOff)
     local f = CreateFrame("Frame", nil, content)
-    f:SetSize(content:GetWidth() - 4, 22)
+    f:SetHeight(22)
     f:SetPoint("TOPLEFT", 0, -yOff)
+    f:SetPoint("TOPRIGHT", -4, -yOff)
     local bg = f:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(WHITE)
@@ -111,7 +115,6 @@ local function BuildRanksSub(panel)
     local _, content = MakeScrollList(listHolder, "GuildOSMgmtRanksScroll")
 
     return function()
-        content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
         local GM = GuildOS.GuildManager
@@ -221,7 +224,6 @@ local function BuildInactiveSub(panel)
 
     local refresh
     refresh = function()
-        content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
         local GM = GuildOS.GuildManager
@@ -293,7 +295,6 @@ local function BuildSuggestSub(panel)
 
     local refresh
     refresh = function()
-        content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
         local data = GuildOS.GuildManager:GetSuggestions()
@@ -480,7 +481,6 @@ local function BuildLogSub(panel)
 
     local refresh
     refresh = function()
-        content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
 
         local entries = GuildOS.GuildManager:GetLog()
@@ -500,7 +500,7 @@ local function BuildLogSub(panel)
             local detail = e.detail and tostring(e.detail) or ""
             local descFS = UI:CreateText(row, tgt .. detail, 10, C.silver.r, C.silver.g, C.silver.b)
             descFS:SetPoint("LEFT", 170, 0)
-            descFS:SetWidth(content:GetWidth() - 320)
+            descFS:SetPoint("RIGHT", -150, 0)
             descFS:SetJustifyH("LEFT")
             descFS:SetWordWrap(false)
 
@@ -631,7 +631,6 @@ local function BuildBanSub(panel)
     local function refresh()
         for _, c in pairs({ content:GetChildren() }) do c:Hide() end
         for _, r in pairs({ content:GetRegions() }) do r:Hide() end
-        content:SetWidth(listHolder:GetWidth() - 4)
         local filter = strtrim(searchBox:GetText() or ""):lower()
         local now = GetServerTime()
         local list = GuildOS.BanList and GuildOS.BanList:List() or {}
@@ -769,7 +768,6 @@ local function BuildEngageSub(panel)
     refresh = function()
         -- Off screen nothing is drawn: showing the tab repaints it (selectSub), with what came meanwhile.
         if not panel:IsVisible() then return end
-        content:SetWidth(listHolder:GetWidth() - 12)
 
         local agg = (GuildOS.RecruitEngagement and GuildOS.RecruitEngagement:GetAggregate())
             or { rows = {}, totals = { posts7 = 0, invites7 = 0, joins7 = 0, conv = 0,
@@ -802,7 +800,7 @@ local function BuildEngageSub(panel)
             local row = rowAt(idx)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", 0, -yOff)
-            row:SetWidth(content:GetWidth() - 4)
+            row:SetPoint("TOPRIGHT", -4, -yOff)
 
             local nameColor = r.stale and C.textDim or C.text
             row.nameFS:SetText(r.name)
@@ -916,7 +914,6 @@ local function BuildPresetsSub(panel)
 
     local refresh
     refresh = function()
-        content:SetWidth(listHolder:GetWidth() - 12)
         ClearContent(content)
         for _, r in pairs({ content:GetRegions() }) do r:Hide() end
 
@@ -927,8 +924,9 @@ local function BuildPresetsSub(panel)
         -- "+ New" chooser: a labelled row of the built-in type buttons.
         if panel.showChooser and MP then
             local chooser = CreateFrame("Frame", nil, content)
-            chooser:SetSize(content:GetWidth() - 4, ROW_H)
+            chooser:SetHeight(ROW_H)
             chooser:SetPoint("TOPLEFT", 0, -yOff)
+            chooser:SetPoint("TOPRIGHT", -4, -yOff)
             local lbl = UI:CreateText(chooser, L["Add preset:"], 10, C.gold.r, C.gold.g, C.gold.b)
             lbl:SetPoint("LEFT", 8, 0)
             local bx = 96
@@ -963,8 +961,9 @@ local function BuildPresetsSub(panel)
             local blockH = ROW_H + 24
             if expanded then blockH = blockH + math.max(1, #matches) * 18 + 4 end
             local block = CreateFrame("Frame", nil, content, "BackdropTemplate")
-            block:SetSize(content:GetWidth() - 4, blockH)
+            block:SetHeight(blockH)
             block:SetPoint("TOPLEFT", 0, -yOff)
+            block:SetPoint("TOPRIGHT", -4, -yOff)
             block:SetBackdrop({ bgFile = WHITE })
             local alt = (idx % 2 == 0) and C.row1 or C.row2
             block:SetBackdropColor(alt.r, alt.g, alt.b, alt.a)
