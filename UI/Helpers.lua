@@ -87,12 +87,25 @@ function Helpers:Hairline(tex, dim)
     return tex
 end
 
+-- Hang a texture one screen pixel outside its parent on every side: a border behind a fill. A 1-unit
+-- offset rounds to nothing on the right and bottom when the interface is scaled down.
+function Helpers:Outset(tex)
+    hairlines[tex] = "outset"
+    local px = self:Px(tex)
+    tex:SetPoint("TOPLEFT", -px, px)
+    tex:SetPoint("BOTTOMRIGHT", px, -px)
+    return tex
+end
+
 -- Size every line again after the interface, the window or the screen changes scale (Core.lua's
 -- event frame calls it on login, UI_SCALE_CHANGED and DISPLAY_SIZE_CHANGED; ApplyScale for the window).
 function Helpers:RefreshHairlines()
     for region, kind in pairs(hairlines) do
         local px = self:Px(region)
-        if kind ~= "edge" then
+        if kind == "outset" then
+            region:SetPoint("TOPLEFT", -px, px)
+            region:SetPoint("BOTTOMRIGHT", px, -px)
+        elseif kind ~= "edge" then
             region["Set" .. kind](region, px)
         else
             local info = region.backdropInfo
@@ -445,11 +458,10 @@ function Helpers:CreateCheckbox(parent, labelText, size)
     cb:SetSize(CHECK_BOX, CHECK_BOX)
     cb:SetPoint("LEFT", math.floor((size - CHECK_BOX) / 2), 0)
 
-    -- A texture one pixel larger on every side, under the fill, is the border.
+    -- A texture one screen pixel larger on every side, under the fill, is the border (#369).
     local border = cb:CreateTexture(nil, "BACKGROUND", nil, 0)
     border:SetTexture(WHITE)
-    border:SetPoint("TOPLEFT", -1, 1)
-    border:SetPoint("BOTTOMRIGHT", 1, -1)
+    Helpers:Outset(border)
     local fill = cb:CreateTexture(nil, "BACKGROUND", nil, 1)
     fill:SetTexture(WHITE)
     fill:SetAllPoints()

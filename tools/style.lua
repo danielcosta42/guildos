@@ -450,6 +450,18 @@ local btn = UI:CreateButton(box, "Apply", 80, 22)
 check(near(pixels(box.backdrop.edgeSize, box), 1), "a box's border is one screen pixel, not 0.82 of one")
 check(near(pixels(rule.h, box), 1), "a separator is one screen pixel")
 check(btn.backdrop and near(pixels(btn.backdrop.edgeSize, btn), 1), "and a button's border too")
+-- A checkbox's border is a texture hung outside the box: one screen pixel out on every side.
+local cbBorder = UI:CreateCheckbox(box, "Don't name me").checkbox.children[1]
+local function outset(t)
+  local tl, br
+  for _, p in ipairs(t.points) do
+    if p[1] == "TOPLEFT" then tl = p elseif p[1] == "BOTTOMRIGHT" then br = p end
+  end
+  return tl and br and -tl[2], br and br[2]
+end
+local l, r = outset(cbBorder)
+check(l and near(pixels(l, box), 1) and near(pixels(r, box), 1),
+  "a checkbox's border sticks out one screen pixel on the right and bottom too, not 0.82")
 local bg = { unpack(box.bg) }
 check(bg[1] ~= 1, "(the box is painted, not the client's white)")
 
@@ -457,6 +469,8 @@ physH, UIParent.scale = 2160, 1          -- moved to a 4K screen: 1 unit is now 
 UI:RefreshHairlines()
 check(near(pixels(box.backdrop.edgeSize, box), 3) and near(pixels(rule.h, box), 3),
   "after a scale change every line is resized to whole pixels")
+l, r = outset(cbBorder)
+check(near(pixels(l, box), 3) and near(pixels(r, box), 3), "and the checkbox's border moves with them")
 check(box.bg[1] == bg[1] and box.bg[4] == bg[4], "and the box keeps its colours")
 PixelUtil = nil
 check(UI:Px(box) == 1, "a client without PixelUtil keeps 1 unit")
