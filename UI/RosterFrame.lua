@@ -111,6 +111,7 @@ end
 --             sorted by; nil sorts last. The first eight draw themselves in UpdateRosterRow, the
 --             rest through
 --   text      (value, data) -> the cell's text and, optionally, its colour
+--   num       the cell holds a number: IBM Plex Mono through the tableNum role (#363)
 --   prepare   (ctx) once per refresh, before any value: an index where a per-row read would scan
 -- Resolved per resize by UI:ResolveColumns (UI/Layout.lua): the rightmost shown column goes first
 -- as the window narrows, and only Member is never dropped.
@@ -221,17 +222,17 @@ local COLUMNS = {
           return ctx.hasAlts[d.key] and L["Main"] or nil
       end,
       text = function(v) return v, C.silver end },
-    { key = "version",     label = L["VERSION"],      name = L["Addon version"], min = 56, weight = 0, align = "CENTER",
+    { key = "version",     label = L["VERSION"],      name = L["Addon version"], min = 56, weight = 0, align = "CENTER", num = true,
       value = function(d) return d.addonVersion and versionNumber(d.addonVersion) or nil end,
       text = function(_, d)
           return d.addonVersion, CompareVersions(d.addonVersion, GuildOS.VERSION) < 0 and C.red or C.silver
       end },
-    { key = "enchants",    label = L["ENCHANTS"],     name = L["Missing enchants"], min = 84, weight = 0, align = "CENTER",
+    { key = "enchants",    label = L["ENCHANTS"],     name = L["Missing enchants"], min = 84, weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS.GearAudit ~= nil end,
       value = function(d) return d.gear and #GuildOS.GearAudit:MissingEnchants(d.gear) or nil end,
       text = function(v) return v, v > 0 and C.red or C.green end },
     -- Retail (issue #187): the rating in the game's colour, then the keystone's level. By the rating.
-    { key = "mplus",       label = L["M+"],           name = L["Mythic+ rating and keystone"], min = 70, weight = 0, align = "CENTER",
+    { key = "mplus",       label = L["M+"],           name = L["Mythic+ rating and keystone"], min = 70, weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS.MythicPlus ~= nil end,
       value = function(d)
           d.keyLevel = GuildOS.MythicPlus:KeyLevel(d.mplus)
@@ -240,17 +241,17 @@ local COLUMNS = {
       text = function(v, d)
           local r, g, b = GuildOS.Compat.RatingColor(v)
           local text = d.keyLevel and (v .. " |cff999999+" .. d.keyLevel .. "|r") or tostring(v)
-          return text, r and { r = r, g = g, b = b } or C.gold
+          return text, r and { r = r, g = g, b = b } or C.text
       end },
 
     -- The modules'.
-    { key = "attendance",  label = L["ATT."],         name = L["Attendance"],   min = 50,  weight = 0, align = "CENTER",
+    { key = "attendance",  label = L["ATT."],         name = L["Attendance"],   min = 50,  weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS.RaidTracker ~= nil and enabled("raidTracker") end,
       prepare = function(ctx) ctx.totals = {} end,
       value = function(d, ctx) return GuildOS.RaidTracker:GetAttendance25ManPercent(d.key, nil, ctx.totals) end,
       text = function(v)
           if v == 0 then return DASH end
-          return v .. "%", v >= 75 and C.green or (v >= 50 and C.gold or C.red)
+          return v .. "%", v >= 75 and C.green or (v >= 50 and C.warn or C.red)
       end },
     { key = "core",        label = L["CORE"],         name = L["Core"],         min = 90,  weight = 1, align = "LEFT", asc = true,
       offered = function() return GuildOS.CoreManager ~= nil end,
@@ -265,12 +266,12 @@ local COLUMNS = {
           end
       end,
       value = function(d, ctx) return ctx.cores[d.key] and table.concat(ctx.cores[d.key], " / ") or nil end,
-      text = function(v) return v, C.gold end },
-    { key = "dkp",         label = L["DKP"],          name = L["DKP"],          min = 50,  weight = 0, align = "CENTER",
+      text = function(v) return v, C.text end },
+    { key = "dkp",         label = L["DKP"],          name = L["DKP"],          min = 50,  weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS:LootSystemShowsDKP() end,
       value = function(d) return GuildOS.Points:Get(d.key) end,
-      text = function(v) return v, C.gold end },
-    { key = "loot",        label = L["LOOT"],         name = L["Loot received"], min = 46, weight = 0, align = "CENTER",
+      text = function(v) return v, C.text end },
+    { key = "loot",        label = L["LOOT"],         name = L["Loot received"], min = 46, weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS.LootTracker ~= nil and enabled("lootTracker") end,
       prepare = function(ctx)
           ctx.loot = {}
@@ -282,10 +283,10 @@ local COLUMNS = {
       text = function(v) return v, C.silver end },
 
     -- Officers only.
-    { key = "trial",       label = L["TRIAL"],        name = L["Trial days left"], min = 64, weight = 0, align = "CENTER",
+    { key = "trial",       label = L["TRIAL"],        name = L["Trial days left"], min = 64, weight = 0, align = "CENTER", num = true,
       offered = function() return GuildOS.TrialTracker ~= nil and enabled("trialTracker") and officer() end,
       value = function(d) return GuildOS.TrialTracker:GetDaysRemaining(d.key) end,
-      text = function(v) return v .. "d", v > 14 and C.green or (v > 7 and C.gold or C.red) end },
+      text = function(v) return v .. "d", v > 14 and C.green or (v > 7 and C.warn or C.red) end },
     { key = "gosNote",     label = L["GOS NOTE"],     name = L["Guild OS officer note"], min = 140, weight = 2, align = "LEFT", asc = true,
       offered = function() return GuildOS.OfficerNotes ~= nil and enabled("officerNotes") and officer() end,
       value = function(d)
@@ -529,9 +530,9 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.kpiPlayers, host.kpiPlayersSub =
                       MakeKpiCard("players", L["Players"],        C.text, "—")
     host.kpiOnline  = MakeKpiCard("online",  L["ONLINE"],         C.online)
-    host.kpiIlvl    = MakeKpiCard("ilvl",    L["AVG iLVL"],       C.gold)
+    host.kpiIlvl    = MakeKpiCard("ilvl",    L["AVG iLVL"],       C.text)
     host.kpiAtt     = MakeKpiCard("att",     L["AVG ATTENDANCE"], C.text)
-    host.kpiAddon   = MakeKpiCard("addon",   L["WITH GUILD OS"],  C.accent)
+    host.kpiAddon   = MakeKpiCard("addon",   L["WITH GUILD OS"],  C.text)
 
     -- KPI band bottom separator
     local bandLine = UI:CreateSeparator(parent)
@@ -703,7 +704,7 @@ function GuildOS:CreateRosterPanel(parent, host)
             local sortArrow = btn:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(sortArrow, 10)
             sortArrow:SetPoint("LEFT", text, "RIGHT", 3, 0)
-            sortArrow:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
+            sortArrow:SetTextColor(C.text.r, C.text.g, C.text.b)
             sortArrow:Hide()
             btn.sortArrow = sortArrow
 
@@ -726,7 +727,7 @@ function GuildOS:CreateRosterPanel(parent, host)
                 self.text:SetTextColor(C.white.r, C.white.g, C.white.b)
             end)
             btn:SetScript("OnLeave", function(self)
-                self.text:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
+                self.text:SetTextColor(C.label.r, C.label.g, C.label.b)
             end)
 
             host.headerButtons[col.key] = btn
@@ -787,8 +788,7 @@ function GuildOS:CreateRosterPanel(parent, host)
     host.classChips = {}
 
     local function RailSectionHeader(text, yOff)
-        local fs = UI:CreateText(rail, text, 9, C.gold.r, C.gold.g, C.gold.b)
-        fs:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
+        local fs = UI:CreateHeaderText(rail, text)
         fs:SetPoint("TOPLEFT", RAIL_PAD + 2, yOff)
         return fs
     end
@@ -911,8 +911,7 @@ function GuildOS:CreateRosterPanel(parent, host)
         chip:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", x, y)
         host.classChips[classFile] = chip
     end
-    local classHeader = UI:CreateText(rail, L["CLASSES"], 9, C.gold.r, C.gold.g, C.gold.b)
-    classHeader:SetTextColor(C.gold.r, C.gold.g, C.gold.b, 0.65)
+    local classHeader = UI:CreateHeaderText(rail, L["CLASSES"])
     classHeader:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", RAIL_PAD + 2, 10 + GRID.rows * CHIP_ROW_H + 2)
 
     function host:UpdateRailActive()
@@ -1396,19 +1395,19 @@ function CreateRosterRow(parent, rowIndex, uid)
     addonDot:Hide()
     row.addonDot = addonDot
 
-    local function cell(size, justify, colour)
+    local function cell(size, justify, colour, role)
         local fs = row:CreateFontString(nil, "OVERLAY")
-        GuildOS:ApplyFont(fs, size)
+        GuildOS:ApplyFont(fs, size, role)
         fs:SetJustifyH(justify)
         fs:SetWordWrap(false)
         if colour then fs:SetTextColor(colour.r, colour.g, colour.b) end
         return fs
     end
 
-    row.levelText    = cell(13, "CENTER")
+    row.levelText    = cell(nil, "CENTER", nil, "tableNum")
     row.classText    = cell(11, "LEFT")
     row.raceText     = cell(11, "LEFT", C.silver)
-    row.ilvlText     = cell(12, "CENTER")
+    row.ilvlText     = cell(nil, "CENTER", nil, "tableNum")
     row.profText     = cell(10, "LEFT")
     row.zoneText     = cell(10, "LEFT")
     row.lastSeenText = cell(10, "RIGHT", C.silver)
@@ -1425,11 +1424,11 @@ function CreateRosterRow(parent, rowIndex, uid)
         professions = { row.profText },
         zone        = { row.zoneText },
     }
-    -- One plain cell per column that draws through its `text` (#178).
+    -- One plain cell per column that draws through its `text` (#178); a `num` column draws in IBM Plex Mono.
     row.textCells = {}
     for _, col in ipairs(COLUMNS) do
         if col.text then
-            local fs = cell(11, col.align)
+            local fs = cell(11, col.align, nil, col.num and "tableNum" or nil)
             row.textCells[col.key] = fs
             row.cells[col.key] = { fs }
         end
@@ -1568,11 +1567,11 @@ function UpdateRosterRow(row, data, rowIndex)
         row.addonDot:Hide()
     end
 
-    -- Level with color coding: gold at the cap, green within ten of it
+    -- Level with color coding: paper at the cap, green within ten of it
     local level = data.level
     local lr, lg, lb
     if level >= GuildOS.Client.maxLevel then
-        lr, lg, lb = C.gold.r, C.gold.g, C.gold.b
+        lr, lg, lb = C.text.r, C.text.g, C.text.b
     elseif level >= GuildOS.Client.maxLevel - 10 then
         lr, lg, lb = C.green.r, C.green.g, C.green.b
     else
@@ -1601,7 +1600,7 @@ function UpdateRosterRow(row, data, rowIndex)
         local parts = {}
         for _, prof in ipairs(data.professions) do
             if prof.isPrimary then
-                local pr, pg, pb = textColor(C.gold.r, C.gold.g, C.gold.b)
+                local pr, pg, pb = textColor(C.text.r, C.text.g, C.text.b)
                 -- A profession known from the guild roster only has no rank (issue #31).
                 local label = GuildOS:Utf8Head(L[prof.name], 5) .. (prof.rank and (" " .. prof.rank) or "")
                 table.insert(parts, GuildOS:ColorText(label, pr, pg, pb))
@@ -1971,11 +1970,11 @@ function ShowRowTooltip(row)
     local cr, cg, cb = GuildOS:GetClassColor(data.class)
     GameTooltip:AddLine(data.name, cr, cg, cb)
     GameTooltip:AddLine(string.format(L["Level %d %s %s"], data.level, data.race, data.classDisplay), 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(data.rank, C.gold.r, C.gold.g, C.gold.b)
+    GameTooltip:AddLine(data.rank, C.text.r, C.text.g, C.text.b)
 
     -- What this member earned for the guild (issue #216).
     for _, title in ipairs(GuildOS.Achievements and GuildOS.Achievements:Of(data.key) or {}) do
-        GameTooltip:AddLine(title, C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(title, C.text.r, C.text.g, C.text.b)
     end
 
     -- First seen by Guild OS (approximate "member since")
@@ -2006,15 +2005,15 @@ function ShowRowTooltip(row)
     -- Gear summary
     if data.avgIlvl and data.avgIlvl > 0 then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.accent.r, C.accent.g, C.accent.b)
+        GameTooltip:AddLine(string.format(L["Average Item Level: %s"], data.avgIlvl), C.text.r, C.text.g, C.text.b)
     end
 
     -- Professions detail
     if data.professions and #data.professions > 0 then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["Professions:"], C.gold.r, C.gold.g, C.gold.b)
+        GameTooltip:AddLine(L["Professions:"], C.text.r, C.text.g, C.text.b)
         for _, prof in ipairs(data.professions) do
-            local profColor = prof.isPrimary and C.gold or C.silver
+            local profColor = prof.isPrimary and C.text or C.silver
             local line = prof.rank and string.format("  %s  %d / %d", L[prof.name], prof.rank, prof.maxRank or 0)
                 or ("  " .. L[prof.name])   -- known from the guild roster only: no rank (issue #31)
             GameTooltip:AddLine(line, profColor.r, profColor.g, profColor.b)
@@ -2040,7 +2039,7 @@ function ShowRowTooltip(row)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(
             string.format(L["Attunements: (%d/%d)"], #done, #effAtts),
-            C.gold.r, C.gold.g, C.gold.b)
+            C.text.r, C.text.g, C.text.b)
 
         for _, att in ipairs(done) do
             GameTooltip:AddLine(
@@ -2051,7 +2050,7 @@ function ShowRowTooltip(row)
             GameTooltip:AddLine(
                 string.format("  [%s] %s  %d%%", att.tier, att.name,
                     math.floor((att.progress or 0) * 100)),
-                C.gold.r, C.gold.g, C.gold.b)
+                C.textSoft.r, C.textSoft.g, C.textSoft.b)
         end
         for _, att in ipairs(pending) do
             GameTooltip:AddLine(
@@ -2068,7 +2067,7 @@ function ShowRowTooltip(row)
         if CompareVersions(data.addonVersion, GuildOS.VERSION) < 0 then
             GameTooltip:AddLine(string.format(L["Guild OS v%s (outdated)"], data.addonVersion), C.red.r, C.red.g, C.red.b)
         else
-            GameTooltip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.gold.r, C.gold.g, C.gold.b)
+            GameTooltip:AddLine(string.format("Guild OS v%s", data.addonVersion), C.label.r, C.label.g, C.label.b)
         end
     end
 
@@ -2078,7 +2077,7 @@ function ShowRowTooltip(row)
         if wData and wData.wishlist and #wData.wishlist > 0 then
             local wColor = GuildOS.Wishlist and GuildOS.Wishlist.TypeColors.wishlist or { r=0.3, g=0.7, b=1.0 }
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(L["Wishlist:"], C.gold.r, C.gold.g, C.gold.b)
+            GameTooltip:AddLine(L["Wishlist:"], C.text.r, C.text.g, C.text.b)
             local shown = math.min(#wData.wishlist, 5)
             for j = 1, shown do
                 local item = wData.wishlist[j]
@@ -2318,13 +2317,13 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 end
             end
             local attPct = charRow:CreateFontString(nil, "OVERLAY")
-            GuildOS:ApplyFont(attPct, 10)
+            GuildOS:ApplyFont(attPct, nil, "tableNum")
             attPct:SetPoint("LEFT", 400, 0)
             attPct:SetWidth(50)
             attPct:SetTextColor(attR, attG, attB)
             attPct:SetText(attStr)
 
-            -- Officer prio indicator: gold star if this character has any prios
+            -- Officer prio indicator: a star if this character has any prios
             local hasPrio = false
             if GuildOS.db.lootPrios then
                 for _, prioList in pairs(GuildOS.db.lootPrios) do
@@ -2341,8 +2340,8 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                 local prioStar = charRow:CreateFontString(nil, "OVERLAY")
                 GuildOS:ApplyFont(prioStar, 12)
                 prioStar:SetPoint("LEFT", 460, 0)
-                prioStar:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                prioStar:SetText("|cffFFD700*|r")
+                prioStar:SetTextColor(C.text.r, C.text.g, C.text.b)
+                prioStar:SetText("*")
             end
 
             -- Hover
@@ -2405,7 +2404,7 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
 
                     -- Order
                     local orderStr = iRow:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(orderStr, 9)
+                    GuildOS:ApplyFont(orderStr, nil, "tableNum")
                     orderStr:SetPoint("LEFT", 8, 0)
                     orderStr:SetWidth(22)
                     orderStr:SetJustifyH("RIGHT")
@@ -2442,11 +2441,11 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                         for prioIdx, prioEntry in ipairs(GuildOS.db.lootPrios[item.itemId]) do
                             if strlower(prioEntry.name or "") == charKey then
                                 local prioBadge = iRow:CreateFontString(nil, "OVERLAY")
-                                GuildOS:ApplyFont(prioBadge, 9)
+                                GuildOS:ApplyFont(prioBadge, nil, "tableNum")
                                 local rightOff = item.isOffspec and -28 or -8
                                 prioBadge:SetPoint("RIGHT", rightOff, 0)
-                                prioBadge:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                                prioBadge:SetText("|cffFFD700* #" .. prioIdx .. "|r")
+                                prioBadge:SetTextColor(C.text.r, C.text.g, C.text.b)
+                                prioBadge:SetText("* #" .. prioIdx)
                                 break
                             end
                         end
@@ -2495,9 +2494,9 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                     detailLy = detailLy - 5
 
                     local prioLabel = listChild:CreateFontString(nil, "OVERLAY")
-                    GuildOS:ApplyFont(prioLabel, 9)
+                    GuildOS:ApplyFont(prioLabel, nil, "colHeader")
                     prioLabel:SetPoint("TOPLEFT", 10, ly + detailLy)
-                    prioLabel:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
+                    prioLabel:SetTextColor(C.label.r, C.label.g, C.label.b)
                     prioLabel:SetText(string.format(L["OFFICIAL PRIORITY  (%d)"], #prioBadges))
                     prioLabel:Show()
                     detailLy = detailLy - 16
@@ -2518,12 +2517,12 @@ function GuildOS:CreateWishlistGuildPanel(parent, _mainFrame)
                         goldBar:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 0.9)
 
                         local starStr = pRow:CreateFontString(nil, "OVERLAY")
-                        GuildOS:ApplyFont(starStr, 9)
+                        GuildOS:ApplyFont(starStr, 10, "tableNum")
                         starStr:SetPoint("LEFT", 8, 0)
                         starStr:SetWidth(32)  -- "* #12" at 10px mono needs 30px
                         starStr:SetJustifyH("RIGHT")
-                        starStr:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-                        starStr:SetText("|cffFFD700*|r #" .. badge.order)
+                        starStr:SetTextColor(C.text.r, C.text.g, C.text.b)
+                        starStr:SetText("* #" .. badge.order)
 
                         local pName = GuildOS.Wishlist and GuildOS.Wishlist:GetItemName(badge.itemId) or string.format(L["Item #%s"], badge.itemId)
                         local pqColor = C.white
@@ -2647,7 +2646,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
         -- Discord
         local discordHeader = UI:CreateText(parent, L["Discord:"], 11, C.silver.r, C.silver.g, C.silver.b)
         discordHeader:SetPoint("TOPLEFT", 20, -60)
-        local discordText = UI:CreateText(parent, "—", 11, C.accent.r, C.accent.g, C.accent.b)
+        local discordText = UI:CreateText(parent, "—", 11, C.text.r, C.text.g, C.text.b)
         discordText:SetPoint("LEFT", discordHeader, "RIGHT", 8, 0)
 
         -- Recruitment message preview
@@ -2857,7 +2856,8 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     -- Helper to create a labeled section
     local function SectionHeader(text, y)
-        local header = UI:CreateText(parent, text, 13, C.gold.r, C.gold.g, C.gold.b)
+        local header = UI:CreateText(parent, text, nil, C.text.r, C.text.g, C.text.b)
+        GuildOS:ApplyFont(header, nil, "sectionTitle")
         header:SetPoint("TOPLEFT", 20, y)
         local line = UI:CreateSeparator(parent)
         line:SetPoint("TOPLEFT", 20, y - 16)
@@ -3284,7 +3284,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     discordBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     discordBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     GuildOS:ApplyFont(discordBox, 11)
-    discordBox:SetTextColor(C.accent.r, C.accent.g, C.accent.b)
+    discordBox:SetTextColor(C.text.r, C.text.g, C.text.b)
     discordBox:SetTextInsets(6, 6, 0, 0)
     discordBox:SetAutoFocus(false)
     discordBox:SetMaxLetters(100)
