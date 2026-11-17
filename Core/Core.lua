@@ -47,7 +47,7 @@ local DB_DEFAULTS = {
         sortAsc = false,
         showOffline = true,
         minimap = { hide = false },
-        hijackGuildButton = true,  -- guild micro button / "J" opens Guild OS (opt-out in General)
+        hijackGuildButton = true,  -- guild micro button / "J" opens Guild OS (opt-out in Settings > Profile)
         itemTooltip = "always",    -- guild lines on item tooltips: "always", "shift" or "off"
         officerMaxRank = 1,  -- rank indexes 0..officerMaxRank are officers (GM + rank 1 by default)
         -- Web companion. Off until someone turns it on: the export carries the
@@ -664,7 +664,7 @@ end
 ----------------------------------------------------------------------
 
 -- Does the guild micro button / "J" open Guild OS? Default yes; opt-out in Settings
--- (General) or via /guildos guildbutton, so players can keep the modern Blizzard
+-- (Profile) or via /guildos guildbutton, so players can keep the modern Blizzard
 -- guild UI (chat history, news) as the guild button's target and use both.
 function GuildOS:IsGuildButtonHijacked()
     return self:GetSetting("hijackGuildButton") ~= false

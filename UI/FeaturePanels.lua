@@ -1576,11 +1576,109 @@ end
 ----------------------------------------------------------------------
 -- SETTINGS PANEL
 ----------------------------------------------------------------------
+-- The sidebar (issue #365): four groups, each item one page of RefreshSettingsPanel. An
+-- `officer` item shows to officers only; an `open` item runs its action instead of drawing a page.
+local SETTINGS_NAV = {
+    { group = L["YOU"] },
+    { key = "profile", label = L["Profile"] },
+    { key = "chat",    label = L["Chat & alerts"] },
+    { group = "GUILD OS" },
+    { key = "modules", label = L["Modules"] },
+    { key = "raid",    label = L["Raid"] },
+    -- The loot settings live in the Loot window (issue #346): the item opens it.
+    { key = "loot",    label = L["Loot window"], officer = true, open = function() UI:OpenWindow("loot", "rule", "") end },
+    { group = L["OFFICER"], officer = true },
+    { key = "rules",   label = L["Guild rules"],   officer = true },
+    { key = "tools",   label = L["Tools & tests"], officer = true },
+    { group = L["DATA"] },
+    { key = "data",    label = L["Backup & reset"] },
+    { key = "about",   label = L["About"] },
+}
+local SETTINGS_PAGE = {}
+for _, item in ipairs(SETTINGS_NAV) do
+    if item.key then SETTINGS_PAGE[item.key] = item end
+end
+local SETTINGS_OLD_KEY = { general = "profile", officer = "rules" }   -- the pages before the sidebar
+local NAV_W, NAV_ROW, NAV_GROUP = 150, 26, 18
+
 function GuildOS:CreateSettingsPanel(parent, _mainFrame)
+    -- The sidebar stays put while the page beside it scrolls.
+    local nav = CreateFrame("Frame", nil, parent)
+    nav:SetPoint("TOPLEFT", 12, -10)
+    nav:SetPoint("BOTTOMLEFT", 12, 10)
+    nav:SetWidth(NAV_W)
+    local divider = nav:CreateTexture(nil, "ARTWORK")
+    divider:SetTexture(WHITE8)
+    divider:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
+    divider:SetPoint("TOPRIGHT", 6, 0)
+    divider:SetPoint("BOTTOMRIGHT", 6, 0)
+    divider:SetWidth(1)
+
     local scrollFrame, content = UI:CreateScrollFrame(parent, "GuildOSSettingsScroll")
-    scrollFrame:SetPoint("TOPLEFT", 12, -10)
+    scrollFrame:SetPoint("TOPLEFT", nav, "TOPRIGHT", 14, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 10)
     content:SetWidth(scrollFrame:GetWidth() - 20)
+
+    nav.rows = {}
+    for i, item in ipairs(SETTINGS_NAV) do
+        local row
+        if item.group then
+            row = UI:CreateHeaderText(nav, item.group)
+        else
+            row = CreateFrame("Button", nil, nav)
+            row:SetSize(NAV_W, NAV_ROW - 2)
+            row.label = row:CreateFontString(nil, "OVERLAY")
+            GuildOS:ApplyFont(row.label, nil, "body")
+            row.label:SetPoint("LEFT", 10, 0)
+            row.label:SetWidth(NAV_W - 14)   -- a long translation ends in an ellipsis, short of the divider
+            row.label:SetJustifyH("LEFT")
+            row.label:SetWordWrap(false)
+            row.label:SetText(item.label)
+            row.mark = UI:CreateAccentLine(row, 2)   -- the selected item's gold rule, down its left edge
+            row.mark:SetPoint("TOPLEFT")
+            row.mark:SetPoint("BOTTOMLEFT")
+            row.mark:SetWidth(2)
+            local function paint(self, hover)
+                local c = self.selected and C.gold or (hover and C.text or C.textSoft)
+                self.label:SetTextColor(c.r, c.g, c.b)
+            end
+            row.Paint = paint
+            row:SetScript("OnEnter", function(self) paint(self, true) end)
+            row:SetScript("OnLeave", function(self) paint(self, false) end)
+            row:SetScript("OnClick", function()
+                if item.open then item.open() else GuildOS:RefreshSettingsPanel(content, item.key) end
+            end)
+        end
+        nav.rows[i] = row
+    end
+
+    -- Lay the items out for this reader and mark the page in sight.
+    -- ponytail: the sidebar does not scroll; an officer's list is about 342px, so a window under
+    -- about 470px tall clips its last items. Give the nav a scroll frame if that size gets used.
+    function nav:Update(key, isOfficer)
+        local y = 0
+        for i, item in ipairs(SETTINGS_NAV) do
+            local row = self.rows[i]
+            if item.officer and not isOfficer then
+                row:Hide()
+            else
+                row:Show()
+                row:ClearAllPoints()
+                if item.group then
+                    if y > 0 then y = y + 12 end   -- room above every group but the first
+                    row:SetPoint("TOPLEFT", 0, -y)
+                    y = y + NAV_GROUP
+                else
+                    row:SetPoint("TOPLEFT", 0, -y)
+                    y = y + NAV_ROW
+                    row.selected = (item.key == key)
+                    if row.selected then row.mark:Show() else row.mark:Hide() end
+                    row:Paint(false)
+                end
+            end
+        end
+    end
+    content.__nav = nav
 
     parent:SetScript("OnShow", function()
         GuildOS:RefreshSettingsPanel(content)
@@ -1598,49 +1696,28 @@ function GuildOS:RefreshSettingsPanel(content, category)
 
     local isOfficer = GuildOS:IsOfficer()
 
-    -- Settings are grouped into category sub-tabs so the panel is easy to
-    -- navigate. Officer-only categories are hidden from members. The active
-    -- category is remembered on the panel itself.
-    local CATS = {
-        { key = "general", label = L["General"] },
-        -- The loot settings live in the Loot window (issue #346): this category only says where.
-        { key = "loot",    label = L["Loot"],    officer = true },
-        { key = "raid",    label = L["Raid"] },
-        { key = "officer", label = L["Officer"], officer = true },
-        { key = "about",   label = L["About"] },
-    }
-    local cat = category or content.__settingsCat or "general"
-    if (cat == "loot" or cat == "officer") and not isOfficer then cat = "general" end
+    -- One page a sidebar item (issue #365). Officer pages are hidden from members, and an item
+    -- that opens a window has no page. The page in sight is remembered on the panel itself.
+    local cat = category or content.__settingsCat or "profile"
+    cat = SETTINGS_OLD_KEY[cat] or cat
+    local page = SETTINGS_PAGE[cat]
+    if not page or page.open or (page.officer and not isOfficer) then
+        cat, page = "profile", SETTINGS_PAGE.profile
+    end
     content.__settingsCat = cat
+    if content.__nav then content.__nav:Update(cat, isOfficer) end
 
     local yOff = 0
-
-    -- Title + category bar
-    local title = UI:CreateTitle(content, L["Settings"], 16)
+    local title = UI:CreateTitle(content, page.label, 16)
     title:SetPoint("TOPLEFT", 0, -yOff)
-    yOff = yOff + 26
-
-    local cx = 0
-    for _, c in ipairs(CATS) do
-        if (not c.officer or isOfficer) and not (c.retail == false and GuildOS.Client.isRetail) then
-            local b = UI:CreateButton(content, c.label, 92, 24)
-            b:SetPoint("TOPLEFT", cx, -yOff)
-            if c.key == cat then
-                b:SetBaseColor(C.accent.r * 0.34, C.accent.g * 0.34, C.accent.b * 0.34, 0.95)
-                b.label:SetTextColor(C.gold.r, C.gold.g, C.gold.b)
-            end
-            b:SetScript("OnClick", function() GuildOS:RefreshSettingsPanel(content, c.key) end)
-            cx = cx + b:GetWidth() + 4  -- a button its label grew pushes the next one (issue #28)
-        end
-    end
-    yOff = yOff + 34
+    yOff = yOff + 28
 
     local sep1 = UI:CreateSeparator(content)
     sep1:SetPoint("TOPLEFT", 0, -yOff)
     sep1:SetPoint("TOPRIGHT", -10, -yOff)
     yOff = yOff + 12
 
-    if cat == "general" then
+    if cat == "profile" then
     --------------------------------------------------------------------
     -- MY PROFILE (self-service raid roles)
     --------------------------------------------------------------------
@@ -1655,11 +1732,6 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local rolePicker = GuildOS:CreateRolePicker(content)
     rolePicker:SetPoint("TOPLEFT", 4, -yOff)
     yOff = yOff + 34
-
-    local profSep = UI:CreateSeparator(content)
-    profSep:SetPoint("TOPLEFT", 0, -yOff)
-    profSep:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
 
     --------------------------------------------------------------------
     -- UI SCALE
@@ -1684,7 +1756,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
         UI:ApplyScale()
     end)
     yOff = yOff + 40
+    end -- cat == "profile" (profile, UI scale)
 
+    if cat == "modules" then
     --------------------------------------------------------------------
     -- MODULE TOGGLES
     --------------------------------------------------------------------
@@ -1724,13 +1798,24 @@ function GuildOS:RefreshSettingsPanel(content, category)
 
         local desc = UI:CreateText(row, def.desc or "", 9, C.silver.r, C.silver.g, C.silver.b)
         desc:SetPoint("LEFT", 240, 0)
-        desc:SetWidth(400)
+        desc:SetPoint("RIGHT", row, "RIGHT", -8, 0)   -- the row's width, not a fixed 400: the sidebar took 164px
+        desc:SetJustifyH("LEFT")
 
         yOff = yOff + 38
         end
     end
 
     yOff = yOff + 8
+
+    -- Reload UI right under the switches that ask for it.
+    local reloadBtn = UI:CreateButton(content, L["Reload UI"], 120, 28)
+    reloadBtn:SetPoint("TOPLEFT", 8, -yOff)
+    reloadBtn:SetScript("OnClick", function()
+        ReloadUI()
+    end)
+    local reloadNote = UI:CreateText(content, L["Required after enabling/disabling modules"], 9, C.silver.r, C.silver.g, C.silver.b)
+    reloadNote:SetPoint("LEFT", reloadBtn, "RIGHT", 10, 0)
+    yOff = yOff + 36
 
     -- Separator
     local sep2 = UI:CreateSeparator(content)
@@ -1788,11 +1873,17 @@ function GuildOS:RefreshSettingsPanel(content, category)
         qx = qx + b:GetWidth() + 6
     end
     yOff = yOff + 36 + qrow
+    end -- cat == "modules"
 
+    if cat == "profile" then
     --------------------------------------------------------------------
-    -- GENERAL OPTIONS
+    -- DISPLAY
     --------------------------------------------------------------------
-    local goTitle = UI:CreateHeaderText(content, L["GENERAL OPTIONS"], 12)
+    local displaySep = UI:CreateSeparator(content)
+    displaySep:SetPoint("TOPLEFT", 0, -yOff)
+    displaySep:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+    local goTitle = UI:CreateHeaderText(content, L["DISPLAY"], 12)
     goTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 24
 
@@ -1863,6 +1954,14 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 56
 
+    local spSep = UI:CreateSeparator(content)
+    spSep:SetPoint("TOPLEFT", 0, -yOff)
+    spSep:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
+    local spTitle = UI:CreateHeaderText(content, L["STARTUP AND PRIVACY"], 12)
+    spTitle:SetPoint("TOPLEFT", 0, -yOff)
+    yOff = yOff + 24
+
     local digestCb = UI:CreateCheckbox(content, L["Show login digest"], 18)
     digestCb:SetPoint("TOPLEFT", 8, -yOff)
     digestCb.checkbox:SetChecked(not (GuildOS.db.digest and GuildOS.db.digest.enabled == false))
@@ -1889,7 +1988,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     local welcomeNote = UI:CreateText(content, L["Replay the first-run intro"], 9, C.silver.r, C.silver.g, C.silver.b)
     welcomeNote:SetPoint("LEFT", welcomeBtn, "RIGHT", 10, 0)
     yOff = yOff + 34
+    end -- cat == "profile" (display, startup and privacy)
 
+    if cat == "chat" then
     --------------------------------------------------------------------
     -- CHAT (guild/officer chat annotations — a personal display
     -- preference, not officer-only; lives in Modules/ChatTweaks.lua)
@@ -2061,12 +2162,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
         lfgCb.checkbox.onChanged = function(_, checked) GuildOS.db.lfgPrefs.notify = checked and true or false end
         yOff = yOff + 30
     end
-    end -- cat == "general"
-
-
-    if isOfficer and cat == "loot" then
-        yOff = GuildOS:DrawLootPointer(content, yOff, "")
-    end
+    end -- cat == "chat"
 
     if cat == "raid" then
     --------------------------------------------------------------------
@@ -2184,7 +2280,7 @@ function GuildOS:RefreshSettingsPanel(content, category)
     yOff = yOff + 8
     end -- cat == "raid"
 
-    if isOfficer and cat == "officer" then
+    if isOfficer and cat == "tools" then
     --------------------------------------------------------------------
     -- MAINTENANCE (officer only)
     --------------------------------------------------------------------
@@ -2388,14 +2484,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     testExpDesc:SetPoint("LEFT", testExport, "RIGHT", 10, 0)
     yOff = yOff + 32
 
-    end -- isOfficer and cat == "officer" (Maintenance + Test Functions)
+    end -- isOfficer and cat == "tools" (Maintenance + Test Functions)
 
-    if isOfficer and cat == "officer" then
-    yOff = yOff + 8
-    local sep5 = UI:CreateSeparator(content)
-    sep5:SetPoint("TOPLEFT", 0, -yOff)
-    sep5:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
+    if isOfficer and cat == "rules" then
     --------------------------------------------------------------------
     -- WoW: Forever: the item level a 60 needs to be ready without a warning (issue #206),
     -- the guild's, like the officer ranks below.
@@ -2427,7 +2518,8 @@ function GuildOS:RefreshSettingsPanel(content, category)
         local minHint = UI:CreateText(content, L["Empty: no minimum. Below it, a 60 still counts, with a warning."],
             9, C.silver.r, C.silver.g, C.silver.b)
         minHint:SetPoint("LEFT", minBox.saveButton, "RIGHT", 8, 0)
-        minHint:SetWidth(280)
+        minHint:SetPoint("RIGHT", content, "TOPRIGHT", -10, -(yOff + 7))   -- the label's row, as eraseNote
+        minHint:SetJustifyH("LEFT")
         yOff = yOff + 34
 
         -- The founding letter, for after the prompt was put away (issue #208): the GM records, an
@@ -2602,9 +2694,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     rankNote:SetWidth(content:GetWidth() - 20)
     yOff = yOff + 20
 
-    end -- isOfficer and cat == "officer" (Rank config)
+    end -- isOfficer and cat == "rules" (Rank config)
 
-    if isOfficer and cat == "officer" then
+    if isOfficer and cat == "rules" then
     yOff = yOff + 8
     local sep6 = UI:CreateSeparator(content)
     sep6:SetPoint("TOPLEFT", 0, -yOff)
@@ -2643,19 +2735,9 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 30
 
-    end -- isOfficer and cat == "officer" (Auto-Invite, !note)
+    end -- isOfficer and cat == "rules" (Auto-Invite, !note)
 
-    if cat == "about" then
-    -- Reload UI button
-    local reloadBtn = UI:CreateButton(content, L["Reload UI"], 120, 28)
-    reloadBtn:SetPoint("TOPLEFT", 8, -yOff)
-    reloadBtn:SetScript("OnClick", function()
-        ReloadUI()
-    end)
-    local reloadNote = UI:CreateText(content, L["Required after enabling/disabling modules"], 9, C.silver.r, C.silver.g, C.silver.b)
-    reloadNote:SetPoint("LEFT", reloadBtn, "RIGHT", 10, 0)
-    yOff = yOff + 36
-
+    if cat == "data" then
     -- Backup / Restore
     local backupBtn = UI:CreateButton(content, L["Backup"], 110, 24)
     backupBtn:SetPoint("TOPLEFT", 8, -yOff)
@@ -2699,7 +2781,12 @@ function GuildOS:RefreshSettingsPanel(content, category)
     end
     yOff = yOff + 32
 
-    -- /gos reset, behind a confirmation: it cannot be undone.
+    -- /gos reset, behind a confirmation: it cannot be undone. Last, under a rule of its own.
+    yOff = yOff + 8
+    local sepErase = UI:CreateSeparator(content)
+    sepErase:SetPoint("TOPLEFT", 0, -yOff)
+    sepErase:SetPoint("TOPRIGHT", -10, -yOff)
+    yOff = yOff + 12
     local eraseBtn = UI:CreateButton(content, L["Erase guild data"], 170, 22)
     eraseBtn:SetPoint("TOPLEFT", 8, -yOff)
     eraseBtn:SetScript("OnClick", function()
@@ -2718,16 +2805,12 @@ function GuildOS:RefreshSettingsPanel(content, category)
     eraseNote:SetWordWrap(false)
     eraseNote:SetJustifyH("LEFT")
     yOff = yOff + 30
+    end -- cat == "data"
 
+    if cat == "about" then
     --------------------------------------------------------------------
     -- ABOUT & SUPPORT
     --------------------------------------------------------------------
-    yOff = yOff + 8
-    local sepAbout = UI:CreateSeparator(content)
-    sepAbout:SetPoint("TOPLEFT", 0, -yOff)
-    sepAbout:SetPoint("TOPRIGHT", -10, -yOff)
-    yOff = yOff + 12
-
     local aboutTitle = UI:CreateHeaderText(content, L["ABOUT & SUPPORT"], 12)
     aboutTitle:SetPoint("TOPLEFT", 0, -yOff)
     yOff = yOff + 22

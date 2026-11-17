@@ -779,7 +779,7 @@ L["Guild invite sent to %s."] = "Guild invite sent to %s."
 L["%s reached level %s!"] = "%s reached level %s!"
 L["%s completed a new attunement"] = "%s completed a new attunement"
 L["%d promotions to review"] = "%d promotions to review"
-L["The Recruitment module is off. Turn it on in Settings > General > Modules."] = "The Recruitment module is off. Turn it on in Settings > General > Modules."
+L["The Recruitment module is off. Turn it on in Settings > Modules."] = "The Recruitment module is off. Turn it on in Settings > Modules."
 L["Checked ranks are officers in Guild OS for the whole guild: a change goes to every member running it."] = "Checked ranks are officers in Guild OS for the whole guild: a change goes to every member running it."
 L["Share these ranks with the guild"] = "Share these ranks with the guild"
 
@@ -804,7 +804,7 @@ L["Send request"] = "Send request"
 L["Alliance tag and an officer of a guild already in it. They approve the request."] = "Alliance tag and an officer of a guild already in it. They approve the request."
 -- Retail (ADR-0026): the welcome without loot; the officer step with retail's loot systems (issue #185).
 L["An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."] = "An all-in-one guild suite: roster, raid attendance, cores, recruitment, professions, leadership tools and audits — all synced between guildmates who run the addon."
-L["As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: free roll, Wishlist or DKP."] = "As an officer you unlock leadership tools. In Settings -> Officer, set which guild ranks count as officers. In Settings -> Loot, choose how the guild hands out loot: free roll, Wishlist or DKP."
+L["As an officer you unlock leadership tools. In Settings -> Guild rules, set which guild ranks count as officers. In the Loot window, choose how the guild hands out loot: free roll, Wishlist or DKP."] = "As an officer you unlock leadership tools. In Settings -> Guild rules, set which guild ranks count as officers. In the Loot window, choose how the guild hands out loot: free roll, Wishlist or DKP."
 -- Retail's character sheet on the member detail (issue #184).
 L["Crit"] = "Crit"
 L["Haste"] = "Haste"

@@ -161,7 +161,7 @@ function Mentions:_SetupHook()
         if not Mentions._hinted then
             Mentions._hinted = true
             GuildOS:Print(string.format(L["Tip: turn these off in %s > %s > %s, or with /gos mentions off."],
-                L["Settings"], L["General"], L["MENTIONS & ALERTS"]))
+                L["Settings"], L["Chat & alerts"], L["MENTIONS & ALERTS"]))
         end
     end)
 end

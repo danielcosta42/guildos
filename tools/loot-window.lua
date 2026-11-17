@@ -5,7 +5,7 @@
 --   * the Loot window: an officer edits the rule (the model, its settings, the answers) and the accounts
 --     (the award row, the points' settings) of the guild or of a core; a member reads the rule as
 --     players will read it and the standings, and edits nothing;
---   * no loot setting is reachable from two places: Settings > Loot and the core's Config tab only
+--   * no loot setting is reachable from two places: Settings' sidebar and the core's Config tab only
 --     point to the window, and the code that writes each setting is in one UI file;
 --   * the master looter's table: the boss's items with where each stands, the candidates in the rule's
 --     order with why each is there, the decision in a sentence that follows that order, an Award
@@ -163,7 +163,14 @@ local function load(style)
   STYLE = style
   UIParent = newFrame("Frame")
   UIParent:SetSize(1920, 1080)
-  function CreateFrame(kind, name, parent) return newFrame(kind, parent, name) end
+  function CreateFrame(kind, name, parent, template)
+    local f = newFrame(kind, parent, name)
+    -- The slider template's three labels, by the names the client gives them.
+    if template == "OptionsSliderTemplate" and name then
+      for _, part in ipairs({ "Low", "High", "Text" }) do newFrame("FontString", f, name .. part) end
+    end
+    return f
+  end
   GameTooltip = newFrame("GameTooltip")
   UISpecialFrames = {}
   DEFAULT_CHAT_FRAME = { AddMessage = function() end }
@@ -210,6 +217,7 @@ local function load(style)
   GuildOS.Style:Resolve()
   dofile(ADDON .. "/UI/Helpers.lua")
   dofile(ADDON .. "/UI/Layout.lua")
+  dofile(ADDON .. "/UI/FeatureRegistry.lua")   -- Settings > Modules lists the registry's switches
   GuildOS.Print = function() end
   GuildOS.SafeCall = function(_, fn, ...) return fn(...) end   -- an error in a paint fails the test, loudly
   check(GuildOS.Style.current == style, "the " .. style .. " style is the one in force")
@@ -330,6 +338,8 @@ local function loadModules()
   dofile(ADDON .. "/UI/PointsPanel.lua")
   dofile(ADDON .. "/UI/CorePanel.lua")
   GuildOS.CreateRolePicker = function(_, parent) return newFrame("Frame", parent) end
+  -- UI/StylePreview.lua's picker on Settings > Profile; the style itself is not under test here.
+  GuildOS.Style.BuildPicker = GuildOS.Style.BuildPicker or function(_, _, y) return y end
   UI_OPENED = nil
   GuildOS.UI.OpenWindow = function(_, id, sub, filter) UI_OPENED = { id, sub, filter } return true end
 end
@@ -475,19 +485,63 @@ local function lootTab(UI)
     acc.SetScope("Alpha")
   end
 
-  -- Settings > Loot and the core's Config tab only point here.
+  -- Settings' sidebar (issue #365) and the core's Config tab only point here: no Settings page
+  -- draws a loot setting, and the sidebar's Loot window item opens the window.
   local settings = newFrame("Frame", UIParent)
-  settings:SetSize(560, 900)
-  GuildOS:RefreshSettingsPanel(settings, "loot")
-  check(#buttons(settings, "Open Loot") == 1, "Settings > Loot says where the loot settings are")
+  settings:SetSize(760, 900)
+  local raidTracker = GuildOS.RaidTracker   -- Settings > Raid reads the guild's penalties
+  GuildOS.RaidTracker = raidTracker or { GetPenalties = function() return { LATE = 10, LEFT_EARLY = 5 } end,
+    GetCurrentGroup = function() return "" end }   -- the active core, as CoreManager reads it
+  GuildOS:CreateSettingsPanel(settings)
+  settings.scripts.OnShow(settings)
   local LOOT_CONTROLS = { "Wishlist Auto-Council", "Roll Duration", "Rarity threshold", "Disenchanter", "Bank character",
     "Points per boss", "Min. Attendance", "Auto-announce", "LOOT SYSTEM", "LOOT MASTER", "Wishlist-only mode",
-    "Roll duration", "Loot threshold", "Mode:" }
-  for _, label in ipairs(LOOT_CONTROLS) do
-    check(not shows(settings, label), "Settings has no \"" .. label .. "\" left")
+    "Roll duration", "Loot threshold", "Mode:", "Add answer" }
+  -- Every section of before the sidebar, on exactly one page (the sidebar's own labels never match these).
+  local SECTIONS = { "MY PROFILE", "UI scale", "MODULES", "Reload UI", "QUICK ACCESS", "DISPLAY", "STARTUP AND PRIVACY",
+    "CHAT", "RAID TRACKER", "MAINTENANCE", "TEST FUNCTIONS", "OFFICER RANKS", "AUTO-INVITE", "!NOTE COMMAND", "Restore",
+    "Backup", "Diagnostics", "Erase guild data", "ABOUT & SUPPORT", "Links", "Who creates events:" }
+  local onPages = {}
+  local function exactly(root, text)
+    local n = 0
+    walk(root, function(f) if f.kind == "FontString" and f:IsVisible() and f.text == text then n = n + 1 end end)
+    return n
   end
-  click(settings, "Open Loot")
-  check(UI_OPENED[1] == "loot" and UI_OPENED[2] == "rule" and UI_OPENED[3] == "", "its button opens the Rule tab on the guild")
+  for _, page in ipairs({ "Profile", "Chat & alerts", "Modules", "Raid", "Guild rules", "Tools & tests",
+                          "Backup & reset", "About" }) do
+    click(settings, page)
+    check(exactly(settings, page) == 2, "Settings > " .. page .. " is titled with its sidebar item")
+    for _, label in ipairs(LOOT_CONTROLS) do
+      check(not shows(settings, label), "Settings > " .. page .. " has no \"" .. label .. "\"")
+    end
+    for _, section in ipairs(SECTIONS) do
+      if exactly(settings, section) > 0 then onPages[section] = (onPages[section] or 0) + 1 end
+    end
+  end
+  for _, section in ipairs(SECTIONS) do
+    check(onPages[section] == 1, "\"" .. section .. "\" is on exactly one Settings page (" .. tostring(onPages[section]) .. ")")
+  end
+  click(settings, "Loot window")
+  check(UI_OPENED[1] == "loot" and UI_OPENED[2] == "rule" and UI_OPENED[3] == "", "its item opens the Rule tab on the guild")
+  check(shows(settings, "ABOUT & SUPPORT"), "and leaves the page in sight (About, the last one clicked) as it was")
+  -- The page keys of before the sidebar, and one that names no page.
+  local page
+  walk(settings, function(f) if f.__nav then page = f end end)
+  GuildOS:RefreshSettingsPanel(page, "general")
+  check(shows(settings, "MY PROFILE") and page.__settingsCat == "profile", "the old General key opens Profile")
+  GuildOS:RefreshSettingsPanel(page, "officer")
+  check(shows(settings, "OFFICER RANKS") and page.__settingsCat == "rules", "the old Officer key opens Guild rules")
+  GuildOS:RefreshSettingsPanel(page, "nope")
+  check(shows(settings, "MY PROFILE"), "a key that names no page opens Profile")
+  -- A member, with an officer page the last one in sight.
+  click(settings, "Guild rules")
+  officer = false
+  settings.scripts.OnShow(settings)
+  check(#buttons(settings, "Guild rules") == 0 and #buttons(settings, "Loot window") == 0 and #buttons(settings, "About") == 1
+    and exactly(settings, "OFFICER") == 0, "a member's sidebar has no officer items, nor their group")
+  check(shows(settings, "MY PROFILE") and not shows(settings, "OFFICER RANKS"), "and the officer page they last saw opens Profile")
+  officer = true
+  GuildOS.RaidTracker = raidTracker
 
   local cores = newFrame("Frame", UIParent)
   cores:SetSize(780, 540)

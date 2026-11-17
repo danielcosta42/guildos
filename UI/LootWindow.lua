@@ -510,8 +510,8 @@ function GuildOS:ShowLootRuleEditor(coreName)
     UI:OpenWindow("loot", "rule", coreName or "")
 end
 
--- Where the loot rule of `scope` is edited, for the screens that used to edit it (Settings > Loot,
--- the core's Config tab): its name in one line and the way to the Loot window. Returns the new y.
+-- Where the loot rule of `scope` is edited, for the core's Config tab, which used to edit it (Settings'
+-- sidebar opens the window instead, issue #365): its name in one line and the way to the Loot window. Returns the new y.
 function GuildOS:DrawLootPointer(content, y, scope, x)
     x = x or 0
     local LR, CM = self.LootRule, self.CoreManager

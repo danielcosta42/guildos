@@ -168,13 +168,13 @@ Removed: `Compat.NewTimer`.
 
 | Function | Description |
 |---|---|
-| `GuildOS:CollectMyDataNow()` | `/gos scan` and Settings → About "Collect my data" |
+| `GuildOS:CollectMyDataNow()` | `/gos scan` and Settings → Backup & reset "Collect my data" |
 | `GuildOS:MergeRaidSessions()` | `/gos mergeraids` and Raids → Audit → Sync "Merge duplicate sessions" |
 | `GuildOS:ShowErrors()` | `/gos errors` and "View Errors" (About, Officer): start-up problems, then the recent ones |
 | `GuildOS:LootMasterStatus()` | `/gos lm` and the Loot tab's status line: one line, nil without LootMaster |
 | `GuildOS:ShowWebString()` | `/gos web` and the Web tab's "Show the paste text": the popup, or how to turn the companion on |
 | `GuildOS:EraseGuildData()` | `/gos reset` and About → "Erase guild data" (behind a confirmation): this guild's GuildOSDB entry, then a reload |
-| `Mentions:PrintLog()` | `/gos mentions` and Settings → Mentions "Recent mentions": the last 15 mentions to chat |
+| `Mentions:PrintLog()` | `/gos mentions` and Settings → Chat & alerts "Recent mentions": the last 15 mentions to chat |
 
 ## Core.lua — GuildOS global
 
@@ -744,8 +744,8 @@ Also: `Compat.CanViewOfficerNote()`, `GearAudit:MissingEnchants(gear)` (slot nam
 | `GuildOS:RefreshLootPanel(content, countText)` | Rebuilds loot history rows |
 | `GuildOS:CreateTrialsPanel(parent, _mainFrame)` | Creates Trial Members tab, with the guild's trial length box and the new-members switch on top (#249) |
 | `GuildOS:RefreshTrialsPanel(parent)` | Rebuilds trials list with expandable detail rows: ready to review first (gold wash, "READY TO REVIEW"), approve/deny on every unresolved trial |
-| `GuildOS:CreateSettingsPanel(parent, _mainFrame)` | Creates Settings tab with scroll content area |
-| `GuildOS:RefreshSettingsPanel(content)` | Populates settings: module toggles, LM options, test functions |
+| `GuildOS:CreateSettingsPanel(parent, _mainFrame)` | Creates the Settings tab: the grouped sidebar (`SETTINGS_NAV`, built once, `nav:Update(key, isOfficer)`) beside the scroll content (#365) |
+| `GuildOS:RefreshSettingsPanel(content, key)` | Draws one sidebar page: profile, chat, modules, raid, rules, tools, data, about; `general` and `officer` still open profile and rules; an unknown, officer-only or window-opening key opens profile |
 | `GuildOS:ShowWishlistFrame()` | Creates or shows personal wishlist standalone frame |
 | `GuildOS:RefreshWishlistFrame()` | Rebuilds wishlist FauxScroll rows |
 | `GuildOS:CreateRecruitmentPanel(parent, mainFrame)` | Creates Recruitment tab panel |
@@ -1026,7 +1026,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Readiness.ForeverStatus(r, minIlvl, cap)` | Pure: below the cap `notready`/`level`; no gear data `ready` by level only; under the guild's minimum `warn`/`ilvl`; an enchant missing `warn`/`enchants`; else `ready`. The cases are guildos.me's too (`tools/readiness-forever.lua`) |
 | `Readiness:GetReport()` | On Forever every row is ruled by `ForeverStatus` and carries `level`, `reason`, `levelOnly`; the attunement path stays for Anniversary |
 | `Readiness.FOREVER_RAIDS` | Barrow Deeps 10, Hyjal Summit 20, Onyxia's Lair 40, `opensAt` 9 Dec 2026 00:00 UTC |
-| `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > officer: "Readiness" |
+| `Readiness:GetMinIlvl()` / `MinIlvlKnown()` / `SetMinIlvl(n)` / `PublishMinIlvl()` / `OnMinIlvlSync(env)` | The guild's minimum item level for a 60: `settings.readyMinIlvl` + `readyMinIlvlAt`, set by an officer (nil clears), `guildcfg`/`readymin` stamped, newest wins and a tie keeps the lower; republished on the officers' regular sync; exported as `guildConfig.readyMinIlvl` (v12) only by a client that has heard it. Settings > Guild rules: "Readiness" |
 | `Readiness.Slices(atCap)` | What the guild can form with who is at the cap (the same as guildos.me's): `{ dungeons, raids = { { size, count } }, short, shortSize }`. Pure. |
 | `Readiness:Countdown(rows, now)` | WoW: Forever, until a week after the raids open (#207): `{ opensAt, open, days, cap, cores = up to 3 { name, size, ready } largest first (titulars at the cap, nobody who left), guild = { ready, enough, short }, me }`. `UI/Dashboard.lua` draws it in the readiness card's place; the readiness panel shows the level and sorts by it within a status |
 
@@ -1058,7 +1058,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `Founding:MyJoinedAt()` / `PublishSelf()` / `OnSelf(env, sender)` / `JoinedAtOf(key)` | My own join date (`firstSeen` until a probe finds the game's, #214), published at login on `foundingSelf` (GUILD only), filed under its sender |
 | `Founding:Founders()` / `IsFounder(key)` / `ForExport()` | Worked out the same everywhere: the GM, today's roster with a join date (claim, else this client's `firstSeen`) inside the window, and manual additions; the export's `founding` (v12) |
 | `Founding:ShouldPrompt(now)` / `Later(now)` / `SuggestedDay(now)` | The letter to the GM while nothing is recorded: three times at most, a day apart; offers an officer's suggestion, else the earliest `firstSeen`, else today |
-| `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > officer: "Record founding" / "Suggest founding date to your GM" |
+| `GuildOS:ShowFoundingLetter(prompted)` / `MaybeShowFoundingLetter()` | UI/Founding.lua: the letter (day with ‹ ›, record or suggest, later); at login after the onboarding; Settings > Guild rules: "Record founding" / "Suggest founding date to your GM" |
 | `tools/founding.lua` | The harness of issue #208 |
 | `Founding.BADGE` / `Founding:Forget()` / `Founding.AddMonths(t, n)` / `Founding:GetDigestLines(since, now)` | The founder's scroll by the name in the roster and the member card (with "joined"); the founders are cached 5 s (`Forget` on any change); months in UTC with no time zone; the digest's founders since the last login (3 at most, never me), the window's days left or its closing, and the guild's 1/3/6/12-month anniversaries (#209) |
 
@@ -1197,7 +1197,7 @@ Atlases are named by ELEMENT (`UI-Frame-Metal-CornerTopLeft`); Forever resolves 
 | `GuildOS:RefreshLootRuleTab(content, scope)` | The Rule tab drawn for a core (`""` the guild; nil keeps the last, else `DefaultLootScope`): the selector, the model as a list (officers), the loot master's settings (`LootMaster:SetLootSetting`), `BuildLootRuleEditor`, and "how players will read it" (`LootRule:Describe`) for everyone |
 | `GuildOS:BuildLootRuleEditor(content, yOff, coreName, redraw)` | The answers' editor (#334), moved here from Settings > Loot; what an answer asks for, the price, a counter's reset, who decides (with a council) and an exception's kind, category and destination are dropdowns |
 | `GuildOS:ShowLootRuleEditor(coreName)` | Opens the Rule tab on that core (it was a window of its own) |
-| `GuildOS:DrawLootPointer(content, y, scope, x)` | "Loot: <rule> — Open Loot": what Settings > Loot and the core's Config tab keep; `content.lootPointer` is the button |
+| `GuildOS:DrawLootPointer(content, y, scope, x)` | "Loot: <rule>" and an Open Loot button: what the core's Config tab keeps (Settings' sidebar opens the window, #365); `content.lootPointer` is the button |
 | `GuildOS:DefaultLootScope()` | The raid's active core when it is one, else `""` |
 | `GuildOS:BuildLootAccounts(panel)` / `GuildOS:ShowPointsFrame(coreName)` | The Accounts tab: core and account dropdowns, the award row (`Points:AwardRow`), Award Raid / Apply Decay / Sync, the standings (columns by `ResolveColumns`) and the movements (dropped below 640 px), and "Account settings" (`Points:SetConfigKey`, `SetMode`, the named reasons). Every read on the core picked (`Points:InCore`). `ShowPointsFrame` opens it (`/gos points`, `/gos dkp`) |
 | `GuildOS:RefreshLootPanel(content, countText, header)` / `:RefreshLootEquity(...)` | The History tab's tables, rows pooled, columns dropped by priority |

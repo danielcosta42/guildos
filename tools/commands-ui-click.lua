@@ -95,7 +95,7 @@ local did = {}
 GuildOS.DataCollector = { CollectMyData = function() did.scan = true end }
 GuildOS.SelfTest = { Run = function() did.selftest = true end }
 GuildOS.Probe = { Run = function() did.probe = true end, RunChat = function() did.probeChat = true end }
--- The style module draws its own picker in General; only the preview is watched.
+-- The style module draws its own picker in Profile; only the preview is watched.
 GuildOS.Style = setmetatable({ ShowPreview = function() did.preview = true end,
                                 BuildPicker = function(_, _, y) return y end },
   { __index = function() return function() return stub end end })
@@ -105,11 +105,11 @@ GuildOS.State.startup.failed["Modules/Broken.lua"] = "boom"
 GuildOS.State.errors = { { msg = "late error" } }
 GuildOS.db = { settings = {}, mentions = { watchWords = { "raid", "boss" }, log = { { ts = 0, sender = "Ana", msg = "oi Off" } } } }
 
--- ── Settings → About: diagnostics and erasing, for everyone ──────────────
-open("about")
+-- ── Settings → Backup & reset: diagnostics and erasing, for everyone ─────
+open("data")
 for _, t in ipairs({ "Collect my data", "View Errors", "Self-test", "Probe the client", "Probe chat", "Style preview",
                      "Erase guild data" }) do
-  check(button(t) and button(t).onClick, "About has " .. t)
+  check(button(t) and button(t).onClick, "Backup & reset has " .. t)
 end
 button("Collect my data").onClick()
 check(did.scan and said("Data collected."), "Collect my data collects, as /gos scan")
@@ -127,8 +127,8 @@ check(popped == "GUILDOS_ERASE_GUILD" and reloaded == 0 and GuildOSDB["Guild-Rea
 GuildOS.Dialogs.GUILDOS_ERASE_GUILD.OnAccept()
 check(GuildOSDB["Guild-Realm"] == nil and GuildOSDB["Other-Realm"] and reloaded == 1, "confirmed: this guild's data only, then a reload")
 
--- ── Settings → General: the mentions log and clearing the words ─────────
-open("general")
+-- ── Settings → Chat & alerts: the mentions log and clearing the words ───
+open("chat")
 check(button("Recent mentions") and button("Clear watch-words"), "Mentions has its log and its clear button")
 button("Recent mentions").onClick()
 check(said("--- Recent mentions ---") and said("oi Off") and not said("Usage:"), "the log, without the command's usage line")

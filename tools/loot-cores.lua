@@ -521,15 +521,12 @@ dofile(ADDON .. "/UI/LootWindow.lua")
 GuildOS.CreateRolePicker = function() return widget() end
 GuildOS.ShowPointsFrame = function() end
 
--- The loot settings moved to the Loot window's Rule tab (issue #346); Settings > Loot only points
--- there. The tab on the guild shows the guild's own choice, whatever core is active.
+-- The loot settings moved to the Loot window's Rule tab (issue #346; Settings' sidebar only points
+-- there, tools/loot-window.lua). The tab on the guild shows the guild's own choice, whatever core is active.
 activate("Alpha")
 local content = widget()
 widgets, buttons, dropdowns = {}, {}, {}
-local drew, problem = pcall(GuildOS.RefreshSettingsPanel, GuildOS, content, "loot")
-check(drew and button("Open Loot") and not button("Add answer"), "Settings > Loot only points to the Loot window (" .. tostring(problem) .. ")")
-widgets, buttons, dropdowns = {}, {}, {}
-drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "")
+local drew, problem = pcall(GuildOS.RefreshLootRuleTab, GuildOS, content, "")
 check(drew, "the Rule tab draws on the guild with a core active (" .. tostring(problem) .. ")")
 -- The second answer asks for a roll; the editor's dropdown turns it to a bid (it was a button that cycled).
 local askDD
