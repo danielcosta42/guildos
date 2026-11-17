@@ -22,6 +22,9 @@ local DANGER_WASH    = 0.12  -- danger tint behind a hovered danger button
 local DISABLED_GOLD  = 0.35  -- alpha of a disabled primary button or checkbox mark
 local FADE_MAX       = 0.1   -- seconds; the only motion the skin allows
 local SCROLL_WIDTH   = 8
+-- The scroll bar sits inside its frame's right edge (2px in, SCROLL_WIDTH wide): content keeps this
+-- much clear on the right, so nothing runs under it (#371). Layout's BindScrollChildWidth applies it.
+Helpers.SCROLL_GUTTER = SCROLL_WIDTH + 4
 local CHECK_BOX      = 14
 local CHECK_MARK     = 8
 local PROGRESS_OK    = 0.8   -- at or above: ok
@@ -206,12 +209,86 @@ function Helpers:CreateText(parent, text, size, r, g, b)
     return fs
 end
 
--- Create a column or section header: IBM Plex Mono Medium in `label`.
+-- Create a column header: IBM Plex Mono Medium in `label`. A section of a screen takes
+-- CreateSectionTitle instead.
 function Helpers:CreateHeaderText(parent, text, size)
     local fs = newText(parent, size or 10, "colHeader")
     fs:SetTextColor(C.label.r, C.label.g, C.label.b)
     fs:SetText(text or "")
     return fs
+end
+
+----------------------------------------------------------------------
+-- One of each screen part (#371): every screen takes these, none draws its own
+----------------------------------------------------------------------
+
+-- Space between blocks, and under a sub-tab bar before a screen's first line. A screen's content
+-- starts flush with the sub-tab bar's left edge (x = 0) and ends GAP short of the right one.
+Helpers.GAP = 8
+
+-- A section title as Settings draws it: Sans SemiBold 14 in `text`. Any section but a screen's first
+-- has a 1px `line` rule 12px above it, from the title's left to the parent's right edge, so leave
+-- about 20px over a later one. Returns the title; title.rule is that rule.
+function Helpers:CreateSectionTitle(parent, text, first)
+    local fs = newText(parent, nil, "sectionTitle")
+    fs:SetTextColor(C.text.r, C.text.g, C.text.b)
+    fs:SetJustifyH("LEFT")
+    fs:SetText(text or "")
+    if not first then
+        local rule = self:CreateSeparator(parent)
+        rule:SetPoint("BOTTOMLEFT", fs, "TOPLEFT", 0, 12)
+        rule:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+        fs.rule = rule
+    end
+    return fs
+end
+
+-- A text field: `well` fill, 1px `lineHi` border that turns gold while typing, Sans 12 (Plex Mono for
+-- numbers) inset 6px, Escape lets go. opts: numeric, max, multiline, placeholder (a hint shown while
+-- empty), justify. Hook its scripts with HookScript: SetScript on the focus ones would drop the border.
+function Helpers:CreateInput(parent, width, height, opts)
+    opts = opts or {}
+    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    box:SetSize(width or 160, height or 22)
+    box:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(box) })
+    box:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    box:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    box:SetTextInsets(6, 6, opts.multiline and 4 or 0, opts.multiline and 4 or 0)
+    GuildOS:ApplyFont(box, 12, opts.numeric and "tableNum" or nil)
+    box:SetTextColor(C.text.r, C.text.g, C.text.b)
+    if opts.justify then box:SetJustifyH(opts.justify) end
+    box:SetAutoFocus(false)
+    if opts.multiline then box:SetMultiLine(true) end
+    if opts.numeric then box:SetNumeric(true) end
+    if opts.max then box:SetMaxLetters(opts.max) end
+    box:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    box:HookScript("OnEditFocusGained", function(self) self:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
+    box:HookScript("OnEditFocusLost", function(self) self:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    if opts.placeholder then
+        local ph = newText(box, 12)
+        ph:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        ph:SetPoint(opts.multiline and "TOPLEFT" or "LEFT", 6, opts.multiline and -4 or 0)
+        ph:SetText(opts.placeholder)
+        local function sync() ph:SetShown((box:GetText() or "") == "" and not box:HasFocus()) end
+        box:HookScript("OnTextChanged", sync)
+        box:HookScript("OnEditFocusGained", sync)
+        box:HookScript("OnEditFocusLost", sync)
+        sync()
+        box.placeholder = ph
+    end
+    return box
+end
+
+-- A table's header row: 22px, no fill, a 1px `line` rule along its bottom. Put the column labels on
+-- it with CreateHeaderText and anchor it by its top corners; the first row sits right under it.
+function Helpers:CreateTableHeader(parent, height)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetHeight(height or 22)
+    local rule = self:CreateSeparator(f)
+    rule:SetPoint("BOTTOMLEFT", 0, 0)
+    rule:SetPoint("BOTTOMRIGHT", 0, 0)
+    f.rule = rule
+    return f
 end
 
 ----------------------------------------------------------------------
@@ -248,6 +325,12 @@ function Helpers:_ButtonState(btn, state)
         elseif variant ~= "ghost" then
             r, g, b, a = C.popup.r, C.popup.g, C.popup.b, 1
         end
+    end
+
+    -- Selected (Helpers:SetSelected): gold border and gold label, through hover and press (#371).
+    if btn.__selected and state ~= "disabled" and variant ~= "primary" then
+        border = C.gold
+        tr, tg, tb = C.gold.r, C.gold.g, C.gold.b
     end
 
     btn:SetBackdropColor(r, g, b, a)
@@ -304,6 +387,16 @@ function Helpers:CreateButton(parent, text, width, height)
 
     -- Flat in every style; only a primary button takes the game's art (SetButtonVariant, #148).
     self:_ButtonState(btn, "rest")
+    return btn
+end
+
+-- Mark a button as the chosen one of a set (a filter, a mode, a model): gold border and gold label,
+-- the identity's only selection mark (#371). No ">" prefix, no tinted fill.
+function Helpers:SetSelected(btn, on)
+    btn.__selected = on and true or nil
+    if btn.label then
+        self:_ButtonState(btn, not btn:IsEnabled() and "disabled" or (btn.__hovered and "hover") or "rest")
+    end
     return btn
 end
 
@@ -814,11 +907,14 @@ function Helpers:SkinScrollBar(scrollFrame, scrollName)
         local thumbHeight = math.max(20, trackHeight * (trackHeight / (trackHeight + max - min + 1)))
         thumb:SetHeight(thumbHeight)
 
+        -- Nothing to scroll: no thumb and no empty track either (#371).
         if max <= min then
             thumb:Hide()
+            track:Hide()
             return
         end
         thumb:Show()
+        track:Show()
         local ratio = (val - min) / (max - min)
         local travel = trackHeight - thumbHeight
         thumb:ClearAllPoints()
