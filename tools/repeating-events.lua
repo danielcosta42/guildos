@@ -231,13 +231,14 @@ NOW = at(2026, 11, 20, 12)
 local nb = Cal:CreateSeries("Birthday: Ana", bday, 40, "", "OTHER", false, "yearly")
 local ybs = {}
 for id, ev in pairs(Cal:GetEvents()) do if ev.series and ev.series.rep == "yearly" then ybs[#ybs + 1] = ev end end
-check(nb == 1 and #ybs == 1 and ybs[1].when == bday, "four months ahead, the one date is on the calendar, and only it")
+check(nb == 2 and #ybs == 2, "four months ahead, this year's date and next year's are on the calendar, no more")
+table.sort(ybs, function(a, b) return a.when < b.when end)
 local ysid = ybs[1].series.id
 NOW = at(2027, 3, 10, 12)
 local tu = Cal:TopUpSeries(); check(tu >= 1 and Cal:GetEvents()[ysid .. ":20280309"], "once it has passed, next year's goes on")
 local ones = 0
 for id in pairs(Cal:GetEvents()) do if id:find("^" .. ysid) then ones = ones + 1 end end
-check(ones == 2, "and only that one")
+check(ones == 3, "and only that one")
 Cal:Delete(ysid .. ":20280309")
 NOW = at(2027, 6, 1, 12)                  -- the tombstone is older than 30 days, the date still ahead
 Cal:PruneTombstones()
@@ -250,5 +251,22 @@ check(not Cal:IsDeleted(ysid .. ":20280309"), "and goes once the day has passed"
 Cal:OnSync({ act = "create", rev = 1, data = { event = { id = "S9:20271224", title = "t", when = NOW + 86400,
   series = { id = "S9", rep = "yearly", first = NOW } } } }, "Other-Firemaw")
 check(Cal:GetEvents()["S9:20271224"].series.rep == "yearly", "a yearly rule off the guild channel is kept")
+
+-- Skipping a year: the only near date deleted, the series still goes on (review of #358).
+NOW = at(2026, 11, 20, 12)
+local only = at(2027, 5, 2, 20)
+Cal:CreateSeries("Founding day", only, 40, "", "OTHER", false, "yearly")
+local fsid
+for id, ev in pairs(Cal:GetEvents()) do if ev.when == only then fsid = ev.series.id end end
+Cal:Delete(fsid .. ":20270502")
+NOW = at(2027, 5, 5, 12)
+Cal:TopUpSeries()
+check(Cal:GetEvents()[fsid .. ":20280502"] and Cal:GetEvents()[fsid .. ":20290502"] and not Cal:GetEvents()[fsid .. ":20270502"],
+  "with this year's date deleted, the series still fills next years in")
+-- A made-up date in an id does not keep a tombstone alive.
+Cal:Tombstones()["web:99999999"] = NOW - 40 * 86400
+Cal:Tombstones()["x:20991231"] = NOW - 40 * 86400
+Cal:PruneTombstones()
+check(not Cal:IsDeleted("web:99999999") and not Cal:IsDeleted("x:20991231"), "a date that is no date, or decades ahead, keeps no tombstone")
 
 print("repeating-events: " .. checks .. " checks passed")
