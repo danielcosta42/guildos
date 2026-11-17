@@ -826,11 +826,7 @@ local function buildLists(panel)
     wishBtn:SetPoint("LEFT", 0, 0)
     local srBtn = GuildOS.SoftRes and UI:CreateButton(bar, L["Soft Reserves"], 110, 22)
     if srBtn then srBtn:SetPoint("LEFT", wishBtn, "RIGHT", 6, 0) end
-    local myWish = GuildOS.Wishlist and UI:CreateButton(bar, L["My Wishlist"], 120, 22)
-    if myWish then
-        myWish:SetPoint("RIGHT", 0, 0)
-        myWish:SetScript("OnClick", function() GuildOS:ShowWishlistFrame() end)
-    end
+    -- "My Wishlist" is the guild list's own, beside Manage Prios: one here too showed it twice (#371).
     local viewTop = GAP + TOOLBAR_H + GAP
 
     -- Wishlists: the guild's, as the officers' Wishlist tab had it; a raider's own opens from the bar.

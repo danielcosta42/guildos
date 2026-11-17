@@ -68,6 +68,7 @@ GuildOS.UI = setmetatable({}, { __index = function()
     local f = Frame.new(type(parent) == "table" and parent or nil)
     f.label = setmetatable({ children = {} }, Frame)
     f.checkbox = setmetatable({ children = {} }, Frame)
+    f.edit = setmetatable({ children = {} }, Frame)   -- a text area's field (UI:CreateTextArea)
     f.text = nil
     return f
   end

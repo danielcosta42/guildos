@@ -452,8 +452,9 @@ end
 -- MOTD / GUILD INFO sub-panel
 ----------------------------------------------------------------------
 -- The shared multi-line field (#371); its width comes from its anchors.
+-- The MOTD and guild info boxes: a field of fixed height (UI:CreateTextArea), the text in `.edit`.
 local function MakeTextArea(parent, height)
-    return UI:CreateInput(parent, nil, height, { multiline = true })
+    return UI:CreateTextArea(parent, nil, height)
 end
 
 local function BuildMotdSub(panel)
@@ -461,9 +462,10 @@ local function BuildMotdSub(panel)
     local motdLabel = UI:CreateSectionTitle(panel, L["MESSAGE OF THE DAY"], true)
     motdLabel:SetPoint("TOPLEFT", 0, 0)
 
-    local motdBox = MakeTextArea(panel, 50)
-    motdBox:SetPoint("TOPLEFT", 0, -TITLE_H)
-    motdBox:SetPoint("TOPRIGHT", 0, -TITLE_H)
+    local motdArea = MakeTextArea(panel, 50)
+    motdArea:SetPoint("TOPLEFT", 0, -TITLE_H)
+    motdArea:SetPoint("TOPRIGHT", 0, -TITLE_H)
+    local motdBox = motdArea.edit
     motdBox:SetMaxLetters(128)
 
     local motdBtn = UI:CreateButton(panel, L["Save MOTD"], 110, 24)
@@ -481,9 +483,10 @@ local function BuildMotdSub(panel)
     local infoLabel = UI:CreateSectionTitle(panel, L["GUILD INFORMATION"])
     infoLabel:SetPoint("TOPLEFT", 0, -infoTop)
 
-    local infoBox = MakeTextArea(panel, 120)
-    infoBox:SetPoint("TOPLEFT", 0, -(infoTop + TITLE_H))
-    infoBox:SetPoint("TOPRIGHT", 0, -(infoTop + TITLE_H))
+    local infoArea = MakeTextArea(panel, 120)
+    infoArea:SetPoint("TOPLEFT", 0, -(infoTop + TITLE_H))
+    infoArea:SetPoint("TOPRIGHT", 0, -(infoTop + TITLE_H))
+    local infoBox = infoArea.edit
     infoBox:SetMaxLetters(500)
 
     local infoBtn = UI:CreateButton(panel, L["Save Info"], 110, 24)

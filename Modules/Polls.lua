@@ -156,11 +156,12 @@ function Polls:Show()
             local qBox = UI:CreateInput(f, 330, 24, { max = 150, placeholder = L["Question..."] })
             qBox:SetPoint("TOPLEFT", 16, -42)
 
-            local oBox = UI:CreateInput(f, 0, 56, { multiline = true })
-            oBox:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -8)
-            oBox:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -74)
+            local oArea = UI:CreateTextArea(f, 0, 56)   -- a multi-line EditBox alone shrinks to one line
+            oArea:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -8)
+            oArea:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -74)
+            local oBox = oArea.edit
             local oHint = UI:CreateText(f, L["One option per line (2-6)"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-            oHint:SetPoint("TOPLEFT", oBox, "BOTTOMLEFT", 0, -4)
+            oHint:SetPoint("TOPLEFT", oArea, "BOTTOMLEFT", 0, -4)
 
             local createBtn = UI:CreateButton(f, L["Create Poll"], 110, 24)
             createBtn:SetPoint("LEFT", qBox, "RIGHT", 8, 0)

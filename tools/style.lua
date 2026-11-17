@@ -509,6 +509,14 @@ check(same(field.border, C.lineHi), "and back when it lets go")
 field:SetText("ana"); field.scripts.OnTextChanged(field)
 check(not field.placeholder.shown, "the hint goes once there is text")
 
+-- A multi-line field keeps the height it was given: a multi-line EditBox alone takes its text's height,
+-- one line when empty, so the box is a frame of that size with the EditBox inside it.
+local area = UI:CreateTextArea(host, 300, 56, { placeholder = "Options" })
+check(area.h == 56 and area.edit and area.edit.kind == "EditBox" and area.edit.parent == area
+  and same(area.border, C.lineHi), "a text area is a 56px framed box with its EditBox inside")
+area.edit.scripts.OnEditFocusGained(area.edit)
+check(same(area.border, C.gold), "and its frame turns gold while typing")
+
 -- Selection: gold border and label, kept under the cursor, gone when unselected.
 local opt = UI:CreateButton(host, "All", 60, 22)
 UI:SetSelected(opt, true)

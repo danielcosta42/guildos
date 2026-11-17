@@ -356,11 +356,12 @@ local function BuildPollsSub(panel)
         qBox:SetPoint("TOPLEFT", 0, -GAP)
         qBox:SetPoint("TOPRIGHT", -(GAP + UI.ReserveFor(createBtn, GAP)), -GAP)
         createBtn:SetPoint("LEFT", qBox, "RIGHT", GAP, 0)
-        local oBox = UI:CreateInput(panel, 0, 56, { multiline = true })
-        oBox:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -GAP)
-        oBox:SetPoint("TOPRIGHT", createBtn, "BOTTOMRIGHT", 0, -GAP)
+        local oArea = UI:CreateTextArea(panel, 0, 56)   -- a multi-line EditBox alone shrinks to one line
+        oArea:SetPoint("TOPLEFT", qBox, "BOTTOMLEFT", 0, -GAP)
+        oArea:SetPoint("TOPRIGHT", createBtn, "BOTTOMRIGHT", 0, -GAP)
+        local oBox = oArea.edit
         local hint = UI:CreateText(panel, L["One option per line (2-6)"], 11, C.textSoft.r, C.textSoft.g, C.textSoft.b)
-        hint:SetPoint("TOPLEFT", oBox, "BOTTOMLEFT", 0, -4)
+        hint:SetPoint("TOPLEFT", oArea, "BOTTOMLEFT", 0, -4)
         listTop = hint
         createBtn:SetScript("OnClick", function()
             local opts = {}

@@ -285,6 +285,47 @@ function Helpers:CreateInput(parent, width, height, opts)
     return box
 end
 
+-- A multi-line field. A multi-line EditBox takes the height of its text, so given 56px and left empty
+-- it shrinks to one line (the poll's options box and the MOTD did, #371). The field is a frame of the
+-- asked size, flat in every style, with the EditBox inside; a click anywhere on it starts typing, and
+-- text past its bottom is clipped. Place and size the area; read, write and script `area.edit`.
+-- opts: max, placeholder.
+function Helpers:CreateTextArea(parent, width, height, opts)
+    opts = opts or {}
+    local area = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    area:SetSize(width or 160, height or 56)
+    area:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = self:Edge(area) })
+    area:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
+    area:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
+    if area.SetClipsChildren then area:SetClipsChildren(true) end
+    local edit = CreateFrame("EditBox", nil, area)
+    edit:SetPoint("TOPLEFT", 6, -4)
+    edit:SetPoint("TOPRIGHT", -6, -4)
+    edit:SetMultiLine(true)
+    edit:SetAutoFocus(false)
+    GuildOS:ApplyFont(edit, 12)
+    edit:SetTextColor(C.text.r, C.text.g, C.text.b)
+    if opts.max then edit:SetMaxLetters(opts.max) end
+    edit:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    edit:HookScript("OnEditFocusGained", function() area:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 1) end)
+    edit:HookScript("OnEditFocusLost", function() area:SetBackdropBorderColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1) end)
+    area:SetScript("OnClick", function() if edit:IsEnabled() then edit:SetFocus() end end)
+    if opts.placeholder then
+        local ph = newText(area, 12)
+        ph:SetTextColor(C.textSoft.r, C.textSoft.g, C.textSoft.b)
+        ph:SetPoint("TOPLEFT", 6, -4)
+        ph:SetText(opts.placeholder)
+        local function sync() ph:SetShown((edit:GetText() or "") == "" and not edit:HasFocus()) end
+        edit:HookScript("OnTextChanged", sync)
+        edit:HookScript("OnEditFocusGained", sync)
+        edit:HookScript("OnEditFocusLost", sync)
+        sync()
+        area.placeholder = ph
+    end
+    area.edit = edit
+    return area
+end
+
 -- A table's header row: 22px, no fill, a 1px `line` rule along its bottom. Put the column labels on
 -- it with CreateHeaderText and anchor it by its top corners; the first row sits right under it.
 function Helpers:CreateTableHeader(parent, height)
