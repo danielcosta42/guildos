@@ -517,6 +517,16 @@ check(area.h == 56 and area.edit and area.edit.kind == "EditBox" and area.edit.p
 area.edit.scripts.OnEditFocusGained(area.edit)
 check(same(area.border, C.gold), "and its frame turns gold while typing")
 
+-- A dropdown's list has its own surface: popup fill under a lineHi border, not options over whatever is
+-- behind them (#371, seen in Loot > Rule).
+local dd = UI:CreateDropdown(host, 150, 22)
+dd:SetOptions({ { value = 1, text = "Rare" }, { value = 2, text = "Epic" } })
+dd:Open()
+local list
+for _, c in ipairs(UIParent.children) do if rawget(c, "catcher") then list = c end end
+check(list and list.backdrop and list.backdrop.bgFile and same(list.bg, C.popup) and same(list.border, C.lineHi),
+  "an open dropdown's list is a popup surface with a border")
+
 -- Selection: gold border and label, kept under the cursor, gone when unselected.
 local opt = UI:CreateButton(host, "All", 60, 22)
 UI:SetSelected(opt, true)

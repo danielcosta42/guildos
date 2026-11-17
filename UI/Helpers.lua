@@ -711,6 +711,10 @@ local function buildDropdownList()
     f:SetFrameLevel(20)
     f:EnableMouse(true)
     f:SetClampedToScreen(true)
+    -- Its own surface: StylePopup only borders a backdrop its caller made, and with none the options
+    -- floated over whatever was under them (#371).
+    f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = Helpers:Edge(f) })
+    f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
     Helpers:StylePopup(f, { noFade = true })
     f:Hide()
     table.insert(UISpecialFrames, "GuildOSDropdownList")   -- Escape closes it
