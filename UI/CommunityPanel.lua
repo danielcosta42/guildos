@@ -666,6 +666,9 @@ end
 ----------------------------------------------------------------------
 -- Guild Hub assembly (sub-tab bar mirrors the Audit panel)
 ----------------------------------------------------------------------
+-- `feature`: offered only while that feature may open here (UI:IsFeatureAllowed: present on this
+-- client, switched on, started), and built the first time it opens. The Journal and Achievements
+-- tabs became the last two (issue #367); both are WoW: Forever's.
 local HUB_SUBTABS = {
     { key = "calendar", label = L["Calendar"] },
     { key = "activity", label = L["Activity"] },
@@ -673,11 +676,23 @@ local HUB_SUBTABS = {
     { key = "cta",      label = L["Call to Arms"] },
     { key = "polls",    label = L["Polls"] },
     { key = "chat",     label = L["Chat"] },
+    { key = "journal",      label = L["Journal"],      feature = "journal" },
+    { key = "achievements", label = L["Achievements"], feature = "achievements" },
 }
+local HUB_DEFAULT = "calendar"
+
+-- `failed`: this hub's lazy sub-tabs whose builder errored (issue #367), refused for the session.
+local function hubOffers(key, failed)
+    if failed and failed[key] then return false end
+    for _, t in ipairs(HUB_SUBTABS) do
+        if t.key == key then return not t.feature or UI:IsFeatureAllowed(UI:GetFeature(t.feature)) end
+    end
+    return false
+end
 
 function GuildOS:CreateGuildHub(parent, _mainFrame)
     parent.subPanels = {}
-    parent.activeSub = "calendar"
+    parent.activeSub = HUB_DEFAULT
 
     -- Anchored on the left only: UI:FlowBar reads GetWidth to wrap, and a frame pinned on both
     -- sides reports a stale width in the frame its container was resized (as ManagementPanel).
@@ -686,8 +701,46 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
     bar:SetSize(400, TAB_H)
     UI:StyleSubTabBar(bar)
 
+    local builders = {
+        calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
+        activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
+        chat = function(p) return GuildOS:CreateGuildChatFeed(p) end,
+        journal = function(p) return GuildOS:CreateJournalPanel(p) end,
+        achievements = function(p) return GuildOS:CreateAchievementsPanel(p) end,
+    }
+    local failed = {}
+    -- The six built with the tab raise as they did, into the tab's own start-up guard. Journal and
+    -- Achievements are built the first time they open: one that errors is recorded, with its stack, and
+    -- refused for the session rather than left half built (issue #367).
+    local function build(key)
+        local info = parent.subPanels[key]
+        if not info or info.built then return end
+        info.built = true
+        local def
+        for _, t in ipairs(HUB_SUBTABS) do if t.key == key then def = t end end
+        if not (def and def.feature) then
+            info.refresh = builders[key](info.panel)
+            return
+        end
+        local ok, res = xpcall(function() return builders[key](info.panel) end, function(e)
+            return tostring(e) .. (debugstack and ("\n" .. debugstack(2)) or "")
+        end)
+        if ok then
+            info.refresh = res
+        else
+            failed[key] = true
+            GuildOS:RecordError("Guild hub " .. key .. ": " .. tostring(res))
+            GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
+        end
+    end
+
     local subTabBtns = {}
+    -- A sub-tab not offered (switched off, or not on this client) falls back to the calendar, deep
+    -- links included.
     local function selectSub(key, filter)
+        if not hubOffers(key, failed) then key = HUB_DEFAULT end
+        build(key)
+        if failed[key] then key = HUB_DEFAULT; build(key) end   -- its builder just errored
         parent.activeSub = key
         for k, info in pairs(parent.subPanels) do info.panel:SetShown(k == key) end
         for k, btn in pairs(subTabBtns) do btn:SetActive(k == key) end
@@ -696,18 +749,29 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
         -- A deep link's filter goes to the sub-panel that takes one (the calendar: a day).
         if filter ~= nil and info and info.panel.ApplyFilter then GuildOS:SafeCall(info.panel.ApplyFilter, filter) end
     end
-    parent.SelectSub = selectSub   -- deep links: /guildos calendar, the Now tab
+    parent.SelectSub = selectSub   -- deep links: /guildos calendar, /gos open journal, the Now tab
 
     -- A tab is as wide as its label: five at a fixed 120px ran off a narrow window (issue #108).
-    local subTabList = {}
     for _, t in ipairs(HUB_SUBTABS) do
         local btn = UI:CreateTab(bar, t.label, TAB_MIN_W, true)
         btn:SetWidth(math.max(TAB_MIN_W, math.ceil(btn.label:GetStringWidth()) + TAB_PAD))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        subTabList[#subTabList + 1] = btn
     end
-    UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = TAB_H })
+
+    -- Flow the offered tabs only, so a sub-tab switched off leaves no gap in the bar (as the
+    -- Alliance panel).
+    local function layoutTabs()
+        local shown = {}
+        for _, t in ipairs(HUB_SUBTABS) do
+            local btn = subTabBtns[t.key]
+            local offered = hubOffers(t.key, failed)
+            btn:SetShown(offered)
+            if offered then shown[#shown + 1] = btn end
+        end
+        UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = TAB_H })
+    end
+    layoutTabs()
 
     -- Hung from the bar, so a bar wrapped onto two rows pushes the content down.
     local function makeSubPanel()
@@ -718,22 +782,18 @@ function GuildOS:CreateGuildHub(parent, _mainFrame)
         return p
     end
 
-    local builders = {
-        calendar = function(p) return GuildOS:CreateCalendarSub(p) end,
-        activity = BuildActivitySub, bulletin = BuildBulletinSub, polls = BuildPollsSub, cta = BuildCallToArmsSub,
-        chat = function(p) return GuildOS:CreateGuildChatFeed(p) end,
-    }
     for _, t in ipairs(HUB_SUBTABS) do
-        local p = makeSubPanel()
-        parent.subPanels[t.key] = { panel = p, refresh = builders[t.key](p) }
+        parent.subPanels[t.key] = { panel = makeSubPanel() }
+        if not t.feature then build(t.key) end
     end
 
     parent:SetScript("OnShow", function()
-        selectSub(parent.activeSub or "calendar")
+        layoutTabs()
+        selectSub(parent.activeSub or HUB_DEFAULT)
     end)
     UI:MakeResponsive(parent, function(_, w)
         bar:SetWidth(math.max(TAB_MIN_W, w - 20))
-        UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = TAB_H })
+        layoutTabs()
     end)
 end
 

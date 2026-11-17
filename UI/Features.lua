@@ -5,6 +5,7 @@
 -- means adding one entry here.
 --
 --   tab = false  -> a background module with a Settings toggle only
+--   tab = false, opens = { tab, sub } -> another tab's sub-tab, with its own Settings toggle
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local L  = GuildOS.L
@@ -57,9 +58,11 @@ UI:RegisterFeature({
     end,
 })
 
+-- Journal and Achievements are its last two sub-tabs on WoW: Forever (issue #367), each where its
+-- feature is present and switched on.
 UI:RegisterFeature({
     id = "guild", label = L["Guild"], order = 50,
-    subs = { "calendar", "activity", "cta" },
+    subs = { "calendar", "activity", "bulletin", "cta", "polls", "chat", "journal", "achievements" },
     build = function(c, win) GuildOS:CreateGuildHub(c, win) end,
 })
 
@@ -71,16 +74,18 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateGroupsPanel(c, win) end,
 })
 
--- WoW: Forever only (issue #211): the guild's journal, where the module exists.
+-- WoW: Forever only (issue #211): the guild's journal, where the module exists. The Guild tab's
+-- Journal sub-tab since issue #367: its switch stays in Settings, and /gos open journal opens it.
 UI:RegisterFeature({
-    id = "journal", label = L["Journal"], order = 55, tbc = false, retail = false, restart = true,
-    build = function(c, win) GuildOS:CreateJournalPanel(c, win) end,
+    id = "journal", label = L["Journal"], order = 55, tab = false, opens = { "guild", "journal" },
+    tbc = false, retail = false, restart = true,
 })
 
--- WoW: Forever only (issue #216): what the guild earned, as guildos.me says it.
+-- WoW: Forever only (issue #216): what the guild earned, as guildos.me says it. The Guild tab's
+-- Achievements sub-tab since issue #367.
 UI:RegisterFeature({
-    id = "achievements", label = L["Achievements"], order = 56, tbc = false, retail = false,
-    build = function(c, win) GuildOS:CreateAchievementsPanel(c, win) end,
+    id = "achievements", label = L["Achievements"], order = 56, tab = false, opens = { "guild", "achievements" },
+    tbc = false, retail = false,
 })
 
 UI:RegisterFeature({
@@ -91,14 +96,18 @@ UI:RegisterFeature({
     build = function(c, win) GuildOS:CreateAlliancePanel(c, win) end,
 })
 
+-- An officer's view has sub-tabs; Trials only for officers, while its feature is on (issue #367).
 UI:RegisterFeature({
     id = "recruitment", label = L["Recruitment"], order = 70,
+    subs = { "recruiting", "scanner", "trials" },
     build = function(c, win) GuildOS:CreateRecruitmentPanel(c, win) end,
 })
 
+-- The Recruitment tab's Trials sub-tab since issue #367: its switch stays in Settings, and
+-- /gos open trials opens it.
 UI:RegisterFeature({
-    id = "trials", label = L["Trials"], order = 80, officerOnly = true,
-    build = function(c, win) GuildOS:CreateTrialsPanel(c, win) end,
+    id = "trials", label = L["Trials"], order = 80, tab = false, opens = { "recruitment", "trials" },
+    officerOnly = true,
 })
 
 UI:RegisterFeature({

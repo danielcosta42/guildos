@@ -1,7 +1,8 @@
 ----------------------------------------------------------------------
 -- Guild OS - The Achievements tab (issue #216, guildos.me #245)
 -- The guild's renown, what is nearest to done, and what it earned. Modules/Achievements.lua answers;
--- this draws. WoW: Forever only: the tab is offered only where the module exists (UI/Features.lua).
+-- this draws. WoW: Forever only: the Guild tab's Achievements sub-tab since issue #367, offered only
+-- where the feature exists and is on (UI/CommunityPanel.lua, UI/Features.lua).
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C = GuildOS.Colors

@@ -750,6 +750,17 @@ function GuildOS:RefreshLootRuleTab(content, scope)
             and L["Free roll: whoever received the item awards it to the best answer, Need before Greed, then the roll. Officers may award too."]
             or L["An officer awards an item a guildmate offers; whoever holds it then trades it to the winner."], y, 0, 9)
     end
+    -- Retail's loot council by trade, for every member: offering an item, answering one (issue #185).
+    -- A Settings quick button until issue #367, on the same terms: the module (retail only) and a
+    -- guild loot system GuildOS runs.
+    local council
+    if GuildOS.TradeCouncil and GuildOS:LootSystemActive() then
+        council = UI:SetButtonVariant(UI:CreateButton(content, L["Loot Council"], 120, 22), "secondary")
+        council:SetPoint("TOPLEFT", 0, -(y + 2))
+        council:SetScript("OnClick", function() GuildOS:ShowTradeCouncil() end)
+        y = y + 30
+    end
+    content.councilButton = council
     y = y + SECTION_GAP
 
     -- 2 · The model's settings and the answers (officers)

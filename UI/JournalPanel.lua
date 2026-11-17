@@ -2,7 +2,8 @@
 -- Guild OS - The Journal tab (issue #211, guildos.me #242)
 -- This week (the guild as a whole), the guild's first clear of each new dungeon, and my own
 -- milestones. No ranking of anybody. Modules/Journal.lua answers every question; this draws.
--- WoW: Forever only: the tab is offered only where the module exists (UI/Features.lua).
+-- WoW: Forever only: the Guild tab's Journal sub-tab since issue #367, offered only where the
+-- feature exists and is on (UI/CommunityPanel.lua, UI/Features.lua).
 ----------------------------------------------------------------------
 local UI = GuildOS.UI
 local C = GuildOS.Colors

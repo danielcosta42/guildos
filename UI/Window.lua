@@ -699,6 +699,19 @@ function UI:OpenWindow(id, sub, filter)
             GuildOS:Print(L["Not available on this client."])
             return false
         end
+        -- Said as a tab says it (issue #367: Trials, the Journal and Achievements became sub-tabs).
+        if not GuildOS:IsFeatureEnabled(id) then
+            GuildOS:Print(string.format(L["%s is disabled in Settings."], def.label))
+            return false
+        end
+        if GuildOS:FeatureStartFailed(id) then
+            GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], def.label))
+            return false
+        end
+        if def.officerOnly and not GuildOS:IsOfficer() then
+            GuildOS:Print(string.format(L["%s is officer-only."], def.label))
+            return false
+        end
         return self:OpenWindow(def.opens[1], sub or def.opens[2], filter)
     end
     if not (def and def.tab) then return false end

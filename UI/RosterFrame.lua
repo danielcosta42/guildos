@@ -2636,6 +2636,14 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     ----------------------------------------------------------------
     local lateOfficer = GuildOS:IsOfficer() and not GuildOS.db.recruitment
     if lateOfficer or not GuildOS:IsOfficer() then
+        -- Trials lives in the officers' view (issue #367): a deep link to it here says what to do.
+        if lateOfficer then
+            parent.SelectSub = function(key)
+                if key == "trials" then
+                    GuildOS:Print(L["You became an officer after logging in. Type /reload to manage recruiting."])
+                end
+            end
+        end
         -- Status badge
         local statusLabel = UI:CreateTitle(parent, "", 15)
         statusLabel:SetPoint("TOPLEFT", 20, -15)
@@ -2744,8 +2752,9 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     end
 
     ----------------------------------------------------------------
-    -- Officer view: sub-tabs — "Recruiting" (config, unchanged below)
-    -- and "Scanner" (the Recruit Scanner, embedded inline). Mirrors the
+    -- Officer view: sub-tabs. "Recruiting" (config, unchanged below),
+    -- "Scanner" (the Recruit Scanner, embedded inline) and "Trials" (the
+    -- trial tracker, the Trials tab until issue #367). Mirrors the
     -- sub-tab idiom in UI/ManagementPanel.lua:CreateManagementPanel.
     ----------------------------------------------------------------
     local root = parent
@@ -2767,6 +2776,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
 
     local recruitingSub = makeSubPanel()
     local scannerSub = makeSubPanel()
+    local trialsSub = makeSubPanel()
 
     -- root.subPanels[key] = { panel, refresh } — same shape as
     -- UI/ManagementPanel.lua. selectSub() below both flips visibility AND
@@ -2778,33 +2788,72 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local scannerRefresh
     if GuildOS.RecruitScanner then scannerRefresh = GuildOS.RecruitScanner:BuildInto(scannerSub) end
     root.subPanels.scanner = { panel = scannerSub, refresh = scannerRefresh }
+    -- Built the first time it opens. CreateTrialsPanel redraws it on its own OnShow, so no refresh here.
+    root.subPanels.trials = { panel = trialsSub, build = function(p) GuildOS:CreateTrialsPanel(p) end }
+
+    -- `feature`: offered only while that feature may open (UI:IsFeatureAllowed: switched on,
+    -- started, and Trials is officerOnly), as the registry's own entry says (issue #367).
+    local RECRUIT_SUBTABS = {
+        { key = "recruiting", label = L["Recruiting"] },
+        { key = "scanner",    label = L["Scanner"] },
+        { key = "trials",     label = L["Trials"], feature = "trials" },
+    }
+    local function subOffered(key)
+        if root.subPanels[key] and root.subPanels[key].failed then return false end
+        for _, t in ipairs(RECRUIT_SUBTABS) do
+            if t.key == key then return not t.feature or UI:IsFeatureAllowed(UI:GetFeature(t.feature)) end
+        end
+        return false
+    end
 
     local subTabBtns = {}
 
+    -- A sub-tab not offered (Trials switched off, or a rank that lost the officers' view) falls
+    -- back to Recruiting, deep links included.
     local function selectSub(key)
+        if not subOffered(key) then key = "recruiting" end
+        local info = root.subPanels[key]
+        if info and info.build then
+            local build = info.build
+            info.build = nil
+            -- A builder that errors is recorded and refused, not left half built (issue #367).
+            local ok, err = pcall(build, info.panel)
+            if not ok then
+                info.failed = true
+                GuildOS:RecordError("Recruitment " .. key .. ": " .. tostring(err))
+                GuildOS:Print(string.format(L["%s could not start on this client. Type /guildos errors for details."], L["Trials"]))
+                key = "recruiting"
+                info = root.subPanels[key]
+            end
+        end
         root.activeSub = key
-        for k, info in pairs(root.subPanels) do
-            info.panel:SetShown(k == key)
+        for k, i in pairs(root.subPanels) do
+            i.panel:SetShown(k == key)
         end
         for k, btn in pairs(subTabBtns) do
             btn:SetActive(k == key)
         end
-        local info = root.subPanels[key]
         if info and info.refresh then GuildOS:SafeCall(info.refresh) end
     end
-    root.SelectSub = selectSub   -- deep links: the Now tab, /gos open recruitment <sub>
+    root.SelectSub = selectSub   -- deep links: the Now tab, /gos open recruitment <sub>, /gos open trials
 
-    local RECRUIT_SUBTABS = {
-        { key = "recruiting", label = L["Recruiting"] },
-        { key = "scanner",    label = L["Scanner"] },
-    }
-    local subTabList = {}
     for _, t in ipairs(RECRUIT_SUBTABS) do
         local btn = UI:CreateTab(bar, t.label, 90, true)
         btn:SetWidth(math.max(90, math.ceil(btn.label:GetStringWidth()) + 20))
         btn:SetScript("OnClick", function() selectSub(t.key) end)
         subTabBtns[t.key] = btn
-        subTabList[#subTabList + 1] = btn
+    end
+
+    -- Flow the offered tabs only, so a sub-tab switched off leaves no gap in the bar.
+    local function layoutTabs()
+        local shown = {}
+        for _, t in ipairs(RECRUIT_SUBTABS) do
+            local btn = subTabBtns[t.key]
+            local show = subOffered(t.key)
+            btn:SetShown(show)
+            if show then shown[#shown + 1] = btn end
+        end
+        UI:FlowBar(bar, shown, { gap = 4, rowGap = 4, rowH = 28 })
     end
 
     -- The Recruiting sub-tab is a tall stack of sections (Auto-Recruit,
@@ -3406,6 +3455,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     root.subPanels.recruiting = { panel = recruitingSub, refresh = recruitingRefresh }
 
     root:SetScript("OnShow", function()
+        layoutTabs()
         selectSub(root.activeSub or "recruiting")
     end)
 
@@ -3418,7 +3468,7 @@ function GuildOS:CreateRecruitmentPanel(parent, _mainFrame)
     local function stackHeight() return math.max(1, -((belowY or 0) + yOff) + 60) end
     UI:MakeResponsive(root, function(_, w, _)
         bar:SetWidth(math.max(180, w - 20))
-        UI:FlowBar(bar, subTabList, { gap = 4, rowGap = 4, rowH = 28 })
+        layoutTabs()
 
         local contentW = math.max(200, w - 24)
         recruitContent:SetSize(contentW, stackHeight())
