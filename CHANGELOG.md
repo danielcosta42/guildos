@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.28.0] - 2026-11-17
+
+### Added
+- The calendar can now repeat an event every year, for birthdays and anniversaries; the next date is always on the calendar.
+
+
 ## [1.27.0] - 2026-11-16
 
 ### Added
