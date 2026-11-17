@@ -188,7 +188,7 @@ local function inviteField(parent)
     local hint = box:CreateFontString(nil, "OVERLAY")
     GuildOS:ApplyFont(hint, 10)
     hint:SetPoint("LEFT", 6, 0)
-    hint:SetTextColor(C.labelDim.r, C.labelDim.g, C.labelDim.b)
+    hint:SetTextColor(C.label.r, C.label.g, C.label.b)
     hint:SetText(L["Player name..."])
     box:SetScript("OnTextChanged", function(self) hint:SetShown((self:GetText() or "") == "") end)
 
@@ -300,7 +300,7 @@ local function createWindow()
     sync:SetJustifyH("RIGHT")
     f.syncText = sync
 
-    local meta = text(10, "caption", C.labelDim)
+    local meta = text(10, "caption", C.label)
     meta:SetPoint("LEFT", wordmark, "RIGHT", 10, 0)
     meta:SetPoint("RIGHT", sync, "LEFT", -10, 0)
     meta:SetJustifyH("LEFT")

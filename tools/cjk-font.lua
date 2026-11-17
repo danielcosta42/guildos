@@ -1,7 +1,7 @@
 -- Korean and Chinese clients draw GuildOS in the client's own font (issue #103), run against the
 -- real Core/Core.lua and Core/Data.lua under a stubbed client.
 --
--- IBM Plex Mono and Spectral cover Latin and Cyrillic but no Hangul and no Han: on koKR, zhCN and
+-- IBM Plex Sans and Mono cover Latin and Cyrillic but no Hangul and no Han: on koKR, zhCN and
 -- zhTW every character, guild, item and zone name the client gave drew as boxes unless the player found the
 -- "Use the game's font" setting. There the client's font is now the only one; elsewhere nothing
 -- changes, the setting included.
@@ -46,14 +46,14 @@ for _, locale in ipairs({ "koKR", "zhCN", "zhTW" }) do
   local file, px = drawn(12)
   check(file == STANDARD_TEXT_FONT and px == 12, locale .. ": text is drawn in the client's font, at its size")
   check(drawn(18) == STANDARD_TEXT_FONT and drawn(nil, "badge") == STANDARD_TEXT_FONT,
-    locale .. ": serif sizes and font roles too")
+    locale .. ": large sizes and font roles too")
   check(GuildOS.GameFontOnly == true, locale .. ": the setting is forced on")
 end
 
 for _, locale in ipairs({ "enUS", "ptBR", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
   load(locale, nil)
-  check(drawn(12):find("IBMPlexMono", 1, true), locale .. ": small text keeps GuildOS's mono")
-  check(drawn(18):find("Spectral", 1, true), locale .. ": large text keeps GuildOS's serif")
+  check(drawn(12):find("IBMPlexSans", 1, true), locale .. ": text keeps GuildOS's sans")
+  check(drawn(nil, "tableNum"):find("IBMPlexMono", 1, true), locale .. ": numbers keep GuildOS's mono")
   check(GuildOS.GameFontOnly == false, locale .. ": nothing is forced")
   load(locale, "game")
   check(drawn(12) == STANDARD_TEXT_FONT, locale .. ": and the player's choice of the game's font still holds")

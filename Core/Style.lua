@@ -82,6 +82,8 @@ Style.FOREVER_PALETTE = {
     text = rgb(1.000, 0.957, 0.859), textSoft = rgb(0.824, 0.761, 0.624), label = rgb(0.722, 0.643, 0.482),
     labelDim = rgb(0.522, 0.459, 0.349), disabled = rgb(0.400, 0.361, 0.298),
     gold = rgb(1.000, 0.820, 0.000), onGold = rgb(0.149, 0.098, 0.020),
+    -- A primary button without the red art falls back to the flat one: its hover and press follow this gold.
+    goldHover = rgb(1.000, 0.878, 0.302), goldActive = rgb(0.851, 0.698, 0.000),
 }
 
 ----------------------------------------------------------------------
@@ -213,7 +215,7 @@ local function roleColor(role)
 end
 
 -- Today's paint, unchanged: a WHITE8x8 backdrop with a 1px `line` border, or the title bar's band.
--- A popup's colours are its caller's (Helpers:StylePopup never set them), so flat leaves it alone.
+-- A popup's background is its caller's (Helpers:StylePopup sets only the lineHi border), so flat leaves it alone.
 function Style:_PaintFlat(frame, role)
     local C = GuildOS.Colors
     if role == "popup" then return "flat" end
@@ -414,7 +416,6 @@ function Style:ButtonState(btn, state)
     local ink = (state == "disabled" and C.disabled) or (state == "hover" and C.text) or rest
     btn.label:SetTextColor(ink.r, ink.g, ink.b)
     btn.__hovered = (state == "hover")
-    if btn.glow then btn.glow:Hide() end
     if btn.underline then btn.underline:SetShown(ghost) end
 end
 

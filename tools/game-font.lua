@@ -1,6 +1,6 @@
 -- The game's font (issue #57), run against the real Core/Data.lua.
 --
--- GuildOS draws its text in its own fonts (Spectral, IBM Plex Mono) and a player had no way
+-- GuildOS draws its text in its own fonts (IBM Plex Sans and Mono) and a player had no way
 -- to change that. GuildOSDB.font = "game" (account-wide) makes ApplyFont use the client's own
 -- font (STANDARD_TEXT_FONT), at the same sizes. Off, nothing changes.
 --
@@ -37,13 +37,13 @@ end
 
 -- ── Off (the default): GuildOS's own fonts ──────────────────────────────
 GuildOSDB = {}
-check(apply(18).file == F.serif, "off: 18px is Spectral")
-check(apply(11).file == F.mono, "off: 11px is IBM Plex Mono")
+check(apply(18).file == F.sans, "off: 18px is IBM Plex Sans")
+check(apply(11, "caption").file == F.mono, "off: a mono role is IBM Plex Mono")
 check(apply(nil, "colHeader").file == F.monoStrong, "off: a role keeps its file")
 GuildOSDB = nil
-check(apply(18).file == F.serif, "before the SavedVariables load, GuildOS's fonts")
+check(apply(18).file == F.sans, "before the SavedVariables load, GuildOS's fonts")
 GuildOS.db = { settings = { font = "game" } }
-check(apply(18).file == F.serif, "a guild's settings do not decide it: it is the account's")
+check(apply(18).file == F.sans, "a guild's settings do not decide it: it is the account's")
 GuildOS.db = nil
 
 -- ── On: the client's font, same sizes ───────────────────────────────────
@@ -53,10 +53,10 @@ check(fs.file == STANDARD_TEXT_FONT and fs.size == 18 and fs.flags == "", "on: 1
 fs = apply(11)
 check(fs.file == STANDARD_TEXT_FONT and fs.size == 11, "on: 11px too")
 fs = apply(7)
-check(fs.file == STANDARD_TEXT_FONT and fs.size == 10, "on: nothing under 10px still")
+check(fs.file == STANDARD_TEXT_FONT and fs.size == 11, "on: nothing under the sans floor, 11px, still")
 fs = apply(nil, "countdown")
-check(fs.file == STANDARD_TEXT_FONT and fs.size == 38, "on: a role keeps its size and takes the game's font")
+check(fs.file == STANDARD_TEXT_FONT and fs.size == 40, "on: a role keeps its size and takes the game's font")
 fs = apply(11, "wordmark")
-check(fs.file == STANDARD_TEXT_FONT and fs.size == 11, "on: a serif role under 14px keeps its size")
+check(fs.file == STANDARD_TEXT_FONT and fs.size == 11, "on: a role asked smaller keeps the size asked")
 
 print(("game-font: %d checks passed"):format(checks))

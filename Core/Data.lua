@@ -23,31 +23,32 @@ local T = {
     popup    = rgb(0.114, 0.106, 0.149),  -- #1d1b26 popup, dropdown, tooltip, selected row (4)
     well     = rgb(0.047, 0.043, 0.063),  -- #0c0b10 table body, input, scroll area (1)
     line     = rgb(0.165, 0.153, 0.200),  -- #2a2733 1px border and separator
-    lineHi   = rgb(0.227, 0.212, 0.275),  -- #3a3646 popup border, border hover, scroll thumb
+    lineHi   = rgb(0.435, 0.408, 0.471),  -- #6f6878 control border, popup border, scroll thumb (3.56:1)
     text     = rgb(0.925, 0.906, 0.878),  -- #ece7e0 primary text
     textSoft = rgb(0.663, 0.635, 0.690),  -- #a9a2b0 supporting text
     label    = rgb(0.592, 0.565, 0.624),  -- #97909f mono label, section caption
     labelDim = rgb(0.435, 0.408, 0.471),  -- #6f6878 metric label, secondary column, footer
     disabled = rgb(0.294, 0.271, 0.325),  -- #4b4553 disabled and ghost text
     gold     = rgb(0.851, 0.663, 0.310),  -- #d9a94f the only brand accent
+    goldHover  = rgb(0.890, 0.725, 0.408),  -- #e3b968 primary button under the cursor
+    goldActive = rgb(0.769, 0.580, 0.247),  -- #c4943f primary button held down
     onGold   = rgb(0.090, 0.075, 0.039),  -- #17130a text on gold
     ok       = rgb(0.490, 0.847, 0.561),  -- #7dd88f present, online, confirmed
-    danger   = rgb(0.812, 0.357, 0.322),  -- #cf5b52 absence, penalty, kick, ban, error
-    info     = rgb(0.357, 0.576, 0.812),  -- #5b93cf link to the site, sync, bot
+    danger   = rgb(0.937, 0.482, 0.447),  -- #ef7b72 absence, penalty, kick, ban, error
+    warn     = rgb(0.910, 0.604, 0.353),  -- #e89a5a a score between ok and danger
     epic     = rgb(0.659, 0.435, 0.878),  -- #a86fe0 epic item quality, nothing else
 }
 
 local ACCENT_DIM  = 0.54  -- dimmed gold for secondary marks
 local ACCENT_WASH = 0.14  -- alpha of the faint gold wash
-local SHADOW      = 0.55  -- drop-shadow alpha (elevation 4 only)
 
 GuildOS.Colors = {
     bg = T.bg, panel = T.panel, popup = T.popup, well = T.well,
     line = T.line, lineHi = T.lineHi,
     text = T.text, textSoft = T.textSoft, label = T.label, labelDim = T.labelDim,
     disabled = T.disabled,
-    gold = T.gold, onGold = T.onGold,
-    ok = T.ok, danger = T.danger, info = T.info, epic = T.epic,
+    gold = T.gold, goldHover = T.goldHover, goldActive = T.goldActive, onGold = T.onGold,
+    ok = T.ok, danger = T.danger, warn = T.warn, epic = T.epic,
 
     -- Legacy keys. Screens older than the Forever skin still read these; each
     -- one points at the token that plays its role now. New code uses the tokens.
@@ -69,10 +70,8 @@ GuildOS.Colors = {
     rowHover   = alias(T.panel),
     red        = alias(T.danger),
     green      = alias(T.ok),
-    blue       = alias(T.info),
     online     = alias(T.ok),
     offline    = alias(T.disabled),
-    shadow     = rgb(0, 0, 0, SHADOW),
 }
 
 -- The legacy keys and the token each copies, so a style can re-point the palette in place
@@ -82,7 +81,7 @@ local ALIASES = {
     accent = { "gold" }, accentDim = { "gold", dim = ACCENT_DIM }, accentSoft = { "gold", a = ACCENT_WASH },
     headerBg = { "panel" }, bg0 = { "well" }, bg1 = { "well" }, bg2 = { "panel" }, panelDark = { "well" },
     row1 = { "well" }, row2 = { "bg" }, rowHover = { "panel" },
-    red = { "danger" }, green = { "ok" }, blue = { "info" }, online = { "ok" }, offline = { "disabled" },
+    red = { "danger" }, green = { "ok" }, online = { "ok" }, offline = { "disabled" },
 }
 
 -- Re-point the named tokens in place, then every legacy key from its token.
@@ -98,66 +97,57 @@ function GuildOS:RepointColors(tokens)
     end
 end
 
--- Fonts. Four OFL files ship in Media/Fonts with their licences. Serif only
--- from 14px up; everything smaller is IBM Plex Mono, never under 10px; no
--- outline anywhere (design handoff §2).
-local FONT_DIR     = "Interface\\AddOns\\GuildOS\\Media\\Fonts\\"
-local SERIF        = FONT_DIR .. "Spectral-Regular.ttf"
-local SERIF_STRONG = FONT_DIR .. "Spectral-SemiBold.ttf"
-local MONO         = FONT_DIR .. "IBMPlexMono-Regular.ttf"
-local MONO_STRONG  = FONT_DIR .. "IBMPlexMono-Medium.ttf"
+-- Fonts. Five OFL files ship in Media/Fonts with their licences: IBM Plex Sans
+-- for words, IBM Plex Mono only through the roles that ask for it (numbers,
+-- captions, column headers, badges). Sans never under 11px, mono never under
+-- 10px; no outline anywhere (docs/superpowers/specs/2026-11-17-swiss-identity-design.md).
+local FONT_DIR    = "Interface\\AddOns\\GuildOS\\Media\\Fonts\\"
+local SANS        = FONT_DIR .. "IBMPlexSans-Regular.ttf"
+local SANS_MEDIUM = FONT_DIR .. "IBMPlexSans-Medium.ttf"
+local SANS_STRONG = FONT_DIR .. "IBMPlexSans-SemiBold.ttf"
+local MONO        = FONT_DIR .. "IBMPlexMono-Regular.ttf"
+local MONO_STRONG = FONT_DIR .. "IBMPlexMono-Medium.ttf"
 
 GuildOS.Fonts = {
-    serif = SERIF, serifStrong = SERIF_STRONG, mono = MONO, monoStrong = MONO_STRONG,
+    sans = SANS, sansMedium = SANS_MEDIUM, sansStrong = SANS_STRONG, mono = MONO, monoStrong = MONO_STRONG,
 
-    -- Roles from the handoff type scale.
-    wordmark     = { file = SERIF_STRONG, size = 18 },
-    windowTitle  = { file = SERIF,        size = 16 },
-    sectionTitle = { file = SERIF_STRONG, size = 15 },
-    body         = { file = SERIF,        size = 14 },
-    memberName   = { file = SERIF_STRONG, size = 14 },
-    itemName     = { file = SERIF_STRONG, size = 17 },
-    caption      = { file = MONO,         size = 10 },
-    tableNum     = { file = MONO,         size = 12 },
-    colHeader    = { file = MONO_STRONG,  size = 10 },
-    metricValue  = { file = MONO,         size = 22 },
-    countdown    = { file = MONO,         size = 38 },
-    badge        = { file = MONO,         size = 10 },
+    -- Roles from the type scale (10, 11, 12, 14, 16, 18, 24, 40).
+    wordmark     = { file = SANS_STRONG, size = 18 },
+    windowTitle  = { file = SANS_STRONG, size = 16 },
+    sectionTitle = { file = SANS_STRONG, size = 14 },
+    body         = { file = SANS,        size = 12 },
+    memberName   = { file = SANS_MEDIUM, size = 12 },
+    itemName     = { file = SANS_STRONG, size = 14 },
+    button       = { file = SANS_MEDIUM, size = 12 },
+    caption      = { file = MONO,        size = 10 },
+    tableNum     = { file = MONO,        size = 11 },
+    colHeader    = { file = MONO_STRONG, size = 10 },
+    metricValue  = { file = MONO,        size = 24 },
+    countdown    = { file = MONO,        size = 40 },
+    badge        = { file = MONO,        size = 10 },
 
-    -- Older readers expect one font for everything.
-    normal = MONO,
+    -- Older readers expect one font for words and one for numbers.
+    normal = SANS,
     number = MONO,
 }
 
-local SERIF_MIN = 14  -- serif blurs below this at UI scale 1.0
-local MONO_MIN  = 10  -- nothing reads below this
+local SANS_MIN = 11  -- sans reads poorly below this at UI scale 1.0
+local MONO_MIN = 10  -- nothing reads below this
 
--- Korean and Chinese clients (issue #103): IBM Plex Mono and Spectral carry Latin and Cyrillic but
+-- Korean and Chinese clients (issue #103): IBM Plex Sans and Mono carry Latin and Cyrillic but
 -- no Hangul and no Han, so every character, guild, item and zone name the client gave in those
 -- languages drew as boxes. There the client's own font, which has the language, is the only one
 -- used, whatever the setting says.
 GuildOS.GameFontOnly = ({ koKR = true, zhCN = true, zhTW = true })[GuildOS.Locale or ""] == true
 
 -- Set a FontString's font. A role from GuildOS.Fonts picks the file (and the
--- size unless one is given); otherwise 14px and up is Spectral and anything
--- smaller is IBM Plex Mono. Either way serif never lands under 14px (it reads
--- as mono instead) and mono is clamped to 10px. Never outlined. Returns the
--- file and size used.
+-- size unless one is given); text with no role is IBM Plex Sans. Sans is
+-- clamped to 11px and mono to 10px. Never outlined. Returns the file and size used.
 function GuildOS:ApplyFont(fontString, size, role)
     local spec = role and GuildOS.Fonts[role]
-    local file, px
-    if type(spec) == "table" then
-        file, px = spec.file, tonumber(size) or spec.size
-    else
-        px = tonumber(size) or MONO_MIN
-        file = (px >= SERIF_MIN) and SERIF or MONO
-    end
-    if (file == SERIF or file == SERIF_STRONG) and px < SERIF_MIN then
-        file = MONO
-    end
-    if file ~= SERIF and file ~= SERIF_STRONG then
-        px = math.max(MONO_MIN, px)
-    end
+    local file = type(spec) == "table" and spec.file or SANS
+    local px = tonumber(size) or (type(spec) == "table" and spec.size) or SANS_MIN
+    px = math.max((file == MONO or file == MONO_STRONG) and MONO_MIN or SANS_MIN, px)
     -- The player's choice (issue #57): the client's own font at the same sizes. A personal
     -- display preference, so it lives at the account root (GuildOSDB.font) and follows the
     -- player to every alt and guild, as the minimap button's does. Read on every call; a

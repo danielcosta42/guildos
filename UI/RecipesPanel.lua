@@ -191,7 +191,7 @@ function GuildOS:CreateRecipesPanel(parent, _mainFrame)
         end)
         btn:SetScript("OnEnter", function(self)
             if state.profFilter ~= self.profName then
-                self:SetBackdropColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1.0)
+                self:SetBackdropColor(C.line.r, C.line.g, C.line.b, 1.0)
             end
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(L[profName], 1, 1, 1)

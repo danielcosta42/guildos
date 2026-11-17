@@ -69,7 +69,7 @@ C.row1, C.row2, C.rowHover    -- cores de linha alternadas
 C.accent                      -- cópia de C.gold (o único destaque)
 C.gold                        -- dourado: wordmark, botão primário, regra da aba ativa
 C.online, C.offline           -- status de jogador
-C.red, C.green, C.blue        -- feedback
+C.danger, C.warn, C.ok        -- feedback (C.red e C.green são aliases)
 C.panel, C.panelDark          -- backgrounds
 C.border, C.separator         -- bordas e separadores
 ```
@@ -80,7 +80,7 @@ UI:CreatePanel(parent, name, level)           -- frame com BackdropTemplate
 UI:CreateDarkPanel(parent, name, level)       -- variante mais escura
 UI:CreateAccentLine(parent, thickness)         -- linha horizontal de destaque
 UI:CreateSeparator(parent)                     -- separador tênue
-UI:CreateTitle(parent, text, size)             -- título de janela: Spectral 16, cor text (papel)
+UI:CreateTitle(parent, text, size)             -- título de janela: Plex Sans SemiBold 16, cor text (papel)
 UI:CreateText(parent, text, size, r, g, b)    -- FontString padrão
 UI:CreateHeaderText(parent, text, size)        -- texto de cabeçalho de coluna
 UI:CreateButton(parent, text, width, height)  -- botão estilizado com hover
@@ -111,12 +111,11 @@ UI:CreateProgressBar(parent, width, height, ramp) -- barra com :SetProgress(v); 
 | Destaque/botão ativo | `C.accent` |
 | Aviso/erro | `C.red` |
 | Sucesso | `C.green` |
-| Info | `C.blue` |
 
 ### Tamanhos de Fonte
 | Uso | Tamanho |
 |---|---|
-| Títulos de janela | 16 (Spectral) |
+| Títulos de janela | 16 (IBM Plex Sans SemiBold) |
 | Headers de coluna | 10 (IBM Plex Mono Medium) |
 | Texto de linha | 11pt |
 | Texto secundário | 10pt |

@@ -569,15 +569,15 @@ do
     if c.kind == "Texture" and c.layer == "BACKGROUND" then barBg = c end
   end
   check(wordmark and wordmark.font.file == face(F.wordmark.file) and wordmark.font.size == 18 and same(wordmark.color, C.gold),
-    "left: the gold wordmark, GuildOS, in its Spectral face")
+    "left: the gold wordmark, GuildOS, in its own face")
   if STYLE == "forever" then
     -- The metal frame's top edge is the bar: a band over it met the frame's corner off true (#148).
     check(not barBg, "in the Forever style the title bar paints no band of its own")
   else
     check(barBg and same(barBg.color, C.panel), "the title bar sits on panel")
   end
-  check(same(f.metaText.color, C.labelDim) and same(f.syncText.color, C.label) and f.metaText.font.file == face(F.mono)
-    and f.syncText.font.size == 10, "the meta line in labelDim and the sync time in label, both mono 10")
+  check(same(f.metaText.color, C.label) and same(f.syncText.color, C.label) and f.metaText.font.file == face(F.mono)
+    and f.syncText.font.size == 10, "the meta line and the sync time in label, both mono 10")
   local label = tabOf(f, "roster").label
   check(label.font.file == face(F.mono) and label.font.size == 11, "tab labels are mono 11")
   local ruleLine

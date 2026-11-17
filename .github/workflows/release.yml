@@ -27,7 +27,7 @@ jobs:
 
       - name: No hard-coded client font
         # The Forever skin sets every font through GuildOS:ApplyFont (Core/Data.lua),
-        # which is what keeps serif at 14px and up and mono at 10px and up.
+        # which is what keeps sans at 11px and up and mono at 10px and up.
         # ChehulNet.lua is shared verbatim with other Chehul addons and cannot call
         # into GuildOS, so it keeps the client font.
         run: |
