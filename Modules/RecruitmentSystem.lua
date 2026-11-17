@@ -620,7 +620,7 @@ function Recruitment:StartAutoRecruit()
     end
     -- /gos recruit on reaches here with the module switched off and its tab hidden (issue #84).
     if not GuildOS:IsFeatureEnabled("recruitment") then
-        GuildOS:Print(L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
+        GuildOS:Print(L["The Recruitment module is off. Turn it on in Settings > Modules."])
         return false
     end
 
@@ -1327,7 +1327,7 @@ function Recruitment:HandleCommand(args)
     -- has, and every branch below but `invite` reads them.
     if not GuildOS.db.recruitment and cmd and cmd ~= "invite" then
         GuildOS:Print(GuildOS:IsFeatureEnabled("recruitment") and L["Recruitment settings are available to officers after login."]
-            or L["The Recruitment module is off. Turn it on in Settings > General > Modules."])
+            or L["The Recruitment module is off. Turn it on in Settings > Modules."])
         return
     end
 

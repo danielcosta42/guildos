@@ -79,6 +79,7 @@ GuildOS.UI = setmetatable({
   CreateCheckbox = function() return widget({ checkbox = widget({}) }) end,
 }, { __index = function() return function() return stub end end })
 dofile(ADDON .. "/UI/FeaturePanels.lua")
+dofile(ADDON .. "/UI/SettingsPanel.lua")
 GuildOS.CreateRolePicker = function() return stub end
 
 local function button(text)
@@ -86,7 +87,7 @@ local function button(text)
 end
 local function open(category)
   buttons, printed = {}, {}
-  local ok, err = pcall(GuildOS.RefreshSettingsPanel, GuildOS, stub, category)
+  local ok, err = pcall(GuildOS.RefreshSettingsPanel, GuildOS, setmetatable({}, getmetatable(stub)), category)
   check(ok, "the " .. category .. " settings draw (" .. tostring(err) .. ")")
 end
 
@@ -105,8 +106,8 @@ GuildOS.State.startup.failed["Modules/Broken.lua"] = "boom"
 GuildOS.State.errors = { { msg = "late error" } }
 GuildOS.db = { settings = {}, mentions = { watchWords = { "raid", "boss" }, log = { { ts = 0, sender = "Ana", msg = "oi Off" } } } }
 
--- ── Settings → About: diagnostics and erasing, for everyone ──────────────
-open("about")
+-- ── Settings → Data and support: diagnostics and erasing, for everyone (#367) ──
+open("data")
 for _, t in ipairs({ "Collect my data", "View Errors", "Self-test", "Probe the client", "Probe chat", "Style preview",
                      "Erase guild data" }) do
   check(button(t) and button(t).onClick, "About has " .. t)
@@ -127,8 +128,8 @@ check(popped == "GUILDOS_ERASE_GUILD" and reloaded == 0 and GuildOSDB["Guild-Rea
 GuildOS.Dialogs.GUILDOS_ERASE_GUILD.OnAccept()
 check(GuildOSDB["Guild-Realm"] == nil and GuildOSDB["Other-Realm"] and reloaded == 1, "confirmed: this guild's data only, then a reload")
 
--- ── Settings → General: the mentions log and clearing the words ─────────
-open("general")
+-- ── Settings → Chat and alerts: the mentions log and clearing the words ─
+open("chat")
 check(button("Recent mentions") and button("Clear watch-words"), "Mentions has its log and its clear button")
 button("Recent mentions").onClick()
 check(said("--- Recent mentions ---") and said("oi Off") and not said("Usage:"), "the log, without the command's usage line")
