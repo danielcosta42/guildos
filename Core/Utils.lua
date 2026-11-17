@@ -983,7 +983,7 @@ function GuildOS:ShowProfessionReminder(staleProfessions)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(frame),
     })
     frame:SetBackdropColor(0.066, 0.066, 0.084, 0.95)
     frame:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.8)

@@ -42,7 +42,7 @@ local function makeInput(parent, width)
     local b = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     b:SetSize(width, 24)
     b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+                    edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(b) })
     b:SetBackdropColor(C.bg1.r, C.bg1.g, C.bg1.b, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     GuildOS:ApplyFont(b, 11)
@@ -329,7 +329,7 @@ local function ensureAllyCard()
     f:SetFrameStrata("DIALOG")
     f:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+        edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f),
     })
     -- A floating card is elevation 4: popup surface, lineHi border.
     f:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -529,7 +529,7 @@ local function BuildChat(panel)
         local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
         card:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(card),
         })
 
         -- Left accent bar in the speaker's class colour. This is the "bubble":
@@ -854,7 +854,7 @@ local function BuildBulletin(panel)
         local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
         card:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(card),
         })
         card:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
 

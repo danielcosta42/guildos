@@ -251,7 +251,7 @@ function GuildOS:CreateWebPanel(parent, _win)
     copyBox:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(copyBox),
     })
     copyBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     copyBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)

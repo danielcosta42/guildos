@@ -104,6 +104,16 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
+-- pcall: a client that lacks an event raises on it (Compat.RegisterEvent, which loads later), and this
+-- frame drives the whole addon.
+pcall(eventFrame.RegisterEvent, eventFrame, "UI_SCALE_CHANGED")
+pcall(eventFrame.RegisterEvent, eventFrame, "DISPLAY_SIZE_CHANGED")
+
+-- Borders and rules are one screen pixel at the scale they were drawn at (#369): size them again a
+-- frame after a scale change, once UIParent has taken it in its own handler for the same event.
+local function refreshHairlines()
+    C_Timer.After(0, function() if GuildOS.UI then GuildOS.UI:RefreshHairlines() end end)
+end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -115,11 +125,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         GuildOS:OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isInitialLogin, isReloadingUi = ...
+        if isInitialLogin or isReloadingUi then refreshHairlines() end
         GuildOS:OnEnterWorld(isInitialLogin, isReloadingUi)
     elseif event == "GUILD_ROSTER_UPDATE" then
         GuildOS:OnGuildRosterUpdate()
     elseif event == "PLAYER_GUILD_UPDATE" then
         GuildOS:OnGuildRosterUpdate()
+    elseif event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
+        refreshHairlines()
     end
 end)
 

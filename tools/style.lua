@@ -47,9 +47,14 @@ local function newRegion(kind, parent)
       elseif k == "SetVertTile" then self.vertTile = a[1]
       elseif k == "SetTexture" then self.texture = a[1]
       elseif k == "SetVertexColor" or k == "SetTextColor" or k == "SetColorTexture" then self.color = a
-      elseif k == "SetBackdrop" then self.backdrop = a[1]
+      elseif k == "SetBackdrop" then   -- the client's ApplyBackdrop paints the pieces white again
+        self.backdrop, self.backdropInfo, self.bg, self.border = a[1], a[1], { 1, 1, 1, 1 }, { 1, 1, 1, 1 }
       elseif k == "SetBackdropColor" then self.bg = a
       elseif k == "SetBackdropBorderColor" then self.border = a
+      elseif k == "GetBackdropColor" then if self.bg then return unpack(self.bg) end
+      elseif k == "GetBackdropBorderColor" then if self.border then return unpack(self.border) end
+      elseif k == "GetEffectiveScale" then
+        return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1)
       elseif k == "SetSize" then self.w, self.h = a[1], a[2]
       elseif k == "SetWidth" then self.w = a[1]
       elseif k == "SetHeight" then self.h = a[1]
@@ -421,5 +426,55 @@ check(seen.window and seen.button and seen.tab and seen.scroll and seen.minimise
 check(missingSeen, "and marks the ones this client lacks")
 S:ShowPreview()
 check(S.previewFrame and S.previewFrame.shown, "/gos style preview opens it, even in the GuildOS style")
+
+-- ── 10. A line is never under a screen pixel (issue #369) ──────────────
+-- The client's rounding, as SharedXML/PixelUtil.lua does it: whole pixels, never under `min`.
+local physH = 1080
+PixelUtil = { GetNearestPixelSize = function(units, scale, min)
+  local factor = 768 / physH
+  local n = math.floor(units * scale / factor + 0.5)
+  if min and n < min then n = min end
+  return n * factor / scale
+end }
+local function pixels(units, region) return units * region:GetEffectiveScale() * physH / 768 end
+local function near(a, b) return math.abs(a - b) < 1e-9 end
+
+S = load({ db = {} }); S:Resolve()
+local UI = GuildOS.UI
+UIParent.scale = 0.64                    -- 1080p at the smallest UI scale: 1 unit is 0.91 px
+local win = UI:CreatePanel(UIParent)
+win.scale = 0.9                          -- the window's own scale slider
+local box = UI:CreatePanel(win)
+local rule = UI:CreateSeparator(box)
+local btn = UI:CreateButton(box, "Apply", 80, 22)
+check(near(pixels(box.backdrop.edgeSize, box), 1), "a box's border is one screen pixel, not 0.82 of one")
+check(near(pixels(rule.h, box), 1), "a separator is one screen pixel")
+check(btn.backdrop and near(pixels(btn.backdrop.edgeSize, btn), 1), "and a button's border too")
+local bg = { unpack(box.bg) }
+check(bg[1] ~= 1, "(the box is painted, not the client's white)")
+
+physH, UIParent.scale = 2160, 1          -- moved to a 4K screen: 1 unit is now 2.5 px
+UI:RefreshHairlines()
+check(near(pixels(box.backdrop.edgeSize, box), 3) and near(pixels(rule.h, box), 3),
+  "after a scale change every line is resized to whole pixels")
+check(box.bg[1] == bg[1] and box.bg[4] == bg[4], "and the box keeps its colours")
+PixelUtil = nil
+check(UI:Px(box) == 1, "a client without PixelUtil keeps 1 unit")
+
+local files, literal = {}, {}
+local p = io.popen('git -C "' .. ADDON .. '" ls-files "*.lua"')
+for line in p:lines() do if not line:find("^tools/") then files[#files + 1] = line end end
+p:close()
+for _, rel in ipairs(files) do
+  local fh = io.open(ADDON .. "/" .. rel, "rb")
+  local n = 0
+  for line in fh:lines() do
+    n = n + 1
+    if line:find("edgeSize%s*=%s*1[^%d.]") or line:find("edgeSize%s*=%s*1$") then literal[#literal + 1] = rel .. ":" .. n end
+  end
+  fh:close()
+end
+check(#files > 100 and #literal == 0,
+  "no border is a literal 1 unit (use GuildOS.UI:Edge): " .. table.concat(literal, ", "))
 
 print(("style: %d checks passed"):format(checks))

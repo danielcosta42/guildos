@@ -114,6 +114,10 @@ function Frame:SetFrameLevel(l) self.level = l end
 function Frame:GetFrameLevel() return self.level end
 function Frame:SetScale(s) self.scale = s end
 function Frame:GetScale() return self.scale end
+function Frame:GetEffectiveScale() return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1) end
+function Frame:SetBackdrop(b) self.backdrop, self.backdropInfo = b, b end
+function Frame:GetBackdropColor() if self.bg then return unpack(self.bg) end end
+function Frame:GetBackdropBorderColor() end
 function Frame:RegisterEvent(e) self.events[e] = true end
 function Frame:SetAtlas(name) self.atlas = name end
 function Frame:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
@@ -161,7 +165,7 @@ function Frame:Enable() self.disabled = nil end
 function Frame:Disable() self.disabled = true end
 function Frame:SetFocus() self.focused = true end
 function Frame:IsMouseOver() return false end
-for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise", "SetBackdrop",
+for _, name in ipairs({ "SetClampedToScreen", "RegisterForClicks", "Raise",
   "SetBackdropBorderColor", "SetTexture", "SetTexCoord", "SetBlendMode", "SetAlpha", "SetShadowOffset",
   "SetShadowColor", "SetJustifyH", "SetWordWrap", "SetTextInsets", "SetAutoFocus", "SetMaxLetters", "ClearFocus",
   "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetMultiLine", "SetHorizTile", "SetVertTile" }) do
@@ -608,6 +612,19 @@ GuildOS.db.settings.window, GuildOS.db.settings.uiScale = nil, 2
 GuildOS.RosterFrame = nil
 f = UI:GetMainWindow()
 check(f.scale == 2 and f.w == 800 and f.h == 450, "the UI scale applies, and the default size fits the scaled screen")
+-- Its border is sized after the scale, not before (#369): 0.5 makes 1 unit 0.7 of a 1080p pixel.
+PixelUtil = { GetNearestPixelSize = function(units, scale, min)
+  local factor = 768 / 1080
+  return math.max(min or 0, math.floor(units * scale / factor + 0.5)) * factor / scale
+end }
+GuildOS.db.settings.uiScale = 0.5
+GuildOS.RosterFrame = nil
+f = UI:GetMainWindow()
+if STYLE ~= "forever" then
+  check(f.backdrop and math.abs(f.backdrop.edgeSize * f:GetEffectiveScale() * 1080 / 768 - 1) < 1e-9,
+    "the window's border is one screen pixel at its own scale")
+end
+PixelUtil = nil
 GuildOS.db.settings.uiScale = 1.1
 UI:ApplyScale()
 check(f.scale == 1.1, "changing the UI scale rescales the window")

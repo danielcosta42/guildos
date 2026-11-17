@@ -34,7 +34,7 @@ end
 local function makeInput(parent, w, multiline)
     local b = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     b:SetSize(w, multiline and 50 or 24)
-    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(b) })
     b:SetBackdropColor(0.05, 0.05, 0.066, 1)
     b:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     GuildOS:ApplyFont(b, 11)
@@ -548,7 +548,7 @@ function GuildOS:CreateGuildChatFeed(panel)
     local function getBlock(i)
         if blocks[i] then return blocks[i] end
         local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        card:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+        card:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(card) })
         -- A link in the line opens as it does in the chat frame.
         card:EnableMouse(true)
         card:SetHyperlinksEnabled(true)

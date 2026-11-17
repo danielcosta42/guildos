@@ -98,7 +98,7 @@ function GuildOS:CreateCoresPanel(panel)
 
     local listDiv = leftCol:CreateTexture(nil, "ARTWORK")
     listDiv:SetTexture(WHITE)
-    listDiv:SetWidth(1)
+    GuildOS.UI:Hairline(listDiv, "Width")
     listDiv:SetPoint("TOPRIGHT", 0, 0)
     listDiv:SetPoint("BOTTOMRIGHT", 0, 0)
     listDiv:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
@@ -884,7 +884,7 @@ function GuildOS:CreateCoresPanel(panel)
             local row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
             row:SetSize(listW - 14 - indent, CORE_ROW_H - 2)
             row:SetPoint("TOPLEFT", indent, -(idx - 1) * CORE_ROW_H)
-            row:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+            row:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(row) })
             local on = name == selectedCore
             row:SetBackdropColor(C.well.r, C.well.g, C.well.b, on and 1 or 0)
             local edge = on and C.gold or C.line

@@ -1030,7 +1030,7 @@ function Recruitment:CreatePopupFrame()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1123,7 +1123,7 @@ local function ActionPopup(title, y, okText, laterText)
     local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     f:SetSize(WIDTH, 120)
     f:SetPoint("TOP", UIParent, "TOP", 0, y)
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(0.082, 0.082, 0.105, 0.97)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     f:SetFrameStrata("DIALOG")

@@ -172,7 +172,7 @@ local function RefreshCoreSignupFrame()
             rlbl:SetText(string.format("%s:%d/%d", rd.short, cnt, rd.target))
             if isMine then
                 local ul = content:CreateTexture(nil, "ARTWORK")
-                ul:SetTexture(WHITE8); ul:SetHeight(1)
+                ul:SetTexture(WHITE8); GuildOS.UI:Hairline(ul, "Height")
                 ul:SetPoint("TOPLEFT", rx, y - 16)
                 ul:SetWidth(44)
                 ul:SetVertexColor(rcol.r, rcol.g, rcol.b, 0.7)
@@ -291,7 +291,7 @@ local function BuildCoreSignupFrame()
         for i = #roles, 1, -1 do
             local role = roles[i]
             local b = CreateFrame("Button", nil, f, "BackdropTemplate")
-            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize=1 })
+            b:SetBackdrop({ bgFile=WHITE8, edgeFile=WHITE8, edgeSize = GuildOS.UI:Edge(b) })
             b.lbl = b:CreateFontString(nil, "OVERLAY")
             GuildOS:ApplyFont(b.lbl, 10)
             b.lbl:SetPoint("CENTER")
@@ -922,7 +922,7 @@ function GuildOS:CreateTrialsPanel(parent, _mainFrame)
     local daysBox = CreateFrame("EditBox", nil, scrollParent, "BackdropTemplate")
     daysBox:SetSize(40, 22)
     daysBox:SetPoint("LEFT", daysLabel, "RIGHT", 8, 0)
-    daysBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    daysBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(daysBox) })
     daysBox:SetBackdropColor(0.058, 0.058, 0.075, 0.9)
     daysBox:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
     GuildOS:ApplyFont(daysBox, nil, "tableNum")
@@ -1202,7 +1202,7 @@ function GuildOS:RefreshTrialsPanel(parent)
             local addBox = CreateFrame("EditBox", nil, detailFrame, "BackdropTemplate")
             addBox:SetSize(content:GetWidth() - 120, 20)
             addBox:SetPoint("TOPLEFT", 10, dY - 4)
-            addBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            addBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(addBox) })
             addBox:SetBackdropColor(0.038, 0.038, 0.052, 1)
             addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.3)
             GuildOS:ApplyFont(addBox, 9)
@@ -1267,7 +1267,7 @@ function GuildOS:ShowExportChooser()
     local f = CreateFrame("Frame", "GuildOSExportChooser", UIParent, "BackdropTemplate")
     f:SetSize(390, 300)
     f:SetPoint("CENTER")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(f) })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
     UI:StylePopup(f)
@@ -1330,7 +1330,7 @@ function GuildOS:ShowExportPopup(titleStr, text)
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1395,7 +1395,7 @@ function GuildOS:ShowSoftResImportPopup()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1470,7 +1470,7 @@ function GuildOS:ShowImportPopup()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1589,7 +1589,7 @@ local function BuildWishlistFrame()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1914,7 +1914,7 @@ local function BuildWishlistFrame()
     addBox:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(addBox),
     })
     addBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     addBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
@@ -1941,7 +1941,7 @@ local function BuildWishlistFrame()
     dropdown:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(dropdown),
     })
     -- A dropdown is elevation 4: popup surface, lineHi border.
     dropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)
@@ -2221,7 +2221,7 @@ local function BuildPrioModal()
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.gold.r, C.gold.g, C.gold.b, 0.8)
@@ -2276,7 +2276,7 @@ local function BuildPrioModal()
     local searchBox = CreateFrame("EditBox", "GuildOSPrioSearchBox", f, "BackdropTemplate")
     searchBox:SetSize(320, 26)
     searchBox:SetPoint("LEFT", 10, 0); searchBox:SetPoint("TOP", 0, -52)
-    searchBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    searchBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(searchBox) })
     searchBox:SetBackdropColor(0.050, 0.050, 0.066, 1.0)
     searchBox:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.4)
     GuildOS:ApplyFont(searchBox, 11)
@@ -2302,7 +2302,7 @@ local function BuildPrioModal()
     prioDropdown:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(prioDropdown),
     })
     -- A dropdown is elevation 4: popup surface, lineHi border.
     prioDropdown:SetBackdropColor(C.popup.r, C.popup.g, C.popup.b, 1)

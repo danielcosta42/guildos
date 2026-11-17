@@ -1207,7 +1207,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = GuildOS.UI:Edge(f),
     })
     f:SetBackdropColor(0.058, 0.058, 0.075, 0.98)
     f:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, C.border.a)
@@ -1248,7 +1248,7 @@ function LootMaster:ShowCouncilResultFrame(winner, itemLink, lootSlot, allCandid
     -- Separator
     local sep = f:CreateTexture(nil, "ARTWORK")
     sep:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sep:SetHeight(1)
+    GuildOS.UI:Hairline(sep, "Height")
     sep:SetPoint("TOPLEFT", 10, -60)
     sep:SetPoint("TOPRIGHT", -10, -60)
     sep:SetVertexColor(C.border.r, C.border.g, C.border.b, 0.4)
@@ -2657,7 +2657,7 @@ local function lootEditBox(parent, width, numeric, maxLetters)
     local C = GuildOS.Colors
     local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     box:SetSize(width, 22)
-    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    box:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(box) })
     box:SetBackdropColor(0.05, 0.05, 0.066, 1)
     box:SetBackdropBorderColor(C.accent.r, C.accent.g, C.accent.b, 0.5)
     GuildOS:ApplyFont(box, 11)
@@ -3119,7 +3119,8 @@ function LootMaster:BuildLootTable()
     grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() end)
     local gripMark = grip:CreateTexture(nil, "OVERLAY")
     gripMark:SetTexture("Interface\\Buttons\\WHITE8x8")
-    gripMark:SetSize(8, 1)
+    gripMark:SetWidth(8)
+    GuildOS.UI:Hairline(gripMark)
     gripMark:SetPoint("BOTTOMRIGHT", -2, 3)
     gripMark:SetVertexColor(C.lineHi.r, C.lineHi.g, C.lineHi.b, 1)
 
@@ -3146,7 +3147,7 @@ function LootMaster:BuildLootTable()
     f.undoBtn = undoBtn
     local vDiv = f:CreateTexture(nil, "ARTWORK")
     vDiv:SetTexture("Interface\\Buttons\\WHITE8x8")
-    vDiv:SetWidth(1)
+    GuildOS.UI:Hairline(vDiv, "Width")
     vDiv:SetPoint("TOPLEFT", left, "TOPRIGHT", 6, 0)
     vDiv:SetPoint("BOTTOMLEFT", left, "BOTTOMRIGHT", 6, 0)
     vDiv:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
@@ -3394,7 +3395,7 @@ function LootMaster:RefreshRollFrame()
         local row = f.itemRows[i]
         if not row then
             row = CreateFrame("Button", nil, f.left, "BackdropTemplate")
-            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GuildOS.UI:Edge(row) })
             row.name = tableText(row, 11)
             row.name:SetPoint("TOPLEFT", 6, -4)
             row.name:SetPoint("RIGHT", row, "RIGHT", -6, 0)

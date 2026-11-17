@@ -58,6 +58,59 @@ local function fitToLabel(frame)
 end
 
 ----------------------------------------------------------------------
+-- Pixels (issue #369)
+----------------------------------------------------------------------
+
+-- `n` interface units (1 by default) in `region`'s scale, rounded to whole screen pixels and never
+-- under one. A 1-unit line is under a pixel when the interface is scaled down, and the game then rounds
+-- both of its ends to the same pixel: the side of a box, or a rule, vanishes.
+function Helpers:Px(region, n)
+    n = n or 1
+    if not (PixelUtil and PixelUtil.GetNearestPixelSize and region and region.GetEffectiveScale) then return n end
+    return PixelUtil.GetNearestPixelSize(n, region:GetEffectiveScale(), 1)
+end
+
+-- What keeps a pixel when the scale changes: frame -> "edge" (its backdrop's edge), texture -> "Height"/"Width".
+local hairlines = setmetatable({}, { __mode = "k" })
+
+-- The backdrop edge size for `frame`: one screen pixel. Use it as `edgeSize = GuildOS.UI:Edge(f)`.
+function Helpers:Edge(frame)
+    hairlines[frame] = "edge"
+    return self:Px(frame)
+end
+
+-- Make a texture a one-pixel rule across its other side: dim "Height" (default) or "Width".
+function Helpers:Hairline(tex, dim)
+    dim = dim or "Height"
+    hairlines[tex] = dim
+    tex["Set" .. dim](tex, self:Px(tex))
+    return tex
+end
+
+-- Size every line again after the interface, the window or the screen changes scale (Core.lua's
+-- event frame calls it on login, UI_SCALE_CHANGED and DISPLAY_SIZE_CHANGED; ApplyScale for the window).
+function Helpers:RefreshHairlines()
+    for region, kind in pairs(hairlines) do
+        local px = self:Px(region)
+        if kind ~= "edge" then
+            region["Set" .. kind](region, px)
+        else
+            local info = region.backdropInfo
+            if info and info.edgeFile and info.edgeSize ~= px then
+                local r, g, b, a = region:GetBackdropColor()
+                local er, eg, eb, ea = region:GetBackdropBorderColor()
+                local copy = {}
+                for k, v in pairs(info) do copy[k] = v end
+                copy.edgeSize = px
+                region:SetBackdrop(copy)
+                if r then region:SetBackdropColor(r, g, b, a) end
+                if er then region:SetBackdropBorderColor(er, eg, eb, ea) end
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------------
 -- Surfaces
 ----------------------------------------------------------------------
 
@@ -105,7 +158,7 @@ end
 function Helpers:CreateAccentLine(parent, thickness)
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
-    line:SetHeight(thickness or 2)
+    if (thickness or 2) == 1 then Helpers:Hairline(line) else line:SetHeight(thickness or 2) end
     line:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)
     line.__solidColor = C.gold
     return line
@@ -115,7 +168,7 @@ end
 function Helpers:CreateSeparator(parent)
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetTexture(WHITE)
-    line:SetHeight(1)
+    Helpers:Hairline(line)
     line:SetVertexColor(C.line.r, C.line.g, C.line.b, 1)
     return line
 end
@@ -201,7 +254,7 @@ end
 function Helpers:CreateButton(parent, text, width, height)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(width or 120, height or BUTTON_HEIGHT)
-    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
 
     local label = newText(btn, nil, "button")
     label:SetPoint("CENTER")
@@ -268,7 +321,7 @@ function Helpers:SetButtonVariant(btn, variant)
         if variant == "ghost" and not btn.underline then
             local u = btn:CreateTexture(nil, "ARTWORK")
             u:SetTexture(WHITE)
-            u:SetHeight(1)
+            Helpers:Hairline(u)
             u:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -3)
             u:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -3)
             btn.underline = u
@@ -480,7 +533,8 @@ local function dropdownArrow(btn)
     for i, w in ipairs({ 7, 5, 3, 1 }) do
         local t = btn:CreateTexture(nil, "OVERLAY")
         t:SetTexture(WHITE)
-        t:SetSize(w, 1)
+        t:SetWidth(w)
+        Helpers:Hairline(t)
         t:SetPoint("RIGHT", btn, "RIGHT", -(6 + (7 - w) / 2), 2 - i)
         rows[i] = t
     end
@@ -650,7 +704,7 @@ end
 function Helpers:CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(20, 20)
-    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    btn:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(btn) })
     btn:SetBackdropColor(0, 0, 0, 0)
     btn:SetBackdropBorderColor(0, 0, 0, 0)
 
@@ -791,7 +845,7 @@ function Helpers:CreateIcon(parent, size, iconPath)
     size = size or 32
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(size + 4, size + 4)
-    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
     frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
@@ -819,7 +873,7 @@ end
 -- badge colour (the officer mark included), so gold reads as `label`, the default.
 function Helpers:CreateBadge(parent, text, color)
     local b = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(b) })
     local fs = newText(b, nil, "badge")
     fs:SetPoint("CENTER", 0, 0)
     b.label = fs
@@ -854,7 +908,7 @@ function Helpers:CreateProgressBar(parent, width, height, ramp)
 
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(width, height)
-    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(frame) })
     frame:SetBackdropColor(C.well.r, C.well.g, C.well.b, 1)
     frame:SetBackdropBorderColor(C.line.r, C.line.g, C.line.b, 1)
 
@@ -944,7 +998,7 @@ end
 function Helpers:CreateTab(parent, text, width, sub)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
     tab:SetSize(width or 100, 28)
-    tab:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    tab:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = GuildOS.UI:Edge(tab) })
     tab:SetBackdropBorderColor(0, 0, 0, 0)
 
     local label = newText(tab, 11, "caption")
@@ -955,7 +1009,7 @@ function Helpers:CreateTab(parent, text, width, sub)
 
     local underline = tab:CreateTexture(nil, "OVERLAY")
     underline:SetTexture(WHITE)
-    underline:SetHeight(sub and 1 or 2)
+    if sub then Helpers:Hairline(underline) else underline:SetHeight(2) end
     underline:SetPoint("BOTTOMLEFT", 2, 0)
     underline:SetPoint("BOTTOMRIGHT", -2, 0)
     underline:SetVertexColor(C.gold.r, C.gold.g, C.gold.b, 1)

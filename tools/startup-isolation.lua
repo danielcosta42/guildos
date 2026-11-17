@@ -28,6 +28,7 @@ end
 local KNOWN_EVENTS = {
   ADDON_LOADED = true, PLAYER_LOGIN = true, PLAYER_ENTERING_WORLD = true,
   GUILD_ROSTER_UPDATE = true, PLAYER_GUILD_UPDATE = true,
+  UI_SCALE_CHANGED = true, DISPLAY_SIZE_CHANGED = true,   -- Core.lua sizes the 1px lines again (#369)
 }
 function CreateFrame()
   local f = { events = {} }
